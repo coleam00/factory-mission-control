@@ -41,3 +41,5 @@ How this repository is built. The product is `docs/mission-control.prd.md`; this
 - Tests sit next to the code they test (`*.test.ts`). Parsers are tested on the literal examples in
   the PRD's appendix and on `fixtures/pack/`.
 - Stop every process you start by its process id; never kill by name.
+
+See [factory workflow policy](factory/WORKFLOW_POLICY.md) for factory-specific shared-workflow requirements.
