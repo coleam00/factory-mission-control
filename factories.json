@@ -1,0 +1,10 @@
+{
+  "factories": [
+    {
+      "name": "mission-control",
+      "repository": "coleam00/factory-mission-control",
+      "codebase": "coleam00/factory-mission-control",
+      "console": "http://localhost:3090"
+    }
+  ]
+}

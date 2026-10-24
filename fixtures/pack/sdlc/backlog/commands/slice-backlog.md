@@ -1,0 +1,76 @@
+# Slice a product document into a backlog
+
+Product document: $read-prd.output.path
+Ticket bound: $read-prd.output.max_issues
+Operator context (may be empty): $ARGUMENTS
+
+Read the document in full, then read the repository's guidance and the project
+requirements those files declare. Read enough of the current code to know what
+already exists. An empty repository is a normal starting point. Do not invent a
+required product document or give an undeclared document precedence over the
+input.
+
+Decompose the way a good engineering lead does. Each implementation phase in the
+document is a group of tickets; each user story becomes one ticket, or more when it
+hides more than about a day of work. A ticket that cannot be described on one screen
+is two tickets. Every ticket traces back to a phase or a story in the document.
+
+Write `$ARTIFACTS_DIR/backlog.json`: a JSON array of tickets, in the order they should
+be built. Each ticket is an object with:
+
+- `key`: a short stable slug, lowercase, unique within this backlog.
+- `title`: imperative and specific, the outcome as a person would say it.
+- `phase`: the document's phase or story this ticket comes from, verbatim.
+- `body`: Markdown that passes the pack's contract test on its own, so triage routes
+  it READY without guessing: the problem, why it is worth solving, the desired outcome,
+  the invariants that must hold, and acceptance criteria as a checklist a verifier can
+  check with exact values, not adjectives. Name the document section it comes from.
+  Every criterion must be one the delivery itself can satisfy: proved by a test, by a
+  runtime or harness observation, or by an evidence file saved in the run's artifacts
+  and named in the PR body. Never require attaching files or images to the pull
+  request (the workflows cannot upload them), and never require a human action.
+- `depends_on`: keys of earlier tickets this one needs; usually empty or one. A
+  dependency is real only when this ticket cannot be built or checked without that
+  ticket's change on the default branch (it calls code that ticket adds, or its
+  criteria observe behaviour that ticket creates). Wanting them in a certain order,
+  or touching the same area, is not a dependency.
+- `depends_why`: one sentence per dependency saying what this ticket needs from it;
+  empty when `depends_on` is empty.
+- `size`: `small_bounded`, `risky`, or `large`.
+
+Rules that make the backlog buildable in dependency order:
+
+1. **The first ticket is the smallest runnable, testable product increment.** It
+   establishes the core path appropriate to this project: a library can expose and
+   test its first useful API, a CLI can execute one real command, a desktop app can
+   open one working flow, and a service can serve one useful request. Use the
+   project's declared build, test, CI, runtime, and evidence requirements. Do not
+   invent a server, port, health endpoint, build identity, persistence layer, or CI
+   system when the product and project guidance do not require one. In an existing
+   codebase, the first ticket is the first unmet story that leaves declared checks
+   passing.
+2. **Each ticket is one reviewable change** that leaves the product working.
+3. **Honor declared scope and invariants.** If the document conflicts with current
+   project guidance, leave the conflicting work out and say so.
+4. **Order by dependency, then by value.** Earlier tickets never depend on later ones.
+   A ticket can only start once its dependencies are done, so a long chain makes the
+   whole backlog wait on one ticket at a time. Prefer slices that can be built side
+   by side once the first ticket lands:
+   state or data and its display as separate tickets where the display can start
+   from a stub, independent capabilities in parallel, and locks or limits beside the
+   feature they guard rather than after it. A chain deeper than three is a sign the
+   slicing follows the document's order of presentation instead of real needs.
+5. **Stop at the bound.** When the document holds more than the bound, keep the
+   tickets that build the core path and the most valuable capabilities, and end the
+   summary with what was left for a later slice.
+6. **A phase too vague to decompose is a document gap.** Say so in the summary
+   instead of inventing requirements.
+7. **Nothing new is a valid slice.** When every ticket the document yields is
+   already in the tracker (an open or closed issue carrying it, or code that
+   already does it), write an empty array, return `count` 0, and say in the
+   summary what already covers the document. That is a fact about the backlog,
+   not a failure, and nothing is published.
+
+Do not create issues, edit files, or touch the tracker here; publication is a later
+node. Return `count` and a `summary`: what the first ticket establishes, the order,
+and what was left out and why.

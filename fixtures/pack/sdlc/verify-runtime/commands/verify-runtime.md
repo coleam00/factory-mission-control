@@ -1,0 +1,110 @@
+# Verify runtime
+
+Exercise the live target using tools. Judge its behavior against these assertions:
+
+$read-scenario.output.assertions_json
+
+Run this project command to observe the actual target identity:
+
+$read-scenario.output.candidate_command
+
+Additional scenario context:
+
+$ARGUMENTS
+
+Previous report feedback (empty on the first attempt):
+
+$prepare-attempt.output.report_feedback
+
+This is the checker's report rejection reason, not a previous product observation.
+Correct the report defect and collect fresh tool evidence against this attempt's
+newly started target; do not reuse previous observations or evidence files.
+
+Do not modify application source, the scenario, or assertion definitions. Do not
+infer runtime results from source, docs, existing fixtures, or previous attempts.
+Missing instructions, an unreachable target, and checks you cannot perform are
+inconclusive. A failed assertion requires observed product behavior that violates
+the scenario. Preserve literal measurements, including boolean true or false.
+
+Capture the commands/tools used and their actual output bytes directly from the
+invocation in new evidence files
+inside this attempt directory:
+
+$prepare-attempt.output.directory
+
+For shell commands, redirect stdout and stderr to files in that directory in the
+same shell invocation and save the numeric exit status beside them. The packaged
+helper at `$capture-helper.output.path` does this without interpreting a shell:
+run it with `bun`, an evidence path prefix, `--`, and the command plus arguments. It
+writes `.stdout`, `.stderr`, and `.exit.json` files and returns the command's exit
+status. For HTTP
+clients, use their native output/header file options. For browser and screenshot
+tools, use their native file output. Then read the saved file and cite what you
+actually observed. Do not use Start-Transcript, provider/session transcripts,
+chat prose, or a copied tool response as evidence. If a tool cannot export usable
+evidence, mark the assertion inconclusive. A nonzero exit may be the expected
+negative observation; preserve it instead of converting the command to success.
+Write nothing inside the checkout under test: every file this node creates (evidence,
+helper scripts, scratch output, raw responses) goes under the attempt directory above,
+built from that absolute path in a single expression. Never assemble a path from pieces
+split across lines or from a computed value (seen live: a helper script joined a path
+across a line break and wrote `10.4503373803295/raw/*.resp` into the checkout, and the
+read-only checkout guard failed an otherwise verified run).
+Run every shell command from the attempt directory: start each command with `cd` to
+its absolute path, so a stray relative write (a mistyped redirect, a debug print sent
+to `>` instead of a file) lands there instead of in the checkout (seen live: a debug
+loop wrote about a hundred files named after its own output lines, such as
+`t+1003 live=3 dist=6.01 ...`, into the checkout, and the guard failed the lap).
+
+Write a JSON report at this exact path:
+
+$prepare-attempt.output.report_path
+
+The report contains `candidate` (a string containing the target-identity command
+output with leading and trailing whitespace removed, or empty if unavailable)
+and `assertions` (one entry per declared id). This canonical identity removes
+surrounding spaces, tabs, and LF/CRLF line endings; interior characters stay exact.
+The checker applies the same normalization to the expected input, probe output,
+and reported string, so literal command output with a final newline is accepted.
+Preserve the raw command output in evidence. Each assertion entry contains:
+
+- `id`: the unchanged scenario id.
+- `outcome`: `passed`, `failed`, or `inconclusive`.
+- `expected` and `observed`: the expected and measured JSON values; use null for
+  an unavailable measurement.
+- `reason`: explain the comparison or why assessment was impossible.
+- `evidence_path`: exactly one existing nonempty file, relative to the attempt
+  directory or absolute inside it, containing this turn's tool output or diagnostic.
+  Never put a comma-separated list of filenames in this string. If an assertion
+  needs multiple outputs, combine their actual tool output into one file and name it.
+
+The downstream script checks structure, coverage, file presence, and identity.
+It cannot prove that model-authored evidence is truthful or that your comparison
+is correct. Record actual tool execution so a reviewer can audit those judgments.
+Your final chat reply is not parsed; normal engine node completion hands the
+report to the checker, including when the report is missing or malformed.
+
+## The target
+
+The workflow started the target before this node and probes its identity after you
+finish, so the target must still be running and serving, unchanged, when you finish.
+Never stop, restart or relaunch it, and never count it among the processes you
+started. An assertion that needs a fresh or relaunched game gets a separate instance
+on another port with its own state, which you start, use and stop by its PID (seen
+live: a verifier read "from a fresh town" as "restart the game", restarted the target
+twice, stopped it on cleanup, and the identity probe found nothing, so a lap whose
+every assertion passed ended inconclusive).
+
+## Processes
+
+Stop only processes this node started, by the process ID it recorded. Never kill by
+image or process name (`taskkill /IM`, `pkill`, `killall`, `Stop-Process -Name`): the
+machine runs other work, including other runs' builds and tests. Never wait on a
+background command without a bound: give every wait a timeout, and if the thing waited
+on was stopped or vanished, report that instead of waiting again (seen live: a reviewer
+killed every `dotnet` by name, including its own test run, then waited for that run's
+output until the run was cancelled).
+Before you finish, stop every process you started that is still running (a game, a
+server, a watcher), by its recorded process ID, and confirm it is gone: nothing else
+reaps it, and it outlives the run (seen live: an investigation left a windowed game
+open on the owner's screen an hour after its run completed).

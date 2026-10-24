@@ -1,0 +1,350 @@
+name: archon-loop
+description: |
+  One unattended move on a repository. A pick agent reads the whole board (open
+  pull requests, CI, review comments, issues) and chooses the single most
+  valuable move and its route: finish an open pull request or build a contained
+  change in the loop, or take complex work through archon-ship-block. Two independent
+  reviewers then check the result: one runs the app as a user would, against the
+  acceptance contract and any reviewer-only holdout scenarios, without reading
+  the diff first; the other reads the diff and decides to merge it head-pinned,
+  send it back with evidence, or return it to the owner. All state lives in
+  GitHub, so the next run picks up where this one left off.
+
+  Use when: a scheduler should keep a backlog moving with nobody at the
+  keyboard — "keep building", "run the loop".
+  NOT for: slicing a product document into issues (archon-backlog).
+model: large
+
+inputs:
+  runtime:
+    default: >-
+      No runtime instructions were given; use what the project documents for
+      running it (for example a harness or end-to-end document), if anything.
+    description: >-
+      How to run the app and what to look at: a path to the project's runtime
+      instructions or scenario file, or plain text. Every agent reads it.
+  holdout:
+    default: ""
+    description: >-
+      Optional path to the holdout scenarios: acceptance checks the builders
+      never see. Only the holdout-verifier agent reads them, for the app check
+      and the reviewer; a project can fence them inside the repository with a
+      hook that refuses every other agent.
+  protected_paths:
+    default: ""
+    description: >-
+      Root-anchored path patterns only the owner may change (`*` within a
+      segment, `**` across segments), comma-separated. The merge gate refuses a
+      pull request that touches one. Empty or "none" protects nothing.
+  merge:
+    default: auto
+    description: >-
+      auto lets the reviewer merge what it accepts; any other value leaves the
+      merge to a human after an approving comment.
+  attempts:
+    default: "3"
+    description: >-
+      How many times the loop works the same item without progress before it
+      labels it needs-owner and moves on.
+  rejections:
+    default: "2"
+    description: >-
+      How many review send-backs one item may collect before the loop stops
+      retrying and returns it to the owner.
+  deploy:
+    default: ""
+    description: >-
+      Optional trusted deployment command, forwarded to archon-deploy after a
+      merge. Empty skips deployment.
+  health:
+    default: ""
+    description: Trusted health command for archon-deploy; required with deploy.
+  claim_hours:
+    default: "6"
+    description: >-
+      How long a run's claim on a work item holds when the run never releases it
+      (it died). Longer than the longest lap; a run that ends releases its claim.
+
+nodes:
+  # Choose one move and how to build it. `none` is a real route, so every later
+  # `when:` can read this node's fields: it always runs.
+  - id: pick
+    command: loop-pick
+    context: fresh
+    idle_timeout: 2700000
+    with:
+      runtime: "$INPUTS.runtime"
+      attempts: "$INPUTS.attempts"
+      rejections: "$INPUTS.rejections"
+      claim_hours: "$INPUTS.claim_hours"
+    output_format:
+      type: object
+      properties:
+        route: { type: string, enum: [continue, simple, complex, none] }
+        target: { type: string }
+        pr: { type: string }
+        confidence: { type: string, enum: [high, medium, low] }
+        depth: { type: string, enum: [light, normal, deep] }
+        area: { type: string }
+        reason: { type: string }
+      required: [route, target, pr, confidence, depth, area, reason]
+
+  # Several runs of this loop may work one repository at once. The claim is the
+  # one hard fact between them: the oldest live claim comment on a work item
+  # holds it, and a run that lost the race does no work this lap.
+  - id: claim
+    script: claim
+    runtime: bun
+    depends_on: [pick]
+    when: "$pick.output.route != 'none'"
+    with:
+      target: "$pick.output.target"
+      pr: "$pick.output.pr"
+      route: "$pick.output.route"
+      area: "$pick.output.area"
+      claim_hours: "$INPUTS.claim_hours"
+    output_format:
+      type: object
+      properties:
+        held: { type: string, enum: ["true", "false"] }
+        holder: { type: string }
+        reason: { type: string }
+      required: [held, holder, reason]
+
+  # Contained work and finishing an open pull request: the in-loop builder.
+  - id: build
+    command: loop-work
+    context: fresh
+    idle_timeout: 2700000
+    depends_on: [claim]
+    when: "$claim.output.held == 'true' && $pick.output.route == 'continue' || $claim.output.held == 'true' && $pick.output.route == 'simple'"
+    with:
+      route: "$pick.output.route"
+      target: "$pick.output.target"
+      pr: "$pick.output.pr"
+      reason: "$pick.output.reason"
+      runtime: "$INPUTS.runtime"
+
+  # Complex work: the full shipping pipeline (triage, investigate or plan, delivery
+  # rounds with review threads handled as work, CI) up to a ready pull request. The
+  # building block, not the archon-ship entry: the entry pauses for a person when it
+  # runs out of next steps, which would hang an unattended lap. Ordered after build
+  # only so the two never run together; pick makes them exclusive.
+  - id: ship
+    include: archon-ship-block
+    depends_on: [claim, build]
+    trigger_rule: none_failed_min_one_success
+    when: "$claim.output.held == 'true' && $pick.output.route == 'complex'"
+    with:
+      target: "$pick.output.target"
+      publish: "false"
+
+  # What the app check tests, as facts: the pull request, its head, its base and the
+  # files it changes. The builder's report and the
+  # pull request's description are read here only to find the pull request; the app
+  # check never sees them, so it tests what the change does, not what it says it does.
+  - id: subject
+    script: subject
+    runtime: bun
+    depends_on: [claim, build, ship]
+    trigger_rule: all_done
+    when: "$pick.output.route != 'none' && $claim.output.held == 'true'"
+    with:
+      target: "$pick.output.target"
+      pr: "$pick.output.pr"
+      builder: { from: "$build.output", if_skipped: "" }
+      ship: { from: "$ship.output", if_skipped: "" }
+    output_format:
+      type: object
+      properties:
+        pr: { type: string }
+        head: { type: string }
+        base: { type: string }
+        files: { type: string }
+        started: { type: string }
+      required: [pr, head, base, files, started]
+
+  # Black-box check: runs the app against the contract and the holdout before it
+  # reads any diff, on the pull request merged with the current default branch. Its
+  # report is structured, so the evidence check and the merge gate read lines, not prose.
+  # The holdout verifier's instructions are a command file in this pack; an inline agent
+  # cannot reach the pack, so this copies them where the agent's prompt points.
+  - id: briefs
+    script: briefs
+    runtime: bun
+    depends_on: [subject]
+
+  - id: check-app
+    command: loop-check-app
+    context: fresh
+    idle_timeout: 2700000
+    depends_on: [subject, briefs]
+    agents: &holdout-agents
+      holdout-verifier:
+        description: >-
+          Runs the project's holdout scenarios against a checkout and returns a
+          verdict and what a user sees per scenario id, never the scenarios. The
+          only agent allowed to read them.
+        prompt: >-
+          You are the holdout verifier. Before anything else, read your
+          instructions in $ARTIFACTS_DIR/agents/holdout-verifier.md with your
+          Read tool, and follow them exactly.
+    with:
+      route: "$pick.output.route"
+      target: "$pick.output.target"
+      pr: "$subject.output.pr"
+      head: "$subject.output.head"
+      base: "$subject.output.base"
+      files: "$subject.output.files"
+      depth: "$pick.output.depth"
+      runtime: "$INPUTS.runtime"
+      holdout: "$INPUTS.holdout"
+    output_format:
+      type: object
+      properties:
+        pr: { type: string }
+        head: { type: string }
+        merged_with: { type: string }
+        lines:
+          type: array
+          items:
+            type: object
+            properties:
+              id: { type: string }
+              kind: { type: string, enum: [criterion, holdout, probe, defect] }
+              verdict: { type: string, enum: [PASS, FAIL, INCOMPLETE, OK, SURPRISE, DEFECT, QUESTION] }
+              text: { type: string }
+              evidence: { type: array, items: { type: string } }
+              pre_existing: { type: string }
+              defect: { type: string }
+              carried_from: { type: string }
+            required: [id, kind, verdict, text, evidence, pre_existing, defect, carried_from]
+        noticed: { type: array, items: { type: string } }
+        overall: { type: string, enum: [PASS, FAIL, NO PR] }
+        summary: { type: string }
+      required: [pr, head, merged_with, lines, noticed, overall, summary]
+
+  # No model: every line of the app check's report must cite evidence written during
+  # the check, every cited image must have been opened, and Overall must agree with
+  # the lines. The reviewer and the merge gate both read this verdict.
+  - id: evidence
+    script: evidence
+    runtime: bun
+    depends_on: [subject, check-app]
+    with:
+      report: "$check-app.output"
+      started: "$subject.output.started"
+    output_format:
+      type: object
+      properties:
+        ok: { type: string, enum: ["true", "false"] }
+        problems: { type: string }
+        overall: { type: string }
+        checked_at: { type: string }
+      required: [ok, problems, overall, checked_at]
+
+  # White-box review and the merge decision. The reviewer decides; the merge gate
+  # below merges, so a decision the record does not support never lands.
+  - id: review
+    command: loop-review
+    context: fresh
+    idle_timeout: 2700000
+    depends_on: [check-app, evidence]
+    agents: *holdout-agents
+    with:
+      route: "$pick.output.route"
+      target: "$pick.output.target"
+      pr: "$subject.output.pr"
+      builder: { from: "$build.output", if_skipped: "" }
+      # A complex lap that stopped short of a pull request still produced a
+      # finding (its triage, plan or investigation in this run's artifacts);
+      # the reviewer posts it so the next lap starts from it.
+      ship: { from: "$ship.output", if_skipped: "" }
+      app_check: "$check-app.output"
+      evidence_ok: "$evidence.output.ok"
+      evidence_problems: "$evidence.output.problems"
+      runtime: "$INPUTS.runtime"
+      holdout: "$INPUTS.holdout"
+      merge: "$INPUTS.merge"
+      rejections: "$INPUTS.rejections"
+    output_format:
+      type: object
+      properties:
+        outcome: { type: string, enum: [merge, sent-back, needs-owner, approved, nothing] }
+        pr: { type: string }
+        sha: { type: string }
+        delivers: { type: string, enum: [all, part, none] }
+        dispositions:
+          type: array
+          items:
+            type: object
+            properties:
+              line: { type: string }
+              action: { type: string, enum: [blocks, rechecked, pre-existing, issue, accepted] }
+              file: { type: string }
+              issue: { type: string }
+              reason: { type: string }
+            required: [line, action, file, issue, reason]
+        judge_changes:
+          type: array
+          items:
+            type: object
+            properties:
+              file: { type: string }
+              change: { type: string }
+              approval: { type: string }
+            required: [file, change, approval]
+        reason: { type: string }
+      required: [outcome, pr, sha, delivers, dispositions, judge_changes, reason]
+
+  # The merge gate (no model). Merges the reviewed commit only when the evidence held,
+  # every failing line has the reviewer's re-check or default-branch proof, every
+  # pre-existing failure and question is tracked or decided, no shipping node failed,
+  # and the commit contains the current default branch. Otherwise it says why.
+  - id: land
+    script: land
+    runtime: bun
+    depends_on: [subject, check-app, evidence, review]
+    when: "$review.output.outcome == 'merge' && $INPUTS.merge == 'auto'"
+    with:
+      pr: "$review.output.pr"
+      sha: "$review.output.sha"
+      delivers: "$review.output.delivers"
+      dispositions: "$review.output.dispositions"
+      judge_changes: "$review.output.judge_changes"
+      route: "$pick.output.route"
+      target: "$pick.output.target"
+      report: "$check-app.output"
+      evidence_problems: "$evidence.output.problems"
+      review_started: "$evidence.output.checked_at"
+      files: "$subject.output.files"
+      protected_paths: "$INPUTS.protected_paths"
+    output_format:
+      type: object
+      properties:
+        outcome: { type: string, enum: [merged, refused] }
+        reason: { type: string }
+      required: [outcome, reason]
+
+  # Merging is not shipping: with a deploy command set, roll the merge out and
+  # read the revision back.
+  - id: deploy
+    include: archon-deploy
+    depends_on: [land]
+    when: "$land.output.outcome == 'merged' && $INPUTS.deploy != ''"
+    with:
+      deploy: "$INPUTS.deploy"
+      health: "$INPUTS.health"
+      identity: ""
+
+  # Free the work item for the next lap however this run ended: after review and
+  # deploy finished, failed or were skipped.
+  - id: release
+    script: release
+    runtime: bun
+    depends_on: [claim, review, land, deploy]
+    trigger_rule: all_done
+    when: "$pick.output.route != 'none' && $claim.output.held == 'true'"
+    with:
+      target: "$pick.output.target"
+      pr: "$pick.output.pr"

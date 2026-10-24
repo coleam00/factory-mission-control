@@ -1,0 +1,65 @@
+name: archon-manager
+description: |
+  Step back from the ticket loop and steer it. One agent looks at the whole
+  system (issues, pull requests, what merged, CI, the product itself) and fixes
+  what a single ticket cannot see: duplicates, impossible criteria, stuck or
+  orphaned work, recurring causes that need one redesign instead of more
+  patches, defects that got past review, and the order of work. Owner
+  questions go into one issue with a stated default; one metrics line per pass.
+
+  Use when: on a slower schedule than archon-loop (every few hours), or when the
+  loop stops making progress.
+  NOT for: writing product code.
+model: large
+
+inputs:
+  runtime:
+    default: >-
+      No runtime instructions were given; use what the project documents for
+      running it (for example a harness or end-to-end document), if anything.
+    description: >-
+      How to run the app and what to look at: a path to the project's runtime
+      instructions or scenario file, or plain text.
+  holdout:
+    default: ""
+    description: >-
+      Optional path to the holdout scenarios. The manager runs them on the
+      default branch through the holdout-verifier agent and adds scenarios
+      through the holdout-writer agent (for each defect that got past review,
+      and before a new section of the product is built); it never reads them
+      itself.
+
+nodes:
+  # The holdout agents' instructions are command files in this pack; an inline agent cannot
+  # reach the pack, so this copies them where the agents' prompts point.
+  - id: briefs
+    script: briefs
+    runtime: bun
+
+  - id: manage
+    command: manage
+    context: fresh
+    idle_timeout: 2700000
+    depends_on: [briefs]
+    agents:
+      holdout-verifier:
+        description: >-
+          Runs the project's holdout scenarios against a checkout and returns a
+          verdict and what a user sees per scenario id, never the scenarios. The
+          only agent, with holdout-writer, allowed to read them.
+        prompt: >-
+          You are the holdout verifier. Before anything else, read your
+          instructions in $ARTIFACTS_DIR/agents/holdout-verifier.md with your
+          Read tool, and follow them exactly.
+      holdout-writer:
+        description: >-
+          Writes and tightens the project's holdout scenarios from the product
+          document or an escaped defect, commits them, and returns one line per
+          scenario id. The only agent, with holdout-verifier, allowed to read them.
+        prompt: >-
+          You are the holdout writer. Before anything else, read your
+          instructions in $ARTIFACTS_DIR/agents/holdout-writer.md with your Read
+          tool, and follow them exactly.
+    with:
+      runtime: "$INPUTS.runtime"
+      holdout: "$INPUTS.holdout"
