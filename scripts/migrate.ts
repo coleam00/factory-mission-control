@@ -35,10 +35,16 @@ export async function runMigrations({
   const applied: string[] = [];
   for (const file of files) {
     if (recorded.has(file.name)) continue;
-    await db.transaction(async (tx) => {
-      await tx.query(file.sql);
-      await tx.query('INSERT INTO mc_schema_migrations (name) VALUES ($1)', [file.name]);
-    });
+    try {
+      await db.transaction(async (tx) => {
+        await tx.query(file.sql);
+        await tx.query('INSERT INTO mc_schema_migrations (name) VALUES ($1)', [file.name]);
+      });
+    } catch (error) {
+      const committed = applied.length > 0 ? ` after applying ${applied.join(', ')}` : '';
+      const reason = error instanceof Error ? error.message : String(error);
+      throw new Error(`${file.name} failed${committed}: ${reason}`, { cause: error });
+    }
     applied.push(file.name);
   }
   return applied;

@@ -85,3 +85,23 @@ test('a second run over the same recorded state applies nothing', async () => {
 test('the migration set is empty', () => {
   expect(readMigrationFiles(migrationsDir(REPO_ROOT))).toEqual([]);
 });
+
+test('a failing file is named, with the files committed before it', async () => {
+  const db: Db = {
+    async query(sql) {
+      if (sql === 'BROKEN') throw new Error('syntax error at or near "BROKEN"');
+      return [];
+    },
+    async transaction(fn) {
+      await fn(db);
+    },
+    async close() {},
+  };
+  const files = [
+    { name: '0001_a.sql', sql: 'SELECT 1;' },
+    { name: '0002_b.sql', sql: 'BROKEN' },
+  ];
+  await expect(runMigrations({ files, db })).rejects.toThrow(
+    '0002_b.sql failed after applying 0001_a.sql: syntax error at or near "BROKEN"',
+  );
+});
