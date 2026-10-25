@@ -13,5 +13,8 @@
 /fixtures/expected-scorecard.json text eol=lf
 /fixtures/expected-scorecard.sql text eol=lf
 /fixtures/archon-schema.sql text eol=lf
+# The architecture parser stores these texts; keep them as git stores them on every checkout.
+/fixtures/pack/** text eol=lf
+/fixtures/factory-template/** text eol=lf
 # Each webhook fixture is signed over its exact bytes; no line-ending conversion.
 /fixtures/webhooks/** -text

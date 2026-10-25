@@ -157,6 +157,17 @@ describe('the pack', () => {
     ]);
   });
 
+  test('reads every text with LF line endings, as git stores it', () => {
+    const texts = [
+      ...parsed.workflows.map((w) => ({ path: w.file, text: w.yaml })),
+      ...parsed.commands,
+      ...parsed.scripts,
+      ...parsed.hooks,
+    ];
+    expect(texts.length).toBeGreaterThan(0);
+    expect(texts.filter((t) => t.text.includes('\r')).map((t) => t.path)).toEqual([]);
+  });
+
   test('parsing twice gives deep-equal output', () => {
     expect(parsePack(packDir, templateDir)).toEqual(parsed);
   });
