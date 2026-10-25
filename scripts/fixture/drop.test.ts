@@ -33,6 +33,32 @@ test("deletes this checkout's branch and every check-* branch older than 3 hours
   expect(existsSync(join(repoRoot, CHECK_ENV_FILE))).toBe(false);
 });
 
+test("a stale branch that fails to delete does not stop this checkout's own", async () => {
+  const repoRoot = repo({ MC_CHECK_BRANCH: 'check-abc' });
+  const run = recordingDeps({
+    repoRoot,
+    branches: BRANCHES,
+    throwsOn: ['deleteBranch check-old'],
+  });
+  expect(await main([], run.deps)).toBe(1);
+  expect(run.mutatingCalls).toEqual(['deleteBranch check-old', 'deleteBranch check-abc']);
+  expect(run.out).toEqual(['deleted check-abc']);
+  expect(run.err.join('\n')).toContain('could not delete check-old');
+  expect(existsSync(join(repoRoot, CHECK_ENV_FILE))).toBe(false);
+});
+
+test('keeps the env file when its own branch fails to delete', async () => {
+  const repoRoot = repo({ MC_CHECK_BRANCH: 'check-abc' });
+  const run = recordingDeps({
+    repoRoot,
+    branches: BRANCHES,
+    throwsOn: ['deleteBranch check-abc'],
+  });
+  expect(await main([], run.deps)).toBe(1);
+  expect(run.out).toEqual(['deleted check-old']);
+  expect(existsSync(join(repoRoot, CHECK_ENV_FILE))).toBe(true);
+});
+
 test.each(['main', 'fixture', 'rewind-x'])(
   'refuses MC_CHECK_BRANCH=%s before any Neon call',
   async (name) => {

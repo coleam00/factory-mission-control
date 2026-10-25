@@ -23,11 +23,22 @@ export const main: Main = async (_argv, deps) =>
     const own = deps.env.MC_CHECK_BRANCH;
     if (own !== undefined) requireCheckBranch(own);
     const api = deps.neon();
+    const failed: string[] = [];
     for (const branch of branchesToDrop(await api.listBranches(), own, deps.now())) {
-      await waitForOperations(api, await api.deleteBranch(branch), deps.sleep);
-      deps.out(`deleted ${branch.name}`);
+      try {
+        await waitForOperations(api, await api.deleteBranch(branch), deps.sleep);
+        deps.out(`deleted ${branch.name}`);
+      } catch (error) {
+        deps.err(
+          `could not delete ${branch.name}: ${error instanceof Error ? error.message : error}`,
+        );
+        failed.push(branch.name);
+      }
     }
-    if (own !== undefined) rmSync(join(deps.repoRoot, CHECK_ENV_FILE), { force: true });
+    if (own !== undefined && !failed.includes(own)) {
+      rmSync(join(deps.repoRoot, CHECK_ENV_FILE), { force: true });
+    }
+    if (failed.length > 0) throw new Error(`fixture:drop left ${failed.join(', ')}`);
   });
 
 if (import.meta.main) await runCli(main);

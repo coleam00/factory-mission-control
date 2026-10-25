@@ -16,6 +16,9 @@ export function hoursAgo(hours: number): string {
 /** A connection string the fake Neon resolves to `branchName`. */
 export const DATABASE_URL = 'postgresql://u:p@ep-fake-endpoint-a1b2c3.us-east-2.aws.neon.tech/db';
 
+/** The connection string the fake Neon returns for every branch it creates. */
+export const CREATED_URL = 'postgresql://u:p@ep-created-d4e5f6.us-east-2.aws.neon.tech/db';
+
 export type Recorder = {
   deps: Deps;
   neonCalls: string[];
@@ -50,6 +53,8 @@ export function recordingDeps(options: {
   branchName?: string;
   rows?: (sql: string) => Row[];
   owner?: boolean;
+  /** Recorded calls (`deleteBranch check-old`, `getRealtimeSecret br-new`) that throw instead. */
+  throwsOn?: string[];
 }): Recorder {
   const recorder: Omit<Recorder, 'deps'> = {
     neonCalls: [],
@@ -60,10 +65,13 @@ export function recordingDeps(options: {
     err: [],
   };
   const branches = options.branches ?? [];
-  const call = (name: string) => recorder.neonCalls.push(name);
+  const call = (name: string) => {
+    recorder.neonCalls.push(name);
+    if (options.throwsOn?.includes(name)) throw new Error(`fake Neon: ${name} failed`);
+  };
   const mutate = (name: string) => {
-    call(name);
     recorder.mutatingCalls.push(name);
+    call(name);
   };
   const neon: NeonApi = {
     async listBranches() {
@@ -90,9 +98,13 @@ export function recordingDeps(options: {
       call(`getRealtimeSecret ${branchId}`);
       return 'nrt_live_1fake';
     },
-    async createBranch({ name }) {
-      mutate(`createBranch ${name}`);
-      return { branch: { id: 'br-new', name, created_at: NOW.toISOString() }, operations: [] };
+    async createBranch({ name, parentId }) {
+      mutate(`createBranch ${name} from ${parentId}`);
+      return {
+        branch: { id: 'br-new', name, created_at: NOW.toISOString() },
+        operations: [],
+        connection_uris: [{ connection_uri: CREATED_URL }],
+      };
     },
     async deleteBranch({ name }) {
       mutate(`deleteBranch ${name}`);
