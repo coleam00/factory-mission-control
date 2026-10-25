@@ -11,13 +11,24 @@ expanded AS (
   JOIN version v ON v.archon_sha = s.archon_sha AND v.factory_sha = s.factory_sha
   WHERE s.workflow = 'archon-loop' AND s.parent_path IS NULL AND s.include = 'archon-ship-block'
 ),
-on_step AS (
-  SELECT ls.step_id, count(DISTINCT ls.run_id)::int AS laps
+running AS (
+  SELECT ls.run_id, ls.step_id
   FROM mc.lap_steps ls
   JOIN mc.laps l ON l.run_id = ls.run_id
   WHERE l.factory = $1 AND l.workflow_name = 'archon-loop' AND l.status = 'running'
     AND ls.status = 'running'
-  GROUP BY ls.step_id
+),
+-- Archon names a nested step by its path joined with `__` (`ship__intel`) and emits no event for
+-- the step that includes it, so a node counts the laps on it or anywhere beneath it.
+on_node AS (
+  SELECT s.path, count(DISTINCT r.run_id)::int AS laps
+  FROM mc.arch_steps s
+  JOIN version v ON v.archon_sha = s.archon_sha AND v.factory_sha = s.factory_sha
+  JOIN running r
+    ON r.step_id = replace(s.path, '/', '__')
+    OR starts_with(r.step_id, replace(s.path, '/', '__') || '__')
+  WHERE s.workflow = 'archon-loop'
+  GROUP BY s.path
 )
 SELECT
   CASE
@@ -41,6 +52,6 @@ LEFT JOIN mc.arch_steps s
   ON w.name = 'archon-loop' AND s.archon_sha = w.archon_sha AND s.factory_sha = w.factory_sha
   AND s.workflow = w.name
 LEFT JOIN expanded e ON e.path = s.parent_path
-LEFT JOIN on_step c ON c.step_id = s.step_id
+LEFT JOIN on_node c ON c.path = s.path
 WHERE w.name IN ('archon-holdouts', 'archon-backlog', 'archon-manager', 'archon-loop')
   AND (w.name <> 'archon-loop' OR s.parent_path IS NULL OR e.path IS NOT NULL)

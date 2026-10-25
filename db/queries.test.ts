@@ -131,22 +131,51 @@ describe('home-map on the seed', () => {
     ).toEqual(['input archon-backlog', 'input archon-holdouts', 'manager archon-manager']);
   });
 
+  /** Running laps per node, from the laps tables: a node's own steps are named by its path joined with `__`. */
+  const lapsOnNodes = async (factory: string) => {
+    const running = (await db.query(
+      `SELECT ls.run_id, ls.step_id FROM mc.lap_steps ls JOIN mc.laps l USING (run_id)
+        WHERE l.factory = $1 AND l.workflow_name = 'archon-loop'
+          AND l.status = 'running' AND ls.status = 'running'`,
+      [factory],
+    )) as { run_id: string; step_id: string }[];
+    return (path: string) => {
+      const key = path.replaceAll('/', '__');
+      const on = running.filter((r) => r.step_id === key || r.step_id.startsWith(`${key}__`));
+      return new Set(on.map((r) => r.run_id)).size;
+    };
+  };
+
   test("each step counts the factory's running laps on it now, as SQL over the seed does", async () => {
-    const onStep = await db.query(
-      `SELECT ls.step_id, count(*)::int AS laps FROM mc.lap_steps ls JOIN mc.laps l USING (run_id)
-        WHERE l.factory = 'mission-control' AND l.workflow_name = 'archon-loop'
-          AND l.status = 'running' AND ls.status = 'running' GROUP BY ls.step_id`,
-    );
-    expect(onStep).toEqual(
-      expect.arrayContaining([
-        { step_id: 'build', laps: 1 },
-        { step_id: 'check-app', laps: 1 },
-      ]),
-    );
-    const expected = new Map(onStep.map((r) => [r.step_id, r.laps]));
+    const on = await lapsOnNodes('mission-control');
+    expect([on('build'), on('check-app')]).toEqual([1, 1]);
     for (const row of await rows()) {
-      if (row.step_id !== null) expect(row.live_count).toBe(Number(expected.get(row.step_id) ?? 0));
+      if (row.path !== null) expect(row.live_count).toBe(on(row.path));
     }
+  });
+
+  test('a lap on a ship stage counts on that stage and on ship, and nowhere else', async () => {
+    const [lap] = await db.query(
+      `SELECT l.run_id FROM mc.laps l JOIN mc.lap_steps ls USING (run_id)
+        WHERE l.status = 'running' AND ls.step_id = 'check-app' AND ls.status = 'running'`,
+    );
+    await db.query(
+      `INSERT INTO remote_agent_workflow_events (workflow_run_id, event_type, step_name, data)
+        VALUES ($1, 'node_started', 'ship__intel', '{}'::jsonb)`,
+      [lap.run_id],
+    );
+    const counts = new Map((await rows()).map((r) => [r.path, r.live_count]));
+    expect(counts.get('ship/intel')).toBe(1);
+    expect(counts.get('ship')).toBe(1);
+    expect(counts.get('intel')).toBeUndefined();
+    const on = await lapsOnNodes('mission-control');
+    for (const [path, count] of counts) if (path !== null) expect(count).toBe(on(path));
+    await db.query(
+      `INSERT INTO remote_agent_workflow_events (workflow_run_id, event_type, step_name, data)
+        VALUES ($1, 'node_completed', 'ship__intel', '{}'::jsonb)`,
+      [lap.run_id],
+    );
+    expect((await rows()).find((r) => r.path === 'ship/intel')?.live_count).toBe(0);
   });
 
   test('a step event projected for a running lap adds it to that step, for that factory only', async () => {

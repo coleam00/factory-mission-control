@@ -207,21 +207,30 @@ const mapNodes = (page: Page) =>
     }))`,
   );
 
-/** Running laps per step for `factory`, straight from the laps tables. */
-async function lapsOnSteps(db: Db, factory: string): Promise<Map<string, number>> {
-  const rows = await db.query(
-    `SELECT ls.step_id, count(DISTINCT ls.run_id)::int AS laps
+/**
+ * Running laps per map node for `factory`, straight from the laps tables. Archon names a nested
+ * step by its path joined with `__`, and a node counts the laps on it or anywhere beneath it.
+ */
+async function lapsOnNodes(db: Db, factory: string): Promise<(path: string) => number> {
+  const running = await db.query(
+    `SELECT ls.run_id, ls.step_id
        FROM mc.lap_steps ls JOIN mc.laps l ON l.run_id = ls.run_id
       WHERE l.factory = $1 AND l.workflow_name = 'archon-loop' AND l.status = 'running'
-        AND ls.status = 'running'
-      GROUP BY ls.step_id`,
+        AND ls.status = 'running'`,
     [factory],
   );
-  return new Map(rows.map((r) => [String(r.step_id), Number(r.laps)]));
+  return (path) => {
+    const key = path.replaceAll('/', '__');
+    const on = running.filter((r) => {
+      const step = String(r.step_id);
+      return step === key || step.startsWith(`${key}__`);
+    });
+    return new Set(on.map((r) => String(r.run_id))).size;
+  };
 }
 
-/** Where the map, in document order, differs from the seed and from `onStep`: one line each. */
-function mapMismatches(nodes: ShownNode[], onStep: Map<string, number>): string[] {
+/** Where the map, in document order, differs from the seed and from `lapsOn`: one line each. */
+function mapMismatches(nodes: ShownNode[], lapsOn: (path: string) => number): string[] {
   const failures: string[] = [];
   const idOf = (path: string | null) => path?.slice(path.lastIndexOf('/') + 1) ?? '';
   const ids = (role: string) => nodes.filter((n) => n.role === role).map((n) => idOf(n.step));
@@ -240,7 +249,7 @@ function mapMismatches(nodes: ShownNode[], onStep: Map<string, number>): string[
     if (shown !== expected) failures.push(`the map shows ${shown} ${what}, not ${expected}`);
   }
   for (const node of nodes.filter((n) => n.count !== null)) {
-    const expected = onStep.get(idOf(node.step)) ?? 0;
+    const expected = lapsOn(node.step ?? '');
     if (Number(node.count) !== expected) {
       failures.push(`${node.step} shows ${node.count} laps, the database has ${expected}`);
     }
@@ -405,7 +414,7 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
         `document.querySelector('${PANEL} [data-count]').getAttribute('data-count')`,
       ),
     );
-    failures.push(...mapMismatches(await mapNodes(page), await lapsOnSteps(db, factory)));
+    failures.push(...mapMismatches(await mapNodes(page), await lapsOnNodes(db, factory)));
     writeFileSync(join(outDir, 'home-map.png'), await page.screenshot(1440));
     const laps = await db.query(
       `SELECT l.run_id FROM mc.laps l
