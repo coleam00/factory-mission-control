@@ -3,8 +3,10 @@ import { join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { createRealtimeClient, type WebSocketLike } from '@neon/realtime/client';
 import { createRealtime, rawSql } from '@neon/realtime/server';
+import { ISSUE_STATES, STATE_TOKEN } from '../app/lib/issue-graph';
 import { realtimeUrlFor } from '../server/live';
 import { SERVE_PORTS } from '../server/ports';
+import { NEXT_TO_LABEL } from './fixture/write';
 import { openPage, type Page } from './lib/cdp';
 import { type Deps, failing, guardedDatabaseUrl, type Main, runCli } from './lib/cli';
 import type { Db } from './lib/db';
@@ -21,6 +23,9 @@ const USAGE = [
   '  On the same run it checks the versions screen against the seed, picks two versions, and times',
   '  `fixture:write pin` to that screen before and after the hold, writing version-strip-check.txt,',
   '  version-strip-timings.json, version-strip.png and version-strip-design-probe.json.',
+  '  It checks the issues screen against the seed and times `fixture:write label` to it before and',
+  '  after the hold, writing issue-graph-check.txt, phases-issue-graph-timings.json,',
+  '  phases-issue-graph.png and phases-issue-graph-design-probe.json.',
 ].join('\n');
 
 export const LIMITS = { readyMs: 2000, firstSnapshotMs: 500, insertToScreenMs: 5000 };
@@ -61,6 +66,7 @@ const LIVE_STEP = 'review';
 const CLICKED_STEP = 'check-app';
 const VERSIONS = '[data-live="version-strip"]';
 const ENTRY = `${VERSIONS} [data-version-entry]`;
+const ISSUES = '[data-live="issue-graph"]';
 const FEATURE_TIMEOUT_MS = 10_000;
 /** How long to wait for `ready` before giving up; the limit is judged on the page's own marks. */
 const READY_WAIT_MS = 10_000;
@@ -480,6 +486,215 @@ async function pinToScreen(page: Page, deps: Deps, target: number): Promise<numb
   return (await shown) ? Math.round(performance.now() - started) : null;
 }
 
+interface IssueGraphTimings {
+  branch: string | null;
+  port: number | null;
+  readyMs: number | null;
+  firstSnapshotMs: number | null;
+  /** The issue `fixture:write label` labelled, and how long its node took to show it. */
+  labelToScreen: { issue: number; ms: number | null } | null;
+  holdSeconds: number;
+  renewals: number | null;
+  afterHoldLabelToScreen: { issue: number; ms: number | null } | null;
+  noReload: boolean | null;
+  limits: typeof LIMITS;
+}
+
+interface IssuesOnScreen {
+  issues: { number: number; state: string; chain: boolean; dot: string; token: string | null }[];
+  dependencies: string[];
+  phases: { phase: string; merged: number; total: number }[];
+}
+
+const issuesOnScreen = `(() => {
+  const tokens = ${JSON.stringify(STATE_TOKEN)};
+  const token = (name) => {
+    if (name === undefined) return null;
+    const probe = document.body.appendChild(document.createElement('span'));
+    probe.style.backgroundColor = 'var(' + name + ')';
+    const color = getComputedStyle(probe).backgroundColor;
+    probe.remove();
+    return color;
+  };
+  return {
+    issues: [...document.querySelectorAll('${ISSUES} [data-issue]')].map((a) => ({
+      number: Number(a.getAttribute('data-issue')),
+      state: a.getAttribute('data-issue-state'),
+      chain: a.getAttribute('data-longest-chain') === 'true',
+      dot: getComputedStyle(a.querySelector('[data-state-dot]')).backgroundColor,
+      token: token(tokens[a.getAttribute('data-issue-state')]),
+    })),
+    dependencies: [...document.querySelectorAll('${ISSUES} [data-dependency]')].map((p) =>
+      p.getAttribute('data-dependency'),
+    ),
+    phases: [...document.querySelectorAll('${ISSUES} [data-phase]')].map((li) => ({
+      phase: li.getAttribute('data-phase'),
+      merged: Number(li.getAttribute('data-merged')),
+      total: Number(li.getAttribute('data-total')),
+    })),
+  };
+})()`;
+
+/** Every open chain of `Depends on` edges through open issues, longest first. */
+const OPEN_CHAINS_SQL = `WITH RECURSIVE open AS (
+    SELECT number FROM mc.issues WHERE factory = $1 AND state = 'open'
+  ), chain(tail, path) AS (
+    SELECT number, ARRAY[number] FROM open
+    UNION ALL
+    SELECT d.depends_on, c.path || d.depends_on FROM chain c
+    JOIN mc.issue_dependencies d ON d.factory = $1 AND d.issue_number = c.tail
+    JOIN open o ON o.number = d.depends_on
+    WHERE NOT d.depends_on = ANY(c.path)
+  )
+  SELECT path FROM chain ORDER BY cardinality(path) DESC`;
+
+/** The issues screen against SQL on the seed, read before any label is written. */
+async function seedIssueGraphMismatches(
+  page: Page,
+  db: Db,
+  factory: string,
+  liveSql: string,
+): Promise<{ mismatches: string[]; report: string }> {
+  const shown = await page.evaluate<IssuesOnScreen>(issuesOnScreen);
+  const mismatches: string[] = [];
+  const same = (what: string, screen: unknown, sql: unknown) => {
+    if (JSON.stringify(screen) !== JSON.stringify(sql)) {
+      mismatches.push(`${what}: screen ${JSON.stringify(screen)}, SQL ${JSON.stringify(sql)}`);
+    }
+  };
+
+  const issues = await db.query('SELECT number FROM mc.issues WHERE factory = $1 ORDER BY number', [
+    factory,
+  ]);
+  same(
+    'nodes',
+    shown.issues.map((i) => i.number).sort((a, b) => a - b),
+    issues.map((i) => Number(i.number)),
+  );
+  const edges = await db.query(
+    'SELECT issue_number, depends_on FROM mc.issue_dependencies WHERE factory = $1 ORDER BY 1, 2',
+    [factory],
+  );
+  const byNumbers = (a: string, b: string) => {
+    const [a1, a2] = a.split('-').map(Number);
+    const [b1, b2] = b.split('-').map(Number);
+    return a1 - b1 || a2 - b2;
+  };
+  same(
+    'edges',
+    [...shown.dependencies].sort(byNumbers),
+    edges.map((e) => `${e.issue_number}-${e.depends_on}`),
+  );
+
+  const states = (await db.query(liveSql, [factory]))
+    .filter((r) => r.kind === 'issue')
+    .map((r) => `#${r.number} ${r.state}`)
+    .sort();
+  same('states', shown.issues.map((i) => `#${i.number} ${i.state}`).sort(), states);
+  for (const state of ISSUE_STATES) {
+    if (!shown.issues.some((i) => i.state === state)) mismatches.push(`no node is ${state}`);
+  }
+  for (const i of shown.issues) {
+    if (i.token === null || i.dot !== i.token) {
+      mismatches.push(`#${i.number} ${i.state} is colored ${i.dot}, its token is ${i.token}`);
+    }
+  }
+
+  const phases = await db.query(
+    `SELECT i.phase, count(*)::int AS total,
+       count(*) FILTER (WHERE i.state = 'closed' AND EXISTS (
+         SELECT 1 FROM mc.pull_request_issues pi
+         JOIN mc.pull_requests p ON p.factory = pi.factory AND p.number = pi.pr_number
+         WHERE pi.factory = i.factory AND pi.issue_number = i.number AND p.merged_at IS NOT NULL
+       ))::int AS merged
+     FROM mc.issues i WHERE i.factory = $1 AND i.phase IS NOT NULL
+     GROUP BY i.phase ORDER BY min(i.number)`,
+    [factory],
+  );
+  same(
+    'phase bars',
+    shown.phases,
+    phases.map((p) => ({ phase: p.phase, merged: p.merged, total: p.total })),
+  );
+
+  // An int[] arrives as an Int32Array, which JSON would print as an object.
+  const chains = (await db.query(OPEN_CHAINS_SQL, [factory])).map((r) =>
+    Array.from(r.path as ArrayLike<number>, Number),
+  );
+  const longest = chains.filter((c) => c.length === chains[0]?.length);
+  if (longest.length !== 1 || longest[0].length < 3) {
+    mismatches.push(
+      `the seed must have one longest open chain of at least 3, it has ${JSON.stringify(longest)}`,
+    );
+  }
+  same(
+    'longest open chain',
+    shown.issues
+      .filter((i) => i.chain)
+      .map((i) => i.number)
+      .sort((a, b) => a - b),
+    [...(longest[0] ?? [])].sort((a, b) => a - b),
+  );
+
+  const report = [
+    'screen:',
+    `  ${JSON.stringify(shown)}`,
+    'SQL (mc.issues, mc.issue_dependencies, db/queries/issue-graph.sql, phase counts, open chains):',
+    `  nodes ${JSON.stringify(issues.map((i) => i.number))}`,
+    `  edges ${JSON.stringify(edges.map((e) => `${e.issue_number}-${e.depends_on}`))}`,
+    `  states ${JSON.stringify(states)}`,
+    `  phases ${JSON.stringify(phases)}`,
+    `  longest open chains ${JSON.stringify(longest)}`,
+    ...mismatches,
+    `mismatches: ${mismatches.length}`,
+  ].join('\n');
+  return { mismatches, report };
+}
+
+/**
+ * Runs `fixture:write label`, which labels the highest-numbered open issue without `needs-owner`,
+ * and times it from just before the spawn to that issue's node reading `needs-owner`.
+ */
+async function labelToScreen(
+  page: Page,
+  db: Db,
+  deps: Deps,
+  factory: string,
+  labelled: number[],
+): Promise<{ issue: number; ms: number | null }> {
+  const [target] = await db.query(NEXT_TO_LABEL, [factory]);
+  if (!target) throw new Error(`no open ${factory} issue for fixture:write label to label`);
+  const issue = Number(target.number);
+  const node = `${ISSUES} [data-issue="${issue}"]`;
+  const before = await page.evaluate<string | null>(
+    `document.querySelector('${node}')?.getAttribute('data-issue-state') ?? null`,
+  );
+  if (before !== 'waiting') {
+    throw new Error(`fixture:write label will label #${issue}, which is ${before}, not waiting`);
+  }
+  const started = performance.now();
+  const shown = page.evaluate<boolean>(
+    pageWait(
+      `document.querySelector('${node}')?.getAttribute('data-issue-state') === 'needs-owner'`,
+      LIMITS.insertToScreenMs,
+    ),
+    LIMITS.insertToScreenMs + 5000,
+  );
+  labelled.push(issue);
+  const write = Bun.spawn(['bun', 'run', 'fixture:write', 'label'], {
+    cwd: deps.repoRoot,
+    env: deps.env,
+    stdout: 'ignore',
+    stderr: 'inherit',
+  });
+  const exitCode = await write.exited;
+  if (exitCode !== 0) {
+    await shown;
+    throw new Error(`bun run fixture:write label exited ${exitCode}`);
+  }
+  return { issue, ms: (await shown) ? Math.round(performance.now() - started) : null };
+}
+
 async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promise<void> {
   const databaseUrl = await guardedDatabaseUrl(deps, 'check');
   const secret = deps.env.NEON_REALTIME_SECRET;
@@ -523,11 +738,25 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
     links: { scorecard: null, diff: null },
     limits: LIMITS,
   };
+  const issueTimings: IssueGraphTimings = {
+    branch: timings.branch,
+    port: null,
+    readyMs: null,
+    firstSnapshotMs: null,
+    labelToScreen: null,
+    holdSeconds,
+    renewals: null,
+    afterHoldLabelToScreen: null,
+    noReload: null,
+    limits: LIMITS,
+  };
+  const labelled: number[] = [];
   const pinned: string[] = [];
   const db = deps.openDb(databaseUrl);
   let server: ReturnType<typeof Bun.spawn> | undefined;
   let page: Page | undefined;
   let versionsPage: Page | undefined;
+  let issuesPage: Page | undefined;
   const latestPin = async () => {
     const [pin] = await db.query('SELECT sha FROM mc.pins ORDER BY committed_at DESC LIMIT 1');
     pinned.push(String(pin.sha));
@@ -544,6 +773,7 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
     timings.port = port;
     mapTimings.port = port;
     versionTimings.port = port;
+    issueTimings.port = port;
     const base = `http://localhost:${port}`;
     const proc = Bun.spawn(['bun', 'server/main.ts', '--port', String(port)], {
       cwd: deps.repoRoot,
@@ -660,6 +890,42 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
       `first pin reached the versions screen in ${versionTimings.pinToScreenMs ?? 'never'} ms`,
     );
 
+    issuesPage = await openPage(deps.env);
+    await issuesPage.goto(`${base}/f/${factory}/issues`);
+    await issuesPage.evaluate('window.__mcNoReload = true');
+    const issuesReady = await issuesPage.evaluate<boolean>(
+      pageWait(`document.querySelector('${ISSUES}[data-state="ready"]') !== null`, READY_WAIT_MS),
+    );
+    if (!issuesReady) {
+      throw new Error(
+        `the issues screen did not reach data-state="ready" within ${READY_WAIT_MS} ms`,
+      );
+    }
+    const issuesReadyAt = await issuesPage.evaluate<number | null>(
+      markTime('live:issue-graph:ready'),
+    );
+    const issuesSubscribedAt = await issuesPage.evaluate<number | null>(
+      markTime('live:issue-graph:subscribe-sent'),
+    );
+    issueTimings.readyMs = issuesReadyAt === null ? null : Math.round(issuesReadyAt);
+    issueTimings.firstSnapshotMs =
+      issuesReadyAt === null || issuesSubscribedAt === null
+        ? null
+        : Math.round(issuesReadyAt - issuesSubscribedAt);
+    const issueSeed = await seedIssueGraphMismatches(
+      issuesPage,
+      db,
+      factory,
+      readFileSync(join(deps.repoRoot, 'db', 'queries', 'issue-graph.sql'), 'utf-8'),
+    );
+    writeFileSync(join(outDir, 'issue-graph-check.txt'), `${issueSeed.report}\n`);
+    failures.push(...issueSeed.mismatches.map((m) => `issues screen against the seed: ${m}`));
+    writeFileSync(join(outDir, 'phases-issue-graph.png'), await issuesPage.screenshot(1440));
+    issueTimings.labelToScreen = await labelToScreen(issuesPage, db, deps, factory, labelled);
+    deps.out(
+      `first label reached the issues screen in ${issueTimings.labelToScreen.ms ?? 'never'} ms`,
+    );
+
     deps.out(`holding the page open ${holdSeconds}s`);
     await deps.sleep(holdSeconds * 1000);
     for (const panel of panels) {
@@ -701,6 +967,20 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
     await versionsPage.close();
     versionsPage = undefined;
 
+    issueTimings.renewals = await issuesPage.evaluate<number>(
+      `performance.getEntriesByName('live:issue-graph:renewed').length`,
+    );
+    issueTimings.afterHoldLabelToScreen = await labelToScreen(
+      issuesPage,
+      db,
+      deps,
+      factory,
+      labelled,
+    );
+    issueTimings.noReload = await issuesPage.evaluate<boolean>('window.__mcNoReload === true');
+    await issuesPage.close();
+    issuesPage = undefined;
+
     const probe = Bun.spawnSync(
       [
         'bun',
@@ -725,6 +1005,19 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
     if (versionsProbe.exitCode !== 0) {
       failures.push(`the design probe on the versions screen exited ${versionsProbe.exitCode}`);
     }
+    const issuesProbe = Bun.spawnSync(
+      [
+        'bun',
+        'harness/design-probe.js',
+        `${base}/f/${factory}/issues`,
+        '--out',
+        join(outDir, 'phases-issue-graph-design-probe.json'),
+      ],
+      { cwd: deps.repoRoot, env: deps.env, stdout: 'ignore', stderr: 'inherit' },
+    );
+    if (issuesProbe.exitCode !== 0) {
+      failures.push(`the design probe on the issues screen exited ${issuesProbe.exitCode}`);
+    }
   } finally {
     for (const panel of panels) {
       writeFileSync(
@@ -736,9 +1029,14 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
       join(outDir, 'version-strip-timings.json'),
       `${JSON.stringify(versionTimings, null, 2)}\n`,
     );
+    writeFileSync(
+      join(outDir, 'phases-issue-graph-timings.json'),
+      `${JSON.stringify(issueTimings, null, 2)}\n`,
+    );
     // The pages and the server go first, so a failed cleanup below cannot leave them running.
     await page?.close().catch(() => undefined);
     await versionsPage?.close().catch(() => undefined);
+    await issuesPage?.close().catch(() => undefined);
     if (server) {
       server.kill();
       await server.exited;
@@ -771,6 +1069,17 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
       }
     } catch (err) {
       failures.push(`removing the written pins failed: ${(err as Error).message}`);
+    }
+    try {
+      if (labelled.length > 0) {
+        await db.query(
+          `DELETE FROM mc.issue_labels
+           WHERE factory = $1 AND label = 'needs-owner' AND issue_number = ANY($2::int[])`,
+          [factory, `{${labelled.join(',')}}`],
+        );
+      }
+    } catch (err) {
+      failures.push(`removing the written labels failed: ${(err as Error).message}`);
     } finally {
       await db.close();
     }
@@ -829,10 +1138,35 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
     );
   }
   if (versionTimings.noReload !== true) failures.push('the versions screen reloaded');
+  if (!within(issueTimings.readyMs, LIMITS.readyMs)) {
+    failures.push(`issues screen ready after ${issueTimings.readyMs} ms, limit ${LIMITS.readyMs}`);
+  }
+  if (!within(issueTimings.firstSnapshotMs, LIMITS.firstSnapshotMs)) {
+    failures.push(
+      `issues screen first snapshot after ${issueTimings.firstSnapshotMs} ms, limit ${LIMITS.firstSnapshotMs}`,
+    );
+  }
+  for (const [when, write] of [
+    ['first', issueTimings.labelToScreen],
+    [`after ${holdSeconds}s`, issueTimings.afterHoldLabelToScreen],
+  ] as const) {
+    if (!within(write?.ms ?? null, LIMITS.insertToScreenMs)) {
+      failures.push(
+        `label ${when} reached the issues screen after ${write?.ms} ms, limit ${LIMITS.insertToScreenMs}`,
+      );
+    }
+  }
+  if (holdSeconds >= 180 && (issueTimings.renewals ?? 0) < RENEWALS_IN_180S) {
+    failures.push(
+      `${issueTimings.renewals} issues seal renewals in ${holdSeconds}s, expected at least ${RENEWALS_IN_180S}`,
+    );
+  }
+  if (issueTimings.noReload !== true) failures.push('the issues screen reloaded');
   if (failures.length > 0) throw new Error(failures.join('\n'));
   deps.out(`live: ${JSON.stringify(timings)}`);
   deps.out(`home map: ${JSON.stringify(mapTimings)}`);
   deps.out(`versions: ${JSON.stringify(versionTimings)}`);
+  deps.out(`issues: ${JSON.stringify(issueTimings)}`);
 }
 
 export const main: Main = async (argv, deps) => {
