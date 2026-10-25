@@ -7,6 +7,7 @@ import type { Db, Row } from '../scripts/lib/db';
 import { migrationsDir, readMigrationFiles, runMigrations } from '../scripts/migrate';
 import { createWebhookApp } from './app';
 import { createGitHub, type GetFetch } from './github';
+import { METRICS_TITLE, OWNER_DECISIONS_TITLE } from './ingest';
 import { sign, verify } from './signature';
 
 const repoRoot = resolve(import.meta.dir, '..');
@@ -41,15 +42,17 @@ type Request = { url: string; method: string };
 
 let db: Db;
 let requests: Request[];
+let respond: () => Response;
 let app: ReturnType<typeof createWebhookApp>;
 
 beforeEach(async () => {
   db = testDb();
   await runMigrations({ files: readMigrationFiles(migrationsDir(repoRoot)), db });
   requests = [];
+  respond = () => new Response(DECISIONS);
   const fetch: GetFetch = async (url, init) => {
     requests.push({ url, method: init.method });
-    return new Response(DECISIONS);
+    return respond();
   };
   app = createWebhookApp({
     secret: SECRET,
@@ -74,6 +77,29 @@ function post(
 }
 
 const deliver = (d: Delivery) => post(d.event, bytes(d.file), d.signature);
+
+/** The fixture fields the tests below change, across every event's payload. */
+interface FixturePayload {
+  action: string;
+  ref: string;
+  deleted: boolean;
+  repository: { full_name: string };
+  commits: { id: string; added: string[]; removed: string[] }[];
+  comment: { body: string; updated_at: string };
+  issue: { body: string; labels: { name: string }[]; updated_at: string };
+}
+
+/** Delivers fixture `prefix` after `change` edits its payload, signed again with the secret. */
+async function deliverChanged(
+  prefix: string,
+  change: (payload: FixturePayload) => void,
+): Promise<Response> {
+  const d = named(prefix);
+  const payload = JSON.parse(new TextDecoder().decode(bytes(d.file)));
+  change(payload);
+  const body = new TextEncoder().encode(JSON.stringify(payload));
+  return post(d.event, body, await sign(SECRET, body));
+}
 
 /** Every row of every table in `mc`, so a comparison sees any change at all. */
 async function snapshot(): Promise<Record<string, string[]>> {
@@ -193,11 +219,11 @@ test('an Owner decisions needed edit stores each question, and closes one that i
     },
   ]);
 
-  const answered = JSON.parse(new TextDecoder().decode(bytes(named('03-').file)));
-  answered.issue.body = 'Questions the loop needs the owner to decide.\n';
-  answered.issue.updated_at = '2026-10-26T09:00:00Z';
-  const body = new TextEncoder().encode(JSON.stringify(answered));
-  expect((await post('issues', body, await sign(SECRET, body))).status).toBe(200);
+  const answered = await deliverChanged('03-', (p) => {
+    p.issue.body = 'Questions the loop needs the owner to decide.\n';
+    p.issue.updated_at = '2026-10-26T09:00:00Z';
+  });
+  expect(answered.status).toBe(200);
   expect(await rows('SELECT question_number, closed_at FROM mc.owner_questions')).toEqual([
     { question_number: 3, closed_at: new Date('2026-10-26T09:00:00Z') },
   ]);
@@ -219,7 +245,7 @@ test('a push with the appendix pin and verdict stores pin abd85896 and verdict h
   expect(requests).toEqual([
     {
       method: 'GET',
-      url: 'https://api.github.com/repos/coleam00/ai-software-factory/contents/DECISIONS.md?ref=85d479ad987dd63e441622ecb03db65233e8a803',
+      url: 'https://api.github.com/repos/coleam00/ai-software-factory/contents/DECISIONS.md?ref=main',
     },
   ]);
 });
@@ -256,11 +282,121 @@ test('posting every payload twice leaves the rows as after the first post', asyn
 });
 
 test('a delivery from a repository the dashboard does not follow writes nothing', async () => {
-  const payload = JSON.parse(new TextDecoder().decode(bytes(named('01-').file)));
-  payload.repository.full_name = 'someone/else';
-  const body = new TextEncoder().encode(JSON.stringify(payload));
   const before = await snapshot();
-  const response = await post('issues', body, await sign(SECRET, body));
+  const response = await deliverChanged('01-', (p) => {
+    p.repository.full_name = 'someone/else';
+  });
   expect(await response.json()).toEqual({ event: 'issues', written: false });
   expect(await snapshot()).toEqual(before);
+});
+
+test('the ingest manager titles are the pack’s MANAGER_TITLES', async () => {
+  // A computed path keeps tsc out of the pack, whose `.ts` import extensions this config refuses.
+  const workable = join(repoRoot, 'fixtures', 'pack', 'sdlc', '.shared', 'workable.ts');
+  const { MANAGER_TITLES } = await import(workable);
+  expect(new Set([OWNER_DECISIONS_TITLE, METRICS_TITLE])).toEqual(MANAGER_TITLES);
+});
+
+test.each([
+  ['a push to another branch', (p: FixturePayload) => (p.ref = 'refs/heads/feature')],
+  ['a deleted branch', (p: FixturePayload) => (p.deleted = true)],
+  [
+    'a push to another repository',
+    (p: FixturePayload) => (p.repository.full_name = 'coleam00/factory-mission-control'),
+  ],
+])('%s writes no pin, verdict or decision and reads nothing', async (_, change) => {
+  const before = await snapshot();
+  const response = await deliverChanged('09-', change);
+  expect(await response.json()).toEqual({ event: 'push', written: false });
+  expect(await snapshot()).toEqual(before);
+  expect(requests).toEqual([]);
+});
+
+const decisionsTitles = () => rows('SELECT title FROM mc.decisions ORDER BY title');
+const entry = (title: string) =>
+  `## 2026-10-25 ${title}\nDecision: d.\nWhy: w.\nReplaces: r.\nVersion: abd85896\n`;
+
+test('decisions follow DECISIONS.md on the default branch, even when an older push is redelivered', async () => {
+  respond = () => new Response(`# Decisions\n\n${entry('Old')}`);
+  await deliver(named('09-'));
+  respond = () => new Response(`# Decisions\n\n${entry('New')}`);
+  await deliverChanged('09-', (p) => {
+    p.commits[0].id = 'b'.repeat(40);
+  });
+  expect(await decisionsTitles()).toEqual([{ title: 'New' }]);
+
+  expect((await deliver(named('09-'))).status).toBe(200);
+  expect(await decisionsTitles()).toEqual([{ title: 'New' }]);
+  expect(new Set(requests.map((r) => r.url.split('?')[1]))).toEqual(new Set(['ref=main']));
+});
+
+test('a DECISIONS.md the push did not remove but GitHub cannot find fails and keeps the rows', async () => {
+  await deliver(named('09-'));
+  const before = await snapshot();
+  respond = () => new Response('Not Found', { status: 404 });
+  expect((await deliver(named('09-'))).status).toBe(500);
+  expect(await snapshot()).toEqual(before);
+});
+
+test('a push that removes DECISIONS.md empties the decisions', async () => {
+  await deliver(named('09-'));
+  respond = () => new Response('Not Found', { status: 404 });
+  const response = await deliverChanged('09-', (p) => {
+    p.commits[0].added = [];
+    p.commits[0].removed = ['DECISIONS.md'];
+  });
+  expect(response.status).toBe(200);
+  expect(await decisionsTitles()).toEqual([]);
+});
+
+const commentRows = () =>
+  rows('SELECT id FROM mc.comments ORDER BY id').then((r) => r.map((c) => Number(c.id)));
+const reviewOutcomes = () => rows('SELECT outcome FROM mc.reviews');
+
+test('a deleted review comment removes its comment and review rows', async () => {
+  await deliver(named('06-'));
+  expect(await reviewOutcomes()).toEqual([{ outcome: 'merged' }]);
+  await deliverChanged('06-', (p) => (p.action = 'deleted'));
+  expect(await commentRows()).toEqual([]);
+  expect(await reviewOutcomes()).toEqual([]);
+});
+
+test('a review comment edited into plain text keeps the comment and drops the review', async () => {
+  await deliver(named('06-'));
+  await deliverChanged('06-', (p) => {
+    p.action = 'edited';
+    p.comment.body = 'hello';
+    p.comment.updated_at = '2026-10-25T12:00:00Z';
+  });
+  expect(await commentRows()).toEqual([6394500001]);
+  expect(await reviewOutcomes()).toEqual([]);
+});
+
+test('an older delivery of a comment does not undo a newer one', async () => {
+  await deliverChanged('06-', (p) => {
+    p.action = 'edited';
+    p.comment.body = 'Loop review: sent back (route: complex)';
+    p.comment.updated_at = '2026-10-25T12:00:00Z';
+  });
+  const before = await snapshot();
+  await deliver(named('06-'));
+  expect(await snapshot()).toEqual(before);
+});
+
+test.each(['deleted', 'transferred'])('an issue %s leaves the mirror', async (action) => {
+  await deliver(named('03-'));
+  await deliverChanged('03-', (p) => {
+    p.action = 'labeled';
+    p.issue.labels = [{ name: 'needs-owner' }];
+    p.issue.updated_at = '2026-10-26T08:00:00Z';
+  });
+  await deliverChanged('03-', (p) => {
+    p.action = action;
+    p.issue.updated_at = '2026-10-26T09:00:00Z';
+  });
+  expect(await rows('SELECT number FROM mc.issues')).toEqual([]);
+  expect(await rows('SELECT label FROM mc.issue_labels')).toEqual([]);
+  expect(await rows('SELECT question_number, closed_at FROM mc.owner_questions')).toEqual([
+    { question_number: 3, closed_at: new Date('2026-10-26T09:00:00Z') },
+  ]);
 });
