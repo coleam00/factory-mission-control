@@ -15,11 +15,14 @@ const USAGE = [
   '  `bun run fixture:branch` first): serves the app on a free port in 8850-8864, opens it in a',
   '  headless browser, inserts running laps and times them to the screen, holds the page open',
   '  --hold seconds (default 180) across seal renewals, re-runs the probes in',
-  '  db/queries/REALTIME.md, and runs the design probe. Also opens /steps/archon-loop/check-app,',
-  '  checks it against the seed, times description writes to it across the same hold, and checks',
-  '  land and an unknown step. Writes realtime-timings.json, realtime-features.json,',
-  '  realtime-design-probe.json, step-detail-timings.json, step-detail.png and',
-  '  step-detail-design-probe.json to --out (default harness/.results/live).',
+  'db/queries/REALTIME.md, and runs the design probe. Writes realtime-timings.json,',
+  '  realtime-features.json and realtime-design-probe.json to --out (default harness/.results/live).',
+  '  On the same run it checks the versions screen against the seed, picks two versions, and times',
+  '  `fixture:write pin` to that screen before and after the hold, writing version-strip-check.txt,',
+  '  version-strip-timings.json, version-strip.png and version-strip-design-probe.json. It also',
+  '  opens /steps/archon-loop/check-app, checks it against the seed, times description writes to',
+  '  it across the same hold, and checks land and an unknown step, writing',
+  '  step-detail-timings.json, step-detail.png and step-detail-design-probe.json.',
 ].join('\n');
 
 export const LIMITS = { readyMs: 2000, firstSnapshotMs: 500, insertToScreenMs: 5000 };
@@ -46,6 +49,8 @@ const SEED_CHECK_APP = {
   hook: '.factory/hooks/holdout_fence.py',
   admitted: ['holdout-verifier', 'holdout-writer'],
 };
+const VERSIONS = '[data-live="version-strip"]';
+const ENTRY = `${VERSIONS} [data-version-entry]`;
 const FEATURE_TIMEOUT_MS = 10_000;
 /** How long to wait for `ready` before giving up; the limit is judged on the page's own marks. */
 const READY_WAIT_MS = 10_000;
@@ -259,6 +264,144 @@ async function checkAppMismatches(page: Page, repoRoot: string): Promise<string[
   return failures;
 }
 
+interface VersionStripTimings {
+  branch: string | null;
+  port: number | null;
+  readyMs: number | null;
+  firstSnapshotMs: number | null;
+  pinToScreenMs: number | null;
+  holdSeconds: number;
+  renewals: number | null;
+  afterHoldPinToScreenMs: number | null;
+  noReload: boolean | null;
+  links: { scorecard: string | null; diff: string | null };
+  limits: typeof LIMITS;
+}
+
+interface ShownEntry {
+  kind: string | null;
+  digest: string | null;
+  pin: string | null;
+  date: string | null;
+  reason: string | null;
+  hypothesis: string | null;
+  measure: string | null;
+}
+
+const entriesOnScreen = `[...document.querySelectorAll('${ENTRY}')].map((li) => ({
+  kind: li.getAttribute('data-kind'),
+  digest: li.getAttribute('data-digest'),
+  pin: li.getAttribute('data-pin'),
+  date: li.querySelector('[data-date]')?.getAttribute('data-date') ?? null,
+  reason: li.querySelector('[data-reason]')?.getAttribute('data-reason') ?? null,
+  hypothesis: li.querySelector('[data-hypothesis]')?.getAttribute('data-hypothesis') ?? null,
+  measure: li.querySelector('[data-measure]')?.getAttribute('data-measure') ?? null,
+}))`;
+
+/** The versions screen against the seed's own versions and pins, read before any pin is written. */
+async function seedVersionMismatches(
+  page: Page,
+  db: Db,
+  factory: string,
+): Promise<{ mismatches: string[]; report: string; digests: string[] }> {
+  const shown = await page.evaluate<ShownEntry[]>(entriesOnScreen);
+  const versions = await db.query(
+    `SELECT v.digest, v.first_run_at, p.sha, p.reason, p.hypothesis, p.measure
+     FROM mc.versions v LEFT JOIN mc.pins p ON p.sha = v.pin_sha
+     WHERE v.factory = $1 ORDER BY v.first_run_at`,
+    [factory],
+  );
+  const pins = await db.query('SELECT sha FROM mc.pins ORDER BY committed_at');
+  const recorded = (text: unknown) =>
+    typeof text === 'string' && text.trim() !== '' ? text : 'not recorded';
+  const mismatches: string[] = [];
+  if (shown.length !== versions.length) {
+    mismatches.push(`the screen shows ${shown.length} entries, the seed has ${versions.length}`);
+  }
+  versions.forEach((version, i) => {
+    const entry = shown[i];
+    const expected: ShownEntry = {
+      kind: 'version',
+      digest: String(version.digest),
+      pin: String(pins[i]?.sha),
+      date: new Date(version.first_run_at as string).toISOString().slice(0, 10),
+      reason: recorded(version.reason),
+      hypothesis: recorded(version.hypothesis),
+      measure: recorded(version.measure),
+    };
+    if (version.sha !== pins[i]?.sha) {
+      mismatches.push(
+        `seed version ${i + 1} is pinned by ${version.sha}, pin ${i + 1} is ${pins[i]?.sha}`,
+      );
+    }
+    for (const key of Object.keys(expected) as (keyof ShownEntry)[]) {
+      if (entry?.[key] !== expected[key]) {
+        mismatches.push(`entry ${i + 1} ${key}: screen ${entry?.[key]}, seed ${expected[key]}`);
+      }
+    }
+  });
+  const report = [
+    'screen:',
+    ...shown.map((e) => `  ${JSON.stringify(e)}`),
+    'seed (mc.versions joined to mc.pins, by first run):',
+    ...versions.map((v) => `  ${JSON.stringify(v)}`),
+    'seed pins by commit:',
+    ...pins.map((p) => `  ${p.sha}`),
+    ...mismatches,
+    `mismatches: ${mismatches.length}`,
+  ].join('\n');
+  return { mismatches, report, digests: versions.map((v) => String(v.digest)) };
+}
+
+/** Picks the versions whose digests are given and returns the two compare links it then shows. */
+async function selectAndLink(
+  page: Page,
+  digests: readonly string[],
+): Promise<VersionStripTimings['links']> {
+  for (const digest of digests) {
+    await page.evaluate(
+      `document.querySelector('${ENTRY}[data-digest=${JSON.stringify(digest)}] button').click()`,
+    );
+  }
+  const shown = await page.evaluate<boolean>(
+    pageWait(`document.querySelectorAll('${VERSIONS} a[data-compare]').length === 2`, 2000),
+  );
+  if (!shown) return { scorecard: null, diff: null };
+  const href = (kind: string) =>
+    page.evaluate<string | null>(
+      `document.querySelector('${VERSIONS} a[data-compare="${kind}"]')?.getAttribute('href') ?? null`,
+    );
+  return { scorecard: await href('scorecard'), diff: await href('diff') };
+}
+
+/** The compare links must name the factory's scorecard and the diff, from V1 (`a`) to V2 (`b`). */
+function checkLinks(
+  links: VersionStripTimings['links'],
+  base: string,
+  factory: string,
+  a: string,
+  b: string,
+): string[] {
+  const failures: string[] = [];
+  const expected = { scorecard: `/f/${factory}/scorecard`, diff: '/diff' };
+  for (const kind of ['scorecard', 'diff'] as const) {
+    const href = links[kind];
+    if (href === null) {
+      failures.push(`picking V1 and V2 showed no ${kind} link`);
+      continue;
+    }
+    const url = new URL(href, base);
+    if (
+      url.pathname !== expected[kind] ||
+      url.searchParams.get('a') !== a ||
+      url.searchParams.get('b') !== b
+    ) {
+      failures.push(`the ${kind} link is ${href}, expected ${expected[kind]}?a=<V1>&b=<V2>`);
+    }
+  }
+  return failures;
+}
+
 const setCheckAppDescription = `UPDATE mc.arch_steps SET description = $3
   WHERE archon_sha = $1 AND factory_sha = $2 AND workflow = 'archon-loop' AND path = 'check-app'`;
 
@@ -283,6 +426,27 @@ async function openStep(page: Page, base: string, path: string, ready: string): 
   if (!(await page.evaluate<boolean>(pageWait(ready, READY_WAIT_MS)))) {
     throw new Error(`${path} did not reach data-state="ready" within ${READY_WAIT_MS} ms`);
   }
+}
+
+/** Runs `fixture:write pin` and times it from just before the spawn to the screen showing it. */
+async function pinToScreen(page: Page, deps: Deps, target: number): Promise<number | null> {
+  const started = performance.now();
+  const shown = page.evaluate<boolean>(
+    pageWait(`document.querySelectorAll('${ENTRY}').length === ${target}`, LIMITS.insertToScreenMs),
+    LIMITS.insertToScreenMs + 5000,
+  );
+  const write = Bun.spawn(['bun', 'run', 'fixture:write', 'pin'], {
+    cwd: deps.repoRoot,
+    env: deps.env,
+    stdout: 'ignore',
+    stderr: 'inherit',
+  });
+  const exitCode = await write.exited;
+  if (exitCode !== 0) {
+    await shown;
+    throw new Error(`bun run fixture:write pin exited ${exitCode}`);
+  }
+  return (await shown) ? Math.round(performance.now() - started) : null;
 }
 
 async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promise<void> {
@@ -322,9 +486,28 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
   /** check-app's description before test:live wrote it, restored at the end. */
   let described: { version: Version; was: unknown } | undefined;
   let stepPage: Page | undefined;
+  const versionTimings: VersionStripTimings = {
+    branch: timings.branch,
+    port: null,
+    readyMs: null,
+    firstSnapshotMs: null,
+    pinToScreenMs: null,
+    holdSeconds,
+    renewals: null,
+    afterHoldPinToScreenMs: null,
+    noReload: null,
+    links: { scorecard: null, diff: null },
+    limits: LIMITS,
+  };
+  const pinned: string[] = [];
   const db = deps.openDb(databaseUrl);
   let server: ReturnType<typeof Bun.spawn> | undefined;
   let page: Page | undefined;
+  let versionsPage: Page | undefined;
+  const latestPin = async () => {
+    const [pin] = await db.query('SELECT sha FROM mc.pins ORDER BY committed_at DESC LIMIT 1');
+    pinned.push(String(pin.sha));
+  };
   try {
     const setup = Bun.spawnSync(['bun', 'run', 'setup'], {
       cwd: deps.repoRoot,
@@ -336,6 +519,7 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
     const port = await freePort();
     timings.port = port;
     stepTimings.port = port;
+    versionTimings.port = port;
     const base = `http://localhost:${port}`;
     const proc = Bun.spawn(['bun', 'server/main.ts', '--port', String(port)], {
       cwd: deps.repoRoot,
@@ -416,6 +600,46 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
       `first description write reached the step in ${stepTimings.descriptionToScreenMs ?? 'never'} ms`,
     );
 
+    versionsPage = await openPage(deps.env);
+    await versionsPage.goto(`${base}/f/${factory}/versions`);
+    await versionsPage.evaluate('window.__mcNoReload = true');
+    const versionsReady = await versionsPage.evaluate<boolean>(
+      pageWait(`document.querySelector('${VERSIONS}[data-state="ready"]') !== null`, READY_WAIT_MS),
+    );
+    if (!versionsReady) {
+      throw new Error(
+        `the versions screen did not reach data-state="ready" within ${READY_WAIT_MS} ms`,
+      );
+    }
+    const versionsReadyAt = await versionsPage.evaluate<number | null>(
+      markTime('live:version-strip:ready'),
+    );
+    const versionsRequestedAt = await versionsPage.evaluate<number | null>(
+      markTime('live:version-strip:requested'),
+    );
+    versionTimings.readyMs = versionsReadyAt === null ? null : Math.round(versionsReadyAt);
+    versionTimings.firstSnapshotMs =
+      versionsReadyAt === null || versionsRequestedAt === null
+        ? null
+        : Math.round(versionsReadyAt - versionsRequestedAt);
+    const seed = await seedVersionMismatches(versionsPage, db, factory);
+    writeFileSync(join(outDir, 'version-strip-check.txt'), `${seed.report}\n`);
+    failures.push(...seed.mismatches.map((m) => `versions screen against the seed: ${m}`));
+    writeFileSync(join(outDir, 'version-strip.png'), await versionsPage.screenshot(1440));
+
+    const [v1, v2] = seed.digests;
+    versionTimings.links = await selectAndLink(versionsPage, [v1, v2]);
+    failures.push(...checkLinks(versionTimings.links, base, factory, v1, v2));
+
+    const entries = await versionsPage.evaluate<number>(
+      `document.querySelectorAll('${ENTRY}').length`,
+    );
+    versionTimings.pinToScreenMs = await pinToScreen(versionsPage, deps, entries + 1);
+    await latestPin();
+    deps.out(
+      `first pin reached the versions screen in ${versionTimings.pinToScreenMs ?? 'never'} ms`,
+    );
+
     deps.out(`holding the page open ${holdSeconds}s`);
     await deps.sleep(holdSeconds * 1000);
     timings.renewals = await page.evaluate<number>(
@@ -465,6 +689,15 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
     await stepPage.close();
     stepPage = undefined;
 
+    versionTimings.renewals = await versionsPage.evaluate<number>(
+      `performance.getEntriesByName('live:version-strip:renewed').length`,
+    );
+    versionTimings.afterHoldPinToScreenMs = await pinToScreen(versionsPage, deps, entries + 2);
+    await latestPin();
+    versionTimings.noReload = await versionsPage.evaluate<boolean>('window.__mcNoReload === true');
+    await versionsPage.close();
+    versionsPage = undefined;
+
     const probe = Bun.spawnSync(
       [
         'bun',
@@ -489,15 +722,33 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
     if (stepProbe.exitCode !== 0) {
       failures.push(`the design probe on ${STEP_PATH} exited ${stepProbe.exitCode}`);
     }
+    const versionsProbe = Bun.spawnSync(
+      [
+        'bun',
+        'harness/design-probe.js',
+        `${base}/f/${factory}/versions`,
+        '--out',
+        join(outDir, 'version-strip-design-probe.json'),
+      ],
+      { cwd: deps.repoRoot, env: deps.env, stdout: 'ignore', stderr: 'inherit' },
+    );
+    if (versionsProbe.exitCode !== 0) {
+      failures.push(`the design probe on the versions screen exited ${versionsProbe.exitCode}`);
+    }
   } finally {
     writeFileSync(join(outDir, 'realtime-timings.json'), `${JSON.stringify(timings, null, 2)}\n`);
     writeFileSync(
       join(outDir, 'step-detail-timings.json'),
       `${JSON.stringify(stepTimings, null, 2)}\n`,
     );
+    writeFileSync(
+      join(outDir, 'version-strip-timings.json'),
+      `${JSON.stringify(versionTimings, null, 2)}\n`,
+    );
     // The pages and the server go first, so a failed cleanup below cannot leave them running.
     await page?.close().catch(() => undefined);
     await stepPage?.close().catch(() => undefined);
+    await versionsPage?.close().catch(() => undefined);
     if (server) {
       server.kill();
       await server.exited;
@@ -518,6 +769,15 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
       }
     } catch (err) {
       failures.push(`restoring check-app's description failed: ${(err as Error).message}`);
+    }
+    try {
+      if (pinned.length > 0) {
+        await db.query('DELETE FROM mc.pins WHERE sha = ANY($1::text[])', [
+          `{${pinned.join(',')}}`,
+        ]);
+      }
+    } catch (err) {
+      failures.push(`removing the written pins failed: ${(err as Error).message}`);
     } finally {
       await db.close();
     }
@@ -575,9 +835,36 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
     );
   }
   if (stepTimings.noReload !== true) failures.push('the step screen reloaded');
+  if (!within(versionTimings.readyMs, LIMITS.readyMs)) {
+    failures.push(
+      `versions screen ready after ${versionTimings.readyMs} ms, limit ${LIMITS.readyMs}`,
+    );
+  }
+  if (!within(versionTimings.firstSnapshotMs, LIMITS.firstSnapshotMs)) {
+    failures.push(
+      `versions screen first snapshot after ${versionTimings.firstSnapshotMs} ms, limit ${LIMITS.firstSnapshotMs}`,
+    );
+  }
+  if (!within(versionTimings.pinToScreenMs, LIMITS.insertToScreenMs)) {
+    failures.push(
+      `first pin reached the versions screen after ${versionTimings.pinToScreenMs} ms, limit ${LIMITS.insertToScreenMs}`,
+    );
+  }
+  if (!within(versionTimings.afterHoldPinToScreenMs, LIMITS.insertToScreenMs)) {
+    failures.push(
+      `pin after ${holdSeconds}s reached the versions screen after ${versionTimings.afterHoldPinToScreenMs} ms, limit ${LIMITS.insertToScreenMs}`,
+    );
+  }
+  if (holdSeconds >= 180 && (versionTimings.renewals ?? 0) < RENEWALS_IN_180S) {
+    failures.push(
+      `${versionTimings.renewals} versions seal renewals in ${holdSeconds}s, expected at least ${RENEWALS_IN_180S}`,
+    );
+  }
+  if (versionTimings.noReload !== true) failures.push('the versions screen reloaded');
   if (failures.length > 0) throw new Error(failures.join('\n'));
   deps.out(`live: ${JSON.stringify(timings)}`);
   deps.out(`step detail: ${JSON.stringify(stepTimings)}`);
+  deps.out(`versions: ${JSON.stringify(versionTimings)}`);
 }
 
 export const main: Main = async (argv, deps) => {

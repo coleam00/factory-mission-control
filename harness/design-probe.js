@@ -3,8 +3,7 @@
  * The design probe (PRD 8.3). Loads a URL in a headless Chromium at 1440 px and 390 px and fails
  * on any computed color outside the tokens copied in docs/design/archon-console/, any text font
  * other than Geist or Geist Mono, a browser-default control, text contrast below 4.5:1,
- * horizontal overflow, and any interactive element without an accessible name. It checks the
- * page once no live panel is still loading (`data-state="loading"`), or after 10 s.
+ * horizontal overflow, and any interactive element without an accessible name.
  *
  *   bun harness/design-probe.js <url> [--out <report.json>]
  *
@@ -273,11 +272,6 @@ async function unnamedInteractiveElements(cdp, session) {
  * the way the page cascades them.
  */
 async function pageChecks(tokenLayers) {
-  // A live panel shows its loading state until its first rows arrive: check what it settles to.
-  const settleBy = Date.now() + 10000;
-  while (document.querySelector('[data-state="loading"]') && Date.now() < settleBy) {
-    await new Promise((done) => setTimeout(done, 100));
-  }
   await document.fonts.ready;
   await new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)));
 
