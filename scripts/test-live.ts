@@ -3,8 +3,10 @@ import { join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { createRealtimeClient, type WebSocketLike } from '@neon/realtime/client';
 import { createRealtime, rawSql } from '@neon/realtime/server';
+import { ISSUE_STATES, STATE_TOKEN } from '../app/lib/issue-graph';
 import { realtimeUrlFor } from '../server/live';
 import { SERVE_PORTS } from '../server/ports';
+import { NEXT_TO_LABEL } from './fixture/write';
 import { openPage, type Page } from './lib/cdp';
 import { type Deps, failing, guardedDatabaseUrl, type Main, runCli } from './lib/cli';
 import type { Db } from './lib/db';
@@ -31,15 +33,6 @@ const PANEL = '[data-live="status-strip"]';
 const VERSIONS = '[data-live="version-strip"]';
 const ENTRY = `${VERSIONS} [data-version-entry]`;
 const ISSUES = '[data-live="issue-graph"]';
-/** The token each issue state's color comes from (PRD 8.3); closed is the console's grey. */
-const STATE_TOKENS: Record<string, string> = {
-  waiting: '--warning',
-  claimed: '--running',
-  'pr-open': '--running',
-  'needs-owner': '--error',
-  merged: '--success',
-  closed: '--text-tertiary',
-};
 const FEATURE_TIMEOUT_MS = 10_000;
 /** How long to wait for `ready` before giving up; the limit is judged on the page's own marks. */
 const READY_WAIT_MS = 10_000;
@@ -369,7 +362,7 @@ interface IssuesOnScreen {
 }
 
 const issuesOnScreen = `(() => {
-  const tokens = ${JSON.stringify(STATE_TOKENS)};
+  const tokens = ${JSON.stringify(STATE_TOKEN)};
   const token = (name) => {
     if (name === undefined) return null;
     const probe = document.body.appendChild(document.createElement('span'));
@@ -453,7 +446,7 @@ async function seedIssueGraphMismatches(
     .map((r) => `#${r.number} ${r.state}`)
     .sort();
   same('states', shown.issues.map((i) => `#${i.number} ${i.state}`).sort(), states);
-  for (const state of Object.keys(STATE_TOKENS)) {
+  for (const state of ISSUE_STATES) {
     if (!shown.issues.some((i) => i.state === state)) mismatches.push(`no node is ${state}`);
   }
   for (const i of shown.issues) {
@@ -524,13 +517,7 @@ async function labelToScreen(
   factory: string,
   labelled: number[],
 ): Promise<{ issue: number; ms: number | null }> {
-  const [target] = await db.query(
-    `SELECT i.number FROM mc.issues i
-     WHERE i.factory = $1 AND i.state = 'open' AND NOT EXISTS (SELECT 1 FROM mc.issue_labels l
-       WHERE l.factory = i.factory AND l.issue_number = i.number AND l.label = 'needs-owner')
-     ORDER BY i.number DESC LIMIT 1`,
-    [factory],
-  );
+  const [target] = await db.query(NEXT_TO_LABEL, [factory]);
   if (!target) throw new Error(`no open ${factory} issue for fixture:write label to label`);
   const issue = Number(target.number);
   const node = `${ISSUES} [data-issue="${issue}"]`;

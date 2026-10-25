@@ -9,6 +9,7 @@ import {
   NODE,
   type PhaseBar,
   phaseBars,
+  STATE_TOKEN,
 } from '../lib/issue-graph';
 import { LivePanel } from '../live/LivePanel';
 import { EmptyState } from './EmptyState';
@@ -16,18 +17,22 @@ import { EmptyState } from './EmptyState';
 const LABEL = 'font-mono text-[10px] font-semibold uppercase tracking-[0.04em] text-text-secondary';
 const MONO = 'font-mono text-[12px] tabular-nums';
 
+function look(label: string, state: IssueState) {
+  const color = `var(${STATE_TOKEN[state]})`;
+  return { label, color, text: color };
+}
+
 /**
- * PRD 8.3: running blue, success teal, waiting amber, failed red; closed is the console's grey.
  * Colors go inline, as in the console's graph: its `.console-root *` border color outranks
  * Tailwind's border utilities.
  */
 const STATE_LOOK: Record<IssueState, { label: string; color: string; text: string }> = {
-  waiting: { label: 'Waiting', color: 'var(--warning)', text: 'var(--warning)' },
-  claimed: { label: 'Claimed', color: 'var(--running)', text: 'var(--running)' },
-  'pr-open': { label: 'PR open', color: 'var(--running)', text: 'var(--running)' },
-  'needs-owner': { label: 'Needs owner', color: 'var(--error)', text: 'var(--error)' },
-  merged: { label: 'Merged', color: 'var(--success)', text: 'var(--success)' },
-  closed: { label: 'Closed', color: 'var(--text-tertiary)', text: 'var(--text-secondary)' },
+  waiting: look('Waiting', 'waiting'),
+  claimed: look('Claimed', 'claimed'),
+  'pr-open': look('PR open', 'pr-open'),
+  'needs-owner': look('Needs owner', 'needs-owner'),
+  merged: look('Merged', 'merged'),
+  closed: { ...look('Closed', 'closed'), text: 'var(--text-secondary)' },
 };
 
 const tint = (color: string, transparent: number) =>
