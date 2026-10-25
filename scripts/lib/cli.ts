@@ -1,4 +1,5 @@
 import { resolve } from 'node:path';
+import { createGitHub, type GitHub } from '../../function/github';
 import { type Env, loadCheckEnv } from '../../server/check-env';
 import { type OpenDb, openDb } from './db';
 import { RefusedBranch, requireCheckBranch } from './guard';
@@ -12,6 +13,7 @@ export type Deps = {
   env: Env;
   repoRoot: string;
   neon: () => NeonApi;
+  github: () => GitHub;
   openDb: OpenDb;
   now: () => Date;
   sleep: Sleep;
@@ -40,6 +42,7 @@ export function defaultDeps(): Deps {
     env: Bun.env,
     repoRoot: REPO_ROOT,
     neon: () => neonFromEnv(Bun.env),
+    github: () => createGitHub(fetch, Bun.env.GITHUB_TOKEN),
     openDb,
     now: () => new Date(),
     sleep: (ms) => Bun.sleep(ms),
@@ -80,7 +83,7 @@ export async function failing(deps: Deps, work: () => Promise<void>): Promise<nu
 
 /**
  * `MC_DATABASE_URL` once the Neon API says it points at a `check-*` branch, or, for the owner's
- * `migrate:main`, at `main`. Nothing may connect to the URL before this returns.
+ * `:main` commands, at `main`. Nothing may connect to the URL before this returns.
  */
 export async function guardedDatabaseUrl(deps: Deps, target: 'check' | 'main'): Promise<string> {
   loadCheckEnv(deps.repoRoot, deps.env);
@@ -91,9 +94,6 @@ export async function guardedDatabaseUrl(deps: Deps, target: 'check' | 'main'): 
     requireCheckBranch(name);
     return url;
   }
-  if (name !== 'main') throw new RefusedBranch(name, 'migrate:main only migrates main');
-  if (!deps.confirmOwner(deps.env.NEON_PROJECT_ID ?? '')) {
-    throw new Error('migrate:main is for the owner, at a terminal');
-  }
+  if (name !== 'main') throw new RefusedBranch(name, 'a :main command only writes main');
   return url;
 }

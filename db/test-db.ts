@@ -22,3 +22,20 @@ export function testDb(): Db {
     close: () => pg.close(),
   };
 }
+
+/** Every row of every table in `mc`, so a comparison sees any change at all. */
+export async function snapshot(db: Tx): Promise<Record<string, string[]>> {
+  const tables = await db.query(
+    `SELECT table_name FROM information_schema.tables
+      WHERE table_schema = 'mc' AND table_type = 'BASE TABLE' ORDER BY table_name`,
+  );
+  const all: Record<string, string[]> = {};
+  for (const { table_name } of tables) {
+    const rows = await db.query(
+      `SELECT to_jsonb(t)::text AS row FROM mc.${String(table_name)} t ORDER BY 1`,
+      [],
+    );
+    all[String(table_name)] = rows.map((r) => String(r.row));
+  }
+  return all;
+}

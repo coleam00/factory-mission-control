@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { testDb } from '../db/test-db';
+import { snapshot as snapshotOf, testDb } from '../db/test-db';
 import factories from '../factories.json';
 import type { Db, Row } from '../scripts/lib/db';
 import { migrationsDir, readMigrationFiles, runMigrations } from '../scripts/migrate';
@@ -101,23 +101,7 @@ async function deliverChanged(
   return post(d.event, body, await sign(SECRET, body));
 }
 
-/** Every row of every table in `mc`, so a comparison sees any change at all. */
-async function snapshot(): Promise<Record<string, string[]>> {
-  const tables = await db.query(
-    `SELECT table_name FROM information_schema.tables
-      WHERE table_schema = 'mc' AND table_type = 'BASE TABLE' ORDER BY table_name`,
-  );
-  const all: Record<string, string[]> = {};
-  for (const { table_name } of tables) {
-    const rows = await db.query(
-      `SELECT to_jsonb(t)::text AS row FROM mc.${String(table_name)} t ORDER BY 1`,
-      [],
-    );
-    all[String(table_name)] = rows.map((r) => String(r.row));
-  }
-  return all;
-}
-
+const snapshot = () => snapshotOf(db);
 const rows = (sql: string, params: unknown[] = []): Promise<Row[]> => db.query(sql, params);
 
 test('every fixture is signed with secret `test` over its exact bytes', async () => {

@@ -1,6 +1,7 @@
 import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { createGitHub } from '../../function/github';
 import { CHECK_ENV_FILE, type Env } from '../../server/check-env';
 import type { Deps } from './cli';
 import type { Db, Row } from './db';
@@ -23,6 +24,8 @@ export type Recorder = {
   deps: Deps;
   neonCalls: string[];
   mutatingCalls: string[];
+  /** Every GitHub URL requested; the fake answers none of them. */
+  githubCalls: string[];
   opened: string[];
   sql: string[];
   /** Each query's parameters, in the order `sql` holds its text. */
@@ -61,6 +64,7 @@ export function recordingDeps(options: {
   const recorder: Omit<Recorder, 'deps'> = {
     neonCalls: [],
     mutatingCalls: [],
+    githubCalls: [],
     opened: [],
     sql: [],
     params: [],
@@ -130,6 +134,11 @@ export function recordingDeps(options: {
     env: { NEON_PROJECT_ID: PROJECT, ...options.env },
     repoRoot: options.repoRoot,
     neon: () => neon,
+    github: () =>
+      createGitHub(async (url) => {
+        recorder.githubCalls.push(url);
+        throw new Error(`fake GitHub: no response for ${url}`);
+      }),
     openDb: (url) => {
       recorder.opened.push(url);
       return db;
