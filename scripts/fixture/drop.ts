@@ -8,14 +8,22 @@ import { type Branch, waitForOperations } from '../lib/neon';
 const STALE_MS = 3 * 60 * 60 * 1000;
 
 const USAGE =
-  "usage: bun run fixture:drop (deletes this checkout's check branch and every check-* branch older than 3 hours)";
+  "usage: bun run fixture:drop (deletes this checkout's check branch, the <branch>-stale-* branches `fixture:branch --stale` made for it, and every check-* branch older than 3 hours; other sessions' younger check-* branches are kept)";
 
-/** This checkout's branch, and every `check-*` branch older than three hours. */
+/** The names `fixture:branch --stale` gives the branches it makes for this checkout. */
+export function staleBranchPrefix(own: string): string {
+  return `${own}-stale-`;
+}
+
+/** This checkout's branch, the stale markers it made, and every `check-*` branch older than three hours. */
 export function branchesToDrop(branches: Branch[], own: string | undefined, now: Date): Branch[] {
   if (own !== undefined) requireCheckBranch(own);
   return branches.filter(
     (branch) =>
       branch.name === own ||
+      (own !== undefined &&
+        isCheckBranch(branch.name) &&
+        branch.name.startsWith(staleBranchPrefix(own))) ||
       (isCheckBranch(branch.name) && now.getTime() - Date.parse(branch.created_at) > STALE_MS),
   );
 }
