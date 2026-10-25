@@ -1,6 +1,7 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { parseArgs } from 'node:util';
+import factories from '../factories.json';
 import { failing, guardedDatabaseUrl, type Main, runCli } from './lib/cli';
 import type { Db } from './lib/db';
 
@@ -50,24 +51,18 @@ export async function runMigrations({
   return applied;
 }
 
-export type Factory = { name: string; repository: string; codebase: string; console: string };
-
-export function readFactories(repoRoot: string): Factory[] {
-  return (
-    JSON.parse(readFileSync(join(repoRoot, 'factories.json'), 'utf-8')) as { factories: Factory[] }
-  ).factories;
-}
+type Factory = (typeof factories.factories)[number];
 
 /**
- * Upserts `factories` into mc.factories by name, deleting none, and gives each lap projected
+ * Upserts `entries` into mc.factories by name, deleting none, and gives each lap projected
  * before its factory existed (factory '' or its codebase's name) the factory the projection would
  * now choose. Returns how many rows each changed.
  */
 export async function loadFactories({
-  factories,
+  entries,
   db,
 }: {
-  factories: Factory[];
+  entries: Factory[];
   db: Db;
 }): Promise<{ factories: number; laps: number }> {
   const changed = { factories: 0, laps: 0 };
@@ -85,7 +80,7 @@ export async function loadFactories({
          WHERE (f.repository, f.codebase, f.console)
            IS DISTINCT FROM (EXCLUDED.repository, EXCLUDED.codebase, EXCLUDED.console)
          RETURNING f.name`,
-        [JSON.stringify(factories)],
+        [JSON.stringify(entries)],
       )
     ).length;
     changed.laps = (
@@ -137,7 +132,7 @@ export const main: Main = async (argv, deps) => {
       });
       for (const name of applied) deps.out(`applied ${name}`);
       deps.out(`applied ${applied.length} migration(s)`);
-      const changed = await loadFactories({ factories: readFactories(deps.repoRoot), db });
+      const changed = await loadFactories({ entries: factories.factories, db });
       deps.out(
         `factories.json: ${changed.factories} factory row(s) written, ${changed.laps} lap(s) re-attributed`,
       );

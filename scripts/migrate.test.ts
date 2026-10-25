@@ -2,19 +2,13 @@ import { afterEach, expect, test } from 'bun:test';
 import { cpSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { archonDb, migrationFiles, snapshot } from '../db/test-db';
+import factories from '../factories.json';
 import type { Db } from './lib/db';
 import { DATABASE_URL, recordingDeps, scratchRepo } from './lib/test-deps';
-import {
-  loadFactories,
-  main,
-  migrationsDir,
-  readFactories,
-  readMigrationFiles,
-  runMigrations,
-} from './migrate';
+import { loadFactories, main, migrationsDir, readMigrationFiles, runMigrations } from './migrate';
 
 const REPO_ROOT = join(import.meta.dir, '..');
-const FACTORIES = readFactories(REPO_ROOT);
+const FACTORIES = factories.factories;
 
 const scratch: string[] = [];
 afterEach(() => {
@@ -71,7 +65,6 @@ test('migrate applies the pending files on a check-* branch', async () => {
   const repoRoot = repo();
   mkdirSync(migrationsDir(repoRoot), { recursive: true });
   writeFileSync(join(migrationsDir(repoRoot), '0001_a.sql'), 'SELECT 1;');
-  cpSync(join(REPO_ROOT, 'factories.json'), join(repoRoot, 'factories.json'));
   const run = recordingDeps({ repoRoot, branchName: 'check-abc' });
   expect(await main([], run.deps)).toBe(0);
   expect(run.opened).toEqual([DATABASE_URL]);
@@ -85,7 +78,6 @@ test('migrate applies the pending files on a check-* branch', async () => {
 test('migrate leaves a fresh database with exactly the factories of factories.json, once', async () => {
   const repoRoot = repo();
   cpSync(migrationsDir(REPO_ROOT), migrationsDir(repoRoot), { recursive: true });
-  cpSync(join(REPO_ROOT, 'factories.json'), join(repoRoot, 'factories.json'));
   const db = await archonDb();
   try {
     const run = recordingDeps({ repoRoot, branchName: 'check-abc' });
@@ -155,7 +147,7 @@ test('loading the factories updates stale rows and attributes the laps projected
       [none]: '',
     });
 
-    expect(await loadFactories({ factories: FACTORIES, db })).toEqual({ factories: 1, laps: 2 });
+    expect(await loadFactories({ entries: FACTORIES, db })).toEqual({ factories: 1, laps: 2 });
     expect(await db.query(`SELECT * FROM mc.factories WHERE name = 'mission-control'`)).toEqual(
       FACTORIES,
     );
@@ -169,7 +161,7 @@ test('loading the factories updates stale rows and attributes the laps projected
       { name: 'mission-control' },
       { name: 'retired' },
     ]);
-    expect(await loadFactories({ factories: FACTORIES, db })).toEqual({ factories: 0, laps: 0 });
+    expect(await loadFactories({ entries: FACTORIES, db })).toEqual({ factories: 0, laps: 0 });
   } finally {
     await db.close();
   }
