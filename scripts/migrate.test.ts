@@ -112,12 +112,13 @@ test('migrate leaves a fresh database with exactly the factories of factories.js
   }
 });
 
-test('loading the factories attributes the laps projected before them and nothing else', async () => {
+test('loading the factories updates stale rows and attributes the laps projected before them, nothing else', async () => {
   const db = await archonDb();
   try {
     await runMigrations({ files: migrationFiles, db });
     await db.query(`INSERT INTO mc.factories VALUES
-      ('retired', 'coleam00/retired', 'coleam00/retired', 'http://localhost:3091')`);
+      ('retired', 'coleam00/retired', 'coleam00/retired', 'http://localhost:3091'),
+      ('mission-control', 'coleam00/old-name', 'coleam00/old-name', 'http://localhost:9999')`);
     const codebase = async (name: string) =>
       String(
         (
@@ -154,10 +155,10 @@ test('loading the factories attributes the laps projected before them and nothin
       [none]: '',
     });
 
-    expect(await loadFactories({ factories: FACTORIES, db })).toEqual({
-      factories: FACTORIES.length,
-      laps: 2,
-    });
+    expect(await loadFactories({ factories: FACTORIES, db })).toEqual({ factories: 1, laps: 2 });
+    expect(await db.query(`SELECT * FROM mc.factories WHERE name = 'mission-control'`)).toEqual(
+      FACTORIES,
+    );
     expect(await factoryOf()).toEqual({
       [named]: 'mission-control',
       [empty]: 'mission-control',
