@@ -168,6 +168,16 @@ describe('the pack', () => {
     expect(texts.filter((t) => t.text.includes('\r')).map((t) => t.path)).toEqual([]);
   });
 
+  test('reads the commit pins without a CR', () => {
+    const pins = [
+      join(repoRoot, 'fixtures', 'pack', 'ARCHON_COMMIT'),
+      join(templateDir, 'FACTORY_COMMIT'),
+    ];
+    expect(pins.filter((pin) => readFileSync(pin, 'utf8').includes('\r'))).toEqual([]);
+    expect(parsed.archonCommit).toMatch(/^[0-9a-f]{40}$/);
+    expect(parsed.factoryCommit).toMatch(/^[0-9a-f]{40}$/);
+  });
+
   test('parsing twice gives deep-equal output', () => {
     expect(parsePack(packDir, templateDir)).toEqual(parsed);
   });
