@@ -1,6 +1,9 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { readdirSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { seededDb } from '../scripts/fixture/seed';
+import { writeRow } from '../scripts/fixture/write';
+import { REPO_ROOT } from '../scripts/lib/cli';
 import type { Db } from '../scripts/lib/db';
 import { runMigrations } from '../scripts/migrate';
 import { LIVE_QUERY_NAME, loadLiveQueries } from '../server/live';
@@ -64,5 +67,49 @@ describe('against the migrated schema', () => {
     const sql = queries.find(([name]) => name === 'status-strip')?.[1] as string;
     expect(await db.query(sql, ['mission-control'])).toEqual([{ running: 2 }]);
     expect(await db.query(sql, ['other'])).toEqual([{ running: 1 }]);
+  });
+});
+
+describe('version-strip on the seed', () => {
+  let db: Db;
+  const sql = queries.find(([name]) => name === 'version-strip')?.[1] as string;
+  const strip = () => db.query(sql, ['mission-control']);
+
+  beforeAll(async () => {
+    db = await seededDb(REPO_ROOT, readFileSync(join(REPO_ROOT, 'fixtures', 'seed.sql'), 'utf8'));
+  }, 60_000);
+
+  afterAll(() => db.close());
+
+  test('is one row per seeded version, labelled by the pin committed before its first run', async () => {
+    const rows = (await strip()).sort(
+      (a, b) =>
+        Number(new Date(a.first_run_at as string)) - Number(new Date(b.first_run_at as string)),
+    );
+    const versions = await db.query(
+      'SELECT digest, pin_sha FROM mc.versions WHERE factory = $1 ORDER BY first_run_at',
+      ['mission-control'],
+    );
+    const pins = await db.query('SELECT sha FROM mc.pins ORDER BY committed_at');
+    expect(rows.map(({ digest, pin_sha }) => ({ digest, pin_sha }))).toEqual(
+      versions.map(({ digest, pin_sha }) => ({ digest, pin_sha })),
+    );
+    expect(rows.map((r) => r.pin_sha)).toEqual(pins.map((p) => p.sha));
+    expect(rows[2]).toMatchObject({ hypothesis: null, measure: null });
+  });
+
+  test('each pin written after the last run adds one entry that has not run yet', async () => {
+    await db.transaction(async (tx) => {
+      await writeRow(tx, 'pin', new Date('2026-10-25T12:00:00Z'));
+    });
+    const [pin] = await db.query('SELECT sha FROM mc.pins ORDER BY committed_at DESC LIMIT 1');
+    const rows = await strip();
+    expect(rows).toHaveLength(4);
+    expect(rows.filter((r) => r.digest === null).map((r) => r.pin_sha)).toEqual([pin.sha]);
+
+    await db.transaction(async (tx) => {
+      await writeRow(tx, 'pin', new Date('2026-10-25T12:03:00Z'));
+    });
+    expect(await strip()).toHaveLength(5);
   });
 });
