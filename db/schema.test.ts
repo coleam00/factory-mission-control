@@ -1,6 +1,10 @@
 import { afterAll, beforeAll, expect, test } from 'bun:test';
 import { join } from 'node:path';
 import { PGlite, type Transaction } from '@electric-sql/pglite';
+import type { CheckLine } from '../fixtures/pack/sdlc/.shared/merge-gate';
+import { REVIEW_OUTCOMES, type Review } from '../parsers/comments';
+import { VERDICT_OUTCOMES } from '../parsers/commits';
+import { HOLDOUT_VERDICTS } from '../parsers/metrics';
 import type { Db, Row, Tx } from '../scripts/lib/db';
 import { migrationsDir, readMigrationFiles, runMigrations } from '../scripts/migrate';
 
@@ -9,6 +13,7 @@ const RUN_ID = '00000000-0000-0000-0000-000000000001';
 const pg = new PGlite();
 const files = readMigrationFiles(migrationsDir(join(import.meta.dir, '..')));
 let firstRun: string[] = [];
+let archonBefore: Row[][] = [];
 
 /** Without params a migration file is several statements, which only exec runs. */
 function txOn(client: PGlite | Transaction): Tx {
@@ -28,8 +33,33 @@ const db: Db = {
   close: () => pg.close(),
 };
 
+/** What a migration could change on Archon's tables: columns, indexes, constraints, triggers. */
+const archonSchema = (): Promise<Row[][]> =>
+  Promise.all([
+    db.query(`SELECT table_name, column_name, data_type, is_nullable, column_default
+      FROM information_schema.columns WHERE table_schema = 'public'
+        AND table_name <> 'mc_schema_migrations' ORDER BY table_name, column_name`),
+    db.query(`SELECT tablename, indexname, indexdef FROM pg_indexes
+      WHERE schemaname = 'public' AND tablename <> 'mc_schema_migrations' ORDER BY indexname`),
+    db.query(`SELECT c.relname, k.conname, pg_get_constraintdef(k.oid) AS def
+      FROM pg_constraint k JOIN pg_class c ON c.oid = k.conrelid
+      JOIN pg_namespace n ON n.oid = c.relnamespace
+      WHERE n.nspname = 'public' AND c.relname <> 'mc_schema_migrations' ORDER BY k.conname`),
+    db.query(`SELECT c.relname, t.tgname FROM pg_trigger t
+      JOIN pg_class c ON c.oid = t.tgrelid JOIN pg_namespace n ON n.oid = c.relnamespace
+      WHERE n.nspname = 'public' ORDER BY t.tgname`),
+  ]);
+
 beforeAll(async () => {
-  await db.query('CREATE TABLE public.remote_agent_workflow_runs (id uuid PRIMARY KEY)');
+  await db.query(`CREATE TABLE public.remote_agent_workflow_runs (
+    id uuid PRIMARY KEY,
+    status text NOT NULL DEFAULT 'pending' CHECK (status <> ''),
+    metadata jsonb,
+    started_at timestamptz NOT NULL DEFAULT now())`);
+  await db.query(
+    'CREATE INDEX remote_agent_workflow_runs_status_idx ON public.remote_agent_workflow_runs (status)',
+  );
+  archonBefore = await archonSchema();
   firstRun = await runMigrations({ files, db });
 });
 afterAll(() => db.close());
@@ -146,10 +176,29 @@ test("leaves Archon's schema alone", async () => {
     )
   ).map((row) => row.table_name);
   expect(publicTables).toEqual(['mc_schema_migrations', 'remote_agent_workflow_runs']);
+  expect(await archonSchema()).toEqual(archonBefore);
+});
 
-  const triggers = await db.query(`
-    SELECT t.tgname FROM pg_trigger t
-    JOIN pg_class c ON c.oid = t.tgrelid JOIN pg_namespace n ON n.oid = c.relnamespace
-    WHERE n.nspname = 'public' AND NOT t.tgisinternal`);
-  expect(triggers).toEqual([]);
+/** Compiles only when A and B are the same set of literals. */
+type Same<A, B> = [A, B] extends [B, A] ? true : false;
+const APP_CHECK_KINDS = ['criterion', 'holdout', 'probe', 'defect'] as const;
+const parserUnionsBound: [
+  Same<(typeof REVIEW_OUTCOMES)[number], Review['outcome']>,
+  Same<(typeof APP_CHECK_KINDS)[number], CheckLine['kind']>,
+] = [true, true];
+
+test.each([
+  ['reviews_outcome_check', REVIEW_OUTCOMES],
+  ['verdicts_verdict_check', VERDICT_OUTCOMES],
+  ['holdout_verdicts_verdict_check', HOLDOUT_VERDICTS],
+  ['app_check_lines_kind_check', APP_CHECK_KINDS],
+])('%s allows exactly the values its parser produces', async (name, values) => {
+  expect(parserUnionsBound).toEqual([true, true]);
+  const [row] = await db.query(
+    `SELECT pg_get_constraintdef(oid) AS def FROM pg_constraint
+     WHERE conname = $1 AND connamespace = 'mc'::regnamespace`,
+    [name],
+  );
+  const allowed = [...String(row?.def).matchAll(/'([^']*)'::text/g)].map((match) => match[1]);
+  expect(allowed.sort()).toEqual([...values].sort());
 });

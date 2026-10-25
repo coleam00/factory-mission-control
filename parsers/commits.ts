@@ -8,7 +8,8 @@ export interface Pin {
   measure: string | null;
 }
 
-export type VerdictOutcome = 'helped' | 'hurt' | 'inconclusive';
+export const VERDICT_OUTCOMES = ['helped', 'hurt', 'inconclusive'] as const;
+export type VerdictOutcome = (typeof VERDICT_OUTCOMES)[number];
 
 export interface Verdict {
   pin: string;
