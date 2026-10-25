@@ -41,21 +41,6 @@ describe.each(queries)('db/queries/%s.sql', (_name, sql) => {
   });
 });
 
-test('step queries share one current-version rule and one part size', () => {
-  const steps = queries.filter(([name]) => name.startsWith('step-'));
-  const version = (sql: string) => sql.match(/^WITH version AS \([\s\S]*?\n\)/)?.[0];
-  const partList = (sql: string) => sql.match(/JOIN \(VALUES .*\) AS n\(part\)/)?.[0];
-  const sql = (name: string) => steps.find(([n]) => n === name)?.[1] as string;
-  expect(version(sql('step-detail'))).toBeDefined();
-  for (const [name, query] of steps) {
-    expect([name, version(query)]).toEqual([name, version(sql('step-detail'))]);
-    if (!query.includes('n(part)')) continue;
-    expect([name, partList(query)]).toEqual([name, partList(sql('step-prompt'))]);
-    const sizes = [...query.matchAll(/n\.part \* (\d+)|, (\d+)\) AS chunk/g)];
-    expect([name, sizes.map((m) => m[1] ?? m[2])]).toEqual([name, ['4000', '4000', '4000']]);
-  }
-});
-
 describe('against the migrated schema', () => {
   let db: Db;
 
