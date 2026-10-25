@@ -15,6 +15,16 @@ export const ISSUE_STATES = [
 
 export type IssueState = (typeof ISSUE_STATES)[number];
 
+/** The design token each state's color comes from (PRD 8.3); closed is the console's grey. */
+export const STATE_TOKEN: Record<IssueState, `--${string}`> = {
+  waiting: '--warning',
+  claimed: '--running',
+  'pr-open': '--running',
+  'needs-owner': '--error',
+  merged: '--success',
+  closed: '--text-tertiary',
+};
+
 const CLOSED_STATES: ReadonlySet<IssueState> = new Set(['merged', 'closed']);
 
 interface IssueRow {
@@ -110,26 +120,33 @@ export function longestOpenChain({ issues, dependencies }: IssueGraph): number[]
   for (const { from, on } of dependencies) {
     if (open.has(from) && open.has(on)) dependsOn.set(from, [...(dependsOn.get(from) ?? []), on]);
   }
+  // Only a chain whose walk cut no cycle is the longest from its issue whatever led there; one
+  // that cut a cycle depended on which issues the walk was already inside.
   const chains = new Map<number, number[]>();
   const visiting = new Set<number>();
-  const chainFrom = (number: number): number[] => {
+  const chainFrom = (number: number): { chain: number[]; cut: boolean } => {
     const known = chains.get(number);
-    if (known) return known;
+    if (known) return { chain: known, cut: false };
     visiting.add(number);
     let longest: number[] = [];
+    let cut = false;
     for (const next of dependsOn.get(number) ?? []) {
-      if (visiting.has(next)) continue;
-      const chain = chainFrom(next);
-      if (chain.length > longest.length) longest = chain;
+      if (visiting.has(next)) {
+        cut = true;
+        continue;
+      }
+      const found = chainFrom(next);
+      cut ||= found.cut;
+      if (found.chain.length > longest.length) longest = found.chain;
     }
     visiting.delete(number);
     const chain = [number, ...longest];
-    chains.set(number, chain);
-    return chain;
+    if (!cut) chains.set(number, chain);
+    return { chain, cut };
   };
   let longest: number[] = [];
   for (const number of [...open].sort((a, b) => a - b)) {
-    const chain = chainFrom(number);
+    const { chain } = chainFrom(number);
     if (chain.length > longest.length) longest = chain;
   }
   return longest.length >= 2 ? longest : [];

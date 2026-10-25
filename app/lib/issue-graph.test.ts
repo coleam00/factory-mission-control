@@ -104,6 +104,23 @@ test('a dependency cycle ends the chain instead of looping', () => {
   expect(longestOpenChain(g)).toHaveLength(3);
 });
 
+test('a chain found while a cycle was cut is not reused as the longest from that issue', () => {
+  // From 1 the walk reaches 2 while 1 is in progress, so 2's chain then stops short of 1.
+  const g = graph([
+    issue(1, 'waiting'),
+    issue(2, 'waiting'),
+    issue(3, 'waiting'),
+    issue(5, 'waiting'),
+    issue(6, 'waiting'),
+    edge(1, 2),
+    edge(2, 1),
+    edge(1, 5),
+    edge(5, 6),
+    edge(3, 2),
+  ]);
+  expect(longestOpenChain(g)).toEqual([3, 2, 1, 5, 6]);
+});
+
 test('dagre places each issue below the issues it depends on, with a path for every edge', () => {
   const g = graph([
     issue(1, 'merged'),
