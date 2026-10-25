@@ -28,6 +28,14 @@ const TOKEN_SOURCES = ['index.css', 'theme.css'].map((f) =>
 
 class ProbeError extends Error {}
 
+/**
+ * Errors that mean the browser has not finished writing DevToolsActivePort: on Windows Chrome
+ * holds the file open while it writes it, so a read in that window fails with EBUSY or EPERM.
+ */
+const PORT_FILE_NOT_WRITTEN_YET = new Set(['ENOENT', 'EBUSY', 'EPERM']);
+
+const readPortFile = (path) => readFileSync(path, 'utf8');
+
 /** Every custom property each token file declares, in source order. */
 function tokenDeclarations(css) {
   const withoutComments = css.replace(/\/\*[\s\S]*?\*\//g, '');
@@ -73,7 +81,26 @@ async function poll(what, timeoutMs, attempt) {
   throw new ProbeError(`${what} did not happen within ${timeoutMs / 1000}s`);
 }
 
-async function launchBrowser() {
+/**
+ * Removes the browser's profile, retrying for up to 5 s while Windows still has a file in it
+ * locked after the browser exits. Bun's rmSync ignores `maxRetries`, so the retry is here.
+ */
+async function removeProfile(profile) {
+  const deadline = Date.now() + 5000;
+  for (;;) {
+    try {
+      rmSync(profile, { recursive: true, force: true });
+      return;
+    } catch (error) {
+      if (!['EBUSY', 'EPERM', 'ENOTEMPTY'].includes(error.code) || Date.now() >= deadline)
+        throw error;
+      await Bun.sleep(200);
+    }
+  }
+}
+
+/** Starts the browser and connects to it. `readPort` reads DevToolsActivePort; tests replace it. */
+export async function launchBrowser(readPort = readPortFile) {
   const profile = mkdtempSync(join(tmpdir(), 'design-probe-'));
   const args = [
     '--headless=new',
@@ -93,13 +120,19 @@ async function launchBrowser() {
       proc.kill();
       await Promise.race([exited, Bun.sleep(5000)]);
     }
-    rmSync(profile, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+    await removeProfile(profile);
   };
   try {
     const activePort = join(profile, 'DevToolsActivePort');
     const [port, path] = await poll('the browser opening its DevTools port', 20000, () => {
       if (proc.exitCode !== null) throw new ProbeError(`the browser exited with ${proc.exitCode}`);
-      const lines = existsSync(activePort) ? readFileSync(activePort, 'utf8').split('\n') : [];
+      let lines;
+      try {
+        lines = readPort(activePort).split('\n');
+      } catch (error) {
+        if (PORT_FILE_NOT_WRITTEN_YET.has(error.code)) return undefined;
+        throw error;
+      }
       return lines.length >= 2 && lines[1] ? lines : undefined;
     });
     return { cdp: await connect(`ws://127.0.0.1:${port.trim()}${path.trim()}`), close };
@@ -476,9 +509,9 @@ async function probeAt(cdp, session, url, width, tokenLayers) {
   };
 }
 
-async function probe(url) {
+export async function probe(url, readPort = readPortFile) {
   const tokenLayers = TOKEN_SOURCES.map((path) => tokenDeclarations(readFileSync(path, 'utf8')));
-  const browser = await launchBrowser();
+  const browser = await launchBrowser(readPort);
   try {
     const { cdp } = browser;
     const { targetId } = await cdp.send('Target.createTarget', { url: 'about:blank' });
