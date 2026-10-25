@@ -4,9 +4,9 @@
   "holdout": ".factory/holdout/HOLDOUT.md",
   "driver": "http",
   "http": {
-    "start": "",
-    "health_path": "/health",
-    "health_contains": "",
+    "start": "bun run serve -- --port {port}",
+    "health_path": "/api/health",
+    "health_contains": "\"status\":\"ok\"",
     "boot_timeout_s": 45,
     "env": {}
   },

@@ -1,6 +1,6 @@
 """Reach the software under test. Three shapes cover almost everything.
 
-    http     a server. Started on a dynamic port, polled until it answers.
+    http     a server. Started on a free port in 8850-8864, polled until it answers.
     cli      a command. Invoked with args; stdout, stderr and exit code asserted.
     library  no process at all. The E2E imports it and calls it.
 
@@ -22,7 +22,7 @@ exists -- it is nearly free then and it is a rewrite afterwards.
 
 The universal parts, kept in one place because getting them wrong is subtle:
 
-  * a DYNAMIC port, so two laps cannot collide
+  * a FREE port, so two laps cannot collide
   * WAIT for an answer rather than sleeping; a sleep is a race you chose to lose
   * FAIL HARD if it never comes up -- never degrade to "not testable", which is how
     a crashed app becomes a green run
@@ -34,6 +34,7 @@ from __future__ import annotations
 
 import json
 import os
+import random
 import shlex
 import shutil
 import socket
@@ -51,10 +52,25 @@ class AppDidNotStart(RuntimeError):
     pass
 
 
+# Realtime accepts browser origins http://localhost:8850 through 8864 and no others, so an app
+# on any other port serves no live data (engineering.md: ports 8850-8864 only).
+APP_PORTS = range(8850, 8865)
+
+
 def _free_port() -> int:
-    with socket.socket() as s:
-        s.bind(("127.0.0.1", 0))
-        return int(s.getsockname()[1])
+    """A port in APP_PORTS nothing is listening on, tried from a random start so parallel
+    laps rarely race for the same one."""
+    start = random.randrange(len(APP_PORTS))
+    for port in [*APP_PORTS[start:], *APP_PORTS[:start]]:
+        with socket.socket() as s:
+            try:
+                s.bind(("127.0.0.1", port))
+            except OSError:
+                continue
+            return port
+    raise AppDidNotStart(
+        f"every port in {APP_PORTS.start}-{APP_PORTS.stop - 1} is taken; stop a lap holding one"
+    )
 
 
 def unquote(token: str) -> str:
@@ -95,7 +111,7 @@ def _argv(cmd: str) -> list[str]:
 
 # --------------------------------------------------------------------------- http
 class HttpApp:
-    """A server on a dynamic port, polled until healthy."""
+    """A server on a free port in APP_PORTS, polled until healthy."""
 
     def __init__(self, cfg: dict, env: dict | None = None) -> None:
         self.cfg = cfg.get("http", {})

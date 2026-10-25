@@ -9,6 +9,8 @@
 /tsconfig.json text eol=lf
 /biome.json text eol=lf
 /vite.config.ts text eol=lf
+/harness/*.js text eol=lf
+/harness/*.ts text eol=lf
 /fixtures/seed.sql text eol=lf
 /fixtures/expected-scorecard.json text eol=lf
 /fixtures/expected-scorecard.sql text eol=lf

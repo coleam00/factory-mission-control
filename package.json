@@ -5,7 +5,7 @@
   "scripts": {
     "setup": "vite build",
     "serve": "bun server/main.ts",
-    "check": "tsc --noEmit && biome check && bun test app server scripts parsers db function",
+    "check": "tsc --noEmit && biome check && bun test app server harness scripts parsers db function",
     "function:dev": "bun function/dev.ts",
     "migrate": "bun scripts/migrate.ts",
     "migrate:main": "bun scripts/migrate.ts --main",
