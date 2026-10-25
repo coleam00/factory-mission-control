@@ -1,19 +1,20 @@
 import { expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { createMemoryRouter, RouterProvider } from 'react-router';
-import type { ScorecardRow } from '../lib/scorecard';
+import type { LapRow, ScorecardRow } from '../lib/scorecard';
 import { ScorecardView } from './Scorecard';
 
 const V1 = `sha256:${'a1'.repeat(32)}`;
 const V2 = `sha256:${'b2'.repeat(32)}`;
 
 /** `n` finished laps of `digest`, an hour apart; the first `merged` of them merge. */
-function laps(digest: string, n: number, merged: number): ScorecardRow[] {
+function laps(digest: string, n: number, merged: number): LapRow[] {
   return Array.from({ length: n }, (_, i) => {
     const start = new Date(Date.UTC(2026, 9, 1, i));
     return {
       run_id: `${digest.slice(7, 11)}-${String(i).padStart(2, '0')}`,
       digest,
+      workflow_name: 'archon-loop',
       status: 'completed',
       started_at: start,
       completed_at: new Date(start.getTime() + 30 * 60_000),
@@ -23,6 +24,9 @@ function laps(digest: string, n: number, merged: number): ScorecardRow[] {
       route: null,
       outcome: i < merged ? 'merged' : 'refused',
       reason: i < merged ? 'Merged.' : 'it changes ci.yml',
+      holdout_catches: 0,
+      pin_sha: null,
+      committed_at: null,
     };
   });
 }
@@ -110,4 +114,39 @@ test('with no version picked, or one no lap ran, it is an empty state linking to
     expect(html).toContain('href="/f/mission-control/versions"');
   }
   expect(render([], undefined)).toContain('Pick a version on the versions screen');
+});
+
+test('each version is named by the pin before its first run, as the versions screen names it', () => {
+  const pin = (sha: string, at: string): ScorecardRow => ({
+    run_id: null,
+    pin_sha: sha,
+    committed_at: new Date(at),
+  });
+  const rows = [
+    ...laps(V1, 2, 1),
+    ...laps(V2, 2, 1).map((r) => ({ ...r, started_at: new Date('2026-10-09T00:00:00Z') })),
+    pin('8e3e1cefaf1e1b7955789d6a43a81b6c2dbd7082', '2026-09-30T18:00:00Z'),
+  ];
+  const header = (html: string, side: string) =>
+    new RegExp(
+      `<div data-version="${side}" data-digest="[^"]*"( data-pin="([^"]*)")?[^>]*>(.*?)</div></div>`,
+    ).exec(html);
+  const before = render(rows, V1, V2);
+  expect(header(before, 'a')?.[2]).toBe('8e3e1cefaf1e1b7955789d6a43a81b6c2dbd7082');
+  expect(header(before, 'a')?.[3]).toContain('8e3e1cef');
+  expect(header(before, 'a')?.[3]).toContain('first run 2026-10-01');
+  expect(header(before, 'b')?.[2]).toBe('8e3e1cefaf1e1b7955789d6a43a81b6c2dbd7082');
+
+  const after = render(
+    [...rows, pin('5ffd60c6c6e591487f2fbb5ec67ccc8fc55ca915', '2026-10-05T00:00:00Z')],
+    V1,
+    V2,
+  );
+  expect(header(after, 'a')?.[2]).toBe('8e3e1cefaf1e1b7955789d6a43a81b6c2dbd7082');
+  expect(header(after, 'b')?.[2]).toBe('5ffd60c6c6e591487f2fbb5ec67ccc8fc55ca915');
+  expect(header(after, 'b')?.[3]).toContain('5ffd60c6');
+
+  const unpinned = render(laps(V1, 2, 1), V1);
+  expect(header(unpinned, 'a')?.[1]).toBeUndefined();
+  expect(header(unpinned, 'a')?.[3]).toContain('not recorded');
 });

@@ -1,14 +1,16 @@
 /**
- * The scorecard of one factory version, from `db/queries/scorecard.sql`'s step-level rows, by the
- * definitions in PRD 4.2. Where 4.2 does not say how an unfinished lap counts, this follows
- * `fixtures/expected-scorecard.sql`: count measures and cost use every lap, the time measures use
+ * The scorecard of one factory version, from `db/queries/scorecard.sql`'s rows (one per finished
+ * attempt of a lap's step, so a step that ran twice counts twice), by the definitions in PRD 4.2.
+ * A lap is an `archon-loop` run whatever its status (owner decision on #16, as
+ * `fixtures/expected-scorecard.sql`): count measures and cost use every lap, the time measures use
  * finished laps. Pure, no React.
  */
 
-/** One step of one lap, or (`step_id` `holdout-catch`) one new holdout catch of that lap. */
-export interface ScorecardRow {
+/** One finished attempt of one lap's step, or (`step_id` null) a lap with none yet. */
+export interface LapRow {
   run_id: string;
   digest: string;
+  workflow_name: string;
   status: string;
   started_at: Date | null;
   completed_at: Date | null;
@@ -18,19 +20,37 @@ export interface ScorecardRow {
   route: string | null;
   outcome: string | null;
   reason: string | null;
+  /** The attempt's new holdout catches (a check-app attempt's only). */
+  holdout_catches: number | null;
+  pin_sha: null;
+  committed_at: null;
 }
 
-export const HOLDOUT_CATCH = 'holdout-catch';
+/** A pin, which labels the versions whose first run came after it (as the version strip does). */
+export interface PinRow {
+  run_id: null;
+  pin_sha: string;
+  committed_at: Date;
+}
+
+export type ScorecardRow = LapRow | PinRow;
+
+const isLap = (row: ScorecardRow): row is LapRow => row.run_id !== null;
+
+/** PRD 4.2: a lap is an `archon-loop` run. */
+export const LAP_WORKFLOW = 'archon-loop';
 
 export interface Lap {
   id: string;
   status: string;
   startedAt: Date | null;
   endedAt: Date | null;
-  route: string | null;
-  review: string | null;
-  land: string | null;
-  landReason: string | null;
+  /** Each attempt's output, in no particular order: a step may run more than once in a lap. */
+  routes: readonly string[];
+  reviews: readonly string[];
+  lands: readonly string[];
+  /** The `reason` of each `land` attempt that refused. */
+  refusals: readonly string[];
   checkAppMs: number;
   cost: number;
   catches: number;
@@ -45,9 +65,12 @@ const isFinished = (lap: Lap): lap is FinishedLap => lap.startedAt !== null && l
 
 /** The laps that ran `digest`, by start (a lap not yet started last), then id. */
 export function versionLaps(rows: readonly ScorecardRow[], digest: string): Lap[] {
-  const laps = new Map<string, Lap>();
+  const laps = new Map<
+    string,
+    Lap & { routes: string[]; reviews: string[]; lands: string[]; refusals: string[] }
+  >();
   for (const row of rows) {
-    if (row.digest !== digest) continue;
+    if (!isLap(row) || row.digest !== digest || row.workflow_name !== LAP_WORKFLOW) continue;
     let lap = laps.get(row.run_id);
     if (lap === undefined) {
       lap = {
@@ -55,30 +78,48 @@ export function versionLaps(rows: readonly ScorecardRow[], digest: string): Lap[
         status: row.status,
         startedAt: row.started_at,
         endedAt: row.completed_at,
-        route: null,
-        review: null,
-        land: null,
-        landReason: null,
+        routes: [],
+        reviews: [],
+        lands: [],
+        refusals: [],
         checkAppMs: 0,
         cost: 0,
         catches: 0,
       };
       laps.set(row.run_id, lap);
     }
-    if (row.step_id === HOLDOUT_CATCH) {
-      lap.catches++;
-      continue;
-    }
+    if (row.step_id === null) continue;
     lap.cost += row.cost_usd ?? 0;
-    if (row.step_id === 'pick') lap.route = row.route;
-    else if (row.step_id === 'review') lap.review = row.outcome;
-    else if (row.step_id === 'land') {
-      lap.land = row.outcome;
-      lap.landReason = row.reason;
-    } else if (row.step_id === 'check-app') lap.checkAppMs = row.duration_ms ?? 0;
+    lap.catches += row.holdout_catches ?? 0;
+    if (row.step_id === 'pick' && row.route !== null) lap.routes.push(row.route);
+    else if (row.step_id === 'review' && row.outcome !== null) lap.reviews.push(row.outcome);
+    else if (row.step_id === 'land' && row.outcome !== null) {
+      lap.lands.push(row.outcome);
+      if (row.outcome === 'refused' && row.reason !== null) lap.refusals.push(row.reason);
+    } else if (row.step_id === 'check-app') lap.checkAppMs += row.duration_ms ?? 0;
   }
   const at = (lap: Lap) => lap.startedAt?.getTime() ?? Number.POSITIVE_INFINITY;
   return [...laps.values()].sort((a, b) => at(a) - at(b) || a.id.localeCompare(b.id));
+}
+
+/** How the version strip labels `digest`: its first run of any workflow, and the pin before it. */
+export function versionPin(
+  rows: readonly ScorecardRow[],
+  digest: string,
+): { firstRunAt: Date | null; pin: string | null } {
+  let first: number | null = null;
+  for (const row of rows) {
+    if (!isLap(row) || row.digest !== digest || row.started_at === null) continue;
+    const t = row.started_at.getTime();
+    if (first === null || t < first) first = t;
+  }
+  if (first === null) return { firstRunAt: null, pin: null };
+  let pin: PinRow | null = null;
+  for (const row of rows) {
+    if (isLap(row) || row.committed_at.getTime() >= first) continue;
+    if (pin === null || row.committed_at.getTime() > pin.committed_at.getTime()) pin = row;
+  }
+  return { firstRunAt: new Date(first), pin: pin?.pin_sha ?? null };
 }
 
 export type MeasureKey =
@@ -153,7 +194,7 @@ function activeHours(laps: readonly FinishedLap[]): number {
   return hours.size;
 }
 
-/** Every 4.2 measure over one version's laps. A sum over no laps is 0; only division is n/a. */
+/** Every 4.2 measure over one version's laps. A count over no laps is 0; only division is n/a. */
 export function scorecard(laps: readonly Lap[]): Scorecard {
   const all = laps.map((lap) => lap.id);
   const finished = laps.filter(isFinished);
@@ -163,7 +204,7 @@ export function scorecard(laps: readonly Lap[]): Scorecard {
     return { value: counted.length, laps: all, counted };
   };
 
-  const merges = count((lap) => lap.land === 'merged');
+  const merges = count((lap) => lap.lands.includes('merged'));
   const hours = activeHours(finished);
   const lapMs = sum(finished.map((lap) => lap.endedAt.getTime() - lap.startedAt.getTime()));
   const checkAppMs = sum(finished.map((lap) => lap.checkAppMs));
@@ -172,13 +213,17 @@ export function scorecard(laps: readonly Lap[]): Scorecard {
   return {
     laps: count(() => true),
     merges,
-    empty_laps: count((lap) => lap.route === 'none'),
+    empty_laps: count((lap) => lap.routes.includes('none')),
     failed_laps: count((lap) => lap.status === 'failed'),
-    send_backs: count((lap) => lap.review === 'sent-back'),
-    gate_refusals: count((lap) => lap.land === 'refused'),
+    send_backs: count((lap) => lap.reviews.includes('sent-back')),
+    gate_refusals: count((lap) => lap.lands.includes('refused')),
     active_hours: { value: hours, laps: finishedIds },
     merges_per_active_hour: { value: ratio(merges.value, hours), laps: finishedIds },
-    lap_hours_per_merge: { value: ratio(lapMs / HOUR_MS, merges.value), laps: finishedIds },
+    // A sum over no finished lap has no duration to divide (the oracle's sum is NULL), so n/a.
+    lap_hours_per_merge: {
+      value: finished.length === 0 ? null : ratio(lapMs / HOUR_MS, merges.value),
+      laps: finishedIds,
+    },
     app_check_share: { value: ratio(checkAppMs, lapMs), laps: finishedIds },
     cost_per_merge: { value: ratio(sum(laps.map((lap) => lap.cost)), merges.value), laps: all },
     new_holdout_catches: {

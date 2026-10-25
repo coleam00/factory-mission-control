@@ -21,7 +21,7 @@ afterAll(() => db.close());
 
 beforeEach(async () => {
   await db.query(`TRUNCATE public.remote_agent_workflow_runs, public.remote_agent_codebases CASCADE;
-    TRUNCATE mc.laps, mc.lap_steps, mc.app_check_lines, mc.projection_errors, mc.factories`);
+    TRUNCATE mc.laps, mc.lap_steps, mc.lap_step_attempts, mc.app_check_lines, mc.projection_errors, mc.factories`);
   runId = await newRun();
 });
 
@@ -199,9 +199,13 @@ test('every projection function stops a lock wait after 100 ms, and only inside 
     JOIN pg_namespace n ON n.oid = p.pronamespace JOIN pg_language l ON l.oid = p.prolang
     WHERE n.nspname = 'mc' AND l.lanname = 'plpgsql' ORDER BY p.proname`);
   expect(functions).toEqual(
-    ['project_app_check_lines', 'project_run', 'project_step_event', 'record_projection_error'].map(
-      (proname) => ({ proname, proconfig: ['lock_timeout=100ms'] }),
-    ),
+    [
+      'project_app_check_lines',
+      'project_run',
+      'project_step_event',
+      'record_projection_error',
+      'record_step_attempt',
+    ].map((proname) => ({ proname, proconfig: ['lock_timeout=100ms'] })),
   );
 
   await stepEvent('check-app', 'node_completed');
@@ -378,7 +382,68 @@ test('replaying the same events leaves every row count unchanged', async () => {
   const once = await dashboardCounts();
   await lap();
   expect(await dashboardCounts()).toEqual(once);
-  expect(once).toMatchObject({ laps: 1, lap_steps: 2, app_check_lines: 3, projection_errors: 0 });
+  expect(once).toMatchObject({
+    laps: 1,
+    lap_steps: 2,
+    lap_step_attempts: 2,
+    app_check_lines: 3,
+    projection_errors: 0,
+  });
+});
+
+test('every finished attempt of a step is its own row, and goes with its step row', async () => {
+  const later = new Date(NOW.getTime() + 3_600_000);
+  const review = (outcome: string, at: Date) =>
+    insertEvent('node_completed', 'review', {
+      ...eventData('review', 'node_completed', at),
+      structured_output: { ...REVIEWED, outcome },
+    });
+  const report = structuredOutputFor('check-app') as { lines: Record<string, unknown>[] };
+  const holdout = { kind: 'holdout', verdict: 'FAIL', text: `H-07 ${MARKER}`, evidence: [] };
+  const checkApp = (lines: Record<string, unknown>[], at: Date) =>
+    insertEvent('node_completed', 'check-app', {
+      ...eventData('check-app', 'node_completed', at),
+      structured_output: { ...report, lines },
+    });
+  await review('sent-back', NOW);
+  await review('approved', later);
+  await checkApp([holdout, { ...holdout, pre_existing: 'baseline' }], NOW);
+  await checkApp([holdout, { ...holdout, verdict: ' fail\t' }, report.lines[0]], later);
+  await insertEvent('node_skipped', 'land', { reason: 'when: false' });
+
+  const attempts = () =>
+    db.query(`SELECT step_id, CASE WHEN isfinite(started_at) THEN started_at END AS started_at,
+        status, duration_ms, cost_usd, outcome, holdout_catches
+      FROM mc.lap_step_attempts ORDER BY step_id, mc.lap_step_attempts.started_at`);
+  const at = (d: Date) => new Date(d.getTime() - 184_250);
+  const cost = String(eventData('review', 'node_completed', NOW).cost_usd);
+  const done = { status: 'completed', duration_ms: 184_250, cost_usd: cost };
+  expect(await attempts()).toEqual([
+    { step_id: 'check-app', started_at: at(NOW), ...done, outcome: null, holdout_catches: 1 },
+    { step_id: 'check-app', started_at: at(later), ...done, outcome: null, holdout_catches: 2 },
+    {
+      step_id: 'land',
+      // No start time on the event: the step's one unstarted attempt (`-infinity`).
+      started_at: null,
+      status: 'skipped',
+      duration_ms: null,
+      cost_usd: null,
+      outcome: null,
+      holdout_catches: 0,
+    },
+    { step_id: 'review', started_at: at(NOW), ...done, outcome: 'sent-back', holdout_catches: 0 },
+    { step_id: 'review', started_at: at(later), ...done, outcome: 'approved', holdout_catches: 0 },
+  ]);
+  expect(
+    await db.query('SELECT step_id, output FROM mc.lap_steps WHERE step_id = $1', ['review']),
+  ).toEqual([{ step_id: 'review', output: expect.objectContaining({ outcome: 'approved' }) }]);
+  expect(await projectionErrors()).toEqual([]);
+  expect(await markerCount()).toBe(0);
+
+  await review('approved', later);
+  expect(await attempts()).toHaveLength(5);
+  await db.query(`DELETE FROM mc.lap_steps WHERE step_id = 'review'`);
+  expect((await attempts()).map((a) => a.step_id)).toEqual(['check-app', 'check-app', 'land']);
 });
 
 test('a replayed start never reopens a finished step, and a retry does', async () => {

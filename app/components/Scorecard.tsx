@@ -12,7 +12,9 @@ import {
   type ScorecardRow,
   scorecard,
   versionLaps,
+  versionPin,
 } from '../lib/scorecard';
+import { NOT_RECORDED } from '../lib/version-strip';
 import { LivePanel } from '../live/LivePanel';
 import { EmptyState } from './EmptyState';
 
@@ -31,6 +33,9 @@ interface Version {
   digest: string;
   laps: readonly Lap[];
   card: Card;
+  /** The version strip's label: the pin before the version's first run, and that run. */
+  pin: string | null;
+  firstRunAt: Date | null;
 }
 
 const short = (digest: string): string => digest.slice(0, 'sha256:'.length + 12);
@@ -96,7 +101,7 @@ export function ScorecardView({
       : ([['a', a]] as const)
   ).map(([side, digest]): Version => {
     const laps = versionLaps(rows, digest);
-    return { side, digest, laps, card: scorecard(laps) };
+    return { side, digest, laps, card: scorecard(laps), ...versionPin(rows, digest) };
   });
   const unrun = versions.find((v) => v.laps.length === 0);
   if (unrun) {
@@ -128,15 +133,24 @@ export function ScorecardView({
   );
 }
 
+/** Labelled as the versions screen labels it: the pin, then the date of its first run. */
 function VersionHeader({ version }: { version: Version }): ReactElement {
-  const first = version.laps[0]?.startedAt;
+  const first = version.firstRunAt;
   return (
-    <div data-version={version.side} data-digest={version.digest} className="min-w-0">
+    <div
+      data-version={version.side}
+      data-digest={version.digest}
+      data-pin={version.pin ?? undefined}
+      className="min-w-0"
+    >
       <div className={LABEL}>Version {version.side.toUpperCase()}</div>
-      <div className={`${MONO} break-all text-text-primary`}>{short(version.digest)}</div>
+      <div className={`${MONO} text-text-primary`}>
+        {version.pin === null ? NOT_RECORDED : version.pin.slice(0, 8)}
+      </div>
+      <div className={`${MONO} break-all text-text-secondary`}>{short(version.digest)}</div>
       {first ? (
         <div className={`${MONO} text-text-secondary`}>
-          first lap {first.toISOString().slice(0, 10)}
+          first run {first.toISOString().slice(0, 10)}
         </div>
       ) : null}
     </div>
@@ -203,7 +217,7 @@ function MeasureCell({ measure, version }: { measure: Measure; version: Version 
               key={id}
               id={id}
               counted={measured.counted?.includes(id)}
-              reason={measure.key === 'gate_refusals' ? byId.get(id)?.landReason : null}
+              reasons={measure.key === 'gate_refusals' ? byId.get(id)?.refusals : undefined}
             />
           ))}
         </ol>
@@ -215,11 +229,11 @@ function MeasureCell({ measure, version }: { measure: Measure; version: Version 
 function LapLine({
   id,
   counted,
-  reason,
+  reasons,
 }: {
   id: string;
   counted: boolean | undefined;
-  reason: string | null | undefined;
+  reasons: readonly string[] | undefined;
 }): ReactElement {
   return (
     <li
@@ -233,9 +247,15 @@ function LapLine({
       {counted ? (
         <span className="ml-2 font-semibold uppercase tracking-[0.05em] text-success">counted</span>
       ) : null}
-      {counted && reason ? (
-        <p className="break-words font-sans text-[12px] text-text-secondary">{reason}</p>
-      ) : null}
+      {counted
+        ? reasons?.map((reason, i) => (
+            // A reason can repeat when the gate refused twice for the same thing.
+            // biome-ignore lint/suspicious/noArrayIndexKey: the list never reorders
+            <p key={i} className="break-words font-sans text-[12px] text-text-secondary">
+              {reason}
+            </p>
+          ))
+        : null}
     </li>
   );
 }

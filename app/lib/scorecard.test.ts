@@ -2,19 +2,22 @@ import { expect, test } from 'bun:test';
 import {
   dataValue,
   difference,
-  HOLDOUT_CATCH,
+  type LapRow,
   type Measured,
   meaningful,
+  type PinRow,
   type ScorecardRow,
   scorecard,
   versionLaps,
+  versionPin,
 } from './scorecard';
 
 const V = 'sha256:a1';
 
-const row = (run: string, over: Partial<ScorecardRow> = {}): ScorecardRow => ({
+const row = (run: string, over: Partial<LapRow> = {}): LapRow => ({
   run_id: run,
   digest: V,
+  workflow_name: 'archon-loop',
   status: 'completed',
   started_at: new Date('2026-10-01T08:00:00Z'),
   completed_at: new Date('2026-10-01T08:30:00Z'),
@@ -24,14 +27,23 @@ const row = (run: string, over: Partial<ScorecardRow> = {}): ScorecardRow => ({
   route: null,
   outcome: null,
   reason: null,
+  holdout_catches: 0,
+  pin_sha: null,
+  committed_at: null,
   ...over,
 });
 
-const step = (run: string, step_id: string, over: Partial<ScorecardRow> = {}) =>
+const step = (run: string, step_id: string, over: Partial<LapRow> = {}) =>
   row(run, { step_id, ...over });
 
+const pin = (sha: string, at: string): PinRow => ({
+  run_id: null,
+  pin_sha: sha,
+  committed_at: new Date(at),
+});
+
 /** One lap's rows, each with the lap's times. */
-const lap = (run: string, start: string | null, end: string | null, steps: ScorecardRow[] = []) =>
+const lap = (run: string, start: string | null, end: string | null, steps: LapRow[] = []) =>
   (steps.length === 0 ? [row(run)] : steps).map((r) => ({
     ...r,
     run_id: run,
@@ -60,9 +72,8 @@ test('each count is the laps its 4.2 definition names, and lists them', () => {
     ...lap('r', '2026-10-01T08:00:00Z', '2026-10-01T08:50:00Z', [
       step('r', 'land', { outcome: 'refused', reason: 'it changes ci.yml' }),
     ]),
-    step('r', HOLDOUT_CATCH),
-    step('r', HOLDOUT_CATCH),
-    step('s', HOLDOUT_CATCH),
+    step('r', 'check-app', { holdout_catches: 2 }),
+    step('s', 'check-app', { holdout_catches: 1 }),
   ];
   const s = card(rows);
   expect(s.laps).toEqual({
@@ -86,7 +97,7 @@ test('each count is the laps its 4.2 definition names, and lists them', () => {
     expect(s[key].value).toBe(1);
     expect(s[key].laps).toHaveLength(5);
   }
-  expect(versionLaps(rows, V).find((l) => l.id === 'r')?.landReason).toBe('it changes ci.yml');
+  expect(versionLaps(rows, V).find((l) => l.id === 'r')?.refusals).toEqual(['it changes ci.yml']);
 });
 
 test('a lap from 09:50 to 10:10 UTC spans two active hours; two laps in one hour count it once', () => {
@@ -162,6 +173,69 @@ test('lap-hours per merge and app-check share on known durations, to 4 decimals'
   expect(s.app_check_share.value).toBe(0.2222);
   expect(dataValue(s.app_check_share.value)).toBe('0.2222');
   expect(s.merges_per_active_hour.value).toBe(0.6667);
+});
+
+test('a step that ran twice in a lap counts both attempts', () => {
+  const s = card(
+    lap('x', '2026-10-01T08:00:00Z', '2026-10-01T09:00:00Z', [
+      step('x', 'check-app', { duration_ms: 600_000, cost_usd: 1, holdout_catches: 1 }),
+      step('x', 'review', { outcome: 'sent-back', cost_usd: 0.5 }),
+      step('x', 'build', { cost_usd: 2 }),
+      step('x', 'check-app', { duration_ms: 300_000, cost_usd: 1, holdout_catches: 1 }),
+      step('x', 'review', { outcome: 'approved', cost_usd: 0.5 }),
+      step('x', 'land', { outcome: 'refused', reason: 'the checks failed' }),
+      step('x', 'land', { outcome: 'merged' }),
+    ]),
+  );
+  expect(s.send_backs).toMatchObject({ value: 1, counted: ['x'] });
+  expect(s.merges.value).toBe(1);
+  expect(s.gate_refusals.value).toBe(1);
+  // 900 000 ms of check-app over a 3 600 000 ms lap; $5 over every attempt of every step.
+  expect(s.app_check_share.value).toBe(0.25);
+  expect(s.cost_per_merge.value).toBe(5);
+  expect(s.new_holdout_catches).toMatchObject({ value: 2, counted: ['x'] });
+});
+
+test('with merges but no finished lap, lap-hours per merge is n/a, not 0', () => {
+  const s = card(
+    lap('x', '2026-10-01T09:00:00Z', null, [step('x', 'land', { outcome: 'merged' })]),
+  );
+  expect(s.merges.value).toBe(1);
+  expect(s.lap_hours_per_merge).toEqual({ value: null, laps: [] });
+  expect(dataValue(s.lap_hours_per_merge.value)).toBe('n/a');
+});
+
+test('a run of another workflow is not a lap', () => {
+  const s = card([
+    ...lap('loop', '2026-10-01T08:00:00Z', '2026-10-01T09:00:00Z'),
+    ...lap('manager', '2026-10-01T08:00:00Z', '2026-10-01T09:00:00Z').map((r) => ({
+      ...r,
+      workflow_name: 'archon-manager',
+    })),
+  ]);
+  expect(s.laps.laps).toEqual(['loop']);
+});
+
+test('a version is labelled by the last pin before its first run of any workflow', () => {
+  const rows: ScorecardRow[] = [
+    ...lap('loop', '2026-10-05T08:00:00Z', '2026-10-05T09:00:00Z'),
+    ...lap('manager', '2026-10-03T08:00:00Z', null).map((r) => ({
+      ...r,
+      workflow_name: 'archon-manager',
+    })),
+    pin('old', '2026-10-01T00:00:00Z'),
+    pin('before', '2026-10-02T00:00:00Z'),
+    pin('after', '2026-10-04T00:00:00Z'),
+  ];
+  expect(versionPin(rows, V)).toEqual({
+    firstRunAt: new Date('2026-10-03T08:00:00Z'),
+    pin: 'before',
+  });
+  expect(versionPin(rows.slice(0, 2), V)).toEqual({
+    firstRunAt: new Date('2026-10-03T08:00:00Z'),
+    pin: null,
+  });
+  expect(versionPin(rows, 'sha256:none')).toEqual({ firstRunAt: null, pin: null });
 });
 
 test("another version's rows are ignored", () => {

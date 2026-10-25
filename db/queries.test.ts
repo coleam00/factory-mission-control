@@ -7,6 +7,7 @@ import {
   type ScorecardRow,
   scorecard,
   versionLaps,
+  versionPin,
 } from '../app/lib/scorecard';
 import { seededDb } from '../scripts/fixture/seed';
 import { writeRow } from '../scripts/fixture/write';
@@ -149,6 +150,19 @@ describe('scorecard on the seed', () => {
         }),
       );
       expect({ digest, measures: shown }).toEqual({ digest, measures });
+    }
+  });
+
+  test('names each seed version by the pin the version strip names it by', async () => {
+    const rows = (await db.query(sql, ['mission-control'])) as unknown as ScorecardRow[];
+    const strip = queries.find(([name]) => name === 'version-strip')?.[1] as string;
+    const versions = (await db.query(strip, ['mission-control'])).filter((r) => r.digest !== null);
+    expect(versions).toHaveLength(3);
+    for (const { digest, pin_sha, first_run_at } of versions) {
+      expect(versionPin(rows, String(digest))).toEqual({
+        firstRunAt: new Date(first_run_at as string),
+        pin: pin_sha as string,
+      });
     }
   });
 });
