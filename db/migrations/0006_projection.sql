@@ -21,8 +21,9 @@ END;
 $$;
 
 -- A check-app report's lines, by 1-based position, without their text: a holdout line keeps only
--- the first H-<nn> in its text, or `unidentified` (PRD 6.3, 11.7). An empty kind reads as a
--- defect, as the merge gate's readAppCheck reads it.
+-- the first H-<nn> in its text, or `unidentified` (PRD 6.3, 11.7), matched as parsers/metrics.ts
+-- holdoutId matches /\bH-\d{2,}\b/. An empty kind reads as a defect, as the merge gate's
+-- readAppCheck reads it.
 CREATE OR REPLACE FUNCTION mc.project_app_check_lines(p_run_id uuid, p_lines jsonb)
 RETURNS void LANGUAGE plpgsql AS $$
 BEGIN
@@ -37,7 +38,9 @@ BEGIN
       THEN jsonb_array_length(l.line -> 'evidence') ELSE 0 END,
     btrim(coalesce(l.line ->> 'pre_existing', '')),
     CASE WHEN k.kind = 'holdout'
-      THEN coalesce(substring(l.line ->> 'text' FROM 'H-[0-9]{2,}'), 'unidentified') END
+      THEN coalesce(
+        substring(l.line ->> 'text' FROM '(?<![A-Za-z0-9_])H-[0-9]{2,}(?![A-Za-z0-9_])'),
+        'unidentified') END
   FROM jsonb_array_elements(p_lines) WITH ORDINALITY AS l(line, position)
   CROSS JOIN LATERAL (SELECT coalesce(nullif(btrim(l.line ->> 'kind'), ''), 'defect') AS kind) k
   ON CONFLICT (run_id, position) DO UPDATE SET
@@ -51,11 +54,34 @@ BEGIN
 END;
 $$;
 
+-- What a step's output keeps in mc.lap_steps. The check-app and review steps read holdout
+-- results, so their free text can quote a holdout line: they keep only their outcome fields, and
+-- a review disposition only its action and the line's leading id (as the merge gate's
+-- parseDispositions reads it). Any other step keeps its output without `lines`.
+CREATE OR REPLACE FUNCTION mc.step_output(p_step text, p_output jsonb)
+RETURNS jsonb LANGUAGE sql IMMUTABLE AS $$
+  SELECT CASE p_step
+    WHEN 'check-app' THEN (SELECT jsonb_object_agg(key, value) FROM jsonb_each(p_output)
+      WHERE key IN ('pr', 'head', 'merged_with', 'overall'))
+    WHEN 'review' THEN (SELECT jsonb_object_agg(key, CASE
+        WHEN key <> 'dispositions' THEN value
+        WHEN jsonb_typeof(value) = 'array' THEN (
+          SELECT coalesce(jsonb_agg(jsonb_build_object(
+              'line', upper(substring(d.entry ->> 'line' FROM '^[A-Za-z]+[0-9]+')),
+              'action', d.entry -> 'action') ORDER BY d.n), '[]')
+          FROM jsonb_array_elements(value) WITH ORDINALITY AS d(entry, n))
+        END)
+      FROM jsonb_each(p_output)
+      WHERE key IN ('outcome', 'pr', 'sha', 'delivers', 'dispositions'))
+    ELSE p_output - 'lines'
+  END
+$$;
+
 -- One step row per (run, step_name). A step finishes at its start plus its duration, both on
 -- Archon's clock, or else when the event was written. A node_started resets the row only while
 -- it is running or when it starts after the row's last attempt finished (a retry), so a replayed
--- start never reopens a finished step. The check-app step's output keeps only its outcome fields: its lines,
--- summary and noticed items can quote holdout text.
+-- start never reopens a finished step. A check-app report whose lines cannot be projected keeps
+-- its step row; the lines' error is recorded on its own.
 CREATE OR REPLACE FUNCTION mc.project_step_event() RETURNS trigger LANGUAGE plpgsql AS $$
 DECLARE
   v_output jsonb;
@@ -71,12 +97,7 @@ BEGIN
   IF jsonb_typeof(v_output) = 'null' THEN
     v_output := NULL;
   END IF;
-  IF NEW.step_name = 'check-app' THEN
-    v_output := (SELECT jsonb_object_agg(key, value) FROM jsonb_each(v_output)
-      WHERE key IN ('pr', 'head', 'merged_with', 'overall'));
-  ELSE
-    v_output := v_output - 'lines';
-  END IF;
+  v_output := mc.step_output(NEW.step_name, v_output);
   v_started := (NEW.data -> 'timing' ->> 'startedAt')::timestamptz;
   v_duration := coalesce(NEW.data ->> 'duration_ms', NEW.data -> 'timing' ->> 'durationMs');
   v_model := coalesce(NEW.data -> 'model_usage' ->> 'resolved', NEW.data ->> 'model');
@@ -136,8 +157,12 @@ BEGIN
       output = EXCLUDED.output;
     IF NEW.event_type = 'node_completed' AND NEW.step_name = 'check-app'
       AND NEW.data -> 'structured_output' ? 'lines' THEN
-      PERFORM mc.project_app_check_lines(NEW.workflow_run_id,
-        NEW.data -> 'structured_output' -> 'lines');
+      BEGIN
+        PERFORM mc.project_app_check_lines(NEW.workflow_run_id,
+          NEW.data -> 'structured_output' -> 'lines');
+      EXCEPTION WHEN OTHERS THEN
+        PERFORM mc.record_projection_error(TG_NAME, NEW.workflow_run_id, NEW.id, SQLSTATE, SQLERRM);
+      END;
     END IF;
   END IF;
   RETURN NULL;

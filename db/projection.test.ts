@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, beforeEach, expect, test } from 'bun:test';
+import { holdoutId } from '../parsers/metrics';
 import { eventData, structuredOutputFor } from '../scripts/fixture/write';
 import type { Db, Row } from '../scripts/lib/db';
 import { runMigrations } from '../scripts/migrate';
@@ -7,6 +8,7 @@ import { archonDb, migrationFiles } from './test-db';
 const NOW = new Date('2026-10-25T12:00:00Z');
 const DIGEST = `sha256:${'ab'.repeat(32)}`;
 const MARKER = 'HOLDOUT-TEXT-MARKER';
+const REVIEWED = structuredOutputFor('review') as { sha: string };
 
 let db: Db;
 let runId: string;
@@ -58,6 +60,22 @@ async function dashboardCounts(): Promise<Record<string, number>> {
   return counts;
 }
 
+/** How many values in every mc text and json column contain the marker. */
+async function markerCount(): Promise<number> {
+  const columns = await db.query(`SELECT table_name, column_name FROM information_schema.columns
+    WHERE table_schema = 'mc' AND data_type IN ('text', 'character varying', 'jsonb', 'json')`);
+  expect(columns.length).toBeGreaterThan(0);
+  let found = 0;
+  for (const { table_name, column_name } of columns) {
+    const [row] = await db.query(
+      `SELECT count(*)::int AS n FROM mc.${table_name} WHERE ${column_name}::text LIKE $1`,
+      [`%${MARKER}%`],
+    );
+    found += Number(row?.n);
+  }
+  return found;
+}
+
 async function projectionErrors(): Promise<Row[]> {
   return db.query('SELECT source, run_id, event_id, sqlstate, message FROM mc.projection_errors');
 }
@@ -83,7 +101,7 @@ test('a started then completed step is one completed row with the event’s timi
       tokens_cache_write: 8_333,
       cost_usd: String(completed.cost_usd),
       error: null,
-      output: structuredOutputFor('review'),
+      output: { outcome: 'merge', pr: '#29', sha: REVIEWED.sha, delivers: 'all', dispositions: [] },
     },
   ]);
   expect(await projectionErrors()).toEqual([]);
@@ -238,18 +256,80 @@ test('check-app lines keep kind, verdict, evidence count and only a holdout’s 
     { output: { pr: '#29', head: report.head, merged_with: report.merged_with, overall: 'PASS' } },
   ]);
 
-  const columns = await db.query(`SELECT table_name, column_name FROM information_schema.columns
-    WHERE table_schema = 'mc' AND data_type IN ('text', 'character varying', 'jsonb', 'json')`);
-  let found = 0;
-  for (const { table_name, column_name } of columns) {
-    const [row] = await db.query(
-      `SELECT count(*)::int AS n FROM mc.${table_name} WHERE ${column_name}::text LIKE $1`,
-      [`%${MARKER}%`],
-    );
-    found += Number(row?.n);
-  }
-  expect(columns.length).toBeGreaterThan(0);
-  expect(found).toBe(0);
+  expect(await markerCount()).toBe(0);
+});
+
+test('a review keeps its outcome and each disposition’s action and line id, never its text', async () => {
+  const data = eventData('review', 'node_completed', NOW);
+  const disposition = {
+    line: `h1 holdout FAIL H-07 ${MARKER} the lane never moves`,
+    action: 'blocks',
+    file: `review/${MARKER}.md`,
+    issue: MARKER,
+    reason: `H-07 ${MARKER}`,
+  };
+  await insertEvent('node_completed', 'review', {
+    ...data,
+    structured_output: {
+      ...structuredOutputFor('review'),
+      outcome: 'sent-back',
+      dispositions: [disposition, { ...disposition, line: MARKER, action: 'issue' }],
+      judge_changes: [{ file: 'holdouts/H-07.md', change: MARKER, approval: MARKER }],
+      reason: `Sent back: ${MARKER}`,
+    },
+  });
+
+  expect(await db.query('SELECT output FROM mc.lap_steps')).toEqual([
+    {
+      output: {
+        outcome: 'sent-back',
+        pr: '#29',
+        sha: REVIEWED.sha,
+        delivers: 'all',
+        dispositions: [
+          { line: 'H1', action: 'blocks' },
+          { line: null, action: 'issue' },
+        ],
+      },
+    },
+  ]);
+  expect(await projectionErrors()).toEqual([]);
+  expect(await markerCount()).toBe(0);
+});
+
+test('a holdout line’s scenario id is the one parsers/metrics.ts holdoutId reads', async () => {
+  const texts = [
+    'H-07 fine',
+    'PH-12 then H-07 seen',
+    'H-07a only',
+    'see H-123, then H-04',
+    'H-1 is too short',
+    'x_H-07 and (H-08)',
+    'no id at all',
+  ];
+  const report = structuredOutputFor('check-app') as { lines: Record<string, unknown>[] };
+  const holdout = report.lines[1];
+  await insertEvent('node_completed', 'check-app', {
+    ...eventData('check-app', 'node_completed', NOW),
+    structured_output: { ...report, lines: texts.map((text) => ({ ...holdout, text })) },
+  });
+  const rows = await db.query('SELECT scenario_id FROM mc.app_check_lines ORDER BY position');
+  expect(rows.map((row) => row.scenario_id)).toEqual(texts.map(holdoutId));
+});
+
+test('a check-app line that cannot be stored is recorded and the step row stays', async () => {
+  const report = structuredOutputFor('check-app') as { lines: Record<string, unknown>[] };
+  const [event] = await insertEvent('node_completed', 'check-app', {
+    ...eventData('check-app', 'node_completed', NOW),
+    structured_output: { ...report, lines: [{ ...report.lines[0], kind: 'remark' }] },
+  });
+  expect(await db.query('SELECT step_id, status FROM mc.lap_steps')).toEqual([
+    { step_id: 'check-app', status: 'completed' },
+  ]);
+  expect(await db.query('SELECT position FROM mc.app_check_lines')).toEqual([]);
+  expect(await projectionErrors()).toMatchObject([
+    { source: 'mc_project_step_event', event_id: event?.id, sqlstate: '23514' },
+  ]);
 });
 
 test('a shorter check-app report replaces the lines of an earlier one', async () => {
@@ -347,4 +427,23 @@ test('an update that changes nothing a lap shows does not fire the projection', 
     [runId],
   );
   expect(await db.query('SELECT status FROM mc.laps')).toEqual([{ status: 'stale' }]);
+});
+
+test('a lap follows a change of its run’s digest or codebase', async () => {
+  const [codebase] = await db.query(`INSERT INTO public.remote_agent_codebases (name)
+    VALUES ('mc-fence-proof') RETURNING id`);
+  const digest = `sha256:${'cd'.repeat(32)}`;
+  await db.query(`UPDATE public.remote_agent_workflow_runs SET metadata = $2 WHERE id = $1`, [
+    runId,
+    JSON.stringify({ workflow_source: { digest } }),
+  ]);
+  expect(await db.query('SELECT factory, digest FROM mc.laps')).toEqual([{ factory: '', digest }]);
+
+  await db.query(`UPDATE public.remote_agent_workflow_runs SET codebase_id = $2 WHERE id = $1`, [
+    runId,
+    codebase?.id,
+  ]);
+  expect(await db.query('SELECT factory, digest FROM mc.laps')).toEqual([
+    { factory: 'mc-fence-proof', digest },
+  ]);
 });
