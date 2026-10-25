@@ -176,8 +176,10 @@ const countIs = (target: number) =>
 const markTime = (name: string) => `performance.getEntriesByName('${name}')[0]?.startTime ?? null`;
 
 /**
- * One panel's timings. The strip's inserts are running laps; the map's are `fixture:write step`
- * events, timed from starting the command.
+ * One panel's timings. `readyMs` is from navigation (connection setup to Neon included);
+ * `firstSnapshotMs` is from the panel's subscribe being sent, once Realtime said `ready` on its
+ * socket, to its rows on screen (owner decision on #13). The strip's inserts are running laps;
+ * the map's are `fixture:write step` events, timed from starting the command.
  */
 interface Timings {
   branch: string | null;
@@ -586,12 +588,12 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
         );
       }
       const readyAt = await page.evaluate<number | null>(markTime(`live:${panel.query}:ready`));
-      const requestedAt = await page.evaluate<number | null>(
-        markTime(`live:${panel.query}:requested`),
+      const subscribedAt = await page.evaluate<number | null>(
+        markTime(`live:${panel.query}:subscribe-sent`),
       );
       panel.timings.readyMs = readyAt === null ? null : Math.round(readyAt);
       panel.timings.firstSnapshotMs =
-        readyAt === null || requestedAt === null ? null : Math.round(readyAt - requestedAt);
+        readyAt === null || subscribedAt === null ? null : Math.round(readyAt - subscribedAt);
     }
     const before = Number(
       await page.evaluate<string>(
@@ -632,14 +634,14 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
     const versionsReadyAt = await versionsPage.evaluate<number | null>(
       markTime('live:version-strip:ready'),
     );
-    const versionsRequestedAt = await versionsPage.evaluate<number | null>(
-      markTime('live:version-strip:requested'),
+    const versionsSubscribedAt = await versionsPage.evaluate<number | null>(
+      markTime('live:version-strip:subscribe-sent'),
     );
     versionTimings.readyMs = versionsReadyAt === null ? null : Math.round(versionsReadyAt);
     versionTimings.firstSnapshotMs =
-      versionsReadyAt === null || versionsRequestedAt === null
+      versionsReadyAt === null || versionsSubscribedAt === null
         ? null
-        : Math.round(versionsReadyAt - versionsRequestedAt);
+        : Math.round(versionsReadyAt - versionsSubscribedAt);
     const seed = await seedVersionMismatches(versionsPage, db, factory);
     writeFileSync(join(outDir, 'version-strip-check.txt'), `${seed.report}\n`);
     failures.push(...seed.mismatches.map((m) => `versions screen against the seed: ${m}`));

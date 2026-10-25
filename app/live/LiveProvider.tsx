@@ -8,6 +8,7 @@ import {
   useState,
 } from 'react';
 import { discardEarlySocket, earlySocketFactory } from './early-socket';
+import { markingSubscribes } from './subscribe-marks';
 
 export type Live =
   | { status: 'loading' | 'error' }
@@ -34,7 +35,10 @@ export function LiveProvider({ children }: { children: ReactNode }): ReactElemen
     let cancelled = false;
     const boot = window.__MC_LIVE__;
     if (boot) {
-      client = createRealtimeClient({ url: boot.url, webSocketFactory: earlySocketFactory(boot) });
+      client = createRealtimeClient({
+        url: boot.url,
+        webSocketFactory: markingSubscribes(earlySocketFactory(boot)),
+      });
       setLive({ status: 'ready', factories: boot.factories, client });
       return () => {
         client?.close();
@@ -46,7 +50,10 @@ export function LiveProvider({ children }: { children: ReactNode }): ReactElemen
         if (!res.ok) throw new Error(`GET /api/live answered ${res.status}`);
         const config = (await res.json()) as LiveConfig;
         if (cancelled) return;
-        client = createRealtimeClient({ url: config.url });
+        client = createRealtimeClient({
+          url: config.url,
+          webSocketFactory: markingSubscribes((url, protocols) => new WebSocket(url, protocols)),
+        });
         setLive({ status: 'ready', factories: config.factories, client });
       })
       .catch(() => {
