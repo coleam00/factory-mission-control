@@ -50,6 +50,61 @@ export async function runMigrations({
   return applied;
 }
 
+export type Factory = { name: string; repository: string; codebase: string; console: string };
+
+export function readFactories(repoRoot: string): Factory[] {
+  return (
+    JSON.parse(readFileSync(join(repoRoot, 'factories.json'), 'utf-8')) as { factories: Factory[] }
+  ).factories;
+}
+
+/**
+ * Upserts `factories` into mc.factories by name, deleting none, and gives each lap projected
+ * before its factory existed (factory '' or its codebase's name) the factory the projection would
+ * now choose. Returns how many rows each changed.
+ */
+export async function loadFactories({
+  factories,
+  db,
+}: {
+  factories: Factory[];
+  db: Db;
+}): Promise<{ factories: number; laps: number }> {
+  const changed = { factories: 0, laps: 0 };
+  await db.transaction(async (tx) => {
+    changed.factories = (
+      await tx.query(
+        `INSERT INTO mc.factories AS f (name, repository, codebase, console)
+         SELECT name, repository, codebase, console
+           FROM jsonb_to_recordset($1::jsonb)
+             AS e(name text, repository text, codebase text, console text)
+         ON CONFLICT (name) DO UPDATE SET
+           repository = EXCLUDED.repository,
+           codebase = EXCLUDED.codebase,
+           console = EXCLUDED.console
+         WHERE (f.repository, f.codebase, f.console)
+           IS DISTINCT FROM (EXCLUDED.repository, EXCLUDED.codebase, EXCLUDED.console)
+         RETURNING f.name`,
+        [JSON.stringify(factories)],
+      )
+    ).length;
+    changed.laps = (
+      await tx.query(
+        `UPDATE mc.laps l SET factory = m.factory
+           FROM (SELECT r.id, c.name AS codebase,
+                   (SELECT f.name FROM mc.factories f WHERE f.codebase = c.name
+                     ORDER BY f.name LIMIT 1) AS factory
+                   FROM public.remote_agent_workflow_runs r
+                   JOIN public.remote_agent_codebases c ON c.id = r.codebase_id) m
+          WHERE l.run_id = m.id AND l.factory IN ('', m.codebase) AND l.factory <> m.factory
+         RETURNING l.run_id`,
+        [],
+      )
+    ).length;
+  });
+  return changed;
+}
+
 const USAGE =
   'usage: bun run migrate (the check branch in .mc-check.env) | bun run migrate:main (the owner, at a terminal)';
 
@@ -82,6 +137,10 @@ export const main: Main = async (argv, deps) => {
       });
       for (const name of applied) deps.out(`applied ${name}`);
       deps.out(`applied ${applied.length} migration(s)`);
+      const changed = await loadFactories({ factories: readFactories(deps.repoRoot), db });
+      deps.out(
+        `factories.json: ${changed.factories} factory row(s) written, ${changed.laps} lap(s) re-attributed`,
+      );
     } finally {
       await db.close();
     }
