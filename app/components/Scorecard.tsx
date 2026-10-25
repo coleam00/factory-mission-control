@@ -236,22 +236,22 @@ function LapLine({
   reasons: readonly string[] | undefined;
 }): ReactElement {
   return (
-    <li
-      data-lap={id}
-      data-counted={counted || undefined}
-      className="font-mono text-[11px] tabular-nums"
-    >
-      <span className={`break-all ${counted ? 'text-text-primary' : 'text-text-tertiary'}`}>
+    <li data-lap={id} data-counted={counted || undefined} className="text-[11px] tabular-nums">
+      <span
+        className={`break-all font-mono ${counted ? 'text-text-primary' : 'text-text-secondary'}`}
+      >
         {id}
       </span>
       {counted ? (
-        <span className="ml-2 font-semibold uppercase tracking-[0.05em] text-success">counted</span>
+        <span className="ml-2 font-mono font-semibold uppercase tracking-[0.05em] text-success">
+          counted
+        </span>
       ) : null}
       {counted
         ? reasons?.map((reason, i) => (
             // A reason can repeat when the gate refused twice for the same thing.
             // biome-ignore lint/suspicious/noArrayIndexKey: the list never reorders
-            <p key={i} className="break-words font-sans text-[12px] text-text-secondary">
+            <p key={i} className="break-words text-[12px] text-text-secondary">
               {reason}
             </p>
           ))
