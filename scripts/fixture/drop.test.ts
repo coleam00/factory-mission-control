@@ -132,3 +132,71 @@ test("deletes this checkout's stale marker and says so", async () => {
   ]);
   expect(run.out).toContain('deleted check-abc-stale-1a2b3c4d');
 });
+
+const SELECTION = [
+  { id: 'br-main', name: 'main', created_at: hoursAgo(72) },
+  { id: 'br-fixture', name: 'fixture', created_at: hoursAgo(48) },
+  { id: 'br-rewind', name: 'rewind-2026-10-20T00:00Z', created_at: hoursAgo(96) },
+  { id: 'br-abc', name: 'check-abc', created_at: hoursAgo(1 / 6) },
+  { id: 'br-marker', name: 'check-abc-stale-1a2b3c4d', created_at: hoursAgo(1 / 60) },
+  { id: 'br-old', name: 'check-old', created_at: hoursAgo(4) },
+  { id: 'br-new', name: 'check-new', created_at: hoursAgo(1) },
+];
+
+test('--dry-run lists what a drop would delete and deletes nothing', async () => {
+  const repoRoot = repo({ MC_CHECK_BRANCH: 'check-abc' });
+  const run = recordingDeps({ repoRoot, branches: SELECTION });
+  expect(await main(['--dry-run'], run.deps)).toBe(0);
+  expect(run.mutatingCalls).toEqual([]);
+  expect(run.neonCalls.filter((call) => call.startsWith('deleteBranch'))).toEqual([]);
+  expect(existsSync(join(repoRoot, CHECK_ENV_FILE))).toBe(true);
+  expect(run.out).toEqual([
+    'would delete check-abc',
+    'would delete check-abc-stale-1a2b3c4d',
+    'would delete check-old',
+  ]);
+  expect(run.out).toEqual(
+    branchesToDrop(SELECTION, 'check-abc', NOW).map((branch) => `would delete ${branch.name}`),
+  );
+});
+
+test('--dry-run without MC_CHECK_BRANCH lists only check-* branches older than 3 hours', async () => {
+  const repoRoot = repo();
+  const run = recordingDeps({ repoRoot, branches: SELECTION });
+  expect(await main(['--dry-run'], run.deps)).toBe(0);
+  expect(run.mutatingCalls).toEqual([]);
+  expect(run.out).toEqual(['would delete check-old']);
+});
+
+test('--dry-run with nothing stale and no MC_CHECK_BRANCH lists nothing and exits 0', async () => {
+  const repoRoot = repo();
+  const run = recordingDeps({
+    repoRoot,
+    branches: SELECTION.filter((b) => b.name !== 'check-old'),
+  });
+  expect(await main(['--dry-run'], run.deps)).toBe(0);
+  expect(run.mutatingCalls).toEqual([]);
+  expect(run.out).toEqual([]);
+});
+
+test.each(['main', 'fixture', 'rewind-x'])(
+  '--dry-run refuses MC_CHECK_BRANCH=%s before any Neon call',
+  async (name) => {
+    const repoRoot = repo({ MC_CHECK_BRANCH: name });
+    const run = recordingDeps({ repoRoot, branches: SELECTION });
+    expect(await main(['--dry-run'], run.deps)).not.toBe(0);
+    expect(run.neonCalls).toEqual([]);
+    expect(run.err.join('\n')).toContain(`refusing branch '${name}'`);
+  },
+);
+
+test.each([[['--dry-run', 'x']], [['x', '--dry-run']]])(
+  'exits 2 for %j and names --dry-run in the usage',
+  async (argv) => {
+    const repoRoot = repo({ MC_CHECK_BRANCH: 'check-abc' });
+    const run = recordingDeps({ repoRoot, branches: SELECTION });
+    expect(await main(argv, run.deps)).toBe(2);
+    expect(run.err.join('\n')).toContain('bun run fixture:drop --dry-run');
+    expect(run.neonCalls).toEqual([]);
+  },
+);
