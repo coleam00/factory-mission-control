@@ -1,8 +1,8 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
-import { type PackVersion, parsePack, type Step } from '../parsers/pack';
+import { HOOKS_DIR, type PackVersion, parsePack, type Step } from '../parsers/pack';
 import { type Deps, failing, guardedDatabaseUrl, type Main, runCli } from './lib/cli';
 import type { Row, Tx } from './lib/db';
 import { readDirectoryAt } from './lib/github';
@@ -16,7 +16,7 @@ export const PACK_DIR = '.archon/workflows/sdlc';
 export const FACTORY_REPOSITORY = 'coleam00/ai-software-factory';
 const TEMPLATE_DIR = 'template';
 /** Only the part of the template the parser reads, so no holdout scenario file is ever fetched. */
-export const HOOKS_DIR = `${TEMPLATE_DIR}/.factory/hooks`;
+export const FACTORY_HOOKS_DIR = `${TEMPLATE_DIR}/${HOOKS_DIR}`;
 
 /** Every table a version owns rows in, besides `mc.arch_versions`. */
 export const ARCH_TABLES = [
@@ -88,7 +88,7 @@ function subagentRows(workflow: string, steps: Step[]): Row[] {
   ]);
 }
 
-function archRows(pack: PackVersion): ArchRows {
+export function archRows(pack: PackVersion): ArchRows {
   const { workflows } = pack;
   return {
     arch_workflows: workflows.map((w) => ({
@@ -156,16 +156,12 @@ async function rowCounts(tx: Tx, archonSha: string, factorySha: string) {
 }
 
 /** The full sha a local snapshot's commit file records, which must extend the sha given. */
-function localSha(given: string, files: string[], what: string): string {
-  const file = files.find((path) => existsSync(path));
-  if (!file) {
+function localSha(given: string, recorded: string | null, dir: string): string {
+  if (recorded === null) {
     if (given.length === 40) return given;
-    throw new Error(`${what} records no commit: give the full 40-character sha`);
+    throw new Error(`${dir} records no commit: give the full 40-character sha`);
   }
-  const recorded = readFileSync(file, 'utf8').trim();
-  if (!recorded.startsWith(given)) {
-    throw new Error(`${what} is at ${recorded}, not ${given}`);
-  }
+  if (!recorded.startsWith(given)) throw new Error(`${dir} is at ${recorded}, not ${given}`);
   return recorded;
 }
 
@@ -192,35 +188,36 @@ async function readVersion(
 ): Promise<Version> {
   const scratch = mkdtempSync(join(tmpdir(), 'mc-arch-'));
   try {
-    let archonSha: string;
-    let packDir: string;
-    if (args.archonPath) {
-      const root = resolve(deps.repoRoot, args.archonPath);
-      packDir = join(root, 'sdlc');
-      archonSha = localSha(
-        args.archonSha,
-        [join(root, 'ARCHON_COMMIT'), join(packDir, 'ARCHON_COMMIT')],
-        args.archonPath,
-      );
-    } else {
-      archonSha = await fetchInto(deps, scratch, ARCHON_REPOSITORY, args.archonSha, PACK_DIR);
-      packDir = join(scratch, PACK_DIR);
+    const archon = args.archonPath
+      ? { dir: join(resolve(deps.repoRoot, args.archonPath), 'sdlc'), sha: null }
+      : {
+          dir: join(scratch, PACK_DIR),
+          sha: await fetchInto(deps, scratch, ARCHON_REPOSITORY, args.archonSha, PACK_DIR),
+        };
+    const factory = args.factoryPath
+      ? { dir: resolve(deps.repoRoot, args.factoryPath), sha: null }
+      : {
+          dir: join(scratch, TEMPLATE_DIR),
+          sha: await fetchInto(
+            deps,
+            scratch,
+            FACTORY_REPOSITORY,
+            args.factorySha,
+            FACTORY_HOOKS_DIR,
+          ),
+        };
+    // The parser reads a missing directory as an empty one, which would replace the version's rows
+    // with nothing. GitHub reads already refuse a missing directory; local paths are checked here.
+    if (!existsSync(archon.dir)) throw new Error(`no pack at ${archon.dir}`);
+    if (!existsSync(join(factory.dir, HOOKS_DIR))) {
+      throw new Error(`no ${HOOKS_DIR} under ${factory.dir}`);
     }
-    let factorySha: string;
-    let templateDir: string;
-    if (args.factoryPath) {
-      templateDir = resolve(deps.repoRoot, args.factoryPath);
-      factorySha = localSha(
-        args.factorySha,
-        [join(templateDir, 'FACTORY_COMMIT')],
-        args.factoryPath,
-      );
-    } else {
-      factorySha = await fetchInto(deps, scratch, FACTORY_REPOSITORY, args.factorySha, HOOKS_DIR);
-      templateDir = join(scratch, TEMPLATE_DIR);
-    }
-    if (!existsSync(packDir)) throw new Error(`no pack at ${packDir}`);
-    return { archonSha, factorySha, pack: parsePack(packDir, templateDir) };
+    const pack = parsePack(archon.dir, factory.dir);
+    return {
+      archonSha: archon.sha ?? localSha(args.archonSha, pack.archonCommit, archon.dir),
+      factorySha: factory.sha ?? localSha(args.factorySha, pack.factoryCommit, factory.dir),
+      pack,
+    };
   } finally {
     rmSync(scratch, { recursive: true, force: true });
   }

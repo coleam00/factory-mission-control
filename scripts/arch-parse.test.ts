@@ -3,12 +3,13 @@ import { readdirSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { testDb } from '../db/test-db';
 import type { GetFetch } from '../function/github';
-import { parsePack, type Step } from '../parsers/pack';
+import { HOOKS_DIR, parsePack, type Step } from '../parsers/pack';
 import {
   ARCH_TABLES,
   ARCHON_REPOSITORY,
+  archRows,
+  FACTORY_HOOKS_DIR,
   FACTORY_REPOSITORY,
-  HOOKS_DIR,
   main,
   PACK_DIR,
 } from './arch-parse';
@@ -19,7 +20,7 @@ import { migrationsDir, readMigrationFiles, runMigrations } from './migrate';
 
 const PACK = join(REPO_ROOT, 'fixtures/pack');
 const TEMPLATE = join(REPO_ROOT, 'fixtures/factory-template');
-const TEMPLATE_HOOKS = join(TEMPLATE, relative('template', HOOKS_DIR));
+const TEMPLATE_HOOKS = join(TEMPLATE, HOOKS_DIR);
 const ARCHON_SHA = readFileSync(join(PACK, 'ARCHON_COMMIT'), 'utf8').trim();
 const FACTORY_SHA = readFileSync(join(TEMPLATE, 'FACTORY_COMMIT'), 'utf8').trim();
 const LOCAL = ['--archon-path', PACK, '--factory-path', TEMPLATE];
@@ -129,6 +130,54 @@ test('refuses a local snapshot at another commit than the sha given', async () =
   expect(job.opened).toEqual([]);
 });
 
+test.each([
+  ['a missing directory', 'fixtures/no-such-template'],
+  ['a directory without hooks', 'fixtures'],
+])('refuses %s as the factory path and keeps the stored rows', async (_, factoryPath) => {
+  expect((await run([ARCHON_SHA, FACTORY_SHA, ...LOCAL])).exit).toBe(0);
+  const before = await everyRow();
+
+  const job = await run([
+    ARCHON_SHA,
+    FACTORY_SHA,
+    '--archon-path',
+    PACK,
+    '--factory-path',
+    factoryPath,
+  ]);
+  expect(job.exit).toBe(1);
+  expect(job.err.join('\n')).toContain(`no ${HOOKS_DIR} under`);
+  expect(job.opened).toEqual([]);
+  expect(await everyRow()).toEqual(before);
+});
+
+test('refuses a missing archon path', async () => {
+  const job = await run([
+    ARCHON_SHA,
+    FACTORY_SHA,
+    '--archon-path',
+    'fixtures/no-such-pack',
+    '--factory-path',
+    TEMPLATE,
+  ]);
+  expect(job.exit).toBe(1);
+  expect(job.err.join('\n')).toContain('no pack at');
+  expect(job.opened).toEqual([]);
+});
+
+test('every row the job builds names exactly its table columns', async () => {
+  const rows = archRows(parsePack(join(PACK, 'sdlc'), TEMPLATE));
+  for (const table of ARCH_TABLES) {
+    const columns = await pg.query(
+      `SELECT column_name FROM information_schema.columns WHERE table_schema = 'mc' AND table_name = $1 AND column_name NOT IN ('archon_sha', 'factory_sha')`,
+      [table],
+    );
+    const names = columns.map((c) => String(c.column_name)).sort();
+    expect(rows[table].length).toBeGreaterThan(0);
+    for (const row of rows[table]) expect(Object.keys(row).sort()).toEqual(names);
+  }
+});
+
 test.each([[[]], [[ARCHON_SHA]], [['not-a-sha', FACTORY_SHA]]])(
   'exits 2 with usage for %j before touching Neon',
   async (argv) => {
@@ -164,7 +213,7 @@ function fakeGitHub(): GetFetch {
       files: new Map(filesOf(dir).map((file) => [`${at}/${file}`, join(dir, file)])),
     });
   mount(ARCHON_REPOSITORY, ARCHON_SHA, PACK_DIR, join(PACK, 'sdlc'));
-  mount(FACTORY_REPOSITORY, FACTORY_SHA, HOOKS_DIR, TEMPLATE_HOOKS);
+  mount(FACTORY_REPOSITORY, FACTORY_SHA, FACTORY_HOOKS_DIR, TEMPLATE_HOOKS);
   repos.get(FACTORY_REPOSITORY)?.files.set(HOLDOUT, join(TEMPLATE, 'FACTORY_COMMIT'));
 
   const trees: { repository: string; dir: string }[] = [];
