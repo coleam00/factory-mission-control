@@ -77,8 +77,13 @@ export async function readHistory(github: GitHub, followed: Factory[]): Promise<
   const commits = await github.list<ListedCommit>(
     `/repos/${VERSIONS_REPOSITORY}/commits?sha=${encodeURIComponent(branch)}&per_page=100`,
   );
-  // The repository itself answered, so a 404 here means the file is not on the branch.
-  const decisions = (await github.fileAt(VERSIONS_REPOSITORY, DECISIONS_PATH, branch)) ?? '';
+  // Stored decisions are replaced wholesale, so a missing file must not read as an empty log.
+  const decisions = await github.fileAt(VERSIONS_REPOSITORY, DECISIONS_PATH, branch);
+  if (decisions === null) {
+    throw new Error(
+      `${VERSIONS_REPOSITORY} has no ${DECISIONS_PATH} on ${branch}; nothing written`,
+    );
+  }
   return {
     factories: read,
     commits: commits.map(({ sha, commit }) => ({
@@ -96,28 +101,29 @@ export interface Removed {
 }
 
 /**
- * Writes `history` with the webhook's upserts. With `removedAt`, also removes each issue and
- * comment of a factory that `history` no longer holds, closing the removed issues' open owner
- * questions at that time.
+ * Writes `history` with the webhook's upserts. With `readAt`, the time reading `history` began,
+ * also removes each issue and comment of a factory created before then that `history` no longer
+ * holds, closing the removed issues' open owner questions at that time. Rows created later came
+ * from the webhook while GitHub was being read and stay.
  */
-export async function storeHistory(tx: Tx, history: History, removedAt?: string): Promise<Removed> {
+export async function storeHistory(tx: Tx, history: History, readAt?: string): Promise<Removed> {
   const removed: Removed = { issues: 0, comments: 0 };
   for (const { factory, issues, comments, pullRequests } of history.factories) {
     for (const issue of issues) await writeIssue(tx, factory, issue);
     for (const { issue, comment } of comments) await writeComment(tx, factory, issue, comment);
     for (const pr of pullRequests) await writePullRequest(tx, factory, pr);
-    if (removedAt === undefined) continue;
+    if (readAt === undefined) continue;
 
     const goneIssues = await tx.query(
-      `SELECT number FROM mc.issues WHERE factory = $1
+      `SELECT number FROM mc.issues WHERE factory = $1 AND created_at < $3
         AND number NOT IN (SELECT v::integer FROM jsonb_array_elements_text($2::jsonb) v)`,
-      [factory, issues.map((issue) => issue.number)],
+      [factory, issues.map((issue) => issue.number), readAt],
     );
-    for (const { number } of goneIssues) await removeIssue(tx, factory, Number(number), removedAt);
+    for (const { number } of goneIssues) await removeIssue(tx, factory, Number(number), readAt);
     const goneComments = await tx.query(
-      `SELECT id FROM mc.comments WHERE factory = $1
+      `SELECT id FROM mc.comments WHERE factory = $1 AND created_at < $3
         AND id NOT IN (SELECT v::bigint FROM jsonb_array_elements_text($2::jsonb) v)`,
-      [factory, comments.map(({ comment }) => comment.id)],
+      [factory, comments.map(({ comment }) => comment.id), readAt],
     );
     for (const { id } of goneComments) await deleteComment(tx, factory, Number(id));
     removed.issues += goneIssues.length;
@@ -173,13 +179,13 @@ export const main: Main = async (argv, deps) => {
   return failing(deps, async () => {
     // No terminal prompt for `:main`, unlike `migrate:main`: the owner schedules the nightly run.
     const url = await guardedDatabaseUrl(deps, values.main ? 'main' : 'check');
+    const readAt = deps.now().toISOString();
     const history = await readHistory(deps.github(), factories.factories);
     const db = deps.openDb(url);
     try {
       const lines: string[] = [];
       await db.transaction(async (tx) => {
-        const removedAt = values.reconcile ? deps.now().toISOString() : undefined;
-        const removed = await storeHistory(tx, history, removedAt);
+        const removed = await storeHistory(tx, history, values.reconcile ? readAt : undefined);
         if (values.reconcile) {
           lines.push(`removed ${removed.issues} issue(s) and ${removed.comments} comment(s)`);
         }

@@ -39,13 +39,13 @@ const recorded: GetFetch = async (url, init) => {
 };
 
 /** Runs the command against the recorded GitHub and the in-memory database, on `branchName`. */
-async function run(argv: string[], branchName = 'check-abc') {
+async function run(argv: string[], branchName = 'check-abc', fetch = recorded) {
   const repoRoot = scratchRepo({ MC_DATABASE_URL: DATABASE_URL });
   scratch.push(repoRoot);
   const recorder = recordingDeps({ repoRoot, branchName });
   const deps = {
     ...recorder.deps,
-    github: () => createGitHub(recorded),
+    github: () => createGitHub(fetch),
     openDb: (url: string) => {
       recorder.opened.push(url);
       return { ...db, close: async () => {} };
@@ -139,6 +139,42 @@ test('reconcile removes a stored label, issue and comment GitHub no longer has; 
   expect(again.out[0]).toBe('removed 0 issue(s) and 0 comment(s)');
   expect(await snapshot(db)).toEqual(repaired);
 });
+
+test('reconcile keeps an issue and comment the webhook stored after reading GitHub began', async () => {
+  await run([]);
+  const after = new Date(NOW.getTime() + 1000).toISOString();
+  await rows(
+    `INSERT INTO mc.issues (factory, number, title, state, url, created_at, updated_at)
+      VALUES ('mission-control', 98, 'new', 'open', 'u', $1, $1)`,
+    [after],
+  );
+  await rows(
+    `INSERT INTO mc.comments (factory, id, issue_number, author, url, created_at, updated_at)
+      VALUES ('mission-control', 2, 98, 'a', 'u', $1, $1)`,
+    [after],
+  );
+
+  const { out } = await run(['--reconcile']);
+  expect(out[0]).toBe('removed 0 issue(s) and 0 comment(s)');
+  expect(await rows('SELECT number FROM mc.issues WHERE number = 98')).toEqual([{ number: 98 }]);
+  expect(await rows('SELECT id FROM mc.comments WHERE id = 2')).toEqual([{ id: 2 }]);
+});
+
+test.each([[[]], [['--reconcile']]])(
+  'given no DECISIONS.md on GitHub, %j exits non-zero and writes nothing',
+  async (argv) => {
+    await run([]);
+    const before = await snapshot(db);
+    const missing: GetFetch = (url, init) =>
+      url.includes('/contents/DECISIONS.md')
+        ? Promise.resolve(new Response('', { status: 404 }))
+        : recorded(url, init);
+    const { code, err } = await run(argv, 'check-abc', missing);
+    expect(code).toBe(1);
+    expect(err.join('\n')).toContain('has no DECISIONS.md');
+    expect(await snapshot(db)).toEqual(before);
+  },
+);
 
 test('reconcile closes an issue GitHub closed', async () => {
   await rows(
