@@ -18,6 +18,7 @@ test('REALTIME.md gives test:live a probe and a verdict for each feature the liv
     'UNION ALL',
     'NOT EXISTS',
     'starts_with()',
+    'EXISTS in CASE',
   ]) {
     expect(names).toContain(name);
   }

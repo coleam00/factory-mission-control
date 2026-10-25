@@ -175,6 +175,12 @@ type RowKind = {
   needs?: string;
 };
 
+/** The issue `label` labels next: the factory's highest-numbered open one without needs-owner. */
+export const NEXT_TO_LABEL = `SELECT i.factory, i.number FROM mc.issues i
+  WHERE i.factory = $1::text AND i.state = 'open' AND NOT EXISTS (SELECT 1 FROM mc.issue_labels l
+    WHERE l.factory = i.factory AND l.issue_number = i.number AND l.label = 'needs-owner')
+  ORDER BY i.number DESC LIMIT 1`;
+
 const sha1 = (text: string) => new Bun.CryptoHasher('sha1').update(text).digest('hex');
 
 const ROW_KINDS = {
@@ -199,10 +205,7 @@ const ROW_KINDS = {
     needs: `an open ${FACTORY} issue without needs-owner`,
     insert: () => ({
       sql: `INSERT INTO mc.issue_labels (factory, issue_number, label)
-        SELECT i.factory, i.number, 'needs-owner' FROM mc.issues i
-        WHERE i.factory = $1::text AND i.state = 'open' AND NOT EXISTS (SELECT 1 FROM mc.issue_labels l
-          WHERE l.factory = i.factory AND l.issue_number = i.number AND l.label = 'needs-owner')
-        ORDER BY i.number DESC LIMIT 1
+        SELECT next.factory, next.number, 'needs-owner' FROM (${NEXT_TO_LABEL}) next
         RETURNING issue_number`,
       params: [FACTORY],
     }),
