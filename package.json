@@ -7,6 +7,7 @@
     "serve": "bun server/main.ts",
     "check": "tsc --noEmit && biome check && bun test app server harness scripts parsers db function",
     "function:dev": "bun function/dev.ts",
+    "function:deploy": "bun scripts/function-deploy.ts",
     "migrate": "bun scripts/migrate.ts",
     "migrate:main": "bun scripts/migrate.ts --main",
     "arch:parse": "bun scripts/arch-parse.ts",
@@ -28,9 +29,11 @@
   "dependencies": {
     "@fontsource/geist": "^5.3.0",
     "@fontsource/geist-mono": "^5.3.0",
+    "@neon/functions": "^0.11.0",
     "@neon/realtime": "0.1.2",
     "@neon/realtime-react": "0.1.1",
     "hono": "^4.13.13",
+    "pg": "^8.23.1",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
     "react-router": "^7"
@@ -38,11 +41,14 @@
   "devDependencies": {
     "@biomejs/biome": "^2.6.3",
     "@electric-sql/pglite": "^0.5.11",
+    "@electric-sql/pglite-socket": "0.2.14",
     "@tailwindcss/vite": "^4",
     "@types/bun": "^1.4.4",
+    "@types/pg": "^8.23.1",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^5",
+    "neonctl": "8.11.3",
     "tailwindcss": "^4",
     "typescript": "^7.0.2",
     "vite": "^6"

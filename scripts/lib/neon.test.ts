@@ -81,3 +81,31 @@ test('a failed request names the method, path and status, never the key', async 
   expect(String(error)).toContain('GET /projects/proj/branches/br-x failed: 404');
   expect(String(error)).not.toContain('secret-key');
 });
+
+test("pooledConnectionUri asks for the branch's database, then its owner's pooled URI", async () => {
+  const { api, requests } = fakeNeon(({ url }) =>
+    url.endsWith('/databases')
+      ? { databases: [{ name: 'factory', owner_name: 'factory_owner' }] }
+      : { uri: 'postgresql://factory_owner:pw@ep-x-pooler.neon.tech/factory' },
+  );
+  expect(await api.pooledConnectionUri('br-check')).toBe(
+    'postgresql://factory_owner:pw@ep-x-pooler.neon.tech/factory',
+  );
+  expect(requests.map((request) => `${request.method} ${request.url}`)).toEqual([
+    'GET https://console.neon.tech/api/v2/projects/proj/branches/br-check/databases',
+    'GET https://console.neon.tech/api/v2/projects/proj/connection_uri?branch_id=br-check&database_name=factory&role_name=factory_owner&pooled=true',
+  ]);
+});
+
+test('pooledConnectionUri refuses a branch with several databases', async () => {
+  const { api, requests } = fakeNeon(() => ({
+    databases: [
+      { name: 'factory', owner_name: 'factory_owner' },
+      { name: 'other', owner_name: 'factory_owner' },
+    ],
+  }));
+  await expect(api.pooledConnectionUri('br-check')).rejects.toThrow(
+    'branch br-check has 2 databases; function:deploy needs exactly one',
+  );
+  expect(requests).toHaveLength(1);
+});

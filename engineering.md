@@ -12,7 +12,7 @@ How this repository is built. The product is `docs/mission-control.prd.md`; this
 | `db/queries/` | Every live query, one file each, named for the panel that reads it. |
 | `function/` | The Neon Function that receives GitHub webhooks (Hono, TypeScript). |
 | `parsers/` | Pure functions: comment formats, pin trailers, DECISIONS.md, the architecture parser. |
-| `scripts/` | `fixture:branch`, `fixture:drop`, `fixture:write`, `migrate`, `backfill`, `rewind:create`. |
+| `scripts/` | `fixture:branch`, `fixture:drop`, `fixture:write`, `migrate`, `backfill`, `rewind:create`, `function:deploy`. |
 | `fixtures/` | `seed.sql`, `expected-scorecard.json`, `webhooks/` sample payloads, `pack/` (a snapshot of the pinned workflow pack), `factory-template/` (the fence files). |
 | `harness/` | `design-probe.js` and the factory harness configuration. |
 | `docs/design/archon-console/` | The Archon console's tokens and components, copied from Archon. The design source of truth. |
@@ -41,5 +41,27 @@ How this repository is built. The product is `docs/mission-control.prd.md`; this
 - Tests sit next to the code they test (`*.test.ts`). Parsers are tested on the literal examples in
   the PRD's appendix and on `fixtures/pack/`.
 - Stop every process you start by its process id; never kill by name.
+
+## Deploying the webhook Function
+
+- `bun run function:deploy -- --branch <check-*|main>` bundles `function/index.ts` with neonctl
+  (pinned in devDependencies), deploys it as the Neon Function `mcwebhook` (runtime nodejs24) on
+  that branch, and prints its URL. It needs `NEON_API_KEY`, `NEON_PROJECT_ID` and
+  `GITHUB_WEBHOOK_SECRET`; `GITHUB_TOKEN` is optional and only raises GitHub's rate limit. It sets
+  the Function's `MC_DATABASE_URL` to that branch's pooled connection string, so the Function
+  writes only the branch it runs on. It refuses every branch but `check-*` and `main`; `main` is
+  the owner's step after merge (PRD 11.3). It prints no secret, though they sit in neonctl's
+  arguments while it runs.
+- `bun run function:deploy -- --branch <branch> --delete` removes it. A check that deploys deletes
+  its Function before `fixture:drop`.
+- `function/index.ts` is the deployed entry (Node, `pg`); `function/dev.ts` is the local one (Bun).
+  Both serve `createWebhookApp`.
+- Registering the webhook (the owner, once per repository, after deploying to `main`): in GitHub,
+  Settings, Webhooks, Add webhook, on each repository in `factories.json` and on
+  `coleam00/ai-software-factory`, whose pushes carry pins, verdicts and `DECISIONS.md`. Payload
+  URL: the printed URL. Content type: `application/json`. Secret: the `GITHUB_WEBHOOK_SECRET` the
+  deploy used. SSL verification on. Events, under "Let me select individual events": Issues, Issue
+  comments, Pull requests, Pushes, Labels. "Recent Deliveries" shows each answer: 200 recorded,
+  401 the secret differs, 400 the content type is not JSON.
 
 See [factory workflow policy](factory/WORKFLOW_POLICY.md) for factory-specific shared-workflow requirements.

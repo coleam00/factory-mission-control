@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createGitHub, type GetFetch } from '../../function/github';
 import { CHECK_ENV_FILE, type Env } from '../../server/check-env';
-import type { Deps } from './cli';
+import type { Deps, NeonctlResult } from './cli';
 import type { Db, Row } from './db';
 import type { Branch, NeonApi } from './neon';
 
@@ -20,6 +20,13 @@ export const DATABASE_URL = 'postgresql://u:p@ep-fake-endpoint-a1b2c3.us-east-2.
 /** The connection string the fake Neon returns for every branch it creates. */
 export const CREATED_URL = 'postgresql://u:p@ep-created-d4e5f6.us-east-2.aws.neon.tech/db';
 
+/** The pooled connection string the fake Neon returns for every branch. */
+export const POOLED_URL =
+  'postgresql://u:pooled-pw@ep-fake-pooler-a1b2c3.us-east-2.aws.neon.tech/db?sslmode=require&channel_binding=require';
+
+/** The `invocation_url` the fake neonctl reports for every deploy. */
+export const FUNCTION_URL = 'https://br-check-mcwebhook.compute.c-1.us-east-1.aws.neon.tech';
+
 export type Recorder = {
   deps: Deps;
   neonCalls: string[];
@@ -32,6 +39,8 @@ export type Recorder = {
   requests: string[];
   /** Each query's parameters, in the order `sql` holds its text. */
   params: (unknown[] | undefined)[];
+  /** Every neonctl argv, in order. */
+  neonctlCalls: string[][];
   out: string[];
   err: string[];
 };
@@ -64,6 +73,8 @@ export function recordingDeps(options: {
   throwsOn?: string[];
   /** Answers `deps.fetch`; without it every request fails, as with no network. */
   fetch?: GetFetch;
+  /** Answers `deps.neonctl`; without it every call succeeds as a deploy reporting `FUNCTION_URL`. */
+  neonctl?: (args: string[]) => NeonctlResult;
 }): Recorder {
   const recorder: Omit<Recorder, 'deps'> = {
     neonCalls: [],
@@ -73,6 +84,7 @@ export function recordingDeps(options: {
     sql: [],
     requests: [],
     params: [],
+    neonctlCalls: [],
     out: [],
     err: [],
   };
@@ -109,6 +121,10 @@ export function recordingDeps(options: {
     async getRealtimeSecret(branchId) {
       call(`getRealtimeSecret ${branchId}`);
       return 'nrt_live_1fake';
+    },
+    async pooledConnectionUri(branchId) {
+      call(`pooledConnectionUri ${branchId}`);
+      return POOLED_URL;
     },
     async createBranch({ name, parentId }) {
       mutate(`createBranch ${name} from ${parentId}`);
@@ -158,6 +174,12 @@ export function recordingDeps(options: {
     out: (line) => recorder.out.push(line),
     err: (line) => recorder.err.push(line),
     confirmOwner: () => options.owner ?? false,
+    neonctl: async (args) => {
+      recorder.neonctlCalls.push(args);
+      if (options.neonctl) return options.neonctl(args);
+      const report = { id: 1, status: 'completed', invocation_url: FUNCTION_URL };
+      return { code: 0, stdout: `${JSON.stringify(report)}\n`, stderr: '' };
+    },
   };
   return { ...recorder, deps };
 }
