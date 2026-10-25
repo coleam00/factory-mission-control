@@ -83,22 +83,28 @@ test("the Function's pool writes what the Bun path writes", async () => {
 });
 
 test('a delivery that throws mid-transaction rejects with its own error and leaves no row', async () => {
-  const db = poolDb(pool);
+  // One connection: the second transaction gets a client only if the first one's came back.
+  const single = new pg.Pool({
+    connectionString: `postgres://postgres@${server.getServerConn()}/postgres`,
+    max: 1,
+  });
+  const db = poolDb(single);
   const failure = new Error('original insert failure');
-  // More failed transactions than the pool has connections: each one's client must come back.
-  for (let round = 0; round < 7; round++) {
-    const write = db.transaction(async (tx) => {
-      await tx.query(
-        "INSERT INTO mc.factories (name, repository, codebase, console) VALUES ($1, 'r', 'c', 'x')",
-        [`rolled-back-${round}`],
-      );
-      throw failure;
-    });
-    expect(write).rejects.toBe(failure);
-    await write.catch(() => {});
+  for (const name of ['rolled-back-1', 'rolled-back-2']) {
+    await expect(
+      db.transaction(async (tx) => {
+        await tx.query(
+          "INSERT INTO mc.factories (name, repository, codebase, console) VALUES ($1, 'r', 'c', 'x')",
+          [name],
+        );
+        throw failure;
+      }),
+    ).rejects.toBe(failure);
   }
-  const left = await db.query("SELECT name FROM mc.factories WHERE name LIKE 'rolled-back-%'");
-  expect(left).toEqual([]);
+  expect(await db.query("SELECT name FROM mc.factories WHERE name LIKE 'rolled-back-%'")).toEqual(
+    [],
+  );
+  await db.close();
 });
 
 test('a ROLLBACK that fails keeps the original error and destroys the client', async () => {
@@ -116,7 +122,6 @@ test('a ROLLBACK that fails keeps the original error and destroys the client', a
   const write = poolDb(fakePool).transaction(async () => {
     throw failure;
   });
-  expect(write).rejects.toBe(failure);
-  await write.catch(() => {});
+  await expect(write).rejects.toBe(failure);
   expect(released).toEqual([dropped]);
 });
