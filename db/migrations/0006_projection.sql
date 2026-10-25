@@ -4,6 +4,11 @@
 -- Invariant 1: an Archon write never fails or waits because of these. Every trigger body runs in
 -- its own exception block, so a failed projection rolls back alone and is recorded in
 -- mc.projection_errors; when even that insert fails, the error is dropped rather than raised.
+-- Every function that takes a lock on an mc table sets lock_timeout, so a lock another session
+-- holds there (a migration's ALTER TABLE, an uncommitted write of the same row) stops a wait after
+-- 100 ms with lock_not_available, which the exception blocks catch, instead of holding Archon's
+-- write until the lock is released or Archon's own statement_timeout cancels it (query_canceled,
+-- which WHEN OTHERS does not catch).
 
 CREATE OR REPLACE FUNCTION mc.record_projection_error(
   p_source text,
@@ -11,7 +16,8 @@ CREATE OR REPLACE FUNCTION mc.record_projection_error(
   p_event_id uuid,
   p_sqlstate text,
   p_message text
-) RETURNS void LANGUAGE plpgsql AS $$
+) RETURNS void LANGUAGE plpgsql
+SET lock_timeout = '100ms' AS $$
 BEGIN
   INSERT INTO mc.projection_errors (source, run_id, event_id, sqlstate, message)
   VALUES (p_source, p_run_id, p_event_id, p_sqlstate, p_message);
@@ -31,7 +37,8 @@ $$;
 -- holdoutId matches /\bH-\d{2,}\b/. An empty kind reads as a defect, as the merge gate's
 -- readAppCheck reads it.
 CREATE OR REPLACE FUNCTION mc.project_app_check_lines(p_run_id uuid, p_lines jsonb)
-RETURNS void LANGUAGE plpgsql AS $$
+RETURNS void LANGUAGE plpgsql
+SET lock_timeout = '100ms' AS $$
 BEGIN
   INSERT INTO mc.app_check_lines AS a
     (run_id, position, kind, verdict, evidence_count, pre_existing, scenario_id)
@@ -88,7 +95,8 @@ $$;
 -- it is running or when it starts after the row's last attempt finished (a retry), so a replayed
 -- start never reopens a finished step. A check-app report whose lines cannot be projected keeps
 -- its step row; the lines' error is recorded on its own.
-CREATE OR REPLACE FUNCTION mc.project_step_event() RETURNS trigger LANGUAGE plpgsql AS $$
+CREATE OR REPLACE FUNCTION mc.project_step_event() RETURNS trigger LANGUAGE plpgsql
+SET lock_timeout = '100ms' AS $$
 DECLARE
   v_output jsonb;
   v_started timestamptz;
@@ -180,7 +188,8 @@ $$;
 
 -- A lap's factory is the one whose codebase is the run's; a run of a codebase no factory names
 -- keeps its codebase's name, and a run with no codebase an empty one.
-CREATE OR REPLACE FUNCTION mc.project_run() RETURNS trigger LANGUAGE plpgsql AS $$
+CREATE OR REPLACE FUNCTION mc.project_run() RETURNS trigger LANGUAGE plpgsql
+SET lock_timeout = '100ms' AS $$
 DECLARE
   v_codebase text;
 BEGIN

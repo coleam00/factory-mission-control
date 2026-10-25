@@ -188,6 +188,22 @@ test('an error the projection cannot even record still never fails Archon’s wr
   await expect(rolledBack).rejects.toThrow('rollback after 1 event');
 });
 
+test('every projection function stops a lock wait after 100 ms, and only inside itself', async () => {
+  // PGlite has one session, so the wait itself is proved on a check branch by
+  // `bun run projection:locks`; this keeps the setting from being dropped.
+  const functions = await db.query(`SELECT p.proname, p.proconfig FROM pg_proc p
+    JOIN pg_namespace n ON n.oid = p.pronamespace JOIN pg_language l ON l.oid = p.prolang
+    WHERE n.nspname = 'mc' AND l.lanname = 'plpgsql' ORDER BY p.proname`);
+  expect(functions).toEqual(
+    ['project_app_check_lines', 'project_run', 'project_step_event', 'record_projection_error'].map(
+      (proname) => ({ proname, proconfig: ['lock_timeout=100ms'] }),
+    ),
+  );
+
+  await stepEvent('check-app', 'node_completed');
+  expect(await db.query('SHOW lock_timeout')).toEqual([{ lock_timeout: '0' }]);
+});
+
 test('check-app lines keep kind, verdict, evidence count and only a holdout’s scenario id', async () => {
   const report = structuredOutputFor('check-app') as {
     lines: Record<string, unknown>[];
