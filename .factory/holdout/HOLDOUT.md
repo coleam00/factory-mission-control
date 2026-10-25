@@ -358,3 +358,90 @@ Expect:
 - The mix of routes and check depths, and app-check lines by kind and verdict, include the new lap.
 - Only ids and verdicts show: no scenario text.
 Author: writer, 2026-10-24, first set for the whole release (docs/mission-control.prd.md)
+
+## H-21 A factory that does not exist says so on every screen, and never wears another factory's name
+Protects: 11.6 (every view is keyed by factory and must work with exactly one); engineering.md (an empty state is one sentence and at most one button); 8.4 (panels settle); invariant 7 (error screens)
+Touches: every screen whose address carries a factory key (whichever exist at the time of the check: factory page, versions, scorecard and comparison, decisions, improvements, owner queue, testing, one lap, health, rewind), the shared header and factory strip, the server's factory list
+Setup: the check app. Run it twice: once with `factories.json` as committed (one factory, A), and once with a second factory B added (as in H-17) with laps and issues of its own, serve restarted. List every factory-keyed address the app's own links lead to (follow the links from each screen; do not guess routes from the code).
+Steps:
+1. With one factory, open each factory-keyed address directly (typed, fresh tab) with each of these keys in place of A's: `nope`; A's key in a different letter case; A's key with a trailing encoded space (`%20`); an empty key; a 300-character key; `..%2F`. Record each screen's text, the header, and every panel's `data-state` after 3 seconds.
+2. With two factories: open B's versions screen and one of B's laps; then remove B from `factories.json`, restart serve, and reload both tabs (a stale bookmark). Then, with B restored, open under A's key the one-lap address of a lap that belongs to B, and A's version or scorecard address for a digest only B ran.
+3. From an unknown-key screen, use the one button it offers (if any), then the browser's Back and Forward.
+4. Restart serve with a deliberately wrong Realtime secret (and, separately, a wrong database password). Open A's factory page and versions screen with A's real key, and the same screens with the key `nope`. Restore the settings.
+Expect:
+- Every unknown, stale or malformed key, on every factory-keyed screen, reads as "this factory does not exist" (or words to that effect: the key is not in the factory list), in one sentence with at most one button, which leads somewhere that works (for example the home map or a real factory). No such screen says live data is unavailable, offline, an error occurred, or retry; no panel is left loading or spinning: within 2 seconds every panel has settled.
+- While the key is unknown, the header, factory strip and page title show no factory's name, repository, running-lap count, console link or any other number belonging to A or B; they do not silently fall back to the first factory in the list.
+- A differently cased or padded key is either treated as A everywhere (header and every panel agree, and A's facts show) or as unknown everywhere; never A's name in the header over an error or empty panel.
+- B's lap under A's key and B's digest under A's key never show B's facts under A's name; they read as not found in A (one sentence, at most one button), not as an outage.
+- After B is removed, its old addresses read as a factory that does not exist, with no B facts and no B name left in the header.
+- Back and Forward land on the same states again: the unknown screen still says it does not exist with an identity-free header, and the real factory's screen shows its own name and facts, with no flash of the other.
+- During the real outage in step 4, A's screens with A's real key read as live data unavailable (an outage, not "does not exist", and not an empty "no versions yet"), with A named in the header; the `nope` key still reads as a factory that does not exist (the factory list is committed and does not depend on the database). No secret appears on any of these screens (as H-11).
+- The design probe reports zero failures on an unknown-key screen at 1440 and 390 px.
+Author: writer, 2026-10-25, escaped defect #79 (an unknown factory key read as an outage, with a real factory's identity in the header)
+
+## H-22 A version is one factory's digest, named by the pin before that factory first ran it
+Protects: 11.2 row "Which version a lap ran" (keyed by (factory, digest), labelled by the most recent pin committed before the first run with that digest); 4.2 version strip ("not recorded"); 11.5; 11.6 and 10 (never mix or sum factories)
+Touches: version keying in the projection, push ingestion, version strip, scorecard, comparison, improvements ledger
+Setup: the check app with two factories A and B (as in H-17). On ai-software-factory, deliver as push events pins P1 at t1, P2 at t3 and P3 at t6 (each with a reason, Hypothesis and Measure). Insert, as Archon would: for A, laps with digest X first started at t4 and more at t7; for B, laps with the same digest X first started at t7. For A, also laps with digest Y first started at t5 and digest Z first started one minute later (two digests between the same pins), and laps with digest W first started at t0, before every pin. Insert one `archon-loop` lap for A whose run has no `workflow_source` digest.
+Steps:
+1. Open A's version strip and B's version strip; record every entry with its label, date, reason, Hypothesis and Measure, and the lap count of each version's scorecard.
+2. Compare A's X with B's X, if the comparison allows versions from two factories; otherwise compare A's X with A's Y.
+3. Push a pin P4 to ai-software-factory, with no run of any new digest after it.
+Expect:
+- A's X is labelled P2 (the latest pin before A's first X run at t4); B's X is labelled P3 (the latest pin before B's first X run at t7). They are two versions, each with only its own factory's laps: A's X scorecard counts no B lap and B's none of A's.
+- Y and Z are two separate entries, both labelled P2; neither is merged into the other or into X.
+- W, whose first run precedes every pin, is listed on A's strip with its laps, and its pin, reason, Hypothesis and Measure read "not recorded"; it is never labelled P1.
+- The lap with no digest is counted in no version's scorecard and is never shown as part of any pinned version.
+- P4, which no run has used, adds no version to either strip and appears on no scorecard.
+- A comparison across factories, if offered, never shows one combined number for both; each side names its factory and the laps it rests on.
+Author: writer, 2026-10-25, coverage of PRD 11.2 version row and 4.2 version strip before the loop builds them
+
+## H-23 A pin that arrives late relabels its version live, and only the latest pin before the first run counts
+Protects: 11.2 (labelled by the most recent pin committed before the first run with that digest; push webhook, reconcile and backfill); 4.2 version strip, comparison and improvements; invariant 5
+Touches: push ingestion and its ordering, reconcile, version strip, scorecard comparison, improvements ledger
+Setup: the check app with one factory. Deliver pin P1 at t1. Insert, as Archon would, laps with digest D first started at t5 (so D is labelled P1). Open the version strip, a comparison of D with another version, and the improvements panel; set the reload marker.
+Steps:
+1. Deliver, late, a push event for pin P2 whose commit time is t4 (before D's first run) but which arrives now, after D's laps. Record when the strip changes.
+2. Deliver a push for pin P3 whose commit time is t6 (after D's first run).
+3. Deliver a push for pin P0 whose commit time is t0 (before P1).
+4. Deliver the P2 push event a second time (a webhook redelivery), then run the nightly reconcile or backfill once.
+5. Insert one more lap with digest D at t8.
+Expect:
+- After step 1, without a reload and within 5 seconds: D is labelled P2 with P2's date, reason, Hypothesis and Measure; the open comparison still compares the same two versions and now names D by P2; D's scorecard numbers and the laps they rest on do not change; P2 (which has a Measure) is listed as being tested, waiting on D's laps.
+- Steps 2 and 3 do not change D's label (P3 is after D's first run; P0 is not the most recent before it).
+- Step 4 creates no duplicate entry and no change of label; step 5 counts the new lap in D without changing its label.
+- The strip keeps exactly one entry per (factory, digest): no relabel splits D into two entries or leaves a stale P1 entry behind.
+- `judges/liveness.js` PASS on the step 1 timing.
+Author: writer, 2026-10-25, coverage of PRD 11.2 version row and 4.2 version strip before the loop builds them
+
+## H-24 Moving between factories is a click, and no screen ever shows the factory you just left
+Protects: 11.6 (every view keyed by factory; never mix factories); 10 (never summed); invariant 5; 8.4
+Touches: factory strip or picker, shared header, every factory-keyed screen, home map live counts and step detail, live query lifecycle
+Setup: the check app with two factories A and B, each with running laps, recent laps, versions, issues and an owner question of its own; A has many more laps than B. Open A's factory page and set the reload marker.
+Steps:
+1. Without typing a URL, move from A to B using only the app's own controls, from each of: the home map, A's factory page, A's version strip, A's owner queue, A's testing and health screens, and one of A's laps. Record where each move lands and what the header says.
+2. With the network throttled so panels take several seconds to load, open A's factory page and move to B before any panel is ready; then switch A, B, A, B quickly and stop on B.
+3. While on B, insert, as Archon would, a `node_started` for one of A's running laps, and then one for one of B's.
+4. Use Back to return to A, then Forward.
+Expect:
+- From every screen there is a visible control to reach the other factory, and the move lands on that factory's matching screen where one exists (from a lap or a version that has no counterpart, on that factory's nearest sensible screen, not an error and not "does not exist").
+- After every move, the header and every panel show only the chosen factory's facts: its name, running-lap count, lanes, laps, versions, owner questions and numbers. No panel briefly or permanently shows the factory left behind, including after the throttled race in step 2: a late snapshot from A never lands on B's screen.
+- In step 3, A's write changes nothing on B's screen; B's write appears within 5 seconds, without a reload (`judges/liveness.js` PASS).
+- Back and Forward restore each factory's screen with its own facts and header.
+- On the home map, the live counts of A and of B are told apart on each step, and step 3 changes only the count of the factory whose lap moved; a step's detail shows the same pinned content whichever factory you came from.
+- Every panel reaches `data-state="ready"` within 2 seconds of each unthrottled move.
+Author: writer, 2026-10-25, coverage of PRD 11.6 factories before the loop builds it
+
+## H-25 With exactly one factory nothing offers a phantom second
+Protects: 11.6 (must work with exactly one); engineering.md (empty states are one sentence and at most one button); 4.1 per-factory live counts
+Touches: factory strip or picker, shared header, home map, every factory-keyed screen, the root address
+Setup: the check app with `factories.json` as committed (one factory). Separately, a copy with one factory whose codebase has no laps, no issues and no versions yet (serve restarted).
+Steps:
+1. Open the app's root address and every screen reachable from it; open every menu, picker and dropdown.
+2. Insert, as Archon would, a running lap for a codebase in no factory, and one for the factory.
+3. Repeat step 1 on the factory with no data yet.
+Expect:
+- The root opens straight onto working screens: no "choose a factory" prompt, no "all factories" or combined view, no empty, blank, placeholder or second entry in any factory list, and no control that switches to nothing.
+- The home map's live counts show the one factory's laps only; the lap of the codebase in no factory appears nowhere and changes no count.
+- With a factory that has no data, every screen reaches ready and shows a one-sentence empty state with at most one button: never an outage message, and never "does not exist" for a factory that is in the list.
+Author: writer, 2026-10-25, coverage of PRD 11.6 factories before the loop builds it
