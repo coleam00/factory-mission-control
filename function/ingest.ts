@@ -15,7 +15,7 @@ import { parsePin, parseVerdict } from '../parsers/commits';
 import { parseDecisions } from '../parsers/decisions';
 import { parseHoldoutsLine, parseMetricsLine } from '../parsers/metrics';
 import type { Tx } from '../scripts/lib/db';
-import type { GitHub } from './github';
+import { type GitHub, GitHubError } from './github';
 
 /** Pins, verdicts and `DECISIONS.md` come from this repository's default branch only. */
 export const VERSIONS_REPOSITORY = 'coleam00/ai-software-factory';
@@ -101,6 +101,12 @@ interface Payloads {
 
 export type Write = (tx: Tx) => Promise<void>;
 
+export interface Prepared {
+  write: Write;
+  /** Set when the push touched `DECISIONS.md` but GitHub would not give it: what GitHub said. */
+  decisionsUnread?: string;
+}
+
 export interface Context {
   factories: Factory[];
   github: GitHub;
@@ -114,7 +120,7 @@ export async function prepare(
   event: string,
   payload: unknown,
   { factories, github }: Context,
-): Promise<Write | null> {
+): Promise<Prepared | null> {
   const repository = (payload as { repository?: Repository }).repository;
   if (!repository) return null;
 
@@ -123,12 +129,27 @@ export async function prepare(
     if (repository.full_name !== VERSIONS_REPOSITORY) return null;
     if (push.deleted || push.ref !== `refs/heads/${repository.default_branch}`) return null;
     const decisions = await decisionsAfter(push, repository.default_branch, github);
-    return async (tx) => {
-      await writeCommits(tx, push.commits);
-      if (decisions !== undefined) await replaceDecisions(tx, decisions);
+    const text = decisions?.text;
+    return {
+      write: async (tx) => {
+        await writeCommits(tx, push.commits);
+        if (text !== undefined) await replaceDecisions(tx, text);
+      },
+      decisionsUnread: decisions?.unread,
     };
   }
 
+  const write = mirrorWrite(event, payload, repository, factories);
+  return write ? { write } : null;
+}
+
+/** The write a delivery about a followed factory's issues, comments, labels or PRs makes. */
+function mirrorWrite(
+  event: string,
+  payload: unknown,
+  repository: Repository,
+  factories: Factory[],
+): Write | null {
   const factory = factories.find(
     (f) => f.repository.toLowerCase() === repository.full_name.toLowerCase(),
   )?.name;
@@ -169,22 +190,31 @@ export async function prepare(
 /**
  * `DECISIONS.md` as the default branch holds it now, when the push touched the file, else
  * undefined. Reading the branch rather than the pushed commit means a redelivered older push
- * cannot roll the table back to that push's file. A missing file is only believed when this push
- * removed it; any other 404 (a private repository, a ref GitHub cannot resolve yet) throws, so
- * the delivery fails visibly instead of emptying the table.
+ * cannot roll the table back to that push's file. When GitHub refuses or cannot be reached (a
+ * rate limit's 403, a 5xx, a network error), the result says so and the stored decisions stay as
+ * they were: the push's commits are still worth recording, and the next push or a reconcile reads
+ * the file again. A missing file is only believed when this push removed it; any other 404 (a
+ * private repository, a ref GitHub cannot resolve yet) throws, so the delivery fails visibly
+ * instead of emptying the table.
  */
 async function decisionsAfter(
   push: Payloads['push'],
   branch: string,
   github: GitHub,
-): Promise<string | undefined> {
+): Promise<{ text: string; unread?: never } | { text?: never; unread: string } | undefined> {
   const touched = (commit: Commit) =>
     [...commit.added, ...commit.modified, ...commit.removed].includes(DECISIONS_PATH);
   const lastTouch = push.commits.findLast(touched);
   if (!lastTouch) return undefined;
-  const text = await github.fileAt(VERSIONS_REPOSITORY, DECISIONS_PATH, branch);
-  if (text !== null) return text;
-  if (lastTouch.removed.includes(DECISIONS_PATH)) return '';
+  let text: string | null;
+  try {
+    text = await github.fileAt(VERSIONS_REPOSITORY, DECISIONS_PATH, branch);
+  } catch (error) {
+    if (error instanceof GitHubError) return { unread: String(error.status) };
+    return { unread: `network error (${error instanceof Error ? error.message : String(error)})` };
+  }
+  if (text !== null) return { text };
+  if (lastTouch.removed.includes(DECISIONS_PATH)) return { text: '' };
   throw new Error(`${DECISIONS_PATH} is missing on ${branch} but this push did not remove it`);
 }
 

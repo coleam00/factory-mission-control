@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import type { Db } from '../scripts/lib/db';
-import { type Context, prepare } from './ingest';
+import { type Context, DECISIONS_PATH, prepare } from './ingest';
 import { verify } from './signature';
 
 export interface WebhookOptions extends Context {
@@ -28,9 +28,21 @@ export function createWebhookApp({ secret, db, ...context }: WebhookOptions): Ho
       );
     }
     const event = c.req.header('x-github-event') ?? '';
-    const write = await prepare(event, payload, context);
-    if (write) await db.transaction(write);
-    return c.json({ event, written: write !== null });
+    const prepared = await prepare(event, payload, context);
+    if (prepared) await db.transaction(prepared.write);
+    const unread = prepared?.decisionsUnread;
+    if (unread === undefined) return c.json({ event, written: prepared !== null });
+    console.warn(
+      `${event} ${c.req.header('x-github-delivery') ?? ''}: ${DECISIONS_PATH} unread: ${unread}; commits written, decisions kept`,
+    );
+    return c.json({ event, written: true, decisions: `unread: ${unread}` });
+  });
+
+  // Whatever fails inside one delivery answers that delivery with a 500, so GitHub shows the
+  // failure and can redeliver; the process keeps serving the next one.
+  app.onError((error, c) => {
+    console.error(`${c.req.header('x-github-event') ?? ''} delivery failed:`, error);
+    return c.json({ error: 'the delivery could not be recorded' }, 500);
   });
 
   return app;
