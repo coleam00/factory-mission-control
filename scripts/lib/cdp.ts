@@ -12,6 +12,8 @@ export interface Page {
   evaluate<T>(expression: string, timeoutMs?: number): Promise<T>;
   /** Navigates and resolves once the page's load event fires. */
   goto(url: string): Promise<void>;
+  /** A PNG of the whole page laid out `width` px wide. */
+  screenshot(width: number): Promise<Buffer>;
   close(): Promise<void>;
 }
 
@@ -174,6 +176,23 @@ export async function openPage(env: Record<string, string | undefined>): Promise
         );
         if (errorText) throw new Error(`could not load ${url}: ${errorText}`);
         await loaded;
+      },
+      async screenshot(width: number) {
+        const metrics = { width, height: 900, deviceScaleFactor: 1, mobile: false };
+        await cdp.send('Emulation.setDeviceMetricsOverride', metrics, sessionId);
+        const { cssContentSize } = await cdp.send<{
+          cssContentSize: { width: number; height: number };
+        }>('Page.getLayoutMetrics', {}, sessionId);
+        const { data } = await cdp.send<{ data: string }>(
+          'Page.captureScreenshot',
+          {
+            format: 'png',
+            captureBeyondViewport: true,
+            clip: { x: 0, y: 0, width, height: cssContentSize.height, scale: 1 },
+          },
+          sessionId,
+        );
+        return Buffer.from(data, 'base64');
       },
       async close() {
         await cdp.send('Browser.close', {}).catch(() => {});
