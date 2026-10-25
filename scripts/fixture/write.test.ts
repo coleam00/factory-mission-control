@@ -1,4 +1,4 @@
-import { afterEach, expect, test } from 'bun:test';
+import { afterEach, describe, expect, test } from 'bun:test';
 import { readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { REPO_ROOT } from '../lib/cli';
@@ -27,15 +27,17 @@ test.each(['main', 'fixture', 'rewind-x'])(
   },
 );
 
-test.each([[['label']], [['step', '--event', 'workflow_started']], [[]]])(
-  'exits 2 with usage for %j before touching Neon',
-  async (argv) => {
-    const run = recordingDeps({ repoRoot: repo() });
-    expect(await main(argv, run.deps)).toBe(2);
-    expect(run.neonCalls).toEqual([]);
-    expect(run.err.join('\n')).toContain('usage: bun run fixture:write step');
-  },
-);
+test.each([
+  [['nope']],
+  [['step', '--event', 'workflow_started']],
+  [['pin', '--step', 'pick']],
+  [[]],
+])('exits 2 with usage for %j before touching Neon', async (argv) => {
+  const run = recordingDeps({ repoRoot: repo() });
+  expect(await main(argv, run.deps)).toBe(2);
+  expect(run.neonCalls).toEqual([]);
+  expect(run.err.join('\n')).toContain('usage: bun run fixture:write step');
+});
 
 /** A database with no running run that stores jsonb as `stored` reports, counting events. */
 function storing(stored: string) {
@@ -109,4 +111,68 @@ test('a completed event carries the structured output and its JSON text', () => 
   const data = eventData('pick', 'node_completed', NOW);
   expect(data.structured_output).toEqual(structuredOutputFor('pick'));
   expect(JSON.parse(String(data.node_output))).toEqual(structuredOutputFor('pick'));
+});
+
+const ROW_KINDS = [
+  ['label', 'mc.issue_labels'],
+  ['comment', 'mc.comments'],
+  ['issue', 'mc.issues'],
+  ['pin', 'mc.pins'],
+  ['verdict', 'mc.verdicts'],
+  ['decision', 'mc.decisions'],
+] as const;
+
+/** A table holding `before` rows, then `after` once something is inserted. */
+function counting(before: number, after: number) {
+  let inserted = false;
+  return (sql: string) => {
+    if (sql.startsWith('INSERT')) {
+      inserted = true;
+      return [{ written: 1 }];
+    }
+    if (sql.startsWith('SELECT count(*)')) return [{ n: inserted ? after : before }];
+    return [];
+  };
+}
+
+describe.each(ROW_KINDS)('the %s kind', (kind, table) => {
+  test.each(['main', 'fixture', 'rewind-x'])(
+    'refuses branch %s without connecting',
+    async (branchName) => {
+      const run = recordingDeps({ repoRoot: repo(), branchName });
+      expect(await main([kind], run.deps)).toBe(1);
+      expect(run.opened).toEqual([]);
+      expect(run.err.join('\n')).toContain(`refusing branch '${branchName}'`);
+    },
+  );
+
+  test(`inserts exactly one row into ${table} on a check branch`, async () => {
+    const run = recordingDeps({ repoRoot: repo(), rows: counting(3, 4) });
+    expect(await main([kind], run.deps)).toBe(0);
+    const inserts = run.sql.filter((sql) => sql.startsWith('INSERT'));
+    expect(inserts).toHaveLength(1);
+    expect(inserts[0]).toStartWith(`INSERT INTO ${table} (`);
+    expect(run.out).toEqual([`${table} rows: 3 -> 4`]);
+  });
+
+  test('fails when the table did not gain a row', async () => {
+    const run = recordingDeps({ repoRoot: repo(), rows: counting(3, 3) });
+    expect(await main([kind], run.deps)).toBe(1);
+    expect(run.err.join('\n')).toContain(`${table} rows: 3 -> 3, not one more`);
+    expect(run.out).toEqual([]);
+  });
+});
+
+test('binds every value a row kind writes, taken from the moment it runs', async () => {
+  const run = recordingDeps({ repoRoot: repo(), rows: counting(0, 1) });
+  expect(await main(['pin'], run.deps)).toBe(0);
+  const params = run.params[run.sql.findIndex((sql) => sql.startsWith('INSERT'))];
+  expect(params).toEqual([
+    expect.stringMatching(/^[0-9a-f]{40}$/),
+    expect.stringMatching(/^[0-9a-f]{40}$/),
+    `fixture pin written at ${NOW.toISOString()}`,
+    expect.any(String),
+    expect.any(String),
+    NOW.toISOString(),
+  ]);
 });
