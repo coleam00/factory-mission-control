@@ -2,6 +2,7 @@ import type { LiveQueryState, SealedLiveQuery } from '@neon/realtime/client';
 import { RealtimeProvider, useLiveQuery } from '@neon/realtime-react';
 import { type ReactElement, type ReactNode, useCallback, useEffect, useState } from 'react';
 import { useLive } from './LiveProvider';
+import { expectSubscribe } from './subscribe-marks';
 
 export type PanelState = 'loading' | 'ready' | 'error';
 
@@ -23,7 +24,10 @@ export function panelState({
   return data === undefined ? 'loading' : 'ready';
 }
 
-/** Read by `bun run test:live`: when the panel asked for its seal, got rows, and renewed. */
+/**
+ * Read by `bun run test:live`: when the panel asked for its seal, got rows, and renewed. The
+ * moment its subscribe is sent is marked by the socket (`subscribe-marks.ts`).
+ */
 function markOnce(name: string): void {
   if (performance.getEntriesByName(name).length === 0) performance.mark(name);
 }
@@ -87,7 +91,11 @@ export function LivePanel<Row>({
     let cancelled = false;
     markOnce(`live:${query}:requested`);
     requestSeal().then(
-      (first) => !cancelled && setSealed(first),
+      (first) => {
+        if (cancelled) return;
+        expectSubscribe(first.capability, query);
+        setSealed(first);
+      },
       () => !cancelled && setFailed(true),
     );
     return () => {

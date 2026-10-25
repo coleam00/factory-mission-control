@@ -3,7 +3,9 @@
  * The design probe (PRD 8.3). Loads a URL in a headless Chromium at 1440 px and 390 px and fails
  * on any computed color outside the tokens copied in docs/design/archon-console/, any text font
  * other than Geist or Geist Mono, a browser-default control, text contrast below 4.5:1,
- * horizontal overflow, and any interactive element without an accessible name.
+ * horizontal overflow, and any interactive element without an accessible name. It checks the
+ * page as first rendered and, when a live panel was still loading (`data-state="loading"`), again
+ * once none is, or after 10 s; each failure names the state it was found in.
  *
  *   bun harness/design-probe.js <url> [--out <report.json>]
  *
@@ -271,9 +273,16 @@ async function unnamedInteractiveElements(cdp, session) {
  * `tokenLayers` is one list of declarations per token file, each layered over the ones before it
  * the way the page cascades them.
  */
-async function pageChecks(tokenLayers) {
+async function pageChecks(tokenLayers, settle) {
+  // A live panel shows its loading state until its first rows arrive: the settled pass checks
+  // what it becomes.
+  const settleBy = Date.now() + 10000;
+  while (settle && document.querySelector('[data-state="loading"]') && Date.now() < settleBy) {
+    await new Promise((done) => setTimeout(done, 100));
+  }
   await document.fonts.ready;
   await new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)));
+  const loading = document.querySelector('[data-state="loading"]') !== null;
 
   const MIN_CONTRAST = 4.5;
   const FONTS = new Set(['Geist', 'Geist Mono']);
@@ -474,7 +483,7 @@ async function pageChecks(tokenLayers) {
       detail: `the page is ${scrollWidth}px wide in a ${viewport}px viewport`,
     });
   }
-  return { failures, tokenColors: palette.size };
+  return { failures, tokenColors: palette.size, loading };
 }
 
 async function probeAt(cdp, session, url, width, tokenLayers) {
@@ -488,10 +497,21 @@ async function probeAt(cdp, session, url, width, tokenLayers) {
   const { errorText } = await cdp.send('Page.navigate', { url }, session);
   if (errorText) throw new ProbeError(`could not load ${url}: ${errorText}`);
   await loaded;
+  const first = await checksIn(cdp, session, tokenLayers, 'first-render');
+  const passes = [first];
+  if (first.loading) passes.push(await checksIn(cdp, session, tokenLayers, 'settled'));
+  return {
+    failures: passes.flatMap((pass) => pass.failures.map((f) => ({ width, ...f }))),
+    tokenColors: passes[passes.length - 1].tokenColors,
+  };
+}
+
+/** One pass of every check over the page as it is (`first-render`) or once it settles (`settled`). */
+async function checksIn(cdp, session, tokenLayers, state) {
   const { result, exceptionDetails } = await cdp.send(
     'Runtime.evaluate',
     {
-      expression: `(${pageChecks.toString()})(${JSON.stringify(tokenLayers)})`,
+      expression: `(${pageChecks.toString()})(${JSON.stringify(tokenLayers)}, ${state === 'settled'})`,
       awaitPromise: true,
       returnByValue: true,
     },
@@ -504,8 +524,9 @@ async function probeAt(cdp, session, url, width, tokenLayers) {
   }
   const failures = [...result.value.failures, ...(await unnamedInteractiveElements(cdp, session))];
   return {
-    failures: failures.map((f) => ({ width, ...f })),
+    failures: failures.map((f) => ({ state, ...f })),
     tokenColors: result.value.tokenColors,
+    loading: result.value.loading,
   };
 }
 
