@@ -7,7 +7,7 @@ and rejected when `bun run test:live` ran each probe query on a check branch; `t
 them again on every run and fails when a verdict or an error differs from this table.
 
 - `@neon/realtime`: 0.1.2
-- Run: check-62647c7c, 2026-10-25
+- Run: check-36d396dc, 2026-10-25
 
 | Feature            | Probe                                                                                                                                                                                             | Verdict  | Error                                                                           |
 | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- | ------------------------------------------------------------------------------- |
