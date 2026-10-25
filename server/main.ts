@@ -3,6 +3,7 @@ import { join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { createApp } from './app';
 import { resolveBuildId } from './build-id';
+import { loadCheckEnv } from './check-env';
 
 const PORTS = { min: 8850, max: 8864 };
 
@@ -18,6 +19,7 @@ if (!Number.isInteger(port) || port < PORTS.min || port > PORTS.max) {
 }
 
 const repoRoot = resolve(import.meta.dir, '..');
+loadCheckEnv(repoRoot, Bun.env);
 const distDir = join(repoRoot, 'dist');
 if (!existsSync(join(distDir, 'index.html'))) {
   console.error('dist/index.html is missing: run `bun run setup` first');
