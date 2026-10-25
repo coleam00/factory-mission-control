@@ -19,6 +19,12 @@ export type Review =
   | { outcome: 'refused'; route: Route; reason: string }
   | { outcome: 'sent-back'; route: Route };
 
+export const REVIEW_OUTCOMES = [
+  'merged',
+  'refused',
+  'sent-back',
+] as const satisfies readonly Review['outcome'][];
+
 export interface OwnerOption {
   key: string;
   text: string;

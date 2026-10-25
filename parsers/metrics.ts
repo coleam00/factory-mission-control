@@ -18,7 +18,8 @@ export interface MetricsLine {
   healthActions: number;
 }
 
-export type HoldoutVerdict = 'PASS' | 'FAIL' | 'INCOMPLETE';
+export const HOLDOUT_VERDICTS = ['PASS', 'FAIL', 'INCOMPLETE'] as const;
+export type HoldoutVerdict = (typeof HOLDOUT_VERDICTS)[number];
 
 export interface HoldoutResult {
   id: string;

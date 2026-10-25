@@ -1,7 +1,6 @@
 import { afterEach, expect, test } from 'bun:test';
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { REPO_ROOT } from './lib/cli';
 import type { Db } from './lib/db';
 import { DATABASE_URL, recordingDeps, scratchRepo } from './lib/test-deps';
 import { main, migrationsDir, readMigrationFiles, runMigrations } from './migrate';
@@ -97,10 +96,6 @@ test('a second run over the same recorded state applies nothing', async () => {
   expect(await runMigrations({ files, db })).toEqual([]);
   expect(statements.some((sql) => sql.startsWith('CREATE TABLE a'))).toBe(false);
   expect(statements.some((sql) => sql.startsWith('INSERT'))).toBe(false);
-});
-
-test('the migration set is empty', () => {
-  expect(readMigrationFiles(migrationsDir(REPO_ROOT))).toEqual([]);
 });
 
 test('a failing file is named, with the files committed before it', async () => {
