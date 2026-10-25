@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, expect, test } from 'bun:test';
+import { afterEach, beforeEach, expect, spyOn, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { snapshot as snapshotOf, testDb } from '../db/test-db';
@@ -7,7 +7,7 @@ import type { Db, Row } from '../scripts/lib/db';
 import { migrationsDir, readMigrationFiles, runMigrations } from '../scripts/migrate';
 import { createWebhookApp } from './app';
 import { createGitHub, type GetFetch } from './github';
-import { METRICS_TITLE, OWNER_DECISIONS_TITLE } from './ingest';
+import { METRICS_TITLE, OWNER_DECISIONS_TITLE, replaceDecisions } from './ingest';
 import { sign, verify } from './signature';
 
 const repoRoot = resolve(import.meta.dir, '..');
@@ -321,6 +321,54 @@ test('a DECISIONS.md the push did not remove but GitHub cannot find fails and ke
   expect((await deliver(named('09-'))).status).toBe(500);
   expect(await snapshot()).toEqual(before);
 });
+
+test.each([
+  ['403', () => new Response('rate limit exceeded', { status: 403 }), '403'],
+  ['500', () => new Response('Internal Server Error', { status: 500 }), '500'],
+  [
+    'a network error',
+    (): Response => {
+      throw new TypeError('fetch failed');
+    },
+    'network error (fetch failed)',
+  ],
+])(
+  'a DECISIONS.md read answered by %s records the push and keeps decisions',
+  async (_, failure, status) => {
+    await deliver(named('09-'));
+    const succeeded = await snapshot();
+    await db.query('DELETE FROM mc.pins');
+    await db.query('DELETE FROM mc.verdicts');
+    const kept = `# Decisions
+
+${entry('Kept')}`;
+    await db.transaction((tx) => replaceDecisions(tx, kept));
+    const before = await snapshot();
+
+    respond = failure;
+    const warn = spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const response = await deliver(named('09-'));
+      expect(response.status).toBe(200);
+      expect(await response.json()).toEqual({
+        event: 'push',
+        written: true,
+        decisions: `unread: ${status}`,
+      });
+      expect(warn.mock.calls.map((args) => args.join(' '))).toEqual([
+        expect.stringContaining(`DECISIONS.md unread: ${status}`),
+      ]);
+    } finally {
+      warn.mockRestore();
+    }
+    expect(await snapshot()).toEqual({
+      ...before,
+      pins: succeeded.pins ?? [],
+      verdicts: succeeded.verdicts ?? [],
+    });
+    expect(await decisionsTitles()).toEqual([{ title: 'Kept' }]);
+  },
+);
 
 test('a push that removes DECISIONS.md empties the decisions', async () => {
   await deliver(named('09-'));
