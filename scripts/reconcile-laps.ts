@@ -1,0 +1,136 @@
+// `bun run reconcile:laps` (issue #53): repairs the laps a dropped projection left wrong. A
+// projection trigger that loses a lock wait records the error, and when even that record fails the
+// error is dropped (0006_projection.sql), so a lap can stay `running` after Archon finished the run:
+// a finished run gets no more writes to project it again. For each of Archon's runs this replays
+// the run's row and step-level events through 0006's own functions, by way of temp tables that
+// carry the same triggers, and keeps the result only when it differs from the lap's rows. Archon's
+// tables are only read. It writes the check branch in .mc-check.env; `:main` writes `main`, and is
+// the owner's nightly run beside `backfill:main`.
+
+import { parseArgs } from 'node:util';
+import { failing, guardedDatabaseUrl, type Main, runCli } from './lib/cli';
+import type { Db, Tx } from './lib/db';
+
+/** Thrown to roll back a replay that reproduced the lap's rows, so they are not rewritten. */
+class Agrees extends Error {}
+/** Thrown to roll back a replay that lost a lock wait to a live projection of the same run. */
+class Busy extends Error {}
+
+const REPLAY_SOURCES = `('mc_reconcile_run', 'mc_reconcile_step_event')`;
+
+/** Every row the projection writes for a run, as text, in a fixed order. */
+async function lapRows(tx: Tx, runId: string): Promise<string> {
+  const rows = await tx.query(
+    `SELECT 'laps' AS t, to_jsonb(l)::text AS row FROM mc.laps l WHERE run_id = $1
+     UNION ALL SELECT 'lap_steps', to_jsonb(s)::text FROM mc.lap_steps s WHERE run_id = $1
+     UNION ALL SELECT 'app_check_lines', to_jsonb(a)::text FROM mc.app_check_lines a WHERE run_id = $1
+     ORDER BY 1, 2`,
+    [runId],
+  );
+  return JSON.stringify(rows);
+}
+
+/**
+ * Replaces the run's rows with what the projection writes from Archon's rows today. Throws `Agrees`
+ * when that is what they already were and `Busy` when the replay could not take a lock.
+ */
+async function reproject(tx: Tx, runId: string): Promise<void> {
+  const before = await lapRows(tx, runId);
+  // The temp tables live only on this transaction's connection, and are dropped with it.
+  await tx.query(
+    'CREATE TEMP TABLE mc_reconcile_runs (LIKE public.remote_agent_workflow_runs) ON COMMIT DROP',
+    [],
+  );
+  await tx.query(
+    'CREATE TEMP TABLE mc_reconcile_events (LIKE public.remote_agent_workflow_events) ON COMMIT DROP',
+    [],
+  );
+  await tx.query(
+    `CREATE TRIGGER mc_reconcile_run AFTER INSERT ON mc_reconcile_runs
+       FOR EACH ROW EXECUTE FUNCTION mc.project_run()`,
+    [],
+  );
+  await tx.query(
+    `CREATE TRIGGER mc_reconcile_step_event AFTER INSERT ON mc_reconcile_events
+       FOR EACH ROW EXECUTE FUNCTION mc.project_step_event()`,
+    [],
+  );
+  await tx.query('DELETE FROM mc.app_check_lines WHERE run_id = $1', [runId]);
+  await tx.query('DELETE FROM mc.lap_steps WHERE run_id = $1', [runId]);
+  await tx.query('DELETE FROM mc.laps WHERE run_id = $1', [runId]);
+  await tx.query(
+    'INSERT INTO mc_reconcile_runs SELECT * FROM public.remote_agent_workflow_runs WHERE id = $1',
+    [runId],
+  );
+  // Archon's chronology: created_at, then event_order, as its own read queries order events. A
+  // replayed start only reopens a step that is running or finished before it, so order matters.
+  await tx.query(
+    `INSERT INTO mc_reconcile_events SELECT * FROM public.remote_agent_workflow_events
+       WHERE workflow_run_id = $1
+         AND event_type IN ('node_started', 'node_completed', 'node_failed', 'node_skipped')
+       ORDER BY created_at, coalesce(event_order, 0), id`,
+    [runId],
+  );
+  const busy = await tx.query(
+    `SELECT 1 FROM mc.projection_errors WHERE source IN ${REPLAY_SOURCES} AND sqlstate = '55P03'`,
+    [],
+  );
+  if (busy.length > 0) throw new Busy();
+  // The live triggers already recorded every error the same rows cause.
+  await tx.query(`DELETE FROM mc.projection_errors WHERE source IN ${REPLAY_SOURCES}`, []);
+  if ((await lapRows(tx, runId)) === before) throw new Agrees();
+}
+
+/** Re-projects every Archon run whose lap rows differ from what its rows project to. */
+export async function reconcileLaps(db: Db): Promise<{ repaired: number; busy: number }> {
+  const runs = await db.query(
+    'SELECT id FROM public.remote_agent_workflow_runs ORDER BY started_at, id',
+    [],
+  );
+  let repaired = 0;
+  let busy = 0;
+  for (const { id } of runs) {
+    try {
+      await db.transaction((tx) => reproject(tx, String(id)));
+      repaired++;
+    } catch (error) {
+      if (error instanceof Busy) busy++;
+      else if (!(error instanceof Agrees)) throw error;
+    }
+  }
+  return { repaired, busy };
+}
+
+const USAGE =
+  'usage: bun run reconcile:laps (the check branch in .mc-check.env) | bun run reconcile:laps:main (main, the owner only)';
+
+export const main: Main = async (argv, deps) => {
+  let values: { main?: boolean; help?: boolean };
+  try {
+    ({ values } = parseArgs({
+      args: argv,
+      options: { main: { type: 'boolean' }, help: { type: 'boolean', short: 'h' } },
+    }));
+  } catch (error) {
+    deps.err(error instanceof Error ? `${error.message}\n${USAGE}` : USAGE);
+    return 2;
+  }
+  if (values.help) {
+    deps.out(USAGE);
+    return 0;
+  }
+  return failing(deps, async () => {
+    // No terminal prompt for `:main`, like `backfill:main`: the owner schedules the nightly run.
+    const url = await guardedDatabaseUrl(deps, values.main ? 'main' : 'check');
+    const db = deps.openDb(url);
+    try {
+      const { repaired, busy } = await reconcileLaps(db);
+      deps.out(`reconcile: ${repaired} run(s) repaired`);
+      if (busy > 0) deps.out(`reconcile: ${busy} run(s) busy, left for the next run`);
+    } finally {
+      await db.close();
+    }
+  });
+};
+
+if (import.meta.main) await runCli(main);
