@@ -1,0 +1,29 @@
+{
+  "name": "factory-mission-control",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "setup": "vite build",
+    "serve": "bun server/main.ts",
+    "check": "tsc --noEmit && biome check && bun test app server"
+  },
+  "dependencies": {
+    "@fontsource/geist": "^5.3.0",
+    "@fontsource/geist-mono": "^5.3.0",
+    "hono": "^4.13.13",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "react-router": "^7"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.6.3",
+    "@tailwindcss/vite": "^4",
+    "@types/bun": "^1.4.4",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^5",
+    "tailwindcss": "^4",
+    "typescript": "^7.0.2",
+    "vite": "^6"
+  }
+}
