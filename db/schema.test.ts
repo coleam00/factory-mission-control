@@ -1,37 +1,20 @@
 import { afterAll, beforeAll, expect, test } from 'bun:test';
 import { join } from 'node:path';
-import { PGlite, type Transaction } from '@electric-sql/pglite';
 import type { CheckLine } from '../fixtures/pack/sdlc/.shared/merge-gate';
 import { REVIEW_OUTCOMES, type Review } from '../parsers/comments';
 import { VERDICT_OUTCOMES } from '../parsers/commits';
 import { HOLDOUT_VERDICTS } from '../parsers/metrics';
-import type { Db, Row, Tx } from '../scripts/lib/db';
+import type { Row } from '../scripts/lib/db';
 import { migrationsDir, readMigrationFiles, runMigrations } from '../scripts/migrate';
+import { testDb } from './test-db';
 
 const RUN_ID = '00000000-0000-0000-0000-000000000001';
 
-const pg = new PGlite();
 const files = readMigrationFiles(migrationsDir(join(import.meta.dir, '..')));
 let firstRun: string[] = [];
 let archonBefore: Row[][] = [];
 
-/** Without params a migration file is several statements, which only exec runs. */
-function txOn(client: PGlite | Transaction): Tx {
-  return {
-    async query(sql, params) {
-      if (params) return (await client.query<Row>(sql, params)).rows;
-      return ((await client.exec(sql)).at(-1)?.rows as Row[] | undefined) ?? [];
-    },
-  };
-}
-
-const db: Db = {
-  ...txOn(pg),
-  async transaction(fn) {
-    await pg.transaction((tx) => fn(txOn(tx)));
-  },
-  close: () => pg.close(),
-};
+const db = testDb();
 
 /** What a migration could change on Archon's tables: columns, indexes, constraints, triggers. */
 const archonSchema = (): Promise<Row[][]> =>

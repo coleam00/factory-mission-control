@@ -1,0 +1,32 @@
+{
+  "action": "edited",
+  "label": {
+    "id": 9100000001,
+    "name": "feature",
+    "color": "a2eeef",
+    "default": false
+  },
+  "changes": {
+    "name": {
+      "from": "enhancement"
+    }
+  },
+  "repository": {
+    "id": 1102400834,
+    "name": "factory-mission-control",
+    "full_name": "coleam00/factory-mission-control",
+    "private": false,
+    "html_url": "https://github.com/coleam00/factory-mission-control",
+    "default_branch": "main",
+    "owner": {
+      "login": "coleam00",
+      "id": 47287758,
+      "type": "User"
+    }
+  },
+  "sender": {
+    "login": "coleam00",
+    "id": 47287758,
+    "type": "User"
+  }
+}
