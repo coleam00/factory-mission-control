@@ -71,6 +71,9 @@ export const main: Main = async (argv, deps) => {
   const target = values.main ? 'main' : 'check';
   return failing(deps, async () => {
     const url = await guardedDatabaseUrl(deps, target);
+    if (target === 'main' && !deps.confirmOwner(deps.env.NEON_PROJECT_ID ?? '')) {
+      throw new Error('migrate:main is for the owner, at a terminal');
+    }
     const db = deps.openDb(url);
     try {
       const applied = await runMigrations({
