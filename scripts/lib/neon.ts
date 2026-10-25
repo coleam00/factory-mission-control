@@ -1,11 +1,15 @@
+import { SERVE_PORTS } from '../../server/ports';
 import { requireCheckBranch } from './guard';
 
 const API_BASE = 'https://console.neon.tech/api/v2';
 
-/** PRD 11.3: Vite dev and the serve ports 8850-8864, exactly the 16 origins Neon allows. */
+/** PRD 11.3: Vite dev and every serve port; Neon allows at most 16 origins. */
 export const REALTIME_ORIGINS = [
   'http://localhost:5173',
-  ...Array.from({ length: 15 }, (_, i) => `http://localhost:${8850 + i}`),
+  ...Array.from(
+    { length: SERVE_PORTS.max - SERVE_PORTS.min + 1 },
+    (_, i) => `http://localhost:${SERVE_PORTS.min + i}`,
+  ),
 ];
 
 export type Branch = { id: string; name: string; created_at: string };

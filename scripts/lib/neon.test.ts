@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test';
+import { SERVE_PORTS } from '../../server/ports';
 import { createNeonApi } from './neon';
 
 type Request = { url: string; method: string; body?: unknown };
@@ -65,7 +66,8 @@ test('createBranch asks for a read-write compute and Realtime for the 16 allowed
   expect(body.branch.parent_id).toBe('br-fixture');
   expect(body.branch.realtime.allowed_origins).toHaveLength(16);
   expect(body.branch.realtime.allowed_origins).toContain('http://localhost:5173');
-  expect(body.branch.realtime.allowed_origins).toContain('http://localhost:8864');
+  expect(body.branch.realtime.allowed_origins).toContain(`http://localhost:${SERVE_PORTS.min}`);
+  expect(body.branch.realtime.allowed_origins).toContain(`http://localhost:${SERVE_PORTS.max}`);
   expect(body.endpoints).toEqual([{ type: 'read_write' }]);
 });
 
