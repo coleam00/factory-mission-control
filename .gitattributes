@@ -1,6 +1,7 @@
 # Biome checks for LF line endings; keep Windows checkouts of the code it checks the same as CI's.
 /app/** text eol=lf
 /server/** text eol=lf
+/parsers/** text eol=lf
 /package.json text eol=lf
 /tsconfig.json text eol=lf
 /biome.json text eol=lf

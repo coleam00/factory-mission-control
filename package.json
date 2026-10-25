@@ -5,7 +5,7 @@
   "scripts": {
     "setup": "vite build",
     "serve": "bun server/main.ts",
-    "check": "tsc --noEmit && biome check && bun test app server harness"
+    "check": "tsc --noEmit && biome check && bun test app server harness parsers"
   },
   "dependencies": {
     "@fontsource/geist": "^5.3.0",

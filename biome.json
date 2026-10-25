@@ -7,6 +7,7 @@
       "server/**",
       "harness/*.js",
       "harness/*.ts",
+      "parsers/**",
       "package.json",
       "tsconfig.json",
       "biome.json",
