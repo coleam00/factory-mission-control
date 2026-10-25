@@ -15,7 +15,9 @@
     "reconcile:main": "bun scripts/backfill.ts --reconcile --main",
     "fixture:branch": "bun scripts/fixture/branch.ts",
     "fixture:drop": "bun scripts/fixture/drop.ts",
-    "fixture:write": "bun scripts/fixture/write.ts"
+    "fixture:write": "bun scripts/fixture/write.ts",
+    "fixture:seed": "bun scripts/fixture/seed.ts",
+    "fixture:verify": "bun scripts/fixture/verify.ts"
   },
   "dependencies": {
     "@fontsource/geist": "^5.3.0",
