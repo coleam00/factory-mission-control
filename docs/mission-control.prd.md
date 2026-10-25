@@ -319,8 +319,9 @@ Archon's `provider_event` rows (about 30 per step) are never read by a live quer
   `DATABASE_URL`, which Archon on this machine uses).
 - **The Neon Function.** Laps build and test the webhook handler locally (`bun run function:dev`,
   with signed sample payloads in `fixtures/webhooks/`, verified with `GITHUB_WEBHOOK_SECRET=test`).
-  Deploying it (`bun run function:deploy`) and registering webhooks are owner steps after merge; no
-  acceptance criterion needs a deployed Function.
+  A lap may deploy it (`bun run function:deploy`) to its own check branch to prove the deployed
+  Function, and deletes it when the check ends (owner decision, #56). Deploying to `main` and
+  registering webhooks are owner steps after merge.
 - `GET /api/health` returns 200 once the app can serve; `GET /api/build-id` returns the git commit.
 - **Checks:** `bun run check` (type-check, lint, unit tests, no network) and `bun run test:live`
   (the liveness checks against a check branch). CI runs `bun run check` on every pull request.
