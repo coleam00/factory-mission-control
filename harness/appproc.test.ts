@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test';
-import { PORTS } from '../server/ports';
+import { SERVE_PORTS } from '../server/ports';
 
 const python = process.platform === 'win32' ? 'python' : 'python3';
 
@@ -19,7 +19,7 @@ test("the http driver's port range is the one the server accepts", () => {
   const range = runPython(
     'import json, appproc; print(json.dumps([appproc.APP_PORTS.start, appproc.APP_PORTS.stop - 1]))',
   );
-  expect(range).toEqual([PORTS.min, PORTS.max]);
+  expect(range).toEqual([SERVE_PORTS.min, SERVE_PORTS.max]);
 });
 
 test('the http driver takes the one free port in its range and refuses to start when none is', () => {

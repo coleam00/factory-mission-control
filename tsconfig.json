@@ -11,5 +11,5 @@
     "isolatedModules": true,
     "skipLibCheck": true
   },
-  "include": ["app", "server", "harness", "parsers", "vite.config.ts"]
+  "include": ["app", "server", "harness", "scripts", "parsers", "db", "function", "vite.config.ts"]
 }

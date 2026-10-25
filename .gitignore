@@ -16,6 +16,7 @@ harness/.results/
 .env
 .env.*
 !.env.example
+.mc-check.env
 *.pem
 secrets.json
 credentials.json

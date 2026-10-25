@@ -1,0 +1,56 @@
+[
+  {
+    "file": "01-issues-opened.json",
+    "event": "issues",
+    "delivery": "6b0f5c4e-0000-4000-8000-000000000001",
+    "signature": "sha256=91790af53dae0df0f8e7bd054536c3098bdbc96f01fc92547c9441cf2ddde342"
+  },
+  {
+    "file": "02-issues-labeled-needs-owner.json",
+    "event": "issues",
+    "delivery": "6b0f5c4e-0000-4000-8000-000000000002",
+    "signature": "sha256=42f1b7870da3e1c66a8b2440286d250bf63e665b3d996f36a884ac6439a7d18f"
+  },
+  {
+    "file": "03-issues-edited-owner-decisions.json",
+    "event": "issues",
+    "delivery": "6b0f5c4e-0000-4000-8000-000000000003",
+    "signature": "sha256=19ab6f792ccd6867fd17ac3de5a53a4ae52b0b82ef08569b006613cd13fd5c38"
+  },
+  {
+    "file": "04-issues-edited-loop-metrics.json",
+    "event": "issues",
+    "delivery": "6b0f5c4e-0000-4000-8000-000000000004",
+    "signature": "sha256=ad0972f38fbcf8ac8386d80b79395dc77d1438e9148d33ec98aba09c5078be6e"
+  },
+  {
+    "file": "05-issue_comment-claim.json",
+    "event": "issue_comment",
+    "delivery": "6b0f5c4e-0000-4000-8000-000000000005",
+    "signature": "sha256=7adb82d173ad110e2ae1818bc0837777c671074b6a18bbe7b5379ee9838de134"
+  },
+  {
+    "file": "06-issue_comment-review.json",
+    "event": "issue_comment",
+    "delivery": "6b0f5c4e-0000-4000-8000-000000000006",
+    "signature": "sha256=55942dc2a2fdeb6f444bfa8978173fdc14d728e2746fa36584cae2a54067667e"
+  },
+  {
+    "file": "07-pull_request-opened.json",
+    "event": "pull_request",
+    "delivery": "6b0f5c4e-0000-4000-8000-000000000007",
+    "signature": "sha256=b8a8ace5018f3dee34112dbebef0a3085ea629d075e4622f7a6788aa0d3425b7"
+  },
+  {
+    "file": "08-label-edited.json",
+    "event": "label",
+    "delivery": "6b0f5c4e-0000-4000-8000-000000000008",
+    "signature": "sha256=7087336ca6ddebfaa45068962172056b3c68c3b976649edfe161f6c21eac1aae"
+  },
+  {
+    "file": "09-push-pin-verdict.json",
+    "event": "push",
+    "delivery": "6b0f5c4e-0000-4000-8000-000000000009",
+    "signature": "sha256=8a8080383136c996a126b512f826a077b7c67b3c4afe61b3a3a1bc189a607e7a"
+  }
+]
