@@ -2,8 +2,8 @@ import { afterEach, expect, test } from 'bun:test';
 import { existsSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { CHECK_ENV_FILE } from '../../server/check-env';
-import { hoursAgo, recordingDeps, scratchRepo } from '../lib/test-deps';
-import { main } from './drop';
+import { hoursAgo, NOW, recordingDeps, scratchRepo } from '../lib/test-deps';
+import { branchesToDrop, main } from './drop';
 
 const scratch: string[] = [];
 afterEach(() => {
@@ -91,3 +91,44 @@ test.each([[['--all']], [['check-old']], [['--help', 'x']]])(
     expect(existsSync(join(repoRoot, CHECK_ENV_FILE))).toBe(true);
   },
 );
+
+const WITH_MARKERS = [
+  { id: 'br-main', name: 'main', created_at: hoursAgo(72) },
+  { id: 'br-fixture', name: 'fixture', created_at: hoursAgo(48) },
+  { id: 'br-abc', name: 'check-abc', created_at: hoursAgo(1 / 6) },
+  { id: 'br-old', name: 'check-old', created_at: hoursAgo(4) },
+  { id: 'br-new', name: 'check-new', created_at: hoursAgo(1) },
+  { id: 'br-marker', name: 'check-abc-stale-1a2b3c4d', created_at: hoursAgo(1 / 60) },
+  { id: 'br-foreign-marker', name: 'check-xyz-stale-5e6f7a8b', created_at: hoursAgo(1 / 60) },
+  { id: 'br-abcd', name: 'check-abcd', created_at: hoursAgo(1 / 60) },
+];
+
+test("selects only this checkout's branch, its stale marker and stale check branches", () => {
+  expect(branchesToDrop(WITH_MARKERS, 'check-abc', NOW).map((branch) => branch.name)).toEqual([
+    'check-abc',
+    'check-old',
+    'check-abc-stale-1a2b3c4d',
+  ]);
+});
+
+test('a stale marker is young to every checkout but its own', () => {
+  expect(branchesToDrop(WITH_MARKERS, undefined, NOW).map((branch) => branch.name)).toEqual([
+    'check-old',
+  ]);
+  expect(branchesToDrop(WITH_MARKERS, 'check-new', NOW).map((branch) => branch.name)).toEqual([
+    'check-old',
+    'check-new',
+  ]);
+});
+
+test("deletes this checkout's stale marker and says so", async () => {
+  const repoRoot = repo({ MC_CHECK_BRANCH: 'check-abc' });
+  const run = recordingDeps({ repoRoot, branches: WITH_MARKERS });
+  expect(await main([], run.deps)).toBe(0);
+  expect(run.mutatingCalls).toEqual([
+    'deleteBranch check-abc',
+    'deleteBranch check-old',
+    'deleteBranch check-abc-stale-1a2b3c4d',
+  ]);
+  expect(run.out).toContain('deleted check-abc-stale-1a2b3c4d');
+});
