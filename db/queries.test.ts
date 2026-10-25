@@ -308,6 +308,20 @@ describe('issue-graph on the seed', () => {
   });
 });
 
+/** The architecture a version ran: the latest pin committed before its first lap, as parsed. */
+async function archOf(db: Db, digest: string): Promise<Record<string, unknown>> {
+  const [version] = await db.query(
+    `SELECT a.archon_sha, a.factory_sha FROM mc.arch_versions a
+     WHERE a.archon_sha = (
+       SELECT p.archon_sha FROM mc.pins p
+       WHERE p.committed_at < (SELECT min(started_at) FROM mc.laps WHERE digest = $1)
+       ORDER BY p.committed_at DESC LIMIT 1)
+     ORDER BY a.parsed_at DESC LIMIT 1`,
+    [digest],
+  );
+  return version;
+}
+
 describe('arch-diff on the seed', () => {
   let db: Db;
   const sql = queries.find(([name]) => name === 'arch-diff')?.[1] as string;
@@ -415,13 +429,7 @@ describe('arch-diff on the seed', () => {
       const baseline = diffVersions(rows, v1, v2);
       if (baseline.status !== 'compared') throw new Error('expected a comparison');
       const scripted = [...baseline.diff[kind].added, ...baseline.diff[kind].changed];
-      const [version] = await db.query(
-        `SELECT a.archon_sha, a.factory_sha FROM mc.versions v
-         JOIN mc.pins p ON p.sha = v.pin_sha
-         JOIN mc.arch_versions a ON a.archon_sha = p.archon_sha
-         WHERE v.digest = $1 ORDER BY a.parsed_at DESC LIMIT 1`,
-        [v2],
-      );
+      const version = await archOf(db, v2);
       const candidates = await db.query(
         `SELECT * FROM mc.${table} WHERE archon_sha = $1 AND factory_sha = $2`,
         [version.archon_sha, version.factory_sha],
@@ -467,4 +475,44 @@ describe('arch-diff on the seed', () => {
       expect(unlisted).toEqual([]);
     },
   );
+});
+
+describe('arch-diff on versions known only from their laps', () => {
+  let db: Db;
+  const sql = queries.find(([name]) => name === 'arch-diff')?.[1] as string;
+
+  beforeAll(async () => {
+    db = await seededDb(REPO_ROOT, readFileSync(join(REPO_ROOT, 'fixtures', 'seed.sql'), 'utf8'));
+    // Only the seed writes mc.versions; the projection records a version as mc.laps.digest (#74).
+    await db.query('DELETE FROM mc.versions');
+  }, 60_000);
+
+  afterAll(() => db.close());
+
+  test('V1 to V2 is still exactly the scripted change, and V3 is still unrecorded', async () => {
+    const rows = (await db.query(sql, ['mission-control'])) as unknown as ArchDiffRow[];
+    const [v1, v2, v3] = (
+      await db.query(
+        `SELECT digest FROM mc.laps WHERE factory = $1 AND digest IS NOT NULL
+         GROUP BY digest ORDER BY min(started_at)`,
+        ['mission-control'],
+      )
+    ).map((v) => String(v.digest));
+    const result = diffVersions(rows, v1, v2);
+    if (result.status !== 'compared')
+      throw new Error(`expected a comparison, got ${result.status}`);
+    expect(
+      KINDS.flatMap((kind) =>
+        (['added', 'removed', 'changed'] as const).flatMap((change) =>
+          result.diff[kind][change].map((item) => `${change} ${kind} ${itemLabel(item)}`),
+        ),
+      ),
+    ).toEqual([
+      'added step archon-loop · tally',
+      'removed step archon-loop · briefs',
+      'changed prompt loop/commands/loop-review.md',
+      'changed subagent archon-manager · manage · holdout-writer',
+    ]);
+    expect(diffVersions(rows, v1, v3)).toEqual({ status: 'unrecorded', digests: [v3] });
+  });
 });

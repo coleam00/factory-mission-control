@@ -1,10 +1,20 @@
-WITH version AS (
-  SELECT DISTINCT ON (v.digest) v.digest, a.archon_sha, a.factory_sha
-  FROM mc.versions v
-  JOIN mc.pins p ON p.sha = v.pin_sha
-  JOIN mc.arch_versions a ON a.archon_sha = p.archon_sha
-  WHERE v.factory = $1
-  ORDER BY v.digest, a.parsed_at DESC
+WITH firsts AS (
+  SELECT DISTINCT ON (l.digest) l.digest, l.started_at AS first_run_at
+  FROM mc.laps l
+  WHERE l.factory = $1 AND l.digest IS NOT NULL AND l.started_at IS NOT NULL
+  ORDER BY l.digest, l.started_at
+),
+version AS (
+  SELECT f.digest, a.archon_sha, a.factory_sha
+  FROM firsts f
+  JOIN LATERAL (
+    SELECT archon_sha FROM mc.pins
+    WHERE committed_at < f.first_run_at ORDER BY committed_at DESC LIMIT 1
+  ) p ON true
+  JOIN LATERAL (
+    SELECT archon_sha, factory_sha FROM mc.arch_versions
+    WHERE archon_sha = p.archon_sha ORDER BY parsed_at DESC LIMIT 1
+  ) a ON true
 )
 SELECT v.digest, 'workflow' AS kind, NULL AS workflow,
   array_agg(w.name || E'\t' || left(md5(coalesce(w.description, '') || E'\n'

@@ -503,10 +503,13 @@ type ArchKey = { archon_sha: string; factory_sha: string };
 /** The architecture rows `db/queries/arch-diff.sql` reads for one of the factory's versions. */
 async function archOf(db: Db, factory: string, digest: string): Promise<ArchKey> {
   const [version] = await db.query(
-    `SELECT a.archon_sha, a.factory_sha FROM mc.versions v
-     JOIN mc.pins p ON p.sha = v.pin_sha
-     JOIN mc.arch_versions a ON a.archon_sha = p.archon_sha
-     WHERE v.factory = $1 AND v.digest = $2 ORDER BY a.parsed_at DESC LIMIT 1`,
+    `SELECT a.archon_sha, a.factory_sha FROM mc.arch_versions a
+     WHERE a.archon_sha = (
+       SELECT p.archon_sha FROM mc.pins p
+       WHERE p.committed_at < (
+         SELECT min(started_at) FROM mc.laps WHERE factory = $1 AND digest = $2)
+       ORDER BY p.committed_at DESC LIMIT 1)
+     ORDER BY a.parsed_at DESC LIMIT 1`,
     [factory, digest],
   );
   if (version === undefined) throw new Error(`no architecture is recorded for ${digest}`);
