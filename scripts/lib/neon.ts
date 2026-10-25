@@ -29,6 +29,8 @@ export interface NeonApi {
   getOperation(id: string): Promise<Operation>;
   getRealtime(branchId: string): Promise<Realtime>;
   getRealtimeSecret(branchId: string): Promise<string>;
+  /** The pooled connection string of the branch's only database, as its owner role (read-only). */
+  pooledConnectionUri(branchId: string): Promise<string>;
   /** Refuses a name that is not `check-*` before any request. */
   createBranch(input: { name: string; parentId: string }): Promise<CreatedBranch>;
   /** Refuses a name that is not `check-*` before any request. */
@@ -97,6 +99,25 @@ export function createNeonApi(options: {
     async getRealtimeSecret(branchId) {
       return (await call<{ secret: string }>('GET', `${branchPath(branchId)}/realtime/secret`))
         .secret;
+    },
+    async pooledConnectionUri(branchId) {
+      const { databases } = await call<{ databases: { name: string; owner_name: string }[] }>(
+        'GET',
+        `${branchPath(branchId)}/databases`,
+      );
+      const [database] = databases;
+      if (databases.length !== 1) {
+        throw new Error(
+          `branch ${branchId} has ${databases.length} databases; function:deploy needs exactly one`,
+        );
+      }
+      const query = new URLSearchParams({
+        branch_id: branchId,
+        database_name: database.name,
+        role_name: database.owner_name,
+        pooled: 'true',
+      });
+      return (await call<{ uri: string }>('GET', `${project}/connection_uri?${query}`)).uri;
     },
     async createBranch({ name, parentId }) {
       requireCheckBranch(name);

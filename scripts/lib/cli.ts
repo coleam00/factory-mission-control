@@ -23,7 +23,14 @@ export type Deps = {
   err: (line: string) => void;
   /** Only `migrate:main` and `arch:parse:main` ask; true when the owner, at a terminal, confirmed the project. */
   confirmOwner: (projectId: string) => boolean;
+  /**
+   * neonctl from this repository's node_modules, run by Bun itself: Bun refuses to pass a
+   * connection string's `&` to the Windows `.cmd` shim.
+   */
+  neonctl: (args: string[]) => Promise<NeonctlResult>;
 };
+
+export type NeonctlResult = { code: number; stdout: string; stderr: string };
 
 export type Main = (argv: string[], deps: Deps) => Promise<number>;
 
@@ -32,6 +39,17 @@ function neonFromEnv(env: Env): NeonApi {
   const projectId = env.NEON_PROJECT_ID;
   if (!apiKey || !projectId) throw new Error('NEON_API_KEY and NEON_PROJECT_ID must be set');
   return createNeonApi({ apiKey, projectId });
+}
+
+async function runNeonctl(args: string[]): Promise<NeonctlResult> {
+  const cli = Bun.resolveSync('neonctl/bin/cli.js', REPO_ROOT);
+  const child = Bun.spawn([process.execPath, cli, ...args], { stdout: 'pipe', stderr: 'pipe' });
+  const [stdout, stderr, code] = await Promise.all([
+    new Response(child.stdout).text(),
+    new Response(child.stderr).text(),
+    child.exited,
+  ]);
+  return { code, stdout, stderr };
 }
 
 function confirmOwnerAtTerminal(projectId: string): boolean {
@@ -52,6 +70,7 @@ export function defaultDeps(): Deps {
     out: (line) => console.log(line),
     err: (line) => console.error(line),
     confirmOwner: confirmOwnerAtTerminal,
+    neonctl: runNeonctl,
   };
 }
 
