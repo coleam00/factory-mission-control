@@ -86,7 +86,7 @@ Expect:
 - The lap's lane is gone from the running lanes; recent laps lists it with outcome merged, a duration equal to its `completed_at` minus `started_at`, and a cost equal to the sum of its steps' `cost_usd`.
 - Issue #N shows as merged in the graph; phase P's merged count rises by one and its total does not change; if #N was on the highlighted longest open chain, the highlight moves to the new longest open chain.
 - No step on the map counts the lap any more.
-- The scorecard's laps and merges each rise by exactly one, and the lap count each number says it rests on rises by one.
+- The scorecard's merges rise by exactly one and its laps do not change: the lap already counted as a lap while it was running (4.2: a lap is an `archon-loop` run, whatever its status). The lap count the count measures say they rest on does not change; only the time measures (those built on lap durations) newly take in this lap, now that it has finished.
 - Every change is visible within 5 seconds of the last write it depends on (`judges/liveness.js` PASS).
 Author: writer, 2026-10-24, first set for the whole release (docs/mission-control.prd.md)
 
