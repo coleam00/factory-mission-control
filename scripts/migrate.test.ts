@@ -167,6 +167,37 @@ test('loading the factories updates stale rows and attributes the laps projected
   }
 });
 
+/**
+ * PGlite reads a string bound to `::jsonb` as JSON text; Bun's client sends it as a jsonb string.
+ * This `Db` binds every string the way Bun does, so a stringified jsonb parameter fails here too.
+ */
+function bunJsonb(db: Db): Db {
+  const bind = (params?: unknown[]) =>
+    params?.map((value) => (typeof value === 'string' ? JSON.stringify(value) : value));
+  return {
+    ...db,
+    query: (sql, params) => db.query(sql, bind(params)),
+    transaction: (fn) =>
+      db.transaction((tx) => fn({ query: (sql, params) => tx.query(sql, bind(params)) })),
+  };
+}
+
+test('loading the factories binds them as a jsonb array, which Bun sends unchanged', async () => {
+  const db = await archonDb();
+  try {
+    await runMigrations({ files: migrationFiles, db });
+    expect(await loadFactories({ entries: FACTORIES, db: bunJsonb(db) })).toEqual({
+      factories: FACTORIES.length,
+      laps: 0,
+    });
+    expect(await db.query('SELECT * FROM mc.factories ORDER BY name')).toEqual(
+      [...FACTORIES].sort((a, b) => a.name.localeCompare(b.name)),
+    );
+  } finally {
+    await db.close();
+  }
+});
+
 test('a second run over the same recorded state applies nothing', async () => {
   const repoRoot = repo();
   const dir = migrationsDir(repoRoot);

@@ -56,7 +56,8 @@ type Factory = (typeof factories.factories)[number];
 /**
  * Upserts `entries` into mc.factories by name, deleting none, and gives each lap projected
  * before its factory existed (factory '' or its codebase's name) the factory the projection would
- * now choose. Returns how many rows each changed.
+ * now choose. Returns how many rows each changed. `entries` is bound as the array itself: Bun
+ * encodes a string bound to `::jsonb` as a jsonb string, which jsonb_to_recordset rejects.
  */
 export async function loadFactories({
   entries,
@@ -80,7 +81,7 @@ export async function loadFactories({
          WHERE (f.repository, f.codebase, f.console)
            IS DISTINCT FROM (EXCLUDED.repository, EXCLUDED.codebase, EXCLUDED.console)
          RETURNING f.name`,
-        [JSON.stringify(entries)],
+        [entries],
       )
     ).length;
     changed.laps = (
