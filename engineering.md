@@ -12,8 +12,8 @@ How this repository is built. The product is `docs/mission-control.prd.md`; this
 | `db/queries/` | Every live query, one file each, named for the panel that reads it. |
 | `function/` | The Neon Function that receives GitHub webhooks (Hono, TypeScript). |
 | `parsers/` | Pure functions: comment formats, pin trailers, DECISIONS.md, the architecture parser. |
-| `scripts/` | `fixture:branch`, `fixture:drop`, `fixture:write`, `fixture:seed`, `fixture:verify`, `migrate`, `backfill`, `rewind:create`. |
-| `fixtures/` | `seed.sql` (written by `fixture:seed`), `expected-scorecard.sql` and its result `expected-scorecard.json`, `archon-schema.sql` (Archon's schema, for offline tests), `webhooks/` sample payloads, `pack/` (a snapshot of the pinned workflow pack), `factory-template/` (the fence files). |
+| `scripts/` | `fixture:branch`, `fixture:drop`, `fixture:write`, `migrate`, `backfill`, `rewind:create`. |
+| `fixtures/` | `seed.sql`, `expected-scorecard.json`, `webhooks/` sample payloads, `pack/` (a snapshot of the pinned workflow pack), `factory-template/` (the fence files). |
 | `harness/` | `design-probe.js` and the factory harness configuration. |
 | `docs/design/archon-console/` | The Archon console's tokens and components, copied from Archon. The design source of truth. |
 | `factories.json` | The factories the dashboard shows (PRD 11.6). |
