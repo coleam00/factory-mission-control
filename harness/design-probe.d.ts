@@ -1,6 +1,8 @@
 /** Types for the two exports of design-probe.js the tests use. */
 export interface Failure {
   width: number;
+  /** The page as first rendered, or once no live panel was loading. */
+  state: 'first-render' | 'settled';
   check: string;
   element: string;
   detail: string;
