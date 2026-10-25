@@ -5,6 +5,7 @@
     "includes": [
       "app/**",
       "server/**",
+      "parsers/**",
       "package.json",
       "tsconfig.json",
       "biome.json",
