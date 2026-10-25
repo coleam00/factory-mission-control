@@ -19,3 +19,5 @@ harness/.results/
 *.pem
 secrets.json
 credentials.json
+node_modules/
+dist/
