@@ -9,7 +9,12 @@ const loop = (digest: string, steps: string[], edges: string[] = []): ArchDiffRo
     workflow: 'archon-loop',
     entries: steps.map((s) => s.replace(':', '\t')),
   },
-  { digest, kind: 'edge', workflow: 'archon-loop', entries: edges.map((e) => e.replace('>', '\t')) },
+  {
+    digest,
+    kind: 'edge',
+    workflow: 'archon-loop',
+    entries: edges.map((e) => e.replace('>', '\t')),
+  },
 ];
 
 const steps = (rows: ArchDiffRow[]) => {
@@ -23,7 +28,11 @@ const steps = (rows: ArchDiffRow[]) => {
 test('a dependant does not change when a step it depended on was removed or added', () => {
   expect(
     steps([
-      ...loop('a', ['subject:1', 'briefs:2', 'check:3'], ['subject>briefs', 'briefs>check', 'subject>check']),
+      ...loop(
+        'a',
+        ['subject:1', 'briefs:2', 'check:3'],
+        ['subject>briefs', 'briefs>check', 'subject>check'],
+      ),
       ...loop('b', ['subject:1', 'check:3', 'tally:4'], ['subject>check', 'check>tally']),
     ]),
   ).toEqual({ added: ['tally'], removed: ['briefs'], changed: [] });

@@ -518,7 +518,10 @@ async function stepToScreen(
   const selector = `${DIFF} [data-change="added"][data-item="archon-loop · ${path}"]`;
   const started = performance.now();
   const shown = page.evaluate<boolean>(
-    pageWait(`document.querySelector(${JSON.stringify(selector)}) !== null`, LIMITS.insertToScreenMs),
+    pageWait(
+      `document.querySelector(${JSON.stringify(selector)}) !== null`,
+      LIMITS.insertToScreenMs,
+    ),
     LIMITS.insertToScreenMs + 5000,
   );
   added.push(path);
@@ -759,7 +762,9 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
       pageWait(`document.querySelector('${DIFF}[data-state="ready"]') !== null`, READY_WAIT_MS),
     );
     if (!diffReady) {
-      throw new Error(`the diff screen did not reach data-state="ready" within ${READY_WAIT_MS} ms`);
+      throw new Error(
+        `the diff screen did not reach data-state="ready" within ${READY_WAIT_MS} ms`,
+      );
     }
     const diffReadyAt = await diffPage.evaluate<number | null>(markTime('live:arch-diff:ready'));
     const diffSubscribedAt = await diffPage.evaluate<number | null>(

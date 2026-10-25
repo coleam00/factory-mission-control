@@ -87,7 +87,9 @@ const order = (a: Item, b: Item): number =>
  * step went.
  */
 export function diffVersions(rows: readonly ArchDiffRow[], a: string, b: string): DiffResult {
-  const unrecorded = [...new Set([a, b])].filter((digest) => !rows.some((r) => r.digest === digest));
+  const unrecorded = [...new Set([a, b])].filter(
+    (digest) => !rows.some((r) => r.digest === digest),
+  );
   if (unrecorded.length > 0) return { status: 'unrecorded', digests: unrecorded };
 
   const before = versionOf(rows, a);
@@ -105,9 +107,11 @@ export function diffVersions(rows: readonly ArchDiffRow[], a: string, b: string)
     diff[item.kind].removed.push(item);
     comingOrGoing.add(key);
   }
-  const dependencies = (version: typeof before, { workflow, name }: Item, key: string) =>
+  const dependencies = (version: typeof before, { workflow }: Item, key: string) =>
     (version.dependencies.get(key) ?? [])
-      .filter((from) => !comingOrGoing.has(keyOf({ kind: 'step', workflow, step: null, name: from })))
+      .filter(
+        (from) => !comingOrGoing.has(keyOf({ kind: 'step', workflow, step: null, name: from })),
+      )
       .sort()
       .join('\n');
   for (const [key, { item, content }] of after.items) {

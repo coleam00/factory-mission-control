@@ -47,7 +47,10 @@ export function ArchDiff({
               title="Pick two versions to diff."
               action={
                 factory === undefined ? undefined : (
-                  <Link to={`/f/${encodeURIComponent(factory)}/versions`} className="text-accent-bright">
+                  <Link
+                    to={`/f/${encodeURIComponent(factory)}/versions`}
+                    className="text-accent-bright"
+                  >
                     Versions
                   </Link>
                 )
