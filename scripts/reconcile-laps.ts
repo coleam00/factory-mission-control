@@ -1,8 +1,8 @@
 // `bun run reconcile:laps` (issue #53): repairs the laps a dropped projection left wrong. A
 // projection trigger that loses a lock wait records the error, and when even that record fails the
 // error is dropped (0006_projection.sql), so a lap can stay `running` after Archon finished the run:
-// a finished run gets no more writes to project it again. For each run Archon completed or
-// cancelled, this replays the run's row and step-level events through 0006's own functions, by way
+// a finished, paused or failed run may get no more writes to project it again. For each run
+// Archon is not running, this replays the run's row and step-level events through 0006's own functions, by way
 // of temp tables that carry the same triggers, and keeps the result only when it differs from the
 // lap's rows. Archon's tables are only read. It writes the check branch in .mc-check.env; `:main`
 // writes `main`, and is the owner's nightly run beside `backfill:main`.
@@ -19,10 +19,14 @@ class Busy extends Error {}
 /** The live trigger's WHEN (0006_projection.sql): the step-level events it projects. */
 export const STEP_EVENT_TYPES = ['node_started', 'node_completed', 'node_failed', 'node_skipped'];
 /**
- * Archon writes no more to a run in these, so no live trigger waits on the replay's locks. Not
- * `failed`: Archon resumes a failed run under the same id.
+ * Archon is writing a run in these, so its next write projects it again. Every other run is
+ * replayed: a paused or failed run can be resumed under the same id, which `reproject` detects.
  */
-const FINISHED = ['completed', 'cancelled'];
+const LIVE = ['pending', 'running'];
+/** The run columns the projection reads (0006's mc_project_run_update WHEN), as text. */
+const PROJECTED_RUN = `SELECT jsonb_build_array(status, workflow_name, codebase_id, started_at,
+    completed_at, metadata -> 'workflow_source' ->> 'digest')::text AS run
+  FROM public.remote_agent_workflow_runs WHERE id = $1`;
 const REPLAY_RUN = 'mc_reconcile_run';
 const REPLAY_STEP_EVENT = 'mc_reconcile_step_event';
 /** A constant list as an SQL `IN` list: Archon's names and ours, never input. */
@@ -43,11 +47,17 @@ async function lapRows(tx: Tx, runId: string): Promise<string> {
 
 /**
  * Replaces the run's rows with what the projection writes from Archon's rows today. Throws `Agrees`
- * when that is what they already were, `Busy` when the replay could not take a lock, and an error
- * naming the first projection error the replay hit that no live trigger recorded for the run.
+ * when that is what they already were, `Busy` when the replay could not take a lock or Archon wrote
+ * the run while it ran, and an error naming the first projection error the replay hit that no live
+ * trigger recorded for the run.
  */
 async function reproject(tx: Tx, runId: string): Promise<void> {
   const before = await lapRows(tx, runId);
+  const [copied] = await tx.query(PROJECTED_RUN, [runId]);
+  const [lastError] = await tx.query(
+    'SELECT coalesce(max(id), 0) AS id FROM mc.projection_errors',
+    [],
+  );
   // The temp tables live only on this transaction's connection, and are dropped with it.
   await tx.query(
     'CREATE TEMP TABLE mc_reconcile_runs (LIKE public.remote_agent_workflow_runs) ON COMMIT DROP',
@@ -87,6 +97,17 @@ async function reproject(tx: Tx, runId: string): Promise<void> {
     [],
   );
   if (busy.length > 0) throw new Busy();
+  // A resume of a paused or failed run that commits while this replays would be overwritten by the
+  // copy taken before it: read committed, so these see it. Its live trigger may instead have lost
+  // its lock wait on the rows this replay holds; either way, roll back and leave the run to the
+  // next run of this command. A live write still waiting when this commits gets the rows after it.
+  const [current] = await tx.query(PROJECTED_RUN, [runId]);
+  const liveBusy = await tx.query(
+    `SELECT 1 FROM mc.projection_errors WHERE source NOT IN ${REPLAY_SOURCES}
+        AND run_id = $1 AND sqlstate = '55P03' AND id > $2`,
+    [runId, lastError?.id],
+  );
+  if (current?.run !== copied?.run || liveBusy.length > 0) throw new Busy();
   if ((await lapRows(tx, runId)) === before) throw new Agrees();
   // A replay error the live triggers recorded too is already evidence; one they did not (its
   // record dropped, or a cause that came later) rolls the repair back and is reported instead.
@@ -107,18 +128,31 @@ async function reproject(tx: Tx, runId: string): Promise<void> {
 type Reconciled = {
   repaired: number;
   busy: number;
+  /** Runs Archon is still running whose lap is missing or shows another status. */
+  live: number;
   /** Each run whose repair rolled back on an error, with that error's message. */
   failed: { runId: string; message: string }[];
 };
 
-/** Re-projects every finished Archon run whose lap rows differ from what its rows project to. */
+/**
+ * Re-projects every Archon run that is not running whose lap rows differ from what its rows project
+ * to, and counts the running runs whose lap differs, which it leaves to their live triggers.
+ */
 export async function reconcileLaps(db: Db): Promise<Reconciled> {
   const runs = await db.query(
-    `SELECT id FROM public.remote_agent_workflow_runs WHERE status IN ${sqlList(FINISHED)}
+    `SELECT id FROM public.remote_agent_workflow_runs WHERE status NOT IN ${sqlList(LIVE)}
       ORDER BY started_at, id`,
     [],
   );
-  const result: Reconciled = { repaired: 0, busy: 0, failed: [] };
+  // Only read, so no live trigger waits on it: a replay would lock the rows Archon's next write
+  // projects to. Steps are not compared here; the run's next write projects them again.
+  const [live] = await db.query(
+    `SELECT count(*)::int AS n FROM public.remote_agent_workflow_runs r
+       LEFT JOIN mc.laps l ON l.run_id = r.id
+      WHERE r.status IN ${sqlList(LIVE)} AND l.status IS DISTINCT FROM r.status`,
+    [],
+  );
+  const result: Reconciled = { repaired: 0, busy: 0, live: Number(live?.n ?? 0), failed: [] };
   for (const { id } of runs) {
     const runId = String(id);
     try {
@@ -160,9 +194,12 @@ export const main: Main = async (argv, deps) => {
     const url = await guardedDatabaseUrl(deps, values.main ? 'main' : 'check');
     const db = deps.openDb(url);
     try {
-      const { repaired, busy, failed } = await reconcileLaps(db);
+      const { repaired, busy, live, failed } = await reconcileLaps(db);
       deps.out(`reconcile: ${repaired} run(s) repaired`);
       if (busy > 0) deps.out(`reconcile: ${busy} run(s) busy, left for the next run`);
+      if (live > 0) {
+        deps.out(`reconcile: ${live} run(s) differ but are still running, left to live triggers`);
+      }
       for (const { runId, message } of failed) deps.err(`reconcile: run ${runId}: ${message}`);
       if (failed.length > 0) throw new Error(`reconcile: ${failed.length} run(s) failed`);
     } finally {

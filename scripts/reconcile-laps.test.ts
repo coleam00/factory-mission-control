@@ -21,15 +21,24 @@ afterEach(async () => {
   for (const dir of scratch.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
 
-/** Runs the command against the in-memory database on `branchName`, recording every SQL text. */
-async function run(argv: string[], branchName = 'check-abc') {
+/**
+ * Runs the command against the in-memory database on `branchName`, recording every SQL text.
+ * `after` runs on the transaction after each of its statements, to stand in for another session.
+ */
+async function run(
+  argv: string[],
+  branchName = 'check-abc',
+  after?: (text: string, tx: Tx) => Promise<void>,
+) {
   const repoRoot = scratchRepo({ MC_DATABASE_URL: DATABASE_URL });
   scratch.push(repoRoot);
   const recorder = recordingDeps({ repoRoot, branchName });
-  const recording = (tx: Tx): Tx => ({
-    query: (text, params) => {
+  const recording = (tx: Tx, hook?: typeof after): Tx => ({
+    query: async (text, params) => {
       sql.push(text);
-      return tx.query(text, params);
+      const result = await tx.query(text, params);
+      await hook?.(text, tx);
+      return result;
     },
   });
   const deps = {
@@ -38,7 +47,7 @@ async function run(argv: string[], branchName = 'check-abc') {
       recorder.opened.push(url);
       return {
         ...recording(db),
-        transaction: (fn) => db.transaction((tx) => fn(recording(tx))),
+        transaction: (fn) => db.transaction((tx) => fn(recording(tx, after))),
         close: async () => {},
       };
     },
@@ -194,20 +203,114 @@ test('the replay projects events in Archon order, not the order their rows are s
   expect(await snapshot(db)).toEqual(projected);
 });
 
-test.each(['running', 'failed'])(
-  'a %s run, which Archon can still write, is left to its live triggers',
+test.each(['paused', 'failed'])(
+  'a %s run, which may get no more writes, is repaired once',
+  async (status) => {
+    const runId = await archonRun('running');
+    await archonEvent(runId, 1, 'pick', 'node_started');
+    await archonEvent(runId, 2, 'pick', 'node_completed');
+    await rows('UPDATE public.remote_agent_workflow_runs SET status = $2 WHERE id = $1', [
+      runId,
+      status,
+    ]);
+    const projected = await snapshot(db);
+    expect(projected.laps?.map((lap) => JSON.parse(lap).status)).toEqual([status]);
+    await rows(`UPDATE mc.laps SET status = 'running' WHERE run_id = $1`, [runId]);
+    await rows(`UPDATE mc.lap_steps SET status = 'running' WHERE run_id = $1`, [runId]);
+
+    const first = await run([]);
+    expect(first.code).toBe(0);
+    expect(first.out).toEqual(['reconcile: 1 run(s) repaired']);
+    expect(await snapshot(db)).toEqual(projected);
+
+    const second = await run([]);
+    expect(second.out).toEqual(['reconcile: 0 run(s) repaired']);
+    expect(await snapshot(db)).toEqual(projected);
+  },
+);
+
+test.each(['running', 'pending'])(
+  'a %s run whose lap differs is left to its live triggers and reported',
   async (status) => {
     const runId = await archonRun(status);
     await archonEvent(runId, 1, 'pick', 'node_started');
     await rows(`UPDATE mc.laps SET status = 'paused' WHERE run_id = $1`, [runId]);
-    const before = await tuples(runId);
+    const agreeing = await archonRun(status);
+    const before = [...(await tuples(runId)), ...(await tuples(agreeing))];
 
     const { code, out } = await run([]);
     expect(code).toBe(0);
-    expect(out).toEqual(['reconcile: 0 run(s) repaired']);
-    expect(await tuples(runId)).toEqual(before);
+    expect(out).toEqual([
+      'reconcile: 0 run(s) repaired',
+      'reconcile: 1 run(s) differ but are still running, left to live triggers',
+    ]);
+    expect([...(await tuples(runId)), ...(await tuples(agreeing))]).toEqual(before);
   },
 );
+
+/** A paused run whose lap a dropped projection left `running`. */
+async function wrongPausedLap(): Promise<string> {
+  const runId = await archonRun('running');
+  await archonEvent(runId, 1, 'pick', 'node_started');
+  await rows(`UPDATE public.remote_agent_workflow_runs SET status = 'paused' WHERE id = $1`, [
+    runId,
+  ]);
+  await rows(`UPDATE mc.laps SET status = 'running' WHERE run_id = $1`, [runId]);
+  return runId;
+}
+
+/** Calls `write` once, right after the replay inserts the run's events. */
+const midReplay =
+  (write: (tx: Tx) => Promise<void>) =>
+  async (text: string, tx: Tx): Promise<void> => {
+    if (text.includes('INSERT INTO mc_reconcile_events')) await write(tx);
+  };
+
+test('a resume that lands while the replay runs rolls the repair back as busy', async () => {
+  const runId = await wrongPausedLap();
+  const before = await tuples(runId);
+
+  const { code, out } = await run(
+    [],
+    'check-abc',
+    midReplay(async (tx) => {
+      // Stands in for Archon's resume committing in another session (read committed sees it).
+      await tx.query(
+        `UPDATE public.remote_agent_workflow_runs SET status = 'running' WHERE id = $1`,
+        [runId],
+      );
+    }),
+  );
+  expect(code).toBe(0);
+  expect(out).toEqual([
+    'reconcile: 0 run(s) repaired',
+    'reconcile: 1 run(s) busy, left for the next run',
+  ]);
+  expect(await tuples(runId)).toEqual(before);
+});
+
+test('a live trigger that lost its lock wait on the run rolls the repair back as busy', async () => {
+  const runId = await wrongPausedLap();
+  const before = await tuples(runId);
+
+  const { code, out } = await run(
+    [],
+    'check-abc',
+    midReplay(async (tx) => {
+      await tx.query(
+        `INSERT INTO mc.projection_errors (source, run_id, event_id, sqlstate, message)
+         VALUES ('mc_project_step_event', $1, NULL, '55P03', 'canceling statement due to lock timeout')`,
+        [runId],
+      );
+    }),
+  );
+  expect(code).toBe(0);
+  expect(out).toEqual([
+    'reconcile: 0 run(s) repaired',
+    'reconcile: 1 run(s) busy, left for the next run',
+  ]);
+  expect(await tuples(runId)).toEqual(before);
+});
 
 test('a replay error no live trigger recorded fails that run alone and is reported', async () => {
   const unrecorded = await finishedRun('{"route":"x"}');
