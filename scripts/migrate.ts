@@ -50,10 +50,27 @@ export async function runMigrations({
   return applied;
 }
 
+const USAGE =
+  'usage: bun run migrate (the check branch in .mc-check.env) | bun run migrate:main (the owner, at a terminal)';
+
 export const main: Main = async (argv, deps) => {
-  const { values } = parseArgs({ args: argv, options: { main: { type: 'boolean' } } });
+  let values: { main?: boolean; help?: boolean };
+  try {
+    ({ values } = parseArgs({
+      args: argv,
+      options: { main: { type: 'boolean' }, help: { type: 'boolean', short: 'h' } },
+    }));
+  } catch (error) {
+    deps.err(error instanceof Error ? `${error.message}\n${USAGE}` : USAGE);
+    return 2;
+  }
+  if (values.help) {
+    deps.out(USAGE);
+    return 0;
+  }
+  const target = values.main ? 'main' : 'check';
   return failing(deps, async () => {
-    const url = await guardedDatabaseUrl(deps, values.main ? 'main' : 'check');
+    const url = await guardedDatabaseUrl(deps, target);
     const db = deps.openDb(url);
     try {
       const applied = await runMigrations({

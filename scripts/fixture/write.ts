@@ -1,6 +1,6 @@
 import { parseArgs } from 'node:util';
 import { failing, guardedDatabaseUrl, type Main, runCli } from '../lib/cli';
-import type { Db } from '../lib/db';
+import type { Row, Tx } from '../lib/db';
 
 const EVENTS = ['node_started', 'node_completed', 'node_failed'] as const;
 type StepEvent = (typeof EVENTS)[number];
@@ -125,24 +125,36 @@ export function eventData(step: string, event: StepEvent, now: Date): Record<str
   };
 }
 
-async function runningRunId(db: Db): Promise<string> {
+/**
+ * Archon's rows hold jsonb objects. Bun encodes a string parameter bound to `::jsonb` as a jsonb
+ * string, so the insert passes the object and reads back what Postgres stored; a wrong one rolls
+ * back.
+ */
+function requireObject(what: string, row: Row | undefined): void {
+  if (row?.stored !== 'object') {
+    throw new Error(`${what} was stored as a jsonb ${row?.stored ?? 'nothing'}, not an object`);
+  }
+}
+
+async function runningRunId(db: Tx): Promise<string> {
   const [running] = await db.query(
     `SELECT id FROM remote_agent_workflow_runs WHERE workflow_name = $1 AND status = 'running' ORDER BY started_at DESC LIMIT 1`,
     [WORKFLOW],
   );
   if (running) return String(running.id);
   const [created] = await db.query(
-    `INSERT INTO remote_agent_workflow_runs (workflow_name, status, user_message, metadata) VALUES ($1, 'running', $2, $3::jsonb) RETURNING id`,
+    `INSERT INTO remote_agent_workflow_runs (workflow_name, status, user_message, metadata) VALUES ($1, 'running', $2, $3::jsonb) RETURNING id, jsonb_typeof(metadata) AS stored`,
     [
       WORKFLOW,
       'Run the loop on coleam00/factory-mission-control',
-      JSON.stringify({ workflow_source: { digest: FIXTURE_DIGEST } }),
+      { workflow_source: { digest: FIXTURE_DIGEST } },
     ],
   );
+  requireObject('the run metadata', created);
   return String(created.id);
 }
 
-async function eventCount(db: Db, runId: string): Promise<number> {
+async function eventCount(db: Tx, runId: string): Promise<number> {
   const [row] = await db.query(
     'SELECT count(*)::int AS n FROM remote_agent_workflow_events WHERE workflow_run_id = $1',
     [runId],
@@ -162,13 +174,18 @@ export const main: Main = async (argv, deps) => {
   return failing(deps, async () => {
     const db = deps.openDb(await guardedDatabaseUrl(deps, 'check'));
     try {
-      const runId = run ?? (await runningRunId(db));
-      const before = await eventCount(db, runId);
-      await db.query(
-        'INSERT INTO remote_agent_workflow_events (workflow_run_id, event_type, step_name, data) VALUES ($1, $2, $3, $4::jsonb)',
-        [runId, event, step, JSON.stringify(eventData(step, event, deps.now()))],
-      );
-      deps.out(`events for run ${runId}: ${before} -> ${await eventCount(db, runId)}`);
+      let report = '';
+      await db.transaction(async (tx) => {
+        const runId = run ?? (await runningRunId(tx));
+        const before = await eventCount(tx, runId);
+        const [inserted] = await tx.query(
+          'INSERT INTO remote_agent_workflow_events (workflow_run_id, event_type, step_name, data) VALUES ($1, $2, $3, $4::jsonb) RETURNING jsonb_typeof(data) AS stored',
+          [runId, event, step, eventData(step, event, deps.now())],
+        );
+        requireObject('the event data', inserted);
+        report = `events for run ${runId}: ${before} -> ${await eventCount(tx, runId)}`;
+      });
+      deps.out(report);
     } finally {
       await db.close();
     }

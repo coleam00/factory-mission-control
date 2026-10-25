@@ -53,6 +53,20 @@ export async function runCli(main: Main): Promise<never> {
   process.exit(await main(Bun.argv.slice(2), defaultDeps()));
 }
 
+/**
+ * The exit code for a command that takes no arguments when given some: usage and 0 for `--help`,
+ * usage and 2 for anything else. Undefined when `argv` is empty and the command may run.
+ */
+export function noArguments(argv: string[], usage: string, deps: Deps): number | undefined {
+  if (argv.length === 0) return undefined;
+  if (argv.length === 1 && (argv[0] === '--help' || argv[0] === '-h')) {
+    deps.out(usage);
+    return 0;
+  }
+  deps.err(`unexpected argument ${argv[0]}\n${usage}`);
+  return 2;
+}
+
 /** Runs `work`, turning any failure (a refusal included) into its message and exit code 1. */
 export async function failing(deps: Deps, work: () => Promise<void>): Promise<number> {
   try {

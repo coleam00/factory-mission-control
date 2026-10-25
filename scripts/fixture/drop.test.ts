@@ -70,3 +70,24 @@ test.each(['main', 'fixture', 'rewind-x'])(
     expect(existsSync(join(repoRoot, CHECK_ENV_FILE))).toBe(true);
   },
 );
+
+test.each([[['--help']], [['-h']]])('prints usage for %j without touching Neon', async (argv) => {
+  const repoRoot = repo({ MC_CHECK_BRANCH: 'check-abc' });
+  const run = recordingDeps({ repoRoot, branches: BRANCHES });
+  expect(await main(argv, run.deps)).toBe(0);
+  expect(run.out.join('\n')).toContain('usage: bun run fixture:drop');
+  expect(run.neonCalls).toEqual([]);
+  expect(existsSync(join(repoRoot, CHECK_ENV_FILE))).toBe(true);
+});
+
+test.each([[['--all']], [['check-old']], [['--help', 'x']]])(
+  'exits 2 for %j without touching Neon',
+  async (argv) => {
+    const repoRoot = repo({ MC_CHECK_BRANCH: 'check-abc' });
+    const run = recordingDeps({ repoRoot, branches: BRANCHES });
+    expect(await main(argv, run.deps)).toBe(2);
+    expect(run.err.join('\n')).toContain('usage: bun run fixture:drop');
+    expect(run.neonCalls).toEqual([]);
+    expect(existsSync(join(repoRoot, CHECK_ENV_FILE))).toBe(true);
+  },
+);

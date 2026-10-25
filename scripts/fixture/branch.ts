@@ -1,12 +1,15 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { CHECK_ENV_FILE, formatCheckEnv, parseCheckEnv } from '../../server/check-env';
-import { type Deps, failing, type Main, runCli } from '../lib/cli';
+import { type Deps, failing, type Main, noArguments, runCli } from '../lib/cli';
 import type { Db } from '../lib/db';
 import { poll, waitForOperations } from '../lib/neon';
 import { migrationsDir, readMigrationFiles, runMigrations } from '../migrate';
 
 const PARENT_BRANCH = 'fixture';
+
+const USAGE =
+  'usage: bun run fixture:branch (creates a check-* branch from fixture, migrates and seeds it, and writes .mc-check.env)';
 
 function newCheckBranchName(): string {
   const bytes = crypto.getRandomValues(new Uint8Array(4));
@@ -49,7 +52,8 @@ async function prepareDatabase(url: string, deps: Deps): Promise<void> {
   }
 }
 
-export const main: Main = async (_argv, deps) =>
+export const main: Main = async (argv, deps) =>
+  noArguments(argv, USAGE, deps) ??
   failing(deps, async () => {
     const envFile = join(deps.repoRoot, CHECK_ENV_FILE);
     const existing = existsSync(envFile)

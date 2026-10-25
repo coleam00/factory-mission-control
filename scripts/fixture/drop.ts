@@ -1,11 +1,14 @@
 import { rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { CHECK_ENV_FILE, loadCheckEnv } from '../../server/check-env';
-import { failing, type Main, runCli } from '../lib/cli';
+import { failing, type Main, noArguments, runCli } from '../lib/cli';
 import { isCheckBranch, requireCheckBranch } from '../lib/guard';
 import { type Branch, waitForOperations } from '../lib/neon';
 
 const STALE_MS = 3 * 60 * 60 * 1000;
+
+const USAGE =
+  "usage: bun run fixture:drop (deletes this checkout's check branch and every check-* branch older than 3 hours)";
 
 /** This checkout's branch, and every `check-*` branch older than three hours. */
 export function branchesToDrop(branches: Branch[], own: string | undefined, now: Date): Branch[] {
@@ -17,7 +20,8 @@ export function branchesToDrop(branches: Branch[], own: string | undefined, now:
   );
 }
 
-export const main: Main = async (_argv, deps) =>
+export const main: Main = async (argv, deps) =>
+  noArguments(argv, USAGE, deps) ??
   failing(deps, async () => {
     loadCheckEnv(deps.repoRoot, deps.env);
     const own = deps.env.MC_CHECK_BRANCH;

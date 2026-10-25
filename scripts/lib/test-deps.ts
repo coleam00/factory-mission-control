@@ -25,6 +25,8 @@ export type Recorder = {
   mutatingCalls: string[];
   opened: string[];
   sql: string[];
+  /** Each query's parameters, in the order `sql` holds its text. */
+  params: (unknown[] | undefined)[];
   out: string[];
   err: string[];
 };
@@ -61,6 +63,7 @@ export function recordingDeps(options: {
     mutatingCalls: [],
     opened: [],
     sql: [],
+    params: [],
     out: [],
     err: [],
   };
@@ -113,8 +116,9 @@ export function recordingDeps(options: {
   };
   const rows = options.rows ?? (() => []);
   const db: Db = {
-    async query(sql) {
+    async query(sql, params) {
       recorder.sql.push(sql);
+      recorder.params.push(params);
       return rows(sql);
     },
     async transaction(fn) {

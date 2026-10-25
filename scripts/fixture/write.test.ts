@@ -37,22 +37,49 @@ test.each([[['label']], [['step', '--event', 'workflow_started']], [[]]])(
   },
 );
 
-test('inserts one event into a new running archon-loop run when the branch has none', async () => {
+/** A database with no running run that stores jsonb as `stored` reports, counting events. */
+function storing(stored: string) {
   let events = 0;
-  const run = recordingDeps({
-    repoRoot: repo(),
-    rows: (sql) => {
-      if (sql.startsWith('SELECT id FROM remote_agent_workflow_runs')) return [];
-      if (sql.startsWith('INSERT INTO remote_agent_workflow_runs')) return [{ id: 'run-1' }];
-      if (sql.startsWith('INSERT INTO remote_agent_workflow_events')) events++;
-      if (sql.startsWith('SELECT count(*)')) return [{ n: events }];
-      return [];
-    },
-  });
+  return (sql: string) => {
+    if (sql.startsWith('SELECT id FROM remote_agent_workflow_runs')) return [];
+    if (sql.startsWith('INSERT INTO remote_agent_workflow_runs')) return [{ id: 'run-1', stored }];
+    if (sql.startsWith('INSERT INTO remote_agent_workflow_events')) {
+      events++;
+      return [{ stored }];
+    }
+    if (sql.startsWith('SELECT count(*)')) return [{ n: events }];
+    return [];
+  };
+}
+
+test('inserts one event into a new running archon-loop run when the branch has none', async () => {
+  const run = recordingDeps({ repoRoot: repo(), rows: storing('object') });
   expect(await main(['step', '--step', 'review'], run.deps)).toBe(0);
   expect(run.out).toEqual(['events for run run-1: 0 -> 1']);
   expect(run.sql.filter((sql) => sql.startsWith('INSERT'))).toHaveLength(2);
 });
+
+test('binds the run metadata and the event data as objects, not JSON text', async () => {
+  const run = recordingDeps({ repoRoot: repo(), rows: storing('object') });
+  expect(await main(['step', '--step', 'pick'], run.deps)).toBe(0);
+  const bound = (prefix: string) => run.params[run.sql.findIndex((sql) => sql.startsWith(prefix))];
+  expect(bound('INSERT INTO remote_agent_workflow_runs')?.[2]).toEqual({
+    workflow_source: { digest: expect.stringMatching(/^sha256:/) },
+  });
+  expect(bound('INSERT INTO remote_agent_workflow_events')?.[3]).toEqual(
+    eventData('pick', 'node_completed', NOW),
+  );
+});
+
+test.each(['string', 'array'])(
+  'fails when the database stores the jsonb as a %s',
+  async (stored) => {
+    const run = recordingDeps({ repoRoot: repo(), rows: storing(stored) });
+    expect(await main(['step'], run.deps)).toBe(1);
+    expect(run.err.join('\n')).toContain(`stored as a jsonb ${stored}, not an object`);
+    expect(run.out).toEqual([]);
+  },
+);
 
 type Schema = {
   required?: string[];

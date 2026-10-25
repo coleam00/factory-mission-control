@@ -71,3 +71,10 @@ test('deletes the new branch and writes no env file when a later step fails', as
   expect(run.opened).toEqual([]);
   expect(existsSync(join(repoRoot, CHECK_ENV_FILE))).toBe(false);
 });
+
+test.each([[['--help']], [['--name', 'check-mine']]])('creates nothing for %j', async (argv) => {
+  const run = recordingDeps({ repoRoot: repo(), branches: BRANCHES });
+  expect(await main(argv, run.deps)).toBe(argv[0] === '--help' ? 0 : 2);
+  expect([...run.out, ...run.err].join('\n')).toContain('usage: bun run fixture:branch');
+  expect(run.neonCalls).toEqual([]);
+});

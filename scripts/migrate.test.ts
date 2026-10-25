@@ -28,6 +28,23 @@ test.each(['main', 'fixture', 'rewind-x'])(
   },
 );
 
+test.each([[['--help']], [['-h']]])('prints usage for %j without touching Neon', async (argv) => {
+  const run = recordingDeps({ repoRoot: repo() });
+  expect(await main(argv, run.deps)).toBe(0);
+  expect(run.out.join('\n')).toContain('usage: bun run migrate');
+  expect(run.neonCalls).toEqual([]);
+});
+
+test.each([[['--force']], [['main']]])(
+  'exits 2 with usage for %j before touching Neon',
+  async (argv) => {
+    const run = recordingDeps({ repoRoot: repo() });
+    expect(await main(argv, run.deps)).toBe(2);
+    expect(run.err.join('\n')).toContain('usage: bun run migrate');
+    expect(run.neonCalls).toEqual([]);
+  },
+);
+
 test('migrate:main refuses every branch but main, check-* included', async () => {
   const run = recordingDeps({ repoRoot: repo(), branchName: 'check-abc', owner: true });
   expect(await main(['--main'], run.deps)).not.toBe(0);
