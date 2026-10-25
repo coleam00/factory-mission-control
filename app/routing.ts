@@ -8,13 +8,17 @@ export interface RouteModule {
 }
 
 /**
- * One route per file in `routes/`: `index.tsx` serves `/`, `<name>.tsx` serves `/<name>`.
- * Keys are module paths as `import.meta.glob` returns them.
+ * One route per file in `routes/`: `index.tsx` serves `/`, `<name>.tsx` serves `/<name>`, and a
+ * `.` in the name separates segments, a `$` starting a segment makes it a parameter:
+ * `steps.$workflow.$step.tsx` serves `/steps/:workflow/:step`. Keys are module paths as
+ * `import.meta.glob` returns them.
  */
 export function routesFromModules(modules: Record<string, RouteModule>): RouteObject[] {
   return Object.entries(modules).map(([file, module]) => {
     const name = file.replace(/^.*\//, '').replace(/\.tsx$/, '');
-    return { path: name === 'index' ? '/' : `/${name}`, Component: module.default };
+    if (name === 'index') return { path: '/', Component: module.default };
+    const segments = name.split('.').map((s) => (s.startsWith('$') ? `:${s.slice(1)}` : s));
+    return { path: `/${segments.join('/')}`, Component: module.default };
   });
 }
 

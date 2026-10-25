@@ -32,3 +32,12 @@ test('a file added to the routes directory becomes a route at its path', async (
   const versions = routes.find((r) => r.path === '/versions');
   expect(versions?.Component?.name).toBe('Versions');
 });
+
+function Steps() {
+  return null;
+}
+
+test('dots in a file name separate segments and a leading $ makes a parameter', () => {
+  const routes = routesFromModules({ './routes/steps.$workflow.$step.tsx': { default: Steps } });
+  expect(routes.map((r) => r.path)).toEqual(['/steps/:workflow/:step']);
+});
