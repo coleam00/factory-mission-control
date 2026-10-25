@@ -1,11 +1,11 @@
 // `bun run reconcile:laps` (issue #53): repairs the laps a dropped projection left wrong. A
 // projection trigger that loses a lock wait records the error, and when even that record fails the
 // error is dropped (0006_projection.sql), so a lap can stay `running` after Archon finished the run:
-// a finished run gets no more writes to project it again. For each run Archon finished, this
-// replays the run's row and step-level events through 0006's own functions, by way of temp tables
-// that carry the same triggers, and keeps the result only when it differs from the lap's rows.
-// Archon's tables are only read. It writes the check branch in .mc-check.env; `:main` writes
-// `main`, and is the owner's nightly run beside `backfill:main`.
+// a finished run gets no more writes to project it again. For each run Archon completed or
+// cancelled, this replays the run's row and step-level events through 0006's own functions, by way
+// of temp tables that carry the same triggers, and keeps the result only when it differs from the
+// lap's rows. Archon's tables are only read. It writes the check branch in .mc-check.env; `:main`
+// writes `main`, and is the owner's nightly run beside `backfill:main`.
 
 import { parseArgs } from 'node:util';
 import { failing, guardedDatabaseUrl, type Main, runCli } from './lib/cli';
@@ -18,8 +18,11 @@ class Busy extends Error {}
 
 /** The live trigger's WHEN (0006_projection.sql): the step-level events it projects. */
 export const STEP_EVENT_TYPES = ['node_started', 'node_completed', 'node_failed', 'node_skipped'];
-/** Archon writes no more to a run in these, so no live trigger waits on the replay's locks. */
-const FINISHED = ['completed', 'failed', 'cancelled'];
+/**
+ * Archon writes no more to a run in these, so no live trigger waits on the replay's locks. Not
+ * `failed`: Archon resumes a failed run under the same id.
+ */
+const FINISHED = ['completed', 'cancelled'];
 const REPLAY_RUN = 'mc_reconcile_run';
 const REPLAY_STEP_EVENT = 'mc_reconcile_step_event';
 /** A constant list as an SQL `IN` list: Archon's names and ours, never input. */

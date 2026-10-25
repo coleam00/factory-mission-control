@@ -194,17 +194,20 @@ test('the replay projects events in Archon order, not the order their rows are s
   expect(await snapshot(db)).toEqual(projected);
 });
 
-test('a run Archon has not finished is left to its live triggers', async () => {
-  const runId = await archonRun('running');
-  await archonEvent(runId, 1, 'pick', 'node_started');
-  await rows(`UPDATE mc.laps SET status = 'paused' WHERE run_id = $1`, [runId]);
-  const before = await tuples(runId);
+test.each(['running', 'failed'])(
+  'a %s run, which Archon can still write, is left to its live triggers',
+  async (status) => {
+    const runId = await archonRun(status);
+    await archonEvent(runId, 1, 'pick', 'node_started');
+    await rows(`UPDATE mc.laps SET status = 'paused' WHERE run_id = $1`, [runId]);
+    const before = await tuples(runId);
 
-  const { code, out } = await run([]);
-  expect(code).toBe(0);
-  expect(out).toEqual(['reconcile: 0 run(s) repaired']);
-  expect(await tuples(runId)).toEqual(before);
-});
+    const { code, out } = await run([]);
+    expect(code).toBe(0);
+    expect(out).toEqual(['reconcile: 0 run(s) repaired']);
+    expect(await tuples(runId)).toEqual(before);
+  },
+);
 
 test('a replay error no live trigger recorded fails that run alone and is reported', async () => {
   const unrecorded = await finishedRun('{"route":"x"}');
