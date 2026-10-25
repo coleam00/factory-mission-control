@@ -5,7 +5,7 @@
   "scripts": {
     "setup": "vite build",
     "serve": "bun server/main.ts",
-    "check": "tsc --noEmit && biome check && bun test app server scripts parsers",
+    "check": "tsc --noEmit && biome check && bun test app server scripts parsers db",
     "migrate": "bun scripts/migrate.ts",
     "migrate:main": "bun scripts/migrate.ts --main",
     "fixture:branch": "bun scripts/fixture/branch.ts",
@@ -22,6 +22,7 @@
   },
   "devDependencies": {
     "@biomejs/biome": "^2.6.3",
+    "@electric-sql/pglite": "^0.5.11",
     "@tailwindcss/vite": "^4",
     "@types/bun": "^1.4.4",
     "@types/react": "^19.3.0",

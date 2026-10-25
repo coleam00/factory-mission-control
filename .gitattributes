@@ -3,6 +3,7 @@
 /server/** text eol=lf
 /scripts/** text eol=lf
 /parsers/** text eol=lf
+/db/** text eol=lf
 /package.json text eol=lf
 /tsconfig.json text eol=lf
 /biome.json text eol=lf
