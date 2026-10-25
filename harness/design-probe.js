@@ -8,7 +8,8 @@
  *   bun harness/design-probe.js <url> [--out <report.json>]
  *
  * Prints the JSON report and writes it to --out when given. Exits 0 only on zero failures, 1 on
- * any failure, 2 when the probe itself could not run. The browser is Chrome, Chromium or Edge,
+ * any failure, 2 when the probe itself could not run, including a page that does not load or
+ * finish its checks within 20 s. The browser is Chrome, Chromium or Edge,
  * found on this machine or named by MC_BROWSER, and driven over the DevTools protocol.
  */
 import { spawn } from 'node:child_process';
@@ -19,6 +20,8 @@ import { parseArgs } from 'node:util';
 
 const WIDTHS = [1440, 390];
 const HEIGHT = 900;
+/** How long one DevTools command, the page load or the in-page checks may take. */
+const STEP_TIMEOUT_MS = 20000;
 const TOKEN_SOURCES = ['index.css', 'theme.css'].map((f) =>
   resolve(import.meta.dir, '..', 'docs', 'design', 'archon-console', f),
 );
@@ -111,36 +114,66 @@ function connect(url) {
   const pending = new Map();
   const listeners = new Set();
   let nextId = 1;
+  let lost;
+  /** A promise for one answer from the browser, refused after STEP_TIMEOUT_MS or on disconnect. */
+  const awaitAnswer = (what, register, unregister) => {
+    if (lost) return Promise.reject(lost);
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        unregister();
+        reject(new ProbeError(`${what} got no answer within ${STEP_TIMEOUT_MS / 1000}s`));
+      }, STEP_TIMEOUT_MS);
+      const settle = (finish) => (value) => {
+        clearTimeout(timer);
+        unregister();
+        finish(value);
+      };
+      register(settle(resolve), settle(reject));
+    });
+  };
   socket.onmessage = ({ data }) => {
     const message = JSON.parse(data);
     const waiting = pending.get(message.id);
     if (waiting) {
-      pending.delete(message.id);
       if (message.error)
         waiting.reject(new ProbeError(`${waiting.method}: ${message.error.message}`));
       else waiting.resolve(message.result);
     } else {
-      for (const listener of listeners) listener(message);
+      for (const listener of listeners) listener.receive(message);
     }
+  };
+  socket.onclose = () => {
+    lost = new ProbeError('the browser closed its DevTools connection');
+    for (const waiting of [...pending.values(), ...listeners]) waiting.reject(lost);
   };
   const cdp = {
     send(method, params = {}, sessionId) {
-      return new Promise((resolve, reject) => {
-        const id = nextId++;
-        pending.set(id, { resolve, reject, method });
-        socket.send(JSON.stringify({ id, method, params, sessionId }));
-      });
+      const id = nextId++;
+      return awaitAnswer(
+        method,
+        (resolve, reject) => {
+          pending.set(id, { resolve, reject, method });
+          socket.send(JSON.stringify({ id, method, params, sessionId }));
+        },
+        () => pending.delete(id),
+      );
     },
     once(method, sessionId) {
-      return new Promise((resolve) => {
-        const listener = (message) => {
-          if (message.method === method && message.sessionId === sessionId) {
-            listeners.delete(listener);
-            resolve(message.params);
-          }
-        };
-        listeners.add(listener);
-      });
+      let listener;
+      return awaitAnswer(
+        method,
+        (resolve, reject) => {
+          listener = {
+            receive: (message) => {
+              if (message.method === method && message.sessionId === sessionId)
+                resolve(message.params);
+            },
+            reject,
+          };
+          listeners.add(listener);
+        },
+        () => listeners.delete(listener),
+      );
     },
     close: () => socket.close(),
   };
@@ -320,6 +353,9 @@ async function pageChecks(tokenLayers) {
       .filter((f) => f.status === 'loaded')
       .map((f) => f.family.replace(/["']/g, '')),
   );
+  /** Controls that draw text with no text node of their own: a value, a label, an option. */
+  const TEXT_CONTROLS =
+    'select, textarea, input:not([type=hidden], [type=checkbox], [type=radio], [type=range], [type=color], [type=image])';
   const SVG_PAINTED = new Set([
     'path',
     'circle',
@@ -369,10 +405,10 @@ async function pageChecks(tokenLayers) {
       }
     }
 
-    const ownText = [...el.childNodes].some(
-      (n) => n.nodeType === Node.TEXT_NODE && n.textContent.trim(),
-    );
-    if (!ownText) continue;
+    const showsText =
+      el.matches(TEXT_CONTROLS) ||
+      [...el.childNodes].some((n) => n.nodeType === Node.TEXT_NODE && n.textContent.trim());
+    if (!showsText) continue;
     checkColor(el, 'color', style.color);
     const family = style.fontFamily.split(',')[0].trim().replace(/["']/g, '');
     if (!FONTS.has(family))

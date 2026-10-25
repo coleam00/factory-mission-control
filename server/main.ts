@@ -3,8 +3,7 @@ import { join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { createApp } from './app';
 import { resolveBuildId } from './build-id';
-
-const PORTS = { min: 8850, max: 8864 };
+import { PORTS } from './ports';
 
 const { values } = parseArgs({
   args: Bun.argv.slice(2),
