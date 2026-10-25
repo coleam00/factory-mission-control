@@ -93,8 +93,9 @@ $$;
 -- One step row per (run, step_name). A step finishes at its start plus its duration, both on
 -- Archon's clock, or else when the event was written. A node_started resets the row only while
 -- it is running or when it starts after the row's last attempt finished (a retry), so a replayed
--- start never reopens a finished step. A check-app report whose lines cannot be projected keeps
--- its step row; the lines' error is recorded on its own.
+-- start never reopens a finished step. A structured_output that is not an object, and a check-app
+-- report whose lines cannot be projected, keep the step row with its status, timing and cost; the
+-- error is recorded on its own and the output stays null or the lines unstored.
 CREATE OR REPLACE FUNCTION mc.project_step_event() RETURNS trigger LANGUAGE plpgsql
 SET lock_timeout = '100ms' AS $$
 DECLARE
@@ -105,10 +106,10 @@ DECLARE
 BEGIN
   v_output := NEW.data -> 'structured_output';
   IF jsonb_typeof(v_output) NOT IN ('object', 'null') THEN
-    RAISE EXCEPTION 'structured_output is a jsonb %, not an object', jsonb_typeof(v_output)
-      USING ERRCODE = 'data_exception';
+    PERFORM mc.record_projection_error(TG_NAME, NEW.workflow_run_id, NEW.id, '22000',
+      format('structured_output is a jsonb %s, not an object', jsonb_typeof(v_output)));
   END IF;
-  IF jsonb_typeof(v_output) = 'null' THEN
+  IF jsonb_typeof(v_output) IS DISTINCT FROM 'object' THEN
     v_output := NULL;
   END IF;
   v_output := mc.step_output(NEW.step_name, v_output);

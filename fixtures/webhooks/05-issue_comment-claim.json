@@ -1,0 +1,69 @@
+{
+  "action": "created",
+  "issue": {
+    "url": "https://api.github.com/repos/coleam00/factory-mission-control/issues/10",
+    "html_url": "https://github.com/coleam00/factory-mission-control/issues/10",
+    "id": 6019021010,
+    "number": 10,
+    "title": "Receive signed GitHub webhooks in the Neon Function and upsert mirror, version and decision rows",
+    "user": {
+      "login": "coleam00",
+      "id": 47287758,
+      "type": "User"
+    },
+    "labels": [
+      {
+        "id": 9100000001,
+        "name": "enhancement",
+        "color": "ededed",
+        "default": false
+      },
+      {
+        "id": 9100000002,
+        "name": "needs-owner",
+        "color": "ededed",
+        "default": false
+      }
+    ],
+    "state": "open",
+    "locked": false,
+    "comments": 1,
+    "created_at": "2026-10-25T00:03:33Z",
+    "updated_at": "2026-10-25T06:33:37Z",
+    "closed_at": null,
+    "author_association": "OWNER",
+    "body": "Phase: Webhook Function handler\n\nSource: `docs/mission-control.prd.md` section 12 item 7.\n\n## Problem\n\nGitHub facts never reach the database.\n\nDepends on: #6\nDepends on: #4\n"
+  },
+  "comment": {
+    "url": "https://api.github.com/repos/coleam00/factory-mission-control/issues/comments/6394428649",
+    "html_url": "https://github.com/coleam00/factory-mission-control/issues/10#issuecomment-6394428649",
+    "id": 6394428649,
+    "user": {
+      "login": "coleam00",
+      "id": 47287758,
+      "type": "User"
+    },
+    "created_at": "2026-10-25T06:33:37Z",
+    "updated_at": "2026-10-25T06:33:37Z",
+    "author_association": "OWNER",
+    "body": "Loop claim: run a1ba5462-3544-481a-92b4-25c62ad62d17\n\nRoute: complex\nArea: function/ (Hono webhook handler, signature verification, upserts), fixtures/webhooks/, package.json (function:dev script), function tests\n\nThis loop is working this item."
+  },
+  "repository": {
+    "id": 1102400834,
+    "name": "factory-mission-control",
+    "full_name": "coleam00/factory-mission-control",
+    "private": false,
+    "html_url": "https://github.com/coleam00/factory-mission-control",
+    "default_branch": "main",
+    "owner": {
+      "login": "coleam00",
+      "id": 47287758,
+      "type": "User"
+    }
+  },
+  "sender": {
+    "login": "coleam00",
+    "id": 47287758,
+    "type": "User"
+  }
+}

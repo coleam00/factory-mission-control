@@ -153,8 +153,9 @@ test('a provider_event changes no dashboard row and never fires the trigger', as
   expect(types.sort()).toEqual(['node_completed', 'node_failed', 'node_skipped', 'node_started']);
 });
 
-test('a structured_output that is a JSON string commits in Archon and is recorded', async () => {
-  const data = { ...eventData('pick', 'node_completed', NOW), structured_output: '{"route":"x"}' };
+test('a structured_output that is a JSON string commits in Archon, is recorded and keeps its step', async () => {
+  const completed = eventData('pick', 'node_completed', NOW);
+  const data = { ...completed, structured_output: '{"route":"x"}' };
   const [event] = await insertEvent('node_completed', 'pick', data);
 
   expect(
@@ -169,7 +170,10 @@ test('a structured_output that is a JSON string commits in Archon and is recorde
       message: 'structured_output is a jsonb string, not an object',
     },
   ]);
-  expect(await db.query('SELECT * FROM mc.lap_steps')).toEqual([]);
+  // The step still ran and cost what it cost: only its unreadable output is dropped.
+  expect(await db.query('SELECT step_id, status, cost_usd, output FROM mc.lap_steps')).toEqual([
+    { step_id: 'pick', status: 'completed', cost_usd: String(completed.cost_usd), output: null },
+  ]);
 });
 
 test('an error the projection cannot even record still never fails Archon’s write', async () => {

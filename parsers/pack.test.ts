@@ -157,6 +157,27 @@ describe('the pack', () => {
     ]);
   });
 
+  test('reads every text with LF line endings, as git stores it', () => {
+    const texts = [
+      ...parsed.workflows.map((w) => ({ path: w.file, text: w.yaml })),
+      ...parsed.commands,
+      ...parsed.scripts,
+      ...parsed.hooks,
+    ];
+    expect(texts.length).toBeGreaterThan(0);
+    expect(texts.filter((t) => t.text.includes('\r')).map((t) => t.path)).toEqual([]);
+  });
+
+  test('reads the commit pins without a CR', () => {
+    const pins = [
+      join(repoRoot, 'fixtures', 'pack', 'ARCHON_COMMIT'),
+      join(templateDir, 'FACTORY_COMMIT'),
+    ];
+    expect(pins.filter((pin) => readFileSync(pin, 'utf8').includes('\r'))).toEqual([]);
+    expect(parsed.archonCommit).toMatch(/^[0-9a-f]{40}$/);
+    expect(parsed.factoryCommit).toMatch(/^[0-9a-f]{40}$/);
+  });
+
   test('parsing twice gives deep-equal output', () => {
     expect(parsePack(packDir, templateDir)).toEqual(parsed);
   });

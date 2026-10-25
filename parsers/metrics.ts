@@ -29,6 +29,8 @@ export interface HoldoutResult {
 }
 
 export interface HoldoutsLine {
+  /** As written, e.g. `2026-10-25T14:20Z`. */
+  at: string;
   sha: string;
   holdouts: HoldoutResult[];
 }
@@ -119,7 +121,7 @@ export function parseHoldoutsLine(line: string): HoldoutsLine | null {
       });
     }
   }
-  return { sha: head[1], holdouts };
+  return { at, sha: head[1], holdouts };
 }
 
 /** The first `H-<nn>` in an app-check holdout line, or `unidentified`; nothing else of the line. */
