@@ -204,8 +204,8 @@ test('check-app lines keep kind, verdict, evidence count and only a holdout’s 
   const lines = [
     report.lines[0],
     line('2', 'FAIL', `H-07 ${MARKER} the user sees the lap`, ['a.txt', 'b.txt']),
-    line('3', 'pass', `${MARKER} with no scenario id`, []),
-    { ...report.lines[2], pre_existing: 'baseline/health.txt' },
+    line('3', '\tpass\n', `${MARKER} with no scenario id`, []),
+    { ...report.lines[2], kind: '\tprobe\r\n', pre_existing: '\nbaseline/health.txt\t' },
   ];
   const data = eventData('check-app', 'node_completed', NOW);
   await insertEvent('node_completed', 'check-app', {

@@ -20,6 +20,12 @@ EXCEPTION WHEN OTHERS THEN
 END;
 $$;
 
+-- A string field trimmed the way the merge gate's str() trims it with JS trim(), on ASCII.
+CREATE OR REPLACE FUNCTION mc.gate_trim(p_value text)
+RETURNS text LANGUAGE sql IMMUTABLE AS $$
+  SELECT btrim(p_value, E' \t\n\r\f\x0B')
+$$;
+
 -- A check-app report's lines, by 1-based position, without their text: a holdout line keeps only
 -- the first H-<nn> in its text, or `unidentified` (PRD 6.3, 11.7), matched as parsers/metrics.ts
 -- holdoutId matches /\bH-\d{2,}\b/. An empty kind reads as a defect, as the merge gate's
@@ -33,16 +39,16 @@ BEGIN
     p_run_id,
     l.position,
     k.kind,
-    upper(btrim(coalesce(l.line ->> 'verdict', ''))),
+    upper(mc.gate_trim(coalesce(l.line ->> 'verdict', ''))),
     CASE WHEN jsonb_typeof(l.line -> 'evidence') = 'array'
       THEN jsonb_array_length(l.line -> 'evidence') ELSE 0 END,
-    btrim(coalesce(l.line ->> 'pre_existing', '')),
+    mc.gate_trim(coalesce(l.line ->> 'pre_existing', '')),
     CASE WHEN k.kind = 'holdout'
       THEN coalesce(
         substring(l.line ->> 'text' FROM '(?<![A-Za-z0-9_])H-[0-9]{2,}(?![A-Za-z0-9_])'),
         'unidentified') END
   FROM jsonb_array_elements(p_lines) WITH ORDINALITY AS l(line, position)
-  CROSS JOIN LATERAL (SELECT coalesce(nullif(btrim(l.line ->> 'kind'), ''), 'defect') AS kind) k
+  CROSS JOIN LATERAL (SELECT coalesce(nullif(mc.gate_trim(l.line ->> 'kind'), ''), 'defect') AS kind) k
   ON CONFLICT (run_id, position) DO UPDATE SET
     kind = EXCLUDED.kind,
     verdict = EXCLUDED.verdict,
@@ -67,7 +73,7 @@ RETURNS jsonb LANGUAGE sql IMMUTABLE AS $$
         WHEN key <> 'dispositions' THEN value
         WHEN jsonb_typeof(value) = 'array' THEN (
           SELECT coalesce(jsonb_agg(jsonb_build_object(
-              'line', upper(substring(btrim(d.entry ->> 'line', E' \t\n\r\f\x0B') FROM '^[A-Za-z]+[0-9]+')),
+              'line', upper(substring(mc.gate_trim(d.entry ->> 'line') FROM '^[A-Za-z]+[0-9]+')),
               'action', d.entry -> 'action') ORDER BY d.n), '[]')
           FROM jsonb_array_elements(value) WITH ORDINALITY AS d(entry, n))
         END)
