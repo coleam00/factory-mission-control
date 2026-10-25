@@ -5,7 +5,7 @@ import { eventData } from './fixture/write';
 import type { Db, Row, Tx } from './lib/db';
 import { DATABASE_URL, NOW, recordingDeps, scratchRepo } from './lib/test-deps';
 import { runMigrations } from './migrate';
-import { main } from './reconcile-laps';
+import { main, STEP_EVENT_TYPES } from './reconcile-laps';
 
 let db: Db;
 let sql: string[];
@@ -48,13 +48,44 @@ async function run(argv: string[], branchName = 'check-abc') {
 
 const rows = (text: string, params: unknown[] = []): Promise<Row[]> => db.query(text, params);
 
-/** A run Archon finished, with `pick` and `check-app` started and completed. */
-async function finishedRun(pickOutput?: unknown): Promise<string> {
+async function archonRun(status: string): Promise<string> {
   const [run] = await rows(
     `INSERT INTO public.remote_agent_workflow_runs (workflow_name, status, user_message, metadata)
-     VALUES ('archon-loop', 'running', 'Run the loop', '{}') RETURNING id`,
+     VALUES ('archon-loop', $1, 'Run the loop', '{}') RETURNING id`,
+    [status],
   );
-  const id = String(run?.id);
+  return String(run?.id);
+}
+
+/** Archon's event `order` of the run, for one step; `data` defaults to the fixture's for `now`. */
+async function archonEvent(
+  runId: string,
+  order: number,
+  step: string,
+  event: Parameters<typeof eventData>[1],
+  data: Record<string, unknown> = eventData(step, event, NOW),
+): Promise<string> {
+  // One created_at for every event, so only event_order orders them, as Archon's can.
+  const [row] = await rows(
+    `INSERT INTO public.remote_agent_workflow_events
+       (workflow_run_id, event_order, event_type, step_name, data, created_at)
+     VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
+    [runId, order, event, step, JSON.stringify(data), NOW.toISOString()],
+  );
+  return String(row?.id);
+}
+
+async function finish(runId: string): Promise<void> {
+  await rows(
+    `UPDATE public.remote_agent_workflow_runs SET status = 'completed', completed_at = $2
+      WHERE id = $1`,
+    [runId, NOW.toISOString()],
+  );
+}
+
+/** A run Archon finished, with `pick` and `check-app` started and completed. */
+async function finishedRun(pickOutput?: unknown): Promise<string> {
+  const id = await archonRun('running');
   let order = 0;
   for (const step of ['pick', 'check-app']) {
     for (const event of ['node_started', 'node_completed'] as const) {
@@ -62,20 +93,10 @@ async function finishedRun(pickOutput?: unknown): Promise<string> {
       if (step === 'pick' && event === 'node_completed' && pickOutput !== undefined) {
         data.structured_output = pickOutput;
       }
-      // One created_at for every event, so only event_order orders them, as Archon's can.
-      await rows(
-        `INSERT INTO public.remote_agent_workflow_events
-           (workflow_run_id, event_order, event_type, step_name, data, created_at)
-         VALUES ($1, $2, $3, $4, $5, $6)`,
-        [id, ++order, event, step, JSON.stringify(data), NOW.toISOString()],
-      );
+      await archonEvent(id, ++order, step, event, data);
     }
   }
-  await rows(
-    `UPDATE public.remote_agent_workflow_runs SET status = 'completed', completed_at = $2
-      WHERE id = $1`,
-    [id, NOW.toISOString()],
-  );
+  await finish(id);
   return id;
 }
 
@@ -147,6 +168,77 @@ test('a run whose lap was never inserted gets one', async () => {
   expect(code).toBe(0);
   expect(out).toEqual(['reconcile: 1 run(s) repaired']);
   expect(await snapshot(db)).toEqual(projected);
+});
+
+test('the replay projects events in Archon order, not the order their rows are stored in', async () => {
+  const runId = await archonRun('running');
+  const retry = new Date(NOW.getTime() + 60_000);
+  const failedFirst = [
+    await archonEvent(runId, 1, 'pick', 'node_started'),
+    await archonEvent(runId, 2, 'pick', 'node_failed'),
+  ];
+  await archonEvent(runId, 3, 'pick', 'node_started', eventData('pick', 'node_started', retry));
+  await archonEvent(runId, 4, 'pick', 'node_completed', eventData('pick', 'node_completed', retry));
+  await finish(runId);
+  const projected = await snapshot(db);
+  expect(projected.lap_steps?.map((step) => JSON.parse(step).status)).toEqual(['completed']);
+  // Rewriting the first attempt's rows stores them after the retry's; no trigger fires on it.
+  await rows('UPDATE public.remote_agent_workflow_events SET data = data WHERE id = ANY($1)', [
+    failedFirst,
+  ]);
+  await rows(`UPDATE mc.lap_steps SET status = 'running' WHERE run_id = $1`, [runId]);
+
+  const { code, out } = await run([]);
+  expect(code).toBe(0);
+  expect(out).toEqual(['reconcile: 1 run(s) repaired']);
+  expect(await snapshot(db)).toEqual(projected);
+});
+
+test('a run Archon has not finished is left to its live triggers', async () => {
+  const runId = await archonRun('running');
+  await archonEvent(runId, 1, 'pick', 'node_started');
+  await rows(`UPDATE mc.laps SET status = 'paused' WHERE run_id = $1`, [runId]);
+  const before = await tuples(runId);
+
+  const { code, out } = await run([]);
+  expect(code).toBe(0);
+  expect(out).toEqual(['reconcile: 0 run(s) repaired']);
+  expect(await tuples(runId)).toEqual(before);
+});
+
+test('a replay error no live trigger recorded fails that run alone and is reported', async () => {
+  const unrecorded = await finishedRun('{"route":"x"}');
+  const repairable = await finishedRun();
+  const [recorded] = await rows('SELECT message FROM mc.projection_errors');
+  // The live trigger's record of the error was itself dropped.
+  await rows('DELETE FROM mc.projection_errors');
+  await rows(`UPDATE mc.laps SET status = 'running' WHERE run_id = ANY($1)`, [
+    [unrecorded, repairable],
+  ]);
+  const before = await tuples(unrecorded);
+
+  const { code, out, err } = await run([]);
+  expect(code).toBe(1);
+  expect(out).toEqual(['reconcile: 1 run(s) repaired']);
+  expect(err).toEqual([
+    `reconcile: run ${unrecorded}: replay hit 22000: ${recorded?.message}`,
+    'reconcile: 1 run(s) failed',
+  ]);
+  expect(await tuples(unrecorded)).toEqual(before);
+  expect(await rows('SELECT status FROM mc.laps WHERE run_id = $1', [repairable])).toEqual([
+    { status: 'completed' },
+  ]);
+  expect(await rows('SELECT * FROM mc.projection_errors')).toEqual([]);
+});
+
+test('the replay projects the step-level event types the live trigger projects', async () => {
+  const [trigger] = await rows(
+    `SELECT pg_get_triggerdef(oid) AS def FROM pg_trigger WHERE tgname = 'mc_project_step_event'`,
+  );
+  const when = / WHEN \((.*)\) EXECUTE /.exec(String(trigger?.def))?.[1] ?? '';
+  const types = [...when.matchAll(/'([^']*)'/g)].map((match) => match[1]);
+  expect(types.length).toBeGreaterThan(0);
+  expect(types.sort()).toEqual([...STEP_EVENT_TYPES].sort());
 });
 
 test('--help prints usage and exits 0 without opening the database', async () => {
