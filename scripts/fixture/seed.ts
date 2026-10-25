@@ -1157,23 +1157,6 @@ function archonSql(factory: FactoryEntry, runs: Run[]): string[] {
       );
     }
   }
-
-  out.push('', '-- What a projection trigger records for a structured_output stored as a string.');
-  for (const run of runs) {
-    for (const event of run.events) {
-      if (typeof event.data.structured_output !== 'string') continue;
-      out.push(
-        insert('mc.projection_errors', {
-          occurred_at: iso(event.at),
-          source: 'remote_agent_workflow_events',
-          run_id: run.id,
-          event_id: event.id,
-          sqlstate: '22023',
-          message: `structured_output of ${event.step} is a jsonb string, not an object`,
-        }),
-      );
-    }
-  }
   return out;
 }
 
