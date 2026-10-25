@@ -119,6 +119,6 @@ test('a page that never answers stops the probe with exit 2 instead of hanging',
   const { stdout, stderr, exitCode } = await runProbe('/wedged.html');
 
   expect(stdout).toBe('');
-  expect(stderr).toContain('got no answer within');
+  expect(stderr).toBe('design probe could not run: Page.navigate got no answer within 20s\n');
   expect(exitCode).toBe(2);
 }, 60_000);

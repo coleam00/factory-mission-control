@@ -451,6 +451,7 @@ async function probeAt(cdp, session, url, width, tokenLayers) {
     session,
   );
   const loaded = cdp.once('Page.loadEventFired', session);
+  loaded.catch(() => {});
   const { errorText } = await cdp.send('Page.navigate', { url }, session);
   if (errorText) throw new ProbeError(`could not load ${url}: ${errorText}`);
   await loaded;
