@@ -17,6 +17,16 @@ export interface GitHub {
 
 export const API_ROOT = 'https://api.github.com';
 
+/** GitHub answered a GET with a status other than success (or, for `fileAt`, 404). */
+export class GitHubError extends Error {
+  constructor(
+    readonly url: string,
+    readonly status: number,
+  ) {
+    super(`GET ${url} failed: ${status}`);
+  }
+}
+
 const NEXT_PAGE = /<([^>]+)>;\s*rel="next"/;
 
 /** `token`, when given, only raises the rate limit; every repository read here is public. */
@@ -33,7 +43,7 @@ export function createGitHub(fetch: GetFetch = globalThis.fetch, token?: string)
 
   async function json(url: string): Promise<Response> {
     const response = await request(url, 'application/vnd.github+json');
-    if (!response.ok) throw new Error(`GET ${url} failed: ${response.status}`);
+    if (!response.ok) throw new GitHubError(url, response.status);
     return response;
   }
 
@@ -42,7 +52,7 @@ export function createGitHub(fetch: GetFetch = globalThis.fetch, token?: string)
       const url = `${API_ROOT}/repos/${repository}/contents/${path}?ref=${encodeURIComponent(ref)}`;
       const response = await request(url, 'application/vnd.github.raw+json');
       if (response.status === 404) return null;
-      if (!response.ok) throw new Error(`GET ${url} failed: ${response.status}`);
+      if (!response.ok) throw new GitHubError(url, response.status);
       return response.text();
     },
     async get<T>(path: string) {
