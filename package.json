@@ -5,7 +5,12 @@
   "scripts": {
     "setup": "vite build",
     "serve": "bun server/main.ts",
-    "check": "tsc --noEmit && biome check && bun test app server parsers"
+    "check": "tsc --noEmit && biome check && bun test app server scripts parsers",
+    "migrate": "bun scripts/migrate.ts",
+    "migrate:main": "bun scripts/migrate.ts --main",
+    "fixture:branch": "bun scripts/fixture/branch.ts",
+    "fixture:drop": "bun scripts/fixture/drop.ts",
+    "fixture:write": "bun scripts/fixture/write.ts"
   },
   "dependencies": {
     "@fontsource/geist": "^5.3.0",

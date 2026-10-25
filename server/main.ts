@@ -3,8 +3,8 @@ import { join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { createApp } from './app';
 import { resolveBuildId } from './build-id';
-
-const PORTS = { min: 8850, max: 8864 };
+import { loadCheckEnv } from './check-env';
+import { SERVE_PORTS } from './ports';
 
 const { values } = parseArgs({
   args: Bun.argv.slice(2),
@@ -12,12 +12,13 @@ const { values } = parseArgs({
 });
 
 const port = Number(values.port);
-if (!Number.isInteger(port) || port < PORTS.min || port > PORTS.max) {
-  console.error(`usage: bun run serve -- --port <${PORTS.min}-${PORTS.max}>`);
+if (!Number.isInteger(port) || port < SERVE_PORTS.min || port > SERVE_PORTS.max) {
+  console.error(`usage: bun run serve -- --port <${SERVE_PORTS.min}-${SERVE_PORTS.max}>`);
   process.exit(2);
 }
 
 const repoRoot = resolve(import.meta.dir, '..');
+loadCheckEnv(repoRoot, Bun.env);
 const distDir = join(repoRoot, 'dist');
 if (!existsSync(join(distDir, 'index.html'))) {
   console.error('dist/index.html is missing: run `bun run setup` first');
