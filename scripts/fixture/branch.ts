@@ -153,7 +153,9 @@ async function createSessionBranch(deps: Deps): Promise<void> {
 export const main: Main = async (argv, deps) => {
   if (argv.length === 1 && argv[0] === '--stale')
     return failing(deps, () => createStaleBranch(deps));
-  return noArguments(argv, USAGE, deps) ?? failing(deps, () => createSessionBranch(deps));
+  return (
+    noArguments(argv, USAGE, deps, ['--stale']) ?? failing(deps, () => createSessionBranch(deps))
+  );
 };
 
 if (import.meta.main) await runCli(main);
