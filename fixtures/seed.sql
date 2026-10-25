@@ -623,9 +623,6 @@ INSERT INTO remote_agent_workflow_events (id, workflow_run_id, event_type, step_
 -- V3 run Q: pending
 INSERT INTO remote_agent_workflow_runs (id, workflow_name, codebase_id, status, user_message, metadata, started_at, completed_at, last_activity_at) VALUES ('5eed0003-0000-4000-8000-00000000000d', 'archon-loop', '5eed0000-0000-4000-8000-000000000000', 'pending', 'Run the loop on coleam00/factory-mission-control', '{"workflow_source":{"digest":"sha256:c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3"}}'::jsonb, '2026-10-24T11:55:00.000Z', NULL, '2026-10-24T11:55:00.000Z');
 
--- What a projection trigger records for a structured_output stored as a string.
-INSERT INTO mc.projection_errors (occurred_at, source, run_id, event_id, sqlstate, message) VALUES ('2026-10-10T08:24:00.000Z', 'remote_agent_workflow_events', '5eed0002-0000-4000-8000-000000000001', '5eedeeee-0000-4000-8000-000000000267', '22023', 'structured_output of build is a jsonb string, not an object');
-
 -- Laps, steps, app-check lines and versions, projected from Archon's rows above.
 INSERT INTO mc.laps (run_id, factory, workflow_name, status, digest, started_at, completed_at)
 SELECT r.id, f.name, r.workflow_name, r.status, r.metadata->'workflow_source'->>'digest',
