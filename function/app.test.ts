@@ -388,14 +388,17 @@ test.each(['deleted', 'transferred'])('an issue %s leaves the mirror', async (ac
   await deliverChanged('03-', (p) => {
     p.action = 'labeled';
     p.issue.labels = [{ name: 'needs-owner' }];
+    p.issue.body += '\nDepends on: #1\n';
     p.issue.updated_at = '2026-10-26T08:00:00Z';
   });
+  expect(await rows('SELECT depends_on FROM mc.issue_dependencies')).toEqual([{ depends_on: 1 }]);
   await deliverChanged('03-', (p) => {
     p.action = action;
     p.issue.updated_at = '2026-10-26T09:00:00Z';
   });
   expect(await rows('SELECT number FROM mc.issues')).toEqual([]);
   expect(await rows('SELECT label FROM mc.issue_labels')).toEqual([]);
+  expect(await rows('SELECT depends_on FROM mc.issue_dependencies')).toEqual([]);
   expect(await rows('SELECT question_number, closed_at FROM mc.owner_questions')).toEqual([
     { question_number: 3, closed_at: new Date('2026-10-26T09:00:00Z') },
   ]);
