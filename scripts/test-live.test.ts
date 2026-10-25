@@ -17,6 +17,7 @@ test('REALTIME.md gives test:live a probe and a verdict for each feature the liv
     'LEFT JOIN LATERAL',
     'UNION ALL',
     'NOT EXISTS',
+    'starts_with()',
   ]) {
     expect(names).toContain(name);
   }

@@ -7,7 +7,7 @@ const EVENTS = ['node_started', 'node_completed', 'node_failed'] as const;
 type StepEvent = (typeof EVENTS)[number];
 
 const USAGE =
-  'usage: bun run fixture:write step [--run <id>] [--step <step id>] [--event node_started|node_completed|node_failed] | label | comment | issue | pin | verdict | decision';
+  'usage: bun run fixture:write step [--run <id>] [--step <step id>] [--event node_started|node_completed|node_failed] | label | comment | issue | pin | verdict [--pin <sha prefix>] | decision';
 
 export const WORKFLOW = 'archon-loop';
 export const FACTORY = 'mission-control';
@@ -170,7 +170,7 @@ async function eventCount(db: Tx, runId: string): Promise<number> {
 /** A dashboard row a kind inserts, its values taken from the moment it runs so writes never collide. */
 type RowKind = {
   table: string;
-  insert: (at: Date) => { sql: string; params: unknown[] };
+  insert: (at: Date, pin?: string) => { sql: string; params: unknown[] };
   /** What the insert must find on the branch, for a kind whose row is chosen from others. */
   needs?: string;
 };
@@ -236,16 +236,18 @@ const ROW_KINDS = {
   },
   verdict: {
     table: 'mc.verdicts',
-    needs: 'a pin to judge',
-    insert: (at) => ({
+    needs: 'a pin to judge (the latest, or the one --pin names by prefix)',
+    insert: (at, pin) => ({
       sql: `INSERT INTO mc.verdicts (sha, pin, verdict, sentence, committed_at)
         SELECT $1::text, left(p.sha, 8), 'inconclusive', $2::text, $3::timestamptz
-        FROM mc.pins p ORDER BY p.committed_at DESC LIMIT 1
+        FROM mc.pins p WHERE $4::text IS NULL OR p.sha LIKE $4::text || '%'
+        ORDER BY p.committed_at DESC LIMIT 1
         RETURNING sha`,
       params: [
         sha1(`verdict ${at.toISOString()}`),
         'Too few laps since the pin to tell.',
         at.toISOString(),
+        pin ?? null,
       ],
     }),
   },
@@ -271,11 +273,14 @@ async function rowCount(tx: Tx, table: string): Promise<number> {
   return Number(row?.n);
 }
 
-/** Inserts one row of `name`, and fails unless its table holds exactly one more row. */
-export async function writeRow(tx: Tx, name: RowKindName, at: Date): Promise<string> {
+/**
+ * Inserts one row of `name`, and fails unless its table holds exactly one more row. `pin` is a sha
+ * prefix naming the pin a verdict judges; without it a verdict judges the latest pin.
+ */
+export async function writeRow(tx: Tx, name: RowKindName, at: Date, pin?: string): Promise<string> {
   const kind: RowKind = ROW_KINDS[name];
   const before = await rowCount(tx, kind.table);
-  const { sql, params } = kind.insert(at);
+  const { sql, params } = kind.insert(at, pin);
   await tx.query(sql, params);
   const after = await rowCount(tx, kind.table);
   const report = `${kind.table} rows: ${before} -> ${after}`;
@@ -312,7 +317,7 @@ export const main: Main = async (argv, deps) => {
         report =
           parsed.kind === 'step'
             ? await writeEvent(tx, parsed, deps.now())
-            : await writeRow(tx, parsed.kind, deps.now());
+            : await writeRow(tx, parsed.kind, deps.now(), parsed.pin);
       });
       deps.out(report);
     } finally {
@@ -322,20 +327,30 @@ export const main: Main = async (argv, deps) => {
 };
 
 type StepCli = { kind: 'step'; step: string; event: StepEvent; run?: string };
-type Cli = StepCli | { kind: RowKindName };
+type Cli = StepCli | { kind: RowKindName; pin?: string };
 
 function parseCli(argv: string[]): Cli {
   const { values, positionals } = parseArgs({
     args: argv,
     allowPositionals: true,
-    options: { run: { type: 'string' }, step: { type: 'string' }, event: { type: 'string' } },
+    options: {
+      run: { type: 'string' },
+      step: { type: 'string' },
+      event: { type: 'string' },
+      pin: { type: 'string' },
+    },
   });
   const [kind, ...extra] = positionals;
   if (kind === undefined || extra.length > 0) throw new Error('name exactly one kind');
   if (isRowKind(kind)) {
-    if (Object.keys(values).length > 0) throw new Error('--run, --step and --event are for step');
-    return { kind };
+    const { pin, ...stepOnly } = values;
+    if (Object.keys(stepOnly).length > 0) throw new Error('--run, --step and --event are for step');
+    if (pin === undefined) return { kind };
+    if (kind !== 'verdict') throw new Error('--pin is for verdict');
+    if (!/^[0-9a-f]{4,40}$/.test(pin)) throw new Error(`--pin takes a sha prefix, not ${pin}`);
+    return { kind, pin };
   }
+  if (values.pin !== undefined) throw new Error('--pin is for verdict');
   if (kind !== 'step') throw new Error(`unknown kind ${kind}`);
   const event = EVENTS.find((name) => name === (values.event ?? 'node_completed'));
   if (!event) throw new Error(`unknown event ${values.event}`);
