@@ -1,27 +1,30 @@
 /**
- * The architecture diff between two versions, from `db/queries/arch-diff.sql`'s rows: every
- * architecture row of every version the factory ran, each with an md5 of what it says. Pure, no
+ * The architecture diff between two versions, from `db/queries/arch-diff.sql`'s rows. Pure, no
  * React.
  */
 
 export const KINDS = ['workflow', 'step', 'prompt', 'subagent'] as const;
 export type Kind = (typeof KINDS)[number];
 
+/**
+ * One version's rows of one kind in one workflow (null for workflows and prompts, which are the
+ * pack's). Each entry is tab-separated: a workflow's name, a step's path, a prompt file's path or
+ * a subagent's step path and name, then the first 12 hex digits of the md5 of what the row says.
+ * An `edge` entry is a step dependency, `from_path` then `to_path`. The query aggregates and
+ * hashes because the first snapshot is timed: one row per architecture row, in full, took
+ * hundreds of milliseconds longer to arrive.
+ */
 export interface ArchDiffRow {
   digest: string;
-  kind: Kind;
+  kind: Kind | 'edge';
   workflow: string | null;
-  /** A step's id, or the path of the step a subagent belongs to; null otherwise. */
-  step: string | null;
-  /** A workflow's name, a step's path, a prompt file's path or a subagent's name. */
-  name: string;
-  content: string;
-  depends_on: string[];
+  entries: string[];
 }
 
 export interface Item {
   kind: Kind;
   workflow: string | null;
+  /** The path of the step a subagent belongs to; null for every other kind. */
   step: string | null;
   name: string;
 }
@@ -39,19 +42,38 @@ export type DiffResult =
   /** The versions named that have no architecture rows: not run here, or not parsed yet. */
   | { status: 'unrecorded'; digests: string[] };
 
-/** What identifies a row within one version; a step's id is not unique, its path is. */
-const keyOf = (row: ArchDiffRow): string =>
-  JSON.stringify([row.kind, row.workflow, row.kind === 'step' ? null : row.step, row.name]);
+interface Entry {
+  item: Item;
+  content: string;
+}
 
-const item = ({ kind, workflow, step, name }: ArchDiffRow): Item => ({
-  kind,
-  workflow,
-  step: kind === 'subagent' ? step : null,
-  name,
-});
+/** One version's items by key, and each step's dependencies by its key. */
+function versionOf(
+  rows: readonly ArchDiffRow[],
+  digest: string,
+): { items: Map<string, Entry>; dependencies: Map<string, string[]> } {
+  const items = new Map<string, Entry>();
+  const dependencies = new Map<string, string[]>();
+  for (const { kind, workflow, entries } of rows.filter((r) => r.digest === digest)) {
+    for (const entry of entries) {
+      const fields = entry.split('\t');
+      if (kind === 'edge') {
+        const [from, to] = fields;
+        const key = keyOf({ kind: 'step', workflow, step: null, name: to });
+        dependencies.set(key, [...(dependencies.get(key) ?? []), from]);
+        continue;
+      }
+      const content = fields.pop() ?? '';
+      const [step, name] = kind === 'subagent' ? fields : [null, fields[0]];
+      const item = { kind, workflow, step, name };
+      items.set(keyOf(item), { item, content });
+    }
+  }
+  return { items, dependencies };
+}
 
-const byKey = (rows: readonly ArchDiffRow[], digest: string) =>
-  new Map(rows.filter((r) => r.digest === digest).map((r) => [keyOf(r), r]));
+const keyOf = ({ kind, workflow, step, name }: Item): string =>
+  JSON.stringify([kind, workflow, step, name]);
 
 const order = (a: Item, b: Item): number =>
   (a.workflow ?? '').localeCompare(b.workflow ?? '') ||
@@ -59,40 +81,43 @@ const order = (a: Item, b: Item): number =>
   a.name.localeCompare(b.name);
 
 /**
- * What changed from version `a` to `b`. A row is added or removed by its key, and changed when
- * its content differs. A step's `depends_on` changes it too, except for the ids of steps added or
- * removed in the same workflow: dropping a step drops it from its dependants, and the diff already
- * says the step went.
+ * What changed from version `a` to `b`. An item is added or removed by its key, and changed when
+ * what it says differs. A step also changes when the steps it depends on do, except for steps
+ * added or removed: dropping a step drops it from its dependants, and the diff already says the
+ * step went.
  */
 export function diffVersions(rows: readonly ArchDiffRow[], a: string, b: string): DiffResult {
-  const before = byKey(rows, a);
-  const after = byKey(rows, b);
   const unrecorded = [...new Set([a, b])].filter((digest) => !rows.some((r) => r.digest === digest));
   if (unrecorded.length > 0) return { status: 'unrecorded', digests: unrecorded };
 
+  const before = versionOf(rows, a);
+  const after = versionOf(rows, b);
   const none = (): KindDiff => ({ added: [], removed: [], changed: [] });
   const diff: ArchDiff = { workflow: none(), step: none(), prompt: none(), subagent: none() };
-  const comingAndGoing = new Set<string>();
-  for (const [key, row] of after) {
-    if (before.has(key)) continue;
-    diff[row.kind].added.push(item(row));
-    if (row.kind === 'step') comingAndGoing.add(JSON.stringify([row.workflow, row.step]));
+  const comingOrGoing = new Set<string>();
+  for (const [key, { item }] of after.items) {
+    if (before.items.has(key)) continue;
+    diff[item.kind].added.push(item);
+    comingOrGoing.add(key);
   }
-  for (const [key, row] of before) {
-    if (after.has(key)) continue;
-    diff[row.kind].removed.push(item(row));
-    if (row.kind === 'step') comingAndGoing.add(JSON.stringify([row.workflow, row.step]));
+  for (const [key, { item }] of before.items) {
+    if (after.items.has(key)) continue;
+    diff[item.kind].removed.push(item);
+    comingOrGoing.add(key);
   }
-  const dependencies = (row: ArchDiffRow) =>
-    row.depends_on
-      .filter((id) => !comingAndGoing.has(JSON.stringify([row.workflow, id])))
+  const dependencies = (version: typeof before, { workflow, name }: Item, key: string) =>
+    (version.dependencies.get(key) ?? [])
+      .filter((from) => !comingOrGoing.has(keyOf({ kind: 'step', workflow, step: null, name: from })))
       .sort()
       .join('\n');
-  for (const [key, row] of after) {
-    const was = before.get(key);
+  for (const [key, { item, content }] of after.items) {
+    const was = before.items.get(key);
     if (was === undefined) continue;
-    if (was.content !== row.content || dependencies(was) !== dependencies(row)) {
-      diff[row.kind].changed.push(item(row));
+    if (
+      was.content !== content ||
+      (item.kind === 'step' && dependencies(before, item, key) !== dependencies(after, item, key))
+    ) {
+      diff[item.kind].changed.push(item);
     }
   }
 
@@ -107,7 +132,6 @@ export function diffVersions(rows: readonly ArchDiffRow[], a: string, b: string)
 }
 
 /** How an item reads on screen: its workflow and step, where it has them, then its name. */
-export function itemLabel({ kind, workflow, step, name }: Item): string {
-  if (kind === 'workflow' || workflow === null) return name;
+export function itemLabel({ workflow, step, name }: Item): string {
   return [workflow, step, name].filter((part) => part !== null).join(' · ');
 }
