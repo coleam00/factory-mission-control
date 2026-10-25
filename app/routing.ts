@@ -1,5 +1,6 @@
 import type { ComponentType } from 'react';
 import type { RouteObject } from 'react-router';
+import { NotFound, RouteError } from './errors';
 
 export interface RouteModule {
   default: ComponentType;
@@ -14,4 +15,14 @@ export function routesFromModules(modules: Record<string, RouteModule>): RouteOb
     const name = file.replace(/^.*\//, '').replace(/\.tsx$/, '');
     return { path: name === 'index' ? '/' : `/${name}`, Component: module.default };
   });
+}
+
+/** The router's whole tree: the directory's routes, a not-found catch-all and an error state. */
+export function appRoutes(modules: Record<string, RouteModule>): RouteObject[] {
+  return [
+    {
+      ErrorBoundary: RouteError,
+      children: [...routesFromModules(modules), { path: '*', Component: NotFound }],
+    },
+  ];
 }
