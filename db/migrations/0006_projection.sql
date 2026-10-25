@@ -67,7 +67,7 @@ RETURNS jsonb LANGUAGE sql IMMUTABLE AS $$
         WHEN key <> 'dispositions' THEN value
         WHEN jsonb_typeof(value) = 'array' THEN (
           SELECT coalesce(jsonb_agg(jsonb_build_object(
-              'line', upper(substring(d.entry ->> 'line' FROM '^[A-Za-z]+[0-9]+')),
+              'line', upper(substring(btrim(d.entry ->> 'line', E' \t\n\r\f\x0B') FROM '^[A-Za-z]+[0-9]+')),
               'action', d.entry -> 'action') ORDER BY d.n), '[]')
           FROM jsonb_array_elements(value) WITH ORDINALITY AS d(entry, n))
         END)

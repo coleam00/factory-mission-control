@@ -273,7 +273,11 @@ test('a review keeps its outcome and each disposition’s action and line id, ne
     structured_output: {
       ...structuredOutputFor('review'),
       outcome: 'sent-back',
-      dispositions: [disposition, { ...disposition, line: MARKER, action: 'issue' }],
+      dispositions: [
+        disposition,
+        { ...disposition, line: MARKER, action: 'issue' },
+        { ...disposition, line: ` \t\n r2 holdout ${MARKER}`, action: 'issue' },
+      ],
       judge_changes: [{ file: 'holdouts/H-07.md', change: MARKER, approval: MARKER }],
       reason: `Sent back: ${MARKER}`,
     },
@@ -289,6 +293,7 @@ test('a review keeps its outcome and each disposition’s action and line id, ne
         dispositions: [
           { line: 'H1', action: 'blocks' },
           { line: null, action: 'issue' },
+          { line: 'R2', action: 'issue' },
         ],
       },
     },
