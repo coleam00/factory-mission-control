@@ -1,4 +1,5 @@
 import { parseArgs } from 'node:util';
+import type { StepKind } from '../../parsers/pack';
 import { failing, guardedDatabaseUrl, type Main, runCli } from '../lib/cli';
 import type { Row, Tx } from '../lib/db';
 
@@ -6,9 +7,11 @@ const EVENTS = ['node_started', 'node_completed', 'node_failed'] as const;
 type StepEvent = (typeof EVENTS)[number];
 
 const USAGE =
-  'usage: bun run fixture:write step [--run <id>] [--step <step id>] [--event node_started|node_completed|node_failed]';
+  'usage: bun run fixture:write step [--run <id>] [--step <step id>] [--event node_started|node_completed|node_failed] | label | comment | issue | pin | verdict | decision';
 
-const WORKFLOW = 'archon-loop';
+export const WORKFLOW = 'archon-loop';
+export const FACTORY = 'mission-control';
+export const REPOSITORY = 'coleam00/factory-mission-control';
 const FIXTURE_DIGEST = `sha256:${'f1'.repeat(32)}`;
 const HEAD = '3f2c9a1e8b7d6c5a4f3e2d1c0b9a8f7e6d5c4b3a';
 const BASE = '845b6201c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8';
@@ -91,17 +94,23 @@ const COMMANDS: Record<string, string> = {
   review: 'loop-review',
 };
 
+/** The node block every event of a step carries in `data`; only a command node runs a model. */
+export function nodeBlock(step: string, kind: StepKind, command: string): Record<string, unknown> {
+  const isCommand = kind === 'command';
+  return {
+    node: { id: step, kind, source: { kind: 'project' } },
+    type: kind,
+    command: isCommand ? command : null,
+    accounting: 'node',
+    ...(isCommand ? { tier: 'medium', model: 'sonnet', provider: 'claude' } : {}),
+  };
+}
+
 /** The keys Archon's executor writes into `data` for a node event, with fixture values. */
 export function eventData(step: string, event: StepEvent, now: Date): Record<string, unknown> {
   const isScript = step === 'land';
   const startedAt = new Date(now.getTime() - 184_250).toISOString();
-  const node = {
-    node: { id: step, kind: isScript ? 'script' : 'command', source: { kind: 'project' } },
-    type: isScript ? 'script' : 'command',
-    command: isScript ? null : (COMMANDS[step] ?? step),
-    accounting: 'node',
-    ...(isScript ? {} : { tier: 'medium', model: 'sonnet', provider: 'claude' }),
-  };
+  const node = nodeBlock(step, isScript ? 'script' : 'command', COMMANDS[step] ?? step);
   if (event === 'node_started') return { ...node, timing: { startedAt } };
   if (event === 'node_failed') {
     return {
@@ -144,11 +153,7 @@ async function runningRunId(db: Tx): Promise<string> {
   if (running) return String(running.id);
   const [created] = await db.query(
     `INSERT INTO remote_agent_workflow_runs (workflow_name, status, user_message, metadata) VALUES ($1, 'running', $2, $3::jsonb) RETURNING id, jsonb_typeof(metadata) AS stored`,
-    [
-      WORKFLOW,
-      'Run the loop on coleam00/factory-mission-control',
-      { workflow_source: { digest: FIXTURE_DIGEST } },
-    ],
+    [WORKFLOW, `Run the loop on ${REPOSITORY}`, { workflow_source: { digest: FIXTURE_DIGEST } }],
   );
   requireObject('the run metadata', created);
   return String(created.id);
@@ -162,28 +167,152 @@ async function eventCount(db: Tx, runId: string): Promise<number> {
   return Number(row.n);
 }
 
+/** A dashboard row a kind inserts, its values taken from the moment it runs so writes never collide. */
+type RowKind = {
+  table: string;
+  insert: (at: Date) => { sql: string; params: unknown[] };
+  /** What the insert must find on the branch, for a kind whose row is chosen from others. */
+  needs?: string;
+};
+
+const sha1 = (text: string) => new Bun.CryptoHasher('sha1').update(text).digest('hex');
+
+const ROW_KINDS = {
+  issue: {
+    table: 'mc.issues',
+    insert: (at) => ({
+      sql: `INSERT INTO mc.issues (factory, number, title, state, phase, url, created_at, updated_at)
+        SELECT $1::text, next.n, $2::text, 'open', 'Screens', $3::text || next.n,
+          $4::timestamptz, $4::timestamptz
+        FROM (SELECT coalesce(max(number), 0) + 1 AS n FROM mc.issues WHERE factory = $1::text) next
+        RETURNING number`,
+      params: [
+        FACTORY,
+        `Fixture issue written at ${at.toISOString()}`,
+        `https://github.com/${REPOSITORY}/issues/`,
+        at.toISOString(),
+      ],
+    }),
+  },
+  label: {
+    table: 'mc.issue_labels',
+    needs: `an open ${FACTORY} issue without needs-owner`,
+    insert: () => ({
+      sql: `INSERT INTO mc.issue_labels (factory, issue_number, label)
+        SELECT i.factory, i.number, 'needs-owner' FROM mc.issues i
+        WHERE i.factory = $1::text AND i.state = 'open' AND NOT EXISTS (SELECT 1 FROM mc.issue_labels l
+          WHERE l.factory = i.factory AND l.issue_number = i.number AND l.label = 'needs-owner')
+        ORDER BY i.number DESC LIMIT 1
+        RETURNING issue_number`,
+      params: [FACTORY],
+    }),
+  },
+  comment: {
+    table: 'mc.comments',
+    needs: `a ${FACTORY} issue`,
+    insert: (at) => ({
+      sql: `INSERT INTO mc.comments (factory, id, issue_number, author, url, created_at, updated_at)
+        SELECT i.factory, $2::bigint, i.number, 'coleam00', i.url || '#issuecomment-' || $2::text,
+          $3::timestamptz, $3::timestamptz
+        FROM mc.issues i WHERE i.factory = $1::text ORDER BY i.number DESC LIMIT 1
+        RETURNING id`,
+      params: [FACTORY, String(at.getTime()), at.toISOString()],
+    }),
+  },
+  pin: {
+    table: 'mc.pins',
+    insert: (at) => ({
+      sql: `INSERT INTO mc.pins (sha, archon_sha, reason, hypothesis, measure, committed_at)
+        VALUES ($1::text, $2::text, $3::text, $4::text, $5::text, $6::timestamptz) RETURNING sha`,
+      params: [
+        sha1(`pin ${at.toISOString()}`),
+        sha1(`archon ${at.toISOString()}`),
+        `fixture pin written at ${at.toISOString()}`,
+        'complex laps finish faster.',
+        'complex-route lap-hours per merge over 10 laps.',
+        at.toISOString(),
+      ],
+    }),
+  },
+  verdict: {
+    table: 'mc.verdicts',
+    needs: 'a pin to judge',
+    insert: (at) => ({
+      sql: `INSERT INTO mc.verdicts (sha, pin, verdict, sentence, committed_at)
+        SELECT $1::text, left(p.sha, 8), 'inconclusive', $2::text, $3::timestamptz
+        FROM mc.pins p ORDER BY p.committed_at DESC LIMIT 1
+        RETURNING sha`,
+      params: [
+        sha1(`verdict ${at.toISOString()}`),
+        'Too few laps since the pin to tell.',
+        at.toISOString(),
+      ],
+    }),
+  },
+  decision: {
+    table: 'mc.decisions',
+    insert: (at) => ({
+      sql: `INSERT INTO mc.decisions (date, title, decision, why, replaces, version)
+        SELECT $1::date, $2::text, 'Keep the fixture decision.', 'It proves the timeline is live.',
+          'nothing',
+          coalesce((SELECT left(sha, 8) FROM mc.pins ORDER BY committed_at DESC LIMIT 1), 'none')
+        RETURNING title`,
+      params: [at.toISOString().slice(0, 10), `Fixture decision ${at.toISOString()}`],
+    }),
+  },
+} satisfies Record<string, RowKind>;
+
+export type RowKindName = keyof typeof ROW_KINDS;
+
+const isRowKind = (kind: string): kind is RowKindName => Object.hasOwn(ROW_KINDS, kind);
+
+async function rowCount(tx: Tx, table: string): Promise<number> {
+  const [row] = await tx.query(`SELECT count(*)::int AS n FROM ${table}`);
+  return Number(row?.n);
+}
+
+/** Inserts one row of `name`, and fails unless its table holds exactly one more row. */
+export async function writeRow(tx: Tx, name: RowKindName, at: Date): Promise<string> {
+  const kind: RowKind = ROW_KINDS[name];
+  const before = await rowCount(tx, kind.table);
+  const { sql, params } = kind.insert(at);
+  await tx.query(sql, params);
+  const after = await rowCount(tx, kind.table);
+  const report = `${kind.table} rows: ${before} -> ${after}`;
+  if (after !== before + 1) {
+    throw new Error(`${report}, not one more${kind.needs ? `: ${name} needs ${kind.needs}` : ''}`);
+  }
+  return report;
+}
+
+async function writeEvent(tx: Tx, { step, event, run }: StepCli, at: Date): Promise<string> {
+  const runId = run ?? (await runningRunId(tx));
+  const before = await eventCount(tx, runId);
+  const [inserted] = await tx.query(
+    'INSERT INTO remote_agent_workflow_events (workflow_run_id, event_type, step_name, data) VALUES ($1, $2, $3, $4::jsonb) RETURNING jsonb_typeof(data) AS stored',
+    [runId, event, step, eventData(step, event, at)],
+  );
+  requireObject('the event data', inserted);
+  return `events for run ${runId}: ${before} -> ${await eventCount(tx, runId)}`;
+}
+
 export const main: Main = async (argv, deps) => {
-  let parsed: ReturnType<typeof parseCli>;
+  let parsed: Cli;
   try {
     parsed = parseCli(argv);
   } catch (error) {
     deps.err(error instanceof Error ? `${error.message}\n${USAGE}` : USAGE);
     return 2;
   }
-  const { step, event, run } = parsed;
   return failing(deps, async () => {
     const db = deps.openDb(await guardedDatabaseUrl(deps, 'check'));
     try {
       let report = '';
       await db.transaction(async (tx) => {
-        const runId = run ?? (await runningRunId(tx));
-        const before = await eventCount(tx, runId);
-        const [inserted] = await tx.query(
-          'INSERT INTO remote_agent_workflow_events (workflow_run_id, event_type, step_name, data) VALUES ($1, $2, $3, $4::jsonb) RETURNING jsonb_typeof(data) AS stored',
-          [runId, event, step, eventData(step, event, deps.now())],
-        );
-        requireObject('the event data', inserted);
-        report = `events for run ${runId}: ${before} -> ${await eventCount(tx, runId)}`;
+        report =
+          parsed.kind === 'step'
+            ? await writeEvent(tx, parsed, deps.now())
+            : await writeRow(tx, parsed.kind, deps.now());
       });
       deps.out(report);
     } finally {
@@ -192,22 +321,25 @@ export const main: Main = async (argv, deps) => {
   });
 };
 
-function parseCli(argv: string[]): { step: string; event: StepEvent; run?: string } {
+type StepCli = { kind: 'step'; step: string; event: StepEvent; run?: string };
+type Cli = StepCli | { kind: RowKindName };
+
+function parseCli(argv: string[]): Cli {
   const { values, positionals } = parseArgs({
     args: argv,
     allowPositionals: true,
-    options: {
-      run: { type: 'string' },
-      step: { type: 'string', default: 'pick' },
-      event: { type: 'string', default: 'node_completed' },
-    },
+    options: { run: { type: 'string' }, step: { type: 'string' }, event: { type: 'string' } },
   });
-  if (positionals.length !== 1 || positionals[0] !== 'step') {
-    throw new Error('the only kind is `step`');
+  const [kind, ...extra] = positionals;
+  if (kind === undefined || extra.length > 0) throw new Error('name exactly one kind');
+  if (isRowKind(kind)) {
+    if (Object.keys(values).length > 0) throw new Error('--run, --step and --event are for step');
+    return { kind };
   }
-  const event = EVENTS.find((name) => name === values.event);
+  if (kind !== 'step') throw new Error(`unknown kind ${kind}`);
+  const event = EVENTS.find((name) => name === (values.event ?? 'node_completed'));
   if (!event) throw new Error(`unknown event ${values.event}`);
-  return { step: values.step, event, run: values.run };
+  return { kind, step: values.step ?? 'pick', event, run: values.run };
 }
 
 if (import.meta.main) await runCli(main);
