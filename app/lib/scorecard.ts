@@ -64,7 +64,8 @@ export interface Lap {
   lands: readonly string[];
   /** The `reason` of each `land` attempt that refused. */
   refusals: readonly string[];
-  checkAppMs: number;
+  /** The summed `duration_ms` of its check-app attempts; null when none reported one. */
+  checkAppMs: number | null;
   cost: number;
   catches: number;
 }
@@ -93,7 +94,7 @@ export function versionLaps(rows: readonly ScorecardRow[], digest: string): Lap[
       reviews: [],
       lands: [],
       refusals: [],
-      checkAppMs: 0,
+      checkAppMs: null,
       cost: 0,
       catches: 0,
     });
@@ -109,7 +110,9 @@ export function versionLaps(rows: readonly ScorecardRow[], digest: string): Lap[
     else if (row.step_id === 'land' && row.outcome !== null) {
       lap.lands.push(row.outcome);
       if (row.outcome === 'refused' && row.reason !== null) lap.refusals.push(row.reason);
-    } else if (row.step_id === 'check-app') lap.checkAppMs += row.duration_ms ?? 0;
+    } else if (row.step_id === 'check-app' && row.duration_ms !== null) {
+      lap.checkAppMs = (lap.checkAppMs ?? 0) + row.duration_ms;
+    }
   }
   const at = (lap: Lap) => lap.startedAt?.getTime() ?? Number.POSITIVE_INFINITY;
   return [...laps.values()].sort((a, b) => at(a) - at(b) || a.id.localeCompare(b.id));
@@ -220,7 +223,7 @@ export function scorecard(laps: readonly Lap[]): Scorecard {
   const merges = count((lap) => lap.lands.includes('merged'));
   const hours = activeHours(finished);
   const lapMs = sum(finished.map((lap) => lap.endedAt.getTime() - lap.startedAt.getTime()));
-  const checkAppMs = sum(finished.map((lap) => lap.checkAppMs));
+  const checkAppMs = finished.flatMap((lap) => (lap.checkAppMs === null ? [] : [lap.checkAppMs]));
   const caught = laps.filter((lap) => lap.catches > 0).map((lap) => lap.id);
 
   return {
@@ -237,7 +240,11 @@ export function scorecard(laps: readonly Lap[]): Scorecard {
       value: finished.length === 0 ? null : ratio(lapMs / HOUR_MS, merges.value),
       laps: finishedIds,
     },
-    app_check_share: { value: ratio(checkAppMs, lapMs), laps: finishedIds },
+    // Likewise with no check-app duration on any finished lap: n/a, not 0.
+    app_check_share: {
+      value: checkAppMs.length === 0 ? null : ratio(sum(checkAppMs), lapMs),
+      laps: finishedIds,
+    },
     cost_per_merge: { value: ratio(sum(laps.map((lap) => lap.cost)), merges.value), laps: all },
     new_holdout_catches: {
       value: sum(laps.map((lap) => lap.catches)),
