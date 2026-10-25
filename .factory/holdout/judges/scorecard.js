@@ -14,8 +14,10 @@
 // }
 // Measures: laps, merges, empty_laps, failed_laps, send_backs, gate_refusals, merges_per_active_hour,
 // lap_hours_per_merge, app_check_share, cost_per_merge, new_holdout_catches. "basis" is the lap count
-// the screen says the number rests on. Laps still running (no completed_at) are judged both ways
-// (counted or not); one reading must fit every measure of a version.
+// the screen says the number rests on. A lap is an archon-loop run whatever its status (PRD 4.2), so
+// running laps (no completed_at) always count in the count measures, the cost and the 10-lap rule; only
+// the time measures (merges_per_active_hour, lap_hours_per_merge, app_check_share) need a finished run,
+// and those may say they rest on either every lap or the finished laps.
 import { readFileSync } from "node:fs";
 
 const out = (verdict, reasons) => {
@@ -43,14 +45,13 @@ const obj = (v) => {
 };
 const HOUR = 3600_000;
 
-function compute(digest, includeRunning) {
+const TIME_MEASURES = new Set(["merges_per_active_hour", "lap_hours_per_merge", "app_check_share"]);
+
+function compute(digest) {
   const laps = rec.runs.filter(
-    (r) =>
-      r.workflow_name === "archon-loop" &&
-      r.codebase === rec.factory_codebase &&
-      r.digest === digest &&
-      (includeRunning || r.completed_at),
+    (r) => r.workflow_name === "archon-loop" && r.codebase === rec.factory_codebase && r.digest === digest,
   );
+  const finished = new Set(laps.filter((l) => l.completed_at).map((l) => l.id));
   const ids = new Set(laps.map((l) => l.id));
   const steps = rec.steps.filter((s) => ids.has(s.run_id));
   const done = steps.filter((s) => s.event_type === "node_completed");
@@ -62,7 +63,7 @@ function compute(digest, includeRunning) {
   const lapMs = durations.reduce((a, [s, e]) => a + (e - s), 0);
   const hours = new Set();
   for (const [s, e] of durations) for (let h = Math.floor(s / HOUR); h * HOUR < e; h++) hours.add(h);
-  const checkMs = done.filter((s) => s.step_name === "check-app").reduce((a, s) => a + Number(s.duration_ms ?? 0), 0);
+  const checkMs = done.filter((s) => s.step_name === "check-app" && finished.has(s.run_id)).reduce((a, s) => a + Number(s.duration_ms ?? 0), 0);
   const cost = steps.reduce((a, s) => a + Number(s.cost_usd ?? 0), 0);
   const catches = (rec.app_check_lines ?? []).filter(
     (l) =>
@@ -74,6 +75,7 @@ function compute(digest, includeRunning) {
   const per = (n) => (merges === 0 ? null : n / merges);
   return {
     lapCount: laps.length,
+    finishedCount: finished.size,
     m: {
       laps: laps.length,
       merges,
@@ -105,8 +107,8 @@ function parseShown(measure, raw) {
   return { value, tol };
 }
 
-function judgeDigest(digest, shown, variant) {
-  const { lapCount, m } = compute(digest, variant);
+function judgeDigest(digest, shown) {
+  const { lapCount, finishedCount, m } = compute(digest);
   const errs = [];
   for (const [measure, expected] of Object.entries(m)) {
     const cell = shown[measure];
@@ -114,7 +116,12 @@ function judgeDigest(digest, shown, variant) {
       errs.push(`${measure}: not recorded`);
       continue;
     }
-    if (cell.basis !== lapCount) errs.push(`${measure}: says it rests on ${cell.basis} laps, expected ${lapCount}`);
+    const basisOk = cell.basis === lapCount || (TIME_MEASURES.has(measure) && cell.basis === finishedCount);
+    if (!basisOk)
+      errs.push(
+        `${measure}: says it rests on ${cell.basis} laps, expected ${lapCount}` +
+          (TIME_MEASURES.has(measure) ? ` (or ${finishedCount} finished)` : ""),
+      );
     const p = parseShown(measure, cell.value);
     if (p.bad) errs.push(`${measure}: shows "${cell.value}"`);
     else if (expected === null) {
@@ -132,17 +139,12 @@ const digests = Object.keys(rec.shown ?? {});
 if (digests.length === 0 && !(rec.comparisons ?? []).length) gaps.push("nothing shown was recorded");
 
 for (const d of digests) {
-  const a = judgeDigest(d, rec.shown[d], false);
-  const b = judgeDigest(d, rec.shown[d], true);
-  if (a.errs.length && b.errs.length) fails.push(...a.errs.map((e) => `${d.slice(0, 12)} ${e}`));
+  const a = judgeDigest(d, rec.shown[d]);
+  fails.push(...a.errs.map((e) => `${d.slice(0, 12)} ${e}`));
 }
 
 for (const c of rec.comparisons ?? []) {
-  const counts = [false, true].map((v) => Math.min(compute(c.a, v).lapCount, compute(c.b, v).lapCount) < 10);
-  if (counts[0] !== counts[1]) {
-    gaps.push(`${c.a.slice(0, 8)} vs ${c.b.slice(0, 8)}: running laps decide the 10-lap rule; finish them first`);
-    continue;
-  }
+  const counts = [Math.min(compute(c.a).lapCount, compute(c.b).lapCount) < 10];
   if (typeof c.not_yet_meaningful_shown !== "boolean") gaps.push(`${c.a.slice(0, 8)} vs ${c.b.slice(0, 8)}: label not recorded`);
   else if (c.not_yet_meaningful_shown !== counts[0])
     fails.push(`${c.a.slice(0, 8)} vs ${c.b.slice(0, 8)}: "not yet meaningful" ${c.not_yet_meaningful_shown ? "shown" : "missing"}, expected ${counts[0] ? "shown" : "absent"}`);
