@@ -41,6 +41,21 @@ describe.each(queries)('db/queries/%s.sql', (_name, sql) => {
   });
 });
 
+test('step queries share one current-version rule and one part size', () => {
+  const steps = queries.filter(([name]) => name.startsWith('step-'));
+  const version = (sql: string) => sql.match(/^WITH version AS \([\s\S]*?\n\)/)?.[0];
+  const partList = (sql: string) => sql.match(/JOIN \(VALUES .*\) AS n\(part\)/)?.[0];
+  const sql = (name: string) => steps.find(([n]) => n === name)?.[1] as string;
+  expect(version(sql('step-detail'))).toBeDefined();
+  for (const [name, query] of steps) {
+    expect([name, version(query)]).toEqual([name, version(sql('step-detail'))]);
+    if (!query.includes('n(part)')) continue;
+    expect([name, partList(query)]).toEqual([name, partList(sql('step-prompt'))]);
+    const sizes = [...query.matchAll(/n\.part \* (\d+)|, (\d+)\) AS chunk/g)];
+    expect([name, sizes.map((m) => m[1] ?? m[2])]).toEqual([name, ['4000', '4000', '4000']]);
+  }
+});
+
 describe('against the migrated schema', () => {
   let db: Db;
 
@@ -69,8 +84,8 @@ describe('against the migrated schema', () => {
 
   test('step queries read the newest pin with architecture rows, for a factory the dashboard shows', async () => {
     const sql = (name: string) => queries.find(([n]) => n === name)?.[1] as string;
-    // A long multi-byte prompt: each part must stay under the 16 KiB Realtime answers (REALTIME.md).
-    const prompt = `${'é'.repeat(4500)}
+    // A long multi-byte file: each part must stay under the 16 KiB Realtime answers (REALTIME.md).
+    const long = `${'é'.repeat(4500)}
 ${'x'.repeat(5000)}`;
     await db.query(`INSERT INTO mc.factories (name, repository, codebase, console)
       VALUES ('mission-control', 'o/r', 'o/r', 'http://localhost:3090')`);
@@ -80,37 +95,84 @@ ${'x'.repeat(5000)}`;
       ('p3', 'a3', 'three, not parsed yet', '2026-03-01T00:00:00Z')`);
     await db.query(`INSERT INTO mc.arch_versions (archon_sha, factory_sha, parsed_at) VALUES
       ('a1', 'f', '2026-01-02T00:00:00Z'), ('a2', 'f', '2026-02-02T00:00:00Z')`);
+    // Both versions share every name and path, so a query that leaks a1 doubles or mixes rows.
     for (const [sha, deps] of [
       ['a1', '{subject,briefs}'],
       ['a2', '{subject}'],
     ]) {
       await db.query(
         `INSERT INTO mc.arch_steps (archon_sha, factory_sha, workflow, path, position, step_id, kind,
-           depends_on, command_file, defined_in, file)
+           depends_on, command_file, script_file, defined_in, file)
          VALUES ($1, 'f', 'archon-loop', 'check-app', 0, 'check-app', 'command', $2,
-           'loop/commands/loop-check-app.md', 'archon-loop', 'loop/archon-loop.yaml')`,
+           'loop/commands/loop-check-app.md', 'loop/scripts/check.ts', 'archon-loop',
+           'loop/archon-loop.yaml')`,
         [sha, deps],
       );
       await db.query(
-        `INSERT INTO mc.arch_texts (archon_sha, factory_sha, path, text)
-         VALUES ($1, 'f', 'loop/commands/loop-check-app.md', $2)`,
-        [sha, `${sha} ${prompt}`],
+        `INSERT INTO mc.arch_texts (archon_sha, factory_sha, path, text) VALUES
+           ($1, 'f', 'loop/commands/loop-check-app.md', $2),
+           ($1, 'f', 'loop/agents/verifier.md', $2)`,
+        [sha, `${sha} ${long}`],
+      );
+      await db.query(
+        `INSERT INTO mc.arch_subagents (archon_sha, factory_sha, workflow, step_path, name,
+           description, instruction_file)
+         VALUES ($1, 'f', 'archon-loop', 'check-app', 'verifier', $1, 'loop/agents/verifier.md')`,
+        [sha],
+      );
+      await db.query(
+        `INSERT INTO mc.arch_scripts (archon_sha, factory_sha, path, text)
+         VALUES ($1, 'f', 'loop/scripts/check.ts', $2)`,
+        [sha, `${sha} ${long}`],
+      );
+      await db.query(
+        `INSERT INTO mc.arch_hooks (archon_sha, factory_sha, path, text, admitted_agents)
+         VALUES ($1, 'f', 'hooks/fence.py', $1, '{verifier}')`,
+        [sha],
+      );
+      await db.query(
+        `INSERT INTO mc.arch_workflows (archon_sha, factory_sha, name, file, yaml)
+         VALUES ($1, 'f', 'archon-loop', 'loop/archon-loop.yaml', $2)`,
+        [sha, `${sha} ${long}`],
       );
     }
 
-    expect(await db.query(sql('step-detail'), ['other'])).toEqual([]);
+    for (const [name, query] of queries.filter(([n]) => n.startsWith('step-'))) {
+      expect([name, await db.query(query, ['other'])]).toEqual([name, []]);
+    }
     const steps = await db.query(sql('step-detail'), ['mission-control']);
     expect(steps.map((s) => s.depends_on)).toEqual([['subject']]);
 
-    const parts = await db.query(sql('step-prompt'), ['mission-control']);
-    expect(parts.length).toBe(3);
-    for (const { chunk } of parts) {
-      expect(Buffer.byteLength(String(chunk))).toBeLessThan(16 * 1024);
-    }
-    const texts = joinParts(
-      parts as { path: string; part: number; chunk: string }[],
-      (row) => row.path,
+    const files = async (name: string, key: (row: Record<string, unknown>) => unknown) => {
+      const parts = (await db.query(sql(name), ['mission-control'])) as {
+        part: number;
+        chunk: string;
+      }[];
+      expect(parts.length).toBe(3);
+      for (const { chunk } of parts) expect(Buffer.byteLength(chunk)).toBeLessThan(16 * 1024);
+      return joinParts(parts, (row) => String(key(row)));
+    };
+    expect(await files('step-prompt', (row) => row.path)).toEqual(
+      new Map([['loop/commands/loop-check-app.md', `a2 ${long}`]]),
     );
-    expect(texts.get('loop/commands/loop-check-app.md')).toBe(`a2 ${prompt}`);
+    expect(await files('step-subagents', (row) => `${row.name} ${row.description}`)).toEqual(
+      new Map([['verifier a2', `a2 ${long}`]]),
+    );
+    expect(await files('step-scripts', (row) => row.path)).toEqual(
+      new Map([['loop/scripts/check.ts', `a2 ${long}`]]),
+    );
+    expect(await files('step-yaml', (row) => row.name)).toEqual(
+      new Map([['archon-loop', `a2 ${long}`]]),
+    );
+    expect(await db.query(sql('step-hooks'), ['mission-control'])).toEqual([
+      {
+        path: 'hooks/fence.py',
+        admitted_agents: ['verifier'],
+        workflow: 'archon-loop',
+        step_path: 'check-app',
+        agent: 'verifier',
+        description: 'a2',
+      },
+    ]);
   });
 });
