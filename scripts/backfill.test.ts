@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, expect, test } from 'bun:test';
 import { readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
-import { snapshot, testDb } from '../db/test-db';
+import { archonDb, snapshot } from '../db/test-db';
 import { createGitHub, type GetFetch } from '../function/github';
 import { main } from './backfill';
 import { REPO_ROOT } from './lib/cli';
@@ -19,7 +19,7 @@ let requests: { url: string; method: string }[];
 const scratch: string[] = [];
 
 beforeEach(async () => {
-  db = testDb();
+  db = await archonDb();
   await runMigrations({ files: readMigrationFiles(migrationsDir(REPO_ROOT)), db });
   requests = [];
 });

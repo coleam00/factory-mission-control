@@ -1,7 +1,7 @@
 import { afterEach, beforeAll, expect, test } from 'bun:test';
 import { readdirSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
-import { testDb } from '../db/test-db';
+import { ARCHON_TABLES, testDb } from '../db/test-db';
 import type { GetFetch } from '../function/github';
 import { HOOKS_DIR, parsePack, type Step } from '../parsers/pack';
 import {
@@ -42,6 +42,7 @@ const pg = testDb();
 const db: Db = { ...pg, async close() {} };
 
 beforeAll(async () => {
+  await pg.query(ARCHON_TABLES);
   await runMigrations({ files: readMigrationFiles(migrationsDir(REPO_ROOT)), db: pg });
 });
 

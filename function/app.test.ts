@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, expect, spyOn, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { snapshot as snapshotOf, testDb } from '../db/test-db';
+import { archonDb, snapshot as snapshotOf } from '../db/test-db';
 import factories from '../factories.json';
 import type { Db, Row } from '../scripts/lib/db';
 import { migrationsDir, readMigrationFiles, runMigrations } from '../scripts/migrate';
@@ -46,7 +46,7 @@ let respond: () => Response;
 let app: ReturnType<typeof createWebhookApp>;
 
 beforeEach(async () => {
-  db = testDb();
+  db = await archonDb();
   await runMigrations({ files: readMigrationFiles(migrationsDir(repoRoot)), db });
   requests = [];
   respond = () => new Response(DECISIONS);
