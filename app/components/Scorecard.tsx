@@ -193,7 +193,7 @@ function MeasureCell({ measure, version }: { measure: Measure; version: Version 
       </div>
       <details className="mt-1">
         <summary
-          className={`${MONO} cursor-pointer list-none text-[11px] text-accent-bright [&::-webkit-details-marker]:hidden`}
+          className={`${MONO} cursor-pointer list-none text-[11px] text-text-secondary underline decoration-dotted underline-offset-2 hover:text-text-primary [&::-webkit-details-marker]:hidden`}
         >
           {n} {n === 1 ? 'lap' : 'laps'}
         </summary>
