@@ -106,6 +106,19 @@ test("V2's architecture is V1's with one step added, one removed, one prompt and
   ]);
 });
 
+test('the projection trigger records the string structured_output once, and the seed adds no copy', async () => {
+  const errors = await db.query(
+    'SELECT event_id, sqlstate, message FROM mc.projection_errors ORDER BY id',
+  );
+  expect(errors).toEqual([
+    {
+      event_id: '5eedeeee-0000-4000-8000-000000000267',
+      sqlstate: '22000',
+      message: 'structured_output is a jsonb string, not an object',
+    },
+  ]);
+});
+
 test('one running lap has been on its step for over a day', async () => {
   const [row] = await db.query(
     `SELECT count(*)::int AS n FROM mc.laps l
