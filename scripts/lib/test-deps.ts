@@ -1,7 +1,7 @@
 import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createGitHub } from '../../function/github';
+import { createGitHub, type GetFetch } from '../../function/github';
 import { CHECK_ENV_FILE, type Env } from '../../server/check-env';
 import type { Deps } from './cli';
 import type { Db, Row } from './db';
@@ -28,6 +28,8 @@ export type Recorder = {
   githubCalls: string[];
   opened: string[];
   sql: string[];
+  /** Every request a command sent through `deps.fetch`, as `<method> <url>`. */
+  requests: string[];
   /** Each query's parameters, in the order `sql` holds its text. */
   params: (unknown[] | undefined)[];
   out: string[];
@@ -60,6 +62,8 @@ export function recordingDeps(options: {
   owner?: boolean;
   /** Recorded calls (`deleteBranch check-old`, `getRealtimeSecret br-new`) that throw instead. */
   throwsOn?: string[];
+  /** Answers `deps.fetch`; without it every request fails, as with no network. */
+  fetch?: GetFetch;
 }): Recorder {
   const recorder: Omit<Recorder, 'deps'> = {
     neonCalls: [],
@@ -67,6 +71,7 @@ export function recordingDeps(options: {
     githubCalls: [],
     opened: [],
     sql: [],
+    requests: [],
     params: [],
     out: [],
     err: [],
@@ -142,6 +147,11 @@ export function recordingDeps(options: {
     openDb: (url) => {
       recorder.opened.push(url);
       return db;
+    },
+    fetch: async (url, init) => {
+      recorder.requests.push(`${init.method} ${url}`);
+      if (!options.fetch) throw new Error(`fake network: no route to ${url}`);
+      return options.fetch(url, init);
     },
     now: () => NOW,
     sleep: async () => {},
