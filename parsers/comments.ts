@@ -179,3 +179,16 @@ export function parsePhase(body: string): string | null {
   }
   return null;
 }
+
+/**
+ * The same-repository issues a pull request body closes with a GitHub closing keyword (`Closes #12`,
+ * `fixes: #14`), in order, without repeats.
+ */
+export function parseClosingIssues(body: string): number[] {
+  const found: number[] = [];
+  for (const match of body.matchAll(/\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?):?\s+#(\d+)\b/gi)) {
+    const n = Number(match[1]);
+    if (!found.includes(n)) found.push(n);
+  }
+  return found;
+}
