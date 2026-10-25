@@ -318,7 +318,16 @@ test('a DECISIONS.md the push did not remove but GitHub cannot find fails and ke
   await deliver(named('09-'));
   const before = await snapshot();
   respond = () => new Response('Not Found', { status: 404 });
-  expect((await deliver(named('09-'))).status).toBe(500);
+  const error = spyOn(console, 'error').mockImplementation(() => {});
+  try {
+    expect((await deliver(named('09-'))).status).toBe(500);
+    expect(error.mock.calls.map((args) => String(args[0]))).toEqual(['push delivery failed:']);
+    expect(String(error.mock.calls[0]?.[1])).toContain(
+      'DECISIONS.md is missing on main but this push did not remove it',
+    );
+  } finally {
+    error.mockRestore();
+  }
   expect(await snapshot()).toEqual(before);
 });
 

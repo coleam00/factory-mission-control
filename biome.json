@@ -5,6 +5,8 @@
     "includes": [
       "app/**",
       "server/**",
+      "harness/*.js",
+      "harness/*.ts",
       "scripts/**",
       "parsers/**",
       "db/**",
