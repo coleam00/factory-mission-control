@@ -1,39 +1,22 @@
 import { afterAll, beforeAll, expect, test } from 'bun:test';
-import { join } from 'node:path';
-import { PGlite, type Transaction } from '@electric-sql/pglite';
 import type { CheckLine } from '../fixtures/pack/sdlc/.shared/merge-gate';
 import { REVIEW_OUTCOMES, type Review } from '../parsers/comments';
 import { VERDICT_OUTCOMES } from '../parsers/commits';
 import { HOLDOUT_VERDICTS } from '../parsers/metrics';
-import type { Db, Row, Tx } from '../scripts/lib/db';
-import { migrationsDir, readMigrationFiles, runMigrations } from '../scripts/migrate';
+import type { Db, Row } from '../scripts/lib/db';
+import { runMigrations } from '../scripts/migrate';
+import { archonDb, migrationFiles as files } from './test-db';
 
 const RUN_ID = '00000000-0000-0000-0000-000000000001';
 
-const pg = new PGlite();
-const files = readMigrationFiles(migrationsDir(join(import.meta.dir, '..')));
+let db: Db;
 let firstRun: string[] = [];
 let archonBefore: Row[][] = [];
 
-/** Without params a migration file is several statements, which only exec runs. */
-function txOn(client: PGlite | Transaction): Tx {
-  return {
-    async query(sql, params) {
-      if (params) return (await client.query<Row>(sql, params)).rows;
-      return ((await client.exec(sql)).at(-1)?.rows as Row[] | undefined) ?? [];
-    },
-  };
-}
-
-const db: Db = {
-  ...txOn(pg),
-  async transaction(fn) {
-    await pg.transaction((tx) => fn(txOn(tx)));
-  },
-  close: () => pg.close(),
-};
-
-/** What a migration could change on Archon's tables: columns, indexes, constraints, triggers. */
+/**
+ * What a migration could change on Archon's tables: columns, indexes, constraints, and triggers
+ * other than the projection's.
+ */
 const archonSchema = (): Promise<Row[][]> =>
   Promise.all([
     db.query(`SELECT table_name, column_name, data_type, is_nullable, column_default
@@ -47,18 +30,11 @@ const archonSchema = (): Promise<Row[][]> =>
       WHERE n.nspname = 'public' AND c.relname <> 'mc_schema_migrations' ORDER BY k.conname`),
     db.query(`SELECT c.relname, t.tgname FROM pg_trigger t
       JOIN pg_class c ON c.oid = t.tgrelid JOIN pg_namespace n ON n.oid = c.relnamespace
-      WHERE n.nspname = 'public' ORDER BY t.tgname`),
+      WHERE n.nspname = 'public' AND t.tgname NOT LIKE 'mc_project_%' ORDER BY t.tgname`),
   ]);
 
 beforeAll(async () => {
-  await db.query(`CREATE TABLE public.remote_agent_workflow_runs (
-    id uuid PRIMARY KEY,
-    status text NOT NULL DEFAULT 'pending' CHECK (status <> ''),
-    metadata jsonb,
-    started_at timestamptz NOT NULL DEFAULT now())`);
-  await db.query(
-    'CREATE INDEX remote_agent_workflow_runs_status_idx ON public.remote_agent_workflow_runs (status)',
-  );
+  db = await archonDb();
   archonBefore = await archonSchema();
   firstRun = await runMigrations({ files, db });
 });
@@ -169,14 +145,26 @@ test('refuses holdout text wherever a line could carry it', async () => {
   await lapStep('pick', null);
 });
 
-test("leaves Archon's schema alone", async () => {
+test("adds only the projection's triggers to Archon's schema", async () => {
   const publicTables = (
     await db.query(
       `SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' ORDER BY table_name`,
     )
   ).map((row) => row.table_name);
-  expect(publicTables).toEqual(['mc_schema_migrations', 'remote_agent_workflow_runs']);
+  expect(publicTables).toEqual([
+    'mc_schema_migrations',
+    'remote_agent_codebases',
+    'remote_agent_workflow_events',
+    'remote_agent_workflow_runs',
+  ]);
   expect(await archonSchema()).toEqual(archonBefore);
+  const projection = await db.query(`SELECT c.relname, t.tgname FROM pg_trigger t
+    JOIN pg_class c ON c.oid = t.tgrelid WHERE t.tgname LIKE 'mc_project_%' ORDER BY t.tgname`);
+  expect(projection).toEqual([
+    { relname: 'remote_agent_workflow_runs', tgname: 'mc_project_run_insert' },
+    { relname: 'remote_agent_workflow_runs', tgname: 'mc_project_run_update' },
+    { relname: 'remote_agent_workflow_events', tgname: 'mc_project_step_event' },
+  ]);
 });
 
 /** Compiles only when A and B are the same set of literals. */
