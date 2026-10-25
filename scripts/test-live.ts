@@ -295,7 +295,7 @@ function checkLinks(
   b: string,
 ): string[] {
   const failures: string[] = [];
-  const expected = { scorecard: `/f/${factory}/scorecard`, diff: '/diff' };
+  const expected = { scorecard: `/f/${factory}/scorecard`, diff: `/f/${factory}/diff` };
   for (const kind of ['scorecard', 'diff'] as const) {
     const href = links[kind];
     if (href === null) {

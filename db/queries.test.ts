@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { type ArchDiffRow, diffVersions, itemLabel, KINDS } from '../app/lib/arch-diff';
 import { seededDb } from '../scripts/fixture/seed';
 import { writeRow } from '../scripts/fixture/write';
 import { REPO_ROOT } from '../scripts/lib/cli';
@@ -111,5 +112,51 @@ describe('version-strip on the seed', () => {
       await writeRow(tx, 'pin', new Date('2026-10-25T12:03:00Z'));
     });
     expect(await strip()).toHaveLength(5);
+  });
+});
+
+describe('arch-diff on the seed', () => {
+  let db: Db;
+  const sql = queries.find(([name]) => name === 'arch-diff')?.[1] as string;
+  let rows: ArchDiffRow[];
+  let digests: string[];
+
+  beforeAll(async () => {
+    db = await seededDb(REPO_ROOT, readFileSync(join(REPO_ROOT, 'fixtures', 'seed.sql'), 'utf8'));
+    rows = (await db.query(sql, ['mission-control'])) as unknown as ArchDiffRow[];
+    const versions = await db.query(
+      'SELECT digest FROM mc.versions WHERE factory = $1 ORDER BY first_run_at',
+      ['mission-control'],
+    );
+    digests = versions.map((v) => String(v.digest));
+  }, 60_000);
+
+  afterAll(() => db.close());
+
+  test('V1 to V2 is exactly the scripted change: a step added and removed, a prompt and a subagent changed', () => {
+    const [v1, v2] = digests;
+    const result = diffVersions(rows, v1, v2);
+    if (result.status !== 'compared') throw new Error(`expected a comparison, got ${result.status}`);
+    const listed = KINDS.flatMap((kind) =>
+      (['added', 'removed', 'changed'] as const).flatMap((change) =>
+        result.diff[kind][change].map((item) => `${change} ${kind} ${itemLabel(item)}`),
+      ),
+    );
+    expect(listed).toEqual([
+      'added step archon-loop · tally',
+      'removed step archon-loop · briefs',
+      'changed prompt loop/commands/loop-review.md',
+      'changed subagent archon-manager · manage · holdout-writer',
+    ]);
+  });
+
+  test('a version against itself has no change, and a version never parsed is unrecorded', () => {
+    const [v1, , v3] = digests;
+    expect(diffVersions(rows, v1, v1)).toMatchObject({ status: 'compared', changes: 0 });
+    expect(diffVersions(rows, v1, v3)).toEqual({ status: 'unrecorded', digests: [v3] });
+  });
+
+  test("names no other factory's versions", async () => {
+    expect(await db.query(sql, ['other'])).toEqual([]);
   });
 });
