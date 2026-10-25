@@ -2,6 +2,7 @@ import { expect, test } from 'bun:test';
 import {
   dataValue,
   difference,
+  type AttemptRow,
   type LapRow,
   type Measured,
   meaningful,
@@ -14,14 +15,9 @@ import {
 
 const V = 'sha256:a1';
 
-const row = (run: string, over: Partial<LapRow> = {}): LapRow => ({
+const step = (run: string, step_id: string, over: Partial<AttemptRow> = {}): AttemptRow => ({
   run_id: run,
-  digest: V,
-  workflow_name: 'archon-loop',
-  status: 'completed',
-  started_at: new Date('2026-10-01T08:00:00Z'),
-  completed_at: new Date('2026-10-01T08:30:00Z'),
-  step_id: null,
+  step_id,
   duration_ms: null,
   cost_usd: null,
   route: null,
@@ -29,27 +25,37 @@ const row = (run: string, over: Partial<LapRow> = {}): LapRow => ({
   reason: null,
   holdout_catches: 0,
   pin_sha: null,
-  committed_at: null,
   ...over,
 });
 
-const step = (run: string, step_id: string, over: Partial<LapRow> = {}) =>
-  row(run, { step_id, ...over });
-
 const pin = (sha: string, at: string): PinRow => ({
   run_id: null,
+  step_id: null,
   pin_sha: sha,
   committed_at: new Date(at),
 });
 
-/** One lap's rows, each with the lap's times. */
-const lap = (run: string, start: string | null, end: string | null, steps: LapRow[] = []) =>
-  (steps.length === 0 ? [row(run)] : steps).map((r) => ({
-    ...r,
+/** One lap's row and its attempts' rows. */
+const lap = (
+  run: string,
+  start: string | null,
+  end: string | null,
+  steps: AttemptRow[] = [],
+  over: Partial<LapRow> = {},
+): ScorecardRow[] => [
+  {
     run_id: run,
+    digest: V,
+    workflow_name: 'archon-loop',
+    status: 'completed',
     started_at: start === null ? null : new Date(start),
     completed_at: end === null ? null : new Date(end),
-  }));
+    step_id: null,
+    pin_sha: null,
+    ...over,
+  },
+  ...steps.map((r) => ({ ...r, run_id: run })),
+];
 
 const card = (rows: ScorecardRow[]) => scorecard(versionLaps(rows, V));
 
@@ -63,9 +69,9 @@ test('each count is the laps its 4.2 definition names, and lists them', () => {
     ...lap('e', '2026-10-01T08:00:00Z', '2026-10-01T08:10:00Z', [
       step('e', 'pick', { route: 'none' }),
     ]),
-    ...lap('f', '2026-10-01T08:00:00Z', '2026-10-01T08:20:00Z', [
-      step('f', 'pick', { route: 'simple' }),
-    ]).map((r) => ({ ...r, status: 'failed' })),
+    ...lap('f', '2026-10-01T08:00:00Z', '2026-10-01T08:20:00Z', [step('f', 'pick')], {
+      status: 'failed',
+    }),
     ...lap('s', '2026-10-01T08:00:00Z', '2026-10-01T08:40:00Z', [
       step('s', 'review', { outcome: 'sent-back' }),
     ]),
@@ -208,10 +214,9 @@ test('with merges but no finished lap, lap-hours per merge is n/a, not 0', () =>
 test('a run of another workflow is not a lap', () => {
   const s = card([
     ...lap('loop', '2026-10-01T08:00:00Z', '2026-10-01T09:00:00Z'),
-    ...lap('manager', '2026-10-01T08:00:00Z', '2026-10-01T09:00:00Z').map((r) => ({
-      ...r,
+    ...lap('manager', '2026-10-01T08:00:00Z', '2026-10-01T09:00:00Z', [], {
       workflow_name: 'archon-manager',
-    })),
+    }),
   ]);
   expect(s.laps.laps).toEqual(['loop']);
 });
@@ -219,10 +224,9 @@ test('a run of another workflow is not a lap', () => {
 test('a version is labelled by the last pin before its first run of any workflow', () => {
   const rows: ScorecardRow[] = [
     ...lap('loop', '2026-10-05T08:00:00Z', '2026-10-05T09:00:00Z'),
-    ...lap('manager', '2026-10-03T08:00:00Z', null).map((r) => ({
-      ...r,
+    ...lap('manager', '2026-10-03T08:00:00Z', null, [step('manager', 'plan', { cost_usd: 1 })], {
       workflow_name: 'archon-manager',
-    })),
+    }),
     pin('old', '2026-10-01T00:00:00Z'),
     pin('before', '2026-10-02T00:00:00Z'),
     pin('after', '2026-10-04T00:00:00Z'),
@@ -231,7 +235,7 @@ test('a version is labelled by the last pin before its first run of any workflow
     firstRunAt: new Date('2026-10-03T08:00:00Z'),
     pin: 'before',
   });
-  expect(versionPin(rows.slice(0, 2), V)).toEqual({
+  expect(versionPin(rows.slice(0, 3), V)).toEqual({
     firstRunAt: new Date('2026-10-03T08:00:00Z'),
     pin: null,
   });
@@ -241,9 +245,13 @@ test('a version is labelled by the last pin before its first run of any workflow
 test("another version's rows are ignored", () => {
   const s = card([
     ...lap('mine', '2026-10-01T08:00:00Z', '2026-10-01T09:00:00Z'),
-    ...lap('theirs', '2026-10-01T08:00:00Z', '2026-10-01T09:00:00Z', [
-      step('theirs', 'land', { outcome: 'merged', digest: 'sha256:b2' }),
-    ]).map((r) => ({ ...r, digest: 'sha256:b2' })),
+    ...lap(
+      'theirs',
+      '2026-10-01T08:00:00Z',
+      '2026-10-01T09:00:00Z',
+      [step('theirs', 'land', { outcome: 'merged' })],
+      { digest: 'sha256:b2' },
+    ),
   ]);
   expect(s.laps.laps).toEqual(['mine']);
   expect(s.merges.value).toBe(0);

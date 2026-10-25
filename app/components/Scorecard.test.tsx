@@ -1,34 +1,41 @@
 import { expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { createMemoryRouter, RouterProvider } from 'react-router';
-import type { LapRow, ScorecardRow } from '../lib/scorecard';
+import type { ScorecardRow } from '../lib/scorecard';
 import { ScorecardView } from './Scorecard';
 
 const V1 = `sha256:${'a1'.repeat(32)}`;
 const V2 = `sha256:${'b2'.repeat(32)}`;
 
 /** `n` finished laps of `digest`, an hour apart; the first `merged` of them merge. */
-function laps(digest: string, n: number, merged: number): LapRow[] {
-  return Array.from({ length: n }, (_, i) => {
+function laps(digest: string, n: number, merged: number): ScorecardRow[] {
+  return Array.from({ length: n }, (_, i): ScorecardRow[] => {
     const start = new Date(Date.UTC(2026, 9, 1, i));
-    return {
-      run_id: `${digest.slice(7, 11)}-${String(i).padStart(2, '0')}`,
-      digest,
-      workflow_name: 'archon-loop',
-      status: 'completed',
-      started_at: start,
-      completed_at: new Date(start.getTime() + 30 * 60_000),
-      step_id: 'land',
-      duration_ms: 1000,
-      cost_usd: 0.5,
-      route: null,
-      outcome: i < merged ? 'merged' : 'refused',
-      reason: i < merged ? 'Merged.' : 'it changes ci.yml',
-      holdout_catches: 0,
-      pin_sha: null,
-      committed_at: null,
-    };
-  });
+    const run_id = `${digest.slice(7, 11)}-${String(i).padStart(2, '0')}`;
+    return [
+      {
+        run_id,
+        digest,
+        workflow_name: 'archon-loop',
+        status: 'completed',
+        started_at: start,
+        completed_at: new Date(start.getTime() + 30 * 60_000),
+        step_id: null,
+        pin_sha: null,
+      },
+      {
+        run_id,
+        step_id: 'land',
+        duration_ms: 1000,
+        cost_usd: 0.5,
+        route: null,
+        outcome: i < merged ? 'merged' : 'refused',
+        reason: i < merged ? 'Merged.' : 'it changes ci.yml',
+        holdout_catches: 0,
+        pin_sha: null,
+      },
+    ];
+  }).flat();
 }
 
 function render(rows: ScorecardRow[], a: string | undefined, b?: string): string {
@@ -119,12 +126,17 @@ test('with no version picked, or one no lap ran, it is an empty state linking to
 test('each version is named by the pin before its first run, as the versions screen names it', () => {
   const pin = (sha: string, at: string): ScorecardRow => ({
     run_id: null,
+    step_id: null,
     pin_sha: sha,
     committed_at: new Date(at),
   });
   const rows = [
     ...laps(V1, 2, 1),
-    ...laps(V2, 2, 1).map((r) => ({ ...r, started_at: new Date('2026-10-09T00:00:00Z') })),
+    ...laps(V2, 2, 1).map((r) =>
+      r.step_id === null && r.pin_sha === null
+        ? { ...r, started_at: new Date('2026-10-09T00:00:00Z') }
+        : r,
+    ),
     pin('8e3e1cefaf1e1b7955789d6a43a81b6c2dbd7082', '2026-09-30T18:00:00Z'),
   ];
   const header = (html: string, side: string) =>

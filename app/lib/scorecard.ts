@@ -6,7 +6,7 @@
  * finished laps. Pure, no React.
  */
 
-/** One finished attempt of one lap's step, or (`step_id` null) a lap with none yet. */
+/** A run of this factory with a digest: a lap when its workflow is `archon-loop`. */
 export interface LapRow {
   run_id: string;
   digest: string;
@@ -14,7 +14,17 @@ export interface LapRow {
   status: string;
   started_at: Date | null;
   completed_at: Date | null;
-  step_id: string | null;
+  step_id: null;
+  pin_sha: null;
+}
+
+/**
+ * One finished attempt of a lap's step, carrying only the attempt's own fields. The query keeps the
+ * steps 4.2 reads an output or a duration of, and every attempt with a cost.
+ */
+export interface AttemptRow {
+  run_id: string;
+  step_id: string;
   duration_ms: number | null;
   cost_usd: number | null;
   route: string | null;
@@ -23,19 +33,22 @@ export interface LapRow {
   /** The attempt's new holdout catches (a check-app attempt's only). */
   holdout_catches: number | null;
   pin_sha: null;
-  committed_at: null;
 }
 
 /** A pin, which labels the versions whose first run came after it (as the version strip does). */
 export interface PinRow {
   run_id: null;
+  step_id: null;
   pin_sha: string;
   committed_at: Date;
 }
 
-export type ScorecardRow = LapRow | PinRow;
+/** A row of `db/queries/scorecard.sql`, which returns every column on every row, null where unused. */
+export type ScorecardRow = LapRow | AttemptRow | PinRow;
 
-const isLap = (row: ScorecardRow): row is LapRow => row.run_id !== null;
+const isPin = (row: ScorecardRow): row is PinRow => row.pin_sha !== null;
+const isAttempt = (row: ScorecardRow): row is AttemptRow => row.step_id !== null;
+const isRun = (row: ScorecardRow): row is LapRow => !isPin(row) && !isAttempt(row);
 
 /** PRD 4.2: a lap is an `archon-loop` run. */
 export const LAP_WORKFLOW = 'archon-loop';
@@ -70,25 +83,25 @@ export function versionLaps(rows: readonly ScorecardRow[], digest: string): Lap[
     Lap & { routes: string[]; reviews: string[]; lands: string[]; refusals: string[] }
   >();
   for (const row of rows) {
-    if (!isLap(row) || row.digest !== digest || row.workflow_name !== LAP_WORKFLOW) continue;
-    let lap = laps.get(row.run_id);
-    if (lap === undefined) {
-      lap = {
-        id: row.run_id,
-        status: row.status,
-        startedAt: row.started_at,
-        endedAt: row.completed_at,
-        routes: [],
-        reviews: [],
-        lands: [],
-        refusals: [],
-        checkAppMs: 0,
-        cost: 0,
-        catches: 0,
-      };
-      laps.set(row.run_id, lap);
-    }
-    if (row.step_id === null) continue;
+    if (!isRun(row) || row.digest !== digest || row.workflow_name !== LAP_WORKFLOW) continue;
+    laps.set(row.run_id, {
+      id: row.run_id,
+      status: row.status,
+      startedAt: row.started_at,
+      endedAt: row.completed_at,
+      routes: [],
+      reviews: [],
+      lands: [],
+      refusals: [],
+      checkAppMs: 0,
+      cost: 0,
+      catches: 0,
+    });
+  }
+  for (const row of rows) {
+    if (!isAttempt(row)) continue;
+    const lap = laps.get(row.run_id);
+    if (lap === undefined) continue;
     lap.cost += row.cost_usd ?? 0;
     lap.catches += row.holdout_catches ?? 0;
     if (row.step_id === 'pick' && row.route !== null) lap.routes.push(row.route);
@@ -109,14 +122,14 @@ export function versionPin(
 ): { firstRunAt: Date | null; pin: string | null } {
   let first: number | null = null;
   for (const row of rows) {
-    if (!isLap(row) || row.digest !== digest || row.started_at === null) continue;
+    if (!isRun(row) || row.digest !== digest || row.started_at === null) continue;
     const t = row.started_at.getTime();
     if (first === null || t < first) first = t;
   }
   if (first === null) return { firstRunAt: null, pin: null };
   let pin: PinRow | null = null;
   for (const row of rows) {
-    if (isLap(row) || row.committed_at.getTime() >= first) continue;
+    if (!isPin(row) || row.committed_at.getTime() >= first) continue;
     if (pin === null || row.committed_at.getTime() > pin.committed_at.getTime()) pin = row;
   }
   return { firstRunAt: new Date(first), pin: pin?.pin_sha ?? null };
