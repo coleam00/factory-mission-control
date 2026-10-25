@@ -1,5 +1,7 @@
 import { afterAll, expect, test } from 'bun:test';
+import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { launchBrowser, probe } from './design-probe.js';
 
 interface Failure {
   width: number;
@@ -121,4 +123,45 @@ test('a page that never answers stops the probe with exit 2 instead of hanging',
   expect(stdout).toBe('');
   expect(stderr).toBe('design probe could not run: Page.navigate got no answer within 20s\n');
   expect(exitCode).toBe(2);
+}, 60_000);
+
+/** An fs error with the code Node gives it, as readFileSync throws it. */
+function fsError(code: string, path: string) {
+  return Object.assign(new Error(`${code}: resource busy or locked, open '${path}'`), { code });
+}
+
+test('a DevToolsActivePort the browser still holds open (EBUSY) is read again, and the probe connects and runs', async () => {
+  const reads: string[] = [];
+  const readPort = (path: string) => {
+    if (reads.length === 0) {
+      reads.push('EBUSY');
+      throw fsError('EBUSY', path);
+    }
+    reads.push('read');
+    return readFileSync(path, 'utf8');
+  };
+
+  const report = await probe(new URL('/clean.html', server.url).href, readPort);
+
+  expect(reads[0]).toBe('EBUSY');
+  expect(reads.at(-1)).toBe('read');
+  expect(report.failureCount).toBe(0);
+}, 60_000);
+
+test('any other error reading DevToolsActivePort still stops the probe', async () => {
+  const readPort = (path: string) => {
+    throw fsError('EACCES', path);
+  };
+
+  await expect(launchBrowser(readPort)).rejects.toThrow('EACCES');
+}, 60_000);
+
+test('a browser whose DevToolsActivePort never appears still stops the probe after 20 s', async () => {
+  const readPort = (path: string) => {
+    throw fsError('ENOENT', path);
+  };
+
+  await expect(launchBrowser(readPort)).rejects.toThrow(
+    'the browser opening its DevTools port did not happen within 20s',
+  );
 }, 60_000);
