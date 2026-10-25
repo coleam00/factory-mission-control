@@ -1,6 +1,6 @@
 import type { ReactElement } from 'react';
 import { LivePanel } from '../live/LivePanel';
-import { useLive } from '../live/LiveProvider';
+import { useFactory } from '../live/LiveProvider';
 import { LiveDot } from './LiveDot';
 
 interface StatusStripRow {
@@ -9,10 +9,9 @@ interface StatusStripRow {
 
 const LABEL = 'font-mono text-[10px] font-semibold uppercase tracking-[0.04em] text-text-secondary';
 
-/** The app shell's live strip for one factory: until a picker exists, the first in factories.json. */
+/** The app shell's live strip for one factory. */
 export function FactoryStrip(): ReactElement {
-  const live = useLive();
-  const factory = live.status === 'ready' ? live.factories[0] : undefined;
+  const factory = useFactory();
   return (
     <LivePanel<StatusStripRow>
       query="status-strip"
