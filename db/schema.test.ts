@@ -1,22 +1,20 @@
 import { afterAll, beforeAll, expect, test } from 'bun:test';
 import { join } from 'node:path';
-import { PGlite } from '@electric-sql/pglite';
 import type { CheckLine } from '../fixtures/pack/sdlc/.shared/merge-gate';
 import { REVIEW_OUTCOMES, type Review } from '../parsers/comments';
 import { VERDICT_OUTCOMES } from '../parsers/commits';
 import { HOLDOUT_VERDICTS } from '../parsers/metrics';
 import type { Row } from '../scripts/lib/db';
-import { pgliteDb } from '../scripts/lib/pglite';
 import { migrationsDir, readMigrationFiles, runMigrations } from '../scripts/migrate';
+import { testDb } from './test-db';
 
 const RUN_ID = '00000000-0000-0000-0000-000000000001';
 
-const pg = new PGlite();
 const files = readMigrationFiles(migrationsDir(join(import.meta.dir, '..')));
 let firstRun: string[] = [];
 let archonBefore: Row[][] = [];
 
-const db = pgliteDb(pg);
+const db = testDb();
 
 /** What a migration could change on Archon's tables: columns, indexes, constraints, triggers. */
 const archonSchema = (): Promise<Row[][]> =>

@@ -40,6 +40,7 @@ describe('holdouts line', () => {
   test('the appendix example: sha and ids with verdicts, no other field', () => {
     const parsed = parseHoldoutsLine(HOLDOUTS);
     expect(parsed).toEqual({
+      at: '2026-10-25T14:20Z',
       sha: '3e4f5a6b',
       holdouts: [
         { id: 'H-01', verdict: 'PASS', issue: null },
@@ -47,7 +48,7 @@ describe('holdouts line', () => {
         { id: 'H-03', verdict: 'INCOMPLETE', issue: 42 },
       ],
     });
-    expect(Object.keys(parsed ?? {})).toEqual(['sha', 'holdouts']);
+    expect(Object.keys(parsed ?? {})).toEqual(['at', 'sha', 'holdouts']);
     for (const h of parsed?.holdouts ?? []) {
       expect(Object.keys(h)).toEqual(['id', 'verdict', 'issue']);
     }

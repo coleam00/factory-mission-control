@@ -4,6 +4,7 @@
 /scripts/** text eol=lf
 /parsers/** text eol=lf
 /db/** text eol=lf
+/function/** text eol=lf
 /package.json text eol=lf
 /tsconfig.json text eol=lf
 /biome.json text eol=lf
@@ -12,3 +13,5 @@
 /fixtures/expected-scorecard.json text eol=lf
 /fixtures/expected-scorecard.sql text eol=lf
 /fixtures/archon-schema.sql text eol=lf
+# Each webhook fixture is signed over its exact bytes; no line-ending conversion.
+/fixtures/webhooks/** -text

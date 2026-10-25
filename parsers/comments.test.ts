@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import {
   parseClaim,
   parseClaimReleased,
+  parseClosingIssues,
   parseDependsOn,
   parseOwnerQuestions,
   parsePhase,
@@ -122,6 +123,13 @@ describe('issue body lines', () => {
   test('Depends on', () => {
     expect(parseDependsOn('Some text\n\nDepends on: #12\nDepends on: #14\n')).toEqual([12, 14]);
     expect(parseDependsOn('nothing here')).toEqual([]);
+  });
+
+  test('closing keywords', () => {
+    expect(
+      parseClosingIssues('Closes #10\nAlso fixes: #12, resolved #10 and Fixed #3. See #99.'),
+    ).toEqual([10, 12, 3]);
+    expect(parseClosingIssues('Refs #10; prefixes #11')).toEqual([]);
   });
 
   test('Phase', () => {
