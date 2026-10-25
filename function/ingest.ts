@@ -30,14 +30,14 @@ export interface Factory {
   repository: string;
 }
 
-// The fields of GitHub's webhook payloads this module reads. The signature vouches for the sender,
-// so the payload is taken in GitHub's documented shape.
+// The fields of GitHub's webhook payloads this module reads, which its REST API returns in the same
+// shape. The signature vouches for the sender, so the payload is taken in GitHub's documented shape.
 interface Repository {
   full_name: string;
   default_branch: string;
 }
 
-interface Issue {
+export interface Issue {
   number: number;
   title: string;
   state: 'open' | 'closed';
@@ -50,7 +50,7 @@ interface Issue {
   pull_request?: unknown;
 }
 
-interface Comment {
+export interface Comment {
   id: number;
   body: string;
   user: { login: string };
@@ -59,7 +59,7 @@ interface Comment {
   updated_at: string;
 }
 
-interface PullRequest {
+export interface PullRequest {
   number: number;
   title: string;
   state: 'open' | 'closed';
@@ -72,7 +72,7 @@ interface PullRequest {
   closed_at: string | null;
 }
 
-interface Commit {
+export interface Commit {
   id: string;
   message: string;
   timestamp: string;
@@ -138,7 +138,7 @@ export async function prepare(
     case 'issues': {
       const { action, issue } = payload as Payloads['issues'];
       if (action === 'deleted' || action === 'transferred') {
-        return (tx) => removeIssue(tx, factory, issue);
+        return (tx) => removeIssue(tx, factory, issue.number, issue.updated_at);
       }
       return (tx) => writeIssue(tx, factory, issue);
     }
@@ -222,7 +222,7 @@ async function replaceSet(
  * Upserts the issue and every fact its body carries. A delivery older than the stored issue
  * (GitHub does not promise order) writes nothing.
  */
-async function writeIssue(tx: Tx, factory: string, issue: Issue): Promise<void> {
+export async function writeIssue(tx: Tx, factory: string, issue: Issue): Promise<void> {
   const body = issue.body ?? '';
   const [current] = await tx.query(
     `INSERT INTO mc.issues (factory, number, title, state, phase, url, created_at, updated_at, closed_at)
@@ -257,18 +257,23 @@ async function writeIssue(tx: Tx, factory: string, issue: Issue): Promise<void> 
 
 /**
  * An issue deleted or transferred out of the repository leaves the mirror; its open owner
- * questions close. Nothing records the removal, so an older delivery about the issue that arrives
- * after this one brings it back.
+ * questions close at `removedAt`. Nothing records the removal, so an older delivery about the
+ * issue that arrives after this one brings it back.
  */
-async function removeIssue(tx: Tx, factory: string, issue: Issue): Promise<void> {
-  const key = [factory, issue.number];
+export async function removeIssue(
+  tx: Tx,
+  factory: string,
+  number: number,
+  removedAt: string,
+): Promise<void> {
+  const key = [factory, number];
   await tx.query('DELETE FROM mc.issues WHERE factory = $1 AND number = $2', key);
   await tx.query('DELETE FROM mc.issue_labels WHERE factory = $1 AND issue_number = $2', key);
   await tx.query('DELETE FROM mc.issue_dependencies WHERE factory = $1 AND issue_number = $2', key);
   await tx.query(
     `UPDATE mc.owner_questions SET closed_at = $3
       WHERE factory = $1 AND issue_number = $2 AND closed_at IS NULL`,
-    [...key, issue.updated_at],
+    [...key, removedAt],
   );
 }
 
@@ -382,7 +387,7 @@ async function writeMetrics(tx: Tx, factory: string, issue: number, body: string
  * stored comment writes nothing. Nothing records a deleted comment, so an older delivery that
  * arrives after the deletion brings it back.
  */
-async function writeComment(
+export async function writeComment(
   tx: Tx,
   factory: string,
   issue: Issue,
@@ -458,7 +463,7 @@ async function writeComment(
   );
 }
 
-async function deleteComment(tx: Tx, factory: string, id: number): Promise<void> {
+export async function deleteComment(tx: Tx, factory: string, id: number): Promise<void> {
   await tx.query('DELETE FROM mc.comments WHERE factory = $1 AND id = $2', [factory, id]);
   await tx.query('DELETE FROM mc.reviews WHERE factory = $1 AND comment_id = $2', [factory, id]);
 }
@@ -477,7 +482,7 @@ async function renameLabel(tx: Tx, factory: string, from: string, to: string): P
   await deleteLabel(tx, factory, from);
 }
 
-async function writePullRequest(tx: Tx, factory: string, pr: PullRequest): Promise<void> {
+export async function writePullRequest(tx: Tx, factory: string, pr: PullRequest): Promise<void> {
   const [current] = await tx.query(
     `INSERT INTO mc.pull_requests (factory, number, title, state, merged_at, head_sha, url,
         created_at, updated_at, closed_at)
@@ -512,7 +517,10 @@ async function writePullRequest(tx: Tx, factory: string, pr: PullRequest): Promi
   );
 }
 
-async function writeCommits(tx: Tx, commits: Commit[]): Promise<void> {
+export async function writeCommits(
+  tx: Tx,
+  commits: Pick<Commit, 'id' | 'message' | 'timestamp'>[],
+): Promise<void> {
   for (const commit of commits) {
     const pin = parsePin(commit.message);
     if (pin) {
@@ -539,7 +547,7 @@ async function writeCommits(tx: Tx, commits: Commit[]): Promise<void> {
 }
 
 /** `DECISIONS.md` on the default branch is the whole truth: entries it no longer has go. */
-async function replaceDecisions(tx: Tx, text: string): Promise<void> {
+export async function replaceDecisions(tx: Tx, text: string): Promise<void> {
   const { entries } = parseDecisions(text);
   await tx.query(
     `DELETE FROM mc.decisions d WHERE NOT EXISTS (

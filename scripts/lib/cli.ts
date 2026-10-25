@@ -1,5 +1,5 @@
 import { resolve } from 'node:path';
-import type { GetFetch } from '../../function/github';
+import { createGitHub, type GetFetch, type GitHub } from '../../function/github';
 import { type Env, loadCheckEnv } from '../../server/check-env';
 import { type OpenDb, openDb } from './db';
 import { RefusedBranch, requireCheckBranch } from './guard';
@@ -13,14 +13,15 @@ export type Deps = {
   env: Env;
   repoRoot: string;
   neon: () => NeonApi;
+  github: () => GitHub;
   openDb: OpenDb;
-  /** The only way a command reaches GitHub. */
+  /** GET-only fetch for commands that read raw GitHub contents (`arch:parse`). */
   fetch: GetFetch;
   now: () => Date;
   sleep: Sleep;
   out: (line: string) => void;
   err: (line: string) => void;
-  /** Only a `:main` command asks; true when the owner, at a terminal, confirmed the project. */
+  /** Only `migrate:main` and `arch:parse:main` ask; true when the owner, at a terminal, confirmed the project. */
   confirmOwner: (projectId: string) => boolean;
 };
 
@@ -43,6 +44,7 @@ export function defaultDeps(): Deps {
     env: Bun.env,
     repoRoot: REPO_ROOT,
     neon: () => neonFromEnv(Bun.env),
+    github: () => createGitHub(fetch, Bun.env.GITHUB_TOKEN),
     openDb,
     fetch: (url, init) => fetch(url, init),
     now: () => new Date(),
@@ -96,8 +98,5 @@ export async function guardedDatabaseUrl(deps: Deps, target: 'check' | 'main'): 
     return url;
   }
   if (name !== 'main') throw new RefusedBranch(name, 'a :main command only writes main');
-  if (!deps.confirmOwner(deps.env.NEON_PROJECT_ID ?? '')) {
-    throw new Error('a :main command is for the owner, at a terminal');
-  }
   return url;
 }

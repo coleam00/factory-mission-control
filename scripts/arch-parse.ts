@@ -266,6 +266,9 @@ export const main: Main = async (argv, deps) => {
   const { target, ...args } = parsed;
   return failing(deps, async () => {
     const url = await guardedDatabaseUrl(deps, target);
+    if (target === 'main' && !deps.confirmOwner(deps.env.NEON_PROJECT_ID ?? '')) {
+      throw new Error('arch:parse:main is for the owner, at a terminal');
+    }
     const version = await readVersion(deps, args);
     const db = deps.openDb(url);
     try {
