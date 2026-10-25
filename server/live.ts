@@ -79,3 +79,25 @@ export function liveRoutes(app: Hono, live: Live | undefined): void {
     return c.json(await live.seal(sql, factory));
   });
 }
+
+/** The WebSocket subprotocol `@neon/realtime`'s client asks for (`neon.realtime.v1`). */
+export const REALTIME_PROTOCOL = 'neon.realtime.v1';
+
+/**
+ * An inline script for `index.html`: it hands the browser what `GET /api/live` answers and opens
+ * the Realtime WebSocket while the page is still parsing, buffering what Realtime sends until the
+ * app's client takes the socket over (app/live/early-socket.ts). Opening the connection is most of
+ * a panel's wait for its first rows; this way it runs while the app's bundle loads.
+ */
+export function liveBootScript(live: Pick<Live, 'url' | 'factories'>): string {
+  const config = JSON.stringify({
+    url: live.url,
+    factories: live.factories,
+    protocol: REALTIME_PROTOCOL,
+  }).replace(/</g, '\\u003c');
+  return (
+    '<script>(function(c){try{var s=new WebSocket(c.url,c.protocol);c.socket=s;c.early=[];' +
+    "s.addEventListener('message',function(e){if(c.early)c.early.push(e.data)})}catch(e){}" +
+    `window.__MC_LIVE__=c})(${config})</script>`
+  );
+}
