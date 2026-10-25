@@ -2,6 +2,7 @@
 // `mcwebhook` on that branch and prints its URL (PRD 11.3).
 import { join } from 'node:path';
 import { parseArgs } from 'node:util';
+import { FUNCTION_ENV } from '../function/env';
 import { type Deps, failing, type Main, runCli } from './lib/cli';
 import { isCheckBranch, RefusedBranch } from './lib/guard';
 import type { Branch, NeonApi } from './lib/neon';
@@ -9,7 +10,7 @@ import type { Branch, NeonApi } from './lib/neon';
 export const SLUG = 'mcwebhook';
 
 const USAGE = [
-  `usage: bun run function:deploy -- --branch <check-*|main> (deploys the webhook Function ${SLUG} to that branch with GITHUB_WEBHOOK_SECRET and GITHUB_TOKEN from the environment, and prints its URL)`,
+  `usage: bun run function:deploy -- --branch <check-*|main> (deploys the webhook Function ${SLUG} to that branch with ${FUNCTION_ENV.webhookSecret} and ${FUNCTION_ENV.githubToken} from the environment, and prints its URL)`,
   `       bun run function:deploy -- --branch <check-*|main> --delete (deletes ${SLUG} from that branch)`,
 ].join('\n');
 
@@ -37,12 +38,14 @@ function redacted(text: string, secrets: string[]): string {
 }
 
 async function deploy(deps: Deps, { api, branch, projectId }: Target): Promise<void> {
-  const secret = deps.env.GITHUB_WEBHOOK_SECRET;
+  const secret = deps.env[FUNCTION_ENV.webhookSecret];
   if (!secret) {
-    throw new Error('GITHUB_WEBHOOK_SECRET must be set: GitHub signs every delivery with it');
+    throw new Error(
+      `${FUNCTION_ENV.webhookSecret} must be set: GitHub signs every delivery with it`,
+    );
   }
   // Sent even when empty: neonctl keeps any key a deploy leaves out from the one before.
-  const token = deps.env.GITHUB_TOKEN ?? '';
+  const token = deps.env[FUNCTION_ENV.githubToken] ?? '';
   const url = await api.pooledConnectionUri(branch.id);
   const result = await deps.neonctl([
     'functions',
@@ -57,11 +60,11 @@ async function deploy(deps: Deps, { api, branch, projectId }: Target): Promise<v
     '--branch',
     branch.id,
     '--env',
-    `MC_DATABASE_URL=${url}`,
+    `${FUNCTION_ENV.databaseUrl}=${url}`,
     '--env',
-    `GITHUB_WEBHOOK_SECRET=${secret}`,
+    `${FUNCTION_ENV.webhookSecret}=${secret}`,
     '--env',
-    `GITHUB_TOKEN=${token}`,
+    `${FUNCTION_ENV.githubToken}=${token}`,
     '--output',
     'json',
   ]);

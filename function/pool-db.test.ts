@@ -81,3 +81,42 @@ test("the Function's pool writes what the Bun path writes", async () => {
   expect(await snapshot(viaPool)).toEqual(await snapshot(reference));
   await reference.close();
 });
+
+test('a delivery that throws mid-transaction rejects with its own error and leaves no row', async () => {
+  const db = poolDb(pool);
+  const failure = new Error('original insert failure');
+  // More failed transactions than the pool has connections: each one's client must come back.
+  for (let round = 0; round < 7; round++) {
+    const write = db.transaction(async (tx) => {
+      await tx.query(
+        "INSERT INTO mc.factories (name, repository, codebase, console) VALUES ($1, 'r', 'c', 'x')",
+        [`rolled-back-${round}`],
+      );
+      throw failure;
+    });
+    expect(write).rejects.toBe(failure);
+    await write.catch(() => {});
+  }
+  const left = await db.query("SELECT name FROM mc.factories WHERE name LIKE 'rolled-back-%'");
+  expect(left).toEqual([]);
+});
+
+test('a ROLLBACK that fails keeps the original error and destroys the client', async () => {
+  const failure = new Error('original insert failure');
+  const dropped = new Error('connection terminated');
+  const released: unknown[] = [];
+  const client = {
+    query: async (text: string) => {
+      if (text === 'ROLLBACK') throw dropped;
+      return { rows: [] };
+    },
+    release: (arg?: unknown) => released.push(arg),
+  };
+  const fakePool = { connect: async () => client } as unknown as pg.Pool;
+  const write = poolDb(fakePool).transaction(async () => {
+    throw failure;
+  });
+  expect(write).rejects.toBe(failure);
+  await write.catch(() => {});
+  expect(released).toEqual([dropped]);
+});

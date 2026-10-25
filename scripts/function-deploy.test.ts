@@ -1,5 +1,6 @@
 import { expect, test } from 'bun:test';
 import { join } from 'node:path';
+import { FUNCTION_ENV } from '../function/env';
 import type { Env } from '../server/check-env';
 import { main } from './function-deploy';
 import type { NeonctlResult } from './lib/cli';
@@ -10,7 +11,10 @@ const BRANCHES = [
   { id: 'br-main', name: 'main', created_at: '' },
   { id: 'br-fixture', name: 'fixture', created_at: '' },
 ];
-const SECRETS = { GITHUB_WEBHOOK_SECRET: 'whsec-test', GITHUB_TOKEN: 'ghp-test' };
+const SECRETS = {
+  [FUNCTION_ENV.webhookSecret]: 'whsec-test',
+  [FUNCTION_ENV.githubToken]: 'ghp-test',
+};
 
 function run(
   argv: string[],
@@ -39,11 +43,11 @@ const deployArgs = (repoRoot: string, branchId: string) => [
   '--branch',
   branchId,
   '--env',
-  `MC_DATABASE_URL=${POOLED_URL}`,
+  `${FUNCTION_ENV.databaseUrl}=${POOLED_URL}`,
   '--env',
-  'GITHUB_WEBHOOK_SECRET=whsec-test',
+  `${FUNCTION_ENV.webhookSecret}=whsec-test`,
   '--env',
-  'GITHUB_TOKEN=ghp-test',
+  `${FUNCTION_ENV.githubToken}=ghp-test`,
   '--output',
   'json',
 ];
@@ -81,10 +85,11 @@ test('without --branch it prints usage and exits 2', async () => {
   expect(recorder.neonCalls).toEqual([]);
 });
 
-test('without GITHUB_WEBHOOK_SECRET it deploys nothing', async () => {
-  const { recorder, exit } = run(['--branch', 'check-abc'], { env: { GITHUB_TOKEN: 'ghp-test' } });
+test('without the webhook secret it deploys nothing', async () => {
+  const env = { [FUNCTION_ENV.githubToken]: 'ghp-test' };
+  const { recorder, exit } = run(['--branch', 'check-abc'], { env });
   expect(await exit).toBe(1);
-  expect(recorder.err.join('\n')).toContain('GITHUB_WEBHOOK_SECRET must be set');
+  expect(recorder.err.join('\n')).toContain(`${FUNCTION_ENV.webhookSecret} must be set`);
   expect(recorder.neonCalls).not.toContain('pooledConnectionUri br-check');
   expect(recorder.neonctlCalls).toEqual([]);
 });

@@ -4,18 +4,19 @@ import { attachDatabasePool } from '@neon/functions';
 import pg from 'pg';
 import factories from '../factories.json';
 import { createWebhookApp } from './app';
+import { FUNCTION_ENV } from './env';
 import { createGitHub } from './github';
 import { poolDb } from './pool-db';
 
-const connectionString = process.env.MC_DATABASE_URL;
-if (!connectionString) throw new Error('MC_DATABASE_URL must be set');
+const connectionString = process.env[FUNCTION_ENV.databaseUrl];
+if (!connectionString) throw new Error(`${FUNCTION_ENV.databaseUrl} must be set`);
 
 const pool = new pg.Pool({ connectionString, max: 5 });
 attachDatabasePool(pool);
 
 export default createWebhookApp({
-  secret: process.env.GITHUB_WEBHOOK_SECRET ?? '',
+  secret: process.env[FUNCTION_ENV.webhookSecret] ?? '',
   db: poolDb(pool),
   factories: factories.factories,
-  github: createGitHub(fetch, process.env.GITHUB_TOKEN || undefined),
+  github: createGitHub(fetch, process.env[FUNCTION_ENV.githubToken] || undefined),
 });

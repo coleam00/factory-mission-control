@@ -16,15 +16,23 @@ export function poolDb(pool: pg.Pool): Db {
     query: queryOn(pool),
     async transaction(fn) {
       const client = await pool.connect();
+      // Set when ROLLBACK itself fails: the client is broken, so the pool destroys it.
+      let broken: Error | undefined;
       try {
         await client.query('BEGIN');
         await fn({ query: queryOn(client) } satisfies Tx);
         await client.query('COMMIT');
       } catch (error) {
-        await client.query('ROLLBACK');
+        try {
+          await client.query('ROLLBACK');
+        } catch (rollbackError) {
+          broken =
+            rollbackError instanceof Error ? rollbackError : new Error(String(rollbackError));
+        }
+        // The delivery's own error, never the rollback's.
         throw error;
       } finally {
-        client.release();
+        client.release(broken);
       }
     },
     close: () => pool.end(),
