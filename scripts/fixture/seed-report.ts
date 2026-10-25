@@ -5,7 +5,7 @@ import type { Tx } from '../lib/db';
 // What the seed must hold (issue #7's outcome list) and the scorecard it must produce, as read-only
 // queries, so the offline test on PGlite and `fixture:verify` on a check branch ask the same thing.
 
-const MARKER = 'HOLDOUT-TEXT-MARKER';
+export const MARKER = 'HOLDOUT-TEXT-MARKER';
 
 export type Minimum = { name: string; value: number; min: number };
 

@@ -9,9 +9,9 @@ type StepEvent = (typeof EVENTS)[number];
 const USAGE =
   'usage: bun run fixture:write step [--run <id>] [--step <step id>] [--event node_started|node_completed|node_failed] | label | comment | issue | pin | verdict | decision';
 
-const WORKFLOW = 'archon-loop';
-const FACTORY = 'mission-control';
-const REPOSITORY = 'coleam00/factory-mission-control';
+export const WORKFLOW = 'archon-loop';
+export const FACTORY = 'mission-control';
+export const REPOSITORY = 'coleam00/factory-mission-control';
 const FIXTURE_DIGEST = `sha256:${'f1'.repeat(32)}`;
 const HEAD = '3f2c9a1e8b7d6c5a4f3e2d1c0b9a8f7e6d5c4b3a';
 const BASE = '845b6201c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8';

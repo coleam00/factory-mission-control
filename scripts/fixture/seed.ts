@@ -18,9 +18,9 @@ import type { Db } from '../lib/db';
 import { pgliteDb } from '../lib/pglite';
 import { migrationsDir, readMigrationFiles, runMigrations } from '../migrate';
 import { architectureSql, parseVersions, V2_EDITS } from './seed-architecture';
-import { scorecard } from './seed-report';
+import { MARKER, scorecard } from './seed-report';
 import { insert, json, type SqlRow } from './sql';
-import { nodeBlock } from './write';
+import { FACTORY, nodeBlock, REPOSITORY, WORKFLOW } from './write';
 
 // Builds fixtures/seed.sql: the rows every panel is built against (PRD 12 item 3). Archon's rows
 // are written first; the lap, step and app-check rows are then projected from them by SQL, so they
@@ -31,9 +31,6 @@ const USAGE =
   'usage: bun run fixture:seed (writes fixtures/seed.sql and fixtures/expected-scorecard.json)';
 
 export const SEED_CODEBASE = '5eed0000-0000-4000-8000-000000000000';
-const FACTORY = 'mission-control';
-const REPOSITORY = 'coleam00/factory-mission-control';
-const MARKER = 'HOLDOUT-TEXT-MARKER';
 const MINUTE = 60_000;
 
 const iso = (ms: number) => new Date(ms).toISOString();
@@ -329,8 +326,8 @@ type Loop = {
 };
 
 function loopOf(version: PackVersion): Loop {
-  const workflow = version.workflows.find((w) => w.name === 'archon-loop');
-  if (!workflow) throw new Error('the pack has no archon-loop workflow');
+  const workflow = version.workflows.find((w) => w.name === WORKFLOW);
+  if (!workflow) throw new Error(`the pack has no ${WORKFLOW} workflow`);
   const steps = new Map<string, Step>();
   for (const step of workflow.steps) {
     steps.set(step.id, step);
@@ -1137,7 +1134,7 @@ function archonSql(factory: FactoryEntry, runs: Run[]): string[] {
       `-- ${run.label}: ${run.outcome ?? run.status}${target}`,
       insert('remote_agent_workflow_runs', {
         id: run.id,
-        workflow_name: 'archon-loop',
+        workflow_name: WORKFLOW,
         codebase_id: SEED_CODEBASE,
         status: run.status,
         user_message: `Run the loop on ${factory.repository}`,
