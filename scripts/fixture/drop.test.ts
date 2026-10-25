@@ -200,3 +200,96 @@ test.each([[['--dry-run', 'x']], [['x', '--dry-run']]])(
     expect(run.neonCalls).toEqual([]);
   },
 );
+
+function hoursAfter(hours: number): string {
+  return new Date(NOW.getTime() + hours * 3_600_000).toISOString();
+}
+
+const YOUNG = { id: 'br-young', name: 'check-young', created_at: NOW.toISOString() };
+const AT_SELECTION = [...SELECTION, YOUNG];
+
+test.each([
+  [
+    hoursAfter(3 + 1 / 60),
+    ['check-abc', 'check-abc-stale-1a2b3c4d', 'check-old', 'check-new', 'check-young'],
+  ],
+  [hoursAfter(3 - 1 / 60), ['check-abc', 'check-abc-stale-1a2b3c4d', 'check-old', 'check-new']],
+])(
+  '--dry-run --at %s lists what a drop then would delete and deletes nothing',
+  async (at, names) => {
+    const repoRoot = repo({ MC_CHECK_BRANCH: 'check-abc' });
+    const run = recordingDeps({ repoRoot, branches: AT_SELECTION });
+    expect(await main(['--dry-run', '--at', at], run.deps)).toBe(0);
+    expect(run.mutatingCalls).toEqual([]);
+    expect(run.neonCalls.filter((call) => call.startsWith('deleteBranch'))).toEqual([]);
+    expect(existsSync(join(repoRoot, CHECK_ENV_FILE))).toBe(true);
+    expect(run.out).toEqual(names.map((name) => `would delete ${name}`));
+  },
+);
+
+test('--at goes before or after --dry-run', async () => {
+  const repoRoot = repo();
+  const run = recordingDeps({ repoRoot, branches: AT_SELECTION });
+  expect(await main(['--at', hoursAfter(3 + 1 / 60), '--dry-run'], run.deps)).toBe(0);
+  expect(run.out).toEqual([
+    'would delete check-abc',
+    'would delete check-abc-stale-1a2b3c4d',
+    'would delete check-old',
+    'would delete check-new',
+    'would delete check-young',
+  ]);
+});
+
+test('just under and just over 3 hours as of --at', () => {
+  const at = new Date(hoursAfter(3));
+  const names = (branches: typeof SELECTION) =>
+    branchesToDrop(branches, undefined, at).map((branch) => branch.name);
+  const created = (ms: number) => new Date(at.getTime() - 3 * 3_600_000 + ms).toISOString();
+  expect(names([{ id: 'br-under', name: 'check-under', created_at: created(1) }])).toEqual([]);
+  expect(names([{ id: 'br-at', name: 'check-at', created_at: created(0) }])).toEqual([]);
+  expect(names([{ id: 'br-over', name: 'check-over', created_at: created(-1) }])).toEqual([
+    'check-over',
+  ]);
+});
+
+test.each([0, 1, 24, 24 * 365])(
+  '--dry-run --at now + %d hours never lists a branch that is not check-*',
+  async (hours) => {
+    const repoRoot = repo({ MC_CHECK_BRANCH: 'check-abc' });
+    const run = recordingDeps({ repoRoot, branches: AT_SELECTION });
+    expect(await main(['--dry-run', '--at', hoursAfter(hours)], run.deps)).toBe(0);
+    for (const line of run.out) expect(line).toMatch(/^would delete check-/);
+    expect(run.out.join('\n')).not.toMatch(/main|fixture|rewind/);
+  },
+);
+
+test.each([
+  [['--at', hoursAfter(4)]],
+  [['--at']],
+  [['--dry-run', '--at']],
+  [['--dry-run', '--at', 'tomorrow']],
+  [['--dry-run', '--at', '2026-10-24 16:00']],
+  [['--dry-run', '--at', '2026-10-24T16:00']],
+  [['--dry-run', '--at', '2026-13-45T16:00Z']],
+  [['--dry-run', '--at', hoursAfter(-1 / 60)]],
+  [['--dry-run', '--at', hoursAfter(4), 'x']],
+  [['--dry-run', '--dry-run', '--at', hoursAfter(4)]],
+  [['--dry-run', '--at', hoursAfter(4), '--at', hoursAfter(5)]],
+  [['--help', '--at', hoursAfter(4)]],
+])('refuses %j with the usage, exit 2 and no Neon call', async (argv) => {
+  const repoRoot = repo({ MC_CHECK_BRANCH: 'check-abc' });
+  const run = recordingDeps({ repoRoot, branches: AT_SELECTION });
+  expect(await main(argv, run.deps)).toBe(2);
+  expect(run.err.join('\n')).toContain('bun run fixture:drop --dry-run --at <time>');
+  expect(run.neonCalls).toEqual([]);
+  expect(run.neonCalls.filter((call) => call.startsWith('deleteBranch'))).toEqual([]);
+  expect(existsSync(join(repoRoot, CHECK_ENV_FILE))).toBe(true);
+});
+
+test('--dry-run --at refuses MC_CHECK_BRANCH=main before any Neon call', async () => {
+  const repoRoot = repo({ MC_CHECK_BRANCH: 'main' });
+  const run = recordingDeps({ repoRoot, branches: AT_SELECTION });
+  expect(await main(['--dry-run', '--at', hoursAfter(4)], run.deps)).not.toBe(0);
+  expect(run.neonCalls).toEqual([]);
+  expect(run.err.join('\n')).toContain("refusing branch 'main'");
+});
