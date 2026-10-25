@@ -56,10 +56,11 @@ describe('against the migrated schema', () => {
 
   test('status-strip counts one factory’s running laps and nothing else', async () => {
     await db.query(`INSERT INTO mc.laps (run_id, factory, workflow_name, status) VALUES
-      ('00000000-0000-0000-0000-0000000000a1', 'mission-control', 'w', 'running'),
-      ('00000000-0000-0000-0000-0000000000a2', 'mission-control', 'w', 'running'),
-      ('00000000-0000-0000-0000-0000000000a3', 'mission-control', 'w', 'completed'),
-      ('00000000-0000-0000-0000-0000000000a4', 'other', 'w', 'running')`);
+      ('00000000-0000-0000-0000-0000000000a1', 'mission-control', 'archon-loop', 'running'),
+      ('00000000-0000-0000-0000-0000000000a2', 'mission-control', 'archon-loop', 'running'),
+      ('00000000-0000-0000-0000-0000000000a3', 'mission-control', 'archon-loop', 'completed'),
+      ('00000000-0000-0000-0000-0000000000a5', 'mission-control', 'archon-manager', 'running'),
+      ('00000000-0000-0000-0000-0000000000a4', 'other', 'archon-loop', 'running')`);
     const sql = queries.find(([name]) => name === 'status-strip')?.[1] as string;
     expect(await db.query(sql, ['mission-control'])).toEqual([{ running: 2 }]);
     expect(await db.query(sql, ['other'])).toEqual([{ running: 1 }]);

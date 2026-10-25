@@ -130,7 +130,11 @@ export async function openPage(env: Record<string, string | undefined>): Promise
       proc.kill();
       await Promise.race([exited, Bun.sleep(5000)]);
     }
-    rmSync(profile, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+    // On Windows the browser's child processes can hold the profile for a while after it exits.
+    // A temp folder left behind is not a test failure, so removing it is best effort.
+    try {
+      rmSync(profile, { recursive: true, force: true, maxRetries: 10, retryDelay: 300 });
+    } catch {}
   };
   try {
     const cdp = await connect(await devToolsUrl(profile, () => proc.exitCode !== null));

@@ -1,4 +1,4 @@
-import type { SealedLiveQuery } from '@neon/realtime/client';
+import type { LiveQueryState, SealedLiveQuery } from '@neon/realtime/client';
 import { RealtimeProvider, useLiveQuery } from '@neon/realtime-react';
 import { type ReactElement, type ReactNode, useCallback, useEffect, useState } from 'react';
 import { useLive } from './LiveProvider';
@@ -7,16 +7,19 @@ export type PanelState = 'loading' | 'ready' | 'error';
 
 /**
  * Rows kept while a renewal reconnects are still the query's rows, so a panel stays `ready`
- * through `connecting` and `stale`.
+ * through `connecting`. A `stale` subscription's seal has expired with no replacement: it gets
+ * no more updates, so its rows are no longer live and the panel is in `error`.
  */
 export function panelState({
+  status,
   data,
   error,
 }: {
+  status: LiveQueryState['status'];
   data: readonly unknown[] | undefined;
   error: unknown;
 }): PanelState {
-  if (error !== undefined) return 'error';
+  if (error !== undefined || status === 'error' || status === 'stale') return 'error';
   return data === undefined ? 'loading' : 'ready';
 }
 
@@ -131,8 +134,8 @@ function Subscribed<Row>({
     performance.mark(`live:${query}:renewed`);
     return renewed;
   }, [query, requestSeal]);
-  const { data, error } = useLiveQuery(sealed, { refreshQuery });
-  const state = panelState({ data, error });
+  const { status, data, error } = useLiveQuery(sealed, { refreshQuery });
+  const state = panelState({ status, data, error });
 
   useEffect(() => {
     if (state === 'ready') markOnce(`live:${query}:ready`);

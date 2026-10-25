@@ -165,7 +165,7 @@ async function insertToScreen(
   const runId = crypto.randomUUID();
   inserted.push(runId);
   await db.query(
-    `INSERT INTO mc.laps (run_id, factory, workflow_name, status) VALUES ($1, $2, 'test-live', 'running')`,
+    `INSERT INTO mc.laps (run_id, factory, workflow_name, status) VALUES ($1, $2, 'archon-loop', 'running')`,
     [runId, factory],
   );
   return (await shown) ? Math.round(performance.now() - started) : null;
@@ -286,16 +286,22 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
     if (probe.exitCode !== 0) failures.push(`the design probe exited ${probe.exitCode}`);
   } finally {
     writeFileSync(join(outDir, 'realtime-timings.json'), `${JSON.stringify(timings, null, 2)}\n`);
-    if (inserted.length > 0) {
-      await db.query('DELETE FROM mc.laps WHERE run_id = ANY($1::uuid[])', [
-        `{${inserted.join(',')}}`,
-      ]);
-    }
-    await db.close();
-    await page?.close();
+    // The page and the server go first, so a failed cleanup below cannot leave them running.
+    await page?.close().catch(() => undefined);
     if (server) {
       server.kill();
       await server.exited;
+    }
+    try {
+      if (inserted.length > 0) {
+        await db.query('DELETE FROM mc.laps WHERE run_id = ANY($1::uuid[])', [
+          `{${inserted.join(',')}}`,
+        ]);
+      }
+    } catch (err) {
+      failures.push(`removing the inserted laps failed: ${(err as Error).message}`);
+    } finally {
+      await db.close();
     }
   }
 
