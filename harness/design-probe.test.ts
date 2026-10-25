@@ -5,6 +5,7 @@ import { launchBrowser, probe } from './design-probe.js';
 
 interface Failure {
   width: number;
+  state: 'first-render' | 'settled';
   check: string;
   element: string;
   detail: string;
@@ -53,6 +54,19 @@ const pages: Record<string, string> = {
     <button></button>
     <input aria-label="Name" value="Typed text" style="color: #00ff00; background: ${TOKENS.surface}; border: 1px solid ${TOKENS.border}">
     <div style="width: 2000px; height: 10px"></div>
+  </body>
+</html>`,
+  '/settling.html': `<!doctype html>
+<html lang="en">
+  <body style="background: ${TOKENS.background}">
+    <section data-state="loading"><p style="color: #ff0000">Loading</p></section>
+    <script>
+      setTimeout(() => {
+        const panel = document.querySelector('section');
+        panel.dataset.state = 'ready';
+        panel.innerHTML = '<p style="color: #00ff00">Loaded</p>';
+      }, 300);
+    </script>
   </body>
 </html>`,
 };
@@ -115,6 +129,25 @@ test('a page with off-token colors and fonts, an unnamed raw button and a 2000 p
   expect(has('overflow', 'div', '1440px viewport')).toBe(true);
   expect(failures.filter((f) => f.width === 390).some((f) => f.check === 'overflow')).toBe(true);
   expect(failures.length).toBeGreaterThanOrEqual(3);
+  // No panel on it was loading, so it is judged once, as first rendered.
+  expect(failures.every((f) => f.state === 'first-render')).toBe(true);
+}, 60_000);
+
+test('a page whose live panel is loading is judged as first rendered and again once it settles', async () => {
+  const { stdout, stderr, exitCode } = await runProbe('/settling.html');
+
+  expect(stderr).toBe('');
+  expect(exitCode).toBe(1);
+  const { failures } = JSON.parse(stdout) as { failures: Failure[] };
+  const colors = failures
+    .filter((f) => f.width === 1440 && f.check === 'color')
+    .map((f) => [
+      f.state,
+      f.detail.includes('255, 0, 0') ? 'red' : f.detail.includes('0, 255, 0') ? 'green' : 'other',
+    ]);
+  expect(colors).toContainEqual(['first-render', 'red']);
+  expect(colors).toContainEqual(['settled', 'green']);
+  expect(colors).not.toContainEqual(['settled', 'red']);
 }, 60_000);
 
 test('a page that never answers stops the probe with exit 2 instead of hanging', async () => {
