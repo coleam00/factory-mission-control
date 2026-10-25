@@ -6,6 +6,7 @@
       "app/**",
       "server/**",
       "scripts/**",
+      "parsers/**",
       "package.json",
       "tsconfig.json",
       "biome.json",
