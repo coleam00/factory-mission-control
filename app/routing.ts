@@ -1,6 +1,7 @@
 import type { ComponentType } from 'react';
 import type { RouteObject } from 'react-router';
 import { NotFound, RouteError } from './errors';
+import { Shell } from './Shell';
 
 export interface RouteModule {
   default: ComponentType;
@@ -17,10 +18,14 @@ export function routesFromModules(modules: Record<string, RouteModule>): RouteOb
   });
 }
 
-/** The router's whole tree: the directory's routes, a not-found catch-all and an error state. */
+/**
+ * The router's whole tree: the shell around the directory's routes, a not-found catch-all and an
+ * error state.
+ */
 export function appRoutes(modules: Record<string, RouteModule>): RouteObject[] {
   return [
     {
+      Component: Shell,
       ErrorBoundary: RouteError,
       children: [...routesFromModules(modules), { path: '*', Component: NotFound }],
     },

@@ -4,6 +4,7 @@ import { parseArgs } from 'node:util';
 import { createApp } from './app';
 import { resolveBuildId } from './build-id';
 import { loadCheckEnv } from './check-env';
+import { liveFromEnv } from './live';
 import { SERVE_PORTS } from './ports';
 
 const { values } = parseArgs({
@@ -25,6 +26,10 @@ if (!existsSync(join(distDir, 'index.html'))) {
   process.exit(1);
 }
 
-const app = createApp({ buildId: resolveBuildId(Bun.env, repoRoot), distDir });
+const app = createApp({
+  buildId: resolveBuildId(Bun.env, repoRoot),
+  distDir,
+  live: liveFromEnv(Bun.env, repoRoot),
+});
 const server = Bun.serve({ hostname: '127.0.0.1', port, fetch: app.fetch });
 console.log(`serving http://localhost:${server.port}`);
