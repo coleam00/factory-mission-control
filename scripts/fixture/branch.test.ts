@@ -72,9 +72,45 @@ test('deletes the new branch and writes no env file when a later step fails', as
   expect(existsSync(join(repoRoot, CHECK_ENV_FILE))).toBe(false);
 });
 
-test.each([[['--help']], [['--name', 'check-mine']]])('creates nothing for %j', async (argv) => {
+test.each([[['--help']], [['--name', 'check-mine']], [['--stale', 'x']]])(
+  'creates nothing for %j',
+  async (argv) => {
+    const run = recordingDeps({ repoRoot: repo(), branches: BRANCHES });
+    expect(await main(argv, run.deps)).toBe(argv[0] === '--help' ? 0 : 2);
+    expect([...run.out, ...run.err].join('\n')).toContain('usage: bun run fixture:branch');
+    expect(run.neonCalls).toEqual([]);
+  },
+);
+
+test('--stale creates <own>-stale-<8 hex> from fixture and leaves the env file alone', async () => {
+  const repoRoot = repo({ MC_CHECK_BRANCH: 'check-abc' });
+  const envFile = join(repoRoot, CHECK_ENV_FILE);
+  const before = readFileSync(envFile, 'utf-8');
+  const run = recordingDeps({ repoRoot, branches: BRANCHES });
+  expect(await main(['--stale'], run.deps)).toBe(0);
+
+  expect(run.mutatingCalls).toHaveLength(1);
+  const [, name, , parent] = run.mutatingCalls[0].split(' ');
+  expect(name).toMatch(/^check-abc-stale-[0-9a-f]{8}$/);
+  expect(parent).toBe('br-fixture');
+  expect(run.opened).toEqual([]);
+  expect(readFileSync(envFile, 'utf-8')).toBe(before);
+  expect(run.out).toEqual([`created ${name} (stale for fixture:drop)`]);
+});
+
+test.each(['main', 'fixture', 'rewind-x'])(
+  '--stale refuses MC_CHECK_BRANCH=%s before any Neon call',
+  async (own) => {
+    const run = recordingDeps({ repoRoot: repo({ MC_CHECK_BRANCH: own }), branches: BRANCHES });
+    expect(await main(['--stale'], run.deps)).not.toBe(0);
+    expect(run.neonCalls).toEqual([]);
+    expect(run.err.join('\n')).toContain(`refusing branch '${own}'`);
+  },
+);
+
+test("--stale without this checkout's branch creates nothing", async () => {
   const run = recordingDeps({ repoRoot: repo(), branches: BRANCHES });
-  expect(await main(argv, run.deps)).toBe(argv[0] === '--help' ? 0 : 2);
-  expect([...run.out, ...run.err].join('\n')).toContain('usage: bun run fixture:branch');
+  expect(await main(['--stale'], run.deps)).toBe(1);
   expect(run.neonCalls).toEqual([]);
+  expect(run.err.join('\n')).toContain('run `bun run fixture:branch` first');
 });

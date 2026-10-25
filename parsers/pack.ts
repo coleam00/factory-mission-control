@@ -104,7 +104,8 @@ type Node = Record<string, unknown>;
 
 const AGENT_KINDS = new Set<StepKind>(['command', 'loop', 'prompt']);
 
-const HOOKS_DIR = '.factory/hooks';
+/** The only directory of the factory template the parser reads. */
+export const HOOKS_DIR = '.factory/hooks';
 
 function slash(path: string): string {
   return path.replaceAll('\\', '/');
