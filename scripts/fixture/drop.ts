@@ -87,7 +87,7 @@ export const main: Main = async (argv, deps) => {
     }
     return failing(deps, () => drop(deps, true, at));
   }
-  return noArguments(argv, USAGE, deps) ?? failing(deps, () => drop(deps, false));
+  return noArguments(argv, USAGE, deps, ['--dry-run']) ?? failing(deps, () => drop(deps, false));
 };
 
 if (import.meta.main) await runCli(main);

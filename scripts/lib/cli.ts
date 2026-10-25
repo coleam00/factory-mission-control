@@ -80,15 +80,23 @@ export async function runCli(main: Main): Promise<never> {
 
 /**
  * The exit code for a command that takes no arguments when given some: usage and 0 for `--help`,
- * usage and 2 for anything else. Undefined when `argv` is empty and the command may run.
+ * usage and 2 for anything else. Undefined when `argv` is empty and the command may run. A command
+ * that takes flags of its own and sends the rest here lists them in `accepted`, so the refusal
+ * names the first argument it does not take rather than one it does.
  */
-export function noArguments(argv: string[], usage: string, deps: Deps): number | undefined {
+export function noArguments(
+  argv: string[],
+  usage: string,
+  deps: Deps,
+  accepted: string[] = [],
+): number | undefined {
   if (argv.length === 0) return undefined;
   if (argv.length === 1 && (argv[0] === '--help' || argv[0] === '-h')) {
     deps.out(usage);
     return 0;
   }
-  deps.err(`unexpected argument ${argv[0]}\n${usage}`);
+  const refused = argv.find((arg) => !accepted.includes(arg)) ?? argv[0];
+  deps.err(`unexpected argument ${refused}\n${usage}`);
   return 2;
 }
 
