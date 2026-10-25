@@ -39,7 +39,12 @@ case. "Without a reload" means a marker set on `window` before the step is still
 
 Judge scripts sit in `.factory/holdout/judges/`. Each reads one JSON file the verifier records during
 the run (its shape is documented at the top of the script), prints PASS, FAIL or INCONCLUSIVE with
-reasons, and exits 0, 1 or 2. Run them with `bun .factory/holdout/judges/<name>.js <record.json>`.
+reasons, and exits 0, 1 or 2. `judges/liveness.js` can also print INCOMPLETE (exit 3): nothing it
+watched failed, but a watched panel's whole screen is not served on the commit (no route; the app says
+"Nothing is at this address"), so the scenario's verdict is INCOMPLETE. A served screen that is slow,
+or never shows the change (including one that lacks the panel), is still FAIL. Its record must list
+every panel the scenario's steps watch, so leaving a panel out of the record can never yield PASS.
+Run them with `bun .factory/holdout/judges/<name>.js <record.json>`.
 
 ---
 
