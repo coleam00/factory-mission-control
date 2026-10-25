@@ -1,47 +1,40 @@
 import { expect, test } from 'bun:test';
-import {
-  compareLinks,
-  NOT_RECORDED,
-  stripEntries,
-  utcDay,
-  type VersionStripRow,
-} from './version-strip';
+import { compareLinks, NOT_RECORDED, stripEntries, type VersionStripRow } from './version-strip';
 
-const row = (over: Partial<VersionStripRow>): VersionStripRow => ({
-  digest: null,
-  first_run_at: null,
-  pin_sha: null,
-  reason: null,
-  hypothesis: null,
-  measure: null,
+const version = (
+  digest: string,
+  firstRun: string,
+  pin: string | null,
+  over = {},
+): VersionStripRow => ({
+  digest,
+  first_run_at: new Date(firstRun),
+  pin_sha: pin,
+  reason: pin === null ? null : `reason ${pin}`,
+  hypothesis: 'faster',
+  measure: 'hours',
   committed_at: null,
   ...over,
 });
 
-test('utcDay reads every form a timestamp reaches the browser in', () => {
-  expect(utcDay('2026-10-01T23:30:00.000Z')).toBe('2026-10-01');
-  expect(utcDay('2026-10-01T23:30:00+00:00')).toBe('2026-10-01');
-  expect(utcDay('2026-10-01 23:30:00+00')).toBe('2026-10-01');
-  expect(utcDay('2026-10-02 01:30:00+02')).toBe('2026-10-01');
-});
-
 test('entries run oldest first, a pin not yet run last, and a missing trailer is not recorded', () => {
   const entries = stripEntries([
-    row({ committed_at: '2026-10-25 12:00:00+00', pin_sha: 'p4', reason: 'next' }),
-    row({ digest: 'sha256:c3', first_run_at: '2026-10-20T09:00:00Z', pin_sha: 'p3', reason: 'V3' }),
-    row({
-      digest: 'sha256:a1',
-      first_run_at: '2026-10-01T09:00:00Z',
-      pin_sha: 'p1',
-      reason: 'V1',
-      hypothesis: 'faster',
-      measure: 'hours',
-    }),
-    row({ digest: 'sha256:b2', first_run_at: '2026-10-10T09:00:00Z', pin_sha: 'p2', measure: ' ' }),
+    {
+      digest: null,
+      first_run_at: null,
+      pin_sha: 'p4',
+      reason: 'next',
+      hypothesis: null,
+      measure: null,
+      committed_at: new Date('2026-10-25T12:00:00Z'),
+    },
+    version('sha256:c3', '2026-10-20T23:30:00Z', 'p3', { hypothesis: null, measure: null }),
+    version('sha256:a1', '2026-10-01T09:00:00Z', 'p1'),
+    version('sha256:b2', '2026-10-10T09:00:00Z', null, { measure: ' ' }),
   ]);
   expect(entries.map((e) => [e.digest, e.pin, e.date])).toEqual([
     ['sha256:a1', 'p1', '2026-10-01'],
-    ['sha256:b2', 'p2', '2026-10-10'],
+    ['sha256:b2', null, '2026-10-10'],
     ['sha256:c3', 'p3', '2026-10-20'],
     [null, 'p4', '2026-10-25'],
   ]);
