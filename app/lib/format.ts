@@ -4,14 +4,16 @@ export function shortRunId(id: string): string {
   return id.replace(/-/g, '').slice(0, 8);
 }
 
-/** HH:MM:SS (or MM:SS under an hour). Tabular numerals recommended at call site. */
+/** H:MM:SS, with a day prefix past a day. Tabular numerals recommended at call site. */
 export function formatElapsed(totalSeconds: number): string {
   const s = Math.max(0, Math.floor(totalSeconds));
-  const h = Math.floor(s / 3600);
+  const days = Math.floor(s / 86_400);
+  const h = Math.floor((s % 86_400) / 3600);
   const m = Math.floor((s % 3600) / 60);
   const sec = s % 60;
   const pad = (n: number): string => n.toString().padStart(2, '0');
-  return h > 0 ? `${pad(h)}:${pad(m)}:${pad(sec)}` : `${pad(m)}:${pad(sec)}`;
+  const time = `${h}:${pad(m)}:${pad(sec)}`;
+  return days > 0 ? `${days}d ${time}` : time;
 }
 
 /**
@@ -77,14 +79,13 @@ export function formatClock(iso: string): string {
 }
 
 /**
- * Compact USD cost — under a dollar shows cents, over a dollar shows two
- * decimals. Sub-cent values still surface (rounded to 4 decimals) so cheap
- * runs don't look free.
+ * USD cost with at least two decimals, trimming only extra trailing zeros.
+ * Keep the sub-dollar precision (3 decimals, or 4 below a cent) so cheap
+ * runs stay visible.
  */
 export function formatCost(usd: number): string {
-  if (usd >= 1) return `$${usd.toFixed(2)}`;
-  if (usd >= 0.01) return `$${usd.toFixed(3)}`;
-  return `$${usd.toFixed(4)}`;
+  const decimals = usd >= 1 ? 2 : usd >= 0.01 ? 3 : 4;
+  return `$${usd.toFixed(decimals).replace(/(\.\d{2}\d*?)0+$/, '$1')}`;
 }
 
 /**

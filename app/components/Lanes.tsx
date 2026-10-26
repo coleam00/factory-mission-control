@@ -1,10 +1,9 @@
 import { type ReactElement, type ReactNode, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router';
-import { formatCost, shortRunId } from '../lib/format';
+import { formatCost, formatElapsed, shortRunId } from '../lib/format';
 import {
   costOf,
   durationOf,
-  formatSpan,
   type LaneRow,
   lanes,
   OUTCOME_LABEL,
@@ -156,7 +155,7 @@ export function LaneList({
                 </span>
               </Field>
               <Field label="On step for">
-                <span data-elapsed>{onStep === null ? NONE : formatSpan(onStep)}</span>
+                <span data-elapsed>{onStep === null ? NONE : formatElapsed(onStep)}</span>
               </Field>
               <Field label="Cost so far">{costText(lane.cost_usd)}</Field>
             </dl>
@@ -254,7 +253,7 @@ export function RecentList({
                 {shortRunId(lap.run_id)}
               </span>
               <span className={`${MONO} text-right text-text-secondary`} data-duration>
-                {duration === null ? NONE : formatSpan(duration)}
+                {duration === null ? NONE : formatElapsed(duration)}
               </span>
               <span className={`${MONO} text-right text-text-primary`}>
                 {costText(lap.cost_usd)}
