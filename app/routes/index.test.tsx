@@ -20,7 +20,7 @@ const textOf = (html: string) => html.replace(/<[^>]+>/g, ' ').trim();
 
 test('an empty factory map shows the empty state without step links', () => {
   const html = render([], 'ready');
-  expect(textOf(html)).toBe('No architecture is stored for the pinned version yet.');
+  expect(textOf(html)).toBe('No factory map is available yet.');
   expect(html).not.toMatch(/<a\b/);
 });
 
