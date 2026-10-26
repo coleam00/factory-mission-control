@@ -495,7 +495,7 @@ async function seedVersionMismatches(
 ): Promise<{ mismatches: string[]; report: string; digests: string[] }> {
   const shown = await page.evaluate<ShownEntry[]>(entriesOnScreen);
   const versions = await db.query(
-    `SELECT v.digest, v.first_run_at, p.sha, p.reason, p.hypothesis, p.measure
+    `SELECT v.digest, v.first_run_at, p.sha, p.reason, p.hypothesis, p.measure, p.committed_at
      FROM mc.versions v LEFT JOIN mc.pins p ON p.sha = v.pin_sha
      WHERE v.factory = $1 ORDER BY v.first_run_at`,
     [factory],
@@ -513,7 +513,10 @@ async function seedVersionMismatches(
       kind: 'version',
       digest: String(version.digest),
       pin: String(pins[i]?.sha),
-      date: new Date(version.first_run_at as string).toISOString().slice(0, 10),
+      date:
+        version.committed_at === null
+          ? 'not recorded'
+          : new Date(version.committed_at as string).toISOString().slice(0, 10),
       reason: recorded(version.reason),
       hypothesis: recorded(version.hypothesis),
       measure: recorded(version.measure),

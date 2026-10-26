@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { createMemoryRouter, RouterProvider } from 'react-router';
-import { NOT_RECORDED, type StripEntry } from '../lib/version-strip';
+import { NOT_RECORDED, type StripEntry, stripEntries } from '../lib/version-strip';
 import { VersionList } from './VersionStrip';
 
 const entry = (over: Partial<StripEntry>): StripEntry => ({
@@ -18,12 +18,12 @@ const V1 = `sha256:${'a1'.repeat(32)}`;
 const V2 = `sha256:${'b2'.repeat(32)}`;
 const V3 = `sha256:${'c3'.repeat(32)}`;
 const entries = [
-  entry({ digest: V1, pin: '8e3e1cef00', date: '2026-10-01' }),
-  entry({ digest: V2, pin: '5ffd60c600', date: '2026-10-10' }),
+  entry({ digest: V1, pin: '8e3e1cef00', date: '2026-09-30' }),
+  entry({ digest: V2, pin: '5ffd60c600', date: '2026-10-09' }),
   entry({
     digest: V3,
     pin: '58c5f77400',
-    date: '2026-10-20',
+    date: '2026-10-19',
     hypothesis: NOT_RECORDED,
     measure: NOT_RECORDED,
   }),
@@ -52,6 +52,31 @@ function render(selected: readonly string[], search = '', rows = entries): strin
 
 const entryHtml = (html: string, marker: string) =>
   html.split('<li').find((li) => li.includes(marker)) ?? '';
+
+test('the visible date and select label follow the pin, including an unknown pin', () => {
+  const row = {
+    digest: V1,
+    first_run_at: new Date('2026-10-01T09:00:00Z'),
+    pin_sha: null,
+    committed_at: null,
+    reason: null,
+    hypothesis: null,
+    measure: null,
+  };
+  const unknown = render([], '', stripEntries([row]));
+  expect(unknown).toContain('data-date="not recorded"');
+  expect(unknown).toContain('Select not recorded');
+  expect(unknown).not.toContain('2026-10-01');
+  const labelled = render(
+    [],
+    '',
+    stripEntries([{ ...row, pin_sha: 'latepin1', committed_at: new Date('2026-09-30T18:00:00Z') }]),
+  );
+  expect(labelled).toContain('data-pin="latepin1"');
+  expect(labelled).toContain('data-date="2026-09-30"');
+  expect(labelled).toContain('Select 2026-09-30');
+  expect(labelled).not.toContain('2026-10-01');
+});
 
 test('a version with no trailers shows not recorded, and a pin not yet run cannot be picked', () => {
   const html = render([]);
