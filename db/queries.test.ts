@@ -1,9 +1,11 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { OUTCOMES } from '../app/lib/laps';
 import { joinParts } from '../app/lib/step-detail';
 import { seededDb } from '../scripts/fixture/seed';
-import { writeRow } from '../scripts/fixture/write';
+import { seedLaps } from '../scripts/fixture/seed-laps';
+import { eventData, writeRow } from '../scripts/fixture/write';
 import { REPO_ROOT } from '../scripts/lib/cli';
 import type { Db } from '../scripts/lib/db';
 import { runMigrations } from '../scripts/migrate';
@@ -445,5 +447,68 @@ describe('issue-graph on the seed', () => {
 
   test('another factory sees none of these issues', async () => {
     expect(await db.query(sql, ['other'])).toEqual([]);
+  });
+});
+
+describe('lanes and recent-laps on the seed', () => {
+  let db: Db;
+  const sqlOf = (name: string) => queries.find(([n]) => n === name)?.[1] as string;
+  const laps = seedLaps(readFileSync(join(REPO_ROOT, 'fixtures', 'seed.sql'), 'utf8'));
+  const finished = laps.filter((l) => !['running', 'paused', 'pending'].includes(l.what));
+
+  beforeAll(async () => {
+    db = await seededDb(REPO_ROOT, readFileSync(join(REPO_ROOT, 'fixtures', 'seed.sql'), 'utf8'));
+  }, 60_000);
+
+  afterAll(() => db.close());
+
+  test('lanes are exactly the two running seed laps, each with its claim, pick and cost', async () => {
+    const lanes = await db.query(sqlOf('lanes'), ['mission-control']);
+    const running = laps.filter((l) => l.what === 'running');
+    expect(running).toHaveLength(2);
+    expect(lanes.map((l) => [l.run_id, l.issue_number]).sort()).toEqual(
+      running.map((l) => [l.runId, l.issue]).sort(),
+    );
+    for (const lane of lanes) {
+      expect([lane.route, lane.depth]).toEqual(['simple', 'normal']);
+      const [step] = await db.query(
+        `SELECT step_id, started_at FROM mc.lap_steps WHERE run_id = $1 AND status = 'running'`,
+        [lane.run_id],
+      );
+      expect([lane.step_id, lane.step_started_at]).toEqual([step.step_id, step.started_at]);
+      const [cost] = await db.query(
+        'SELECT sum(cost_usd)::float8 AS c FROM mc.lap_steps WHERE run_id = $1',
+        [lane.run_id],
+      );
+      expect(lane.cost_usd).toBe(cost.c);
+      expect(lane.cost_usd).toBeGreaterThan(0);
+    }
+  });
+
+  test("recent laps are every finished seed lap with the seed's outcome, all six present", async () => {
+    const recent = await db.query(sqlOf('recent-laps'), ['mission-control']);
+    expect(Object.fromEntries(recent.map((l) => [l.run_id, l.outcome]))).toEqual(
+      Object.fromEntries(finished.map((l) => [l.runId, l.what])),
+    );
+    expect(new Set(recent.map((l) => l.outcome))).toEqual(new Set(OUTCOMES));
+  });
+
+  test('a review node_started from fixture:write moves its lane to review', async () => {
+    const errors = () => db.query('SELECT id FROM mc.projection_errors ORDER BY id');
+    const before = await errors();
+    const [lane] = await db.query(sqlOf('lanes'), ['mission-control']);
+    await db.query(
+      `INSERT INTO remote_agent_workflow_events (workflow_run_id, event_type, step_name, data)
+       VALUES ($1, 'node_started', 'review', $2::jsonb)`,
+      [lane.run_id, eventData('review', 'node_started', new Date('2026-10-25T12:00:00Z'))],
+    );
+    const moved = await db.query(sqlOf('lanes'), ['mission-control']);
+    expect(moved.find((l) => l.run_id === lane.run_id)?.step_id).toBe('review');
+    expect(await errors()).toEqual(before);
+  });
+
+  test('another factory sees none of these laps', async () => {
+    expect(await db.query(sqlOf('lanes'), ['other'])).toEqual([]);
+    expect(await db.query(sqlOf('recent-laps'), ['other'])).toEqual([]);
   });
 });
