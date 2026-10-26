@@ -1,6 +1,7 @@
 import type { ReactElement } from 'react';
 import { RewindBranches } from '../components/RewindList';
-import { useFactory, useLive } from '../live/LiveProvider';
+import { useFactory } from '../live/FactoryProvider';
+import { useLive } from '../live/LiveProvider';
 
 export default function Rewind(): ReactElement {
   const live = useLive();

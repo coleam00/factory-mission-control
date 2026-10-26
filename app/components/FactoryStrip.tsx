@@ -2,7 +2,8 @@ import type { ReactElement } from 'react';
 import { switchBranch } from '../lib/rewind';
 import type { PanelState } from '../live/LivePanel';
 import { LivePanel } from '../live/LivePanel';
-import { useFactory, useLive } from '../live/LiveProvider';
+import { useFactory } from '../live/FactoryProvider';
+import { useLive } from '../live/LiveProvider';
 import { LiveDot } from './LiveDot';
 
 export interface StatusStripRow {

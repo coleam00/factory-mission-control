@@ -1,6 +1,6 @@
 import type { ReactElement } from 'react';
 import { NavLink, useParams } from 'react-router';
-import { useFactory } from '../live/LiveProvider';
+import { useFactory } from '../live/FactoryProvider';
 import type { FactoryScreen } from '../routing';
 
 const LINK =
@@ -31,8 +31,9 @@ function ScreenLink({ to, label }: { to: string; label: string }): ReactElement 
 }
 
 /**
- * The shell's links: the home map, then each factory screen for `factory`. The current screen's
- * link is `aria-current="page"`.
+ * The shell's links: the home map, then each factory screen for `factory`. On a factory's pages
+ * the home map is that factory's own (`/f/:factory`). The current screen's link is
+ * `aria-current="page"`.
  */
 export function ScreenNavBody({
   screens,
@@ -41,9 +42,11 @@ export function ScreenNavBody({
   screens: readonly FactoryScreen[];
   factory: string | undefined;
 }): ReactElement {
+  const inUrl = useParams().factory;
+  const home = inUrl === undefined ? '/' : `/f/${encodeURIComponent(inUrl)}`;
   return (
     <nav aria-label="Screens" className="mx-auto flex max-w-6xl flex-wrap gap-x-5 px-6">
-      <ScreenLink to="/" label="Map" />
+      <ScreenLink to={home} label="Map" />
       {factory === undefined
         ? null
         : screens.map((screen) => (
@@ -57,8 +60,7 @@ export function ScreenNavBody({
   );
 }
 
-/** The links for the factory in the URL or, off a factory's pages, the one every panel shows. */
+/** The links for the factory every panel shows. */
 export function ScreenNav({ screens }: { screens: readonly FactoryScreen[] }): ReactElement {
-  const shown = useFactory();
-  return <ScreenNavBody screens={screens} factory={useParams().factory ?? shown} />;
+  return <ScreenNavBody screens={screens} factory={useFactory()} />;
 }

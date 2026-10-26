@@ -34,7 +34,9 @@ How this repository is built. The product is `docs/mission-control.prd.md`; this
 - Never connect to the `main` database branch from a check, a test or a lap. Use a `check-*` branch
   (`bun run fixture:branch`). `scripts/` refuses any other branch name for writes.
 - Configuration by environment only: `MC_DATABASE_URL`, `NEON_REALTIME_SECRET`, `NEON_API_KEY`,
-  `NEON_PROJECT_ID`. Never `DATABASE_URL`. Never commit a secret; `.mc-check.env` is gitignored.
+  `NEON_PROJECT_ID`, and optionally `MC_FACTORIES_FILE` (a factories file served instead of
+  `factories.json`; checks use it to add a fixture-only factory, a real install leaves it unset).
+  Never `DATABASE_URL`. Never commit a secret; `.mc-check.env` is gitignored.
 - Serve on `127.0.0.1:<port>`, open as `http://localhost:<port>`, ports 8850-8864 only.
 - Holdout scenario text never enters the dashboard's tables or screens: ids and verdicts only.
 - Design: copy from `docs/design/archon-console/` (tokens in `index.css` and `theme.css`, and the

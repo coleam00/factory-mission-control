@@ -7,6 +7,7 @@ import { ISSUE_STATES, STATE_TOKEN } from '../app/lib/issue-graph';
 import { OUTCOME_TOKEN, OUTCOMES } from '../app/lib/laps';
 import { realtimeUrlFor } from '../server/live';
 import { SERVE_PORTS } from '../server/ports';
+import { SECOND_FACTORY } from './fixture/seed';
 import { seedLaps } from './fixture/seed-laps';
 import { NEXT_TO_LABEL } from './fixture/write';
 import { openPage, type Page } from './lib/cdp';
@@ -14,6 +15,7 @@ import { type Deps, failing, guardedDatabaseUrl, type Main, runCli } from './lib
 import type { Db } from './lib/db';
 import { machineLockPath, withMachineLock } from './lib/machine-lock';
 import { rewindPhase } from './live/rewind';
+import { switcherPhase } from './live/switcher';
 
 const USAGE = [
   'usage: bun run test:live [--out <dir>] [--hold <seconds>]',
@@ -53,11 +55,19 @@ const USAGE = [
   '  It opens /rewind on a second server, makes a rewind branch of the check branch with',
   '  `bun run rewind:create` before the hold and another after it, switches to the first and back,',
   '  writing rewind-run.txt, rewind-timings.json, rewind.png and rewind-design-probe.json.',
+  "  Its server reads factories.json plus the seed's second factory (factories.json in --out, as",
+  '  MC_FACTORIES_FILE). Before the diff it checks the factory switcher: every factory in that file',
+  '  with its running laps, an inserted lap on the second factory timed to its count, choosing that',
+  '  factory from /, every factory screen and step detail, its map, strip and lanes, and the',
+  '  remembered choice with its fallback for a removed factory; then, on a second server reading',
+  "  factories.json alone, that the switcher lists only factories.json's factories and the second",
+  '  factory is neither sealed for nor shown when remembered. It writes switcher-check.txt,',
+  '  switcher-timings.json, switcher.png and switcher-design-probe.json.',
 ].join('\n');
 
 export const LIMITS = { readyMs: 2000, firstSnapshotMs: 500, insertToScreenMs: 5000 };
 const RENEWALS_IN_180S = 3;
-const PANEL = '[data-live="status-strip"]';
+export const PANEL = '[data-live="status-strip"]';
 /** Every live query the step screen reads, one panel each. */
 const STEP_QUERIES = [
   'step-detail',
@@ -79,7 +89,7 @@ const SEED_CHECK_APP = {
   hook: '.factory/hooks/holdout_fence.py',
   admitted: ['holdout-verifier', 'holdout-writer'],
 };
-const MAP = '[data-live="home-map"]';
+export const MAP = '[data-live="home-map"]';
 /**
  * The seed's pinned architecture: the newest pin with architecture rows is V2 (V3 stores none),
  * whose loop drops `briefs` and adds `tally` (scripts/fixture/seed.ts).
@@ -122,7 +132,7 @@ const inLedger = (group: 'testing' | 'verdicts', pin: string) =>
   `document.querySelector('${LEDGER} [data-ledger-group="${group}"] [data-ledger-entry][data-pin="${pin}"]') !== null`;
 const ISSUES = '[data-live="issue-graph"]';
 const LAPS_QUERIES = ['lanes', 'recent-laps'] as const;
-const LANE = '[data-live="lanes"] [data-lane]';
+export const LANE = '[data-live="lanes"] [data-lane]';
 const RECENT_LAP = '[data-live="recent-laps"] [data-recent-lap]';
 const laneOn = (runId: string, step: string) =>
   `document.querySelector('[data-live="lanes"] [data-lane="${runId}"]')?.getAttribute('data-step') === '${step}'`;
@@ -286,7 +296,7 @@ interface ShownNode {
 const liveCountOf = (step: string) =>
   `document.querySelector('${MAP} [data-step="${step}"]')?.getAttribute('data-live-count')`;
 
-const mapNodes = (page: Page) =>
+export const mapNodes = (page: Page) =>
   page.evaluate<ShownNode[]>(
     `[...document.querySelectorAll('${MAP} [data-node-role]')].map((el) => ({
       role: el.getAttribute('data-node-role'),
@@ -299,7 +309,7 @@ const mapNodes = (page: Page) =>
  * Running laps per map node for `factory`, straight from the laps tables. Archon names a nested
  * step by its path joined with `__`, and a node counts the laps on it or anywhere beneath it.
  */
-async function lapsOnNodes(db: Db, factory: string): Promise<(path: string) => number> {
+export async function lapsOnNodes(db: Db, factory: string): Promise<(path: string) => number> {
   const running = await db.query(
     `SELECT ls.run_id, ls.step_id
        FROM mc.lap_steps ls JOIN mc.laps l ON l.run_id = ls.run_id
@@ -318,7 +328,7 @@ async function lapsOnNodes(db: Db, factory: string): Promise<(path: string) => n
 }
 
 /** Where the map, in document order, differs from the seed and from `lapsOn`: one line each. */
-function mapMismatches(nodes: ShownNode[], lapsOn: (path: string) => number): string[] {
+export function mapMismatches(nodes: ShownNode[], lapsOn: (path: string) => number): string[] {
   const failures: string[] = [];
   const idOf = (path: string | null) => path?.slice(path.lastIndexOf('/') + 1) ?? '';
   const ids = (role: string) => nodes.filter((n) => n.role === role).map((n) => idOf(n.step));
@@ -1377,6 +1387,13 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
   const { factories } = JSON.parse(readFileSync(join(deps.repoRoot, 'factories.json'), 'utf-8'));
   const factory: string = factories[0].name;
   mkdirSync(outDir, { recursive: true });
+  // The seed's second factory is in mc.factories only; the app shows it once its file names it.
+  const factoriesFile = join(outDir, 'factories.json');
+  writeFileSync(
+    factoriesFile,
+    `${JSON.stringify({ factories: [...factories, SECOND_FACTORY] }, null, 2)}
+`,
+  );
 
   const failures: string[] = [];
   const panelTimings = (): Timings => ({
@@ -1548,7 +1565,7 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
     const base = `http://localhost:${port}`;
     const proc = Bun.spawn(['bun', 'server/main.ts', '--port', String(port)], {
       cwd: deps.repoRoot,
-      env: deps.env,
+      env: { ...deps.env, MC_FACTORIES_FILE: factoriesFile },
       stdout: 'ignore',
       stderr: 'inherit',
     });
@@ -1885,6 +1902,9 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
     deps.out(
       `first label reached the issues screen in ${issueTimings.labelToScreen.ms ?? 'never'} ms`,
     );
+
+    // Before the diff adds steps to the current architecture, which the second factory's map shows.
+    await switcherPhase({ deps, db, base, outDir, factory, factoriesFile, inserted, failures });
 
     diffTimings.url = `/f/${factory}/diff?a=${encodeURIComponent(v1)}&b=${encodeURIComponent(v2)}`;
     diffPage = await openPage(deps.env);

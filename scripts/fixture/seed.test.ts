@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { REPO_ROOT } from '../lib/cli';
 import type { Db } from '../lib/db';
-import { buildSeed, seededDb } from './seed';
+import { buildSeed, SECOND_FACTORY, SEED_CODEBASE, seededDb } from './seed';
 import { markerHits, minimums, scorecard, tableCounts } from './seed-report';
 import { writeRow } from './write';
 
@@ -127,4 +127,27 @@ test('one running lap has been on its step for over a day', async () => {
        AND s.started_at < (SELECT max(started_at) FROM mc.laps) - interval '1 day'`,
   );
   expect(row?.n).toBe(1);
+});
+
+test("the seed holds a second factory with one running lap, kept out of mission-control's numbers", async () => {
+  const strip = readFileSync(join(REPO_ROOT, 'db', 'queries', 'status-strip.sql'), 'utf8');
+  expect(await db.query('SELECT name FROM mc.factories ORDER BY name')).toEqual([
+    { name: 'mission-control' },
+    { name: SECOND_FACTORY.name },
+  ]);
+  expect(
+    await db.query(
+      `SELECT s.step_id, s.status FROM mc.laps l JOIN mc.lap_steps s USING (run_id)
+        WHERE l.factory = $1 AND l.workflow_name = 'archon-loop' AND l.status = 'running'`,
+      [SECOND_FACTORY.name],
+    ),
+  ).toEqual([{ step_id: 'claim', status: 'running' }]);
+  expect(await db.query(strip, [SECOND_FACTORY.name])).toEqual([{ running: 1 }]);
+  const [own] = await db.query(
+    `SELECT count(*)::int AS running FROM mc.laps l
+      JOIN remote_agent_workflow_runs r ON r.id = l.run_id
+     WHERE r.codebase_id = $1 AND l.workflow_name = 'archon-loop' AND l.status = 'running'`,
+    [SEED_CODEBASE],
+  );
+  expect(await db.query(strip, ['mission-control'])).toEqual([own]);
 });

@@ -19,6 +19,7 @@ export type RewindSealer = Sealer & { name: string };
 
 /** What the server needs to seal live queries; absent when the environment cannot seal. */
 export interface Live {
+  /** The factories this server shows and seals for, from its factories file. */
   factories: string[];
   /** Every file in `db/queries/` by its name without `.sql`: the only SQL the server seals. */
   queries: Map<string, string>;
@@ -78,8 +79,14 @@ export function rewindOpener(api: NeonApi, db: string): (name: string) => Promis
   };
 }
 
-function factoryNames(repoRoot: string): string[] {
-  const { factories } = JSON.parse(readFileSync(join(repoRoot, 'factories.json'), 'utf-8')) as {
+/**
+ * The factories file: `MC_FACTORIES_FILE` when set (a check's own list, as `test:live` writes),
+ * else the repository's factories.json. Only its names are shown and sealed for: a row of
+ * `mc.factories` the file does not name is never listed, so one entry means one factory.
+ */
+export function factoryNames(env: Env, repoRoot: string): string[] {
+  const file = env.MC_FACTORIES_FILE || join(repoRoot, 'factories.json');
+  const { factories } = JSON.parse(readFileSync(file, 'utf-8')) as {
     factories: { name: string }[];
   };
   return factories.map((f) => f.name);
@@ -93,7 +100,7 @@ export function liveFromEnv(env: Env, repoRoot: string): Live | undefined {
   const apiKey = env.NEON_API_KEY;
   const projectId = env.NEON_PROJECT_ID;
   return {
-    factories: factoryNames(repoRoot),
+    factories: factoryNames(env, repoRoot),
     queries: loadLiveQueries(join(repoRoot, 'db', 'queries')),
     home: sealerFor(realtimeUrlFor(databaseUrl), secret, db),
     openRewind:

@@ -85,7 +85,7 @@ test('adding a factory route file adds its link with no edit to the shell', () =
   expect(after.some((l) => l.href.includes(':run') || l.href.includes('/laps/'))).toBe(false);
 });
 
-test('from / the versions link reaches the strip and the home link returns, in the same router', async () => {
+test('from / the versions link reaches the strip and the Map link returns to that factory’s map', async () => {
   const { router, html } = navAt(registeredRoutes(), '/');
   const versions = links(html()).find((l) => l.name === 'Versions');
   expect(versions?.href).toBe(`/f/${FACTORY}/versions`);
@@ -98,7 +98,8 @@ test('from / the versions link reaches the strip and the home link returns, in t
 
   const home = there.find((l) => l.name === 'Map');
   await router.navigate(home?.href ?? '');
-  expect(router.state.location.pathname).toBe('/');
+  expect(router.state.location.pathname).toBe(`/f/${FACTORY}`);
+  expect(router.state.matches.at(-1)?.route.path).toBe('/f/:factory');
   expect(links(html()).find((l) => l.current)?.name).toBe('Map');
 });
 

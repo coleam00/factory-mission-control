@@ -31,6 +31,7 @@ const USAGE =
   'usage: bun run fixture:seed (writes fixtures/seed.sql and fixtures/expected-scorecard.json)';
 
 export const SEED_CODEBASE = '5eed0000-0000-4000-8000-000000000000';
+const SECOND_CODEBASE = '5eed0000-0000-4000-8000-000000000001';
 const MINUTE = 60_000;
 
 const iso = (ms: number) => new Date(ms).toISOString();
@@ -984,7 +985,7 @@ function githubSql(runs: Run[]): string[] {
   return out;
 }
 
-// --- The projection (PRD 11.2, 11.4, 11.7), over the seed's codebase only -----------------------
+// --- The projection (PRD 11.2, 11.4, 11.7), over the seed's codebases only ----------------------
 
 const PROJECTION = `INSERT INTO mc.laps (run_id, factory, workflow_name, status, digest, started_at, completed_at)
 SELECT r.id, f.name, r.workflow_name, r.status, r.metadata->'workflow_source'->>'digest',
@@ -992,7 +993,7 @@ SELECT r.id, f.name, r.workflow_name, r.status, r.metadata->'workflow_source'->>
 FROM remote_agent_workflow_runs r
 JOIN remote_agent_codebases c ON c.id = r.codebase_id
 JOIN mc.factories f ON f.codebase = c.name
-WHERE r.codebase_id = '${SEED_CODEBASE}'
+WHERE r.codebase_id IN ('${SEED_CODEBASE}', '${SECOND_CODEBASE}')
 ON CONFLICT DO NOTHING;
 
 -- A step's last event decides its status and carries its timing, model, tokens, cost and output.
@@ -1014,7 +1015,7 @@ SELECT DISTINCT ON (e.workflow_run_id, e.step_name)
     THEN (e.data->'structured_output') - 'lines' END
 FROM remote_agent_workflow_events e
 JOIN remote_agent_workflow_runs r ON r.id = e.workflow_run_id
-WHERE r.codebase_id = '${SEED_CODEBASE}'
+WHERE r.codebase_id IN ('${SEED_CODEBASE}', '${SECOND_CODEBASE}')
   AND e.event_type IN ('node_started', 'node_completed', 'node_failed', 'node_skipped')
 ORDER BY e.workflow_run_id, e.step_name, e.created_at DESC, e.event_order DESC
 ON CONFLICT DO NOTHING;
@@ -1024,7 +1025,7 @@ ON CONFLICT DO NOTHING;
 SELECT mc.record_step_attempt(e.workflow_run_id, e.event_type, e.step_name, e.data)
 FROM remote_agent_workflow_events e
 JOIN remote_agent_workflow_runs r ON r.id = e.workflow_run_id
-WHERE r.codebase_id = '${SEED_CODEBASE}'
+WHERE r.codebase_id IN ('${SEED_CODEBASE}', '${SECOND_CODEBASE}')
   AND e.event_type IN ('node_completed', 'node_failed', 'node_skipped')
 ORDER BY e.created_at, e.event_order;
 
@@ -1040,7 +1041,7 @@ FROM remote_agent_workflow_events e
 JOIN remote_agent_workflow_runs r ON r.id = e.workflow_run_id
 CROSS JOIN LATERAL jsonb_array_elements(e.data->'structured_output'->'lines')
   WITH ORDINALITY AS l(line, position)
-WHERE r.codebase_id = '${SEED_CODEBASE}'
+WHERE r.codebase_id IN ('${SEED_CODEBASE}', '${SECOND_CODEBASE}')
   AND e.event_type = 'node_completed' AND e.step_name = 'check-app'
   AND jsonb_typeof(e.data->'structured_output'->'lines') = 'array'
 ON CONFLICT DO NOTHING;
@@ -1169,12 +1170,62 @@ function archonSql(factory: FactoryEntry, runs: Run[]): string[] {
   return out;
 }
 
+/**
+ * A second factory, in the fixture only, so the factory switcher (#77) has one to switch to: its
+ * own codebase and one archon-loop lap running on `claim`. Its name is no real factory's, so a
+ * check branch never mixes it with one from factories.json; it runs no digest, so it adds no
+ * version.
+ */
+export const SECOND_FACTORY: FactoryEntry = {
+  name: 'second-factory',
+  repository: 'coleam00/second-factory',
+  codebase: 'coleam00/second-factory',
+  console: 'http://localhost:3090',
+};
+
+function secondFactorySql(loop: Loop): string[] {
+  const runId = '5eed0004-0000-4000-8000-000000000000';
+  const startedAt = '2026-10-24T09:00:00.000Z';
+  const claimedAt = '2026-10-24T09:05:00.000Z';
+  return [
+    '',
+    '-- A second factory, for the factory switcher only: its codebase and one running lap.',
+    insert('mc.factories', SECOND_FACTORY),
+    insert('remote_agent_codebases', {
+      id: SECOND_CODEBASE,
+      name: SECOND_FACTORY.codebase,
+      repository_url: `https://github.com/${SECOND_FACTORY.repository}`,
+      default_cwd: 'C:/factory/second-factory',
+    }),
+    insert('remote_agent_workflow_runs', {
+      id: runId,
+      workflow_name: WORKFLOW,
+      codebase_id: SECOND_CODEBASE,
+      status: 'running',
+      user_message: `Run the loop on ${SECOND_FACTORY.repository}`,
+      metadata: json({}),
+      started_at: startedAt,
+      completed_at: null,
+      last_activity_at: claimedAt,
+    }),
+    insert('remote_agent_workflow_events', {
+      id: '5eedeeee-0000-4000-8000-100000000001',
+      workflow_run_id: runId,
+      event_type: 'node_started',
+      step_name: 'claim',
+      data: json({ ...block(loop, 'claim'), timing: { startedAt: claimedAt } }),
+      created_at: claimedAt,
+    }),
+  ];
+}
+
 export function buildSeed(repoRoot: string): string {
   const { v1, v2 } = parseVersions(repoRoot);
   if (!v1.archonCommit || !v1.factoryCommit) throw new Error('the pack names no commits');
   const versions = versionSpecs(v1.archonCommit);
   // V3's pack keeps V2's loop: no architecture rows are seeded for it.
-  const runs = buildRuns(versions, { V1: loopOf(v1), V2: loopOf(v2), V3: loopOf(v2) });
+  const v2Loop = loopOf(v2);
+  const runs = buildRuns(versions, { V1: loopOf(v1), V2: v2Loop, V3: v2Loop });
   const { factories } = JSON.parse(readFileSync(join(repoRoot, 'factories.json'), 'utf8')) as {
     factories: FactoryEntry[];
   };
@@ -1199,6 +1250,7 @@ export function buildSeed(repoRoot: string): string {
     insert('mc.factories', factory),
     ...versionsSql(versions),
     ...archonSql(factory, runs),
+    ...secondFactorySql(v2Loop),
     '',
     "-- Laps, steps, app-check lines and versions, projected from Archon's rows above.",
     PROJECTION,
