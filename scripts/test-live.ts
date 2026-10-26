@@ -404,8 +404,6 @@ export async function insertToScreen(
 interface StepTimings extends GroupTimings {
   branch: string | null;
   port: number | null;
-  /** When the last of the screen's panels reached `ready`, from navigation. */
-  /** Per query, from the panel's subscribe being sent to its first rows. */
   descriptionToScreenMs: number | null;
   holdSeconds: number;
   renewals: number | null;
