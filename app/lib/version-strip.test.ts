@@ -50,6 +50,6 @@ test('compare links carry each digest URL-encoded, so it reads back unchanged', 
   expect(scorecard.pathname).toBe('/f/mission-control/scorecard');
   expect([scorecard.searchParams.get('a'), scorecard.searchParams.get('b')]).toEqual([a, b]);
   const diff = new URL(links.diff, 'http://localhost');
-  expect(diff.pathname).toBe('/diff');
+  expect(diff.pathname).toBe('/f/mission-control/diff');
   expect([diff.searchParams.get('a'), diff.searchParams.get('b')]).toEqual([a, b]);
 });

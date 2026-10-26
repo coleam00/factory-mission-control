@@ -65,8 +65,6 @@ export function compareLinks(
   b: string,
 ): { scorecard: string; diff: string } {
   const query = `?a=${encodeURIComponent(a)}&b=${encodeURIComponent(b)}`;
-  return {
-    scorecard: `/f/${encodeURIComponent(factory)}/scorecard${query}`,
-    diff: `/diff${query}`,
-  };
+  const base = `/f/${encodeURIComponent(factory)}`;
+  return { scorecard: `${base}/scorecard${query}`, diff: `${base}/diff${query}` };
 }
