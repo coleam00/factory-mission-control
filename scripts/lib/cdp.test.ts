@@ -2,7 +2,7 @@ import { expect, test } from 'bun:test';
 import { readDevToolsUrl } from './cdp';
 
 test('Chrome port discovery waits for an absent, busy or partial file, then reads its published endpoint', () => {
-  for (const code of ['ENOENT', 'EBUSY']) {
+  for (const code of ['ENOENT', 'EBUSY', 'EPERM']) {
     expect(
       readDevToolsUrl('port', () => {
         throw Object.assign(new Error('opening port'), { code });

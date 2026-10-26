@@ -12,6 +12,7 @@ export interface Page {
   evaluate<T>(expression: string, timeoutMs?: number): Promise<T>;
   /** Navigates and resolves once the page's load event fires. */
   goto(url: string): Promise<void>;
+  setViewport(width: number): Promise<void>;
   /** A PNG of the whole page laid out `width` px wide. */
   screenshot(width: number): Promise<Buffer>;
   close(): Promise<void>;
@@ -54,7 +55,7 @@ export function readDevToolsUrl(
     lines = read(activePort).split('\n');
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code;
-    if (code === 'ENOENT' || code === 'EBUSY') return undefined;
+    if (code === 'ENOENT' || code === 'EBUSY' || code === 'EPERM') return undefined;
     throw error;
   }
   if (lines.length >= 2 && lines[1]) return `ws://127.0.0.1:${lines[0].trim()}${lines[1].trim()}`;
@@ -165,6 +166,10 @@ export async function openPage(env: Record<string, string | undefined>): Promise
       flatten: true,
     });
     await cdp.send('Page.enable', {}, sessionId);
+    const setViewport = async (width: number) => {
+      const metrics = { width, height: 900, deviceScaleFactor: 1, mobile: false };
+      await cdp.send('Emulation.setDeviceMetricsOverride', metrics, sessionId);
+    };
     return {
       async evaluate<T>(expression: string, timeoutMs = STEP_TIMEOUT_MS): Promise<T> {
         const { result, exceptionDetails } = await cdp.send<{
@@ -194,9 +199,9 @@ export async function openPage(env: Record<string, string | undefined>): Promise
         if (errorText) throw new Error(`could not load ${url}: ${errorText}`);
         await loaded;
       },
+      setViewport,
       async screenshot(width: number) {
-        const metrics = { width, height: 900, deviceScaleFactor: 1, mobile: false };
-        await cdp.send('Emulation.setDeviceMetricsOverride', metrics, sessionId);
+        await setViewport(width);
         const { cssContentSize } = await cdp.send<{
           cssContentSize: { width: number; height: number };
         }>('Page.getLayoutMetrics', {}, sessionId);

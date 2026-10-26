@@ -946,6 +946,7 @@ export function compareDecision(
 
 interface ShownDestination {
   href: string;
+  factory: string | null;
   targets: {
     pin: string | null;
     digest: string | null;
@@ -965,6 +966,7 @@ export function compareDecisionDestination(
   const mismatches: string[] = [];
   if (shown.href !== decisionHref(seed, factory))
     mismatches.push('destination URL differs from the seed');
+  if (shown.factory !== factory) mismatches.push('destination header names a different factory');
   const [target] = shown.targets;
   if (
     shown.targets.length !== 1 ||
@@ -987,7 +989,36 @@ export function compareDecisionDestination(
   return mismatches;
 }
 
-/** After all timed phases: follow the seed links and the already-written unused pin's decision. */
+async function observeDecisionDestination(page: Page): Promise<ShownDestination> {
+  if (
+    !(await page.evaluate<boolean>(
+      pageWait(
+        `document.querySelector('${VERSIONS}[data-state="ready"]') !== null && document.querySelector('header ${PANEL}[data-state="ready"]') !== null`,
+        READY_WAIT_MS,
+      ),
+    ))
+  ) {
+    throw new Error('versions destination did not become ready');
+  }
+  // Let the destination's scroll effect paint before measuring its viewport position.
+  await page.evaluate(
+    'new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))',
+  );
+  return page.evaluate<ShownDestination>(`({
+    href: location.pathname + location.search,
+    factory: document.querySelector('header ${PANEL} span')?.textContent ?? null,
+    selected: document.querySelectorAll('${ENTRY} button[aria-pressed="true"]').length,
+    targets: [...document.querySelectorAll('${ENTRY}[aria-current="true"]')].map(el => {
+      const rect = el.getBoundingClientRect();
+      const style = getComputedStyle(el);
+      return { pin: el.getAttribute('data-pin'), digest: el.getAttribute('data-digest'),
+        kind: el.getAttribute('data-kind'), text: el.textContent,
+        visible: rect.width > 0 && rect.height > 0 && rect.top >= 0 && rect.bottom <= innerHeight && style.visibility === 'visible' && style.display !== 'none',
+        highlighted: style.boxShadow !== 'none' && style.backgroundColor !== 'rgba(0, 0, 0, 0)' };
+    })
+  })`);
+}
+
 export async function decisionDestinations(
   page: Page,
   db: Db,
@@ -995,77 +1026,136 @@ export async function decisionDestinations(
   base: string,
   outDir: string,
 ): Promise<string[]> {
-  const seeds = await db.query(DECISION_DESTINATIONS_SQL, [factory]);
   const failures: string[] = [];
   const report: string[] = [];
+  const seeds = await db.query(DECISION_DESTINATIONS_SQL, [factory]);
+  if (new Set(seeds.filter((s) => s.digest !== null).map((s) => s.pin_sha)).size < 2)
+    failures.push('fewer than two distinct joined pins exercised');
   if (!seeds.some((s) => s.pin_sha !== null && s.digest === null))
     failures.push('no unused pin decision exercised');
   if (!seeds.some((s) => s.pin_sha === null)) failures.push('no unmatched decision exercised');
-  for (const [i, seed] of seeds.entries()) {
-    const label = `decision ${i + 1} (${seed.title})`;
-    try {
-      await page.goto(`${base}/f/${encodeURIComponent(factory)}/decisions`);
-      if (
-        !(await page.evaluate<boolean>(
-          pageWait(
-            `document.querySelector('[data-live="decisions-timeline"][data-state="ready"]') !== null`,
-            READY_WAIT_MS,
-          ),
-        ))
-      ) {
-        throw new Error('timeline did not become ready');
+  for (const width of [1440, 390]) {
+    for (const [i, seed] of seeds.entries()) {
+      for (const mode of seed.pin_sha === null ? ['click'] : ['click', 'direct']) {
+        const label = `${factory} ${width}px ${mode} decision ${i + 1} (${seed.title})`;
+        try {
+          await page.setViewport(width);
+          await page.goto(`${base}/f/${encodeURIComponent(factory)}/decisions`);
+          if (
+            !(await page.evaluate<boolean>(
+              pageWait(
+                `document.querySelector('[data-live="decisions-timeline"][data-state="ready"]') !== null`,
+                READY_WAIT_MS,
+              ),
+            ))
+          ) {
+            throw new Error('timeline did not become ready');
+          }
+          const decisions = await page.evaluate<ShownDecision[]>(decisionsOnScreen);
+          const index = decisions.findIndex((d) => d.date === seed.date && d.title === seed.title);
+          failures.push(
+            ...compareDecision(decisions[index], seed, factory).map((m) => `${label}: ${m}`),
+          );
+          if (seed.pin_sha === null) {
+            report.push(`${label}: ${JSON.stringify(decisions[index])}`);
+            continue;
+          }
+          const copiedHref = decisions[index]?.href ?? null;
+          if (mode === 'direct') {
+            if (copiedHref === null) throw new Error('no destination URL to copy');
+            await page.goto(`${base}${copiedHref}`);
+          } else {
+            await page.evaluate(
+              `document.querySelectorAll('${DECISION}')[${index}].querySelector('[data-version-link]').click()`,
+            );
+          }
+          const shown = await observeDecisionDestination(page);
+          failures.push(
+            ...compareDecisionDestination(shown, seed, factory).map((m) => `${label}: ${m}`),
+          );
+          report.push(
+            `${label}: expected ${decisionHref(seed, factory)}\n  ${JSON.stringify(shown)}`,
+          );
+          const screenshot = await page.screenshot(width);
+          writeFileSync(
+            join(outDir, `decision-destination-${i + 1}-${width}-${mode}.png`),
+            screenshot,
+          );
+          if (width === 1440 && mode === 'click') {
+            writeFileSync(join(outDir, `decision-destination-${i + 1}.png`), screenshot);
+          }
+        } catch (error) {
+          failures.push(`${label}: ${(error as Error).message}`);
+        }
       }
-      const decisions = await page.evaluate<ShownDecision[]>(decisionsOnScreen);
-      const index = decisions.findIndex((d) => d.date === seed.date && d.title === seed.title);
-      failures.push(
-        ...compareDecision(decisions[index], seed, factory).map((m) => `${label}: ${m}`),
-      );
-      if (seed.pin_sha === null) {
-        report.push(`${label}: ${JSON.stringify(decisions[index])}`);
-        continue;
-      }
-      await page.evaluate(
-        `document.querySelectorAll('${DECISION}')[${index}].querySelector('[data-version-link]').click()`,
-      );
-      if (
-        !(await page.evaluate<boolean>(
-          pageWait(
-            `document.querySelector('${VERSIONS}[data-state="ready"]') !== null`,
-            READY_WAIT_MS,
-          ),
-        ))
-      ) {
-        throw new Error('versions destination did not become ready');
-      }
-      // Let the destination's scroll effect paint before measuring its viewport position.
-      await page.evaluate(
-        'new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))',
-      );
-      const shown = await page.evaluate<ShownDestination>(`({
-        href: location.pathname + location.search,
-        selected: document.querySelectorAll('${ENTRY} button[aria-pressed="true"]').length,
-        targets: [...document.querySelectorAll('${ENTRY}[aria-current="true"]')].map(el => {
-          const rect = el.getBoundingClientRect();
-          const style = getComputedStyle(el);
-          return { pin: el.getAttribute('data-pin'), digest: el.getAttribute('data-digest'),
-            kind: el.getAttribute('data-kind'), text: el.textContent,
-            visible: rect.width > 0 && rect.height > 0 && rect.top >= 0 && rect.bottom <= innerHeight && style.visibility === 'visible' && style.display !== 'none',
-            highlighted: style.boxShadow !== 'none' && style.backgroundColor !== 'rgba(0, 0, 0, 0)' };
-        })
-      })`);
-      failures.push(
-        ...compareDecisionDestination(shown, seed, factory).map((m) => `${label}: ${m}`),
-      );
-      report.push(`${label}: expected ${decisionHref(seed, factory)}\n  ${JSON.stringify(shown)}`);
-      writeFileSync(join(outDir, `decision-destination-${i + 1}.png`), await page.screenshot(1440));
-    } catch (error) {
-      failures.push(`${label}: ${(error as Error).message}`);
     }
   }
-  writeFileSync(
-    join(outDir, 'decision-destinations-check.txt'),
-    [...report, ...failures, `mismatches: ${failures.length}`].join('\n'),
-  );
+  try {
+    writeFileSync(
+      join(outDir, 'decision-destinations-check.txt'),
+      [...report, ...failures, `mismatches: ${failures.length}`].join('\n'),
+    );
+  } catch (error) {
+    failures.push(`${factory} destination report: ${(error as Error).message}`);
+  }
+  return failures;
+}
+
+/** Runs after timing: the second factory's matching laps must not change earlier seed counts. */
+export async function decisionDestinationPhase(
+  open: () => Promise<Page>,
+  db: Db,
+  factory: string,
+  base: string,
+  outDir: string,
+): Promise<string[]> {
+  const failures: string[] = [];
+  for (const name of [factory, SECOND_FACTORY.name]) {
+    let page: Page | undefined;
+    const added: { run: string; digest: string }[] = [];
+    try {
+      if (name === SECOND_FACTORY.name) {
+        const versions = await db.query(
+          'SELECT digest, first_run_at FROM mc.versions WHERE factory = $1 ORDER BY first_run_at',
+          [factory],
+        );
+        await db.transaction(async (tx) => {
+          for (const version of versions) {
+            const run = crypto.randomUUID();
+            added.push({ run, digest: String(version.digest) });
+            await tx.query(
+              `INSERT INTO mc.laps (run_id, factory, workflow_name, status, digest, started_at)
+               VALUES ($1, $2, 'archon-loop', 'completed', $3, $4)`,
+              [run, name, version.digest, version.first_run_at],
+            );
+            await tx.query('SELECT mc.project_version($1, $2)', [name, version.digest]);
+          }
+        });
+      }
+      const dir = name === factory ? outDir : join(outDir, encodeURIComponent(name));
+      mkdirSync(dir, { recursive: true });
+      page = await open();
+      failures.push(...(await decisionDestinations(page, db, name, base, dir)));
+    } catch (error) {
+      failures.push(`${name} destination phase: ${(error as Error).message}`);
+    } finally {
+      try {
+        await page?.close();
+      } catch (error) {
+        failures.push(`${name} destination close: ${(error as Error).message}`);
+      }
+      try {
+        await db.transaction(async (tx) => {
+          for (const { run, digest } of added) {
+            await tx.query('DELETE FROM mc.laps WHERE run_id = $1', [run]);
+            await tx.query('SELECT mc.project_version($1, $2)', [name, digest]);
+          }
+        });
+      } catch (error) {
+        failures.push(`${name} destination fixture cleanup: ${(error as Error).message}`);
+      }
+    }
+  }
   return failures;
 }
 
@@ -2260,12 +2350,9 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
     diffPage = undefined;
 
     await rewind.afterHold();
-    const destinationPage = await openPage(deps.env);
-    try {
-      failures.push(...(await decisionDestinations(destinationPage, db, factory, base, outDir)));
-    } finally {
-      await destinationPage.close();
-    }
+    failures.push(
+      ...(await decisionDestinationPhase(() => openPage(deps.env), db, factory, base, outDir)),
+    );
     const probe = Bun.spawnSync(
       [
         'bun',
