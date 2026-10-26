@@ -5,7 +5,7 @@ import { createRealtimeClient, type WebSocketLike } from '@neon/realtime/client'
 import { createRealtime, rawSql } from '@neon/realtime/server';
 import { ISSUE_STATES, STATE_TOKEN } from '../app/lib/issue-graph';
 import { OUTCOME_TOKEN, OUTCOMES } from '../app/lib/laps';
-import { realtimeUrlFor } from '../server/live';
+import { loadLiveQueries, realtimeUrlFor } from '../server/live';
 import { SERVE_PORTS } from '../server/ports';
 import { SECOND_FACTORY } from './fixture/seed';
 import { seedLaps } from './fixture/seed-laps';
@@ -14,8 +14,20 @@ import { openPage, type Page } from './lib/cdp';
 import { type Deps, failing, guardedDatabaseUrl, type Main, runCli } from './lib/cli';
 import type { Db, Row } from './lib/db';
 import { machineLockPath, withMachineLock } from './lib/machine-lock';
+import { resolveBranchName } from './lib/target';
 import { rewindPhase } from './live/rewind';
 import { switcherPhase } from './live/switcher';
+import {
+  emptyGroupTimings,
+  emptyPanelTimings,
+  type GroupTimings,
+  groupPerformanceFailures,
+  groupTimings,
+  measurePanels,
+  type PanelTimings,
+  PERFORMANCE_LIMITS,
+  performanceFailures,
+} from './live/timings';
 
 const USAGE = [
   'usage: bun run test:live [--out <dir>] [--hold <seconds>]',
@@ -65,7 +77,7 @@ const USAGE = [
   '  switcher-timings.json, switcher.png and switcher-design-probe.json.',
 ].join('\n');
 
-export const LIMITS = { readyMs: 2000, firstSnapshotMs: 500, insertToScreenMs: 5000 };
+export const LIMITS = { readyMs: 2000, ...PERFORMANCE_LIMITS, insertToScreenMs: 5000 };
 const RENEWALS_IN_180S = 3;
 export const PANEL = '[data-live="status-strip"]';
 /** Every live query the step screen reads, one panel each. */
@@ -249,34 +261,15 @@ export function pageWait(condition: string, ms: number): string {
 const countIs = (target: number) =>
   `document.querySelector('${PANEL} [data-count]')?.getAttribute('data-count') === '${target}'`;
 
-export const markTime = (name: string) =>
-  `performance.getEntriesByName('${name}')[0]?.startTime ?? null`;
-
-/** When `query`'s panel was ready after navigation, and after its subscribe was sent (#13). */
-async function panelMarks(
-  page: Page,
-  query: string,
-): Promise<{ readyMs: number | null; firstSnapshotMs: number | null }> {
-  const readyAt = await page.evaluate<number | null>(markTime(`live:${query}:ready`));
-  const subscribedAt = await page.evaluate<number | null>(markTime(`live:${query}:subscribe-sent`));
-  return {
-    readyMs: readyAt === null ? null : Math.round(readyAt),
-    firstSnapshotMs:
-      readyAt === null || subscribedAt === null ? null : Math.round(readyAt - subscribedAt),
-  };
-}
-
 /**
  * One panel's timings. `readyMs` is from navigation (connection setup to Neon included);
- * `firstSnapshotMs` is from the panel's subscribe being sent, once Realtime said `ready` on its
- * socket, to its rows on screen (owner decision on #13). The strip's inserts are running laps;
+ * `firstSnapshotMs` retains the combined delivery/render interval as unjudged evidence (#141).
+ * The strip's inserts are running laps;
  * the map's are `fixture:write step` events, timed from starting the command.
  */
-interface Timings {
+interface Timings extends PanelTimings {
   branch: string | null;
   port: number | null;
-  readyMs: number | null;
-  firstSnapshotMs: number | null;
   insertToScreenMs: number | null;
   holdSeconds: number;
   renewals: number | null;
@@ -386,13 +379,11 @@ export async function insertToScreen(
   return (await shown) ? Math.round(performance.now() - started) : null;
 }
 
-interface StepTimings {
+interface StepTimings extends GroupTimings {
   branch: string | null;
   port: number | null;
   /** When the last of the screen's panels reached `ready`, from navigation. */
-  readyMs: number | null;
   /** Per query, from the panel's subscribe being sent to its first rows. */
-  firstSnapshotMs: Record<string, number | null>;
   descriptionToScreenMs: number | null;
   holdSeconds: number;
   renewals: number | null;
@@ -453,11 +444,9 @@ async function checkAppMismatches(page: Page, repoRoot: string): Promise<string[
 export const renewalsOf = (query: string) =>
   `performance.getEntriesByName('live:${query}:renewed').length`;
 
-interface VersionStripTimings {
+interface VersionStripTimings extends PanelTimings {
   branch: string | null;
   port: number | null;
-  readyMs: number | null;
-  firstSnapshotMs: number | null;
   pinToScreenMs: number | null;
   holdSeconds: number;
   renewals: number | null;
@@ -591,13 +580,11 @@ function checkLinks(
   return failures;
 }
 
-interface ArchDiffTimings {
+interface ArchDiffTimings extends PanelTimings {
   branch: string | null;
   port: number | null;
   url: string | null;
   shown: string[] | null;
-  readyMs: number | null;
-  firstSnapshotMs: number | null;
   stepToScreenMs: number | null;
   holdSeconds: number;
   renewals: number | null;
@@ -723,11 +710,9 @@ async function writeToScreen(
 
 const entriesAre = (target: number) => `document.querySelectorAll('${ENTRY}').length === ${target}`;
 
-interface ScorecardTimings {
+interface ScorecardTimings extends PanelTimings {
   branch: string | null;
   port: number | null;
-  readyMs: number | null;
-  firstSnapshotMs: number | null;
   mergeToScreenMs: number | null;
   holdSeconds: number;
   renewals: number | null;
@@ -844,13 +829,9 @@ const mergesAre = (target: number) =>
 
 type PerQuery = Record<(typeof DECISION_QUERIES)[number], number | null>;
 
-interface DecisionsTimings {
+interface DecisionsTimings extends GroupTimings {
   branch: string | null;
   port: number | null;
-  /** Navigation to the later of the two panels reaching `data-state="ready"`. */
-  readyMs: number | null;
-  /** Per live query: its subscribe being sent to its first snapshot (owner decision, #13). */
-  firstSnapshotMs: PerQuery;
   verdictToScreenMs: number | null;
   decisionToScreenMs: number | null;
   holdSeconds: number;
@@ -861,11 +842,9 @@ interface DecisionsTimings {
   limits: typeof LIMITS;
 }
 
-interface IssueGraphTimings {
+interface IssueGraphTimings extends PanelTimings {
   branch: string | null;
   port: number | null;
-  readyMs: number | null;
-  firstSnapshotMs: number | null;
   /** The issue `fixture:write label` labelled, and how long its node took to show it. */
   labelToScreen: { issue: number; ms: number | null } | null;
   holdSeconds: number;
@@ -1448,13 +1427,9 @@ async function labelToScreen(
 
 type PerLapsQuery = Record<(typeof LAPS_QUERIES)[number], number | null>;
 
-interface LapsTimings {
+interface LapsTimings extends GroupTimings {
   branch: string | null;
   port: number | null;
-  /** Navigation to the later of the two panels reaching `data-state="ready"`. */
-  readyMs: number | null;
-  /** Per live query: its subscribe being sent to its first snapshot (owner decision, #13). */
-  firstSnapshotMs: PerLapsQuery;
   /** The lap `fixture:write step --step review --event node_started` ran on, and its lane's time. */
   stepToLane: { run: string; ms: number | null } | null;
   holdSeconds: number;
@@ -1629,6 +1604,8 @@ async function seedLapsMismatches(
 
 async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promise<void> {
   const databaseUrl = await guardedDatabaseUrl(deps, 'check');
+  const homeBranch = await resolveBranchName(databaseUrl, deps.neon());
+  const queries = loadLiveQueries(join(deps.repoRoot, 'db', 'queries'));
   const secret = deps.env.NEON_REALTIME_SECRET;
   if (!secret) throw new Error('NEON_REALTIME_SECRET is not set: run `bun run fixture:branch`');
   const { factories } = JSON.parse(readFileSync(join(deps.repoRoot, 'factories.json'), 'utf-8'));
@@ -1646,8 +1623,7 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
   const panelTimings = (): Timings => ({
     branch: deps.env.MC_CHECK_BRANCH ?? null,
     port: null,
-    readyMs: null,
-    firstSnapshotMs: null,
+    ...emptyPanelTimings(),
     insertToScreenMs: null,
     holdSeconds,
     renewals: null,
@@ -1667,8 +1643,7 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
   const stepTimings: StepTimings = {
     branch: timings.branch,
     port: null,
-    readyMs: null,
-    firstSnapshotMs: {},
+    ...emptyGroupTimings(STEP_QUERIES),
     descriptionToScreenMs: null,
     holdSeconds,
     renewals: null,
@@ -1682,8 +1657,7 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
   const versionTimings: VersionStripTimings = {
     branch: timings.branch,
     port: null,
-    readyMs: null,
-    firstSnapshotMs: null,
+    ...emptyPanelTimings(),
     pinToScreenMs: null,
     holdSeconds,
     renewals: null,
@@ -1695,8 +1669,7 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
   const scorecardTimings: ScorecardTimings = {
     branch: timings.branch,
     port: null,
-    readyMs: null,
-    firstSnapshotMs: null,
+    ...emptyPanelTimings(),
     mergeToScreenMs: null,
     holdSeconds,
     renewals: null,
@@ -1707,8 +1680,7 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
   const decisionTimings: DecisionsTimings = {
     branch: timings.branch,
     port: null,
-    readyMs: null,
-    firstSnapshotMs: { 'decisions-timeline': null, 'improvements-ledger': null },
+    ...emptyGroupTimings(DECISION_QUERIES),
     verdictToScreenMs: null,
     decisionToScreenMs: null,
     holdSeconds,
@@ -1721,8 +1693,7 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
   const issueTimings: IssueGraphTimings = {
     branch: timings.branch,
     port: null,
-    readyMs: null,
-    firstSnapshotMs: null,
+    ...emptyPanelTimings(),
     labelToScreen: null,
     holdSeconds,
     renewals: null,
@@ -1733,8 +1704,7 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
   const lapsTimings: LapsTimings = {
     branch: timings.branch,
     port: null,
-    readyMs: null,
-    firstSnapshotMs: { lanes: null, 'recent-laps': null },
+    ...emptyGroupTimings(LAPS_QUERIES),
     stepToLane: null,
     holdSeconds,
     renewals: { lanes: null, 'recent-laps': null },
@@ -1748,8 +1718,7 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
     port: null,
     url: null,
     shown: null,
-    readyMs: null,
-    firstSnapshotMs: null,
+    ...emptyPanelTimings(),
     stepToScreenMs: null,
     holdSeconds,
     renewals: null,
@@ -1764,7 +1733,10 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
   const judgedBy: string[] = [];
   const decided: string[] = [];
   const db = deps.openDb(databaseUrl);
-  const rewind = rewindPhase({ deps, db, outDir, factory, holdSeconds });
+  const timingDatabase = { db, branch: homeBranch, selectedBranch: null };
+  const measure = (page: Page, names: readonly string[]) =>
+    measurePanels(page, names, timingDatabase, queries, factory, READY_WAIT_MS);
+  const rewind = rewindPhase({ deps, db, outDir, factory, holdSeconds, homeBranch, queries });
   let server: ReturnType<typeof Bun.spawn> | undefined;
   let page: Page | undefined;
   let versionsPage: Page | undefined;
@@ -1852,14 +1824,12 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
           `${panel.name} did not reach data-state="ready" within ${READY_WAIT_MS} ms`,
         );
       }
-      const readyAt = await page.evaluate<number | null>(markTime(`live:${panel.query}:ready`));
-      const subscribedAt = await page.evaluate<number | null>(
-        markTime(`live:${panel.query}:subscribe-sent`),
-      );
-      panel.timings.readyMs = readyAt === null ? null : Math.round(readyAt);
-      panel.timings.firstSnapshotMs =
-        readyAt === null || subscribedAt === null ? null : Math.round(readyAt - subscribedAt);
     }
+    const homeMeasurements = await measure(
+      page,
+      panels.map((panel) => panel.query),
+    );
+    for (const panel of panels) Object.assign(panel.timings, homeMeasurements[panel.query]);
     const before = Number(
       await page.evaluate<string>(
         `document.querySelector('${PANEL} [data-count]').getAttribute('data-count')`,
@@ -1896,20 +1866,7 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
         `the laps screen did not reach data-state="ready" within ${READY_WAIT_MS} ms`,
       );
     }
-    const lapsReadyMarks: number[] = [];
-    for (const q of LAPS_QUERIES) {
-      const readyAt = await lapsPage.evaluate<number | null>(markTime(`live:${q}:ready`));
-      const subscribedAt = await lapsPage.evaluate<number | null>(
-        markTime(`live:${q}:subscribe-sent`),
-      );
-      if (readyAt !== null) lapsReadyMarks.push(readyAt);
-      lapsTimings.firstSnapshotMs[q] =
-        readyAt === null || subscribedAt === null ? null : Math.round(readyAt - subscribedAt);
-    }
-    lapsTimings.readyMs =
-      lapsReadyMarks.length === LAPS_QUERIES.length
-        ? Math.round(Math.max(...lapsReadyMarks))
-        : null;
+    Object.assign(lapsTimings, groupTimings(await measure(lapsPage, LAPS_QUERIES)));
     const lapsSeed = await seedLapsMismatches(
       lapsPage,
       db,
@@ -1952,18 +1909,7 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
         `the decisions screen did not reach data-state="ready" within ${READY_WAIT_MS} ms`,
       );
     }
-    const readyMarks: number[] = [];
-    for (const q of DECISION_QUERIES) {
-      const readyAt = await decisionsPage.evaluate<number | null>(markTime(`live:${q}:ready`));
-      const subscribedAt = await decisionsPage.evaluate<number | null>(
-        markTime(`live:${q}:subscribe-sent`),
-      );
-      if (readyAt !== null) readyMarks.push(readyAt);
-      decisionTimings.firstSnapshotMs[q] =
-        readyAt === null || subscribedAt === null ? null : Math.round(readyAt - subscribedAt);
-    }
-    decisionTimings.readyMs =
-      readyMarks.length === DECISION_QUERIES.length ? Math.round(Math.max(...readyMarks)) : null;
+    Object.assign(decisionTimings, groupTimings(await measure(decisionsPage, DECISION_QUERIES)));
     const decisionSeed = await seedDecisionMismatches(decisionsPage, db, factory);
     writeFileSync(join(outDir, 'ledger-check.txt'), `${decisionSeed.report}\n`);
     failures.push(...decisionSeed.mismatches.map((m) => `decisions screen against the seed: ${m}`));
@@ -1995,20 +1941,7 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
     stepPage = await openPage(deps.env);
     await openStep(stepPage, base, STEP_PATH, stepPanelsReady);
     await stepPage.evaluate('window.__mcNoReload = true');
-    const stepReadyMarks: number[] = [];
-    for (const query of STEP_QUERIES) {
-      const readyAt = await stepPage.evaluate<number | null>(markTime(`live:${query}:ready`));
-      const subscribedAt = await stepPage.evaluate<number | null>(
-        markTime(`live:${query}:subscribe-sent`),
-      );
-      if (readyAt !== null) stepReadyMarks.push(readyAt);
-      stepTimings.firstSnapshotMs[query] =
-        readyAt === null || subscribedAt === null ? null : Math.round(readyAt - subscribedAt);
-    }
-    stepTimings.readyMs =
-      stepReadyMarks.length === STEP_QUERIES.length
-        ? Math.round(Math.max(...stepReadyMarks))
-        : null;
+    Object.assign(stepTimings, groupTimings(await measure(stepPage, STEP_QUERIES)));
     failures.push(...(await checkAppMismatches(stepPage, deps.repoRoot)));
     writeFileSync(join(outDir, 'step-detail.png'), await stepPage.screenshot(1440));
     versionsPage = await openPage(deps.env);
@@ -2022,7 +1955,10 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
         `the versions screen did not reach data-state="ready" within ${READY_WAIT_MS} ms`,
       );
     }
-    Object.assign(versionTimings, await panelMarks(versionsPage, 'version-strip'));
+    Object.assign(
+      versionTimings,
+      (await measure(versionsPage, ['version-strip']))['version-strip'],
+    );
     const seed = await seedVersionMismatches(versionsPage, db, factory);
     writeFileSync(join(outDir, 'version-strip-check.txt'), `${seed.report}\n`);
     failures.push(...seed.mismatches.map((m) => `versions screen against the seed: ${m}`));
@@ -2048,7 +1984,7 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
 
     const [, , v3] = seed.digests;
     scorePage = await openScorecard(deps, base, factory, v1, v2);
-    Object.assign(scorecardTimings, await panelMarks(scorePage, 'scorecard'));
+    Object.assign(scorecardTimings, (await measure(scorePage, ['scorecard'])).scorecard);
     const shown = await scorePage.evaluate<ShownCell[]>(cellsOnScreen);
     failures.push(...(await labelFailures(scorePage, 'V1 against V2', true)));
     const thinPage = await openScorecard(deps, base, factory, v1, v3);
@@ -2125,17 +2061,7 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
         `the issues screen did not reach data-state="ready" within ${READY_WAIT_MS} ms`,
       );
     }
-    const issuesReadyAt = await issuesPage.evaluate<number | null>(
-      markTime('live:issue-graph:ready'),
-    );
-    const issuesSubscribedAt = await issuesPage.evaluate<number | null>(
-      markTime('live:issue-graph:subscribe-sent'),
-    );
-    issueTimings.readyMs = issuesReadyAt === null ? null : Math.round(issuesReadyAt);
-    issueTimings.firstSnapshotMs =
-      issuesReadyAt === null || issuesSubscribedAt === null
-        ? null
-        : Math.round(issuesReadyAt - issuesSubscribedAt);
+    Object.assign(issueTimings, (await measure(issuesPage, ['issue-graph']))['issue-graph']);
     const issueSeed = await seedIssueGraphMismatches(
       issuesPage,
       db,
@@ -2151,7 +2077,18 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
     );
 
     // Before the diff adds steps to the current architecture, which the second factory's map shows.
-    await switcherPhase({ deps, db, base, outDir, factory, factoriesFile, inserted, failures });
+    await switcherPhase({
+      deps,
+      db,
+      base,
+      outDir,
+      factory,
+      factoriesFile,
+      inserted,
+      failures,
+      homeBranch,
+      queries,
+    });
 
     diffTimings.url = `/f/${factory}/diff?a=${encodeURIComponent(v1)}&b=${encodeURIComponent(v2)}`;
     diffPage = await openPage(deps.env);
@@ -2165,15 +2102,7 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
         `the diff screen did not reach data-state="ready" within ${READY_WAIT_MS} ms`,
       );
     }
-    const diffReadyAt = await diffPage.evaluate<number | null>(markTime('live:arch-diff:ready'));
-    const diffSubscribedAt = await diffPage.evaluate<number | null>(
-      markTime('live:arch-diff:subscribe-sent'),
-    );
-    diffTimings.readyMs = diffReadyAt === null ? null : Math.round(diffReadyAt);
-    diffTimings.firstSnapshotMs =
-      diffReadyAt === null || diffSubscribedAt === null
-        ? null
-        : Math.round(diffReadyAt - diffSubscribedAt);
+    Object.assign(diffTimings, (await measure(diffPage, ['arch-diff']))['arch-diff']);
     diffTimings.shown = await diffPage.evaluate<string[]>(changesOnScreen);
     if (JSON.stringify(diffTimings.shown) !== JSON.stringify(SEED_ARCH_CHANGE)) {
       failures.push(
@@ -2604,11 +2533,7 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
     if (!within(t.readyMs, LIMITS.readyMs)) {
       failures.push(`${name} was ready after ${t.readyMs} ms, limit ${LIMITS.readyMs}`);
     }
-    if (!within(t.firstSnapshotMs, LIMITS.firstSnapshotMs)) {
-      failures.push(
-        `${name}'s first snapshot came after ${t.firstSnapshotMs} ms, limit ${LIMITS.firstSnapshotMs}`,
-      );
-    }
+    failures.push(...performanceFailures(name, t));
     if (!within(t.insertToScreenMs, LIMITS.insertToScreenMs)) {
       failures.push(
         `the first insert reached ${name} after ${t.insertToScreenMs} ms, limit ${LIMITS.insertToScreenMs}`,
@@ -2631,12 +2556,7 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
       `the step screen was ready after ${stepTimings.readyMs} ms, limit ${LIMITS.readyMs}`,
     );
   }
-  for (const query of STEP_QUERIES) {
-    const ms = stepTimings.firstSnapshotMs[query] ?? null;
-    if (!within(ms, LIMITS.firstSnapshotMs)) {
-      failures.push(`${query}'s first snapshot after ${ms} ms, limit ${LIMITS.firstSnapshotMs}`);
-    }
-  }
+  failures.push(...groupPerformanceFailures(STEP_QUERIES, stepTimings));
   if (!within(stepTimings.descriptionToScreenMs, LIMITS.insertToScreenMs)) {
     failures.push(
       `the first description write reached the step after ${stepTimings.descriptionToScreenMs} ms, limit ${LIMITS.insertToScreenMs}`,
@@ -2658,11 +2578,7 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
       `versions screen ready after ${versionTimings.readyMs} ms, limit ${LIMITS.readyMs}`,
     );
   }
-  if (!within(versionTimings.firstSnapshotMs, LIMITS.firstSnapshotMs)) {
-    failures.push(
-      `versions screen first snapshot after ${versionTimings.firstSnapshotMs} ms, limit ${LIMITS.firstSnapshotMs}`,
-    );
-  }
+  failures.push(...performanceFailures('versions screen', versionTimings));
   if (!within(versionTimings.pinToScreenMs, LIMITS.insertToScreenMs)) {
     failures.push(
       `first pin reached the versions screen after ${versionTimings.pinToScreenMs} ms, limit ${LIMITS.insertToScreenMs}`,
@@ -2682,11 +2598,7 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
   if (!within(scorecardTimings.readyMs, LIMITS.readyMs)) {
     failures.push(`scorecard ready after ${scorecardTimings.readyMs} ms, limit ${LIMITS.readyMs}`);
   }
-  if (!within(scorecardTimings.firstSnapshotMs, LIMITS.firstSnapshotMs)) {
-    failures.push(
-      `scorecard first snapshot after ${scorecardTimings.firstSnapshotMs} ms, limit ${LIMITS.firstSnapshotMs}`,
-    );
-  }
+  failures.push(...performanceFailures('scorecard', scorecardTimings));
   if (!within(scorecardTimings.mergeToScreenMs, LIMITS.insertToScreenMs)) {
     failures.push(
       `first merge reached the scorecard after ${scorecardTimings.mergeToScreenMs} ms, limit ${LIMITS.insertToScreenMs}`,
@@ -2709,11 +2621,7 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
     );
   }
   for (const q of DECISION_QUERIES) {
-    if (!within(decisionTimings.firstSnapshotMs[q], LIMITS.firstSnapshotMs)) {
-      failures.push(
-        `${q} first snapshot after ${decisionTimings.firstSnapshotMs[q]} ms, limit ${LIMITS.firstSnapshotMs}`,
-      );
-    }
+    failures.push(...groupPerformanceFailures([q], decisionTimings));
     if (holdSeconds >= 180 && (decisionTimings.renewals[q] ?? 0) < RENEWALS_IN_180S) {
       failures.push(
         `${decisionTimings.renewals[q]} ${q} seal renewals in ${holdSeconds}s, expected at least ${RENEWALS_IN_180S}`,
@@ -2741,11 +2649,7 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
   if (!within(issueTimings.readyMs, LIMITS.readyMs)) {
     failures.push(`issues screen ready after ${issueTimings.readyMs} ms, limit ${LIMITS.readyMs}`);
   }
-  if (!within(issueTimings.firstSnapshotMs, LIMITS.firstSnapshotMs)) {
-    failures.push(
-      `issues screen first snapshot after ${issueTimings.firstSnapshotMs} ms, limit ${LIMITS.firstSnapshotMs}`,
-    );
-  }
+  failures.push(...performanceFailures('issues screen', issueTimings));
   for (const [when, write] of [
     ['first', issueTimings.labelToScreen],
     [`after ${holdSeconds}s`, issueTimings.afterHoldLabelToScreen],
@@ -2767,11 +2671,7 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
     failures.push(`laps screen ready after ${lapsTimings.readyMs} ms, limit ${LIMITS.readyMs}`);
   }
   for (const q of LAPS_QUERIES) {
-    if (!within(lapsTimings.firstSnapshotMs[q], LIMITS.firstSnapshotMs)) {
-      failures.push(
-        `${q} first snapshot after ${lapsTimings.firstSnapshotMs[q]} ms, limit ${LIMITS.firstSnapshotMs}`,
-      );
-    }
+    failures.push(...groupPerformanceFailures([q], lapsTimings));
     if (holdSeconds >= 180 && (lapsTimings.renewals[q] ?? 0) < RENEWALS_IN_180S) {
       failures.push(
         `${lapsTimings.renewals[q]} ${q} seal renewals in ${holdSeconds}s, expected at least ${RENEWALS_IN_180S}`,
@@ -2792,11 +2692,7 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
   if (!within(diffTimings.readyMs, LIMITS.readyMs)) {
     failures.push(`diff screen ready after ${diffTimings.readyMs} ms, limit ${LIMITS.readyMs}`);
   }
-  if (!within(diffTimings.firstSnapshotMs, LIMITS.firstSnapshotMs)) {
-    failures.push(
-      `diff screen first snapshot after ${diffTimings.firstSnapshotMs} ms, limit ${LIMITS.firstSnapshotMs}`,
-    );
-  }
+  failures.push(...performanceFailures('diff screen', diffTimings));
   if (!within(diffTimings.stepToScreenMs, LIMITS.insertToScreenMs)) {
     failures.push(
       `first step reached the diff screen after ${diffTimings.stepToScreenMs} ms, limit ${LIMITS.insertToScreenMs}`,

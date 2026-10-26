@@ -11,16 +11,23 @@ import {
   MAP,
   mapMismatches,
   mapNodes,
-  markTime,
   PANEL,
   pageWait,
   READY_WAIT_MS,
   waitForHealth,
 } from '../test-live';
+import {
+  emptyPanelTimings,
+  measurePanels,
+  type PanelTimings,
+  performanceFailures,
+} from './timings';
 
 export interface SwitcherContext {
   deps: Deps;
   db: Db;
+  homeBranch: string;
+  queries: ReadonlyMap<string, string>;
   base: string;
   outDir: string;
   /** The default factory: factories.json's first. */
@@ -32,9 +39,7 @@ export interface SwitcherContext {
   failures: string[];
 }
 
-interface SwitcherTimings {
-  readyMs: number | null;
-  firstSnapshotMs: number | null;
+interface SwitcherTimings extends PanelTimings {
   insertToScreenMs: number | null;
   noReload: boolean | null;
   limits: typeof LIMITS;
@@ -110,8 +115,7 @@ export async function switcherPhase(ctx: SwitcherContext): Promise<void> {
       );
   };
   const timings: SwitcherTimings = {
-    readyMs: null,
-    firstSnapshotMs: null,
+    ...emptyPanelTimings(),
     insertToScreenMs: null,
     noReload: null,
     limits: LIMITS,
@@ -133,13 +137,19 @@ export async function switcherPhase(ctx: SwitcherContext): Promise<void> {
     await page.goto(`${base}/`);
     await page.evaluate('window.__mcNoReload = true');
     await openList(page);
-    const readyAt = await page.evaluate<number | null>(markTime('live:factory-switcher:ready'));
-    const sentAt = await page.evaluate<number | null>(
-      markTime('live:factory-switcher:subscribe-sent'),
+    Object.assign(
+      timings,
+      (
+        await measurePanels(
+          page,
+          ['factory-switcher'],
+          { db, branch: ctx.homeBranch, selectedBranch: null },
+          ctx.queries,
+          factory,
+          READY_WAIT_MS,
+        )
+      )['factory-switcher'],
     );
-    timings.readyMs = readyAt === null ? null : Math.round(readyAt);
-    timings.firstSnapshotMs =
-      readyAt === null || sentAt === null ? null : Math.round(readyAt - sentAt);
     const shown = await page.evaluate<[string, number][]>(entriesOnScreen);
     const byName = (rows: readonly (readonly [string, number])[]) =>
       [...rows].sort(([a], [b]) => a.localeCompare(b));
@@ -301,11 +311,7 @@ export async function switcherPhase(ctx: SwitcherContext): Promise<void> {
   if (!within(timings.readyMs, LIMITS.readyMs)) {
     failures.push(`the switcher was ready after ${timings.readyMs} ms, limit ${LIMITS.readyMs}`);
   }
-  if (!within(timings.firstSnapshotMs, LIMITS.firstSnapshotMs)) {
-    failures.push(
-      `the switcher's first snapshot came after ${timings.firstSnapshotMs} ms, limit ${LIMITS.firstSnapshotMs}`,
-    );
-  }
+  failures.push(...performanceFailures('factory-switcher', timings));
   if (!within(timings.insertToScreenMs, LIMITS.insertToScreenMs)) {
     failures.push(
       `an insert reached the switcher after ${timings.insertToScreenMs} ms, limit ${LIMITS.insertToScreenMs}`,

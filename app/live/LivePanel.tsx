@@ -2,7 +2,13 @@ import type { LiveQueryState, SealedLiveQuery } from '@neon/realtime/client';
 import { RealtimeProvider, useLiveQuery } from '@neon/realtime-react';
 import { type ReactElement, type ReactNode, useCallback, useEffect, useState } from 'react';
 import { useLive } from './LiveProvider';
-import { expectSubscribe } from './subscribe-marks';
+import {
+  discardObservation,
+  expectSubscribe,
+  markRendered,
+  observeQuery,
+  type QueryObservation,
+} from './subscribe-marks';
 
 export type PanelState = 'loading' | 'ready' | 'error';
 
@@ -96,7 +102,11 @@ export function LivePanel<Row>({
   children,
 }: LivePanelProps<Row>): ReactElement {
   const live = useLive();
-  const [sealed, setSealed] = useState<SealedLiveQuery<Row>>();
+  const [accepted, setAccepted] = useState<{
+    sealed: SealedLiveQuery<Row>;
+    observation: QueryObservation;
+    requestSeal: () => Promise<SealedLiveQuery<Row>>;
+  }>();
   const [failed, setFailed] = useState(false);
 
   const body = JSON.stringify({ factory, ...(home && { branch: 'home' }), ...(args && { args }) });
@@ -111,24 +121,36 @@ export function LivePanel<Row>({
   }, [query, body]);
 
   const ready = live.status === 'ready' && factory !== undefined;
+  const branch = live.status === 'ready' && !home ? live.rewind : null;
   useEffect(() => {
-    if (!ready) return;
+    if (!ready || factory === undefined) return;
     let cancelled = false;
+    let observation: QueryObservation | undefined;
     markOnce(`live:${query}:requested`);
     requestSeal().then(
       (first) => {
         if (cancelled) return;
-        expectSubscribe(first.capability, query);
-        setSealed(first);
+        const parameters: { args?: string[] } = JSON.parse(body);
+        observation = observeQuery({
+          query,
+          factory,
+          args: parameters.args ?? [],
+          home,
+          branch,
+          queryFingerprint: first.queryFingerprint,
+        });
+        expectSubscribe(first.capability, observation);
+        setAccepted({ sealed: first, observation, requestSeal });
       },
       () => !cancelled && setFailed(true),
     );
     return () => {
       cancelled = true;
+      if (observation) discardObservation(observation);
     };
-  }, [ready, query, requestSeal]);
+  }, [ready, query, requestSeal, factory, body, home, branch]);
 
-  if (live.status !== 'ready' || sealed === undefined || failed) {
+  if (live.status !== 'ready' || accepted === undefined || failed) {
     const state = live.status === 'error' || failed ? 'error' : 'loading';
     return (
       <Frame query={query} state={state} className={className}>
@@ -137,11 +159,12 @@ export function LivePanel<Row>({
     );
   }
   return (
-    <RealtimeProvider client={home ? live.homeClient : live.client}>
+    <RealtimeProvider client={accepted.observation.home ? live.homeClient : live.client}>
       <Subscribed
-        query={query}
-        sealed={sealed}
-        requestSeal={requestSeal}
+        query={accepted.observation.query}
+        sealed={accepted.sealed}
+        observation={accepted.observation}
+        requestSeal={accepted.requestSeal}
         className={className}
         render={children}
       />
@@ -152,21 +175,24 @@ export function LivePanel<Row>({
 function Subscribed<Row>({
   query,
   sealed,
+  observation,
   requestSeal,
   className,
   render,
 }: {
   query: string;
   sealed: SealedLiveQuery<Row>;
+  observation: QueryObservation;
   requestSeal: () => Promise<SealedLiveQuery<Row>>;
   className?: string;
   render: Render<Row>;
 }): ReactElement {
   const refreshQuery = useCallback(async () => {
     const renewed = await requestSeal();
+    expectSubscribe(renewed.capability, observation);
     performance.mark(`live:${query}:renewed`);
     return renewed;
-  }, [query, requestSeal]);
+  }, [query, requestSeal, observation]);
   const { status, data, error } = useLiveQuery(sealed, { refreshQuery });
   const [wasRecovering, setRecovering] = useState(false);
   const isRecovering = recovering(wasRecovering, status);
@@ -174,8 +200,8 @@ function Subscribed<Row>({
   const state = panelState({ status, data, error, recovering: isRecovering });
 
   useEffect(() => {
-    if (state === 'ready') markOnce(`live:${query}:ready`);
-  }, [state, query]);
+    if (state === 'ready') markRendered(observation);
+  }, [state, observation]);
 
   return (
     <Frame query={query} state={state} className={className}>
