@@ -1,4 +1,14 @@
--- Upgrade installed projections without replaying events or changing recorded history.
+-- Only a lap's events project steps and attempts (issue #111; a lap is an `archon-loop` run, PRD
+-- 4.2). 0007's mc.record_step_attempt and mc.project_step_event projected every run's step events,
+-- so a manager, holdouts or backlog run's node added a step and an attempt, and 0007's replay of
+-- the attempts Archon finished before it recorded a foreign-key error for each such node whose run
+-- had no step row. Both functions now return before reading anything from a run that is not a lap,
+-- whose events record nothing and no error. A real failure of an eligible lap's attempt is still
+-- caught and recorded as before.
+--
+-- 0007 is applied on main and never re-run, so the change is here, not there. Nothing is replayed
+-- and no step or attempt is removed; the one thing undone is the false errors 0007's replay
+-- recorded for runs that are not laps, which the corrected replay would never have recorded.
 
 -- Upserts the attempt a node_completed, node_failed or node_skipped event finished.
 CREATE OR REPLACE FUNCTION mc.record_step_attempt(
@@ -146,3 +156,7 @@ EXCEPTION WHEN OTHERS THEN
   RETURN NULL;
 END;
 $$;
+
+DELETE FROM mc.projection_errors p
+USING public.remote_agent_workflow_runs r
+WHERE p.source = '0007_step_attempts' AND r.id = p.run_id AND r.workflow_name <> 'archon-loop';

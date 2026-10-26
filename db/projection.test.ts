@@ -1,6 +1,4 @@
 import { afterAll, beforeAll, beforeEach, expect, test } from 'bun:test';
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
 import { holdoutId } from '../parsers/metrics';
 import { eventData, structuredOutputFor } from '../scripts/fixture/write';
 import type { Db, Row } from '../scripts/lib/db';
@@ -146,7 +144,7 @@ test('an attempt failure is recorded without losing the source event or its step
   await expect(rolledBack).rejects.toThrow('rollback after attempt failure');
 });
 
-test('historical replay excludes known non-laps but records missing parents for eligible laps', async () => {
+test('0010 undoes the replay errors of non-laps but keeps missing parents of eligible laps', async () => {
   const historical = await archonDb();
   try {
     await runMigrations({
@@ -172,16 +170,21 @@ test('historical replay excludes known non-laps but records missing parents for 
            VALUES ($1, $2, $3, '{}'), ($1, $2, $4, '{}')`,
           [run?.id, `node_${status}`, status, `missing-${status}`],
         );
-        await historical.query(
-          'INSERT INTO mc.lap_steps (run_id, step_id, status) VALUES ($1, $2, $2)',
-          [run?.id, status],
-        );
+        if (workflow === 'archon-loop') {
+          await historical.query(
+            'INSERT INTO mc.lap_steps (run_id, step_id, status) VALUES ($1, $2, $2)',
+            [run?.id, status],
+          );
+        }
       }
     }
     await runMigrations({ files: migrationFiles.filter((f) => f.name < '0010'), db: historical });
-    const freshDefinitions = await projectionDefinitions(historical);
+    expect(
+      await historical.query(
+        `SELECT count(*)::int AS n FROM mc.projection_errors WHERE source = '0007_step_attempts'`,
+      ),
+    ).toEqual([{ n: 27 }]);
     await runMigrations({ files: migrationFiles, db: historical });
-    expect(await projectionDefinitions(historical)).toEqual(freshDefinitions);
     expect(
       await historical.query(
         `SELECT r.workflow_name, a.step_id, a.status FROM mc.lap_step_attempts a
@@ -219,19 +222,10 @@ test('historical replay excludes known non-laps but records missing parents for 
   }
 });
 
-test('the eligibility upgrade preserves history and installs the same functions as a fresh database', async () => {
+test('the eligibility upgrade keeps live history and installs the same functions as a fresh database', async () => {
   const upgraded = await archonDb();
   try {
-    const original = readFileSync(
-      join(import.meta.dir, 'test-fixtures/0007_step_attempts.sql'),
-      'utf8',
-    );
-    await runMigrations({
-      files: migrationFiles
-        .filter((f) => f.name < '0010')
-        .map((f) => (f.name === '0007_step_attempts.sql' ? { ...f, sql: original } : f)),
-      db: upgraded,
-    });
+    await runMigrations({ files: migrationFiles.filter((f) => f.name < '0010'), db: upgraded });
     for (const workflow of ['archon-loop', 'archon-manager']) {
       await upgraded.query(
         `WITH r AS (

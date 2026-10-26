@@ -53,10 +53,6 @@ DECLARE
   v_raw jsonb;
   v_output jsonb;
 BEGIN
-  IF EXISTS (SELECT 1 FROM public.remote_agent_workflow_runs
-    WHERE id = p_run_id AND workflow_name <> 'archon-loop') THEN
-    RETURN;
-  END IF;
   v_raw := p_data -> 'structured_output';
   IF jsonb_typeof(v_raw) IS DISTINCT FROM 'object' THEN
     v_raw := NULL;
@@ -87,7 +83,7 @@ BEGIN
 END;
 $$;
 
--- Only lap events project steps and their finished attempts.
+-- 0006's mc.project_step_event, unchanged but for recording the attempt a finishing event ends.
 CREATE OR REPLACE FUNCTION mc.project_step_event() RETURNS trigger LANGUAGE plpgsql
 SET lock_timeout = '100ms' AS $$
 DECLARE
@@ -96,10 +92,6 @@ DECLARE
   v_duration bigint;
   v_model text;
 BEGIN
-  IF EXISTS (SELECT 1 FROM public.remote_agent_workflow_runs
-    WHERE id = NEW.workflow_run_id AND workflow_name <> 'archon-loop') THEN
-    RETURN NULL;
-  END IF;
   v_output := NEW.data -> 'structured_output';
   IF jsonb_typeof(v_output) NOT IN ('object', 'null') THEN
     PERFORM mc.record_projection_error(TG_NAME, NEW.workflow_run_id, NEW.id, '22000',
