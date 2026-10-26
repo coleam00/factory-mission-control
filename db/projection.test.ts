@@ -686,3 +686,22 @@ test('a version that cannot be written keeps the lap and is recorded', async () 
   });
   await expect(rolledBack).rejects.toThrow('rollback after the run committed');
 });
+
+test('a run status update commits and is recorded when the trigger cannot reach mc.laps, even on its first call', async () => {
+  // PGlite has one session, so no lock wait is possible here; `bun run projection:locks` proves
+  // that on a check branch. Recompiling the trigger with mc.laps out of reach is what a session's
+  // first call under a lock on it does: anything the trigger resolves when it compiles fails
+  // outside its exception blocks (#114).
+  const rolledBack = db.transaction(async (tx) => {
+    await tx.query(`ALTER FUNCTION mc.project_run() SET lock_timeout = '100ms'`);
+    await tx.query('ALTER TABLE mc.laps RENAME TO laps_gone');
+    await tx.query(`UPDATE public.remote_agent_workflow_runs SET status = 'paused' WHERE id = $1`, [
+      runId,
+    ]);
+    expect(await tx.query('SELECT source, run_id, sqlstate FROM mc.projection_errors')).toEqual([
+      { source: 'mc_project_run_update', run_id: runId, sqlstate: '42P01' },
+    ]);
+    throw new Error('rollback after the run committed');
+  });
+  await expect(rolledBack).rejects.toThrow('rollback after the run committed');
+});
