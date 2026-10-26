@@ -7,6 +7,7 @@ import { ISSUE_STATES, STATE_TOKEN } from '../app/lib/issue-graph';
 import { OUTCOME_TOKEN, OUTCOMES } from '../app/lib/laps';
 import { realtimeUrlFor } from '../server/live';
 import { SERVE_PORTS } from '../server/ports';
+import { SECOND_FACTORY } from './fixture/seed';
 import { seedLaps } from './fixture/seed-laps';
 import { NEXT_TO_LABEL } from './fixture/write';
 import { openPage, type Page } from './lib/cdp';
@@ -50,11 +51,14 @@ const USAGE = [
   '  It opens /steps/archon-loop/check-app, checks it against the seed, times description writes to',
   '  it across the same hold, and checks land and an unknown step, writing',
   '  step-detail-timings.json, step-detail.png and step-detail-design-probe.json.',
-  '  Before the diff it checks the factory switcher: every mc.factories row with its running',
-  '  laps, an inserted lap on the second factory timed to its count, choosing that factory from /,',
-  '  every factory screen and step detail, its map, strip and lanes, and the remembered choice',
-  '  with its fallback for a removed factory, writing switcher-check.txt, switcher-timings.json,',
-  '  switcher.png and switcher-design-probe.json.',
+  "  Its server reads factories.json plus the seed's second factory (factories.json in --out, as",
+  '  MC_FACTORIES_FILE). Before the diff it checks the factory switcher: every factory in that file',
+  '  with its running laps, an inserted lap on the second factory timed to its count, choosing that',
+  '  factory from /, every factory screen and step detail, its map, strip and lanes, and the',
+  '  remembered choice with its fallback for a removed factory; then, on a second server reading',
+  "  factories.json alone, that the switcher lists only factories.json's factories and the second",
+  '  factory is neither sealed for nor shown when remembered. It writes switcher-check.txt,',
+  '  switcher-timings.json, switcher.png and switcher-design-probe.json.',
 ].join('\n');
 
 export const LIMITS = { readyMs: 2000, firstSnapshotMs: 500, insertToScreenMs: 5000 };
@@ -201,7 +205,7 @@ async function runProbe(
   }
 }
 
-async function freePort(): Promise<number> {
+export async function freePort(): Promise<number> {
   for (let port = SERVE_PORTS.min; port <= SERVE_PORTS.max; port++) {
     try {
       Bun.listen({ hostname: '127.0.0.1', port, socket: { data() {} } }).stop(true);
@@ -211,7 +215,7 @@ async function freePort(): Promise<number> {
   throw new Error(`no free port in ${SERVE_PORTS.min}-${SERVE_PORTS.max}`);
 }
 
-async function waitForHealth(base: string, exited: () => boolean): Promise<void> {
+export async function waitForHealth(base: string, exited: () => boolean): Promise<void> {
   const deadline = Date.now() + 15_000;
   while (Date.now() < deadline) {
     if (exited()) throw new Error('the server exited before answering /api/health');
@@ -1379,6 +1383,13 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
   const { factories } = JSON.parse(readFileSync(join(deps.repoRoot, 'factories.json'), 'utf-8'));
   const factory: string = factories[0].name;
   mkdirSync(outDir, { recursive: true });
+  // The seed's second factory is in mc.factories only; the app shows it once its file names it.
+  const factoriesFile = join(outDir, 'factories.json');
+  writeFileSync(
+    factoriesFile,
+    `${JSON.stringify({ factories: [...factories, SECOND_FACTORY] }, null, 2)}
+`,
+  );
 
   const failures: string[] = [];
   const panelTimings = (): Timings => ({
@@ -1549,7 +1560,7 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
     const base = `http://localhost:${port}`;
     const proc = Bun.spawn(['bun', 'server/main.ts', '--port', String(port)], {
       cwd: deps.repoRoot,
-      env: deps.env,
+      env: { ...deps.env, MC_FACTORIES_FILE: factoriesFile },
       stdout: 'ignore',
       stderr: 'inherit',
     });
@@ -1888,7 +1899,7 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
     );
 
     // Before the diff adds steps to the current architecture, which the second factory's map shows.
-    await switcherPhase({ deps, db, base, outDir, factory, inserted, failures });
+    await switcherPhase({ deps, db, base, outDir, factory, factoriesFile, inserted, failures });
 
     diffTimings.url = `/f/${factory}/diff?a=${encodeURIComponent(v1)}&b=${encodeURIComponent(v2)}`;
     diffPage = await openPage(deps.env);

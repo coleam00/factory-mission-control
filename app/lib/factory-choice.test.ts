@@ -5,6 +5,7 @@ import {
   REMEMBERED_KEY,
   readRemembered,
   remember,
+  shownRows,
   switcherEntries,
   toRemember,
 } from './factory-choice';
@@ -69,4 +70,17 @@ test('the switcher lists the default first, then by name', () => {
     { factory: 'alpha', is_default: false },
   ];
   expect(switcherEntries(rows).map((r) => r.factory)).toEqual(['mission-control', 'alpha', 'zeta']);
+});
+
+test('the switcher lists only the rows the server shows: one factory in the file lists one', () => {
+  const rows = [
+    { factory: 'mission-control', running: 3 },
+    { factory: 'second-factory', running: 1 },
+  ];
+  expect(shownRows(rows, ['mission-control'])).toEqual([
+    { factory: 'mission-control', running: 3 },
+  ]);
+  expect(shownRows(rows, ['mission-control', 'second-factory'])).toEqual(rows);
+  expect(shownRows(rows, undefined)).toBeUndefined();
+  expect(shownRows(undefined, ['mission-control'])).toBeUndefined();
 });

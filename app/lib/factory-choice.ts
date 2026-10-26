@@ -56,6 +56,19 @@ export function remember(storage: Storage | undefined, factory: string): void {
   }
 }
 
+/**
+ * The rows of `mc.factories` the switcher lists: only the factories the server shows (its
+ * factories file). `migrate` never deletes a row, so a factory dropped from the file, or a row
+ * only a fixture adds, stays in the table; with one factory in the file the switcher lists one.
+ */
+export function shownRows<Row extends { factory: string }>(
+  rows: readonly Row[] | undefined,
+  factories: readonly string[] | undefined,
+): Row[] | undefined {
+  if (rows === undefined || factories === undefined) return undefined;
+  return rows.filter((row) => factories.includes(row.factory));
+}
+
 /** The switcher's order: the default factory first, then the rest by name. */
 export function switcherEntries<Row extends { factory: string; is_default: boolean }>(
   rows: readonly Row[],

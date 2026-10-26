@@ -1,6 +1,6 @@
 import { type ReactElement, useEffect, useState } from 'react';
 import { Link, useLocation } from 'react-router';
-import { switcherEntries } from '../lib/factory-choice';
+import { shownRows, switcherEntries } from '../lib/factory-choice';
 import { useFactory, usePublishFactories } from '../live/FactoryProvider';
 import { LivePanel, type PanelState } from '../live/LivePanel';
 import { useLive } from '../live/LiveProvider';
@@ -119,33 +119,40 @@ function PublishFactories({
   return null;
 }
 
-/** The shell's factory switcher: every row of `mc.factories`, live, opening the same screen. */
+/**
+ * The shell's factory switcher: every row of `mc.factories` the server shows, live, opening the
+ * same screen.
+ */
 export function FactorySwitcher({ screens }: { screens: readonly FactoryScreen[] }): ReactElement {
   const live = useLive();
   const current = useFactory();
   const { pathname } = useLocation();
   const [open, setOpen] = useState(false);
+  const factories = live.status === 'ready' ? live.factories : undefined;
   // Sealed for the default factory, so a switch does not re-seal the list.
-  const fallback = live.status === 'ready' ? live.factories[0] : undefined;
+  const fallback = factories?.[0];
   return (
     <LivePanel<FactorySwitcherRow>
       query="factory-switcher"
       factory={fallback}
       className="mx-auto flex max-w-6xl px-6 pt-3"
     >
-      {(rows, state) => (
-        <>
-          <PublishFactories rows={rows} state={state} />
-          <FactorySwitcherBody
-            rows={rows}
-            state={state}
-            current={current}
-            hrefFor={(factory) => factoryPath(pathname, factory, screens)}
-            open={open}
-            onToggle={setOpen}
-          />
-        </>
-      )}
+      {(all, state) => {
+        const rows = shownRows(all, factories);
+        return (
+          <>
+            <PublishFactories rows={rows} state={state} />
+            <FactorySwitcherBody
+              rows={rows}
+              state={state}
+              current={current}
+              hrefFor={(factory) => factoryPath(pathname, factory, screens)}
+              open={open}
+              onToggle={setOpen}
+            />
+          </>
+        );
+      }}
     </LivePanel>
   );
 }

@@ -1,9 +1,10 @@
-import { writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { openPage, type Page } from '../lib/cdp';
 import type { Deps } from '../lib/cli';
 import type { Db } from '../lib/db';
 import {
+  freePort,
   LANE,
   LIMITS,
   lapsOnNodes,
@@ -14,6 +15,7 @@ import {
   PANEL,
   pageWait,
   READY_WAIT_MS,
+  waitForHealth,
 } from '../test-live';
 
 export interface SwitcherContext {
@@ -23,6 +25,8 @@ export interface SwitcherContext {
   outDir: string;
   /** The default factory: factories.json's first. */
   factory: string;
+  /** The factories file the app's server reads (`MC_FACTORIES_FILE`): factories.json's and the seed's second. */
+  factoriesFile: string;
   /** Laps test:live inserted; its cleanup deletes them. */
   inserted: string[];
   failures: string[];
@@ -81,13 +85,19 @@ async function choose(page: Page, factory: string, path: string): Promise<string
   return page.evaluate<string>('location.pathname');
 }
 
+const namesIn = (file: string): string[] =>
+  (JSON.parse(readFileSync(file, 'utf-8')) as { factories: { name: string }[] }).factories.map(
+    (f) => f.name,
+  );
+
 /**
- * The factory switcher on the running app (#77): it lists every row of `mc.factories` with its
- * running laps, live; choosing the second factory shows its name, map and laps, keeps the screen,
- * and is remembered; a remembered factory that no longer exists falls back with no error.
+ * The factory switcher on the running app (#77): it lists every row of `mc.factories` its
+ * server's factories file names, with its running laps, live; choosing the second factory shows its name, map and laps, keeps the screen,
+ * and is remembered; a remembered factory that no longer exists falls back with no error. A server reading
+ * factories.json alone lists only its factories, though the seed's second is in `mc.factories`.
  */
 export async function switcherPhase(ctx: SwitcherContext): Promise<void> {
-  const { deps, db, base, outDir, factory, inserted, failures } = ctx;
+  const { deps, db, base, outDir, factory, factoriesFile, inserted, failures } = ctx;
   const lines: string[] = [];
   const check = (what: string, shown: unknown, expected: unknown) => {
     const same = JSON.stringify(shown) === JSON.stringify(expected);
@@ -108,10 +118,14 @@ export async function switcherPhase(ctx: SwitcherContext): Promise<void> {
   };
   const counts = async () =>
     (await db.query(RUNNING_SQL)).map((r) => [String(r.name), Number(r.running)] as const);
-  const listed = await counts();
+  const shownBy = (names: readonly string[]) =>
+    counts().then((rows) => rows.filter(([name]) => names.includes(name)));
+  const listed = await shownBy(namesIn(factoriesFile));
   const second = listed.map(([name]) => name).find((name) => name !== factory);
   if (second === undefined) {
-    failures.push(`switcher: mc.factories holds ${listed.length} factory, the check needs two`);
+    failures.push(
+      `switcher: mc.factories holds ${listed.length} of the factories file's, the check needs two`,
+    );
     return;
   }
   const page = await openPage(deps.env);
@@ -235,6 +249,48 @@ export async function switcherPhase(ctx: SwitcherContext): Promise<void> {
       ),
       [],
     );
+
+    // factories.json alone: the seed's second factory is still a row of mc.factories.
+    const own = namesIn(join(deps.repoRoot, 'factories.json'));
+    const port = await freePort();
+    const alone = `http://localhost:${port}`;
+    const env = { ...deps.env };
+    delete env.MC_FACTORIES_FILE;
+    const proc = Bun.spawn(['bun', 'server/main.ts', '--port', String(port)], {
+      cwd: deps.repoRoot,
+      env,
+      stdout: 'ignore',
+      stderr: 'inherit',
+    });
+    try {
+      await waitForHealth(alone, () => proc.exitCode !== null);
+      await page.goto(`${alone}/`);
+      await openList(page);
+      const byName = (rows: readonly (readonly [string, number])[]) =>
+        [...rows].sort(([a], [b]) => a.localeCompare(b));
+      check(
+        'the factories on / with factories.json alone',
+        byName(await page.evaluate<[string, number][]>(entriesOnScreen)),
+        byName(await shownBy(own)),
+      );
+      const sealed = await fetch(`${alone}/api/live/status-strip`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ factory: second }),
+      });
+      check(`a seal for ${second} with factories.json alone`, sealed.status, 400);
+      await page.evaluate(`localStorage.setItem('mc:factory', ${JSON.stringify(second)})`);
+      await page.goto(`${alone}/`);
+      await waitFor(page, `/ did not fall back to ${factory}`, stripNames(factory));
+      check(
+        `the factory / shows with ${second} remembered and factories.json alone`,
+        await page.evaluate<string>(`document.querySelector('${PANEL} span')?.textContent`),
+        factory,
+      );
+    } finally {
+      proc.kill();
+      await proc.exited;
+    }
   } finally {
     await page.close().catch(() => undefined);
     writeFileSync(join(outDir, 'switcher-check.txt'), `${lines.join('\n')}\n`);
