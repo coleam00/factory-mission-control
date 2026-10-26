@@ -210,7 +210,7 @@ export interface LoopLayout {
 }
 
 /** Lays the loop out top to bottom with dagre, each expanded step's stages in a box. */
-export function layoutLoop(map: HomeMap): LoopLayout {
+export function layoutLoop(map: HomeMap, narrow = false): LoopLayout {
   const g = new dagre.graphlib.Graph<GraphLabel, NodeLabel, EdgeLabel>({ compound: true });
   g.setDefaultEdgeLabel(() => ({}));
   g.setGraph({ rankdir: 'TB', ranksep: 36, nodesep: 28, marginx: 24, marginy: 24 });
@@ -244,8 +244,25 @@ export function layoutLoop(map: HomeMap): LoopLayout {
     return { x: x - width / 2, y: y - height / 2, width, height };
   };
   const nodes = new Map(map.loop.map((node) => [node.id, boxOf(node.id)]));
+  // The desktop spine bends around expanded stages. On a phone keep every spine node
+  // in the first column, leaving the expanded stages reachable beside it at full size.
+  if (narrow) {
+    for (const node of map.loop) {
+      const box = nodes.get(node.id);
+      if (node.role === 'step' && box) box.x = 24;
+    }
+  }
   const clusters = new Map([...map.clusters.keys()].map((p) => [p, boxOf(`cluster:${p}`)]));
   const edges = map.edges.map((edge) => {
+    const from = nodes.get(edge.from);
+    const to = nodes.get(edge.to);
+    if (narrow && from && to) {
+      const x1 = from.x + from.width / 2;
+      const y1 = from.y + from.height;
+      const x2 = to.x + to.width / 2;
+      const y2 = to.y;
+      return { ...edge, d: `M${x1},${y1} V${(y1 + y2) / 2} H${x2} V${y2}` };
+    }
     const points = g.edge(edge.from, edge.to).points ?? [];
     return { ...edge, d: points.map((p, i) => `${i === 0 ? 'M' : 'L'}${p.x},${p.y}`).join(' ') };
   });

@@ -13,6 +13,7 @@ import {
 } from '../lib/issue-graph';
 import { LivePanel } from '../live/LivePanel';
 import { EmptyState } from './EmptyState';
+import { GraphViewport } from './GraphViewport';
 
 const LABEL = 'font-mono text-[10px] font-semibold uppercase tracking-[0.04em] text-text-secondary';
 const MONO = 'font-mono text-[12px] tabular-nums';
@@ -63,6 +64,9 @@ export function IssueScreen({ rows }: { rows: readonly IssueGraphRow[] }): React
     return { graph, bars: phaseBars(graph.issues), chain: new Set(longestOpenChain(graph)) };
   }, [rows]);
   const layout = useMemo(() => layoutGraph(graph), [graph]);
+  const root = layout.issues.find(
+    (issue) => !graph.dependencies.some((dependency) => dependency.from === issue.number),
+  );
   const onChain = (number: number) => chain.has(number);
   return (
     <>
@@ -78,7 +82,11 @@ export function IssueScreen({ rows }: { rows: readonly IssueGraphRow[] }): React
       )}
       <h2 className={`${LABEL} mt-8 mb-3`}>Issue graph</h2>
       <Legend />
-      <div className="mt-3 overflow-x-auto rounded-[10px] border border-border bg-surface-inset">
+      <GraphViewport
+        label="issue graph"
+        anchorX={(root?.x ?? 0) + NODE.width / 2}
+        className="mt-3 rounded-[10px]"
+      >
         <div className="relative mx-auto" style={{ width: layout.width, height: layout.height }}>
           <svg
             aria-hidden="true"
@@ -143,7 +151,7 @@ export function IssueScreen({ rows }: { rows: readonly IssueGraphRow[] }): React
             );
           })}
         </div>
-      </div>
+      </GraphViewport>
     </>
   );
 }

@@ -1,4 +1,4 @@
-import { type ReactElement, type ReactNode, useMemo } from 'react';
+import { type ReactElement, type ReactNode, useMemo, useSyncExternalStore } from 'react';
 import { Link } from 'react-router';
 import {
   type Box,
@@ -9,6 +9,14 @@ import {
   type StepNode,
 } from '../lib/home-map';
 import { LiveDot } from './LiveDot';
+import { GraphViewport } from './GraphViewport';
+
+const narrowScreen = () => window.matchMedia('(max-width: 639px)').matches;
+const subscribeScreen = (onChange: () => void) => {
+  const query = window.matchMedia('(max-width: 639px)');
+  query.addEventListener('change', onChange);
+  return () => query.removeEventListener('change', onChange);
+};
 
 /** Kind glyphs from the console's run graph (RunGraphPanel); an include gets a boxed square. */
 const KIND_GLYPH: Record<string, string> = {
@@ -142,13 +150,15 @@ export function HomeMap({
   factories: readonly string[];
 }): ReactElement {
   const map = useMemo(() => homeMap(rows, factories), [rows, factories]);
-  const laid = useMemo(() => layoutLoop(map), [map]);
+  const narrow = useSyncExternalStore(subscribeScreen, narrowScreen, () => false);
+  const laid = useMemo(() => layoutLoop(map, narrow), [map, narrow]);
+  const first = laid.nodes.get(map.loop[0]?.id ?? '');
   return (
     <div className="flex flex-col gap-5">
       <Band label="Inputs">{frames(map.inputs)}</Band>
       <Band label="Manager">{frames(map.manager)}</Band>
       <Band label="Loop">
-        <div className="overflow-x-auto rounded-lg border border-border bg-surface-inset">
+        <GraphViewport label="loop" anchorX={first ? first.x + first.width / 2 : 0}>
           <div className="relative mx-auto" style={{ width: laid.width, height: laid.height }}>
             <svg
               aria-hidden="true"
@@ -179,7 +189,7 @@ export function HomeMap({
               return box === undefined ? null : <Step key={node.id} node={node} box={box} />;
             })}
           </div>
-        </div>
+        </GraphViewport>
       </Band>
       <Band label="Outputs">{frames(map.outputs)}</Band>
     </div>

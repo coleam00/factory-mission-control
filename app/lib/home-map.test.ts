@@ -147,6 +147,32 @@ test('with no steps stored the map is empty', () => {
   expect([...map.inputs, ...map.manager, ...map.loop, ...map.outputs]).toEqual([]);
 });
 
+test('the narrow layout keeps the whole spine in one column with full-size stages beside it', () => {
+  const map = homeMap(rows, SHOWN);
+  const desktop = layoutLoop(map);
+  const narrow = layoutLoop(map, true);
+  for (const node of map.loop) {
+    const box = narrow.nodes.get(node.id);
+    const original = desktop.nodes.get(node.id);
+    if (!box || !original) throw new Error(`Missing node ${node.id}`);
+    expect([box.y, box.width, box.height]).toEqual([original.y, original.width, original.height]);
+    if (node.role === 'step') {
+      expect(box.x).toBe(24);
+      expect(box.x + box.width).toBeLessThanOrEqual(340);
+    } else {
+      expect(box).toEqual(original);
+    }
+  }
+  for (const edge of narrow.edges) {
+    const from = narrow.nodes.get(edge.from);
+    const to = narrow.nodes.get(edge.to);
+    if (!from || !to) throw new Error('Missing edge endpoint');
+    expect(edge.d).toStartWith(`M${from.x + from.width / 2},${from.y + from.height}`);
+    expect(edge.d).toEndWith(`H${to.x + to.width / 2} V${to.y}`);
+  }
+  expect(narrow.clusters).toEqual(desktop.clusters);
+});
+
 test('the layout places every step apart, and the stage box around its stages', () => {
   const longFactory = 'a-factory-with-a-long-name';
   const map = homeMap(
