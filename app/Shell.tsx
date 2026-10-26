@@ -1,10 +1,12 @@
 import { Fragment, type ReactElement } from 'react';
 import { Outlet } from 'react-router';
-import { FactoryStrip } from './components/FactoryStrip';
+import { EmptyState } from './components/EmptyState';
+import { FactoryStrip, FactoryStripBody } from './components/FactoryStrip';
 import { FactorySwitcher } from './components/FactorySwitcher';
 import { ScreenNav } from './components/ScreenNav';
-import { FactoryProvider, useFactory } from './live/FactoryProvider';
-import { LiveProvider } from './live/LiveProvider';
+import { UnknownFactory } from './components/UnknownFactory';
+import { FactoryProvider, useFactory, useUrlFactory } from './live/FactoryProvider';
+import { LiveProvider, useLive } from './live/LiveProvider';
 import type { FactoryScreen } from './routing';
 
 /**
@@ -13,6 +15,40 @@ import type { FactoryScreen } from './routing';
  */
 function ForFactory({ screens }: { screens: readonly FactoryScreen[] }): ReactElement {
   const factory = useFactory() ?? '';
+  const inUrl = useUrlFactory();
+  const live = useLive();
+  if (inUrl.key !== undefined && inUrl.view !== 'screen') {
+    // Nothing is sealed for a key that is not a factory, so nothing reads as an outage.
+    const unknown = inUrl.view === 'unknown';
+    return (
+      <>
+        <header className="border-b border-border bg-surface">
+          <FactorySwitcher screens={screens} />
+          <section
+            data-url-factory={inUrl.view}
+            className="mx-auto flex max-w-6xl flex-wrap items-center gap-x-6 gap-y-2 px-6 py-3"
+          >
+            <FactoryStripBody
+              factory={inUrl.key}
+              rows={undefined}
+              state="loading"
+              held={inUrl.view}
+            />
+          </section>
+        </header>
+        {unknown ? (
+          <UnknownFactory
+            factory={inUrl.key}
+            fallback={live.status === 'ready' ? live.factories[0] : undefined}
+          />
+        ) : (
+          <main className="mx-auto max-w-6xl px-6">
+            <EmptyState title="Loading the factories." />
+          </main>
+        )}
+      </>
+    );
+  }
   return (
     <>
       <header className="border-b border-border bg-surface">

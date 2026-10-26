@@ -8,6 +8,7 @@ import {
   shownRows,
   switcherEntries,
   toRemember,
+  urlFactoryView,
 } from './factory-choice';
 
 const loading: Listed = { status: 'loading' };
@@ -37,6 +38,53 @@ test('only a listed factory in the URL is remembered', () => {
   expect(toRemember('typo', both)).toBeUndefined();
   expect(toRemember('second-factory', loading)).toBeUndefined();
   expect(toRemember(undefined, both)).toBeUndefined();
+});
+
+/** The keys #79's contract checks: none of them is a factory. */
+const NOT_FACTORIES = ['nope', ' mission-control', 'Mission-Control', 'x'.repeat(300), 'a/b'];
+const SERVED = ['mission-control', 'second-factory'];
+const view = (inUrl: string | undefined, listed: Listed, served: string[] | undefined = SERVED) =>
+  urlFactoryView({ inUrl, listed, served });
+
+test('a key the live list names shows its screen; one it does not name is unknown', () => {
+  expect(view('second-factory', both)).toBe('screen');
+  for (const key of NOT_FACTORIES) expect(view(key, both)).toBe('unknown');
+});
+
+test('a key the server serves is never unknown, even with no row in the live list', () => {
+  const noRow: Listed = { status: 'ready', names: ['mission-control'] };
+  expect(view('second-factory', noRow)).toBe('screen');
+  expect(view('second-factory', { status: 'ready', names: [] })).toBe('screen');
+  expect(view('second-factory', loading)).toBe('screen');
+  // Served is the server's file as written: a recased or padded key is still not one of them.
+  expect(view('Second-Factory', noRow)).toBe('unknown');
+  expect(view(' second-factory', noRow)).toBe('unknown');
+});
+
+test('while the list loads nothing is unknown: a served key shows, any other waits', () => {
+  expect(view('mission-control', loading)).toBe('screen');
+  for (const key of NOT_FACTORIES) expect(view(key, loading)).toBe('waiting');
+  // Before the server's configuration is in, no panel can seal, so nothing waits on it.
+  expect(urlFactoryView({ inUrl: 'nope', listed: loading, served: undefined })).toBe('screen');
+});
+
+test('when the list fails the key cannot be checked, so the screen shows as before', () => {
+  const failed: Listed = { status: 'error' };
+  expect(view('mission-control', failed)).toBe('screen');
+  for (const key of NOT_FACTORIES) expect(view(key, failed)).toBe('screen');
+});
+
+test('off a factory URL the screen shows', () => {
+  expect(view(undefined, loading)).toBe('screen');
+  expect(view(undefined, both)).toBe('screen');
+});
+
+test('a key that is not a factory is never remembered', () => {
+  for (const key of NOT_FACTORIES) {
+    expect(toRemember(key, both)).toBeUndefined();
+    expect(toRemember(key, loading)).toBeUndefined();
+    expect(toRemember(key, { status: 'error' })).toBeUndefined();
+  }
 });
 
 test('the choice round-trips through storage, and a throwing storage remembers nothing', () => {
