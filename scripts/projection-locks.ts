@@ -277,7 +277,7 @@ export const main: Main = async (argv, deps) => {
         );
       const [run] = await archon.query(
         `INSERT INTO remote_agent_workflow_runs (workflow_name, status, user_message, metadata)
-         VALUES ('projection-locks', 'running', 'lock wait check', '{}'::jsonb) RETURNING id`,
+         VALUES ('archon-loop', 'running', 'lock wait check', '{}'::jsonb) RETURNING id`,
       );
       const runId = String(run?.id);
       await holder.query('SELECT 1');
