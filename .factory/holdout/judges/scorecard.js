@@ -46,6 +46,9 @@ const obj = (v) => {
 const HOUR = 3600_000;
 
 const TIME_MEASURES = new Set(["merges_per_active_hour", "lap_hours_per_merge", "app_check_share"]);
+// app_check_share's numerator is every check-app attempt, failed or completed, retries included (owner's
+// reading of PRD 4.2): each node_completed and each node_failed check-app event adds its duration_ms.
+const CHECK_ATTEMPT_ENDS = new Set(["node_completed", "node_failed"]);
 
 function compute(digest) {
   const laps = rec.runs.filter(
@@ -63,7 +66,9 @@ function compute(digest) {
   const lapMs = durations.reduce((a, [s, e]) => a + (e - s), 0);
   const hours = new Set();
   for (const [s, e] of durations) for (let h = Math.floor(s / HOUR); h * HOUR < e; h++) hours.add(h);
-  const checkMs = done.filter((s) => s.step_name === "check-app" && finished.has(s.run_id)).reduce((a, s) => a + Number(s.duration_ms ?? 0), 0);
+  const checkMs = steps
+    .filter((s) => s.step_name === "check-app" && CHECK_ATTEMPT_ENDS.has(s.event_type) && finished.has(s.run_id))
+    .reduce((a, s) => a + Number(s.duration_ms ?? 0), 0);
   const cost = steps.reduce((a, s) => a + Number(s.cost_usd ?? 0), 0);
   const catches = (rec.app_check_lines ?? []).filter(
     (l) =>
