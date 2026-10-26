@@ -12,7 +12,12 @@ export interface HomeMapRow {
   depends_on: string[] | null;
   /** The workflow whose step this is: a stage is a step of the workflow its parent includes. */
   detail_workflow: string;
-  live_count: number;
+  /** The factory whose laps `laps` counts; null on a step no factory has a lap on. */
+  lap_factory: string | null;
+  /** That factory's running laps on the step or anywhere beneath it. */
+  laps: number;
+  /** Whether `lap_factory` is the factory in the address. */
+  is_current: boolean;
 }
 
 /**
@@ -43,7 +48,16 @@ export interface StepNode {
   label: string;
   kind: string;
   href: string;
+  /** The laps of the factory in the address on it now. */
   liveCount: number;
+  /** Every shown factory with laps on it now, the factory in the address first, then by name. */
+  factories: FactoryLaps[];
+}
+
+export interface FactoryLaps {
+  factory: string;
+  laps: number;
+  current: boolean;
 }
 
 export interface Edge {
@@ -94,9 +108,38 @@ export function reduceEdges(edges: readonly Edge[]): Edge[] {
   return edges.filter((edge) => !reachesAvoiding(edge.from, edge.to, edge));
 }
 
-/** Turns the live rows into the map; every part is empty when no architecture is stored. */
-export function homeMap(rows: readonly HomeMapRow[]): HomeMap {
-  const steps = rows.filter(isStep).sort((a, b) => a.position - b.position);
+/**
+ * Each step path once, with the laps each shown factory has on it: the query gives a row per
+ * factory with laps, including a factory the server's factories file does not name, which the map
+ * does not show (PRD 11.6), as the switcher does not list it.
+ */
+function stepsByPath(
+  rows: readonly HomeMapRow[],
+  shown: readonly string[],
+): { row: StepRow; factories: FactoryLaps[] }[] {
+  const byPath = new Map<string, { row: StepRow; factories: FactoryLaps[] }>();
+  for (const row of rows.filter(isStep)) {
+    const step = byPath.get(row.path) ?? { row, factories: [] };
+    byPath.set(row.path, step);
+    if (row.lap_factory !== null && shown.includes(row.lap_factory)) {
+      step.factories.push({ factory: row.lap_factory, laps: row.laps, current: row.is_current });
+    }
+  }
+  for (const { factories } of byPath.values()) {
+    factories.sort(
+      (a, b) => Number(b.current) - Number(a.current) || a.factory.localeCompare(b.factory),
+    );
+  }
+  return [...byPath.values()].sort((a, b) => a.row.position - b.row.position);
+}
+
+/**
+ * Turns the live rows into the map, counting the laps of the factories in `shown` (the server's
+ * factories file); every part is empty when no architecture is stored.
+ */
+export function homeMap(rows: readonly HomeMapRow[], shown: readonly string[]): HomeMap {
+  const nodes = stepsByPath(rows, shown);
+  const steps = nodes.map((n) => n.row);
   if (steps.length === 0) {
     return { inputs: [], manager: [], loop: [], outputs: [], edges: [], clusters: new Map() };
   }
@@ -132,13 +175,14 @@ export function homeMap(rows: readonly HomeMapRow[]): HomeMap {
       ...FRAME_INPUTS_AFTER.map((label) => frame('frame-input', label)),
     ],
     manager: workflows('manager'),
-    loop: steps.map((row) => ({
+    loop: nodes.map(({ row, factories }) => ({
       id: row.path,
       role: row.role as StepNode['role'],
       label: row.step_id,
       kind: row.kind ?? '',
       href: `/steps/${encodeURIComponent(row.detail_workflow)}/${encodeURIComponent(row.step_id)}`,
-      liveCount: row.live_count,
+      liveCount: factories.find((f) => f.current)?.laps ?? 0,
+      factories,
     })),
     outputs: FRAME_OUTPUTS.map((label) => frame('output', label)),
     edges: reduceEdges(edges),
@@ -170,7 +214,18 @@ export function layoutLoop(map: HomeMap): LoopLayout {
   const g = new dagre.graphlib.Graph<GraphLabel, NodeLabel, EdgeLabel>({ compound: true });
   g.setDefaultEdgeLabel(() => ({}));
   g.setGraph({ rankdir: 'TB', ranksep: 36, nodesep: 28, marginx: 24, marginy: 24 });
-  for (const node of map.loop) g.setNode(node.id, { width: NODE_W, height: NODE_H });
+  for (const node of map.loop) {
+    const labelled = node.factories.some((f) => !f.current);
+    // One 15px line per factory, below the step label. Reserve 70px horizontally for the
+    // padding, glyph, gaps and live dot; 7px per character leaves room for 10px Geist Mono.
+    // Give dagre the full size so edges, siblings and stage clusters also clear the counts.
+    g.setNode(node.id, {
+      width: labelled
+        ? Math.max(NODE_W, ...node.factories.map((f) => 70 + `${f.factory} ${f.laps}`.length * 7))
+        : NODE_W,
+      height: labelled ? NODE_H + node.factories.length * 15 : NODE_H,
+    });
+  }
   for (const [parent, members] of map.clusters) {
     const cluster = `cluster:${parent}`;
     g.setNode(cluster, {
