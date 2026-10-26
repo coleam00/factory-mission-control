@@ -30,20 +30,23 @@ const entries = [
   entry({ pin: 'f00dfeed00', date: '2026-10-25' }),
 ];
 
-function render(selected: readonly string[]): string {
-  const router = createMemoryRouter([
-    {
-      path: '/',
-      element: (
-        <VersionList
-          factory="mission-control"
-          entries={entries}
-          selected={selected}
-          onToggle={() => {}}
-        />
-      ),
-    },
-  ]);
+function render(selected: readonly string[], search = '', rows = entries): string {
+  const router = createMemoryRouter(
+    [
+      {
+        path: '/',
+        element: (
+          <VersionList
+            factory="mission-control"
+            entries={rows}
+            selected={selected}
+            onToggle={() => {}}
+          />
+        ),
+      },
+    ],
+    { initialEntries: [`/${search}`] },
+  );
   return renderToStaticMarkup(<RouterProvider router={router} />);
 }
 
@@ -58,6 +61,29 @@ test('a version with no trailers shows not recorded, and a pin not yet run canno
   expect(pending).toContain('Not yet run');
   expect(pending).not.toContain('<button');
   expect(html).not.toContain('data-compare');
+});
+
+test('a copied destination highlights only its exact pin and digest without picking comparisons', () => {
+  const rows = [...entries, entry({ pin: entries[1].pin, digest: 'sha256:another' })];
+  const html = render([], `?pin=${entries[1].pin}&digest=${encodeURIComponent(V2)}`, rows);
+  expect(entryHtml(html, `data-digest="${V2}"`)).toContain('aria-current="true"');
+  expect(html.match(/aria-current="true"/g)).toHaveLength(1);
+  expect(html).not.toContain('aria-pressed="true"');
+  expect(html).not.toContain('data-compare');
+});
+
+test('an unused pin is the destination and an unknown or mismatched version never targets another', () => {
+  const html = render([], '?pin=f00dfeed00');
+  const pending = entryHtml(html, 'data-kind="pending"');
+  expect(pending).toContain('aria-current="true"');
+  expect(pending).toContain('bg-surface-hover');
+  expect(pending).toContain('Not yet run');
+  expect(html.match(/aria-current="true"/g)).toHaveLength(1);
+  expect(render([], '?pin=unknown')).not.toContain('aria-current');
+  expect(render([], `?pin=f00dfeed00&digest=${encodeURIComponent(V1)}`)).not.toContain(
+    'aria-current',
+  );
+  expect(render([])).not.toContain('aria-current');
 });
 
 test('two picked versions link to their scorecard and diff, older as a, whatever the click order', () => {

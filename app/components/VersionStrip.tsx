@@ -1,5 +1,5 @@
-import { type ReactElement, useState } from 'react';
-import { Link } from 'react-router';
+import { type ReactElement, useEffect, useRef, useState } from 'react';
+import { Link, useSearchParams } from 'react-router';
 import {
   compareLinks,
   NOT_RECORDED,
@@ -56,6 +56,12 @@ export function VersionList({
   selected: readonly string[];
   onToggle: (digest: string) => void;
 }): ReactElement {
+  const [params] = useSearchParams();
+  const pin = params.get('pin');
+  const digest = params.get('digest');
+  const destination = entries.find(
+    (entry) => pin !== null && entry.pin === pin && (digest === null || entry.digest === digest),
+  );
   const picked = entries.flatMap((e) =>
     e.digest !== null && selected.includes(e.digest) ? [e.digest] : [],
   );
@@ -67,6 +73,7 @@ export function VersionList({
           <Entry
             key={entry.digest ?? `pin:${entry.pin}`}
             entry={entry}
+            targeted={entry === destination}
             selected={entry.digest !== null && selected.includes(entry.digest)}
             onToggle={onToggle}
           />
@@ -92,22 +99,32 @@ export function VersionList({
 
 function Entry({
   entry,
+  targeted,
   selected,
   onToggle,
 }: {
   entry: StripEntry;
+  targeted: boolean;
   selected: boolean;
   onToggle: (digest: string) => void;
 }): ReactElement {
   const { digest } = entry;
+  const row = useRef<HTMLLIElement>(null);
+  // The destination may arrive after navigation, in the first live snapshot.
+  // Only scroll when it becomes the target, not on subsequent live updates.
+  useEffect(() => {
+    if (targeted) row.current?.scrollIntoView({ block: 'center' });
+  }, [targeted]);
   return (
     <li
+      ref={row}
+      aria-current={targeted ? 'true' : undefined}
       data-version-entry
       data-kind={digest === null ? 'pending' : 'version'}
       data-digest={digest ?? undefined}
       data-pin={entry.pin ?? undefined}
       className={`flex flex-col gap-2 border-b border-border/40 px-[18px] py-[13px] ${
-        selected ? 'bg-surface-hover ring-2 ring-inset ring-accent-bright/40' : ''
+        selected || targeted ? 'bg-surface-hover ring-2 ring-inset ring-accent-bright/40' : ''
       }`}
     >
       <div className="flex flex-wrap items-center gap-x-[18px] gap-y-1">

@@ -106,7 +106,10 @@ export function Timeline({
             ) : (
               <Link
                 data-version-link={entry.pin_sha}
-                to={`/f/${encodeURIComponent(factory)}/versions`}
+                to={`/f/${encodeURIComponent(factory)}/versions?${new URLSearchParams({
+                  pin: entry.pin_sha,
+                  ...(entry.digest === null ? {} : { digest: entry.digest }),
+                })}`}
                 className={`${MONO} min-w-0 break-all text-accent-bright`}
               >
                 {entry.pin_sha.slice(0, 8)}
