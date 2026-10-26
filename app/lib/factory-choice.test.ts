@@ -49,8 +49,16 @@ const view = (inUrl: string | undefined, listed: Listed, served: string[] | unde
 test('a key the live list names shows its screen; one it does not name is unknown', () => {
   expect(view('second-factory', both)).toBe('screen');
   for (const key of NOT_FACTORIES) expect(view(key, both)).toBe('unknown');
-  // Listed means in the live list, not in the server's file: a served key with no row is unknown.
-  expect(view('second-factory', { status: 'ready', names: ['mission-control'] })).toBe('unknown');
+});
+
+test('a key the server serves is never unknown, even with no row in the live list', () => {
+  const noRow: Listed = { status: 'ready', names: ['mission-control'] };
+  expect(view('second-factory', noRow)).toBe('screen');
+  expect(view('second-factory', { status: 'ready', names: [] })).toBe('screen');
+  expect(view('second-factory', loading)).toBe('screen');
+  // Served is the server's file as written: a recased or padded key is still not one of them.
+  expect(view('Second-Factory', noRow)).toBe('unknown');
+  expect(view(' second-factory', noRow)).toBe('unknown');
 });
 
 test('while the list loads nothing is unknown: a served key shows, any other waits', () => {

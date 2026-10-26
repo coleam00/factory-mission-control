@@ -32,7 +32,7 @@ function ForFactory({ screens }: { screens: readonly FactoryScreen[] }): ReactEl
               factory={inUrl.key}
               rows={undefined}
               state="loading"
-              unknown={unknown}
+              held={inUrl.view}
             />
           </section>
         </header>

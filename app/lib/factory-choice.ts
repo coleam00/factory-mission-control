@@ -40,11 +40,12 @@ export function toRemember(inUrl: string | undefined, listed: Listed): string | 
 }
 
 /**
- * What the shell shows for the URL's factory. A key is a factory when the switcher's live list
- * names it: once listed it is the `screen`, and once the list is in without it, it is `unknown`.
- * While the list loads nothing is called unknown: a key the server serves shows its screen at
- * once, and one it does not is held (`waiting`), because sealing for it would read as an outage.
- * When the list itself fails, the key cannot be checked and the screen shows as before.
+ * What the shell shows for the URL's factory. A key the server serves is always the `screen`,
+ * even before it has a row in the live list (a new factory shows its empty states). Any other key
+ * is a factory when the switcher's live list names it: once listed it is the `screen`, and once
+ * the list is in without it, it is `unknown`. While the list loads nothing is called unknown: a
+ * key the server does not serve is held (`waiting`), because sealing for it would read as an
+ * outage. When the list itself fails, the key cannot be checked and the screen shows as before.
  */
 export type UrlFactoryView = 'screen' | 'unknown' | 'waiting';
 
@@ -59,6 +60,7 @@ export function urlFactoryView({
   served: readonly string[] | undefined;
 }): UrlFactoryView {
   if (inUrl === undefined || listed.status === 'error') return 'screen';
+  if (served?.includes(inUrl)) return 'screen';
   if (listed.status === 'ready') return listed.names.includes(inUrl) ? 'screen' : 'unknown';
   return served === undefined || served.includes(inUrl) ? 'screen' : 'waiting';
 }
