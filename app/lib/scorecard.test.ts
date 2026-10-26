@@ -6,11 +6,11 @@ import {
   type LapRow,
   type Measured,
   meaningful,
-  type PinRow,
   type ScorecardRow,
   scorecard,
   versionLaps,
   versionPin,
+  type VersionRow,
 } from './scorecard';
 
 const V = 'sha256:a1';
@@ -28,11 +28,12 @@ const step = (run: string, step_id: string, over: Partial<AttemptRow> = {}): Att
   ...over,
 });
 
-const pin = (sha: string, at: string): PinRow => ({
+const version = (digest: string, firstRunAt: string, pin: string | null): VersionRow => ({
   run_id: null,
   step_id: null,
-  pin_sha: sha,
-  committed_at: new Date(at),
+  digest,
+  first_run_at: new Date(firstRunAt),
+  pin_sha: pin,
 });
 
 /** One lap's row and its attempts' rows. */
@@ -240,25 +241,23 @@ test('a run of another workflow is not a lap', () => {
   expect(s.laps.laps).toEqual(['loop']);
 });
 
-test('a version is labelled by the last pin before its first run of any workflow', () => {
-  const rows: ScorecardRow[] = [
+test('a version is labelled by its version row, and a digest with no row is not a version', () => {
+  const laps: ScorecardRow[] = [
     ...lap('loop', '2026-10-05T08:00:00Z', '2026-10-05T09:00:00Z'),
     ...lap('manager', '2026-10-03T08:00:00Z', null, [step('manager', 'plan', { cost_usd: 1 })], {
       workflow_name: 'archon-manager',
+      digest: 'sha256:manager-only',
     }),
-    pin('old', '2026-10-01T00:00:00Z'),
-    pin('before', '2026-10-02T00:00:00Z'),
-    pin('after', '2026-10-04T00:00:00Z'),
   ];
-  expect(versionPin(rows, V)).toEqual({
-    firstRunAt: new Date('2026-10-03T08:00:00Z'),
+  expect(versionPin([...laps, version(V, '2026-10-05T08:00:00Z', 'before')], V)).toEqual({
+    firstRunAt: new Date('2026-10-05T08:00:00Z'),
     pin: 'before',
   });
-  expect(versionPin(rows.slice(0, 3), V)).toEqual({
-    firstRunAt: new Date('2026-10-03T08:00:00Z'),
+  expect(versionPin([...laps, version(V, '2026-10-05T08:00:00Z', null)], V)).toEqual({
+    firstRunAt: new Date('2026-10-05T08:00:00Z'),
     pin: null,
   });
-  expect(versionPin(rows, 'sha256:none')).toEqual({ firstRunAt: null, pin: null });
+  expect(versionPin(laps, 'sha256:manager-only')).toEqual({ firstRunAt: null, pin: null });
 });
 
 test("another version's rows are ignored", () => {

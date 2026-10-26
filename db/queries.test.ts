@@ -20,7 +20,7 @@ import {
   versionPin,
 } from '../app/lib/scorecard';
 import { joinParts } from '../app/lib/step-detail';
-import { seededDb } from '../scripts/fixture/seed';
+import { SEED_CODEBASE, seededDb } from '../scripts/fixture/seed';
 import { seedLaps } from '../scripts/fixture/seed-laps';
 import { eventData, writeRow } from '../scripts/fixture/write';
 import { REPO_ROOT } from '../scripts/lib/cli';
@@ -555,6 +555,9 @@ describe('version-strip on the seed', () => {
         await tx.query(`INSERT INTO mc.laps (run_id, factory, workflow_name, status, digest, started_at)
           VALUES ('00000000-0000-0000-0000-0000000000c1', 'north-star', 'archon-loop', 'completed',
             'north-star-digest', '2026-10-20T00:00:00Z')`);
+        await tx.query(`INSERT INTO mc.factories (name, repository, codebase, console)
+          VALUES ('north-star', 'coleam00/north-star', 'coleam00/north-star', 'http://localhost:3090')`);
+        await tx.query(`SELECT mc.project_version('north-star', 'north-star-digest')`);
         const [label] = await tx.query(
           'SELECT sha FROM mc.pins WHERE committed_at < $1 ORDER BY committed_at DESC LIMIT 1',
           ['2026-10-20T00:00:00Z'],
@@ -569,6 +572,59 @@ describe('version-strip on the seed', () => {
             .map((r) => r.pin_sha)
             .sort(),
         ).toEqual(unused);
+        throw rollback;
+      })
+      .catch((error) => {
+        if (error !== rollback) throw error;
+      });
+  });
+
+  test('a digest only a non-archon-loop run used is not a version and uses up no pin', async () => {
+    const rollback = new Error('rollback');
+    const digest = 'sha256:fence-proof';
+    await db
+      .transaction(async (tx) => {
+        await writeRow(tx, 'pin', new Date('2026-10-25T14:00:00Z'));
+        const [pin] = await tx.query('SELECT sha FROM mc.pins ORDER BY committed_at DESC LIMIT 1');
+        await tx.query(
+          `INSERT INTO remote_agent_workflow_runs (id, workflow_name, codebase_id, status,
+            user_message, metadata, started_at, completed_at, last_activity_at)
+          VALUES ('00000000-0000-4000-8000-0000000000f1', 'fence-proof', $1, 'completed', 'Prove the fence',
+            $2::jsonb, '2026-10-25T15:00:00Z', '2026-10-25T15:10:00Z', '2026-10-25T15:10:00Z')`,
+          [SEED_CODEBASE, JSON.stringify({ workflow_source: { digest } })],
+        );
+        expect(await tx.query('SELECT factory FROM mc.laps WHERE digest = $1', [digest])).toEqual([
+          { factory: 'mission-control' },
+        ]);
+        expect(await tx.query('SELECT 1 FROM mc.versions WHERE digest = $1', [digest])).toEqual([]);
+
+        const rows = await tx.query(sql, ['mission-control']);
+        expect(rows.filter((r) => r.digest === digest)).toEqual([]);
+        expect(rows.filter((r) => r.digest === null).map((r) => r.pin_sha)).toContain(pin.sha);
+        const scorecardSql = queries.find(([name]) => name === 'scorecard')?.[1] as string;
+        const card = await tx.query(scorecardSql, ['mission-control']);
+        expect(card.filter((r) => r.digest === digest)).toEqual([]);
+        throw rollback;
+      })
+      .catch((error) => {
+        if (error !== rollback) throw error;
+      });
+  });
+
+  test('a recorded version no lap qualifies for is still listed, as a version', async () => {
+    const rollback = new Error('rollback');
+    await db
+      .transaction(async (tx) => {
+        const [pin] = await tx.query('SELECT sha FROM mc.pins ORDER BY committed_at LIMIT 1');
+        await tx.query(
+          `INSERT INTO mc.versions (factory, digest, first_run_at, pin_sha)
+          VALUES ('mission-control', 'sha256:recorded-only', '2026-10-22T00:00:00Z', $1)`,
+          [pin.sha],
+        );
+        const rows = await tx.query(sql, ['mission-control']);
+        expect(rows.filter((r) => r.digest === 'sha256:recorded-only')).toMatchObject([
+          { pin_sha: pin.sha },
+        ]);
         throw rollback;
       })
       .catch((error) => {
