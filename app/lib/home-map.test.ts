@@ -148,8 +148,20 @@ test('with no steps stored the map is empty', () => {
 });
 
 test('the layout places every step apart, and the stage box around its stages', () => {
-  const map = homeMap(rows, SHOWN);
+  const longFactory = 'a-factory-with-a-long-name';
+  const map = homeMap(
+    [
+      ...rows,
+      step('b/two', 3, ['one'], { lap_factory: longFactory, laps: 123 }),
+      step('b/two', 3, ['one'], { lap_factory: 'b-other', laps: 4 }),
+    ],
+    [...SHOWN, longFactory],
+  );
   const laid = layoutLoop(map);
+  const plain = laid.nodes.get('b/one') as NonNullable<ReturnType<typeof laid.nodes.get>>;
+  const counted = laid.nodes.get('b/two') as NonNullable<ReturnType<typeof laid.nodes.get>>;
+  expect(counted.width).toBeGreaterThan(plain.width);
+  expect(counted.height).toBeGreaterThan(plain.height);
   expect([...laid.nodes.keys()]).toEqual(map.loop.map((n) => n.id));
   const boxes = [...laid.nodes.values()];
   for (const [i, a] of boxes.entries()) {
@@ -166,6 +178,8 @@ test('the layout places every step apart, and the stage box around its stages', 
   for (const id of ['b/one', 'b/two']) {
     const box = laid.nodes.get(id);
     expect(box && cluster && box.x >= cluster.x && box.y >= cluster.y).toBe(true);
+    expect(box && cluster && box.x + box.width <= cluster.x + cluster.width).toBe(true);
+    expect(box && cluster && box.y + box.height <= cluster.y + cluster.height).toBe(true);
   }
   expect(laid.edges.every((e) => e.d.startsWith('M'))).toBe(true);
 });

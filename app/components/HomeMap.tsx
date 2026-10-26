@@ -65,7 +65,7 @@ function Step({ node, box }: { node: StepNode; box: Box }): ReactElement {
         {others.length > 0 ? (
           <span
             data-factory-counts
-            className="flex gap-2 truncate font-mono text-[10px] tabular-nums"
+            className="flex flex-col whitespace-nowrap font-mono text-[10px] leading-[15px] tabular-nums"
           >
             {node.factories.map((f) => (
               <span

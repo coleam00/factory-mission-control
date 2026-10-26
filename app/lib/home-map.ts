@@ -214,7 +214,18 @@ export function layoutLoop(map: HomeMap): LoopLayout {
   const g = new dagre.graphlib.Graph<GraphLabel, NodeLabel, EdgeLabel>({ compound: true });
   g.setDefaultEdgeLabel(() => ({}));
   g.setGraph({ rankdir: 'TB', ranksep: 36, nodesep: 28, marginx: 24, marginy: 24 });
-  for (const node of map.loop) g.setNode(node.id, { width: NODE_W, height: NODE_H });
+  for (const node of map.loop) {
+    const labelled = node.factories.some((f) => !f.current);
+    // One 15px line per factory, below the step label. Reserve 70px horizontally for the
+    // padding, glyph, gaps and live dot; 7px per character leaves room for 10px Geist Mono.
+    // Give dagre the full size so edges, siblings and stage clusters also clear the counts.
+    g.setNode(node.id, {
+      width: labelled
+        ? Math.max(NODE_W, ...node.factories.map((f) => 70 + `${f.factory} ${f.laps}`.length * 7))
+        : NODE_W,
+      height: labelled ? NODE_H + node.factories.length * 15 : NODE_H,
+    });
+  }
   for (const [parent, members] of map.clusters) {
     const cluster = `cluster:${parent}`;
     g.setNode(cluster, {
