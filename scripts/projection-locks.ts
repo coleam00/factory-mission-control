@@ -67,6 +67,12 @@ export const CASES: Case[] = [
     write: stepEvent('pick'),
   },
   {
+    name: 'ACCESS EXCLUSIVE mc.lap_step_attempts: node_completed',
+    hold: exclusive('lap_step_attempts'),
+    errors: 1,
+    write: stepEvent('pick'),
+  },
+  {
     name: 'ACCESS EXCLUSIVE mc.app_check_lines: check-app node_completed',
     hold: exclusive('app_check_lines'),
     errors: 1,
@@ -98,7 +104,14 @@ export const CASES: Case[] = [
   },
   {
     name: 'ACCESS EXCLUSIVE on every mc table the projection writes: provider_event',
-    hold: exclusive('laps', 'lap_steps', 'app_check_lines', 'factories', 'projection_errors'),
+    hold: exclusive(
+      'laps',
+      'lap_steps',
+      'lap_step_attempts',
+      'app_check_lines',
+      'factories',
+      'projection_errors',
+    ),
     errors: 0,
     write: providerEvent,
   },
