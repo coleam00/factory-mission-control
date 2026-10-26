@@ -75,20 +75,20 @@ function admit(socket: FakeSocket, request = '1', live = '11') {
     columns: [{ name: 'value', type_oid: 23, typmod: -1, codec: 'pg_text' }],
   });
 }
-function start(socket: FakeSocket, live = '11', attempt = '1') {
+function start(socket: FakeSocket, live = '11', attempt = '1', epoch = '1') {
   socket.receive({
     type: 'baseline_sync_start',
     live_id: live,
-    epoch: '1',
+    epoch,
     baseline_sync_attempt: attempt,
     mvcc: { xmin: '1', xmax: '1', xip: [] },
   });
 }
-function end(socket: FakeSocket, live = '11', attempt = '1', batches = 0) {
+function end(socket: FakeSocket, live = '11', attempt = '1', batches = 0, epoch = '1') {
   socket.receive({
     type: 'baseline_sync_end',
     live_id: live,
-    epoch: '1',
+    epoch,
     baseline_sync_attempt: attempt,
     batch_count: batches,
   });
@@ -172,6 +172,59 @@ test('the actual SDK sees a complete empty or multi-batch baseline only after it
     client.close();
   }
 });
+
+test.each(['before start', 'during baseline', 'stale completion', 'after completion'])(
+  'the actual SDK and observer agree on a committed reset %s',
+  (phase) => {
+    const socket = new FakeSocket();
+    const seal = sealed('a');
+    const item = observation();
+    expectSubscribe(seal.capability, item);
+    const client = createRealtimeClient({
+      url: 'wss://test/',
+      webSocketFactory: markingSubscribes(() => socket),
+    });
+    try {
+      const subscription = client.subscribe(seal);
+      subscription.onChange((snapshot) => {
+        if (snapshot.data !== undefined && snapshot.status === 'live') markRendered(item);
+      });
+      socket.receive({ type: 'ready' });
+      admit(socket);
+      if (phase !== 'before start') start(socket, '11', '5');
+      if (phase === 'after completion') end(socket, '11', '5');
+      const original = marks(item.query, 'first-result')[0]?.startTime;
+      socket.receive({ type: 'open', publication_id: 'reset' });
+      socket.receive({
+        type: 'reset_required',
+        publication_id: 'reset',
+        index: 0,
+        targets: [{ live_id: '11', epoch: '2', first_sequence: '1' }],
+      });
+      socket.receive({
+        type: 'commit',
+        publication_id: 'reset',
+        body_count: 1,
+        frontier: { lsn: '0/1' },
+      });
+      if (phase === 'stale completion') {
+        end(socket, '11', '5');
+        expect(subscription.getSnapshot().data).toBeUndefined();
+        expect(marks(item.query, 'first-result')).toHaveLength(0);
+        expect(marks(item.query, 'rendered')).toHaveLength(0);
+      }
+      start(socket, '11', '1', '2');
+      end(socket, '11', '1', 0, '2');
+      expect(subscription.getSnapshot()).toMatchObject({ status: 'live', data: [] });
+      expect(marks(item.query, 'first-result')).toHaveLength(1);
+      expect(marks(item.query, 'rendered')).toHaveLength(1);
+      if (original !== undefined)
+        expect(marks(item.query, 'first-result')[0].startTime).toBe(original);
+    } finally {
+      client.close();
+    }
+  },
+);
 
 test('two sockets with colliding IDs and the same query retain their own factory, arguments and branch', () => {
   const first = transport();

@@ -84,6 +84,7 @@ interface Admission {
   observation: QueryObservation;
   epoch: bigint;
   attempt?: bigint;
+  reset?: { publication: string; epoch: bigint };
 }
 
 /** Observes the pinned SDK's complete baseline before decoding and publication. */
@@ -105,6 +106,31 @@ export function markingSubscribes(factory: WebSocketFactory): WebSocketFactory {
       if (type === 'subscribe_rejected' && typeof requestId === 'string')
         requests.delete(requestId);
       if (type === 'connection_error') clear();
+      if (
+        type === 'reset_required' &&
+        typeof message.publication_id === 'string' &&
+        Array.isArray(message.targets)
+      ) {
+        const targets: unknown[] = message.targets;
+        for (const target of targets) {
+          if (!target || typeof target !== 'object') continue;
+          const fields = target as Record<string, unknown>;
+          const admission =
+            typeof fields.live_id === 'string' ? live.get(fields.live_id) : undefined;
+          const epoch = counter(fields.epoch);
+          if (admission && epoch !== undefined && epoch > admission.epoch)
+            admission.reset = { publication: message.publication_id, epoch };
+        }
+      }
+      if (type === 'commit') {
+        for (const admission of live.values()) {
+          if (admission.reset && admission.reset.publication === message.publication_id) {
+            admission.epoch = admission.reset.epoch;
+            admission.attempt = undefined;
+            admission.reset = undefined;
+          }
+        }
+      }
       if (typeof liveId !== 'string') return;
       if (type === 'subscribed' && typeof requestId === 'string') {
         const observation = requests.get(requestId);
