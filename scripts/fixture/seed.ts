@@ -1263,6 +1263,15 @@ export function buildSeed(repoRoot: string): string {
       { version: v1, key: archKey(v1.archonCommit, '2026-10-01T00:00:00Z') },
       { version: v2, key: archKey(V2_ARCHON, '2026-10-10T00:00:00Z') },
     ),
+    '',
+    '-- A rewind `bun run rewind:create` registered. No Neon branch has its name: switching to it',
+    '-- answers 404.',
+    insert('mc.rewind_branches', {
+      name: 'rewind-2026-10-24t11-00-00z',
+      parent: 'main',
+      at: '2026-10-24T11:00:00Z',
+      created_at: '2026-10-24T11:02:00Z',
+    }),
   ].join('\n')}\n`;
 }
 

@@ -104,7 +104,12 @@ export function recordingDeps(options: {
     },
     async getEndpoint(id) {
       call(`getEndpoint ${id}`);
-      return { id, branch_id: 'br-target' };
+      return { id, branch_id: 'br-target', host: `${id}.us-east-2.aws.neon.tech` };
+    },
+    async branchEndpoints(branchId) {
+      call(`branchEndpoints ${branchId}`);
+      const id = 'ep-rewind-a1b2c3';
+      return [{ id, branch_id: branchId, host: `${id}.us-east-2.aws.neon.tech` }];
     },
     async getBranch(id) {
       call(`getBranch ${id}`);
@@ -136,6 +141,14 @@ export function recordingDeps(options: {
     },
     async deleteBranch({ name }) {
       mutate(`deleteBranch ${name}`);
+      return [];
+    },
+    async createRewindBranch({ name, parentId, at }) {
+      mutate(`createRewindBranch ${name} from ${parentId} at ${at}`);
+      return { branch: { id: 'br-rewind', name, created_at: NOW.toISOString() }, operations: [] };
+    },
+    async deleteRewindBranch({ name }) {
+      mutate(`deleteRewindBranch ${name}`);
       return [];
     },
   };
