@@ -47,12 +47,15 @@ test.each([
   expect(ledger([pin({ measure, laps: 3 })]).testing[0].waiting).toBe(wanted - 3);
 });
 
-test.each([null, '', 'fewer send-backs per merge.', 'at least 2 merges per hour.'])(
-  'a Measure without a lap count names none: %s',
-  (measure) => {
-    expect(lapsWanted(measure)).toBeNull();
-  },
-);
+test.each([
+  null,
+  '',
+  'fewer send-backs per merge.',
+  'at least 2 merges per hour.',
+  '2 merges per hour over several laps.',
+])('a Measure without a lap count names none: %s', (measure) => {
+  expect(lapsWanted(measure)).toBeNull();
+});
 
 const pin = (over: Partial<LedgerRow>): LedgerRow => ({
   pin_sha: '0'.repeat(40),
@@ -74,12 +77,14 @@ test('a pin with a Measure and no verdict is being tested, waiting for the laps 
     pin({ pin_sha: 'e', measure: '  ' }),
     pin({ pin_sha: 'f' }),
     pin({ pin_sha: 'g', measure: 'at least 2 merges per hour.', laps: 3 }),
+    pin({ pin_sha: 'h', measure: '2 merges per hour over several laps.', laps: 3 }),
   ]);
   expect(testing.map((t) => [t.pin, t.laps, t.waiting])).toEqual([
     ['b', 7, 5],
     ['c', 15, 0],
     ['d', 3, 7],
     ['g', 3, NOT_RECORDED],
+    ['h', 3, NOT_RECORDED],
   ]);
   expect(verdicts).toEqual([]);
 });

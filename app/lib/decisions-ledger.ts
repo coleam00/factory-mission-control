@@ -37,9 +37,13 @@ export function timelineEntries(rows: readonly TimelineRow[]): TimelineRow[] {
   return [...rows].sort((a, b) => a.date.localeCompare(b.date) || a.title.localeCompare(b.title));
 }
 
-/** The lap count a Measure names, allowing descriptors such as `complex`, or null without one. */
+/**
+ * The lap count a Measure names, allowing one descriptor such as `complex`, or null without one.
+ * Only a number right before `laps` (or its one descriptor) counts: in `2 merges per hour over
+ * several laps` the 2 measures merges, so there is no lap count.
+ */
 export function lapsWanted(measure: string | null): number | null {
-  const match = /\b(\d+)\s+(?:[a-z-]+\s+)*laps\b/i.exec(measure ?? '');
+  const match = /\b(\d+)\s+(?:[a-z-]+\s+)?laps\b/i.exec(measure ?? '');
   return match ? Number(match[1]) : null;
 }
 
