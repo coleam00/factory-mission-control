@@ -1,5 +1,11 @@
 import { expect, test } from 'bun:test';
-import { compareLinks, NOT_RECORDED, stripEntries, type VersionStripRow } from './version-strip';
+import {
+  compareLinks,
+  NOT_RECORDED,
+  scorecardLink,
+  stripEntries,
+  type VersionStripRow,
+} from './version-strip';
 
 const version = (
   digest: string,
@@ -52,4 +58,11 @@ test('compare links carry each digest URL-encoded, so it reads back unchanged', 
   const diff = new URL(links.diff, 'http://localhost');
   expect(diff.pathname).toBe('/f/mission-control/diff');
   expect([diff.searchParams.get('a'), diff.searchParams.get('b')]).toEqual([a, b]);
+});
+
+test('a scorecard link carries one digest URL-encoded, so it reads back unchanged', () => {
+  const url = new URL(scorecardLink('mission-control', 'sha256:b2&x=/?#'), 'http://localhost');
+  expect(url.pathname).toBe('/f/mission-control/scorecard');
+  expect(url.searchParams.get('a')).toBe('sha256:b2&x=/?#');
+  expect(url.searchParams.has('b')).toBe(false);
 });

@@ -94,3 +94,12 @@ test('two picked versions link to their scorecard and diff, older as a, whatever
   expect(href('scorecard')).toBe(`/f/mission-control/scorecard${query}`);
   expect(href('diff')).toBe(`/f/mission-control/diff${query}`);
 });
+
+test('one picked version links to its own scorecard, and none or two picked show no such link', () => {
+  const html = render([V2]);
+  const href = /<a data-scorecard="one"[^>]*href="([^"]+)"/.exec(html)?.[1];
+  expect(href).toBe(`/f/mission-control/scorecard?a=${encodeURIComponent(V2)}`);
+  expect(html).not.toContain('data-compare');
+  expect(render([])).not.toContain('data-scorecard');
+  expect(render([V2, V1])).not.toContain('data-scorecard');
+});
