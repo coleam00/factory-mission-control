@@ -1,6 +1,7 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createRealtime, rawSql, type SealedLiveQuery } from '@neon/realtime/server';
+import { SQL } from 'bun';
 import type { Hono } from 'hono';
 import type { Env } from './check-env';
 
@@ -11,6 +12,8 @@ export interface Live {
   /** The Realtime WebSocket the browser subscribes on. */
   url: string;
   factories: string[];
+  /** Whether a factory may be sealed for: in factories.json, or a row of `mc.factories`. */
+  isFactory(name: string): Promise<boolean>;
   /** Every file in `db/queries/` by its name without `.sql`: the only SQL the server seals. */
   queries: Map<string, string>;
   seal(sql: string, factory: string): Promise<SealedLiveQuery<unknown>>;
@@ -44,14 +47,39 @@ function factoryNames(repoRoot: string): string[] {
   return factories.map((f) => f.name);
 }
 
+/**
+ * factories.json names pass with no query; any other name passes once `lookup` finds it, and is
+ * then remembered, since `migrate` never deletes a factory. A name not found is asked again, so a
+ * factory added while the server runs can be sealed for.
+ */
+export function knownFactories(
+  names: readonly string[],
+  lookup: (name: string) => Promise<boolean>,
+): (name: string) => Promise<boolean> {
+  const known = new Set(names);
+  return async (name) => {
+    if (known.has(name)) return true;
+    if (!(await lookup(name))) return false;
+    known.add(name);
+    return true;
+  };
+}
+
 export function liveFromEnv(env: Env, repoRoot: string): Live | undefined {
   const databaseUrl = env.MC_DATABASE_URL;
   const secret = env.NEON_REALTIME_SECRET;
   if (!databaseUrl || !secret) return undefined;
   const realtime = createRealtime({ secret, db: new URL(databaseUrl).pathname.slice(1) });
+  const sql = new SQL(databaseUrl);
+  const factories = factoryNames(repoRoot);
   return {
     url: realtimeUrlFor(databaseUrl),
-    factories: factoryNames(repoRoot),
+    factories,
+    isFactory: knownFactories(
+      factories,
+      async (name) =>
+        (await sql.unsafe('SELECT 1 FROM mc.factories WHERE name = $1', [name])).length > 0,
+    ),
     queries: loadLiveQueries(join(repoRoot, 'db', 'queries')),
     seal: (sql, factory) => realtime.seal({ query: rawSql(sql, [factory]) }),
   };
@@ -73,7 +101,7 @@ export function liveRoutes(app: Hono, live: Live | undefined): void {
     const body: unknown = await c.req.json().catch(() => undefined);
     const factory =
       typeof body === 'object' && body !== null && 'factory' in body ? body.factory : undefined;
-    if (typeof factory !== 'string' || !live.factories.includes(factory)) {
+    if (typeof factory !== 'string' || !(await live.isFactory(factory))) {
       return c.json({ error: 'unknown factory' }, 400);
     }
     return c.json(await live.seal(sql, factory));

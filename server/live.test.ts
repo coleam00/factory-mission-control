@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { createApp } from './app';
 import {
+  knownFactories,
   type Live,
   liveBootScript,
   loadLiveQueries,
@@ -28,6 +29,7 @@ function fakeLive() {
   const live: Live = {
     url: 'wss://ep-abc-123.rt.c-14.us-east-1.aws.neon.tech/',
     factories: ['mission-control'],
+    isFactory: async (name) => ['mission-control', 'second-factory'].includes(name),
     queries,
     seal: async (sql, factory) => {
       sealed.push([sql, factory]);
@@ -54,7 +56,7 @@ describe('POST /api/live/:name', () => {
     expect(sealed).toEqual([]);
   });
 
-  test('a factory not in factories.json is a 400 and seals nothing', async () => {
+  test('a factory the server does not know is a 400 and seals nothing', async () => {
     const { app, sealed } = fakeLive();
     for (const body of [{ factory: 'other' }, {}, 'mission-control', null]) {
       expect((await app.request('/api/live/status-strip', post(body))).status).toBe(400);
@@ -74,6 +76,33 @@ describe('POST /api/live/:name', () => {
       expiresAt: 60_000,
     });
     expect(sealed).toEqual([[queries.get('status-strip') as string, 'mission-control']]);
+  });
+
+  test('a factory known only from mc.factories seals too', async () => {
+    const { app, sealed } = fakeLive();
+    const res = await app.request('/api/live/status-strip', post({ factory: 'second-factory' }));
+    expect(res.status).toBe(200);
+    expect(sealed).toEqual([[queries.get('status-strip') as string, 'second-factory']]);
+  });
+});
+
+describe('knownFactories', () => {
+  test('factories.json names pass unasked; others are asked until found, then remembered', async () => {
+    const asked: string[] = [];
+    const rows = new Set(['second-factory']);
+    const isFactory = knownFactories(['mission-control'], async (name) => {
+      asked.push(name);
+      return rows.has(name);
+    });
+    expect(await isFactory('mission-control')).toBe(true);
+    expect(asked).toEqual([]);
+    expect(await isFactory('second-factory')).toBe(true);
+    expect(await isFactory('second-factory')).toBe(true);
+    expect(asked).toEqual(['second-factory']);
+    expect(await isFactory('later')).toBe(false);
+    rows.add('later');
+    expect(await isFactory('later')).toBe(true);
+    expect(asked).toEqual(['second-factory', 'later', 'later']);
   });
 });
 
