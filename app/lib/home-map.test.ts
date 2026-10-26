@@ -11,7 +11,9 @@ const workflow = (role: 'input' | 'manager', name: string): HomeMapRow => ({
   kind: null,
   depends_on: null,
   detail_workflow: name,
-  live_count: 0,
+  lap_factory: null,
+  laps: 0,
+  is_current: false,
 });
 
 const step = (
@@ -31,7 +33,9 @@ const step = (
     kind: 'script',
     depends_on: dependsOn,
     detail_workflow: parent === null ? 'wf-loop' : 'wf-block',
-    live_count: 0,
+    lap_factory: null,
+    laps: 0,
+    is_current: false,
     ...extra,
   };
 };
@@ -40,7 +44,7 @@ const step = (
 const rows: HomeMapRow[] = [
   step('c', 9, ['b']),
   workflow('manager', 'wf-manager'),
-  step('b/two', 3, ['one'], { live_count: 2 }),
+  step('b/two', 3, ['one'], { lap_factory: 'here', laps: 2, is_current: true }),
   step('a', 0, []),
   workflow('input', 'wf-writer'),
   step('b', 1, ['a'], { kind: 'include' }),
@@ -95,6 +99,24 @@ test('a step links to its own workflow, a stage to the workflow its step include
   expect(href('a')).toBe('/steps/wf-loop/a');
   expect(href('b/two')).toBe('/steps/wf-block/two');
   expect(map.loop.find((n) => n.id === 'b/two')?.liveCount).toBe(2);
+});
+
+test("a step with several factories' laps is one node: the address factory's count, every factory listed", () => {
+  const map = homeMap([
+    ...rows,
+    step('b/two', 3, ['one'], { lap_factory: 'b-other', laps: 3 }),
+    step('b/two', 3, ['one'], { lap_factory: 'a-other', laps: 4 }),
+  ]);
+  expect(map.loop.map((n) => n.id)).toEqual(['a', 'b', 'b/one', 'b/two', 'c']);
+  const two = map.loop.find((n) => n.id === 'b/two');
+  expect(two?.liveCount).toBe(2);
+  expect(two?.factories).toEqual([
+    { factory: 'here', laps: 2, current: true },
+    { factory: 'a-other', laps: 4, current: false },
+    { factory: 'b-other', laps: 3, current: false },
+  ]);
+  expect(map.loop.find((n) => n.id === 'a')?.factories).toEqual([]);
+  expect(map.edges.filter((e) => e.to === 'b/two')).toEqual([{ from: 'b/one', to: 'b/two' }]);
 });
 
 test('with no steps stored the map is empty', () => {

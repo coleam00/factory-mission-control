@@ -27,9 +27,14 @@ const LABEL = 'font-mono text-[10px] font-semibold uppercase tracking-[0.04em] t
 
 const placed = (box: Box) => ({ left: box.x, top: box.y, width: box.width, height: box.height });
 
+const lapsOf = (n: number) => `${n} ${n === 1 ? 'lap' : 'laps'}`;
+
 function Step({ node, box }: { node: StepNode; box: Box }): ReactElement {
   const running = node.liveCount > 0;
-  const laps = `${node.liveCount} ${node.liveCount === 1 ? 'lap' : 'laps'} on it`;
+  const others = node.factories.filter((f) => !f.current);
+  const laps = `${lapsOf(node.liveCount)} on it${
+    others.length > 0 ? `; ${others.map((f) => `${f.factory} ${lapsOf(f.laps)}`).join(', ')}` : ''
+  }`;
   return (
     <Link
       to={node.href}
@@ -53,17 +58,38 @@ function Step({ node, box }: { node: StepNode; box: Box }): ReactElement {
       >
         {KIND_GLYPH[node.kind] ?? '·'}
       </span>
-      <span className="min-w-0 flex-1 truncate font-mono text-[13px] font-semibold text-text-primary">
-        {node.label}
+      <span className="flex min-w-0 flex-1 flex-col">
+        <span className="truncate font-mono text-[13px] font-semibold text-text-primary">
+          {node.label}
+        </span>
+        {others.length > 0 ? (
+          <span
+            data-factory-counts
+            className="flex gap-2 truncate font-mono text-[10px] tabular-nums"
+          >
+            {node.factories.map((f) => (
+              <span
+                key={f.factory}
+                data-factory-count={f.factory}
+                data-laps={f.laps}
+                className={f.current ? 'text-text-primary' : 'text-text-secondary'}
+              >
+                {`${f.factory} ${f.laps}`}
+              </span>
+            ))}
+          </span>
+        ) : null}
       </span>
       {running ? <LiveDot size={8} /> : null}
-      <span
-        className={`font-mono text-[12px] tabular-nums ${
-          running ? 'text-text-primary' : 'text-text-secondary'
-        }`}
-      >
-        {node.liveCount}
-      </span>
+      {others.length > 0 ? null : (
+        <span
+          className={`font-mono text-[12px] tabular-nums ${
+            running ? 'text-text-primary' : 'text-text-secondary'
+          }`}
+        >
+          {node.liveCount}
+        </span>
+      )}
     </Link>
   );
 }
@@ -104,7 +130,8 @@ const frames = (nodes: FrameNode[]) => (
 /**
  * The factory at the pinned version: what feeds it and the manager above the loop, the loop laid
  * out with dagre (each expanded step's stages boxed beside it), and what it produces below. Every
- * step shows how many of the factory's laps are on it now and opens its detail.
+ * step shows how many of the factory's laps are on it now, and each other factory's laps there
+ * under that factory's name, and opens its detail.
  */
 export function HomeMap({ rows }: { rows: readonly HomeMapRow[] }): ReactElement {
   const map = useMemo(() => homeMap(rows), [rows]);

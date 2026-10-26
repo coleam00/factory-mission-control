@@ -208,16 +208,26 @@ ${'x'.repeat(5000)}`;
 describe('home-map on the seed', () => {
   let db: Db;
   const sql = queries.find(([name]) => name === 'home-map')?.[1] as string;
-  const rows = async () =>
-    (await db.query(sql, ['mission-control'])) as {
-      role: string;
-      path: string | null;
-      step_id: string | null;
-      workflow: string;
-      position: number | null;
-      detail_workflow: string;
-      live_count: number;
-    }[];
+  type Row = {
+    role: string;
+    path: string | null;
+    step_id: string | null;
+    workflow: string;
+    position: number | null;
+    detail_workflow: string;
+    lap_factory: string | null;
+    laps: number;
+    is_current: boolean;
+  };
+  const rows = async (factory = 'mission-control') => (await db.query(sql, [factory])) as Row[];
+  /** The address factory's laps on each node: the `laps` of its `is_current` row, else 0. */
+  const liveCounts = async (factory = 'mission-control') => {
+    const counts = new Map<string | null, number>();
+    for (const row of await rows(factory)) {
+      counts.set(row.path, row.is_current ? row.laps : (counts.get(row.path) ?? 0));
+    }
+    return counts;
+  };
 
   beforeAll(async () => {
     db = await seededDb(REPO_ROOT, readFileSync(join(REPO_ROOT, 'fixtures', 'seed.sql'), 'utf8'));
@@ -285,8 +295,8 @@ describe('home-map on the seed', () => {
   test("each step counts the factory's running laps on it now, as SQL over the seed does", async () => {
     const on = await lapsOnNodes('mission-control');
     expect([on('build'), on('check-app')]).toEqual([1, 1]);
-    for (const row of await rows()) {
-      if (row.path !== null) expect(row.live_count).toBe(on(row.path));
+    for (const [path, count] of await liveCounts()) {
+      if (path !== null) expect(count).toBe(on(path));
     }
   });
 
@@ -300,7 +310,7 @@ describe('home-map on the seed', () => {
         VALUES ($1, 'node_started', 'ship__intel', '{}'::jsonb)`,
       [lap.run_id],
     );
-    const counts = new Map((await rows()).map((r) => [r.path, r.live_count]));
+    const counts = await liveCounts();
     expect(counts.get('ship/intel')).toBe(1);
     expect(counts.get('ship')).toBe(1);
     expect(counts.get('intel')).toBeUndefined();
@@ -311,7 +321,7 @@ describe('home-map on the seed', () => {
         VALUES ($1, 'node_completed', 'ship__intel', '{}'::jsonb)`,
       [lap.run_id],
     );
-    expect((await rows()).find((r) => r.path === 'ship/intel')?.live_count).toBe(0);
+    expect((await liveCounts()).get('ship/intel')).toBe(0);
   });
 
   test('a step event projected for a running lap adds it to that step, for that factory only', async () => {
@@ -324,11 +334,74 @@ describe('home-map on the seed', () => {
         VALUES ($1, 'node_started', 'review', '{}'::jsonb)`,
       [lap.run_id],
     );
-    const review = (await rows()).find((r) => r.step_id === 'review');
-    expect(review?.live_count).toBe(1);
-    expect(await db.query(sql, ['other'])).toEqual(
-      expect.arrayContaining([expect.objectContaining({ step_id: 'review', live_count: 0 })]),
+    expect((await liveCounts()).get('review')).toBe(1);
+    expect((await rows('other')).filter((r) => r.step_id === 'review')).toEqual([
+      expect.objectContaining({ lap_factory: 'mission-control', laps: 1, is_current: false }),
+    ]);
+    expect((await liveCounts('other')).get('review')).toBe(0);
+  });
+
+  test("two factories: the header and each step count each factory's laps, the address factory current", async () => {
+    const strip = queries.find(([name]) => name === 'status-strip')?.[1] as string;
+    const [{ running: ours }] = await db.query(
+      `SELECT count(*)::int AS running FROM mc.laps
+        WHERE factory = 'mission-control' AND workflow_name = 'archon-loop' AND status = 'running'`,
     );
+    const ourLaps = await lapsOnNodes('mission-control');
+    expect([ourLaps('build'), ourLaps('deploy')]).toEqual([1, 0]);
+    await db.query(`INSERT INTO mc.laps (run_id, factory, workflow_name, status) VALUES
+      ('00000000-0000-0000-0000-0000000000c1', 'north-star', 'archon-loop', 'running'),
+      ('00000000-0000-0000-0000-0000000000c2', 'north-star', 'archon-loop', 'running'),
+      ('00000000-0000-0000-0000-0000000000c3', 'north-star', 'archon-loop', 'completed')`);
+    await db.query(`INSERT INTO mc.lap_steps (run_id, step_id, status) VALUES
+      ('00000000-0000-0000-0000-0000000000c1', 'build', 'running'),
+      ('00000000-0000-0000-0000-0000000000c2', 'deploy', 'running'),
+      ('00000000-0000-0000-0000-0000000000c3', 'deploy', 'running')`);
+
+    expect(await db.query(strip, ['north-star'])).toEqual([{ running: 2 }]);
+    expect(await db.query(strip, ['mission-control'])).toEqual([{ running: ours }]);
+    expect(await db.query(strip, ['zero-laps'])).toEqual([{ running: 0 }]);
+
+    // The seed already runs one second-factory lap, on claim.
+    const lapping = ['mission-control', 'north-star', 'second-factory'];
+    const lapsOf = new Map(
+      await Promise.all(lapping.map(async (f) => [f, await lapsOnNodes(f)] as const)),
+    );
+    const on = (all: Row[], path: string) =>
+      all
+        .filter((r) => r.path === path)
+        .map(({ lap_factory, laps, is_current }) => ({ lap_factory, laps, is_current }))
+        .sort((a, b) => String(a.lap_factory).localeCompare(String(b.lap_factory)));
+    for (const address of [...lapping, 'zero-laps']) {
+      const all = await rows(address);
+      expect(on(all, 'build')).toEqual([
+        { lap_factory: 'mission-control', laps: 1, is_current: address === 'mission-control' },
+        { lap_factory: 'north-star', laps: 1, is_current: address === 'north-star' },
+      ]);
+      expect(on(all, 'deploy')).toEqual([
+        { lap_factory: 'north-star', laps: 1, is_current: address === 'north-star' },
+      ]);
+      for (const path of new Set(all.map((r) => r.path))) {
+        if (path === null) continue;
+        const expected = lapping
+          .map((f) => ({
+            lap_factory: f,
+            laps: lapsOf.get(f)?.(path) ?? 0,
+            is_current: f === address,
+          }))
+          .filter((e) => e.laps > 0);
+        expect([path, on(all, path)]).toEqual([
+          path,
+          expected.length > 0 ? expected : [{ lap_factory: null, laps: 0, is_current: false }],
+        ]);
+      }
+      const live = await liveCounts(address);
+      for (const [path, count] of live) {
+        if (path !== null) expect([path, count]).toEqual([path, lapsOf.get(address)?.(path) ?? 0]);
+      }
+    }
+    await db.query(`DELETE FROM mc.lap_steps WHERE run_id::text LIKE '%0000000000c_'`);
+    await db.query(`DELETE FROM mc.laps WHERE run_id::text LIKE '%0000000000c_'`);
   });
 });
 

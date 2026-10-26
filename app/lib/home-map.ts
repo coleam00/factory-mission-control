@@ -12,7 +12,12 @@ export interface HomeMapRow {
   depends_on: string[] | null;
   /** The workflow whose step this is: a stage is a step of the workflow its parent includes. */
   detail_workflow: string;
-  live_count: number;
+  /** The factory whose laps `laps` counts; null on a step no factory has a lap on. */
+  lap_factory: string | null;
+  /** That factory's running laps on the step or anywhere beneath it. */
+  laps: number;
+  /** Whether `lap_factory` is the factory in the address. */
+  is_current: boolean;
 }
 
 /**
@@ -43,7 +48,16 @@ export interface StepNode {
   label: string;
   kind: string;
   href: string;
+  /** The laps of the factory in the address on it now. */
   liveCount: number;
+  /** Every factory with laps on it now, the factory in the address first, then by name. */
+  factories: FactoryLaps[];
+}
+
+export interface FactoryLaps {
+  factory: string;
+  laps: number;
+  current: boolean;
 }
 
 export interface Edge {
@@ -94,9 +108,28 @@ export function reduceEdges(edges: readonly Edge[]): Edge[] {
   return edges.filter((edge) => !reachesAvoiding(edge.from, edge.to, edge));
 }
 
+/** Each step path once, with the laps every factory has on it: the query gives a row per factory. */
+function stepsByPath(rows: readonly HomeMapRow[]): { row: StepRow; factories: FactoryLaps[] }[] {
+  const byPath = new Map<string, { row: StepRow; factories: FactoryLaps[] }>();
+  for (const row of rows.filter(isStep)) {
+    const step = byPath.get(row.path) ?? { row, factories: [] };
+    byPath.set(row.path, step);
+    if (row.lap_factory !== null) {
+      step.factories.push({ factory: row.lap_factory, laps: row.laps, current: row.is_current });
+    }
+  }
+  for (const { factories } of byPath.values()) {
+    factories.sort(
+      (a, b) => Number(b.current) - Number(a.current) || a.factory.localeCompare(b.factory),
+    );
+  }
+  return [...byPath.values()].sort((a, b) => a.row.position - b.row.position);
+}
+
 /** Turns the live rows into the map; every part is empty when no architecture is stored. */
 export function homeMap(rows: readonly HomeMapRow[]): HomeMap {
-  const steps = rows.filter(isStep).sort((a, b) => a.position - b.position);
+  const nodes = stepsByPath(rows);
+  const steps = nodes.map((n) => n.row);
   if (steps.length === 0) {
     return { inputs: [], manager: [], loop: [], outputs: [], edges: [], clusters: new Map() };
   }
@@ -132,13 +165,14 @@ export function homeMap(rows: readonly HomeMapRow[]): HomeMap {
       ...FRAME_INPUTS_AFTER.map((label) => frame('frame-input', label)),
     ],
     manager: workflows('manager'),
-    loop: steps.map((row) => ({
+    loop: nodes.map(({ row, factories }) => ({
       id: row.path,
       role: row.role as StepNode['role'],
       label: row.step_id,
       kind: row.kind ?? '',
       href: `/steps/${encodeURIComponent(row.detail_workflow)}/${encodeURIComponent(row.step_id)}`,
-      liveCount: row.live_count,
+      liveCount: factories.find((f) => f.current)?.laps ?? 0,
+      factories,
     })),
     outputs: FRAME_OUTPUTS.map((label) => frame('output', label)),
     edges: reduceEdges(edges),
