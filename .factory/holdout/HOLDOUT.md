@@ -445,3 +445,156 @@ Expect:
 - The home map's live counts show the one factory's laps only; the lap of the codebase in no factory appears nowhere and changes no count.
 - With a factory that has no data, every screen reaches ready and shows a one-sentence empty state with at most one button: never an outage message, and never "does not exist" for a factory that is in the list.
 Author: writer, 2026-10-25, coverage of PRD 11.6 factories before the loop builds it
+
+## H-36 Every open window tells the truth about which moment it is showing
+Protects: 4.7; journey 5; invariants 4 and 5; 11.6
+Touches: rewind switching, shared header, every panel, live-query renewal, browser history, factory navigation
+Setup: the check app with two factories and two valid rewind branches from different moments T1 and T2. Arrange distinguishable laps, labels, owner questions, and default-branch verdicts before T1, between T1 and T2, and after T2. Use only check-derived branches; record their identities privately. Open three tabs on different screens and set reload markers.
+Steps:
+1. Select T1 in one tab and T2 in another, leaving the third on live. Navigate within each tab through the factory page, owner queue, testing, health, versions and a lap that existed at its displayed moment.
+2. Leave the tabs through three seal renewals, then write a new step event and owner label to the live check branch. Record the selected moment, factory, and received facts in every tab.
+3. Throttle one tab's responses, start a switch to T1, then switch to T2 before the first switch completes. Change factory while that request is outstanding. Release the delayed responses.
+4. Use Back and Forward, close and reopen a tab using its visible address, and switch each surviving tab back to live. Write another step event after the restored live subscriptions are ready.
+Expect:
+- Every visible fact and link belongs to the factory and moment the tab actually names. A late response, another tab's selection, a renewal or history navigation never puts live facts under a rewind label, past facts under a live label, or one factory's facts under another's name.
+- Whether the app shares a selection between tabs or keeps it per tab, any selection change is visible in every affected tab and all affected panels follow it; no tab silently changes its data source while retaining its former context label.
+- Every tab still displaying T1 or T2 excludes facts first created after that moment. The live tab receives the live writes, and restored live tabs receive the final write within 5 seconds with their reload markers intact; record these writes for `judges/liveness.js` with `require_open_seconds: 0`.
+- Navigation and retries change no row on either rewind branch. No database credential or Realtime secret appears in any captured browser response.
+Author: writer, 2026-10-26, escaped defect class #118 and PRD 4.7 cross-tab and cross-factory journey
+
+## H-37 A missing past moment never masquerades as a different moment
+Protects: 4.7; invariant 7; 11.3; engineering.md empty states
+Touches: rewind list, branch selection, failed transitions, shared header, every screen
+Setup: the check app first with no rewind branches, then with two check-derived rewind branches having different facts. Keep one rewind selected in a second tab while operating the first. Never delete or alter a branch belonging to another run.
+Steps:
+1. With no rewinds, open the rewind controls on every screen that offers them and navigate away and back.
+2. With both rewinds present, start a switch and interrupt that switch's network request. Repeat with branch discovery unavailable, and with the selected rewind deleted through the owner's branch-management path after its tab is already open.
+3. Restore connectivity, use the app's controls to select the remaining rewind and return to live, and then reopen the stale address or selection for the deleted branch.
+4. From the remaining rewind, use every visible navigation control and inspect the selected factory, moment, page data and external links.
+Expect:
+- An empty list is an empty state, with no blank branch option, phantom destination or action that silently selects nothing. The real live context remains usable.
+- A failed or stale selection never displays live data, another rewind's data, or another factory's data as though it came from the requested moment. It either preserves the previous context honestly or explains that the requested past moment is unavailable; it does not remain an unexplained spinner.
+- A subsequent valid selection works. Every screen and external link is consistent with the selected factory and displayed moment, and no action writes to the rewind branch.
+- Errors reveal no connection string, secret, branch credential or token. No browser action creates a rewind branch; creation remains an owner command.
+Author: writer, 2026-10-26, escaped defect classes #121 and #122, PRD 4.7 state boundaries
+
+## H-38 A lost renewal does not strand the dashboard after the connection returns
+Protects: 8.1; invariant 5; invariant 7; 11.1 seal lifetime; 4.7
+Touches: live-query lifecycle, renewal, navigation, all live panels and rewind context
+Setup: the check app with a running lap; open home, factory and one-lap screens in separate tabs, with reload markers and network recording. Also open a rewind tab with visibly different facts. Use browser request interception or network controls without changing application code or server clocks.
+Steps:
+1. Keep the tabs open past three normal seal renewals and record a live step transition.
+2. Make the sealing service unreachable until the current seals expire. During the interruption, navigate between two screens, open and close a step detail, and change the selected factory in one tab. Record what the pages and request log do.
+3. Restore the sealing service. After subscriptions are ready, insert a new step event and then a GitHub label affecting the open panels. Do not reload or press a refresh control.
+4. Repeat with a rejected renewal response instead of a disconnected request. Close a tab and navigate away from a subscribed screen while its renewal is pending; release the delayed response afterward.
+Expect:
+- Unavailable data is never presented as a live, ready subscription, and navigation remains usable during the interruption. A rejected or expired seal does not trap the page in a visible error/reconnect cycle after the service is healthy.
+- Recovery obtains usable sealed queries automatically, without polling panel data or accepting an expired seal. Each post-recovery write appears in every relevant live panel within 5 seconds; `judges/liveness.js` passes with the recorded post-recovery writes and `require_open_seconds: 0`.
+- A completed late renewal cannot resurrect a closed screen's data, undo the chosen factory or rewind, or replace a newer subscription with the expired one. The rewind tab continues to show only its past facts.
+- The request record contains no secret and no browser-originated SQL; errors are safe to display. The original tabs retain their reload markers.
+Author: writer, 2026-10-26, escaped defect class #120 and PRD 8.1 recovery across seal boundaries
+
+## H-39 A lap that revisits a step keeps all of its work in its story and totals
+Protects: 4.6 every step the lap ran; 4.2 measure definitions; 4.3 lanes and recent laps; invariant 4
+Touches: one-lap history, live lanes, recent laps, scorecard, testing, health
+Setup: the check app with a running loop lap of a known factory and digest. In Archon's source rows, give separate attempts of the same step visibly different start times, models, tokens, costs and durations. Use distinct source events for distinct attempts; retain their source identities for the evidence.
+Steps:
+1. Let a build attempt fail, then run a second build attempt to completion. Run check-app twice, with one failed attempt and one completed attempt, each carrying its own duration and cost. Record the lap page and lane after every transition.
+2. Send the lap through a sent-back review, more work, a refused land attempt with a reason, and finally a merged land attempt; finish the run. Open its recent-lap row, one-lap page, scorecard and testing screen.
+3. Reconcile or backfill the same source history through the documented command, then reload the screens. Insert a second loop lap with the same step names but different values, and a non-loop run with those names, in the same factory.
+Expect:
+- The one-lap page retains every actual attempt with its own recorded start, duration, model, tokens and cost; later attempts do not erase earlier work or borrow another run's details. The running lane names the current attempt and its cost so far includes the earlier attempts.
+- After completion, the final lap outcome agrees across recent laps and the lap page, while its history still explains the send-back and refusal with the recorded reason. Scorecard send-backs, refusals and merges count laps as defined, without counting the repeated attempts as extra laps.
+- Costs and app-check share include every applicable attempt, including failed check-app work. `judges/scorecard.js` passes on an export of the source events and observed values; the export contains attempt events, not the dashboard's already-aggregated rows.
+- Testing preserves the applicable check evidence for the lap without leaking holdout text. Reconciliation adds no duplicate attempt, lap, cost or verdict; the second lap remains separate, and the non-loop run does not inflate loop scorecards.
+Author: writer, 2026-10-26, escaped defect class #116, PRD 4.2 and 4.6 repeated-work journey
+
+## H-40 Resolving and reopening an owner thread changes the whole queue
+Protects: 4.4 open issues and open questions; journey 4; invariant 2; 11.6
+Touches: owner queue, question ingestion, issue lifecycle, health workable count, graph, factory navigation
+Setup: the check app with two factories whose repositories both have an Owner decisions needed issue and overlapping issue numbers. Each contains multiple questions with options, recommendation, default and date; each factory also has a separate needs-owner issue. Open both queues and one factory's graph and health screens.
+Steps:
+1. Edit one owner's question while keeping another unchanged; remove a resolved question; then close that entire Owner decisions needed issue while its former body still contains a question.
+2. Close a needs-owner issue without removing its label. Reopen that issue, then remove its label. Reopen the decisions issue with only its still-open questions in the body.
+3. Redeliver each event with the same delivery identity and run the documented reconcile. Switch between factories and follow each surviving queue entry's GitHub link.
+4. On a rewind preceding the resolutions, inspect the same queue and its links, then return to live.
+Expect:
+- Only currently open questions and open labelled issues appear in the live queue. Closing a thread removes its entries even if its old body or labels remain; reopening restores only questions currently in its body and issues still bearing the label.
+- Every surviving entry retains its complete options, recommendation, default and date, with a waiting age and a link to the correct repository's thread. Redelivery and reconcile create no duplicate entry or reset an unchanged question's waiting age.
+- Changes in one repository leave the other factory's queue unchanged despite equal issue numbers. Health and graph reflect the changed open/labelled state using the same issues.
+- The rewind shows the earlier queue, with an explicit past context, and returning live restores the resolved state. The dashboard offers no action that answers, dismisses or edits a question itself.
+- Record each affected live panel after each source write; `judges/liveness.js` passes with `require_open_seconds: 0`.
+Author: writer, 2026-10-26, PRD 4.4 coverage of lifecycle, repository identity and rewind interactions
+
+## H-41 Health judges the factory and step whose history it is showing
+Protects: 4.8; 11.6; invariant 4; invariant 5
+Touches: health history window, failed-lap causes, pending and paused transitions, lanes, factory switching
+Setup: the check app with two factories that both run a step S. Give A's latest 50 completions of S identical short durations and B's latest 50 identical much longer durations; also give A a different step with long durations. Record source identities and timing. Add pending and paused loop runs in each factory.
+Steps:
+1. Start S in both factories at the same time; watch both health screens before and after A's threshold, and later beyond B's threshold, recording elapsed times and flags.
+2. Add newer completions of S in A that move its latest-50 window; keep a running A step visible while the new history arrives. Record the window and observed flag at each observation.
+3. Move A's pending run to running and its paused run back to running, then finish one and fail the other with an infrastructure error on its failing step. Include an earlier successfully completed step with a different error-like phrase in its ordinary output.
+4. Switch factories and revisit the affected laps through their health links.
+Expect:
+- A's threshold uses only A's last 50 completions of S, and B's uses only B's; another step, another factory and completions outside the window cannot affect it. New completions update the relevant history without a reload.
+- `judges/health.js` passes for each factory and each fixed observation window separately, using source-derived history and observations on both sides of that window's threshold. Do not combine observations from different windows in one judge case.
+- Pending and paused lists track the runs' current state and stop listing them when they leave it. The final failed lap is classified from its failing step's error, not an unrelated earlier output; completed runs do not remain active lanes.
+- Every count and linked lap belongs to the selected factory. Record state transitions for `judges/liveness.js` with `require_open_seconds: 0`; all affected panels update within 5 seconds.
+Author: writer, 2026-10-26, PRD 4.8 coverage of changing populations and per-factory history
+
+## H-42 A displayed pin leads to that exact version's evidence
+Protects: 4.2 version strip, decisions and architecture diff; 11.2 digest keying; 11.5 SHA-prefix joins; 11.6
+Touches: version links, decisions, improvements, comparison, architecture detail, browser history
+Setup: the check app with two pin commits with different full SHAs, distinct parsed architecture and different lap populations. Their labels use shortened SHAs. Add decisions whose Version lines name unique prefixes of the pins, and a verdict for one pin. Use a second factory with an independently recorded version to detect cross-factory resolution.
+Steps:
+1. Starting from each version-strip entry, follow the links into its scorecard, decisions, improvements and architecture detail, then into a comparison and architecture diff with the other version. Record the full source pin, digest and factory behind each destination.
+2. Open each app-generated link directly in a new tab and use Back and Forward through the journey. Repeat after a late-arriving pin legitimately changes a version's label while its digest and laps stay the same.
+3. Deliver a decision with a SHA prefix shared by two available pin commits and then a corrected unambiguous Version line. Also open an app address with a version identity that is absent from that factory.
+Expect:
+- Each app-generated link resolves to the exact version, factory and pinned code that its label represents, even when display labels shorten a SHA or a version's label changes. A full SHA, digest and display prefix are not silently interchanged as different identities.
+- The comparison's lap populations and architecture diff remain the selected pair throughout navigation and relabelling. No destination shows another version's data or reports a real, linked version missing merely because the display shortened its label.
+- A decision with a unique prefix links to the matching pin. An ambiguous prefix does not silently link to one arbitrary pin; after correction, the decision links to its unambiguous version without a reload.
+- An identity that is absent from the selected factory yields an honest missing state rather than another factory's version or an outage. No holdout scenario text appears while navigating architecture evidence.
+Author: writer, 2026-10-26, escaped defect class #115 and PRD 4.2/11.5 evidence-identity journey
+
+## H-43 Long and changing facts remain readable in every important state
+Protects: 8.3 design contract; engineering.md design and empty states; journeys 2, 4 and 5
+Touches: owner queue, one lap, health, testing, factory and rewind controls, shared layout
+Setup: the check app with realistic but lengthy owner options and recommendations, a long repository name, a long failed-step reason, many attempts on a lap, and a long evidence link. These facts arrive through the documented source surfaces. Start at both 1440 and 390 px widths; use the existing design probe without exceptions or threshold changes.
+Steps:
+1. Open the owner queue with all question details, the lap with repeated attempts, failed-lap health details, testing evidence, and each factory or rewind menu. Run the design probe and capture screenshots in every open state.
+2. Deliver an edit that lengthens the currently visible question and an error that lengthens the current lap's history while the panel remains open. Repeat the probe and screenshots without reloading.
+3. Move through no-data, one-factory, unknown-factory, failed-live-connection and unavailable-rewind states using the app's controls or a stale bookmark. In each, inspect and use every visible control, including the control that leaves the state.
+Expect:
+- The design probe reports zero failures for every recorded state at both widths: token colors and fonts, text contrast at least 4.5:1, no horizontal overflow, and an accessible name on every control. No browser-default control or light-mode island appears during a transition or open menu.
+- Questions, error reasons and evidence remain readable and reachable; a panel or menu does not cover the only way to continue the journey. Empty states remain one sentence with at most one button and do not offer an empty factory or branch destination.
+- Newly arrived content satisfies the same design contract as first-load content. Screenshots are compared against the committed console references, with the judgement recorded; a subjective disagreement goes to the owner rather than changing the probe.
+Author: writer, 2026-10-26, PRD 8.3 coverage of live content, narrow screens and recovery states
+
+## H-44 An unrecognized address does not inherit a factory it never selected
+Protects: 11.6 every view keyed by factory; invariant 4; engineering.md empty states
+Touches: shared header, unmatched routes, browser history, factory identity, recovery navigation
+Setup: the check app with two factories having distinguishable names, repositories and running-lap counts. Derive valid addresses from the app's links, and prepare unknown addresses outside any factory route as well as addresses with a valid factory segment but an unknown remaining path.
+Steps:
+1. From A's lap and B's owner queue, navigate to each unknown address. Repeat in fresh tabs and after switching factory. Record the page, shared header, links and numbers.
+2. On each unknown page, use its offered recovery link if any, then Back and Forward. Open a removed factory's formerly valid address after serve has restarted with that factory absent.
+Expect:
+- An address outside every factory route presents an honest missing-page state and carries no selected factory's name, repository, console link or running-lap count left over from a prior screen or chosen by default.
+- An unknown path that explicitly names a real factory may keep that factory's context, but never shows another factory's facts or claims that unrelated content belongs to the requested path.
+- A removed factory's address shows it missing without inheriting another factory. Recovery reaches a real screen with matching identity; Back and Forward restore the same truthful missing states.
+- The missing state is one sentence with at most one button, with no indefinite spinner and no false live-service outage message.
+Author: writer, 2026-10-26, escaped defect class #119, unknown-address identity across the full navigation journey
+
+## H-45 Switching context meets the same timing bar as opening it
+Protects: 8.4; engineering.md approved subscription and readiness timing; 4.7 same queries; 11.6
+Touches: every live query, route navigation, rewind and factory switching, architecture comparison
+Setup: the check app on the seed, with a second factory and a check-derived rewind. Use unthrottled browser sessions at 1440 and 390 px. Observe subscription sends, delivered first snapshots and actual Realtime ready states; never count cached rows as a delivered subscription.
+Steps:
+1. Measure the home screen from a cold opening. Navigate through every reachable live screen, including a version comparison, architecture diff, factory page, owner queue, testing, health and one lap; measure each new panel subscription and readiness.
+2. On the home screen and every screen that offers the controls, switch live to rewind and back, and switch factories and back. Measure each resulting panel and subscription afresh; keep the initial-load and post-switch records separate.
+3. Repeat after the app has remained open through three seal renewals. Collect records for the existing `judges/speed.js`: ready_ms is time since navigation or the explicit context-switch action, first_snapshot_ms is time since that panel's subscribe was sent. Run the judge separately for each screen/transition class, with both widths represented.
+Expect:
+- Every panel becomes genuinely ready within 2000 ms and every newly subscribed live query delivers its first snapshot within 500 ms. The same limits apply after a rewind/factory switch, route navigation and return to a previously visited screen; no transition is exempt because initial load passed.
+- Every recorded speed-judge invocation prints PASS. A missing observation or missing transition remains incomplete evidence, not a passing timing; a slow observation is a failure even if other observations or a mean are fast.
+- The delivered rows match the selected factory, moment and version, and readiness never comes from cached or fabricated initial rows. Timing evidence distinguishes the subscription clock from the connection/readiness clock without loosening either bar.
+Author: writer, 2026-10-26, escaped defect class #129 and PRD 8.4 performance across the full navigation journey
