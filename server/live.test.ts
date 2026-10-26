@@ -1,9 +1,15 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { copyFileSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { createApp } from './app';
-import { type Live, loadLiveQueries, realtimeUrlFor } from './live';
+import {
+  type Live,
+  liveBootScript,
+  loadLiveQueries,
+  REALTIME_PROTOCOL,
+  realtimeUrlFor,
+} from './live';
 
 const repoRoot = resolve(import.meta.dir, '..');
 const queries = loadLiveQueries(join(repoRoot, 'db', 'queries'));
@@ -82,8 +88,51 @@ describe('GET /api/live', () => {
   });
 });
 
+/** The configuration the inline script in the page hands the app. */
+function bootConfig(html: string): unknown {
+  const match = /<head><script>\(function\(c\)\{.*\}\)\((\{.*\})\)<\/script>/.exec(html);
+  return match ? JSON.parse(match[1] as string) : undefined;
+}
+
+describe('the page the server answers', () => {
+  test('opens the Realtime socket first, with what GET /api/live answers and the subprotocol', async () => {
+    const res = await fakeLive().app.request('/');
+    expect(res.headers.get('content-type')).toContain('text/html');
+    const html = await res.text();
+    expect(bootConfig(html)).toEqual({
+      url: 'wss://ep-abc-123.rt.c-14.us-east-1.aws.neon.tech/',
+      factories: ['mission-control'],
+      protocol: REALTIME_PROTOCOL,
+    });
+    expect(html).toContain('new WebSocket(c.url,c.protocol)');
+    expect(html).toContain('<div id="root"></div>');
+  });
+
+  test('a client-side route gets the same page', async () => {
+    expect(bootConfig(await (await fakeLive().app.request('/runs')).text())).toBeDefined();
+  });
+
+  test('the subprotocol is the one @neon/realtime asks for', () => {
+    const messages = readFileSync(
+      join(repoRoot, 'node_modules/@neon/realtime/dist/client/protocol/messages.js'),
+      'utf-8',
+    );
+    expect(messages).toContain(`const REALTIME_SUBPROTOCOL = "${REALTIME_PROTOCOL}";`);
+  });
+
+  test('a factory name cannot end the script', () => {
+    const script = liveBootScript({ url: 'wss://x/', factories: ['</script><b>'] });
+    expect(script.indexOf('</script>')).toBe(script.length - '</script>'.length);
+  });
+});
+
 describe('without Realtime configuration', () => {
   const app = () => createApp({ buildId: 'test', distDir });
+
+  test('the page opens no socket', async () => {
+    const html = await (await app().request('/')).text();
+    expect(html).not.toContain('__MC_LIVE__');
+  });
 
   test('both live routes are 503 and health stays 200', async () => {
     expect((await app().request('/api/live')).status).toBe(503);

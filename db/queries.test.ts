@@ -165,6 +165,133 @@ ${'x'.repeat(5000)}`;
   });
 });
 
+describe('home-map on the seed', () => {
+  let db: Db;
+  const sql = queries.find(([name]) => name === 'home-map')?.[1] as string;
+  const rows = async () =>
+    (await db.query(sql, ['mission-control'])) as {
+      role: string;
+      path: string | null;
+      step_id: string | null;
+      workflow: string;
+      position: number | null;
+      detail_workflow: string;
+      live_count: number;
+    }[];
+
+  beforeAll(async () => {
+    db = await seededDb(REPO_ROOT, readFileSync(join(REPO_ROOT, 'fixtures', 'seed.sql'), 'utf8'));
+  }, 60_000);
+  afterAll(() => db.close());
+
+  test("shows the newest pin's architecture: V3 stores none, so V2's loop with ship expanded", async () => {
+    const all = await rows();
+    const ordered = (role: string) =>
+      all
+        .filter((r) => r.role === role)
+        .sort((a, b) => (a.position ?? 0) - (b.position ?? 0))
+        .map((r) => r.step_id);
+    expect(ordered('step')).toEqual([
+      'pick',
+      'claim',
+      'build',
+      'ship',
+      'subject',
+      'check-app',
+      'evidence',
+      'review',
+      'land',
+      'deploy',
+      'release',
+      'tally',
+    ]);
+    expect(ordered('stage')).toEqual([
+      'forge',
+      'triage',
+      'inv',
+      'intel',
+      'planned',
+      'continues',
+      'deliver',
+      'outcome',
+      'report',
+    ]);
+    expect(all.filter((r) => r.role === 'stage').map((r) => r.detail_workflow)).toEqual(
+      Array(9).fill('archon-ship-block'),
+    );
+    expect(
+      all
+        .filter((r) => r.role === 'input' || r.role === 'manager')
+        .map((r) => `${r.role} ${r.workflow}`)
+        .sort(),
+    ).toEqual(['input archon-backlog', 'input archon-holdouts', 'manager archon-manager']);
+  });
+
+  /** Running laps per node, from the laps tables: a node's own steps are named by its path joined with `__`. */
+  const lapsOnNodes = async (factory: string) => {
+    const running = (await db.query(
+      `SELECT ls.run_id, ls.step_id FROM mc.lap_steps ls JOIN mc.laps l USING (run_id)
+        WHERE l.factory = $1 AND l.workflow_name = 'archon-loop'
+          AND l.status = 'running' AND ls.status = 'running'`,
+      [factory],
+    )) as { run_id: string; step_id: string }[];
+    return (path: string) => {
+      const key = path.replaceAll('/', '__');
+      const on = running.filter((r) => r.step_id === key || r.step_id.startsWith(`${key}__`));
+      return new Set(on.map((r) => r.run_id)).size;
+    };
+  };
+
+  test("each step counts the factory's running laps on it now, as SQL over the seed does", async () => {
+    const on = await lapsOnNodes('mission-control');
+    expect([on('build'), on('check-app')]).toEqual([1, 1]);
+    for (const row of await rows()) {
+      if (row.path !== null) expect(row.live_count).toBe(on(row.path));
+    }
+  });
+
+  test('a lap on a ship stage counts on that stage and on ship, and nowhere else', async () => {
+    const [lap] = await db.query(
+      `SELECT l.run_id FROM mc.laps l JOIN mc.lap_steps ls USING (run_id)
+        WHERE l.status = 'running' AND ls.step_id = 'check-app' AND ls.status = 'running'`,
+    );
+    await db.query(
+      `INSERT INTO remote_agent_workflow_events (workflow_run_id, event_type, step_name, data)
+        VALUES ($1, 'node_started', 'ship__intel', '{}'::jsonb)`,
+      [lap.run_id],
+    );
+    const counts = new Map((await rows()).map((r) => [r.path, r.live_count]));
+    expect(counts.get('ship/intel')).toBe(1);
+    expect(counts.get('ship')).toBe(1);
+    expect(counts.get('intel')).toBeUndefined();
+    const on = await lapsOnNodes('mission-control');
+    for (const [path, count] of counts) if (path !== null) expect(count).toBe(on(path));
+    await db.query(
+      `INSERT INTO remote_agent_workflow_events (workflow_run_id, event_type, step_name, data)
+        VALUES ($1, 'node_completed', 'ship__intel', '{}'::jsonb)`,
+      [lap.run_id],
+    );
+    expect((await rows()).find((r) => r.path === 'ship/intel')?.live_count).toBe(0);
+  });
+
+  test('a step event projected for a running lap adds it to that step, for that factory only', async () => {
+    const [lap] = await db.query(
+      `SELECT l.run_id FROM mc.laps l JOIN mc.lap_steps ls USING (run_id)
+        WHERE l.status = 'running' AND ls.step_id = 'build' AND ls.status = 'running'`,
+    );
+    await db.query(
+      `INSERT INTO remote_agent_workflow_events (workflow_run_id, event_type, step_name, data)
+        VALUES ($1, 'node_started', 'review', '{}'::jsonb)`,
+      [lap.run_id],
+    );
+    const review = (await rows()).find((r) => r.step_id === 'review');
+    expect(review?.live_count).toBe(1);
+    expect(await db.query(sql, ['other'])).toEqual(
+      expect.arrayContaining([expect.objectContaining({ step_id: 'review', live_count: 0 })]),
+    );
+  });
+});
+
 describe('version-strip on the seed', () => {
   let db: Db;
   const sql = queries.find(([name]) => name === 'version-strip')?.[1] as string;
@@ -206,5 +333,117 @@ describe('version-strip on the seed', () => {
       await writeRow(tx, 'pin', new Date('2026-10-25T12:03:00Z'));
     });
     expect(await strip()).toHaveLength(5);
+  });
+});
+
+describe('decisions-timeline and improvements-ledger on the seed', () => {
+  let db: Db;
+  const named = (name: string) => queries.find(([n]) => n === name)?.[1] as string;
+  const timeline = () => db.query(named('decisions-timeline'), ['mission-control']);
+  const ledgerRows = () => db.query(named('improvements-ledger'), ['mission-control']);
+  const byPin = async (prefix: string) =>
+    (await ledgerRows()).find((r) => String(r.pin_sha).startsWith(prefix));
+
+  beforeAll(async () => {
+    db = await seededDb(REPO_ROOT, readFileSync(join(REPO_ROOT, 'fixtures', 'seed.sql'), 'utf8'));
+  }, 60_000);
+
+  afterAll(() => db.close());
+
+  test('the timeline is every decision, each joined to its pin and that pin’s version by prefix', async () => {
+    const versions = await db.query('SELECT digest, pin_sha FROM mc.versions WHERE factory = $1', [
+      'mission-control',
+    ]);
+    const decisions = await db.query('SELECT date::text AS date, title, version FROM mc.decisions');
+    const rows = await timeline();
+    expect(rows.map((r) => r.title).sort()).toEqual(decisions.map((d) => d.title).sort());
+    const joined = rows.filter((r) => r.pin_sha !== null);
+    expect(joined).toHaveLength(2);
+    for (const row of joined) {
+      expect(String(row.pin_sha)).toStartWith(String(row.version));
+      expect(versions).toContainEqual({ digest: row.digest, pin_sha: row.pin_sha });
+    }
+  });
+
+  test('a pin’s laps are this factory’s archon-loop laps of the versions it labels', async () => {
+    const counted = await db.query(
+      `SELECT v.pin_sha, count(*)::int AS laps FROM mc.laps l
+       JOIN mc.versions v ON v.factory = l.factory AND v.digest = l.digest
+       WHERE l.factory = $1 AND l.workflow_name = 'archon-loop' GROUP BY v.pin_sha`,
+      ['mission-control'],
+    );
+    const rows = await ledgerRows();
+    for (const { pin_sha, laps } of counted) {
+      expect(rows.find((r) => r.pin_sha === pin_sha)?.laps).toBe(laps);
+    }
+    expect(await byPin('8e3e1cef')).toMatchObject({ verdict: 'helped' });
+    expect(await byPin('5ffd60c6')).toMatchObject({ verdict: null });
+  });
+
+  test('a verdict on V2 by prefix gives V2 that verdict', async () => {
+    await db.transaction(async (tx) => {
+      await writeRow(tx, 'verdict', new Date('2026-10-25T12:00:00Z'), '5ffd60c6');
+    });
+    expect(await byPin('5ffd60c6')).toMatchObject({ verdict: 'inconclusive' });
+    expect(await byPin('58c5f774')).toMatchObject({ verdict: null });
+  });
+});
+
+describe('issue-graph on the seed', () => {
+  let db: Db;
+  const sql = queries.find(([name]) => name === 'issue-graph')?.[1] as string;
+  const graph = () => db.query(sql, ['mission-control']);
+  const states = async () =>
+    Object.fromEntries(
+      (await graph()).filter((r) => r.kind === 'issue').map((r) => [r.number, r.state]),
+    );
+
+  beforeAll(async () => {
+    db = await seededDb(REPO_ROOT, readFileSync(join(REPO_ROOT, 'fixtures', 'seed.sql'), 'utf8'));
+  }, 60_000);
+
+  afterAll(() => db.close());
+
+  test('is every seeded issue in its one state, and every Depends on line as an edge', async () => {
+    expect(await states()).toEqual({
+      1: 'merged',
+      2: 'merged',
+      3: 'merged',
+      4: 'closed',
+      5: 'merged',
+      6: 'merged',
+      7: 'merged',
+      8: 'merged',
+      9: 'pr-open',
+      10: 'merged',
+      11: 'claimed',
+      12: 'pr-open',
+      13: 'needs-owner',
+      14: 'waiting',
+      15: 'waiting',
+      16: 'claimed',
+      17: 'waiting',
+      18: 'waiting',
+    });
+    const edges = (await graph())
+      .filter((r) => r.kind === 'edge')
+      .map((r) => [r.number, r.depends_on])
+      .sort(([a, b], [c, d]) => Number(a) - Number(c) || Number(b) - Number(d));
+    const seeded = await db.query(
+      'SELECT issue_number, depends_on FROM mc.issue_dependencies WHERE factory = $1 ORDER BY 1, 2',
+      ['mission-control'],
+    );
+    expect(edges).toEqual(seeded.map((r) => [r.issue_number, r.depends_on]));
+  });
+
+  test('a needs-owner label from fixture:write turns a waiting issue needs-owner', async () => {
+    await db.transaction(async (tx) => {
+      await writeRow(tx, 'label', new Date('2026-10-25T12:00:00Z'));
+    });
+    expect((await states())[18]).toBe('needs-owner');
+  });
+
+  test('another factory sees none of these issues', async () => {
+    expect(await db.query(sql, ['other'])).toEqual([]);
   });
 });

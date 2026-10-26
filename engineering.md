@@ -26,6 +26,10 @@ How this repository is built. The product is `docs/mission-control.prd.md`; this
   function. Return timestamps; the browser computes elapsed times. Every table a live query reads
   has a primary key.
 - Live queries read the dashboard's own tables, never Archon's `provider_event` rows.
+- A live panel's speed is judged in two parts (owner decision, #13/#14): its first snapshot within
+  500 ms of the panel's subscribe being sent (query and render, the app's own work), and Realtime
+  `ready` within 2000 ms of navigation (connection setup to Neon). Never show rows that did not come
+  from a delivered subscription (no `initialData`), so a panel reads `ready` only when it is live.
 - Nothing writes to Archon's tables. Triggers on them catch every error into `projection_errors`.
 - Never connect to the `main` database branch from a check, a test or a lap. Use a `check-*` branch
   (`bun run fixture:branch`). `scripts/` refuses any other branch name for writes.

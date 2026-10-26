@@ -1,6 +1,6 @@
 import { join, resolve, sep } from 'node:path';
 import { Hono } from 'hono';
-import { type Live, liveRoutes } from './live';
+import { type Live, liveBootScript, liveRoutes } from './live';
 
 interface AppOptions {
   buildId: string;
@@ -26,7 +26,10 @@ export function createApp({ buildId, distDir, live }: AppOptions): Hono {
       const file = Bun.file(asset);
       if (await file.exists()) return new Response(file);
     }
-    return new Response(Bun.file(join(root, 'index.html')));
+    const index = Bun.file(join(root, 'index.html'));
+    if (!live) return new Response(index);
+    const html = (await index.text()).replace('<head>', `<head>${liveBootScript(live)}`);
+    return c.html(html);
   });
 
   return app;

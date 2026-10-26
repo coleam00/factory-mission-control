@@ -7,7 +7,7 @@ and rejected when `bun run test:live` ran each probe query on a check branch; `t
 them again on every run and fails when a verdict or an error differs from this table.
 
 - `@neon/realtime`: 0.1.2
-- Run: check-816754c9 and check-ff19c267, 2026-10-25
+- Run: check-816754c9, check-ff19c267 and check-bfb770e3, 2026-10-25
 
 | Feature                 | Probe                                                                                                                                                                                             | Verdict  | Error                                                                           |
 | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- | ------------------------------------------------------------------------------- |
@@ -23,6 +23,8 @@ them again on every run and fails when a verdict or an error differs from this t
 | LEFT JOIN LATERAL       | `SELECT l.run_id, s.step_id FROM mc.laps l LEFT JOIN LATERAL (SELECT step_id FROM mc.lap_steps ls WHERE ls.run_id = l.run_id ORDER BY ls.started_at DESC LIMIT 1) s ON true WHERE l.factory = $1` | accepted |                                                                                 |
 | UNION ALL               | `SELECT l.run_id::text AS id FROM mc.laps l WHERE l.factory = $1 UNION ALL SELECT p.sha FROM mc.pins p`                                                                                           | accepted |                                                                                 |
 | NOT EXISTS              | `SELECT p.sha FROM mc.pins p WHERE NOT EXISTS (SELECT 1 FROM mc.laps l WHERE l.factory = $1 AND l.started_at > p.committed_at)`                                                                   | accepted |                                                                                 |
+| starts_with()           | `SELECT p.sha, v.verdict FROM mc.pins p JOIN mc.verdicts v ON starts_with(p.sha, v.pin)`                                                                                                          | accepted |                                                                                 |
+| EXISTS in CASE          | `SELECT i.number, CASE WHEN EXISTS (SELECT 1 FROM mc.issue_labels l WHERE l.issue_number = i.number) THEN 1 ELSE 0 END AS n FROM mc.issues i WHERE i.factory = $1`                                | accepted |                                                                                 |
 
 A volatile function such as `now()` is rejected, so a query returns timestamps and the browser
 computes elapsed times. A query whose answer holds one value of about 16 KiB or more (the seed's
