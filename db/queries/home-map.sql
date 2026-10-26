@@ -2,6 +2,8 @@ WITH version AS (
   SELECT a.archon_sha, a.factory_sha
   FROM mc.arch_versions a
   JOIN mc.pins p ON p.archon_sha = a.archon_sha
+  -- Like the version strip, an empty factory does not borrow the shared pin history.
+  WHERE EXISTS (SELECT 1 FROM mc.laps l WHERE l.factory = $1)
   ORDER BY p.committed_at DESC, a.parsed_at DESC
   LIMIT 1
 ),
