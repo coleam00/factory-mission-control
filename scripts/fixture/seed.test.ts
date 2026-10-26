@@ -1,9 +1,11 @@
 import { afterAll, beforeAll, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { migrationFiles, testDb } from '../../db/test-db';
 import { REPO_ROOT } from '../lib/cli';
 import type { Db } from '../lib/db';
-import { buildSeed, SECOND_FACTORY, SEED_CODEBASE, seededDb } from './seed';
+import { runMigrations } from '../migrate';
+import { buildSeed, SECOND_FACTORY, SEED_CODEBASE } from './seed';
 import { markerHits, minimums, scorecard, tableCounts } from './seed-report';
 import { writeRow } from './write';
 
@@ -14,7 +16,16 @@ let db: Db;
 
 beforeAll(async () => {
   seed = buildSeed(REPO_ROOT);
-  db = await seededDb(REPO_ROOT, fixture('seed.sql'));
+  db = testDb();
+  await db.query(fixture('archon-schema.sql'));
+  await db.query(`WITH r AS (
+    INSERT INTO public.remote_agent_workflow_runs (workflow_name, user_message)
+    VALUES ('fence-proof', 'inherited non-lap') RETURNING id)
+    INSERT INTO public.remote_agent_workflow_events (workflow_run_id, event_type, step_name, data)
+    SELECT r.id, 'node_completed', step, '{}'::jsonb FROM r CROSS JOIN
+      (VALUES ('builder'), ('verify')) AS steps(step)`);
+  await runMigrations({ files: migrationFiles, db });
+  await db.transaction((tx) => tx.query(fixture('seed.sql')).then(() => undefined));
 }, 60_000);
 afterAll(() => db.close());
 

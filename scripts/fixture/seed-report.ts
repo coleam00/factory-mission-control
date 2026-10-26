@@ -198,8 +198,12 @@ export function formatCounts({ tables, minimums: found, markers }: Counts): {
   ok: boolean;
 } {
   const verdict = (pass: boolean) => (pass ? 'ok' : 'SHORT');
+  const errors = tables.find((t) => t.table === 'mc.projection_errors');
   const lines = [
-    ...tables.map((t) => `table ${t.table} ${t.rows} >= 1 ${verdict(t.rows >= 1)}`),
+    ...tables
+      .filter((t) => t.table !== 'mc.projection_errors')
+      .map((t) => `table ${t.table} ${t.rows} >= 1 ${verdict(t.rows >= 1)}`),
+    `table mc.projection_errors ${errors?.rows ?? 'missing'} == 1 ${verdict(errors?.rows === 1)}`,
     ...found.map((m) => `minimum ${m.name} ${m.value} >= ${m.min} ${verdict(m.value >= m.min)}`),
     `marker dashboard ${markers.dashboard} == 0 ${verdict(markers.dashboard === 0)}`,
     `marker archon-events ${markers.archonEvents} >= 1 ${verdict(markers.archonEvents >= 1)}`,

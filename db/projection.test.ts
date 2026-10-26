@@ -1,9 +1,11 @@
 import { afterAll, beforeAll, beforeEach, expect, test } from 'bun:test';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { holdoutId } from '../parsers/metrics';
 import { eventData, structuredOutputFor } from '../scripts/fixture/write';
 import type { Db, Row } from '../scripts/lib/db';
 import { runMigrations } from '../scripts/migrate';
-import { archonDb, migrationFiles } from './test-db';
+import { archonDb, migrationFiles, snapshot } from './test-db';
 
 const NOW = new Date('2026-10-25T12:00:00Z');
 const DIGEST = `sha256:${'ab'.repeat(32)}`;
@@ -80,6 +82,189 @@ async function markerCount(): Promise<number> {
 async function projectionErrors(): Promise<Row[]> {
   return db.query('SELECT source, run_id, event_id, sqlstate, message FROM mc.projection_errors');
 }
+
+const projectionDefinitions = (database: Db) =>
+  database.query(
+    `SELECT proname, pg_get_functiondef(oid) AS definition FROM pg_proc
+   WHERE oid IN ('mc.record_step_attempt(uuid,text,text,jsonb)'::regprocedure,
+     'mc.project_step_event()'::regprocedure) ORDER BY proname`,
+  );
+
+test.each(['archon-manager', 'archon-holdouts', 'archon-backlog', 'fence-proof'])(
+  '%s events are excluded before parsing payloads or projecting steps, attempts and check lines',
+  async (workflow) => {
+    await db.query(
+      'UPDATE public.remote_agent_workflow_runs SET workflow_name = $1 WHERE id = $2',
+      [workflow, runId],
+    );
+    const before = await dashboardCounts();
+    const payloads = [
+      eventData('check-app', 'node_completed', NOW),
+      { structured_output: 'malformed' },
+      { timing: { startedAt: 'invalid' } },
+      { duration_ms: 'invalid' },
+      { cost_usd: 'invalid' },
+    ];
+    for (const event of ['node_started', 'node_completed', 'node_failed', 'node_skipped']) {
+      for (const data of payloads) {
+        await insertEvent(event, 'check-app', data);
+        if (event !== 'node_started') {
+          await db.query('SELECT mc.record_step_attempt($1, $2, $3, $4)', [
+            runId,
+            event,
+            'check-app',
+            JSON.stringify(data),
+          ]);
+        }
+      }
+    }
+    expect(await dashboardCounts()).toEqual(before);
+    expect(
+      await db.query('SELECT count(*)::int AS n FROM public.remote_agent_workflow_events'),
+    ).toEqual([{ n: 20 }]);
+  },
+);
+
+test('an attempt failure is recorded without losing the source event or its step', async () => {
+  const rolledBack = db.transaction(async (tx) => {
+    await tx.query('ALTER TABLE mc.lap_step_attempts ADD CONSTRAINT reject_attempt CHECK (false)');
+    const [event] = await tx.query(
+      `INSERT INTO public.remote_agent_workflow_events (workflow_run_id, event_type, step_name, data)
+       VALUES ($1, 'node_completed', 'review', '{}') RETURNING id`,
+      [runId],
+    );
+    expect(await tx.query('SELECT id FROM public.remote_agent_workflow_events')).toEqual([event]);
+    expect(await tx.query('SELECT step_id, status FROM mc.lap_steps')).toEqual([
+      { step_id: 'review', status: 'completed' },
+    ]);
+    expect(await tx.query('SELECT * FROM mc.lap_step_attempts')).toEqual([]);
+    expect(await tx.query('SELECT source, event_id, sqlstate FROM mc.projection_errors')).toEqual([
+      { source: 'mc_project_step_event', event_id: event?.id, sqlstate: '23514' },
+    ]);
+    throw new Error('rollback after attempt failure');
+  });
+  await expect(rolledBack).rejects.toThrow('rollback after attempt failure');
+});
+
+test('historical replay excludes known non-laps but records missing parents for eligible laps', async () => {
+  const historical = await archonDb();
+  try {
+    await runMigrations({
+      files: migrationFiles.filter((f) => f.name < '0006'),
+      db: historical,
+    });
+    for (const workflow of [
+      'archon-manager',
+      'archon-holdouts',
+      'archon-backlog',
+      'fence-proof',
+      'archon-loop',
+    ]) {
+      const [run] = await historical.query(
+        `INSERT INTO public.remote_agent_workflow_runs (workflow_name, user_message)
+         VALUES ($1, 'historical') RETURNING id`,
+        [workflow],
+      );
+      for (const status of ['completed', 'failed', 'skipped']) {
+        await historical.query(
+          `INSERT INTO public.remote_agent_workflow_events
+             (workflow_run_id, event_type, step_name, data)
+           VALUES ($1, $2, $3, '{}'), ($1, $2, $4, '{}')`,
+          [run?.id, `node_${status}`, status, `missing-${status}`],
+        );
+        await historical.query(
+          'INSERT INTO mc.lap_steps (run_id, step_id, status) VALUES ($1, $2, $2)',
+          [run?.id, status],
+        );
+      }
+    }
+    await runMigrations({ files: migrationFiles.filter((f) => f.name < '0010'), db: historical });
+    const freshDefinitions = await projectionDefinitions(historical);
+    await runMigrations({ files: migrationFiles, db: historical });
+    expect(await projectionDefinitions(historical)).toEqual(freshDefinitions);
+    expect(
+      await historical.query(
+        `SELECT r.workflow_name, a.step_id, a.status FROM mc.lap_step_attempts a
+       JOIN public.remote_agent_workflow_runs r ON r.id = a.run_id ORDER BY a.step_id`,
+      ),
+    ).toEqual(
+      ['completed', 'failed', 'skipped'].map((status) => ({
+        workflow_name: 'archon-loop',
+        step_id: status,
+        status,
+      })),
+    );
+    expect(
+      await historical.query(
+        `SELECT r.workflow_name, e.step_name, p.source, p.sqlstate FROM mc.projection_errors p
+       JOIN public.remote_agent_workflow_runs r ON r.id = p.run_id
+       JOIN public.remote_agent_workflow_events e ON e.id = p.event_id ORDER BY e.step_name`,
+      ),
+    ).toEqual(
+      ['completed', 'failed', 'skipped'].map((status) => ({
+        workflow_name: 'archon-loop',
+        step_name: `missing-${status}`,
+        source: '0007_step_attempts',
+        sqlstate: '23503',
+      })),
+    );
+    await expect(
+      historical.query(
+        `SELECT mc.record_step_attempt('00000000-0000-0000-0000-000000000000',
+        'node_completed', 'review', '{}')`,
+      ),
+    ).rejects.toMatchObject({ code: '23503' });
+  } finally {
+    await historical.close();
+  }
+});
+
+test('the eligibility upgrade preserves history and installs the same functions as a fresh database', async () => {
+  const upgraded = await archonDb();
+  try {
+    const original = readFileSync(
+      join(import.meta.dir, 'test-fixtures/0007_step_attempts.sql'),
+      'utf8',
+    );
+    await runMigrations({
+      files: migrationFiles
+        .filter((f) => f.name < '0010')
+        .map((f) => (f.name === '0007_step_attempts.sql' ? { ...f, sql: original } : f)),
+      db: upgraded,
+    });
+    for (const workflow of ['archon-loop', 'archon-manager']) {
+      await upgraded.query(
+        `WITH r AS (
+          INSERT INTO public.remote_agent_workflow_runs (workflow_name, user_message)
+          VALUES ($1, 'upgrade') RETURNING id)
+         INSERT INTO public.remote_agent_workflow_events (workflow_run_id, event_type, step_name, data)
+         SELECT id, 'node_completed', 'review', '{"structured_output":"malformed"}' FROM r`,
+        [workflow],
+      );
+    }
+    expect(await upgraded.query('SELECT count(*)::int AS n FROM mc.lap_step_attempts')).toEqual([
+      { n: 2 },
+    ]);
+    expect(await upgraded.query('SELECT count(*)::int AS n FROM mc.projection_errors')).toEqual([
+      { n: 2 },
+    ]);
+    const before = await snapshot(upgraded);
+    expect(await runMigrations({ files: migrationFiles, db: upgraded })).toEqual([
+      '0010_step_attempt_eligibility.sql',
+    ]);
+    expect(await snapshot(upgraded)).toEqual(before);
+    expect(await projectionDefinitions(upgraded)).toEqual(await projectionDefinitions(db));
+    expect(await runMigrations({ files: migrationFiles, db: upgraded })).toEqual([]);
+    await upgraded.query(
+      `INSERT INTO public.remote_agent_workflow_events (workflow_run_id, event_type, step_name, data)
+       SELECT id, 'node_completed', 'check-app', '{"timing":{"startedAt":"invalid"}}'
+       FROM public.remote_agent_workflow_runs WHERE workflow_name = 'archon-manager'`,
+    );
+    expect(await snapshot(upgraded)).toEqual(before);
+  } finally {
+    await upgraded.close();
+  }
+});
 
 test('a started then completed step is one completed row with the event’s timing and cost', async () => {
   await stepEvent('review', 'node_started');
