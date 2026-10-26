@@ -19,7 +19,7 @@ import {
   versionLaps,
   versionPin,
 } from '../app/lib/scorecard';
-import { joinParts } from '../app/lib/step-detail';
+import { findStep, joinParts, type NestingRow, type StepRow } from '../app/lib/step-detail';
 import { seededDb } from '../scripts/fixture/seed';
 import { seedLaps } from '../scripts/fixture/seed-laps';
 import { eventData, writeRow } from '../scripts/fixture/write';
@@ -33,7 +33,14 @@ const dir = join(import.meta.dir, 'queries');
 const queries = [...loadLiveQueries(dir)];
 
 /** The step screen's panels below step-detail: keyed by the step's workflow and path too. */
-const STEP_PANELS = ['step-prompt', 'step-subagents', 'step-scripts', 'step-hooks', 'step-yaml'];
+const STEP_PANELS = [
+  'step-nesting',
+  'step-prompt',
+  'step-subagents',
+  'step-scripts',
+  'step-hooks',
+  'step-yaml',
+];
 const CHECK_APP = ['archon-loop', 'check-app'];
 const paramsFor = (name: string, factory: string) =>
   STEP_PANELS.includes(name) ? [factory, ...CHECK_APP] : [factory];
@@ -494,6 +501,76 @@ describe('home-map on the seed', () => {
     }
     await db.query(`DELETE FROM mc.lap_steps WHERE run_id::text LIKE '%0000000000c_'`);
     await db.query(`DELETE FROM mc.laps WHERE run_id::text LIKE '%0000000000c_'`);
+  });
+});
+
+describe('step screens of included blocks on the seed', () => {
+  let db: Db;
+  const sql = (name: string) => queries.find(([n]) => n === name)?.[1] as string;
+  const nestingOf = async (workflow: string, path: string) =>
+    (await db.query(sql('step-nesting'), [
+      'mission-control',
+      workflow,
+      path,
+    ])) as unknown as NestingRow[];
+  const opens = (row: NestingRow) => `${row.open_workflow} / ${row.open_path}`;
+
+  beforeAll(async () => {
+    db = await seededDb(REPO_ROOT, readFileSync(join(REPO_ROOT, 'fixtures', 'seed.sql'), 'utf8'));
+  }, 60_000);
+  afterAll(() => db.close());
+
+  test("the step that writes the code has its own screen and prompt, and no alias under deliver's block", async () => {
+    const steps = (await db.query(sql('step-detail'), ['mission-control'])) as unknown as StepRow[];
+    expect(findStep(steps, 'archon-implement', 'implement')?.command_file).toBe(
+      'implement/commands/implement.md',
+    );
+    expect(findStep(steps, 'archon-deliver-block', 'implement')).toBeUndefined();
+    const parts = (await db.query(sql('step-prompt'), [
+      'mission-control',
+      'archon-implement',
+      'implement',
+    ])) as { path: string; part: number; chunk: string }[];
+    expect(joinParts(parts, (row) => row.path).get('implement/commands/implement.md')).toBe(
+      readFileSync(
+        join(REPO_ROOT, 'fixtures', 'pack', 'sdlc', 'implement', 'commands', 'implement.md'),
+        'utf8',
+      ),
+    );
+  });
+
+  test("deliver's screen lists both occurrences of implement, each opening its own screen", async () => {
+    const inside = new Map(
+      (await nestingOf('archon-ship-block', 'deliver'))
+        .filter((row) => row.relation === 'inside')
+        .map((row) => [row.path, opens(row)]),
+    );
+    expect(inside.get('deliver/rounds/implement')).toBe('archon-deliver-block / rounds/implement');
+    expect(inside.get('deliver/rounds/implement/implement')).toBe('archon-implement / implement');
+    expect(inside.get('deliver/rounds/reshape/implement')).toBe('archon-implement / implement');
+  });
+
+  test('every step beneath ship opens a screen that exists', async () => {
+    const steps = (await db.query(sql('step-detail'), ['mission-control'])) as unknown as StepRow[];
+    const inside = (await nestingOf('archon-loop', 'ship')).filter((r) => r.relation === 'inside');
+    expect(inside.length).toBeGreaterThan(50);
+    const missing = inside.filter((row) => !findStep(steps, row.open_workflow, row.open_path));
+    expect(missing.map((row) => row.path)).toEqual([]);
+  });
+
+  test("implement's screen lists every place an include puts it, opening the node it sits in", async () => {
+    const places = (await nestingOf('archon-implement', 'implement'))
+      .filter((row) => row.relation === 'included_at')
+      .map((row) => `${row.workflow} ${row.path} -> ${opens(row)}`)
+      .sort();
+    expect(places).toEqual([
+      'archon-deliver-block rounds/implement/implement -> archon-deliver-block / rounds/implement',
+      'archon-deliver-block rounds/reshape/implement -> archon-deliver-block / rounds/reshape',
+      'archon-loop ship/deliver/rounds/implement/implement -> archon-deliver-block / rounds/implement',
+      'archon-loop ship/deliver/rounds/reshape/implement -> archon-deliver-block / rounds/reshape',
+      'archon-ship-block deliver/rounds/implement/implement -> archon-deliver-block / rounds/implement',
+      'archon-ship-block deliver/rounds/reshape/implement -> archon-deliver-block / rounds/reshape',
+    ]);
   });
 });
 
