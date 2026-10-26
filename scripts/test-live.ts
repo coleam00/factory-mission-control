@@ -14,6 +14,7 @@ import { openPage, type Page } from './lib/cdp';
 import { type Deps, failing, guardedDatabaseUrl, type Main, runCli } from './lib/cli';
 import type { Db } from './lib/db';
 import { machineLockPath, withMachineLock } from './lib/machine-lock';
+import { rewindPhase } from './live/rewind';
 import { switcherPhase } from './live/switcher';
 
 const USAGE = [
@@ -51,6 +52,9 @@ const USAGE = [
   '  It opens /steps/archon-loop/check-app, checks it against the seed, times description writes to',
   '  it across the same hold, and checks land and an unknown step, writing',
   '  step-detail-timings.json, step-detail.png and step-detail-design-probe.json.',
+  '  It opens /rewind on a second server, makes a rewind branch of the check branch with',
+  '  `bun run rewind:create` before the hold and another after it, switches to the first and back,',
+  '  writing rewind-run.txt, rewind-timings.json, rewind.png and rewind-design-probe.json.',
   "  Its server reads factories.json plus the seed's second factory (factories.json in --out, as",
   '  MC_FACTORIES_FILE). Before the diff it checks the factory switcher: every factory in that file',
   '  with its running laps, an inserted lap on the second factory timed to its count, choosing that',
@@ -361,7 +365,7 @@ const stepToScreen = (page: Page, deps: Deps, runId: string, target: number) =>
   );
 
 /** Inserts one running lap and times it from just before the insert to the strip showing it. */
-async function insertToScreen(
+export async function insertToScreen(
   page: Page,
   db: Db,
   inserted: string[],
@@ -446,7 +450,7 @@ async function checkAppMismatches(page: Page, repoRoot: string): Promise<string[
   return failures;
 }
 
-const renewalsOf = (query: string) =>
+export const renewalsOf = (query: string) =>
   `performance.getEntriesByName('live:${query}:renewed').length`;
 
 interface VersionStripTimings {
@@ -1513,6 +1517,7 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
   const judgedBy: string[] = [];
   const decided: string[] = [];
   const db = deps.openDb(databaseUrl);
+  const rewind = rewindPhase({ deps, db, outDir, factory, holdSeconds });
   let server: ReturnType<typeof Bun.spawn> | undefined;
   let page: Page | undefined;
   let versionsPage: Page | undefined;
@@ -1947,6 +1952,10 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
     diffTimings.stepToScreenMs = await archStepToScreen(diffPage, db, v2Arch, addedSteps);
     deps.out(`first step reached the diff in ${diffTimings.stepToScreenMs ?? 'never'} ms`);
 
+    // Last before the hold: making a rewind branch starts a new Neon compute on the project, so
+    // every other screen's first snapshots are timed before it.
+    await rewind.beforeHold();
+
     deps.out(`holding the page open ${holdSeconds}s`);
     await deps.sleep(holdSeconds * 1000);
     for (const panel of panels) {
@@ -2093,6 +2102,7 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
     await diffPage.close();
     diffPage = undefined;
 
+    await rewind.afterHold();
     const probe = Bun.spawnSync(
       [
         'bun',
@@ -2243,6 +2253,7 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
       server.kill();
       await server.exited;
     }
+    failures.push(...(await rewind.cleanup()));
     try {
       if (inserted.length > 0) {
         await db.query('DELETE FROM mc.laps WHERE run_id = ANY($1::uuid[])', [
@@ -2552,6 +2563,7 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
     );
   }
   if (diffTimings.noReload !== true) failures.push('the diff screen reloaded');
+  failures.push(...rewind.judge());
   if (failures.length > 0) throw new Error(failures.join('\n'));
   deps.out(`live: ${JSON.stringify(timings)}`);
   deps.out(`step detail: ${JSON.stringify(stepTimings)}`);
@@ -2562,6 +2574,7 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
   deps.out(`issues: ${JSON.stringify(issueTimings)}`);
   deps.out(`laps: ${JSON.stringify(lapsTimings)}`);
   deps.out(`diff: ${JSON.stringify(diffTimings)}`);
+  deps.out(`rewind: ${JSON.stringify(rewind.timings)}`);
 }
 
 export const main: Main = async (argv, deps) => {

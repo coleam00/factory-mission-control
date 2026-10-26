@@ -1,0 +1,32 @@
+/** A row of `db/queries/rewind-branches.sql`; Realtime delivers its timestamps as dates. */
+export interface RewindBranchRow {
+  name: string;
+  parent: string;
+  at: Date;
+  created_at: Date;
+}
+
+/**
+ * Switches the server's sealing to `branch`, or back to its home branch for null, then reloads
+ * `/rewind`: the page's Realtime client is bound to one branch, so every panel opens again on
+ * the new one. A refused switch throws the server's reason and leaves the page as it is.
+ */
+export async function switchBranch(branch: string | null): Promise<void> {
+  const res = await fetch('/api/rewind', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ branch }),
+  });
+  if (!res.ok) {
+    const answer = (await res.json().catch(() => undefined)) as { error?: unknown } | undefined;
+    throw new Error(
+      typeof answer?.error === 'string' ? answer.error : `switching answered ${res.status}`,
+    );
+  }
+  window.location.assign('/rewind');
+}
+
+/** The moment a rewind branch shows, in UTC to the second as its name has it. */
+export function rewindMoment(at: Date): string {
+  return `${at.toISOString().slice(0, 19).replace('T', ' ')} UTC`;
+}
