@@ -5,6 +5,7 @@ import type { Hono } from 'hono';
 import { isRewindBranch } from '../scripts/lib/guard';
 import { createNeonApi, type NeonApi } from '../scripts/lib/neon';
 import type { Env } from './check-env';
+import { readFactories } from './factories';
 import { rewindRealtime, UnknownRewindBranch } from './rewind';
 
 export const LIVE_QUERY_NAME = /^[a-z0-9-]+$/;
@@ -85,11 +86,7 @@ export function rewindOpener(api: NeonApi, db: string): (name: string) => Promis
  * `mc.factories` the file does not name is never listed, so one entry means one factory.
  */
 export function factoryNames(env: Env, repoRoot: string): string[] {
-  const file = env.MC_FACTORIES_FILE || join(repoRoot, 'factories.json');
-  const { factories } = JSON.parse(readFileSync(file, 'utf-8')) as {
-    factories: { name: string }[];
-  };
-  return factories.map((f) => f.name);
+  return readFactories(env, repoRoot).map((f) => f.name);
 }
 
 export function liveFromEnv(env: Env, repoRoot: string): Live | undefined {
