@@ -686,7 +686,7 @@ describe('arch-diff on versions known only from their laps', () => {
 
   beforeAll(async () => {
     db = await seededDb(REPO_ROOT, readFileSync(join(REPO_ROOT, 'fixtures', 'seed.sql'), 'utf8'));
-    // Only the seed writes mc.versions; the projection records a version as mc.laps.digest (#74).
+    // As runs projected before 0008 are until `reconcile:laps` writes their versions.
     await db.query('DELETE FROM mc.versions');
   }, 60_000);
 

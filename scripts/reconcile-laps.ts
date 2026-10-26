@@ -3,10 +3,11 @@
 // error is dropped (0006_projection.sql), so a lap can stay `running` after Archon finished the run:
 // a finished, paused or failed run may get no more writes to project it again. For each run
 // Archon is not running, this replays the run's row and step-level events through the
-// projection's own functions (0006, and 0007's attempts), by way of temp tables that carry the same
-// triggers, and keeps the result only when it differs from the lap's rows. Archon's tables are only
-// read. It writes the check branch in .mc-check.env; `:main` writes `main`, and is the owner's
-// nightly run beside `backfill:main`.
+// projection's own functions (0006, 0007's attempts and 0008's versions), by way of temp tables that
+// carry the same triggers, and keeps the result only when it differs from the lap's rows. A run
+// projected before versions were (0008, issue #74) differs by its missing version, so this writes
+// that too. Archon's tables are only read. It writes the check branch in .mc-check.env; `:main`
+// writes `main`, and is the owner's nightly run beside `backfill:main`.
 
 import { parseArgs } from 'node:util';
 import { failing, guardedDatabaseUrl, type Main, runCli } from './lib/cli';
@@ -34,7 +35,7 @@ const REPLAY_STEP_EVENT = 'mc_reconcile_step_event';
 const sqlList = (values: string[]) => `(${values.map((value) => `'${value}'`).join(', ')})`;
 const REPLAY_SOURCES = sqlList([REPLAY_RUN, REPLAY_STEP_EVENT]);
 
-/** Every row the projection writes for a run, as text, in a fixed order. */
+/** Every row the projection writes for a run, its version's included, as text, in a fixed order. */
 async function lapRows(tx: Tx, runId: string): Promise<string> {
   const rows = await tx.query(
     `SELECT 'laps' AS t, to_jsonb(l)::text AS row FROM mc.laps l WHERE run_id = $1
@@ -42,6 +43,8 @@ async function lapRows(tx: Tx, runId: string): Promise<string> {
      UNION ALL SELECT 'lap_step_attempts', to_jsonb(a)::text FROM mc.lap_step_attempts a
        WHERE run_id = $1
      UNION ALL SELECT 'app_check_lines', to_jsonb(a)::text FROM mc.app_check_lines a WHERE run_id = $1
+     UNION ALL SELECT 'versions', to_jsonb(v)::text FROM mc.versions v
+       JOIN mc.laps l ON l.factory = v.factory AND l.digest = v.digest WHERE l.run_id = $1
      ORDER BY 1, 2`,
     [runId],
   );
@@ -82,7 +85,7 @@ async function reproject(tx: Tx, runId: string): Promise<void> {
   );
   await tx.query('DELETE FROM mc.app_check_lines WHERE run_id = $1', [runId]);
   await tx.query('DELETE FROM mc.lap_steps WHERE run_id = $1', [runId]);
-  await tx.query('DELETE FROM mc.laps WHERE run_id = $1', [runId]);
+  // The lap is overwritten in place, not deleted: the replay re-projects the version it moves off.
   await tx.query(
     'INSERT INTO mc_reconcile_runs SELECT * FROM public.remote_agent_workflow_runs WHERE id = $1',
     [runId],

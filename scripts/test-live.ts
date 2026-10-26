@@ -12,10 +12,14 @@ import { NEXT_TO_LABEL } from './fixture/write';
 import { openPage, type Page } from './lib/cdp';
 import { type Deps, failing, guardedDatabaseUrl, type Main, runCli } from './lib/cli';
 import type { Db } from './lib/db';
+import { machineLockPath, withMachineLock } from './lib/machine-lock';
 import { rewindPhase } from './live/rewind';
 
 const USAGE = [
   'usage: bun run test:live [--out <dir>] [--hold <seconds>]',
+  '  Runs one at a time per machine: it takes a lock in the temp directory before serving and',
+  '  measuring, waits up to 30 minutes for another running test:live (naming its process id),',
+  '  takes over a lock whose process no longer exists, and releases it when it ends.',
   '  Proves the home screen is live against the check branch in .mc-check.env (run',
   '  `bun run fixture:branch` first): serves the app on a free port in 8850-8864, opens `/` in a',
   '  headless browser, checks the map against the seed, times inserted laps to the factory strip',
@@ -2578,7 +2582,9 @@ export const main: Main = async (argv, deps) => {
     return 2;
   }
   const outDir = resolve(values.out ?? join(deps.repoRoot, 'harness', '.results', 'live'));
-  return failing(deps, () => testLive(deps, outDir, hold));
+  return failing(deps, () =>
+    withMachineLock(deps, machineLockPath(deps), () => testLive(deps, outDir, hold)),
+  );
 };
 
 if (import.meta.main) await runCli(main);
