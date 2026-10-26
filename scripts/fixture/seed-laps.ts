@@ -1,5 +1,5 @@
 /**
- * The laps `fixtures/seed.sql` holds, read from the comment the generator writes above each run
+ * The mission-control laps `fixtures/seed.sql` holds, read from the comment the generator writes above each run
  * (`-- V1 k4: needs-owner on #4`, `-- V3 run A: running on #11`) and the id its run insert gives,
  * so a check compares a screen with the seed's own account of each lap, not with the query that
  * drew it.
