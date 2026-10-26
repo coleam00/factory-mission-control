@@ -1568,7 +1568,6 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
       join(outDir, 'realtime-features.json'),
       `${JSON.stringify({ branch: timings.branch, features }, null, 2)}\n`,
     );
-    await rewind.beforeHold();
 
     page = await openPage(deps.env);
     await page.goto(`${base}/`);
@@ -1928,6 +1927,10 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
     v2Arch = await archOf(db, factory, v2);
     diffTimings.stepToScreenMs = await archStepToScreen(diffPage, db, v2Arch, addedSteps);
     deps.out(`first step reached the diff in ${diffTimings.stepToScreenMs ?? 'never'} ms`);
+
+    // Last before the hold: making a rewind branch starts a new Neon compute on the project, so
+    // every other screen's first snapshots are timed before it.
+    await rewind.beforeHold();
 
     deps.out(`holding the page open ${holdSeconds}s`);
     await deps.sleep(holdSeconds * 1000);
