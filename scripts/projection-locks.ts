@@ -49,6 +49,28 @@ const providerEvent = (tx: Tx, runId: string) =>
     [runId],
   );
 
+/** The first factory by name whose codebase is on the branch, which the version cases run. */
+const FACTORY_CODEBASE = `FROM remote_agent_codebases c JOIN mc.factories f ON f.codebase = c.name
+  ORDER BY f.name LIMIT 1`;
+
+/** The digest every version case runs, one per run of this script. */
+const loopDigest = (runId: string) => `projection-locks:${runId}`;
+
+/**
+ * A finished archon-loop run of the factory, `daysBefore` days ago: earlier than every earlier
+ * case's, so its version's first run moves and the projection must write the version row.
+ */
+const loopRun = (daysBefore: number) => (tx: Tx, runId: string) =>
+  tx.query(
+    `INSERT INTO remote_agent_workflow_runs
+       (workflow_name, codebase_id, status, user_message, metadata, started_at)
+     SELECT 'archon-loop', c.id, 'completed', 'lock wait check',
+       jsonb_build_object('workflow_source', jsonb_build_object('digest', $1::text)),
+       now() - make_interval(days => $2::int)
+     ${FACTORY_CODEBASE}`,
+    [loopDigest(runId), daysBefore],
+  );
+
 const exclusive = (...tables: string[]) =>
   `LOCK TABLE ${tables.map((table) => `mc.${table}`).join(', ')} IN ACCESS EXCLUSIVE MODE`;
 
@@ -98,9 +120,36 @@ export const CASES: Case[] = [
   },
   {
     name: 'ACCESS EXCLUSIVE on every mc table the projection writes: provider_event',
-    hold: exclusive('laps', 'lap_steps', 'app_check_lines', 'factories', 'projection_errors'),
+    hold: exclusive(
+      'laps',
+      'lap_steps',
+      'app_check_lines',
+      'factories',
+      'versions',
+      'pins',
+      'projection_errors',
+    ),
     errors: 0,
     write: providerEvent,
+  },
+  { name: 'no lock: archon-loop run INSERT with a new digest', errors: 0, write: loopRun(0) },
+  {
+    name: "ACCESS EXCLUSIVE mc.versions: archon-loop run INSERT that moves its version's first run",
+    hold: exclusive('versions'),
+    errors: 1,
+    write: loopRun(1),
+  },
+  {
+    name: "uncommitted UPDATE of the same mc.versions row: archon-loop run INSERT that moves its version's first run",
+    hold: `UPDATE mc.versions SET pin_sha = pin_sha WHERE digest = 'projection-locks:' || $1::text`,
+    errors: 1,
+    write: loopRun(2),
+  },
+  {
+    name: "ACCESS EXCLUSIVE mc.pins: archon-loop run INSERT that moves its version's first run",
+    hold: exclusive('pins'),
+    errors: 1,
+    write: loopRun(3),
   },
 ];
 
@@ -133,6 +182,52 @@ async function holdLock(holder: Db, sql: string, runId: string): Promise<() => P
     release();
     await transaction;
   };
+}
+
+/**
+ * The version cases' digest after them, as problems: one row for the unlocked case's run, since
+ * every locked case lost its version write; the repair the digest's next write or `reconcile:laps`
+ * applies; and a pin written after the run labelling it.
+ */
+async function versionProblems(db: Db, factory: string, runId: string): Promise<string[]> {
+  const digest = loopDigest(runId);
+  const problems: string[] = [];
+  const [unrepaired] = await db.query(
+    `SELECT count(*)::int AS n, bool_and(v.first_run_at = (SELECT max(l.started_at) FROM mc.laps l
+       WHERE l.digest = $1)) AS first_unlocked FROM mc.versions v WHERE v.digest = $1`,
+    [digest],
+  );
+  if (unrepaired?.n !== 1 || unrepaired?.first_unlocked !== true)
+    problems.push("expected one version row at the unlocked case's run");
+
+  await db.query('SELECT mc.project_version($1, $2)', [factory, digest]);
+  const repaired = `SELECT count(*)::int AS n, bool_and(v.first_run_at = (SELECT min(l.started_at)
+       FROM mc.laps l WHERE l.digest = $1)) AS first_earliest,
+     bool_and(v.pin_sha IS NOT DISTINCT FROM (SELECT p.sha FROM mc.pins p
+       WHERE p.committed_at < v.first_run_at ORDER BY p.committed_at DESC, p.sha DESC LIMIT 1))
+       AS labelled
+     FROM mc.versions v WHERE v.digest = $1`;
+  const [row] = await db.query(repaired, [digest]);
+  if (row?.n !== 1 || row?.first_earliest !== true || row?.labelled !== true)
+    problems.push("expected the repair to move the version to the earliest run and that run's pin");
+
+  try {
+    await db.transaction(async (tx) => {
+      await tx.query(
+        `INSERT INTO mc.pins (sha, archon_sha, reason, committed_at)
+         SELECT $1, 'projection-locks', 'lock wait check', v.first_run_at - interval '1 millisecond'
+         FROM mc.versions v WHERE v.digest = $1`,
+        [digest],
+      );
+      const [late] = await tx.query('SELECT pin_sha FROM mc.versions WHERE digest = $1', [digest]);
+      if (late?.pin_sha !== digest)
+        problems.push('expected a pin written after the run to label it');
+      throw new Release();
+    });
+  } catch (error) {
+    if (!(error instanceof Release)) throw error;
+  }
+  return problems;
 }
 
 async function errorStates(db: Db): Promise<string[]> {
@@ -168,6 +263,11 @@ export const main: Main = async (argv, deps) => {
     const archon = deps.openDb(url);
     const holder = deps.openDb(url);
     try {
+      const [factory] = await archon.query(`SELECT f.name ${FACTORY_CODEBASE}`);
+      if (!factory)
+        throw new Error(
+          'the check branch has no factory codebase: create it with bun run fixture:branch',
+        );
       const [run] = await archon.query(
         `INSERT INTO remote_agent_workflow_runs (workflow_name, status, user_message, metadata)
          VALUES ('projection-locks', 'running', 'lock wait check', '{}'::jsonb) RETURNING id`,
@@ -203,9 +303,15 @@ export const main: Main = async (argv, deps) => {
           `${verdict} | ${check.name} | ${result.error ? 'failed' : 'committed'} in ${result.elapsed.toFixed(0)} ms | projection_errors +${added.length}${added.length ? ` (${added.join(', ')})` : ''}`,
         );
       }
-      if (failures.length > 0)
-        throw new Error(`${failures.length} of ${CASES.length} cases failed`);
-      deps.out(`all ${CASES.length} cases passed`);
+      const versionCheck = 'versions: one row per digest, repaired and labelled by a late pin';
+      const problems = await versionProblems(archon, String(factory.name), runId);
+      if (problems.length > 0) failures.push(versionCheck);
+      deps.out(
+        `${problems.length === 0 ? 'PASS' : `FAIL (${problems.join('; ')})`} | ${versionCheck}`,
+      );
+      const checks = CASES.length + 1;
+      if (failures.length > 0) throw new Error(`${failures.length} of ${checks} checks failed`);
+      deps.out(`all ${checks} checks passed`);
     } finally {
       await Promise.all([archon.close(), holder.close()]);
     }
