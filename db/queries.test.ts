@@ -95,10 +95,10 @@ describe('against the migrated schema', () => {
 ${'x'.repeat(5000)}`;
     await db.query(`INSERT INTO mc.factories (name, repository, codebase, console)
       VALUES ('mission-control', 'o/r', 'o/r', 'http://localhost:3090')`);
-    await db.query(`INSERT INTO mc.pins (sha, archon_sha, reason, committed_at) VALUES
-      ('p1', 'a1', 'one', '2026-01-01T00:00:00Z'),
-      ('p2', 'a2', 'two', '2026-02-01T00:00:00Z'),
-      ('p3', 'a3', 'three, not parsed yet', '2026-03-01T00:00:00Z')`);
+    await db.query(`INSERT INTO mc.pins (sha, archon_sha, reason, committed_at, factory) VALUES
+      ('p1', 'a1', 'one', '2026-01-01T00:00:00Z', 'mission-control'),
+      ('p2', 'a2', 'two', '2026-02-01T00:00:00Z', 'mission-control'),
+      ('p3', 'a3', 'three, not parsed yet', '2026-03-01T00:00:00Z', 'mission-control')`);
     await db.query(`INSERT INTO mc.arch_versions (archon_sha, factory_sha, parsed_at) VALUES
       ('a1', 'f', '2026-01-02T00:00:00Z'), ('a2', 'f', '2026-02-02T00:00:00Z')`);
     // Both versions share every name and path, so a query that leaks a1 doubles or mixes rows.
@@ -352,6 +352,17 @@ describe('version-strip on the seed', () => {
     });
     expect(await strip()).toHaveLength(5);
   });
+
+  test("a pin is listed only on its own factory's strip, and a factory with no data lists none", async () => {
+    await db.query(`INSERT INTO mc.pins (sha, archon_sha, reason, committed_at, factory)
+      VALUES ('north-star-pin', 'archon', 'why', '2026-10-25T13:00:00Z', 'north-star')`);
+    const shas = async (factory: string) => (await db.query(sql, [factory])).map((r) => r.pin_sha);
+
+    expect(await shas('north-star')).toEqual(['north-star-pin']);
+    expect(await shas('mission-control')).not.toContain('north-star-pin');
+    expect(await shas('mission-control')).toHaveLength(5);
+    expect(await db.query(sql, ['empty-check'])).toEqual([]);
+  });
 });
 
 describe('scorecard on the seed', () => {
@@ -383,6 +394,10 @@ describe('scorecard on the seed', () => {
       );
       expect({ digest, measures: shown }).toEqual({ digest, measures });
     }
+  });
+
+  test('is empty for a factory with no laps and no pins', async () => {
+    expect(await db.query(sql, ['empty-check'])).toEqual([]);
   });
 
   test('names each seed version by the pin the version strip names it by', async () => {

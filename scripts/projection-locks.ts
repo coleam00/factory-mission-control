@@ -211,7 +211,7 @@ async function versionProblems(db: Db, factory: string, runId: string): Promise<
   const repaired = `SELECT count(*)::int AS n, bool_and(v.first_run_at = (SELECT min(l.started_at)
        FROM mc.laps l WHERE l.digest = $1)) AS first_earliest,
      bool_and(v.pin_sha IS NOT DISTINCT FROM (SELECT p.sha FROM mc.pins p
-       WHERE p.committed_at < v.first_run_at ORDER BY p.committed_at DESC, p.sha DESC LIMIT 1))
+       WHERE p.factory = v.factory AND p.committed_at < v.first_run_at ORDER BY p.committed_at DESC, p.sha DESC LIMIT 1))
        AS labelled
      FROM mc.versions v WHERE v.digest = $1`;
   const [row] = await db.query(repaired, [digest]);
@@ -221,8 +221,9 @@ async function versionProblems(db: Db, factory: string, runId: string): Promise<
   try {
     await db.transaction(async (tx) => {
       await tx.query(
-        `INSERT INTO mc.pins (sha, archon_sha, reason, committed_at)
-         SELECT $1, 'projection-locks', 'lock wait check', v.first_run_at - interval '1 millisecond'
+        `INSERT INTO mc.pins (sha, archon_sha, reason, committed_at, factory)
+         SELECT $1, 'projection-locks', 'lock wait check', v.first_run_at - interval '1 millisecond',
+           v.factory
          FROM mc.versions v WHERE v.digest = $1`,
         [digest],
       );

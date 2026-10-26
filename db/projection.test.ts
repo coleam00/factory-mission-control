@@ -569,10 +569,11 @@ function runAt(
   );
 }
 
-function pin(sha: string, committedAt: Date): Promise<Row[]> {
+function pin(sha: string, committedAt: Date, factory = 'mission-control'): Promise<Row[]> {
   return db.query(
-    `INSERT INTO mc.pins (sha, archon_sha, reason, committed_at) VALUES ($1, 'archon', 'why', $2)`,
-    [sha, committedAt],
+    `INSERT INTO mc.pins (sha, archon_sha, reason, committed_at, factory)
+     VALUES ($1, 'archon', 'why', $2, $3)`,
+    [sha, committedAt, factory],
   );
 }
 
@@ -627,6 +628,29 @@ test('a pin updated or deleted relabels the versions it labelled', async () => {
 
   await db.query(`DELETE FROM mc.pins WHERE sha = 'first'`);
   expect(await db.query('SELECT pin_sha FROM mc.versions')).toEqual([{ pin_sha: null }]);
+});
+
+test("a version is labelled only by its own factory's pins", async () => {
+  await runAt(await factoryCodebase(), NOW);
+  await db.query(`INSERT INTO mc.factories VALUES
+    ('north-star', 'coleam00/north-star', 'coleam00/north-star', 'http://localhost:3091')`);
+  const [northStar] = await db.query(`INSERT INTO public.remote_agent_codebases (name)
+    VALUES ('coleam00/north-star') RETURNING id`);
+  await runAt(String(northStar?.id), NOW);
+  const labels = () => db.query('SELECT factory, pin_sha FROM mc.versions ORDER BY factory');
+
+  await pin('ours', minutes(-10));
+  expect(await labels()).toEqual([
+    { factory: 'mission-control', pin_sha: 'ours' },
+    { factory: 'north-star', pin_sha: null },
+  ]);
+
+  await pin('theirs', minutes(-20), 'north-star');
+  expect(await labels()).toEqual([
+    { factory: 'mission-control', pin_sha: 'ours' },
+    { factory: 'north-star', pin_sha: 'theirs' },
+  ]);
+  expect(await projectionErrors()).toEqual([]);
 });
 
 test('a lap that moves off a digest takes its version along', async () => {
