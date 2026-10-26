@@ -1,4 +1,4 @@
-import { eventData } from './fixture/write';
+import { eventData, WORKFLOW } from './fixture/write';
 import { failing, guardedDatabaseUrl, type Main, noArguments, runCli } from './lib/cli';
 import type { Db, Tx } from './lib/db';
 
@@ -64,11 +64,11 @@ const loopRun = (daysBefore: number) => (tx: Tx, runId: string) =>
   tx.query(
     `INSERT INTO remote_agent_workflow_runs
        (workflow_name, codebase_id, status, user_message, metadata, started_at)
-     SELECT 'archon-loop', c.id, 'completed', 'lock wait check',
+     SELECT $3, c.id, 'completed', 'lock wait check',
        jsonb_build_object('workflow_source', jsonb_build_object('digest', $1::text)),
        now() - make_interval(days => $2::int)
      ${FACTORY_CODEBASE}`,
-    [loopDigest(runId), daysBefore],
+    [loopDigest(runId), daysBefore, WORKFLOW],
   );
 
 const exclusive = (...tables: string[]) =>
@@ -277,7 +277,8 @@ export const main: Main = async (argv, deps) => {
         );
       const [run] = await archon.query(
         `INSERT INTO remote_agent_workflow_runs (workflow_name, status, user_message, metadata)
-         VALUES ('projection-locks', 'running', 'lock wait check', '{}'::jsonb) RETURNING id`,
+         VALUES ($1, 'running', 'lock wait check', '{}'::jsonb) RETURNING id`,
+        [WORKFLOW],
       );
       const runId = String(run?.id);
       await holder.query('SELECT 1');

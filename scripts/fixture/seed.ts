@@ -13,6 +13,7 @@ import { parsePin, parseVerdict } from '../../parsers/commits';
 import { parseDecisions } from '../../parsers/decisions';
 import { parseHoldoutsLine, parseMetricsLine } from '../../parsers/metrics';
 import type { PackVersion, Step } from '../../parsers/pack';
+import type { FactoryEntry } from '../../server/factories';
 import { failing, type Main, noArguments, runCli } from '../lib/cli';
 import type { Db } from '../lib/db';
 import { pgliteDb } from '../lib/pglite';
@@ -1123,8 +1124,6 @@ function versionsSql(versions: VersionSpec[]): string[] {
   for (const d of decisions.entries) out.push(insert('mc.decisions', { ...d }));
   return out;
 }
-
-type FactoryEntry = { name: string; repository: string; codebase: string; console: string };
 
 function archonSql(factory: FactoryEntry, runs: Run[]): string[] {
   const out = [

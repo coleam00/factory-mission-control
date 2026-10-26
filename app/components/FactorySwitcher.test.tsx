@@ -3,7 +3,11 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { MemoryRouter } from 'react-router';
 import type { PanelState } from '../live/LivePanel';
 import { factoryPath } from '../routing';
-import { FactorySwitcherBody, type FactorySwitcherRow } from './FactorySwitcher';
+import {
+  FactorySetupNotice,
+  FactorySwitcherBody,
+  type FactorySwitcherRow,
+} from './FactorySwitcher';
 
 const SCREENS = [{ path: 'laps', label: 'Laps' }];
 
@@ -68,4 +72,61 @@ test('loading and error are each one sentence and no button, and list no factory
     expect(html).not.toMatch(/<button\b/);
     expect(html).not.toContain('data-factory-entry');
   }
+});
+
+const registered = [{ factory: 'mission-control', running: 0, is_default: true }];
+const configured = ['mission-control', 'new-factory'];
+const notice = (
+  factories: readonly string[] | undefined,
+  rows: FactorySwitcherRow[] | undefined,
+  state: PanelState = 'ready',
+  rewind: string | null = null,
+) => renderToStaticMarkup(<FactorySetupNotice {...{ factories, rows, state, rewind }} />);
+
+test('a missing configured factory gets setup commands until its live registration arrives', () => {
+  const html = notice(configured, registered);
+  expect(html).toContain('“new-factory”');
+  expect(html).not.toContain('“mission-control”');
+  expect(html).toContain('bun run migrate -- --configured-factories');
+  expect(html).toContain('bun run migrate:main -- --configured-factories');
+  expect(html).toContain('on check-*');
+  expect(html).toContain('the owner run');
+  expect(html).toContain('on main, using the server&#x27;s environment');
+  expect(html).not.toMatch(/<a\b|data-running|data-factory-entry/);
+  expect(
+    notice(configured, [...registered, { factory: 'new-factory', running: 0, is_default: false }]),
+  ).toBe('');
+});
+
+test('an empty registry names every missing factory in configuration order as escaped text', () => {
+  expect(notice(['z', '<script>'], [])).toContain('“z”, “&lt;script&gt;”');
+});
+
+test.each(['loading', 'error'] as const)(
+  'no setup diagnosis during %s, even with retained rows',
+  (state) => {
+    expect(notice(configured, undefined, state)).toBe('');
+    expect(notice(configured, registered, state)).toBe('');
+  },
+);
+
+test('absent configuration or rows, zero laps and database-only factories need no notice', () => {
+  expect(notice(undefined, registered)).toBe('');
+  expect(notice(configured, undefined)).toBe('');
+  expect(notice([], registered)).toBe('');
+  expect(notice(['mission-control'], registered)).toBe('');
+  expect(
+    notice(
+      ['mission-control'],
+      [...registered, { factory: 'retired', running: 2, is_default: false }],
+    ),
+  ).toBe('');
+});
+
+test('historical absence asks to return live before deciding whether setup is needed', () => {
+  const html = notice(configured, registered, 'ready', 'rewind-before-setup');
+  expect(html).toContain('“new-factory” are absent from this read-only rewind');
+  expect(html).toContain('switch back and, if setup is still needed, run');
+  expect(html).toContain('bun run migrate -- --configured-factories');
+  expect(html).toContain('bun run migrate:main -- --configured-factories');
 });
