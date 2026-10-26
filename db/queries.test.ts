@@ -181,6 +181,67 @@ ${'x'.repeat(5000)}`;
     const steps = await db.query(sql('step-detail'), ['mission-control']);
     expect(steps.map((s) => s.depends_on)).toEqual([['subject']]);
 
+    // A second workflow with a step at the same path and files of its own: a step panel that
+    // ignores the workflow ($2) shows them on archon-loop's step too.
+    await db.query(
+      `INSERT INTO mc.arch_steps (archon_sha, factory_sha, workflow, path, position, step_id, kind,
+         depends_on, command_file, script_file, defined_in, file)
+       VALUES ('a2', 'f', 'archon-manager', 'check-app', 0, 'check-app', 'command', '{}',
+         'manager/commands/check.md', 'manager/scripts/check.ts', 'archon-manager',
+         'manager/archon-manager.yaml')`,
+    );
+    await db.query(`INSERT INTO mc.arch_texts (archon_sha, factory_sha, path, text) VALUES
+      ('a2', 'f', 'manager/commands/check.md', 'manager prompt'),
+      ('a2', 'f', 'manager/agents/judge.md', 'manager judge file')`);
+    await db.query(`INSERT INTO mc.arch_subagents (archon_sha, factory_sha, workflow, step_path,
+        name, description, instruction_file)
+      VALUES ('a2', 'f', 'archon-manager', 'check-app', 'judge', 'manager judge',
+        'manager/agents/judge.md')`);
+    await db.query(`INSERT INTO mc.arch_scripts (archon_sha, factory_sha, path, text)
+      VALUES ('a2', 'f', 'manager/scripts/check.ts', 'manager script')`);
+    await db.query(`INSERT INTO mc.arch_hooks (archon_sha, factory_sha, path, text, admitted_agents)
+      VALUES ('a2', 'f', 'hooks/judge.py', 'manager hook', '{judge}')`);
+    await db.query(`INSERT INTO mc.arch_workflows (archon_sha, factory_sha, name, file, yaml)
+      VALUES ('a2', 'f', 'archon-manager', 'manager/archon-manager.yaml', 'manager yaml')`);
+    const manager = (name: string) =>
+      db.query(sql(name), ['mission-control', 'archon-manager', 'check-app']);
+    expect(await manager('step-prompt')).toEqual([
+      { path: 'manager/commands/check.md', part: 0, chunk: 'manager prompt' },
+    ]);
+    expect(await manager('step-subagents')).toEqual([
+      {
+        workflow: 'archon-manager',
+        step_path: 'check-app',
+        name: 'judge',
+        description: 'manager judge',
+        prompt: null,
+        instruction_file: 'manager/agents/judge.md',
+        part: 0,
+        chunk: 'manager judge file',
+      },
+    ]);
+    expect(await manager('step-scripts')).toEqual([
+      { path: 'manager/scripts/check.ts', part: 0, chunk: 'manager script' },
+    ]);
+    expect(await manager('step-hooks')).toEqual([
+      {
+        path: 'hooks/judge.py',
+        admitted_agents: ['judge'],
+        workflow: 'archon-manager',
+        step_path: 'check-app',
+        agent: 'judge',
+        description: 'manager judge',
+      },
+    ]);
+    expect(await manager('step-yaml')).toEqual([
+      {
+        name: 'archon-manager',
+        file: 'manager/archon-manager.yaml',
+        part: 0,
+        chunk: 'manager yaml',
+      },
+    ]);
+
     const files = async (name: string, key: (row: Record<string, unknown>) => unknown) => {
       const parts = (await db.query(sql(name), paramsFor(name, 'mission-control'))) as {
         part: number;
