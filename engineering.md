@@ -8,7 +8,7 @@ How this repository is built. The product is `docs/mission-control.prd.md`; this
 |---|---|
 | `app/` | The browser app: React 19, Vite 6, Tailwind v4, react-router 7. One file per screen under `app/routes/`, registered from the directory; a file's name encodes its path (`.` separates segments, `$name` is a parameter: `f.$factory.versions.tsx` serves `/f/:factory/versions`, #73). |
 | `server/` | Bun + Hono: serves the built app, `/api/health`, `/api/build-id`, and the sealing API for live queries. |
-| `db/migrations/` | Numbered SQL files, applied in order by `bun run migrate`; each idempotent. |
+| `db/migrations/` | Numbered SQL files, applied in order by `bun run migrate`; each idempotent. A merged migration is never edited (main has applied it and never re-runs it): change it with a new, higher-numbered file. |
 | `db/queries/` | Every live query, one file each, named for the panel that reads it. |
 | `function/` | The Neon Function that receives GitHub webhooks (Hono, TypeScript). |
 | `parsers/` | Pure functions: comment formats, pin trailers, DECISIONS.md, the architecture parser. |
