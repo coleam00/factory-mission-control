@@ -34,6 +34,9 @@ const USAGE = [
   '  It checks the laps screen against the seed and times the same `fixture:write step` events to',
   '  their lanes before and after the hold, writing lanes-check.txt, lanes-recent-laps-timings.json,',
   '  lanes-recent-laps.png and lanes-recent-laps-design-probe.json.',
+  "  Then it opens the diff of the two versions, checks it lists exactly the seed's scripted change,",
+  '  and times a step inserted into the second version to that screen before and after the hold,',
+  '  writing arch-diff-timings.json, arch-diff.png and arch-diff-design-probe.json.',
   '  It opens /steps/archon-loop/check-app, checks it against the seed, times description writes to',
   '  it across the same hold, and checks land and an unknown step, writing',
   '  step-detail-timings.json, step-detail.png and step-detail-design-probe.json.',
@@ -109,6 +112,7 @@ const LANE = '[data-live="lanes"] [data-lane]';
 const RECENT_LAP = '[data-live="recent-laps"] [data-recent-lap]';
 const laneOn = (runId: string, step: string) =>
   `document.querySelector('[data-live="lanes"] [data-lane="${runId}"]')?.getAttribute('data-step') === '${step}'`;
+const DIFF = '[data-live="arch-diff"]';
 const FEATURE_TIMEOUT_MS = 10_000;
 /** How long to wait for `ready` before giving up; the limit is judged on the page's own marks. */
 const READY_WAIT_MS = 10_000;
@@ -529,7 +533,7 @@ function checkLinks(
   b: string,
 ): string[] {
   const failures: string[] = [];
-  const expected = { scorecard: `/f/${factory}/scorecard`, diff: '/diff' };
+  const expected = { scorecard: `/f/${factory}/scorecard`, diff: `/f/${factory}/diff` };
   for (const kind of ['scorecard', 'diff'] as const) {
     const href = links[kind];
     if (href === null) {
@@ -546,6 +550,81 @@ function checkLinks(
     }
   }
   return failures;
+}
+
+interface ArchDiffTimings {
+  branch: string | null;
+  port: number | null;
+  url: string | null;
+  shown: string[] | null;
+  readyMs: number | null;
+  firstSnapshotMs: number | null;
+  stepToScreenMs: number | null;
+  holdSeconds: number;
+  renewals: number | null;
+  afterHoldStepToScreenMs: number | null;
+  noReload: boolean | null;
+  limits: typeof LIMITS;
+}
+
+/** The seed's V1 to V2 (V2_EDITS in scripts/fixture/seed-architecture.ts) as the diff lists it. */
+const SEED_ARCH_CHANGE = [
+  'added step archon-loop · tally',
+  'removed step archon-loop · briefs',
+  'changed prompt loop/commands/loop-review.md',
+  'changed subagent archon-manager · manage · holdout-writer',
+];
+
+const changesOnScreen = `[...document.querySelectorAll('${DIFF} [data-change]')].map((li) => [
+  li.getAttribute('data-change'),
+  li.closest('[data-kind]')?.getAttribute('data-kind'),
+  li.getAttribute('data-item'),
+].join(' '))`;
+
+type ArchKey = { archon_sha: string; factory_sha: string };
+
+/** The architecture rows `db/queries/arch-diff.sql` reads for one of the factory's versions. */
+async function archOf(db: Db, factory: string, digest: string): Promise<ArchKey> {
+  const [version] = await db.query(
+    `SELECT a.archon_sha, a.factory_sha FROM mc.arch_versions a
+     WHERE a.archon_sha = (
+       SELECT p.archon_sha FROM mc.pins p
+       WHERE p.committed_at < (
+         SELECT min(started_at) FROM mc.laps WHERE factory = $1 AND digest = $2)
+       ORDER BY p.committed_at DESC LIMIT 1)
+     ORDER BY a.parsed_at DESC LIMIT 1`,
+    [factory, digest],
+  );
+  if (version === undefined) throw new Error(`no architecture is recorded for ${digest}`);
+  return { archon_sha: String(version.archon_sha), factory_sha: String(version.factory_sha) };
+}
+
+/** Inserts one step into `arch` and times it from just before the insert to the diff adding it. */
+async function archStepToScreen(
+  page: Page,
+  db: Db,
+  arch: ArchKey,
+  added: string[],
+): Promise<number | null> {
+  const path = `live-${crypto.randomUUID().slice(0, 8)}`;
+  const selector = `${DIFF} [data-change="added"][data-item="archon-loop · ${path}"]`;
+  const started = performance.now();
+  const shown = page.evaluate<boolean>(
+    pageWait(
+      `document.querySelector(${JSON.stringify(selector)}) !== null`,
+      LIMITS.insertToScreenMs,
+    ),
+    LIMITS.insertToScreenMs + 5000,
+  );
+  added.push(path);
+  await db.query(
+    `INSERT INTO mc.arch_steps
+       (archon_sha, factory_sha, workflow, path, position, step_id, kind, bash, defined_in, file)
+     VALUES ($1, $2, 'archon-loop', $3, 10000, $3, 'bash', 'echo live', 'archon-loop',
+       'loop/archon-loop.yaml')`,
+    [arch.archon_sha, arch.factory_sha, path],
+  );
+  return (await shown) ? Math.round(performance.now() - started) : null;
 }
 
 const setCheckAppDescription = `UPDATE mc.arch_steps SET description = $3
@@ -1248,8 +1327,24 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
     limits: LIMITS,
   };
   let lapsPage: Page | undefined;
+  const diffTimings: ArchDiffTimings = {
+    branch: timings.branch,
+    port: null,
+    url: null,
+    shown: null,
+    readyMs: null,
+    firstSnapshotMs: null,
+    stepToScreenMs: null,
+    holdSeconds,
+    renewals: null,
+    afterHoldStepToScreenMs: null,
+    noReload: null,
+    limits: LIMITS,
+  };
   const labelled: number[] = [];
   const pinned: string[] = [];
+  const addedSteps: string[] = [];
+  let v2Arch: ArchKey | undefined;
   const judgedBy: string[] = [];
   const decided: string[] = [];
   const db = deps.openDb(databaseUrl);
@@ -1271,6 +1366,7 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
     }
   };
   let issuesPage: Page | undefined;
+  let diffPage: Page | undefined;
   const latestPin = async () => {
     const [pin] = await db.query('SELECT sha FROM mc.pins ORDER BY committed_at DESC LIMIT 1');
     pinned.push(String(pin.sha));
@@ -1291,6 +1387,7 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
     decisionTimings.port = port;
     issueTimings.port = port;
     lapsTimings.port = port;
+    diffTimings.port = port;
     const base = `http://localhost:${port}`;
     const proc = Bun.spawn(['bun', 'server/main.ts', '--port', String(port)], {
       cwd: deps.repoRoot,
@@ -1493,18 +1590,6 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
         : null;
     failures.push(...(await checkAppMismatches(stepPage, deps.repoRoot)));
     writeFileSync(join(outDir, 'step-detail.png'), await stepPage.screenshot(1440));
-    const version = await currentVersion(db);
-    const [checkApp] = await db.query(
-      `SELECT description FROM mc.arch_steps
-        WHERE archon_sha = $1 AND factory_sha = $2 AND workflow = 'archon-loop' AND path = 'check-app'`,
-      [version.archon_sha, version.factory_sha],
-    );
-    described = { version, was: checkApp?.description ?? null };
-    stepTimings.descriptionToScreenMs = await descriptionToScreen(stepPage, db, version);
-    deps.out(
-      `first description write reached the step in ${stepTimings.descriptionToScreenMs ?? 'never'} ms`,
-    );
-
     versionsPage = await openPage(deps.env);
     await versionsPage.goto(`${base}/f/${factory}/versions`);
     await versionsPage.evaluate('window.__mcNoReload = true');
@@ -1580,6 +1665,52 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
     deps.out(
       `first label reached the issues screen in ${issueTimings.labelToScreen.ms ?? 'never'} ms`,
     );
+
+    diffTimings.url = `/f/${factory}/diff?a=${encodeURIComponent(v1)}&b=${encodeURIComponent(v2)}`;
+    diffPage = await openPage(deps.env);
+    await diffPage.goto(`${base}${diffTimings.url}`);
+    await diffPage.evaluate('window.__mcNoReload = true');
+    const diffReady = await diffPage.evaluate<boolean>(
+      pageWait(`document.querySelector('${DIFF}[data-state="ready"]') !== null`, READY_WAIT_MS),
+    );
+    if (!diffReady) {
+      throw new Error(
+        `the diff screen did not reach data-state="ready" within ${READY_WAIT_MS} ms`,
+      );
+    }
+    const diffReadyAt = await diffPage.evaluate<number | null>(markTime('live:arch-diff:ready'));
+    const diffSubscribedAt = await diffPage.evaluate<number | null>(
+      markTime('live:arch-diff:subscribe-sent'),
+    );
+    diffTimings.readyMs = diffReadyAt === null ? null : Math.round(diffReadyAt);
+    diffTimings.firstSnapshotMs =
+      diffReadyAt === null || diffSubscribedAt === null
+        ? null
+        : Math.round(diffReadyAt - diffSubscribedAt);
+    diffTimings.shown = await diffPage.evaluate<string[]>(changesOnScreen);
+    if (JSON.stringify(diffTimings.shown) !== JSON.stringify(SEED_ARCH_CHANGE)) {
+      failures.push(
+        `the diff of V1 and V2 lists ${JSON.stringify(diffTimings.shown)}, the seed scripted ${JSON.stringify(SEED_ARCH_CHANGE)}`,
+      );
+    }
+    writeFileSync(join(outDir, 'arch-diff.png'), await diffPage.screenshot(1440));
+    // check-app's description is written only now: it is in V2's architecture, so the diff above
+    // would list it as changed.
+    const version = await currentVersion(db);
+    const [checkApp] = await db.query(
+      `SELECT description FROM mc.arch_steps
+        WHERE archon_sha = $1 AND factory_sha = $2 AND workflow = 'archon-loop' AND path = 'check-app'`,
+      [version.archon_sha, version.factory_sha],
+    );
+    described = { version, was: checkApp?.description ?? null };
+    stepTimings.descriptionToScreenMs = await descriptionToScreen(stepPage, db, version);
+    deps.out(
+      `first description write reached the step in ${stepTimings.descriptionToScreenMs ?? 'never'} ms`,
+    );
+
+    v2Arch = await archOf(db, factory, v2);
+    diffTimings.stepToScreenMs = await archStepToScreen(diffPage, db, v2Arch, addedSteps);
+    deps.out(`first step reached the diff in ${diffTimings.stepToScreenMs ?? 'never'} ms`);
 
     deps.out(`holding the page open ${holdSeconds}s`);
     await deps.sleep(holdSeconds * 1000);
@@ -1706,6 +1837,14 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
     await issuesPage.close();
     issuesPage = undefined;
 
+    diffTimings.renewals = await diffPage.evaluate<number>(
+      `performance.getEntriesByName('live:arch-diff:renewed').length`,
+    );
+    diffTimings.afterHoldStepToScreenMs = await archStepToScreen(diffPage, db, v2Arch, addedSteps);
+    diffTimings.noReload = await diffPage.evaluate<boolean>('window.__mcNoReload === true');
+    await diffPage.close();
+    diffPage = undefined;
+
     const probe = Bun.spawnSync(
       [
         'bun',
@@ -1782,6 +1921,19 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
     if (lapsProbe.exitCode !== 0) {
       failures.push(`the design probe on the laps screen exited ${lapsProbe.exitCode}`);
     }
+    const diffProbe = Bun.spawnSync(
+      [
+        'bun',
+        'harness/design-probe.js',
+        `${base}${diffTimings.url}`,
+        '--out',
+        join(outDir, 'arch-diff-design-probe.json'),
+      ],
+      { cwd: deps.repoRoot, env: deps.env, stdout: 'ignore', stderr: 'inherit' },
+    );
+    if (diffProbe.exitCode !== 0) {
+      failures.push(`the design probe on the diff screen exited ${diffProbe.exitCode}`);
+    }
   } finally {
     for (const panel of panels) {
       writeFileSync(
@@ -1809,6 +1961,10 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
       join(outDir, 'lanes-recent-laps-timings.json'),
       `${JSON.stringify(lapsTimings, null, 2)}\n`,
     );
+    writeFileSync(
+      join(outDir, 'arch-diff-timings.json'),
+      `${JSON.stringify(diffTimings, null, 2)}\n`,
+    );
     // The pages and the server go first, so a failed cleanup below cannot leave them running.
     await page?.close().catch(() => undefined);
     await stepPage?.close().catch(() => undefined);
@@ -1816,6 +1972,7 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
     await decisionsPage?.close().catch(() => undefined);
     await issuesPage?.close().catch(() => undefined);
     await lapsPage?.close().catch(() => undefined);
+    await diffPage?.close().catch(() => undefined);
     if (server) {
       server.kill();
       await server.exited;
@@ -1839,6 +1996,17 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
       }
     } catch (err) {
       failures.push(`removing the inserted rows failed: ${(err as Error).message}`);
+    }
+    try {
+      if (v2Arch !== undefined && addedSteps.length > 0) {
+        await db.query(
+          `DELETE FROM mc.arch_steps WHERE archon_sha = $1 AND factory_sha = $2
+           AND workflow = 'archon-loop' AND path = ANY($3::text[])`,
+          [v2Arch.archon_sha, v2Arch.factory_sha, `{${addedSteps.join(',')}}`],
+        );
+      }
+    } catch (err) {
+      failures.push(`removing the inserted steps failed: ${(err as Error).message}`);
     }
     try {
       if (judgedBy.length > 0) {
@@ -2052,6 +2220,30 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
     }
   }
   if (lapsTimings.noReload !== true) failures.push('the laps screen reloaded');
+  if (!within(diffTimings.readyMs, LIMITS.readyMs)) {
+    failures.push(`diff screen ready after ${diffTimings.readyMs} ms, limit ${LIMITS.readyMs}`);
+  }
+  if (!within(diffTimings.firstSnapshotMs, LIMITS.firstSnapshotMs)) {
+    failures.push(
+      `diff screen first snapshot after ${diffTimings.firstSnapshotMs} ms, limit ${LIMITS.firstSnapshotMs}`,
+    );
+  }
+  if (!within(diffTimings.stepToScreenMs, LIMITS.insertToScreenMs)) {
+    failures.push(
+      `first step reached the diff screen after ${diffTimings.stepToScreenMs} ms, limit ${LIMITS.insertToScreenMs}`,
+    );
+  }
+  if (!within(diffTimings.afterHoldStepToScreenMs, LIMITS.insertToScreenMs)) {
+    failures.push(
+      `step after ${holdSeconds}s reached the diff screen after ${diffTimings.afterHoldStepToScreenMs} ms, limit ${LIMITS.insertToScreenMs}`,
+    );
+  }
+  if (holdSeconds >= 180 && (diffTimings.renewals ?? 0) < RENEWALS_IN_180S) {
+    failures.push(
+      `${diffTimings.renewals} diff seal renewals in ${holdSeconds}s, expected at least ${RENEWALS_IN_180S}`,
+    );
+  }
+  if (diffTimings.noReload !== true) failures.push('the diff screen reloaded');
   if (failures.length > 0) throw new Error(failures.join('\n'));
   deps.out(`live: ${JSON.stringify(timings)}`);
   deps.out(`step detail: ${JSON.stringify(stepTimings)}`);
@@ -2060,6 +2252,7 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
   deps.out(`decisions: ${JSON.stringify(decisionTimings)}`);
   deps.out(`issues: ${JSON.stringify(issueTimings)}`);
   deps.out(`laps: ${JSON.stringify(lapsTimings)}`);
+  deps.out(`diff: ${JSON.stringify(diffTimings)}`);
 }
 
 export const main: Main = async (argv, deps) => {

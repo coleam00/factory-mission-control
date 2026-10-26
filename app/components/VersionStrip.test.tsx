@@ -66,5 +66,5 @@ test('two picked versions link to their scorecard and diff, older as a, whatever
     new RegExp(`<a data-compare="${kind}"[^>]*href="([^"]+)"`).exec(html)?.[1];
   const query = `?a=${encodeURIComponent(V1)}&amp;b=${encodeURIComponent(V2)}`;
   expect(href('scorecard')).toBe(`/f/mission-control/scorecard${query}`);
-  expect(href('diff')).toBe(`/diff${query}`);
+  expect(href('diff')).toBe(`/f/mission-control/diff${query}`);
 });
