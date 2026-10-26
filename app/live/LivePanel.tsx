@@ -58,10 +58,6 @@ interface LivePanelProps<Row> {
    * branch: for the rewind list, which must always show the way back.
    */
   home?: boolean;
-  /** While false, the panel waits, `loading`, without sealing or subscribing. */
-  enabled?: boolean;
-  /** Called with `query` once the panel has its first rows, or has failed. */
-  onSettled?: (query: string) => void;
   className?: string;
   children: Render<Row>;
 }
@@ -93,8 +89,6 @@ export function LivePanel<Row>({
   query,
   factory,
   home = false,
-  enabled = true,
-  onSettled,
   className,
   children,
 }: LivePanelProps<Row>): ReactElement {
@@ -112,7 +106,7 @@ export function LivePanel<Row>({
     return (await res.json()) as SealedLiveQuery<Row>;
   }, [query, factory, home]);
 
-  const ready = enabled && live.status === 'ready' && factory !== undefined;
+  const ready = live.status === 'ready' && factory !== undefined;
   useEffect(() => {
     if (!ready) return;
     let cancelled = false;
@@ -130,10 +124,6 @@ export function LivePanel<Row>({
     };
   }, [ready, query, requestSeal]);
 
-  useEffect(() => {
-    if (failed) onSettled?.(query);
-  }, [failed, query, onSettled]);
-
   if (live.status !== 'ready' || sealed === undefined || failed) {
     const state = live.status === 'error' || failed ? 'error' : 'loading';
     return (
@@ -148,7 +138,6 @@ export function LivePanel<Row>({
         query={query}
         sealed={sealed}
         requestSeal={requestSeal}
-        onSettled={onSettled}
         className={className}
         render={children}
       />
@@ -160,14 +149,12 @@ function Subscribed<Row>({
   query,
   sealed,
   requestSeal,
-  onSettled,
   className,
   render,
 }: {
   query: string;
   sealed: SealedLiveQuery<Row>;
   requestSeal: () => Promise<SealedLiveQuery<Row>>;
-  onSettled: ((query: string) => void) | undefined;
   className?: string;
   render: Render<Row>;
 }): ReactElement {
@@ -184,8 +171,7 @@ function Subscribed<Row>({
 
   useEffect(() => {
     if (state === 'ready') markOnce(`live:${query}:ready`);
-    if (state !== 'loading') onSettled?.(query);
-  }, [state, query, onSettled]);
+  }, [state, query]);
 
   return (
     <Frame query={query} state={state} className={className}>

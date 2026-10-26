@@ -13,7 +13,6 @@ import {
 } from '../lib/step-detail';
 import { useFactory } from '../live/FactoryProvider';
 import { LivePanel, type PanelState } from '../live/LivePanel';
-import { useWaves } from '../live/waves';
 
 const LABEL = 'font-mono text-[10px] font-semibold uppercase tracking-[0.04em] text-text-secondary';
 const CARD = 'flex flex-col gap-3 rounded-lg border border-border bg-surface p-5';
@@ -95,15 +94,9 @@ function StepList({ steps, ...data }: { steps: readonly string[]; [a: `data-${st
   );
 }
 
-interface PanelProps {
-  step: StepRow;
-  factory: string;
-  wave: { enabled: boolean; onSettled: (query: string) => void };
-}
-
-function Prompt({ step, factory, wave }: PanelProps): ReactElement {
+function Prompt({ step, factory }: { step: StepRow; factory: string }): ReactElement {
   return (
-    <LivePanel<PartRow> query="step-prompt" factory={factory} {...wave} className={CARD}>
+    <LivePanel<PartRow> query="step-prompt" factory={factory} className={CARD}>
       {(rows = [], state) => (
         <Section title="Prompt" state={state}>
           {() => {
@@ -125,9 +118,9 @@ function Prompt({ step, factory, wave }: PanelProps): ReactElement {
   );
 }
 
-function Subagents({ step, factory, wave }: PanelProps): ReactElement {
+function Subagents({ step, factory }: { step: StepRow; factory: string }): ReactElement {
   return (
-    <LivePanel<SubagentRow> query="step-subagents" factory={factory} {...wave} className={CARD}>
+    <LivePanel<SubagentRow> query="step-subagents" factory={factory} className={CARD}>
       {(rows = [], state) => (
         <Section title="Subagents" state={state}>
           {() => {
@@ -162,9 +155,9 @@ function Subagents({ step, factory, wave }: PanelProps): ReactElement {
   );
 }
 
-function Scripts({ step, factory, wave }: PanelProps): ReactElement {
+function Scripts({ step, factory }: { step: StepRow; factory: string }): ReactElement {
   return (
-    <LivePanel<PartRow> query="step-scripts" factory={factory} {...wave} className={CARD}>
+    <LivePanel<PartRow> query="step-scripts" factory={factory} className={CARD}>
       {(rows = [], state) => (
         <Section title="Scripts" state={state}>
           {() => {
@@ -199,9 +192,9 @@ function Scripts({ step, factory, wave }: PanelProps): ReactElement {
 }
 
 /** The hooks that let this step's subagents through: for a holdout step, the fence. */
-function Hooks({ step, factory, wave }: PanelProps): ReactElement {
+function Hooks({ step, factory }: { step: StepRow; factory: string }): ReactElement {
   return (
-    <LivePanel<HookRow> query="step-hooks" factory={factory} {...wave} className={CARD}>
+    <LivePanel<HookRow> query="step-hooks" factory={factory} className={CARD}>
       {(rows = [], state) => (
         <Section title="Hooks" state={state}>
           {() => {
@@ -242,9 +235,9 @@ function Hooks({ step, factory, wave }: PanelProps): ReactElement {
   );
 }
 
-function Yaml({ step, factory, wave }: PanelProps): ReactElement {
+function Yaml({ step, factory }: { step: StepRow; factory: string }): ReactElement {
   return (
-    <LivePanel<YamlPartRow> query="step-yaml" factory={factory} {...wave} className={CARD}>
+    <LivePanel<YamlPartRow> query="step-yaml" factory={factory} className={CARD}>
       {(rows = [], state) => (
         <Section title="Workflow YAML" state={state}>
           {() => (
@@ -260,9 +253,6 @@ function Yaml({ step, factory, wave }: PanelProps): ReactElement {
   );
 }
 
-/** The step's panels below its facts, opened two at a time. */
-const WAVES = [['step-prompt', 'step-subagents'], ['step-scripts', 'step-hooks'], ['step-yaml']];
-
 function Step({
   step,
   steps,
@@ -272,12 +262,6 @@ function Step({
   steps: readonly StepRow[];
   factory: string;
 }): ReactElement {
-  const { enabled, settle } = useWaves(WAVES);
-  const panel = (query: string) => ({
-    step,
-    factory,
-    wave: { enabled: enabled(query), onSettled: settle },
-  });
   return (
     <div className="flex flex-col gap-6">
       <header className="flex flex-col gap-2">
@@ -304,11 +288,11 @@ function Step({
         </Fact>
         <Fact label="Defined in">{step.file}</Fact>
       </dl>
-      <Prompt {...panel('step-prompt')} />
-      <Subagents {...panel('step-subagents')} />
-      <Scripts {...panel('step-scripts')} />
-      <Hooks {...panel('step-hooks')} />
-      <Yaml {...panel('step-yaml')} />
+      <Prompt step={step} factory={factory} />
+      <Subagents step={step} factory={factory} />
+      <Scripts step={step} factory={factory} />
+      <Hooks step={step} factory={factory} />
+      <Yaml step={step} factory={factory} />
     </div>
   );
 }
