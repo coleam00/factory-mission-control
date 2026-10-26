@@ -1,4 +1,4 @@
-// Judge for H-26, H-27, H-28 and H-29: Archon's own writes always commit within their bound whatever
+// Judge for H-32, H-33, H-34 and H-35: Archon's own writes always commit within their bound whatever
 // the dashboard's tables are doing, and the dashboard repairs itself afterwards without touching Archon.
 //
 // Run: bun .factory/holdout/judges/archon-writes.js <record.json> [archon|repair]
@@ -21,7 +21,7 @@
 //       "elapsed_ms": 35,
 //       "reads_back": true }                           // after commit, Archon's row reads exactly as written
 //   ],
-//   "repair": {                                        // H-27 / H-28 / H-29
+//   "repair": {                                        // H-33 / H-34 / H-35
 //     "tracked_runs": [ { "id": "...", "workflow_name": "archon-loop", "archon_status": "completed" } ],
 //     "projection_errors_before": 3, "projection_errors_after_lock": 9,
 //     "lanes_after_release": ["run ids on the lanes after the lock was released, before repair"],

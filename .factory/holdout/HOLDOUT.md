@@ -231,7 +231,7 @@ Steps, each as Archon would, checking that each statement commits:
 6. Insert a normal `node_started` and watch the lanes.
 Expect:
 - Every Archon statement in steps 1 to 5 commits; none waits on the lock (step 3 finishes inside the 2-second timeout) or raises.
-- Every committed Archon statement reads back exactly as written: after step 3 the run's status in Archon is the new status, not the old one (tightened 2026-10-26: H-26 covers every write kind under every lock).
+- Every committed Archon statement reads back exactly as written: after step 3 the run's status in Archon is the new status, not the old one (tightened 2026-10-26: H-32 covers every write kind under every lock).
 - `projection_errors` grows for the rows that could not be projected (at least steps 3 and 4) and the trigger never raised.
 - No dashboard trigger function runs for `provider_event` rows.
 - After step 6, the lanes update within 5 seconds: the projection still works after its own failures.
@@ -447,7 +447,7 @@ Expect:
 - With a factory that has no data, every screen reaches ready and shows a one-sentence empty state with at most one button: never an outage message, and never "does not exist" for a factory that is in the list.
 Author: writer, 2026-10-25, coverage of PRD 11.6 factories before the loop builds it
 
-## H-26 No lock on any dashboard table ever makes any Archon write fail or wait
+## H-32 No lock on any dashboard table ever makes any Archon write fail or wait
 Protects: invariant 1 (never make an Archon write fail or wait; a trigger never raises); 11.4 (every trigger body catches every error into `projection_errors`); engineering.md ("Nothing writes to Archon's tables. Triggers on them catch every error into projection_errors")
 Touches: every dashboard trigger on Archon's tables (runs and events, and any added later: versions, pins, laps, steps, verdicts), every dashboard table they write
 Setup: a check branch with the migrations applied. List every table the repository's migrations created (in every schema they use, not only the one the trigger names suggest) as `dashboard_tables`, and every trigger on Archon's tables (`pg_trigger` on `remote_agent_workflow_runs` and `remote_agent_workflow_events`, with the operations each fires on) as `archon_triggers`. Insert two running `archon-loop` laps for the factory to act on.
@@ -466,19 +466,19 @@ Expect:
 - `bun .factory/holdout/judges/archon-writes.js <record.json> archon` prints PASS. A missing combination of table, write kind and lock is INCONCLUSIVE, never PASS.
 Author: writer, 2026-10-26, escaped defect #114 (Archon's run-status update was cancelled while a dashboard table was locked)
 
-## H-27 After a lock, a lap Archon finished never stays running, and nothing is lost silently
+## H-33 After a lock, a lap Archon finished never stays running, and nothing is lost silently
 Protects: invariant 1; 11.4 (`projection_errors`); 4.3 lanes and recent laps; invariant 4 (every number can be traced); 8.1
 Touches: projection triggers, `projection_errors`, the lap repair (`bun run reconcile:laps`), lanes, recent laps, health, scorecard
 Setup: the check app on a check branch, with the factory page, health and the scorecard for the laps' version open (reload marker set). Note the `projection_errors` count. Insert, as Archon would, four running `archon-loop` laps L1..L4 with a step each.
 Steps:
-1. In a second session take an access exclusive lock on the dashboard's laps table (repeat the whole scenario once for each other dashboard table the projection writes, as listed in H-26, starting from fresh laps).
-2. While the lock is held, as Archon would: mark L1 `completed` with `completed_at` after a `land` `node_completed` with `outcome = merged`; mark L2 `failed`; insert `node_completed` and the next `node_started` for L3; leave L4 alone. Record each statement's outcome as in H-26.
+1. In a second session take an access exclusive lock on the dashboard's laps table (repeat the whole scenario once for each other dashboard table the projection writes, as listed in H-32, starting from fresh laps).
+2. While the lock is held, as Archon would: mark L1 `completed` with `completed_at` after a `land` `node_completed` with `outcome = merged`; mark L2 `failed`; insert `node_completed` and the next `node_started` for L3; leave L4 alone. Record each statement's outcome as in H-32.
 3. Release the lock. With no further Archon write, record what the lanes, recent laps and health show, and the `projection_errors` count.
 4. Run `bun run reconcile:laps`. Record the screens again, without a reload.
 5. Run it a second time; then restart serve and reload. Record the screens each time.
 6. Insert a `node_started` for L4 and watch the lanes.
 Expect:
-- Every Archon write in step 2 commits within its bound (as H-26); if any did not, this scenario FAILs on that alone.
+- Every Archon write in step 2 commits within its bound (as H-32); if any did not, this scenario FAILs on that alone.
 - After step 3, any lap the screens show wrong is matched by new `projection_errors` rows: the dashboard never misses an update without recording it.
 - After step 4, within 5 seconds and without a reload: L1 and L2 are gone from the lanes and listed on recent laps (merged, and failed), with durations and costs from Archon's rows; L3's lane shows its new step and cost; L4 is unchanged; health and the scorecard agree with the lanes (L1 a merge, L2 a failed lap, each counted once).
 - Step 5 changes nothing: a second repair and a restart show the same, with no lap counted twice.
@@ -486,7 +486,7 @@ Expect:
 - `bun .factory/holdout/judges/archon-writes.js <record.json> repair` prints PASS, and the `archon` part on the step 2 attempts also prints PASS.
 Author: writer, 2026-10-26, escaped defect #114 (a finished run stayed Running on the lanes after a lock, with no projection error recorded)
 
-## H-28 A lock held across a whole lap, longer than Archon would ever wait, still costs Archon nothing
+## H-34 A lock held across a whole lap, longer than Archon would ever wait, still costs Archon nothing
 Protects: invariant 1 (never fail or wait); 11.4; 11.2 version keying (a new digest during the lock); 4.3 lanes and recent laps
 Touches: every projection trigger including versions and pins, the lap repair, version strip, lanes, recent laps, one lap
 Setup: the check app; note the version strip and the `projection_errors` count.
@@ -500,17 +500,17 @@ Expect:
 - `judges/archon-writes.js` (both parts) prints PASS on the recorded run.
 Author: writer, 2026-10-26, escaped defect #114 (class: every Archon write any trigger reacts to, under a lock on every projected table)
 
-## H-29 The repair never makes Archon wait and never writes to Archon
+## H-35 The repair never makes Archon wait and never writes to Archon
 Protects: invariant 1; invariant 2 (nothing writes to Archon's tables); engineering.md; 11.4
 Touches: the lap repair (`bun run reconcile:laps`), any other reconcile or backfill that writes the projected tables, projection triggers
 Setup: a check branch with the seed and at least 200 laps (insert more as Archon would if needed). Snapshot Archon's tables: row counts, latest timestamps, and a checksum of every row.
 Steps:
-1. Start `bun run reconcile:laps`. While it runs, as Archon would, insert step events and update run statuses continuously (at least one write every 100 ms, covering each kind in H-26), timing each.
+1. Start `bun run reconcile:laps`. While it runs, as Archon would, insert step events and update run statuses continuously (at least one write every 100 ms, covering each kind in H-32), timing each.
 2. Run it again while a second session holds an access exclusive lock on the dashboard's laps table, and again with the database becoming unreachable partway (a wrong password on a fresh start).
 3. Snapshot Archon's tables again, accounting for the step 1 writes.
 Expect:
 - Every Archon write in steps 1 and 2 commits within 2 seconds with no error; the repair's own locks never make Archon wait.
 - Archon's tables differ from the snapshot only by the writes made in step 1: the repair changed no Archon row.
-- In step 2 the repair either waits or exits non-zero with a plain message naming the cause; it never leaves the lanes showing a lap that is not running once a later clean run finishes, and that clean run puts everything right (as H-27).
+- In step 2 the repair either waits or exits non-zero with a plain message naming the cause; it never leaves the lanes showing a lap that is not running once a later clean run finishes, and that clean run puts everything right (as H-33).
 - `judges/archon-writes.js` (both parts) prints PASS on the recorded run.
 Author: writer, 2026-10-26, escaped defect #114 (class: the repair path must hold invariants 1 and 2 too)
