@@ -598,3 +598,18 @@ Expect:
 - Every recorded speed-judge invocation prints PASS. A missing observation or missing transition remains incomplete evidence, not a passing timing; a slow observation is a failure even if other observations or a mean are fast.
 - The delivered rows match the selected factory, moment and version, and readiness never comes from cached or fabricated initial rows. Timing evidence distinguishes the subscription clock from the connection/readiness clock without loosening either bar.
 Author: writer, 2026-10-26, escaped defect class #129 and PRD 8.4 performance across the full navigation journey
+
+## H-46 Comparing versions only asks for choices the factory actually offers
+Protects: 4.2 side-by-side comparison; 11.6 factory-specific views; engineering.md empty states; 8.3
+Touches: version strip, comparison controls and guidance, live version availability, factory navigation
+Setup: the check app with the owner's shared-pin behavior: factory A has laps, but its displayed pins are unused there and cannot be selected for comparison; factory B has selectable versions. Include unused pins among the selectable entries. Record actual selectable version identities separately from the factory's total lap count.
+Steps:
+1. Open A's versions screen directly, then arrive there from B's comparison using the app's factory controls. Read the guidance, try every visible comparison control, and inspect which entries a keyboard user can choose.
+2. Through the normal source surfaces, make a first version selectable in A and then a second. Keep the screen open through both updates; choose the first when possible, then complete the comparison when the second becomes available. Record the guidance and selected identities after each change.
+3. From that comparison, move to a factory with fewer selectable versions and return. Use Back and Forward, reopen the comparison address directly, and attempt to choose an unused pin alongside a selectable version.
+Expect:
+- Guidance describes a reachable next step in the current factory. When no comparison can be formed, the screen explains the missing comparison data rather than instructing the user to make an impossible selection; the presence of unrelated laps or visible unused pins cannot make that guidance claim a comparison is available.
+- As usable versions arrive, guidance and controls agree with what can actually be selected. Once a valid pair is available, the user can reach its comparison without reloading; the comparison names that pair and uses only its factory's laps.
+- An unused pin is never silently substituted for a selectable version or treated as a lap-bearing version. Switching factories or following stale history never leaves an actionable comparison assembled from a previous factory's choices.
+- If a saved comparison is unavailable in its current context, the page explains that state and offers a usable way onward instead of a misleading selection prompt, a fabricated comparison, or a loading loop. Empty states follow the existing one-sentence, at-most-one-button rule; no new visual style or comparison policy is prescribed.
+Author: writer, 2026-10-26, escaped defect class #134, PRD 4.2 comparison journey with unused pins and changing availability
