@@ -1,7 +1,7 @@
 import type { ReactElement } from 'react';
 import type { PanelState } from '../live/LivePanel';
 import { LivePanel } from '../live/LivePanel';
-import { useFactory } from '../live/LiveProvider';
+import { useFactory } from '../live/FactoryProvider';
 import { LiveDot } from './LiveDot';
 
 export interface StatusStripRow {
