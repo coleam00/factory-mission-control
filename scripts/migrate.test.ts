@@ -360,6 +360,41 @@ test('loading the factories updates stale rows and attributes the laps projected
   }
 });
 
+test('a factory registered after its runs lists their versions on the version strip', async () => {
+  const db = await archonDb();
+  try {
+    await runMigrations({ files: migrationFiles, db });
+    const [codebase] = await db.query(
+      `INSERT INTO public.remote_agent_codebases (name) VALUES ('coleam00/late-factory') RETURNING id`,
+    );
+    await db.query(
+      `INSERT INTO public.remote_agent_workflow_runs (workflow_name, codebase_id, status, user_message,
+        metadata, started_at, completed_at)
+      VALUES ('archon-loop', $1, 'completed', 'Run the loop', $2::jsonb,
+        '2026-10-20T00:00:00Z', '2026-10-20T00:10:00Z')`,
+      [codebase?.id, JSON.stringify({ workflow_source: { digest: 'sha256:late' } })],
+    );
+    expect(await db.query('SELECT * FROM mc.versions')).toEqual([]);
+
+    const late = {
+      name: 'late-factory',
+      repository: 'coleam00/late-factory',
+      codebase: 'coleam00/late-factory',
+      console: 'http://localhost:3092',
+    };
+    expect(await loadFactories({ entries: [late], db })).toEqual({ factories: 1, laps: 1 });
+    expect(await db.query('SELECT factory, digest FROM mc.versions')).toEqual([
+      { factory: 'late-factory', digest: 'sha256:late' },
+    ]);
+    const strip = readFileSync(join(REPO_ROOT, 'db/queries/version-strip.sql'), 'utf8');
+    expect(
+      (await db.query(strip, ['late-factory'])).filter((r) => r.digest !== null),
+    ).toMatchObject([{ digest: 'sha256:late' }]);
+  } finally {
+    await db.close();
+  }
+});
+
 /**
  * PGlite reads a string bound to `::jsonb` as JSON text; Bun's client sends it as a jsonb string.
  * This `Db` binds every string the way Bun does, so a stringified jsonb parameter fails here too.
