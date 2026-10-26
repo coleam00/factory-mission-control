@@ -4,6 +4,7 @@ import {
   compareLinks,
   NOT_RECORDED,
   type StripEntry,
+  scorecardLink,
   stripEntries,
   type VersionStripRow,
 } from '../lib/version-strip';
@@ -88,6 +89,17 @@ export function VersionList({
             <Link data-compare="diff" to={links.diff} className="text-accent-bright">
               Diff the two versions
             </Link>
+          </>
+        ) : picked.length === 1 ? (
+          <>
+            <Link
+              data-scorecard="one"
+              to={scorecardLink(factory, picked[0])}
+              className="text-accent-bright"
+            >
+              Open this version's scorecard
+            </Link>
+            <p className="text-text-secondary">Select another version to compare.</p>
           </>
         ) : (
           <p className="text-text-secondary">Select two versions to compare.</p>
