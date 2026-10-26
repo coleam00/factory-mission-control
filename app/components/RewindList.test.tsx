@@ -1,6 +1,6 @@
-import { expect, test } from 'bun:test';
+import { afterEach, expect, test } from 'bun:test';
+import type { ReactElement, ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { MemoryRouter } from 'react-router';
 import type { RewindBranchRow } from '../lib/rewind';
 import { RewindIndicator } from './FactoryStrip';
 import { RewindBranches, RewindRows } from './RewindList';
@@ -61,20 +61,71 @@ test('before Realtime is ready the list is one loading sentence and no button', 
   expect(html).not.toMatch(/<button\b/);
 });
 
-test('the indicator names the rewind branch and links back, and is absent on the home branch', () => {
-  const html = renderToStaticMarkup(
-    <MemoryRouter>
-      <RewindIndicator rewind={OLDER} />
-    </MemoryRouter>,
-  );
+test('the indicator names the rewind branch and offers the way back, and is absent on the home branch', () => {
+  const html = renderToStaticMarkup(<RewindIndicator rewind={OLDER} />);
   expect(html).toContain(`data-rewind-indicator="${OLDER}"`);
   expect(textOf(html)).toContain('read-only');
-  expect(html).toContain('href="/rewind"');
-  expect(
-    renderToStaticMarkup(
-      <MemoryRouter>
-        <RewindIndicator rewind={null} />
-      </MemoryRouter>,
-    ),
-  ).toBe('');
+  expect(html).toContain('Switch back');
+  expect(html).not.toContain('href=');
+  expect(renderToStaticMarkup(<RewindIndicator rewind={null} />)).toBe('');
+});
+
+type Props = { children?: ReactNode; onClick?: () => void; [key: string]: unknown };
+
+/** The element under `node` that carries `attribute`, walking the tree the component returned. */
+const findElement = (node: ReactNode, attribute: string): ReactElement<Props> | undefined => {
+  if (node === null || typeof node !== 'object') return undefined;
+  if (Array.isArray(node)) {
+    for (const child of node) {
+      const found = findElement(child, attribute);
+      if (found !== undefined) return found;
+    }
+    return undefined;
+  }
+  const element = node as ReactElement<Props>;
+  if (element.props?.[attribute] !== undefined) return element;
+  return findElement(element.props?.children, attribute);
+};
+
+const realFetch = globalThis.fetch;
+const realWindow = (globalThis as { window?: unknown }).window;
+afterEach(() => {
+  globalThis.fetch = realFetch;
+  (globalThis as { window?: unknown }).window = realWindow;
+});
+
+/** Clicks the indicator's Switch back with `fetch` answering `status`; returns what it did. */
+const clickSwitchBack = async (status: number) => {
+  const posts: { url: string; init: RequestInit | undefined }[] = [];
+  const assigned: string[] = [];
+  globalThis.fetch = (async (url: string, init?: RequestInit) => {
+    posts.push({ url, init });
+    return new Response(JSON.stringify(status === 200 ? { ok: true } : { error: 'refused' }), {
+      status,
+    });
+  }) as typeof fetch;
+  (globalThis as { window?: unknown }).window = {
+    location: { assign: (to: string) => assigned.push(to) },
+  };
+  const tree = RewindIndicator({ rewind: OLDER });
+  const button = findElement(tree, 'data-indicator-switch-back');
+  expect(button?.type).toBe('button');
+  button?.props.onClick?.();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  return { posts, assigned };
+};
+
+test('clicking Switch back posts {branch: null} to /api/rewind, then reloads', async () => {
+  const { posts, assigned } = await clickSwitchBack(200);
+  expect(posts).toHaveLength(1);
+  expect(posts[0]?.url).toBe('/api/rewind');
+  expect(posts[0]?.init?.method).toBe('POST');
+  expect(JSON.parse(String(posts[0]?.init?.body))).toEqual({ branch: null });
+  expect(assigned).toEqual(['/rewind']);
+});
+
+test('a refused Switch back opens /rewind, where the way back says why', async () => {
+  const { posts, assigned } = await clickSwitchBack(503);
+  expect(posts).toHaveLength(1);
+  expect(assigned).toEqual(['/rewind']);
 });

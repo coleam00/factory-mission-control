@@ -1,5 +1,5 @@
 import type { ReactElement } from 'react';
-import { Link } from 'react-router';
+import { switchBranch } from '../lib/rewind';
 import type { PanelState } from '../live/LivePanel';
 import { LivePanel } from '../live/LivePanel';
 import { useFactory, useLive } from '../live/LiveProvider';
@@ -10,6 +10,14 @@ export interface StatusStripRow {
 }
 
 const LABEL = 'font-mono text-[10px] font-semibold uppercase tracking-[0.04em] text-text-secondary';
+
+/**
+ * Switches the server back to its home branch. A refused switch opens `/rewind`, whose own way
+ * back says why.
+ */
+const switchBack = () => {
+  switchBranch(null).catch(() => window.location.assign('/rewind'));
+};
 
 /**
  * Shown on every screen while the server seals for a rewind branch. It comes from the server's
@@ -25,12 +33,14 @@ export function RewindIndicator({ rewind }: { rewind: string | null }): ReactEle
         </span>
         <span className="min-w-0 break-all font-mono text-[12px] text-text-primary">{rewind}</span>
         <span className="text-[12px] text-text-secondary">read-only</span>
-        <Link
-          to="/rewind"
+        <button
+          type="button"
+          data-indicator-switch-back
+          onClick={switchBack}
           className="ml-auto text-[12px] text-text-primary underline underline-offset-2"
         >
           Switch back
-        </Link>
+        </button>
       </div>
     </div>
   );
