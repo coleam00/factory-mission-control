@@ -7,11 +7,12 @@ WITH version AS (
   ORDER BY p.committed_at DESC, a.parsed_at DESC
   LIMIT 1
 )
--- A hook applies to a step when it lets one of the step's subagents through: the holdout fence
--- around the agents that may read the scenarios.
+-- The hooks that apply to the step: each lets one of the step's subagents through, the holdout
+-- fence around the agents that may read the scenarios.
 SELECT h.path, h.admitted_agents, g.workflow, g.step_path, g.name AS agent, g.description
 FROM mc.arch_hooks h
 JOIN version v ON v.archon_sha = h.archon_sha AND v.factory_sha = h.factory_sha
 JOIN mc.arch_subagents g
   ON g.archon_sha = h.archon_sha AND g.factory_sha = h.factory_sha
   AND g.name = ANY (h.admitted_agents)
+WHERE g.workflow = $2 AND g.step_path = $3

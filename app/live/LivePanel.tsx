@@ -58,6 +58,8 @@ interface LivePanelProps<Row> {
    * branch: for the rewind list, which must always show the way back.
    */
   home?: boolean;
+  /** The query's parameters after the factory (`$2` on), when it takes any. */
+  args?: readonly string[];
   className?: string;
   children: Render<Row>;
 }
@@ -89,6 +91,7 @@ export function LivePanel<Row>({
   query,
   factory,
   home = false,
+  args,
   className,
   children,
 }: LivePanelProps<Row>): ReactElement {
@@ -96,15 +99,16 @@ export function LivePanel<Row>({
   const [sealed, setSealed] = useState<SealedLiveQuery<Row>>();
   const [failed, setFailed] = useState(false);
 
+  const body = JSON.stringify({ factory, ...(home && { branch: 'home' }), ...(args && { args }) });
   const requestSeal = useCallback(async (): Promise<SealedLiveQuery<Row>> => {
     const res = await fetch(`/api/live/${query}`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(home ? { factory, branch: 'home' } : { factory }),
+      body,
     });
     if (!res.ok) throw new Error(`sealing ${query} answered ${res.status}`);
     return (await res.json()) as SealedLiveQuery<Row>;
-  }, [query, factory, home]);
+  }, [query, body]);
 
   const ready = live.status === 'ready' && factory !== undefined;
   useEffect(() => {

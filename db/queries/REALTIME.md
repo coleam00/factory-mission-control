@@ -2,7 +2,9 @@
 
 Every file in this directory except this one is a live query: one read-only `SELECT`, keyed by the
 factory as `$1`, sealed by the server and subscribed through Neon Realtime (engineering.md,
-PRD 11.1). Realtime refuses some SQL a database would run. The table below is what it accepted
+PRD 11.1). The step screen's panels below `step-detail` also take the step's workflow and path as
+`$2` and `$3`, so each answers with that step's files alone: a panel's first snapshot grows with
+the size of its answer (#103). Realtime refuses some SQL a database would run. The table below is what it accepted
 and rejected when `bun run test:live` ran each probe query on a check branch; `test:live` runs
 them again on every run and fails when a verdict or an error differs from this table.
 

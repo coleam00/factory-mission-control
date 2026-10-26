@@ -96,7 +96,12 @@ function StepList({ steps, ...data }: { steps: readonly string[]; [a: `data-${st
 
 function Prompt({ step, factory }: { step: StepRow; factory: string }): ReactElement {
   return (
-    <LivePanel<PartRow> query="step-prompt" factory={factory} className={CARD}>
+    <LivePanel<PartRow>
+      query="step-prompt"
+      factory={factory}
+      args={[step.workflow, step.path]}
+      className={CARD}
+    >
       {(rows = [], state) => (
         <Section title="Prompt" state={state}>
           {() => {
@@ -120,16 +125,19 @@ function Prompt({ step, factory }: { step: StepRow; factory: string }): ReactEle
 
 function Subagents({ step, factory }: { step: StepRow; factory: string }): ReactElement {
   return (
-    <LivePanel<SubagentRow> query="step-subagents" factory={factory} className={CARD}>
+    <LivePanel<SubagentRow>
+      query="step-subagents"
+      factory={factory}
+      args={[step.workflow, step.path]}
+      className={CARD}
+    >
       {(rows = [], state) => (
         <Section title="Subagents" state={state}>
           {() => {
-            const own = rows.filter(
-              (r) => r.workflow === step.workflow && r.step_path === step.path,
-            );
-            if (own.length === 0) return <p className={NOTE}>This step has no inline subagents.</p>;
-            const instructions = joinParts(own, (row) => row.name);
-            const agents = [...new Map(own.map((row) => [row.name, row])).values()];
+            if (rows.length === 0)
+              return <p className={NOTE}>This step has no inline subagents.</p>;
+            const instructions = joinParts(rows, (row) => row.name);
+            const agents = [...new Map(rows.map((row) => [row.name, row])).values()];
             return agents.map((agent) => (
               <article
                 key={agent.name}
@@ -157,7 +165,12 @@ function Subagents({ step, factory }: { step: StepRow; factory: string }): React
 
 function Scripts({ step, factory }: { step: StepRow; factory: string }): ReactElement {
   return (
-    <LivePanel<PartRow> query="step-scripts" factory={factory} className={CARD}>
+    <LivePanel<PartRow>
+      query="step-scripts"
+      factory={factory}
+      args={[step.workflow, step.path]}
+      className={CARD}
+    >
       {(rows = [], state) => (
         <Section title="Scripts" state={state}>
           {() => {
@@ -194,15 +207,17 @@ function Scripts({ step, factory }: { step: StepRow; factory: string }): ReactEl
 /** The hooks that let this step's subagents through: for a holdout step, the fence. */
 function Hooks({ step, factory }: { step: StepRow; factory: string }): ReactElement {
   return (
-    <LivePanel<HookRow> query="step-hooks" factory={factory} className={CARD}>
+    <LivePanel<HookRow>
+      query="step-hooks"
+      factory={factory}
+      args={[step.workflow, step.path]}
+      className={CARD}
+    >
       {(rows = [], state) => (
         <Section title="Hooks" state={state}>
           {() => {
-            const own = rows.filter(
-              (r) => r.workflow === step.workflow && r.step_path === step.path,
-            );
-            if (own.length === 0) return <p className={NOTE}>No hook applies to this step.</p>;
-            const hooks = [...new Map(own.map((row) => [row.path, row])).values()];
+            if (rows.length === 0) return <p className={NOTE}>No hook applies to this step.</p>;
+            const hooks = [...new Map(rows.map((row) => [row.path, row])).values()];
             return hooks.map((hook) => (
               <dl
                 key={hook.path}
@@ -219,7 +234,7 @@ function Hooks({ step, factory }: { step: StepRow; factory: string }): ReactElem
                     ))}
                   </span>
                 </Fact>
-                {own
+                {rows
                   .filter((row) => row.path === hook.path && row.description !== null)
                   .map((row) => (
                     <Fact key={row.agent} label={`${row.agent} returns`} className={NOTE}>
@@ -237,7 +252,12 @@ function Hooks({ step, factory }: { step: StepRow; factory: string }): ReactElem
 
 function Yaml({ step, factory }: { step: StepRow; factory: string }): ReactElement {
   return (
-    <LivePanel<YamlPartRow> query="step-yaml" factory={factory} className={CARD}>
+    <LivePanel<YamlPartRow>
+      query="step-yaml"
+      factory={factory}
+      args={[step.workflow, step.path]}
+      className={CARD}
+    >
       {(rows = [], state) => (
         <Section title="Workflow YAML" state={state}>
           {() => (
