@@ -1,4 +1,4 @@
-import type { ComponentType } from 'react';
+import { type ComponentType, createElement } from 'react';
 import type { RouteObject } from 'react-router';
 import { NotFound, RouteError } from './errors';
 import { Shell } from './Shell';
@@ -39,16 +39,42 @@ export function routesFromModules(modules: Record<string, RouteModule>): RouteOb
   });
 }
 
+/** A factory screen the shell links to: its path after `/f/:factory/` and its link's name. */
+export interface FactoryScreen {
+  path: string;
+  label: string;
+}
+
 /**
- * The router's whole tree: the shell around the directory's routes, a not-found catch-all and an
- * error state.
+ * The factory screens among the routes: every `/f/:factory/...` path with no other parameter, so a
+ * screen that needs a step or a lap is left out. Labels come from the path (`versions` is
+ * "Versions"), so adding a route file adds its link with no edit to the shell.
+ */
+export function factoryScreens(routes: readonly RouteObject[]): FactoryScreen[] {
+  const screens: FactoryScreen[] = [];
+  for (const { path } of routes) {
+    const rest = path?.match(/^\/f\/:factory\/(.+)$/)?.[1];
+    if (rest === undefined || rest.includes(':')) continue;
+    const label = rest
+      .split('/')
+      .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1))
+      .join(' ');
+    screens.push({ path: rest, label });
+  }
+  return screens.sort((a, b) => a.path.localeCompare(b.path));
+}
+
+/**
+ * The router's whole tree: the shell, linking every factory screen, around the directory's routes,
+ * a not-found catch-all and an error state.
  */
 export function appRoutes(modules: Record<string, RouteModule>): RouteObject[] {
+  const routes = routesFromModules(modules);
   return [
     {
-      Component: Shell,
+      element: createElement(Shell, { screens: factoryScreens(routes) }),
       ErrorBoundary: RouteError,
-      children: [...routesFromModules(modules), { path: '*', Component: NotFound }],
+      children: [...routes, { path: '*', Component: NotFound }],
     },
   ];
 }
