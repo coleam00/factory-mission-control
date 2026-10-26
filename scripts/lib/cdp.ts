@@ -44,13 +44,30 @@ function findBrowser(env: Record<string, string | undefined>): string {
   return found;
 }
 
+/** Chrome may still hold this file open for writing on Windows while publishing its port. */
+export function readDevToolsUrl(
+  activePort: string,
+  read: (path: string) => string = (path) => readFileSync(path, 'utf8'),
+): string | undefined {
+  let lines: string[];
+  try {
+    lines = read(activePort).split('\n');
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === 'ENOENT' || code === 'EBUSY') return undefined;
+    throw error;
+  }
+  if (lines.length >= 2 && lines[1]) return `ws://127.0.0.1:${lines[0].trim()}${lines[1].trim()}`;
+  return undefined;
+}
+
 async function devToolsUrl(profile: string, exited: () => boolean): Promise<string> {
   const activePort = join(profile, 'DevToolsActivePort');
   const deadline = Date.now() + STEP_TIMEOUT_MS;
   while (Date.now() < deadline) {
     if (exited()) throw new Error('the browser exited before opening its DevTools port');
-    const lines = existsSync(activePort) ? readFileSync(activePort, 'utf8').split('\n') : [];
-    if (lines.length >= 2 && lines[1]) return `ws://127.0.0.1:${lines[0].trim()}${lines[1].trim()}`;
+    const url = readDevToolsUrl(activePort);
+    if (url) return url;
     await Bun.sleep(100);
   }
   throw new Error('the browser did not open its DevTools port within 20s');
