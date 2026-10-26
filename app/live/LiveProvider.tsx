@@ -71,9 +71,3 @@ export function LiveProvider({ children }: { children: ReactNode }): ReactElemen
 export function useLive(): Live {
   return useContext(LiveContext);
 }
-
-/** The factory every panel shows: until a picker exists, the first in factories.json. */
-export function useFactory(): string | undefined {
-  const live = useLive();
-  return live.status === 'ready' ? live.factories[0] : undefined;
-}

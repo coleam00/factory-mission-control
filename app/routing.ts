@@ -65,6 +65,21 @@ export function factoryScreens(routes: readonly RouteObject[]): FactoryScreen[] 
 }
 
 /**
+ * Where choosing `factory` goes from `pathname`: the same screen for it when `pathname` is one of
+ * `screens`, otherwise its home map (`/f/:factory`). Pass the pathname only: a screen's search
+ * names the old factory's versions.
+ */
+export function factoryPath(
+  pathname: string,
+  factory: string,
+  screens: readonly FactoryScreen[],
+): string {
+  const home = `/f/${encodeURIComponent(factory)}`;
+  const rest = pathname.match(/^\/f\/[^/]+\/(.+)$/)?.[1];
+  return screens.some((screen) => screen.path === rest) ? `${home}/${rest}` : home;
+}
+
+/**
  * The router's whole tree: the shell, linking every factory screen, around the directory's routes,
  * a not-found catch-all and an error state.
  */

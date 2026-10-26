@@ -10,6 +10,7 @@ export const LIVE_QUERY_NAME = /^[a-z0-9-]+$/;
 export interface Live {
   /** The Realtime WebSocket the browser subscribes on. */
   url: string;
+  /** The factories this server shows and seals for, from its factories file. */
   factories: string[];
   /** Every file in `db/queries/` by its name without `.sql`: the only SQL the server seals. */
   queries: Map<string, string>;
@@ -37,8 +38,14 @@ export function realtimeUrlFor(databaseUrl: string): string {
   return `wss://${match[1]}.rt.${match[2]}/`;
 }
 
-function factoryNames(repoRoot: string): string[] {
-  const { factories } = JSON.parse(readFileSync(join(repoRoot, 'factories.json'), 'utf-8')) as {
+/**
+ * The factories file: `MC_FACTORIES_FILE` when set (a check's own list, as `test:live` writes),
+ * else the repository's factories.json. Only its names are shown and sealed for: a row of
+ * `mc.factories` the file does not name is never listed, so one entry means one factory.
+ */
+export function factoryNames(env: Env, repoRoot: string): string[] {
+  const file = env.MC_FACTORIES_FILE || join(repoRoot, 'factories.json');
+  const { factories } = JSON.parse(readFileSync(file, 'utf-8')) as {
     factories: { name: string }[];
   };
   return factories.map((f) => f.name);
@@ -51,7 +58,7 @@ export function liveFromEnv(env: Env, repoRoot: string): Live | undefined {
   const realtime = createRealtime({ secret, db: new URL(databaseUrl).pathname.slice(1) });
   return {
     url: realtimeUrlFor(databaseUrl),
-    factories: factoryNames(repoRoot),
+    factories: factoryNames(env, repoRoot),
     queries: loadLiveQueries(join(repoRoot, 'db', 'queries')),
     seal: (sql, factory) => realtime.seal({ query: rawSql(sql, [factory]) }),
   };

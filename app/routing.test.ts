@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { createMemoryRouter, RouterProvider, useParams } from 'react-router';
-import { appRoutes, type RouteModule, routePath, routesFromModules } from './routing';
+import { appRoutes, factoryPath, type RouteModule, routePath, routesFromModules } from './routing';
 
 const scratch = mkdtempSync(join(tmpdir(), 'mc-routes-'));
 afterAll(() => rmSync(scratch, { recursive: true, force: true }));
@@ -71,4 +71,20 @@ test('two route files that map to the same path are refused', () => {
   expect(() =>
     routesFromModules({ './routes/index.tsx': page, './routes/f.$factory.tsx': page }),
   ).not.toThrow();
+});
+
+test('choosing a factory keeps the screen, else goes to its home map', () => {
+  const screens = [
+    { path: 'laps', label: 'Laps' },
+    { path: 'versions', label: 'Versions' },
+  ];
+  for (const { path } of screens) {
+    expect(factoryPath(`/f/mission-control/${path}`, 'second-factory', screens)).toBe(
+      `/f/second-factory/${path}`,
+    );
+  }
+  for (const from of ['/', '/f/mission-control', '/steps/archon-loop/check-app', '/f/a/nope']) {
+    expect(factoryPath(from, 'second-factory', screens)).toBe('/f/second-factory');
+  }
+  expect(factoryPath('/f/a/versions', 'a b/c', screens)).toBe('/f/a%20b%2Fc/versions');
 });

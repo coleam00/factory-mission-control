@@ -1,9 +1,10 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { createApp } from './app';
 import {
+  factoryNames,
   type Live,
   liveBootScript,
   loadLiveQueries,
@@ -54,7 +55,7 @@ describe('POST /api/live/:name', () => {
     expect(sealed).toEqual([]);
   });
 
-  test('a factory not in factories.json is a 400 and seals nothing', async () => {
+  test('a factory the server does not know is a 400 and seals nothing', async () => {
     const { app, sealed } = fakeLive();
     for (const body of [{ factory: 'other' }, {}, 'mission-control', null]) {
       expect((await app.request('/api/live/status-strip', post(body))).status).toBe(400);
@@ -74,6 +75,28 @@ describe('POST /api/live/:name', () => {
       expiresAt: 60_000,
     });
     expect(sealed).toEqual([[queries.get('status-strip') as string, 'mission-control']]);
+  });
+
+  test('a factory that is a row of mc.factories but not in the factories file is a 400', async () => {
+    const { app, sealed } = fakeLive();
+    const res = await app.request('/api/live/status-strip', post({ factory: 'second-factory' }));
+    expect(res.status).toBe(400);
+    expect(sealed).toEqual([]);
+  });
+});
+
+describe('factoryNames', () => {
+  test("factories.json's names, unless MC_FACTORIES_FILE names another file", () => {
+    expect(factoryNames({}, repoRoot)).toEqual(
+      (
+        JSON.parse(readFileSync(join(repoRoot, 'factories.json'), 'utf-8')) as {
+          factories: { name: string }[];
+        }
+      ).factories.map((f) => f.name),
+    );
+    const file = join(resolve(distDir, '..'), 'factories.json');
+    writeFileSync(file, JSON.stringify({ factories: [{ name: 'a' }, { name: 'b' }] }));
+    expect(factoryNames({ MC_FACTORIES_FILE: file }, repoRoot)).toEqual(['a', 'b']);
   });
 });
 
