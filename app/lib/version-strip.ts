@@ -58,6 +58,11 @@ export function stripEntries(rows: readonly VersionStripRow[]): StripEntry[] {
     }));
 }
 
+/** The one version's own scorecard, its digest URL-encoded. */
+export function scorecardLink(factory: string, digest: string): string {
+  return `/f/${encodeURIComponent(factory)}/scorecard?a=${encodeURIComponent(digest)}`;
+}
+
 /** The scorecard and diff of two versions by digest, read from `a` (the older) to `b`. */
 export function compareLinks(
   factory: string,

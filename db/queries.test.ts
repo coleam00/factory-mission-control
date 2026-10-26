@@ -1071,6 +1071,41 @@ describe('lanes and recent-laps on the seed', () => {
     expect(await errors()).toEqual(before);
   });
 
+  test("a lane's route falls back to its claim comment; the pick step's output wins (#107)", async () => {
+    const [claimOnly, both, neither] = [
+      '107a0000-0000-4000-8000-000000000001',
+      '107a0000-0000-4000-8000-000000000002',
+      '107a0000-0000-4000-8000-000000000003',
+    ];
+    const routes = async () =>
+      Object.fromEntries(
+        (await db.query(sqlOf('lanes'), ['route-107'])).map((l) => [l.run_id, l.route]),
+      );
+    await db.query(
+      `INSERT INTO mc.laps (run_id, factory, workflow_name, status) VALUES
+      ($1, 'route-107', 'archon-loop', 'running'), ($2, 'route-107', 'archon-loop', 'running'),
+      ($3, 'route-107', 'archon-loop', 'running')`,
+      [claimOnly, both, neither],
+    );
+    await db.query(
+      `INSERT INTO mc.lap_steps (run_id, step_id, status, output)
+       VALUES ($1, 'pick', 'completed', '{"route":"continue"}'::jsonb)`,
+      [both],
+    );
+    expect(await routes()).toEqual({ [claimOnly]: null, [both]: 'continue', [neither]: null });
+    await db.query(
+      `INSERT INTO mc.claims (factory, issue_number, run_id, route, claimed_at) VALUES
+       ('route-107', 7, $1, 'simple', '2026-10-26T12:00:00Z'),
+       ('route-107', 8, $2, 'simple', '2026-10-26T12:00:00Z')`,
+      [claimOnly, both],
+    );
+    expect(await routes()).toEqual({
+      [claimOnly]: 'simple',
+      [both]: 'continue',
+      [neither]: null,
+    });
+  });
+
   test('another factory sees none of these laps', async () => {
     expect(await db.query(sqlOf('lanes'), ['other'])).toEqual([]);
     expect(await db.query(sqlOf('recent-laps'), ['other'])).toEqual([]);
