@@ -495,6 +495,15 @@ describe('home-map on the seed', () => {
     await db.query(`DELETE FROM mc.lap_steps WHERE run_id::text LIKE '%0000000000c_'`);
     await db.query(`DELETE FROM mc.laps WHERE run_id::text LIKE '%0000000000c_'`);
   });
+
+  test('step-detail reads V2, the current pin, whose subject names a short sha', async () => {
+    const query = queries.find(([n]) => n === 'step-detail')?.[1] as string;
+    const steps = await db.query(query, ['mission-control']);
+    const ids = steps.filter((s) => s.workflow === 'archon-loop').map((s) => s.step_id);
+    expect(ids).toContain('check-app');
+    expect(ids).toContain('tally');
+    expect(ids).not.toContain('briefs');
+  });
 });
 
 describe('version-strip on the seed', () => {

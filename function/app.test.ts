@@ -7,7 +7,13 @@ import type { Db, Row } from '../scripts/lib/db';
 import { migrationsDir, readMigrationFiles, runMigrations } from '../scripts/migrate';
 import { createWebhookApp } from './app';
 import { createGitHub, type GetFetch } from './github';
-import { METRICS_TITLE, OWNER_DECISIONS_TITLE, replaceDecisions } from './ingest';
+import {
+  METRICS_TITLE,
+  OWNER_DECISIONS_TITLE,
+  PACK_PATH,
+  pinnedArchonSha,
+  replaceDecisions,
+} from './ingest';
 import { sign, verify } from './signature';
 
 const repoRoot = resolve(import.meta.dir, '..');
@@ -38,21 +44,40 @@ Replaces: Holdout files kept outside the repository.
 Version: abd85896
 `;
 
+/** The full sha the appendix pin's pack file pins; its subject names `abd85896`. */
+const PINNED = 'abd85896e7971c9ac5199ed7e87973f27130250f';
+const PACK_URL = `https://api.github.com/repos/coleam00/ai-software-factory/contents/${PACK_PATH}?ref=85d479ad987dd63e441622ecb03db65233e8a803`;
+const DECISIONS_URL =
+  'https://api.github.com/repos/coleam00/ai-software-factory/contents/DECISIONS.md?ref=main';
+const pack = (sha: string) => JSON.stringify({ integration_revision_required: sha });
+
+/** GitHub answering a pin's pack file read with `pinned` and any `DECISIONS.md` read with `decisions`. */
+const answering =
+  ({
+    pinned = () => new Response(pack(PINNED)),
+    decisions = () => new Response(DECISIONS),
+  }: {
+    pinned?: () => Response;
+    decisions?: () => Response;
+  }) =>
+  (url: string) =>
+    url.includes(`/contents/${PACK_PATH}?`) ? pinned() : decisions();
+
 type Request = { url: string; method: string };
 
 let db: Db;
 let requests: Request[];
-let respond: () => Response;
+let respond: (url: string) => Response;
 let app: ReturnType<typeof createWebhookApp>;
 
 beforeEach(async () => {
   db = await archonDb();
   await runMigrations({ files: readMigrationFiles(migrationsDir(repoRoot)), db });
   requests = [];
-  respond = () => new Response(DECISIONS);
+  respond = answering({});
   const fetch: GetFetch = async (url, init) => {
     requests.push({ url, method: init.method });
-    return respond();
+    return respond(url);
   };
   app = createWebhookApp({
     secret: SECRET,
@@ -213,10 +238,10 @@ test('an Owner decisions needed edit stores each question, and closes one that i
   ]);
 });
 
-test('a push with the appendix pin and verdict stores pin abd85896 and verdict helped', async () => {
+test('a push with the appendix pin and verdict stores the full sha pin abd85896 pins and verdict helped', async () => {
   await deliver(named('09-'));
   const [pin] = await rows('SELECT archon_sha, hypothesis, measure FROM mc.pins');
-  expect(pin?.archon_sha).toBe('abd85896');
+  expect(pin?.archon_sha).toBe(PINNED);
   expect(String(pin?.hypothesis)).toStartWith('complex laps finish faster and are sent back less');
   expect(String(pin?.measure)).toStartWith('on the mission-control factory, complex-route');
   expect(await rows('SELECT pin, verdict, sentence FROM mc.verdicts')).toEqual([
@@ -227,11 +252,26 @@ test('a push with the appendix pin and verdict stores pin abd85896 and verdict h
     },
   ]);
   expect(requests).toEqual([
-    {
-      method: 'GET',
-      url: 'https://api.github.com/repos/coleam00/ai-software-factory/contents/DECISIONS.md?ref=main',
-    },
+    { method: 'GET', url: PACK_URL },
+    { method: 'GET', url: DECISIONS_URL },
   ]);
+});
+
+test.each([
+  ['the full sha a short subject names', 'abd85896', pack(PINNED), { sha: PINNED }],
+  ['the full sha a full subject names', PINNED, pack(PINNED), { sha: PINNED }],
+  ['no file', 'abd85896', null, { unresolved: `${PACK_PATH} missing` }],
+  ['text that is not JSON', 'abd85896', 'not json', { unresolved: `${PACK_PATH} is not JSON` }],
+  ['a short sha', 'abd85896', pack('abd85896'), { unresolved: `${PACK_PATH} pins no full sha` }],
+  ['no pin', 'abd85896', '{}', { unresolved: `${PACK_PATH} pins no full sha` }],
+  [
+    'another version',
+    'abd85896',
+    pack('f'.repeat(40)),
+    { unresolved: `pins ${'f'.repeat(40)}, not abd85896` },
+  ],
+])('a pin whose pack file holds %s resolves only to that full sha', (_, named, text, expected) => {
+  expect(pinnedArchonSha(named, text)).toEqual(expected);
 });
 
 test('every request the handler sends to GitHub is a GET', async () => {
@@ -301,9 +341,9 @@ const entry = (title: string) =>
   `## 2026-10-25 ${title}\nDecision: d.\nWhy: w.\nReplaces: r.\nVersion: abd85896\n`;
 
 test('decisions follow DECISIONS.md on the default branch, even when an older push is redelivered', async () => {
-  respond = () => new Response(`# Decisions\n\n${entry('Old')}`);
+  respond = answering({ decisions: () => new Response(`# Decisions\n\n${entry('Old')}`) });
   await deliver(named('09-'));
-  respond = () => new Response(`# Decisions\n\n${entry('New')}`);
+  respond = answering({ decisions: () => new Response(`# Decisions\n\n${entry('New')}`) });
   await deliverChanged('09-', (p) => {
     p.commits[0].id = 'b'.repeat(40);
   });
@@ -311,13 +351,14 @@ test('decisions follow DECISIONS.md on the default branch, even when an older pu
 
   expect((await deliver(named('09-'))).status).toBe(200);
   expect(await decisionsTitles()).toEqual([{ title: 'New' }]);
-  expect(new Set(requests.map((r) => r.url.split('?')[1]))).toEqual(new Set(['ref=main']));
+  const decisionsReads = requests.filter((r) => r.url.includes('/DECISIONS.md?'));
+  expect(new Set(decisionsReads.map((r) => r.url.split('?')[1]))).toEqual(new Set(['ref=main']));
 });
 
 test('a DECISIONS.md the push did not remove but GitHub cannot find fails and keeps the rows', async () => {
   await deliver(named('09-'));
   const before = await snapshot();
-  respond = () => new Response('Not Found', { status: 404 });
+  respond = answering({ decisions: () => new Response('Not Found', { status: 404 }) });
   const error = spyOn(console, 'error').mockImplementation(() => {});
   try {
     expect((await deliver(named('09-'))).status).toBe(500);
@@ -354,7 +395,7 @@ ${entry('Kept')}`;
     await db.transaction((tx) => replaceDecisions(tx, kept));
     const before = await snapshot();
 
-    respond = failure;
+    respond = answering({ decisions: failure });
     const warn = spyOn(console, 'warn').mockImplementation(() => {});
     try {
       const response = await deliver(named('09-'));
@@ -379,9 +420,85 @@ ${entry('Kept')}`;
   },
 );
 
+const pinRows = () => rows('SELECT sha, archon_sha FROM mc.pins');
+
+test.each([
+  ['403', () => new Response('rate limit exceeded', { status: 403 }), '403'],
+  ['500', () => new Response('Internal Server Error', { status: 500 }), '500'],
+  [
+    'a network error',
+    (): Response => {
+      throw new TypeError('fetch failed');
+    },
+    'network error (fetch failed)',
+  ],
+])(
+  'a pack file read answered by %s records the verdict and keeps the stored pin',
+  async (_, failure, status) => {
+    await deliver(named('09-'));
+    const stored = await pinRows();
+    expect(stored).toEqual([
+      { sha: '85d479ad987dd63e441622ecb03db65233e8a803', archon_sha: PINNED },
+    ]);
+    await db.query('DELETE FROM mc.verdicts');
+
+    respond = answering({ pinned: failure });
+    const warn = spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const response = await deliver(named('09-'));
+      expect(response.status).toBe(200);
+      expect(await response.json()).toEqual({
+        event: 'push',
+        written: true,
+        pins: `unread: ${status}`,
+      });
+      expect(warn.mock.calls.map((args) => args.join(' '))).toEqual([
+        expect.stringContaining(`${PACK_PATH} unread for pins: ${status}; pins kept`),
+      ]);
+    } finally {
+      warn.mockRestore();
+    }
+    expect(await pinRows()).toEqual(stored);
+    expect(await rows('SELECT verdict FROM mc.verdicts')).toEqual([{ verdict: 'helped' }]);
+  },
+);
+
+test('a pack file read that fails on a first delivery writes the verdict and no pin', async () => {
+  respond = answering({ pinned: () => new Response('Internal Server Error', { status: 500 }) });
+  const warn = spyOn(console, 'warn').mockImplementation(() => {});
+  try {
+    expect(await (await deliver(named('09-'))).json()).toEqual({
+      event: 'push',
+      written: true,
+      pins: 'unread: 500',
+    });
+  } finally {
+    warn.mockRestore();
+  }
+  expect(await pinRows()).toEqual([]);
+  expect(await rows('SELECT verdict FROM mc.verdicts')).toEqual([{ verdict: 'helped' }]);
+});
+
+test('a pin whose pack file pins another version writes no pin and says which', async () => {
+  const other = 'f'.repeat(40);
+  respond = answering({ pinned: () => new Response(pack(other)) });
+  const warn = spyOn(console, 'warn').mockImplementation(() => {});
+  try {
+    expect(await (await deliver(named('09-'))).json()).toEqual({
+      event: 'push',
+      written: true,
+      pins: `unread: 85d479ad: pins ${other}, not abd85896`,
+    });
+  } finally {
+    warn.mockRestore();
+  }
+  expect(await pinRows()).toEqual([]);
+  expect(await rows('SELECT verdict FROM mc.verdicts')).toEqual([{ verdict: 'helped' }]);
+});
+
 test('a push that removes DECISIONS.md empties the decisions', async () => {
   await deliver(named('09-'));
-  respond = () => new Response('Not Found', { status: 404 });
+  respond = answering({ decisions: () => new Response('Not Found', { status: 404 }) });
   const response = await deliverChanged('09-', (p) => {
     p.commits[0].added = [];
     p.commits[0].removed = ['DECISIONS.md'];
