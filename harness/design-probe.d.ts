@@ -1,4 +1,3 @@
-/** Types for the two exports of design-probe.js the tests use. */
 export interface Failure {
   width: number;
   /** The page as first rendered, or once no live panel was loading. */
@@ -29,3 +28,5 @@ export type ReadPort = (path: string) => string;
 
 export function launchBrowser(readPort?: ReadPort): Promise<Browser>;
 export function probe(url: string, readPort?: ReadPort): Promise<Report>;
+
+export const PORT_FILE_NOT_WRITTEN_YET: ReadonlySet<string>;

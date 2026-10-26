@@ -32,11 +32,29 @@ test('the timeline is in date order, ties by title', () => {
   ]);
 });
 
-test('a Measure names its lap count by "at least <n>", or names none', () => {
-  expect(lapsWanted('lap-hours per merge, lower, over at least 12 laps.')).toBe(12);
-  expect(lapsWanted('send-backs per merge, over at least 10 complex laps.')).toBe(10);
-  expect(lapsWanted('complex-route lap-hours per merge over 10 laps.')).toBeNull();
-  expect(lapsWanted(null)).toBeNull();
+test.each([
+  ['lap-hours per merge, lower, over at least 12 laps.', 12],
+  ['complex-route lap-hours per merge over 10 laps.', 10],
+  ['send-backs per merge, 10 complex laps.', 10],
+  ['send-backs per merge, at least 10 laps.', 10],
+  ['lap-hours per merge, over 12 laps or more.', 12],
+  ['send-backs per merge, over at least 10 complex laps.', 10],
+  ['at least 2 merges per hour over 12 laps.', 12],
+  ['over 12 laps, at least 2 merges per hour.', 12],
+  ['over 10 COMPLEX-ROUTE\tLAPS.', 10],
+])('a Measure names its lap count: %s', (measure, wanted) => {
+  expect(lapsWanted(measure)).toBe(wanted);
+  expect(ledger([pin({ measure, laps: 3 })]).testing[0].waiting).toBe(wanted - 3);
+});
+
+test.each([
+  null,
+  '',
+  'fewer send-backs per merge.',
+  'at least 2 merges per hour.',
+  '2 merges per hour over several laps.',
+])('a Measure without a lap count names none: %s', (measure) => {
+  expect(lapsWanted(measure)).toBeNull();
 });
 
 const pin = (over: Partial<LedgerRow>): LedgerRow => ({
@@ -58,11 +76,15 @@ test('a pin with a Measure and no verdict is being tested, waiting for the laps 
     pin({ pin_sha: 'd', measure: 'over 10 laps.', laps: 3 }),
     pin({ pin_sha: 'e', measure: '  ' }),
     pin({ pin_sha: 'f' }),
+    pin({ pin_sha: 'g', measure: 'at least 2 merges per hour.', laps: 3 }),
+    pin({ pin_sha: 'h', measure: '2 merges per hour over several laps.', laps: 3 }),
   ]);
   expect(testing.map((t) => [t.pin, t.laps, t.waiting])).toEqual([
     ['b', 7, 5],
     ['c', 15, 0],
-    ['d', 3, NOT_RECORDED],
+    ['d', 3, 7],
+    ['g', 3, NOT_RECORDED],
+    ['h', 3, NOT_RECORDED],
   ]);
   expect(verdicts).toEqual([]);
 });
