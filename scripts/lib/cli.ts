@@ -21,7 +21,7 @@ export type Deps = {
   sleep: Sleep;
   out: (line: string) => void;
   err: (line: string) => void;
-  /** Only `migrate:main` and `arch:parse:main` ask; true when the owner, at a terminal, confirmed the project. */
+  /** `migrate:main`, `arch:parse:main` and `rewind:create` on main ask; true when the owner, at a terminal, confirmed the project. */
   confirmOwner: (projectId: string) => boolean;
   /**
    * neonctl from this repository's node_modules, run by Bun itself: Bun refuses to pass a

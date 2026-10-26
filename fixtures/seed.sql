@@ -623,6 +623,12 @@ INSERT INTO remote_agent_workflow_events (id, workflow_run_id, event_type, step_
 -- V3 run Q: pending
 INSERT INTO remote_agent_workflow_runs (id, workflow_name, codebase_id, status, user_message, metadata, started_at, completed_at, last_activity_at) VALUES ('5eed0003-0000-4000-8000-00000000000d', 'archon-loop', '5eed0000-0000-4000-8000-000000000000', 'pending', 'Run the loop on coleam00/factory-mission-control', '{"workflow_source":{"digest":"sha256:c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3"}}'::jsonb, '2026-10-24T11:55:00.000Z', NULL, '2026-10-24T11:55:00.000Z');
 
+-- A second factory, for the factory switcher only: its codebase and one running lap.
+INSERT INTO mc.factories (name, repository, codebase, console) VALUES ('second-factory', 'coleam00/second-factory', 'coleam00/second-factory', 'http://localhost:3090');
+INSERT INTO remote_agent_codebases (id, name, repository_url, default_cwd) VALUES ('5eed0000-0000-4000-8000-000000000001', 'coleam00/second-factory', 'https://github.com/coleam00/second-factory', 'C:/factory/second-factory');
+INSERT INTO remote_agent_workflow_runs (id, workflow_name, codebase_id, status, user_message, metadata, started_at, completed_at, last_activity_at) VALUES ('5eed0004-0000-4000-8000-000000000000', 'archon-loop', '5eed0000-0000-4000-8000-000000000001', 'running', 'Run the loop on coleam00/second-factory', '{}'::jsonb, '2026-10-24T09:00:00.000Z', NULL, '2026-10-24T09:05:00.000Z');
+INSERT INTO remote_agent_workflow_events (id, workflow_run_id, event_type, step_name, data, created_at) VALUES ('5eedeeee-0000-4000-8000-100000000001', '5eed0004-0000-4000-8000-000000000000', 'node_started', 'claim', '{"node":{"id":"claim","kind":"script","source":{"kind":"project"}},"type":"script","command":null,"accounting":"node","timing":{"startedAt":"2026-10-24T09:05:00.000Z"}}'::jsonb, '2026-10-24T09:05:00.000Z');
+
 -- Laps, steps, app-check lines and versions, projected from Archon's rows above.
 INSERT INTO mc.laps (run_id, factory, workflow_name, status, digest, started_at, completed_at)
 SELECT r.id, f.name, r.workflow_name, r.status, r.metadata->'workflow_source'->>'digest',
@@ -630,7 +636,7 @@ SELECT r.id, f.name, r.workflow_name, r.status, r.metadata->'workflow_source'->>
 FROM remote_agent_workflow_runs r
 JOIN remote_agent_codebases c ON c.id = r.codebase_id
 JOIN mc.factories f ON f.codebase = c.name
-WHERE r.codebase_id = '5eed0000-0000-4000-8000-000000000000'
+WHERE r.codebase_id IN ('5eed0000-0000-4000-8000-000000000000', '5eed0000-0000-4000-8000-000000000001')
 ON CONFLICT DO NOTHING;
 
 -- A step's last event decides its status and carries its timing, model, tokens, cost and output.
@@ -652,7 +658,7 @@ SELECT DISTINCT ON (e.workflow_run_id, e.step_name)
     THEN (e.data->'structured_output') - 'lines' END
 FROM remote_agent_workflow_events e
 JOIN remote_agent_workflow_runs r ON r.id = e.workflow_run_id
-WHERE r.codebase_id = '5eed0000-0000-4000-8000-000000000000'
+WHERE r.codebase_id IN ('5eed0000-0000-4000-8000-000000000000', '5eed0000-0000-4000-8000-000000000001')
   AND e.event_type IN ('node_started', 'node_completed', 'node_failed', 'node_skipped')
 ORDER BY e.workflow_run_id, e.step_name, e.created_at DESC, e.event_order DESC
 ON CONFLICT DO NOTHING;
@@ -662,7 +668,7 @@ ON CONFLICT DO NOTHING;
 SELECT mc.record_step_attempt(e.workflow_run_id, e.event_type, e.step_name, e.data)
 FROM remote_agent_workflow_events e
 JOIN remote_agent_workflow_runs r ON r.id = e.workflow_run_id
-WHERE r.codebase_id = '5eed0000-0000-4000-8000-000000000000'
+WHERE r.codebase_id IN ('5eed0000-0000-4000-8000-000000000000', '5eed0000-0000-4000-8000-000000000001')
   AND e.event_type IN ('node_completed', 'node_failed', 'node_skipped')
 ORDER BY e.created_at, e.event_order;
 
@@ -678,7 +684,7 @@ FROM remote_agent_workflow_events e
 JOIN remote_agent_workflow_runs r ON r.id = e.workflow_run_id
 CROSS JOIN LATERAL jsonb_array_elements(e.data->'structured_output'->'lines')
   WITH ORDINALITY AS l(line, position)
-WHERE r.codebase_id = '5eed0000-0000-4000-8000-000000000000'
+WHERE r.codebase_id IN ('5eed0000-0000-4000-8000-000000000000', '5eed0000-0000-4000-8000-000000000001')
   AND e.event_type = 'node_completed' AND e.step_name = 'check-app'
   AND jsonb_typeof(e.data->'structured_output'->'lines') = 'array'
 ON CONFLICT DO NOTHING;
@@ -18459,3 +18465,7 @@ INSERT INTO mc.arch_subagents (archon_sha, factory_sha, workflow, step_path, nam
 DELETE FROM mc.arch_subagents WHERE archon_sha = '2b7c4e9a1f0d3c5b6a7e8f9d0c1b2a3f4e5d6c7b' AND factory_sha = '85d479ad987dd63e441622ecb03db65233e8a803' AND workflow = 'archon-manager' AND step_path = 'manage' AND name = 'holdout-writer';
 INSERT INTO mc.arch_subagents (archon_sha, factory_sha, workflow, step_path, name, description, prompt, instruction_file) VALUES ('2b7c4e9a1f0d3c5b6a7e8f9d0c1b2a3f4e5d6c7b', '85d479ad987dd63e441622ecb03db65233e8a803', 'archon-manager', 'manage', 'holdout-writer', 'Writes the project''s holdout scenarios from the product document or an escaped defect, commits them, and returns one line per scenario id. The only agent, with holdout-verifier, allowed to read them.', 'You are the holdout writer. Before anything else, read your instructions in $ARTIFACTS_DIR/agents/holdout-writer.md with your Read tool, and follow them exactly.', 'holdouts/commands/holdout-writer.md');
 INSERT INTO mc.arch_hooks (archon_sha, factory_sha, path, text, admitted_agents) SELECT '2b7c4e9a1f0d3c5b6a7e8f9d0c1b2a3f4e5d6c7b', '85d479ad987dd63e441622ecb03db65233e8a803', path, text, admitted_agents FROM mc.arch_hooks WHERE archon_sha = 'abd85896e7971c9ac5199ed7e87973f27130250f' AND factory_sha = '85d479ad987dd63e441622ecb03db65233e8a803';
+
+-- A rewind `bun run rewind:create` registered. No Neon branch has its name: switching to it
+-- answers 404.
+INSERT INTO mc.rewind_branches (name, parent, at, created_at) VALUES ('rewind-2026-10-24t11-00-00z', 'main', '2026-10-24T11:00:00Z', '2026-10-24T11:02:00Z');

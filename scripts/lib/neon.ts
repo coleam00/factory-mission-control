@@ -1,5 +1,5 @@
 import { SERVE_PORTS } from '../../server/ports';
-import { requireCheckBranch } from './guard';
+import { requireCheckBranch, requireRewindBranch } from './guard';
 
 const API_BASE = 'https://console.neon.tech/api/v2';
 
@@ -13,7 +13,7 @@ export const REALTIME_ORIGINS = [
 ];
 
 export type Branch = { id: string; name: string; created_at: string };
-export type Endpoint = { id: string; branch_id: string };
+export type Endpoint = { id: string; branch_id: string; host: string };
 export type Operation = { id: string; status: string };
 export type Realtime = { enabled: boolean; pending: boolean };
 export type CreatedBranch = {
@@ -26,6 +26,7 @@ export interface NeonApi {
   listBranches(): Promise<Branch[]>;
   getBranch(id: string): Promise<Branch>;
   getEndpoint(id: string): Promise<Endpoint>;
+  branchEndpoints(branchId: string): Promise<Endpoint[]>;
   getOperation(id: string): Promise<Operation>;
   getRealtime(branchId: string): Promise<Realtime>;
   getRealtimeSecret(branchId: string): Promise<string>;
@@ -35,6 +36,10 @@ export interface NeonApi {
   createBranch(input: { name: string; parentId: string }): Promise<CreatedBranch>;
   /** Refuses a name that is not `check-*` before any request. */
   deleteBranch(branch: { id: string; name: string }): Promise<Operation[]>;
+  /** The parent as it was at `at` (ISO time). Refuses a name that is not `rewind-*` before any request. */
+  createRewindBranch(input: { name: string; parentId: string; at: string }): Promise<CreatedBranch>;
+  /** Refuses a name that is not `rewind-*` before any request. */
+  deleteRewindBranch(branch: { id: string; name: string }): Promise<Operation[]>;
 }
 
 export type Fetch = (url: string, init: RequestInit) => Promise<Response>;
@@ -89,6 +94,10 @@ export function createNeonApi(options: {
       const path = `${project}/endpoints/${encodeURIComponent(id)}`;
       return (await call<{ endpoint: Endpoint }>('GET', path)).endpoint;
     },
+    async branchEndpoints(branchId) {
+      return (await call<{ endpoints: Endpoint[] }>('GET', `${branchPath(branchId)}/endpoints`))
+        .endpoints;
+    },
     async getOperation(id) {
       const path = `${project}/operations/${encodeURIComponent(id)}`;
       return (await call<{ operation: Operation }>('GET', path)).operation;
@@ -128,6 +137,22 @@ export function createNeonApi(options: {
     },
     async deleteBranch({ id, name }) {
       requireCheckBranch(name);
+      return (await call<{ operations: Operation[] }>('DELETE', branchPath(id))).operations;
+    },
+    async createRewindBranch({ name, parentId, at }) {
+      requireRewindBranch(name);
+      return call<CreatedBranch>('POST', `${project}/branches`, {
+        branch: {
+          name,
+          parent_id: parentId,
+          parent_timestamp: at,
+          realtime: { allowed_origins: REALTIME_ORIGINS },
+        },
+        endpoints: [{ type: 'read_write' }],
+      });
+    },
+    async deleteRewindBranch({ id, name }) {
+      requireRewindBranch(name);
       return (await call<{ operations: Operation[] }>('DELETE', branchPath(id))).operations;
     },
   };

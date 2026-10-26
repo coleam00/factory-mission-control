@@ -1,4 +1,8 @@
-import { createRealtimeClient, type RealtimeClient } from '@neon/realtime/client';
+import {
+  createRealtimeClient,
+  type RealtimeClient,
+  type WebSocketFactory,
+} from '@neon/realtime/client';
 import {
   createContext,
   type ReactElement,
@@ -12,18 +16,46 @@ import { markingSubscribes } from './subscribe-marks';
 
 export type Live =
   | { status: 'loading' | 'error' }
-  | { status: 'ready'; factories: readonly string[]; client: RealtimeClient };
+  | {
+      status: 'ready';
+      factories: readonly string[];
+      client: RealtimeClient;
+      /** The home branch's client: `client` itself unless the server is switched to a rewind. */
+      homeClient: RealtimeClient;
+      /** The rewind branch the server seals for, or null on its home branch. */
+      rewind: string | null;
+    };
 
 const LiveContext = createContext<Live>({ status: 'loading' });
 
 /** What `GET /api/live` answers: everything the browser needs to subscribe, and no secret. */
 interface LiveConfig {
   url: string;
+  home: string;
   factories: string[];
+  rewind: string | null;
+}
+
+const newSocket: WebSocketFactory = (url, protocols) => new WebSocket(url, protocols);
+
+/** The clients for `config`; a second one for the home branch only while rewound. */
+function clientsFor(
+  config: LiveConfig,
+  transport: WebSocketFactory,
+): { client: RealtimeClient; homeClient: RealtimeClient } {
+  const client = createRealtimeClient({
+    url: config.url,
+    webSocketFactory: markingSubscribes(transport),
+  });
+  const homeClient =
+    config.rewind === null
+      ? client
+      : createRealtimeClient({ url: config.home, webSocketFactory: markingSubscribes(newSocket) });
+  return { client, homeClient };
 }
 
 /**
- * Opens the one Realtime connection the app shares; panels render `error` when it cannot. When the
+ * Opens the Realtime connection the app shares; panels render `error` when it cannot. When the
  * server put the configuration in the page, the client takes over the socket the page already
  * opened; otherwise it asks `GET /api/live`.
  */
@@ -31,17 +63,18 @@ export function LiveProvider({ children }: { children: ReactNode }): ReactElemen
   const [live, setLive] = useState<Live>({ status: 'loading' });
 
   useEffect(() => {
-    let client: RealtimeClient | undefined;
+    let clients: { client: RealtimeClient; homeClient: RealtimeClient } | undefined;
     let cancelled = false;
+    const close = () => {
+      clients?.client.close();
+      if (clients?.homeClient !== clients?.client) clients?.homeClient.close();
+    };
     const boot = window.__MC_LIVE__;
     if (boot) {
-      client = createRealtimeClient({
-        url: boot.url,
-        webSocketFactory: markingSubscribes(earlySocketFactory(boot)),
-      });
-      setLive({ status: 'ready', factories: boot.factories, client });
+      clients = clientsFor(boot, earlySocketFactory(boot));
+      setLive({ status: 'ready', factories: boot.factories, rewind: boot.rewind, ...clients });
       return () => {
-        client?.close();
+        close();
         discardEarlySocket(boot);
       };
     }
@@ -50,18 +83,20 @@ export function LiveProvider({ children }: { children: ReactNode }): ReactElemen
         if (!res.ok) throw new Error(`GET /api/live answered ${res.status}`);
         const config = (await res.json()) as LiveConfig;
         if (cancelled) return;
-        client = createRealtimeClient({
-          url: config.url,
-          webSocketFactory: markingSubscribes((url, protocols) => new WebSocket(url, protocols)),
+        clients = clientsFor(config, newSocket);
+        setLive({
+          status: 'ready',
+          factories: config.factories,
+          rewind: config.rewind,
+          ...clients,
         });
-        setLive({ status: 'ready', factories: config.factories, client });
       })
       .catch(() => {
         if (!cancelled) setLive({ status: 'error' });
       });
     return () => {
       cancelled = true;
-      client?.close();
+      close();
     };
   }, []);
 
@@ -70,10 +105,4 @@ export function LiveProvider({ children }: { children: ReactNode }): ReactElemen
 
 export function useLive(): Live {
   return useContext(LiveContext);
-}
-
-/** The factory every panel shows: until a picker exists, the first in factories.json. */
-export function useFactory(): string | undefined {
-  const live = useLive();
-  return live.status === 'ready' ? live.factories[0] : undefined;
 }

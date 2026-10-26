@@ -2,8 +2,8 @@ import type { ReactElement } from 'react';
 import { EmptyState } from '../components/EmptyState';
 import { HomeMap } from '../components/HomeMap';
 import type { HomeMapRow } from '../lib/home-map';
+import { useFactory } from '../live/FactoryProvider';
 import { LivePanel, type PanelState } from '../live/LivePanel';
-import { useFactory } from '../live/LiveProvider';
 
 export function HomeMapBody({
   rows,
