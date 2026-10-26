@@ -87,6 +87,7 @@ test('gives every table in mc a primary key, one table per family', async () => 
       'laps',
       'lap_steps',
       'app_check_lines',
+      'lap_step_attempts',
       'projection_errors',
     ]),
   );

@@ -10,6 +10,14 @@ import {
   type Kind,
 } from '../app/lib/arch-diff';
 import { OUTCOMES } from '../app/lib/laps';
+import {
+  dataValue,
+  type MeasureKey,
+  type ScorecardRow,
+  scorecard,
+  versionLaps,
+  versionPin,
+} from '../app/lib/scorecard';
 import { joinParts } from '../app/lib/step-detail';
 import { seededDb } from '../scripts/fixture/seed';
 import { seedLaps } from '../scripts/fixture/seed-laps';
@@ -346,6 +354,51 @@ describe('version-strip on the seed', () => {
   });
 });
 
+describe('scorecard on the seed', () => {
+  let db: Db;
+  const sql = queries.find(([name]) => name === 'scorecard')?.[1] as string;
+  const expected = JSON.parse(
+    readFileSync(join(REPO_ROOT, 'fixtures', 'expected-scorecard.json'), 'utf8'),
+  ) as {
+    versions: { digest: string; measures: Record<string, { value: number; laps: number }> }[];
+  };
+
+  beforeAll(async () => {
+    db = await seededDb(REPO_ROOT, readFileSync(join(REPO_ROOT, 'fixtures', 'seed.sql'), 'utf8'));
+  }, 60_000);
+
+  afterAll(() => db.close());
+
+  test('every measure of every seed version equals fixtures/expected-scorecard.json', async () => {
+    const rows = (await db.query(sql, ['mission-control'])) as unknown as ScorecardRow[];
+    expect(expected.versions).toHaveLength(3);
+    for (const { digest, measures } of expected.versions) {
+      const card = scorecard(versionLaps(rows, digest));
+      const shown = Object.fromEntries(
+        Object.keys(measures).map((key) => {
+          const { value, laps } = card[key as MeasureKey];
+          const data = dataValue(value);
+          return [key, { value: data === 'n/a' ? null : Number(data), laps: laps.length }];
+        }),
+      );
+      expect({ digest, measures: shown }).toEqual({ digest, measures });
+    }
+  });
+
+  test('names each seed version by the pin the version strip names it by', async () => {
+    const rows = (await db.query(sql, ['mission-control'])) as unknown as ScorecardRow[];
+    const strip = queries.find(([name]) => name === 'version-strip')?.[1] as string;
+    const versions = (await db.query(strip, ['mission-control'])).filter((r) => r.digest !== null);
+    expect(versions).toHaveLength(3);
+    for (const { digest, pin_sha, first_run_at } of versions) {
+      expect(versionPin(rows, String(digest))).toEqual({
+        firstRunAt: new Date(first_run_at as string),
+        pin: pin_sha as string,
+      });
+    }
+  });
+});
+
 describe('decisions-timeline and improvements-ledger on the seed', () => {
   let db: Db;
   const named = (name: string) => queries.find(([n]) => n === name)?.[1] as string;
@@ -633,7 +686,7 @@ describe('arch-diff on versions known only from their laps', () => {
 
   beforeAll(async () => {
     db = await seededDb(REPO_ROOT, readFileSync(join(REPO_ROOT, 'fixtures', 'seed.sql'), 'utf8'));
-    // As runs projected before 0007 are until `reconcile:laps` writes their versions.
+    // As runs projected before 0008 are until `reconcile:laps` writes their versions.
     await db.query('DELETE FROM mc.versions');
   }, 60_000);
 

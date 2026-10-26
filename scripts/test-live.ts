@@ -25,6 +25,11 @@ const USAGE = [
   '  On the same run it checks the versions screen against the seed, picks two versions, and times',
   '  `fixture:write pin` to that screen before and after the hold, writing version-strip-check.txt,',
   '  version-strip-timings.json, version-strip.png and version-strip-design-probe.json.',
+  '  It then opens the scorecard of V1 against V2 and of V1 against V3, checks every number against',
+  '  fixtures/expected-scorecard.json and the not-yet-meaningful labels, and times',
+  '  `fixture:write step --step land` on a V2 lap to the screen before and after the hold, writing',
+  '  scorecard-vs-expected.json, scorecard-timings.json, scorecard.png and',
+  "  scorecard-design-probe.json; it restores those laps' land steps afterwards.",
   '  It checks the decisions screen against the seed, times `fixture:write verdict --pin <V2>` and',
   '  `fixture:write decision` to that screen before and after the hold, writing ledger-check.txt,',
   '  decisions-ledger-timings.json, decisions-ledger.png and decisions-ledger-design-probe.json.',
@@ -101,6 +106,7 @@ const LIVE_STEP = 'review';
 const CLICKED_STEP = 'check-app';
 const VERSIONS = '[data-live="version-strip"]';
 const ENTRY = `${VERSIONS} [data-version-entry]`;
+const SCORECARD = '[data-live="scorecard"]';
 const DECISION_QUERIES = ['decisions-timeline', 'improvements-ledger'] as const;
 const DECISION = '[data-live="decisions-timeline"] [data-decision-entry]';
 const LEDGER = '[data-live="improvements-ledger"]';
@@ -226,6 +232,20 @@ const countIs = (target: number) =>
   `document.querySelector('${PANEL} [data-count]')?.getAttribute('data-count') === '${target}'`;
 
 const markTime = (name: string) => `performance.getEntriesByName('${name}')[0]?.startTime ?? null`;
+
+/** When `query`'s panel was ready after navigation, and after its subscribe was sent (#13). */
+async function panelMarks(
+  page: Page,
+  query: string,
+): Promise<{ readyMs: number | null; firstSnapshotMs: number | null }> {
+  const readyAt = await page.evaluate<number | null>(markTime(`live:${query}:ready`));
+  const subscribedAt = await page.evaluate<number | null>(markTime(`live:${query}:subscribe-sent`));
+  return {
+    readyMs: readyAt === null ? null : Math.round(readyAt),
+    firstSnapshotMs:
+      readyAt === null || subscribedAt === null ? null : Math.round(readyAt - subscribedAt),
+  };
+}
 
 /**
  * One panel's timings. `readyMs` is from navigation (connection setup to Neon included);
@@ -653,16 +673,6 @@ async function openStep(page: Page, base: string, path: string, ready: string): 
   }
 }
 
-/** Runs `fixture:write pin` and times it from just before the spawn to the screen showing it. */
-function pinToScreen(page: Page, deps: Deps, target: number): Promise<number | null> {
-  return writeToScreen(
-    page,
-    deps,
-    ['pin'],
-    `document.querySelectorAll('${ENTRY}').length === ${target}`,
-  );
-}
-
 /**
  * Runs `fixture:write <args>` and times it from just before the spawn to `condition` holding on
  * the page.
@@ -691,6 +701,127 @@ async function writeToScreen(
   }
   return (await shown) ? Math.round(performance.now() - started) : null;
 }
+
+const entriesAre = (target: number) => `document.querySelectorAll('${ENTRY}').length === ${target}`;
+
+interface ScorecardTimings {
+  branch: string | null;
+  port: number | null;
+  readyMs: number | null;
+  firstSnapshotMs: number | null;
+  mergeToScreenMs: number | null;
+  holdSeconds: number;
+  renewals: number | null;
+  afterHoldMergeToScreenMs: number | null;
+  noReload: boolean | null;
+  limits: typeof LIMITS;
+}
+
+/** One number on the scorecard: its attributes, the laps it lists, and its summary's text. */
+export interface ShownCell {
+  digest: string | null;
+  measure: string | null;
+  value: string | null;
+  laps: string | null;
+  listed: number;
+  summary: string | null;
+}
+
+const cellsOnScreen = `[...document.querySelectorAll('${SCORECARD} [data-version][data-measure]')].map((cell) => ({
+  digest: cell.getAttribute('data-digest'),
+  measure: cell.getAttribute('data-measure'),
+  value: cell.getAttribute('data-value'),
+  laps: cell.getAttribute('data-laps'),
+  listed: cell.querySelectorAll('[data-lap]').length,
+  summary: cell.querySelector('summary')?.textContent ?? null,
+}))`;
+
+interface ExpectedScorecard {
+  versions: { digest: string; measures: Record<string, { value: number | null; laps: number }> }[];
+}
+
+interface ScorecardComparison {
+  digest: string;
+  measure: string;
+  screen: { value: number | null; laps: number } | null;
+  expected: { value: number | null; laps: number };
+  match: boolean;
+}
+
+/**
+ * Every measure of every version in `fixtures/expected-scorecard.json` against the cell the
+ * screen shows for it; a number the screen does not show is a mismatch. Also each cell whose lap
+ * list or summary disagrees with its `data-laps`.
+ */
+export function compareScorecard(
+  shown: readonly ShownCell[],
+  expected: ExpectedScorecard,
+): { comparisons: ScorecardComparison[]; mismatches: number; lapListFailures: string[] } {
+  const comparisons = expected.versions.flatMap(({ digest, measures }) =>
+    Object.entries(measures).map(([measure, want]): ScorecardComparison => {
+      const cell = shown.find((c) => c.digest === digest && c.measure === measure);
+      const screen =
+        cell === undefined
+          ? null
+          : { value: cell.value === 'n/a' ? null : Number(cell.value), laps: Number(cell.laps) };
+      const match = screen !== null && screen.value === want.value && screen.laps === want.laps;
+      return { digest, measure, screen, expected: want, match };
+    }),
+  );
+  const lapListFailures = shown.flatMap((cell) => {
+    const laps = Number(cell.laps);
+    const summary = Number(/^\d+/.exec(cell.summary ?? '')?.[0]);
+    return cell.listed === laps && summary === laps
+      ? []
+      : [
+          `${cell.digest} ${cell.measure}: data-laps ${cell.laps}, lists ${cell.listed}, summary "${cell.summary}"`,
+        ];
+  });
+  return {
+    comparisons,
+    mismatches: comparisons.filter((c) => !c.match).length,
+    lapListFailures,
+  };
+}
+
+/** Opens the scorecard of `a` against `b` and waits for it to be ready. */
+async function openScorecard(deps: Deps, base: string, factory: string, a: string, b: string) {
+  const page = await openPage(deps.env);
+  await page.goto(
+    `${base}/f/${factory}/scorecard?a=${encodeURIComponent(a)}&b=${encodeURIComponent(b)}`,
+  );
+  await page.evaluate('window.__mcNoReload = true');
+  const ready = await page.evaluate<boolean>(
+    pageWait(`document.querySelector('${SCORECARD}[data-state="ready"]') !== null`, READY_WAIT_MS),
+  );
+  if (!ready) {
+    await page.close();
+    throw new Error(`the scorecard did not reach data-state="ready" within ${READY_WAIT_MS} ms`);
+  }
+  return page;
+}
+
+/** Each difference's `data-meaningful` and whether it carries the `not yet meaningful` label. */
+const differencesOnScreen = `[...document.querySelectorAll('${SCORECARD} [data-difference]')].map((d) => ({
+  meaningful: d.getAttribute('data-meaningful'),
+  labelled: d.textContent.includes('not yet meaningful'),
+}))`;
+
+async function labelFailures(page: Page, pair: string, meaningful: boolean): Promise<string[]> {
+  const shown =
+    await page.evaluate<{ meaningful: string | null; labelled: boolean }[]>(differencesOnScreen);
+  if (shown.length === 0) return [`${pair} shows no differences`];
+  return shown
+    .filter((d) => d.meaningful !== String(meaningful) || d.labelled === meaningful)
+    .map(
+      (d) =>
+        `${pair}: a difference has data-meaningful=${d.meaningful}${d.labelled ? ' and is' : ' and is not'} labelled not yet meaningful`,
+    );
+}
+
+/** V2's merges on the open scorecard (version b) equal `target`. */
+const mergesAre = (target: number) =>
+  `document.querySelector('${SCORECARD} [data-version="b"][data-measure="merges"]')?.getAttribute('data-value') === '${target.toFixed(4)}'`;
 
 type PerQuery = Record<(typeof DECISION_QUERIES)[number], number | null>;
 
@@ -1288,6 +1419,18 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
     links: { scorecard: null, diff: null },
     limits: LIMITS,
   };
+  const scorecardTimings: ScorecardTimings = {
+    branch: timings.branch,
+    port: null,
+    readyMs: null,
+    firstSnapshotMs: null,
+    mergeToScreenMs: null,
+    holdSeconds,
+    renewals: null,
+    afterHoldMergeToScreenMs: null,
+    noReload: null,
+    limits: LIMITS,
+  };
   const decisionTimings: DecisionsTimings = {
     branch: timings.branch,
     port: null,
@@ -1351,6 +1494,9 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
   let server: ReturnType<typeof Bun.spawn> | undefined;
   let page: Page | undefined;
   let versionsPage: Page | undefined;
+  let scorePage: Page | undefined;
+  /** The `land` rows of the V2 laps the scorecard's writes land, as they were before them. */
+  const landed: { runId: string; row: string | null }[] = [];
   let decisionsPage: Page | undefined;
   const latestVerdict = async () => {
     const [row] = await db.query('SELECT sha FROM mc.verdicts ORDER BY committed_at DESC LIMIT 1');
@@ -1384,6 +1530,7 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
     stepTimings.port = port;
     mapTimings.port = port;
     versionTimings.port = port;
+    scorecardTimings.port = port;
     decisionTimings.port = port;
     issueTimings.port = port;
     lapsTimings.port = port;
@@ -1601,17 +1748,7 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
         `the versions screen did not reach data-state="ready" within ${READY_WAIT_MS} ms`,
       );
     }
-    const versionsReadyAt = await versionsPage.evaluate<number | null>(
-      markTime('live:version-strip:ready'),
-    );
-    const versionsSubscribedAt = await versionsPage.evaluate<number | null>(
-      markTime('live:version-strip:subscribe-sent'),
-    );
-    versionTimings.readyMs = versionsReadyAt === null ? null : Math.round(versionsReadyAt);
-    versionTimings.firstSnapshotMs =
-      versionsReadyAt === null || versionsSubscribedAt === null
-        ? null
-        : Math.round(versionsReadyAt - versionsSubscribedAt);
+    Object.assign(versionTimings, await panelMarks(versionsPage, 'version-strip'));
     const seed = await seedVersionMismatches(versionsPage, db, factory);
     writeFileSync(join(outDir, 'version-strip-check.txt'), `${seed.report}\n`);
     failures.push(...seed.mismatches.map((m) => `versions screen against the seed: ${m}`));
@@ -1624,10 +1761,83 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
     const entries = await versionsPage.evaluate<number>(
       `document.querySelectorAll('${ENTRY}').length`,
     );
-    versionTimings.pinToScreenMs = await pinToScreen(versionsPage, deps, entries + 1);
+    versionTimings.pinToScreenMs = await writeToScreen(
+      versionsPage,
+      deps,
+      ['pin'],
+      entriesAre(entries + 1),
+    );
     await latestPin();
     deps.out(
       `first pin reached the versions screen in ${versionTimings.pinToScreenMs ?? 'never'} ms`,
+    );
+
+    const [, , v3] = seed.digests;
+    scorePage = await openScorecard(deps, base, factory, v1, v2);
+    Object.assign(scorecardTimings, await panelMarks(scorePage, 'scorecard'));
+    const shown = await scorePage.evaluate<ShownCell[]>(cellsOnScreen);
+    failures.push(...(await labelFailures(scorePage, 'V1 against V2', true)));
+    const thinPage = await openScorecard(deps, base, factory, v1, v3);
+    try {
+      shown.push(...(await thinPage.evaluate<ShownCell[]>(cellsOnScreen)));
+      failures.push(...(await labelFailures(thinPage, 'V1 against V3', false)));
+    } finally {
+      await thinPage.close();
+    }
+    const expected: ExpectedScorecard = JSON.parse(
+      readFileSync(join(deps.repoRoot, 'fixtures', 'expected-scorecard.json'), 'utf-8'),
+    );
+    const compared = compareScorecard(shown, expected);
+    writeFileSync(
+      join(outDir, 'scorecard-vs-expected.json'),
+      `${JSON.stringify({ branch: timings.branch, ...compared }, null, 2)}\n`,
+    );
+    failures.push(
+      ...compared.comparisons
+        .filter((c) => !c.match)
+        .map(
+          (c) =>
+            `scorecard ${c.digest} ${c.measure}: screen ${JSON.stringify(c.screen)}, expected ${JSON.stringify(c.expected)}`,
+        ),
+      ...compared.lapListFailures.map((f) => `scorecard lap list: ${f}`),
+    );
+    writeFileSync(join(outDir, 'scorecard.png'), await scorePage.screenshot(1440));
+
+    const unlanded = await db.query(
+      `SELECT l.run_id, (SELECT to_jsonb(s)::text FROM mc.lap_steps s
+         WHERE s.run_id = l.run_id AND s.step_id = 'land') AS row
+       FROM mc.laps l
+       WHERE l.factory = $1 AND l.digest = $2 AND NOT EXISTS (
+         SELECT 1 FROM mc.lap_steps s WHERE s.run_id = l.run_id AND s.step_id = 'land'
+           AND s.output ->> 'outcome' IN ('merged', 'refused'))
+       ORDER BY l.started_at LIMIT 2`,
+      [factory, v2],
+    );
+    if (unlanded.length < 2) {
+      throw new Error(`the check branch has ${unlanded.length} V2 laps that did not land, not 2`);
+    }
+    const merges = Number(
+      await scorePage.evaluate<string>(
+        `document.querySelector('${SCORECARD} [data-version="b"][data-measure="merges"]').getAttribute('data-value')`,
+      ),
+    );
+    const landToScreen = async (page: Page, target: number): Promise<number | null> => {
+      const lap = unlanded[landed.length];
+      landed.push({ runId: String(lap.run_id), row: lap.row === null ? null : String(lap.row) });
+      const args = [
+        'step',
+        '--run',
+        String(lap.run_id),
+        '--step',
+        'land',
+        '--event',
+        'node_completed',
+      ];
+      return writeToScreen(page, deps, args, mergesAre(target));
+    };
+    scorecardTimings.mergeToScreenMs = await landToScreen(scorePage, merges + 1);
+    deps.out(
+      `first merge reached the scorecard in ${scorecardTimings.mergeToScreenMs ?? 'never'} ms`,
     );
 
     issuesPage = await openPage(deps.env);
@@ -1788,11 +1998,24 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
     versionTimings.renewals = await versionsPage.evaluate<number>(
       `performance.getEntriesByName('live:version-strip:renewed').length`,
     );
-    versionTimings.afterHoldPinToScreenMs = await pinToScreen(versionsPage, deps, entries + 2);
+    versionTimings.afterHoldPinToScreenMs = await writeToScreen(
+      versionsPage,
+      deps,
+      ['pin'],
+      entriesAre(entries + 2),
+    );
     await latestPin();
     versionTimings.noReload = await versionsPage.evaluate<boolean>('window.__mcNoReload === true');
     await versionsPage.close();
     versionsPage = undefined;
+
+    scorecardTimings.renewals = await scorePage.evaluate<number>(
+      `performance.getEntriesByName('live:scorecard:renewed').length`,
+    );
+    scorecardTimings.afterHoldMergeToScreenMs = await landToScreen(scorePage, merges + 2);
+    scorecardTimings.noReload = await scorePage.evaluate<boolean>('window.__mcNoReload === true');
+    await scorePage.close();
+    scorePage = undefined;
 
     for (const q of DECISION_QUERIES) {
       decisionTimings.renewals[q] = await decisionsPage.evaluate<number>(
@@ -1882,6 +2105,19 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
     if (versionsProbe.exitCode !== 0) {
       failures.push(`the design probe on the versions screen exited ${versionsProbe.exitCode}`);
     }
+    const scorecardProbe = Bun.spawnSync(
+      [
+        'bun',
+        'harness/design-probe.js',
+        `${base}/f/${factory}/scorecard?a=${encodeURIComponent(v1)}&b=${encodeURIComponent(v2)}`,
+        '--out',
+        join(outDir, 'scorecard-design-probe.json'),
+      ],
+      { cwd: deps.repoRoot, env: deps.env, stdout: 'ignore', stderr: 'inherit' },
+    );
+    if (scorecardProbe.exitCode !== 0) {
+      failures.push(`the design probe on the scorecard exited ${scorecardProbe.exitCode}`);
+    }
     const decisionsProbe = Bun.spawnSync(
       [
         'bun',
@@ -1950,6 +2186,10 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
       `${JSON.stringify(versionTimings, null, 2)}\n`,
     );
     writeFileSync(
+      join(outDir, 'scorecard-timings.json'),
+      `${JSON.stringify(scorecardTimings, null, 2)}\n`,
+    );
+    writeFileSync(
       join(outDir, 'decisions-ledger-timings.json'),
       `${JSON.stringify(decisionTimings, null, 2)}\n`,
     );
@@ -1969,6 +2209,7 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
     await page?.close().catch(() => undefined);
     await stepPage?.close().catch(() => undefined);
     await versionsPage?.close().catch(() => undefined);
+    await scorePage?.close().catch(() => undefined);
     await decisionsPage?.close().catch(() => undefined);
     await issuesPage?.close().catch(() => undefined);
     await lapsPage?.close().catch(() => undefined);
@@ -2007,6 +2248,24 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
       }
     } catch (err) {
       failures.push(`removing the inserted steps failed: ${(err as Error).message}`);
+    }
+    try {
+      // Archon's event rows the writes added stay: only `fixture:*` writes them on a check branch.
+      for (const { runId, row } of landed) {
+        await db.transaction(async (tx) => {
+          await tx.query(`DELETE FROM mc.lap_steps WHERE run_id = $1 AND step_id = 'land'`, [
+            runId,
+          ]);
+          if (row !== null) {
+            await tx.query(
+              'INSERT INTO mc.lap_steps SELECT * FROM jsonb_populate_record(NULL::mc.lap_steps, $1::text::jsonb)',
+              [row],
+            );
+          }
+        });
+      }
+    } catch (err) {
+      failures.push(`restoring the landed laps' land steps failed: ${(err as Error).message}`);
     }
     try {
       if (judgedBy.length > 0) {
@@ -2134,6 +2393,30 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
     );
   }
   if (versionTimings.noReload !== true) failures.push('the versions screen reloaded');
+  if (!within(scorecardTimings.readyMs, LIMITS.readyMs)) {
+    failures.push(`scorecard ready after ${scorecardTimings.readyMs} ms, limit ${LIMITS.readyMs}`);
+  }
+  if (!within(scorecardTimings.firstSnapshotMs, LIMITS.firstSnapshotMs)) {
+    failures.push(
+      `scorecard first snapshot after ${scorecardTimings.firstSnapshotMs} ms, limit ${LIMITS.firstSnapshotMs}`,
+    );
+  }
+  if (!within(scorecardTimings.mergeToScreenMs, LIMITS.insertToScreenMs)) {
+    failures.push(
+      `first merge reached the scorecard after ${scorecardTimings.mergeToScreenMs} ms, limit ${LIMITS.insertToScreenMs}`,
+    );
+  }
+  if (!within(scorecardTimings.afterHoldMergeToScreenMs, LIMITS.insertToScreenMs)) {
+    failures.push(
+      `merge after ${holdSeconds}s reached the scorecard after ${scorecardTimings.afterHoldMergeToScreenMs} ms, limit ${LIMITS.insertToScreenMs}`,
+    );
+  }
+  if (holdSeconds >= 180 && (scorecardTimings.renewals ?? 0) < RENEWALS_IN_180S) {
+    failures.push(
+      `${scorecardTimings.renewals} scorecard seal renewals in ${holdSeconds}s, expected at least ${RENEWALS_IN_180S}`,
+    );
+  }
+  if (scorecardTimings.noReload !== true) failures.push('the scorecard reloaded');
   if (!within(decisionTimings.readyMs, LIMITS.readyMs)) {
     failures.push(
       `decisions screen ready after ${decisionTimings.readyMs} ms, limit ${LIMITS.readyMs}`,
@@ -2249,6 +2532,7 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
   deps.out(`step detail: ${JSON.stringify(stepTimings)}`);
   deps.out(`home map: ${JSON.stringify(mapTimings)}`);
   deps.out(`versions: ${JSON.stringify(versionTimings)}`);
+  deps.out(`scorecard: ${JSON.stringify(scorecardTimings)}`);
   deps.out(`decisions: ${JSON.stringify(decisionTimings)}`);
   deps.out(`issues: ${JSON.stringify(issueTimings)}`);
   deps.out(`laps: ${JSON.stringify(lapsTimings)}`);
