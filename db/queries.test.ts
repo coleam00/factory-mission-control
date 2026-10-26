@@ -249,6 +249,59 @@ describe('version-strip on the seed', () => {
   });
 });
 
+describe('decisions-timeline and improvements-ledger on the seed', () => {
+  let db: Db;
+  const named = (name: string) => queries.find(([n]) => n === name)?.[1] as string;
+  const timeline = () => db.query(named('decisions-timeline'), ['mission-control']);
+  const ledgerRows = () => db.query(named('improvements-ledger'), ['mission-control']);
+  const byPin = async (prefix: string) =>
+    (await ledgerRows()).find((r) => String(r.pin_sha).startsWith(prefix));
+
+  beforeAll(async () => {
+    db = await seededDb(REPO_ROOT, readFileSync(join(REPO_ROOT, 'fixtures', 'seed.sql'), 'utf8'));
+  }, 60_000);
+
+  afterAll(() => db.close());
+
+  test('the timeline is every decision, each joined to its pin and that pin’s version by prefix', async () => {
+    const versions = await db.query('SELECT digest, pin_sha FROM mc.versions WHERE factory = $1', [
+      'mission-control',
+    ]);
+    const decisions = await db.query('SELECT date::text AS date, title, version FROM mc.decisions');
+    const rows = await timeline();
+    expect(rows.map((r) => r.title).sort()).toEqual(decisions.map((d) => d.title).sort());
+    const joined = rows.filter((r) => r.pin_sha !== null);
+    expect(joined).toHaveLength(2);
+    for (const row of joined) {
+      expect(String(row.pin_sha)).toStartWith(String(row.version));
+      expect(versions).toContainEqual({ digest: row.digest, pin_sha: row.pin_sha });
+    }
+  });
+
+  test('a pin’s laps are this factory’s archon-loop laps of the versions it labels', async () => {
+    const counted = await db.query(
+      `SELECT v.pin_sha, count(*)::int AS laps FROM mc.laps l
+       JOIN mc.versions v ON v.factory = l.factory AND v.digest = l.digest
+       WHERE l.factory = $1 AND l.workflow_name = 'archon-loop' GROUP BY v.pin_sha`,
+      ['mission-control'],
+    );
+    const rows = await ledgerRows();
+    for (const { pin_sha, laps } of counted) {
+      expect(rows.find((r) => r.pin_sha === pin_sha)?.laps).toBe(laps);
+    }
+    expect(await byPin('8e3e1cef')).toMatchObject({ verdict: 'helped' });
+    expect(await byPin('5ffd60c6')).toMatchObject({ verdict: null });
+  });
+
+  test('a verdict on V2 by prefix gives V2 that verdict', async () => {
+    await db.transaction(async (tx) => {
+      await writeRow(tx, 'verdict', new Date('2026-10-25T12:00:00Z'), '5ffd60c6');
+    });
+    expect(await byPin('5ffd60c6')).toMatchObject({ verdict: 'inconclusive' });
+    expect(await byPin('58c5f774')).toMatchObject({ verdict: null });
+  });
+});
+
 describe('issue-graph on the seed', () => {
   let db: Db;
   const sql = queries.find(([name]) => name === 'issue-graph')?.[1] as string;
