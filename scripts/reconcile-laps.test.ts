@@ -179,6 +179,56 @@ test('a run whose lap was never inserted gets one', async () => {
   expect(await snapshot(db)).toEqual(projected);
 });
 
+test('a finished run projected before versions gets its version, the same in either order with a late pin, and the next run leaves it alone', async () => {
+  await rows(`INSERT INTO mc.factories VALUES
+    ('mission-control', 'coleam00/factory-mission-control', 'coleam00/factory-mission-control',
+     'http://localhost:3090')`);
+  const [codebase] = await rows(`INSERT INTO public.remote_agent_codebases (name)
+    VALUES ('coleam00/factory-mission-control') RETURNING id`);
+  for (const minutesBefore of [60, 30]) {
+    await rows(
+      `INSERT INTO public.remote_agent_workflow_runs
+         (workflow_name, codebase_id, status, user_message, metadata, started_at, completed_at)
+       VALUES ('archon-loop', $1, 'completed', 'Run the loop', $2, $3, $4)`,
+      [
+        codebase?.id,
+        JSON.stringify({ workflow_source: { digest: 'sha256:pack' } }),
+        new Date(NOW.getTime() - minutesBefore * 60_000).toISOString(),
+        NOW.toISOString(),
+      ],
+    );
+  }
+  const versions = () => rows('SELECT * FROM mc.versions');
+  const live = await versions();
+  expect(live).toEqual([
+    {
+      factory: 'mission-control',
+      digest: 'sha256:pack',
+      first_run_at: new Date(NOW.getTime() - 60 * 60_000),
+      pin_sha: null,
+    },
+  ]);
+
+  await rows('DELETE FROM mc.versions');
+  expect((await run([])).out).toEqual(['reconcile: 1 run(s) repaired']);
+  expect(await versions()).toEqual(live);
+
+  await rows(
+    `INSERT INTO mc.pins (sha, archon_sha, reason, committed_at)
+     VALUES ('pin', 'archon', 'why', $1)`,
+    [new Date(NOW.getTime() - 90 * 60_000).toISOString()],
+  );
+  const labelled = await versions();
+  expect(labelled).toEqual([{ ...live[0], pin_sha: 'pin' }]);
+  expect((await run([])).out).toEqual(['reconcile: 0 run(s) repaired']);
+
+  await rows('DELETE FROM mc.versions');
+  const { code, out } = await run([]);
+  expect(code).toBe(0);
+  expect(out).toEqual(['reconcile: 1 run(s) repaired']);
+  expect(await versions()).toEqual(labelled);
+});
+
 test('the replay projects events in Archon order, not the order their rows are stored in', async () => {
   const runId = await archonRun('running');
   const retry = new Date(NOW.getTime() + 60_000);

@@ -21,7 +21,8 @@ afterAll(() => db.close());
 
 beforeEach(async () => {
   await db.query(`TRUNCATE public.remote_agent_workflow_runs, public.remote_agent_codebases CASCADE;
-    TRUNCATE mc.laps, mc.lap_steps, mc.app_check_lines, mc.projection_errors, mc.factories`);
+    TRUNCATE mc.laps, mc.lap_steps, mc.app_check_lines, mc.projection_errors, mc.factories,
+      mc.versions, mc.pins`);
   runId = await newRun();
 });
 
@@ -198,11 +199,17 @@ test('every projection function stops a lock wait after 100 ms, and only inside 
   const functions = await db.query(`SELECT p.proname, p.proconfig FROM pg_proc p
     JOIN pg_namespace n ON n.oid = p.pronamespace JOIN pg_language l ON l.oid = p.prolang
     WHERE n.nspname = 'mc' AND l.lanname = 'plpgsql' ORDER BY p.proname`);
-  expect(functions).toEqual(
-    ['project_app_check_lines', 'project_run', 'project_step_event', 'record_projection_error'].map(
-      (proname) => ({ proname, proconfig: ['lock_timeout=100ms'] }),
-    ),
-  );
+  expect(functions).toEqual([
+    // It relabels versions in the transaction that writes a pin, never in Archon's, so it waits.
+    { proname: 'label_versions', proconfig: null },
+    ...[
+      'project_app_check_lines',
+      'project_run',
+      'project_step_event',
+      'project_version',
+      'record_projection_error',
+    ].map((proname) => ({ proname, proconfig: ['lock_timeout=100ms'] })),
+  ]);
 
   await stepEvent('check-app', 'node_completed');
   expect(await db.query('SHOW lock_timeout')).toEqual([{ lock_timeout: '0' }]);
@@ -471,4 +478,87 @@ test('a lap follows a change of its run’s digest or codebase', async () => {
   expect(await db.query('SELECT factory, digest FROM mc.laps')).toEqual([
     { factory: 'mc-fence-proof', digest },
   ]);
+});
+
+async function factoryCodebase(): Promise<string> {
+  await db.query(`INSERT INTO mc.factories VALUES
+    ('mission-control', 'coleam00/factory-mission-control', 'coleam00/factory-mission-control',
+     'http://localhost:3090')`);
+  const [codebase] = await db.query(`INSERT INTO public.remote_agent_codebases (name)
+    VALUES ('coleam00/factory-mission-control') RETURNING id`);
+  return String(codebase?.id);
+}
+
+function runAt(
+  codebaseId: string,
+  startedAt: Date,
+  { workflow = 'archon-loop', digest = DIGEST }: { workflow?: string; digest?: string | null } = {},
+): Promise<Row[]> {
+  return db.query(
+    `INSERT INTO public.remote_agent_workflow_runs
+       (workflow_name, codebase_id, status, user_message, metadata, started_at)
+     VALUES ($1, $2, 'running', 'Run the loop', $3, $4)`,
+    [
+      workflow,
+      codebaseId,
+      JSON.stringify(digest ? { workflow_source: { digest } } : {}),
+      startedAt,
+    ],
+  );
+}
+
+function pin(sha: string, committedAt: Date): Promise<Row[]> {
+  return db.query(
+    `INSERT INTO mc.pins (sha, archon_sha, reason, committed_at) VALUES ($1, 'archon', 'why', $2)`,
+    [sha, committedAt],
+  );
+}
+
+const minutes = (n: number) => new Date(NOW.getTime() + n * 60_000);
+
+test('a factory’s archon-loop run with a new digest is one version labelled by the pin before it, and a second run adds none', async () => {
+  const codebase = await factoryCodebase();
+  await pin('before', minutes(-10));
+  await pin('after', minutes(10));
+  await runAt(codebase, NOW);
+  await runAt(codebase, minutes(20));
+  await runAt(codebase, minutes(-30), { workflow: 'archon-fix' });
+  await runAt(codebase, minutes(-30), { digest: null });
+
+  expect(await db.query('SELECT * FROM mc.versions')).toEqual([
+    { factory: 'mission-control', digest: DIGEST, first_run_at: NOW, pin_sha: 'before' },
+  ]);
+  expect(await projectionErrors()).toEqual([]);
+});
+
+test('a pin written after the run labels its version', async () => {
+  await runAt(await factoryCodebase(), NOW);
+  expect(await db.query('SELECT pin_sha FROM mc.versions')).toEqual([{ pin_sha: null }]);
+
+  await pin('before', minutes(-10));
+  expect(await db.query('SELECT pin_sha FROM mc.versions')).toEqual([{ pin_sha: 'before' }]);
+
+  await pin('after', minutes(10));
+  expect(await db.query('SELECT pin_sha FROM mc.versions')).toEqual([{ pin_sha: 'before' }]);
+});
+
+test('a version that cannot be written keeps the lap and is recorded', async () => {
+  const codebase = await factoryCodebase();
+  const rolledBack = db.transaction(async (tx) => {
+    await tx.query('ALTER TABLE mc.versions ADD CONSTRAINT no_rows CHECK (false) NOT VALID');
+    const [run] = await tx.query(
+      `INSERT INTO public.remote_agent_workflow_runs
+         (workflow_name, codebase_id, status, user_message, metadata)
+       VALUES ('archon-loop', $1, 'running', 'Run the loop', $2) RETURNING id`,
+      [codebase, JSON.stringify({ workflow_source: { digest: DIGEST } })],
+    );
+    expect(await tx.query('SELECT factory FROM mc.laps WHERE run_id = $1', [run?.id])).toEqual([
+      { factory: 'mission-control' },
+    ]);
+    expect(await tx.query('SELECT source, run_id, sqlstate FROM mc.projection_errors')).toEqual([
+      { source: 'mc_project_run_insert', run_id: run?.id, sqlstate: '23514' },
+    ]);
+    throw new Error('rollback after the run committed');
+  });
+  await expect(rolledBack).rejects.toThrow('rollback after the run committed');
 });
