@@ -23,7 +23,7 @@ import { seededDb } from '../scripts/fixture/seed';
 import { seedLaps } from '../scripts/fixture/seed-laps';
 import { eventData, writeRow } from '../scripts/fixture/write';
 import { REPO_ROOT } from '../scripts/lib/cli';
-import type { Db } from '../scripts/lib/db';
+import type { Db, Tx } from '../scripts/lib/db';
 import { runMigrations } from '../scripts/migrate';
 import { LIVE_QUERY_NAME, loadLiveQueries } from '../server/live';
 import { archonDb, migrationFiles } from './test-db';
@@ -732,6 +732,46 @@ describe('arch-diff on versions known only from their laps', () => {
       'changed subagent archon-manager · manage · holdout-writer',
     ]);
     expect(diffVersions(rows, v1, v3)).toEqual({ status: 'unrecorded', digests: [v3] });
+  });
+});
+
+describe("every pin reader on another factory's pin", () => {
+  let db: Db;
+  const sqlOf = (name: string) => queries.find(([n]) => n === name)?.[1] as string;
+  const readers = ['arch-diff', 'decisions-timeline', 'improvements-ledger'];
+  const read = async (tx: Tx, name: string, factory: string) =>
+    (await tx.query(sqlOf(name), [factory])).map((r) => JSON.stringify(r)).sort();
+
+  beforeAll(async () => {
+    db = await seededDb(REPO_ROOT, readFileSync(join(REPO_ROOT, 'fixtures', 'seed.sql'), 'utf8'));
+  }, 60_000);
+
+  afterAll(() => db.close());
+
+  test('neither labels, lists nor names it outside its own factory', async () => {
+    const rollback = new Error('rollback');
+    await db
+      .transaction(async (tx) => {
+        const before = await Promise.all(readers.map((name) => read(tx, name, 'mission-control')));
+        // Newer than V2's pin, older than V2's first lap, prefixed by V2's decision, and naming
+        // V1's architecture: any reader that takes it would label, list or diff V2 differently.
+        await tx.query(`INSERT INTO mc.pins (sha, archon_sha, reason, committed_at, factory)
+          VALUES ('5ffd60c6-north-star', 'abd85896e7971c9ac5199ed7e87973f27130250f', 'why',
+            '2026-10-09T19:00:00Z', 'north-star')`);
+        const after = await Promise.all(readers.map((name) => read(tx, name, 'mission-control')));
+        expect(after).toEqual(before);
+
+        const ledger = await tx.query(sqlOf('improvements-ledger'), ['north-star']);
+        expect(ledger.map((r) => r.pin_sha)).toEqual(['5ffd60c6-north-star']);
+        expect(await tx.query(sqlOf('improvements-ledger'), ['empty-check'])).toEqual([]);
+        const timeline = await tx.query(sqlOf('decisions-timeline'), ['empty-check']);
+        expect(timeline.map((r) => r.pin_sha).filter((sha) => sha !== null)).toEqual([]);
+        expect(await tx.query(sqlOf('arch-diff'), ['empty-check'])).toEqual([]);
+        throw rollback;
+      })
+      .catch((error) => {
+        if (error !== rollback) throw error;
+      });
   });
 });
 
