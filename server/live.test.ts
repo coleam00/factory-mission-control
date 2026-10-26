@@ -31,13 +31,13 @@ const REWIND = 'rewind-2026-10-24t11-00-00z';
 
 /** A `Live` whose sealers record what they sealed, each under its branch's name. */
 function fakeLive({ openRewind = true }: { openRewind?: boolean | (() => Promise<never>) } = {}) {
-  const sealed: [string, string][] = [];
+  const sealed: [string, readonly string[]][] = [];
   const sealedOn: string[] = [];
   const opened: string[] = [];
   const sealer = (branch: string, url: string) => ({
     url,
-    seal: async (sql: string, factory: string) => {
-      sealed.push([sql, factory]);
+    seal: async (sql: string, params: readonly string[]) => {
+      sealed.push([sql, params]);
       sealedOn.push(branch);
       return { capability: 'cap', queryFingerprint: 'fp', expiresAt: 60_000 };
     },
@@ -94,7 +94,34 @@ describe('POST /api/live/:name', () => {
       queryFingerprint: 'fp',
       expiresAt: 60_000,
     });
-    expect(sealed).toEqual([[queries.get('status-strip') as string, 'mission-control']]);
+    expect(sealed).toEqual([[queries.get('status-strip') as string, ['mission-control']]]);
+  });
+
+  test("a step panel's query seals with the step's workflow and path after the factory", async () => {
+    const { app, sealed } = fakeLive();
+    const body = { factory: 'mission-control', args: ['archon-loop', 'check-app'] };
+    expect((await app.request('/api/live/step-yaml', post(body))).status).toBe(200);
+    expect(sealed).toEqual([
+      [queries.get('step-yaml') as string, ['mission-control', 'archon-loop', 'check-app']],
+    ]);
+  });
+
+  test("args that do not fill the query's parameters are a 400 and seal nothing", async () => {
+    const { app, sealed } = fakeLive();
+    for (const [name, args] of [
+      ['step-yaml', undefined],
+      ['step-yaml', ['archon-loop']],
+      ['step-yaml', ['archon-loop', 7]],
+      ['step-yaml', 'archon-loop/check-app'],
+      ['status-strip', ['archon-loop']],
+    ] as const) {
+      const res = await app.request(
+        `/api/live/${name}`,
+        post({ factory: 'mission-control', args }),
+      );
+      expect(res.status).toBe(400);
+    }
+    expect(sealed).toEqual([]);
   });
 
   test('a factory that is a row of mc.factories but not in the factories file is a 400', async () => {
