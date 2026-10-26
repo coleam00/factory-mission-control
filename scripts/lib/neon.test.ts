@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test';
 import { SERVE_PORTS } from '../../server/ports';
-import { createNeonApi } from './neon';
+import { createNeonApi, REALTIME_ORIGINS } from './neon';
 
 type Request = { url: string; method: string; body?: unknown };
 
@@ -69,6 +69,55 @@ test('createBranch asks for a read-write compute and Realtime for the 16 allowed
   expect(body.branch.realtime.allowed_origins).toContain(`http://localhost:${SERVE_PORTS.min}`);
   expect(body.branch.realtime.allowed_origins).toContain(`http://localhost:${SERVE_PORTS.max}`);
   expect(body.endpoints).toEqual([{ type: 'read_write' }]);
+});
+
+test.each(['main', 'fixture', 'check-abc'])(
+  'createRewindBranch and deleteRewindBranch refuse %s without a request',
+  async (name) => {
+    const { api, requests } = fakeNeon(() => ({ operations: [] }));
+    await expect(api.deleteRewindBranch({ id: 'br-x', name })).rejects.toThrow(
+      `refusing branch '${name}'`,
+    );
+    await expect(
+      api.createRewindBranch({ name, parentId: 'br-main', at: '2026-10-24T11:00:00.000Z' }),
+    ).rejects.toThrow(`refusing branch '${name}'`);
+    expect(requests).toEqual([]);
+  },
+);
+
+test('createRewindBranch asks for the parent at that time, a read-write compute and Realtime', async () => {
+  const { api, requests } = fakeNeon(() => ({
+    branch: { id: 'br-rewind', name: 'rewind-2026-10-24t11-00-00z', created_at: '' },
+    operations: [],
+  }));
+  await api.createRewindBranch({
+    name: 'rewind-2026-10-24t11-00-00z',
+    parentId: 'br-main',
+    at: '2026-10-24T11:00:00.000Z',
+  });
+  const [request] = requests;
+  expect(`${request.method} ${request.url}`).toBe(
+    'POST https://console.neon.tech/api/v2/projects/proj/branches',
+  );
+  expect(request.body).toEqual({
+    branch: {
+      name: 'rewind-2026-10-24t11-00-00z',
+      parent_id: 'br-main',
+      parent_timestamp: '2026-10-24T11:00:00.000Z',
+      realtime: { allowed_origins: REALTIME_ORIGINS },
+    },
+    endpoints: [{ type: 'read_write' }],
+  });
+  expect(REALTIME_ORIGINS).toHaveLength(16);
+});
+
+test("branchEndpoints lists the branch's endpoints with their hosts", async () => {
+  const endpoint = { id: 'ep-1', branch_id: 'br-1', host: 'ep-1.c-14.us-east-1.aws.neon.tech' };
+  const { api, requests } = fakeNeon(() => ({ endpoints: [endpoint] }));
+  expect(await api.branchEndpoints('br-1')).toEqual([endpoint]);
+  expect(requests.map((request) => `${request.method} ${request.url}`)).toEqual([
+    'GET https://console.neon.tech/api/v2/projects/proj/branches/br-1/endpoints',
+  ]);
 });
 
 test('a failed request names the method, path and status, never the key', async () => {
