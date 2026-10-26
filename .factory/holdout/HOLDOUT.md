@@ -272,7 +272,7 @@ Author: writer, 2026-10-24, first set for the whole release (docs/mission-contro
 ## H-15 The map and every step detail are exactly the pinned code, and change when the code does
 Protects: 4.1; invariant 6; 11.4; journey 1; 4.2 architecture diff; invariant 3 (scenarios in the template)
 Touches: architecture job, home map, step detail, architecture diff
-Setup: the check app. Make a local copy of the pack and template in `fixtures/pack/`, and in the copy: change one sentence of `check-app`'s command file; add a step with a `when` condition to `archon-loop`; remove one inline subagent from another step; and write a scenario containing the canary `CANARY-PELICAN-2210` into the template's holdout scenario file. Run `bun run arch:parse` on the original and on the copy (local paths), so two versions exist.
+Setup: the check app. Make a local copy of the pack and template in `fixtures/pack/`, and in the copy: change one sentence of `check-app`'s command file; add a step with a `when` condition to `archon-loop`; remove one inline subagent from another step; and write a scenario containing the canary `CANARY-PELICAN-2210` into the template's holdout scenario file. Run `bun run arch:parse` on the original and on the copy (local paths), so two versions exist. Label each version the way the factory does, with a pin commit delivered as a push event on ai-software-factory in the appendix form (`Pin Archon <sha>: <reason>` naming the Archon commit by its first 8 characters, with `Hypothesis` and `Measure` trailers), and with laps of that version's digest inserted after its pin; never only the seed's form, where pin and architecture carry the identical full sha.
 Steps:
 1. Open the home map at each version. Click `check-app` and read its detail; click a ship stage that comes from an include of an include, if the pack has one.
 2. Compare the prompt, subagent instruction files, workflow YAML and `when` text on screen with the files at that version, byte for byte.
@@ -284,6 +284,7 @@ Expect:
 - Every text equals the file at that version exactly; switching versions switches the text.
 - The diff lists exactly the changed prompt, the added step and the removed subagent, and nothing else.
 - The canary appears nowhere.
+- No screen at either version says there is no architecture, nothing available, or not recorded: a pin naming the commit by a short sha finds the architecture the job stored (tightened 2026-10-26, escaped defect #157).
 Author: writer, 2026-10-24, first set for the whole release (docs/mission-control.prd.md)
 
 ## H-16 Health names each failed lap's cause and flags a stuck step at the right moment
@@ -445,3 +446,138 @@ Expect:
 - The home map's live counts show the one factory's laps only; the lap of the codebase in no factory appears nowhere and changes no count.
 - With a factory that has no data, every screen reaches ready and shows a one-sentence empty state with at most one button: never an outage message, and never "does not exist" for a factory that is in the list.
 Author: writer, 2026-10-25, coverage of PRD 11.6 factories before the loop builds it
+
+## Shared setup for H-47..H-55: real pins and their commits in every form
+
+"Real pins" means pin commits delivered as push events on ai-software-factory exactly as the appendix writes them: subject `Pin Archon <sha>: <reason>` (the reason may itself contain a colon or a semicolon), a blank line, `Hypothesis:` and `Measure:` trailers, and after them a `Co-Authored-By:` trailer, the way commits on that repository end. The pin commit's own id in the push event is its full 40-character sha. "An architecture for commit C" means `bun run arch:parse <archon-sha> <factory-sha>` run for C, with whichever sha form the scenario says it is given. Unless a scenario says otherwise the Archon commits are commits of a local git repository holding a copy of `fixtures/pack/` (pack and template), each changing something visible: C1 as copied; C2 with one sentence of `check-app`'s command file changed and a step with a `when` condition added to `archon-loop`; C3 with one inline subagent removed from another step. If the job cannot read a commit of a local repository, use real `coleam00/Archon` commits whose packs differ; if neither works, the scenario is INCONCLUSIVE, not PASS. A version exists when laps of its digest are inserted, as Archon would, after its pin and before the next one. "Every surface" means: the home map as it first opens (no version picked), the map at that version picked from the version strip, the detail of `check-app` and of one ship stage opened by clicking, the same step detail addresses opened directly in a fresh tab and reloaded, and the architecture diff against each other version. Record each screen's text and every panel's `data-state`.
+
+## H-47 Pins written the factory's way show their architecture on every screen, whichever form each side used
+Protects: 4.1 (the home map is the pinned version; every step detail comes from the pinned code); 4.2 architecture diff; invariant 6; 11.2 Architecture row; 11.4 architecture job; 11.5 pin format; appendix pin commit
+Touches: push ingestion and the pin parser, the architecture job, the join from a version to its architecture, home map, step detail, architecture diff, version strip
+Setup: the check app on the seed, plus three versions from real pins: V1 pinned on C1 by its first 8 characters, its architecture parsed with C1's full 40-character sha; V2 pinned on C2 by its full 40 characters, its architecture parsed with C2's first 8 characters; V3 pinned on C3 by its first 12 characters, its architecture parsed with C3's full sha. V3 is the latest version.
+Steps:
+1. Open every surface for V1, V2 and V3, and for every seed version.
+2. Open the architecture diff for V1 against V2, V2 against V3, and V1 against V3, in both orders where the screen lets you choose the order.
+Expect:
+- The home map as it first opens shows V3's architecture: C3's steps, without the removed subagent.
+- At each version, the map and every step detail show that commit's pack and template, byte for byte as the files are at that commit: V2's `check-app` prompt carries the changed sentence and V1's does not; the step added in C2 is on V2's and V3's maps and not on V1's.
+- A step detail opened directly and reloaded shows the same text as the one reached by clicking.
+- The diffs list exactly what changed between the commits (the changed prompt and the added step between V1 and V2, the removed subagent between V2 and V3, all three between V1 and V3), never "no changes", and never every workflow added or removed.
+- No surface for any of these versions, and none for a seed version, says there is no architecture, nothing available, not recorded, or not found, and every panel reaches `data-state="ready"`.
+Author: writer, 2026-10-26, escaped defect #157 (one writer recorded the Archon commit as a short sha and another as the full sha, so the map, step details and diff said nothing was available)
+
+## H-48 A prefix shared by two commits never shows either one's architecture as if it were the pinned one
+Protects: 4.1 and invariant 6 (the map is the code at that version, never typed in or guessed); 4.2 architecture diff; 11.2 Architecture row
+Touches: the join from a version to its architecture, home map, step detail, architecture diff
+Setup: the check app. In the local pack repository, make commits (scripted, for example with `git commit-tree`, changing a file each time) until two commits CA and CB share their first 5 or more characters and differ before the 8th; give CA and CB visibly different packs (CB has one extra step). Parse an architecture for each, with its full sha. Deliver real pins: VA pinned on CA by its first 8 characters; VB pinned on CB by its first 8 characters; VX pinned by only the prefix CA and CB share. Make VX the latest version.
+Steps:
+1. Open every surface for VA, VB and VX.
+2. Take a step detail address of CB's extra step from VB and change only the version part to VX's; open it.
+3. Open the diff of VA against VB, of VX against VA, and of VX against VB.
+Expect:
+- VA shows exactly CA's architecture and VB exactly CB's, on every surface: VA never shows CB's extra step, VB always does. Swapping which of the two was parsed first, or parsed last, does not change this.
+- VX shows neither commit's architecture on any surface, including the home map as it first opens: it says, in one sentence with at most one button, that this version's architecture cannot be told apart or is not recorded. It never shows CA's or CB's steps, prompts or subagents, and never chooses one of them silently by age, order or anything else.
+- The diff of VA against VB lists the extra step and nothing else. A diff involving VX never lists changes and never says "no changes": it says VX's architecture is not available.
+- The step 2 address does not show CB's step.
+Author: writer, 2026-10-26, escaped defect #157 (class: a short form of a commit must resolve to exactly one architecture or to none)
+
+## H-49 A pin naming a commit the job never parsed says so, and never borrows a neighbour's architecture
+Protects: 4.1 and invariant 6; 4.2 architecture diff; 11.2 Architecture row; engineering.md (an empty state is one sentence and at most one button)
+Touches: the join from a version to its architecture, home map, step detail, architecture diff, empty states
+Setup: the check app with V1 and V2 as in H-47 (architectures parsed). Deliver real pins for three more versions, each newer than the last: VU8 naming by 8 characters an Archon commit that exists but was never parsed; VU40 naming one by its full 40 characters, also never parsed; VN naming 8 characters that are no commit at all. Make VN the latest version.
+Steps:
+1. Open every surface for VU8, VU40 and VN, including the home map as it first opens.
+2. Take step detail addresses from V2 and change only the version part to each of these versions; open them.
+3. Open the diff of each against V1 and against V2.
+Expect:
+- Each of the three versions says, in one sentence with at most one button, that its architecture is not recorded (or words to that effect), on the map, on every step detail and in every diff. It is never an outage message and never a spinner left running: every panel has settled within 2 seconds.
+- None of them ever shows V1's, V2's, the seed's or any other version's steps, prompts or subagents: not the latest parsed architecture, not the nearest older one, not the one parsed last.
+- No diff involving them says "no changes" or lists anything as added, removed or changed.
+- V1 and V2 still show their own architectures on every surface.
+Author: writer, 2026-10-26, escaped defect #157 (class: a missing architecture must look missing, not like another version's)
+
+## H-50 The architecture appears live, whichever of the pin and the job came first
+Protects: invariant 5 (every panel live, no refresh button); 4.1; 4.2 architecture diff; 11.2 (pins by push webhook, nightly reconcile and backfill)
+Touches: push ingestion, the architecture job, home map, step detail, architecture diff, live queries
+Setup: the check app with V1 as in H-47. Open the home map, a `check-app` step detail and the architecture diff, and set the reload marker in each.
+Steps:
+1. Deliver a real pin for V4 naming C2 by its first 8 characters, and insert V4's laps. Record what the open screens show.
+2. Run the architecture job for C2 given its full sha. Record when each open screen changes.
+3. Parse an architecture for C3 given its first 8 characters, first; then deliver a real pin for V5 naming C3 by its full 40 characters and insert V5's laps. Record when each open screen changes.
+4. Deliver V4's push event again (a webhook redelivery), run the nightly reconcile or backfill once, and restart serve.
+Expect:
+- After step 1, V4 reads as architecture not recorded on every surface (as H-49), never V1's.
+- Within 5 seconds of step 2, without a reload, the home map, the open step detail and the diff show C2's architecture for V4; after step 3 they do the same for V5 with C3's.
+- After step 4 nothing changes: no version loses its architecture, none gains a second entry, and every surface still shows the same text after the restart.
+- `judges/liveness.js` PASS on the step 2 and step 3 timings.
+Author: writer, 2026-10-26, escaped defect #157 (class: the join must hold whichever writer wrote first and after every re-delivery)
+
+## H-51 Two pins on one commit, named two ways, are the same commit
+Protects: 4.2 architecture diff and version strip; 11.2 (versions keyed by digest, labelled by the most recent pin; Architecture row); 11.4
+Touches: the join from a version to its architecture, architecture diff, version strip
+Setup: the check app. Deliver a real pin for VP naming C2 by its first 8 characters; then, after VP's laps, a second real pin VQ naming the same C2 by its full 40 characters, whose only change on ai-software-factory is one sentence of the template's holdout-verifier instruction file (so VQ's laps have their own digest). Parse each version's architecture with C2's sha given in the opposite form from its pin, and the factory commit given as its pin commit's full sha.
+Steps:
+1. Open every surface for VP and VQ.
+2. Open the diff of VP against VQ.
+Expect:
+- Both versions show C2's architecture; `check-app`'s detail shows the holdout-verifier instruction file as it is at each version's factory commit.
+- The diff lists exactly the changed instruction file and nothing else: not "no changes", not "architecture not available" on either side, and not every Archon workflow as added on one side and removed on the other.
+- The version strip shows VP and VQ as two entries, each with its own reason, Hypothesis and Measure.
+Author: writer, 2026-10-26, escaped defect #157 (class: the same commit written in two forms must join as one commit)
+
+## H-52 The factory template is found whatever form its commit was given in
+Protects: 4.1 (the holdout steps' detail explains the fence from the template); 11.2 Architecture row (the factory template at the pinned factory commit); 11.4 (`arch:parse <archon-sha> <factory-sha>`)
+Touches: the architecture job's factory side, push ingestion, step detail for the holdout steps, architecture diff
+Setup: the check app with two real pins VF1 and VF2 on two different factory commits whose templates differ in the fence explanation's instruction file. Parse VF1's architecture with its factory commit given as the first 8 characters of the pin commit's sha (the push event carries the full sha), and VF2's with the full 40 characters while its Archon commit is given as 8 characters.
+Steps:
+1. Open the `check-app` detail and the detail of every other step whose detail explains the fence, at VF1 and at VF2, by clicking and by direct address.
+2. Open the diff of VF1 against VF2.
+Expect:
+- At each version the detail shows the hook file `.factory/hooks/holdout_fence.py`, which agents may read the scenarios and how a verdict comes back, with the instruction file text exactly as it is at that version's factory commit; never the other version's text, and never an empty or "not recorded" template section.
+- The diff names the changed instruction file.
+Author: writer, 2026-10-26, escaped defect #157 (class: every commit the job records, Archon's or the factory's, joins in any form)
+
+## H-53 Verdicts and decisions find their pin by any unambiguous form, and never the wrong one
+Protects: 11.5 (a verdict names its pin by sha; `Version:` joins to a pin by sha prefix); 4.2 improvements being tested, key decisions, version strip; appendix verdict commit
+Touches: push ingestion, verdict and `DECISIONS.md` parsers, the join to pins, improvements panel, decisions timeline, version strip
+Setup: the check app. Deliver real pins with `Measure` trailers: PS naming its Archon commit by 8 characters; PF naming its commit by the full 40; PA and PB naming two commits that share their first 5 characters (as in H-48) by 8 characters each. Insert laps for a version of each.
+Steps:
+1. Deliver verdict commits written as the appendix writes them: one for PS naming its commit by the full 40 characters; one for PF naming its commit by its first 8; one naming only the 5-character prefix PA and PB share; one naming 8 characters no pin names.
+2. Deliver a `DECISIONS.md` change adding entries in the fixed shape whose `Version:` lines are: PS's commit in full; PF's commit by its first 7; PF's commit by its first 12; the prefix PA and PB share; 8 characters no pin names.
+3. Restart serve, then deliver the same push events again.
+Expect:
+- PS and PF show their verdicts (helped, hurt or inconclusive) and sentences, and leave the being-tested list, without a reload.
+- The full, 7-character and 12-character decisions appear on the timeline linked to PS's or PF's version as named.
+- The verdict and the decision naming the shared prefix attach to neither PA nor PB; PA and PB remain listed as being tested. The unknown verdict and decision attach to no version. None of them is shown under another version, and none of them changes any version's label.
+- After step 3 nothing is duplicated or relinked.
+Author: writer, 2026-10-26, escaped defect #157 (class: every join between a short and a full sha, on every surface that joins one)
+
+## H-54 A version shows its architecture in every context: two factories and a rewind
+Protects: 11.6 (every view keyed by factory); 4.7 rewind (every screen as of the moment); 4.1; invariant 6
+Touches: home map per factory, step detail, architecture diff, rewind branches
+Setup: the check app with two factories A and B (as in H-17). For A, versions V1 and V2 as in H-47. For B, a version VB2 whose laps have their own digest but whose real pin names C2 by its first 8 characters, while C2's architecture was parsed once, with its full sha.
+Steps:
+1. Open every surface for A's V1 and V2 and for B's VB2, moving between the factories with the app's own controls.
+2. Note a moment T. Then deliver a real pin V3 for A naming C3 by 8 characters, insert its laps, and parse C3 with its full sha. Create a rewind at T and open every surface on it; then go back to live.
+Expect:
+- B's VB2 shows C2's architecture on every surface; A's V2 shows the same; neither factory's map shows the other's live counts.
+- On the rewind, A's versions as of T (V1 and V2) show their architectures on every surface, and V3 is absent; no rewind screen says no architecture is recorded for a version that had one at T.
+- Back on live, V3 shows C3's architecture.
+Author: writer, 2026-10-26, escaped defect #157 (class: the join holds in every keyed view)
+
+## H-55 A step-by-step story of a repin: what a user sees at each moment is true
+Protects: 4.1 (the home base is the map at the pinned version); 4.2 version strip and architecture diff; 11.2 (labelled by the most recent pin before the first run); invariant 5
+Touches: push ingestion, version labelling, the architecture job, home map, step detail, architecture diff
+Setup: the check app with V1 as in H-47 shown on the home map; reload marker set.
+Steps:
+1. Deliver a real pin naming C2 by its first 8 characters. Before any lap of a new digest runs, record the home map and `check-app` detail.
+2. Insert the first lap of a new digest D2, and record them again.
+3. Run the architecture job for C2 given its full sha, and record them again; open the diff of V1 against the new version.
+4. Deliver, late, a real pin whose commit time is before D2's first run and after step 1's pin, naming C3 by its full 40 characters, with C3 not yet parsed. Record every surface.
+5. Parse C3 with its first 8 characters. Record every surface.
+Expect:
+- After steps 1 and 2 nothing claims C2's architecture for V1, and V1's map still shows C1's. Whatever the home map shows for the new version, it is never V1's architecture labelled as the new version.
+- After step 3, without a reload, the new version shows C2's architecture and the diff lists exactly C1 to C2's changes.
+- After step 4 the version is relabelled by the late pin (as H-23) and its map, step details and diff follow it: they say C3's architecture is not recorded; they never keep showing C2's under the C3 label.
+- After step 5, within 5 seconds and without a reload, they show C3's architecture.
+Author: writer, 2026-10-26, escaped defect #157 (class: label and architecture are one fact seen twice, so they must always agree)
