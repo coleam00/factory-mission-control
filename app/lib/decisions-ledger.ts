@@ -37,9 +37,9 @@ export function timelineEntries(rows: readonly TimelineRow[]): TimelineRow[] {
   return [...rows].sort((a, b) => a.date.localeCompare(b.date) || a.title.localeCompare(b.title));
 }
 
-/** The `at least <n>` lap count a Measure names, or null when it names none. */
+/** The lap count a Measure names, allowing descriptors such as `complex`, or null without one. */
 export function lapsWanted(measure: string | null): number | null {
-  const match = /\bat least (\d+)\b/i.exec(measure ?? '');
+  const match = /\b(\d+)\s+(?:[a-z-]+\s+)*laps\b/i.exec(measure ?? '');
   return match ? Number(match[1]) : null;
 }
 
