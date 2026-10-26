@@ -29,11 +29,35 @@ const USAGE = [
   '  It checks the issues screen against the seed and times `fixture:write label` to it before and',
   '  after the hold, writing issue-graph-check.txt, phases-issue-graph-timings.json,',
   '  phases-issue-graph.png and phases-issue-graph-design-probe.json.',
+  '  It opens /steps/archon-loop/check-app, checks it against the seed, times description writes to',
+  '  it across the same hold, and checks land and an unknown step, writing',
+  '  step-detail-timings.json, step-detail.png and step-detail-design-probe.json.',
 ].join('\n');
 
 export const LIMITS = { readyMs: 2000, firstSnapshotMs: 500, insertToScreenMs: 5000 };
 const RENEWALS_IN_180S = 3;
 const PANEL = '[data-live="status-strip"]';
+/** Every live query the step screen reads, one panel each. */
+const STEP_QUERIES = [
+  'step-detail',
+  'step-prompt',
+  'step-subagents',
+  'step-scripts',
+  'step-hooks',
+  'step-yaml',
+];
+const STEP_PATH = '/steps/archon-loop/check-app';
+/**
+ * check-app at the seed's current version, V2 (the newest pin with architecture rows): V2 drops
+ * `briefs`, so it depends on `subject` alone (owner decision on #14).
+ */
+const SEED_CHECK_APP = {
+  prompt: 'fixtures/pack/sdlc/loop/commands/loop-check-app.md',
+  subagent: 'holdout-verifier',
+  dependsOn: 'subject',
+  hook: '.factory/hooks/holdout_fence.py',
+  admitted: ['holdout-verifier', 'holdout-writer'],
+};
 const MAP = '[data-live="home-map"]';
 /**
  * The seed's pinned architecture: the newest pin with architecture rows is V2 (V3 stores none),
@@ -309,6 +333,70 @@ async function insertToScreen(
   return (await shown) ? Math.round(performance.now() - started) : null;
 }
 
+interface StepTimings {
+  branch: string | null;
+  port: number | null;
+  /** When the last of the screen's panels reached `ready`, from navigation. */
+  readyMs: number | null;
+  /** Per query, from the panel's subscribe being sent to its first rows. */
+  firstSnapshotMs: Record<string, number | null>;
+  descriptionToScreenMs: number | null;
+  holdSeconds: number;
+  renewals: number | null;
+  afterHoldDescriptionToScreenMs: number | null;
+  noReload: boolean | null;
+  limits: typeof LIMITS;
+}
+
+interface Version {
+  archon_sha: string;
+  factory_sha: string;
+}
+
+/** The architecture key of the seed's current version, as the step queries choose it. */
+async function currentVersion(db: Db): Promise<Version> {
+  const [version] = await db.query(
+    `SELECT a.archon_sha, a.factory_sha FROM mc.arch_versions a
+       JOIN mc.pins p ON p.archon_sha = a.archon_sha
+      ORDER BY p.committed_at DESC, a.parsed_at DESC LIMIT 1`,
+  );
+  if (!version) throw new Error('the check branch has no pin with architecture rows');
+  return version as unknown as Version;
+}
+
+const stepPanelsReady = `document.querySelectorAll('${STEP_QUERIES.map((q) => `[data-live="${q}"][data-state="ready"]`).join(', ')}').length === ${STEP_QUERIES.length}`;
+
+/** Where check-app's screen differs from the seed: one line each. */
+async function checkAppMismatches(page: Page, repoRoot: string): Promise<string[]> {
+  const shown = await page.evaluate<{
+    prompt: string | null;
+    subagent: boolean;
+    dependsOn: string | null;
+    hook: boolean;
+    admitted: string[];
+  }>(`({
+    prompt: document.querySelector('[data-live="step-prompt"] [data-prompt]')?.textContent ?? null,
+    subagent: document.querySelector('[data-live="step-subagents"] [data-subagent="${SEED_CHECK_APP.subagent}"]') !== null,
+    dependsOn: document.querySelector('[data-depends-on]')?.getAttribute('data-depends-on') ?? null,
+    hook: document.querySelector('[data-live="step-hooks"] [data-hook="${SEED_CHECK_APP.hook}"]') !== null,
+    admitted: [...document.querySelectorAll('[data-live="step-hooks"] [data-admitted-agent]')]
+      .map((el) => el.getAttribute('data-admitted-agent')).sort(),
+  })`);
+  const failures: string[] = [];
+  if (shown.prompt !== readFileSync(join(repoRoot, SEED_CHECK_APP.prompt), 'utf-8')) {
+    failures.push(`check-app's prompt is not ${SEED_CHECK_APP.prompt} byte for byte`);
+  }
+  if (!shown.subagent) failures.push(`check-app shows no subagent ${SEED_CHECK_APP.subagent}`);
+  if (shown.dependsOn !== SEED_CHECK_APP.dependsOn) {
+    failures.push(`check-app depends on "${shown.dependsOn}", not "${SEED_CHECK_APP.dependsOn}"`);
+  }
+  if (!shown.hook) failures.push(`check-app shows no hook ${SEED_CHECK_APP.hook}`);
+  if (shown.admitted.join() !== SEED_CHECK_APP.admitted.join()) {
+    failures.push(`the fence admits ${shown.admitted.join(', ')}`);
+  }
+  return failures;
+}
+
 const renewalsOf = (query: string) =>
   `performance.getEntriesByName('live:${query}:renewed').length`;
 
@@ -448,6 +536,32 @@ function checkLinks(
     }
   }
   return failures;
+}
+
+const setCheckAppDescription = `UPDATE mc.arch_steps SET description = $3
+  WHERE archon_sha = $1 AND factory_sha = $2 AND workflow = 'archon-loop' AND path = 'check-app'`;
+
+/** Writes check-app's stored description and times it from just before the write to the screen. */
+async function descriptionToScreen(page: Page, db: Db, version: Version): Promise<number | null> {
+  const text = `test:live ${crypto.randomUUID()}`;
+  const started = performance.now();
+  const shown = page.evaluate<boolean>(
+    pageWait(
+      `document.querySelector('[data-description]')?.textContent === '${text}'`,
+      LIMITS.insertToScreenMs,
+    ),
+    LIMITS.insertToScreenMs + 5000,
+  );
+  await db.query(setCheckAppDescription, [version.archon_sha, version.factory_sha, text]);
+  return (await shown) ? Math.round(performance.now() - started) : null;
+}
+
+/** Opens `path` on the app and waits until `ready` holds in the page. */
+async function openStep(page: Page, base: string, path: string, ready: string): Promise<void> {
+  await page.goto(`${base}${path}`);
+  if (!(await page.evaluate<boolean>(pageWait(ready, READY_WAIT_MS)))) {
+    throw new Error(`${path} did not reach data-state="ready" within ${READY_WAIT_MS} ms`);
+  }
 }
 
 /** Runs `fixture:write pin` and times it from just before the spawn to the screen showing it. */
@@ -876,6 +990,21 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
   const inserted: string[] = [];
   /** Laps `fixture:write` started LIVE_STEP on; the cleanup removes those events and steps. */
   const written: string[] = [];
+  const stepTimings: StepTimings = {
+    branch: timings.branch,
+    port: null,
+    readyMs: null,
+    firstSnapshotMs: {},
+    descriptionToScreenMs: null,
+    holdSeconds,
+    renewals: null,
+    afterHoldDescriptionToScreenMs: null,
+    noReload: null,
+    limits: LIMITS,
+  };
+  /** check-app's description before test:live wrote it, restored at the end. */
+  let described: { version: Version; was: unknown } | undefined;
+  let stepPage: Page | undefined;
   const versionTimings: VersionStripTimings = {
     branch: timings.branch,
     port: null,
@@ -952,6 +1081,7 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
 
     const port = await freePort();
     timings.port = port;
+    stepTimings.port = port;
     mapTimings.port = port;
     versionTimings.port = port;
     decisionTimings.port = port;
@@ -1088,6 +1218,37 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
       `V2's verdict reached the ledger in ${decisionTimings.verdictToScreenMs ?? 'never'} ms, a decision the timeline in ${decisionTimings.decisionToScreenMs ?? 'never'} ms`,
     );
 
+    stepPage = await openPage(deps.env);
+    await openStep(stepPage, base, STEP_PATH, stepPanelsReady);
+    await stepPage.evaluate('window.__mcNoReload = true');
+    const stepReadyMarks: number[] = [];
+    for (const query of STEP_QUERIES) {
+      const readyAt = await stepPage.evaluate<number | null>(markTime(`live:${query}:ready`));
+      const subscribedAt = await stepPage.evaluate<number | null>(
+        markTime(`live:${query}:subscribe-sent`),
+      );
+      if (readyAt !== null) stepReadyMarks.push(readyAt);
+      stepTimings.firstSnapshotMs[query] =
+        readyAt === null || subscribedAt === null ? null : Math.round(readyAt - subscribedAt);
+    }
+    stepTimings.readyMs =
+      stepReadyMarks.length === STEP_QUERIES.length
+        ? Math.round(Math.max(...stepReadyMarks))
+        : null;
+    failures.push(...(await checkAppMismatches(stepPage, deps.repoRoot)));
+    writeFileSync(join(outDir, 'step-detail.png'), await stepPage.screenshot(1440));
+    const version = await currentVersion(db);
+    const [checkApp] = await db.query(
+      `SELECT description FROM mc.arch_steps
+        WHERE archon_sha = $1 AND factory_sha = $2 AND workflow = 'archon-loop' AND path = 'check-app'`,
+      [version.archon_sha, version.factory_sha],
+    );
+    described = { version, was: checkApp?.description ?? null };
+    stepTimings.descriptionToScreenMs = await descriptionToScreen(stepPage, db, version);
+    deps.out(
+      `first description write reached the step in ${stepTimings.descriptionToScreenMs ?? 'never'} ms`,
+    );
+
     versionsPage = await openPage(deps.env);
     await versionsPage.goto(`${base}/f/${factory}/versions`);
     await versionsPage.evaluate('window.__mcNoReload = true');
@@ -1196,6 +1357,39 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
     await page.close();
     page = undefined;
 
+    stepTimings.renewals = await stepPage.evaluate<number>(
+      `performance.getEntriesByName('live:step-detail:renewed').length`,
+    );
+    stepTimings.afterHoldDescriptionToScreenMs = await descriptionToScreen(stepPage, db, version);
+    stepTimings.noReload = await stepPage.evaluate<boolean>('window.__mcNoReload === true');
+
+    await openStep(stepPage, base, '/steps/archon-loop/land', stepPanelsReady);
+    const [land] = await db.query(
+      `SELECT when_condition FROM mc.arch_steps
+        WHERE archon_sha = $1 AND factory_sha = $2 AND workflow = 'archon-loop' AND path = 'land'`,
+      [version.archon_sha, version.factory_sha],
+    );
+    const when = await stepPage.evaluate<string | null>(
+      `document.querySelector('[data-when]')?.textContent ?? null`,
+    );
+    if (typeof land?.when_condition !== 'string' || when !== land.when_condition) {
+      failures.push(`land shows when "${when}", stored "${land?.when_condition}"`);
+    }
+    await openStep(
+      stepPage,
+      base,
+      '/steps/archon-loop/no-such-step',
+      `document.querySelector('[data-live="step-detail"][data-state="ready"]') !== null`,
+    );
+    const unknown = await stepPage.evaluate<string>(
+      `document.querySelector('[data-live="step-detail"]').textContent.trim()`,
+    );
+    if (unknown.match(/[.!?](\s|$)/g)?.length !== 1) {
+      failures.push(`an unknown step shows "${unknown}", not one sentence`);
+    }
+    await stepPage.close();
+    stepPage = undefined;
+
     versionTimings.renewals = await versionsPage.evaluate<number>(
       `performance.getEntriesByName('live:version-strip:renewed').length`,
     );
@@ -1259,6 +1453,19 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
       { cwd: deps.repoRoot, env: deps.env, stdout: 'ignore', stderr: 'inherit' },
     );
     if (probe.exitCode !== 0) failures.push(`the design probe exited ${probe.exitCode}`);
+    const stepProbe = Bun.spawnSync(
+      [
+        'bun',
+        'harness/design-probe.js',
+        `${base}${STEP_PATH}`,
+        '--out',
+        join(outDir, 'step-detail-design-probe.json'),
+      ],
+      { cwd: deps.repoRoot, env: deps.env, stdout: 'ignore', stderr: 'inherit' },
+    );
+    if (stepProbe.exitCode !== 0) {
+      failures.push(`the design probe on ${STEP_PATH} exited ${stepProbe.exitCode}`);
+    }
     const versionsProbe = Bun.spawnSync(
       [
         'bun',
@@ -1306,6 +1513,10 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
       );
     }
     writeFileSync(
+      join(outDir, 'step-detail-timings.json'),
+      `${JSON.stringify(stepTimings, null, 2)}\n`,
+    );
+    writeFileSync(
       join(outDir, 'version-strip-timings.json'),
       `${JSON.stringify(versionTimings, null, 2)}\n`,
     );
@@ -1319,6 +1530,7 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
     );
     // The pages and the server go first, so a failed cleanup below cannot leave them running.
     await page?.close().catch(() => undefined);
+    await stepPage?.close().catch(() => undefined);
     await versionsPage?.close().catch(() => undefined);
     await decisionsPage?.close().catch(() => undefined);
     await issuesPage?.close().catch(() => undefined);
@@ -1359,6 +1571,14 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
       failures.push(
         `removing the written verdicts and decisions failed: ${(err as Error).message}`,
       );
+    }
+    try {
+      if (described) {
+        const { version, was } = described;
+        await db.query(setCheckAppDescription, [version.archon_sha, version.factory_sha, was]);
+      }
+    } catch (err) {
+      failures.push(`restoring check-app's description failed: ${(err as Error).message}`);
     }
     try {
       if (pinned.length > 0) {
@@ -1411,6 +1631,33 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
     }
   }
   if (timings.noReload !== true) failures.push('the page reloaded');
+  if (!within(stepTimings.readyMs, LIMITS.readyMs)) {
+    failures.push(
+      `the step screen was ready after ${stepTimings.readyMs} ms, limit ${LIMITS.readyMs}`,
+    );
+  }
+  for (const query of STEP_QUERIES) {
+    const ms = stepTimings.firstSnapshotMs[query] ?? null;
+    if (!within(ms, LIMITS.firstSnapshotMs)) {
+      failures.push(`${query}'s first snapshot after ${ms} ms, limit ${LIMITS.firstSnapshotMs}`);
+    }
+  }
+  if (!within(stepTimings.descriptionToScreenMs, LIMITS.insertToScreenMs)) {
+    failures.push(
+      `the first description write reached the step after ${stepTimings.descriptionToScreenMs} ms, limit ${LIMITS.insertToScreenMs}`,
+    );
+  }
+  if (!within(stepTimings.afterHoldDescriptionToScreenMs, LIMITS.insertToScreenMs)) {
+    failures.push(
+      `the description write after ${holdSeconds}s reached the step after ${stepTimings.afterHoldDescriptionToScreenMs} ms, limit ${LIMITS.insertToScreenMs}`,
+    );
+  }
+  if (holdSeconds >= 180 && (stepTimings.renewals ?? 0) < RENEWALS_IN_180S) {
+    failures.push(
+      `${stepTimings.renewals} step-detail seal renewals in ${holdSeconds}s, expected at least ${RENEWALS_IN_180S}`,
+    );
+  }
+  if (stepTimings.noReload !== true) failures.push('the step screen reloaded');
   if (!within(versionTimings.readyMs, LIMITS.readyMs)) {
     failures.push(
       `versions screen ready after ${versionTimings.readyMs} ms, limit ${LIMITS.readyMs}`,
@@ -1498,6 +1745,7 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
   if (issueTimings.noReload !== true) failures.push('the issues screen reloaded');
   if (failures.length > 0) throw new Error(failures.join('\n'));
   deps.out(`live: ${JSON.stringify(timings)}`);
+  deps.out(`step detail: ${JSON.stringify(stepTimings)}`);
   deps.out(`home map: ${JSON.stringify(mapTimings)}`);
   deps.out(`versions: ${JSON.stringify(versionTimings)}`);
   deps.out(`decisions: ${JSON.stringify(decisionTimings)}`);
