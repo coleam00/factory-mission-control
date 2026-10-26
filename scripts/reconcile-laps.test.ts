@@ -229,6 +229,26 @@ test('a finished run projected before versions gets its version, the same in eit
   expect(await versions()).toEqual(labelled);
 });
 
+test('a run whose dropped projection left its lap on an old digest takes its version along', async () => {
+  await rows(`INSERT INTO mc.factories VALUES
+    ('mission-control', 'coleam00/factory-mission-control', 'coleam00/factory-mission-control',
+     'http://localhost:3090')`);
+  const [codebase] = await rows(`INSERT INTO public.remote_agent_codebases (name)
+    VALUES ('coleam00/factory-mission-control') RETURNING id`);
+  const [archon] = await rows(
+    `INSERT INTO public.remote_agent_workflow_runs
+       (workflow_name, codebase_id, status, user_message, metadata, started_at, completed_at)
+     VALUES ('archon-loop', $1, 'completed', 'Run the loop', $2, $3, $3) RETURNING id`,
+    [codebase?.id, JSON.stringify({ workflow_source: { digest: 'sha256:new' } }), NOW],
+  );
+  const projected = await snapshot(db);
+  await rows(`UPDATE mc.laps SET digest = 'sha256:old' WHERE run_id = $1`, [archon?.id]);
+  await rows(`UPDATE mc.versions SET digest = 'sha256:old'`);
+
+  expect((await run([])).out).toEqual(['reconcile: 1 run(s) repaired']);
+  expect(await snapshot(db)).toEqual(projected);
+});
+
 test('the replay projects events in Archon order, not the order their rows are stored in', async () => {
   const runId = await archonRun('running');
   const retry = new Date(NOW.getTime() + 60_000);

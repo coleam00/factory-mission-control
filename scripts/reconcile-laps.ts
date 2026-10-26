@@ -83,7 +83,7 @@ async function reproject(tx: Tx, runId: string): Promise<void> {
   );
   await tx.query('DELETE FROM mc.app_check_lines WHERE run_id = $1', [runId]);
   await tx.query('DELETE FROM mc.lap_steps WHERE run_id = $1', [runId]);
-  await tx.query('DELETE FROM mc.laps WHERE run_id = $1', [runId]);
+  // The lap is overwritten in place, not deleted: the replay re-projects the version it moves off.
   await tx.query(
     'INSERT INTO mc_reconcile_runs SELECT * FROM public.remote_agent_workflow_runs WHERE id = $1',
     [runId],

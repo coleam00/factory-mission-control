@@ -15,8 +15,9 @@ RETURNS text LANGUAGE sql STABLE AS $$
   ORDER BY p.committed_at DESC, p.sha DESC LIMIT 1
 $$;
 
--- Writes a factory's version of a digest by the rule above; true when it wrote a row. A version
--- that already reads right takes no row lock, so a run's later updates never contend on it.
+-- Writes a factory's version of a digest by the rule above, or deletes it when no lap ran it; true
+-- when it wrote a row. A version that already reads right takes no row lock, so a run's later
+-- updates never contend on it.
 CREATE OR REPLACE FUNCTION mc.project_version(p_factory text, p_digest text)
 RETURNS boolean LANGUAGE plpgsql
 SET lock_timeout = '100ms' AS $$
@@ -29,7 +30,9 @@ BEGIN
   WHERE l.factory = p_factory AND l.digest = p_digest AND l.workflow_name = 'archon-loop'
     AND EXISTS (SELECT 1 FROM mc.factories f WHERE f.name = l.factory);
   IF v_first IS NULL THEN
-    RETURN false;
+    DELETE FROM mc.versions v WHERE v.factory = p_factory AND v.digest = p_digest;
+    GET DIAGNOSTICS v_written = ROW_COUNT;
+    RETURN v_written > 0;
   END IF;
   v_pin := mc.version_pin(v_first);
   IF EXISTS (SELECT 1 FROM mc.versions v WHERE v.factory = p_factory AND v.digest = p_digest
@@ -47,14 +50,15 @@ BEGIN
 END;
 $$;
 
--- 0006's lap projection, then the run's version. A version that cannot be written is recorded on
--- its own and keeps the lap.
+-- 0006's lap projection, then the run's version, and the version its lap ran before when the lap
+-- moves off it. A version that cannot be written is recorded on its own and keeps the lap.
 CREATE OR REPLACE FUNCTION mc.project_run() RETURNS trigger LANGUAGE plpgsql
 SET lock_timeout = '100ms' AS $$
 DECLARE
   v_codebase text;
   v_factory text;
   v_digest text;
+  v_was mc.laps;
 BEGIN
   v_codebase := (SELECT c.name FROM public.remote_agent_codebases c WHERE c.id = NEW.codebase_id);
   v_factory := coalesce(
@@ -62,6 +66,7 @@ BEGIN
     v_codebase,
     '');
   v_digest := NEW.metadata -> 'workflow_source' ->> 'digest';
+  SELECT * INTO v_was FROM mc.laps l WHERE l.run_id = NEW.id;
   INSERT INTO mc.laps AS l
     (run_id, factory, workflow_name, status, digest, started_at, completed_at)
   VALUES (
@@ -79,13 +84,18 @@ BEGIN
     digest = EXCLUDED.digest,
     started_at = EXCLUDED.started_at,
     completed_at = EXCLUDED.completed_at;
-  IF NEW.workflow_name = 'archon-loop' AND v_digest IS NOT NULL THEN
-    BEGIN
+  BEGIN
+    IF v_was.workflow_name = 'archon-loop' AND v_was.digest IS NOT NULL
+        AND (v_was.factory, v_was.digest, v_was.workflow_name)
+          IS DISTINCT FROM (v_factory, v_digest, NEW.workflow_name) THEN
+      PERFORM mc.project_version(v_was.factory, v_was.digest);
+    END IF;
+    IF NEW.workflow_name = 'archon-loop' AND v_digest IS NOT NULL THEN
       PERFORM mc.project_version(v_factory, v_digest);
-    EXCEPTION WHEN OTHERS THEN
-      PERFORM mc.record_projection_error(TG_NAME, NEW.id, NULL, SQLSTATE, SQLERRM);
-    END;
-  END IF;
+    END IF;
+  EXCEPTION WHEN OTHERS THEN
+    PERFORM mc.record_projection_error(TG_NAME, NEW.id, NULL, SQLSTATE, SQLERRM);
+  END;
   RETURN NULL;
 EXCEPTION WHEN OTHERS THEN
   PERFORM mc.record_projection_error(TG_NAME, NEW.id, NULL, SQLSTATE, SQLERRM);

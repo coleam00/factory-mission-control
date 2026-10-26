@@ -497,7 +497,7 @@ function runAt(
   return db.query(
     `INSERT INTO public.remote_agent_workflow_runs
        (workflow_name, codebase_id, status, user_message, metadata, started_at)
-     VALUES ($1, $2, 'running', 'Run the loop', $3, $4)`,
+     VALUES ($1, $2, 'running', 'Run the loop', $3, $4) RETURNING id`,
     [
       workflow,
       codebaseId,
@@ -540,6 +540,68 @@ test('a pin written after the run labels its version', async () => {
 
   await pin('after', minutes(10));
   expect(await db.query('SELECT pin_sha FROM mc.versions')).toEqual([{ pin_sha: 'before' }]);
+});
+
+test('an earlier run projected later moves its version’s first run and pin back', async () => {
+  const codebase = await factoryCodebase();
+  await pin('earlier', minutes(-40));
+  await pin('later', minutes(-10));
+  await runAt(codebase, NOW);
+  await runAt(codebase, minutes(-30));
+
+  expect(await db.query('SELECT * FROM mc.versions')).toEqual([
+    { factory: 'mission-control', digest: DIGEST, first_run_at: minutes(-30), pin_sha: 'earlier' },
+  ]);
+});
+
+test('a pin updated or deleted relabels the versions it labelled', async () => {
+  await runAt(await factoryCodebase(), NOW);
+  await pin('first', minutes(-20));
+  await pin('second', minutes(-10));
+  expect(await db.query('SELECT pin_sha FROM mc.versions')).toEqual([{ pin_sha: 'second' }]);
+
+  await db.query(`UPDATE mc.pins SET committed_at = $1 WHERE sha = 'second'`, [minutes(10)]);
+  expect(await db.query('SELECT pin_sha FROM mc.versions')).toEqual([{ pin_sha: 'first' }]);
+
+  await db.query(`DELETE FROM mc.pins WHERE sha = 'first'`);
+  expect(await db.query('SELECT pin_sha FROM mc.versions')).toEqual([{ pin_sha: null }]);
+});
+
+test('a lap that moves off a digest takes its version along', async () => {
+  const codebase = await factoryCodebase();
+  const other = `sha256:${'ef'.repeat(32)}`;
+  const [only] = await runAt(codebase, NOW);
+  const [first] = await runAt(codebase, minutes(-30), { digest: other });
+  await runAt(codebase, minutes(10), { digest: other });
+  const versions = () => db.query('SELECT digest, first_run_at FROM mc.versions ORDER BY 1');
+  const setDigest = (runId: unknown, digest: string) =>
+    db.query(`UPDATE public.remote_agent_workflow_runs SET metadata = $2 WHERE id = $1`, [
+      runId,
+      JSON.stringify({ workflow_source: { digest } }),
+    ]);
+
+  await setDigest(only?.id, `sha256:${'cd'.repeat(32)}`);
+  expect(await versions()).toEqual([
+    { digest: `sha256:${'cd'.repeat(32)}`, first_run_at: NOW },
+    { digest: other, first_run_at: minutes(-30) },
+  ]);
+
+  await setDigest(first?.id, DIGEST);
+  expect(await versions()).toEqual([
+    { digest: DIGEST, first_run_at: minutes(-30) },
+    { digest: `sha256:${'cd'.repeat(32)}`, first_run_at: NOW },
+    { digest: other, first_run_at: minutes(10) },
+  ]);
+
+  await db.query(
+    `UPDATE public.remote_agent_workflow_runs SET workflow_name = 'archon-fix' WHERE id = $1`,
+    [first?.id],
+  );
+  await db.query(`UPDATE public.remote_agent_workflow_runs SET codebase_id = NULL WHERE id = $1`, [
+    only?.id,
+  ]);
+  expect(await versions()).toEqual([{ digest: other, first_run_at: minutes(10) }]);
+  expect(await projectionErrors()).toEqual([]);
 });
 
 test('a version that cannot be written keeps the lap and is recorded', async () => {
