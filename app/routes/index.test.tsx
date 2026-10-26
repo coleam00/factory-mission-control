@@ -12,7 +12,7 @@ const REPO = join(import.meta.dir, '..', '..');
 const render = (rows: HomeMapRow[] | undefined, state: 'loading' | 'ready' | 'error') =>
   renderToStaticMarkup(
     <MemoryRouter>
-      <HomeMapBody rows={rows} state={state} />
+      <HomeMapBody rows={rows} state={state} factories={['here', 'north-star']} />
     </MemoryRouter>,
   );
 
@@ -31,25 +31,65 @@ test('loading, error and an empty architecture are each one sentence and no butt
   }
 });
 
+const step = (
+  path: string,
+  position: number,
+  laps = 0,
+  lap_factory: string | null = laps > 0 ? 'here' : null,
+  is_current = lap_factory === 'here',
+): HomeMapRow => ({
+  role: 'step',
+  workflow: 'wf',
+  path,
+  parent_path: null,
+  position,
+  step_id: path,
+  kind: 'command',
+  depends_on: [],
+  detail_workflow: 'wf',
+  lap_factory,
+  laps,
+  is_current,
+});
+
+const linkIn = (html: string, href: string) =>
+  html.match(new RegExp(`<a [^>]*href="${href}"[^>]*>.*?</a>`))?.[0] ?? '';
+
 test('a step with laps on it carries its count and the running style; the rest show 0', () => {
-  const step = (path: string, position: number, live_count: number): HomeMapRow => ({
-    role: 'step',
-    workflow: 'wf',
-    path,
-    parent_path: null,
-    position,
-    step_id: path,
-    kind: 'command',
-    depends_on: [],
-    detail_workflow: 'wf',
-    live_count,
-  });
   const html = render([step('first', 0, 2), step('second', 1, 0)], 'ready');
   const link = (href: string) => html.match(new RegExp(`<a [^>]*href="${href}"[^>]*>`))?.[0] ?? '';
   expect(link('/steps/wf/first')).toContain('data-live-count="2"');
   expect(link('/steps/wf/first')).toContain('var(--running)');
   expect(link('/steps/wf/second')).toContain('data-live-count="0"');
   expect(link('/steps/wf/second')).not.toContain('var(--running)');
+  expect(html).not.toContain('data-factory-counts');
+});
+
+test("another listed factory's laps show under its name, the address factory first, and only its count is live", () => {
+  const html = render(
+    [
+      step('both', 0, 3, 'north-star'),
+      step('both', 0, 2),
+      step('theirs', 1, 1, 'north-star'),
+      step('ours', 2, 1),
+      step('ours', 2, 4, 'unlisted'),
+    ],
+    'ready',
+  );
+  const counted = (href: string) =>
+    [...linkIn(html, href).matchAll(/data-factory-count="([^"]+)" data-laps="(\d+)"/g)].map(
+      (m) => `${m[1]} ${m[2]}`,
+    );
+  const both = linkIn(html, '/steps/wf/both');
+  expect(both).toContain('data-live-count="2"');
+  expect(both).toContain('var(--running)');
+  expect(counted('/steps/wf/both')).toEqual(['here 2', 'north-star 3']);
+  const theirs = linkIn(html, '/steps/wf/theirs');
+  expect(theirs).toContain('data-live-count="0"');
+  expect(theirs).not.toContain('var(--running)');
+  expect(counted('/steps/wf/theirs')).toEqual(['north-star 1']);
+  expect(linkIn(html, '/steps/wf/ours')).not.toContain('data-factory-counts');
+  expect(html).not.toContain('unlisted');
 });
 
 /** Every step id in the pinned pack's archon-loop, at every depth. */
