@@ -23,7 +23,7 @@ import { seededDb } from '../scripts/fixture/seed';
 import { seedLaps } from '../scripts/fixture/seed-laps';
 import { eventData, writeRow } from '../scripts/fixture/write';
 import { REPO_ROOT } from '../scripts/lib/cli';
-import type { Db, Tx } from '../scripts/lib/db';
+import type { Db } from '../scripts/lib/db';
 import { runMigrations } from '../scripts/migrate';
 import { LIVE_QUERY_NAME, loadLiveQueries } from '../server/live';
 import { archonDb, migrationFiles } from './test-db';
@@ -117,10 +117,10 @@ describe('against the migrated schema', () => {
 ${'x'.repeat(5000)}`;
     await db.query(`INSERT INTO mc.factories (name, repository, codebase, console)
       VALUES ('mission-control', 'o/r', 'o/r', 'http://localhost:3090')`);
-    await db.query(`INSERT INTO mc.pins (sha, archon_sha, reason, committed_at, factory) VALUES
-      ('p1', 'a1', 'one', '2026-01-01T00:00:00Z', 'mission-control'),
-      ('p2', 'a2', 'two', '2026-02-01T00:00:00Z', 'mission-control'),
-      ('p3', 'a3', 'three, not parsed yet', '2026-03-01T00:00:00Z', 'mission-control')`);
+    await db.query(`INSERT INTO mc.pins (sha, archon_sha, reason, committed_at) VALUES
+      ('p1', 'a1', 'one', '2026-01-01T00:00:00Z'),
+      ('p2', 'a2', 'two', '2026-02-01T00:00:00Z'),
+      ('p3', 'a3', 'three, not parsed yet', '2026-03-01T00:00:00Z')`);
     await db.query(`INSERT INTO mc.arch_versions (archon_sha, factory_sha, parsed_at) VALUES
       ('a1', 'f', '2026-01-02T00:00:00Z'), ('a2', 'f', '2026-02-02T00:00:00Z')`);
     // Both versions share every name and path, so a query that leaks a1 doubles or mixes rows.
@@ -375,15 +375,40 @@ describe('version-strip on the seed', () => {
     expect(await strip()).toHaveLength(5);
   });
 
-  test("a pin is listed only on its own factory's strip, and a factory with no data lists none", async () => {
-    await db.query(`INSERT INTO mc.pins (sha, archon_sha, reason, committed_at, factory)
-      VALUES ('north-star-pin', 'archon', 'why', '2026-10-25T13:00:00Z', 'north-star')`);
-    const shas = async (factory: string) => (await db.query(sql, [factory])).map((r) => r.pin_sha);
+  test('pins are shared: a factory with a lap is labelled by them and lists the unused ones, a factory with none lists nothing', async () => {
+    const rollback = new Error('rollback');
+    await db
+      .transaction(async (tx) => {
+        await writeRow(tx, 'pin', new Date('2026-10-25T13:00:00Z'));
+        const unused = (await tx.query(sql, ['mission-control']))
+          .filter((r) => r.digest === null)
+          .map((r) => r.pin_sha)
+          .sort();
+        expect(unused.length).toBeGreaterThan(0);
+        expect(await tx.query(sql, ['empty-check'])).toEqual([]);
 
-    expect(await shas('north-star')).toEqual(['north-star-pin']);
-    expect(await shas('mission-control')).not.toContain('north-star-pin');
-    expect(await shas('mission-control')).toHaveLength(5);
-    expect(await db.query(sql, ['empty-check'])).toEqual([]);
+        await tx.query(`INSERT INTO mc.laps (run_id, factory, workflow_name, status, digest, started_at)
+          VALUES ('00000000-0000-0000-0000-0000000000c1', 'north-star', 'archon-loop', 'completed',
+            'north-star-digest', '2026-10-20T00:00:00Z')`);
+        const [label] = await tx.query(
+          'SELECT sha FROM mc.pins WHERE committed_at < $1 ORDER BY committed_at DESC LIMIT 1',
+          ['2026-10-20T00:00:00Z'],
+        );
+        const rows = await tx.query(sql, ['north-star']);
+        expect(rows.filter((r) => r.digest !== null)).toMatchObject([
+          { digest: 'north-star-digest', pin_sha: label.sha },
+        ]);
+        expect(
+          rows
+            .filter((r) => r.digest === null)
+            .map((r) => r.pin_sha)
+            .sort(),
+        ).toEqual(unused);
+        throw rollback;
+      })
+      .catch((error) => {
+        if (error !== rollback) throw error;
+      });
   });
 });
 
@@ -416,10 +441,6 @@ describe('scorecard on the seed', () => {
       );
       expect({ digest, measures: shown }).toEqual({ digest, measures });
     }
-  });
-
-  test('is empty for a factory with no laps and no pins', async () => {
-    expect(await db.query(sql, ['empty-check'])).toEqual([]);
   });
 
   test('names each seed version by the pin the version strip names it by', async () => {
@@ -754,46 +775,6 @@ describe('arch-diff on versions known only from their laps', () => {
       'changed subagent archon-manager · manage · holdout-writer',
     ]);
     expect(diffVersions(rows, v1, v3)).toEqual({ status: 'unrecorded', digests: [v3] });
-  });
-});
-
-describe("every pin reader on another factory's pin", () => {
-  let db: Db;
-  const sqlOf = (name: string) => queries.find(([n]) => n === name)?.[1] as string;
-  const readers = ['arch-diff', 'decisions-timeline', 'improvements-ledger'];
-  const read = async (tx: Tx, name: string, factory: string) =>
-    (await tx.query(sqlOf(name), [factory])).map((r) => JSON.stringify(r)).sort();
-
-  beforeAll(async () => {
-    db = await seededDb(REPO_ROOT, readFileSync(join(REPO_ROOT, 'fixtures', 'seed.sql'), 'utf8'));
-  }, 60_000);
-
-  afterAll(() => db.close());
-
-  test('neither labels, lists nor names it outside its own factory', async () => {
-    const rollback = new Error('rollback');
-    await db
-      .transaction(async (tx) => {
-        const before = await Promise.all(readers.map((name) => read(tx, name, 'mission-control')));
-        // Newer than V2's pin, older than V2's first lap, prefixed by V2's decision, and naming
-        // V1's architecture: any reader that takes it would label, list or diff V2 differently.
-        await tx.query(`INSERT INTO mc.pins (sha, archon_sha, reason, committed_at, factory)
-          VALUES ('5ffd60c6-north-star', 'abd85896e7971c9ac5199ed7e87973f27130250f', 'why',
-            '2026-10-09T19:00:00Z', 'north-star')`);
-        const after = await Promise.all(readers.map((name) => read(tx, name, 'mission-control')));
-        expect(after).toEqual(before);
-
-        const ledger = await tx.query(sqlOf('improvements-ledger'), ['north-star']);
-        expect(ledger.map((r) => r.pin_sha)).toEqual(['5ffd60c6-north-star']);
-        expect(await tx.query(sqlOf('improvements-ledger'), ['empty-check'])).toEqual([]);
-        const timeline = await tx.query(sqlOf('decisions-timeline'), ['empty-check']);
-        expect(timeline.map((r) => r.pin_sha).filter((sha) => sha !== null)).toEqual([]);
-        expect(await tx.query(sqlOf('arch-diff'), ['empty-check'])).toEqual([]);
-        throw rollback;
-      })
-      .catch((error) => {
-        if (error !== rollback) throw error;
-      });
   });
 });
 

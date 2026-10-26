@@ -215,9 +215,8 @@ test('an Owner decisions needed edit stores each question, and closes one that i
 
 test('a push with the appendix pin and verdict stores pin abd85896 and verdict helped', async () => {
   await deliver(named('09-'));
-  const [pin] = await rows('SELECT archon_sha, hypothesis, measure, factory FROM mc.pins');
+  const [pin] = await rows('SELECT archon_sha, hypothesis, measure FROM mc.pins');
   expect(pin?.archon_sha).toBe('abd85896');
-  expect(pin?.factory).toBe('mission-control');
   expect(String(pin?.hypothesis)).toStartWith('complex laps finish faster and are sent back less');
   expect(String(pin?.measure)).toStartWith('on the mission-control factory, complex-route');
   expect(await rows('SELECT pin, verdict, sentence FROM mc.verdicts')).toEqual([

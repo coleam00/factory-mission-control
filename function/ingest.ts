@@ -19,8 +19,6 @@ import { type GitHub, GitHubError } from './github';
 
 /** Pins, verdicts and `DECISIONS.md` come from this repository's default branch only. */
 export const VERSIONS_REPOSITORY = 'coleam00/ai-software-factory';
-/** The factory `VERSIONS_REPOSITORY` versions: every pin it carries is this factory's. */
-export const VERSIONS_FACTORY = 'mission-control';
 export const DECISIONS_PATH = 'DECISIONS.md';
 
 /** The manager's issues whose bodies the loop writes; a test holds them to the pack's `MANAGER_TITLES`. */
@@ -557,21 +555,12 @@ export async function writeCommits(
     const pin = parsePin(commit.message);
     if (pin) {
       await tx.query(
-        `INSERT INTO mc.pins (sha, archon_sha, reason, hypothesis, measure, committed_at, factory)
-          VALUES ($1, $2, $3, $4, $5, $6, $7)
+        `INSERT INTO mc.pins (sha, archon_sha, reason, hypothesis, measure, committed_at)
+          VALUES ($1, $2, $3, $4, $5, $6)
           ON CONFLICT (sha) DO UPDATE SET archon_sha = EXCLUDED.archon_sha,
             reason = EXCLUDED.reason, hypothesis = EXCLUDED.hypothesis,
-            measure = EXCLUDED.measure, committed_at = EXCLUDED.committed_at,
-            factory = EXCLUDED.factory`,
-        [
-          commit.id,
-          pin.archonSha,
-          pin.reason,
-          pin.hypothesis,
-          pin.measure,
-          commit.timestamp,
-          VERSIONS_FACTORY,
-        ],
+            measure = EXCLUDED.measure, committed_at = EXCLUDED.committed_at`,
+        [commit.id, pin.archonSha, pin.reason, pin.hypothesis, pin.measure, commit.timestamp],
       );
     }
     const verdict = parseVerdict(commit.message);

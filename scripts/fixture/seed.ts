@@ -1049,7 +1049,7 @@ ON CONFLICT DO NOTHING;
 -- A version is a digest the factory's laps ran, labelled with the last pin before its first run.
 INSERT INTO mc.versions (factory, digest, first_run_at, pin_sha)
 SELECT l.factory, l.digest, min(l.started_at),
-  (SELECT p.sha FROM mc.pins p WHERE p.factory = l.factory AND p.committed_at < min(l.started_at)
+  (SELECT p.sha FROM mc.pins p WHERE p.committed_at < min(l.started_at)
     ORDER BY p.committed_at DESC LIMIT 1)
 FROM mc.laps l
 WHERE l.digest IS NOT NULL
@@ -1097,7 +1097,6 @@ function versionsSql(versions: VersionSpec[]): string[] {
         hypothesis: pin.hypothesis,
         measure: pin.measure,
         committed_at: version.pinnedAt,
-        factory: FACTORY,
       }),
     );
   }

@@ -214,8 +214,8 @@ test('a finished run projected before versions gets its version, the same in eit
   expect(await versions()).toEqual(live);
 
   await rows(
-    `INSERT INTO mc.pins (sha, archon_sha, reason, committed_at, factory)
-     VALUES ('pin', 'archon', 'why', $1, 'mission-control')`,
+    `INSERT INTO mc.pins (sha, archon_sha, reason, committed_at)
+     VALUES ('pin', 'archon', 'why', $1)`,
     [new Date(NOW.getTime() - 90 * 60_000).toISOString()],
   );
   const labelled = await versions();

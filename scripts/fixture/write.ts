@@ -225,9 +225,8 @@ const ROW_KINDS = {
   pin: {
     table: 'mc.pins',
     insert: (at) => ({
-      sql: `INSERT INTO mc.pins (sha, archon_sha, reason, hypothesis, measure, committed_at, factory)
-        VALUES ($1::text, $2::text, $3::text, $4::text, $5::text, $6::timestamptz, $7::text)
-        RETURNING sha`,
+      sql: `INSERT INTO mc.pins (sha, archon_sha, reason, hypothesis, measure, committed_at)
+        VALUES ($1::text, $2::text, $3::text, $4::text, $5::text, $6::timestamptz) RETURNING sha`,
       params: [
         sha1(`pin ${at.toISOString()}`),
         sha1(`archon ${at.toISOString()}`),
@@ -235,7 +234,6 @@ const ROW_KINDS = {
         'complex laps finish faster.',
         'complex-route lap-hours per merge over 10 laps.',
         at.toISOString(),
-        FACTORY,
       ],
     }),
   },

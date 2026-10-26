@@ -15,4 +15,3 @@ UNION ALL
 SELECT NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, p.sha,
   p.committed_at
 FROM mc.pins p
-WHERE p.factory = $1

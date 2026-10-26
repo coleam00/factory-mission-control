@@ -5,9 +5,9 @@
 INSERT INTO mc.factories (name, repository, codebase, console) VALUES ('mission-control', 'coleam00/factory-mission-control', 'coleam00/factory-mission-control', 'http://localhost:3090');
 
 -- Pins and their verdict on coleam00/ai-software-factory, through parsePin and parseVerdict.
-INSERT INTO mc.pins (sha, archon_sha, reason, hypothesis, measure, committed_at, factory) VALUES ('8e3e1cefaf1e1b7955789d6a43a81b6c2dbd7082', 'abd85896e7971c9ac5199ed7e87973f27130250f', 'holdouts fenced in the repository; the complex route runs dev''s ship-block', 'complex laps finish faster and are sent back less.', 'complex-route lap-hours per merge and send-backs per merge, over at least 10 complex laps.', '2026-09-30T18:00:00Z', 'mission-control');
-INSERT INTO mc.pins (sha, archon_sha, reason, hypothesis, measure, committed_at, factory) VALUES ('5ffd60c6c6e591487f2fbb5ec67ccc8fc55ca915', '2b7c4e9a1f0d3c5b6a7e8f9d0c1b2a3f4e5d6c7b', 'the loop drops the briefs step and tallies every lap', NULL, 'lap-hours per merge, lower, over at least 12 laps.', '2026-10-09T18:00:00Z', 'mission-control');
-INSERT INTO mc.pins (sha, archon_sha, reason, hypothesis, measure, committed_at, factory) VALUES ('58c5f774e1bbe57c80c85ee91df8d44075664232', '7e1d0c9b8a7f6e5d4c3b2a1f0e9d8c7b6a5f4e3d', 'follow dev''s pack', NULL, NULL, '2026-10-19T18:00:00Z', 'mission-control');
+INSERT INTO mc.pins (sha, archon_sha, reason, hypothesis, measure, committed_at) VALUES ('8e3e1cefaf1e1b7955789d6a43a81b6c2dbd7082', 'abd85896e7971c9ac5199ed7e87973f27130250f', 'holdouts fenced in the repository; the complex route runs dev''s ship-block', 'complex laps finish faster and are sent back less.', 'complex-route lap-hours per merge and send-backs per merge, over at least 10 complex laps.', '2026-09-30T18:00:00Z');
+INSERT INTO mc.pins (sha, archon_sha, reason, hypothesis, measure, committed_at) VALUES ('5ffd60c6c6e591487f2fbb5ec67ccc8fc55ca915', '2b7c4e9a1f0d3c5b6a7e8f9d0c1b2a3f4e5d6c7b', 'the loop drops the briefs step and tallies every lap', NULL, 'lap-hours per merge, lower, over at least 12 laps.', '2026-10-09T18:00:00Z');
+INSERT INTO mc.pins (sha, archon_sha, reason, hypothesis, measure, committed_at) VALUES ('58c5f774e1bbe57c80c85ee91df8d44075664232', '7e1d0c9b8a7f6e5d4c3b2a1f0e9d8c7b6a5f4e3d', 'follow dev''s pack', NULL, NULL, '2026-10-19T18:00:00Z');
 INSERT INTO mc.verdicts (sha, pin, verdict, sentence, committed_at) VALUES ('5833269587f5a3cb378a243bed094467aa71801e', '8e3e1cef', 'helped', 'complex laps took 1.4 lap-hours per merge against 2.6, over 12 laps.', '2026-10-09T17:00:00Z');
 
 -- DECISIONS.md on coleam00/ai-software-factory, through parseDecisions.
@@ -692,7 +692,7 @@ ON CONFLICT DO NOTHING;
 -- A version is a digest the factory's laps ran, labelled with the last pin before its first run.
 INSERT INTO mc.versions (factory, digest, first_run_at, pin_sha)
 SELECT l.factory, l.digest, min(l.started_at),
-  (SELECT p.sha FROM mc.pins p WHERE p.factory = l.factory AND p.committed_at < min(l.started_at)
+  (SELECT p.sha FROM mc.pins p WHERE p.committed_at < min(l.started_at)
     ORDER BY p.committed_at DESC LIMIT 1)
 FROM mc.laps l
 WHERE l.digest IS NOT NULL

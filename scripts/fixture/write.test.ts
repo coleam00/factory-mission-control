@@ -174,7 +174,6 @@ test('binds every value a row kind writes, taken from the moment it runs', async
     expect.any(String),
     expect.any(String),
     NOW.toISOString(),
-    'mission-control',
   ]);
 });
 

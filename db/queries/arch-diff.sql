@@ -9,7 +9,7 @@ version AS (
   FROM firsts f
   JOIN LATERAL (
     SELECT archon_sha FROM mc.pins
-    WHERE factory = $1 AND committed_at < f.first_run_at ORDER BY committed_at DESC LIMIT 1
+    WHERE committed_at < f.first_run_at ORDER BY committed_at DESC LIMIT 1
   ) p ON true
   JOIN LATERAL (
     SELECT archon_sha, factory_sha FROM mc.arch_versions

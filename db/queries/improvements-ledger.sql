@@ -9,7 +9,7 @@ labelled AS (
   FROM firsts f
   CROSS JOIN LATERAL (
     SELECT sha FROM mc.pins
-    WHERE factory = $1 AND committed_at < f.first_run_at ORDER BY committed_at DESC LIMIT 1
+    WHERE committed_at < f.first_run_at ORDER BY committed_at DESC LIMIT 1
   ) p
 )
 SELECT p.sha AS pin_sha, p.reason, p.measure, p.committed_at, n.laps,
@@ -25,4 +25,3 @@ LEFT JOIN LATERAL (
   WHERE pin <> '' AND starts_with(p.sha, pin)
   ORDER BY committed_at DESC LIMIT 1
 ) v ON true
-WHERE p.factory = $1
