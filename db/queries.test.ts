@@ -520,6 +520,42 @@ describe('version-strip on the seed', () => {
     });
     expect(await strip()).toHaveLength(5);
   });
+
+  test('pins are shared: a factory with a lap is labelled by them and lists the unused ones, a factory with none lists nothing', async () => {
+    const rollback = new Error('rollback');
+    await db
+      .transaction(async (tx) => {
+        await writeRow(tx, 'pin', new Date('2026-10-25T13:00:00Z'));
+        const unused = (await tx.query(sql, ['mission-control']))
+          .filter((r) => r.digest === null)
+          .map((r) => r.pin_sha)
+          .sort();
+        expect(unused.length).toBeGreaterThan(0);
+        expect(await tx.query(sql, ['empty-check'])).toEqual([]);
+
+        await tx.query(`INSERT INTO mc.laps (run_id, factory, workflow_name, status, digest, started_at)
+          VALUES ('00000000-0000-0000-0000-0000000000c1', 'north-star', 'archon-loop', 'completed',
+            'north-star-digest', '2026-10-20T00:00:00Z')`);
+        const [label] = await tx.query(
+          'SELECT sha FROM mc.pins WHERE committed_at < $1 ORDER BY committed_at DESC LIMIT 1',
+          ['2026-10-20T00:00:00Z'],
+        );
+        const rows = await tx.query(sql, ['north-star']);
+        expect(rows.filter((r) => r.digest !== null)).toMatchObject([
+          { digest: 'north-star-digest', pin_sha: label.sha },
+        ]);
+        expect(
+          rows
+            .filter((r) => r.digest === null)
+            .map((r) => r.pin_sha)
+            .sort(),
+        ).toEqual(unused);
+        throw rollback;
+      })
+      .catch((error) => {
+        if (error !== rollback) throw error;
+      });
+  });
 });
 
 describe('scorecard on the seed', () => {
