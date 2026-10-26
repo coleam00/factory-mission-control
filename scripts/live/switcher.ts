@@ -54,13 +54,26 @@ async function waitFor(page: Page, what: string, condition: string): Promise<voi
   }
 }
 
-/** Chooses `factory` in the switcher and waits for the browser to reach `path`. */
-async function choose(page: Page, factory: string, path: string): Promise<string> {
+/** Opens the switcher once its list is live; the list is in the page only while open. */
+async function openList(page: Page): Promise<void> {
   await waitFor(
     page,
     'the switcher was not ready',
     `document.querySelector('${SWITCHER}[data-state="ready"]') !== null`,
   );
+  await page.evaluate(
+    `document.querySelector('${SWITCHER} details').open || document.querySelector('${SWITCHER} summary').click()`,
+  );
+  await waitFor(
+    page,
+    'the switcher listed no factory',
+    `document.querySelector('${SWITCHER} [data-factory-entry]') !== null`,
+  );
+}
+
+/** Chooses `factory` in the switcher and waits for the browser to reach `path`. */
+async function choose(page: Page, factory: string, path: string): Promise<string> {
+  await openList(page);
   await page.evaluate(`document.querySelector('${entry(factory)} a').click()`);
   await page.evaluate<boolean>(
     pageWait(`location.pathname === ${JSON.stringify(path)}`, READY_WAIT_MS),
@@ -105,11 +118,7 @@ export async function switcherPhase(ctx: SwitcherContext): Promise<void> {
   try {
     await page.goto(`${base}/`);
     await page.evaluate('window.__mcNoReload = true');
-    await waitFor(
-      page,
-      'the switcher was not ready',
-      `document.querySelector('${SWITCHER}[data-state="ready"]') !== null`,
-    );
+    await openList(page);
     const readyAt = await page.evaluate<number | null>(markTime('live:factory-switcher:ready'));
     const sentAt = await page.evaluate<number | null>(
       markTime('live:factory-switcher:subscribe-sent'),
@@ -122,7 +131,6 @@ export async function switcherPhase(ctx: SwitcherContext): Promise<void> {
       [...rows].sort(([a], [b]) => a.localeCompare(b));
     check('the factories on /', byName(shown), byName(listed));
     check('the first entry', shown[0]?.[0], factory);
-    await page.evaluate(`document.querySelector('${SWITCHER} summary').click()`);
     writeFileSync(join(outDir, 'switcher.png'), await page.screenshot(1440));
 
     const before = listed.find(([name]) => name === second)?.[1] ?? 0;
@@ -159,10 +167,11 @@ export async function switcherPhase(ctx: SwitcherContext): Promise<void> {
     const map = mapMismatches(await mapNodes(page), await lapsOnNodes(db, second));
     check(`${second}'s map against its laps`, map, []);
 
-    await page.goto(`${base}/`);
-    const screens = await page.evaluate<string[]>(
-      `[...document.querySelectorAll('nav[aria-label="Screens"] a')].map((a) => a.getAttribute('href')).filter((href) => href.startsWith('/f/'))`,
-    );
+    // On a factory's own map the nav links its screens at once; on / it waits for the factory.
+    await page.goto(`${base}/f/${factory}`);
+    const screenLinks = `[...document.querySelectorAll('nav[aria-label="Screens"] a')].map((a) => a.getAttribute('href')).filter((href) => href.startsWith('/f/${factory}/'))`;
+    await page.evaluate<boolean>(pageWait(`${screenLinks}.length > 0`, READY_WAIT_MS));
+    const screens = await page.evaluate<string[]>(screenLinks);
     if (screens.length === 0) failures.push('switcher: the nav links no factory screen');
     for (const href of screens) {
       const screen = href.slice(href.indexOf('/', '/f/'.length) + 1);

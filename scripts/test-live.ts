@@ -46,10 +46,10 @@ const USAGE = [
   '  It opens /steps/archon-loop/check-app, checks it against the seed, times description writes to',
   '  it across the same hold, and checks land and an unknown step, writing',
   '  step-detail-timings.json, step-detail.png and step-detail-design-probe.json.',
-  '  Last it checks the factory switcher: every mc.factories row with its running laps, an',
-  '  inserted lap on the second factory timed to its count, choosing that factory from /, every',
-  '  factory screen and step detail, its map, strip and lanes, and the remembered choice with its',
-  '  fallback for a removed factory, writing switcher-check.txt, switcher-timings.json,',
+  '  Before the diff it checks the factory switcher: every mc.factories row with its running',
+  '  laps, an inserted lap on the second factory timed to its count, choosing that factory from /,',
+  '  every factory screen and step detail, its map, strip and lanes, and the remembered choice',
+  '  with its fallback for a removed factory, writing switcher-check.txt, switcher-timings.json,',
   '  switcher.png and switcher-design-probe.json.',
 ].join('\n');
 
@@ -1883,6 +1883,9 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
       `first label reached the issues screen in ${issueTimings.labelToScreen.ms ?? 'never'} ms`,
     );
 
+    // Before the diff adds steps to the current architecture, which the second factory's map shows.
+    await switcherPhase({ deps, db, base, outDir, factory, inserted, failures });
+
     diffTimings.url = `/f/${factory}/diff?a=${encodeURIComponent(v1)}&b=${encodeURIComponent(v2)}`;
     diffPage = await openPage(deps.env);
     await diffPage.goto(`${base}${diffTimings.url}`);
@@ -2074,8 +2077,6 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
     diffTimings.noReload = await diffPage.evaluate<boolean>('window.__mcNoReload === true');
     await diffPage.close();
     diffPage = undefined;
-
-    await switcherPhase({ deps, db, base, outDir, factory, inserted, failures });
 
     const probe = Bun.spawnSync(
       [

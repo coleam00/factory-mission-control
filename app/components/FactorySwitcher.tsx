@@ -57,7 +57,7 @@ function Entries({
 
 /**
  * The switcher's contents: the current factory, and when open every factory with its running
- * laps, each linking to `hrefFor` it.
+ * laps, each linking to `hrefFor` it. The list is in the page only while open.
  */
 export function FactorySwitcherBody({
   rows,
@@ -85,15 +85,17 @@ export function FactorySwitcherBody({
         <span className={LABEL}>Factory</span>
         <span className="font-mono text-sm text-text-primary">{current ?? '-'}</span>
       </summary>
-      <div className="absolute left-0 top-full z-10 mt-2 min-w-64 rounded-md border border-border bg-surface">
-        <Entries
-          rows={rows}
-          state={state}
-          current={current}
-          hrefFor={hrefFor}
-          onChoose={() => onToggle(false)}
-        />
-      </div>
+      {open ? (
+        <div className="absolute left-0 top-full z-10 mt-2 min-w-64 rounded-md border border-border bg-surface">
+          <Entries
+            rows={rows}
+            state={state}
+            current={current}
+            hrefFor={hrefFor}
+            onChoose={() => onToggle(false)}
+          />
+        </div>
+      ) : null}
     </details>
   );
 }
