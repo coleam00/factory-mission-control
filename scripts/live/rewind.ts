@@ -3,7 +3,9 @@ import { join } from 'node:path';
 import { openPage, type Page } from '../lib/cdp';
 import type { Deps } from '../lib/cli';
 import type { Db } from '../lib/db';
+import { requireRewindBranch } from '../lib/guard';
 import { waitForOperations } from '../lib/neon';
+import { resolveBranchName } from '../lib/target';
 import { rewindBranchName } from '../rewind-create';
 // test-live.ts imports this module too: its helpers are used only inside functions, never while
 // the modules load.
@@ -11,15 +13,21 @@ import {
   freePort,
   insertToScreen,
   LIMITS,
-  markTime,
   pageWait,
   READY_WAIT_MS,
   renewalsOf,
   waitForHealth,
 } from '../test-live';
+import {
+  collectPanelMarks,
+  emptyGroupTimings,
+  explainPanel,
+  type GroupTimings,
+  groupPerformanceFailures,
+  groupTimings,
+} from './timings';
 
 const QUERIES = ['rewind-branches', 'status-strip'] as const;
-type PerQuery = Record<(typeof QUERIES)[number], number | null>;
 const RENEWALS_IN_180S = 3;
 /** Making a Neon branch and its Realtime takes tens of seconds before its row is written. */
 const CREATE_WAIT_MS = 180_000;
@@ -39,11 +47,9 @@ const listed = (name: string) =>
  * compute, so it is recorded only. A new rewind's way to the list is timed from the line
  * `rewind:create` prints just before its INSERT, since making the Neon branch comes first.
  */
-interface RewindTimings {
+interface RewindTimings extends GroupTimings {
   branch: string | null;
   port: number | null;
-  readyMs: number | null;
-  firstSnapshotMs: PerQuery;
   createToListMs: number | null;
   holdSeconds: number;
   renewals: number | null;
@@ -55,25 +61,64 @@ interface RewindTimings {
     rewindCount: number | null;
     expected: number | null;
   };
-  afterSwitch: { readyMs: number | null; firstSnapshotMs: PerQuery };
+  afterSwitch: GroupTimings;
   switchedBack: boolean | null;
   limits: typeof LIMITS;
 }
 
-async function panelTimings(page: Page): Promise<{ readyMs: number | null; first: PerQuery }> {
-  const first: PerQuery = { 'rewind-branches': null, 'status-strip': null };
-  const marks: number[] = [];
-  for (const q of QUERIES) {
-    const readyAt = await page.evaluate<number | null>(markTime(`live:${q}:ready`));
-    const subscribedAt = await page.evaluate<number | null>(markTime(`live:${q}:subscribe-sent`));
-    if (readyAt !== null) marks.push(readyAt);
-    first[q] =
-      readyAt === null || subscribedAt === null ? null : Math.round(readyAt - subscribedAt);
+interface RewindMeasurementContext {
+  deps: Deps;
+  db: Db;
+  homeBranch: string;
+  queries: ReadonlyMap<string, string>;
+  factory: string;
+  created: readonly string[];
+}
+
+export async function measureRewindPanels(
+  page: Page,
+  ctx: RewindMeasurementContext,
+): Promise<GroupTimings> {
+  const panels = await collectPanelMarks(page, QUERIES, READY_WAIT_MS);
+  for (const query of QUERIES) {
+    const timing = panels[query];
+    if (timing.measurementError) continue;
+    const branch = timing.queryContext?.branch;
+    if (branch === null) {
+      await explainPanel(
+        query,
+        timing,
+        { db: ctx.db, branch: ctx.homeBranch, selectedBranch: null },
+        ctx.queries,
+        ctx.factory,
+      );
+      continue;
+    }
+    let rewindDb: Db | undefined;
+    try {
+      if (!branch || !ctx.created.includes(branch)) throw new Error('unowned rewind branch');
+      requireRewindBranch(branch);
+      const api = ctx.deps.neon();
+      const owned = (await api.listBranches()).find((candidate) => candidate.name === branch);
+      if (!owned) throw new Error('owned rewind branch missing');
+      const url = await api.pooledConnectionUri(owned.id);
+      if ((await resolveBranchName(url, api)) !== branch)
+        throw new Error('rewind endpoint mismatch');
+      rewindDb = ctx.deps.openDb(url);
+      await explainPanel(
+        query,
+        timing,
+        { db: rewindDb, branch, selectedBranch: branch },
+        ctx.queries,
+        ctx.factory,
+      );
+    } catch {
+      timing.measurementError = `${query}: could not measure the owned rewind branch`;
+    } finally {
+      await rewindDb?.close();
+    }
   }
-  return {
-    readyMs: marks.length === QUERIES.length ? Math.round(Math.max(...marks)) : null,
-    first,
-  };
+  return groupTimings(panels);
 }
 
 /** Clicks `selector` and waits for the page `switchBranch` loads to have both panels ready. */
@@ -100,6 +145,8 @@ async function switchVia(page: Page, selector: string): Promise<void> {
 export function rewindPhase(ctx: {
   deps: Deps;
   db: Db;
+  homeBranch: string;
+  queries: ReadonlyMap<string, string>;
   outDir: string;
   factory: string;
   holdSeconds: number;
@@ -109,18 +156,14 @@ export function rewindPhase(ctx: {
   const timings: RewindTimings = {
     branch: parent ?? null,
     port: null,
-    readyMs: null,
-    firstSnapshotMs: { 'rewind-branches': null, 'status-strip': null },
+    ...emptyGroupTimings(QUERIES),
     createToListMs: null,
     holdSeconds,
     renewals: null,
     afterHoldCreateToListMs: null,
     noReload: null,
     switched: { branch: null, homeCount: null, rewindCount: null, expected: null },
-    afterSwitch: {
-      readyMs: null,
-      firstSnapshotMs: { 'rewind-branches': null, 'status-strip': null },
-    },
+    afterSwitch: emptyGroupTimings(QUERIES),
     switchedBack: null,
     limits: LIMITS,
   };
@@ -196,9 +239,7 @@ export function rewindPhase(ctx: {
       if (!(await page.evaluate<boolean>(pageWait(bothReady, READY_WAIT_MS)))) {
         throw new Error(`/rewind did not reach data-state="ready" within ${READY_WAIT_MS} ms`);
       }
-      const first = await panelTimings(page);
-      timings.readyMs = first.readyMs;
-      timings.firstSnapshotMs = first.first;
+      Object.assign(timings, await measureRewindPanels(page, { ...ctx, created }));
 
       const before = await count(page);
       if (before === null) throw new Error('the strip on /rewind shows no count');
@@ -216,8 +257,7 @@ export function rewindPhase(ctx: {
       const name = rewindBranchName(at);
       timings.noReload = await page.evaluate<boolean>('window.__mcNoReload === true');
       await switchVia(page, `[data-rewind-branch="${name}"] button`);
-      const after = await panelTimings(page);
-      timings.afterSwitch = { readyMs: after.readyMs, firstSnapshotMs: after.first };
+      timings.afterSwitch = await measureRewindPanels(page, { ...ctx, created });
       timings.switched.branch = await page.evaluate<string | null>(INDICATOR);
       timings.switched.rewindCount = await count(page);
       timings.switched.expected = before;
@@ -308,13 +348,7 @@ export function rewindPhase(ctx: {
       if (!within(timings.readyMs, LIMITS.readyMs)) {
         failures.push(`/rewind was ready after ${timings.readyMs} ms, limit ${LIMITS.readyMs}`);
       }
-      for (const q of QUERIES) {
-        if (!within(timings.firstSnapshotMs[q], LIMITS.firstSnapshotMs)) {
-          failures.push(
-            `${q} on /rewind first snapshot after ${timings.firstSnapshotMs[q]} ms, limit ${LIMITS.firstSnapshotMs}`,
-          );
-        }
-      }
+      failures.push(...groupPerformanceFailures(QUERIES, timings));
       for (const [when, ms] of [
         ['first', timings.createToListMs],
         [`after ${holdSeconds}s`, timings.afterHoldCreateToListMs],
