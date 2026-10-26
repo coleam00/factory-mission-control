@@ -2,6 +2,14 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
+  type ArchDiffRow,
+  diffVersions,
+  type Item,
+  itemLabel,
+  KINDS,
+  type Kind,
+} from '../app/lib/arch-diff';
+import {
   dataValue,
   type MeasureKey,
   type ScorecardRow,
@@ -9,6 +17,7 @@ import {
   versionLaps,
   versionPin,
 } from '../app/lib/scorecard';
+import { joinParts } from '../app/lib/step-detail';
 import { seededDb } from '../scripts/fixture/seed';
 import { writeRow } from '../scripts/fixture/write';
 import { REPO_ROOT } from '../scripts/lib/cli';
@@ -75,6 +84,100 @@ describe('against the migrated schema', () => {
     const sql = queries.find(([name]) => name === 'status-strip')?.[1] as string;
     expect(await db.query(sql, ['mission-control'])).toEqual([{ running: 2 }]);
     expect(await db.query(sql, ['other'])).toEqual([{ running: 1 }]);
+  });
+
+  test('step queries read the newest pin with architecture rows, for a factory the dashboard shows', async () => {
+    const sql = (name: string) => queries.find(([n]) => n === name)?.[1] as string;
+    // A long multi-byte file: each part must stay under the 16 KiB Realtime answers (REALTIME.md).
+    const long = `${'é'.repeat(4500)}
+${'x'.repeat(5000)}`;
+    await db.query(`INSERT INTO mc.factories (name, repository, codebase, console)
+      VALUES ('mission-control', 'o/r', 'o/r', 'http://localhost:3090')`);
+    await db.query(`INSERT INTO mc.pins (sha, archon_sha, reason, committed_at) VALUES
+      ('p1', 'a1', 'one', '2026-01-01T00:00:00Z'),
+      ('p2', 'a2', 'two', '2026-02-01T00:00:00Z'),
+      ('p3', 'a3', 'three, not parsed yet', '2026-03-01T00:00:00Z')`);
+    await db.query(`INSERT INTO mc.arch_versions (archon_sha, factory_sha, parsed_at) VALUES
+      ('a1', 'f', '2026-01-02T00:00:00Z'), ('a2', 'f', '2026-02-02T00:00:00Z')`);
+    // Both versions share every name and path, so a query that leaks a1 doubles or mixes rows.
+    for (const [sha, deps] of [
+      ['a1', '{subject,briefs}'],
+      ['a2', '{subject}'],
+    ]) {
+      await db.query(
+        `INSERT INTO mc.arch_steps (archon_sha, factory_sha, workflow, path, position, step_id, kind,
+           depends_on, command_file, script_file, defined_in, file)
+         VALUES ($1, 'f', 'archon-loop', 'check-app', 0, 'check-app', 'command', $2,
+           'loop/commands/loop-check-app.md', 'loop/scripts/check.ts', 'archon-loop',
+           'loop/archon-loop.yaml')`,
+        [sha, deps],
+      );
+      await db.query(
+        `INSERT INTO mc.arch_texts (archon_sha, factory_sha, path, text) VALUES
+           ($1, 'f', 'loop/commands/loop-check-app.md', $2),
+           ($1, 'f', 'loop/agents/verifier.md', $2)`,
+        [sha, `${sha} ${long}`],
+      );
+      await db.query(
+        `INSERT INTO mc.arch_subagents (archon_sha, factory_sha, workflow, step_path, name,
+           description, instruction_file)
+         VALUES ($1, 'f', 'archon-loop', 'check-app', 'verifier', $1, 'loop/agents/verifier.md')`,
+        [sha],
+      );
+      await db.query(
+        `INSERT INTO mc.arch_scripts (archon_sha, factory_sha, path, text)
+         VALUES ($1, 'f', 'loop/scripts/check.ts', $2)`,
+        [sha, `${sha} ${long}`],
+      );
+      await db.query(
+        `INSERT INTO mc.arch_hooks (archon_sha, factory_sha, path, text, admitted_agents)
+         VALUES ($1, 'f', 'hooks/fence.py', $1, '{verifier}')`,
+        [sha],
+      );
+      await db.query(
+        `INSERT INTO mc.arch_workflows (archon_sha, factory_sha, name, file, yaml)
+         VALUES ($1, 'f', 'archon-loop', 'loop/archon-loop.yaml', $2)`,
+        [sha, `${sha} ${long}`],
+      );
+    }
+
+    for (const [name, query] of queries.filter(([n]) => n.startsWith('step-'))) {
+      expect([name, await db.query(query, ['other'])]).toEqual([name, []]);
+    }
+    const steps = await db.query(sql('step-detail'), ['mission-control']);
+    expect(steps.map((s) => s.depends_on)).toEqual([['subject']]);
+
+    const files = async (name: string, key: (row: Record<string, unknown>) => unknown) => {
+      const parts = (await db.query(sql(name), ['mission-control'])) as {
+        part: number;
+        chunk: string;
+      }[];
+      expect(parts.length).toBe(3);
+      for (const { chunk } of parts) expect(Buffer.byteLength(chunk)).toBeLessThan(16 * 1024);
+      return joinParts(parts, (row) => String(key(row)));
+    };
+    expect(await files('step-prompt', (row) => row.path)).toEqual(
+      new Map([['loop/commands/loop-check-app.md', `a2 ${long}`]]),
+    );
+    expect(await files('step-subagents', (row) => `${row.name} ${row.description}`)).toEqual(
+      new Map([['verifier a2', `a2 ${long}`]]),
+    );
+    expect(await files('step-scripts', (row) => row.path)).toEqual(
+      new Map([['loop/scripts/check.ts', `a2 ${long}`]]),
+    );
+    expect(await files('step-yaml', (row) => row.name)).toEqual(
+      new Map([['archon-loop', `a2 ${long}`]]),
+    );
+    expect(await db.query(sql('step-hooks'), ['mission-control'])).toEqual([
+      {
+        path: 'hooks/fence.py',
+        admitted_agents: ['verifier'],
+        workflow: 'archon-loop',
+        step_path: 'check-app',
+        agent: 'verifier',
+        description: 'a2',
+      },
+    ]);
   });
 });
 
@@ -403,5 +506,214 @@ describe('issue-graph on the seed', () => {
 
   test('another factory sees none of these issues', async () => {
     expect(await db.query(sql, ['other'])).toEqual([]);
+  });
+});
+
+/** The architecture a version ran: the latest pin committed before its first lap, as parsed. */
+async function archOf(db: Db, digest: string): Promise<Record<string, unknown>> {
+  const [version] = await db.query(
+    `SELECT a.archon_sha, a.factory_sha FROM mc.arch_versions a
+     WHERE a.archon_sha = (
+       SELECT p.archon_sha FROM mc.pins p
+       WHERE p.committed_at < (SELECT min(started_at) FROM mc.laps WHERE digest = $1)
+       ORDER BY p.committed_at DESC LIMIT 1)
+     ORDER BY a.parsed_at DESC LIMIT 1`,
+    [digest],
+  );
+  return version;
+}
+
+describe('arch-diff on the seed', () => {
+  let db: Db;
+  const sql = queries.find(([name]) => name === 'arch-diff')?.[1] as string;
+  let rows: ArchDiffRow[];
+  let digests: string[];
+
+  beforeAll(async () => {
+    db = await seededDb(REPO_ROOT, readFileSync(join(REPO_ROOT, 'fixtures', 'seed.sql'), 'utf8'));
+    rows = (await db.query(sql, ['mission-control'])) as unknown as ArchDiffRow[];
+    const versions = await db.query(
+      'SELECT digest FROM mc.versions WHERE factory = $1 ORDER BY first_run_at',
+      ['mission-control'],
+    );
+    digests = versions.map((v) => String(v.digest));
+  }, 60_000);
+
+  afterAll(() => db.close());
+
+  test('V1 to V2 is exactly the scripted change: a step added and removed, a prompt and a subagent changed', () => {
+    const [v1, v2] = digests;
+    const result = diffVersions(rows, v1, v2);
+    if (result.status !== 'compared')
+      throw new Error(`expected a comparison, got ${result.status}`);
+    const listed = KINDS.flatMap((kind) =>
+      (['added', 'removed', 'changed'] as const).flatMap((change) =>
+        result.diff[kind][change].map((item) => `${change} ${kind} ${itemLabel(item)}`),
+      ),
+    );
+    expect(listed).toEqual([
+      'added step archon-loop · tally',
+      'removed step archon-loop · briefs',
+      'changed prompt loop/commands/loop-review.md',
+      'changed subagent archon-manager · manage · holdout-writer',
+    ]);
+  });
+
+  test('a version against itself has no change, and a version never parsed is unrecorded', () => {
+    const [v1, , v3] = digests;
+    expect(diffVersions(rows, v1, v1)).toMatchObject({ status: 'compared', changes: 0 });
+    expect(diffVersions(rows, v1, v3)).toEqual({ status: 'unrecorded', digests: [v3] });
+  });
+
+  test("names no other factory's versions", async () => {
+    expect(await db.query(sql, ['other'])).toEqual([]);
+  });
+
+  /**
+   * Each architecture table, the columns that name its item, and the columns deliberately not
+   * part of what it says. Every other column must count as a change, so a column the query stops
+   * hashing, or one a migration adds, fails here.
+   */
+  const tables: {
+    table: string;
+    kind: Kind;
+    item: (row: Record<string, unknown>) => Item;
+    key: string[];
+    ignored: string[];
+  }[] = [
+    {
+      table: 'arch_workflows',
+      kind: 'workflow',
+      item: (r) => ({ kind: 'workflow', workflow: null, step: null, name: String(r.name) }),
+      key: ['name'],
+      // The YAML text changes whenever any step does, so it would list every edited workflow.
+      ignored: ['yaml'],
+    },
+    {
+      table: 'arch_steps',
+      kind: 'step',
+      item: (r) => ({
+        kind: 'step',
+        workflow: String(r.workflow),
+        step: null,
+        name: String(r.path),
+      }),
+      key: ['workflow', 'path'],
+      // Removing a step renumbers the rest; wiring is compared from mc.arch_edges.
+      ignored: ['parent_path', 'position', 'step_id', 'depends_on'],
+    },
+    {
+      table: 'arch_texts',
+      kind: 'prompt',
+      item: (r) => ({ kind: 'prompt', workflow: null, step: null, name: String(r.path) }),
+      key: ['path'],
+      ignored: [],
+    },
+    {
+      table: 'arch_subagents',
+      kind: 'subagent',
+      item: (r) => ({
+        kind: 'subagent',
+        workflow: String(r.workflow),
+        step: String(r.step_path),
+        name: String(r.name),
+      }),
+      key: ['workflow', 'step_path', 'name'],
+      ignored: [],
+    },
+  ];
+
+  test.each(tables)(
+    'an edit to any column of $table that says something is listed as a changed $kind',
+    async ({ table, kind, item, key, ignored }) => {
+      const [v1, v2] = digests;
+      const baseline = diffVersions(rows, v1, v2);
+      if (baseline.status !== 'compared') throw new Error('expected a comparison');
+      const scripted = [...baseline.diff[kind].added, ...baseline.diff[kind].changed];
+      const version = await archOf(db, v2);
+      const candidates = await db.query(
+        `SELECT * FROM mc.${table} WHERE archon_sha = $1 AND factory_sha = $2`,
+        [version.archon_sha, version.factory_sha],
+      );
+      const row = candidates.find(
+        (r) => !scripted.some((s) => itemLabel(s) === itemLabel(item(r))),
+      );
+      if (!row) throw new Error(`no ${table} row in V2 that the seed leaves unchanged`);
+      const columns = (
+        await db.query(
+          `SELECT column_name FROM information_schema.columns
+           WHERE table_schema = 'mc' AND table_name = $1 ORDER BY ordinal_position`,
+          [table],
+        )
+      )
+        .map((c) => String(c.column_name))
+        .filter((c) => !['archon_sha', 'factory_sha', ...key, ...ignored].includes(c));
+      expect(columns.length).toBeGreaterThan(0);
+
+      const unlisted: string[] = [];
+      for (const column of columns) {
+        const rollback = new Error('rollback');
+        await db
+          .transaction(async (tx) => {
+            await tx.query(
+              `UPDATE mc.${table} SET ${column} = coalesce(${column}, '') || '~'
+               WHERE archon_sha = $1 AND factory_sha = $2
+                 AND ${key.map((c, i) => `${c} = $${i + 3}`).join(' AND ')}`,
+              [version.archon_sha, version.factory_sha, ...key.map((c) => row[c])],
+            );
+            const edited = (await tx.query(sql, ['mission-control'])) as unknown as ArchDiffRow[];
+            const result = diffVersions(edited, v1, v2);
+            if (result.status !== 'compared') throw new Error('expected a comparison');
+            if (!result.diff[kind].changed.some((c) => itemLabel(c) === itemLabel(item(row)))) {
+              unlisted.push(column);
+            }
+            throw rollback;
+          })
+          .catch((error) => {
+            if (error !== rollback) throw error;
+          });
+      }
+      expect(unlisted).toEqual([]);
+    },
+  );
+});
+
+describe('arch-diff on versions known only from their laps', () => {
+  let db: Db;
+  const sql = queries.find(([name]) => name === 'arch-diff')?.[1] as string;
+
+  beforeAll(async () => {
+    db = await seededDb(REPO_ROOT, readFileSync(join(REPO_ROOT, 'fixtures', 'seed.sql'), 'utf8'));
+    // Only the seed writes mc.versions; the projection records a version as mc.laps.digest (#74).
+    await db.query('DELETE FROM mc.versions');
+  }, 60_000);
+
+  afterAll(() => db.close());
+
+  test('V1 to V2 is still exactly the scripted change, and V3 is still unrecorded', async () => {
+    const rows = (await db.query(sql, ['mission-control'])) as unknown as ArchDiffRow[];
+    const [v1, v2, v3] = (
+      await db.query(
+        `SELECT digest FROM mc.laps WHERE factory = $1 AND digest IS NOT NULL
+         GROUP BY digest ORDER BY min(started_at)`,
+        ['mission-control'],
+      )
+    ).map((v) => String(v.digest));
+    const result = diffVersions(rows, v1, v2);
+    if (result.status !== 'compared')
+      throw new Error(`expected a comparison, got ${result.status}`);
+    expect(
+      KINDS.flatMap((kind) =>
+        (['added', 'removed', 'changed'] as const).flatMap((change) =>
+          result.diff[kind][change].map((item) => `${change} ${kind} ${itemLabel(item)}`),
+        ),
+      ),
+    ).toEqual([
+      'added step archon-loop · tally',
+      'removed step archon-loop · briefs',
+      'changed prompt loop/commands/loop-review.md',
+      'changed subagent archon-manager · manage · holdout-writer',
+    ]);
+    expect(diffVersions(rows, v1, v3)).toEqual({ status: 'unrecorded', digests: [v3] });
   });
 });
