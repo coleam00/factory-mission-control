@@ -2,10 +2,11 @@
 // projection trigger that loses a lock wait records the error, and when even that record fails the
 // error is dropped (0006_projection.sql), so a lap can stay `running` after Archon finished the run:
 // a finished, paused or failed run may get no more writes to project it again. For each run
-// Archon is not running, this replays the run's row and step-level events through 0006's own functions, by way
-// of temp tables that carry the same triggers, and keeps the result only when it differs from the
-// lap's rows. Archon's tables are only read. It writes the check branch in .mc-check.env; `:main`
-// writes `main`, and is the owner's nightly run beside `backfill:main`.
+// Archon is not running, this replays the run's row and step-level events through the
+// projection's own functions (0006, and 0007's attempts), by way of temp tables that carry the same
+// triggers, and keeps the result only when it differs from the lap's rows. Archon's tables are only
+// read. It writes the check branch in .mc-check.env; `:main` writes `main`, and is the owner's
+// nightly run beside `backfill:main`.
 
 import { parseArgs } from 'node:util';
 import { failing, guardedDatabaseUrl, type Main, runCli } from './lib/cli';
@@ -38,6 +39,8 @@ async function lapRows(tx: Tx, runId: string): Promise<string> {
   const rows = await tx.query(
     `SELECT 'laps' AS t, to_jsonb(l)::text AS row FROM mc.laps l WHERE run_id = $1
      UNION ALL SELECT 'lap_steps', to_jsonb(s)::text FROM mc.lap_steps s WHERE run_id = $1
+     UNION ALL SELECT 'lap_step_attempts', to_jsonb(a)::text FROM mc.lap_step_attempts a
+       WHERE run_id = $1
      UNION ALL SELECT 'app_check_lines', to_jsonb(a)::text FROM mc.app_check_lines a WHERE run_id = $1
      ORDER BY 1, 2`,
     [runId],

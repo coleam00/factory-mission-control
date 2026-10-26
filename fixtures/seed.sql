@@ -657,6 +657,15 @@ WHERE r.codebase_id = '5eed0000-0000-4000-8000-000000000000'
 ORDER BY e.workflow_run_id, e.step_name, e.created_at DESC, e.event_order DESC
 ON CONFLICT DO NOTHING;
 
+-- Every finished attempt of a step, through 0007's own function (the seed's events run each step
+-- once, so these agree with the step rows above).
+SELECT mc.record_step_attempt(e.workflow_run_id, e.event_type, e.step_name, e.data)
+FROM remote_agent_workflow_events e
+JOIN remote_agent_workflow_runs r ON r.id = e.workflow_run_id
+WHERE r.codebase_id = '5eed0000-0000-4000-8000-000000000000'
+  AND e.event_type IN ('node_completed', 'node_failed', 'node_skipped')
+ORDER BY e.created_at, e.event_order;
+
 -- A check-app line keeps its position, kind, verdict, evidence count, pre_existing and, for a
 -- holdout, the first H-<nn> of its text (holdoutId in parsers/metrics.ts); never the text itself.
 INSERT INTO mc.app_check_lines (run_id, position, kind, verdict, evidence_count, pre_existing,
