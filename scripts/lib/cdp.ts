@@ -2,11 +2,9 @@ import { spawn } from 'node:child_process';
 import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { PORT_FILE_NOT_WRITTEN_YET } from '../../harness/design-probe.js';
 
-/**
- * A headless Chrome, Chromium or Edge driven over the DevTools protocol, for `test:live`. The
- * launch follows `harness/design-probe.js`, which exports nothing to share.
- */
+/** A headless Chrome, Chromium or Edge driven over the DevTools protocol, for `test:live`. */
 export interface Page {
   /** Evaluates `expression` in the page, awaiting a promise, and returns its JSON value. */
   evaluate<T>(expression: string, timeoutMs?: number): Promise<T>;
@@ -55,7 +53,7 @@ export function readDevToolsUrl(
     lines = read(activePort).split('\n');
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code;
-    if (code === 'ENOENT' || code === 'EBUSY' || code === 'EPERM') return undefined;
+    if (code !== undefined && PORT_FILE_NOT_WRITTEN_YET.has(code)) return undefined;
     throw error;
   }
   if (lines.length >= 2 && lines[1]) return `ws://127.0.0.1:${lines[0].trim()}${lines[1].trim()}`;
