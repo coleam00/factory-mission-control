@@ -1334,18 +1334,6 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
         : null;
     failures.push(...(await checkAppMismatches(stepPage, deps.repoRoot)));
     writeFileSync(join(outDir, 'step-detail.png'), await stepPage.screenshot(1440));
-    const version = await currentVersion(db);
-    const [checkApp] = await db.query(
-      `SELECT description FROM mc.arch_steps
-        WHERE archon_sha = $1 AND factory_sha = $2 AND workflow = 'archon-loop' AND path = 'check-app'`,
-      [version.archon_sha, version.factory_sha],
-    );
-    described = { version, was: checkApp?.description ?? null };
-    stepTimings.descriptionToScreenMs = await descriptionToScreen(stepPage, db, version);
-    deps.out(
-      `first description write reached the step in ${stepTimings.descriptionToScreenMs ?? 'never'} ms`,
-    );
-
     versionsPage = await openPage(deps.env);
     await versionsPage.goto(`${base}/f/${factory}/versions`);
     await versionsPage.evaluate('window.__mcNoReload = true');
@@ -1450,6 +1438,20 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
       );
     }
     writeFileSync(join(outDir, 'arch-diff.png'), await diffPage.screenshot(1440));
+    // check-app's description is written only now: it is in V2's architecture, so the diff above
+    // would list it as changed.
+    const version = await currentVersion(db);
+    const [checkApp] = await db.query(
+      `SELECT description FROM mc.arch_steps
+        WHERE archon_sha = $1 AND factory_sha = $2 AND workflow = 'archon-loop' AND path = 'check-app'`,
+      [version.archon_sha, version.factory_sha],
+    );
+    described = { version, was: checkApp?.description ?? null };
+    stepTimings.descriptionToScreenMs = await descriptionToScreen(stepPage, db, version);
+    deps.out(
+      `first description write reached the step in ${stepTimings.descriptionToScreenMs ?? 'never'} ms`,
+    );
+
     v2Arch = await archOf(db, factory, v2);
     diffTimings.stepToScreenMs = await archStepToScreen(diffPage, db, v2Arch, addedSteps);
     deps.out(`first step reached the diff in ${diffTimings.stepToScreenMs ?? 'never'} ms`);
