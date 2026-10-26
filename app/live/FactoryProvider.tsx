@@ -15,15 +15,28 @@ import {
   readRemembered,
   remember,
   toRemember,
+  type UrlFactoryView,
+  urlFactoryView,
 } from '../lib/factory-choice';
 import { useLive } from './LiveProvider';
 
+/** The URL's factory key and what the shell shows for it (`urlFactoryView`). */
+export interface UrlFactory {
+  key: string | undefined;
+  view: UrlFactoryView;
+}
+
 interface FactoryChoice {
   current: string | undefined;
+  inUrl: UrlFactory;
   publish: (listed: Listed) => void;
 }
 
-const FactoryContext = createContext<FactoryChoice>({ current: undefined, publish: () => {} });
+const FactoryContext = createContext<FactoryChoice>({
+  current: undefined,
+  inUrl: { key: undefined, view: 'screen' },
+  publish: () => {},
+});
 
 /** Reading `localStorage` itself throws where the browser blocks storage. */
 function browserStorage(): Storage | undefined {
@@ -62,15 +75,27 @@ export function FactoryProvider({ children }: { children: ReactNode }): ReactEle
     (next: Listed) => setListed((prev) => (sameListed(prev, next) ? prev : next)),
     [],
   );
-  const fallback = live.status === 'ready' ? live.factories[0] : undefined;
-  const current = currentFactory({ inUrl, remembered, fallback, listed });
-  const value = useMemo(() => ({ current, publish }), [current, publish]);
+  const served = live.status === 'ready' ? live.factories : undefined;
+  const fallback = served?.[0];
+  const view = urlFactoryView({ inUrl, listed, served });
+  // A key that is not a factory is no panel's factory: the header does not show it as one.
+  const current =
+    view === 'unknown' ? undefined : currentFactory({ inUrl, remembered, fallback, listed });
+  const value = useMemo(
+    () => ({ current, inUrl: { key: inUrl, view }, publish }),
+    [current, inUrl, view, publish],
+  );
   return <FactoryContext.Provider value={value}>{children}</FactoryContext.Provider>;
 }
 
 /** The factory every panel shows: the URL's, else the remembered one, else factories.json's first. */
 export function useFactory(): string | undefined {
   return useContext(FactoryContext).current;
+}
+
+/** The URL's factory key, and whether the shell shows its screen, waits, or calls it unknown. */
+export function useUrlFactory(): UrlFactory {
+  return useContext(FactoryContext).inUrl;
 }
 
 /** How the switcher hands the provider the factories it lists. */

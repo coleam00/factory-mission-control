@@ -83,7 +83,9 @@ export function FactorySwitcherBody({
     >
       <summary className="flex cursor-pointer items-center gap-3">
         <span className={LABEL}>Factory</span>
-        <span className="font-mono text-sm text-text-primary">{current ?? '-'}</span>
+        <span className="font-mono text-sm text-text-primary [overflow-wrap:anywhere]">
+          {current ?? '-'}
+        </span>
       </summary>
       {open ? (
         <div className="absolute left-0 top-full z-10 mt-2 min-w-64 rounded-md border border-border bg-surface">
