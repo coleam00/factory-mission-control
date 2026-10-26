@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { afterAll, beforeAll, describe, expect, spyOn, test } from 'bun:test';
 import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -11,6 +11,7 @@ import {
   REALTIME_PROTOCOL,
   realtimeUrlFor,
 } from './live';
+import { UnknownRewindBranch } from './rewind';
 
 const repoRoot = resolve(import.meta.dir, '..');
 const queries = loadLiveQueries(join(repoRoot, 'db', 'queries'));
@@ -24,18 +25,37 @@ beforeAll(() => {
 
 afterAll(() => rmSync(resolve(distDir, '..'), { recursive: true, force: true }));
 
-function fakeLive() {
+const HOME_URL = 'wss://ep-abc-123.rt.c-14.us-east-1.aws.neon.tech/';
+const REWIND_URL = 'wss://ep-rewind-1.rt.c-14.us-east-1.aws.neon.tech/';
+const REWIND = 'rewind-2026-10-24t11-00-00z';
+
+/** A `Live` whose sealers record what they sealed, each under its branch's name. */
+function fakeLive({ openRewind = true }: { openRewind?: boolean | (() => Promise<never>) } = {}) {
   const sealed: [string, string][] = [];
-  const live: Live = {
-    url: 'wss://ep-abc-123.rt.c-14.us-east-1.aws.neon.tech/',
-    factories: ['mission-control'],
-    queries,
-    seal: async (sql, factory) => {
+  const sealedOn: string[] = [];
+  const opened: string[] = [];
+  const sealer = (branch: string, url: string) => ({
+    url,
+    seal: async (sql: string, factory: string) => {
       sealed.push([sql, factory]);
+      sealedOn.push(branch);
       return { capability: 'cap', queryFingerprint: 'fp', expiresAt: 60_000 };
     },
+  });
+  const live: Live = {
+    factories: ['mission-control'],
+    queries,
+    home: sealer('home', HOME_URL),
+    openRewind:
+      openRewind === false
+        ? undefined
+        : async (name) => {
+            opened.push(name);
+            if (typeof openRewind === 'function') return openRewind();
+            return { name, ...sealer(name, REWIND_URL) };
+          },
   };
-  return { app: createApp({ buildId: 'test', distDir, live }), sealed };
+  return { app: createApp({ buildId: 'test', distDir, live }), live, sealed, sealedOn, opened };
 }
 
 const post = (body: unknown) => ({
@@ -105,8 +125,10 @@ describe('GET /api/live', () => {
     const res = await fakeLive().app.request('/api/live');
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({
-      url: 'wss://ep-abc-123.rt.c-14.us-east-1.aws.neon.tech/',
+      url: HOME_URL,
+      home: HOME_URL,
       factories: ['mission-control'],
+      rewind: null,
     });
   });
 });
@@ -123,8 +145,10 @@ describe('the page the server answers', () => {
     expect(res.headers.get('content-type')).toContain('text/html');
     const html = await res.text();
     expect(bootConfig(html)).toEqual({
-      url: 'wss://ep-abc-123.rt.c-14.us-east-1.aws.neon.tech/',
+      url: HOME_URL,
+      home: HOME_URL,
       factories: ['mission-control'],
+      rewind: null,
       protocol: REALTIME_PROTOCOL,
     });
     expect(html).toContain('new WebSocket(c.url,c.protocol)');
@@ -144,8 +168,94 @@ describe('the page the server answers', () => {
   });
 
   test('a factory name cannot end the script', () => {
-    const script = liveBootScript({ url: 'wss://x/', factories: ['</script><b>'] });
+    const script = liveBootScript({
+      url: 'wss://x/',
+      home: 'wss://x/',
+      factories: ['</script><b>'],
+      rewind: null,
+    });
     expect(script.indexOf('</script>')).toBe(script.length - '</script>'.length);
+  });
+});
+
+describe('POST /api/rewind', () => {
+  const rewindTo = (app: ReturnType<typeof fakeLive>['app'], branch: unknown) =>
+    app.request('/api/rewind', post({ branch }));
+
+  test('switches every seal but a home one to the branch until switched back', async () => {
+    const { app, sealedOn, opened } = fakeLive();
+    const res = await rewindTo(app, REWIND);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ rewind: REWIND });
+    expect(opened).toEqual([REWIND]);
+    expect(await (await app.request('/api/live')).json()).toEqual({
+      url: REWIND_URL,
+      home: HOME_URL,
+      factories: ['mission-control'],
+      rewind: REWIND,
+    });
+    await app.request('/api/live/status-strip', post({ factory: 'mission-control' }));
+    await app.request(
+      '/api/live/rewind-branches',
+      post({ factory: 'mission-control', branch: 'home' }),
+    );
+    expect(sealedOn).toEqual([REWIND, 'home']);
+    const html = await (await app.request('/')).text();
+    expect(bootConfig(html)).toMatchObject({ url: REWIND_URL, home: HOME_URL, rewind: REWIND });
+
+    expect(await (await rewindTo(app, null)).json()).toEqual({ rewind: null });
+    await app.request('/api/live/status-strip', post({ factory: 'mission-control' }));
+    expect(sealedOn).toEqual([REWIND, 'home', 'home']);
+    expect(await (await app.request('/api/live')).json()).toMatchObject({
+      url: HOME_URL,
+      rewind: null,
+    });
+  });
+
+  test('a branch that is not rewind-* is a 400 and asks Neon nothing', async () => {
+    const { app, opened } = fakeLive();
+    for (const branch of ['main', 'check-abc', 'rewind-', 42, {}, undefined]) {
+      expect((await rewindTo(app, branch)).status).toBe(400);
+    }
+    expect((await app.request('/api/rewind', { method: 'POST', body: '{' })).status).toBe(400);
+    expect(opened).toEqual([]);
+  });
+
+  test('without the Neon API on the server switching is a 503', async () => {
+    const { app } = fakeLive({ openRewind: false });
+    expect((await rewindTo(app, REWIND)).status).toBe(503);
+  });
+
+  test('an unknown branch is a 404 and any other failure a 502 without its text; both keep home', async () => {
+    const unknown = fakeLive({
+      openRewind: () => Promise.reject(new UnknownRewindBranch(REWIND)),
+    });
+    const missing = await rewindTo(unknown.app, REWIND);
+    expect(missing.status).toBe(404);
+    expect(await missing.json()).toEqual({ error: `no branch named ${REWIND}` });
+    expect(unknown.live.rewind).toBeUndefined();
+
+    const failing = fakeLive({
+      openRewind: () => Promise.reject(new Error('Neon API GET failed: 500 upstream detail')),
+    });
+    const quiet = spyOn(console, 'error').mockImplementation(() => {});
+    const failed = await rewindTo(failing.app, REWIND);
+    quiet.mockRestore();
+    expect(failed.status).toBe(502);
+    expect(await failed.text()).not.toContain('upstream detail');
+    expect(failing.live.rewind).toBeUndefined();
+  });
+
+  test('a seal for any branch but home is a 400 and seals nothing', async () => {
+    const { app, sealed } = fakeLive();
+    for (const branch of ['rewind', 7, null, REWIND]) {
+      const res = await app.request(
+        '/api/live/status-strip',
+        post({ factory: 'mission-control', branch }),
+      );
+      expect(res.status).toBe(400);
+    }
+    expect(sealed).toEqual([]);
   });
 });
 
@@ -157,10 +267,11 @@ describe('without Realtime configuration', () => {
     expect(html).not.toContain('__MC_LIVE__');
   });
 
-  test('both live routes are 503 and health stays 200', async () => {
+  test('every live route is 503 and health stays 200', async () => {
     expect((await app().request('/api/live')).status).toBe(503);
     const res = await app().request('/api/live/status-strip', post({ factory: 'mission-control' }));
     expect(res.status).toBe(503);
+    expect((await app().request('/api/rewind', post({ branch: REWIND }))).status).toBe(503);
     expect((await app().request('/api/health')).status).toBe(200);
   });
 });

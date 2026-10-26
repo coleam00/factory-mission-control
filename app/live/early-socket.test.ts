@@ -42,7 +42,9 @@ afterEach(() => {
 function bootWith(socket: FakeSocket): LiveBoot {
   const boot: LiveBoot = {
     url: SOCKET_URL,
+    home: SOCKET_URL,
     factories: ['mission-control'],
+    rewind: null,
     protocol: PROTOCOL,
     socket: socket as unknown as WebSocket,
     early: [],
