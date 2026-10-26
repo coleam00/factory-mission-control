@@ -611,6 +611,21 @@ describe('version-strip on the seed', () => {
       });
   });
 
+  test('a factory whose only runs are non-archon-loop runs lists nothing', async () => {
+    const rollback = new Error('rollback');
+    await db
+      .transaction(async (tx) => {
+        await tx.query(`INSERT INTO mc.laps (run_id, factory, workflow_name, status, digest, started_at)
+          VALUES ('00000000-0000-0000-0000-0000000000c2', 'fence-only', 'fence-proof', 'completed',
+            'sha256:fence-only', '2026-10-25T16:00:00Z')`);
+        expect(await tx.query(sql, ['fence-only'])).toEqual([]);
+        throw rollback;
+      })
+      .catch((error) => {
+        if (error !== rollback) throw error;
+      });
+  });
+
   test('a recorded version no lap qualifies for is still listed, as a version', async () => {
     const rollback = new Error('rollback');
     await db
