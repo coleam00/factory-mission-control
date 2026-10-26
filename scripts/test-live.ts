@@ -3,8 +3,10 @@ import { join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { createRealtimeClient, type WebSocketLike } from '@neon/realtime/client';
 import { createRealtime, rawSql } from '@neon/realtime/server';
+import { ISSUE_STATES, STATE_TOKEN } from '../app/lib/issue-graph';
 import { realtimeUrlFor } from '../server/live';
 import { SERVE_PORTS } from '../server/ports';
+import { NEXT_TO_LABEL } from './fixture/write';
 import { openPage, type Page } from './lib/cdp';
 import { type Deps, failing, guardedDatabaseUrl, type Main, runCli } from './lib/cli';
 import type { Db } from './lib/db';
@@ -26,6 +28,12 @@ const USAGE = [
   '  `fixture:write step --step land` on a V2 lap to the screen before and after the hold, writing',
   '  scorecard-vs-expected.json, scorecard-timings.json, scorecard.png and',
   "  scorecard-design-probe.json; it restores those laps' land steps afterwards.",
+  '  It checks the decisions screen against the seed, times `fixture:write verdict --pin <V2>` and',
+  '  `fixture:write decision` to that screen before and after the hold, writing ledger-check.txt,',
+  '  decisions-ledger-timings.json, decisions-ledger.png and decisions-ledger-design-probe.json.',
+  '  It checks the issues screen against the seed and times `fixture:write label` to it before and',
+  '  after the hold, writing issue-graph-check.txt, phases-issue-graph-timings.json,',
+  '  phases-issue-graph.png and phases-issue-graph-design-probe.json.',
 ].join('\n');
 
 export const LIMITS = { readyMs: 2000, firstSnapshotMs: 500, insertToScreenMs: 5000 };
@@ -67,6 +75,12 @@ const CLICKED_STEP = 'check-app';
 const VERSIONS = '[data-live="version-strip"]';
 const ENTRY = `${VERSIONS} [data-version-entry]`;
 const SCORECARD = '[data-live="scorecard"]';
+const DECISION_QUERIES = ['decisions-timeline', 'improvements-ledger'] as const;
+const DECISION = '[data-live="decisions-timeline"] [data-decision-entry]';
+const LEDGER = '[data-live="improvements-ledger"]';
+const inLedger = (group: 'testing' | 'verdicts', pin: string) =>
+  `document.querySelector('${LEDGER} [data-ledger-group="${group}"] [data-ledger-entry][data-pin="${pin}"]') !== null`;
+const ISSUES = '[data-live="issue-graph"]';
 const FEATURE_TIMEOUT_MS = 10_000;
 /** How long to wait for `ready` before giving up; the limit is judged on the page's own marks. */
 const READY_WAIT_MS = 10_000;
@@ -285,10 +299,13 @@ function mapMismatches(nodes: ShownNode[], lapsOn: (path: string) => number): st
 }
 
 /** Runs `fixture:write step` on `runId` and times it to LIVE_STEP's count reaching `target`. */
-function stepToScreen(page: Page, deps: Deps, runId: string, target: number) {
-  const args = ['step', '--run', runId, '--step', LIVE_STEP, '--event', 'node_started'];
-  return writeToScreen(page, deps, args, `${liveCountOf(LIVE_STEP)} === '${target}'`);
-}
+const stepToScreen = (page: Page, deps: Deps, runId: string, target: number) =>
+  writeToScreen(
+    page,
+    deps,
+    ['step', '--run', runId, '--step', LIVE_STEP, '--event', 'node_started'],
+    `${liveCountOf(LIVE_STEP)} === '${target}'`,
+  );
 
 /** Inserts one running lap and times it from just before the insert to the strip showing it. */
 async function insertToScreen(
@@ -458,11 +475,11 @@ async function writeToScreen(
   page: Page,
   deps: Deps,
   args: readonly string[],
-  shownWhen: string,
+  condition: string,
 ): Promise<number | null> {
   const started = performance.now();
   const shown = page.evaluate<boolean>(
-    pageWait(shownWhen, LIMITS.insertToScreenMs),
+    pageWait(condition, LIMITS.insertToScreenMs),
     LIMITS.insertToScreenMs + 5000,
   );
   const write = Bun.spawn(['bun', 'run', 'fixture:write', ...args], {
@@ -600,6 +617,363 @@ async function labelFailures(page: Page, pair: string, meaningful: boolean): Pro
 const mergesAre = (target: number) =>
   `document.querySelector('${SCORECARD} [data-version="b"][data-measure="merges"]')?.getAttribute('data-value') === '${target.toFixed(4)}'`;
 
+type PerQuery = Record<(typeof DECISION_QUERIES)[number], number | null>;
+
+interface DecisionsTimings {
+  branch: string | null;
+  port: number | null;
+  /** Navigation to the later of the two panels reaching `data-state="ready"`. */
+  readyMs: number | null;
+  /** Per live query: its subscribe being sent to its first snapshot (owner decision, #13). */
+  firstSnapshotMs: PerQuery;
+  verdictToScreenMs: number | null;
+  decisionToScreenMs: number | null;
+  holdSeconds: number;
+  renewals: PerQuery;
+  afterHoldVerdictToScreenMs: number | null;
+  afterHoldDecisionToScreenMs: number | null;
+  noReload: boolean | null;
+  limits: typeof LIMITS;
+}
+
+interface IssueGraphTimings {
+  branch: string | null;
+  port: number | null;
+  readyMs: number | null;
+  firstSnapshotMs: number | null;
+  /** The issue `fixture:write label` labelled, and how long its node took to show it. */
+  labelToScreen: { issue: number; ms: number | null } | null;
+  holdSeconds: number;
+  renewals: number | null;
+  afterHoldLabelToScreen: { issue: number; ms: number | null } | null;
+  noReload: boolean | null;
+  limits: typeof LIMITS;
+}
+
+interface ShownDecision {
+  date: string | null;
+  title: string | null;
+  link: string | null;
+  href: string | null;
+}
+
+interface ShownLedgerEntry {
+  group: string | null;
+  pin: string | null;
+  laps: string | null;
+  waiting: string | null;
+  verdict: string | null;
+  sentence: string | null;
+}
+
+const decisionsOnScreen = `[...document.querySelectorAll('${DECISION}')].map((li) => ({
+  date: li.getAttribute('data-date'),
+  title: li.getAttribute('data-title'),
+  link: li.querySelector('[data-version-link]')?.getAttribute('data-version-link') ?? null,
+  href: li.querySelector('[data-version-link]')?.getAttribute('href') ?? null,
+}))`;
+
+const ledgerOnScreen = `[...document.querySelectorAll('${LEDGER} [data-ledger-entry]')].map((li) => ({
+  group: li.closest('[data-ledger-group]')?.getAttribute('data-ledger-group') ?? null,
+  pin: li.getAttribute('data-pin'),
+  laps: li.getAttribute('data-laps'),
+  waiting: li.getAttribute('data-waiting'),
+  verdict: li.getAttribute('data-verdict'),
+  sentence: li.getAttribute('data-sentence'),
+}))`;
+
+/** V2's laps still waiting, computed apart from the live query: its laps come from mc.versions. */
+const V2_WAITING_SQL = `SELECT p.sha, substring(p.measure from 'at least ([0-9]+)')::int AS wanted, n.laps,
+  greatest(0, substring(p.measure from 'at least ([0-9]+)')::int - n.laps) AS waiting
+FROM mc.pins p, (
+  SELECT count(*)::int AS laps FROM mc.laps l
+  JOIN mc.versions v ON v.factory = l.factory AND v.digest = l.digest
+  WHERE l.factory = $1 AND l.workflow_name = 'archon-loop' AND v.pin_sha = $2
+) n
+WHERE p.sha = $2`;
+
+/**
+ * The decisions screen against the seed, read before anything is written: the timeline is the
+ * seed's decisions in date order with the joined ones linked to the versions screen, V2 waits for
+ * the laps V2_WAITING_SQL computes, and V1 shows `helped` with its sentence.
+ */
+async function seedDecisionMismatches(
+  page: Page,
+  db: Db,
+  factory: string,
+): Promise<{ mismatches: string[]; report: string; v2: string }> {
+  const decisions = await page.evaluate<ShownDecision[]>(decisionsOnScreen);
+  const ledgerShown = await page.evaluate<ShownLedgerEntry[]>(ledgerOnScreen);
+  const seedDecisions = await db.query(
+    `SELECT d.date::text AS date, d.title, d.version,
+       (SELECT p.sha FROM mc.pins p WHERE p.sha LIKE d.version || '%') AS pin_sha
+     FROM mc.decisions d ORDER BY d.date, d.title`,
+  );
+  const pins = await db.query('SELECT sha FROM mc.pins ORDER BY committed_at');
+  const [v1, v2] = pins.map((p) => String(p.sha));
+  const [v2Sql] = await db.query(V2_WAITING_SQL, [factory, v2]);
+  const [v1Verdict] = await db.query(
+    `SELECT verdict, sentence FROM mc.verdicts WHERE $1 LIKE pin || '%' ORDER BY committed_at DESC LIMIT 1`,
+    [v1],
+  );
+
+  const mismatches: string[] = [];
+  if (decisions.length !== seedDecisions.length) {
+    mismatches.push(
+      `the timeline shows ${decisions.length} entries, the seed has ${seedDecisions.length}`,
+    );
+  }
+  seedDecisions.forEach((seed, i) => {
+    const shown = decisions[i];
+    const pin = seed.pin_sha === null ? null : String(seed.pin_sha);
+    const expected: ShownDecision = {
+      date: String(seed.date),
+      title: String(seed.title),
+      link: pin,
+      href: pin === null ? null : `/f/${factory}/versions`,
+    };
+    for (const key of Object.keys(expected) as (keyof ShownDecision)[]) {
+      if (shown?.[key] !== expected[key]) {
+        mismatches.push(`decision ${i + 1} ${key}: screen ${shown?.[key]}, seed ${expected[key]}`);
+      }
+    }
+  });
+  const joined = decisions.flatMap((d) => (d.link === null ? [] : [d.link]));
+  if (joined.length !== 2 || !joined.includes(v1) || !joined.includes(v2)) {
+    mismatches.push(`the joined decisions link to ${joined.join(', ')}, expected V1 and V2`);
+  }
+  const v2Shown = ledgerShown.find((e) => e.pin === v2);
+  if (v2Shown?.group !== 'testing') {
+    mismatches.push(`V2 is under ${v2Shown?.group ?? 'nothing'}, expected testing`);
+  }
+  if (v2Sql?.waiting === null || v2Shown?.waiting !== String(v2Sql?.waiting)) {
+    mismatches.push(`V2 waits for ${v2Shown?.waiting} laps on screen, ${v2Sql?.waiting} by SQL`);
+  }
+  const v1Shown = ledgerShown.find((e) => e.pin === v1);
+  if (
+    v1Shown?.group !== 'verdicts' ||
+    v1Shown.verdict !== 'helped' ||
+    v1Verdict?.verdict !== 'helped' ||
+    v1Shown.sentence !== v1Verdict?.sentence
+  ) {
+    mismatches.push(
+      `V1 shows ${JSON.stringify(v1Shown)}, expected verdicts, helped, ${JSON.stringify(v1Verdict)}`,
+    );
+  }
+  const report = [
+    'timeline on screen:',
+    ...decisions.map((d) => `  ${JSON.stringify(d)}`),
+    'seed decisions by date (mc.decisions, version joined to mc.pins by prefix):',
+    ...seedDecisions.map((d) => `  ${JSON.stringify(d)}`),
+    'ledger on screen:',
+    ...ledgerShown.map((e) => `  ${JSON.stringify(e)}`),
+    `V1 = ${v1}, V2 = ${v2} (seed pins by commit)`,
+    `V2 laps waiting by SQL ($1 = ${factory}, $2 = V2):`,
+    ...V2_WAITING_SQL.split('\n').map((line) => `  ${line}`),
+    `  -> ${JSON.stringify(v2Sql)}`,
+    `V2 laps waiting on screen: ${v2Shown?.waiting ?? 'absent'}`,
+    `V1 verdict in mc.verdicts: ${JSON.stringify(v1Verdict)}`,
+    ...mismatches,
+    `mismatches: ${mismatches.length}`,
+  ].join('\n');
+  return { mismatches, report, v2 };
+}
+
+interface IssuesOnScreen {
+  issues: { number: number; state: string; chain: boolean; dot: string; token: string | null }[];
+  dependencies: string[];
+  phases: { phase: string; merged: number; total: number }[];
+}
+
+const issuesOnScreen = `(() => {
+  const tokens = ${JSON.stringify(STATE_TOKEN)};
+  const token = (name) => {
+    if (name === undefined) return null;
+    const probe = document.body.appendChild(document.createElement('span'));
+    probe.style.backgroundColor = 'var(' + name + ')';
+    const color = getComputedStyle(probe).backgroundColor;
+    probe.remove();
+    return color;
+  };
+  return {
+    issues: [...document.querySelectorAll('${ISSUES} [data-issue]')].map((a) => ({
+      number: Number(a.getAttribute('data-issue')),
+      state: a.getAttribute('data-issue-state'),
+      chain: a.getAttribute('data-longest-chain') === 'true',
+      dot: getComputedStyle(a.querySelector('[data-state-dot]')).backgroundColor,
+      token: token(tokens[a.getAttribute('data-issue-state')]),
+    })),
+    dependencies: [...document.querySelectorAll('${ISSUES} [data-dependency]')].map((p) =>
+      p.getAttribute('data-dependency'),
+    ),
+    phases: [...document.querySelectorAll('${ISSUES} [data-phase]')].map((li) => ({
+      phase: li.getAttribute('data-phase'),
+      merged: Number(li.getAttribute('data-merged')),
+      total: Number(li.getAttribute('data-total')),
+    })),
+  };
+})()`;
+
+/** Every open chain of `Depends on` edges through open issues, longest first. */
+const OPEN_CHAINS_SQL = `WITH RECURSIVE open AS (
+    SELECT number FROM mc.issues WHERE factory = $1 AND state = 'open'
+  ), chain(tail, path) AS (
+    SELECT number, ARRAY[number] FROM open
+    UNION ALL
+    SELECT d.depends_on, c.path || d.depends_on FROM chain c
+    JOIN mc.issue_dependencies d ON d.factory = $1 AND d.issue_number = c.tail
+    JOIN open o ON o.number = d.depends_on
+    WHERE NOT d.depends_on = ANY(c.path)
+  )
+  SELECT path FROM chain ORDER BY cardinality(path) DESC`;
+
+/** The issues screen against SQL on the seed, read before any label is written. */
+async function seedIssueGraphMismatches(
+  page: Page,
+  db: Db,
+  factory: string,
+  liveSql: string,
+): Promise<{ mismatches: string[]; report: string }> {
+  const shown = await page.evaluate<IssuesOnScreen>(issuesOnScreen);
+  const mismatches: string[] = [];
+  const same = (what: string, screen: unknown, sql: unknown) => {
+    if (JSON.stringify(screen) !== JSON.stringify(sql)) {
+      mismatches.push(`${what}: screen ${JSON.stringify(screen)}, SQL ${JSON.stringify(sql)}`);
+    }
+  };
+
+  const issues = await db.query('SELECT number FROM mc.issues WHERE factory = $1 ORDER BY number', [
+    factory,
+  ]);
+  same(
+    'nodes',
+    shown.issues.map((i) => i.number).sort((a, b) => a - b),
+    issues.map((i) => Number(i.number)),
+  );
+  const edges = await db.query(
+    'SELECT issue_number, depends_on FROM mc.issue_dependencies WHERE factory = $1 ORDER BY 1, 2',
+    [factory],
+  );
+  const byNumbers = (a: string, b: string) => {
+    const [a1, a2] = a.split('-').map(Number);
+    const [b1, b2] = b.split('-').map(Number);
+    return a1 - b1 || a2 - b2;
+  };
+  same(
+    'edges',
+    [...shown.dependencies].sort(byNumbers),
+    edges.map((e) => `${e.issue_number}-${e.depends_on}`),
+  );
+
+  const states = (await db.query(liveSql, [factory]))
+    .filter((r) => r.kind === 'issue')
+    .map((r) => `#${r.number} ${r.state}`)
+    .sort();
+  same('states', shown.issues.map((i) => `#${i.number} ${i.state}`).sort(), states);
+  for (const state of ISSUE_STATES) {
+    if (!shown.issues.some((i) => i.state === state)) mismatches.push(`no node is ${state}`);
+  }
+  for (const i of shown.issues) {
+    if (i.token === null || i.dot !== i.token) {
+      mismatches.push(`#${i.number} ${i.state} is colored ${i.dot}, its token is ${i.token}`);
+    }
+  }
+
+  const phases = await db.query(
+    `SELECT i.phase, count(*)::int AS total,
+       count(*) FILTER (WHERE i.state = 'closed' AND EXISTS (
+         SELECT 1 FROM mc.pull_request_issues pi
+         JOIN mc.pull_requests p ON p.factory = pi.factory AND p.number = pi.pr_number
+         WHERE pi.factory = i.factory AND pi.issue_number = i.number AND p.merged_at IS NOT NULL
+       ))::int AS merged
+     FROM mc.issues i WHERE i.factory = $1 AND i.phase IS NOT NULL
+     GROUP BY i.phase ORDER BY min(i.number)`,
+    [factory],
+  );
+  same(
+    'phase bars',
+    shown.phases,
+    phases.map((p) => ({ phase: p.phase, merged: p.merged, total: p.total })),
+  );
+
+  // An int[] arrives as an Int32Array, which JSON would print as an object.
+  const chains = (await db.query(OPEN_CHAINS_SQL, [factory])).map((r) =>
+    Array.from(r.path as ArrayLike<number>, Number),
+  );
+  const longest = chains.filter((c) => c.length === chains[0]?.length);
+  if (longest.length !== 1 || longest[0].length < 3) {
+    mismatches.push(
+      `the seed must have one longest open chain of at least 3, it has ${JSON.stringify(longest)}`,
+    );
+  }
+  same(
+    'longest open chain',
+    shown.issues
+      .filter((i) => i.chain)
+      .map((i) => i.number)
+      .sort((a, b) => a - b),
+    [...(longest[0] ?? [])].sort((a, b) => a - b),
+  );
+
+  const report = [
+    'screen:',
+    `  ${JSON.stringify(shown)}`,
+    'SQL (mc.issues, mc.issue_dependencies, db/queries/issue-graph.sql, phase counts, open chains):',
+    `  nodes ${JSON.stringify(issues.map((i) => i.number))}`,
+    `  edges ${JSON.stringify(edges.map((e) => `${e.issue_number}-${e.depends_on}`))}`,
+    `  states ${JSON.stringify(states)}`,
+    `  phases ${JSON.stringify(phases)}`,
+    `  longest open chains ${JSON.stringify(longest)}`,
+    ...mismatches,
+    `mismatches: ${mismatches.length}`,
+  ].join('\n');
+  return { mismatches, report };
+}
+
+/**
+ * Runs `fixture:write label`, which labels the highest-numbered open issue without `needs-owner`,
+ * and times it from just before the spawn to that issue's node reading `needs-owner`.
+ */
+async function labelToScreen(
+  page: Page,
+  db: Db,
+  deps: Deps,
+  factory: string,
+  labelled: number[],
+): Promise<{ issue: number; ms: number | null }> {
+  const [target] = await db.query(NEXT_TO_LABEL, [factory]);
+  if (!target) throw new Error(`no open ${factory} issue for fixture:write label to label`);
+  const issue = Number(target.number);
+  const node = `${ISSUES} [data-issue="${issue}"]`;
+  const before = await page.evaluate<string | null>(
+    `document.querySelector('${node}')?.getAttribute('data-issue-state') ?? null`,
+  );
+  if (before !== 'waiting') {
+    throw new Error(`fixture:write label will label #${issue}, which is ${before}, not waiting`);
+  }
+  const started = performance.now();
+  const shown = page.evaluate<boolean>(
+    pageWait(
+      `document.querySelector('${node}')?.getAttribute('data-issue-state') === 'needs-owner'`,
+      LIMITS.insertToScreenMs,
+    ),
+    LIMITS.insertToScreenMs + 5000,
+  );
+  labelled.push(issue);
+  const write = Bun.spawn(['bun', 'run', 'fixture:write', 'label'], {
+    cwd: deps.repoRoot,
+    env: deps.env,
+    stdout: 'ignore',
+    stderr: 'inherit',
+  });
+  const exitCode = await write.exited;
+  if (exitCode !== 0) {
+    await shown;
+    throw new Error(`bun run fixture:write label exited ${exitCode}`);
+  }
+  return { issue, ms: (await shown) ? Math.round(performance.now() - started) : null };
+}
+
 async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promise<void> {
   const databaseUrl = await guardedDatabaseUrl(deps, 'check');
   const secret = deps.env.NEON_REALTIME_SECRET;
@@ -655,7 +1029,36 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
     noReload: null,
     limits: LIMITS,
   };
+  const decisionTimings: DecisionsTimings = {
+    branch: timings.branch,
+    port: null,
+    readyMs: null,
+    firstSnapshotMs: { 'decisions-timeline': null, 'improvements-ledger': null },
+    verdictToScreenMs: null,
+    decisionToScreenMs: null,
+    holdSeconds,
+    renewals: { 'decisions-timeline': null, 'improvements-ledger': null },
+    afterHoldVerdictToScreenMs: null,
+    afterHoldDecisionToScreenMs: null,
+    noReload: null,
+    limits: LIMITS,
+  };
+  const issueTimings: IssueGraphTimings = {
+    branch: timings.branch,
+    port: null,
+    readyMs: null,
+    firstSnapshotMs: null,
+    labelToScreen: null,
+    holdSeconds,
+    renewals: null,
+    afterHoldLabelToScreen: null,
+    noReload: null,
+    limits: LIMITS,
+  };
+  const labelled: number[] = [];
   const pinned: string[] = [];
+  const judgedBy: string[] = [];
+  const decided: string[] = [];
   const db = deps.openDb(databaseUrl);
   let server: ReturnType<typeof Bun.spawn> | undefined;
   let page: Page | undefined;
@@ -663,6 +1066,21 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
   let scorePage: Page | undefined;
   /** The `land` rows of the V2 laps the scorecard's writes land, as they were before them. */
   const landed: { runId: string; row: string | null }[] = [];
+  let decisionsPage: Page | undefined;
+  const latestVerdict = async () => {
+    const [row] = await db.query('SELECT sha FROM mc.verdicts ORDER BY committed_at DESC LIMIT 1');
+    judgedBy.push(String(row.sha));
+  };
+  const fixtureDecisions = async () =>
+    (await db.query(`SELECT title FROM mc.decisions WHERE title LIKE 'Fixture decision %'`)).map(
+      (row) => String(row.title),
+    );
+  const newDecisions = async (before: readonly string[]) => {
+    for (const title of await fixtureDecisions()) {
+      if (!before.includes(title) && !decided.includes(title)) decided.push(title);
+    }
+  };
+  let issuesPage: Page | undefined;
   const latestPin = async () => {
     const [pin] = await db.query('SELECT sha FROM mc.pins ORDER BY committed_at DESC LIMIT 1');
     pinned.push(String(pin.sha));
@@ -680,6 +1098,8 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
     mapTimings.port = port;
     versionTimings.port = port;
     scorecardTimings.port = port;
+    decisionTimings.port = port;
+    issueTimings.port = port;
     const base = `http://localhost:${port}`;
     const proc = Bun.spawn(['bun', 'server/main.ts', '--port', String(port)], {
       cwd: deps.repoRoot,
@@ -755,6 +1175,62 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
     written.push(firstLap);
     mapTimings.insertToScreenMs = await stepToScreen(page, deps, firstLap, onLiveStep + 1);
     deps.out(`first step event reached the map in ${mapTimings.insertToScreenMs ?? 'never'} ms`);
+
+    decisionsPage = await openPage(deps.env);
+    await decisionsPage.goto(`${base}/f/${factory}/decisions`);
+    await decisionsPage.evaluate('window.__mcNoReload = true');
+    const decisionsReady = await decisionsPage.evaluate<boolean>(
+      pageWait(
+        DECISION_QUERIES.map(
+          (q) => `document.querySelector('[data-live="${q}"][data-state="ready"]') !== null`,
+        ).join(' && '),
+        READY_WAIT_MS,
+      ),
+    );
+    if (!decisionsReady) {
+      throw new Error(
+        `the decisions screen did not reach data-state="ready" within ${READY_WAIT_MS} ms`,
+      );
+    }
+    const readyMarks: number[] = [];
+    for (const q of DECISION_QUERIES) {
+      const readyAt = await decisionsPage.evaluate<number | null>(markTime(`live:${q}:ready`));
+      const subscribedAt = await decisionsPage.evaluate<number | null>(
+        markTime(`live:${q}:subscribe-sent`),
+      );
+      if (readyAt !== null) readyMarks.push(readyAt);
+      decisionTimings.firstSnapshotMs[q] =
+        readyAt === null || subscribedAt === null ? null : Math.round(readyAt - subscribedAt);
+    }
+    decisionTimings.readyMs =
+      readyMarks.length === DECISION_QUERIES.length ? Math.round(Math.max(...readyMarks)) : null;
+    const decisionSeed = await seedDecisionMismatches(decisionsPage, db, factory);
+    writeFileSync(join(outDir, 'ledger-check.txt'), `${decisionSeed.report}\n`);
+    failures.push(...decisionSeed.mismatches.map((m) => `decisions screen against the seed: ${m}`));
+    writeFileSync(join(outDir, 'decisions-ledger.png'), await decisionsPage.screenshot(1440));
+
+    const v2Pin = decisionSeed.v2;
+    decisionTimings.verdictToScreenMs = await writeToScreen(
+      decisionsPage,
+      deps,
+      ['verdict', '--pin', v2Pin.slice(0, 8)],
+      `${inLedger('verdicts', v2Pin)} && !(${inLedger('testing', v2Pin)})`,
+    );
+    await latestVerdict();
+    const timelineLength = await decisionsPage.evaluate<number>(
+      `document.querySelectorAll('${DECISION}').length`,
+    );
+    const decisionsBefore = await fixtureDecisions();
+    decisionTimings.decisionToScreenMs = await writeToScreen(
+      decisionsPage,
+      deps,
+      ['decision'],
+      `document.querySelectorAll('${DECISION}').length === ${timelineLength + 1}`,
+    );
+    await newDecisions(decisionsBefore);
+    deps.out(
+      `V2's verdict reached the ledger in ${decisionTimings.verdictToScreenMs ?? 'never'} ms, a decision the timeline in ${decisionTimings.decisionToScreenMs ?? 'never'} ms`,
+    );
 
     versionsPage = await openPage(deps.env);
     await versionsPage.goto(`${base}/f/${factory}/versions`);
@@ -859,6 +1335,42 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
       `first merge reached the scorecard in ${scorecardTimings.mergeToScreenMs ?? 'never'} ms`,
     );
 
+    issuesPage = await openPage(deps.env);
+    await issuesPage.goto(`${base}/f/${factory}/issues`);
+    await issuesPage.evaluate('window.__mcNoReload = true');
+    const issuesReady = await issuesPage.evaluate<boolean>(
+      pageWait(`document.querySelector('${ISSUES}[data-state="ready"]') !== null`, READY_WAIT_MS),
+    );
+    if (!issuesReady) {
+      throw new Error(
+        `the issues screen did not reach data-state="ready" within ${READY_WAIT_MS} ms`,
+      );
+    }
+    const issuesReadyAt = await issuesPage.evaluate<number | null>(
+      markTime('live:issue-graph:ready'),
+    );
+    const issuesSubscribedAt = await issuesPage.evaluate<number | null>(
+      markTime('live:issue-graph:subscribe-sent'),
+    );
+    issueTimings.readyMs = issuesReadyAt === null ? null : Math.round(issuesReadyAt);
+    issueTimings.firstSnapshotMs =
+      issuesReadyAt === null || issuesSubscribedAt === null
+        ? null
+        : Math.round(issuesReadyAt - issuesSubscribedAt);
+    const issueSeed = await seedIssueGraphMismatches(
+      issuesPage,
+      db,
+      factory,
+      readFileSync(join(deps.repoRoot, 'db', 'queries', 'issue-graph.sql'), 'utf-8'),
+    );
+    writeFileSync(join(outDir, 'issue-graph-check.txt'), `${issueSeed.report}\n`);
+    failures.push(...issueSeed.mismatches.map((m) => `issues screen against the seed: ${m}`));
+    writeFileSync(join(outDir, 'phases-issue-graph.png'), await issuesPage.screenshot(1440));
+    issueTimings.labelToScreen = await labelToScreen(issuesPage, db, deps, factory, labelled);
+    deps.out(
+      `first label reached the issues screen in ${issueTimings.labelToScreen.ms ?? 'never'} ms`,
+    );
+
     deps.out(`holding the page open ${holdSeconds}s`);
     await deps.sleep(holdSeconds * 1000);
     for (const panel of panels) {
@@ -913,6 +1425,49 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
     await scorePage.close();
     scorePage = undefined;
 
+    for (const q of DECISION_QUERIES) {
+      decisionTimings.renewals[q] = await decisionsPage.evaluate<number>(
+        `performance.getEntriesByName('live:${q}:renewed').length`,
+      );
+    }
+    // The second verdict judges the newest pin: the versions screen wrote it, so it is being tested.
+    const [newest] = await db.query('SELECT sha FROM mc.pins ORDER BY committed_at DESC LIMIT 1');
+    const judged = String(newest.sha);
+    decisionTimings.afterHoldVerdictToScreenMs = await writeToScreen(
+      decisionsPage,
+      deps,
+      ['verdict', '--pin', judged],
+      `${inLedger('verdicts', judged)} && !(${inLedger('testing', judged)})`,
+    );
+    await latestVerdict();
+    const decisionsBeforeHold = await fixtureDecisions();
+    decisionTimings.afterHoldDecisionToScreenMs = await writeToScreen(
+      decisionsPage,
+      deps,
+      ['decision'],
+      `document.querySelectorAll('${DECISION}').length === ${timelineLength + 2}`,
+    );
+    await newDecisions(decisionsBeforeHold);
+    decisionTimings.noReload = await decisionsPage.evaluate<boolean>(
+      'window.__mcNoReload === true',
+    );
+    await decisionsPage.close();
+    decisionsPage = undefined;
+
+    issueTimings.renewals = await issuesPage.evaluate<number>(
+      `performance.getEntriesByName('live:issue-graph:renewed').length`,
+    );
+    issueTimings.afterHoldLabelToScreen = await labelToScreen(
+      issuesPage,
+      db,
+      deps,
+      factory,
+      labelled,
+    );
+    issueTimings.noReload = await issuesPage.evaluate<boolean>('window.__mcNoReload === true');
+    await issuesPage.close();
+    issuesPage = undefined;
+
     const probe = Bun.spawnSync(
       [
         'bun',
@@ -950,6 +1505,32 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
     if (scorecardProbe.exitCode !== 0) {
       failures.push(`the design probe on the scorecard exited ${scorecardProbe.exitCode}`);
     }
+    const decisionsProbe = Bun.spawnSync(
+      [
+        'bun',
+        'harness/design-probe.js',
+        `${base}/f/${factory}/decisions`,
+        '--out',
+        join(outDir, 'decisions-ledger-design-probe.json'),
+      ],
+      { cwd: deps.repoRoot, env: deps.env, stdout: 'ignore', stderr: 'inherit' },
+    );
+    if (decisionsProbe.exitCode !== 0) {
+      failures.push(`the design probe on the decisions screen exited ${decisionsProbe.exitCode}`);
+    }
+    const issuesProbe = Bun.spawnSync(
+      [
+        'bun',
+        'harness/design-probe.js',
+        `${base}/f/${factory}/issues`,
+        '--out',
+        join(outDir, 'phases-issue-graph-design-probe.json'),
+      ],
+      { cwd: deps.repoRoot, env: deps.env, stdout: 'ignore', stderr: 'inherit' },
+    );
+    if (issuesProbe.exitCode !== 0) {
+      failures.push(`the design probe on the issues screen exited ${issuesProbe.exitCode}`);
+    }
   } finally {
     for (const panel of panels) {
       writeFileSync(
@@ -965,10 +1546,20 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
       join(outDir, 'scorecard-timings.json'),
       `${JSON.stringify(scorecardTimings, null, 2)}\n`,
     );
+    writeFileSync(
+      join(outDir, 'decisions-ledger-timings.json'),
+      `${JSON.stringify(decisionTimings, null, 2)}\n`,
+    );
+    writeFileSync(
+      join(outDir, 'phases-issue-graph-timings.json'),
+      `${JSON.stringify(issueTimings, null, 2)}\n`,
+    );
     // The pages and the server go first, so a failed cleanup below cannot leave them running.
     await page?.close().catch(() => undefined);
     await versionsPage?.close().catch(() => undefined);
     await scorePage?.close().catch(() => undefined);
+    await decisionsPage?.close().catch(() => undefined);
+    await issuesPage?.close().catch(() => undefined);
     if (server) {
       server.kill();
       await server.exited;
@@ -1012,6 +1603,20 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
       failures.push(`restoring the landed laps' land steps failed: ${(err as Error).message}`);
     }
     try {
+      if (judgedBy.length > 0) {
+        await db.query('DELETE FROM mc.verdicts WHERE sha = ANY($1::text[])', [
+          `{${judgedBy.join(',')}}`,
+        ]);
+      }
+      for (const title of decided) {
+        await db.query('DELETE FROM mc.decisions WHERE title = $1', [title]);
+      }
+    } catch (err) {
+      failures.push(
+        `removing the written verdicts and decisions failed: ${(err as Error).message}`,
+      );
+    }
+    try {
       if (pinned.length > 0) {
         await db.query('DELETE FROM mc.pins WHERE sha = ANY($1::text[])', [
           `{${pinned.join(',')}}`,
@@ -1019,6 +1624,17 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
       }
     } catch (err) {
       failures.push(`removing the written pins failed: ${(err as Error).message}`);
+    }
+    try {
+      if (labelled.length > 0) {
+        await db.query(
+          `DELETE FROM mc.issue_labels
+           WHERE factory = $1 AND label = 'needs-owner' AND issue_number = ANY($2::int[])`,
+          [factory, `{${labelled.join(',')}}`],
+        );
+      }
+    } catch (err) {
+      failures.push(`removing the written labels failed: ${(err as Error).message}`);
     } finally {
       await db.close();
     }
@@ -1101,11 +1717,72 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
     );
   }
   if (scorecardTimings.noReload !== true) failures.push('the scorecard reloaded');
+  if (!within(decisionTimings.readyMs, LIMITS.readyMs)) {
+    failures.push(
+      `decisions screen ready after ${decisionTimings.readyMs} ms, limit ${LIMITS.readyMs}`,
+    );
+  }
+  for (const q of DECISION_QUERIES) {
+    if (!within(decisionTimings.firstSnapshotMs[q], LIMITS.firstSnapshotMs)) {
+      failures.push(
+        `${q} first snapshot after ${decisionTimings.firstSnapshotMs[q]} ms, limit ${LIMITS.firstSnapshotMs}`,
+      );
+    }
+    if (holdSeconds >= 180 && (decisionTimings.renewals[q] ?? 0) < RENEWALS_IN_180S) {
+      failures.push(
+        `${decisionTimings.renewals[q]} ${q} seal renewals in ${holdSeconds}s, expected at least ${RENEWALS_IN_180S}`,
+      );
+    }
+  }
+  for (const [what, ms] of [
+    ["V2's verdict reached the ledger", decisionTimings.verdictToScreenMs],
+    ['a decision reached the timeline', decisionTimings.decisionToScreenMs],
+    [
+      `a verdict after ${holdSeconds}s reached the ledger`,
+      decisionTimings.afterHoldVerdictToScreenMs,
+    ],
+    [
+      `a decision after ${holdSeconds}s reached the timeline`,
+      decisionTimings.afterHoldDecisionToScreenMs,
+    ],
+  ] as const) {
+    if (!within(ms, LIMITS.insertToScreenMs)) {
+      failures.push(`${what} after ${ms} ms, limit ${LIMITS.insertToScreenMs}`);
+    }
+  }
+  if (decisionTimings.noReload !== true) failures.push('the decisions screen reloaded');
+
+  if (!within(issueTimings.readyMs, LIMITS.readyMs)) {
+    failures.push(`issues screen ready after ${issueTimings.readyMs} ms, limit ${LIMITS.readyMs}`);
+  }
+  if (!within(issueTimings.firstSnapshotMs, LIMITS.firstSnapshotMs)) {
+    failures.push(
+      `issues screen first snapshot after ${issueTimings.firstSnapshotMs} ms, limit ${LIMITS.firstSnapshotMs}`,
+    );
+  }
+  for (const [when, write] of [
+    ['first', issueTimings.labelToScreen],
+    [`after ${holdSeconds}s`, issueTimings.afterHoldLabelToScreen],
+  ] as const) {
+    if (!within(write?.ms ?? null, LIMITS.insertToScreenMs)) {
+      failures.push(
+        `label ${when} reached the issues screen after ${write?.ms} ms, limit ${LIMITS.insertToScreenMs}`,
+      );
+    }
+  }
+  if (holdSeconds >= 180 && (issueTimings.renewals ?? 0) < RENEWALS_IN_180S) {
+    failures.push(
+      `${issueTimings.renewals} issues seal renewals in ${holdSeconds}s, expected at least ${RENEWALS_IN_180S}`,
+    );
+  }
+  if (issueTimings.noReload !== true) failures.push('the issues screen reloaded');
   if (failures.length > 0) throw new Error(failures.join('\n'));
   deps.out(`live: ${JSON.stringify(timings)}`);
   deps.out(`home map: ${JSON.stringify(mapTimings)}`);
   deps.out(`versions: ${JSON.stringify(versionTimings)}`);
   deps.out(`scorecard: ${JSON.stringify(scorecardTimings)}`);
+  deps.out(`decisions: ${JSON.stringify(decisionTimings)}`);
+  deps.out(`issues: ${JSON.stringify(issueTimings)}`);
 }
 
 export const main: Main = async (argv, deps) => {

@@ -176,3 +176,25 @@ test('binds every value a row kind writes, taken from the moment it runs', async
     NOW.toISOString(),
   ]);
 });
+
+test('a verdict judges the pin --pin names by prefix, and --pin is refused anywhere else', async () => {
+  const run = recordingDeps({ repoRoot: repo(), rows: counting(1, 2) });
+  expect(await main(['verdict', '--pin', '5ffd60c6'], run.deps)).toBe(0);
+  const at = run.sql.findIndex((sql) => sql.startsWith('INSERT'));
+  expect(run.sql[at]).toContain("p.sha LIKE $4::text || '%'");
+  expect(run.params[at]?.[3]).toBe('5ffd60c6');
+
+  const latest = recordingDeps({ repoRoot: repo(), rows: counting(1, 2) });
+  expect(await main(['verdict'], latest.deps)).toBe(0);
+  expect(latest.params[latest.sql.findIndex((sql) => sql.startsWith('INSERT'))]?.[3]).toBeNull();
+
+  for (const argv of [
+    ['pin', '--pin', '5ffd60c6'],
+    ['step', '--pin', '5ffd60c6'],
+    ['verdict', '--pin', 'V2'],
+  ]) {
+    const refused = recordingDeps({ repoRoot: repo() });
+    expect(await main(argv, refused.deps)).toBe(2);
+    expect(refused.opened).toEqual([]);
+  }
+});

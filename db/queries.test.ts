@@ -293,3 +293,115 @@ describe('scorecard on the seed', () => {
     }
   });
 });
+
+describe('decisions-timeline and improvements-ledger on the seed', () => {
+  let db: Db;
+  const named = (name: string) => queries.find(([n]) => n === name)?.[1] as string;
+  const timeline = () => db.query(named('decisions-timeline'), ['mission-control']);
+  const ledgerRows = () => db.query(named('improvements-ledger'), ['mission-control']);
+  const byPin = async (prefix: string) =>
+    (await ledgerRows()).find((r) => String(r.pin_sha).startsWith(prefix));
+
+  beforeAll(async () => {
+    db = await seededDb(REPO_ROOT, readFileSync(join(REPO_ROOT, 'fixtures', 'seed.sql'), 'utf8'));
+  }, 60_000);
+
+  afterAll(() => db.close());
+
+  test('the timeline is every decision, each joined to its pin and that pin’s version by prefix', async () => {
+    const versions = await db.query('SELECT digest, pin_sha FROM mc.versions WHERE factory = $1', [
+      'mission-control',
+    ]);
+    const decisions = await db.query('SELECT date::text AS date, title, version FROM mc.decisions');
+    const rows = await timeline();
+    expect(rows.map((r) => r.title).sort()).toEqual(decisions.map((d) => d.title).sort());
+    const joined = rows.filter((r) => r.pin_sha !== null);
+    expect(joined).toHaveLength(2);
+    for (const row of joined) {
+      expect(String(row.pin_sha)).toStartWith(String(row.version));
+      expect(versions).toContainEqual({ digest: row.digest, pin_sha: row.pin_sha });
+    }
+  });
+
+  test('a pin’s laps are this factory’s archon-loop laps of the versions it labels', async () => {
+    const counted = await db.query(
+      `SELECT v.pin_sha, count(*)::int AS laps FROM mc.laps l
+       JOIN mc.versions v ON v.factory = l.factory AND v.digest = l.digest
+       WHERE l.factory = $1 AND l.workflow_name = 'archon-loop' GROUP BY v.pin_sha`,
+      ['mission-control'],
+    );
+    const rows = await ledgerRows();
+    for (const { pin_sha, laps } of counted) {
+      expect(rows.find((r) => r.pin_sha === pin_sha)?.laps).toBe(laps);
+    }
+    expect(await byPin('8e3e1cef')).toMatchObject({ verdict: 'helped' });
+    expect(await byPin('5ffd60c6')).toMatchObject({ verdict: null });
+  });
+
+  test('a verdict on V2 by prefix gives V2 that verdict', async () => {
+    await db.transaction(async (tx) => {
+      await writeRow(tx, 'verdict', new Date('2026-10-25T12:00:00Z'), '5ffd60c6');
+    });
+    expect(await byPin('5ffd60c6')).toMatchObject({ verdict: 'inconclusive' });
+    expect(await byPin('58c5f774')).toMatchObject({ verdict: null });
+  });
+});
+
+describe('issue-graph on the seed', () => {
+  let db: Db;
+  const sql = queries.find(([name]) => name === 'issue-graph')?.[1] as string;
+  const graph = () => db.query(sql, ['mission-control']);
+  const states = async () =>
+    Object.fromEntries(
+      (await graph()).filter((r) => r.kind === 'issue').map((r) => [r.number, r.state]),
+    );
+
+  beforeAll(async () => {
+    db = await seededDb(REPO_ROOT, readFileSync(join(REPO_ROOT, 'fixtures', 'seed.sql'), 'utf8'));
+  }, 60_000);
+
+  afterAll(() => db.close());
+
+  test('is every seeded issue in its one state, and every Depends on line as an edge', async () => {
+    expect(await states()).toEqual({
+      1: 'merged',
+      2: 'merged',
+      3: 'merged',
+      4: 'closed',
+      5: 'merged',
+      6: 'merged',
+      7: 'merged',
+      8: 'merged',
+      9: 'pr-open',
+      10: 'merged',
+      11: 'claimed',
+      12: 'pr-open',
+      13: 'needs-owner',
+      14: 'waiting',
+      15: 'waiting',
+      16: 'claimed',
+      17: 'waiting',
+      18: 'waiting',
+    });
+    const edges = (await graph())
+      .filter((r) => r.kind === 'edge')
+      .map((r) => [r.number, r.depends_on])
+      .sort(([a, b], [c, d]) => Number(a) - Number(c) || Number(b) - Number(d));
+    const seeded = await db.query(
+      'SELECT issue_number, depends_on FROM mc.issue_dependencies WHERE factory = $1 ORDER BY 1, 2',
+      ['mission-control'],
+    );
+    expect(edges).toEqual(seeded.map((r) => [r.issue_number, r.depends_on]));
+  });
+
+  test('a needs-owner label from fixture:write turns a waiting issue needs-owner', async () => {
+    await db.transaction(async (tx) => {
+      await writeRow(tx, 'label', new Date('2026-10-25T12:00:00Z'));
+    });
+    expect((await states())[18]).toBe('needs-owner');
+  });
+
+  test('another factory sees none of these issues', async () => {
+    expect(await db.query(sql, ['other'])).toEqual([]);
+  });
+});
