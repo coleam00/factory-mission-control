@@ -12,6 +12,7 @@ import { NEXT_TO_LABEL } from './fixture/write';
 import { openPage, type Page } from './lib/cdp';
 import { type Deps, failing, guardedDatabaseUrl, type Main, runCli } from './lib/cli';
 import type { Db } from './lib/db';
+import { switcherPhase } from './live/switcher';
 
 const USAGE = [
   'usage: bun run test:live [--out <dir>] [--hold <seconds>]',
@@ -45,11 +46,16 @@ const USAGE = [
   '  It opens /steps/archon-loop/check-app, checks it against the seed, times description writes to',
   '  it across the same hold, and checks land and an unknown step, writing',
   '  step-detail-timings.json, step-detail.png and step-detail-design-probe.json.',
+  '  Last it checks the factory switcher: every mc.factories row with its running laps, an',
+  '  inserted lap on the second factory timed to its count, choosing that factory from /, every',
+  '  factory screen and step detail, its map, strip and lanes, and the remembered choice with its',
+  '  fallback for a removed factory, writing switcher-check.txt, switcher-timings.json,',
+  '  switcher.png and switcher-design-probe.json.',
 ].join('\n');
 
 export const LIMITS = { readyMs: 2000, firstSnapshotMs: 500, insertToScreenMs: 5000 };
 const RENEWALS_IN_180S = 3;
-const PANEL = '[data-live="status-strip"]';
+export const PANEL = '[data-live="status-strip"]';
 /** Every live query the step screen reads, one panel each. */
 const STEP_QUERIES = [
   'step-detail',
@@ -71,7 +77,7 @@ const SEED_CHECK_APP = {
   hook: '.factory/hooks/holdout_fence.py',
   admitted: ['holdout-verifier', 'holdout-writer'],
 };
-const MAP = '[data-live="home-map"]';
+export const MAP = '[data-live="home-map"]';
 /**
  * The seed's pinned architecture: the newest pin with architecture rows is V2 (V3 stores none),
  * whose loop drops `briefs` and adds `tally` (scripts/fixture/seed.ts).
@@ -114,14 +120,14 @@ const inLedger = (group: 'testing' | 'verdicts', pin: string) =>
   `document.querySelector('${LEDGER} [data-ledger-group="${group}"] [data-ledger-entry][data-pin="${pin}"]') !== null`;
 const ISSUES = '[data-live="issue-graph"]';
 const LAPS_QUERIES = ['lanes', 'recent-laps'] as const;
-const LANE = '[data-live="lanes"] [data-lane]';
+export const LANE = '[data-live="lanes"] [data-lane]';
 const RECENT_LAP = '[data-live="recent-laps"] [data-recent-lap]';
 const laneOn = (runId: string, step: string) =>
   `document.querySelector('[data-live="lanes"] [data-lane="${runId}"]')?.getAttribute('data-step') === '${step}'`;
 const DIFF = '[data-live="arch-diff"]';
 const FEATURE_TIMEOUT_MS = 10_000;
 /** How long to wait for `ready` before giving up; the limit is judged on the page's own marks. */
-const READY_WAIT_MS = 10_000;
+export const READY_WAIT_MS = 10_000;
 
 export interface Feature {
   feature: string;
@@ -216,7 +222,7 @@ async function waitForHealth(base: string, exited: () => boolean): Promise<void>
 }
 
 /** An in-page promise: true once `condition` holds, false after `ms`; it watches, never polls. */
-function pageWait(condition: string, ms: number): string {
+export function pageWait(condition: string, ms: number): string {
   return `new Promise((done) => {
     const holds = () => ${condition};
     if (holds()) return done(true);
@@ -231,7 +237,8 @@ function pageWait(condition: string, ms: number): string {
 const countIs = (target: number) =>
   `document.querySelector('${PANEL} [data-count]')?.getAttribute('data-count') === '${target}'`;
 
-const markTime = (name: string) => `performance.getEntriesByName('${name}')[0]?.startTime ?? null`;
+export const markTime = (name: string) =>
+  `performance.getEntriesByName('${name}')[0]?.startTime ?? null`;
 
 /** When `query`'s panel was ready after navigation, and after its subscribe was sent (#13). */
 async function panelMarks(
@@ -277,7 +284,7 @@ interface ShownNode {
 const liveCountOf = (step: string) =>
   `document.querySelector('${MAP} [data-step="${step}"]')?.getAttribute('data-live-count')`;
 
-const mapNodes = (page: Page) =>
+export const mapNodes = (page: Page) =>
   page.evaluate<ShownNode[]>(
     `[...document.querySelectorAll('${MAP} [data-node-role]')].map((el) => ({
       role: el.getAttribute('data-node-role'),
@@ -290,7 +297,7 @@ const mapNodes = (page: Page) =>
  * Running laps per map node for `factory`, straight from the laps tables. Archon names a nested
  * step by its path joined with `__`, and a node counts the laps on it or anywhere beneath it.
  */
-async function lapsOnNodes(db: Db, factory: string): Promise<(path: string) => number> {
+export async function lapsOnNodes(db: Db, factory: string): Promise<(path: string) => number> {
   const running = await db.query(
     `SELECT ls.run_id, ls.step_id
        FROM mc.lap_steps ls JOIN mc.laps l ON l.run_id = ls.run_id
@@ -309,7 +316,7 @@ async function lapsOnNodes(db: Db, factory: string): Promise<(path: string) => n
 }
 
 /** Where the map, in document order, differs from the seed and from `lapsOn`: one line each. */
-function mapMismatches(nodes: ShownNode[], lapsOn: (path: string) => number): string[] {
+export function mapMismatches(nodes: ShownNode[], lapsOn: (path: string) => number): string[] {
   const failures: string[] = [];
   const idOf = (path: string | null) => path?.slice(path.lastIndexOf('/') + 1) ?? '';
   const ids = (role: string) => nodes.filter((n) => n.role === role).map((n) => idOf(n.step));
@@ -2067,6 +2074,8 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
     diffTimings.noReload = await diffPage.evaluate<boolean>('window.__mcNoReload === true');
     await diffPage.close();
     diffPage = undefined;
+
+    await switcherPhase({ deps, db, base, outDir, factory, inserted, failures });
 
     const probe = Bun.spawnSync(
       [
