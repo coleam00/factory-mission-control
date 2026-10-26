@@ -445,3 +445,90 @@ Expect:
 - The home map's live counts show the one factory's laps only; the lap of the codebase in no factory appears nowhere and changes no count.
 - With a factory that has no data, every screen reaches ready and shows a one-sentence empty state with at most one button: never an outage message, and never "does not exist" for a factory that is in the list.
 Author: writer, 2026-10-25, coverage of PRD 11.6 factories before the loop builds it
+
+## H-26 Every step on the map, at any include depth, opens its own full detail
+Protects: 4.1 (ship expanded into the stages parsed from `archon-ship-block` and its includes; clicking a step opens its detail); 11.4 (includes expanded the way Archon expands them); invariant 6; journey 1
+Touches: architecture job include expansion, home map, step detail, every workflow on the map (inputs, manager, loop, ship stages)
+Setup: the check app at the pinned version. Independently of the app (reading the pinned pack and template files, never the app's tables or payloads), list every step a lap could run under `archon-loop`, `archon-manager`, `archon-holdouts` and `archon-backlog`, expanding every include the way Archon does, to whatever depth it goes; note for each its include path, YAML and command file.
+Steps:
+1. Open the home map. For every step it shows, including every stage under ship and every step that sits inside an included block, click it and record where it leads.
+2. Open each of those addresses in a fresh tab by typing it, and record the page after 3 seconds.
+3. Record everything in the shape `judges/step-coverage.js` documents and run it.
+Expect:
+- Every step in the independent list is on the map, and every step on the map is in the list: no included block is shown as one opaque box with no way into its steps, and nothing is invented.
+- Every one of them, at every depth, leads to a ready detail page for that step: its description, inputs and outputs, `when`, model tier, its own workflow YAML, its prompt, its inline subagents and their instruction files, its scripts and its hooks (a section the step does not have says so). None reads as not found, empty, an error or a spinner, and none shows the step that included it instead.
+- An included step's YAML and prompt are that step's own, from the included block's file at that version, byte for byte.
+- `judges/step-coverage.js` prints PASS.
+Author: writer, 2026-10-26, escaped defect #105 (steps inside an included block had no detail page)
+
+## H-27 A step address works on its own, survives reload, and follows the version
+Protects: 4.1 step detail; 4.2 (versions and the architecture diff); invariant 6
+Touches: step detail addressing, version strip or pin selector, architecture diff, browser history
+Setup: the check app with two versions parsed (as H-15: the committed pack, and a local copy). In the copy, change one sentence of the command file of a step that lives inside an included block (not a top-level loop step), and remove a different step from inside an included block.
+Steps:
+1. From the map at the newer version, open the changed included step's detail; copy its address. Open it in a fresh tab, reload it, then use Back and Forward.
+2. On that detail, switch to the older version by the app's own controls.
+3. Open the removed included step's detail at the version that has it, then switch to the version that does not.
+4. Open the architecture diff between the two versions and follow whatever it offers toward the changed and removed steps.
+Expect:
+- The copied address opens the same step's full detail in a fresh tab and after a reload, never the map's home state, a parent step, or a not-found; Back and Forward return to the same pages.
+- Switching versions on the changed step shows that version's text for the same step; nothing from the other version lingers.
+- On the version without the removed step, its detail reads as not found at that version (one sentence, at most one button), never the other version's content.
+- The diff names the changed prompt and the removed step by the included step's own name, as steps, not as a change to the step that includes them; where the diff links to a step, the link opens that step's detail at the right version.
+Author: writer, 2026-10-26, escaped defect #105 (steps inside an included block had no detail page)
+
+## H-28 Two blocks with a step of the same name each keep their own detail
+Protects: 4.1 step detail; 11.4 (steps stored per workflow; includes expanded the way Archon expands them); invariant 6
+Touches: architecture job step identity, home map, step detail addressing, architecture diff
+Setup: the check app. If the pinned pack has no step id used in two different workflows or blocks, make a local copy of the pack where an included block of ship has a step with the same id as a top-level `archon-loop` step (for example `review`), and a second included block also has a step with that id, each with a different description, YAML and command file; parse it as a version.
+Steps:
+1. On the map, click each of the same-named steps in turn; record the address and the detail.
+2. Open each address in a fresh tab; reload each.
+3. Open the architecture diff between this version and the committed one.
+Expect:
+- Each same-named step leads to its own address and its own detail: its own description, YAML, prompt, `when` and subagents, from its own file. No two of them share an address, and none shows another's content or a merge of both.
+- Each address reopens the same step after a reload.
+- The map shows each in its own place (top-level loop step, and inside each block under ship) and counts none of them twice.
+- The diff lists each added step once, told apart by where it lives.
+- `judges/step-coverage.js` PASS on a record covering these steps.
+Author: writer, 2026-10-26, escaped defect #105 (steps inside an included block had no detail page)
+
+## H-29 An include of an include is expanded all the way down, in Archon's order
+Protects: 4.1 (ship expanded into the stages parsed from `archon-ship-block` and its includes); 11.4 (includes expanded the way Archon expands them)
+Touches: architecture job include expansion, home map ordering, step detail
+Setup: a local copy of the pack in which an included block of ship itself includes a block that includes a third block (three levels below ship), each with at least two steps; and one block included from two different places. Parse it as a version alongside the committed pack. Work out by hand, from Archon's own include behaviour, the expanded order and occurrences.
+Steps:
+1. Open the map at that version; record the stages under ship in order.
+2. Click every step at every level, including both places the shared block appears.
+3. Change one sentence in the deepest block's command file, parse again, and open the deepest step's detail at the new version and at the previous one.
+Expect:
+- The map shows every step of every level under ship, in the order and with the occurrences Archon's expansion gives; the deepest block's steps are not missing, collapsed or flattened out of order.
+- Every step at every level opens its own ready, full detail; the shared block's steps open from both places and show that block's file.
+- After step 3, the deepest step's prompt shows the new sentence at the new version and the old one at the previous version.
+- `judges/step-coverage.js` PASS on a record covering this version.
+Author: writer, 2026-10-26, escaped defect #105 (steps inside an included block had no detail page)
+
+## H-30 A step that does not exist still reads as not found, and only those do
+Protects: 4.1 step detail; engineering.md (an empty state is one sentence and at most one button); 8.4 (panels settle)
+Touches: step detail addressing, shared header, home map
+Setup: the check app at the pinned version. Take a real included step's address (from H-26) and a real top-level step's address.
+Steps: open, each in a fresh tab, step addresses with: an id no workflow has (`nope`); a real included step's id placed under the wrong parent workflow or block, if the address carries one; a real step id in a different letter case; a real id with a trailing `%20`; an empty id; a 300-character id; `..%2F`; and the id of a step that exists only at another version, under this version. Record each page after 3 seconds and every panel's `data-state`.
+Expect:
+- Every one reads as this step not found (or words to that effect) in one sentence with at most one button that leads somewhere working (for example the map); none shows another step's detail, a parent step, an outage message or a spinner, and every panel has settled within 2 seconds.
+- The real included and top-level addresses, opened the same way, show their full detail: the not-found rule catches only steps that are truly not in the parsed architecture at that version.
+- A differently cased or padded id is treated as the real step everywhere on the page or as not found everywhere, never a real step's name over an empty detail.
+Author: writer, 2026-10-26, escaped defect #105 (steps inside an included block had no detail page)
+
+## H-31 Laps on an included step light that step on the map, and the map leads into it
+Protects: 4.1 Live (each step shows per factory how many laps are on it now; `data-live-count` greater than 0 and a running style); invariant 5
+Touches: Archon projection, home map live counts, step detail
+Setup: the check app, home map open with the reload marker set. Pick a step whose id is unique in the pinned architecture and that lives inside a block included by ship (two levels down if the pack has one).
+Steps:
+1. Insert, as Archon would, a running `archon-loop` lap and a `node_started` whose `step_name` is that included step.
+2. Click the step that now carries the count.
+3. Insert `node_completed` for it and `node_started` for the next step in Archon's order.
+Expect:
+- Within 5 seconds and without a reload, that included step on the map carries `data-live-count` of 1 and the running style, as a top-level step would; the count is on the step itself, not only on ship or the block that includes it, and no other step's count changes.
+- Clicking it opens that step's full detail, not ship's.
+- After step 3, its count returns to 0 and the next step's rises to 1 within 5 seconds (`judges/liveness.js` PASS).
+Author: writer, 2026-10-26, escaped defect #105 (steps inside an included block had no detail page)
