@@ -18,8 +18,10 @@ import { resolveBranchName } from './lib/target';
 import { rewindPhase } from './live/rewind';
 import { switcherPhase } from './live/switcher';
 import {
+  collectPanelMarks,
   emptyGroupTimings,
   emptyPanelTimings,
+  explainPanel,
   type GroupTimings,
   groupPerformanceFailures,
   groupTimings,
@@ -256,6 +258,26 @@ export function pageWait(condition: string, ms: number): string {
     observer.observe(document.body, { subtree: true, childList: true, attributes: true, characterData: true });
     const timer = setTimeout(() => { observer.disconnect(); done(false); }, ${ms});
   })`;
+}
+
+export async function observeHomePanels(
+  page: Page,
+  panels: readonly { name: string; query: string; selector: string; timings: PanelTimings }[],
+): Promise<void> {
+  for (const panel of panels) {
+    const ready = await page.evaluate<boolean>(
+      pageWait(
+        `document.querySelector('${panel.selector}[data-state="ready"]') !== null`,
+        READY_WAIT_MS,
+      ),
+    );
+    if (!ready)
+      throw new Error(`${panel.name} did not reach data-state="ready" within ${READY_WAIT_MS} ms`);
+    Object.assign(
+      panel.timings,
+      (await collectPanelMarks(page, [panel.query], READY_WAIT_MS))[panel.query],
+    );
+  }
 }
 
 const countIs = (target: number) =>
@@ -1812,24 +1834,9 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
     page = await openPage(deps.env);
     await page.goto(`${base}/`);
     await page.evaluate('window.__mcNoReload = true');
-    for (const panel of panels) {
-      const ready = await page.evaluate<boolean>(
-        pageWait(
-          `document.querySelector('${panel.selector}[data-state="ready"]') !== null`,
-          READY_WAIT_MS,
-        ),
-      );
-      if (!ready) {
-        throw new Error(
-          `${panel.name} did not reach data-state="ready" within ${READY_WAIT_MS} ms`,
-        );
-      }
-    }
-    const homeMeasurements = await measure(
-      page,
-      panels.map((panel) => panel.query),
-    );
-    for (const panel of panels) Object.assign(panel.timings, homeMeasurements[panel.query]);
+    await observeHomePanels(page, panels);
+    for (const panel of panels)
+      await explainPanel(panel.query, panel.timings, timingDatabase, queries, factory);
     const before = Number(
       await page.evaluate<string>(
         `document.querySelector('${PANEL} [data-count]').getAttribute('data-count')`,
