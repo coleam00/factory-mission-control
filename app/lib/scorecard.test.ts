@@ -211,18 +211,23 @@ test('with merges but no finished lap, lap-hours per merge is n/a, not 0', () =>
   expect(dataValue(s.lap_hours_per_merge.value)).toBe('n/a');
 });
 
-test('with no check-app duration on a finished lap, app-check share is n/a, not 0', () => {
+test('with no check-app on a finished lap, app-check share is 0, not n/a', () => {
   const s = card([
     ...lap('x', '2026-10-01T09:00:00Z', '2026-10-01T10:00:00Z', [step('x', 'build')]),
     ...lap('y', '2026-10-01T09:00:00Z', null, [step('y', 'check-app', { duration_ms: 60_000 })]),
   ]);
-  expect(s.app_check_share).toEqual({ value: null, laps: ['x'] });
+  expect(s.app_check_share).toEqual({ value: 0, laps: ['x'] });
+  expect(dataValue(s.app_check_share.value)).toBe('0.0000');
   const timed = card(
     lap('x', '2026-10-01T09:00:00Z', '2026-10-01T10:00:00Z', [
       step('x', 'check-app', { duration_ms: 0 }),
     ]),
   );
   expect(timed.app_check_share.value).toBe(0);
+  const none = card(
+    lap('y', '2026-10-01T09:00:00Z', null, [step('y', 'check-app', { duration_ms: 60_000 })]),
+  );
+  expect(none.app_check_share).toEqual({ value: null, laps: [] });
 });
 
 test('a run of another workflow is not a lap', () => {

@@ -223,7 +223,7 @@ export function scorecard(laps: readonly Lap[]): Scorecard {
   const merges = count((lap) => lap.lands.includes('merged'));
   const hours = activeHours(finished);
   const lapMs = sum(finished.map((lap) => lap.endedAt.getTime() - lap.startedAt.getTime()));
-  const checkAppMs = finished.flatMap((lap) => (lap.checkAppMs === null ? [] : [lap.checkAppMs]));
+  const checkAppMs = sum(finished.map((lap) => lap.checkAppMs ?? 0));
   const caught = laps.filter((lap) => lap.catches > 0).map((lap) => lap.id);
 
   return {
@@ -240,11 +240,8 @@ export function scorecard(laps: readonly Lap[]): Scorecard {
       value: finished.length === 0 ? null : ratio(lapMs / HOUR_MS, merges.value),
       laps: finishedIds,
     },
-    // Likewise with no check-app duration on any finished lap: n/a, not 0.
-    app_check_share: {
-      value: checkAppMs.length === 0 ? null : ratio(sum(checkAppMs), lapMs),
-      laps: finishedIds,
-    },
+    // No check-app on a finished lap adds 0 to the sum; only no finished lap time is n/a.
+    app_check_share: { value: ratio(checkAppMs, lapMs), laps: finishedIds },
     cost_per_merge: { value: ratio(sum(laps.map((lap) => lap.cost)), merges.value), laps: all },
     new_holdout_catches: {
       value: sum(laps.map((lap) => lap.catches)),

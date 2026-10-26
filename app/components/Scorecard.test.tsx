@@ -126,12 +126,47 @@ test('a side under 10 laps labels each difference not yet meaningful; 12 against
   expect(both.find((d) => d.value === '+1.0000')).toBeDefined();
 });
 
-test('with no version picked, or one no lap ran, it is an empty state linking to the versions', () => {
-  for (const html of [render(laps(V1, 2, 1), undefined), render(laps(V1, 2, 1), V2)]) {
-    expect(html).not.toContain('data-measure=');
-    expect(html).toContain('href="/f/mission-control/versions"');
-  }
+test('with no version picked, it is an empty state linking to the versions', () => {
+  const html = render(laps(V1, 2, 1), undefined);
+  expect(html).not.toContain('data-measure=');
+  expect(html).toContain('href="/f/mission-control/versions"');
   expect(render([], undefined)).toContain('Pick a version on the versions screen');
+});
+
+test('a version no lap ran is still compared: 0 laps, n/a where undefined, not yet meaningful', () => {
+  const html = render(laps(V1, 12, 3), V1, V2);
+  const shown = cells(html);
+  expect(shown).toHaveLength(24);
+  const a = shown.filter((c) => c.version === 'a');
+  const b = shown.filter((c) => c.version === 'b');
+  expect(a.find((c) => c.measure === 'merges')).toMatchObject({ value: '3.0000', laps: 12 });
+  for (const cell of b) {
+    expect(cell).toMatchObject({ laps: 0, summary: 0, listed: 0 });
+  }
+  const value = (measure: string) => b.find((c) => c.measure === measure)?.value;
+  for (const measure of ['laps', 'merges', 'empty_laps', 'active_hours', 'new_holdout_catches']) {
+    expect(value(measure)).toBe('0.0000');
+  }
+  for (const measure of [
+    'merges_per_active_hour',
+    'lap_hours_per_merge',
+    'app_check_share',
+    'cost_per_merge',
+  ]) {
+    expect(value(measure)).toBe('n/a');
+  }
+  const diffs = differences(html);
+  expect(diffs).toHaveLength(12);
+  for (const d of diffs) {
+    expect(d.meaningful).toBe('false');
+    expect(d.body).toContain('not yet meaningful');
+  }
+  expect(diffs.find((d) => d.value === '-3.0000')).toBeDefined();
+  expect(html).toContain('no lap ran yet');
+  // The same with the 0-lap version on side a.
+  const flipped = cells(render(laps(V1, 12, 3), V2, V1));
+  expect(flipped.filter((c) => c.version === 'a').every((c) => c.laps === 0)).toBe(true);
+  expect(flipped.find((c) => c.version === 'b' && c.measure === 'merges')?.value).toBe('3.0000');
 });
 
 test('each version is named by the pin before its first run, as the versions screen names it', () => {

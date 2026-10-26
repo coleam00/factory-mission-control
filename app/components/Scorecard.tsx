@@ -100,18 +100,11 @@ export function ScorecardView({
         ] as const)
       : ([['a', a]] as const)
   ).map(([side, digest]): Version => {
+    // A version no lap ran stays on screen: each measure rests on 0 laps, and every difference
+    // with it is not yet meaningful (owner decision on #16).
     const laps = versionLaps(rows, digest);
     return { side, digest, laps, card: scorecard(laps), ...versionPin(rows, digest) };
   });
-  const unrun = versions.find((v) => v.laps.length === 0);
-  if (unrun) {
-    return (
-      <EmptyState
-        title={`No lap of this factory ran ${short(unrun.digest)}.`}
-        action={versionsLink}
-      />
-    );
-  }
   const columns = versions.length === 2 ? COLUMNS.ab : COLUMNS.a;
   return (
     <div className="border-t border-border/40">
@@ -152,6 +145,9 @@ function VersionHeader({ version }: { version: Version }): ReactElement {
         <div className={`${MONO} text-text-secondary`}>
           first run {first.toISOString().slice(0, 10)}
         </div>
+      ) : null}
+      {version.laps.length === 0 ? (
+        <div className={`${MONO} text-text-secondary`}>no lap ran yet</div>
       ) : null}
     </div>
   );
