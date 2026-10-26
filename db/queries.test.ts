@@ -350,6 +350,24 @@ describe('home-map on the seed', () => {
     ).toEqual(['input archon-backlog', 'input archon-holdouts', 'manager archon-manager']);
   });
 
+  test('a factory with no laps has no map steps, even when shared architecture is stored', async () => {
+    expect(await rows('empty-check')).toEqual([]);
+    await db.query(`INSERT INTO mc.factories (name, repository, codebase, console)
+      VALUES ('empty-check', 'o/empty', 'o/empty', 'http://localhost:3090')`);
+    try {
+      expect(await rows('empty-check')).toEqual([]);
+      expect((await rows()).some((row) => row.step_id === 'check-app')).toBe(true);
+      await db.query(`INSERT INTO mc.laps (run_id, factory, workflow_name, status) VALUES
+        ('00000000-0000-0000-0000-000000000095', 'empty-check', 'archon-loop', 'completed')`);
+      expect((await rows('empty-check')).map((row) => row.step_id).sort()).toEqual(
+        (await rows()).map((row) => row.step_id).sort(),
+      );
+    } finally {
+      await db.query("DELETE FROM mc.laps WHERE factory = 'empty-check'");
+      await db.query("DELETE FROM mc.factories WHERE name = 'empty-check'");
+    }
+  });
+
   /** Running laps per node, from the laps tables: a node's own steps are named by its path joined with `__`. */
   const lapsOnNodes = async (factory: string) => {
     const running = (await db.query(
@@ -408,10 +426,10 @@ describe('home-map on the seed', () => {
       [lap.run_id],
     );
     expect((await liveCounts()).get('review')).toBe(1);
-    expect((await rows('other')).filter((r) => r.step_id === 'review')).toEqual([
+    expect((await rows('second-factory')).filter((r) => r.step_id === 'review')).toEqual([
       expect.objectContaining({ lap_factory: 'mission-control', laps: 1, is_current: false }),
     ]);
-    expect((await liveCounts('other')).get('review')).toBe(0);
+    expect((await liveCounts('second-factory')).get('review')).toBe(0);
   });
 
   test("two factories: the header and each step count each factory's laps, the address factory current", async () => {
@@ -445,7 +463,8 @@ describe('home-map on the seed', () => {
         .filter((r) => r.path === path)
         .map(({ lap_factory, laps, is_current }) => ({ lap_factory, laps, is_current }))
         .sort((a, b) => String(a.lap_factory).localeCompare(String(b.lap_factory)));
-    for (const address of [...lapping, 'zero-laps']) {
+    expect(await rows('zero-laps')).toEqual([]);
+    for (const address of lapping) {
       const all = await rows(address);
       expect(on(all, 'build')).toEqual([
         { lap_factory: 'mission-control', laps: 1, is_current: address === 'mission-control' },

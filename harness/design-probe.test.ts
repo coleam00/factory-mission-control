@@ -61,11 +61,19 @@ const pages: Record<string, string> = {
   <body style="background: ${TOKENS.background}">
     <section data-state="loading"><p style="color: #ff0000">Loading</p></section>
     <script>
-      setTimeout(() => {
+      // pageChecks removes its scratch iframe after collecting the first-render failures.
+      // Release the fixture on that signal, never on a timer that can beat the first sample.
+      const inspected = new MutationObserver((records) => {
+        const finished = records.some((record) =>
+          [...record.removedNodes].some((node) => node.nodeName === 'IFRAME')
+        );
+        if (!finished) return;
+        inspected.disconnect();
         const panel = document.querySelector('section');
         panel.dataset.state = 'ready';
         panel.innerHTML = '<p style="color: #00ff00">Loaded</p>';
-      }, 300);
+      });
+      inspected.observe(document.body, { childList: true });
     </script>
   </body>
 </html>`,
