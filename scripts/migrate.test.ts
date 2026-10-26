@@ -271,6 +271,32 @@ test('configured migration fails on a bad selected file before opening the datab
   expect(run.opened).toEqual([]);
 });
 
+test.each([
+  null,
+  [[]],
+  {},
+  { factories: null },
+  { factories: {} },
+  { factories: [null] },
+  { factories: [[]] },
+  { factories: [123] },
+  ...['name', 'repository', 'codebase', 'console'].flatMap((field) =>
+    [undefined, 123].map((value) => ({ factories: [{ ...FACTORIES[0], [field]: value }] })),
+  ),
+])('configured migration rejects malformed configuration %j before opening', async (config) => {
+  const repoRoot = repo();
+  writeFileSync(join(repoRoot, 'factories.json'), JSON.stringify(config));
+  for (const branchName of ['check-abc', 'main']) {
+    const run = recordingDeps({ repoRoot, branchName, owner: true });
+    const argv = ['--configured-factories', ...(branchName === 'main' ? ['--main'] : [])];
+    expect(await main(argv, run.deps)).toBe(1);
+    expect(run.err.join('\n')).toContain('Invalid factories configuration:');
+    expect(run.opened).toEqual([]);
+    expect(run.sql).toEqual([]);
+    expect(run.out).toEqual([]);
+  }
+});
+
 test('loading the factories updates stale rows and attributes the laps projected before them, nothing else', async () => {
   const db = await archonDb();
   try {
