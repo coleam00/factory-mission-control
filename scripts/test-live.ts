@@ -12,6 +12,7 @@ import { NEXT_TO_LABEL } from './fixture/write';
 import { openPage, type Page } from './lib/cdp';
 import { type Deps, failing, guardedDatabaseUrl, type Main, runCli } from './lib/cli';
 import type { Db } from './lib/db';
+import { rewindPhase } from './live/rewind';
 
 const USAGE = [
   'usage: bun run test:live [--out <dir>] [--hold <seconds>]',
@@ -40,6 +41,9 @@ const USAGE = [
   '  It opens /steps/archon-loop/check-app, checks it against the seed, times description writes to',
   '  it across the same hold, and checks land and an unknown step, writing',
   '  step-detail-timings.json, step-detail.png and step-detail-design-probe.json.',
+  '  It opens /rewind on a second server, makes a rewind branch of the check branch with',
+  '  `bun run rewind:create` before the hold and another after it, switches to the first and back,',
+  '  writing rewind-run.txt, rewind-timings.json, rewind.png and rewind-design-probe.json.',
 ].join('\n');
 
 export const LIMITS = { readyMs: 2000, firstSnapshotMs: 500, insertToScreenMs: 5000 };
@@ -115,7 +119,7 @@ const laneOn = (runId: string, step: string) =>
 const DIFF = '[data-live="arch-diff"]';
 const FEATURE_TIMEOUT_MS = 10_000;
 /** How long to wait for `ready` before giving up; the limit is judged on the page's own marks. */
-const READY_WAIT_MS = 10_000;
+export const READY_WAIT_MS = 10_000;
 
 export interface Feature {
   feature: string;
@@ -185,7 +189,7 @@ async function runProbe(
   }
 }
 
-async function freePort(): Promise<number> {
+export async function freePort(): Promise<number> {
   for (let port = SERVE_PORTS.min; port <= SERVE_PORTS.max; port++) {
     try {
       Bun.listen({ hostname: '127.0.0.1', port, socket: { data() {} } }).stop(true);
@@ -195,7 +199,7 @@ async function freePort(): Promise<number> {
   throw new Error(`no free port in ${SERVE_PORTS.min}-${SERVE_PORTS.max}`);
 }
 
-async function waitForHealth(base: string, exited: () => boolean): Promise<void> {
+export async function waitForHealth(base: string, exited: () => boolean): Promise<void> {
   const deadline = Date.now() + 15_000;
   while (Date.now() < deadline) {
     if (exited()) throw new Error('the server exited before answering /api/health');
@@ -210,7 +214,7 @@ async function waitForHealth(base: string, exited: () => boolean): Promise<void>
 }
 
 /** An in-page promise: true once `condition` holds, false after `ms`; it watches, never polls. */
-function pageWait(condition: string, ms: number): string {
+export function pageWait(condition: string, ms: number): string {
   return `new Promise((done) => {
     const holds = () => ${condition};
     if (holds()) return done(true);
@@ -225,7 +229,8 @@ function pageWait(condition: string, ms: number): string {
 const countIs = (target: number) =>
   `document.querySelector('${PANEL} [data-count]')?.getAttribute('data-count') === '${target}'`;
 
-const markTime = (name: string) => `performance.getEntriesByName('${name}')[0]?.startTime ?? null`;
+export const markTime = (name: string) =>
+  `performance.getEntriesByName('${name}')[0]?.startTime ?? null`;
 
 /**
  * One panel's timings. `readyMs` is from navigation (connection setup to Neon included);
@@ -326,7 +331,7 @@ const stepToScreen = (page: Page, deps: Deps, runId: string, target: number) =>
   );
 
 /** Inserts one running lap and times it from just before the insert to the strip showing it. */
-async function insertToScreen(
+export async function insertToScreen(
   page: Page,
   db: Db,
   inserted: string[],
@@ -411,7 +416,7 @@ async function checkAppMismatches(page: Page, repoRoot: string): Promise<string[
   return failures;
 }
 
-const renewalsOf = (query: string) =>
+export const renewalsOf = (query: string) =>
   `performance.getEntriesByName('live:${query}:renewed').length`;
 
 interface VersionStripTimings {
@@ -1348,6 +1353,7 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
   const judgedBy: string[] = [];
   const decided: string[] = [];
   const db = deps.openDb(databaseUrl);
+  const rewind = rewindPhase({ deps, db, outDir, factory, holdSeconds });
   let server: ReturnType<typeof Bun.spawn> | undefined;
   let page: Page | undefined;
   let versionsPage: Page | undefined;
@@ -1415,6 +1421,7 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
       join(outDir, 'realtime-features.json'),
       `${JSON.stringify({ branch: timings.branch, features }, null, 2)}\n`,
     );
+    await rewind.beforeHold();
 
     page = await openPage(deps.env);
     await page.goto(`${base}/`);
@@ -1845,6 +1852,7 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
     await diffPage.close();
     diffPage = undefined;
 
+    await rewind.afterHold();
     const probe = Bun.spawnSync(
       [
         'bun',
@@ -1977,6 +1985,7 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
       server.kill();
       await server.exited;
     }
+    failures.push(...(await rewind.cleanup()));
     try {
       if (inserted.length > 0) {
         await db.query('DELETE FROM mc.laps WHERE run_id = ANY($1::uuid[])', [
@@ -2244,6 +2253,7 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
     );
   }
   if (diffTimings.noReload !== true) failures.push('the diff screen reloaded');
+  failures.push(...rewind.judge());
   if (failures.length > 0) throw new Error(failures.join('\n'));
   deps.out(`live: ${JSON.stringify(timings)}`);
   deps.out(`step detail: ${JSON.stringify(stepTimings)}`);
@@ -2253,6 +2263,7 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
   deps.out(`issues: ${JSON.stringify(issueTimings)}`);
   deps.out(`laps: ${JSON.stringify(lapsTimings)}`);
   deps.out(`diff: ${JSON.stringify(diffTimings)}`);
+  deps.out(`rewind: ${JSON.stringify(rewind.timings)}`);
 }
 
 export const main: Main = async (argv, deps) => {
