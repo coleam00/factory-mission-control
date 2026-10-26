@@ -11,3 +11,9 @@ The same sentence covers missing architecture; it does not diagnose which prereq
 
 The map updates live when the first lap arrives or the last lap is removed. Populated factories
 keep their existing step details and per-factory counts.
+
+The map draws the loop and ship's stages, not the steps their includes expand. An include's box,
+such as deliver, opens its screen, which lists every step beneath it by its path there
+(`rounds/implement/implement`, `rounds/reshape/implement`). Each entry opens that step's own
+screen, under the workflow that declares it (`/steps/archon-implement/implement`), which lists
+every place an include puts it and links back to each.
