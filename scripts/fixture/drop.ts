@@ -14,7 +14,7 @@ const USAGE = [
 ].join('\n');
 
 /** An ISO-8601 date and time with an explicit zone, so `--at` names the same moment on every machine. */
-const ISO_TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:\d{2})$/;
+export const ISO_TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:\d{2})$/;
 
 /** The names `fixture:branch --stale` gives the branches it makes for this checkout. */
 export function staleBranchPrefix(own: string): string {

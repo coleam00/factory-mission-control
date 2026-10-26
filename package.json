@@ -18,6 +18,7 @@
     "reconcile:main": "bun scripts/backfill.ts --reconcile --main",
     "reconcile:laps": "bun scripts/reconcile-laps.ts",
     "reconcile:laps:main": "bun scripts/reconcile-laps.ts --main",
+    "rewind:create": "bun scripts/rewind-create.ts",
     "fixture:branch": "bun scripts/fixture/branch.ts",
     "fixture:drop": "bun scripts/fixture/drop.ts",
     "fixture:write": "bun scripts/fixture/write.ts",
