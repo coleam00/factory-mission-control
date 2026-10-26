@@ -25,7 +25,10 @@ export function RewindIndicator({ rewind }: { rewind: string | null }): ReactEle
         </span>
         <span className="min-w-0 break-all font-mono text-[12px] text-text-primary">{rewind}</span>
         <span className="text-[12px] text-text-secondary">read-only</span>
-        <Link to="/rewind" className="ml-auto text-[12px] text-accent-bright">
+        <Link
+          to="/rewind"
+          className="ml-auto text-[12px] text-text-primary underline underline-offset-2"
+        >
           Switch back
         </Link>
       </div>
