@@ -3,7 +3,118 @@ import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { REPO_ROOT } from './lib/cli';
 import { NOW, recordingDeps, scratchRepo } from './lib/test-deps';
-import { compareScorecard, main, parseRealtimeFeatures, type ShownCell } from './test-live';
+import {
+  compareDecision,
+  compareDecisionDestination,
+  compareScorecard,
+  decisionHref,
+  main,
+  parseRealtimeFeatures,
+  type ShownCell,
+} from './test-live';
+
+const decisionSeed = {
+  date: '2026-10-09',
+  title: 'Drop briefs',
+  version: '5ffd60c6',
+  pin_sha: '5ffd60c6full',
+  digest: 'sha256:b2b2',
+};
+
+test('decision assertions require the factory, full pin and encoded digest from the seed join', () => {
+  const href = '/f/second%20factory/versions?pin=5ffd60c6full&digest=sha256%3Ab2b2';
+  expect(decisionHref(decisionSeed, 'second factory')).toBe(href);
+  const shown = {
+    date: decisionSeed.date,
+    title: decisionSeed.title,
+    link: decisionSeed.pin_sha,
+    href,
+    text: '',
+  };
+  expect(compareDecision(shown, decisionSeed, 'second factory')).toEqual([]);
+  for (const wrong of [
+    '/f/second%20factory/versions',
+    href.replace('b2b2', 'a1a1'),
+    href.replace('second%20factory', 'mission-control'),
+    href.replace('5ffd60c6full', 'another-pin'),
+  ]) {
+    expect(compareDecision({ ...shown, href: wrong }, decisionSeed, 'second factory')).toHaveLength(
+      1,
+    );
+  }
+  expect(compareDecision(undefined, decisionSeed, 'second factory')).toHaveLength(4);
+});
+
+test('unused pins keep a pin-only link and unmatched decisions must retain their non-link explanation', () => {
+  expect(decisionHref({ ...decisionSeed, digest: null }, 'mission-control')).toBe(
+    '/f/mission-control/versions?pin=5ffd60c6full',
+  );
+  const seed = { ...decisionSeed, pin_sha: null, digest: null, version: 'none' };
+  const shown = {
+    date: seed.date,
+    title: seed.title,
+    link: null,
+    href: null,
+    text: 'none, no pin by that prefix',
+  };
+  expect(compareDecision(shown, seed, 'mission-control')).toEqual([]);
+  expect(compareDecision({ ...shown, text: '' }, seed, 'mission-control')).toHaveLength(1);
+  expect(
+    compareDecision({ ...shown, href: '/f/mission-control/versions' }, seed, 'mission-control'),
+  ).toHaveLength(1);
+});
+
+test('destination assertions reject an undifferentiated list, wrong target, hidden target and comparison selection', () => {
+  const target = {
+    pin: decisionSeed.pin_sha,
+    digest: decisionSeed.digest,
+    kind: 'version',
+    text: '5ffd60c6 sha256:b2b2',
+    visible: true,
+    highlighted: true,
+  };
+  const shown = {
+    href: decisionHref(decisionSeed, 'mission-control') as string,
+    targets: [target],
+    selected: 0,
+  };
+  expect(compareDecisionDestination(shown, decisionSeed, 'mission-control')).toEqual([]);
+  for (const bad of [
+    { ...shown, targets: [] },
+    { ...shown, targets: [target, target] },
+    { ...shown, targets: [{ ...target, pin: 'wrong' }] },
+    { ...shown, targets: [{ ...target, digest: 'sha256:a1a1' }] },
+    { ...shown, targets: [{ ...target, visible: false }] },
+    { ...shown, targets: [{ ...target, highlighted: false }] },
+    { ...shown, targets: [{ ...target, text: '' }] },
+    { ...shown, selected: 1 },
+    { ...shown, href: '/f/mission-control/versions' },
+  ])
+    expect(compareDecisionDestination(bad, decisionSeed, 'mission-control').length).toBeGreaterThan(
+      0,
+    );
+  const unused = { ...decisionSeed, digest: null };
+  const pending = {
+    ...shown,
+    href: decisionHref(unused, 'mission-control') as string,
+    targets: [{ ...target, digest: null, kind: 'pending', text: '5ffd60c6 Not yet run' }],
+  };
+  expect(compareDecisionDestination(pending, unused, 'mission-control')).toEqual([]);
+  expect(
+    compareDecisionDestination(
+      { ...pending, targets: [{ ...pending.targets[0], kind: 'version' }] },
+      unused,
+      'mission-control',
+    ),
+  ).toHaveLength(1);
+  expect(
+    compareDecisionDestination(
+      { ...pending, targets: [{ ...pending.targets[0], text: '5ffd60c6' }] },
+      unused,
+      'mission-control',
+    ),
+  ).toHaveLength(1);
+});
 
 test('REALTIME.md gives test:live a probe and a verdict for each feature the live queries rely on', () => {
   const features = parseRealtimeFeatures(
