@@ -26,11 +26,17 @@ import { eventData, writeRow } from '../scripts/fixture/write';
 import { REPO_ROOT } from '../scripts/lib/cli';
 import type { Db } from '../scripts/lib/db';
 import { runMigrations } from '../scripts/migrate';
-import { LIVE_QUERY_NAME, loadLiveQueries } from '../server/live';
+import { LIVE_QUERY_NAME, loadLiveQueries, parameterCount } from '../server/live';
 import { archonDb, migrationFiles } from './test-db';
 
 const dir = join(import.meta.dir, 'queries');
 const queries = [...loadLiveQueries(dir)];
+
+/** The step screen's panels below step-detail: keyed by the step's workflow and path too. */
+const STEP_PANELS = ['step-prompt', 'step-subagents', 'step-scripts', 'step-hooks', 'step-yaml'];
+const CHECK_APP = ['archon-loop', 'check-app'];
+const paramsFor = (name: string, factory: string) =>
+  STEP_PANELS.includes(name) ? [factory, ...CHECK_APP] : [factory];
 
 /** Functions whose value changes between evaluations; Realtime refuses them (REALTIME.md). */
 const VOLATILE =
@@ -42,7 +48,7 @@ test('every file in db/queries/ is a live query named for its panel', () => {
   for (const file of sqlFiles) expect(file.slice(0, -4)).toMatch(LIVE_QUERY_NAME);
 });
 
-describe.each(queries)('db/queries/%s.sql', (_name, sql) => {
+describe.each(queries)('db/queries/%s.sql', (name, sql) => {
   test('is one read-only SELECT', () => {
     expect(sql).not.toContain(';');
     expect(sql).toMatch(/^(SELECT|WITH)\b/i);
@@ -57,9 +63,9 @@ describe.each(queries)('db/queries/%s.sql', (_name, sql) => {
     expect(sql).not.toMatch(/remote_agent_|provider_event/i);
   });
 
-  test('is keyed by one factory, $1, and takes no other parameter', () => {
+  test("is keyed by one factory, $1, and a step panel's by the step's workflow and path", () => {
     expect(sql).toMatch(/\$1\b/);
-    expect(sql).not.toMatch(/\$([2-9]|\d{2,})/);
+    expect(parameterCount(sql)).toBe(paramsFor(name, '').length);
   });
 });
 
@@ -73,8 +79,8 @@ describe('against the migrated schema', () => {
 
   afterAll(() => db.close());
 
-  test.each(queries)('%s runs with a factory name as $1', async (_name, sql) => {
-    await db.query(sql, ['mission-control']);
+  test.each(queries)('%s runs with a factory name as $1', async (name, sql) => {
+    await db.query(sql, paramsFor(name, 'mission-control'));
   });
 
   test('status-strip counts one factory’s running laps and nothing else', async () => {
@@ -167,13 +173,78 @@ ${'x'.repeat(5000)}`;
     }
 
     for (const [name, query] of queries.filter(([n]) => n.startsWith('step-'))) {
-      expect([name, await db.query(query, ['other'])]).toEqual([name, []]);
+      expect([name, await db.query(query, paramsFor(name, 'other'))]).toEqual([name, []]);
+    }
+    for (const name of STEP_PANELS) {
+      const otherStep = await db.query(sql(name), ['mission-control', 'archon-loop', 'subject']);
+      expect([name, otherStep]).toEqual([name, []]);
     }
     const steps = await db.query(sql('step-detail'), ['mission-control']);
     expect(steps.map((s) => s.depends_on)).toEqual([['subject']]);
 
+    // A second workflow with a step at the same path and files of its own: a step panel that
+    // ignores the workflow ($2) shows them on archon-loop's step too.
+    await db.query(
+      `INSERT INTO mc.arch_steps (archon_sha, factory_sha, workflow, path, position, step_id, kind,
+         depends_on, command_file, script_file, defined_in, file)
+       VALUES ('a2', 'f', 'archon-manager', 'check-app', 0, 'check-app', 'command', '{}',
+         'manager/commands/check.md', 'manager/scripts/check.ts', 'archon-manager',
+         'manager/archon-manager.yaml')`,
+    );
+    await db.query(`INSERT INTO mc.arch_texts (archon_sha, factory_sha, path, text) VALUES
+      ('a2', 'f', 'manager/commands/check.md', 'manager prompt'),
+      ('a2', 'f', 'manager/agents/judge.md', 'manager judge file')`);
+    await db.query(`INSERT INTO mc.arch_subagents (archon_sha, factory_sha, workflow, step_path,
+        name, description, instruction_file)
+      VALUES ('a2', 'f', 'archon-manager', 'check-app', 'judge', 'manager judge',
+        'manager/agents/judge.md')`);
+    await db.query(`INSERT INTO mc.arch_scripts (archon_sha, factory_sha, path, text)
+      VALUES ('a2', 'f', 'manager/scripts/check.ts', 'manager script')`);
+    await db.query(`INSERT INTO mc.arch_hooks (archon_sha, factory_sha, path, text, admitted_agents)
+      VALUES ('a2', 'f', 'hooks/judge.py', 'manager hook', '{judge}')`);
+    await db.query(`INSERT INTO mc.arch_workflows (archon_sha, factory_sha, name, file, yaml)
+      VALUES ('a2', 'f', 'archon-manager', 'manager/archon-manager.yaml', 'manager yaml')`);
+    const manager = (name: string) =>
+      db.query(sql(name), ['mission-control', 'archon-manager', 'check-app']);
+    expect(await manager('step-prompt')).toEqual([
+      { path: 'manager/commands/check.md', part: 0, chunk: 'manager prompt' },
+    ]);
+    expect(await manager('step-subagents')).toEqual([
+      {
+        workflow: 'archon-manager',
+        step_path: 'check-app',
+        name: 'judge',
+        description: 'manager judge',
+        prompt: null,
+        instruction_file: 'manager/agents/judge.md',
+        part: 0,
+        chunk: 'manager judge file',
+      },
+    ]);
+    expect(await manager('step-scripts')).toEqual([
+      { path: 'manager/scripts/check.ts', part: 0, chunk: 'manager script' },
+    ]);
+    expect(await manager('step-hooks')).toEqual([
+      {
+        path: 'hooks/judge.py',
+        admitted_agents: ['judge'],
+        workflow: 'archon-manager',
+        step_path: 'check-app',
+        agent: 'judge',
+        description: 'manager judge',
+      },
+    ]);
+    expect(await manager('step-yaml')).toEqual([
+      {
+        name: 'archon-manager',
+        file: 'manager/archon-manager.yaml',
+        part: 0,
+        chunk: 'manager yaml',
+      },
+    ]);
+
     const files = async (name: string, key: (row: Record<string, unknown>) => unknown) => {
-      const parts = (await db.query(sql(name), ['mission-control'])) as {
+      const parts = (await db.query(sql(name), paramsFor(name, 'mission-control'))) as {
         part: number;
         chunk: string;
       }[];
@@ -193,7 +264,7 @@ ${'x'.repeat(5000)}`;
     expect(await files('step-yaml', (row) => row.name)).toEqual(
       new Map([['archon-loop', `a2 ${long}`]]),
     );
-    expect(await db.query(sql('step-hooks'), ['mission-control'])).toEqual([
+    expect(await db.query(sql('step-hooks'), paramsFor('step-hooks', 'mission-control'))).toEqual([
       {
         path: 'hooks/fence.py',
         admitted_agents: ['verifier'],

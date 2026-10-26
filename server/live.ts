@@ -12,7 +12,7 @@ export const LIVE_QUERY_NAME = /^[a-z0-9-]+$/;
 /** One branch's sealing: the Realtime WebSocket the browser subscribes on, and its sealer. */
 export interface Sealer {
   url: string;
-  seal(sql: string, factory: string): Promise<SealedLiveQuery<unknown>>;
+  seal(sql: string, params: readonly string[]): Promise<SealedLiveQuery<unknown>>;
 }
 
 export type RewindSealer = Sealer & { name: string };
@@ -65,7 +65,7 @@ export function realtimeUrlForHost(host: string): string {
 /** Seals with `secret` for database `db`; the secret stays in the closure. */
 function sealerFor(url: string, secret: string, db: string): Sealer {
   const realtime = createRealtime({ secret, db });
-  return { url, seal: (sql, factory) => realtime.seal({ query: rawSql(sql, [factory]) }) };
+  return { url, seal: (sql, params) => realtime.seal({ query: rawSql(sql, [...params]) }) };
 }
 
 /**
@@ -108,6 +108,11 @@ export function liveFromEnv(env: Env, repoRoot: string): Live | undefined {
   };
 }
 
+/** How many parameters `sql` takes: its highest `$n`. */
+export function parameterCount(sql: string): number {
+  return Math.max(0, ...[...sql.matchAll(/\$(\d+)/g)].map((m) => Number(m[1])));
+}
+
 /** What `GET /api/live` answers and the page's boot script carries: no secret, no connection string. */
 export function liveConfig(live: Live) {
   return {
@@ -131,8 +136,9 @@ function field(body: unknown, key: string): unknown {
 }
 
 /**
- * The browser names a query file and a factory; it never sends SQL. Sealing follows the rewind
- * branch `POST /api/rewind` switched to, except for a panel that asks for `branch: 'home'`.
+ * The browser names a query file, a factory, and `args` for a query's parameters after `$1`; it
+ * never sends SQL. Sealing follows the rewind branch `POST /api/rewind` switched to, except for a
+ * panel that asks for `branch: 'home'`.
  */
 export function liveRoutes(app: Hono, live: Live | undefined): void {
   app.get('/api/live', (c) => {
@@ -149,10 +155,18 @@ export function liveRoutes(app: Hono, live: Live | undefined): void {
     if (typeof factory !== 'string' || !live.factories.includes(factory)) {
       return c.json({ error: 'unknown factory' }, 400);
     }
+    const args = field(body, 'args') ?? [];
+    if (
+      !Array.isArray(args) ||
+      !args.every((arg) => typeof arg === 'string') ||
+      args.length !== parameterCount(sql) - 1
+    ) {
+      return c.json({ error: 'wrong arguments for this query' }, 400);
+    }
     const branch = field(body, 'branch');
     if (branch !== undefined && branch !== 'home') return c.json({ error: 'unknown branch' }, 400);
     const sealer = branch === 'home' ? live.home : (live.rewind ?? live.home);
-    return c.json(await sealer.seal(sql, factory));
+    return c.json(await sealer.seal(sql, [factory, ...args]));
   });
 
   // `{ branch: "rewind-..." }` switches every page's sealing to that branch; `{ branch: null }` back.
