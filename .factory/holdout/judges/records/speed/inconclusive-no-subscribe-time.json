@@ -1,0 +1,12 @@
+{
+  "runs": [
+    { "width": 1440,
+      "panels":  [ { "name": "map", "ready_ms": 1900 }, { "name": "counts", "ready_ms": 1300 } ],
+      "queries": [ { "name": "map-steps", "panel": "map", "first_snapshot_ms": 901 },
+                   { "name": "live-counts", "panel": "counts", "subscribe_sent_ms": 1210, "first_snapshot_ms": 1251 } ] },
+    { "width": 390,
+      "panels":  [ { "name": "map", "ready_ms": 1615 }, { "name": "counts", "ready_ms": 1580 } ],
+      "queries": [ { "name": "map-steps", "panel": "map", "subscribe_sent_ms": 1574, "first_snapshot_ms": 1575 },
+                   { "name": "live-counts", "panel": "counts", "subscribe_sent_ms": 1540, "first_snapshot_ms": 1570 } ] }
+  ]
+}

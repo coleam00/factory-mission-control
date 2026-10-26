@@ -24,6 +24,8 @@ Author: owner
 
 Scenarios are added and tightened, never loosened, except by the owner with a reason recorded here.
 
+- H-19, 2026-10-26: first snapshot is timed from the panel's own subscribe being sent, not from navigation; ready stays timed from navigation at 2000 ms. Owner decision on #13/#14, written into engineering.md at 93452de.
+
 ---
 
 ## Shared setup and judges
@@ -334,14 +336,14 @@ Protects: 8.4; 8.3
 Touches: every screen, live query performance, design tokens
 Setup: the check app on the seed, with a cold browser profile.
 Steps:
-1. Open the home screen at 1440 and at 390 px wide, five times each; record for every panel the time from navigation to `data-state="ready"`, and for every live query the time to its first snapshot.
+1. Open the home screen at 1440 and at 390 px wide, five times each; on one clock (ms since navigation start), record for every panel the time to `data-state="ready"`, and for every live query its panel, the time its subscribe was sent and the time its first snapshot rendered (shape in `judges/speed.js`).
 2. Run `harness/design-probe.js` on every screen at both widths: home map, a step detail open, version strip with a comparison, architecture diff, factory page, owner queue, testing, one lap, rewind, health, and a factory with no laps.
 3. Open the app with the operating system set to light mode.
 Expect:
-- `judges/speed.js` PASS: every panel ready within 2000 ms and every first snapshot within 500 ms, on every run.
+- `judges/speed.js` PASS: every panel ready within 2000 ms of navigation, and every first snapshot within 500 ms of its panel's subscribe being sent, both on every run. A run missing either timing is INCONCLUSIVE, never PASS.
 - The design probe reports zero failures on every screen at both widths.
 - The app stays dark in light mode.
-Author: writer, 2026-10-24, first set for the whole release (docs/mission-control.prd.md)
+Author: writer, 2026-10-24, first set for the whole release (docs/mission-control.prd.md); tightened 2026-10-26, speed judge timing basis per engineering.md (#13/#14)
 
 ## H-20 Default-branch holdout verdicts follow the latest manager pass
 Protects: 4.5; 11.7; invariant 3
