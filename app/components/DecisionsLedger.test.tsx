@@ -46,12 +46,32 @@ test('a joined decision links to the versions screen by its pin; an unjoined one
   );
   const joined = itemHtml(html, 'data-title="Fence the holdouts"');
   expect(joined).toContain(`data-version-link="${V1_PIN}"`);
-  expect(joined).toContain('href="/f/mission-control/versions"');
+  expect(joined).toContain(
+    `href="/f/mission-control/versions?pin=${V1_PIN}&amp;digest=${encodeURIComponent(V1)}"`,
+  );
   expect(joined).toContain('8e3e1cef');
   const unjoined = itemHtml(html, 'data-title="Run three laps at once"');
   expect(unjoined).not.toContain('data-version-link');
   expect(unjoined).not.toContain('<a');
   expect(unjoined).toContain('none, no pin by that prefix');
+});
+
+test('different pins have distinct destinations, including an unused pin in another factory', () => {
+  const html = render(
+    <Timeline
+      factory="second factory"
+      entries={[
+        decision({}),
+        decision({ title: 'Unused pin', pin_sha: 'f00dfeed00', digest: null }),
+      ]}
+    />,
+  );
+  expect(html).toContain(
+    `href="/f/second%20factory/versions?pin=${V1_PIN}&amp;digest=${encodeURIComponent(V1)}"`,
+  );
+  const pending = itemHtml(html, 'data-title="Unused pin"');
+  expect(pending).toContain('href="/f/second%20factory/versions?pin=f00dfeed00"');
+  expect(pending).toContain('not yet run');
 });
 
 test('the ledger shows waiting laps under being tested and each verdict with its sentence', () => {
