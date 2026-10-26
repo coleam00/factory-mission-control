@@ -145,6 +145,34 @@ describe('factoryNames', () => {
     writeFileSync(file, JSON.stringify({ factories: [{ name: 'a' }, { name: 'b' }] }));
     expect(factoryNames({ MC_FACTORIES_FILE: file }, repoRoot)).toEqual(['a', 'b']);
   });
+
+  test.each([
+    null,
+    [[]],
+    {},
+    { factories: null },
+    { factories: {} },
+    { factories: [null] },
+    { factories: [[]] },
+    { factories: [123] },
+    { factories: [{}] },
+    { factories: [{ name: 123 }] },
+  ])('rejects malformed served configuration %j', (config) => {
+    const file = join(resolve(distDir, '..'), 'factories.json');
+    writeFileSync(file, JSON.stringify(config));
+    expect(() => factoryNames({ MC_FACTORIES_FILE: file }, repoRoot)).toThrow(
+      'Invalid factories configuration:',
+    );
+  });
+
+  test('accepts an empty list and checks only the fields serving uses', () => {
+    const root = resolve(distDir, '..');
+    const file = join(root, 'factories.json');
+    writeFileSync(file, JSON.stringify({ factories: [] }));
+    expect(factoryNames({ MC_FACTORIES_FILE: file }, repoRoot)).toEqual([]);
+    writeFileSync(file, JSON.stringify({ factories: [{ name: 'a', repository: null }] }));
+    expect(factoryNames({ MC_FACTORIES_FILE: '' }, root)).toEqual(['a']);
+  });
 });
 
 describe('GET /api/live', () => {

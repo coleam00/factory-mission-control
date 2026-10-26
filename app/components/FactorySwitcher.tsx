@@ -16,6 +16,34 @@ export interface FactorySwitcherRow {
 const LABEL = 'font-mono text-[10px] font-semibold uppercase tracking-[0.04em] text-text-secondary';
 const NOTE = 'px-3 py-2 text-sm text-text-secondary';
 
+export function FactorySetupNotice({
+  factories,
+  rows,
+  state,
+  rewind,
+}: {
+  factories: readonly string[] | undefined;
+  rows: readonly FactorySwitcherRow[] | undefined;
+  state: PanelState;
+  rewind: string | null;
+}): ReactElement | null {
+  if (state !== 'ready' || factories === undefined || rows === undefined) return null;
+  const missing = factories.filter((name) => !rows.some((row) => row.factory === name));
+  if (missing.length === 0) return null;
+  const names = missing.map((name) => `“${name}”`).join(', ');
+  return (
+    <p className="w-full text-sm text-text-secondary [overflow-wrap:anywhere]">
+      {rewind === null
+        ? `To load configured factories ${names}, run `
+        : `Configured factories ${names} are absent from this read-only rewind; switch back and, if setup is still needed, run `}
+      <code className="font-mono">bun run migrate -- --configured-factories</code> on check-* or
+      have the owner run{' '}
+      <code className="font-mono">bun run migrate:main -- --configured-factories</code> on main,
+      using the server's environment.
+    </p>
+  );
+}
+
 function Entries({
   rows,
   state,
@@ -137,7 +165,7 @@ export function FactorySwitcher({ screens }: { screens: readonly FactoryScreen[]
     <LivePanel<FactorySwitcherRow>
       query="factory-switcher"
       factory={fallback}
-      className="mx-auto flex max-w-6xl px-6 pt-3"
+      className="mx-auto flex max-w-6xl flex-wrap gap-y-2 px-6 pt-3"
     >
       {(all, state) => {
         const rows = shownRows(all, factories);
@@ -151,6 +179,12 @@ export function FactorySwitcher({ screens }: { screens: readonly FactoryScreen[]
               hrefFor={(factory) => factoryPath(pathname, factory, screens)}
               open={open}
               onToggle={setOpen}
+            />
+            <FactorySetupNotice
+              factories={factories}
+              rows={rows}
+              state={state}
+              rewind={live.status === 'ready' ? live.rewind : null}
             />
           </>
         );

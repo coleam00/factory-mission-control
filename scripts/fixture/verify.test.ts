@@ -14,6 +14,31 @@ function repo(): string {
   return dir;
 }
 
+test.each([0, 1, 2, 5, undefined])(
+  'counts requires exactly one projection error (got %s)',
+  async (errors) => {
+    const run = recordingDeps({
+      repoRoot: repo(),
+      rows: (sql) => {
+        if (sql.includes('information_schema.tables')) {
+          return [
+            { table_name: 'lap_steps' },
+            ...(errors === undefined ? [] : [{ table_name: 'projection_errors' }]),
+          ];
+        }
+        if (sql.includes('mc."projection_errors"')) return [{ n: errors }];
+        if (sql.includes('information_schema.columns')) return [];
+        return [{ n: 100 }];
+      },
+    });
+    expect(await main(['counts'], run.deps)).toBe(errors === 1 ? 0 : 1);
+    expect(run.out.join('\n')).toContain(
+      `table mc.projection_errors ${errors ?? 'missing'} == 1 ${errors === 1 ? 'ok' : 'SHORT'}`,
+    );
+    expect(run.out.join('\n')).toContain('table mc.lap_steps 100 >= 1 ok');
+  },
+);
+
 test.each(['main', 'fixture', 'rewind-x'])(
   'refuses a database URL on branch %s without connecting',
   async (branchName) => {
