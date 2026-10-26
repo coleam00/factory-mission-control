@@ -7,7 +7,9 @@ import type { WebSocketFactory, WebSocketLike } from '@neon/realtime/client';
  */
 export interface LiveBoot {
   url: string;
+  home: string;
   factories: string[];
+  rewind: string | null;
   protocol: string;
   socket?: WebSocket;
   early?: unknown[] | null;

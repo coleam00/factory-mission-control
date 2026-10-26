@@ -53,6 +53,11 @@ interface LivePanelProps<Row> {
   /** A file name in `db/queries/`, without `.sql`. */
   query: string;
   factory: string | undefined;
+  /**
+   * Reads the branch the server was started on even while its sealing is switched to a rewind
+   * branch: for the rewind list, which must always show the way back.
+   */
+  home?: boolean;
   className?: string;
   children: Render<Row>;
 }
@@ -83,6 +88,7 @@ function Frame({
 export function LivePanel<Row>({
   query,
   factory,
+  home = false,
   className,
   children,
 }: LivePanelProps<Row>): ReactElement {
@@ -94,11 +100,11 @@ export function LivePanel<Row>({
     const res = await fetch(`/api/live/${query}`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ factory }),
+      body: JSON.stringify(home ? { factory, branch: 'home' } : { factory }),
     });
     if (!res.ok) throw new Error(`sealing ${query} answered ${res.status}`);
     return (await res.json()) as SealedLiveQuery<Row>;
-  }, [query, factory]);
+  }, [query, factory, home]);
 
   const ready = live.status === 'ready' && factory !== undefined;
   useEffect(() => {
@@ -127,7 +133,7 @@ export function LivePanel<Row>({
     );
   }
   return (
-    <RealtimeProvider client={live.client}>
+    <RealtimeProvider client={home ? live.homeClient : live.client}>
       <Subscribed
         query={query}
         sealed={sealed}
