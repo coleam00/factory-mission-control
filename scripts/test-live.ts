@@ -4,8 +4,10 @@ import { parseArgs } from 'node:util';
 import { createRealtimeClient, type WebSocketLike } from '@neon/realtime/client';
 import { createRealtime, rawSql } from '@neon/realtime/server';
 import { ISSUE_STATES, STATE_TOKEN } from '../app/lib/issue-graph';
+import { OUTCOME_TOKEN, OUTCOMES } from '../app/lib/laps';
 import { realtimeUrlFor } from '../server/live';
 import { SERVE_PORTS } from '../server/ports';
+import { seedLaps } from './fixture/seed-laps';
 import { NEXT_TO_LABEL } from './fixture/write';
 import { openPage, type Page } from './lib/cdp';
 import { type Deps, failing, guardedDatabaseUrl, type Main, runCli } from './lib/cli';
@@ -34,6 +36,9 @@ const USAGE = [
   '  It checks the issues screen against the seed and times `fixture:write label` to it before and',
   '  after the hold, writing issue-graph-check.txt, phases-issue-graph-timings.json,',
   '  phases-issue-graph.png and phases-issue-graph-design-probe.json.',
+  '  It checks the laps screen against the seed and times the same `fixture:write step` events to',
+  '  their lanes before and after the hold, writing lanes-check.txt, lanes-recent-laps-timings.json,',
+  '  lanes-recent-laps.png and lanes-recent-laps-design-probe.json.',
   "  Then it opens the diff of the two versions, checks it lists exactly the seed's scripted change,",
   '  and times a step inserted into the second version to that screen before and after the hold,',
   '  writing arch-diff-timings.json, arch-diff.png and arch-diff-design-probe.json.',
@@ -108,6 +113,11 @@ const LEDGER = '[data-live="improvements-ledger"]';
 const inLedger = (group: 'testing' | 'verdicts', pin: string) =>
   `document.querySelector('${LEDGER} [data-ledger-group="${group}"] [data-ledger-entry][data-pin="${pin}"]') !== null`;
 const ISSUES = '[data-live="issue-graph"]';
+const LAPS_QUERIES = ['lanes', 'recent-laps'] as const;
+const LANE = '[data-live="lanes"] [data-lane]';
+const RECENT_LAP = '[data-live="recent-laps"] [data-recent-lap]';
+const laneOn = (runId: string, step: string) =>
+  `document.querySelector('[data-live="lanes"] [data-lane="${runId}"]')?.getAttribute('data-step') === '${step}'`;
 const DIFF = '[data-live="arch-diff"]';
 const FEATURE_TIMEOUT_MS = 10_000;
 /** How long to wait for `ready` before giving up; the limit is judged on the page's own marks. */
@@ -1170,6 +1180,187 @@ async function labelToScreen(
   return { issue, ms: (await shown) ? Math.round(performance.now() - started) : null };
 }
 
+type PerLapsQuery = Record<(typeof LAPS_QUERIES)[number], number | null>;
+
+interface LapsTimings {
+  branch: string | null;
+  port: number | null;
+  /** Navigation to the later of the two panels reaching `data-state="ready"`. */
+  readyMs: number | null;
+  /** Per live query: its subscribe being sent to its first snapshot (owner decision, #13). */
+  firstSnapshotMs: PerLapsQuery;
+  /** The lap `fixture:write step --step review --event node_started` ran on, and its lane's time. */
+  stepToLane: { run: string; ms: number | null } | null;
+  holdSeconds: number;
+  renewals: PerLapsQuery;
+  afterHoldStepToLane: { run: string; ms: number | null } | null;
+  noReload: boolean | null;
+  limits: typeof LIMITS;
+}
+
+/** Starts timing `condition` on `page` now; resolves to its milliseconds, or null past the limit. */
+function untilShown(page: Page, condition: string): Promise<number | null> {
+  const started = performance.now();
+  return page
+    .evaluate<boolean>(pageWait(condition, LIMITS.insertToScreenMs), LIMITS.insertToScreenMs + 5000)
+    .then((shown) => (shown ? Math.round(performance.now() - started) : null));
+}
+
+interface LapsOnScreen {
+  lanes: {
+    run: string;
+    issue: number | null;
+    route: string | null;
+    depth: string | null;
+    step: string | null;
+    cost: number;
+  }[];
+  recent: {
+    run: string;
+    outcome: string | null;
+    cost: number;
+    dot: string;
+    token: string | null;
+  }[];
+}
+
+const lapsOnScreen = `(() => {
+  const tokens = ${JSON.stringify(OUTCOME_TOKEN)};
+  const token = (name) => {
+    if (name === undefined) return null;
+    const probe = document.body.appendChild(document.createElement('span'));
+    probe.style.backgroundColor = 'var(' + name + ')';
+    const color = getComputedStyle(probe).backgroundColor;
+    probe.remove();
+    return color;
+  };
+  const num = (el, name) => (el.hasAttribute(name) ? Number(el.getAttribute(name)) : null);
+  return {
+    lanes: [...document.querySelectorAll('${LANE}')].map((li) => ({
+      run: li.getAttribute('data-lane'),
+      issue: num(li, 'data-issue'),
+      route: li.getAttribute('data-route'),
+      depth: li.getAttribute('data-depth'),
+      step: li.getAttribute('data-step'),
+      cost: Number(li.getAttribute('data-cost')),
+    })),
+    recent: [...document.querySelectorAll('${RECENT_LAP}')].map((li) => ({
+      run: li.getAttribute('data-recent-lap'),
+      outcome: li.getAttribute('data-outcome'),
+      cost: Number(li.getAttribute('data-cost')),
+      dot: getComputedStyle(li.querySelector('[data-outcome-dot]')).backgroundColor,
+      token: token(tokens[li.getAttribute('data-outcome')]),
+    })),
+  };
+})()`;
+
+/**
+ * The laps screen against SQL over the seed's tables (not the screen's queries) and against the
+ * seed's own account of each lap, read before any lap is inserted or step written.
+ */
+async function seedLapsMismatches(
+  page: Page,
+  db: Db,
+  factory: string,
+  seed: string,
+): Promise<{ mismatches: string[]; report: string }> {
+  const shown = await page.evaluate<LapsOnScreen>(lapsOnScreen);
+  const mismatches: string[] = [];
+  const same = (what: string, screen: unknown, sql: unknown) => {
+    if (JSON.stringify(screen) !== JSON.stringify(sql)) {
+      mismatches.push(`${what}: screen ${JSON.stringify(screen)}, SQL ${JSON.stringify(sql)}`);
+    }
+  };
+  const byRun = <T extends { run: string }>(rows: readonly T[]) =>
+    [...rows].sort((a, b) => a.run.localeCompare(b.run));
+
+  const running = await db.query(
+    `SELECT l.run_id::text AS run,
+       (SELECT c.issue_number FROM mc.claims c
+         WHERE c.factory = l.factory AND c.run_id = l.run_id AND c.released_at IS NULL) AS issue,
+       pick.output ->> 'route' AS route,
+       pick.output ->> 'depth' AS depth,
+       (SELECT s.step_id FROM mc.lap_steps s WHERE s.run_id = l.run_id AND s.status = 'running') AS step,
+       (SELECT coalesce(sum(s.cost_usd), 0)::float8 FROM mc.lap_steps s WHERE s.run_id = l.run_id) AS cost
+     FROM mc.laps l
+     LEFT JOIN mc.lap_steps pick ON pick.run_id = l.run_id AND pick.step_id = 'pick'
+     WHERE l.factory = $1 AND l.workflow_name = 'archon-loop' AND l.status = 'running'
+     ORDER BY 1`,
+    [factory],
+  );
+  const lanesSql = running.map((r) => ({
+    run: String(r.run),
+    issue: r.issue === null ? null : Number(r.issue),
+    route: r.route,
+    depth: r.depth,
+    step: r.step,
+    cost: Number(r.cost),
+  }));
+  if (lanesSql.length !== 2) mismatches.push(`the seed has ${lanesSql.length} running laps, not 2`);
+  same('lanes', byRun(shown.lanes), lanesSql);
+
+  const laps = seedLaps(seed);
+  const seedRunning = laps
+    .filter((l) => l.what === 'running')
+    .map((l) => ({ run: l.runId, issue: l.issue }));
+  same(
+    'lanes against the seed',
+    byRun(shown.lanes.map((l) => ({ run: l.run, issue: l.issue }))),
+    byRun(seedRunning),
+  );
+
+  const finished = await db.query(
+    `SELECT l.run_id::text AS run,
+       (SELECT coalesce(sum(s.cost_usd), 0)::float8 FROM mc.lap_steps s WHERE s.run_id = l.run_id) AS cost
+     FROM mc.laps l
+     WHERE l.factory = $1 AND l.workflow_name = 'archon-loop'
+       AND l.status IN ('completed', 'failed', 'cancelled')
+     ORDER BY 1`,
+    [factory],
+  );
+  const finishedSql = finished.map((r) => ({ run: String(r.run), cost: Number(r.cost) }));
+  same(
+    'finished laps and their cost',
+    byRun(shown.recent.map((l) => ({ run: l.run, cost: l.cost }))),
+    finishedSql,
+  );
+  const seedFinished = laps.filter((l) => !['running', 'paused', 'pending'].includes(l.what));
+  same(
+    'outcomes against the seed',
+    byRun(shown.recent.map((l) => ({ run: l.run, outcome: l.outcome }))),
+    byRun(seedFinished.map((l) => ({ run: l.runId, outcome: l.what }))),
+  );
+  for (const outcome of OUTCOMES) {
+    if (!shown.recent.some((l) => l.outcome === outcome)) {
+      mismatches.push(`no finished lap shows ${outcome}`);
+    }
+  }
+  for (const lap of shown.recent) {
+    if (lap.token === null || lap.dot !== lap.token) {
+      mismatches.push(`${lap.run} ${lap.outcome} is colored ${lap.dot}, its token is ${lap.token}`);
+    }
+  }
+
+  const tally = Object.fromEntries(
+    OUTCOMES.map((o) => [o, shown.recent.filter((l) => l.outcome === o).length]),
+  );
+  const report = [
+    'screen:',
+    `  lanes ${JSON.stringify(byRun(shown.lanes))}`,
+    `  recent ${JSON.stringify(byRun(shown.recent))}`,
+    'SQL (mc.laps, mc.claims, mc.lap_steps; not the queries in db/queries/):',
+    `  lanes ${JSON.stringify(lanesSql)}`,
+    `  finished ${JSON.stringify(finishedSql)}`,
+    'seed (fixtures/seed.sql, the comment above each run):',
+    `  running ${JSON.stringify(byRun(seedRunning))}`,
+    `  finished ${JSON.stringify(seedFinished.map((l) => ({ run: l.runId, label: l.label, outcome: l.what })))}`,
+    `outcomes on screen: ${JSON.stringify(tally)}`,
+    ...mismatches,
+    `mismatches: ${mismatches.length}`,
+  ].join('\n');
+  return { mismatches, report };
+}
+
 async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promise<void> {
   const databaseUrl = await guardedDatabaseUrl(deps, 'check');
   const secret = deps.env.NEON_REALTIME_SECRET;
@@ -1266,6 +1457,19 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
     noReload: null,
     limits: LIMITS,
   };
+  const lapsTimings: LapsTimings = {
+    branch: timings.branch,
+    port: null,
+    readyMs: null,
+    firstSnapshotMs: { lanes: null, 'recent-laps': null },
+    stepToLane: null,
+    holdSeconds,
+    renewals: { lanes: null, 'recent-laps': null },
+    afterHoldStepToLane: null,
+    noReload: null,
+    limits: LIMITS,
+  };
+  let lapsPage: Page | undefined;
   const diffTimings: ArchDiffTimings = {
     branch: timings.branch,
     port: null,
@@ -1329,6 +1533,7 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
     scorecardTimings.port = port;
     decisionTimings.port = port;
     issueTimings.port = port;
+    lapsTimings.port = port;
     diffTimings.port = port;
     const base = `http://localhost:${port}`;
     const proc = Bun.spawn(['bun', 'server/main.ts', '--port', String(port)], {
@@ -1400,11 +1605,62 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
     const [firstLap, secondLap] = laps.map((l) => String(l.run_id));
     const onLiveStep = Number(await page.evaluate<string>(liveCountOf(LIVE_STEP)));
 
+    // The laps screen opens before the strip inserts its laps, so its lanes are the seed's two.
+    lapsPage = await openPage(deps.env);
+    await lapsPage.goto(`${base}/f/${factory}/laps`);
+    await lapsPage.evaluate('window.__mcNoReload = true');
+    const lapsReady = await lapsPage.evaluate<boolean>(
+      pageWait(
+        LAPS_QUERIES.map(
+          (q) => `document.querySelector('[data-live="${q}"][data-state="ready"]') !== null`,
+        ).join(' && '),
+        READY_WAIT_MS,
+      ),
+    );
+    if (!lapsReady) {
+      throw new Error(
+        `the laps screen did not reach data-state="ready" within ${READY_WAIT_MS} ms`,
+      );
+    }
+    const lapsReadyMarks: number[] = [];
+    for (const q of LAPS_QUERIES) {
+      const readyAt = await lapsPage.evaluate<number | null>(markTime(`live:${q}:ready`));
+      const subscribedAt = await lapsPage.evaluate<number | null>(
+        markTime(`live:${q}:subscribe-sent`),
+      );
+      if (readyAt !== null) lapsReadyMarks.push(readyAt);
+      lapsTimings.firstSnapshotMs[q] =
+        readyAt === null || subscribedAt === null ? null : Math.round(readyAt - subscribedAt);
+    }
+    lapsTimings.readyMs =
+      lapsReadyMarks.length === LAPS_QUERIES.length
+        ? Math.round(Math.max(...lapsReadyMarks))
+        : null;
+    const lapsSeed = await seedLapsMismatches(
+      lapsPage,
+      db,
+      factory,
+      readFileSync(join(deps.repoRoot, 'fixtures', 'seed.sql'), 'utf-8'),
+    );
+    writeFileSync(join(outDir, 'lanes-check.txt'), `${lapsSeed.report}\n`);
+    failures.push(...lapsSeed.mismatches.map((m) => `laps screen against the seed: ${m}`));
+    writeFileSync(join(outDir, 'lanes-recent-laps.png'), await lapsPage.screenshot(1440));
+    for (const lap of [firstLap, secondLap]) {
+      if (await lapsPage.evaluate<boolean>(laneOn(lap, LIVE_STEP))) {
+        throw new Error(`the lane of ${lap} is on ${LIVE_STEP} before any write`);
+      }
+    }
+
     timings.insertToScreenMs = await insertToScreen(page, db, inserted, factory, before + 1);
     deps.out(`first insert reached the strip in ${timings.insertToScreenMs ?? 'never'} ms`);
     written.push(firstLap);
+    // The map's step write is the lanes' too: both screens watch the same event.
+    const firstLane = untilShown(lapsPage, laneOn(firstLap, LIVE_STEP));
     mapTimings.insertToScreenMs = await stepToScreen(page, deps, firstLap, onLiveStep + 1);
-    deps.out(`first step event reached the map in ${mapTimings.insertToScreenMs ?? 'never'} ms`);
+    lapsTimings.stepToLane = { run: firstLap, ms: await firstLane };
+    deps.out(
+      `first step event reached the map in ${mapTimings.insertToScreenMs ?? 'never'} ms, its lane in ${lapsTimings.stepToLane.ms ?? 'never'} ms`,
+    );
 
     decisionsPage = await openPage(deps.env);
     await decisionsPage.goto(`${base}/f/${factory}/decisions`);
@@ -1679,12 +1935,20 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
       before + 2,
     );
     written.push(secondLap);
+    for (const q of LAPS_QUERIES) {
+      lapsTimings.renewals[q] = await lapsPage.evaluate<number>(renewalsOf(q));
+    }
+    const secondLane = untilShown(lapsPage, laneOn(secondLap, LIVE_STEP));
     mapTimings.afterHoldInsertToScreenMs = await stepToScreen(
       page,
       deps,
       secondLap,
       onLiveStep + 2,
     );
+    lapsTimings.afterHoldStepToLane = { run: secondLap, ms: await secondLane };
+    lapsTimings.noReload = await lapsPage.evaluate<boolean>('window.__mcNoReload === true');
+    await lapsPage.close();
+    lapsPage = undefined;
 
     const target = `/steps/archon-loop/${CLICKED_STEP}`;
     await page.evaluate(`document.querySelector('${MAP} [data-step="${CLICKED_STEP}"]').click()`);
@@ -1880,6 +2144,19 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
     if (issuesProbe.exitCode !== 0) {
       failures.push(`the design probe on the issues screen exited ${issuesProbe.exitCode}`);
     }
+    const lapsProbe = Bun.spawnSync(
+      [
+        'bun',
+        'harness/design-probe.js',
+        `${base}/f/${factory}/laps`,
+        '--out',
+        join(outDir, 'lanes-recent-laps-design-probe.json'),
+      ],
+      { cwd: deps.repoRoot, env: deps.env, stdout: 'ignore', stderr: 'inherit' },
+    );
+    if (lapsProbe.exitCode !== 0) {
+      failures.push(`the design probe on the laps screen exited ${lapsProbe.exitCode}`);
+    }
     const diffProbe = Bun.spawnSync(
       [
         'bun',
@@ -1921,6 +2198,10 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
       `${JSON.stringify(issueTimings, null, 2)}\n`,
     );
     writeFileSync(
+      join(outDir, 'lanes-recent-laps-timings.json'),
+      `${JSON.stringify(lapsTimings, null, 2)}\n`,
+    );
+    writeFileSync(
       join(outDir, 'arch-diff-timings.json'),
       `${JSON.stringify(diffTimings, null, 2)}\n`,
     );
@@ -1931,6 +2212,7 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
     await scorePage?.close().catch(() => undefined);
     await decisionsPage?.close().catch(() => undefined);
     await issuesPage?.close().catch(() => undefined);
+    await lapsPage?.close().catch(() => undefined);
     await diffPage?.close().catch(() => undefined);
     if (server) {
       server.kill();
@@ -2194,6 +2476,33 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
     );
   }
   if (issueTimings.noReload !== true) failures.push('the issues screen reloaded');
+
+  if (!within(lapsTimings.readyMs, LIMITS.readyMs)) {
+    failures.push(`laps screen ready after ${lapsTimings.readyMs} ms, limit ${LIMITS.readyMs}`);
+  }
+  for (const q of LAPS_QUERIES) {
+    if (!within(lapsTimings.firstSnapshotMs[q], LIMITS.firstSnapshotMs)) {
+      failures.push(
+        `${q} first snapshot after ${lapsTimings.firstSnapshotMs[q]} ms, limit ${LIMITS.firstSnapshotMs}`,
+      );
+    }
+    if (holdSeconds >= 180 && (lapsTimings.renewals[q] ?? 0) < RENEWALS_IN_180S) {
+      failures.push(
+        `${lapsTimings.renewals[q]} ${q} seal renewals in ${holdSeconds}s, expected at least ${RENEWALS_IN_180S}`,
+      );
+    }
+  }
+  for (const [when, write] of [
+    ['first', lapsTimings.stepToLane],
+    [`after ${holdSeconds}s`, lapsTimings.afterHoldStepToLane],
+  ] as const) {
+    if (!within(write?.ms ?? null, LIMITS.insertToScreenMs)) {
+      failures.push(
+        `${LIVE_STEP} ${when} reached its lane after ${write?.ms} ms, limit ${LIMITS.insertToScreenMs}`,
+      );
+    }
+  }
+  if (lapsTimings.noReload !== true) failures.push('the laps screen reloaded');
   if (!within(diffTimings.readyMs, LIMITS.readyMs)) {
     failures.push(`diff screen ready after ${diffTimings.readyMs} ms, limit ${LIMITS.readyMs}`);
   }
@@ -2226,6 +2535,7 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
   deps.out(`scorecard: ${JSON.stringify(scorecardTimings)}`);
   deps.out(`decisions: ${JSON.stringify(decisionTimings)}`);
   deps.out(`issues: ${JSON.stringify(issueTimings)}`);
+  deps.out(`laps: ${JSON.stringify(lapsTimings)}`);
   deps.out(`diff: ${JSON.stringify(diffTimings)}`);
 }
 

@@ -9,19 +9,34 @@ export type PanelState = 'loading' | 'ready' | 'error';
 /**
  * Rows kept while a renewal reconnects are still the query's rows, so a panel stays `ready`
  * through `connecting`. A `stale` subscription's seal has expired with no replacement: it gets
- * no more updates, so its rows are no longer live and the panel is in `error`.
+ * no more updates, so its rows are no longer live and the panel is in `error`. Rows kept through
+ * a `stale` or `error` spell are from before the outage, so while the subscription reconnects
+ * after one (`recovering`) the panel is `loading`, not `ready`, until it is `live` again.
  */
 export function panelState({
   status,
   data,
   error,
+  recovering = false,
 }: {
   status: LiveQueryState['status'];
   data: readonly unknown[] | undefined;
   error: unknown;
+  recovering?: boolean;
 }): PanelState {
   if (error !== undefined || status === 'error' || status === 'stale') return 'error';
+  if (recovering && status !== 'live') return 'loading';
   return data === undefined ? 'loading' : 'ready';
+}
+
+/**
+ * Whether a subscription is in or coming back from an outage: it entered one at `stale` or
+ * `error`, and it leaves it only at `live`, when the fresh snapshot has been published.
+ */
+export function recovering(wasRecovering: boolean, status: LiveQueryState['status']): boolean {
+  if (status === 'stale' || status === 'error') return true;
+  if (status === 'live') return false;
+  return wasRecovering;
 }
 
 /**
@@ -143,7 +158,10 @@ function Subscribed<Row>({
     return renewed;
   }, [query, requestSeal]);
   const { status, data, error } = useLiveQuery(sealed, { refreshQuery });
-  const state = panelState({ status, data, error });
+  const [wasRecovering, setRecovering] = useState(false);
+  const isRecovering = recovering(wasRecovering, status);
+  if (isRecovering !== wasRecovering) setRecovering(isRecovering);
+  const state = panelState({ status, data, error, recovering: isRecovering });
 
   useEffect(() => {
     if (state === 'ready') markOnce(`live:${query}:ready`);
@@ -151,7 +169,7 @@ function Subscribed<Row>({
 
   return (
     <Frame query={query} state={state} className={className}>
-      {render(data, state)}
+      {render(state === 'loading' ? undefined : data, state)}
     </Frame>
   );
 }
