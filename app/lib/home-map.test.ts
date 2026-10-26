@@ -41,6 +41,9 @@ const step = (
 };
 
 // Out of order, as a live query may deliver them.
+/** The factories the server's factories file names. */
+const SHOWN = ['here', 'a-other', 'b-other'];
+
 const rows: HomeMapRow[] = [
   step('c', 9, ['b']),
   workflow('manager', 'wf-manager'),
@@ -52,21 +55,21 @@ const rows: HomeMapRow[] = [
 ];
 
 test('the loop is in declaration order, each expanded step followed by its stages', () => {
-  const map = homeMap(rows);
+  const map = homeMap(rows, SHOWN);
   expect(map.loop.map((n) => n.id)).toEqual(['a', 'b', 'b/one', 'b/two', 'c']);
   expect(map.loop.map((n) => n.role)).toEqual(['step', 'step', 'stage', 'stage', 'step']);
   expect(map.clusters).toEqual(new Map([['b', ['b/one', 'b/two']]]));
 });
 
 test("a stage's depends_on names its siblings, and a stage with none hangs off its step", () => {
-  const { edges } = homeMap(rows);
+  const { edges } = homeMap(rows, SHOWN);
   expect(edges).toContainEqual({ from: 'b', to: 'b/one' });
   expect(edges).toContainEqual({ from: 'b/one', to: 'b/two' });
   expect(edges).not.toContainEqual({ from: 'one', to: 'b/two' });
 });
 
 test('inputs, the manager and the outputs frame the loop', () => {
-  const map = homeMap(rows);
+  const map = homeMap(rows, SHOWN);
   expect(map.inputs.map((n) => n.label)).toEqual([
     'Product document',
     'wf-writer',
@@ -88,13 +91,13 @@ test('an edge another path already implies is not drawn', () => {
     { from: 'b', to: 'c' },
     { from: 'c', to: 'd' },
   ]);
-  const map = homeMap([...rows, step('d', 10, ['a', 'c'])]);
+  const map = homeMap([...rows, step('d', 10, ['a', 'c'])], SHOWN);
   expect(map.edges).toContainEqual({ from: 'c', to: 'd' });
   expect(map.edges).not.toContainEqual({ from: 'a', to: 'd' });
 });
 
 test('a step links to its own workflow, a stage to the workflow its step includes', () => {
-  const map = homeMap(rows);
+  const map = homeMap(rows, SHOWN);
   const href = (id: string) => map.loop.find((n) => n.id === id)?.href;
   expect(href('a')).toBe('/steps/wf-loop/a');
   expect(href('b/two')).toBe('/steps/wf-block/two');
@@ -102,11 +105,14 @@ test('a step links to its own workflow, a stage to the workflow its step include
 });
 
 test("a step with several factories' laps is one node: the address factory's count, every factory listed", () => {
-  const map = homeMap([
-    ...rows,
-    step('b/two', 3, ['one'], { lap_factory: 'b-other', laps: 3 }),
-    step('b/two', 3, ['one'], { lap_factory: 'a-other', laps: 4 }),
-  ]);
+  const map = homeMap(
+    [
+      ...rows,
+      step('b/two', 3, ['one'], { lap_factory: 'b-other', laps: 3 }),
+      step('b/two', 3, ['one'], { lap_factory: 'a-other', laps: 4 }),
+    ],
+    SHOWN,
+  );
   expect(map.loop.map((n) => n.id)).toEqual(['a', 'b', 'b/one', 'b/two', 'c']);
   const two = map.loop.find((n) => n.id === 'b/two');
   expect(two?.liveCount).toBe(2);
@@ -119,13 +125,30 @@ test("a step with several factories' laps is one node: the address factory's cou
   expect(map.edges.filter((e) => e.to === 'b/two')).toEqual([{ from: 'b/one', to: 'b/two' }]);
 });
 
+test('a factory the factories file does not name is not on the map, even where it alone has laps', () => {
+  const map = homeMap(
+    [
+      ...rows.filter((r) => r.path !== 'a'),
+      step('b/two', 3, ['one'], { lap_factory: 'unlisted', laps: 5 }),
+      step('a', 0, [], { lap_factory: 'unlisted', laps: 1 }),
+    ],
+    SHOWN,
+  );
+  expect(map.loop.map((n) => n.id)).toEqual(['a', 'b', 'b/one', 'b/two', 'c']);
+  expect(map.loop.find((n) => n.id === 'b/two')?.factories).toEqual([
+    { factory: 'here', laps: 2, current: true },
+  ]);
+  const a = map.loop.find((n) => n.id === 'a');
+  expect([a?.liveCount, a?.factories]).toEqual([0, []]);
+});
+
 test('with no steps stored the map is empty', () => {
-  const map = homeMap([workflow('manager', 'wf-manager')]);
+  const map = homeMap([workflow('manager', 'wf-manager')], SHOWN);
   expect([...map.inputs, ...map.manager, ...map.loop, ...map.outputs]).toEqual([]);
 });
 
 test('the layout places every step apart, and the stage box around its stages', () => {
-  const map = homeMap(rows);
+  const map = homeMap(rows, SHOWN);
   const laid = layoutLoop(map);
   expect([...laid.nodes.keys()]).toEqual(map.loop.map((n) => n.id));
   const boxes = [...laid.nodes.values()];

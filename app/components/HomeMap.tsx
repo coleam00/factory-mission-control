@@ -130,11 +130,18 @@ const frames = (nodes: FrameNode[]) => (
 /**
  * The factory at the pinned version: what feeds it and the manager above the loop, the loop laid
  * out with dagre (each expanded step's stages boxed beside it), and what it produces below. Every
- * step shows how many of the factory's laps are on it now, and each other factory's laps there
- * under that factory's name, and opens its detail.
+ * step shows how many of the factory's laps are on it now, and each other shown factory's laps
+ * there under that factory's name, and opens its detail.
  */
-export function HomeMap({ rows }: { rows: readonly HomeMapRow[] }): ReactElement {
-  const map = useMemo(() => homeMap(rows), [rows]);
+export function HomeMap({
+  rows,
+  factories,
+}: {
+  rows: readonly HomeMapRow[];
+  /** The factories the server shows; another factory's laps are not on the map. */
+  factories: readonly string[];
+}): ReactElement {
+  const map = useMemo(() => homeMap(rows, factories), [rows, factories]);
   const laid = useMemo(() => layoutLoop(map), [map]);
   return (
     <div className="flex flex-col gap-5">

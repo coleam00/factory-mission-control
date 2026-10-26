@@ -50,7 +50,7 @@ export interface StepNode {
   href: string;
   /** The laps of the factory in the address on it now. */
   liveCount: number;
-  /** Every factory with laps on it now, the factory in the address first, then by name. */
+  /** Every shown factory with laps on it now, the factory in the address first, then by name. */
   factories: FactoryLaps[];
 }
 
@@ -108,13 +108,20 @@ export function reduceEdges(edges: readonly Edge[]): Edge[] {
   return edges.filter((edge) => !reachesAvoiding(edge.from, edge.to, edge));
 }
 
-/** Each step path once, with the laps every factory has on it: the query gives a row per factory. */
-function stepsByPath(rows: readonly HomeMapRow[]): { row: StepRow; factories: FactoryLaps[] }[] {
+/**
+ * Each step path once, with the laps each shown factory has on it: the query gives a row per
+ * factory with laps, including a factory the server's factories file does not name, which the map
+ * does not show (PRD 11.6), as the switcher does not list it.
+ */
+function stepsByPath(
+  rows: readonly HomeMapRow[],
+  shown: readonly string[],
+): { row: StepRow; factories: FactoryLaps[] }[] {
   const byPath = new Map<string, { row: StepRow; factories: FactoryLaps[] }>();
   for (const row of rows.filter(isStep)) {
     const step = byPath.get(row.path) ?? { row, factories: [] };
     byPath.set(row.path, step);
-    if (row.lap_factory !== null) {
+    if (row.lap_factory !== null && shown.includes(row.lap_factory)) {
       step.factories.push({ factory: row.lap_factory, laps: row.laps, current: row.is_current });
     }
   }
@@ -126,9 +133,12 @@ function stepsByPath(rows: readonly HomeMapRow[]): { row: StepRow; factories: Fa
   return [...byPath.values()].sort((a, b) => a.row.position - b.row.position);
 }
 
-/** Turns the live rows into the map; every part is empty when no architecture is stored. */
-export function homeMap(rows: readonly HomeMapRow[]): HomeMap {
-  const nodes = stepsByPath(rows);
+/**
+ * Turns the live rows into the map, counting the laps of the factories in `shown` (the server's
+ * factories file); every part is empty when no architecture is stored.
+ */
+export function homeMap(rows: readonly HomeMapRow[], shown: readonly string[]): HomeMap {
+  const nodes = stepsByPath(rows, shown);
   const steps = nodes.map((n) => n.row);
   if (steps.length === 0) {
     return { inputs: [], manager: [], loop: [], outputs: [], edges: [], clusters: new Map() };

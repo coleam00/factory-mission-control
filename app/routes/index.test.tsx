@@ -12,7 +12,7 @@ const REPO = join(import.meta.dir, '..', '..');
 const render = (rows: HomeMapRow[] | undefined, state: 'loading' | 'ready' | 'error') =>
   renderToStaticMarkup(
     <MemoryRouter>
-      <HomeMapBody rows={rows} state={state} />
+      <HomeMapBody rows={rows} state={state} factories={['here', 'north-star']} />
     </MemoryRouter>,
   );
 
@@ -65,13 +65,14 @@ test('a step with laps on it carries its count and the running style; the rest s
   expect(html).not.toContain('data-factory-counts');
 });
 
-test("another factory's laps show under its name, the address factory first, and only its count is live", () => {
+test("another listed factory's laps show under its name, the address factory first, and only its count is live", () => {
   const html = render(
     [
       step('both', 0, 3, 'north-star'),
       step('both', 0, 2),
       step('theirs', 1, 1, 'north-star'),
       step('ours', 2, 1),
+      step('ours', 2, 4, 'unlisted'),
     ],
     'ready',
   );
@@ -88,6 +89,7 @@ test("another factory's laps show under its name, the address factory first, and
   expect(theirs).not.toContain('var(--running)');
   expect(counted('/steps/wf/theirs')).toEqual(['north-star 1']);
   expect(linkIn(html, '/steps/wf/ours')).not.toContain('data-factory-counts');
+  expect(html).not.toContain('unlisted');
 });
 
 /** Every step id in the pinned pack's archon-loop, at every depth. */

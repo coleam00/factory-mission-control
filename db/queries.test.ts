@@ -9,6 +9,7 @@ import {
   KINDS,
   type Kind,
 } from '../app/lib/arch-diff';
+import type { HomeMapRow } from '../app/lib/home-map';
 import { OUTCOMES } from '../app/lib/laps';
 import {
   dataValue,
@@ -208,17 +209,18 @@ ${'x'.repeat(5000)}`;
 describe('home-map on the seed', () => {
   let db: Db;
   const sql = queries.find(([name]) => name === 'home-map')?.[1] as string;
-  type Row = {
-    role: string;
-    path: string | null;
-    step_id: string | null;
-    workflow: string;
-    position: number | null;
-    detail_workflow: string;
-    lap_factory: string | null;
-    laps: number;
-    is_current: boolean;
-  };
+  type Row = Pick<
+    HomeMapRow,
+    | 'role'
+    | 'path'
+    | 'step_id'
+    | 'workflow'
+    | 'position'
+    | 'detail_workflow'
+    | 'lap_factory'
+    | 'laps'
+    | 'is_current'
+  >;
   const rows = async (factory = 'mission-control') => (await db.query(sql, [factory])) as Row[];
   /** The address factory's laps on each node: the `laps` of its `is_current` row, else 0. */
   const liveCounts = async (factory = 'mission-control') => {
