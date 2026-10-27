@@ -13,7 +13,7 @@ import { NEXT_TO_LABEL } from './fixture/write';
 import { openPage, type Page } from './lib/cdp';
 import { type Deps, failing, guardedDatabaseUrl, type Main, runCli } from './lib/cli';
 import type { Db, Row } from './lib/db';
-import { machineLockPath, withMachineLock } from './lib/machine-lock';
+import { LOCK_POLL_MS, LOCK_WAIT_MS, machineLockPath, withMachineLock } from './lib/machine-lock';
 import { resolveBranchName } from './lib/target';
 import { rewindPhase } from './live/rewind';
 import { switcherPhase } from './live/switcher';
@@ -37,8 +37,9 @@ const USAGE = [
   '  measuring, waits up to 30 minutes for another running test:live (naming its process id),',
   '  takes over a lock whose process no longer exists, and releases it when it ends.',
   '  Proves the home screen is live against the check branch in .mc-check.env (run',
-  '  `bun run fixture:branch` first): serves the app on a free port in 8850-8864, opens `/` in a',
-  '  headless browser, checks the map against the seed, times inserted laps to the factory strip',
+  '  `bun run fixture:branch` first): serves the app on a free port in 8850-8864 (waiting up to 30',
+  '  minutes while every one is taken), opens `/` in a headless browser, checks the map against the',
+  '  seed, times inserted laps to the factory strip',
   '  and `fixture:write step` events to the map, holds the page open --hold seconds (default 180)',
   '  across seal renewals, clicks a step, re-runs the probes in db/queries/REALTIME.md, and runs',
   '  the design probe. Writes realtime-timings.json, realtime-features.json, home-map-timings.json,',
@@ -78,9 +79,25 @@ const USAGE = [
   "  factories.json alone, that the switcher lists only factories.json's factories and the second",
   '  factory is neither sealed for nor shown when remembered. It writes switcher-check.txt,',
   '  switcher-timings.json, switcher.png and switcher-design-probe.json.',
+  '  Each `fixture:write` is timed from its exit, when its write has committed, to the screen.',
 ].join('\n');
 
 export const LIMITS = { readyMs: 2000, ...PERFORMANCE_LIMITS, insertToScreenMs: 5000 };
+
+/**
+ * The failure of a write timed to a screen: none within the limit, otherwise one line naming the
+ * reading and its value, `never` when the screen did not show the write within the limit.
+ */
+export function lateWrite(
+  reading: string,
+  screen: string,
+  ms: number | null | undefined,
+): string[] {
+  const limit = LIMITS.insertToScreenMs;
+  if (ms == null) return [`${reading} never reached ${screen} within ${limit} ms`];
+  return ms > limit ? [`${reading} reached ${screen} after ${ms} ms, limit ${limit}`] : [];
+}
+
 const RENEWALS_IN_180S = 3;
 export const PANEL = '[data-live="status-strip"]';
 /** Every live query the step screen reads, one panel each. */
@@ -228,14 +245,46 @@ async function runProbe(
   }
 }
 
-export async function freePort(): Promise<number> {
-  for (let port = SERVE_PORTS.min; port <= SERVE_PORTS.max; port++) {
-    try {
-      Bun.listen({ hostname: '127.0.0.1', port, socket: { data() {} } }).stop(true);
-      return port;
-    } catch {}
+function portIsFree(port: number): boolean {
+  try {
+    Bun.listen({ hostname: '127.0.0.1', port, socket: { data() {} } }).stop(true);
+    return true;
+  } catch {
+    return false;
   }
-  throw new Error(`no free port in ${SERVE_PORTS.min}-${SERVE_PORTS.max}`);
+}
+
+/**
+ * The first free port in 8850-8864. While every one is taken (other checks on this machine are
+ * serving), it waits for one up to `waitMs`, as long as the machine lock waits, then throws.
+ */
+export async function freePort(
+  deps: Pick<Deps, 'now' | 'sleep' | 'out'>,
+  options: { waitMs?: number; pollMs?: number; free?: (port: number) => boolean } = {},
+): Promise<number> {
+  const waitMs = options.waitMs ?? LOCK_WAIT_MS;
+  const pollMs = options.pollMs ?? LOCK_POLL_MS;
+  const free = options.free ?? portIsFree;
+  const range = `${SERVE_PORTS.min}-${SERVE_PORTS.max}`;
+  const started = deps.now().getTime();
+  for (let waiting = false; ; waiting = true) {
+    for (let port = SERVE_PORTS.min; port <= SERVE_PORTS.max; port++) {
+      if (free(port)) {
+        if (waiting) deps.out(`port ${port} is free`);
+        return port;
+      }
+    }
+    const waited = deps.now().getTime() - started;
+    if (waited >= waitMs) {
+      throw new Error(`no free port in ${range} after ${Math.round(waited / 60_000)} min`);
+    }
+    if (!waiting) {
+      deps.out(
+        `every port in ${range} is taken: waiting for one (up to ${Math.round(waitMs / 60_000)} min)`,
+      );
+    }
+    await deps.sleep(pollMs);
+  }
 }
 
 export async function waitForHealth(base: string, exited: () => boolean): Promise<void> {
@@ -375,14 +424,32 @@ export function mapMismatches(nodes: ShownNode[], lapsOn: (path: string) => numb
   return failures;
 }
 
-/** Runs `fixture:write step` on `runId` and times it to LIVE_STEP's count reaching `target`. */
-const stepToScreen = (page: Page, deps: Deps, runId: string, target: number) =>
-  writeToScreen(
-    page,
-    deps,
-    ['step', '--run', runId, '--step', LIVE_STEP, '--event', 'node_started'],
-    `${liveCountOf(LIVE_STEP)} === '${target}'`,
-  );
+/**
+ * Runs `fixture:write step` on `runId` and times it to LIVE_STEP's count on the map reaching
+ * `target` and to the run's lane on the laps screen reaching LIVE_STEP: the same event feeds both.
+ */
+async function stepToScreens(
+  map: Page,
+  laps: Page,
+  deps: Deps,
+  runId: string,
+  target: number,
+): Promise<{ map: number | null; lane: number | null }> {
+  await fixtureWrite(deps, [
+    'step',
+    '--run',
+    runId,
+    '--step',
+    LIVE_STEP,
+    '--event',
+    'node_started',
+  ]);
+  const [onMap, onLane] = await Promise.all([
+    untilShown(map, `${liveCountOf(LIVE_STEP)} === '${target}'`),
+    untilShown(laps, laneOn(runId, LIVE_STEP)),
+  ]);
+  return { map: onMap, lane: onLane };
+}
 
 /** Inserts one running lap and times it from just before the insert to the strip showing it. */
 export async function insertToScreen(
@@ -735,21 +802,8 @@ async function openStep(page: Page, base: string, path: string, ready: string): 
   }
 }
 
-/**
- * Runs `fixture:write <args>` and times it from just before the spawn to `condition` holding on
- * the page.
- */
-async function writeToScreen(
-  page: Page,
-  deps: Deps,
-  args: readonly string[],
-  condition: string,
-): Promise<number | null> {
-  const started = performance.now();
-  const shown = page.evaluate<boolean>(
-    pageWait(condition, LIMITS.insertToScreenMs),
-    LIMITS.insertToScreenMs + 5000,
-  );
+/** Runs `fixture:write <args>` to its exit, which is after its transaction has committed. */
+async function fixtureWrite(deps: Deps, args: readonly string[]): Promise<void> {
   const write = Bun.spawn(['bun', 'run', 'fixture:write', ...args], {
     cwd: deps.repoRoot,
     env: deps.env,
@@ -758,10 +812,31 @@ async function writeToScreen(
   });
   const exitCode = await write.exited;
   if (exitCode !== 0) {
-    await shown;
     throw new Error(`bun run fixture:write ${args.join(' ')} exited ${exitCode}`);
   }
-  return (await shown) ? Math.round(performance.now() - started) : null;
+}
+
+/** Starts timing `condition` on `page` now; resolves to its milliseconds, or null past the limit. */
+function untilShown(page: Page, condition: string): Promise<number | null> {
+  const started = performance.now();
+  return page
+    .evaluate<boolean>(pageWait(condition, LIMITS.insertToScreenMs), LIMITS.insertToScreenMs + 5000)
+    .then((shown) => (shown ? Math.round(performance.now() - started) : null));
+}
+
+/**
+ * Runs `fixture:write <args>` and times it from the write's exit to `condition` holding on the
+ * page. Starting the clock at the spawn instead would charge a process start, which takes seconds
+ * on a busy machine, to the screen's limit.
+ */
+async function writeToScreen(
+  page: Page,
+  deps: Deps,
+  args: readonly string[],
+  condition: string,
+): Promise<number | null> {
+  await fixtureWrite(deps, args);
+  return untilShown(page, condition);
 }
 
 const entriesAre = (target: number) => `document.querySelectorAll('${ENTRY}').length === ${target}`;
@@ -1439,7 +1514,7 @@ async function seedIssueGraphMismatches(
 
 /**
  * Runs `fixture:write label`, which labels the highest-numbered open issue without `needs-owner`,
- * and times it from just before the spawn to that issue's node reading `needs-owner`.
+ * and times it from the write's exit to that issue's node reading `needs-owner`.
  */
 async function labelToScreen(
   page: Page,
@@ -1458,27 +1533,14 @@ async function labelToScreen(
   if (before !== 'waiting') {
     throw new Error(`fixture:write label will label #${issue}, which is ${before}, not waiting`);
   }
-  const started = performance.now();
-  const shown = page.evaluate<boolean>(
-    pageWait(
-      `document.querySelector('${node}')?.getAttribute('data-issue-state') === 'needs-owner'`,
-      LIMITS.insertToScreenMs,
-    ),
-    LIMITS.insertToScreenMs + 5000,
-  );
   labelled.push(issue);
-  const write = Bun.spawn(['bun', 'run', 'fixture:write', 'label'], {
-    cwd: deps.repoRoot,
-    env: deps.env,
-    stdout: 'ignore',
-    stderr: 'inherit',
-  });
-  const exitCode = await write.exited;
-  if (exitCode !== 0) {
-    await shown;
-    throw new Error(`bun run fixture:write label exited ${exitCode}`);
-  }
-  return { issue, ms: (await shown) ? Math.round(performance.now() - started) : null };
+  const ms = await writeToScreen(
+    page,
+    deps,
+    ['label'],
+    `document.querySelector('${node}')?.getAttribute('data-issue-state') === 'needs-owner'`,
+  );
+  return { issue, ms };
 }
 
 type PerLapsQuery = Record<(typeof LAPS_QUERIES)[number], number | null>;
@@ -1493,14 +1555,6 @@ interface LapsTimings extends GroupTimings {
   afterHoldStepToLane: { run: string; ms: number | null } | null;
   noReload: boolean | null;
   limits: typeof LIMITS;
-}
-
-/** Starts timing `condition` on `page` now; resolves to its milliseconds, or null past the limit. */
-function untilShown(page: Page, condition: string): Promise<number | null> {
-  const started = performance.now();
-  return page
-    .evaluate<boolean>(pageWait(condition, LIMITS.insertToScreenMs), LIMITS.insertToScreenMs + 5000)
-    .then((shown) => (shown ? Math.round(performance.now() - started) : null));
 }
 
 interface LapsOnScreen {
@@ -1827,7 +1881,7 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
     });
     if (setup.exitCode !== 0) throw new Error(`bun run setup exited ${setup.exitCode}`);
 
-    const port = await freePort();
+    const port = await freePort(deps);
     timings.port = port;
     stepTimings.port = port;
     mapTimings.port = port;
@@ -1926,10 +1980,9 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
     timings.insertToScreenMs = await insertToScreen(page, db, inserted, factory, before + 1);
     deps.out(`first insert reached the strip in ${timings.insertToScreenMs ?? 'never'} ms`);
     written.push(firstLap);
-    // The map's step write is the lanes' too: both screens watch the same event.
-    const firstLane = untilShown(lapsPage, laneOn(firstLap, LIVE_STEP));
-    mapTimings.insertToScreenMs = await stepToScreen(page, deps, firstLap, onLiveStep + 1);
-    lapsTimings.stepToLane = { run: firstLap, ms: await firstLane };
+    const firstStep = await stepToScreens(page, lapsPage, deps, firstLap, onLiveStep + 1);
+    mapTimings.insertToScreenMs = firstStep.map;
+    lapsTimings.stepToLane = { run: firstLap, ms: firstStep.lane };
     deps.out(
       `first step event reached the map in ${mapTimings.insertToScreenMs ?? 'never'} ms, its lane in ${lapsTimings.stepToLane.ms ?? 'never'} ms`,
     );
@@ -2189,14 +2242,9 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
     for (const q of LAPS_QUERIES) {
       lapsTimings.renewals[q] = await lapsPage.evaluate<number>(renewalsOf(q));
     }
-    const secondLane = untilShown(lapsPage, laneOn(secondLap, LIVE_STEP));
-    mapTimings.afterHoldInsertToScreenMs = await stepToScreen(
-      page,
-      deps,
-      secondLap,
-      onLiveStep + 2,
-    );
-    lapsTimings.afterHoldStepToLane = { run: secondLap, ms: await secondLane };
+    const secondStep = await stepToScreens(page, lapsPage, deps, secondLap, onLiveStep + 2);
+    mapTimings.afterHoldInsertToScreenMs = secondStep.map;
+    lapsTimings.afterHoldStepToLane = { run: secondLap, ms: secondStep.lane };
     lapsTimings.noReload = await lapsPage.evaluate<boolean>('window.__mcNoReload === true');
     await lapsPage.close();
     lapsPage = undefined;
@@ -2576,16 +2624,10 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
       failures.push(`${name} was ready after ${t.readyMs} ms, limit ${LIMITS.readyMs}`);
     }
     failures.push(...performanceFailures(name, t));
-    if (!within(t.insertToScreenMs, LIMITS.insertToScreenMs)) {
-      failures.push(
-        `the first insert reached ${name} after ${t.insertToScreenMs} ms, limit ${LIMITS.insertToScreenMs}`,
-      );
-    }
-    if (!within(t.afterHoldInsertToScreenMs, LIMITS.insertToScreenMs)) {
-      failures.push(
-        `the insert after ${holdSeconds}s reached ${name} after ${t.afterHoldInsertToScreenMs} ms, limit ${LIMITS.insertToScreenMs}`,
-      );
-    }
+    failures.push(...lateWrite('the first insert', name, t.insertToScreenMs));
+    failures.push(
+      ...lateWrite(`the insert after ${holdSeconds}s`, name, t.afterHoldInsertToScreenMs),
+    );
     if (holdSeconds >= 180 && (t.renewals ?? 0) < RENEWALS_IN_180S) {
       failures.push(
         `${t.renewals} seal renewals of ${name} in ${holdSeconds}s, expected at least ${RENEWALS_IN_180S}`,
@@ -2599,16 +2641,16 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
     );
   }
   failures.push(...groupPerformanceFailures(STEP_QUERIES, stepTimings));
-  if (!within(stepTimings.descriptionToScreenMs, LIMITS.insertToScreenMs)) {
-    failures.push(
-      `the first description write reached the step after ${stepTimings.descriptionToScreenMs} ms, limit ${LIMITS.insertToScreenMs}`,
-    );
-  }
-  if (!within(stepTimings.afterHoldDescriptionToScreenMs, LIMITS.insertToScreenMs)) {
-    failures.push(
-      `the description write after ${holdSeconds}s reached the step after ${stepTimings.afterHoldDescriptionToScreenMs} ms, limit ${LIMITS.insertToScreenMs}`,
-    );
-  }
+  failures.push(
+    ...lateWrite('the first description write', 'the step', stepTimings.descriptionToScreenMs),
+  );
+  failures.push(
+    ...lateWrite(
+      `the description write after ${holdSeconds}s`,
+      'the step',
+      stepTimings.afterHoldDescriptionToScreenMs,
+    ),
+  );
   if (holdSeconds >= 180 && (stepTimings.renewals ?? 0) < RENEWALS_IN_180S) {
     failures.push(
       `${stepTimings.renewals} step-detail seal renewals in ${holdSeconds}s, expected at least ${RENEWALS_IN_180S}`,
@@ -2621,16 +2663,20 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
     );
   }
   failures.push(...performanceFailures('versions screen', versionTimings));
-  if (!within(versionTimings.pinToScreenMs, LIMITS.insertToScreenMs)) {
-    failures.push(
-      `first pin reached the versions screen after ${versionTimings.pinToScreenMs} ms, limit ${LIMITS.insertToScreenMs}`,
-    );
-  }
-  if (!within(versionTimings.afterHoldPinToScreenMs, LIMITS.insertToScreenMs)) {
-    failures.push(
-      `pin after ${holdSeconds}s reached the versions screen after ${versionTimings.afterHoldPinToScreenMs} ms, limit ${LIMITS.insertToScreenMs}`,
-    );
-  }
+  failures.push(
+    ...lateWrite(
+      'the pin before the hold (pinToScreenMs)',
+      'the versions screen',
+      versionTimings.pinToScreenMs,
+    ),
+  );
+  failures.push(
+    ...lateWrite(
+      `the pin after the ${holdSeconds}s hold (afterHoldPinToScreenMs)`,
+      'the versions screen',
+      versionTimings.afterHoldPinToScreenMs,
+    ),
+  );
   if (holdSeconds >= 180 && (versionTimings.renewals ?? 0) < RENEWALS_IN_180S) {
     failures.push(
       `${versionTimings.renewals} versions seal renewals in ${holdSeconds}s, expected at least ${RENEWALS_IN_180S}`,
@@ -2641,16 +2687,14 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
     failures.push(`scorecard ready after ${scorecardTimings.readyMs} ms, limit ${LIMITS.readyMs}`);
   }
   failures.push(...performanceFailures('scorecard', scorecardTimings));
-  if (!within(scorecardTimings.mergeToScreenMs, LIMITS.insertToScreenMs)) {
-    failures.push(
-      `first merge reached the scorecard after ${scorecardTimings.mergeToScreenMs} ms, limit ${LIMITS.insertToScreenMs}`,
-    );
-  }
-  if (!within(scorecardTimings.afterHoldMergeToScreenMs, LIMITS.insertToScreenMs)) {
-    failures.push(
-      `merge after ${holdSeconds}s reached the scorecard after ${scorecardTimings.afterHoldMergeToScreenMs} ms, limit ${LIMITS.insertToScreenMs}`,
-    );
-  }
+  failures.push(...lateWrite('first merge', 'the scorecard', scorecardTimings.mergeToScreenMs));
+  failures.push(
+    ...lateWrite(
+      `merge after ${holdSeconds}s`,
+      'the scorecard',
+      scorecardTimings.afterHoldMergeToScreenMs,
+    ),
+  );
   if (holdSeconds >= 180 && (scorecardTimings.renewals ?? 0) < RENEWALS_IN_180S) {
     failures.push(
       `${scorecardTimings.renewals} scorecard seal renewals in ${holdSeconds}s, expected at least ${RENEWALS_IN_180S}`,
@@ -2670,21 +2714,17 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
       );
     }
   }
-  for (const [what, ms] of [
-    ["V2's verdict reached the ledger", decisionTimings.verdictToScreenMs],
-    ['a decision reached the timeline', decisionTimings.decisionToScreenMs],
+  for (const [reading, screen, ms] of [
+    ["V2's verdict", 'the ledger', decisionTimings.verdictToScreenMs],
+    ['a decision', 'the timeline', decisionTimings.decisionToScreenMs],
+    [`a verdict after ${holdSeconds}s`, 'the ledger', decisionTimings.afterHoldVerdictToScreenMs],
     [
-      `a verdict after ${holdSeconds}s reached the ledger`,
-      decisionTimings.afterHoldVerdictToScreenMs,
-    ],
-    [
-      `a decision after ${holdSeconds}s reached the timeline`,
+      `a decision after ${holdSeconds}s`,
+      'the timeline',
       decisionTimings.afterHoldDecisionToScreenMs,
     ],
   ] as const) {
-    if (!within(ms, LIMITS.insertToScreenMs)) {
-      failures.push(`${what} after ${ms} ms, limit ${LIMITS.insertToScreenMs}`);
-    }
+    failures.push(...lateWrite(reading, screen, ms));
   }
   if (decisionTimings.noReload !== true) failures.push('the decisions screen reloaded');
 
@@ -2696,11 +2736,7 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
     ['first', issueTimings.labelToScreen],
     [`after ${holdSeconds}s`, issueTimings.afterHoldLabelToScreen],
   ] as const) {
-    if (!within(write?.ms ?? null, LIMITS.insertToScreenMs)) {
-      failures.push(
-        `label ${when} reached the issues screen after ${write?.ms} ms, limit ${LIMITS.insertToScreenMs}`,
-      );
-    }
+    failures.push(...lateWrite(`label ${when}`, 'the issues screen', write?.ms));
   }
   if (holdSeconds >= 180 && (issueTimings.renewals ?? 0) < RENEWALS_IN_180S) {
     failures.push(
@@ -2724,27 +2760,21 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
     ['first', lapsTimings.stepToLane],
     [`after ${holdSeconds}s`, lapsTimings.afterHoldStepToLane],
   ] as const) {
-    if (!within(write?.ms ?? null, LIMITS.insertToScreenMs)) {
-      failures.push(
-        `${LIVE_STEP} ${when} reached its lane after ${write?.ms} ms, limit ${LIMITS.insertToScreenMs}`,
-      );
-    }
+    failures.push(...lateWrite(`${LIVE_STEP} ${when}`, 'its lane', write?.ms));
   }
   if (lapsTimings.noReload !== true) failures.push('the laps screen reloaded');
   if (!within(diffTimings.readyMs, LIMITS.readyMs)) {
     failures.push(`diff screen ready after ${diffTimings.readyMs} ms, limit ${LIMITS.readyMs}`);
   }
   failures.push(...performanceFailures('diff screen', diffTimings));
-  if (!within(diffTimings.stepToScreenMs, LIMITS.insertToScreenMs)) {
-    failures.push(
-      `first step reached the diff screen after ${diffTimings.stepToScreenMs} ms, limit ${LIMITS.insertToScreenMs}`,
-    );
-  }
-  if (!within(diffTimings.afterHoldStepToScreenMs, LIMITS.insertToScreenMs)) {
-    failures.push(
-      `step after ${holdSeconds}s reached the diff screen after ${diffTimings.afterHoldStepToScreenMs} ms, limit ${LIMITS.insertToScreenMs}`,
-    );
-  }
+  failures.push(...lateWrite('first step', 'the diff screen', diffTimings.stepToScreenMs));
+  failures.push(
+    ...lateWrite(
+      `step after ${holdSeconds}s`,
+      'the diff screen',
+      diffTimings.afterHoldStepToScreenMs,
+    ),
+  );
   if (holdSeconds >= 180 && (diffTimings.renewals ?? 0) < RENEWALS_IN_180S) {
     failures.push(
       `${diffTimings.renewals} diff seal renewals in ${holdSeconds}s, expected at least ${RENEWALS_IN_180S}`,
