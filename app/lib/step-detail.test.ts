@@ -1,5 +1,13 @@
 import { expect, test } from 'bun:test';
-import { dependents, findStep, joinParts, type StepRow } from './step-detail';
+import {
+  dependents,
+  findStep,
+  joinParts,
+  type NestingRow,
+  nesting,
+  type StepRow,
+  stepHref,
+} from './step-detail';
 
 function step(path: string, fields: Partial<StepRow> = {}): StepRow {
   const parent = path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : null;
@@ -62,4 +70,97 @@ test('parts join in part order per file, and a missing part text joins as nothin
       ['y.md', ''],
     ]),
   );
+});
+
+function nested(
+  relation: NestingRow['relation'],
+  workflow: string,
+  path: string,
+  position: number,
+  open: [string, string],
+): NestingRow {
+  return {
+    relation,
+    workflow,
+    path,
+    position,
+    step_id: path.slice(path.lastIndexOf('/') + 1),
+    kind: 'command',
+    open_workflow: open[0],
+    open_path: open[1],
+  };
+}
+
+test("a nested path's slash is encoded in the step's link", () => {
+  expect(stepHref('archon-deliver-block', 'rounds/implement')).toBe(
+    '/steps/archon-deliver-block/rounds%2Fimplement',
+  );
+});
+
+test('repeated occurrences beneath a step are two entries, by their path beneath it, in order', () => {
+  const deliver = step('deliver', { workflow: 'archon-ship-block' });
+  const { inside } = nesting(
+    [
+      nested('inside', 'archon-ship-block', 'deliver/rounds/reshape/implement', 7, [
+        'archon-implement',
+        'implement',
+      ]),
+      nested('inside', 'archon-ship-block', 'deliver/rounds/implement', 2, [
+        'archon-deliver-block',
+        'rounds/implement',
+      ]),
+      nested('inside', 'archon-ship-block', 'deliver/rounds/implement/implement', 3, [
+        'archon-implement',
+        'implement',
+      ]),
+    ],
+    deliver,
+  );
+  expect(inside).toEqual([
+    {
+      label: 'rounds/implement',
+      depth: 1,
+      kind: 'command',
+      href: '/steps/archon-deliver-block/rounds%2Fimplement',
+    },
+    {
+      label: 'rounds/implement/implement',
+      depth: 2,
+      kind: 'command',
+      href: '/steps/archon-implement/implement',
+    },
+    {
+      label: 'rounds/reshape/implement',
+      depth: 2,
+      kind: 'command',
+      href: '/steps/archon-implement/implement',
+    },
+  ]);
+});
+
+test('the places an include puts a step are by workflow, then in declaration order', () => {
+  const implement = step('implement', { workflow: 'archon-implement' });
+  const { inside, includedAt } = nesting(
+    [
+      nested('included_at', 'archon-ship-block', 'deliver/rounds/implement/implement', 5, [
+        'archon-deliver-block',
+        'rounds/implement',
+      ]),
+      nested('included_at', 'archon-deliver-block', 'rounds/reshape/implement', 9, [
+        'archon-deliver-block',
+        'rounds/reshape',
+      ]),
+      nested('included_at', 'archon-deliver-block', 'rounds/implement/implement', 3, [
+        'archon-deliver-block',
+        'rounds/implement',
+      ]),
+    ],
+    implement,
+  );
+  expect(inside).toEqual([]);
+  expect(includedAt.map((place) => `${place.workflow} ${place.path} ${place.href}`)).toEqual([
+    'archon-deliver-block rounds/implement/implement /steps/archon-deliver-block/rounds%2Fimplement',
+    'archon-deliver-block rounds/reshape/implement /steps/archon-deliver-block/rounds%2Freshape',
+    'archon-ship-block deliver/rounds/implement/implement /steps/archon-deliver-block/rounds%2Fimplement',
+  ]);
 });

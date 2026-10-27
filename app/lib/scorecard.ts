@@ -6,7 +6,7 @@
  * finished laps. Pure, no React.
  */
 
-/** A run of this factory with a digest: a lap when its workflow is `archon-loop`. */
+/** An `archon-loop` run of this factory with a digest: a lap. */
 export interface LapRow {
   run_id: string;
   digest: string;
@@ -35,20 +35,21 @@ export interface AttemptRow {
   pin_sha: null;
 }
 
-/** A pin, which labels the versions whose first run came after it (as the version strip does). */
-export interface PinRow {
+/** A version of this factory (mc.versions): its first lap's start, and the pin that labels it. */
+export interface VersionRow {
   run_id: null;
   step_id: null;
-  pin_sha: string;
-  committed_at: Date;
+  digest: string;
+  first_run_at: Date;
+  pin_sha: string | null;
 }
 
 /** A row of `db/queries/scorecard.sql`, which returns every column on every row, null where unused. */
-export type ScorecardRow = LapRow | AttemptRow | PinRow;
+export type ScorecardRow = LapRow | AttemptRow | VersionRow;
 
-const isPin = (row: ScorecardRow): row is PinRow => row.pin_sha !== null;
+const isVersion = (row: ScorecardRow): row is VersionRow => row.run_id === null;
 const isAttempt = (row: ScorecardRow): row is AttemptRow => row.step_id !== null;
-const isRun = (row: ScorecardRow): row is LapRow => !isPin(row) && !isAttempt(row);
+const isRun = (row: ScorecardRow): row is LapRow => !isVersion(row) && !isAttempt(row);
 
 /** PRD 4.2: a lap is an `archon-loop` run. */
 export const LAP_WORKFLOW = 'archon-loop';
@@ -118,24 +119,13 @@ export function versionLaps(rows: readonly ScorecardRow[], digest: string): Lap[
   return [...laps.values()].sort((a, b) => at(a) - at(b) || a.id.localeCompare(b.id));
 }
 
-/** How the version strip labels `digest`: its first run of any workflow, and the pin before it. */
+/** How the version strip labels `digest`: its version's first run and pin, if it is a version. */
 export function versionPin(
   rows: readonly ScorecardRow[],
   digest: string,
 ): { firstRunAt: Date | null; pin: string | null } {
-  let first: number | null = null;
-  for (const row of rows) {
-    if (!isRun(row) || row.digest !== digest || row.started_at === null) continue;
-    const t = row.started_at.getTime();
-    if (first === null || t < first) first = t;
-  }
-  if (first === null) return { firstRunAt: null, pin: null };
-  let pin: PinRow | null = null;
-  for (const row of rows) {
-    if (!isPin(row) || row.committed_at.getTime() >= first) continue;
-    if (pin === null || row.committed_at.getTime() > pin.committed_at.getTime()) pin = row;
-  }
-  return { firstRunAt: new Date(first), pin: pin?.pin_sha ?? null };
+  const version = rows.find((row): row is VersionRow => isVersion(row) && row.digest === digest);
+  return { firstRunAt: version?.first_run_at ?? null, pin: version?.pin_sha ?? null };
 }
 
 export type MeasureKey =

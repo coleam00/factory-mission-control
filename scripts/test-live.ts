@@ -64,7 +64,8 @@ const USAGE = [
   '  and times a step inserted into the second version to that screen before and after the hold,',
   '  writing arch-diff-timings.json, arch-diff.png and arch-diff-design-probe.json.',
   '  It opens /steps/archon-loop/check-app, checks it against the seed, times description writes to',
-  '  it across the same hold, and checks land and an unknown step, writing',
+  '  it across the same hold, and checks land, the way from deliver to the implement step it',
+  "  includes and that step's prompt, and an unknown step, writing",
   '  step-detail-timings.json, step-detail.png and step-detail-design-probe.json.',
   '  It opens /rewind on a second server, makes a rewind branch of the check branch with',
   '  `bun run rewind:create` before the hold and another after it, switches to the first and back,',
@@ -85,6 +86,7 @@ export const PANEL = '[data-live="status-strip"]';
 /** Every live query the step screen reads, one panel each. */
 const STEP_QUERIES = [
   'step-detail',
+  'step-nesting',
   'step-prompt',
   'step-subagents',
   'step-scripts',
@@ -92,6 +94,9 @@ const STEP_QUERIES = [
   'step-yaml',
 ];
 const STEP_PATH = '/steps/archon-loop/check-app';
+/** The step deliver's block includes to write the code, and the prompt the seed pins for it. */
+const IMPLEMENT_PATH = '/steps/archon-implement/implement';
+const IMPLEMENT_PROMPT = 'fixtures/pack/sdlc/implement/commands/implement.md';
 /**
  * check-app at the seed's current version, V2 (the newest pin with architecture rows): V2 drops
  * `briefs`, so it depends on `subject` alone (owner decision on #14).
@@ -457,6 +462,34 @@ async function checkAppMismatches(page: Page, repoRoot: string): Promise<string[
   if (!shown.hook) failures.push(`check-app shows no hook ${SEED_CHECK_APP.hook}`);
   if (shown.admitted.join() !== SEED_CHECK_APP.admitted.join()) {
     failures.push(`the fence admits ${shown.admitted.join(', ')}`);
+  }
+  return failures;
+}
+
+/**
+ * Where the way from deliver's screen to the step that writes the code differs from the seed:
+ * both places deliver includes it open its own screen, which shows its pinned prompt.
+ */
+async function includedImplementMismatches(
+  page: Page,
+  base: string,
+  repoRoot: string,
+): Promise<string[]> {
+  const failures: string[] = [];
+  await openStep(page, base, '/steps/archon-ship-block/deliver', stepPanelsReady);
+  for (const label of ['rounds/implement/implement', 'rounds/reshape/implement']) {
+    const href = await page.evaluate<string | null>(
+      `document.querySelector('[data-live="step-nesting"] [data-inside="${label}"] a')?.getAttribute('href') ?? null`,
+    );
+    if (href !== IMPLEMENT_PATH)
+      failures.push(`deliver's ${label} opens ${href}, not ${IMPLEMENT_PATH}`);
+  }
+  await openStep(page, base, IMPLEMENT_PATH, stepPanelsReady);
+  const prompt = await page.evaluate<string | null>(
+    `document.querySelector('[data-live="step-prompt"] [data-prompt]')?.textContent ?? null`,
+  );
+  if (prompt !== readFileSync(join(repoRoot, IMPLEMENT_PROMPT), 'utf-8')) {
+    failures.push(`${IMPLEMENT_PATH}'s prompt is not ${IMPLEMENT_PROMPT} byte for byte`);
   }
   return failures;
 }
@@ -2195,6 +2228,7 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
     if (typeof land?.when_condition !== 'string' || when !== land.when_condition) {
       failures.push(`land shows when "${when}", stored "${land?.when_condition}"`);
     }
+    failures.push(...(await includedImplementMismatches(stepPage, base, deps.repoRoot)));
     await openStep(
       stepPage,
       base,

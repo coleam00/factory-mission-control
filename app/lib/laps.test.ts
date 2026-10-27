@@ -1,13 +1,5 @@
 import { expect, test } from 'bun:test';
-import { costOf, durationOf, formatSpan, recentLaps, since, stepLabel } from './laps';
-
-test('formatSpan counts days past a day and pads hours under it', () => {
-  expect(formatSpan(65)).toBe('01:05');
-  expect(formatSpan(3_725)).toBe('01:02:05');
-  expect(formatSpan(86_400 + 65)).toBe('1d 00:01:05');
-  expect(formatSpan(3 * 86_400 + 3_725)).toBe('3d 01:02:05');
-  expect(formatSpan(-5)).toBe('00:00');
-});
+import { costOf, durationOf, recentLaps, since, stepLabel } from './laps';
 
 test('since and durationOf do the clock math the queries leave out', () => {
   const now = Date.parse('2026-10-24T12:00:00Z');

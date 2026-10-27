@@ -98,3 +98,52 @@ export function joinParts<Row extends { part: number; chunk: string | null }>(
     ]),
   );
 }
+
+/** One row of `db/queries/step-nesting.sql`: a node beneath the step, or a place an include puts it. */
+export interface NestingRow {
+  relation: 'inside' | 'included_at';
+  workflow: string;
+  path: string;
+  position: number;
+  step_id: string;
+  kind: string;
+  /** The screen the row opens: a node's own screen, a place's the node it sits in. */
+  open_workflow: string;
+  open_path: string;
+}
+
+/** A step's screen. A nested path's `/` is encoded, and react-router decodes it back. */
+export function stepHref(workflow: string, path: string): string {
+  return `/steps/${encodeURIComponent(workflow)}/${encodeURIComponent(path)}`;
+}
+
+export interface Nesting {
+  /** Every node beneath the step, by its path beneath it, in declaration order. */
+  inside: { label: string; depth: number; kind: string; href: string }[];
+  /** Every place an include puts the step, by workflow and path there. */
+  includedAt: { workflow: string; path: string; href: string }[];
+}
+
+export function nesting(rows: readonly NestingRow[], step: StepRow): Nesting {
+  const of = (relation: NestingRow['relation']) => rows.filter((row) => row.relation === relation);
+  return {
+    inside: of('inside')
+      .sort((a, b) => a.position - b.position)
+      .map((row) => {
+        const label = row.path.slice(step.path.length + 1);
+        return {
+          label,
+          depth: label.split('/').length - 1,
+          kind: row.kind,
+          href: stepHref(row.open_workflow, row.open_path),
+        };
+      }),
+    includedAt: of('included_at')
+      .sort((a, b) => a.workflow.localeCompare(b.workflow) || a.position - b.position)
+      .map((row) => ({
+        workflow: row.workflow,
+        path: row.path,
+        href: stepHref(row.open_workflow, row.open_path),
+      })),
+  };
+}
