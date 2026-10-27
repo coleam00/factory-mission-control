@@ -169,5 +169,8 @@
   },
   "https://api.github.com/repos/coleam00/ai-software-factory/contents/DECISIONS.md?ref=main": {
     "body": "# Decisions\n\n## 2026-10-24 Holdouts live in the repository, behind a hook\nDecision: Holdout scenarios live in the repository.\nWhy: Builder steps read them.\nReplaces: Holdout files kept outside the repository.\nVersion: abd85896\n\n## 2026-10-24 The complex route runs dev's ship-block\nDecision: Complex laps deliver through archon-ship-block.\nWhy: The fork's script gates sent back more work.\nReplaces: The forked ship workflow.\nVersion: abd85896\n"
+  },
+  "https://api.github.com/repos/coleam00/ai-software-factory/contents/template/factory/pack.json?ref=85d479ad987dd63e441622ecb03db65233e8a803": {
+    "body": "{\"integration_revision_required\": \"abd85896e7971c9ac5199ed7e87973f27130250f\"}\n"
   }
 }
