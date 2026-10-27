@@ -33,7 +33,7 @@ export const NOT_RECORDED = 'not recorded';
 export interface StripEntry {
   digest: string | null;
   pin: string | null;
-  /** UTC `YYYY-MM-DD`: the version's first run, or the pin's commit when it has not run yet. */
+  /** The labelled pin's UTC `YYYY-MM-DD` commit date, or `not recorded`. */
   date: string;
   reason: string;
   hypothesis: string;
@@ -51,7 +51,7 @@ export function stripEntries(rows: readonly VersionStripRow[]): StripEntry[] {
     .map((row) => ({
       digest: row.digest,
       pin: row.pin_sha,
-      date: at(row).toISOString().slice(0, 10),
+      date: row.committed_at?.toISOString().slice(0, 10) ?? NOT_RECORDED,
       reason: recorded(row.reason),
       hypothesis: recorded(row.hypothesis),
       measure: recorded(row.measure),
