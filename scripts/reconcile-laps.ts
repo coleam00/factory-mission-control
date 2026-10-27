@@ -146,7 +146,8 @@ type Reconciled = {
 
 /**
  * Replays the runs whose projection lost a lock wait, then re-projects every Archon run that is not
- * running whose lap rows differ from what its rows project to, and counts the running runs whose lap differs, which it leaves to their live triggers.
+ * running whose lap rows differ from what its rows project to, and counts the running runs whose
+ * lap differs, which it leaves to their live triggers.
  */
 export async function reconcileLaps(db: Db): Promise<Reconciled> {
   const [replay] = await db.query('SELECT mc.replay_locked_runs() AS n', []);
