@@ -1,4 +1,5 @@
 import dagre, { type EdgeLabel, type GraphLabel, type NodeLabel } from '@dagrejs/dagre';
+import { stepHref } from './step-detail';
 
 /** One row of `db/queries/home-map.sql`: a workflow the map shows, or one of the loop's steps. */
 export interface HomeMapRow {
@@ -180,7 +181,7 @@ export function homeMap(rows: readonly HomeMapRow[], shown: readonly string[]): 
       role: row.role as StepNode['role'],
       label: row.step_id,
       kind: row.kind ?? '',
-      href: `/steps/${encodeURIComponent(row.detail_workflow)}/${encodeURIComponent(row.step_id)}`,
+      href: stepHref(row.detail_workflow, row.step_id),
       liveCount: factories.find((f) => f.current)?.laps ?? 0,
       factories,
     })),
