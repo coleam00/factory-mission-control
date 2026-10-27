@@ -98,7 +98,9 @@ function OwnerEntry({ item, now }: { item: OwnerItem; now: number }): ReactEleme
             {look.label}
           </span>
         </span>
-        <span className="flex min-w-0 flex-1 items-baseline gap-2.5">
+        {/* Below sm the title takes its own line under the kind and the wait, so it is never
+            squeezed into the gap between them. */}
+        <span className="order-last flex min-w-0 basis-full items-baseline gap-2.5 sm:order-none sm:basis-0 sm:flex-1">
           {item.url === null ? (
             <span className={`${MONO} font-bold text-text-primary`}>#{item.issue_number}</span>
           ) : (
@@ -109,12 +111,12 @@ function OwnerEntry({ item, now }: { item: OwnerItem; now: number }): ReactEleme
           {item.question_number === null ? null : (
             <span className={`${MONO} shrink-0 text-text-secondary`}>Q{item.question_number}</span>
           )}
-          <span data-title className="min-w-0 text-[12.5px] text-text-primary">
+          <span data-title className="min-w-0 break-words text-[12.5px] text-text-primary">
             {item.title}
           </span>
         </span>
         <span
-          className={`${MONO} shrink-0 text-text-secondary`}
+          className={`${MONO} ml-auto shrink-0 text-text-secondary sm:ml-0`}
           title={
             item.kind === 'issue'
               ? 'Since the issue was last updated on GitHub'
@@ -171,18 +173,22 @@ function QuestionDetail({ item, now }: { item: OwnerItem; now: number }): ReactE
         <Field label="Default">
           <span data-default-option>{item.default_option ?? NONE}</span>
         </Field>
-        <Field label="Default applies">
-          {item.default_at === null || untilDefault === null ? (
-            NONE
-          ) : (
-            <span data-default-at={item.default_at.toISOString()}>
-              {utcMinute(item.default_at)}{' '}
-              <span className="text-text-secondary">
-                {untilDefault > 0 ? `in ${waited(untilDefault)}` : `${waited(-untilDefault)} ago`}
+        {/* Not the truncating Field: the date, its UTC and the countdown must all show on a phone. */}
+        <div className="col-span-2 flex min-w-0 flex-col gap-1 sm:col-span-1">
+          <dt className={LABEL}>Default applies</dt>
+          <dd className={`${MONO} min-w-0 text-text-primary`}>
+            {item.default_at === null || untilDefault === null ? (
+              NONE
+            ) : (
+              <span data-default-at={item.default_at.toISOString()}>
+                {utcMinute(item.default_at)}{' '}
+                <span className="whitespace-nowrap text-text-secondary">
+                  {untilDefault > 0 ? `in ${waited(untilDefault)}` : `${waited(-untilDefault)} ago`}
+                </span>
               </span>
-            </span>
-          )}
-        </Field>
+            )}
+          </dd>
+        </div>
       </dl>
     </>
   );
