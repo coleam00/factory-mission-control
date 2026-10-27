@@ -17,7 +17,6 @@ import {
   RENEWALS_IN_180S,
   renewalsOf,
   waitForHealth,
-  within,
 } from './shared';
 import {
   collectPanelMarks,
@@ -27,6 +26,7 @@ import {
   groupPerformanceFailures,
   groupTimings,
   readyFailures,
+  within,
 } from './timings';
 
 const QUERIES = ['rewind-branches', 'status-strip'] as const;

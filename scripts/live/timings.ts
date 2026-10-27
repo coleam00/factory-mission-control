@@ -298,6 +298,8 @@ function stretches({ requestedMs, subscribeSentMs, firstSnapshotMs }: ReadyStret
   ].join(', ');
 }
 
+export const within = (value: number | null, limit: number) => value !== null && value <= limit;
+
 /**
  * A screen's ready failure: none within `limitMs`, otherwise one line naming where the time went,
  * per panel for a group, since a group's ready is its slowest panel's.
@@ -307,7 +309,7 @@ export function readyFailures(
   timings: PanelTimings | GroupTimings,
   limitMs: number,
 ): string[] {
-  if (timings.readyMs !== null && timings.readyMs <= limitMs) return [];
+  if (within(timings.readyMs, limitMs)) return [];
   const head = `${screen} ready after ${timings.readyMs} ms, limit ${limitMs}`;
   if (!isGroup(timings)) return [`${head}: ${stretches(timings)}`];
   const panels = Object.keys(timings.firstSnapshotMs).map(
