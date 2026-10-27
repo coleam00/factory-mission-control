@@ -31,6 +31,7 @@ import {
 } from './live/shared';
 import { stepDetailPhase } from './live/step-detail';
 import { switcherPhase } from './live/switcher';
+import { testingPhase } from './live/testing';
 import { measurePanels } from './live/timings';
 import { versionsPhase } from './live/versions';
 
@@ -55,6 +56,11 @@ const USAGE = [
   '  `fixture:write step --step land` on a V2 lap to the screen before and after the hold, writing',
   '  scorecard-vs-expected.json, scorecard-timings.json, scorecard.png and',
   "  scorecard-design-probe.json; it restores those laps' land steps afterwards.",
+  '  It checks the testing screen against SQL over the seed, with no holdout text on it, and times',
+  '  `fixture:write step --step check-app --event node_completed` on a lap with no app check to its',
+  '  kind and verdict counts before the hold and on a second such lap after it, writing',
+  '  testing-check.txt, testing-panel-timings.json, testing-panel.png and',
+  "  testing-panel-design-probe.json; it removes those laps' app checks afterwards.",
   '  It checks the decisions screen against the seed, times `fixture:write verdict --pin <V2>` and',
   '  `fixture:write decision` to that screen before and after the hold, writing ledger-check.txt,',
   '  decisions-ledger-timings.json, decisions-ledger.png and decisions-ledger-design-probe.json.',
@@ -230,6 +236,7 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
     stepDetailPhase(ctx),
     versionsPhase(ctx),
     scorecardPhase(ctx),
+    testingPhase(ctx),
     issuesPhase(ctx),
     switcherPhase(ctx),
     diffPhase(ctx),
