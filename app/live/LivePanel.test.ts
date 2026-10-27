@@ -1,8 +1,9 @@
-import { afterEach, expect, mock, spyOn, test } from 'bun:test';
-import type { LiveQueryState } from '@neon/realtime/client';
+import { afterEach, expect, jest, mock, spyOn, test } from 'bun:test';
+import { type LiveQueryState, QueryRefreshController } from '@neon/realtime/client';
 import * as rewind from '../lib/rewind';
 import {
   backOffSeals,
+  newSealBackoff,
   panelState,
   recovering,
   SEAL_RETRY_CEILING_MS,
@@ -117,24 +118,9 @@ async function backOff(
   answer: (at: number) => { expiresAt: number } | 'fail',
   signal = new AbortController().signal,
 ) {
-  let clock = 0;
   const sent: number[] = [];
   const outcomes: string[] = [];
-  const request = backOffSeals(
-    async () => {
-      sent.push(clock);
-      const answered = answer(clock);
-      if (answered === 'fail') throw new Error('sealing status-strip answered 503');
-      return { ...sealed, ...answered };
-    },
-    signal,
-    {
-      now: () => clock,
-      wait: async (ms) => {
-        clock += ms;
-      },
-    },
-  );
+  const request = onClock(sent, answer, signal);
   for (let i = 0; i < calls; i++) {
     outcomes.push(
       await request().then(
@@ -144,6 +130,34 @@ async function backOff(
     );
   }
   return { sent, outcomes };
+}
+
+let clock = 0;
+
+/** A `backOffSeals` on the test clock, logging when each request is sent into `sent`. */
+function onClock(
+  sent: number[],
+  answer: (at: number) => { expiresAt: number } | 'fail',
+  signal = new AbortController().signal,
+  backoff = newSealBackoff(),
+) {
+  clock = 0;
+  return backOffSeals(
+    async () => {
+      sent.push(clock);
+      const answered = answer(clock);
+      if (answered === 'fail') throw new Error('sealing status-strip answered 503');
+      return { ...sealed, ...answered };
+    },
+    signal,
+    {
+      backoff,
+      now: () => clock,
+      wait: async (ms) => {
+        clock += ms;
+      },
+    },
+  );
 }
 
 test('a seal that keeps failing is asked for again after a doubling wait, up to a ceiling', async () => {
@@ -189,4 +203,82 @@ test('a panel that stopped asking sends no more seal requests', async () => {
   );
   expect(sent).toEqual([0]);
   expect(outcomes).toEqual(['thrown', 'thrown', 'thrown']);
+});
+
+test('a panel asking through a new wrapper, its effect re-run or remounted, still owes the wait', async () => {
+  const sent: number[] = [];
+  const backoff = newSealBackoff();
+  const first = onClock(sent, () => 'fail', undefined, backoff);
+  await first().catch(() => {});
+  const again = backOffSeals(
+    async () => {
+      sent.push(clock);
+      throw new Error('sealing status-strip answered 503');
+    },
+    new AbortController().signal,
+    {
+      backoff,
+      now: () => clock,
+      wait: async (ms) => {
+        clock += ms;
+      },
+    },
+  );
+  for (let i = 0; i < 3; i++) await again().catch(() => {});
+  expect(sent).toEqual([0, 1_000, 3_000, 7_000]);
+});
+
+test('seal requests made at once are sent one at a time, each a wait after the last answer', async () => {
+  const sent: number[] = [];
+  const request = onClock(sent, () => 'fail');
+  await Promise.allSettled([request(), request(), request()]);
+  expect(sent).toEqual([0, 1_000, 3_000]);
+});
+
+/**
+ * A live seal renewed by `@neon/realtime`'s own controller while the endpoint replays an expired
+ * seal, its refresh callback set again every 100 ms the way the React store does when its effect
+ * re-runs (each time rescheduling the refresh for now). Returns when each request was sent, in
+ * ms from when the live seal was due to renew.
+ */
+async function renewWhileStale(seconds: number): Promise<number[]> {
+  jest.useFakeTimers();
+  try {
+    const start = Date.now();
+    const renewAt = start + 50_000;
+    const header = Buffer.from('{"alg":"dir","enc":"A256GCM","v":1}').toString('base64url');
+    const live = {
+      ...sealed,
+      capability: `${header}..iv.ciphertext.tag`,
+      expiresAt: start + 60_000,
+    };
+    const sent: number[] = [];
+    const refreshQuery = backOffSeals(async () => {
+      sent.push(Date.now() - renewAt);
+      return { ...live, expiresAt: start - 60_000 };
+    }, new AbortController().signal);
+    const controller = new QueryRefreshController({
+      query: live,
+      refreshQuery,
+      renewSubscription: async () => {},
+      onRefreshExhausted: () => {},
+    });
+    controller.start();
+    while (Date.now() < renewAt + seconds * 1_000) {
+      jest.advanceTimersByTime(100);
+      for (let i = 0; i < 10; i++) await Promise.resolve();
+      controller.setRefreshCallback(refreshQuery);
+    }
+    controller.stop();
+    return sent;
+  } finally {
+    jest.useRealTimers();
+  }
+}
+
+test('a live panel renewing against a replayed expired seal backs off, however often rescheduled', async () => {
+  const sent = await renewWhileStale(30);
+  // The tight loop sent ~11,000 requests per panel in 30 s; the acceptance limit is 30.
+  expect(sent.length).toBeLessThanOrEqual(30);
+  expect(sent).toEqual([0, 1_000, 3_000, 7_000, 15_000]);
 });

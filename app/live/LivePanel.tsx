@@ -87,8 +87,39 @@ export const SEAL_RETRY_FIRST_MS = 1_000;
 export const SEAL_RETRY_CEILING_MS = 16_000;
 
 /**
- * Wraps `request` so a seal that fails, or comes back expired, is asked for again only after a
- * wait that doubles from `SEAL_RETRY_FIRST_MS` to `SEAL_RETRY_CEILING_MS`, never back to back.
+ * Where one seal's requests stand: the wait the next one owes, counted from when the last was
+ * answered, and the request in turn, so only one is ever in flight.
+ */
+export interface SealBackoff {
+  delay: number;
+  answeredAt: number;
+  turn: Promise<unknown>;
+}
+
+export function newSealBackoff(): SealBackoff {
+  return { delay: 0, answeredAt: 0, turn: Promise.resolve() };
+}
+
+/**
+ * Every panel's backoff, by what it seals. Kept outside the component so that whatever asks for
+ * the same seal again (the panel's effect re-running, the panel remounting, the library's own
+ * retry timer or a reschedule of it) owes the same wait, and the wait keeps growing.
+ */
+const sealBackoffs = new Map<string, SealBackoff>();
+
+export function sealBackoff(key: string): SealBackoff {
+  let backoff = sealBackoffs.get(key);
+  if (!backoff) {
+    backoff = newSealBackoff();
+    sealBackoffs.set(key, backoff);
+  }
+  return backoff;
+}
+
+/**
+ * Wraps `request` so a seal that fails, or comes back expired, is asked for again only once a
+ * wait, doubling from `SEAL_RETRY_FIRST_MS` to `SEAL_RETRY_CEILING_MS`, has passed since the last
+ * answer: never back to back, and never two at once, however often or by whom it is called.
  * An expired seal is thrown, not returned: the library would renew it at once, again and again.
  * A seal too close to expiry for the library to wait before renewing it is returned but backs off
  * too. A seal with a full lifetime resets the wait. Once `signal` aborts, no request is sent.
@@ -97,32 +128,43 @@ export function backOffSeals<Row>(
   request: () => Promise<SealedLiveQuery<Row>>,
   signal: AbortSignal,
   {
+    backoff = newSealBackoff(),
     now = Date.now,
     wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)),
-  }: { now?: () => number; wait?: (ms: number) => Promise<void> } = {},
+  }: {
+    backoff?: SealBackoff;
+    now?: () => number;
+    wait?: (ms: number) => Promise<void>;
+  } = {},
 ): () => Promise<SealedLiveQuery<Row>> {
-  let delay = 0;
-  const backOff = () => {
-    delay = Math.min(SEAL_RETRY_CEILING_MS, Math.max(SEAL_RETRY_FIRST_MS, delay * 2));
+  const answered = (fresh: boolean) => {
+    backoff.answeredAt = now();
+    backoff.delay = fresh
+      ? 0
+      : Math.min(SEAL_RETRY_CEILING_MS, Math.max(SEAL_RETRY_FIRST_MS, backoff.delay * 2));
   };
-  return async () => {
-    if (delay > 0) await wait(delay);
-    if (signal.aborted) throw new Error('the panel stopped asking for seals');
+  const stopped = () => new Error('the panel stopped asking for seals');
+  const ask = async (): Promise<SealedLiveQuery<Row>> => {
+    if (signal.aborted) throw stopped();
+    const owed = backoff.answeredAt + backoff.delay - now();
+    if (backoff.delay > 0 && owed > 0) await wait(owed);
+    if (signal.aborted) throw stopped();
     let sealed: SealedLiveQuery<Row>;
     try {
       sealed = await request();
     } catch (error) {
-      backOff();
+      answered(false);
       throw error;
     }
     const left = sealed.expiresAt - now();
-    if (left <= 0) {
-      backOff();
-      throw new Error(`the seal answered had expired ${-left} ms before`);
-    }
-    if (left <= RENEW_EARLY_MS) backOff();
-    else delay = 0;
+    answered(left > RENEW_EARLY_MS);
+    if (left <= 0) throw new Error(`the seal answered had expired ${-left} ms before`);
     return sealed;
+  };
+  return () => {
+    const turn = backoff.turn.then(ask);
+    backoff.turn = turn.catch(() => {});
+    return turn;
   };
 }
 
@@ -190,7 +232,9 @@ export function LivePanel<Row>({
     let cancelled = false;
     let observation: QueryObservation | undefined;
     const stopped = new AbortController();
-    const requestSeal = backOffSeals(() => seal<Row>(query, body, branch), stopped.signal);
+    const requestSeal = backOffSeals(() => seal<Row>(query, body, branch), stopped.signal, {
+      backoff: sealBackoff(`${query} ${body} ${branch}`),
+    });
     markOnce(`live:${query}:requested`);
     const ask = (): void => {
       requestSeal().then(
