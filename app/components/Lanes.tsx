@@ -15,12 +15,13 @@ import {
 } from '../lib/laps';
 import { LivePanel, type PanelState } from '../live/LivePanel';
 
-const LABEL = 'font-mono text-[10px] font-semibold uppercase tracking-[0.04em] text-text-secondary';
-const MONO = 'font-mono text-[12px] tabular-nums';
-const NONE = 'not recorded';
+export const LABEL =
+  'font-mono text-[10px] font-semibold uppercase tracking-[0.04em] text-text-secondary';
+export const MONO = 'font-mono text-[12px] tabular-nums';
+export const NONE = 'not recorded';
 
 /** The browser's clock, once a second: elapsed times are computed here, never in a query. */
-function useNow(): number {
+export function useNow(): number {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 1000);
@@ -29,8 +30,8 @@ function useNow(): number {
   return now;
 }
 
-/** The error and loading sentences both panels on this screen share. */
-function PanelBody<Row>({
+/** The error and loading sentences the laps screen's panels and a lap's share. */
+export function PanelBody<Row>({
   rows,
   state,
   factory,
@@ -53,7 +54,7 @@ function PanelBody<Row>({
 }
 
 /** `2026-10-24 10:00 UTC`: the same moment for every viewer. */
-const utcMinute = (at: Date) => `${at.toISOString().slice(0, 16).replace('T', ' ')} UTC`;
+export const utcMinute = (at: Date) => `${at.toISOString().slice(0, 16).replace('T', ' ')} UTC`;
 
 const costText = (value: number | string | null) => {
   const cost = costOf(value);
@@ -68,11 +69,11 @@ export function Lanes({ factory }: { factory: string | undefined }): ReactElemen
         <>
           <h1 className={`${LABEL} mb-3`}>Lanes</h1>
           <PanelBody rows={rows} state={state} factory={factory} what="lanes">
-            {(loaded) =>
+            {(loaded, name) =>
               loaded.length === 0 ? (
                 <p className="text-sm text-text-secondary">No lap is running.</p>
               ) : (
-                <LaneList rows={loaded} />
+                <LaneList rows={loaded} factory={name} />
               )
             }
           </PanelBody>
@@ -84,9 +85,11 @@ export function Lanes({ factory }: { factory: string | undefined }): ReactElemen
 
 export function LaneList({
   rows,
+  factory,
   now: fixed,
 }: {
   rows: readonly LaneRow[];
+  factory: string;
   /** A fixed clock, for tests; the screen uses the browser's. */
   now?: number;
 }): ReactElement {
@@ -144,7 +147,13 @@ export function LaneList({
                   </span>
                 )}
               </span>
-              <span className={`${MONO} text-text-secondary`}>{shortRunId(lane.run_id)}</span>
+              <Link
+                to={`/f/${encodeURIComponent(factory)}/laps/${lane.run_id}`}
+                data-lap-link
+                className={`${MONO} text-text-secondary underline decoration-border-bright underline-offset-2 hover:decoration-text-primary`}
+              >
+                {shortRunId(lane.run_id)}
+              </Link>
             </div>
             <dl className="mt-3 grid grid-cols-2 gap-x-[18px] gap-y-2 sm:grid-cols-5">
               <Field label="Route">{lane.route ?? NONE}</Field>
@@ -166,7 +175,7 @@ export function LaneList({
   );
 }
 
-function Field({ label, children }: { label: string; children: ReactNode }): ReactElement {
+export function Field({ label, children }: { label: string; children: ReactNode }): ReactElement {
   return (
     <div className="flex min-w-0 flex-col gap-1">
       <dt className={LABEL}>{label}</dt>
