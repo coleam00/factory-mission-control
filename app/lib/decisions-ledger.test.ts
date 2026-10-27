@@ -42,10 +42,21 @@ test.each([
   ['at least 2 merges per hour over 12 laps.', 12],
   ['over 12 laps, at least 2 merges per hour.', 12],
   ['over 10 COMPLEX-ROUTE\tLAPS.', 10],
+  ['lap-hours per merge, over at least 16 consecutive complex laps.', 16],
+  ['2 merges per hour over 12 consecutive complex laps.', 12],
 ])('a Measure names its lap count: %s', (measure, wanted) => {
   expect(lapsWanted(measure)).toBe(wanted);
   expect(ledger([pin({ measure, laps: 3 })]).testing[0].waiting).toBe(wanted - 3);
 });
+
+test.each(['send-backs per merge, over 1 lap.', 'send-backs per merge, over 1 complex lap.'])(
+  'a Measure names one lap in the singular: %s',
+  (measure) => {
+    expect(lapsWanted(measure)).toBe(1);
+    expect(ledger([pin({ measure, laps: 0 })]).testing[0].waiting).toBe(1);
+    expect(ledger([pin({ measure, laps: 1 })]).testing[0].waiting).toBe(0);
+  },
+);
 
 test.each([
   null,
@@ -53,6 +64,11 @@ test.each([
   'fewer send-backs per merge.',
   'at least 2 merges per hour.',
   '2 merges per hour over several laps.',
+  'at least 2 merges per lap.',
+  '2 send-backs across laps.',
+  '2 merges in complex laps.',
+  'lap-hours per merge over 12 lap-hours.',
+  'send-backs per merge over 3 laptops.',
 ])('a Measure without a lap count names none: %s', (measure) => {
   expect(lapsWanted(measure)).toBeNull();
 });
