@@ -2,7 +2,13 @@ import { expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { createMemoryRouter, RouterProvider } from 'react-router';
 import { NOT_RECORDED, type StripEntry, stripEntries } from '../lib/version-strip';
-import { VersionList } from './VersionStrip';
+import {
+  SELECT_PARAM,
+  toggleSelection,
+  useSelectedVersions,
+  VersionList,
+  withSelection,
+} from './VersionStrip';
 
 const entry = (over: Partial<StripEntry>): StripEntry => ({
   digest: null,
@@ -40,7 +46,7 @@ function render(selected: readonly string[], search = '', rows = entries): strin
             factory="mission-control"
             entries={rows}
             selected={selected}
-            onToggle={() => {}}
+            onSelect={() => {}}
           />
         ),
       },
@@ -170,4 +176,92 @@ test('comparison guidance follows the versions that can be picked, not the entri
   expect(render([])).toContain('Select two versions to compare.');
   expect(render([V2])).toContain('Select another version to compare.');
   expect(render([V2, V1])).toContain('data-compare="scorecard"');
+});
+
+/** The strip with its selection held in the address, as the versions screen wires it. */
+function Strip() {
+  const [selected, select] = useSelectedVersions();
+  return (
+    <VersionList
+      factory="mission-control"
+      entries={entries}
+      selected={selected}
+      onSelect={select}
+    />
+  );
+}
+
+/** The strip beside a scorecard page, in a router at `path`. */
+function screenAt(path: string) {
+  const router = createMemoryRouter(
+    [
+      { path: '/f/:factory/versions', element: <Strip /> },
+      { path: '/f/:factory/scorecard', element: <p>scorecard</p> },
+    ],
+    { initialEntries: [path] },
+  );
+  const html = () => renderToStaticMarkup(<RouterProvider router={router} />);
+  return { router, html };
+}
+
+const selectedDigests = (html: string) =>
+  [...html.matchAll(/data-digest="([^"]+)"[^>]*>(?:(?!<li).)*aria-pressed="true"/gs)].map(
+    (m) => m[1],
+  );
+
+test('a selection is written to the address in order, keeping a destination', () => {
+  const was = new URLSearchParams({ pin: '5ffd60c600', [SELECT_PARAM]: V1 });
+  const next = withSelection(was, toggleSelection([V1], V2));
+  expect(next.getAll(SELECT_PARAM)).toEqual([V1, V2]);
+  expect(next.get('pin')).toBe('5ffd60c600');
+  expect(was.getAll(SELECT_PARAM)).toEqual([V1]);
+  expect(withSelection(next, []).toString()).toBe('pin=5ffd60c600');
+});
+
+test('select a version, open its scorecard, press Back: it is still selected with its link', async () => {
+  const { router, html } = screenAt(
+    `/f/mission-control/versions?${SELECT_PARAM}=${encodeURIComponent(V2)}`,
+  );
+  const link = /<a data-scorecard="one"[^>]*href="([^"]+)"/.exec(html())?.[1] ?? '';
+  expect(link).toBe(`/f/mission-control/scorecard?a=${encodeURIComponent(V2)}`);
+  await router.navigate(link.replaceAll('&amp;', '&'));
+  expect(html()).toContain('scorecard');
+  await router.navigate(-1);
+  expect(router.state.location.pathname).toBe('/f/mission-control/versions');
+  const back = html();
+  expect(selectedDigests(back)).toEqual([V2]);
+  expect(back).toContain('data-scorecard="one"');
+});
+
+test('two selected versions survive a reload, and their compare links are offered', () => {
+  const search = `?${SELECT_PARAM}=${encodeURIComponent(V2)}&${SELECT_PARAM}=${encodeURIComponent(V1)}`;
+  const html = screenAt(`/f/mission-control/versions${search}`).html();
+  expect(selectedDigests(html)).toEqual([V1, V2]);
+  expect(html).toContain('data-compare="scorecard"');
+  expect(html).toContain('data-compare="diff"');
+});
+
+test('an address naming an unknown or another factory’s version selects nothing, with no error', () => {
+  for (const digest of ['sha256:unknown', `sha256:${'ee'.repeat(32)}`, '', V1.toUpperCase()]) {
+    const html = screenAt(
+      `/f/mission-control/versions?${SELECT_PARAM}=${encodeURIComponent(digest)}`,
+    ).html();
+    expect(html).not.toContain('aria-pressed="true"');
+    expect(html).not.toContain('data-scorecard');
+    expect(html).not.toContain('data-compare');
+    expect(html).toContain('Select two versions to compare.');
+  }
+  // An unknown digest beside a known one leaves just the known one picked.
+  const mixed = screenAt(
+    `/f/mission-control/versions?${SELECT_PARAM}=sha256:unknown&${SELECT_PARAM}=${encodeURIComponent(V3)}`,
+  ).html();
+  expect(selectedDigests(mixed)).toEqual([V3]);
+  expect(mixed).toContain('data-scorecard="one"');
+});
+
+test('pressing select toggles a version and keeps the last two picked', () => {
+  expect(toggleSelection([], V1)).toEqual([V1]);
+  expect(toggleSelection([V1], V1)).toEqual([]);
+  expect(toggleSelection([V1, V2], V3)).toEqual([V2, V3]);
+  expect(toggleSelection([V1, V2], V1)).toEqual([V2]);
 });

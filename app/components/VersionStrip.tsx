@@ -1,4 +1,4 @@
-import { type ReactElement, useEffect, useRef, useState } from 'react';
+import { type ReactElement, useEffect, useRef } from 'react';
 import { Link, useSearchParams } from 'react-router';
 import {
   compareLinks,
@@ -14,13 +14,35 @@ import { EmptyState } from './EmptyState';
 const LABEL = 'font-mono text-[10px] font-semibold uppercase tracking-[0.04em] text-text-secondary';
 const MONO = 'font-mono text-[12px] tabular-nums';
 
+/** The address's query parameter naming each selected version's digest, in the order picked. */
+export const SELECT_PARAM = 'select';
+
+/** `params` naming `digests` as the selection, in order, with every other parameter kept. */
+export function withSelection(
+  params: URLSearchParams,
+  digests: readonly string[],
+): URLSearchParams {
+  const next = new URLSearchParams(params);
+  next.delete(SELECT_PARAM);
+  for (const digest of digests) next.append(SELECT_PARAM, digest);
+  return next;
+}
+
+/**
+ * The versions picked on the strip, read from and written to the address (`?select=<digest>`), so
+ * Back, a reload or a shared link keeps them. Writing replaces the entry and keeps other parameters.
+ */
+export function useSelectedVersions(): [readonly string[], (digests: readonly string[]) => void] {
+  const [params, setParams] = useSearchParams();
+  // Picking is not a place to go Back to.
+  const select = (digests: readonly string[]) =>
+    setParams((was) => withSelection(was, digests), { replace: true });
+  return [params.getAll(SELECT_PARAM), select];
+}
+
 /** One factory's versions, oldest first, each labelled by its pin; two picked compare. */
 export function VersionStrip({ factory }: { factory: string | undefined }): ReactElement {
-  const [selected, setSelected] = useState<readonly string[]>([]);
-  const toggle = (digest: string) =>
-    setSelected((was) =>
-      was.includes(digest) ? was.filter((d) => d !== digest) : [...was, digest].slice(-2),
-    );
+  const [selected, select] = useSelectedVersions();
   return (
     <LivePanel<VersionStripRow> query="version-strip" factory={factory}>
       {(rows, state) => (
@@ -37,7 +59,7 @@ export function VersionStrip({ factory }: { factory: string | undefined }): Reac
               factory={factory}
               entries={stripEntries(rows)}
               selected={selected}
-              onToggle={toggle}
+              onSelect={select}
             />
           )}
         </>
@@ -46,16 +68,21 @@ export function VersionStrip({ factory }: { factory: string | undefined }): Reac
   );
 }
 
+/** The picks after pressing `digest`'s select button: off if picked, else on, keeping the last two. */
+export function toggleSelection(kept: readonly string[], digest: string): string[] {
+  return kept.includes(digest) ? kept.filter((d) => d !== digest) : [...kept, digest].slice(-2);
+}
+
 export function VersionList({
   factory,
   entries,
   selected,
-  onToggle,
+  onSelect,
 }: {
   factory: string;
   entries: readonly StripEntry[];
   selected: readonly string[];
-  onToggle: (digest: string) => void;
+  onSelect: (digests: readonly string[]) => void;
 }): ReactElement {
   const [params] = useSearchParams();
   const pin = params.get('pin');
@@ -63,12 +90,16 @@ export function VersionList({
   const destination = entries.find(
     (entry) => pin !== null && entry.pin === pin && (digest === null || entry.digest === digest),
   );
+  // A selection naming no version here (unknown, or another factory's) is ignored.
+  const known = new Set(entries.flatMap((e) => (e.digest === null ? [] : [e.digest])));
+  const kept = [...new Set(selected.filter((d) => known.has(d)))].slice(-2);
   const picked = entries.flatMap((e) =>
-    e.digest !== null && selected.includes(e.digest) ? [e.digest] : [],
+    e.digest !== null && kept.includes(e.digest) ? [e.digest] : [],
   );
+  const onToggle = (digest: string) => onSelect(toggleSelection(kept, digest));
   const links = picked.length === 2 ? compareLinks(factory, picked[0], picked[1]) : undefined;
   // Guidance follows what can be picked: a pin not yet run has no digest and no select button.
-  const selectable = new Set(entries.flatMap((e) => (e.digest === null ? [] : [e.digest]))).size;
+  const selectable = known.size;
   return (
     <>
       <ol className="border-t border-border/40">
@@ -77,7 +108,7 @@ export function VersionList({
             key={entry.digest ?? `pin:${entry.pin}`}
             entry={entry}
             targeted={entry === destination}
-            selected={entry.digest !== null && selected.includes(entry.digest)}
+            selected={entry.digest !== null && kept.includes(entry.digest)}
             onToggle={onToggle}
           />
         ))}
