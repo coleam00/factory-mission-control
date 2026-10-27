@@ -47,6 +47,47 @@ describe('decisions-timeline and improvements-ledger on the seed', () => {
     expect(await byPin('5ffd60c6')).toMatchObject({ verdict: null });
   });
 
+  test('decisions are shared but lap counts are each factory’s own; a factory with no laps lists nothing', async () => {
+    const rollback = new Error('rollback');
+    const ownLaps = (rows: Record<string, unknown>[]) =>
+      Object.fromEntries(rows.map((r) => [r.pin_sha, r.laps]));
+    const before = ownLaps(await ledgerRows());
+    await db
+      .transaction(async (tx) => {
+        await tx.query(`INSERT INTO mc.factories (name, repository, codebase, console)
+          VALUES ('north-star', 'coleam00/north-star', 'coleam00/north-star', 'http://localhost:3090')`);
+        await tx.query(`INSERT INTO mc.laps (run_id, factory, workflow_name, status, digest, started_at)
+          VALUES ('00000000-0000-0000-0000-0000000000d1', 'north-star', 'archon-loop', 'completed',
+            'north-star-digest', '2026-10-20T00:00:00Z'),
+          ('00000000-0000-0000-0000-0000000000d2', 'north-star', 'archon-loop', 'completed',
+            'north-star-digest', '2026-10-20T01:00:00Z')`);
+        const [label] = await tx.query(
+          'SELECT sha FROM mc.pins WHERE committed_at < $1 ORDER BY committed_at DESC LIMIT 1',
+          ['2026-10-20T00:00:00Z'],
+        );
+        const titles = async (factory: string) =>
+          (await tx.query(named('decisions-timeline'), [factory])).map((r) => r.title).sort();
+        expect(await titles('north-star')).toEqual(await titles('mission-control'));
+        expect((await titles('north-star')).length).toBeGreaterThan(0);
+
+        const north = ownLaps(await tx.query(named('improvements-ledger'), ['north-star']));
+        expect(Object.keys(north).sort()).toEqual(Object.keys(before).sort());
+        for (const pin of Object.keys(north)) expect(north[pin]).toBe(pin === label.sha ? 2 : 0);
+        expect(ownLaps(await tx.query(named('improvements-ledger'), ['mission-control']))).toEqual(
+          before,
+        );
+
+        await tx.query(`INSERT INTO mc.factories (name, repository, codebase, console)
+          VALUES ('empty-check', 'o/empty', 'o/empty', 'http://localhost:3090')`);
+        expect(await tx.query(named('decisions-timeline'), ['empty-check'])).toEqual([]);
+        expect(await tx.query(named('improvements-ledger'), ['empty-check'])).toEqual([]);
+        throw rollback;
+      })
+      .catch((error) => {
+        if (error !== rollback) throw error;
+      });
+  });
+
   test('a verdict on V2 by prefix gives V2 that verdict', async () => {
     await db.transaction(async (tx) => {
       await writeRow(tx, 'verdict', new Date('2026-10-25T12:00:00Z'), '5ffd60c6');
