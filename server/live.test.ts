@@ -98,12 +98,12 @@ describe('POST /api/live/:name', () => {
     expect(sealed).toEqual([[queries.get('status-strip') as string, ['mission-control']]]);
   });
 
-  test("a step panel's query seals with the step's workflow and path after the factory", async () => {
+  test("a step panel's query seals with the step's workflow, path and version after the factory", async () => {
     const { app, sealed } = fakeLive();
-    const body = { factory: 'mission-control', args: ['archon-loop', 'check-app'] };
+    const body = { factory: 'mission-control', args: ['archon-loop', 'check-app', ''] };
     expect((await app.request('/api/live/step-yaml', post(body))).status).toBe(200);
     expect(sealed).toEqual([
-      [queries.get('step-yaml') as string, ['mission-control', 'archon-loop', 'check-app']],
+      [queries.get('step-yaml') as string, ['mission-control', 'archon-loop', 'check-app', '']],
     ]);
   });
 
@@ -113,6 +113,7 @@ describe('POST /api/live/:name', () => {
       ['step-yaml', undefined],
       ['step-yaml', ['archon-loop']],
       ['step-yaml', ['archon-loop', 7]],
+      ['step-yaml', ['archon-loop', 'check-app']],
       ['step-yaml', 'archon-loop/check-app'],
       ['status-strip', ['archon-loop']],
     ] as const) {

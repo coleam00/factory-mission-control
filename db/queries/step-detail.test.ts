@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { findStep, joinParts, type NestingRow, type StepRow } from '../../app/lib/step-detail';
 import { REPO_ROOT } from '../../scripts/lib/cli';
 import type { Db } from '../../scripts/lib/db';
-import { migratedDb, onTheSeed, paramsFor, queries, STEP_PANELS } from './test-seed';
+import { CHECK_APP, migratedDb, onTheSeed, paramsFor, queries, STEP_PANELS } from './test-seed';
 
 describe('against the migrated schema', () => {
   let db: Db;
@@ -15,7 +15,7 @@ describe('against the migrated schema', () => {
 
   afterAll(() => db.close());
 
-  test('step queries read the newest pin with architecture rows, for a factory the dashboard shows', async () => {
+  test('step queries read the newest pin with architecture rows, or the pin the address names, for a factory the dashboard shows', async () => {
     const sql = (name: string) => queries.find(([n]) => n === name)?.[1] as string;
     // A long multi-byte file: each part must stay under the 16 KiB Realtime answers (REALTIME.md).
     const long = `${'é'.repeat(4500)}
@@ -74,10 +74,15 @@ ${'x'.repeat(5000)}`;
       expect([name, await db.query(query, paramsFor(name, 'other'))]).toEqual([name, []]);
     }
     for (const name of STEP_PANELS) {
-      const otherStep = await db.query(sql(name), ['mission-control', 'archon-loop', 'subject']);
+      const otherStep = await db.query(sql(name), [
+        'mission-control',
+        'archon-loop',
+        'subject',
+        '',
+      ]);
       expect([name, otherStep]).toEqual([name, []]);
     }
-    const steps = await db.query(sql('step-detail'), ['mission-control']);
+    const steps = await db.query(sql('step-detail'), ['mission-control', '']);
     expect(steps.map((s) => s.depends_on)).toEqual([['subject']]);
 
     // A second workflow with a step at the same path and files of its own: a step panel that
@@ -103,7 +108,7 @@ ${'x'.repeat(5000)}`;
     await db.query(`INSERT INTO mc.arch_workflows (archon_sha, factory_sha, name, file, yaml)
       VALUES ('a2', 'f', 'archon-manager', 'manager/archon-manager.yaml', 'manager yaml')`);
     const manager = (name: string) =>
-      db.query(sql(name), ['mission-control', 'archon-manager', 'check-app']);
+      db.query(sql(name), ['mission-control', 'archon-manager', 'check-app', '']);
     expect(await manager('step-prompt')).toEqual([
       { path: 'manager/commands/check.md', part: 0, chunk: 'manager prompt' },
     ]);
@@ -141,8 +146,12 @@ ${'x'.repeat(5000)}`;
       },
     ]);
 
-    const files = async (name: string, key: (row: Record<string, unknown>) => unknown) => {
-      const parts = (await db.query(sql(name), paramsFor(name, 'mission-control'))) as {
+    const files = async (
+      name: string,
+      key: (row: Record<string, unknown>) => unknown,
+      version = '',
+    ) => {
+      const parts = (await db.query(sql(name), ['mission-control', ...CHECK_APP, version])) as {
         part: number;
         chunk: string;
       }[];
@@ -172,6 +181,53 @@ ${'x'.repeat(5000)}`;
         description: 'a2',
       },
     ]);
+
+    // The version the address names by its pin, and nothing for any other value.
+    const olderSteps = await db.query(sql('step-detail'), ['mission-control', 'p1']);
+    expect(olderSteps.map((s) => s.depends_on)).toEqual([['subject', 'briefs']]);
+    expect(await files('step-prompt', (row) => row.path, 'p1')).toEqual(
+      new Map([['loop/commands/loop-check-app.md', `a1 ${long}`]]),
+    );
+    expect(await files('step-subagents', (row) => `${row.name} ${row.description}`, 'p1')).toEqual(
+      new Map([['verifier a1', `a1 ${long}`]]),
+    );
+    expect(await files('step-scripts', (row) => row.path, 'p1')).toEqual(
+      new Map([['loop/scripts/check.ts', `a1 ${long}`]]),
+    );
+    expect(await files('step-yaml', (row) => row.name, 'p1')).toEqual(
+      new Map([['archon-loop', `a1 ${long}`]]),
+    );
+    const hooks = await db.query(sql('step-hooks'), ['mission-control', ...CHECK_APP, 'p1']);
+    expect(hooks.map((h) => h.description)).toEqual(['a1']);
+
+    // A pin with no architecture, an archon sha, a prefix of a pin, a made-up value, and a known
+    // pin for a factory the dashboard does not show.
+    for (const [factory, version] of [
+      ['mission-control', 'p3'],
+      ['mission-control', 'a1'],
+      ['mission-control', 'p'],
+      ['mission-control', 'nope'],
+      ['other', 'p1'],
+    ]) {
+      expect(await db.query(sql('step-detail'), [factory, version])).toEqual([]);
+      for (const name of STEP_PANELS) {
+        const rows = await db.query(sql(name), [factory, ...CHECK_APP, version]);
+        expect([name, version, rows]).toEqual([name, version, []]);
+      }
+    }
+
+    // The versions the screen can open: the pins with architecture, the one shown without a
+    // version marked.
+    const versions = await db.query(sql('step-versions'), ['mission-control']);
+    expect(
+      versions
+        .map((v) => [v.sha, v.is_current])
+        .sort(([a], [b]) => String(a).localeCompare(String(b))),
+    ).toEqual([
+      ['p1', false],
+      ['p2', true],
+    ]);
+    expect(await db.query(sql('step-versions'), ['other'])).toEqual([]);
   });
 });
 
@@ -183,6 +239,7 @@ describe('step screens of included blocks on the seed', () => {
       'mission-control',
       workflow,
       path,
+      '',
     ])) as unknown as NestingRow[];
   const opens = (row: NestingRow) => `${row.open_workflow} / ${row.open_path}`;
 
@@ -192,7 +249,10 @@ describe('step screens of included blocks on the seed', () => {
   afterAll(() => db.close());
 
   test("the step that writes the code has its own screen and prompt, and no alias under deliver's block", async () => {
-    const steps = (await db.query(sql('step-detail'), ['mission-control'])) as unknown as StepRow[];
+    const steps = (await db.query(sql('step-detail'), [
+      'mission-control',
+      '',
+    ])) as unknown as StepRow[];
     expect(findStep(steps, 'archon-implement', 'implement')?.command_file).toBe(
       'implement/commands/implement.md',
     );
@@ -201,6 +261,7 @@ describe('step screens of included blocks on the seed', () => {
       'mission-control',
       'archon-implement',
       'implement',
+      '',
     ])) as { path: string; part: number; chunk: string }[];
     expect(joinParts(parts, (row) => row.path).get('implement/commands/implement.md')).toBe(
       readFileSync(
@@ -208,6 +269,30 @@ describe('step screens of included blocks on the seed', () => {
         'utf8',
       ),
     );
+  });
+
+  test('an older pin opens the step as it was: V1 has briefs and its own review prompt', async () => {
+    const V1 = '8e3e1cefaf1e1b7955789d6a43a81b6c2dbd7082';
+    const V2 = '5ffd60c6c6e591487f2fbb5ec67ccc8fc55ca915';
+    const stepsAt = async (version: string) =>
+      (await db.query(sql('step-detail'), ['mission-control', version])) as unknown as StepRow[];
+    expect(findStep(await stepsAt(''), 'archon-loop', 'briefs')).toBeUndefined();
+    expect(findStep(await stepsAt(V1), 'archon-loop', 'briefs')).toBeDefined();
+    const reviewPrompt = async (version: string) =>
+      joinParts(
+        (await db.query(sql('step-prompt'), [
+          'mission-control',
+          'archon-loop',
+          'review',
+          version,
+        ])) as { path: string; part: number; chunk: string }[],
+        (row) => row.path,
+      ).get('loop/commands/loop-review.md');
+    const current = await reviewPrompt('');
+    expect(current).toBeString();
+    expect(await reviewPrompt(V2)).toBe(current);
+    expect(await reviewPrompt(V1)).toBeString();
+    expect(await reviewPrompt(V1)).not.toBe(current);
   });
 
   test("deliver's screen lists both occurrences of implement, each opening its own screen", async () => {
@@ -222,7 +307,10 @@ describe('step screens of included blocks on the seed', () => {
   });
 
   test('every step beneath ship opens a screen that exists', async () => {
-    const steps = (await db.query(sql('step-detail'), ['mission-control'])) as unknown as StepRow[];
+    const steps = (await db.query(sql('step-detail'), [
+      'mission-control',
+      '',
+    ])) as unknown as StepRow[];
     const inside = (await nestingOf('archon-loop', 'ship')).filter((r) => r.relation === 'inside');
     expect(inside.length).toBeGreaterThan(50);
     const missing = inside.filter((row) => !findStep(steps, row.open_workflow, row.open_path));
