@@ -15,10 +15,14 @@ import {
   renewalsOf,
   required,
   screenAgainstSql,
-  within,
   writeToScreen,
 } from './shared';
-import { emptyPanelTimings, type PanelTimings, performanceFailures } from './timings';
+import {
+  emptyPanelTimings,
+  type PanelTimings,
+  performanceFailures,
+  readyFailures,
+} from './timings';
 
 const OWNER = '[data-live="owner-queue"]';
 const ITEM = `${OWNER} [data-owner-item]`;
@@ -284,9 +288,7 @@ export function ownerPhase(ctx: LiveContext): LivePhase {
 
     judge() {
       const failures: string[] = [];
-      if (!within(timings.readyMs, LIMITS.readyMs)) {
-        failures.push(`owner queue ready after ${timings.readyMs} ms, limit ${LIMITS.readyMs}`);
-      }
+      failures.push(...readyFailures('owner queue', timings, LIMITS.readyMs));
       failures.push(...performanceFailures('owner queue', timings));
       for (const [when, write] of [
         ['first', timings.labelToScreen],

@@ -15,10 +15,14 @@ import {
   RENEWALS_IN_180S,
   required,
   screenAgainstSql,
-  within,
   writeToScreen,
 } from './shared';
-import { emptyPanelTimings, type PanelTimings, performanceFailures } from './timings';
+import {
+  emptyPanelTimings,
+  type PanelTimings,
+  performanceFailures,
+  readyFailures,
+} from './timings';
 
 const ISSUES = '[data-live="issue-graph"]';
 
@@ -306,11 +310,7 @@ export function issuesPhase(ctx: LiveContext): LivePhase {
 
     judge() {
       const failures: string[] = [];
-      if (!within(issueTimings.readyMs, LIMITS.readyMs)) {
-        failures.push(
-          `issues screen ready after ${issueTimings.readyMs} ms, limit ${LIMITS.readyMs}`,
-        );
-      }
+      failures.push(...readyFailures('issues screen', issueTimings, LIMITS.readyMs));
       failures.push(...performanceFailures('issues screen', issueTimings));
       for (const [when, write] of [
         ['first', issueTimings.labelToScreen],

@@ -12,9 +12,13 @@ import {
   RENEWALS_IN_180S,
   required,
   versionDigests,
-  within,
 } from './shared';
-import { emptyPanelTimings, type PanelTimings, performanceFailures } from './timings';
+import {
+  emptyPanelTimings,
+  type PanelTimings,
+  performanceFailures,
+  readyFailures,
+} from './timings';
 
 const DIFF = '[data-live="arch-diff"]';
 
@@ -198,9 +202,7 @@ export function diffPhase(ctx: LiveContext): LivePhase {
 
     judge() {
       const failures: string[] = [];
-      if (!within(diffTimings.readyMs, LIMITS.readyMs)) {
-        failures.push(`diff screen ready after ${diffTimings.readyMs} ms, limit ${LIMITS.readyMs}`);
-      }
+      failures.push(...readyFailures('diff screen', diffTimings, LIMITS.readyMs));
       failures.push(...performanceFailures('diff screen', diffTimings));
       failures.push(...lateWrite('first step', 'the diff screen', diffTimings.stepToScreenMs));
       failures.push(

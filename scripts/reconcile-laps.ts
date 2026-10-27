@@ -6,8 +6,9 @@
 // projection's own functions (0006, 0007's attempts and 0008's versions), by way of temp tables that
 // carry the same triggers, and keeps the result only when it differs from the lap's rows. A run
 // projected before versions were (0008, issue #74) differs by its missing version, so this writes
-// that too. Archon's tables are only read. It writes the check branch in .mc-check.env; `:main`
-// writes `main`, and is the owner's nightly run beside `backfill:main`.
+// that too, and a finish lost to a locked lap (issue #152) differs by its status. Archon's tables
+// are only read. It writes the check branch in .mc-check.env; `:main` writes `main`, and is the
+// owner's scheduled run beside `reconcile:main`.
 
 import { parseArgs } from 'node:util';
 import { failing, guardedDatabaseUrl, type Main, runCli } from './lib/cli';
@@ -196,7 +197,7 @@ export const main: Main = async (argv, deps) => {
     return 0;
   }
   return failing(deps, async () => {
-    // No terminal prompt for `:main`, like `backfill:main`: the owner schedules the nightly run.
+    // No terminal prompt for `:main`, like `backfill:main`: the owner schedules it.
     const url = await guardedDatabaseUrl(deps, values.main ? 'main' : 'check');
     const db = deps.openDb(url);
     try {

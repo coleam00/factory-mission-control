@@ -18,13 +18,13 @@ import {
   required,
   screenAgainstSql,
   untilShown,
-  within,
 } from './shared';
 import {
   emptyGroupTimings,
   type GroupTimings,
   groupPerformanceFailures,
   groupTimings,
+  readyFailures,
 } from './timings';
 
 const LAPS_QUERIES = ['lanes', 'recent-laps'] as const;
@@ -297,9 +297,7 @@ export function lapsPhase(ctx: LiveContext): LivePhase {
 
     judge() {
       const failures: string[] = [];
-      if (!within(lapsTimings.readyMs, LIMITS.readyMs)) {
-        failures.push(`laps screen ready after ${lapsTimings.readyMs} ms, limit ${LIMITS.readyMs}`);
-      }
+      failures.push(...readyFailures('laps screen', lapsTimings, LIMITS.readyMs));
       for (const q of LAPS_QUERIES) {
         failures.push(...groupPerformanceFailures([q], lapsTimings));
         if (holdSeconds >= 180 && (lapsTimings.renewals[q] ?? 0) < RENEWALS_IN_180S) {
