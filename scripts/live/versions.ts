@@ -13,10 +13,14 @@ import {
   RENEWALS_IN_180S,
   required,
   VERSIONS,
-  within,
   writeToScreen,
 } from './shared';
-import { emptyPanelTimings, type PanelTimings, performanceFailures } from './timings';
+import {
+  emptyPanelTimings,
+  type PanelTimings,
+  performanceFailures,
+  readyFailures,
+} from './timings';
 
 interface VersionStripTimings extends PanelTimings {
   branch: string | null;
@@ -273,11 +277,7 @@ export function versionsPhase(ctx: LiveContext): LivePhase {
 
     judge() {
       const failures: string[] = [];
-      if (!within(versionTimings.readyMs, LIMITS.readyMs)) {
-        failures.push(
-          `versions screen ready after ${versionTimings.readyMs} ms, limit ${LIMITS.readyMs}`,
-        );
-      }
+      failures.push(...readyFailures('versions screen', versionTimings, LIMITS.readyMs));
       failures.push(...performanceFailures('versions screen', versionTimings));
       failures.push(
         ...lateWrite(
