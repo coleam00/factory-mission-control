@@ -7,8 +7,6 @@ import { requireRewindBranch } from '../lib/guard';
 import { waitForOperations } from '../lib/neon';
 import { resolveBranchName } from '../lib/target';
 import { rewindBranchName } from '../rewind-create';
-// test-live.ts imports this module too: its helpers are used only inside functions, never while
-// the modules load.
 import {
   freePort,
   insertToScreen,
@@ -16,9 +14,11 @@ import {
   lateWrite,
   pageWait,
   READY_WAIT_MS,
+  RENEWALS_IN_180S,
   renewalsOf,
   waitForHealth,
-} from '../test-live';
+  within,
+} from './shared';
 import {
   collectPanelMarks,
   emptyGroupTimings,
@@ -29,7 +29,6 @@ import {
 } from './timings';
 
 const QUERIES = ['rewind-branches', 'status-strip'] as const;
-const RENEWALS_IN_180S = 3;
 /** Making a Neon branch and its Realtime takes tens of seconds before its row is written. */
 const CREATE_WAIT_MS = 180_000;
 /** A switch asks the Neon API for the branch before the page reloads. */
@@ -426,7 +425,6 @@ export function rewindPhase(ctx: {
 
     judge(): string[] {
       const failures = [...failed];
-      const within = (value: number | null, limit: number) => value !== null && value <= limit;
       if (!within(timings.readyMs, LIMITS.readyMs)) {
         failures.push(`/rewind was ready after ${timings.readyMs} ms, limit ${LIMITS.readyMs}`);
       }
