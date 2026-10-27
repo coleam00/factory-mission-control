@@ -98,6 +98,7 @@ afterEach(() => {
 const clickSwitchBack = async (status: number) => {
   const posts: { url: string; init: RequestInit | undefined }[] = [];
   const assigned: string[] = [];
+  let reloads = 0;
   globalThis.fetch = (async (url: string, init?: RequestInit) => {
     posts.push({ url, init });
     return new Response(JSON.stringify(status === 200 ? { ok: true } : { error: 'refused' }), {
@@ -105,27 +106,34 @@ const clickSwitchBack = async (status: number) => {
     });
   }) as typeof fetch;
   (globalThis as { window?: unknown }).window = {
-    location: { assign: (to: string) => assigned.push(to) },
+    location: {
+      assign: (to: string) => assigned.push(to),
+      reload: () => {
+        reloads += 1;
+      },
+    },
   };
   const tree = RewindIndicator({ rewind: OLDER });
   const button = findElement(tree, 'data-indicator-switch-back');
   expect(button?.type).toBe('button');
   button?.props.onClick?.();
   await new Promise((resolve) => setTimeout(resolve, 0));
-  return { posts, assigned };
+  return { posts, assigned, reloads };
 };
 
-test('clicking Switch back posts {branch: null} to /api/rewind, then reloads', async () => {
-  const { posts, assigned } = await clickSwitchBack(200);
+test('clicking Switch back posts {branch: null} to /api/rewind, then reloads the same screen', async () => {
+  const { posts, assigned, reloads } = await clickSwitchBack(200);
   expect(posts).toHaveLength(1);
   expect(posts[0]?.url).toBe('/api/rewind');
   expect(posts[0]?.init?.method).toBe('POST');
   expect(JSON.parse(String(posts[0]?.init?.body))).toEqual({ branch: null });
-  expect(assigned).toEqual(['/rewind']);
+  expect(reloads).toBe(1);
+  expect(assigned).toEqual([]);
 });
 
 test('a refused Switch back opens /rewind, where the way back says why', async () => {
-  const { posts, assigned } = await clickSwitchBack(503);
+  const { posts, assigned, reloads } = await clickSwitchBack(503);
   expect(posts).toHaveLength(1);
   expect(assigned).toEqual(['/rewind']);
+  expect(reloads).toBe(0);
 });

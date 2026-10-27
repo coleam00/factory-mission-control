@@ -2,10 +2,11 @@ import { afterAll, beforeAll, expect, test } from 'bun:test';
 import { copyFileSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
+import type { Db, Row } from '../scripts/lib/db';
 import type { NeonApi } from '../scripts/lib/neon';
 import { createApp } from './app';
 import { liveFromEnv, rewindOpener } from './live';
-import { rewindRealtime } from './rewind';
+import { rewindListed, rewindRealtime, UnlistedRewindBranch } from './rewind';
 
 const repoRoot = resolve(import.meta.dir, '..');
 const REWIND = 'rewind-2026-10-24t11-00-00z';
@@ -54,6 +55,8 @@ function fakeNeon() {
   return { api, calls };
 }
 
+const listed = async () => true;
+
 let distDir: string;
 
 beforeAll(() => {
@@ -76,7 +79,7 @@ test('neither the list, the switch nor any page answer carries a secret or conne
     repoRoot,
   );
   if (!live) throw new Error('liveFromEnv gave no live configuration');
-  live.openRewind = rewindOpener(fakeNeon().api, 'factory');
+  live.openRewind = rewindOpener(fakeNeon().api, 'factory', listed);
   const app = createApp({ buildId: 'test', distDir, live });
 
   const answers = [
@@ -101,7 +104,7 @@ test('neither the list, the switch nor any page answer carries a secret or conne
 
 test('an opened rewind branch is its name, its Realtime URL and a sealer, nothing else', async () => {
   const { api, calls } = fakeNeon();
-  const opened = await rewindOpener(api, 'factory')(REWIND);
+  const opened = await rewindOpener(api, 'factory', listed)(REWIND);
   expect(Object.keys(opened).sort()).toEqual(['name', 'seal', 'url']);
   expect(opened.url).toBe('wss://ep-rewind-1.rt.c-14.us-east-1.aws.neon.tech/');
   expect(calls).toEqual([
@@ -113,6 +116,42 @@ test('an opened rewind branch is its name, its Realtime URL and a sealer, nothin
 
 test('a branch that is not rewind-* is refused before any Neon request', async () => {
   const { api, calls } = fakeNeon();
-  await expect(rewindRealtime(api, 'check-abc')).rejects.toThrow("refusing branch 'check-abc'");
+  await expect(rewindRealtime(api, 'check-abc', listed)).rejects.toThrow(
+    "refusing branch 'check-abc'",
+  );
   expect(calls).toEqual([]);
+});
+
+test('a rewind-* branch the list does not show is refused before any Neon request', async () => {
+  const { api, calls } = fakeNeon();
+  const refused = rewindRealtime(api, REWIND, async () => false);
+  await expect(refused).rejects.toBeInstanceOf(UnlistedRewindBranch);
+  await expect(refused).rejects.toThrow(`${REWIND} is not in the rewind list`);
+  expect(calls).toEqual([]);
+});
+
+test('the list is one query on mc.rewind_branches, and its connection closes after each answer', async () => {
+  const ran: { url: string; sql: string; params: unknown[] | undefined }[] = [];
+  let closed = 0;
+  const openWith =
+    (rows: Row[]) =>
+    (url: string): Db => ({
+      async query(sql, params) {
+        ran.push({ url, sql, params });
+        return rows;
+      },
+      transaction: () => Promise.reject(new Error('transaction is not used')),
+      async close() {
+        closed += 1;
+      },
+    });
+  expect(await rewindListed(CONNECTION, openWith([{ '?column?': 1 }]))(REWIND)).toBe(true);
+  expect(await rewindListed(CONNECTION, openWith([]))(REWIND)).toBe(false);
+  const query = {
+    url: CONNECTION,
+    sql: 'SELECT 1 FROM mc.rewind_branches WHERE name = $1',
+    params: [REWIND],
+  };
+  expect(ran).toEqual([query, query]);
+  expect(closed).toBe(2);
 });
