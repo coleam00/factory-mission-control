@@ -65,20 +65,32 @@ export interface RecentLapRow {
 
 const timeOf = (at: Date | null) => (at === null ? Number.NaN : at.getTime());
 
-/** Newest first; a lap with no start goes last, ties by run id so the order never jumps. */
-function newestFirst<Row extends { run_id: string; started_at: Date | null }>(
-  rows: readonly Row[],
-): Row[] {
-  return [...rows].sort((a, b) => {
-    const ta = timeOf(a.started_at);
-    const tb = timeOf(b.started_at);
-    if (Number.isNaN(ta) !== Number.isNaN(tb)) return Number.isNaN(ta) ? 1 : -1;
-    return (Number.isNaN(ta) ? 0 : tb - ta) || a.run_id.localeCompare(b.run_id);
-  });
+/** Newer `at` first, a missing one last; 0 when both are equal or both missing. */
+function newerFirst(a: Date | null, b: Date | null): number {
+  const ta = timeOf(a);
+  const tb = timeOf(b);
+  if (Number.isNaN(ta) !== Number.isNaN(tb)) return Number.isNaN(ta) ? 1 : -1;
+  return Number.isNaN(ta) ? 0 : tb - ta;
 }
 
-export const lanes = (rows: readonly LaneRow[]): LaneRow[] => newestFirst(rows);
-export const recentLaps = (rows: readonly RecentLapRow[]): RecentLapRow[] => newestFirst(rows);
+/** Running laps, newest start first; a lap with no start goes last, ties by run id. */
+export const lanes = (rows: readonly LaneRow[]): LaneRow[] =>
+  [...rows].sort(
+    (a, b) => newerFirst(a.started_at, b.started_at) || a.run_id.localeCompare(b.run_id),
+  );
+
+/**
+ * Finished laps, the one that finished last first (#116), so a lap that just merged tops the list
+ * whenever it started. A lap with no finish goes last; ties by start, then run id, so the order
+ * never jumps.
+ */
+export const recentLaps = (rows: readonly RecentLapRow[]): RecentLapRow[] =>
+  [...rows].sort(
+    (a, b) =>
+      newerFirst(a.completed_at, b.completed_at) ||
+      newerFirst(a.started_at, b.started_at) ||
+      a.run_id.localeCompare(b.run_id),
+  );
 
 /** A cost as a number; numeric columns can arrive as strings. Null when no step has a cost. */
 export function costOf(value: number | string | null): number | null {

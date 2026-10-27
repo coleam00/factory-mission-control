@@ -16,7 +16,9 @@ LEFT JOIN LATERAL (
   WHERE ls.run_id = l.run_id
   ORDER BY ls.status = 'running' DESC, ls.started_at DESC NULLS LAST, ls.step_id LIMIT 1
 ) s ON true
+-- Every finished run of every step, repeats included, as the scorecard counts a lap's cost (#116):
+-- mc.lap_steps keeps only a step's latest run.
 LEFT JOIN LATERAL (
-  SELECT sum(ls.cost_usd)::float8 AS cost_usd FROM mc.lap_steps ls WHERE ls.run_id = l.run_id
+  SELECT sum(a.cost_usd)::float8 AS cost_usd FROM mc.lap_step_attempts a WHERE a.run_id = l.run_id
 ) k ON true
 WHERE l.factory = $1 AND l.workflow_name = 'archon-loop' AND l.status = 'running'
