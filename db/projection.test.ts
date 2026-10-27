@@ -47,6 +47,25 @@ function insertEvent(eventType: string, step: string, data: unknown): Promise<Ro
 const stepEvent = (step: string, event: 'node_started' | 'node_completed' | 'node_failed') =>
   insertEvent(event, step, eventData(step, event, NOW));
 
+/** Projects every event again under its own id, in Archon's order, as `reconcile:laps` does. */
+const replayEvents = () =>
+  db.transaction(async (tx) => {
+    await tx.query(
+      'CREATE TEMP TABLE replayed_events (LIKE public.remote_agent_workflow_events) ON COMMIT DROP',
+      [],
+    );
+    await tx.query(
+      `CREATE TRIGGER replayed_step_event AFTER INSERT ON replayed_events
+         FOR EACH ROW EXECUTE FUNCTION mc.project_step_event()`,
+      [],
+    );
+    await tx.query(
+      `INSERT INTO replayed_events SELECT * FROM public.remote_agent_workflow_events
+         ORDER BY created_at, coalesce(event_order, 0), id`,
+      [],
+    );
+  });
+
 /** Row counts of every dashboard table, so a test can say nothing else changed. */
 async function dashboardCounts(): Promise<Record<string, number>> {
   const tables = await db.query(
@@ -84,7 +103,7 @@ async function projectionErrors(): Promise<Row[]> {
 const projectionDefinitions = (database: Db) =>
   database.query(
     `SELECT proname, pg_get_functiondef(oid) AS definition FROM pg_proc
-   WHERE oid IN ('mc.record_step_attempt(uuid,text,text,jsonb)'::regprocedure,
+   WHERE oid IN ('mc.record_step_attempt(uuid,uuid,text,text,jsonb)'::regprocedure,
      'mc.project_step_event()'::regprocedure) ORDER BY proname`,
   );
 
@@ -107,7 +126,7 @@ test.each(['archon-manager', 'archon-holdouts', 'archon-backlog', 'fence-proof']
       for (const data of payloads) {
         await insertEvent(event, 'check-app', data);
         if (event !== 'node_started') {
-          await db.query('SELECT mc.record_step_attempt($1, $2, $3, $4)', [
+          await db.query('SELECT mc.record_step_attempt(gen_random_uuid(), $1, $2, $3, $4)', [
             runId,
             event,
             'check-app',
@@ -213,7 +232,7 @@ test('0010 undoes the replay errors of non-laps but keeps missing parents of eli
     );
     await expect(
       historical.query(
-        `SELECT mc.record_step_attempt('00000000-0000-0000-0000-000000000000',
+        `SELECT mc.record_step_attempt(gen_random_uuid(), '00000000-0000-0000-0000-000000000000',
         'node_completed', 'review', '{}')`,
       ),
     ).rejects.toMatchObject({ code: '23503' });
@@ -243,20 +262,26 @@ test('the eligibility upgrade keeps live history and installs the same functions
       { n: 2 },
     ]);
     const before = await snapshot(upgraded);
-    expect(await runMigrations({ files: migrationFiles, db: upgraded })).toEqual([
+    expect(
+      await runMigrations({ files: migrationFiles.filter((f) => f.name < '0013'), db: upgraded }),
+    ).toEqual([
       '0010_step_attempt_eligibility.sql',
       '0011_pin_full_archon_sha.sql',
       '0012_arch_text_lf.sql',
     ]);
     expect(await snapshot(upgraded)).toEqual(before);
+    expect(await runMigrations({ files: migrationFiles, db: upgraded })).toEqual([
+      '0013_step_attempt_identity.sql',
+    ]);
     expect(await projectionDefinitions(upgraded)).toEqual(await projectionDefinitions(db));
     expect(await runMigrations({ files: migrationFiles, db: upgraded })).toEqual([]);
+    const migrated = await snapshot(upgraded);
     await upgraded.query(
       `INSERT INTO public.remote_agent_workflow_events (workflow_run_id, event_type, step_name, data)
        SELECT id, 'node_completed', 'check-app', '{"timing":{"startedAt":"invalid"}}'
        FROM public.remote_agent_workflow_runs WHERE workflow_name = 'archon-manager'`,
     );
-    expect(await snapshot(upgraded)).toEqual(before);
+    expect(await snapshot(upgraded)).toEqual(migrated);
   } finally {
     await upgraded.close();
   }
@@ -289,6 +314,7 @@ test('0011 rewrites a short pin to the one full sha it prefixes, and clears ambi
     expect(await runMigrations({ files: migrationFiles, db: historical })).toEqual([
       '0011_pin_full_archon_sha.sql',
       '0012_arch_text_lf.sql',
+      '0013_step_attempt_identity.sql',
     ]);
     const migrated = [
       { sha: 'p1', archon_sha: full },
@@ -347,6 +373,7 @@ test('0012 rewrites CRLF to LF in stored architecture texts, and changes nothing
 
     expect(await runMigrations({ files: migrationFiles, db: historical })).toEqual([
       '0012_arch_text_lf.sql',
+      '0013_step_attempt_identity.sql',
     ]);
     const migrated = [
       { kind: 'hook', path: '.factory/hooks/gate.sh', text: 'exit 0\n' },
@@ -360,6 +387,74 @@ test('0012 rewrites CRLF to LF in stored architecture texts, and changes nothing
     const [rewrite] = migrationFiles.filter((f) => f.name.startsWith('0012'));
     await historical.query(rewrite?.sql ?? '');
     expect(await texts()).toEqual(migrated);
+  } finally {
+    await historical.close();
+  }
+});
+
+test('0013 gives back the runs of a step the old key merged, and changes nothing run again', async () => {
+  const historical = await archonDb();
+  try {
+    await runMigrations({ files: migrationFiles.filter((f) => f.name < '0013'), db: historical });
+    const [run] = await historical.query(
+      `INSERT INTO public.remote_agent_workflow_runs (workflow_name, user_message)
+       VALUES ('archon-loop', 'historical') RETURNING id`,
+    );
+    const finished = async (step: string, data: object) => {
+      const [event] = await historical.query(
+        `INSERT INTO public.remote_agent_workflow_events
+           (workflow_run_id, event_type, step_name, data)
+         VALUES ($1, 'node_completed', $2, $3) RETURNING id`,
+        [run?.id, step, JSON.stringify(data)],
+      );
+      return String(event?.id);
+    };
+    const timing = { timing: { startedAt: NOW.toISOString() } };
+    const events = [
+      await finished('review', {
+        ...timing,
+        cost_usd: 1,
+        structured_output: { outcome: 'sent-back' },
+      }),
+      await finished('review', { ...timing, cost_usd: 2, structured_output: { outcome: 'merge' } }),
+      await finished('land', { structured_output: { outcome: 'refused', reason: 'red' } }),
+      await finished('land', { structured_output: { outcome: 'merged' } }),
+    ];
+    // An attempt only this constraint refuses: its step row stays and its error is recorded.
+    await historical.query(
+      `ALTER TABLE mc.lap_step_attempts ADD CONSTRAINT refuse_pick CHECK (step_id <> 'pick')`,
+    );
+    const refused = await finished('pick', {});
+    const attempts = () =>
+      historical.query(
+        `SELECT step_id, outcome, cost_usd FROM mc.lap_step_attempts ORDER BY step_id, cost_usd, outcome`,
+      );
+    expect(await attempts()).toEqual([
+      { step_id: 'land', outcome: 'merged', cost_usd: null },
+      { step_id: 'review', outcome: 'merge', cost_usd: '2' },
+    ]);
+    const errors = () => historical.query('SELECT event_id, sqlstate FROM mc.projection_errors');
+    expect(await errors()).toEqual([{ event_id: refused, sqlstate: '23514' }]);
+
+    expect(await runMigrations({ files: migrationFiles, db: historical })).toEqual([
+      '0013_step_attempt_identity.sql',
+    ]);
+    expect(await attempts()).toEqual([
+      { step_id: 'land', outcome: 'merged', cost_usd: null },
+      { step_id: 'land', outcome: 'refused', cost_usd: null },
+      { step_id: 'review', outcome: 'sent-back', cost_usd: '1' },
+      { step_id: 'review', outcome: 'merge', cost_usd: '2' },
+    ]);
+    expect(
+      (await historical.query('SELECT event_id FROM mc.lap_step_attempts ORDER BY event_id')).map(
+        (row) => row.event_id,
+      ),
+    ).toEqual(events.sort());
+    expect(await errors()).toEqual([{ event_id: refused, sqlstate: '23514' }]);
+    const migrated = await snapshot(historical);
+    const [identity] = migrationFiles.filter((f) => f.name.startsWith('0013'));
+    await historical.query(identity?.sql ?? '');
+    expect(await snapshot(historical)).toEqual(migrated);
   } finally {
     await historical.close();
   }
@@ -661,14 +756,11 @@ test('a shorter check-app report replaces the lines of an earlier one', async ()
 });
 
 test('replaying the same events leaves every row count unchanged', async () => {
-  const lap = async () => {
-    await stepEvent('pick', 'node_started');
-    await stepEvent('pick', 'node_completed');
-    await stepEvent('check-app', 'node_completed');
-  };
-  await lap();
+  await stepEvent('pick', 'node_started');
+  await stepEvent('pick', 'node_completed');
+  await stepEvent('check-app', 'node_completed');
   const once = await dashboardCounts();
-  await lap();
+  await replayEvents();
   expect(await dashboardCounts()).toEqual(once);
   expect(once).toMatchObject({
     laps: 1,
@@ -728,8 +820,9 @@ test('every finished attempt of a step is its own row, and goes with its step ro
   expect(await projectionErrors()).toEqual([]);
   expect(await markerCount()).toBe(0);
 
-  await review('approved', later);
-  expect(await attempts()).toHaveLength(5);
+  const recorded = await attempts();
+  await replayEvents();
+  expect(await attempts()).toEqual(recorded);
   await db.query(`DELETE FROM mc.lap_steps WHERE step_id = 'review'`);
   expect((await attempts()).map((a) => a.step_id)).toEqual(['check-app', 'check-app', 'land']);
 });
