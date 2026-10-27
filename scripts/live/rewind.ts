@@ -49,6 +49,12 @@ const bothReady = QUERIES.map(
 const homeReady = ['status-strip', 'home-map']
   .map((q) => `document.querySelector('[data-live="${q}"][data-state="ready"]') !== null`)
   .join(' && ');
+/** The Issues screen's panels: the factory's strip and its issue graph. */
+const issuesReady = ['status-strip', 'issue-graph']
+  .map((q) => `document.querySelector('[data-live="${q}"][data-state="ready"]') !== null`)
+  .join(' && ');
+/** A rewind-* name no `rewind:create` lists. */
+const UNLISTED = 'rewind-not-listed';
 const listed = (name: string) =>
   `document.querySelector('[data-live="rewind-branches"] [data-rewind-branch="${name}"]') !== null`;
 
@@ -80,6 +86,15 @@ interface RewindTimings extends GroupTimings {
     branch: string | null;
     count: number | null;
     backMs: number | null;
+  };
+  /** A switch to a rewind-* name `/rewind` does not list: its status and reason. */
+  unlisted: { status: number | null; error: string | null };
+  /** Switch back pressed on the rewind bar of `screen`: where it landed, and when it was live. */
+  indicatorBack: {
+    screen: string;
+    pathname: string | null;
+    indicator: string | null;
+    ms: number | null;
   };
   limits: typeof LIMITS;
 }
@@ -213,6 +228,13 @@ export function rewindPhase(ctx: {
     afterSwitch: emptyGroupTimings(QUERIES),
     switchedBack: null,
     followed: { switchedMs: null, branch: null, count: null, backMs: null },
+    unlisted: { status: null, error: null },
+    indicatorBack: {
+      screen: `/f/${encodeURIComponent(factory)}/issues`,
+      pathname: null,
+      indicator: null,
+      ms: null,
+    },
     limits: LIMITS,
   };
   const report: string[] = [];
@@ -280,6 +302,60 @@ export function rewindPhase(ctx: {
     return ms;
   }
 
+  /** Asks the server to switch to a rewind-* name no `rewind:create` listed. */
+  async function switchToUnlisted(): Promise<void> {
+    const res = await fetch(`${base}/api/rewind`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ branch: UNLISTED }),
+    });
+    const answer = (await res.json().catch(() => undefined)) as { error?: unknown } | undefined;
+    timings.unlisted = {
+      status: res.status,
+      error: typeof answer?.error === 'string' ? answer.error : null,
+    };
+    report.push(
+      `switching to ${UNLISTED} answered ${res.status}: ${timings.unlisted.error ?? 'no reason'}`,
+    );
+  }
+
+  /**
+   * Switches `on` to `branch`, opens the factory's Issues screen there and presses Switch back
+   * on its rewind bar; records where the page landed and when it was live.
+   */
+  async function switchBackFromScreen(on: Page, branch: string): Promise<void> {
+    const back = timings.indicatorBack;
+    const res = await fetch(`${base}/api/rewind`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ branch }),
+    });
+    if (!res.ok) throw new Error(`switching to ${branch} answered ${res.status}`);
+    await on.goto(`${base}${back.screen}`);
+    if (
+      !(await on.evaluate<boolean>(
+        pageWait(`(${INDICATOR}) === ${JSON.stringify(branch)}`, SWITCH_WAIT_MS),
+        SWITCH_WAIT_MS + 5000,
+      ))
+    ) {
+      throw new Error(
+        `${back.screen} showed no rewind bar for ${branch} within ${SWITCH_WAIT_MS} ms`,
+      );
+    }
+    await on.evaluate('window.__mcNoReload = true');
+    const pressedAt = Date.now();
+    await on.evaluate(`void document.querySelector('[data-indicator-switch-back]').click()`);
+    const live = `window.__mcNoReload !== true && location.pathname === ${JSON.stringify(back.screen)} && (${INDICATOR}) === null && ${issuesReady}`;
+    if (await waitAcrossReload(on, live, pressedAt + SWITCH_WAIT_MS)) {
+      back.ms = Date.now() - pressedAt;
+    }
+    back.pathname = await on.evaluate<string>('location.pathname').catch(() => null);
+    back.indicator = await on.evaluate<string | null>(INDICATOR).catch(() => null);
+    report.push(
+      `Switch back on ${back.screen} landed on ${back.pathname} with ${back.indicator === null ? 'no rewind bar' : `the rewind bar for ${back.indicator}`}, live after ${back.ms ?? 'never'} ms`,
+    );
+  }
+
   return {
     timings,
 
@@ -296,6 +372,7 @@ export function rewindPhase(ctx: {
       });
       server = proc;
       await waitForHealth(base, () => proc.exitCode !== null);
+      await switchToUnlisted();
 
       page = await openPage(deps.env);
       await page.goto(`${base}/rewind`);
@@ -381,6 +458,9 @@ export function rewindPhase(ctx: {
       report.push(
         `the page open on / came back live after ${timings.followed.backMs ?? 'never'} ms (limit ${FOLLOW_LIMIT_MS})`,
       );
+      const second = created[1];
+      if (!second) throw new Error('the rewind phase made no second rewind branch');
+      await switchBackFromScreen(other, second);
     },
 
     /** Always runs: closes the page and server, deletes what the phase made. Never throws. */
@@ -463,6 +543,21 @@ export function rewindPhase(ctx: {
       }
       if (!within(followed.backMs, FOLLOW_LIMIT_MS)) {
         failures.push(`the other open page did not come back live within ${FOLLOW_LIMIT_MS} ms`);
+      }
+      const { unlisted, indicatorBack } = timings;
+      if (unlisted.status !== 404 || !unlisted.error?.includes('not in the rewind list')) {
+        failures.push(
+          `switching to unlisted ${UNLISTED} answered ${unlisted.status} (${unlisted.error}), expected 404 not in the rewind list`,
+        );
+      }
+      if (
+        indicatorBack.pathname !== indicatorBack.screen ||
+        indicatorBack.indicator !== null ||
+        indicatorBack.ms === null
+      ) {
+        failures.push(
+          `Switch back on ${indicatorBack.screen} landed on ${indicatorBack.pathname} showing ${indicatorBack.indicator ?? 'no rewind bar'}, live after ${indicatorBack.ms ?? 'never'} ms; expected the same screen, live, with no rewind bar`,
+        );
       }
       return failures;
     },
