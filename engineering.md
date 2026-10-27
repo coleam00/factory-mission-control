@@ -8,7 +8,7 @@ How this repository is built. The product is `docs/mission-control.prd.md`; this
 |---|---|
 | `app/` | The browser app: React 19, Vite 6, Tailwind v4, react-router 7. One file per screen under `app/routes/`, registered from the directory; a file's name encodes its path (`.` separates segments, `$name` is a parameter: `f.$factory.versions.tsx` serves `/f/:factory/versions`, #73). |
 | `server/` | Bun + Hono: serves the built app, `/api/health`, `/api/build-id`, and the sealing API for live queries. |
-| `db/migrations/` | Numbered SQL files, applied in order by `bun run migrate`; each idempotent. |
+| `db/migrations/` | Numbered SQL files, applied in order by `bun run migrate`; each idempotent. A merged migration is never edited (main has applied it and never re-runs it): change it with a new, higher-numbered file. |
 | `db/queries/` | Every live query, one file each, named for the panel that reads it. |
 | `function/` | The Neon Function that receives GitHub webhooks (Hono, TypeScript). |
 | `parsers/` | Pure functions: comment formats, pin trailers, DECISIONS.md, the architecture parser. |
@@ -26,10 +26,12 @@ How this repository is built. The product is `docs/mission-control.prd.md`; this
   function. Return timestamps; the browser computes elapsed times. Every table a live query reads
   has a primary key.
 - Live queries read the dashboard's own tables, never Archon's `provider_event` rows.
-- A live panel's speed is judged in two parts (owner decision, #13/#14): its first snapshot within
-  500 ms of the panel's subscribe being sent (query and render, the app's own work), and Realtime
-  `ready` within 2000 ms of navigation (connection setup to Neon). Never show rows that did not come
-  from a delivered subscription (no `initialData`), so a panel reads `ready` only when it is live.
+- A live panel's speed is judged on the app's own work (owner decision, #13/#14, revised on #137):
+  its query's `EXPLAIN ANALYZE` execution under 100 ms on the seed, and its rows on screen within
+  500 ms of the first snapshot arriving (decode and render). Everything between the subscribe and
+  that first snapshot is Neon's (connection, first-subscribe warm-up, delivery) and is judged only
+  by Realtime `ready` within 2000 ms of navigation. Never show rows that did not come from a
+  delivered subscription (no `initialData`), so a panel reads `ready` only when it is live.
 - Nothing writes to Archon's tables. Triggers on them catch every error into `projection_errors`.
 - Never connect to the `main` database branch from a check, a test or a lap. Use a `check-*` branch
   (`bun run fixture:branch`). `scripts/` refuses any other branch name for writes.

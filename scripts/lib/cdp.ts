@@ -2,16 +2,15 @@ import { spawn } from 'node:child_process';
 import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { PORT_FILE_NOT_WRITTEN_YET } from '../../harness/design-probe.js';
 
-/**
- * A headless Chrome, Chromium or Edge driven over the DevTools protocol, for `test:live`. The
- * launch follows `harness/design-probe.js`, which exports nothing to share.
- */
+/** A headless Chrome, Chromium or Edge driven over the DevTools protocol, for `test:live`. */
 export interface Page {
   /** Evaluates `expression` in the page, awaiting a promise, and returns its JSON value. */
   evaluate<T>(expression: string, timeoutMs?: number): Promise<T>;
   /** Navigates and resolves once the page's load event fires. */
   goto(url: string): Promise<void>;
+  setViewport(width: number): Promise<void>;
   /** A PNG of the whole page laid out `width` px wide. */
   screenshot(width: number): Promise<Buffer>;
   close(): Promise<void>;
@@ -44,13 +43,30 @@ function findBrowser(env: Record<string, string | undefined>): string {
   return found;
 }
 
+/** Chrome may still hold this file open for writing on Windows while publishing its port. */
+export function readDevToolsUrl(
+  activePort: string,
+  read: (path: string) => string = (path) => readFileSync(path, 'utf8'),
+): string | undefined {
+  let lines: string[];
+  try {
+    lines = read(activePort).split('\n');
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code !== undefined && PORT_FILE_NOT_WRITTEN_YET.has(code)) return undefined;
+    throw error;
+  }
+  if (lines.length >= 2 && lines[1]) return `ws://127.0.0.1:${lines[0].trim()}${lines[1].trim()}`;
+  return undefined;
+}
+
 async function devToolsUrl(profile: string, exited: () => boolean): Promise<string> {
   const activePort = join(profile, 'DevToolsActivePort');
   const deadline = Date.now() + STEP_TIMEOUT_MS;
   while (Date.now() < deadline) {
     if (exited()) throw new Error('the browser exited before opening its DevTools port');
-    const lines = existsSync(activePort) ? readFileSync(activePort, 'utf8').split('\n') : [];
-    if (lines.length >= 2 && lines[1]) return `ws://127.0.0.1:${lines[0].trim()}${lines[1].trim()}`;
+    const url = readDevToolsUrl(activePort);
+    if (url) return url;
     await Bun.sleep(100);
   }
   throw new Error('the browser did not open its DevTools port within 20s');
@@ -148,6 +164,10 @@ export async function openPage(env: Record<string, string | undefined>): Promise
       flatten: true,
     });
     await cdp.send('Page.enable', {}, sessionId);
+    const setViewport = async (width: number) => {
+      const metrics = { width, height: 900, deviceScaleFactor: 1, mobile: false };
+      await cdp.send('Emulation.setDeviceMetricsOverride', metrics, sessionId);
+    };
     return {
       async evaluate<T>(expression: string, timeoutMs = STEP_TIMEOUT_MS): Promise<T> {
         const { result, exceptionDetails } = await cdp.send<{
@@ -177,9 +197,9 @@ export async function openPage(env: Record<string, string | undefined>): Promise
         if (errorText) throw new Error(`could not load ${url}: ${errorText}`);
         await loaded;
       },
+      setViewport,
       async screenshot(width: number) {
-        const metrics = { width, height: 900, deviceScaleFactor: 1, mobile: false };
-        await cdp.send('Emulation.setDeviceMetricsOverride', metrics, sessionId);
+        await setViewport(width);
         const { cssContentSize } = await cdp.send<{
           cssContentSize: { width: number; height: number };
         }>('Page.getLayoutMetrics', {}, sessionId);

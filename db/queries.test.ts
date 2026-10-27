@@ -19,8 +19,8 @@ import {
   versionLaps,
   versionPin,
 } from '../app/lib/scorecard';
-import { joinParts } from '../app/lib/step-detail';
-import { seededDb } from '../scripts/fixture/seed';
+import { findStep, joinParts, type NestingRow, type StepRow } from '../app/lib/step-detail';
+import { SEED_CODEBASE, seededDb } from '../scripts/fixture/seed';
 import { seedLaps } from '../scripts/fixture/seed-laps';
 import { eventData, writeRow } from '../scripts/fixture/write';
 import { REPO_ROOT } from '../scripts/lib/cli';
@@ -33,7 +33,14 @@ const dir = join(import.meta.dir, 'queries');
 const queries = [...loadLiveQueries(dir)];
 
 /** The step screen's panels below step-detail: keyed by the step's workflow and path too. */
-const STEP_PANELS = ['step-prompt', 'step-subagents', 'step-scripts', 'step-hooks', 'step-yaml'];
+const STEP_PANELS = [
+  'step-nesting',
+  'step-prompt',
+  'step-subagents',
+  'step-scripts',
+  'step-hooks',
+  'step-yaml',
+];
 const CHECK_APP = ['archon-loop', 'check-app'];
 const paramsFor = (name: string, factory: string) =>
   STEP_PANELS.includes(name) ? [factory, ...CHECK_APP] : [factory];
@@ -350,6 +357,24 @@ describe('home-map on the seed', () => {
     ).toEqual(['input archon-backlog', 'input archon-holdouts', 'manager archon-manager']);
   });
 
+  test('a factory with no laps has no map steps, even when shared architecture is stored', async () => {
+    expect(await rows('empty-check')).toEqual([]);
+    await db.query(`INSERT INTO mc.factories (name, repository, codebase, console)
+      VALUES ('empty-check', 'o/empty', 'o/empty', 'http://localhost:3090')`);
+    try {
+      expect(await rows('empty-check')).toEqual([]);
+      expect((await rows()).some((row) => row.step_id === 'check-app')).toBe(true);
+      await db.query(`INSERT INTO mc.laps (run_id, factory, workflow_name, status) VALUES
+        ('00000000-0000-0000-0000-000000000095', 'empty-check', 'archon-loop', 'completed')`);
+      expect((await rows('empty-check')).map((row) => row.step_id).sort()).toEqual(
+        (await rows()).map((row) => row.step_id).sort(),
+      );
+    } finally {
+      await db.query("DELETE FROM mc.laps WHERE factory = 'empty-check'");
+      await db.query("DELETE FROM mc.factories WHERE name = 'empty-check'");
+    }
+  });
+
   /** Running laps per node, from the laps tables: a node's own steps are named by its path joined with `__`. */
   const lapsOnNodes = async (factory: string) => {
     const running = (await db.query(
@@ -408,10 +433,10 @@ describe('home-map on the seed', () => {
       [lap.run_id],
     );
     expect((await liveCounts()).get('review')).toBe(1);
-    expect((await rows('other')).filter((r) => r.step_id === 'review')).toEqual([
+    expect((await rows('second-factory')).filter((r) => r.step_id === 'review')).toEqual([
       expect.objectContaining({ lap_factory: 'mission-control', laps: 1, is_current: false }),
     ]);
-    expect((await liveCounts('other')).get('review')).toBe(0);
+    expect((await liveCounts('second-factory')).get('review')).toBe(0);
   });
 
   test("two factories: the header and each step count each factory's laps, the address factory current", async () => {
@@ -445,7 +470,8 @@ describe('home-map on the seed', () => {
         .filter((r) => r.path === path)
         .map(({ lap_factory, laps, is_current }) => ({ lap_factory, laps, is_current }))
         .sort((a, b) => String(a.lap_factory).localeCompare(String(b.lap_factory)));
-    for (const address of [...lapping, 'zero-laps']) {
+    expect(await rows('zero-laps')).toEqual([]);
+    for (const address of lapping) {
       const all = await rows(address);
       expect(on(all, 'build')).toEqual([
         { lap_factory: 'mission-control', laps: 1, is_current: address === 'mission-control' },
@@ -475,6 +501,76 @@ describe('home-map on the seed', () => {
     }
     await db.query(`DELETE FROM mc.lap_steps WHERE run_id::text LIKE '%0000000000c_'`);
     await db.query(`DELETE FROM mc.laps WHERE run_id::text LIKE '%0000000000c_'`);
+  });
+});
+
+describe('step screens of included blocks on the seed', () => {
+  let db: Db;
+  const sql = (name: string) => queries.find(([n]) => n === name)?.[1] as string;
+  const nestingOf = async (workflow: string, path: string) =>
+    (await db.query(sql('step-nesting'), [
+      'mission-control',
+      workflow,
+      path,
+    ])) as unknown as NestingRow[];
+  const opens = (row: NestingRow) => `${row.open_workflow} / ${row.open_path}`;
+
+  beforeAll(async () => {
+    db = await seededDb(REPO_ROOT, readFileSync(join(REPO_ROOT, 'fixtures', 'seed.sql'), 'utf8'));
+  }, 60_000);
+  afterAll(() => db.close());
+
+  test("the step that writes the code has its own screen and prompt, and no alias under deliver's block", async () => {
+    const steps = (await db.query(sql('step-detail'), ['mission-control'])) as unknown as StepRow[];
+    expect(findStep(steps, 'archon-implement', 'implement')?.command_file).toBe(
+      'implement/commands/implement.md',
+    );
+    expect(findStep(steps, 'archon-deliver-block', 'implement')).toBeUndefined();
+    const parts = (await db.query(sql('step-prompt'), [
+      'mission-control',
+      'archon-implement',
+      'implement',
+    ])) as { path: string; part: number; chunk: string }[];
+    expect(joinParts(parts, (row) => row.path).get('implement/commands/implement.md')).toBe(
+      readFileSync(
+        join(REPO_ROOT, 'fixtures', 'pack', 'sdlc', 'implement', 'commands', 'implement.md'),
+        'utf8',
+      ),
+    );
+  });
+
+  test("deliver's screen lists both occurrences of implement, each opening its own screen", async () => {
+    const inside = new Map(
+      (await nestingOf('archon-ship-block', 'deliver'))
+        .filter((row) => row.relation === 'inside')
+        .map((row) => [row.path, opens(row)]),
+    );
+    expect(inside.get('deliver/rounds/implement')).toBe('archon-deliver-block / rounds/implement');
+    expect(inside.get('deliver/rounds/implement/implement')).toBe('archon-implement / implement');
+    expect(inside.get('deliver/rounds/reshape/implement')).toBe('archon-implement / implement');
+  });
+
+  test('every step beneath ship opens a screen that exists', async () => {
+    const steps = (await db.query(sql('step-detail'), ['mission-control'])) as unknown as StepRow[];
+    const inside = (await nestingOf('archon-loop', 'ship')).filter((r) => r.relation === 'inside');
+    expect(inside.length).toBeGreaterThan(50);
+    const missing = inside.filter((row) => !findStep(steps, row.open_workflow, row.open_path));
+    expect(missing.map((row) => row.path)).toEqual([]);
+  });
+
+  test("implement's screen lists every place an include puts it, opening the node it sits in", async () => {
+    const places = (await nestingOf('archon-implement', 'implement'))
+      .filter((row) => row.relation === 'included_at')
+      .map((row) => `${row.workflow} ${row.path} -> ${opens(row)}`)
+      .sort();
+    expect(places).toEqual([
+      'archon-deliver-block rounds/implement/implement -> archon-deliver-block / rounds/implement',
+      'archon-deliver-block rounds/reshape/implement -> archon-deliver-block / rounds/reshape',
+      'archon-loop ship/deliver/rounds/implement/implement -> archon-deliver-block / rounds/implement',
+      'archon-loop ship/deliver/rounds/reshape/implement -> archon-deliver-block / rounds/reshape',
+      'archon-ship-block deliver/rounds/implement/implement -> archon-deliver-block / rounds/implement',
+      'archon-ship-block deliver/rounds/reshape/implement -> archon-deliver-block / rounds/reshape',
+    ]);
   });
 });
 
@@ -536,6 +632,9 @@ describe('version-strip on the seed', () => {
         await tx.query(`INSERT INTO mc.laps (run_id, factory, workflow_name, status, digest, started_at)
           VALUES ('00000000-0000-0000-0000-0000000000c1', 'north-star', 'archon-loop', 'completed',
             'north-star-digest', '2026-10-20T00:00:00Z')`);
+        await tx.query(`INSERT INTO mc.factories (name, repository, codebase, console)
+          VALUES ('north-star', 'coleam00/north-star', 'coleam00/north-star', 'http://localhost:3090')`);
+        await tx.query(`SELECT mc.project_version('north-star', 'north-star-digest')`);
         const [label] = await tx.query(
           'SELECT sha FROM mc.pins WHERE committed_at < $1 ORDER BY committed_at DESC LIMIT 1',
           ['2026-10-20T00:00:00Z'],
@@ -550,6 +649,74 @@ describe('version-strip on the seed', () => {
             .map((r) => r.pin_sha)
             .sort(),
         ).toEqual(unused);
+        throw rollback;
+      })
+      .catch((error) => {
+        if (error !== rollback) throw error;
+      });
+  });
+
+  test('a digest only a non-archon-loop run used is not a version and uses up no pin', async () => {
+    const rollback = new Error('rollback');
+    const digest = 'sha256:fence-proof';
+    await db
+      .transaction(async (tx) => {
+        await writeRow(tx, 'pin', new Date('2026-10-25T14:00:00Z'));
+        const [pin] = await tx.query('SELECT sha FROM mc.pins ORDER BY committed_at DESC LIMIT 1');
+        await tx.query(
+          `INSERT INTO remote_agent_workflow_runs (id, workflow_name, codebase_id, status,
+            user_message, metadata, started_at, completed_at, last_activity_at)
+          VALUES ('00000000-0000-4000-8000-0000000000f1', 'fence-proof', $1, 'completed', 'Prove the fence',
+            $2::jsonb, '2026-10-25T15:00:00Z', '2026-10-25T15:10:00Z', '2026-10-25T15:10:00Z')`,
+          [SEED_CODEBASE, JSON.stringify({ workflow_source: { digest } })],
+        );
+        expect(await tx.query('SELECT factory FROM mc.laps WHERE digest = $1', [digest])).toEqual([
+          { factory: 'mission-control' },
+        ]);
+        expect(await tx.query('SELECT 1 FROM mc.versions WHERE digest = $1', [digest])).toEqual([]);
+
+        const rows = await tx.query(sql, ['mission-control']);
+        expect(rows.filter((r) => r.digest === digest)).toEqual([]);
+        expect(rows.filter((r) => r.digest === null).map((r) => r.pin_sha)).toContain(pin.sha);
+        const scorecardSql = queries.find(([name]) => name === 'scorecard')?.[1] as string;
+        const card = await tx.query(scorecardSql, ['mission-control']);
+        expect(card.filter((r) => r.digest === digest)).toEqual([]);
+        throw rollback;
+      })
+      .catch((error) => {
+        if (error !== rollback) throw error;
+      });
+  });
+
+  test('a factory whose only runs are non-archon-loop runs lists nothing', async () => {
+    const rollback = new Error('rollback');
+    await db
+      .transaction(async (tx) => {
+        await tx.query(`INSERT INTO mc.laps (run_id, factory, workflow_name, status, digest, started_at)
+          VALUES ('00000000-0000-0000-0000-0000000000c2', 'fence-only', 'fence-proof', 'completed',
+            'sha256:fence-only', '2026-10-25T16:00:00Z')`);
+        expect(await tx.query(sql, ['fence-only'])).toEqual([]);
+        throw rollback;
+      })
+      .catch((error) => {
+        if (error !== rollback) throw error;
+      });
+  });
+
+  test('a recorded version no lap qualifies for is still listed, as a version', async () => {
+    const rollback = new Error('rollback');
+    await db
+      .transaction(async (tx) => {
+        const [pin] = await tx.query('SELECT sha FROM mc.pins ORDER BY committed_at LIMIT 1');
+        await tx.query(
+          `INSERT INTO mc.versions (factory, digest, first_run_at, pin_sha)
+          VALUES ('mission-control', 'sha256:recorded-only', '2026-10-22T00:00:00Z', $1)`,
+          [pin.sha],
+        );
+        const rows = await tx.query(sql, ['mission-control']);
+        expect(rows.filter((r) => r.digest === 'sha256:recorded-only')).toMatchObject([
+          { pin_sha: pin.sha },
+        ]);
         throw rollback;
       })
       .catch((error) => {
@@ -979,6 +1146,41 @@ describe('lanes and recent-laps on the seed', () => {
     const moved = await db.query(sqlOf('lanes'), ['mission-control']);
     expect(moved.find((l) => l.run_id === lane.run_id)?.step_id).toBe('review');
     expect(await errors()).toEqual(before);
+  });
+
+  test("a lane's route falls back to its claim comment; the pick step's output wins (#107)", async () => {
+    const [claimOnly, both, neither] = [
+      '107a0000-0000-4000-8000-000000000001',
+      '107a0000-0000-4000-8000-000000000002',
+      '107a0000-0000-4000-8000-000000000003',
+    ];
+    const routes = async () =>
+      Object.fromEntries(
+        (await db.query(sqlOf('lanes'), ['route-107'])).map((l) => [l.run_id, l.route]),
+      );
+    await db.query(
+      `INSERT INTO mc.laps (run_id, factory, workflow_name, status) VALUES
+      ($1, 'route-107', 'archon-loop', 'running'), ($2, 'route-107', 'archon-loop', 'running'),
+      ($3, 'route-107', 'archon-loop', 'running')`,
+      [claimOnly, both, neither],
+    );
+    await db.query(
+      `INSERT INTO mc.lap_steps (run_id, step_id, status, output)
+       VALUES ($1, 'pick', 'completed', '{"route":"continue"}'::jsonb)`,
+      [both],
+    );
+    expect(await routes()).toEqual({ [claimOnly]: null, [both]: 'continue', [neither]: null });
+    await db.query(
+      `INSERT INTO mc.claims (factory, issue_number, run_id, route, claimed_at) VALUES
+       ('route-107', 7, $1, 'simple', '2026-10-26T12:00:00Z'),
+       ('route-107', 8, $2, 'simple', '2026-10-26T12:00:00Z')`,
+      [claimOnly, both],
+    );
+    expect(await routes()).toEqual({
+      [claimOnly]: 'simple',
+      [both]: 'continue',
+      [neither]: null,
+    });
   });
 
   test('another factory sees none of these laps', async () => {

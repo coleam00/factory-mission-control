@@ -1,9 +1,10 @@
 SELECT l.run_id, l.started_at, c.issue_number, i.title AS issue_title, i.url AS issue_url,
-  p.output ->> 'route' AS route, p.output ->> 'depth' AS depth,
+  -- The pick step's route, or else the one the lap's claim comment records (often first).
+  coalesce(p.output ->> 'route', c.route) AS route, p.output ->> 'depth' AS depth,
   s.step_id, s.started_at AS step_started_at, k.cost_usd
 FROM mc.laps l
 LEFT JOIN LATERAL (
-  SELECT c.issue_number FROM mc.claims c
+  SELECT c.issue_number, c.route FROM mc.claims c
   WHERE c.factory = l.factory AND c.run_id = l.run_id
   ORDER BY c.claimed_at DESC NULLS LAST, c.issue_number LIMIT 1
 ) c ON true

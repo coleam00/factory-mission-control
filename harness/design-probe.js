@@ -34,7 +34,7 @@ class ProbeError extends Error {}
  * Errors that mean the browser has not finished writing DevToolsActivePort: on Windows Chrome
  * holds the file open while it writes it, so a read in that window fails with EBUSY or EPERM.
  */
-const PORT_FILE_NOT_WRITTEN_YET = new Set(['ENOENT', 'EBUSY', 'EPERM']);
+export const PORT_FILE_NOT_WRITTEN_YET = new Set(['ENOENT', 'EBUSY', 'EPERM']);
 
 const readPortFile = (path) => readFileSync(path, 'utf8');
 

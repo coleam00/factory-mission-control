@@ -33,7 +33,7 @@ interface Version {
   digest: string;
   laps: readonly Lap[];
   card: Card;
-  /** The version strip's label: the pin before the version's first run, and that run. */
+  /** The version strip's label: the pin its mc.versions row is labelled by, and its first run. */
   pin: string | null;
   firstRunAt: Date | null;
 }

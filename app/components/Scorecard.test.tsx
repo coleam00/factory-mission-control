@@ -169,34 +169,48 @@ test('a version no lap ran is still compared: 0 laps, n/a where undefined, not y
   expect(flipped.find((c) => c.version === 'b' && c.measure === 'merges')?.value).toBe('3.0000');
 });
 
-test('each version is named by the pin before its first run, as the versions screen names it', () => {
-  const pin = (sha: string, at: string): ScorecardRow => ({
+test('each version is named by its version row, as the versions screen names it', () => {
+  const version = (digest: string, at: string, sha: string | null): ScorecardRow => ({
     run_id: null,
     step_id: null,
+    digest,
+    first_run_at: new Date(at),
     pin_sha: sha,
-    committed_at: new Date(at),
   });
-  const rows = [
+  const laps1And2 = [
     ...laps(V1, 2, 1),
     ...laps(V2, 2, 1).map((r) =>
-      r.step_id === null && r.pin_sha === null
+      r.step_id === null && r.run_id !== null
         ? { ...r, started_at: new Date('2026-10-09T00:00:00Z') }
         : r,
     ),
-    pin('8e3e1cefaf1e1b7955789d6a43a81b6c2dbd7082', '2026-09-30T18:00:00Z'),
   ];
+  const v1 = version(V1, '2026-10-01T00:00:00Z', '8e3e1cefaf1e1b7955789d6a43a81b6c2dbd7082');
   const header = (html: string, side: string) =>
     new RegExp(
       `<div data-version="${side}" data-digest="[^"]*"( data-pin="([^"]*)")?[^>]*>(.*?)</div></div>`,
     ).exec(html);
-  const before = render(rows, V1, V2);
+  const before = render(
+    [
+      ...laps1And2,
+      v1,
+      version(V2, '2026-10-09T00:00:00Z', '8e3e1cefaf1e1b7955789d6a43a81b6c2dbd7082'),
+    ],
+    V1,
+    V2,
+  );
   expect(header(before, 'a')?.[2]).toBe('8e3e1cefaf1e1b7955789d6a43a81b6c2dbd7082');
   expect(header(before, 'a')?.[3]).toContain('8e3e1cef');
   expect(header(before, 'a')?.[3]).toContain('first run 2026-10-01');
   expect(header(before, 'b')?.[2]).toBe('8e3e1cefaf1e1b7955789d6a43a81b6c2dbd7082');
 
+  // A pin committed later relabels V2's row (mc.label_versions); the screen follows the row.
   const after = render(
-    [...rows, pin('5ffd60c6c6e591487f2fbb5ec67ccc8fc55ca915', '2026-10-05T00:00:00Z')],
+    [
+      ...laps1And2,
+      v1,
+      version(V2, '2026-10-09T00:00:00Z', '5ffd60c6c6e591487f2fbb5ec67ccc8fc55ca915'),
+    ],
     V1,
     V2,
   );
@@ -204,7 +218,13 @@ test('each version is named by the pin before its first run, as the versions scr
   expect(header(after, 'b')?.[2]).toBe('5ffd60c6c6e591487f2fbb5ec67ccc8fc55ca915');
   expect(header(after, 'b')?.[3]).toContain('5ffd60c6');
 
-  const unpinned = render(laps(V1, 2, 1), V1);
+  const unpinned = render([...laps(V1, 2, 1), version(V1, '2026-10-01T00:00:00Z', null)], V1);
   expect(header(unpinned, 'a')?.[1]).toBeUndefined();
   expect(header(unpinned, 'a')?.[3]).toContain('not recorded');
+  expect(header(unpinned, 'a')?.[3]).toContain('first run 2026-10-01');
+
+  const notAVersion = render(laps(V1, 2, 1), V1);
+  expect(header(notAVersion, 'a')?.[1]).toBeUndefined();
+  expect(header(notAVersion, 'a')?.[3]).toContain('not recorded');
+  expect(header(notAVersion, 'a')?.[3]).not.toContain('first run');
 });

@@ -1,11 +1,13 @@
 import type { ReactElement, ReactNode } from 'react';
-import { useParams } from 'react-router';
+import { Link, useParams } from 'react-router';
 import { EmptyState } from '../components/EmptyState';
 import {
   dependents,
   findStep,
   type HookRow,
   joinParts,
+  type NestingRow,
+  nesting,
   type PartRow,
   type StepRow,
   type SubagentRow,
@@ -91,6 +93,65 @@ function StepList({ steps, ...data }: { steps: readonly string[]; [a: `data-${st
         <span key={id}>{id}</span>
       ))}
     </span>
+  );
+}
+
+/** Where includes put this step, and every node beneath it: on an include, the steps it runs. */
+function Nesting({ step, factory }: { step: StepRow; factory: string }): ReactElement {
+  return (
+    <LivePanel<NestingRow> query="step-nesting" factory={factory} args={[step.workflow, step.path]}>
+      {(rows, state) => {
+        if (state === 'error')
+          return (
+            <div className={CARD}>
+              <Unavailable />
+            </div>
+          );
+        if (rows === undefined || rows.length === 0) return null;
+        const { inside, includedAt } = nesting(rows, step);
+        return (
+          <div className={CARD}>
+            {includedAt.length > 0 ? (
+              <>
+                <h2 className={LABEL}>Included at</h2>
+                <ul className="flex flex-col gap-1">
+                  {includedAt.map((place) => (
+                    <li
+                      key={`${place.workflow} ${place.path}`}
+                      data-included-at={`${place.workflow} ${place.path}`}
+                    >
+                      <Link to={place.href} className="flex flex-wrap gap-x-3">
+                        <span className={NOTE}>{place.workflow}</span>
+                        <span className={MONO}>{place.path}</span>
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              </>
+            ) : null}
+            {inside.length > 0 ? (
+              <>
+                <h2 className={LABEL}>Steps inside</h2>
+                <ul className="flex flex-col gap-1">
+                  {inside.map((node) => (
+                    <li
+                      key={node.label}
+                      data-inside={node.label}
+                      style={{ paddingLeft: node.depth * 16 }}
+                    >
+                      <Link to={node.href} className="flex flex-wrap gap-x-3">
+                        <span className={MONO}>{node.label}</span>
+                        <span className={NOTE}>{node.kind}</span>
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              </>
+            ) : null}
+          </div>
+        );
+      }}
+    </LivePanel>
   );
 }
 
@@ -308,6 +369,7 @@ function Step({
         </Fact>
         <Fact label="Defined in">{step.file}</Fact>
       </dl>
+      <Nesting step={step} factory={factory} />
       <Prompt step={step} factory={factory} />
       <Subagents step={step} factory={factory} />
       <Scripts step={step} factory={factory} />

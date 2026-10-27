@@ -18,7 +18,7 @@ export function HomeMapBody({
   if (state === 'error') return <EmptyState title="Live data is unavailable." />;
   if (rows === undefined) return <EmptyState title="Loading the factory map." />;
   if (rows.length === 0) {
-    return <EmptyState title="No architecture is stored for the pinned version yet." />;
+    return <EmptyState title="No factory map is available yet." />;
   }
   return <HomeMap rows={rows} factories={factories} />;
 }

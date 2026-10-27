@@ -2,6 +2,7 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { parseArgs } from 'node:util';
 import factories from '../factories.json';
+import { type FactoryEntry, readFactories } from '../server/factories';
 import { failing, guardedDatabaseUrl, type Main, runCli } from './lib/cli';
 import type { Db } from './lib/db';
 
@@ -51,19 +52,19 @@ export async function runMigrations({
   return applied;
 }
 
-type Factory = (typeof factories.factories)[number];
-
 /**
  * Upserts `entries` into mc.factories by name, deleting none, and gives each lap projected
  * before its factory existed (factory '' or its codebase's name) the factory the projection would
- * now choose. Returns how many rows each changed. `entries` is bound as the array itself: Bun
+ * now choose, then projects the versions (mc.project_version) of every digest those laps moved to
+ * and from, so a factory registered after its runs lists them on the version strip. Returns how
+ * many factory and lap rows changed. `entries` is bound as the array itself: Bun
  * encodes a string bound to `::jsonb` as a jsonb string, which jsonb_to_recordset rejects.
  */
 export async function loadFactories({
   entries,
   db,
 }: {
-  entries: Factory[];
+  entries: FactoryEntry[];
   db: Db;
 }): Promise<{ factories: number; laps: number }> {
   const changed = { factories: 0, laps: 0 };
@@ -84,32 +85,51 @@ export async function loadFactories({
         [entries],
       )
     ).length;
-    changed.laps = (
-      await tx.query(
-        `UPDATE mc.laps l SET factory = m.factory
+    const moved = await tx.query(
+      `UPDATE mc.laps l SET factory = m.factory
            FROM (SELECT r.id, c.name AS codebase,
                    (SELECT f.name FROM mc.factories f WHERE f.codebase = c.name
                      ORDER BY f.name LIMIT 1) AS factory
                    FROM public.remote_agent_workflow_runs r
                    JOIN public.remote_agent_codebases c ON c.id = r.codebase_id) m
           WHERE l.run_id = m.id AND l.factory IN ('', m.codebase) AND l.factory <> m.factory
-         RETURNING l.run_id`,
-        [],
-      )
-    ).length;
+         RETURNING l.factory, m.codebase AS was, l.digest`,
+      [],
+    );
+    changed.laps = moved.length;
+    await tx.query(
+      `SELECT mc.project_version(p.factory, p.digest)
+         FROM (SELECT DISTINCT factory, digest FROM jsonb_to_recordset($1::jsonb)
+                 AS e(factory text, digest text)
+                WHERE digest IS NOT NULL) p`,
+      [moved.flatMap((r) => [r, { factory: r.was, digest: r.digest }])],
+    );
   });
   return changed;
 }
 
-const USAGE =
-  'usage: bun run migrate (the check branch in .mc-check.env) | bun run migrate:main (the owner, at a terminal)';
+const USAGE = [
+  'usage: bun run migrate (the check branch in .mc-check.env) | bun run migrate:main (the owner, at a terminal)',
+  '  After adding a factory, load it and attribute its existing laps on the live branch:',
+  '  bun run migrate -- --configured-factories (check-* only)',
+  '  bun run migrate:main -- --configured-factories (main only, owner confirmation at a terminal)',
+  '  --configured-factories reads MC_FACTORIES_FILE when nonempty, otherwise the repository factories.json.',
+  '  Use the same MC_DATABASE_URL and MC_FACTORIES_FILE environment as the server; .mc-check.env fills unset values.',
+  '  NEON_API_KEY and NEON_PROJECT_ID are required to verify the database branch before connecting.',
+  '  Rewind branches are read-only: switch back and target the live branch if setup is still needed.',
+  '  Without --configured-factories, migrate loads the committed factories.json regardless of MC_FACTORIES_FILE.',
+].join('\n');
 
 export const main: Main = async (argv, deps) => {
-  let values: { main?: boolean; help?: boolean };
+  let values: { main?: boolean; help?: boolean; 'configured-factories'?: boolean };
   try {
     ({ values } = parseArgs({
       args: argv,
-      options: { main: { type: 'boolean' }, help: { type: 'boolean', short: 'h' } },
+      options: {
+        main: { type: 'boolean' },
+        help: { type: 'boolean', short: 'h' },
+        'configured-factories': { type: 'boolean' },
+      },
     }));
   } catch (error) {
     deps.err(error instanceof Error ? `${error.message}\n${USAGE}` : USAGE);
@@ -125,6 +145,9 @@ export const main: Main = async (argv, deps) => {
     if (target === 'main' && !deps.confirmOwner(deps.env.NEON_PROJECT_ID ?? '')) {
       throw new Error('migrate:main is for the owner, at a terminal');
     }
+    const entries = values['configured-factories']
+      ? readFactories(deps.env, deps.repoRoot)
+      : factories.factories;
     const db = deps.openDb(url);
     try {
       const applied = await runMigrations({
@@ -133,9 +156,10 @@ export const main: Main = async (argv, deps) => {
       });
       for (const name of applied) deps.out(`applied ${name}`);
       deps.out(`applied ${applied.length} migration(s)`);
-      const changed = await loadFactories({ entries: factories.factories, db });
+      const changed = await loadFactories({ entries, db });
+      const source = values['configured-factories'] ? 'configured factories' : 'factories.json';
       deps.out(
-        `factories.json: ${changed.factories} factory row(s) written, ${changed.laps} lap(s) re-attributed`,
+        `${source}: ${changed.factories} factory row(s) written, ${changed.laps} lap(s) re-attributed`,
       );
     } finally {
       await db.close();
