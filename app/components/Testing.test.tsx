@@ -48,6 +48,7 @@ const report = {
   issue_title: null,
   issue_state: null,
   issue_url: null,
+  repository: 'coleam00/factory-mission-control',
 };
 const holdouts: DefaultHoldoutRow[] = [
   { ...report, scenario_id: 'H-01', verdict: 'PASS', issue_number: null },
@@ -115,6 +116,18 @@ test("the default branch's failing scenario shows its tracking issue", () => {
   expect(html).toContain('href="https://github.com/coleam00/factory-mission-control/issues/14"');
   expect(html).toContain('#14 Phases and the issue graph');
   expect(html.split('data-failing=').length - 1).toBe(1);
+});
+
+test('a tracking issue not mirrored yet still links to the factory repository', () => {
+  const html = render(
+    <DefaultBranchHoldouts
+      rows={[{ ...report, scenario_id: 'H-20', verdict: 'FAIL', issue_number: 43 }]}
+    />,
+  );
+  expect(html).toContain(
+    '<a data-link="issue" href="https://github.com/coleam00/factory-mission-control/issues/43"',
+  );
+  expect(html).not.toMatch(/<span[^>]*>#43<\/span>/);
 });
 
 test('each panel has a one-sentence empty state', () => {

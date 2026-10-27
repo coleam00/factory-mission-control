@@ -41,6 +41,8 @@ export interface DefaultHoldoutRow {
   issue_title: string | null;
   issue_state: string | null;
   issue_url: string | null;
+  /** The factory's `owner/name`, for a tracking issue not mirrored yet. */
+  repository: string;
 }
 
 export interface RouteGroup {

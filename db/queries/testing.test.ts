@@ -73,6 +73,7 @@ describe('the testing screen on the seed', () => {
           verdict: 'FAIL',
           issue_number: 14,
           issue_title: 'Phases and the issue graph',
+          repository: 'coleam00/factory-mission-control',
         }),
         expect.objectContaining({ sha: '3e4f5a6b', scenario_id: 'H-04', verdict: 'PASS' }),
       ]),

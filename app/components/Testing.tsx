@@ -1,7 +1,7 @@
 import { type ReactElement, type ReactNode, useMemo } from 'react';
 import { Link } from 'react-router';
 import { shortRunId } from '../lib/format';
-import { VERDICT_TOKEN } from '../lib/one-lap';
+import { issueUrl, VERDICT_TOKEN } from '../lib/one-lap';
 import {
   type CheckRow,
   checkMix,
@@ -225,12 +225,10 @@ function IssueLink({ row }: { row: DefaultHoldoutRow }): ReactElement {
   if (row.issue_number === null)
     return <span className="text-text-secondary">no tracking issue</span>;
   const label = `#${row.issue_number}${row.issue_title === null ? '' : ` ${row.issue_title}`}`;
-  return row.issue_url === null ? (
-    <span className="min-w-0 text-text-primary [overflow-wrap:anywhere]">{label}</span>
-  ) : (
+  return (
     <a
       data-link="issue"
-      href={row.issue_url}
+      href={row.issue_url ?? issueUrl(row.repository, row.issue_number)}
       className={`min-w-0 text-text-primary [overflow-wrap:anywhere] ${LINK}`}
     >
       {label}
