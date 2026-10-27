@@ -1,5 +1,14 @@
 import { afterEach, beforeAll, expect, test } from 'bun:test';
-import { readdirSync, readFileSync, rmSync, statSync } from 'node:fs';
+import {
+  cpSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join, relative } from 'node:path';
 import { ARCHON_TABLES, testDb } from '../db/test-db';
 import type { GetFetch } from '../function/github';
@@ -101,6 +110,41 @@ test('a second run for the same shas leaves every row as it was', async () => {
   expect(second.exit).toBe(0);
   expect(counts(second.out)).toEqual(counts(first.out));
   expect(await everyRow()).toEqual(before);
+});
+
+test('a CRLF checkout stores the same rows as an LF one', async () => {
+  const lf = await run([ARCHON_SHA, FACTORY_SHA, ...LOCAL]);
+  expect(lf.exit).toBe(0);
+  const lfRows = await everyRow();
+  for (const table of TABLES) await pg.query(`DELETE FROM mc.${table}`);
+
+  const checkout = mkdtempSync(join(tmpdir(), 'arch-parse-crlf-'));
+  scratch.push(checkout);
+  for (const [from, to] of [
+    [PACK, 'pack'],
+    [TEMPLATE, 'template'],
+  ] as const) {
+    const dir = join(checkout, to);
+    cpSync(from, dir, { recursive: true });
+    for (const file of filesOf(dir)) {
+      const path = join(dir, file);
+      writeFileSync(path, readFileSync(path, 'utf8').replaceAll('\n', '\r\n'));
+    }
+  }
+  expect(readFileSync(join(checkout, 'pack/sdlc/loop/archon-loop.yaml'), 'utf8')).toContain('\r\n');
+
+  const crlf = await run([
+    ARCHON_SHA,
+    FACTORY_SHA,
+    '--archon-path',
+    join(checkout, 'pack'),
+    '--factory-path',
+    join(checkout, 'template'),
+  ]);
+  expect(crlf.err).toEqual([]);
+  expect(crlf.exit).toBe(0);
+  expect(crlf.out).toEqual(lf.out);
+  expect(await everyRow()).toEqual(lfRows);
 });
 
 test.each(['main', 'fixture'])(

@@ -8,6 +8,7 @@ import {
   LANE,
   LIMITS,
   lapsOnNodes,
+  lateWrite,
   MAP,
   mapMismatches,
   mapNodes,
@@ -262,7 +263,7 @@ export async function switcherPhase(ctx: SwitcherContext): Promise<void> {
 
     // factories.json alone: the seed's second factory is still a row of mc.factories.
     const own = namesIn(join(deps.repoRoot, 'factories.json'));
-    const port = await freePort();
+    const port = await freePort(deps);
     const alone = `http://localhost:${port}`;
     const env = { ...deps.env };
     delete env.MC_FACTORIES_FILE;
@@ -312,11 +313,7 @@ export async function switcherPhase(ctx: SwitcherContext): Promise<void> {
     failures.push(`the switcher was ready after ${timings.readyMs} ms, limit ${LIMITS.readyMs}`);
   }
   failures.push(...performanceFailures('factory-switcher', timings));
-  if (!within(timings.insertToScreenMs, LIMITS.insertToScreenMs)) {
-    failures.push(
-      `an insert reached the switcher after ${timings.insertToScreenMs} ms, limit ${LIMITS.insertToScreenMs}`,
-    );
-  }
+  failures.push(...lateWrite('an insert', 'the switcher', timings.insertToScreenMs));
   if (timings.noReload !== true) failures.push('the page reloaded while the switcher counted');
 
   const probe = Bun.spawnSync(

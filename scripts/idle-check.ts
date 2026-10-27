@@ -68,7 +68,7 @@ async function check(deps: Deps, maxMinutes: number): Promise<void> {
   const body = new Uint8Array(readFileSync(join(deps.repoRoot, 'fixtures', 'webhooks', FIXTURE)));
   const secret = crypto.randomUUID();
   const signature = await sign(secret, body);
-  const port = await freePort();
+  const port = await freePort(deps);
   const handler = startHandler(deps, port, secret);
   const answers: { label: string; status: number }[] = [];
   const send = async (label: string) => {
