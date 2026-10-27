@@ -12,8 +12,9 @@ export type Kind = (typeof KINDS)[number];
  * a subagent's step path and name, then the first 12 hex digits of the md5 of what the row says.
  * An `edge` entry is a step dependency, `from_path` then `to_path`. The query aggregates and
  * hashes because the first snapshot is timed: one row per architecture row, in full, took
- * hundreds of milliseconds longer to arrive. A `version` row, with no entries, names a digest a lap
- * of this factory ran, architecture or not.
+ * hundreds of milliseconds longer to arrive. A `version` row, with no entries, names one of this
+ * factory's versions (its mc.versions rows and its archon-loop lap digests, as the scorecard reads
+ * them), architecture or not.
  */
 export interface ArchDiffRow {
   digest: string;
@@ -40,7 +41,7 @@ export type ArchDiff = Record<Kind, KindDiff>;
 
 export type DiffResult =
   | { status: 'compared'; diff: ArchDiff; changes: number }
-  /** The digests named that no lap of this factory ran. */
+  /** The digests named that are not one of this factory's versions. */
   | { status: 'not-found'; digests: string[] }
   /** The versions named that have no architecture rows: not parsed yet. */
   | { status: 'unrecorded'; digests: string[] };
