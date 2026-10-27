@@ -17,6 +17,7 @@ import { homePhase } from './live/home';
 import { issuesPhase } from './live/issues';
 import { lapsPhase } from './live/laps';
 import { oneLapPhase } from './live/one-lap';
+import { ownerPhase } from './live/owner';
 import { rewindPhase } from './live/rewind';
 import { scorecardPhase } from './live/scorecard';
 import {
@@ -58,6 +59,9 @@ const USAGE = [
   '  It checks the decisions screen against the seed, times `fixture:write verdict --pin <V2>` and',
   '  `fixture:write decision` to that screen before and after the hold, writing ledger-check.txt,',
   '  decisions-ledger-timings.json, decisions-ledger.png and decisions-ledger-design-probe.json.',
+  "  It checks the owner queue against the seed's open needs-owner issues and open owner questions,",
+  '  and times `fixture:write label` to it before and after the hold, writing owner-queue-check.txt,',
+  '  owner-queue-timings.json, owner-queue.png and owner-queue-design-probe.json.',
   '  It checks the issues screen against the seed and times `fixture:write label` to it before and',
   '  after the hold, writing issue-graph-check.txt, phases-issue-graph-timings.json,',
   '  phases-issue-graph.png and phases-issue-graph-design-probe.json.',
@@ -220,7 +224,8 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
   // and the lap open before the strip's first insert, the decisions screen writes before the
   // step, versions and scorecard screens open and judges the versions screen's pin after the
   // hold, and the switcher runs before the diff adds steps to the architecture the second
-  // factory's map shows. Rewind is last: making a rewind branch starts a new Neon compute on the
+  // factory's map shows. The owner queue labels just before the issues screen does, so each of the
+  // issues screen's labels lands on a waiting issue. Rewind is last: making a rewind branch starts a new Neon compute on the
   // project, so every other screen's first snapshots are timed before it.
   const phases: LivePhase[] = [
     homePhase(ctx),
@@ -230,6 +235,7 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
     stepDetailPhase(ctx),
     versionsPhase(ctx),
     scorecardPhase(ctx),
+    ownerPhase(ctx),
     issuesPhase(ctx),
     switcherPhase(ctx),
     diffPhase(ctx),
