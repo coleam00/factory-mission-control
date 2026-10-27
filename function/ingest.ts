@@ -20,6 +20,8 @@ import { type GitHub, GitHubError } from './github';
 /** Pins, verdicts and `DECISIONS.md` come from this repository's default branch only. */
 export const VERSIONS_REPOSITORY = 'coleam00/ai-software-factory';
 export const DECISIONS_PATH = 'DECISIONS.md';
+/** A pin commit's own copy of the pack it pins, whose `integration_revision_required` is the full sha. */
+export const PACK_PATH = 'template/factory/pack.json';
 
 /** The manager's issues whose bodies the loop writes; a test holds them to the pack's `MANAGER_TITLES`. */
 export const OWNER_DECISIONS_TITLE = 'Owner decisions needed';
@@ -81,6 +83,9 @@ export interface Commit {
   removed: string[];
 }
 
+/** A commit of the versions repository; `archonSha` is set on a pin whose full sha was resolved. */
+export type VersionCommit = Pick<Commit, 'id' | 'message' | 'timestamp'> & { archonSha?: string };
+
 interface Payloads {
   issues: { action: string; issue: Issue; repository: Repository };
   issue_comment: { action: string; issue: Issue; comment: Comment; repository: Repository };
@@ -105,6 +110,8 @@ export interface Prepared {
   write: Write;
   /** Set when the push touched `DECISIONS.md` but GitHub would not give it: what GitHub said. */
   decisionsUnread?: string;
+  /** Set when a pin of the push was written without its Archon sha: which, and why. */
+  pinsUnread?: string;
 }
 
 export interface Context {
@@ -128,14 +135,16 @@ export async function prepare(
     const push = payload as Payloads['push'];
     if (repository.full_name !== VERSIONS_REPOSITORY) return null;
     if (push.deleted || push.ref !== `refs/heads/${repository.default_branch}`) return null;
+    const pins = await pinsAfter(push, github);
     const decisions = await decisionsAfter(push, repository.default_branch, github);
     const text = decisions?.text;
     return {
       write: async (tx) => {
-        await writeCommits(tx, push.commits);
+        await writeCommits(tx, pins.commits);
         if (text !== undefined) await replaceDecisions(tx, text);
       },
       decisionsUnread: decisions?.unread,
+      pinsUnread: pins.unread,
     };
   }
 
@@ -188,6 +197,77 @@ function mirrorWrite(
 }
 
 /**
+ * The push's commits with each pin's full Archon sha resolved. When GitHub refuses or cannot be
+ * reached, the push's pins are written without a sha and the result says so; the next backfill
+ * reads them again. A stored sha is never cleared or rewritten short.
+ */
+async function pinsAfter(
+  push: Payloads['push'],
+  github: GitHub,
+): Promise<{ commits: VersionCommit[]; unread?: string }> {
+  try {
+    const { commits, unresolved } = await resolvePins(github, push.commits);
+    return { commits, unread: unresolved.length ? unresolved.join('; ') : undefined };
+  } catch (error) {
+    return { commits: push.commits, unread: unreadBecause(error) };
+  }
+}
+
+/** What a failed GitHub read says: the status GitHub answered, or the network error. */
+function unreadBecause(error: unknown): string {
+  if (error instanceof GitHubError) return String(error.status);
+  return `network error (${error instanceof Error ? error.message : String(error)})`;
+}
+
+/**
+ * The full Archon sha a pin commit pins: `integration_revision_required` in its `PACK_PATH`, when
+ * that is a full sha extending the one the subject names. Anything else is unresolved, so a pin
+ * never stores a short sha or a version its subject does not claim.
+ */
+export function pinnedArchonSha(
+  named: string,
+  pack: string | null,
+): { sha: string; unresolved?: never } | { sha?: never; unresolved: string } {
+  if (pack === null) return { unresolved: `${PACK_PATH} missing` };
+  let value: unknown;
+  try {
+    value = (JSON.parse(pack) as { integration_revision_required?: unknown })
+      ?.integration_revision_required;
+  } catch {
+    return { unresolved: `${PACK_PATH} is not JSON` };
+  }
+  if (typeof value !== 'string' || !/^[0-9a-f]{40}$/.test(value)) {
+    return { unresolved: `${PACK_PATH} pins no full sha` };
+  }
+  if (!value.startsWith(named)) return { unresolved: `pins ${value}, not ${named}` };
+  return { sha: value };
+}
+
+/**
+ * `commits` with `archonSha` set on each pin whose `PACK_PATH` at that commit resolves, and why
+ * each other pin did not. A commit that is not a pin costs no request; GitHub's errors propagate.
+ */
+export async function resolvePins(
+  github: GitHub,
+  commits: Pick<Commit, 'id' | 'message' | 'timestamp'>[],
+): Promise<{ commits: VersionCommit[]; unresolved: string[] }> {
+  const resolved: VersionCommit[] = [];
+  const unresolved: string[] = [];
+  for (const commit of commits) {
+    const pin = parsePin(commit.message);
+    if (!pin) {
+      resolved.push(commit);
+      continue;
+    }
+    const pack = await github.fileAt(VERSIONS_REPOSITORY, PACK_PATH, commit.id);
+    const { sha, unresolved: reason } = pinnedArchonSha(pin.archonSha, pack);
+    if (reason !== undefined) unresolved.push(`${commit.id.slice(0, 8)}: ${reason}`);
+    resolved.push(sha === undefined ? commit : { ...commit, archonSha: sha });
+  }
+  return { commits: resolved, unresolved };
+}
+
+/**
  * `DECISIONS.md` as the default branch holds it now, when the push touched the file, else
  * undefined. Reading the branch rather than the pushed commit means a redelivered older push
  * cannot roll the table back to that push's file. When GitHub refuses or cannot be reached (a
@@ -210,8 +290,7 @@ async function decisionsAfter(
   try {
     text = await github.fileAt(VERSIONS_REPOSITORY, DECISIONS_PATH, branch);
   } catch (error) {
-    if (error instanceof GitHubError) return { unread: String(error.status) };
-    return { unread: `network error (${error instanceof Error ? error.message : String(error)})` };
+    return { unread: unreadBecause(error) };
   }
   if (text !== null) return { text };
   if (lastTouch.removed.includes(DECISIONS_PATH)) return { text: '' };
@@ -547,20 +626,30 @@ export async function writePullRequest(tx: Tx, factory: string, pr: PullRequest)
   );
 }
 
-export async function writeCommits(
-  tx: Tx,
-  commits: Pick<Commit, 'id' | 'message' | 'timestamp'>[],
-): Promise<void> {
+/**
+ * A pin is written with its resolved full sha (`VersionCommit.archonSha`), or with none while it is
+ * unresolved, so the version strip shows it at once and the map waits for the next backfill. An
+ * unresolved write never clears a sha already stored.
+ */
+export async function writeCommits(tx: Tx, commits: VersionCommit[]): Promise<void> {
   for (const commit of commits) {
     const pin = parsePin(commit.message);
     if (pin) {
       await tx.query(
         `INSERT INTO mc.pins (sha, archon_sha, reason, hypothesis, measure, committed_at)
           VALUES ($1, $2, $3, $4, $5, $6)
-          ON CONFLICT (sha) DO UPDATE SET archon_sha = EXCLUDED.archon_sha,
+          ON CONFLICT (sha) DO UPDATE SET
+            archon_sha = coalesce(EXCLUDED.archon_sha, mc.pins.archon_sha),
             reason = EXCLUDED.reason, hypothesis = EXCLUDED.hypothesis,
             measure = EXCLUDED.measure, committed_at = EXCLUDED.committed_at`,
-        [commit.id, pin.archonSha, pin.reason, pin.hypothesis, pin.measure, commit.timestamp],
+        [
+          commit.id,
+          commit.archonSha ?? null,
+          pin.reason,
+          pin.hypothesis,
+          pin.measure,
+          commit.timestamp,
+        ],
       );
     }
     const verdict = parseVerdict(commit.message);

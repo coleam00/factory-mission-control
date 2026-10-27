@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import type { Db } from '../scripts/lib/db';
-import { type Context, DECISIONS_PATH, prepare, type Write } from './ingest';
+import { type Context, DECISIONS_PATH, PACK_PATH, prepare, type Write } from './ingest';
 import { verify } from './signature';
 
 export interface WebhookOptions extends Context {
@@ -75,12 +75,22 @@ export function createWebhookApp({ secret, db, ...context }: WebhookOptions): Ho
     const delivery = `${event} ${c.req.header('x-github-delivery') ?? ''}`;
     const prepared = await prepare(event, payload, context);
     if (prepared) await writeDelivery(db, prepared.write, delivery);
-    const unread = prepared?.decisionsUnread;
-    if (unread === undefined) return c.json({ event, written: prepared !== null });
-    console.warn(
-      `${delivery}: ${DECISIONS_PATH} unread: ${unread}; commits written, decisions kept`,
-    );
-    return c.json({ event, written: true, decisions: `unread: ${unread}` });
+    const response: Record<string, string | boolean> = { event, written: prepared !== null };
+    const decisions = prepared?.decisionsUnread;
+    if (decisions !== undefined) {
+      console.warn(
+        `${delivery}: ${DECISIONS_PATH} unread: ${decisions}; commits written, decisions kept`,
+      );
+      response.decisions = `unread: ${decisions}`;
+    }
+    const pins = prepared?.pinsUnread;
+    if (pins !== undefined) {
+      console.warn(
+        `${delivery}: ${PACK_PATH} unread for pins: ${pins}; pins written without an Archon sha`,
+      );
+      response.pins = `unread: ${pins}`;
+    }
+    return c.json(response);
   });
 
   // Whatever fails inside one delivery answers that delivery with a 500, so GitHub shows the
