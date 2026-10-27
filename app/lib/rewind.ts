@@ -8,8 +8,8 @@ export interface RewindBranchRow {
 
 /**
  * Switches the server's sealing to `branch`, or back to its home branch for null, then reloads
- * `/rewind`: the page's Realtime client is bound to one branch, so every panel opens again on
- * the new one. Other open pages follow at their next seal (`followSwitch`). A refused switch
+ * the page it was called on: the page's Realtime client is bound to one branch, so every panel
+ * opens again on the new one. Other open pages follow at their next seal (`followSwitch`). A refused switch
  * throws the server's reason and leaves the page as it is.
  */
 export async function switchBranch(branch: string | null): Promise<void> {
@@ -24,7 +24,7 @@ export async function switchBranch(branch: string | null): Promise<void> {
       typeof answer?.error === 'string' ? answer.error : `switching answered ${res.status}`,
     );
   }
-  window.location.assign('/rewind');
+  window.location.reload();
 }
 
 let following = false;

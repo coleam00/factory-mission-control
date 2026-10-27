@@ -10,7 +10,7 @@ import { resolveBranchName } from './lib/target';
 export const REWIND_DAYS = 7;
 
 const USAGE =
-  "usage: bun run rewind:create <ISO time> [--parent <branch>] (makes Neon branch rewind-<time> from <branch>, default main, as it was at that time, at most 7 days back, and lists it on the dashboard's branch: a check-* branch, or main when the owner confirms at a terminal)";
+  "usage: bun run rewind:create <ISO time> [--parent <branch>] (makes Neon branch rewind-<time> from <branch>, default main, as it was at that time, at most 7 days back and no earlier than <branch>'s creation, and lists it on the dashboard's branch: a check-* branch, or main when the owner confirms at a terminal)";
 
 /** `2026-10-25T12:00:00Z` is `rewind-2026-10-25t12-00-00z`: UTC to the second, as a branch name allows. */
 export function rewindBranchName(at: Date): string {
@@ -56,6 +56,12 @@ async function createRewind(deps: Deps, value: string, parentName: string): Prom
   const branches = await api.listBranches();
   const parent = branches.find((branch) => branch.name === parentName);
   if (!parent) throw new Error(`no branch named ${parentName}`);
+  const born = new Date(parent.created_at);
+  if (at.getTime() < born.getTime()) {
+    throw new Error(
+      `refusing ${at.toISOString()}: ${parent.name} was created at ${born.toISOString()}, after that moment`,
+    );
+  }
   if (branches.some((branch) => branch.name === name)) throw new Error(`${name} already exists`);
 
   deps.out(`creating ${name} from ${parent.name} at ${at.toISOString()}`);

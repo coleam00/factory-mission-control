@@ -11,7 +11,7 @@ import {
   REALTIME_PROTOCOL,
   realtimeUrlFor,
 } from './live';
-import { UnknownRewindBranch } from './rewind';
+import { UnknownRewindBranch, UnlistedRewindBranch } from './rewind';
 
 const repoRoot = resolve(import.meta.dir, '..');
 const queries = loadLiveQueries(join(repoRoot, 'db', 'queries'));
@@ -303,6 +303,16 @@ describe('POST /api/rewind', () => {
     expect(failed.status).toBe(502);
     expect(await failed.text()).not.toContain('upstream detail');
     expect(failing.live.rewind).toBeUndefined();
+  });
+
+  test('a rewind-* branch the list does not show is a 404 with its reason and keeps home', async () => {
+    const { app, live } = fakeLive({
+      openRewind: () => Promise.reject(new UnlistedRewindBranch(REWIND)),
+    });
+    const res = await rewindTo(app, REWIND);
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ error: `${REWIND} is not in the rewind list` });
+    expect(live.rewind).toBeUndefined();
   });
 
   test('a seal for any branch but home is a 400 and seals nothing', async () => {

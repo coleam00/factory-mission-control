@@ -113,6 +113,16 @@ test('an unknown parent or an existing rewind of the same name is refused before
   expect(taken.mutatingCalls).toEqual([]);
 });
 
+test('a moment before the parent existed is refused, naming both times, before any mutation', async () => {
+  const r = run();
+  expect(await main(['2026-10-24T10:59:59Z', '--parent', 'check-abc'], r.deps)).toBe(1);
+  expect(r.mutatingCalls).toEqual([]);
+  expect(r.opened).toEqual([]);
+  const err = r.err.join('\n');
+  expect(err).toContain('2026-10-24T10:59:59.000Z');
+  expect(err).toContain('check-abc was created at 2026-10-24T11:00:00.000Z');
+});
+
 test('a failure after the branch exists deletes it again', async () => {
   const realtime = run({ throwsOn: ['getRealtime br-rewind'] });
   expect(await main(['2026-10-24T11:00:00Z'], realtime.deps)).toBe(1);
