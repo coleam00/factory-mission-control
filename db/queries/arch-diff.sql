@@ -1,7 +1,9 @@
 WITH firsts AS (
+  -- A version is a digest this factory's archon-loop laps ran (mc.versions), no other workflow's.
   SELECT DISTINCT ON (l.digest) l.digest, l.started_at AS first_run_at
   FROM mc.laps l
-  WHERE l.factory = $1 AND l.digest IS NOT NULL AND l.started_at IS NOT NULL
+  WHERE l.factory = $1 AND l.workflow_name = 'archon-loop' AND l.digest IS NOT NULL
+    AND l.started_at IS NOT NULL
   ORDER BY l.digest, l.started_at
 ),
 version AS (
