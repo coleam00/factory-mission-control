@@ -104,12 +104,19 @@ export function recordingDeps(options: {
     },
     async getEndpoint(id) {
       call(`getEndpoint ${id}`);
-      return { id, branch_id: 'br-target', host: `${id}.us-east-2.aws.neon.tech` };
+      return {
+        id,
+        branch_id: 'br-target',
+        host: `${id}.us-east-2.aws.neon.tech`,
+        current_state: 'active',
+      };
     },
     async branchEndpoints(branchId) {
       call(`branchEndpoints ${branchId}`);
       const id = 'ep-rewind-a1b2c3';
-      return [{ id, branch_id: branchId, host: `${id}.us-east-2.aws.neon.tech` }];
+      return [
+        { id, branch_id: branchId, host: `${id}.us-east-2.aws.neon.tech`, current_state: 'active' },
+      ];
     },
     async getBranch(id) {
       call(`getBranch ${id}`);
