@@ -7,7 +7,7 @@ const EVENTS = ['node_started', 'node_completed', 'node_failed'] as const;
 type StepEvent = (typeof EVENTS)[number];
 
 const USAGE =
-  'usage: bun run fixture:write step [--run <id>] [--step <step id>] [--event node_started|node_completed|node_failed] | label | comment | issue | pin | verdict [--pin <sha prefix>] | decision';
+  'usage: bun run fixture:write step [--run <id>] [--step <step id>] [--event node_started|node_completed|node_failed] [--error <text>] | label | comment | issue | pin | verdict [--pin <sha prefix>] | decision';
 
 export const WORKFLOW = 'archon-loop';
 export const FACTORY = 'mission-control';
@@ -106,8 +106,16 @@ export function nodeBlock(step: string, kind: StepKind, command: string): Record
   };
 }
 
-/** The keys Archon's executor writes into `data` for a node event, with fixture values. */
-export function eventData(step: string, event: StepEvent, now: Date): Record<string, unknown> {
+/**
+ * The keys Archon's executor writes into `data` for a node event, with fixture values. `error` is a
+ * failed event's error text.
+ */
+export function eventData(
+  step: string,
+  event: StepEvent,
+  now: Date,
+  error = `${step} failed: fixture error`,
+): Record<string, unknown> {
   const isScript = step === 'land';
   const startedAt = new Date(now.getTime() - 184_250).toISOString();
   const node = nodeBlock(step, isScript ? 'script' : 'command', COMMANDS[step] ?? step);
@@ -117,7 +125,7 @@ export function eventData(step: string, event: StepEvent, now: Date): Record<str
       ...node,
       timing: { startedAt, durationMs: 18_400 },
       duration_ms: 18_400,
-      error: `${step} failed: fixture error`,
+      error,
     };
   }
   const output = structuredOutputFor(step);
@@ -293,12 +301,12 @@ export async function writeRow(tx: Tx, name: RowKindName, at: Date, pin?: string
   return report;
 }
 
-async function writeEvent(tx: Tx, { step, event, run }: StepCli, at: Date): Promise<string> {
+async function writeEvent(tx: Tx, { step, event, run, error }: StepCli, at: Date): Promise<string> {
   const runId = run ?? (await runningRunId(tx));
   const before = await eventCount(tx, runId);
   const [inserted] = await tx.query(
     'INSERT INTO remote_agent_workflow_events (workflow_run_id, event_type, step_name, data) VALUES ($1, $2, $3, $4::jsonb) RETURNING jsonb_typeof(data) AS stored',
-    [runId, event, step, eventData(step, event, at)],
+    [runId, event, step, eventData(step, event, at, error)],
   );
   requireObject('the event data', inserted);
   return `events for run ${runId}: ${before} -> ${await eventCount(tx, runId)}`;
@@ -329,7 +337,7 @@ export const main: Main = async (argv, deps) => {
   });
 };
 
-type StepCli = { kind: 'step'; step: string; event: StepEvent; run?: string };
+type StepCli = { kind: 'step'; step: string; event: StepEvent; run?: string; error?: string };
 type Cli = StepCli | { kind: RowKindName; pin?: string };
 
 function parseCli(argv: string[]): Cli {
@@ -341,13 +349,16 @@ function parseCli(argv: string[]): Cli {
       step: { type: 'string' },
       event: { type: 'string' },
       pin: { type: 'string' },
+      error: { type: 'string' },
     },
   });
   const [kind, ...extra] = positionals;
   if (kind === undefined || extra.length > 0) throw new Error('name exactly one kind');
   if (isRowKind(kind)) {
     const { pin, ...stepOnly } = values;
-    if (Object.keys(stepOnly).length > 0) throw new Error('--run, --step and --event are for step');
+    if (Object.keys(stepOnly).length > 0) {
+      throw new Error('--run, --step, --event and --error are for step');
+    }
     if (pin === undefined) return { kind };
     if (kind !== 'verdict') throw new Error('--pin is for verdict');
     if (!/^[0-9a-f]{4,40}$/.test(pin)) throw new Error(`--pin takes a sha prefix, not ${pin}`);
@@ -357,7 +368,10 @@ function parseCli(argv: string[]): Cli {
   if (kind !== 'step') throw new Error(`unknown kind ${kind}`);
   const event = EVENTS.find((name) => name === (values.event ?? 'node_completed'));
   if (!event) throw new Error(`unknown event ${values.event}`);
-  return { kind, step: values.step ?? 'pick', event, run: values.run };
+  if (values.error !== undefined && event !== 'node_failed') {
+    throw new Error('--error is for --event node_failed');
+  }
+  return { kind, step: values.step ?? 'pick', event, run: values.run, error: values.error };
 }
 
 if (import.meta.main) await runCli(main);
