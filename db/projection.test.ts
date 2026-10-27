@@ -246,6 +246,7 @@ test('the eligibility upgrade keeps live history and installs the same functions
     expect(await runMigrations({ files: migrationFiles, db: upgraded })).toEqual([
       '0010_step_attempt_eligibility.sql',
       '0011_pin_full_archon_sha.sql',
+      '0012_arch_text_lf.sql',
     ]);
     expect(await snapshot(upgraded)).toEqual(before);
     expect(await projectionDefinitions(upgraded)).toEqual(await projectionDefinitions(db));
@@ -287,6 +288,7 @@ test('0011 rewrites a short pin to the one full sha it prefixes, and clears ambi
 
     expect(await runMigrations({ files: migrationFiles, db: historical })).toEqual([
       '0011_pin_full_archon_sha.sql',
+      '0012_arch_text_lf.sql',
     ]);
     const migrated = [
       { sha: 'p1', archon_sha: full },
@@ -298,6 +300,66 @@ test('0011 rewrites a short pin to the one full sha it prefixes, and clears ambi
     const [rewrite] = migrationFiles.filter((f) => f.name.startsWith('0011'));
     await historical.query(rewrite?.sql ?? '');
     expect(await pinShas()).toEqual(migrated);
+  } finally {
+    await historical.close();
+  }
+});
+
+test('0012 rewrites CRLF to LF in stored architecture texts, and changes nothing run again', async () => {
+  const historical = await archonDb();
+  const texts = () =>
+    historical.query(
+      `SELECT 'workflow' AS kind, name AS path, yaml AS text FROM mc.arch_workflows
+       UNION ALL SELECT 'text', path, text FROM mc.arch_texts
+       UNION ALL SELECT 'script', path, text FROM mc.arch_scripts
+       UNION ALL SELECT 'hook', path, text FROM mc.arch_hooks
+       ORDER BY kind, path`,
+    );
+  try {
+    await runMigrations({ files: migrationFiles.filter((f) => f.name < '0012'), db: historical });
+    const v = ['a1', 'f1'];
+    await historical.query(
+      `INSERT INTO mc.arch_versions (archon_sha, factory_sha, parsed_at) VALUES ($1, $2, $3)`,
+      [...v, NOW],
+    );
+    await historical.query(
+      `INSERT INTO mc.arch_workflows (archon_sha, factory_sha, name, file, yaml)
+       VALUES ($1, $2, 'loop', 'loop/loop.yaml', E'name: loop\\r\\nnodes: []\\r\\n')`,
+      v,
+    );
+    await historical.query(
+      `INSERT INTO mc.arch_texts (archon_sha, factory_sha, path, text) VALUES
+        ($1, $2, 'crlf.md', E'# Plan\\r\\n\\r\\nDo it.\\r\\n'),
+        ($1, $2, 'lf.md', E'# Plan\\n\\nDo it.\\n'),
+        ($1, $2, 'lone-cr.md', E'a\\rb\\n')`,
+      v,
+    );
+    await historical.query(
+      `INSERT INTO mc.arch_scripts (archon_sha, factory_sha, path, text)
+       VALUES ($1, $2, 'run.sh', E'#!/bin/sh\\r\\necho hi\\r\\n')`,
+      v,
+    );
+    await historical.query(
+      `INSERT INTO mc.arch_hooks (archon_sha, factory_sha, path, text)
+       VALUES ($1, $2, '.factory/hooks/gate.sh', E'exit 0\\r\\n')`,
+      v,
+    );
+
+    expect(await runMigrations({ files: migrationFiles, db: historical })).toEqual([
+      '0012_arch_text_lf.sql',
+    ]);
+    const migrated = [
+      { kind: 'hook', path: '.factory/hooks/gate.sh', text: 'exit 0\n' },
+      { kind: 'script', path: 'run.sh', text: '#!/bin/sh\necho hi\n' },
+      { kind: 'text', path: 'crlf.md', text: '# Plan\n\nDo it.\n' },
+      { kind: 'text', path: 'lf.md', text: '# Plan\n\nDo it.\n' },
+      { kind: 'text', path: 'lone-cr.md', text: 'a\rb\n' },
+      { kind: 'workflow', path: 'loop', text: 'name: loop\nnodes: []\n' },
+    ];
+    expect(await texts()).toEqual(migrated);
+    const [rewrite] = migrationFiles.filter((f) => f.name.startsWith('0012'));
+    await historical.query(rewrite?.sql ?? '');
+    expect(await texts()).toEqual(migrated);
   } finally {
     await historical.close();
   }

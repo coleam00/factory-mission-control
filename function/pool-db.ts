@@ -16,6 +16,10 @@ export function poolDb(pool: pg.Pool): Db {
     query: queryOn(pool),
     async transaction(fn) {
       const client = await pool.connect();
+      // The pool stops listening while a client is checked out, and a connection that dies emits
+      // `error` as well as rejecting the query in flight: unheard, that event ends the process.
+      const ignore = () => {};
+      client.on('error', ignore);
       // Set when ROLLBACK itself fails: the client is broken, so the pool destroys it.
       let broken: Error | undefined;
       try {
@@ -32,6 +36,7 @@ export function poolDb(pool: pg.Pool): Db {
         // The delivery's own error, never the rollback's.
         throw error;
       } finally {
+        client.off('error', ignore);
         client.release(broken);
       }
     },

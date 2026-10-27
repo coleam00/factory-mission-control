@@ -127,6 +127,11 @@ function strings(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string') : [];
 }
 
+/** A file's text with CRLF read as LF, so a version stores the same text from any checkout. */
+function readText(path: string): string {
+  return readFileSync(path, 'utf8').replaceAll('\r\n', '\n');
+}
+
 function commit(...files: string[]): string | null {
   const found = files.find((file) => existsSync(file));
   return found ? readFileSync(found, 'utf8').trim() : null;
@@ -147,7 +152,7 @@ function readSources(packDir: string): Source[] {
     for (const file of list(dir)) {
       if (!file.endsWith('.yaml') && !file.endsWith('.yml')) continue;
       const path = join(dir, file);
-      const yaml = readFileSync(path, 'utf8');
+      const yaml = readText(path);
       const doc = Bun.YAML.parse(yaml) as Record<string, unknown>;
       const name = str(doc.name);
       if (!name) throw new Error(`${slash(relative(packDir, path))} has no workflow name`);
@@ -156,7 +161,7 @@ function readSources(packDir: string): Source[] {
         file: slash(relative(packDir, path)),
         dir: entry,
         yaml,
-        lines: yaml.split(/\r?\n/),
+        lines: yaml.split('\n'),
         doc,
       });
     }
@@ -219,7 +224,7 @@ export function parsePack(packDir: string, templateDir: string): PackVersion {
     for (const file of list(dir)) {
       if (!file.endsWith('.md')) continue;
       const path = join(dir, file);
-      commands.push({ path: slash(relative(packDir, path)), text: readFileSync(path, 'utf8') });
+      commands.push({ path: slash(relative(packDir, path)), text: readText(path) });
     }
   }
   const commandText = new Map(commands.map((c) => [c.path, c.text]));
@@ -231,7 +236,7 @@ export function parsePack(packDir: string, templateDir: string): PackVersion {
     const files = entry === '.shared' ? filesUnder(root) : filesUnder(join(root, 'scripts'));
     for (const path of files) {
       if (path.endsWith('.md')) continue;
-      scripts.push({ path: slash(relative(packDir, path)), text: readFileSync(path, 'utf8') });
+      scripts.push({ path: slash(relative(packDir, path)), text: readText(path) });
     }
   }
 
@@ -352,7 +357,7 @@ export function parsePack(packDir: string, templateDir: string): PackVersion {
   });
 
   const hooks: Hook[] = filesUnder(join(templateDir, HOOKS_DIR)).map((path) => {
-    const text = readFileSync(path, 'utf8');
+    const text = readText(path);
     return { path: slash(relative(templateDir, path)), text, admittedAgents: admitted(text) };
   });
 

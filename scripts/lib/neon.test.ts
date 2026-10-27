@@ -112,7 +112,12 @@ test('createRewindBranch asks for the parent at that time, a read-write compute 
 });
 
 test("branchEndpoints lists the branch's endpoints with their hosts", async () => {
-  const endpoint = { id: 'ep-1', branch_id: 'br-1', host: 'ep-1.c-14.us-east-1.aws.neon.tech' };
+  const endpoint = {
+    id: 'ep-1',
+    branch_id: 'br-1',
+    host: 'ep-1.c-14.us-east-1.aws.neon.tech',
+    current_state: 'active',
+  };
   const { api, requests } = fakeNeon(() => ({ endpoints: [endpoint] }));
   expect(await api.branchEndpoints('br-1')).toEqual([endpoint]);
   expect(requests.map((request) => `${request.method} ${request.url}`)).toEqual([
