@@ -236,6 +236,7 @@ Steps, each as Archon would, checking that each statement commits:
 6. Insert a normal `node_started` and watch the lanes.
 Expect:
 - Every Archon statement in steps 1 to 5 commits; none waits on the lock (step 3 finishes inside the 2-second timeout) or raises.
+- Every committed Archon statement reads back exactly as written: after step 3 the run's status in Archon is the new status, not the old one (tightened 2026-10-26: H-32 covers every write kind under every lock).
 - `projection_errors` grows for the rows that could not be projected (at least steps 3 and 4) and the trigger never raised.
 - No dashboard trigger function runs for `provider_event` rows.
 - After step 6, the lanes update within 5 seconds: the projection still works after its own failures.
@@ -277,7 +278,7 @@ Author: writer, 2026-10-24, first set for the whole release (docs/mission-contro
 ## H-15 The map and every step detail are exactly the pinned code, and change when the code does
 Protects: 4.1; invariant 6; 11.4; journey 1; 4.2 architecture diff; invariant 3 (scenarios in the template)
 Touches: architecture job, home map, step detail, architecture diff
-Setup: the check app. Make a local copy of the pack and template in `fixtures/pack/`, and in the copy: change one sentence of `check-app`'s command file; add a step with a `when` condition to `archon-loop`; remove one inline subagent from another step; and write a scenario containing the canary `CANARY-PELICAN-2210` into the template's holdout scenario file. Run `bun run arch:parse` on the original and on the copy (local paths), so two versions exist.
+Setup: the check app. Make a local copy of the pack and template in `fixtures/pack/`, and in the copy: change one sentence of `check-app`'s command file; add a step with a `when` condition to `archon-loop`; remove one inline subagent from another step; and write a scenario containing the canary `CANARY-PELICAN-2210` into the template's holdout scenario file. Run `bun run arch:parse` on the original and on the copy (local paths), so two versions exist. Label each version the way the factory does, with a pin commit delivered as a push event on ai-software-factory in the appendix form (`Pin Archon <sha>: <reason>` naming the Archon commit by its first 8 characters, with `Hypothesis` and `Measure` trailers), and with laps of that version's digest inserted after its pin; never only the seed's form, where pin and architecture carry the identical full sha.
 Steps:
 1. Open the home map at each version. Click `check-app` and read its detail; click a ship stage that comes from an include of an include, if the pack has one.
 2. Compare the prompt, subagent instruction files, workflow YAML and `when` text on screen with the files at that version, byte for byte.
@@ -289,6 +290,7 @@ Expect:
 - Every text equals the file at that version exactly; switching versions switches the text.
 - The diff lists exactly the changed prompt, the added step and the removed subagent, and nothing else.
 - The canary appears nowhere.
+- No screen at either version says there is no architecture, nothing available, or not recorded: a pin naming the commit by a short sha finds the architecture the job stored (tightened 2026-10-26, escaped defect #157).
 Author: writer, 2026-10-24, first set for the whole release (docs/mission-control.prd.md)
 
 ## H-16 Health names each failed lap's cause and flags a stuck step at the right moment
@@ -393,13 +395,13 @@ Setup: the check app with two factories A and B (as in H-17). On ai-software-fac
 Steps:
 1. Open A's version strip and B's version strip; record every entry with its label, date, reason, Hypothesis and Measure, and the lap count of each version's scorecard.
 2. Compare A's X with B's X, if the comparison allows versions from two factories; otherwise compare A's X with A's Y.
-3. Push a pin P4 to ai-software-factory, with no run of any new digest after it.
+3. Push a pin P4 to ai-software-factory, with no run of any new digest after it. Record A's and B's version strips again.
 Expect:
 - A's X is labelled P2 (the latest pin before A's first X run at t4); B's X is labelled P3 (the latest pin before B's first X run at t7). They are two versions, each with only its own factory's laps: A's X scorecard counts no B lap and B's none of A's.
 - Y and Z are two separate entries, both labelled P2; neither is merged into the other or into X.
 - W, whose first run precedes every pin, is listed on A's strip with its laps, and its pin, reason, Hypothesis and Measure read "not recorded"; it is never labelled P1.
 - The lap with no digest is counted in no version's scorecard and is never shown as part of any pinned version.
-- P4, which no run has used, adds no version to either strip and appears on no scorecard.
+- Pins are shared (changed 2026-10-27, owner decision on #85, restated on #27 question 7): P1 and P4, which no lap in any factory has run, each show on both A's and B's strips, since both factories have laps, marked NOT YET RUN, with their reason, Hypothesis and Measure. Neither is a version with laps: neither has a scorecard or a lap count, neither takes any lap or digest from either factory, and neither changes any other entry's label or count. P4 shows on both strips after step 3, and so does P1 from step 1.
 - A comparison across factories, if offered, never shows one combined number for both; each side names its factory and the laps it rests on.
 Author: writer, 2026-10-25, coverage of PRD 11.2 version row and 4.2 version strip before the loop builds them
 
@@ -539,3 +541,374 @@ Expect:
 - Clicking it opens that step's full detail, not ship's.
 - After step 3, its count returns to 0 and the next step's rises to 1 within 5 seconds (`judges/liveness.js` PASS).
 Author: writer, 2026-10-26, escaped defect #105 (steps inside an included block had no detail page)
+
+## H-32 No lock on any dashboard table ever makes any Archon write fail or wait
+Protects: invariant 1 (never make an Archon write fail or wait; a trigger never raises); 11.4 (every trigger body catches every error into `projection_errors`); engineering.md ("Nothing writes to Archon's tables. Triggers on them catch every error into projection_errors")
+Touches: every dashboard trigger on Archon's tables (runs and events, and any added later: versions, pins, laps, steps, verdicts), every dashboard table they write
+Setup: a check branch with the migrations applied. List every table the repository's migrations created (in every schema they use, not only the one the trigger names suggest) as `dashboard_tables`, and every trigger on Archon's tables (`pg_trigger` on `remote_agent_workflow_runs` and `remote_agent_workflow_events`, with the operations each fires on) as `archon_triggers`. Insert two running `archon-loop` laps for the factory to act on.
+Steps: for each dashboard table T in turn, a second session takes `LOCK TABLE T IN ACCESS EXCLUSIVE MODE` and keeps it (confirm in `pg_locks` that it is granted). Then, in a session that behaves as Archon would (its own default settings, plus `statement_timeout = 2s`), make each of these writes, one statement each, timing each and noting any error:
+1. Insert an `archon-loop` run with a digest no version has yet, and one with a digest an existing version has.
+2. Update a running lap to `completed` with `completed_at`; update another to `failed`; update a run without changing its status (metadata or `updated_at` only).
+3. Insert `node_started`, `node_completed` (with `structured_output`, `cost_usd`, `duration_ms`), `node_failed` and `node_skipped` events.
+4. Insert a `provider_event` row.
+5. Make one write of every other kind any recorded trigger fires on (every operation of every trigger in `archon_triggers`).
+6. Read each written Archon row back. Release the lock, reset the laps, and move to the next table.
+Then, for a run status update and a `node_completed`, repeat under two more kinds of contention on the dashboard row the write would change (for example that lap's row in the laps table): a second session holding `SELECT ... FOR UPDATE` on it, and a second session that updated it and has not committed. Repeat those two writes also inside one Archon transaction (`BEGIN`, the event insert, the run update, `COMMIT`).
+Record the run in the shape `judges/archon-writes.js` documents.
+Expect:
+- Every Archon write, under every lock, commits within 2 seconds and Archon's session receives no error of any kind: not a lock timeout, a statement timeout, a deadlock, a serialization failure or an error re-raised from a trigger. Its row then reads back exactly as written (a status update leaves the new status in Archon).
+- An Archon write that fails or is cancelled is a FAIL on its own, whatever the dashboard shows afterwards and even if `projection_errors` records it.
+- `bun .factory/holdout/judges/archon-writes.js <record.json> archon` prints PASS. A missing combination of table, write kind and lock is INCONCLUSIVE, never PASS.
+Author: writer, 2026-10-26, escaped defect #114 (Archon's run-status update was cancelled while a dashboard table was locked)
+
+## H-33 After a lock, a lap Archon finished never stays running, and nothing is lost silently
+Protects: invariant 1; 11.4 (`projection_errors`); 4.3 lanes and recent laps; invariant 4 (every number can be traced); 8.1
+Touches: projection triggers, `projection_errors`, the lap repair (`bun run reconcile:laps`), lanes, recent laps, health, scorecard
+Setup: the check app on a check branch, with the factory page, health and the scorecard for the laps' version open (reload marker set). Note the `projection_errors` count. Insert, as Archon would, four running `archon-loop` laps L1..L4 with a step each.
+Steps:
+1. In a second session take an access exclusive lock on the dashboard's laps table (repeat the whole scenario once for each other dashboard table the projection writes, as listed in H-32, starting from fresh laps).
+2. While the lock is held, as Archon would: mark L1 `completed` with `completed_at` after a `land` `node_completed` with `outcome = merged`; mark L2 `failed`; insert `node_completed` and the next `node_started` for L3; leave L4 alone. Record each statement's outcome as in H-32.
+3. Release the lock. With no further Archon write, record what the lanes, recent laps and health show, and the `projection_errors` count.
+4. Run `bun run reconcile:laps`. Record the screens again, without a reload.
+5. Run it a second time; then restart serve and reload. Record the screens each time.
+6. Insert a `node_started` for L4 and watch the lanes.
+Expect:
+- Every Archon write in step 2 commits within its bound (as H-32); if any did not, this scenario FAILs on that alone.
+- After step 3, any lap the screens show wrong is matched by new `projection_errors` rows: the dashboard never misses an update without recording it.
+- After step 4, within 5 seconds and without a reload: L1 and L2 are gone from the lanes and listed on recent laps (merged, and failed), with durations and costs from Archon's rows; L3's lane shows its new step and cost; L4 is unchanged; health and the scorecard agree with the lanes (L1 a merge, L2 a failed lap, each counted once).
+- Step 5 changes nothing: a second repair and a restart show the same, with no lap counted twice.
+- After step 6, L4's lane moves within 5 seconds: the projection works again by itself.
+- `bun .factory/holdout/judges/archon-writes.js <record.json> repair` prints PASS, and the `archon` part on the step 2 attempts also prints PASS.
+Author: writer, 2026-10-26, escaped defect #114 (a finished run stayed Running on the lanes after a lock, with no projection error recorded)
+
+## H-34 A lock held across a whole lap, longer than Archon would ever wait, still costs Archon nothing
+Protects: invariant 1 (never fail or wait); 11.4; 11.2 version keying (a new digest during the lock); 4.3 lanes and recent laps
+Touches: every projection trigger including versions and pins, the lap repair, version strip, lanes, recent laps, one lap
+Setup: the check app; note the version strip and the `projection_errors` count.
+Steps:
+1. A second session opens a transaction, takes access exclusive locks on every dashboard table the projection writes at once, and holds them for 60 seconds.
+2. During those 60 seconds, as Archon would, run a whole lap from nothing with a digest no version has: the run insert, `node_started` and `node_completed` for every loop step (pick, claim, build, ship, subject, briefs, check-app, evidence, review, land with `outcome = merged`), and the run's update to `completed`. Also, while the lock is held, deliver a pin push as GitHub would. Time every Archon statement.
+3. Let the locks go by rolling the second session back (not committing). Run `bun run reconcile:laps`, and any repair or reconcile the app offers for versions.
+Expect:
+- Every Archon statement in step 2 commits within 2 seconds of being sent and none receives an error; the whole lap's writes finish long before the locks are released.
+- After the repair, without a reload: the lap is on recent laps as merged (never on the lanes), with every step on its one-lap page and a cost equal to the sum of its steps' `cost_usd`; its digest is one new entry on the version strip labelled by the latest pin before its first run, counting this lap once.
+- `judges/archon-writes.js` (both parts) prints PASS on the recorded run.
+Author: writer, 2026-10-26, escaped defect #114 (class: every Archon write any trigger reacts to, under a lock on every projected table)
+
+## H-35 The repair never makes Archon wait and never writes to Archon
+Protects: invariant 1; invariant 2 (nothing writes to Archon's tables); engineering.md; 11.4
+Touches: the lap repair (`bun run reconcile:laps`), any other reconcile or backfill that writes the projected tables, projection triggers
+Setup: a check branch with the seed and at least 200 laps (insert more as Archon would if needed). Snapshot Archon's tables: row counts, latest timestamps, and a checksum of every row.
+Steps:
+1. Start `bun run reconcile:laps`. While it runs, as Archon would, insert step events and update run statuses continuously (at least one write every 100 ms, covering each kind in H-32), timing each.
+2. Run it again while a second session holds an access exclusive lock on the dashboard's laps table, and again with the database becoming unreachable partway (a wrong password on a fresh start).
+3. Snapshot Archon's tables again, accounting for the step 1 writes.
+Expect:
+- Every Archon write in steps 1 and 2 commits within 2 seconds with no error; the repair's own locks never make Archon wait.
+- Archon's tables differ from the snapshot only by the writes made in step 1: the repair changed no Archon row.
+- In step 2 the repair either waits or exits non-zero with a plain message naming the cause; it never leaves the lanes showing a lap that is not running once a later clean run finishes, and that clean run puts everything right (as H-33).
+- `judges/archon-writes.js` (both parts) prints PASS on the recorded run.
+Author: writer, 2026-10-26, escaped defect #114 (class: the repair path must hold invariants 1 and 2 too)
+
+## H-36 Every open window tells the truth about which moment it is showing
+Protects: 4.7; journey 5; invariants 4 and 5; 11.6
+Touches: rewind switching, shared header, every panel, live-query renewal, browser history, factory navigation
+Setup: the check app with two factories and two valid rewind branches from different moments T1 and T2. Arrange distinguishable laps, labels, owner questions, and default-branch verdicts before T1, between T1 and T2, and after T2. Use only check-derived branches; record their identities privately. Open three tabs on different screens and set reload markers.
+Steps:
+1. Select T1 in one tab and T2 in another, leaving the third on live. Navigate within each tab through the factory page, owner queue, testing, health, versions and a lap that existed at its displayed moment.
+2. Leave the tabs through three seal renewals, then write a new step event and owner label to the live check branch. Record the selected moment, factory, and received facts in every tab.
+3. Throttle one tab's responses, start a switch to T1, then switch to T2 before the first switch completes. Change factory while that request is outstanding. Release the delayed responses.
+4. Use Back and Forward, close and reopen a tab using its visible address, and switch each surviving tab back to live. Write another step event after the restored live subscriptions are ready.
+Expect:
+- Every visible fact and link belongs to the factory and moment the tab actually names. A late response, another tab's selection, a renewal or history navigation never puts live facts under a rewind label, past facts under a live label, or one factory's facts under another's name.
+- Whether the app shares a selection between tabs or keeps it per tab, any selection change is visible in every affected tab and all affected panels follow it; no tab silently changes its data source while retaining its former context label.
+- Every tab still displaying T1 or T2 excludes facts first created after that moment. The live tab receives the live writes, and restored live tabs receive the final write within 5 seconds with their reload markers intact; record these writes for `judges/liveness.js` with `require_open_seconds: 0`.
+- Navigation and retries change no row on either rewind branch. No database credential or Realtime secret appears in any captured browser response.
+Author: writer, 2026-10-26, escaped defect class #118 and PRD 4.7 cross-tab and cross-factory journey
+
+## H-37 A missing past moment never masquerades as a different moment
+Protects: 4.7; invariant 7; 11.3; engineering.md empty states
+Touches: rewind list, branch selection, failed transitions, shared header, every screen
+Setup: the check app first with no rewind branches, then with two check-derived rewind branches having different facts. Keep one rewind selected in a second tab while operating the first. Never delete or alter a branch belonging to another run.
+Steps:
+1. With no rewinds, open the rewind controls on every screen that offers them and navigate away and back.
+2. With both rewinds present, start a switch and interrupt that switch's network request. Repeat with branch discovery unavailable, and with the selected rewind deleted through the owner's branch-management path after its tab is already open.
+3. Restore connectivity, use the app's controls to select the remaining rewind and return to live, and then reopen the stale address or selection for the deleted branch.
+4. From the remaining rewind, use every visible navigation control and inspect the selected factory, moment, page data and external links.
+Expect:
+- An empty list is an empty state, with no blank branch option, phantom destination or action that silently selects nothing. The real live context remains usable.
+- A failed or stale selection never displays live data, another rewind's data, or another factory's data as though it came from the requested moment. It either preserves the previous context honestly or explains that the requested past moment is unavailable; it does not remain an unexplained spinner.
+- A subsequent valid selection works. Every screen and external link is consistent with the selected factory and displayed moment, and no action writes to the rewind branch.
+- Errors reveal no connection string, secret, branch credential or token. No browser action creates a rewind branch; creation remains an owner command.
+Author: writer, 2026-10-26, escaped defect classes #121 and #122, PRD 4.7 state boundaries
+
+## H-38 A lost renewal does not strand the dashboard after the connection returns
+Protects: 8.1; invariant 5; invariant 7; 11.1 seal lifetime; 4.7
+Touches: live-query lifecycle, renewal, navigation, all live panels and rewind context
+Setup: the check app with a running lap; open home, factory and one-lap screens in separate tabs, with reload markers and network recording. Also open a rewind tab with visibly different facts. Use browser request interception or network controls without changing application code or server clocks.
+Steps:
+1. Keep the tabs open past three normal seal renewals and record a live step transition.
+2. Make the sealing service unreachable until the current seals expire. During the interruption, navigate between two screens, open and close a step detail, and change the selected factory in one tab. Record what the pages and request log do.
+3. Restore the sealing service. After subscriptions are ready, insert a new step event and then a GitHub label affecting the open panels. Do not reload or press a refresh control.
+4. Repeat with a rejected renewal response instead of a disconnected request. Close a tab and navigate away from a subscribed screen while its renewal is pending; release the delayed response afterward.
+Expect:
+- Unavailable data is never presented as a live, ready subscription, and navigation remains usable during the interruption. A rejected or expired seal does not trap the page in a visible error/reconnect cycle after the service is healthy.
+- Recovery obtains usable sealed queries automatically, without polling panel data or accepting an expired seal. Each post-recovery write appears in every relevant live panel within 5 seconds; `judges/liveness.js` passes with the recorded post-recovery writes and `require_open_seconds: 0`.
+- A completed late renewal cannot resurrect a closed screen's data, undo the chosen factory or rewind, or replace a newer subscription with the expired one. The rewind tab continues to show only its past facts.
+- The request record contains no secret and no browser-originated SQL; errors are safe to display. The original tabs retain their reload markers.
+Author: writer, 2026-10-26, escaped defect class #120 and PRD 8.1 recovery across seal boundaries
+
+## H-39 A lap that revisits a step keeps all of its work in its story and totals
+Protects: 4.6 every step the lap ran; 4.2 measure definitions; 4.3 lanes and recent laps; invariant 4
+Touches: one-lap history, live lanes, recent laps, scorecard, testing, health
+Setup: the check app with a running loop lap of a known factory and digest. In Archon's source rows, give separate attempts of the same step visibly different start times, models, tokens, costs and durations. Use distinct source events for distinct attempts; retain their source identities for the evidence.
+Steps:
+1. Let a build attempt fail, then run a second build attempt to completion. Run check-app twice, with one failed attempt and one completed attempt, each carrying its own duration and cost. Record the lap page and lane after every transition.
+2. Send the lap through a sent-back review, more work, a refused land attempt with a reason, and finally a merged land attempt; finish the run. Open its recent-lap row, one-lap page, scorecard and testing screen.
+3. Reconcile or backfill the same source history through the documented command, then reload the screens. Insert a second loop lap with the same step names but different values, and a non-loop run with those names, in the same factory.
+Expect:
+- The one-lap page retains every actual attempt with its own recorded start, duration, model, tokens and cost; later attempts do not erase earlier work or borrow another run's details. The running lane names the current attempt and its cost so far includes the earlier attempts.
+- After completion, the final lap outcome agrees across recent laps and the lap page, while its history still explains the send-back and refusal with the recorded reason. Scorecard send-backs, refusals and merges count laps as defined, without counting the repeated attempts as extra laps.
+- Costs and app-check share include every applicable attempt, including failed check-app work. `judges/scorecard.js` passes on an export of the source events and observed values; the export contains attempt events, not the dashboard's already-aggregated rows.
+- Testing preserves the applicable check evidence for the lap without leaking holdout text. Reconciliation adds no duplicate attempt, lap, cost or verdict; the second lap remains separate, and the non-loop run does not inflate loop scorecards.
+Author: writer, 2026-10-26, escaped defect class #116, PRD 4.2 and 4.6 repeated-work journey
+
+## H-40 Resolving and reopening an owner thread changes the whole queue
+Protects: 4.4 open issues and open questions; journey 4; invariant 2; 11.6
+Touches: owner queue, question ingestion, issue lifecycle, health workable count, graph, factory navigation
+Setup: the check app with two factories whose repositories both have an Owner decisions needed issue and overlapping issue numbers. Each contains multiple questions with options, recommendation, default and date; each factory also has a separate needs-owner issue. Open both queues and one factory's graph and health screens.
+Steps:
+1. Edit one owner's question while keeping another unchanged; remove a resolved question; then close that entire Owner decisions needed issue while its former body still contains a question.
+2. Close a needs-owner issue without removing its label. Reopen that issue, then remove its label. Reopen the decisions issue with only its still-open questions in the body.
+3. Redeliver each event with the same delivery identity and run the documented reconcile. Switch between factories and follow each surviving queue entry's GitHub link.
+4. On a rewind preceding the resolutions, inspect the same queue and its links, then return to live.
+Expect:
+- Only currently open questions and open labelled issues appear in the live queue. Closing a thread removes its entries even if its old body or labels remain; reopening restores only questions currently in its body and issues still bearing the label.
+- Every surviving entry retains its complete options, recommendation, default and date, with a waiting age and a link to the correct repository's thread. Redelivery and reconcile create no duplicate entry or reset an unchanged question's waiting age.
+- Changes in one repository leave the other factory's queue unchanged despite equal issue numbers. Health and graph reflect the changed open/labelled state using the same issues.
+- The rewind shows the earlier queue, with an explicit past context, and returning live restores the resolved state. The dashboard offers no action that answers, dismisses or edits a question itself.
+- Record each affected live panel after each source write; `judges/liveness.js` passes with `require_open_seconds: 0`.
+Author: writer, 2026-10-26, PRD 4.4 coverage of lifecycle, repository identity and rewind interactions
+
+## H-41 Health judges the factory and step whose history it is showing
+Protects: 4.8; 11.6; invariant 4; invariant 5
+Touches: health history window, failed-lap causes, pending and paused transitions, lanes, factory switching
+Setup: the check app with two factories that both run a step S. Give A's latest 50 completions of S identical short durations and B's latest 50 identical much longer durations; also give A a different step with long durations. Record source identities and timing. Add pending and paused loop runs in each factory.
+Steps:
+1. Start S in both factories at the same time; watch both health screens before and after A's threshold, and later beyond B's threshold, recording elapsed times and flags.
+2. Add newer completions of S in A that move its latest-50 window; keep a running A step visible while the new history arrives. Record the window and observed flag at each observation.
+3. Move A's pending run to running and its paused run back to running, then finish one and fail the other with an infrastructure error on its failing step. Include an earlier successfully completed step with a different error-like phrase in its ordinary output.
+4. Switch factories and revisit the affected laps through their health links.
+Expect:
+- A's threshold uses only A's last 50 completions of S, and B's uses only B's; another step, another factory and completions outside the window cannot affect it. New completions update the relevant history without a reload.
+- `judges/health.js` passes for each factory and each fixed observation window separately, using source-derived history and observations on both sides of that window's threshold. Do not combine observations from different windows in one judge case.
+- Pending and paused lists track the runs' current state and stop listing them when they leave it. The final failed lap is classified from its failing step's error, not an unrelated earlier output; completed runs do not remain active lanes.
+- Every count and linked lap belongs to the selected factory. Record state transitions for `judges/liveness.js` with `require_open_seconds: 0`; all affected panels update within 5 seconds.
+Author: writer, 2026-10-26, PRD 4.8 coverage of changing populations and per-factory history
+
+## H-42 A displayed pin leads to that exact version's evidence
+Protects: 4.2 version strip, decisions and architecture diff; 11.2 digest keying; 11.5 SHA-prefix joins; 11.6
+Touches: version links, decisions, improvements, comparison, architecture detail, browser history
+Setup: the check app with two pin commits with different full SHAs, distinct parsed architecture and different lap populations. Their labels use shortened SHAs. Add decisions whose Version lines name unique prefixes of the pins, and a verdict for one pin. Use a second factory with an independently recorded version to detect cross-factory resolution.
+Steps:
+1. Starting from each version-strip entry, follow the links into its scorecard, decisions, improvements and architecture detail, then into a comparison and architecture diff with the other version. Record the full source pin, digest and factory behind each destination.
+2. Open each app-generated link directly in a new tab and use Back and Forward through the journey. Repeat after a late-arriving pin legitimately changes a version's label while its digest and laps stay the same.
+3. Deliver a decision with a SHA prefix shared by two available pin commits and then a corrected unambiguous Version line. Also open an app address with a version identity that is absent from that factory.
+Expect:
+- Each app-generated link resolves to the exact version, factory and pinned code that its label represents, even when display labels shorten a SHA or a version's label changes. A full SHA, digest and display prefix are not silently interchanged as different identities.
+- The comparison's lap populations and architecture diff remain the selected pair throughout navigation and relabelling. No destination shows another version's data or reports a real, linked version missing merely because the display shortened its label.
+- A decision with a unique prefix links to the matching pin. An ambiguous prefix does not silently link to one arbitrary pin; after correction, the decision links to its unambiguous version without a reload.
+- An identity that is absent from the selected factory yields an honest missing state rather than another factory's version or an outage. No holdout scenario text appears while navigating architecture evidence.
+Author: writer, 2026-10-26, escaped defect class #115 and PRD 4.2/11.5 evidence-identity journey
+
+## H-43 Long and changing facts remain readable in every important state
+Protects: 8.3 design contract; engineering.md design and empty states; journeys 2, 4 and 5
+Touches: owner queue, one lap, health, testing, factory and rewind controls, shared layout
+Setup: the check app with realistic but lengthy owner options and recommendations, a long repository name, a long failed-step reason, many attempts on a lap, and a long evidence link. These facts arrive through the documented source surfaces. Start at both 1440 and 390 px widths; use the existing design probe without exceptions or threshold changes.
+Steps:
+1. Open the owner queue with all question details, the lap with repeated attempts, failed-lap health details, testing evidence, and each factory or rewind menu. Run the design probe and capture screenshots in every open state.
+2. Deliver an edit that lengthens the currently visible question and an error that lengthens the current lap's history while the panel remains open. Repeat the probe and screenshots without reloading.
+3. Move through no-data, one-factory, unknown-factory, failed-live-connection and unavailable-rewind states using the app's controls or a stale bookmark. In each, inspect and use every visible control, including the control that leaves the state.
+Expect:
+- The design probe reports zero failures for every recorded state at both widths: token colors and fonts, text contrast at least 4.5:1, no horizontal overflow, and an accessible name on every control. No browser-default control or light-mode island appears during a transition or open menu.
+- Questions, error reasons and evidence remain readable and reachable; a panel or menu does not cover the only way to continue the journey. Empty states remain one sentence with at most one button and do not offer an empty factory or branch destination.
+- Newly arrived content satisfies the same design contract as first-load content. Screenshots are compared against the committed console references, with the judgement recorded; a subjective disagreement goes to the owner rather than changing the probe.
+Author: writer, 2026-10-26, PRD 8.3 coverage of live content, narrow screens and recovery states
+
+## H-44 An unrecognized address does not inherit a factory it never selected
+Protects: 11.6 every view keyed by factory; invariant 4; engineering.md empty states
+Touches: shared header, unmatched routes, browser history, factory identity, recovery navigation
+Setup: the check app with two factories having distinguishable names, repositories and running-lap counts. Derive valid addresses from the app's links, and prepare unknown addresses outside any factory route as well as addresses with a valid factory segment but an unknown remaining path.
+Steps:
+1. From A's lap and B's owner queue, navigate to each unknown address. Repeat in fresh tabs and after switching factory. Record the page, shared header, links and numbers.
+2. On each unknown page, use its offered recovery link if any, then Back and Forward. Open a removed factory's formerly valid address after serve has restarted with that factory absent.
+Expect:
+- An address outside every factory route presents an honest missing-page state and carries no selected factory's name, repository, console link or running-lap count left over from a prior screen or chosen by default.
+- An unknown path that explicitly names a real factory may keep that factory's context, but never shows another factory's facts or claims that unrelated content belongs to the requested path.
+- A removed factory's address shows it missing without inheriting another factory. Recovery reaches a real screen with matching identity; Back and Forward restore the same truthful missing states.
+- The missing state is one sentence with at most one button, with no indefinite spinner and no false live-service outage message.
+Author: writer, 2026-10-26, escaped defect class #119, unknown-address identity across the full navigation journey
+
+## H-45 Switching context meets the same timing bar as opening it
+Protects: 8.4; engineering.md approved subscription and readiness timing; 4.7 same queries; 11.6
+Touches: every live query, route navigation, rewind and factory switching, architecture comparison
+Setup: the check app on the seed, with a second factory and a check-derived rewind. Use unthrottled browser sessions at 1440 and 390 px. Observe subscription sends, delivered first snapshots and actual Realtime ready states; never count cached rows as a delivered subscription.
+Steps:
+1. Measure the home screen from a cold opening. Navigate through every reachable live screen, including a version comparison, architecture diff, factory page, owner queue, testing, health and one lap; measure each new panel subscription and readiness.
+2. On the home screen and every screen that offers the controls, switch live to rewind and back, and switch factories and back. Measure each resulting panel and subscription afresh; keep the initial-load and post-switch records separate.
+3. Repeat after the app has remained open through three seal renewals. Collect records for the existing `judges/speed.js`: ready_ms is time since navigation or the explicit context-switch action, first_snapshot_ms is time since that panel's subscribe was sent. Run the judge separately for each screen/transition class, with both widths represented.
+Expect:
+- Every panel becomes genuinely ready within 2000 ms and every newly subscribed live query delivers its first snapshot within 500 ms. The same limits apply after a rewind/factory switch, route navigation and return to a previously visited screen; no transition is exempt because initial load passed.
+- Every recorded speed-judge invocation prints PASS. A missing observation or missing transition remains incomplete evidence, not a passing timing; a slow observation is a failure even if other observations or a mean are fast.
+- The delivered rows match the selected factory, moment and version, and readiness never comes from cached or fabricated initial rows. Timing evidence distinguishes the subscription clock from the connection/readiness clock without loosening either bar.
+Author: writer, 2026-10-26, escaped defect class #129 and PRD 8.4 performance across the full navigation journey
+
+## H-46 Comparing versions only asks for choices the factory actually offers
+Protects: 4.2 side-by-side comparison; 11.6 factory-specific views; engineering.md empty states; 8.3
+Touches: version strip, comparison controls and guidance, live version availability, factory navigation
+Setup: the check app with the owner's shared-pin behavior: factory A has laps, but its displayed pins are unused there and cannot be selected for comparison; factory B has selectable versions. Include unused pins among the selectable entries. Record actual selectable version identities separately from the factory's total lap count.
+Steps:
+1. Open A's versions screen directly, then arrive there from B's comparison using the app's factory controls. Read the guidance, try every visible comparison control, and inspect which entries a keyboard user can choose.
+2. Through the normal source surfaces, make a first version selectable in A and then a second. Keep the screen open through both updates; choose the first when possible, then complete the comparison when the second becomes available. Record the guidance and selected identities after each change.
+3. From that comparison, move to a factory with fewer selectable versions and return. Use Back and Forward, reopen the comparison address directly, and attempt to choose an unused pin alongside a selectable version.
+Expect:
+- Guidance describes a reachable next step in the current factory. When no comparison can be formed, the screen explains the missing comparison data rather than instructing the user to make an impossible selection; the presence of unrelated laps or visible unused pins cannot make that guidance claim a comparison is available.
+- As usable versions arrive, guidance and controls agree with what can actually be selected. Once a valid pair is available, the user can reach its comparison without reloading; the comparison names that pair and uses only its factory's laps.
+- An unused pin is never silently substituted for a selectable version or treated as a lap-bearing version. Switching factories or following stale history never leaves an actionable comparison assembled from a previous factory's choices.
+- If a saved comparison is unavailable in its current context, the page explains that state and offers a usable way onward instead of a misleading selection prompt, a fabricated comparison, or a loading loop. Empty states follow the existing one-sentence, at-most-one-button rule; no new visual style or comparison policy is prescribed.
+Author: writer, 2026-10-26, escaped defect class #134, PRD 4.2 comparison journey with unused pins and changing availability
+
+## Shared setup for H-47..H-55: real pins and their commits in every form
+
+"Real pins" means pin commits delivered as push events on ai-software-factory exactly as the appendix writes them: subject `Pin Archon <sha>: <reason>` (the reason may itself contain a colon or a semicolon), a blank line, `Hypothesis:` and `Measure:` trailers, and after them a `Co-Authored-By:` trailer, the way commits on that repository end. The pin commit's own id in the push event is its full 40-character sha. "An architecture for commit C" means `bun run arch:parse <archon-sha> <factory-sha>` run for C, with whichever sha form the scenario says it is given. Unless a scenario says otherwise the Archon commits are commits of a local git repository holding a copy of `fixtures/pack/` (pack and template), each changing something visible: C1 as copied; C2 with one sentence of `check-app`'s command file changed and a step with a `when` condition added to `archon-loop`; C3 with one inline subagent removed from another step. If the job cannot read a commit of a local repository, use real `coleam00/Archon` commits whose packs differ; if neither works, the scenario is INCONCLUSIVE, not PASS. A version exists when laps of its digest are inserted, as Archon would, after its pin and before the next one. "Every surface" means: the home map as it first opens (no version picked), the map at that version picked from the version strip, the detail of `check-app` and of one ship stage opened by clicking, the same step detail addresses opened directly in a fresh tab and reloaded, and the architecture diff against each other version. Record each screen's text and every panel's `data-state`.
+
+## H-47 Pins written the factory's way show their architecture on every screen, whichever form each side used
+Protects: 4.1 (the home map is the pinned version; every step detail comes from the pinned code); 4.2 architecture diff; invariant 6; 11.2 Architecture row; 11.4 architecture job; 11.5 pin format; appendix pin commit
+Touches: push ingestion and the pin parser, the architecture job, the join from a version to its architecture, home map, step detail, architecture diff, version strip
+Setup: the check app on the seed, plus three versions from real pins: V1 pinned on C1 by its first 8 characters, its architecture parsed with C1's full 40-character sha; V2 pinned on C2 by its full 40 characters, its architecture parsed with C2's first 8 characters; V3 pinned on C3 by its first 12 characters, its architecture parsed with C3's full sha. V3 is the latest version.
+Steps:
+1. Open every surface for V1, V2 and V3, and for every seed version.
+2. Open the architecture diff for V1 against V2, V2 against V3, and V1 against V3, in both orders where the screen lets you choose the order.
+Expect:
+- The home map as it first opens shows V3's architecture: C3's steps, without the removed subagent.
+- At each version, the map and every step detail show that commit's pack and template, byte for byte as the files are at that commit: V2's `check-app` prompt carries the changed sentence and V1's does not; the step added in C2 is on V2's and V3's maps and not on V1's.
+- A step detail opened directly and reloaded shows the same text as the one reached by clicking.
+- The diffs list exactly what changed between the commits (the changed prompt and the added step between V1 and V2, the removed subagent between V2 and V3, all three between V1 and V3), never "no changes", and never every workflow added or removed.
+- No surface for any of these versions, and none for a seed version, says there is no architecture, nothing available, not recorded, or not found, and every panel reaches `data-state="ready"`.
+Author: writer, 2026-10-26, escaped defect #157 (one writer recorded the Archon commit as a short sha and another as the full sha, so the map, step details and diff said nothing was available)
+
+## H-48 A prefix shared by two commits never shows either one's architecture as if it were the pinned one
+Protects: 4.1 and invariant 6 (the map is the code at that version, never typed in or guessed); 4.2 architecture diff; 11.2 Architecture row
+Touches: the join from a version to its architecture, home map, step detail, architecture diff
+Setup: the check app. In the local pack repository, make commits (scripted, for example with `git commit-tree`, changing a file each time) until two commits CA and CB share their first 5 or more characters and differ before the 8th; give CA and CB visibly different packs (CB has one extra step). Parse an architecture for each, with its full sha. Deliver real pins: VA pinned on CA by its first 8 characters; VB pinned on CB by its first 8 characters; VX pinned by only the prefix CA and CB share. Make VX the latest version.
+Steps:
+1. Open every surface for VA, VB and VX.
+2. Take a step detail address of CB's extra step from VB and change only the version part to VX's; open it.
+3. Open the diff of VA against VB, of VX against VA, and of VX against VB.
+Expect:
+- VA shows exactly CA's architecture and VB exactly CB's, on every surface: VA never shows CB's extra step, VB always does. Swapping which of the two was parsed first, or parsed last, does not change this.
+- VX shows neither commit's architecture on any surface, including the home map as it first opens: it says, in one sentence with at most one button, that this version's architecture cannot be told apart or is not recorded. It never shows CA's or CB's steps, prompts or subagents, and never chooses one of them silently by age, order or anything else.
+- The diff of VA against VB lists the extra step and nothing else. A diff involving VX never lists changes and never says "no changes": it says VX's architecture is not available.
+- The step 2 address does not show CB's step.
+Author: writer, 2026-10-26, escaped defect #157 (class: a short form of a commit must resolve to exactly one architecture or to none)
+
+## H-49 A pin naming a commit the job never parsed says so, and never borrows a neighbour's architecture
+Protects: 4.1 and invariant 6; 4.2 architecture diff; 11.2 Architecture row; engineering.md (an empty state is one sentence and at most one button)
+Touches: the join from a version to its architecture, home map, step detail, architecture diff, empty states
+Setup: the check app with V1 and V2 as in H-47 (architectures parsed). Deliver real pins for three more versions, each newer than the last: VU8 naming by 8 characters an Archon commit that exists but was never parsed; VU40 naming one by its full 40 characters, also never parsed; VN naming 8 characters that are no commit at all. Make VN the latest version.
+Steps:
+1. Open every surface for VU8, VU40 and VN, including the home map as it first opens.
+2. Take step detail addresses from V2 and change only the version part to each of these versions; open them.
+3. Open the diff of each against V1 and against V2.
+Expect:
+- Each of the three versions says, in one sentence with at most one button, that its architecture is not recorded (or words to that effect), on the map, on every step detail and in every diff. It is never an outage message and never a spinner left running: every panel has settled within 2 seconds.
+- None of them ever shows V1's, V2's, the seed's or any other version's steps, prompts or subagents: not the latest parsed architecture, not the nearest older one, not the one parsed last.
+- No diff involving them says "no changes" or lists anything as added, removed or changed.
+- V1 and V2 still show their own architectures on every surface.
+Author: writer, 2026-10-26, escaped defect #157 (class: a missing architecture must look missing, not like another version's)
+
+## H-50 The architecture appears live, whichever of the pin and the job came first
+Protects: invariant 5 (every panel live, no refresh button); 4.1; 4.2 architecture diff; 11.2 (pins by push webhook, nightly reconcile and backfill)
+Touches: push ingestion, the architecture job, home map, step detail, architecture diff, live queries
+Setup: the check app with V1 as in H-47. Open the home map, a `check-app` step detail and the architecture diff, and set the reload marker in each.
+Steps:
+1. Deliver a real pin for V4 naming C2 by its first 8 characters, and insert V4's laps. Record what the open screens show.
+2. Run the architecture job for C2 given its full sha. Record when each open screen changes.
+3. Parse an architecture for C3 given its first 8 characters, first; then deliver a real pin for V5 naming C3 by its full 40 characters and insert V5's laps. Record when each open screen changes.
+4. Deliver V4's push event again (a webhook redelivery), run the nightly reconcile or backfill once, and restart serve.
+Expect:
+- After step 1, V4 reads as architecture not recorded on every surface (as H-49), never V1's.
+- Within 5 seconds of step 2, without a reload, the home map, the open step detail and the diff show C2's architecture for V4; after step 3 they do the same for V5 with C3's.
+- After step 4 nothing changes: no version loses its architecture, none gains a second entry, and every surface still shows the same text after the restart.
+- `judges/liveness.js` PASS on the step 2 and step 3 timings.
+Author: writer, 2026-10-26, escaped defect #157 (class: the join must hold whichever writer wrote first and after every re-delivery)
+
+## H-51 Two pins on one commit, named two ways, are the same commit
+Protects: 4.2 architecture diff and version strip; 11.2 (versions keyed by digest, labelled by the most recent pin; Architecture row); 11.4
+Touches: the join from a version to its architecture, architecture diff, version strip
+Setup: the check app. Deliver a real pin for VP naming C2 by its first 8 characters; then, after VP's laps, a second real pin VQ naming the same C2 by its full 40 characters, whose only change on ai-software-factory is one sentence of the template's holdout-verifier instruction file (so VQ's laps have their own digest). Parse each version's architecture with C2's sha given in the opposite form from its pin, and the factory commit given as its pin commit's full sha.
+Steps:
+1. Open every surface for VP and VQ.
+2. Open the diff of VP against VQ.
+Expect:
+- Both versions show C2's architecture; `check-app`'s detail shows the holdout-verifier instruction file as it is at each version's factory commit.
+- The diff lists exactly the changed instruction file and nothing else: not "no changes", not "architecture not available" on either side, and not every Archon workflow as added on one side and removed on the other.
+- The version strip shows VP and VQ as two entries, each with its own reason, Hypothesis and Measure.
+Author: writer, 2026-10-26, escaped defect #157 (class: the same commit written in two forms must join as one commit)
+
+## H-52 The factory template is found whatever form its commit was given in
+Protects: 4.1 (the holdout steps' detail explains the fence from the template); 11.2 Architecture row (the factory template at the pinned factory commit); 11.4 (`arch:parse <archon-sha> <factory-sha>`)
+Touches: the architecture job's factory side, push ingestion, step detail for the holdout steps, architecture diff
+Setup: the check app with two real pins VF1 and VF2 on two different factory commits whose templates differ in the fence explanation's instruction file. Parse VF1's architecture with its factory commit given as the first 8 characters of the pin commit's sha (the push event carries the full sha), and VF2's with the full 40 characters while its Archon commit is given as 8 characters.
+Steps:
+1. Open the `check-app` detail and the detail of every other step whose detail explains the fence, at VF1 and at VF2, by clicking and by direct address.
+2. Open the diff of VF1 against VF2.
+Expect:
+- At each version the detail shows the hook file `.factory/hooks/holdout_fence.py`, which agents may read the scenarios and how a verdict comes back, with the instruction file text exactly as it is at that version's factory commit; never the other version's text, and never an empty or "not recorded" template section.
+- The diff names the changed instruction file.
+Author: writer, 2026-10-26, escaped defect #157 (class: every commit the job records, Archon's or the factory's, joins in any form)
+
+## H-53 Verdicts and decisions find their pin by any unambiguous form, and never the wrong one
+Protects: 11.5 (a verdict names its pin by sha; `Version:` joins to a pin by sha prefix); 4.2 improvements being tested, key decisions, version strip; appendix verdict commit
+Touches: push ingestion, verdict and `DECISIONS.md` parsers, the join to pins, improvements panel, decisions timeline, version strip
+Setup: the check app. Deliver real pins with `Measure` trailers: PS naming its Archon commit by 8 characters; PF naming its commit by the full 40; PA and PB naming two commits that share their first 5 characters (as in H-48) by 8 characters each. Insert laps for a version of each.
+Steps:
+1. Deliver verdict commits written as the appendix writes them: one for PS naming its commit by the full 40 characters; one for PF naming its commit by its first 8; one naming only the 5-character prefix PA and PB share; one naming 8 characters no pin names.
+2. Deliver a `DECISIONS.md` change adding entries in the fixed shape whose `Version:` lines are: PS's commit in full; PF's commit by its first 7; PF's commit by its first 12; the prefix PA and PB share; 8 characters no pin names.
+3. Restart serve, then deliver the same push events again.
+Expect:
+- PS and PF show their verdicts (helped, hurt or inconclusive) and sentences, and leave the being-tested list, without a reload.
+- The full, 7-character and 12-character decisions appear on the timeline linked to PS's or PF's version as named.
+- The verdict and the decision naming the shared prefix attach to neither PA nor PB; PA and PB remain listed as being tested. The unknown verdict and decision attach to no version. None of them is shown under another version, and none of them changes any version's label.
+- After step 3 nothing is duplicated or relinked.
+Author: writer, 2026-10-26, escaped defect #157 (class: every join between a short and a full sha, on every surface that joins one)
+
+## H-54 A version shows its architecture in every context: two factories and a rewind
+Protects: 11.6 (every view keyed by factory); 4.7 rewind (every screen as of the moment); 4.1; invariant 6
+Touches: home map per factory, step detail, architecture diff, rewind branches
+Setup: the check app with two factories A and B (as in H-17). For A, versions V1 and V2 as in H-47. For B, a version VB2 whose laps have their own digest but whose real pin names C2 by its first 8 characters, while C2's architecture was parsed once, with its full sha.
+Steps:
+1. Open every surface for A's V1 and V2 and for B's VB2, moving between the factories with the app's own controls.
+2. Note a moment T. Then deliver a real pin V3 for A naming C3 by 8 characters, insert its laps, and parse C3 with its full sha. Create a rewind at T and open every surface on it; then go back to live.
+Expect:
+- B's VB2 shows C2's architecture on every surface; A's V2 shows the same; neither factory's map shows the other's live counts.
+- On the rewind, A's versions as of T (V1 and V2) show their architectures on every surface, and V3 is absent; no rewind screen says no architecture is recorded for a version that had one at T.
+- Back on live, V3 shows C3's architecture.
+Author: writer, 2026-10-26, escaped defect #157 (class: the join holds in every keyed view)
+
+## H-55 A step-by-step story of a repin: what a user sees at each moment is true
+Protects: 4.1 (the home base is the map at the pinned version); 4.2 version strip and architecture diff; 11.2 (labelled by the most recent pin before the first run); invariant 5
+Touches: push ingestion, version labelling, the architecture job, home map, step detail, architecture diff
+Setup: the check app with V1 as in H-47 shown on the home map; reload marker set.
+Steps:
+1. Deliver a real pin naming C2 by its first 8 characters. Before any lap of a new digest runs, record the home map and `check-app` detail.
+2. Insert the first lap of a new digest D2, and record them again.
+3. Run the architecture job for C2 given its full sha, and record them again; open the diff of V1 against the new version.
+4. Deliver, late, a real pin whose commit time is before D2's first run and after step 1's pin, naming C3 by its full 40 characters, with C3 not yet parsed. Record every surface.
+5. Parse C3 with its first 8 characters. Record every surface.
+Expect:
+- After steps 1 and 2 nothing claims C2's architecture for V1, and V1's map still shows C1's. Whatever the home map shows for the new version, it is never V1's architecture labelled as the new version.
+- After step 3, without a reload, the new version shows C2's architecture and the diff lists exactly C1 to C2's changes.
+- After step 4 the version is relabelled by the late pin (as H-23) and its map, step details and diff follow it: they say C3's architecture is not recorded; they never keep showing C2's under the C3 label.
+- After step 5, within 5 seconds and without a reload, they show C3's architecture.
+Author: writer, 2026-10-26, escaped defect #157 (class: label and architecture are one fact seen twice, so they must always agree)
