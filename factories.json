@@ -5,6 +5,12 @@
       "repository": "coleam00/factory-mission-control",
       "codebase": "coleam00/factory-mission-control",
       "console": "http://localhost:3090"
+    },
+    {
+      "name": "north-star",
+      "repository": "coleam00/north-star-godot",
+      "codebase": "coleam00/north-star-godot",
+      "console": "http://localhost:3090"
     }
   ]
 }
