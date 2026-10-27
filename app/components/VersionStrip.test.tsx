@@ -78,6 +78,24 @@ test('the visible date and select label follow the pin, including an unknown pin
   expect(labelled).not.toContain('2026-10-01');
 });
 
+test('two versions sharing a pin get select buttons named apart by their digest', () => {
+  const V4 = `sha256:${'d4'.repeat(32)}`;
+  const rows = [
+    entry({ digest: V3, pin: '58c5f77400', date: '2026-10-19' }),
+    entry({ digest: V4, pin: '58c5f77400', date: '2026-10-19' }),
+    entry({ digest: V1, pin: null, date: NOT_RECORDED }),
+  ];
+  const names = [...render([V4], '', rows).matchAll(/<button[^>]*aria-label="([^"]+)"/g)].map(
+    (m) => m[1],
+  );
+  expect(names).toEqual([
+    `Select 2026-10-19, pin 58c5f774, ${V3.slice(0, 19)}`,
+    `Selected 2026-10-19, pin 58c5f774, ${V4.slice(0, 19)}`,
+    `Select not recorded, pin not recorded, ${V1.slice(0, 19)}`,
+  ]);
+  expect(new Set(names).size).toBe(3);
+});
+
 test('a version with no trailers shows not recorded, and a pin not yet run cannot be picked', () => {
   const html = render([]);
   expect(entryHtml(html, `data-digest="${V3}"`)).toContain(`data-hypothesis="${NOT_RECORDED}"`);
