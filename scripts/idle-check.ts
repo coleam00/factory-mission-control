@@ -108,12 +108,14 @@ async function check(deps: Deps, maxMinutes: number): Promise<void> {
     await send('warm-1');
     await send('warm-2');
     deps.out(`endpoint ${await state()}`);
-    for (let minute = 1; minute <= maxMinutes; minute++) {
+    let suspended = false;
+    for (let minute = 1; minute <= maxMinutes && !suspended; minute++) {
       await deps.sleep(60_000);
       const now = await state();
       deps.out(`${deps.now().toISOString()} idle ${minute} min: endpoint ${now}`);
-      if (now === 'idle') break;
+      suspended = now === 'idle';
     }
+    if (!suspended) deps.out(`compute never suspended within ${maxMinutes} min`);
     for (const label of ['after-idle-1', 'after-idle-2', 'after-idle-3']) await send(label);
   } finally {
     await handler.stop();
