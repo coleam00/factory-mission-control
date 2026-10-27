@@ -38,14 +38,23 @@ export function timelineEntries(rows: readonly TimelineRow[]): TimelineRow[] {
 }
 
 /**
- * The lap count a Measure names, allowing one descriptor such as `complex`, or null without one.
- * Only a number right before `laps` (or its one descriptor) counts: in `2 merges per hour over
- * several laps` the 2 measures merges, so there is no lap count.
+ * The lap count a Measure names, allowing up to two descriptors such as `consecutive complex`, or
+ * null without one. Only a number right before `laps` (or `1 lap`) or its descriptors counts: in
+ * `2 merges per hour over several laps` the 2 measures merges, so there is no lap count. A
+ * descriptor is never a word such as `per` or `across` that would make the number count something
+ * else per lap or across laps.
  */
 export function lapsWanted(measure: string | null): number | null {
-  const match = /\b(\d+)\s+(?:[a-z-]+\s+)?laps\b/i.exec(measure ?? '');
-  return match ? Number(match[1]) : null;
+  const match = LAPS_WANTED.exec(measure ?? '');
+  return match ? Number(match[1] ?? match[2]) : null;
 }
+
+/** A word that may sit between the number and `laps`: any but one that relates two counts. */
+const DESCRIPTOR = String.raw`(?!(?:per|over|across|in|of|for|during|within|after|before|between|each|every)\s)[a-z-]+\s+`;
+const LAPS_WANTED = new RegExp(
+  String.raw`\b(?:(1)\s+(?:${DESCRIPTOR}){0,2}lap|(\d+)\s+(?:${DESCRIPTOR}){0,2}laps)(?![\w-])`,
+  'i',
+);
 
 export interface TestingEntry {
   pin: string;
