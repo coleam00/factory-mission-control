@@ -1,6 +1,7 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { PGlite } from '@electric-sql/pglite';
+import { pinnedArchonSha } from '../../function/ingest';
 import {
   parseClaim,
   parseClaimReleased,
@@ -78,7 +79,8 @@ Measure: complex-route lap-hours per merge and send-backs per merge, over at lea
       digest: `sha256:${'b2'.repeat(32)}`,
       archonSha: V2_ARCHON,
       pinSha: fakeSha('pin V2'),
-      pinMessage: `Pin Archon ${V2_ARCHON}: the loop drops the briefs step and tallies every lap
+      // Names its Archon commit by short sha, as real pins do (#157).
+      pinMessage: `Pin Archon ${V2_ARCHON.slice(0, 8)}: the loop drops the briefs step and tallies every lap
 
 Measure: lap-hours per merge, lower, over at least 12 laps.`,
       pinnedAt: '2026-10-09T18:00:00Z',
@@ -1086,14 +1088,18 @@ Version: none
 function versionsSql(versions: VersionSpec[]): string[] {
   const out = [
     '',
-    '-- Pins and their verdict on coleam00/ai-software-factory, through parsePin and parseVerdict.',
+    '-- Pins and their verdict on coleam00/ai-software-factory, through parsePin, pinnedArchonSha and parseVerdict.',
   ];
   for (const version of versions) {
     const pin = must(parsePin(version.pinMessage), `${version.name}'s pin`);
+    const pack = JSON.stringify({ integration_revision_required: version.archonSha });
     out.push(
       insert('mc.pins', {
         sha: version.pinSha,
-        archon_sha: pin.archonSha,
+        archon_sha: must(
+          pinnedArchonSha(pin.archonSha, pack).sha ?? null,
+          `${version.name}'s Archon sha`,
+        ),
         reason: pin.reason,
         hypothesis: pin.hypothesis,
         measure: pin.measure,

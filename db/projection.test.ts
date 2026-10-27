@@ -245,6 +245,7 @@ test('the eligibility upgrade keeps live history and installs the same functions
     const before = await snapshot(upgraded);
     expect(await runMigrations({ files: migrationFiles, db: upgraded })).toEqual([
       '0010_step_attempt_eligibility.sql',
+      '0011_pin_full_archon_sha.sql',
     ]);
     expect(await snapshot(upgraded)).toEqual(before);
     expect(await projectionDefinitions(upgraded)).toEqual(await projectionDefinitions(db));
@@ -257,6 +258,48 @@ test('the eligibility upgrade keeps live history and installs the same functions
     expect(await snapshot(upgraded)).toEqual(before);
   } finally {
     await upgraded.close();
+  }
+});
+
+test('0011 rewrites a short pin to the one full sha it prefixes, and clears ambiguous and unknown ones', async () => {
+  const historical = await archonDb();
+  const full = `abcdef12${'0'.repeat(32)}`;
+  const twin = (last: string) => `12345678${'0'.repeat(31)}${last}`;
+  const pinShas = () => historical.query('SELECT sha, archon_sha FROM mc.pins ORDER BY sha');
+  try {
+    await runMigrations({ files: migrationFiles.filter((f) => f.name < '0011'), db: historical });
+    await historical.query(
+      `INSERT INTO mc.arch_versions (archon_sha, factory_sha, parsed_at)
+        VALUES ($1, 'f1', $4), ($1, 'f2', $4), ($2, 'f1', $4), ($3, 'f1', $4)`,
+      [full, twin('1'), twin('2'), NOW],
+    );
+    for (const [sha, archon] of [
+      ['p1', full.slice(0, 8)],
+      ['p2', '12345678'],
+      ['p3', 'deadbeef'],
+      ['p4', twin('1')],
+    ]) {
+      await historical.query(
+        `INSERT INTO mc.pins (sha, archon_sha, reason, committed_at) VALUES ($1, $2, 'r', $3)`,
+        [sha, archon, NOW],
+      );
+    }
+
+    expect(await runMigrations({ files: migrationFiles, db: historical })).toEqual([
+      '0011_pin_full_archon_sha.sql',
+    ]);
+    const migrated = [
+      { sha: 'p1', archon_sha: full },
+      { sha: 'p2', archon_sha: null },
+      { sha: 'p3', archon_sha: null },
+      { sha: 'p4', archon_sha: twin('1') },
+    ];
+    expect(await pinShas()).toEqual(migrated);
+    const [rewrite] = migrationFiles.filter((f) => f.name.startsWith('0011'));
+    await historical.query(rewrite?.sql ?? '');
+    expect(await pinShas()).toEqual(migrated);
+  } finally {
+    await historical.close();
   }
 });
 

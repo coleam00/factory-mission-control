@@ -83,7 +83,25 @@ test('backfill on a check branch stores every recorded issue, comment, label, pu
     { pr_number: 34, issue_number: 10 },
   ]);
   expect(await rows('SELECT count(*)::int AS n FROM mc.metrics_lines')).toEqual([{ n: 1 }]);
-  expect(await rows('SELECT archon_sha FROM mc.pins')).toEqual([{ archon_sha: 'abd85896' }]);
+  expect(await rows('SELECT archon_sha FROM mc.pins')).toEqual([
+    { archon_sha: 'abd85896e7971c9ac5199ed7e87973f27130250f' },
+  ]);
+});
+
+test('a pin whose pack file pins another version is written without a sha, said so, with the rest', async () => {
+  const other = 'f'.repeat(40);
+  const repinned: GetFetch = (url, init) =>
+    url.includes('/contents/template/factory/pack.json')
+      ? Promise.resolve(Response.json({ integration_revision_required: other }))
+      : recorded(url, init);
+  const { code, out } = await run([], 'check-abc', repinned);
+  expect(code).toBe(0);
+  expect(out).toEqual([
+    'mission-control: 3 issues, 2 comments, 3 labels, 1 pull requests',
+    'coleam00/ai-software-factory: 1 pins, 1 verdicts, 2 decisions',
+    `pin without an Archon sha 85d479ad: pins ${other}, not abd85896`,
+  ]);
+  expect(await rows('SELECT archon_sha FROM mc.pins')).toEqual([{ archon_sha: null }]);
 });
 
 test('every request backfill and reconcile send to GitHub is a GET, the next page included', async () => {

@@ -4,7 +4,7 @@
 -- factories.json.
 INSERT INTO mc.factories (name, repository, codebase, console) VALUES ('mission-control', 'coleam00/factory-mission-control', 'coleam00/factory-mission-control', 'http://localhost:3090');
 
--- Pins and their verdict on coleam00/ai-software-factory, through parsePin and parseVerdict.
+-- Pins and their verdict on coleam00/ai-software-factory, through parsePin, pinnedArchonSha and parseVerdict.
 INSERT INTO mc.pins (sha, archon_sha, reason, hypothesis, measure, committed_at) VALUES ('8e3e1cefaf1e1b7955789d6a43a81b6c2dbd7082', 'abd85896e7971c9ac5199ed7e87973f27130250f', 'holdouts fenced in the repository; the complex route runs dev''s ship-block', 'complex laps finish faster and are sent back less.', 'complex-route lap-hours per merge and send-backs per merge, over at least 10 complex laps.', '2026-09-30T18:00:00Z');
 INSERT INTO mc.pins (sha, archon_sha, reason, hypothesis, measure, committed_at) VALUES ('5ffd60c6c6e591487f2fbb5ec67ccc8fc55ca915', '2b7c4e9a1f0d3c5b6a7e8f9d0c1b2a3f4e5d6c7b', 'the loop drops the briefs step and tallies every lap', NULL, 'lap-hours per merge, lower, over at least 12 laps.', '2026-10-09T18:00:00Z');
 INSERT INTO mc.pins (sha, archon_sha, reason, hypothesis, measure, committed_at) VALUES ('58c5f774e1bbe57c80c85ee91df8d44075664232', '7e1d0c9b8a7f6e5d4c3b2a1f0e9d8c7b6a5f4e3d', 'follow dev''s pack', NULL, NULL, '2026-10-19T18:00:00Z');

@@ -502,6 +502,15 @@ describe('home-map on the seed', () => {
     await db.query(`DELETE FROM mc.lap_steps WHERE run_id::text LIKE '%0000000000c_'`);
     await db.query(`DELETE FROM mc.laps WHERE run_id::text LIKE '%0000000000c_'`);
   });
+
+  test('step-detail reads V2, the current pin, whose subject names a short sha', async () => {
+    const query = queries.find(([n]) => n === 'step-detail')?.[1] as string;
+    const steps = await db.query(query, ['mission-control']);
+    const ids = steps.filter((s) => s.workflow === 'archon-loop').map((s) => s.step_id);
+    expect(ids).toContain('check-app');
+    expect(ids).toContain('tally');
+    expect(ids).not.toContain('briefs');
+  });
 });
 
 describe('step screens of included blocks on the seed', () => {
@@ -936,6 +945,27 @@ describe('arch-diff on the seed', () => {
     const [v1, , v3] = digests;
     expect(diffVersions(rows, v1, v1)).toMatchObject({ status: 'compared', changes: 0 });
     expect(diffVersions(rows, v1, v3)).toEqual({ status: 'unrecorded', digests: [v3] });
+  });
+
+  test('a version whose pin has no Archon sha yet stays on the strip and is unrecorded, never another', async () => {
+    const [v1, v2] = digests;
+    const [pin] = await db.query(
+      'SELECT p.sha, p.archon_sha FROM mc.versions v JOIN mc.pins p ON p.sha = v.pin_sha WHERE v.digest = $1',
+      [v2],
+    );
+    const strip = queries.find(([name]) => name === 'version-strip')?.[1] as string;
+    await db.query('UPDATE mc.pins SET archon_sha = NULL WHERE sha = $1', [pin?.sha]);
+    try {
+      const unresolved = (await db.query(sql, ['mission-control'])) as unknown as ArchDiffRow[];
+      expect(diffVersions(unresolved, v1, v2)).toEqual({ status: 'unrecorded', digests: [v2] });
+      const listed = await db.query(strip, ['mission-control']);
+      expect(listed.find((r) => r.digest === v2)).toMatchObject({ pin_sha: pin?.sha });
+    } finally {
+      await db.query('UPDATE mc.pins SET archon_sha = $2 WHERE sha = $1', [
+        pin?.sha,
+        pin?.archon_sha,
+      ]);
+    }
   });
 
   test("names no other factory's versions", async () => {

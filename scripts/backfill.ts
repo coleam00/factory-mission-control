@@ -9,7 +9,6 @@ import factories from '../factories.json';
 import type { GitHub } from '../function/github';
 import {
   type Comment,
-  type Commit,
   DECISIONS_PATH,
   deleteComment,
   type Factory,
@@ -17,7 +16,9 @@ import {
   type PullRequest,
   removeIssue,
   replaceDecisions,
+  resolvePins,
   VERSIONS_REPOSITORY,
+  type VersionCommit,
   writeComment,
   writeCommits,
   writeIssue,
@@ -37,7 +38,9 @@ interface FactoryHistory {
 
 export interface History {
   factories: FactoryHistory[];
-  commits: Pick<Commit, 'id' | 'message' | 'timestamp'>[];
+  commits: VersionCommit[];
+  /** Each pin written without an Archon sha because its full sha did not resolve, and why. */
+  unresolvedPins: string[];
   decisions: string;
 }
 
@@ -84,15 +87,15 @@ export async function readHistory(github: GitHub, followed: Factory[]): Promise<
       `${VERSIONS_REPOSITORY} has no ${DECISIONS_PATH} on ${branch}; nothing written`,
     );
   }
-  return {
-    factories: read,
-    commits: commits.map(({ sha, commit }) => ({
+  const pins = await resolvePins(
+    github,
+    commits.map(({ sha, commit }) => ({
       id: sha,
       message: commit.message,
       timestamp: commit.committer.date,
     })),
-    decisions,
-  };
+  );
+  return { factories: read, commits: pins.commits, unresolvedPins: pins.unresolved, decisions };
 }
 
 export interface Removed {
@@ -190,6 +193,7 @@ export const main: Main = async (argv, deps) => {
           lines.push(`removed ${removed.issues} issue(s) and ${removed.comments} comment(s)`);
         }
         lines.push(...(await storedCounts(tx, history)));
+        lines.push(...history.unresolvedPins.map((pin) => `pin without an Archon sha ${pin}`));
       });
       for (const line of lines) deps.out(line);
     } finally {
