@@ -11,13 +11,13 @@ import {
   READY_WAIT_MS,
   RENEWALS_IN_180S,
   required,
-  within,
 } from './shared';
 import {
   emptyGroupTimings,
   type GroupTimings,
   groupPerformanceFailures,
   groupTimings,
+  readyFailures,
 } from './timings';
 
 /** Every live query the step screen reads, one panel each. */
@@ -346,11 +346,7 @@ export function stepDetailPhase(ctx: LiveContext): LivePhase {
 
     judge() {
       const failures: string[] = [];
-      if (!within(stepTimings.readyMs, LIMITS.readyMs)) {
-        failures.push(
-          `the step screen was ready after ${stepTimings.readyMs} ms, limit ${LIMITS.readyMs}`,
-        );
-      }
+      failures.push(...readyFailures('the step screen', stepTimings, LIMITS.readyMs));
       failures.push(...groupPerformanceFailures(STEP_QUERIES, stepTimings));
       failures.push(
         ...lateWrite('the first description write', 'the step', stepTimings.descriptionToScreenMs),

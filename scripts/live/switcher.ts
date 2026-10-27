@@ -16,13 +16,13 @@ import {
   pageWait,
   READY_WAIT_MS,
   waitForHealth,
-  within,
 } from './shared';
 import {
   emptyPanelTimings,
   measurePanels,
   type PanelTimings,
   performanceFailures,
+  readyFailures,
 } from './timings';
 
 interface SwitcherTimings extends PanelTimings {
@@ -293,9 +293,7 @@ async function checkSwitcher(ctx: LiveContext): Promise<void> {
     writeFileSync(join(outDir, 'switcher-timings.json'), `${JSON.stringify(timings, null, 2)}\n`);
   }
 
-  if (!within(timings.readyMs, LIMITS.readyMs)) {
-    failures.push(`the switcher was ready after ${timings.readyMs} ms, limit ${LIMITS.readyMs}`);
-  }
+  failures.push(...readyFailures('the switcher', timings, LIMITS.readyMs));
   failures.push(...performanceFailures('factory-switcher', timings));
   failures.push(...lateWrite('an insert', 'the switcher', timings.insertToScreenMs));
   if (timings.noReload !== true) failures.push('the page reloaded while the switcher counted');

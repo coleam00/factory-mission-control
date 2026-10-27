@@ -26,6 +26,7 @@ import {
   type GroupTimings,
   groupPerformanceFailures,
   groupTimings,
+  readyFailures,
 } from './timings';
 
 const QUERIES = ['rewind-branches', 'status-strip'] as const;
@@ -505,9 +506,7 @@ export function rewindPhase(ctx: {
 
     judge(): string[] {
       const failures = [...failed];
-      if (!within(timings.readyMs, LIMITS.readyMs)) {
-        failures.push(`/rewind was ready after ${timings.readyMs} ms, limit ${LIMITS.readyMs}`);
-      }
+      failures.push(...readyFailures('/rewind', timings, LIMITS.readyMs));
       failures.push(...groupPerformanceFailures(QUERIES, timings));
       for (const [when, ms] of [
         ['first', timings.createToListMs],

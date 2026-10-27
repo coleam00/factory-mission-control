@@ -15,7 +15,6 @@ import {
   renewalsOf,
   required,
   screenAgainstSql,
-  within,
   writeToScreen,
 } from './shared';
 import {
@@ -23,6 +22,7 @@ import {
   type GroupTimings,
   groupPerformanceFailures,
   groupTimings,
+  readyFailures,
 } from './timings';
 
 const TESTING_QUERIES = ['testing-routes', 'testing-app-check', 'testing-holdouts'] as const;
@@ -353,9 +353,7 @@ export function testingPhase(ctx: LiveContext): LivePhase {
 
     judge() {
       const failures: string[] = [];
-      if (!within(timings.readyMs, LIMITS.readyMs)) {
-        failures.push(`testing screen ready after ${timings.readyMs} ms, limit ${LIMITS.readyMs}`);
-      }
+      failures.push(...readyFailures('testing screen', timings, LIMITS.readyMs));
       for (const q of TESTING_QUERIES) {
         failures.push(...groupPerformanceFailures([q], timings));
         if (holdSeconds >= 180 && (timings.renewals[q] ?? 0) < RENEWALS_IN_180S) {
