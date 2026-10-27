@@ -47,7 +47,7 @@ describe('decisions-timeline and improvements-ledger on the seed', () => {
     expect(await byPin('5ffd60c6')).toMatchObject({ verdict: null });
   });
 
-  test('decisions are shared but lap counts are each factory’s own; a factory with no laps lists nothing', async () => {
+  test('decisions are shared but lap counts are each factoryâ€™s own; a factory with no laps lists nothing', async () => {
     const rollback = new Error('rollback');
     const ownLaps = (rows: Record<string, unknown>[]) =>
       Object.fromEntries(rows.map((r) => [r.pin_sha, r.laps]));

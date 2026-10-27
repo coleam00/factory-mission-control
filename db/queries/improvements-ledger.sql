@@ -25,5 +25,5 @@ LEFT JOIN LATERAL (
   WHERE pin <> '' AND starts_with(p.sha, pin)
   ORDER BY committed_at DESC LIMIT 1
 ) v ON true
--- Pins are shared; their lap counts are this factory's own. A factory with no laps lists none.
+-- Pins are shared, but their lap counts are this factory's own. A factory with no laps lists none.
 WHERE EXISTS (SELECT 1 FROM mc.laps l WHERE l.factory = $1 AND l.workflow_name = 'archon-loop')
