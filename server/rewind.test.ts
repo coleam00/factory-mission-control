@@ -33,6 +33,7 @@ function fakeNeon() {
           id: 'ep-rewind-1',
           branch_id: branchId,
           host: 'ep-rewind-1.c-14.us-east-1.aws.neon.tech',
+          current_state: 'active',
         },
       ];
     },
