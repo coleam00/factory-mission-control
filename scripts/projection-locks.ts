@@ -237,6 +237,58 @@ async function versionProblems(db: Db, factory: string, runId: string): Promise<
   return problems;
 }
 
+const LAP_LOCK = 'UPDATE mc.laps SET status = status WHERE run_id = $1';
+
+const finishRun = (tx: Tx, runId: string) =>
+  tx.query(
+    `UPDATE remote_agent_workflow_runs SET status = 'completed', completed_at = now()
+     WHERE id = $1`,
+    [runId],
+  );
+
+/**
+ * A finish Archon writes while another session holds the run's lap row, as problems: the write
+ * commits and its projection gives up with one 55P03; mc.replay_locked_runs() (0014, issue #152)
+ * skips the lap while it is still locked; once the lock is gone one call projects the finish, so
+ * the lane ends finished, and marks the error replayed.
+ */
+async function finishProblems(archon: Db, holder: Db): Promise<string[]> {
+  const [run] = await archon.query(
+    `INSERT INTO remote_agent_workflow_runs (workflow_name, status, user_message, metadata)
+     VALUES ($1, 'running', 'lock wait check', '{}'::jsonb) RETURNING id`,
+    [WORKFLOW],
+  );
+  const runId = String(run?.id);
+  const lap = async () =>
+    (await archon.query('SELECT status, completed_at FROM mc.laps WHERE run_id = $1', [runId]))[0];
+  const problems: string[] = [];
+  const before = (await errorStates(archon)).length;
+  const release = await holdLock(holder, LAP_LOCK, runId);
+  try {
+    const result = await archonWrite(archon, runId, finishRun);
+    if (result.error) problems.push(`Archon's write failed: ${result.error}`);
+    const added = (await errorStates(archon)).slice(before);
+    if (added.length !== 1 || added[0] !== '55P03')
+      problems.push('expected one 55P03 projection error');
+    await archon.query('SELECT mc.replay_locked_runs()');
+    if ((await lap())?.status !== 'running')
+      problems.push('expected the replay to skip the lap while it is locked');
+  } finally {
+    await release();
+  }
+  await archon.query('SELECT mc.replay_locked_runs()');
+  const finished = await lap();
+  if (finished?.status !== 'completed' || finished?.completed_at === null)
+    problems.push('expected one replay after the lock to leave the lane finished');
+  const [unreplayed] = await archon.query(
+    `SELECT count(*)::int AS n FROM mc.projection_errors
+      WHERE run_id = $1 AND sqlstate = '55P03' AND replayed_at IS NULL`,
+    [runId],
+  );
+  if (unreplayed?.n !== 0) problems.push("expected the replay to mark the run's error replayed");
+  return problems;
+}
+
 async function errorStates(db: Db): Promise<string[]> {
   return (await db.query('SELECT sqlstate FROM mc.projection_errors ORDER BY id')).map((row) =>
     String(row.sqlstate),
@@ -317,7 +369,12 @@ export const main: Main = async (argv, deps) => {
       deps.out(
         `${problems.length === 0 ? 'PASS' : `FAIL (${problems.join('; ')})`} | ${versionCheck}`,
       );
-      const checks = CASES.length + 1;
+      // After the version check: its replay projects the version cases' runs again too.
+      const finishCheck = 'finish while the lap row is locked: replayed once the lock is gone';
+      const finish = await finishProblems(archon, holder);
+      if (finish.length > 0) failures.push(finishCheck);
+      deps.out(`${finish.length === 0 ? 'PASS' : `FAIL (${finish.join('; ')})`} | ${finishCheck}`);
+      const checks = CASES.length + 2;
       if (failures.length > 0) throw new Error(`${failures.length} of ${checks} checks failed`);
       deps.out(`all ${checks} checks passed`);
     } finally {

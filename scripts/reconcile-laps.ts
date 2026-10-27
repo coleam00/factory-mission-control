@@ -6,8 +6,10 @@
 // projection's own functions (0006, 0007's attempts and 0008's versions), by way of temp tables that
 // carry the same triggers, and keeps the result only when it differs from the lap's rows. A run
 // projected before versions were (0008, issue #74) differs by its missing version, so this writes
-// that too. Archon's tables are only read. It writes the check branch in .mc-check.env; `:main`
-// writes `main`, and is the owner's nightly run beside `backfill:main`.
+// that too. First it replays the runs whose projection lost a lock wait (0014, issue #152), so a
+// finish lost to a locked lap is projected and its errors marked replayed. Archon's tables are only
+// read. It writes the check branch in .mc-check.env; `:main` writes `main`, and is the owner's
+// scheduled run beside `reconcile:main`.
 
 import { parseArgs } from 'node:util';
 import { failing, guardedDatabaseUrl, type Main, runCli } from './lib/cli';
@@ -132,6 +134,8 @@ async function reproject(tx: Tx, runId: string): Promise<void> {
 }
 
 type Reconciled = {
+  /** Runs whose lost lock wait 0014's mc.replay_locked_runs() projected again. */
+  replayed: number;
   repaired: number;
   busy: number;
   /** Runs Archon is still running whose lap is missing or shows another status. */
@@ -141,10 +145,11 @@ type Reconciled = {
 };
 
 /**
- * Re-projects every Archon run that is not running whose lap rows differ from what its rows project
- * to, and counts the running runs whose lap differs, which it leaves to their live triggers.
+ * Replays the runs whose projection lost a lock wait, then re-projects every Archon run that is not
+ * running whose lap rows differ from what its rows project to, and counts the running runs whose lap differs, which it leaves to their live triggers.
  */
 export async function reconcileLaps(db: Db): Promise<Reconciled> {
+  const [replay] = await db.query('SELECT mc.replay_locked_runs() AS n', []);
   const runs = await db.query(
     `SELECT id FROM public.remote_agent_workflow_runs WHERE status NOT IN ${sqlList(LIVE)}
       ORDER BY started_at, id`,
@@ -158,7 +163,13 @@ export async function reconcileLaps(db: Db): Promise<Reconciled> {
       WHERE r.status IN ${sqlList(LIVE)} AND l.status IS DISTINCT FROM r.status`,
     [],
   );
-  const result: Reconciled = { repaired: 0, busy: 0, live: Number(live?.n ?? 0), failed: [] };
+  const result: Reconciled = {
+    replayed: Number(replay?.n ?? 0),
+    repaired: 0,
+    busy: 0,
+    live: Number(live?.n ?? 0),
+    failed: [],
+  };
   for (const { id } of runs) {
     const runId = String(id);
     try {
@@ -196,11 +207,12 @@ export const main: Main = async (argv, deps) => {
     return 0;
   }
   return failing(deps, async () => {
-    // No terminal prompt for `:main`, like `backfill:main`: the owner schedules the nightly run.
+    // No terminal prompt for `:main`, like `backfill:main`: the owner schedules it.
     const url = await guardedDatabaseUrl(deps, values.main ? 'main' : 'check');
     const db = deps.openDb(url);
     try {
-      const { repaired, busy, live, failed } = await reconcileLaps(db);
+      const { replayed, repaired, busy, live, failed } = await reconcileLaps(db);
+      if (replayed > 0) deps.out(`reconcile: ${replayed} run(s) replayed after a lost lock wait`);
       deps.out(`reconcile: ${repaired} run(s) repaired`);
       if (busy > 0) deps.out(`reconcile: ${busy} run(s) busy, left for the next run`);
       if (live > 0) {
