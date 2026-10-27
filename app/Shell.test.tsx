@@ -75,9 +75,7 @@ test('an address under an unknown key that no screen serves names the key, not a
     const html = render(path);
     expectNoFactoryIdentity(html);
     expect(header(html)).toContain('nope Unknown factory');
-    expect(main(html)).toBe(
-      'No factory is named "nope". Choose a factory from the switcher above. Go to mission-control\'s map',
-    );
+    expect(main(html)).toBe('No factory is named "nope". Go to mission-control\'s map');
   }
 });
 
@@ -91,9 +89,7 @@ test('the empty key names no factory and links home', () => {
   for (const path of ['/f/', '/f//versions', '/f//laps/example']) {
     const html = render(path);
     expectNoFactoryIdentity(html);
-    expect(main(html)).toBe(
-      'No factory is named in this address. Choose a factory from the switcher above. Go to home',
-    );
+    expect(main(html)).toBe('No factory is named in this address. Go to home');
     expect(html.match(/<main[\s\S]*<\/main>/)?.[0]).toContain('href="/"');
   }
 });
