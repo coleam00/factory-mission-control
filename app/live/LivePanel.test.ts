@@ -1,7 +1,14 @@
 import { afterEach, expect, mock, spyOn, test } from 'bun:test';
 import type { LiveQueryState } from '@neon/realtime/client';
 import * as rewind from '../lib/rewind';
-import { panelState, recovering, seal } from './LivePanel';
+import {
+  backOffSeals,
+  panelState,
+  recovering,
+  SEAL_RETRY_CEILING_MS,
+  SEAL_RETRY_FIRST_MS,
+  seal,
+} from './LivePanel';
 
 test('a panel is loading until rows arrive', () => {
   expect(panelState({ status: 'connecting', data: undefined, error: undefined })).toBe('loading');
@@ -98,4 +105,88 @@ test('a page on a rewind branch follows a seal for home, and the seal never reac
   const { outcome, follow } = await sealOn('rewind-x', null);
   expect(follow).toHaveBeenCalledTimes(1);
   expect(outcome).toBe('pending');
+});
+
+/**
+ * Drives `backOffSeals` on a clock that only moves when it waits: each call is one seal request
+ * the controller or the panel makes, answered by `answer` at that moment. Returns when each
+ * request was sent, and what each call settled to.
+ */
+async function backOff(
+  calls: number,
+  answer: (at: number) => { expiresAt: number } | 'fail',
+  signal = new AbortController().signal,
+) {
+  let clock = 0;
+  const sent: number[] = [];
+  const outcomes: string[] = [];
+  const request = backOffSeals(
+    async () => {
+      sent.push(clock);
+      const answered = answer(clock);
+      if (answered === 'fail') throw new Error('sealing status-strip answered 503');
+      return { ...sealed, ...answered };
+    },
+    signal,
+    {
+      now: () => clock,
+      wait: async (ms) => {
+        clock += ms;
+      },
+    },
+  );
+  for (let i = 0; i < calls; i++) {
+    outcomes.push(
+      await request().then(
+        () => 'sealed',
+        () => 'thrown',
+      ),
+    );
+  }
+  return { sent, outcomes };
+}
+
+test('a seal that keeps failing is asked for again after a doubling wait, up to a ceiling', async () => {
+  const { sent, outcomes } = await backOff(8, () => 'fail');
+  expect(outcomes).toEqual(Array(8).fill('thrown'));
+  expect(sent).toEqual([0, 1_000, 3_000, 7_000, 15_000, 31_000, 47_000, 63_000]);
+  expect(SEAL_RETRY_FIRST_MS).toBe(1_000);
+  expect(SEAL_RETRY_CEILING_MS).toBe(16_000);
+});
+
+test('an expired seal is never handed on, and is asked for again only after a wait', async () => {
+  const { sent, outcomes } = await backOff(6, (at) => ({ expiresAt: at - 60_000 }));
+  expect(outcomes).toEqual(Array(6).fill('thrown'));
+  expect(sent).toEqual([0, 1_000, 3_000, 7_000, 15_000, 31_000]);
+  // A stale seal replayed for 30 s: the tight loop sent ~37k requests; this sends 5.
+  expect(sent.filter((at) => at < 30_000)).toHaveLength(5);
+});
+
+test('a seal too close to expiry to wait before renewing is handed on, and the next waits', async () => {
+  const { sent, outcomes } = await backOff(4, (at) => ({ expiresAt: at + 5_000 }));
+  expect(outcomes).toEqual(Array(4).fill('sealed'));
+  expect(sent).toEqual([0, 1_000, 3_000, 7_000]);
+});
+
+test('once the endpoint answers again, a full seal comes one wait later and resets the wait', async () => {
+  const { sent, outcomes } = await backOff(6, (at) =>
+    at < 10_000 ? 'fail' : { expiresAt: at + 60_000 },
+  );
+  expect(outcomes).toEqual(['thrown', 'thrown', 'thrown', 'thrown', 'sealed', 'sealed']);
+  expect(sent).toEqual([0, 1_000, 3_000, 7_000, 15_000, 15_000]);
+});
+
+test('a panel that stopped asking sends no more seal requests', async () => {
+  const stopped = new AbortController();
+  let calls = 0;
+  const { sent, outcomes } = await backOff(
+    3,
+    () => {
+      if (++calls === 1) stopped.abort();
+      return 'fail';
+    },
+    stopped.signal,
+  );
+  expect(sent).toEqual([0]);
+  expect(outcomes).toEqual(['thrown', 'thrown', 'thrown']);
 });

@@ -80,6 +80,52 @@ export async function seal<Row>(
   return sealed;
 }
 
+/** `@neon/realtime` asks for the next seal this long before the current one expires. */
+const RENEW_EARLY_MS = 10_000;
+/** The wait before retrying a seal that failed or came back expired; it doubles to the ceiling. */
+export const SEAL_RETRY_FIRST_MS = 1_000;
+export const SEAL_RETRY_CEILING_MS = 16_000;
+
+/**
+ * Wraps `request` so a seal that fails, or comes back expired, is asked for again only after a
+ * wait that doubles from `SEAL_RETRY_FIRST_MS` to `SEAL_RETRY_CEILING_MS`, never back to back.
+ * An expired seal is thrown, not returned: the library would renew it at once, again and again.
+ * A seal too close to expiry for the library to wait before renewing it is returned but backs off
+ * too. A seal with a full lifetime resets the wait. Once `signal` aborts, no request is sent.
+ */
+export function backOffSeals<Row>(
+  request: () => Promise<SealedLiveQuery<Row>>,
+  signal: AbortSignal,
+  {
+    now = Date.now,
+    wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)),
+  }: { now?: () => number; wait?: (ms: number) => Promise<void> } = {},
+): () => Promise<SealedLiveQuery<Row>> {
+  let delay = 0;
+  const backOff = () => {
+    delay = Math.min(SEAL_RETRY_CEILING_MS, Math.max(SEAL_RETRY_FIRST_MS, delay * 2));
+  };
+  return async () => {
+    if (delay > 0) await wait(delay);
+    if (signal.aborted) throw new Error('the panel stopped asking for seals');
+    let sealed: SealedLiveQuery<Row>;
+    try {
+      sealed = await request();
+    } catch (error) {
+      backOff();
+      throw error;
+    }
+    const left = sealed.expiresAt - now();
+    if (left <= 0) {
+      backOff();
+      throw new Error(`the seal answered had expired ${-left} ms before`);
+    }
+    if (left <= RENEW_EARLY_MS) backOff();
+    else delay = 0;
+    return sealed;
+  };
+}
+
 type Render<Row> = (rows: readonly Row[] | undefined, state: PanelState) => ReactNode;
 
 interface LivePanelProps<Row> {
@@ -139,34 +185,44 @@ export function LivePanel<Row>({
   const body = JSON.stringify({ factory, ...(home && { branch: 'home' }), ...(args && { args }) });
   const ready = live.status === 'ready' && factory !== undefined;
   const branch = live.status === 'ready' && !home ? live.rewind : null;
-  const requestSeal = useCallback(() => seal<Row>(query, body, branch), [query, body, branch]);
   useEffect(() => {
     if (!ready || factory === undefined) return;
     let cancelled = false;
     let observation: QueryObservation | undefined;
+    const stopped = new AbortController();
+    const requestSeal = backOffSeals(() => seal<Row>(query, body, branch), stopped.signal);
     markOnce(`live:${query}:requested`);
-    requestSeal().then(
-      (first) => {
-        if (cancelled) return;
-        const parameters: { args?: string[] } = JSON.parse(body);
-        observation = observeQuery({
-          query,
-          factory,
-          args: parameters.args ?? [],
-          home,
-          branch,
-          queryFingerprint: first.queryFingerprint,
-        });
-        expectSubscribe(first.capability, observation);
-        setAccepted({ sealed: first, observation, requestSeal });
-      },
-      () => !cancelled && setFailed(true),
-    );
+    const ask = (): void => {
+      requestSeal().then(
+        (first) => {
+          if (cancelled) return;
+          const parameters: { args?: string[] } = JSON.parse(body);
+          observation = observeQuery({
+            query,
+            factory,
+            args: parameters.args ?? [],
+            home,
+            branch,
+            queryFingerprint: first.queryFingerprint,
+          });
+          expectSubscribe(first.capability, observation);
+          setFailed(false);
+          setAccepted({ sealed: first, observation, requestSeal });
+        },
+        () => {
+          if (cancelled) return;
+          setFailed(true);
+          ask();
+        },
+      );
+    };
+    ask();
     return () => {
       cancelled = true;
+      stopped.abort();
       if (observation) discardObservation(observation);
     };
-  }, [ready, query, requestSeal, factory, body, home, branch]);
+  }, [ready, query, factory, body, home, branch]);
 
   if (live.status !== 'ready' || accepted === undefined || failed) {
     const state = live.status === 'error' || failed ? 'error' : 'loading';
