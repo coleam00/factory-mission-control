@@ -74,7 +74,8 @@ test('an address under an unknown key that no screen serves names the key, not a
   ]) {
     const html = render(path);
     expectNoFactoryIdentity(html);
-    expect(header(html)).toContain('nope Unknown factory');
+    expect(header(html)).toContain('Unknown factory');
+    expect(header(html)).not.toContain('nope');
     expect(main(html)).toBe(
       'No factory is named "nope". Choose a factory from the switcher above. Go to mission-control\'s map',
     );
@@ -109,6 +110,8 @@ test("a factory removed from the server's file reads as unknown on its old addre
   ]) {
     const html = render(path, removed);
     expectNoFactoryIdentity(html);
+    expect(header(html)).toContain('Unknown factory');
+    expect(header(html)).not.toContain('second-factory');
     expect(main(html)).toContain('No factory is named "second-factory".');
   }
 });
