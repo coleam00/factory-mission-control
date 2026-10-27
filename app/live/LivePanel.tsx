@@ -54,6 +54,32 @@ function markOnce(name: string): void {
   if (performance.getEntriesByName(name).length === 0) performance.mark(name);
 }
 
+/**
+ * Asks the server to seal `query` with the panel's request `body`. A seal for a branch other than
+ * `branch`, the one this page's socket is on, means another tab switched: the page reloads onto
+ * it, and the returned promise never settles, so the panel asks nothing more.
+ */
+export async function seal<Row>(
+  query: string,
+  body: string,
+  branch: string | null,
+): Promise<SealedLiveQuery<Row>> {
+  const res = await fetch(`/api/live/${query}`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body,
+  });
+  if (!res.ok) throw new Error(`sealing ${query} answered ${res.status}`);
+  const { rewind, ...sealed } = (await res.json()) as SealedLiveQuery<Row> & {
+    rewind: string | null;
+  };
+  if (rewind !== branch) {
+    followSwitch();
+    return new Promise<never>(() => {});
+  }
+  return sealed;
+}
+
 type Render<Row> = (rows: readonly Row[] | undefined, state: PanelState) => ReactNode;
 
 interface LivePanelProps<Row> {
@@ -113,23 +139,7 @@ export function LivePanel<Row>({
   const body = JSON.stringify({ factory, ...(home && { branch: 'home' }), ...(args && { args }) });
   const ready = live.status === 'ready' && factory !== undefined;
   const branch = live.status === 'ready' && !home ? live.rewind : null;
-  const requestSeal = useCallback(async (): Promise<SealedLiveQuery<Row>> => {
-    const res = await fetch(`/api/live/${query}`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body,
-    });
-    if (!res.ok) throw new Error(`sealing ${query} answered ${res.status}`);
-    const { rewind, ...sealed } = (await res.json()) as SealedLiveQuery<Row> & {
-      rewind: string | null;
-    };
-    // Sealed for a branch this page's socket is not on: it reloads onto it, asking nothing more.
-    if (rewind !== branch) {
-      followSwitch();
-      return new Promise<never>(() => {});
-    }
-    return sealed;
-  }, [query, body, branch]);
+  const requestSeal = useCallback(() => seal<Row>(query, body, branch), [query, body, branch]);
   useEffect(() => {
     if (!ready || factory === undefined) return;
     let cancelled = false;
