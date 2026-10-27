@@ -33,7 +33,7 @@ test('a lane shows its issue, route, depth, step, time on the step and cost so f
   expect(html).toContain('href="https://github.com/coleam00/factory-mission-control/issues/11"');
   expect(html).toContain('>#11<');
   expect(html).toContain('ship / intel');
-  expect(html).toContain('1d 01:01:30');
+  expect(html).toContain('1d 1:01:30');
   expect(html).toContain('$1.30');
 });
 
@@ -61,6 +61,37 @@ test('a lane before its pick and claim says so instead of guessing', () => {
   expect(html).toContain('$0.00');
 });
 
+test('lanes and recent laps share hours and trimmed sub-dollar costs', () => {
+  const started = new Date('2026-10-21T09:00:00Z');
+  const completed = new Date('2026-10-21T09:20:00Z');
+  const running = render(
+    <LaneList
+      rows={[lane({ step_started_at: started, cost_usd: '0.1' })]}
+      now={completed.getTime()}
+    />,
+  );
+  const finished = render(
+    <RecentList
+      factory="mission-control"
+      rows={[
+        {
+          run_id: RUN,
+          status: 'completed',
+          started_at: started,
+          completed_at: completed,
+          issue_number: 11,
+          outcome: 'merged',
+          cost_usd: '0.1',
+        },
+      ]}
+    />,
+  );
+  for (const html of [running, finished]) {
+    expect(html).toContain('>0:20:00<');
+    expect(html).toContain('>$0.10<');
+  }
+});
+
 test('every outcome is labelled and links its lap; a lap with none says its status', () => {
   const rows: RecentLapRow[] = [...OUTCOMES, null].map((outcome, i) => ({
     run_id: `5eed0001-0000-4000-8000-00000000000${i}`,
@@ -78,6 +109,6 @@ test('every outcome is labelled and links its lap; a lap with none says its stat
   }
   expect(html).toContain('No outcome, cancelled');
   expect(html).toContain('href="/f/mission-control/laps/5eed0001-0000-4000-8000-000000000000"');
-  expect(html).toContain('01:30:00');
+  expect(html).toContain('1:30:00');
   expect(html).toContain('ended 2026-10-01 09:30 UTC');
 });

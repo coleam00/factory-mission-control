@@ -3,7 +3,6 @@
  * and the clock math the queries leave to the browser. Realtime, like node-postgres, parses
  * `timestamptz` into a `Date`. Pure, no React.
  */
-import { formatElapsed } from './format';
 
 /** A lap's outcome, by the scorecard's definitions (PRD 4.2), as recent-laps.sql derives it. */
 export const OUTCOMES = [
@@ -90,15 +89,6 @@ export function costOf(value: number | string | null): number | null {
 
 /** Archon names a nested step by its path joined with `__`: `ship__intel` reads `ship / intel`. */
 export const stepLabel = (step: string) => step.split('__').join(' / ');
-
-/** A span of seconds: `MM:SS`, `HH:MM:SS`, and `Nd HH:MM:SS` past a day. */
-export function formatSpan(seconds: number): string {
-  const s = Math.max(0, Math.floor(seconds));
-  const days = Math.floor(s / 86_400);
-  const rest = formatElapsed(s % 86_400);
-  if (days === 0) return rest;
-  return `${days}d ${rest.length === 5 ? `00:${rest}` : rest}`;
-}
 
 /** Seconds from `at` to `now` (ms since the epoch); null without a timestamp. */
 export function since(at: Date | null, now: number): number | null {
