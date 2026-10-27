@@ -66,7 +66,7 @@ export interface RecentLapRow {
 const timeOf = (at: Date | null) => (at === null ? Number.NaN : at.getTime());
 
 /** Newer `at` first, a missing one last; 0 when both are equal or both missing. */
-function newerFirst(a: Date | null, b: Date | null): number {
+export function newerFirst(a: Date | null, b: Date | null): number {
   const ta = timeOf(a);
   const tb = timeOf(b);
   if (Number.isNaN(ta) !== Number.isNaN(tb)) return Number.isNaN(ta) ? 1 : -1;

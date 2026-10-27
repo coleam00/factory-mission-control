@@ -31,6 +31,8 @@ test.each([
   [['nope']],
   [['step', '--event', 'workflow_started']],
   [['pin', '--step', 'pick']],
+  [['label', '--error', 'ECONNRESET']],
+  [['step', '--error', 'ECONNRESET']],
   [[]],
 ])('exits 2 with usage for %j before touching Neon', async (argv) => {
   const run = recordingDeps({ repoRoot: repo() });
@@ -71,6 +73,18 @@ test('binds the run metadata and the event data as objects, not JSON text', asyn
   expect(bound('INSERT INTO remote_agent_workflow_events')?.[3]).toEqual(
     eventData('pick', 'node_completed', NOW),
   );
+});
+
+test('a failed event carries the error --error names', async () => {
+  const run = recordingDeps({ repoRoot: repo(), rows: storing('object') });
+  const argv = ['step', '--step', 'deploy', '--event', 'node_failed', '--error', 'ECONNRESET'];
+  expect(await main(argv, run.deps)).toBe(0);
+  const bound =
+    run.params[
+      run.sql.findIndex((sql) => sql.startsWith('INSERT INTO remote_agent_workflow_events'))
+    ];
+  expect(bound?.[3]).toEqual(eventData('deploy', 'node_failed', NOW, 'ECONNRESET'));
+  expect(bound?.[3]).toMatchObject({ error: 'ECONNRESET' });
 });
 
 test.each(['string', 'array'])(
