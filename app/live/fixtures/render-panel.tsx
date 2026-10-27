@@ -61,6 +61,7 @@ export async function renderPanel(empty: boolean) {
         capability: `${header}..nonce.test.tag`,
         queryFingerprint: 'a'.repeat(64),
         expiresAt: Date.now() + 60_000,
+        rewind: null,
       }),
     { preconnect: originalFetch.preconnect },
   );

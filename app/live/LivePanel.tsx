@@ -1,6 +1,7 @@
 import type { LiveQueryState, SealedLiveQuery } from '@neon/realtime/client';
 import { RealtimeProvider, useLiveQuery } from '@neon/realtime-react';
 import { type ReactElement, type ReactNode, useCallback, useEffect, useState } from 'react';
+import { followSwitch } from '../lib/rewind';
 import { useLive } from './LiveProvider';
 import {
   discardObservation,
@@ -110,6 +111,8 @@ export function LivePanel<Row>({
   const [failed, setFailed] = useState(false);
 
   const body = JSON.stringify({ factory, ...(home && { branch: 'home' }), ...(args && { args }) });
+  const ready = live.status === 'ready' && factory !== undefined;
+  const branch = live.status === 'ready' && !home ? live.rewind : null;
   const requestSeal = useCallback(async (): Promise<SealedLiveQuery<Row>> => {
     const res = await fetch(`/api/live/${query}`, {
       method: 'POST',
@@ -117,11 +120,16 @@ export function LivePanel<Row>({
       body,
     });
     if (!res.ok) throw new Error(`sealing ${query} answered ${res.status}`);
-    return (await res.json()) as SealedLiveQuery<Row>;
-  }, [query, body]);
-
-  const ready = live.status === 'ready' && factory !== undefined;
-  const branch = live.status === 'ready' && !home ? live.rewind : null;
+    const { rewind, ...sealed } = (await res.json()) as SealedLiveQuery<Row> & {
+      rewind: string | null;
+    };
+    // Sealed for a branch this page's socket is not on: it reloads onto it, asking nothing more.
+    if (rewind !== branch) {
+      followSwitch();
+      return new Promise<never>(() => {});
+    }
+    return sealed;
+  }, [query, body, branch]);
   useEffect(() => {
     if (!ready || factory === undefined) return;
     let cancelled = false;
