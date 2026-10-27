@@ -1849,6 +1849,9 @@ async function seedOneLapMismatches(
     `SELECT f.repository,
        (SELECT c.issue_number FROM mc.claims c WHERE c.factory = l.factory AND c.run_id = l.run_id
          ORDER BY c.claimed_at DESC NULLS LAST LIMIT 1) AS issue,
+       (SELECT i.url FROM mc.issues i WHERE i.factory = l.factory AND i.number =
+         (SELECT c.issue_number FROM mc.claims c WHERE c.factory = l.factory AND c.run_id = l.run_id
+           ORDER BY c.claimed_at DESC NULLS LAST LIMIT 1)) AS issue_url,
        pick.output ->> 'route' AS route, pick.output ->> 'depth' AS depth,
        review.output ->> 'outcome' AS review, review.output ->> 'pr' AS pr,
        land.output ->> 'outcome' AS gate, land.output ->> 'reason' AS reason
@@ -1869,7 +1872,7 @@ async function seedOneLapMismatches(
     issue,
     links: {
       console: `http://localhost:3090/console/r/${runId}`,
-      issue: issue === null ? null : `https://github.com/${lap.repository}/issues/${issue}`,
+      issue: lap.issue_url,
       pr: pr === '' ? null : `https://github.com/${lap.repository}/pull/${pr}`,
     },
     review: lap.review,

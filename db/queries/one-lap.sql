@@ -1,5 +1,5 @@
 SELECT l.run_id, l.status, l.started_at, l.completed_at, f.repository, f.console,
-  c.issue_number, i.title AS issue_title,
+  c.issue_number, i.title AS issue_title, i.url AS issue_url,
   -- The pick step's route, or else the one the lap's claim comment records, as lanes.sql reads it.
   coalesce(p.output ->> 'route', c.route) AS route, p.output ->> 'depth' AS depth,
   pr.pr,

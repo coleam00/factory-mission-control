@@ -1276,6 +1276,7 @@ describe('one-lap on the seed', () => {
         console: 'http://localhost:3090',
         issue_number: 3,
         issue_title: 'A migrations runner that refuses main',
+        issue_url: 'https://github.com/coleam00/factory-mission-control/issues/3',
         route: 'simple',
         depth: 'normal',
         pr: '#103',

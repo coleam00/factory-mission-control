@@ -97,6 +97,7 @@ const lap = (over: Partial<OneLapRow>): OneLapRow => ({
   console: 'http://localhost:3090',
   issue_number: null,
   issue_title: null,
+  issue_url: null,
   route: 'simple',
   depth: null,
   pr: null,

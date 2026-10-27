@@ -8,7 +8,6 @@ import {
   type CheckLineRow,
   consoleUrl,
   GATE_TOKEN,
-  issueUrl,
   lapCost,
   lapOutcome,
   linesInOrder,
@@ -117,10 +116,12 @@ export function LapHeaderBody({
           <span className="flex min-w-0 flex-1 items-baseline gap-2.5">
             {lap.issue_number === null ? (
               <span className={`${MONO} text-text-secondary`}>No issue claimed</span>
+            ) : lap.issue_url === null ? (
+              <span className={`${MONO} font-bold text-text-primary`}>#{lap.issue_number}</span>
             ) : (
               <a
                 data-link="issue"
-                href={issueUrl(lap.repository, lap.issue_number)}
+                href={lap.issue_url}
                 className={`${MONO} shrink-0 font-bold text-text-primary ${LINK}`}
               >
                 #{lap.issue_number}

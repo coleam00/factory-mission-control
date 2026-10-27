@@ -21,6 +21,7 @@ export interface OneLapRow {
   console: string;
   issue_number: number | null;
   issue_title: string | null;
+  issue_url: string | null;
   route: string | null;
   depth: string | null;
   pr: string | null;
@@ -108,8 +109,6 @@ export function prNumber(text: string | null): number | null {
 
 export const pullUrl = (repository: string, n: number) =>
   `https://github.com/${repository}/pull/${n}`;
-export const issueUrl = (repository: string, n: number) =>
-  `https://github.com/${repository}/issues/${n}`;
 
 /** A finished lap's outcome, read as recent-laps.sql reads it; null while it runs or when none applies. */
 export function lapOutcome(lap: OneLapRow): Outcome | null {
