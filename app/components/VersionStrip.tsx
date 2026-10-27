@@ -152,13 +152,14 @@ function Entry({
           </span>
         ) : (
           <span className={`${MONO} min-w-0 break-all text-text-secondary`}>
-            {digest.slice(0, 'sha256:'.length + 12)}
+            {shortDigest(digest)}
           </span>
         )}
         {digest === null ? null : (
           <button
             type="button"
             aria-pressed={selected}
+            aria-label={selectName(entry, digest, selected)}
             onClick={() => onToggle(digest)}
             className={`ml-auto font-mono text-[11px] font-semibold uppercase tracking-[0.1em] transition-colors ${
               selected ? 'text-text-primary' : 'text-text-secondary hover:text-text-primary'
@@ -181,6 +182,17 @@ function Entry({
       </div>
     </li>
   );
+}
+
+const shortDigest = (digest: string) => digest.slice(0, 'sha256:'.length + 12);
+
+/**
+ * The select button's accessible name: its visible text, then the pin and short digest, since two
+ * versions can share a pin and so a date.
+ */
+export function selectName(entry: StripEntry, digest: string, selected: boolean): string {
+  const pin = entry.pin === null ? `pin ${NOT_RECORDED}` : `pin ${entry.pin.slice(0, 8)}`;
+  return `${selected ? 'Selected' : 'Select'} ${entry.date}, ${pin}, ${shortDigest(digest)}`;
 }
 
 function Trailer({ label, text }: { label: string; text: string }): ReactElement {
