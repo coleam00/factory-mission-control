@@ -1,6 +1,7 @@
 import { eventData, WORKFLOW } from './fixture/write';
 import { failing, guardedDatabaseUrl, type Main, noArguments, runCli } from './lib/cli';
 import type { Db, Tx } from './lib/db';
+import { reconcileLaps } from './reconcile-laps';
 
 const USAGE = 'usage: bun run projection:locks (the check branch in .mc-check.env)';
 
@@ -248,9 +249,9 @@ const finishRun = (tx: Tx, runId: string) =>
 
 /**
  * A finish Archon writes while another session holds the run's lap row, as problems: the write
- * commits and its projection gives up with one 55P03; mc.replay_locked_runs() (0014, issue #152)
- * skips the lap while it is still locked; once the lock is gone one call projects the finish, so
- * the lane ends finished, and marks the error replayed.
+ * commits and its projection gives up with one 55P03; `reconcile:laps` (issue #152) leaves the lap
+ * while it is still locked, and once the lock is gone one run projects the finish, so the lane ends
+ * finished.
  */
 async function finishProblems(archon: Db, holder: Db): Promise<string[]> {
   const [run] = await archon.query(
@@ -270,22 +271,18 @@ async function finishProblems(archon: Db, holder: Db): Promise<string[]> {
     const added = (await errorStates(archon)).slice(before);
     if (added.length !== 1 || added[0] !== '55P03')
       problems.push('expected one 55P03 projection error');
-    await archon.query('SELECT mc.replay_locked_runs()');
+    await reconcileLaps(archon);
     if ((await lap())?.status !== 'running')
-      problems.push('expected the replay to skip the lap while it is locked');
+      problems.push('expected the repair to leave the lap while it is locked');
   } finally {
     await release();
   }
-  await archon.query('SELECT mc.replay_locked_runs()');
+  const { failed } = await reconcileLaps(archon);
+  for (const { message } of failed.filter((run) => run.runId === runId))
+    problems.push(`the repair failed: ${message}`);
   const finished = await lap();
   if (finished?.status !== 'completed' || finished?.completed_at === null)
-    problems.push('expected one replay after the lock to leave the lane finished');
-  const [unreplayed] = await archon.query(
-    `SELECT count(*)::int AS n FROM mc.projection_errors
-      WHERE run_id = $1 AND sqlstate = '55P03' AND replayed_at IS NULL`,
-    [runId],
-  );
-  if (unreplayed?.n !== 0) problems.push("expected the replay to mark the run's error replayed");
+    problems.push('expected one repair after the lock to leave the lane finished');
   return problems;
 }
 
@@ -369,8 +366,8 @@ export const main: Main = async (argv, deps) => {
       deps.out(
         `${problems.length === 0 ? 'PASS' : `FAIL (${problems.join('; ')})`} | ${versionCheck}`,
       );
-      // After the version check: its replay projects the version cases' runs again too.
-      const finishCheck = 'finish while the lap row is locked: replayed once the lock is gone';
+      // After the version check: its repair projects the version cases' runs again too.
+      const finishCheck = 'finish while the lap row is locked: repaired once the lock is gone';
       const finish = await finishProblems(archon, holder);
       if (finish.length > 0) failures.push(finishCheck);
       deps.out(`${finish.length === 0 ? 'PASS' : `FAIL (${finish.join('; ')})`} | ${finishCheck}`);

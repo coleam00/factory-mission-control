@@ -272,7 +272,6 @@ test('the eligibility upgrade keeps live history and installs the same functions
     expect(await snapshot(upgraded)).toEqual(before);
     expect(await runMigrations({ files: migrationFiles, db: upgraded })).toEqual([
       '0013_step_attempt_identity.sql',
-      '0014_replay_locked_runs.sql',
     ]);
     expect(await projectionDefinitions(upgraded)).toEqual(await projectionDefinitions(db));
     expect(await runMigrations({ files: migrationFiles, db: upgraded })).toEqual([]);
@@ -316,7 +315,6 @@ test('0011 rewrites a short pin to the one full sha it prefixes, and clears ambi
       '0011_pin_full_archon_sha.sql',
       '0012_arch_text_lf.sql',
       '0013_step_attempt_identity.sql',
-      '0014_replay_locked_runs.sql',
     ]);
     const migrated = [
       { sha: 'p1', archon_sha: full },
@@ -376,7 +374,6 @@ test('0012 rewrites CRLF to LF in stored architecture texts, and changes nothing
     expect(await runMigrations({ files: migrationFiles, db: historical })).toEqual([
       '0012_arch_text_lf.sql',
       '0013_step_attempt_identity.sql',
-      '0014_replay_locked_runs.sql',
     ]);
     const migrated = [
       { kind: 'hook', path: '.factory/hooks/gate.sh', text: 'exit 0\n' },
@@ -441,7 +438,6 @@ test('0013 gives back the runs of a step the old key merged, and changes nothing
 
     expect(await runMigrations({ files: migrationFiles, db: historical })).toEqual([
       '0013_step_attempt_identity.sql',
-      '0014_replay_locked_runs.sql',
     ]);
     expect(await attempts()).toEqual([
       { step_id: 'land', outcome: 'merged', cost_usd: null },
@@ -592,7 +588,6 @@ test('every projection function stops a lock wait after 100 ms, and only inside 
       'project_version',
       'record_projection_error',
       'record_step_attempt',
-      'replay_locked_runs',
     ].map((proname) => ({ proname, proconfig: ['lock_timeout=100ms'] })),
   ]);
 

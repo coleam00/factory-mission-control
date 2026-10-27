@@ -172,12 +172,11 @@ test('a dropped projection is repaired once, an agreeing lap is left alone, and 
 const lostLockWait = (runId: string) =>
   rows(
     `INSERT INTO mc.projection_errors (source, run_id, event_id, sqlstate, message)
-     VALUES ('mc_project_run_update', $1, NULL, '55P03', 'canceling statement due to lock timeout')
-     RETURNING id`,
+     VALUES ('mc_project_run_update', $1, NULL, '55P03', 'canceling statement due to lock timeout')`,
     [runId],
   );
 
-test('one run clears the lane of a finish lost to a locked lap, and the next replays nothing', async () => {
+test('one run clears the lane of a finish lost to a locked lap', async () => {
   const runId = await finishedRun();
   const projected = await rows('SELECT * FROM mc.laps');
   expect(projected.map((lap) => lap.status)).toEqual(['completed']);
@@ -185,91 +184,16 @@ test('one run clears the lane of a finish lost to a locked lap, and the next rep
   await rows(`UPDATE mc.laps SET status = 'running', completed_at = NULL WHERE run_id = $1`, [
     runId,
   ]);
-  const [lost] = await lostLockWait(runId);
+  await lostLockWait(runId);
 
   const first = await run([]);
   expect(first.code).toBe(0);
-  expect(first.out).toEqual([
-    'reconcile: 1 run(s) replayed after a lost lock wait',
-    'reconcile: 0 run(s) repaired',
-  ]);
+  expect(first.out).toEqual(['reconcile: 1 run(s) repaired']);
   expect(await rows('SELECT * FROM mc.laps')).toEqual(projected);
-  const [marked] = await rows('SELECT replayed_at FROM mc.projection_errors WHERE id = $1', [
-    lost?.id,
-  ]);
-  expect(marked?.replayed_at).toBeInstanceOf(Date);
 
   const second = await run([]);
   expect(second.out).toEqual(['reconcile: 0 run(s) repaired']);
   expect(await archonRows()).toEqual(archon);
-});
-
-test('a lost lock wait of a run Archon is still running is left unreplayed', async () => {
-  const runId = await archonRun('running');
-  await lostLockWait(runId);
-
-  const { code, out } = await run([]);
-  expect(code).toBe(0);
-  expect(out).toEqual(['reconcile: 0 run(s) repaired']);
-  expect(await rows('SELECT replayed_at FROM mc.projection_errors')).toEqual([
-    { replayed_at: null },
-  ]);
-});
-
-test('only a lost lock wait of the run triggers is replayed, and only it is marked', async () => {
-  const otherErrors = async (runId: string) => {
-    await rows(`UPDATE mc.laps SET status = 'running', completed_at = NULL WHERE run_id = $1`, [
-      runId,
-    ]);
-    await rows(
-      `INSERT INTO mc.projection_errors (source, run_id, event_id, sqlstate, message) VALUES
-         ('mc_project_run_update', $1, NULL, '22P02', 'invalid input syntax'),
-         ('mc_project_step_event', $1, NULL, '55P03', 'canceling statement due to lock timeout')`,
-      [runId],
-    );
-  };
-  const unlocked = await finishedRun();
-  await otherErrors(unlocked);
-  const locked = await finishedRun();
-  await otherErrors(locked);
-  await lostLockWait(locked);
-
-  const { code, out } = await run([]);
-  expect(code).toBe(0);
-  expect(out).toEqual([
-    'reconcile: 1 run(s) replayed after a lost lock wait',
-    'reconcile: 1 run(s) repaired',
-  ]);
-  const marked = await rows(
-    `SELECT run_id, source, sqlstate FROM mc.projection_errors WHERE replayed_at IS NOT NULL`,
-  );
-  expect(marked).toEqual([{ run_id: locked, source: 'mc_project_run_update', sqlstate: '55P03' }]);
-});
-
-test('a replay that records an error stays unreplayed, and the next run replays it', async () => {
-  const runId = await finishedRun();
-  const projected = await rows('SELECT * FROM mc.laps');
-  await rows(`UPDATE mc.laps SET status = 'running', completed_at = NULL WHERE run_id = $1`, [
-    runId,
-  ]);
-  const [lost] = await lostLockWait(runId);
-  await rows(`ALTER TABLE mc.laps ADD CONSTRAINT not_yet CHECK (status <> 'completed') NOT VALID`);
-
-  const failed = await run([]);
-  expect(failed.out).toEqual(['reconcile: 0 run(s) repaired']);
-  const unreplayed = () =>
-    rows('SELECT replayed_at FROM mc.projection_errors WHERE id = $1', [lost?.id]);
-  expect(await unreplayed()).toEqual([{ replayed_at: null }]);
-
-  await rows('ALTER TABLE mc.laps DROP CONSTRAINT not_yet');
-  const next = await run([]);
-  expect(next.code).toBe(0);
-  expect(next.out).toEqual([
-    'reconcile: 1 run(s) replayed after a lost lock wait',
-    'reconcile: 0 run(s) repaired',
-  ]);
-  expect(await rows('SELECT * FROM mc.laps')).toEqual(projected);
-  expect((await unreplayed())[0]?.replayed_at).toBeInstanceOf(Date);
 });
 
 test('a run whose lap was never inserted gets one', async () => {
