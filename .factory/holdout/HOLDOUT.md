@@ -334,14 +334,16 @@ Protects: 8.4; 8.3
 Touches: every screen, live query performance, design tokens
 Setup: the check app on the seed, with a cold browser profile.
 Steps:
-1. Open the home screen at 1440 and at 390 px wide, five times each; record for every panel the time from navigation to `data-state="ready"`, and for every live query the time to its first snapshot.
-2. Run `harness/design-probe.js` on every screen at both widths: home map, a step detail open, version strip with a comparison, architecture diff, factory page, owner queue, testing, one lap, rewind, health, and a factory with no laps.
-3. Open the app with the operating system set to light mode.
+1. Open the home screen at 1440 and at 390 px wide, five times each; record for every panel, measured from navigation, the time to `data-state="ready"`, the time its first snapshot arrived, and the time its rows were on screen.
+2. On the seed, run `EXPLAIN ANALYZE` on every live query the home screen subscribes to, and record each one's execution time.
+3. Run `harness/design-probe.js` on every screen at both widths: home map, a step detail open, version strip with a comparison, architecture diff, factory page, owner queue, testing, one lap, rewind, health, and a factory with no laps.
+4. Open the app with the operating system set to light mode.
 Expect:
-- `judges/speed.js` PASS: every panel ready within 2000 ms and every first snapshot within 500 ms, on every run.
+- `judges/speed.js` PASS: every live query's `EXPLAIN ANALYZE` execution under 100 ms; on every run, every panel ready within 2000 ms of navigation and its rows on screen within 500 ms of its first snapshot arriving. The time from the subscribe to the first snapshot is Neon's and is judged only through the 2000 ms ready bound.
 - The design probe reports zero failures on every screen at both widths.
 - The app stays dark in light mode.
 Author: writer, 2026-10-24, first set for the whole release (docs/mission-control.prd.md)
+Revised: writer, 2026-10-27, owner decision on #137/#141 (engineering.md live-panel speed rule): the 500 ms bound runs from the first snapshot arriving, not from navigation; the query's own work is judged by `EXPLAIN ANALYZE` under 100 ms.
 
 ## H-20 Default-branch holdout verdicts follow the latest manager pass
 Protects: 4.5; 11.7; invariant 3
