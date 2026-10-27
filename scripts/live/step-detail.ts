@@ -29,11 +29,15 @@ const STEP_QUERIES = [
   'step-scripts',
   'step-hooks',
   'step-yaml',
+  'step-versions',
 ];
 const STEP_PATH = '/steps/archon-loop/check-app';
 /** The step deliver's block includes to write the code, and the prompt the seed pins for it. */
 const IMPLEMENT_PATH = '/steps/archon-implement/implement';
 const IMPLEMENT_PROMPT = 'fixtures/pack/sdlc/implement/commands/implement.md';
+/** A step whose prompt the seed changes between its two versions with architecture. */
+const REVIEW_PATH = '/steps/archon-loop/review';
+const REVIEW_PROMPT = 'loop/commands/loop-review.md';
 /**
  * check-app at the seed's current version, V2 (the newest pin with architecture rows): V2 drops
  * `briefs`, so it depends on `subject` alone (owner decision on #14).
@@ -134,6 +138,66 @@ async function includedImplementMismatches(
   return failures;
 }
 
+/** The stored review prompt at a version's architecture. */
+async function reviewPromptAt(db: Db, version: Version): Promise<string | null> {
+  const [row] = await db.query(
+    'SELECT text FROM mc.arch_texts WHERE archon_sha = $1 AND factory_sha = $2 AND path = $3',
+    [version.archon_sha, version.factory_sha, REVIEW_PROMPT],
+  );
+  return typeof row?.text === 'string' ? row.text : null;
+}
+
+const isOneSentence = (text: string) => text.match(/[.!?](\s|$)/g)?.length === 1;
+
+const onVersionPicker = `document.querySelector('[data-step-version]') !== null`;
+
+/**
+ * Where the step screen at an older version differs from what that version stored: review opened
+ * at the older pin shows its own prompt, not the current one, and a version nobody recorded reads
+ * one sentence. Both keep the version picker.
+ */
+async function olderVersionMismatches(page: Page, base: string, db: Db): Promise<string[]> {
+  const failures: string[] = [];
+  const pins = (await db.query(
+    `SELECT p.sha, a.archon_sha, a.factory_sha FROM mc.arch_versions a
+       JOIN mc.pins p ON p.archon_sha = a.archon_sha
+      ORDER BY p.committed_at DESC, a.parsed_at DESC`,
+  )) as unknown as (Version & { sha: string })[];
+  const [current] = pins;
+  const older = pins.find((pin) => pin.sha !== current?.sha);
+  if (!current || !older) return ['the check branch has no older pin with architecture rows'];
+  const olderPrompt = await reviewPromptAt(db, older);
+  if (olderPrompt === null || olderPrompt === (await reviewPromptAt(db, current))) {
+    return [`the seed's review prompt does not differ at ${older.sha.slice(0, 8)}`];
+  }
+  await openStep(page, base, `${REVIEW_PATH}?at=${older.sha}`, stepPanelsReady);
+  const prompt = await page.evaluate<string | null>(
+    `document.querySelector('[data-live="step-prompt"] [data-prompt]')?.textContent ?? null`,
+  );
+  if (prompt !== olderPrompt) {
+    failures.push(`review at ${older.sha.slice(0, 8)} does not show that version's prompt`);
+  }
+  if (!(await page.evaluate<boolean>(onVersionPicker))) {
+    failures.push(`review at ${older.sha.slice(0, 8)} shows no version picker`);
+  }
+  await openStep(
+    page,
+    base,
+    `${REVIEW_PATH}?at=not-a-version`,
+    `document.querySelector('[data-live="step-detail"][data-state="ready"]') !== null`,
+  );
+  const unknown = await page.evaluate<string>(
+    `document.querySelector('[data-live="step-detail"]').textContent.trim()`,
+  );
+  if (!isOneSentence(unknown)) {
+    failures.push(`an unknown version shows "${unknown}", not one sentence`);
+  }
+  if (!(await page.evaluate<boolean>(onVersionPicker))) {
+    failures.push('an unknown version shows no version picker');
+  }
+  return failures;
+}
+
 const setCheckAppDescription = `UPDATE mc.arch_steps SET description = $3
   WHERE archon_sha = $1 AND factory_sha = $2 AND workflow = 'archon-loop' AND path = 'check-app'`;
 
@@ -162,7 +226,8 @@ async function openStep(page: Page, base: string, path: string, ready: string): 
 
 /**
  * The step screen on check-app: the seed's step, description writes timed to it across the hold,
- * then land, the way from deliver to the implement step it includes, and an unknown step.
+ * then land, the way from deliver to the implement step it includes, review at an older version
+ * and at an unknown one, and an unknown step.
  */
 export function stepDetailPhase(ctx: LiveContext): LivePhase {
   const { deps, db, outDir, holdSeconds, branch, measure } = ctx;
@@ -236,6 +301,7 @@ export function stepDetailPhase(ctx: LiveContext): LivePhase {
         ctx.failures.push(`land shows when "${when}", stored "${land?.when_condition}"`);
       }
       ctx.failures.push(...(await includedImplementMismatches(page, base, deps.repoRoot)));
+      ctx.failures.push(...(await olderVersionMismatches(page, base, db)));
       await openStep(
         page,
         base,
@@ -245,7 +311,7 @@ export function stepDetailPhase(ctx: LiveContext): LivePhase {
       const unknown = await page.evaluate<string>(
         `document.querySelector('[data-live="step-detail"]').textContent.trim()`,
       );
-      if (unknown.match(/[.!?](\s|$)/g)?.length !== 1) {
+      if (!isOneSentence(unknown)) {
         ctx.failures.push(`an unknown step shows "${unknown}", not one sentence`);
       }
       await page.close();
