@@ -112,9 +112,13 @@ export interface NestingRow {
   open_path: string;
 }
 
-/** A step's screen. A nested path's `/` is encoded, and react-router decodes it back. */
-export function stepHref(workflow: string, path: string): string {
-  return `/steps/${encodeURIComponent(workflow)}/${encodeURIComponent(path)}`;
+/**
+ * A step's screen, at the version pinned `at` when one is given. A nested path's `/` is encoded,
+ * and react-router decodes it back.
+ */
+export function stepHref(workflow: string, path: string, at?: string | null): string {
+  const href = `/steps/${encodeURIComponent(workflow)}/${encodeURIComponent(path)}`;
+  return at ? `${href}?at=${encodeURIComponent(at)}` : href;
 }
 
 export interface Nesting {
@@ -124,7 +128,8 @@ export interface Nesting {
   includedAt: { workflow: string; path: string; href: string }[];
 }
 
-export function nesting(rows: readonly NestingRow[], step: StepRow): Nesting {
+/** The step's nesting, each link opening its screen at the version pinned `at`. */
+export function nesting(rows: readonly NestingRow[], step: StepRow, at?: string | null): Nesting {
   const of = (relation: NestingRow['relation']) => rows.filter((row) => row.relation === relation);
   return {
     inside: of('inside')
@@ -135,7 +140,7 @@ export function nesting(rows: readonly NestingRow[], step: StepRow): Nesting {
           label,
           depth: label.split('/').length - 1,
           kind: row.kind,
-          href: stepHref(row.open_workflow, row.open_path),
+          href: stepHref(row.open_workflow, row.open_path, at),
         };
       }),
     includedAt: of('included_at')
@@ -143,7 +148,45 @@ export function nesting(rows: readonly NestingRow[], step: StepRow): Nesting {
       .map((row) => ({
         workflow: row.workflow,
         path: row.path,
-        href: stepHref(row.open_workflow, row.open_path),
+        href: stepHref(row.open_workflow, row.open_path, at),
       })),
   };
+}
+
+/**
+ * One row of `db/queries/step-versions.sql`: a pin with architecture, and whether it is the version
+ * the step screen shows without one in its address.
+ */
+export interface StepVersionRow {
+  sha: string;
+  reason: string;
+  committed_at: Date;
+  is_current: boolean;
+}
+
+export interface StepVersion {
+  sha: string;
+  /** The pin's first 8 characters and its commit date. */
+  label: string;
+  reason: string;
+  current: boolean;
+}
+
+/** The versions the step screen can open, newest first. */
+export function stepVersions(rows: readonly StepVersionRow[]): StepVersion[] {
+  return [...rows]
+    .sort(
+      (a, b) => b.committed_at.getTime() - a.committed_at.getTime() || a.sha.localeCompare(b.sha),
+    )
+    .map((row) => ({
+      sha: row.sha,
+      label: `${row.sha.slice(0, 8)} ${row.committed_at.toISOString().slice(0, 10)}`,
+      reason: row.reason,
+      current: row.is_current,
+    }));
+}
+
+/** The version the step screen shows, in a sentence: the one pinned `at`, else the current one. */
+export function versionName(at: string | null): string {
+  return at === null ? 'the current version' : `version ${at.slice(0, 8)}`;
 }

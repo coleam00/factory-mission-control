@@ -7,6 +7,8 @@ import {
   nesting,
   type StepRow,
   stepHref,
+  stepVersions,
+  versionName,
 } from './step-detail';
 
 function step(path: string, fields: Partial<StepRow> = {}): StepRow {
@@ -95,6 +97,59 @@ test("a nested path's slash is encoded in the step's link", () => {
   expect(stepHref('archon-deliver-block', 'rounds/implement')).toBe(
     '/steps/archon-deliver-block/rounds%2Fimplement',
   );
+});
+
+test("a step's link keeps the version it is opened at, and has none for the current version", () => {
+  expect(stepHref('archon-loop', 'review', '8e3e1cef/x')).toBe(
+    '/steps/archon-loop/review?at=8e3e1cef%2Fx',
+  );
+  expect(stepHref('archon-loop', 'review', null)).toBe('/steps/archon-loop/review');
+  expect(stepHref('archon-loop', 'review', '')).toBe('/steps/archon-loop/review');
+});
+
+test("nesting's links open each screen at the version the step is opened at", () => {
+  const { inside, includedAt } = nesting(
+    [
+      nested('inside', 'archon-ship-block', 'deliver/rounds/implement', 2, [
+        'archon-deliver-block',
+        'rounds/implement',
+      ]),
+      nested('included_at', 'archon-loop', 'ship/deliver', 4, ['archon-loop', 'ship']),
+    ],
+    step('deliver', { workflow: 'archon-ship-block' }),
+    'p1',
+  );
+  expect(inside.map((node) => node.href)).toEqual([
+    '/steps/archon-deliver-block/rounds%2Fimplement?at=p1',
+  ]);
+  expect(includedAt.map((place) => place.href)).toEqual(['/steps/archon-loop/ship?at=p1']);
+});
+
+test('the versions a step opens at are newest first, the current one marked', () => {
+  expect(
+    stepVersions([
+      {
+        sha: 'aaaa1111old',
+        reason: 'one',
+        committed_at: new Date('2026-01-01T00:00:00Z'),
+        is_current: false,
+      },
+      {
+        sha: 'bbbb2222new',
+        reason: 'two',
+        committed_at: new Date('2026-02-01T00:00:00Z'),
+        is_current: true,
+      },
+    ]),
+  ).toEqual([
+    { sha: 'bbbb2222new', label: 'bbbb2222 2026-02-01', reason: 'two', current: true },
+    { sha: 'aaaa1111old', label: 'aaaa1111 2026-01-01', reason: 'one', current: false },
+  ]);
+});
+
+test('a sentence names the version the step is shown at', () => {
+  expect(versionName(null)).toBe('the current version');
+  expect(versionName('8e3e1cefaf1e1b7955789d6a43a81b6c2dbd7082')).toBe('version 8e3e1cef');
 });
 
 test('repeated occurrences beneath a step are two entries, by their path beneath it, in order', () => {

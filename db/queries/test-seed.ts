@@ -10,7 +10,10 @@ import { archonDb, migrationFiles } from '../test-db';
 /** Every live query in db/queries/, by name. */
 export const queries = [...loadLiveQueries(import.meta.dir)];
 
-/** The step screen's panels below step-detail: keyed by the step's workflow and path too. */
+/**
+ * The step screen's panels below step-detail: keyed by the step's workflow and path too. Every step
+ * query takes the version's pin last, '' for the current version.
+ */
 export const STEP_PANELS = [
   'step-nesting',
   'step-prompt',
@@ -24,11 +27,13 @@ export const CHECK_APP = ['archon-loop', 'check-app'];
 export const LAP_PANELS = ['one-lap', 'one-lap-steps', 'one-lap-checks'];
 export const LAP_RUN = '5eed0001-0000-4000-8000-000000000003';
 export const paramsFor = (name: string, factory: string) =>
-  STEP_PANELS.includes(name)
-    ? [factory, ...CHECK_APP]
-    : LAP_PANELS.includes(name)
-      ? [factory, LAP_RUN]
-      : [factory];
+  name === 'step-detail'
+    ? [factory, '']
+    : STEP_PANELS.includes(name)
+      ? [factory, ...CHECK_APP, '']
+      : LAP_PANELS.includes(name)
+        ? [factory, LAP_RUN]
+        : [factory];
 
 export const SEED = readFileSync(join(REPO_ROOT, 'fixtures', 'seed.sql'), 'utf8');
 

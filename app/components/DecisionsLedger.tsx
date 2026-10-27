@@ -169,7 +169,7 @@ export function Ledger({
                   <span className={`${BADGE} border-warning/35 bg-warning/[0.08] text-warning`}>
                     {entry.waiting === NOT_RECORDED
                       ? `Laps waiting: ${NOT_RECORDED}`
-                      : `${entry.waiting} laps waiting`}
+                      : `${entry.waiting} ${entry.waiting === 1 ? 'lap' : 'laps'} waiting`}
                   </span>
                   <span className={`${MONO} ml-auto text-text-secondary`}>
                     {entry.laps} laps run

@@ -1,9 +1,11 @@
 WITH version AS (
-  -- The current version: the architecture of the newest pin that has any.
+  -- The version the address names by its pin, $4, or for '' the current version: the
+  -- architecture of the newest pin that has any.
   SELECT a.archon_sha, a.factory_sha
   FROM mc.arch_versions a
   JOIN mc.pins p ON p.archon_sha = a.archon_sha
   JOIN mc.factories f ON f.name = $1
+  WHERE $4 = '' OR p.sha = $4
   ORDER BY p.committed_at DESC, a.parsed_at DESC
   LIMIT 1
 ),

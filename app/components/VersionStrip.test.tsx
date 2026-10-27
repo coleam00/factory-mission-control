@@ -146,3 +146,28 @@ test('one picked version links to its own scorecard, and none or two picked show
   expect(render([])).not.toContain('data-scorecard');
   expect(render([V2, V1])).not.toContain('data-scorecard');
 });
+
+test('comparison guidance follows the versions that can be picked, not the entries shown', () => {
+  const pending = [
+    entry({ pin: 'f00dfeed00', date: '2026-10-25' }),
+    entry({ pin: 'cafebabe00', date: '2026-10-26' }),
+  ];
+  const none = render([], '', pending);
+  expect(none.match(/data-kind="pending"/g)).toHaveLength(2);
+  expect(none).not.toContain('<button');
+  expect(none).toContain('No version has run yet, so there is nothing to compare.');
+  expect(none).not.toContain('Select two versions');
+
+  const one = [entry({ digest: V1, pin: '8e3e1cef00', date: '2026-09-30' }), ...pending];
+  const unpicked = render([], '', one);
+  expect(unpicked).toContain('Only one version has run; a comparison needs a second.');
+  expect(unpicked).not.toContain('Select two versions');
+  const picked = render([V1], '', one);
+  expect(picked).toContain('data-scorecard="one"');
+  expect(picked).toContain('A comparison needs a second version that has run.');
+  expect(picked).not.toContain('Select another version');
+
+  expect(render([])).toContain('Select two versions to compare.');
+  expect(render([V2])).toContain('Select another version to compare.');
+  expect(render([V2, V1])).toContain('data-compare="scorecard"');
+});
