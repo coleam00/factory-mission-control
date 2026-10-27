@@ -21,12 +21,31 @@ const connectionClosed = (error: unknown): error is Error =>
  * nothing twice.
  */
 async function writeDelivery(db: Db, write: Write, delivery: string): Promise<void> {
+  let statements = 0;
+  let wrote = false;
+  const attempt = () =>
+    db.transaction(async (tx) => {
+      statements = 0;
+      wrote = false;
+      await write({
+        query: (sql, params) => {
+          statements += 1;
+          return tx.query(sql, params);
+        },
+      });
+      wrote = true;
+    });
   try {
-    await db.transaction(write);
+    await attempt();
   } catch (error) {
     if (!connectionClosed(error)) throw error;
-    console.warn(`${delivery}: connection closed (${error.message}); writing it again`);
-    await db.transaction(write);
+    const where = wrote
+      ? 'at COMMIT'
+      : statements === 0
+        ? 'before the first statement'
+        : `at statement ${statements}`;
+    console.warn(`${delivery}: connection closed ${where} (${error.message}); writing it again`);
+    await attempt();
   }
 }
 
