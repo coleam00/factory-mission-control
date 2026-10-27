@@ -232,15 +232,16 @@ Steps, each as Archon would, checking that each statement commits:
 2. A run row with `metadata` null, and one with no `workflow_source`; a run updated to `completed` twice.
 3. In a second session, take an exclusive lock on every dashboard table the triggers write; then, with `statement_timeout = 2s`, insert a `node_completed` and update a run's status. Release the lock.
 4. Rename one dashboard table the triggers write, insert a `node_started`, and rename it back.
-5. Insert 1,000 `provider_event` rows and check whether any dashboard trigger function ran (for example through `pg_stat_user_functions` with function tracking on).
+5. Measure trigger firings in a way the check branch's own role can read (Neon refuses `SET track_functions`, so `pg_stat_user_functions` is not used): (a) as a positive control, `EXPLAIN (ANALYZE) INSERT` one `node_started` event and note the `Trigger <name>: ... calls=` lines the dashboard's triggers print; (b) in one transaction, `EXPLAIN (ANALYZE) INSERT` 1,000 `provider_event` rows, then 10 rows each of two other event types that are not one of the four step-level events, then read `pg_stat_xact_user_tables` for every dashboard table and for `remote_agent_workflow_events` before `COMMIT`; (c) list every trigger on `remote_agent_workflow_events` from `pg_trigger` (with `pg_get_triggerdef`), noting whether each is row-level and its `WHEN` condition. Note `projection_errors` again.
 6. Insert a normal `node_started` and watch the lanes.
 Expect:
 - Every Archon statement in steps 1 to 5 commits; none waits on the lock (step 3 finishes inside the 2-second timeout) or raises.
 - Every committed Archon statement reads back exactly as written: after step 3 the run's status in Archon is the new status, not the old one (tightened 2026-10-26: H-32 covers every write kind under every lock).
 - `projection_errors` grows for the rows that could not be projected (at least steps 3 and 4) and the trigger never raised.
-- No dashboard trigger function runs for `provider_event` rows.
+- No dashboard trigger function runs for `provider_event` rows, nor for any event type outside the four step-level ones: the positive control in step 5(a) shows the dashboard's trigger with `calls=1`, and step 5(b)'s plans show no dashboard trigger with any call (no `Trigger` line, or `calls=0`); `pg_stat_xact_user_tables` shows the events table's 1,020 inserts and zero inserted, updated or deleted rows on every dashboard table; `projection_errors` is unchanged by step 5; and step 5(c) finds no statement-level trigger on the events table and every row-level one has a `WHEN` that admits only the four step-level event types (11.4). If the positive control shows no trigger line, step 5 is INCONCLUSIVE, never PASS.
 - After step 6, the lanes update within 5 seconds: the projection still works after its own failures.
 Author: writer, 2026-10-24, first set for the whole release (docs/mission-control.prd.md)
+Revised: writer, 2026-10-27, #225 (Neon refuses `SET track_functions` on a check branch, so step 5 always read INCOMPLETE): the function-count measurement is replaced by trigger call counts from `EXPLAIN ANALYZE` with a positive control, transaction-level tuple counts on every dashboard table, and the trigger catalog; it now also covers non-step event types.
 
 ## H-13 The check commands only ever touch `check-*` branches and never `main`
 Protects: invariant 8; 11.3 check branches and migrations
@@ -912,3 +913,48 @@ Expect:
 - After step 4 the version is relabelled by the late pin (as H-23) and its map, step details and diff follow it: they say C3's architecture is not recorded; they never keep showing C2's under the C3 label.
 - After step 5, within 5 seconds and without a reload, they show C3's architecture.
 Author: writer, 2026-10-26, escaped defect #157 (class: label and architecture are one fact seen twice, so they must always agree)
+
+## H-56 Magenta marks only who we are: nothing you can click, select or focus is ever drawn in it
+Protects: 8.3 design contract (magenta only for identity) and engineering.md Design rule ("magenta is identity only"), as decided by the owner on #27 question 4 (2026-10-27): links, selection, focus and highlighted versions on the Versions screen, and anywhere else, use neutral tokens; magenta only on identity
+Touches: every screen and the shared layout, version strip and comparison, home map (nodes, edges, highlighted steps), factory switcher, rewind controls, links, focus, hover and pressed styles, text selection, live-arriving rows
+Setup: the check app on the seed, with two factories (as in H-17) and at least three versions on the strip. Identity means the product's brand mark and wordmark only; anything else the verifier records as identity needs a line of the product document that makes it so, quoted in the record.
+Steps:
+1. On every screen `judges/identity-color.js` names (`REQUIRED_SCREENS`), at 1440 and 390 px, record the computed styles of every link, button, tab, menu item, map node and edge, version entry, and the brand mark: at rest, hovered, keyboard-focused (reached with Tab, not a click, so `:focus-visible` applies), pressed, and, for anything that can be chosen, selected, selected and hovered, and selected and focused. Open every menu and popover first so their items are recorded open.
+2. On the Versions screen, select one version, then pick two for a comparison; then, without a reload, deliver a pin and a lap of a new digest so a new entry arrives while one is selected, and record the arriving entry and the still-selected one. Select the new one by keyboard only and record it.
+3. Select a run of text in a panel and in a step's prompt text, and record the `::selection` colors.
+4. Hover and focus the brand mark (if it is a link) and record those states.
+5. Repeat steps 1 to 4 with the operating system set to light mode.
+Expect:
+- `bun .factory/holdout/judges/identity-color.js <record.json>` prints PASS: no element other than the brand mark and wordmark shows a color in the identity band in any state, including a translucent magenta focus ring or selection wash; the brand mark's own hover and focus cues are not magenta either.
+- The app stays dark in light mode and the same holds there; no state, open menu or newly arrived entry is an exception.
+Author: writer, 2026-10-27, owner decision on #27 question 4 (tracking #229): the class, a non-identity element drawn in the identity color
+
+## H-57 With magenta gone, you can still tell what is selected, hovered and focused, on every screen
+Protects: 8.3 design contract (identity-only magenta, token colors, every control usable) and engineering.md Design rule, as decided by the owner on #27 question 4 (neutral tokens for selection, focus, links and highlighted versions); 4.2 version strip and comparison
+Touches: version strip and comparison picker, factory switcher, rewind picker, home map step selection, tabs and filters, every link and focus style
+Setup: the record from H-56, or a fresh one taken the same way.
+Steps:
+1. On the Versions screen, with no mouse, Tab to a version entry and select it, Tab on to the next, then hover a third with the mouse: record the selected, focused-unselected, hovered-unselected and selected-and-hovered entries and take a screenshot. Repeat with the two versions picked for a comparison, and with the version currently pinned.
+2. Do the same for the selected factory in the switcher, the selected step on the home map, the chosen rewind moment, and the open tab or filter on any screen that has one.
+3. Turn the step 1 screenshot to grayscale and say which entry is selected, which is focused and which is hovered.
+Expect:
+- `judges/identity-color.js` prints PASS on the record: every color that changes for hover, focus, press or selection is a neutral token (no hue: not magenta, and not a status color borrowed for selection); a link's own color is neutral; a selected entry differs visibly from an unselected one at rest and while hovered, and from a merely hovered one, by a neutral cue (surface, border, weight, underline or a marker); every keyboard focus shows a ring with at least 3:1 contrast against what it sits on.
+- In grayscale the selected version, the comparison pair and the focused entry can each be named without guessing; a selected entry never looks like a hovered one.
+- The design probe still reports zero failures on every screen at both widths.
+Author: writer, 2026-10-27, owner decision on #27 question 4 (tracking #229): edges of the identity-color class (selected against unselected, hover and focus, light-mode OS)
+
+## H-58 Cleaning up old check branches never deletes one a running lap still uses
+Protects: 11.3 runtime contract (`fixture:drop` deletes its own branch and any `check-*` branch older than 3 hours, and refuses anything not `check-*`), as amended by the owner decision on #27 question 6 (2026-10-27): the age cleanup skips any `check-*` branch owned by a run that is still running, and orphans of ended runs are still deleted after 3 hours; invariant 8
+Touches: fixture:branch (how it records a branch's owning run), fixture:drop (`--dry-run --at <time>`), Neon branches
+Setup: Neon credentials for the project, and two checkouts K1 and K2. Using `bun run fixture:branch` the way a lap uses it (so it records the owner the way the product records it; name an owner only by what its documentation or `--help` offers), create: K1's own branch, owned by a run that is running now (the verifier's own run); K2's own branch, owned by another running run; a branch owned by a running run with no checkout of its own; and a branch owned by a run that has ended in Archon (for example a completed `archon-loop` run, read from Archon's runs, never written). Make one more `check-<id>` branch from `fixture` with Neon's own tools, so no owner is recorded. Add the decoys of H-13. Note every branch in the project with its creation time and its owner's state. If `fixture:branch` records no owner at all, this scenario is FAIL: running and ended owners cannot be told apart.
+Steps:
+1. From K1, `bun run fixture:drop -- --dry-run --at <T>` for T = the newest of these branches' creation plus 3 hours 1 minute, T = the oldest's creation plus 2 hours 59 minutes, and T = 100 hours from now.
+2. The same three from K2.
+3. From K1, a real `bun run fixture:drop`, then list the project's branches; then, from K2, a dry run at 100 hours from now again.
+4. Let the run that owns the branch with no checkout end (or create a fresh branch owned by a run that then ends), and repeat a dry run at that branch's creation plus 3 hours 1 minute.
+Record every drop in the shape `judges/drop-cleanup.js` documents.
+Expect:
+- `bun .factory/holdout/judges/drop-cleanup.js <record.json>` prints PASS: each drop names exactly its own checkout's branch plus every other `check-*` branch more than 3 hours old at T whose owner has ended or is not recorded; it never names a branch whose owning run is still running (another checkout's branch included), at any T; just under 3 hours it names nothing but its own branch; it never names anything that is not `check-*`, nor `main`.
+- A dry run deletes nothing. The real run deletes only K1's own branch (and any genuinely old orphan); K2's branch and the other running-owned branch are still there, and K2's serve still works on its branch.
+- After step 4 the newly ended run's branch is named: an ended owner does not protect its orphan.
+Author: writer, 2026-10-27, owner decision on #27 question 6 (tracking #230): edges owner running, owner ended, no owner recorded, this checkout's own branch
