@@ -135,7 +135,8 @@ function field(body: unknown, key: string): unknown {
 /**
  * The browser names a query file, a factory, and `args` for a query's parameters after `$1`; it
  * never sends SQL. Sealing follows the rewind branch `POST /api/rewind` switched to, except for a
- * panel that asks for `branch: 'home'`.
+ * panel that asks for `branch: 'home'`. The answer names the rewind branch it was sealed for (null
+ * for home), so an open page can tell that the server switched since it loaded.
  */
 export function liveRoutes(app: Hono, live: Live | undefined): void {
   app.get('/api/live', (c) => {
@@ -162,8 +163,9 @@ export function liveRoutes(app: Hono, live: Live | undefined): void {
     }
     const branch = field(body, 'branch');
     if (branch !== undefined && branch !== 'home') return c.json({ error: 'unknown branch' }, 400);
-    const sealer = branch === 'home' ? live.home : (live.rewind ?? live.home);
-    return c.json(await sealer.seal(sql, [factory, ...args]));
+    const rewind = branch === 'home' ? undefined : live.rewind;
+    const sealed = await (rewind ?? live.home).seal(sql, [factory, ...args]);
+    return c.json({ ...sealed, rewind: rewind?.name ?? null });
   });
 
   // `{ branch: "rewind-..." }` switches every page's sealing to that branch; `{ branch: null }` back.

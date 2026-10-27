@@ -70,6 +70,7 @@ const USAGE = [
   '  step-detail-timings.json, step-detail.png and step-detail-design-probe.json.',
   '  It opens /rewind on a second server, makes a rewind branch of the check branch with',
   '  `bun run rewind:create` before the hold and another after it, switches to the first and back,',
+  '  and a second page left open on / must follow each switch by itself within 55 s,',
   '  writing rewind-run.txt, rewind-timings.json, rewind.png and rewind-design-probe.json.',
   "  Its server reads factories.json plus the seed's second factory (factories.json in --out, as",
   '  MC_FACTORIES_FILE). Before the diff it checks the factory switcher: every factory in that file',
