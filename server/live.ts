@@ -6,7 +6,7 @@ import { isRewindBranch } from '../scripts/lib/guard';
 import { createNeonApi, type NeonApi } from '../scripts/lib/neon';
 import type { Env } from './check-env';
 import { readFactoryNames } from './factories';
-import { rewindRealtime, UnknownRewindBranch } from './rewind';
+import { rewindListed, rewindRealtime, UnknownRewindBranch, UnlistedRewindBranch } from './rewind';
 
 export const LIVE_QUERY_NAME = /^[a-z0-9-]+$/;
 
@@ -28,7 +28,7 @@ export interface Live {
   home: Sealer;
   /** The rewind branch `POST /api/rewind` switched sealing to, until switched back. */
   rewind?: RewindSealer;
-  /** Finds a rewind-* branch's sealing; absent without NEON_API_KEY and NEON_PROJECT_ID. */
+  /** Finds a listed rewind-* branch's sealing; absent without NEON_API_KEY and NEON_PROJECT_ID. */
   openRewind?: (name: string) => Promise<RewindSealer>;
 }
 
@@ -71,11 +71,16 @@ function sealerFor(url: string, secret: string, db: string): Sealer {
 
 /**
  * Opens a rewind branch's sealing through the Neon API. A branch copies its parent's databases,
- * so the rewind branch has the home branch's database `db`.
+ * so the rewind branch has the home branch's database `db`. Only a branch `listed` says `/rewind`
+ * shows is opened.
  */
-export function rewindOpener(api: NeonApi, db: string): (name: string) => Promise<RewindSealer> {
+export function rewindOpener(
+  api: NeonApi,
+  db: string,
+  listed: (name: string) => Promise<boolean>,
+): (name: string) => Promise<RewindSealer> {
   return async (name) => {
-    const { host, secret } = await rewindRealtime(api, name);
+    const { host, secret } = await rewindRealtime(api, name, listed);
     return { name, ...sealerFor(realtimeUrlForHost(host), secret, db) };
   };
 }
@@ -101,7 +106,9 @@ export function liveFromEnv(env: Env, repoRoot: string): Live | undefined {
     queries: loadLiveQueries(join(repoRoot, 'db', 'queries')),
     home: sealerFor(realtimeUrlFor(databaseUrl), secret, db),
     openRewind:
-      apiKey && projectId ? rewindOpener(createNeonApi({ apiKey, projectId }), db) : undefined,
+      apiKey && projectId
+        ? rewindOpener(createNeonApi({ apiKey, projectId }), db, rewindListed(databaseUrl))
+        : undefined,
   };
 }
 
@@ -188,7 +195,9 @@ export function liveRoutes(app: Hono, live: Live | undefined): void {
     try {
       live.rewind = await live.openRewind(branch);
     } catch (error) {
-      if (error instanceof UnknownRewindBranch) return c.json({ error: error.message }, 404);
+      if (error instanceof UnknownRewindBranch || error instanceof UnlistedRewindBranch) {
+        return c.json({ error: error.message }, 404);
+      }
       // The Neon API's answer stays in the server's log: the browser gets no upstream text.
       console.error(`opening ${branch} failed: ${error instanceof Error ? error.message : error}`);
       return c.json({ error: `could not open ${branch}` }, 502);
