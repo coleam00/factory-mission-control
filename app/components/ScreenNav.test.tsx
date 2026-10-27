@@ -86,11 +86,11 @@ test('the rewind link shows on every screen and is current on /rewind', () => {
 test('adding a factory route file adds its link with no edit to the shell', () => {
   const before = links(navAt(registeredRoutes(), '/').html());
   const after = links(
-    navAt(registeredRoutes(['f.$factory.probe.tsx', 'f.$factory.laps.$run.tsx']), '/').html(),
+    navAt(registeredRoutes(['f.$factory.probe.tsx', 'f.$factory.probe.$item.tsx']), '/').html(),
   );
   expect(after).toHaveLength(before.length + 1);
   expect(after).toContainEqual({ href: `/f/${FACTORY}/probe`, name: 'Probe', current: false });
-  expect(after.some((l) => l.href.includes(':run') || l.href.includes('/laps/'))).toBe(false);
+  expect(after.some((l) => l.href.includes(':item') || l.href.includes('/probe/'))).toBe(false);
 });
 
 test('from / the versions link reaches the strip and the Map link returns to that factory’s map', async () => {

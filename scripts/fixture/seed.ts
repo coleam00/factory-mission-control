@@ -391,6 +391,13 @@ const ISSUE_AREAS: Record<number, string> = {
 
 const areaOf = (issue: number | null) => (issue === null ? '' : (ISSUE_AREAS[issue] ?? ''));
 
+const LINE_PREFIX: Record<Line['kind'], string> = {
+  criterion: 'C',
+  probe: 'P',
+  holdout: 'H',
+  defect: 'D',
+};
+
 function checkLines(run: Run): Record<string, unknown>[] {
   const lines: Line[] = [
     { kind: 'criterion', verdict: 'PASS', text: `#${run.issue}: every acceptance criterion holds` },
@@ -398,10 +405,14 @@ function checkLines(run: Run): Record<string, unknown>[] {
     { kind: 'holdout', verdict: 'PASS', text: `H-01 ${MARKER} the user sees the home screen` },
     ...(run.spec?.lines ?? []),
   ];
+  // Each kind numbers its own lines, as the pack's check-app reports them (`C1`, `P1`, `H1`, `D1`).
+  const counts = new Map<string, number>();
   return lines.map((line, index) => {
     const evidence = `check-app/line-${index + 1}`;
+    const n = (counts.get(line.kind) ?? 0) + 1;
+    counts.set(line.kind, n);
     return {
-      id: String(index + 1),
+      id: `${LINE_PREFIX[line.kind]}${n}`,
       kind: line.kind,
       verdict: line.verdict,
       text: line.text,
@@ -433,7 +444,7 @@ function reviewOutput(run: Run, pr: string, lines: Record<string, unknown>[]) {
     dispositions: failingLines(lines).map((line) => ({
       line: line.id,
       action: line.pre_existing === '' ? 'blocks' : 'pre-existing',
-      file: `check-app/line-${line.id}.txt`,
+      file: (line.evidence as string[])[0],
       issue: line.pre_existing,
       reason: line.pre_existing === '' ? 'The change causes it.' : 'It fails on main too.',
     })),

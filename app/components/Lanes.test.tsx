@@ -25,9 +25,16 @@ const lane = (over: Partial<LaneRow>): LaneRow => ({
   ...over,
 });
 
-test('a lane shows its issue, route, depth, step, time on the step and cost so far', () => {
-  const html = render(<LaneList rows={[lane({})]} now={Date.parse('2026-10-22T10:05:30Z')} />);
+test('a lane shows its issue, route, depth, step, time on the step and cost so far, and links its lap', () => {
+  const html = render(
+    <LaneList
+      rows={[lane({})]}
+      factory="mission-control"
+      now={Date.parse('2026-10-22T10:05:30Z')}
+    />,
+  );
   expect(html).toContain(`data-lane="${RUN}"`);
+  expect(html).toContain(`href="/f/mission-control/laps/${RUN}"`);
   expect(html).toContain('data-step="ship__intel"');
   expect(html).toContain('data-cost="1.3"');
   expect(html).toContain('href="https://github.com/coleam00/factory-mission-control/issues/11"');
@@ -52,6 +59,7 @@ test('a lane before its pick and claim says so instead of guessing', () => {
           cost_usd: null,
         }),
       ]}
+      factory="mission-control"
       now={0}
     />,
   );
@@ -67,6 +75,7 @@ test('lanes and recent laps share hours and trimmed sub-dollar costs', () => {
   const running = render(
     <LaneList
       rows={[lane({ step_started_at: started, cost_usd: '0.1' })]}
+      factory="mission-control"
       now={completed.getTime()}
     />,
   );
