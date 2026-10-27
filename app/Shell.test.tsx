@@ -74,7 +74,8 @@ test('an address under an unknown key that no screen serves names the key, not a
   ]) {
     const html = render(path);
     expectNoFactoryIdentity(html);
-    expect(header(html)).toContain('nope Unknown factory');
+    expect(header(html)).toContain('Unknown factory');
+    expect(header(html)).not.toContain('nope');
     expect(main(html)).toBe('No factory is named "nope". Go to mission-control\'s map');
   }
 });
@@ -100,9 +101,13 @@ test("a factory removed from the server's file reads as unknown on its old addre
     '/f/second-factory',
     '/f/second-factory/versions',
     '/f/second-factory/laps/7',
+    `/f/second-factory/scorecard?a=sha256:${'a1'.repeat(32)}`,
+    `/f/second-factory/diff?a=sha256:${'a1'.repeat(32)}&b=sha256:${'b2'.repeat(32)}`,
   ]) {
     const html = render(path, removed);
     expectNoFactoryIdentity(html);
+    expect(header(html)).toContain('Unknown factory');
+    expect(header(html)).not.toContain('second-factory');
     expect(main(html)).toContain('No factory is named "second-factory".');
   }
 });

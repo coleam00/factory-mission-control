@@ -119,6 +119,14 @@ export function versionLaps(rows: readonly ScorecardRow[], digest: string): Lap[
   return [...laps.values()].sort((a, b) => at(a) - at(b) || a.id.localeCompare(b.id));
 }
 
+/** Whether `digest` is one of this factory's versions: mc.versions names it, or a lap of it ran. */
+export function isVersionOf(rows: readonly ScorecardRow[], digest: string): boolean {
+  return (
+    rows.some((row) => isVersion(row) && row.digest === digest) ||
+    versionLaps(rows, digest).length > 0
+  );
+}
+
 /** How the version strip labels `digest`: its version's first run and pin, if it is a version. */
 export function versionPin(
   rows: readonly ScorecardRow[],

@@ -51,3 +51,13 @@ SELECT v.digest, 'subagent', g.workflow,
 FROM version v
 JOIN mc.arch_subagents g ON g.archon_sha = v.archon_sha AND g.factory_sha = v.factory_sha
 GROUP BY v.digest, g.workflow
+UNION ALL
+-- This factory's versions, as the scorecard reads them: its mc.versions rows, and the digest of
+-- any archon-loop lap whose version `reconcile:laps` has not written yet.
+SELECT v.digest, 'version', NULL, ARRAY[]::text[]
+FROM (
+  SELECT digest FROM mc.versions WHERE factory = $1
+  UNION
+  SELECT digest FROM mc.laps
+  WHERE factory = $1 AND workflow_name = 'archon-loop' AND digest IS NOT NULL
+) v

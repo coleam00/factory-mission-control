@@ -1,8 +1,16 @@
 import { expect, test } from 'bun:test';
 import { type ArchDiffRow, diffVersions } from './arch-diff';
 
+const version = (digest: string): ArchDiffRow => ({
+  digest,
+  kind: 'version',
+  workflow: null,
+  entries: [],
+});
+
 /** One version of `archon-loop`: each step `path:content`, each edge `from>to`. */
 const loop = (digest: string, steps: string[], edges: string[] = []): ArchDiffRow[] => [
+  version(digest),
   {
     digest,
     kind: 'step',
@@ -56,6 +64,8 @@ test('a subagent is keyed by its workflow, step and name', () => {
   });
   const result = diffVersions(
     [
+      version('a'),
+      version('b'),
       agent('a', 'archon-manager', 'x'),
       agent('a', 'archon-holdouts', 'x'),
       agent('b', 'archon-manager', 'y'),

@@ -9,6 +9,7 @@ import {
   MEASURES,
   meaningful,
   type Scorecard as Card,
+  isVersionOf,
   type ScorecardRow,
   scorecard,
   versionLaps,
@@ -92,14 +93,29 @@ export function ScorecardView({
       />
     );
   }
-  const versions = (
-    b
-      ? ([
-          ['a', a],
-          ['b', b],
-        ] as const)
-      : ([['a', a]] as const)
-  ).map(([side, digest]): Version => {
+  const sides = b
+    ? ([
+        ['a', a],
+        ['b', b],
+      ] as const)
+    : ([['a', a]] as const);
+  const unknown = [...new Set(sides.map(([, digest]) => digest))].filter(
+    (digest) => !isVersionOf(rows, digest),
+  );
+  if (unknown.length > 0) {
+    const [first, second] = unknown.map(short);
+    return (
+      <EmptyState
+        title={
+          second === undefined
+            ? `${first} is not a version of this factory.`
+            : `${first} and ${second} are not versions of this factory.`
+        }
+        action={versionsLink}
+      />
+    );
+  }
+  const versions = sides.map(([side, digest]): Version => {
     // A version no lap ran stays on screen: each measure rests on 0 laps, and every difference
     // with it is not yet meaningful (owner decision on #16).
     const laps = versionLaps(rows, digest);
