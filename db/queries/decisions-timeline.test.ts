@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { SEED_CODEBASE } from '../../scripts/fixture/seed';
 import { writeRow } from '../../scripts/fixture/write';
 import type { Db } from '../../scripts/lib/db';
 import { onTheSeed, queries } from './test-seed';
@@ -30,6 +31,39 @@ describe('decisions-timeline and improvements-ledger on the seed', () => {
       expect(String(row.pin_sha)).toStartWith(String(row.version));
       expect(versions).toContainEqual({ digest: row.digest, pin_sha: row.pin_sha });
     }
+  });
+
+  test('a digest only another workflow ran after a pin never becomes that pin’s version', async () => {
+    const before = await timeline();
+    const linked = before.find((r) => r.digest !== null);
+    if (!linked) throw new Error('expected a decision linked to a version');
+    const [{ committed_at }] = await db.query('SELECT committed_at FROM mc.pins WHERE sha = $1', [
+      linked.pin_sha,
+    ]);
+    const [{ first_run_at }] = await db.query(
+      'SELECT first_run_at FROM mc.versions WHERE factory = $1 AND digest = $2',
+      ['mission-control', linked.digest],
+    );
+    const started = new Date(new Date(String(committed_at)).getTime() + 1000);
+    expect(started.getTime()).toBeLessThan(new Date(String(first_run_at)).getTime());
+    const digest = `sha256:${'f6'.repeat(32)}`;
+    const rollback = new Error('rollback');
+    await db
+      .transaction(async (tx) => {
+        await tx.query(
+          `INSERT INTO remote_agent_workflow_runs (workflow_name, codebase_id, status, user_message,
+           metadata, started_at, completed_at)
+           VALUES ('archon-manager', $1, 'completed', 'Manage', $2, $3, $3)`,
+          [SEED_CODEBASE, JSON.stringify({ workflow_source: { digest } }), started.toISOString()],
+        );
+        const [lap] = await tx.query('SELECT factory FROM mc.laps WHERE digest = $1', [digest]);
+        expect(lap).toEqual({ factory: 'mission-control' });
+        expect(await tx.query(named('decisions-timeline'), ['mission-control'])).toEqual(before);
+        throw rollback;
+      })
+      .catch((error) => {
+        if (error !== rollback) throw error;
+      });
   });
 
   test('a pin’s laps are this factory’s archon-loop laps of the versions it labels', async () => {
