@@ -249,9 +249,9 @@ export function scorecard(laps: readonly Lap[]): Scorecard {
   };
 }
 
-/** A measure's value as the screen's `data-value` carries it: 4 decimals, or `n/a`. */
+/** A measure's value as the screen's `data-value` carries it: the plain number, or `n/a`. */
 export function dataValue(value: number | null): string {
-  return value === null ? 'n/a' : value.toFixed(4);
+  return value === null ? 'n/a' : String(value);
 }
 
 /** `b` minus `a`, or null when either side divides by zero. */
