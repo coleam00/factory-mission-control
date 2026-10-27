@@ -28,3 +28,10 @@ test('a padded, path-like or very long key is named whole', () => {
 test('before the server names a default it links home', () => {
   expect(render('nope', undefined)).toContain('href="/"');
 });
+
+test('the empty key names no factory and links home, not to a map', () => {
+  const html = render('', 'mission-control');
+  expect(html).toContain('No factory is named in this address.');
+  expect(html).toContain('href="/"');
+  expect(html).not.toContain('mission-control');
+});

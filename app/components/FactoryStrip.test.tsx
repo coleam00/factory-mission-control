@@ -34,21 +34,11 @@ test('when ready the strip shows the factory name and the running count', () => 
 
 test('an unknown key is shown as typed and marked unknown, with no count and no outage', () => {
   const html = renderToStaticMarkup(
-    <FactoryStripBody factory=" mission-control" rows={undefined} state="loading" held="unknown" />,
+    <FactoryStripBody factory=" mission-control" rows={undefined} state="loading" unknown />,
   );
   expect(html).toContain('> mission-control<');
   expect(html).toContain('Unknown factory');
   expect(html).not.toContain('Running laps');
   expect(html).not.toContain('data-count');
   expect(html).not.toContain('Live data is unavailable.');
-});
-
-test('a key waiting on the live list is shown as typed, with no count and no unknown mark', () => {
-  const html = renderToStaticMarkup(
-    <FactoryStripBody factory="nope" rows={undefined} state="loading" held="waiting" />,
-  );
-  expect(html).toContain('>nope<');
-  expect(html).toContain('[overflow-wrap:anywhere]');
-  expect(html).not.toContain('Unknown factory');
-  expect(html).not.toContain('Running laps');
 });

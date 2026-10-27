@@ -8,7 +8,7 @@ import {
   useMemo,
   useState,
 } from 'react';
-import { useParams } from 'react-router';
+import { useLocation, useParams } from 'react-router';
 import {
   currentFactory,
   type Listed,
@@ -16,6 +16,7 @@ import {
   remember,
   toRemember,
   type UrlFactoryView,
+  urlFactoryKey,
   urlFactoryView,
 } from '../lib/factory-choice';
 import { useLive } from './LiveProvider';
@@ -59,7 +60,9 @@ const sameListed = (a: Listed, b: Listed): boolean =>
  */
 export function FactoryProvider({ children }: { children: ReactNode }): ReactElement {
   const live = useLive();
-  const inUrl = useParams().factory;
+  // An address under `/f/<key>` that no screen serves still names its key.
+  const { pathname } = useLocation();
+  const inUrl = useParams().factory ?? urlFactoryKey(pathname);
   const [listed, setListed] = useState<Listed>({ status: 'loading' });
   const [remembered, setRemembered] = useState(() => readRemembered(browserStorage()));
   const chosen = toRemember(inUrl, listed);
@@ -77,7 +80,7 @@ export function FactoryProvider({ children }: { children: ReactNode }): ReactEle
   );
   const served = live.status === 'ready' ? live.factories : undefined;
   const fallback = served?.[0];
-  const view = urlFactoryView({ inUrl, listed, served });
+  const view = urlFactoryView({ inUrl, served });
   // A key that is not a factory is no panel's factory: the header does not show it as one.
   const current =
     view === 'unknown' ? undefined : currentFactory({ inUrl, remembered, fallback, listed });
@@ -93,7 +96,7 @@ export function useFactory(): string | undefined {
   return useContext(FactoryContext).current;
 }
 
-/** The URL's factory key, and whether the shell shows its screen, waits, or calls it unknown. */
+/** The URL's factory key, and whether the shell shows its screen or calls it unknown. */
 export function useUrlFactory(): UrlFactory {
   return useContext(FactoryContext).inUrl;
 }

@@ -8,6 +8,7 @@ import {
   shownRows,
   switcherEntries,
   toRemember,
+  urlFactoryKey,
   urlFactoryView,
 } from './factory-choice';
 
@@ -43,40 +44,44 @@ test('only a listed factory in the URL is remembered', () => {
 /** The keys #79's contract checks: none of them is a factory. */
 const NOT_FACTORIES = ['nope', ' mission-control', 'Mission-Control', 'x'.repeat(300), 'a/b'];
 const SERVED = ['mission-control', 'second-factory'];
-const view = (inUrl: string | undefined, listed: Listed, served: string[] | undefined = SERVED) =>
-  urlFactoryView({ inUrl, listed, served });
+const view = (inUrl: string | undefined, served: string[] | undefined = SERVED) =>
+  urlFactoryView({ inUrl, served });
 
-test('a key the live list names shows its screen; one it does not name is unknown', () => {
-  expect(view('second-factory', both)).toBe('screen');
-  for (const key of NOT_FACTORIES) expect(view(key, both)).toBe('unknown');
-});
-
-test('a key the server serves is never unknown, even with no row in the live list', () => {
-  const noRow: Listed = { status: 'ready', names: ['mission-control'] };
-  expect(view('second-factory', noRow)).toBe('screen');
-  expect(view('second-factory', { status: 'ready', names: [] })).toBe('screen');
-  expect(view('second-factory', loading)).toBe('screen');
+test("a key in the server's factories file shows its screen; any other is unknown", () => {
+  expect(view('mission-control')).toBe('screen');
+  expect(view('second-factory')).toBe('screen');
+  for (const key of [...NOT_FACTORIES, '']) expect(view(key)).toBe('unknown');
   // Served is the server's file as written: a recased or padded key is still not one of them.
-  expect(view('Second-Factory', noRow)).toBe('unknown');
-  expect(view(' second-factory', noRow)).toBe('unknown');
+  expect(view('Second-Factory')).toBe('unknown');
+  expect(view(' second-factory')).toBe('unknown');
 });
 
-test('while the list loads nothing is unknown: a served key shows, any other waits', () => {
-  expect(view('mission-control', loading)).toBe('screen');
-  for (const key of NOT_FACTORIES) expect(view(key, loading)).toBe('waiting');
-  // Before the server's configuration is in, no panel can seal, so nothing waits on it.
-  expect(urlFactoryView({ inUrl: 'nope', listed: loading, served: undefined })).toBe('screen');
+test('a factory removed from the file is unknown, whatever the live list still has', () => {
+  expect(view('second-factory', ['mission-control'])).toBe('unknown');
 });
 
-test('when the list fails the key cannot be checked, so the screen shows as before', () => {
-  const failed: Listed = { status: 'error' };
-  expect(view('mission-control', failed)).toBe('screen');
-  for (const key of NOT_FACTORIES) expect(view(key, failed)).toBe('screen');
+test("before the server's configuration is in no panel can seal, so the screen shows", () => {
+  for (const key of NOT_FACTORIES)
+    expect(urlFactoryView({ inUrl: key, served: undefined })).toBe('screen');
 });
 
 test('off a factory URL the screen shows', () => {
-  expect(view(undefined, loading)).toBe('screen');
-  expect(view(undefined, both)).toBe('screen');
+  expect(view(undefined)).toBe('screen');
+  expect(urlFactoryView({ inUrl: undefined, served: undefined })).toBe('screen');
+});
+
+test('the key an address under /f/ names, as typed, whatever follows it', () => {
+  expect(urlFactoryKey('/f/nope')).toBe('nope');
+  expect(urlFactoryKey('/f/nope/laps/example')).toBe('nope');
+  expect(urlFactoryKey('/f/nope/steps/archon-loop/check-app')).toBe('nope');
+  expect(urlFactoryKey('/f/Mission%20Control/x')).toBe('Mission Control');
+  expect(urlFactoryKey('/f/100%/x')).toBe('100%');
+  expect(urlFactoryKey('/f/')).toBe('');
+  expect(urlFactoryKey('/f//versions')).toBe('');
+  expect(urlFactoryKey('/f')).toBeUndefined();
+  expect(urlFactoryKey('/nothing')).toBeUndefined();
+  expect(urlFactoryKey('/steps/archon-loop/check-app')).toBeUndefined();
+  expect(urlFactoryKey('/fx/nope')).toBeUndefined();
 });
 
 test('a key that is not a factory is never remembered', () => {
