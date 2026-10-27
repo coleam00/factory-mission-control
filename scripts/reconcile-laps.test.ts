@@ -168,6 +168,34 @@ test('a dropped projection is repaired once, an agreeing lap is left alone, and 
   ).toEqual([]);
 });
 
+/** What mc.project_run records when Archon's write of `runId` loses its wait on a locked lap. */
+const lostLockWait = (runId: string) =>
+  rows(
+    `INSERT INTO mc.projection_errors (source, run_id, event_id, sqlstate, message)
+     VALUES ('mc_project_run_update', $1, NULL, '55P03', 'canceling statement due to lock timeout')`,
+    [runId],
+  );
+
+test('one run clears the lane of a finish lost to a locked lap', async () => {
+  const runId = await finishedRun();
+  const projected = await rows('SELECT * FROM mc.laps');
+  expect(projected.map((lap) => lap.status)).toEqual(['completed']);
+  const archon = await archonRows();
+  await rows(`UPDATE mc.laps SET status = 'running', completed_at = NULL WHERE run_id = $1`, [
+    runId,
+  ]);
+  await lostLockWait(runId);
+
+  const first = await run([]);
+  expect(first.code).toBe(0);
+  expect(first.out).toEqual(['reconcile: 1 run(s) repaired']);
+  expect(await rows('SELECT * FROM mc.laps')).toEqual(projected);
+
+  const second = await run([]);
+  expect(second.out).toEqual(['reconcile: 0 run(s) repaired']);
+  expect(await archonRows()).toEqual(archon);
+});
+
 test('a run whose lap was never inserted gets one', async () => {
   const runId = await finishedRun();
   const projected = await snapshot(db);
