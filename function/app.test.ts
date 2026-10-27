@@ -477,3 +477,42 @@ test.each([
   }
   expect(transactions).toBe(attempts);
 });
+
+const terminated = 'terminating connection due to administrator command';
+test.each([
+  [
+    'Bun SQL',
+    () =>
+      Object.assign(new Error(terminated), { code: 'ERR_POSTGRES_SERVER_ERROR', errno: '57P01' }),
+  ],
+  ['pg.Pool', () => Object.assign(new Error(terminated), { code: '57P01' })],
+])(
+  'a %s connection the server terminated is retried once and recorded once',
+  async (_, failure) => {
+    let transactions = 0;
+    app = createWebhookApp({
+      secret: SECRET,
+      db: {
+        query: (sql, params) => db.query(sql, params),
+        close: () => db.close(),
+        transaction: (fn) => {
+          transactions += 1;
+          return transactions === 1 ? Promise.reject(failure()) : db.transaction(fn);
+        },
+      },
+      factories: factories.factories,
+      github: createGitHub(async () => respond()),
+    });
+    const warn = spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      expect((await deliver(named('03-'))).status).toBe(200);
+      expect(warn.mock.calls.map((args) => args.join(' '))).toEqual([
+        expect.stringContaining(`connection closed before the first statement (${terminated})`),
+      ]);
+    } finally {
+      warn.mockRestore();
+    }
+    expect(transactions).toBe(2);
+    expect(await rows('SELECT number FROM mc.issues')).toEqual([{ number: 44 }]);
+  },
+);

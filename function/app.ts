@@ -9,10 +9,13 @@ export interface WebhookOptions extends Context {
 }
 
 // Bun SQL and a reset socket name a dropped connection by code; node-postgres only in its message.
-const CLOSED_CODES = new Set(['ERR_POSTGRES_CONNECTION_CLOSED', 'ECONNRESET']);
+// SQLSTATE 57P01 is the server ending the connection (an admin terminate, a compute shutting
+// down): node-postgres puts it in `code`, Bun SQL in `errno`.
+const CLOSED_CODES = new Set(['ERR_POSTGRES_CONNECTION_CLOSED', 'ECONNRESET', '57P01']);
 const connectionClosed = (error: unknown): error is Error =>
   error instanceof Error &&
   (('code' in error && CLOSED_CODES.has(String(error.code))) ||
+    ('errno' in error && String(error.errno) === '57P01') ||
     error.message.startsWith('Connection terminated'));
 
 /**
