@@ -9,7 +9,8 @@ export interface RewindBranchRow {
 /**
  * Switches the server's sealing to `branch`, or back to its home branch for null, then reloads
  * `/rewind`: the page's Realtime client is bound to one branch, so every panel opens again on
- * the new one. A refused switch throws the server's reason and leaves the page as it is.
+ * the new one. Other open pages follow at their next seal (`followSwitch`). A refused switch
+ * throws the server's reason and leaves the page as it is.
  */
 export async function switchBranch(branch: string | null): Promise<void> {
   const res = await fetch('/api/rewind', {
@@ -24,6 +25,19 @@ export async function switchBranch(branch: string | null): Promise<void> {
     );
   }
   window.location.assign('/rewind');
+}
+
+let following = false;
+
+/**
+ * The server switched branches since this page loaded (another tab switched): the page's
+ * Realtime client is bound to the branch it loaded on, so it reloads onto the new one, once, on
+ * the same screen.
+ */
+export function followSwitch(): void {
+  if (following) return;
+  following = true;
+  window.location.reload();
 }
 
 /** The moment a rewind branch shows, in UTC to the second as its name has it. */

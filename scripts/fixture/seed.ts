@@ -1034,9 +1034,9 @@ WHERE r.codebase_id IN ('${SEED_CODEBASE}', '${SECOND_CODEBASE}')
 ORDER BY e.workflow_run_id, e.step_name, e.created_at DESC, e.event_order DESC
 ON CONFLICT DO NOTHING;
 
--- Every finished attempt of a step, through 0007's own function (the seed's events run each step
--- once, so these agree with the step rows above).
-SELECT mc.record_step_attempt(e.workflow_run_id, e.event_type, e.step_name, e.data)
+-- Every finished attempt of a step, through the projection's own function (the seed's events run
+-- each step once, so these agree with the step rows above).
+SELECT mc.record_step_attempt(e.id, e.workflow_run_id, e.event_type, e.step_name, e.data)
 FROM remote_agent_workflow_events e
 JOIN remote_agent_workflow_runs r ON r.id = e.workflow_run_id
 WHERE r.codebase_id IN ('${SEED_CODEBASE}', '${SECOND_CODEBASE}')
