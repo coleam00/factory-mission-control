@@ -67,6 +67,8 @@ export function VersionList({
     e.digest !== null && selected.includes(e.digest) ? [e.digest] : [],
   );
   const links = picked.length === 2 ? compareLinks(factory, picked[0], picked[1]) : undefined;
+  // Guidance follows what can be picked: a pin not yet run has no digest and no select button.
+  const selectable = new Set(entries.flatMap((e) => (e.digest === null ? [] : [e.digest]))).size;
   return (
     <>
       <ol className="border-t border-border/40">
@@ -99,8 +101,20 @@ export function VersionList({
             >
               Open this version's scorecard
             </Link>
-            <p className="text-text-secondary">Select another version to compare.</p>
+            <p className="text-text-secondary">
+              {selectable < 2
+                ? 'A comparison needs a second version that has run.'
+                : 'Select another version to compare.'}
+            </p>
           </>
+        ) : selectable === 0 ? (
+          <p className="text-text-secondary">
+            No version has run yet, so there is nothing to compare.
+          </p>
+        ) : selectable === 1 ? (
+          <p className="text-text-secondary">
+            Only one version has run; a comparison needs a second.
+          </p>
         ) : (
           <p className="text-text-secondary">Select two versions to compare.</p>
         )}
