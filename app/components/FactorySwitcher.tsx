@@ -59,6 +59,7 @@ function Entries({
 }): ReactElement {
   if (state === 'error') return <p className={NOTE}>Live data is unavailable.</p>;
   if (rows === undefined) return <p className={NOTE}>Loading the factories.</p>;
+  if (rows.length === 0) return <p className={NOTE}>No factory has recorded laps yet.</p>;
   return (
     <ul className="flex flex-col py-1">
       {switcherEntries(rows).map(({ factory, running }) => (

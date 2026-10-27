@@ -74,6 +74,16 @@ test('loading and error are each one sentence and no button, and list no factory
   }
 });
 
+test('with no factories the open switcher says so in one sentence, with no list or button', () => {
+  const html = render([], 'ready');
+  expect(html).toContain(
+    '<p class="px-3 py-2 text-sm text-text-secondary">No factory has recorded laps yet.</p>',
+  );
+  expect(html).not.toMatch(/<ul\b/);
+  expect(html).not.toMatch(/<button\b/);
+  expect(html).not.toContain('data-factory-entry');
+});
+
 const registered = [{ factory: 'mission-control', running: 0, is_default: true }];
 const configured = ['mission-control', 'new-factory'];
 const notice = (
