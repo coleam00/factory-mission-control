@@ -349,7 +349,10 @@ test('loading the factories updates stale rows and attributes the laps projected
       [none]: '',
     });
 
-    expect(await loadFactories({ entries: MISSION_CONTROL, db })).toEqual({ factories: 1, laps: 2 });
+    expect(await loadFactories({ entries: MISSION_CONTROL, db })).toEqual({
+      factories: 1,
+      laps: 2,
+    });
     expect(await db.query(`SELECT * FROM mc.factories WHERE name = 'mission-control'`)).toEqual(
       MISSION_CONTROL,
     );
@@ -363,7 +366,10 @@ test('loading the factories updates stale rows and attributes the laps projected
       { name: 'mission-control' },
       { name: 'retired' },
     ]);
-    expect(await loadFactories({ entries: MISSION_CONTROL, db })).toEqual({ factories: 0, laps: 0 });
+    expect(await loadFactories({ entries: MISSION_CONTROL, db })).toEqual({
+      factories: 0,
+      laps: 0,
+    });
   } finally {
     await db.close();
   }
