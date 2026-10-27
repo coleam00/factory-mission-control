@@ -444,3 +444,36 @@ test.each(['deleted', 'transferred'])('an issue %s leaves the mirror', async (ac
     { question_number: 3, closed_at: new Date('2026-10-26T09:00:00Z') },
   ]);
 });
+
+test.each([
+  ['any other error is not retried', () => new Error('duplicate key'), 1],
+  [
+    'a connection that closes again is retried once',
+    () => Object.assign(new Error('closed'), { code: 'ERR_POSTGRES_CONNECTION_CLOSED' }),
+    2,
+  ],
+])('%s', async (_, failure, attempts) => {
+  let transactions = 0;
+  app = createWebhookApp({
+    secret: SECRET,
+    db: {
+      query: (sql, params) => db.query(sql, params),
+      close: () => db.close(),
+      transaction: async () => {
+        transactions += 1;
+        throw failure();
+      },
+    },
+    factories: factories.factories,
+    github: createGitHub(async () => respond()),
+  });
+  const warn = spyOn(console, 'warn').mockImplementation(() => {});
+  const error = spyOn(console, 'error').mockImplementation(() => {});
+  try {
+    expect((await deliver(named('03-'))).status).toBe(500);
+  } finally {
+    warn.mockRestore();
+    error.mockRestore();
+  }
+  expect(transactions).toBe(attempts);
+});
