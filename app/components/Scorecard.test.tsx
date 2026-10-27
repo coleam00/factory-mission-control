@@ -49,6 +49,15 @@ function laps(digest: string, n: number, merged: number): ScorecardRow[] {
   }).flat();
 }
 
+/** The mc.versions row of `digest`. */
+const version = (digest: string, at: string, sha: string | null): ScorecardRow => ({
+  run_id: null,
+  step_id: null,
+  digest,
+  first_run_at: new Date(at),
+  pin_sha: sha,
+});
+
 function render(rows: ScorecardRow[], a: string | undefined, b?: string): string {
   const router = createMemoryRouter([
     { path: '/', element: <ScorecardView factory="mission-control" a={a} b={b} rows={rows} /> },
@@ -134,7 +143,8 @@ test('with no version picked, it is an empty state linking to the versions', () 
 });
 
 test('a version no lap ran is still compared: 0 laps, n/a where undefined, not yet meaningful', () => {
-  const html = render(laps(V1, 12, 3), V1, V2);
+  const rows = [...laps(V1, 12, 3), version(V2, '2026-10-09T00:00:00Z', null)];
+  const html = render(rows, V1, V2);
   const shown = cells(html);
   expect(shown).toHaveLength(24);
   const a = shown.filter((c) => c.version === 'a');
@@ -164,19 +174,37 @@ test('a version no lap ran is still compared: 0 laps, n/a where undefined, not y
   expect(diffs.find((d) => d.value === '-3.0000')).toBeDefined();
   expect(html).toContain('no lap ran yet');
   // The same with the 0-lap version on side a.
-  const flipped = cells(render(laps(V1, 12, 3), V2, V1));
+  const flipped = cells(render(rows, V2, V1));
   expect(flipped.filter((c) => c.version === 'a').every((c) => c.laps === 0)).toBe(true);
   expect(flipped.find((c) => c.version === 'b' && c.measure === 'merges')?.value).toBe('3.0000');
 });
 
+test("a digest that is not one of this factory's versions is not found, one sentence and one button", () => {
+  const rows = [...laps(V1, 12, 3), version(V1, '2026-10-01T00:00:00Z', null)];
+  const sentences = (html: string) =>
+    [...html.matchAll(/<p[^>]*>([^<]*)<\/p>/g)].map((m) => m[1].replaceAll('&#x27;', "'"));
+  const OTHER = `sha256:${'d4'.repeat(32)}`;
+  for (const [a, b, said] of [
+    [OTHER, undefined, `sha256:${'d4'.repeat(6)} is not a version of this factory.`],
+    ['8e3e1cef', undefined, '8e3e1cef is not a version of this factory.'],
+    ['sha256:zzzz', undefined, 'sha256:zzzz is not a version of this factory.'],
+    [V1, OTHER, `sha256:${'d4'.repeat(6)} is not a version of this factory.`],
+    [
+      OTHER,
+      'sha256:zzzz',
+      `sha256:${'d4'.repeat(6)} and sha256:zzzz are not versions of this factory.`,
+    ],
+  ] as const) {
+    const html = render(rows, a, b);
+    expect(html).not.toContain('data-measure=');
+    expect(html).not.toContain('data-version=');
+    expect(sentences(html)).toEqual([said]);
+    expect(html.match(/<a /g)).toHaveLength(1);
+    expect(html).toContain('href="/f/mission-control/versions"');
+  }
+});
+
 test('each version is named by its version row, as the versions screen names it', () => {
-  const version = (digest: string, at: string, sha: string | null): ScorecardRow => ({
-    run_id: null,
-    step_id: null,
-    digest,
-    first_run_at: new Date(at),
-    pin_sha: sha,
-  });
   const laps1And2 = [
     ...laps(V1, 2, 1),
     ...laps(V2, 2, 1).map((r) =>

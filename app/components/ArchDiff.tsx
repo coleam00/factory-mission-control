@@ -1,4 +1,4 @@
-import type { ReactElement } from 'react';
+import type { ReactElement, ReactNode } from 'react';
 import { Link } from 'react-router';
 import {
   type ArchDiffRow,
@@ -37,25 +37,19 @@ export function ArchDiff({
   a: string | null;
   b: string | null;
 }): ReactElement {
+  const versions =
+    factory === undefined ? undefined : (
+      <Link to={`/f/${encodeURIComponent(factory)}/versions`} className="text-accent-bright">
+        Versions
+      </Link>
+    );
   return (
     <LivePanel<ArchDiffRow> query="arch-diff" factory={factory}>
       {(rows, state) => (
         <>
           <h1 className={`${LABEL} mb-3`}>Architecture diff</h1>
           {a === null || b === null ? (
-            <EmptyState
-              title="Pick two versions to diff."
-              action={
-                factory === undefined ? undefined : (
-                  <Link
-                    to={`/f/${encodeURIComponent(factory)}/versions`}
-                    className="text-accent-bright"
-                  >
-                    Versions
-                  </Link>
-                )
-              }
-            />
+            <EmptyState title="Pick two versions to diff." action={versions} />
           ) : (
             <>
               <p className={`${MONO} mb-4 break-all text-text-secondary`}>
@@ -66,7 +60,7 @@ export function ArchDiff({
               ) : rows === undefined ? (
                 <p className="text-sm text-text-secondary">Loading the architecture.</p>
               ) : (
-                <DiffView result={diffVersions(rows, a, b)} />
+                <DiffView result={diffVersions(rows, a, b)} versions={versions} />
               )}
             </>
           )}
@@ -76,7 +70,26 @@ export function ArchDiff({
   );
 }
 
-export function DiffView({ result }: { result: DiffResult }): ReactElement {
+export function DiffView({
+  result,
+  versions,
+}: {
+  result: DiffResult;
+  versions?: ReactNode;
+}): ReactElement {
+  if (result.status === 'not-found') {
+    const [first, second] = result.digests.map(short);
+    return (
+      <EmptyState
+        title={
+          second === undefined
+            ? `${first} is not a version of this factory.`
+            : `${first} and ${second} are not versions of this factory.`
+        }
+        action={versions}
+      />
+    );
+  }
   if (result.status === 'unrecorded') {
     return (
       <EmptyState

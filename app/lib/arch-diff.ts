@@ -12,11 +12,12 @@ export type Kind = (typeof KINDS)[number];
  * a subagent's step path and name, then the first 12 hex digits of the md5 of what the row says.
  * An `edge` entry is a step dependency, `from_path` then `to_path`. The query aggregates and
  * hashes because the first snapshot is timed: one row per architecture row, in full, took
- * hundreds of milliseconds longer to arrive.
+ * hundreds of milliseconds longer to arrive. A `version` row, with no entries, names a digest a lap
+ * of this factory ran, architecture or not.
  */
 export interface ArchDiffRow {
   digest: string;
-  kind: Kind | 'edge';
+  kind: Kind | 'edge' | 'version';
   workflow: string | null;
   entries: string[];
 }
@@ -39,7 +40,9 @@ export type ArchDiff = Record<Kind, KindDiff>;
 
 export type DiffResult =
   | { status: 'compared'; diff: ArchDiff; changes: number }
-  /** The versions named that have no architecture rows: not run here, or not parsed yet. */
+  /** The digests named that no lap of this factory ran. */
+  | { status: 'not-found'; digests: string[] }
+  /** The versions named that have no architecture rows: not parsed yet. */
   | { status: 'unrecorded'; digests: string[] };
 
 interface Entry {
@@ -55,6 +58,7 @@ function versionOf(
   const items = new Map<string, Entry>();
   const dependencies = new Map<string, string[]>();
   for (const { kind, workflow, entries } of rows.filter((r) => r.digest === digest)) {
+    if (kind === 'version') continue;
     for (const entry of entries) {
       const fields = entry.split('\t');
       if (kind === 'edge') {
@@ -87,8 +91,11 @@ const order = (a: Item, b: Item): number =>
  * step went.
  */
 export function diffVersions(rows: readonly ArchDiffRow[], a: string, b: string): DiffResult {
-  const unrecorded = [...new Set([a, b])].filter(
-    (digest) => !rows.some((r) => r.digest === digest),
+  const named = [...new Set([a, b])];
+  const notFound = named.filter((digest) => !rows.some((r) => r.digest === digest));
+  if (notFound.length > 0) return { status: 'not-found', digests: notFound };
+  const unrecorded = named.filter(
+    (digest) => !rows.some((r) => r.digest === digest && r.kind !== 'version'),
   );
   if (unrecorded.length > 0) return { status: 'unrecorded', digests: unrecorded };
 

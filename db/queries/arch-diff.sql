@@ -51,3 +51,6 @@ SELECT v.digest, 'subagent', g.workflow,
 FROM version v
 JOIN mc.arch_subagents g ON g.archon_sha = v.archon_sha AND g.factory_sha = v.factory_sha
 GROUP BY v.digest, g.workflow
+UNION ALL
+SELECT f.digest, 'version', NULL, ARRAY[]::text[]
+FROM firsts f

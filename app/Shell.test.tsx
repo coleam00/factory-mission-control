@@ -104,6 +104,8 @@ test("a factory removed from the server's file reads as unknown on its old addre
     '/f/second-factory',
     '/f/second-factory/versions',
     '/f/second-factory/laps/7',
+    `/f/second-factory/scorecard?a=sha256:${'a1'.repeat(32)}`,
+    `/f/second-factory/diff?a=sha256:${'a1'.repeat(32)}&b=sha256:${'b2'.repeat(32)}`,
   ]) {
     const html = render(path, removed);
     expectNoFactoryIdentity(html);

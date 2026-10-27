@@ -91,6 +91,16 @@ describe('arch-diff on the seed', () => {
     expect(await db.query(sql, ['other'])).toEqual([]);
   });
 
+  test('names each digest a lap ran, so one no lap ran here is not found', () => {
+    const named = rows.filter((r) => r.kind === 'version').map((r) => r.digest);
+    expect(named.sort()).toEqual([...digests].sort());
+    const elsewhere = `sha256:${'d4'.repeat(32)}`;
+    expect(diffVersions(rows, digests[0], elsewhere)).toEqual({
+      status: 'not-found',
+      digests: [elsewhere],
+    });
+  });
+
   /**
    * Each architecture table, the columns that name its item, and the columns deliberately not
    * part of what it says. Every other column must count as a change, so a column the query stops
