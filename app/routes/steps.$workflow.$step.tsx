@@ -1,6 +1,7 @@
 import type { ReactElement, ReactNode } from 'react';
-import { Link, useParams } from 'react-router';
+import { Link, useParams, useSearchParams } from 'react-router';
 import { EmptyState } from '../components/EmptyState';
+import { StepVersionPicker } from '../components/StepVersionPicker';
 import {
   dependents,
   findStep,
@@ -11,6 +12,7 @@ import {
   type PartRow,
   type StepRow,
   type SubagentRow,
+  versionName,
   type YamlPartRow,
 } from '../lib/step-detail';
 import { useFactory } from '../live/FactoryProvider';
@@ -22,6 +24,13 @@ const CODE =
   'whitespace-pre-wrap rounded-md border border-border bg-surface-inset p-4 font-mono text-[12px] leading-relaxed text-text-primary [overflow-wrap:anywhere]';
 const NOTE = 'text-sm text-text-secondary';
 const MONO = 'font-mono text-[13px] text-text-primary [overflow-wrap:anywhere]';
+
+/** A panel of one step, at the version pinned `at`, else the current one. */
+interface PanelProps {
+  step: StepRow;
+  factory: string;
+  at: string | null;
+}
 
 function Unavailable(): ReactElement {
   return <p className={NOTE}>Live data is unavailable.</p>;
@@ -97,9 +106,13 @@ function StepList({ steps, ...data }: { steps: readonly string[]; [a: `data-${st
 }
 
 /** Where includes put this step, and every node beneath it: on an include, the steps it runs. */
-function Nesting({ step, factory }: { step: StepRow; factory: string }): ReactElement {
+function Nesting({ step, factory, at }: PanelProps): ReactElement {
   return (
-    <LivePanel<NestingRow> query="step-nesting" factory={factory} args={[step.workflow, step.path]}>
+    <LivePanel<NestingRow>
+      query="step-nesting"
+      factory={factory}
+      args={[step.workflow, step.path, at ?? '']}
+    >
       {(rows, state) => {
         if (state === 'error')
           return (
@@ -108,7 +121,7 @@ function Nesting({ step, factory }: { step: StepRow; factory: string }): ReactEl
             </div>
           );
         if (rows === undefined || rows.length === 0) return null;
-        const { inside, includedAt } = nesting(rows, step);
+        const { inside, includedAt } = nesting(rows, step, at);
         return (
           <div className={CARD}>
             {includedAt.length > 0 ? (
@@ -155,12 +168,12 @@ function Nesting({ step, factory }: { step: StepRow; factory: string }): ReactEl
   );
 }
 
-function Prompt({ step, factory }: { step: StepRow; factory: string }): ReactElement {
+function Prompt({ step, factory, at }: PanelProps): ReactElement {
   return (
     <LivePanel<PartRow>
       query="step-prompt"
       factory={factory}
-      args={[step.workflow, step.path]}
+      args={[step.workflow, step.path, at ?? '']}
       className={CARD}
     >
       {(rows = [], state) => (
@@ -184,12 +197,12 @@ function Prompt({ step, factory }: { step: StepRow; factory: string }): ReactEle
   );
 }
 
-function Subagents({ step, factory }: { step: StepRow; factory: string }): ReactElement {
+function Subagents({ step, factory, at }: PanelProps): ReactElement {
   return (
     <LivePanel<SubagentRow>
       query="step-subagents"
       factory={factory}
-      args={[step.workflow, step.path]}
+      args={[step.workflow, step.path, at ?? '']}
       className={CARD}
     >
       {(rows = [], state) => (
@@ -224,12 +237,12 @@ function Subagents({ step, factory }: { step: StepRow; factory: string }): React
   );
 }
 
-function Scripts({ step, factory }: { step: StepRow; factory: string }): ReactElement {
+function Scripts({ step, factory, at }: PanelProps): ReactElement {
   return (
     <LivePanel<PartRow>
       query="step-scripts"
       factory={factory}
-      args={[step.workflow, step.path]}
+      args={[step.workflow, step.path, at ?? '']}
       className={CARD}
     >
       {(rows = [], state) => (
@@ -266,12 +279,12 @@ function Scripts({ step, factory }: { step: StepRow; factory: string }): ReactEl
 }
 
 /** The hooks that let this step's subagents through: for a holdout step, the fence. */
-function Hooks({ step, factory }: { step: StepRow; factory: string }): ReactElement {
+function Hooks({ step, factory, at }: PanelProps): ReactElement {
   return (
     <LivePanel<HookRow>
       query="step-hooks"
       factory={factory}
-      args={[step.workflow, step.path]}
+      args={[step.workflow, step.path, at ?? '']}
       className={CARD}
     >
       {(rows = [], state) => (
@@ -311,12 +324,12 @@ function Hooks({ step, factory }: { step: StepRow; factory: string }): ReactElem
   );
 }
 
-function Yaml({ step, factory }: { step: StepRow; factory: string }): ReactElement {
+function Yaml({ step, factory, at }: PanelProps): ReactElement {
   return (
     <LivePanel<YamlPartRow>
       query="step-yaml"
       factory={factory}
-      args={[step.workflow, step.path]}
+      args={[step.workflow, step.path, at ?? '']}
       className={CARD}
     >
       {(rows = [], state) => (
@@ -338,11 +351,8 @@ function Step({
   step,
   steps,
   factory,
-}: {
-  step: StepRow;
-  steps: readonly StepRow[];
-  factory: string;
-}): ReactElement {
+  at,
+}: PanelProps & { steps: readonly StepRow[] }): ReactElement {
   return (
     <div className="flex flex-col gap-6">
       <header className="flex flex-col gap-2">
@@ -369,31 +379,41 @@ function Step({
         </Fact>
         <Fact label="Defined in">{step.file}</Fact>
       </dl>
-      <Nesting step={step} factory={factory} />
-      <Prompt step={step} factory={factory} />
-      <Subagents step={step} factory={factory} />
-      <Scripts step={step} factory={factory} />
-      <Hooks step={step} factory={factory} />
-      <Yaml step={step} factory={factory} />
+      <Nesting step={step} factory={factory} at={at} />
+      <Prompt step={step} factory={factory} at={at} />
+      <Subagents step={step} factory={factory} at={at} />
+      <Scripts step={step} factory={factory} at={at} />
+      <Hooks step={step} factory={factory} at={at} />
+      <Yaml step={step} factory={factory} at={at} />
     </div>
   );
 }
 
-/** One step of the current version: what it does, what routes a lap through it, what it runs. */
+/**
+ * One step of the version its address names, else the current one: what it does, what routes a
+ * lap through it, what it runs.
+ */
 export default function StepDetail(): ReactElement {
   const { workflow = '', step = '' } = useParams();
+  const [search] = useSearchParams();
+  const at = search.get('at') || null;
   const factory = useFactory();
   return (
     <main className="mx-auto max-w-6xl px-6 py-8">
-      <LivePanel<StepRow> query="step-detail" factory={factory}>
+      <StepVersionPicker factory={factory} at={at} workflow={workflow} path={step} />
+      <LivePanel<StepRow> query="step-detail" factory={factory} args={[at ?? '']}>
         {(rows, state) => {
           if (state === 'error') return <Unavailable />;
           if (rows === undefined || factory === undefined) return null;
+          // Every recorded version has steps, so none means the pin has no architecture.
+          if (at !== null && rows.length === 0) {
+            return <EmptyState title={`No version ${at} is recorded for this factory.`} />;
+          }
           const found = findStep(rows, workflow, step);
           if (found === undefined) {
-            return <EmptyState title={`No step ${step} in ${workflow} at the current version.`} />;
+            return <EmptyState title={`No step ${step} in ${workflow} at ${versionName(at)}.`} />;
           }
-          return <Step step={found} steps={rows} factory={factory} />;
+          return <Step step={found} steps={rows} factory={factory} at={at} />;
         }}
       </LivePanel>
     </main>
