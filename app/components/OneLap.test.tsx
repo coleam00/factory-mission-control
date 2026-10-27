@@ -62,9 +62,23 @@ test('the header links the console run, the pull request and the issue, and says
   expect(html).toContain('data-gate-outcome="refused"');
   expect(html).toContain(REASON);
   expect(html).toContain('data-review-outcome="merge"');
+  expect(html).toContain('<span style="color:var(--success)">merge</span>');
+  expect(html).toContain('<span style="color:var(--error)">refused</span>');
   expect(html).toContain('data-line="B1"');
   expect(html).toContain('no line id');
   expect(html).toContain('1:00:00');
+});
+
+test('the pull request a step names by URL links as its number', () => {
+  const html = render(
+    <LapHeaderBody
+      lap={{ ...refused, pr: 'https://github.com/coleam00/factory-mission-control/pull/103' }}
+      now={0}
+    />,
+  );
+  expect(html).toContain('href="https://github.com/coleam00/factory-mission-control/pull/103"');
+  expect(html).toContain('data-pr="103"');
+  expect(html).toContain('>#103</a>');
 });
 
 test('a lap with no review or gate yet says so', () => {
@@ -116,6 +130,25 @@ test('both attempts of a repeated review show, the running one with its time so 
   expect(html).toContain('0:03:04');
   expect(html).toContain('0:01:30');
   expect(html).toContain('data-lap-cost="0.4213"');
+});
+
+test('token counts Realtime sends as strings still group their thousands', () => {
+  const html = render(
+    <StepList
+      rows={[
+        step({
+          model: 'sonnet',
+          tokens_input: '48210',
+          tokens_output: '6904',
+          tokens_cache_read: '39877',
+          tokens_cache_write: '8333',
+        }),
+      ]}
+      now={0}
+    />,
+  );
+  expect(html).toContain('48,210 / 6,904');
+  expect(html).toContain('cache read 39,877, cache write 8,333');
 });
 
 test('a holdout line shows only its scenario id beside its kind, verdict and evidence', () => {

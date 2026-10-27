@@ -4,6 +4,8 @@ import {
   attemptsInOrder,
   consoleUrl,
   lapCost,
+  lapOutcome,
+  type OneLapRow,
   prNumber,
   type StepAttemptRow,
 } from './one-lap';
@@ -58,9 +60,13 @@ test("the console link is the factory's console, /console/r/, and the run id", (
   expect(consoleUrl('http://localhost:3090/', RUN)).toBe(`http://localhost:3090/console/r/${RUN}`);
 });
 
-test('a pull request number is read from its #n text, and nothing else', () => {
+test('a pull request number is read from its #n text or its URL, and nothing else', () => {
   expect(prNumber('#103')).toBe(103);
   expect(prNumber('103')).toBe(103);
+  expect(prNumber('https://github.com/coleam00/factory-mission-control/pull/103')).toBe(103);
+  expect(prNumber('https://github.com/coleam00/factory-mission-control/pull/103/')).toBe(103);
+  expect(prNumber('https://github.com/coleam00/factory-mission-control/issues/103')).toBeNull();
+  expect(prNumber('#103/')).toBeNull();
   expect(prNumber('')).toBeNull();
   expect(prNumber(null)).toBeNull();
   expect(prNumber('#103 and #104')).toBeNull();
@@ -80,4 +86,40 @@ test('a finished attempt takes its recorded duration; a running one its time so 
     ),
   ).toBe(184);
   expect(attemptSeconds(attempt({ status: 'skipped', duration_ms: null }), now)).toBeNull();
+});
+
+const lap = (over: Partial<OneLapRow>): OneLapRow => ({
+  run_id: RUN,
+  status: 'completed',
+  started_at: null,
+  completed_at: null,
+  repository: 'coleam00/factory-mission-control',
+  console: 'http://localhost:3090',
+  issue_number: null,
+  issue_title: null,
+  route: 'simple',
+  depth: null,
+  pr: null,
+  review_status: null,
+  review_outcome: null,
+  review_delivers: null,
+  dispositions: null,
+  gate_status: null,
+  gate_outcome: null,
+  gate_reason: null,
+  ...over,
+});
+
+test("a lap's outcome reads as recent-laps.sql's CASE: failure, gate, review, then route none", () => {
+  const cases: [Partial<OneLapRow>, ReturnType<typeof lapOutcome>][] = [
+    [{ status: 'running', gate_outcome: 'merged' }, null],
+    [{ status: 'failed', gate_outcome: 'merged' }, 'failed'],
+    [{ review_outcome: 'merge', gate_outcome: 'merged' }, 'merged'],
+    [{ review_outcome: 'merge', gate_outcome: 'refused' }, 'gate-refused'],
+    [{ review_outcome: 'sent-back' }, 'sent-back'],
+    [{ review_outcome: 'needs-owner' }, 'needs-owner'],
+    [{ status: 'cancelled', route: 'none' }, 'nothing'],
+    [{ review_outcome: 'merge' }, null],
+  ];
+  for (const [over, outcome] of cases) expect(lapOutcome(lap(over))).toBe(outcome);
 });

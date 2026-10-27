@@ -282,7 +282,7 @@ export function LapSteps({
   );
 }
 
-const thousands = (n: number) => n.toLocaleString('en-US');
+const thousands = (n: number | string) => Number(n).toLocaleString('en-US');
 
 export function StepList({
   rows,

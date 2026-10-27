@@ -33,17 +33,20 @@ export interface OneLapRow {
   gate_reason: string | null;
 }
 
-/** One attempt of one step. An earlier attempt of a repeated step has no model or tokens. */
+/**
+ * One attempt of one step. An earlier attempt of a repeated step has no model or tokens. The
+ * bigint columns arrive as numbers from a direct query and as strings from Realtime.
+ */
 export interface StepAttemptRow {
   step_id: string;
   status: string;
   started_at: Date | null;
   duration_ms: number | string | null;
   model: string | null;
-  tokens_input: number | null;
-  tokens_output: number | null;
-  tokens_cache_read: number | null;
-  tokens_cache_write: number | null;
+  tokens_input: number | string | null;
+  tokens_output: number | string | null;
+  tokens_cache_read: number | string | null;
+  tokens_cache_write: number | string | null;
   cost_usd: number | string | null;
   outcome: string | null;
   error: string | null;
@@ -92,10 +95,15 @@ export function attemptSeconds(attempt: StepAttemptRow, now: number): number | n
 export const consoleUrl = (console: string, runId: string) =>
   `${console.replace(/\/+$/, '')}/console/r/${runId}`;
 
-/** `#103` or `103` is pull request 103; any other text names none. */
+/**
+ * `#103`, `103` or a pull request URL ending `/pull/103` (what the loop's steps write) is pull
+ * request 103; any other text names none.
+ */
 export function prNumber(text: string | null): number | null {
-  const match = /^#?(\d+)$/.exec(text?.trim() ?? '');
-  return match === null ? null : Number(match[1]);
+  const match = /^#?(\d+)$|^https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/pull\/(\d+)\/?$/.exec(
+    text?.trim() ?? '',
+  );
+  return match === null ? null : Number(match[1] ?? match[2]);
 }
 
 export const pullUrl = (repository: string, n: number) =>
