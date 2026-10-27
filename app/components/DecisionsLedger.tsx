@@ -8,8 +8,9 @@ import {
   timelineEntries,
   type VerdictEntry,
 } from '../lib/decisions-ledger';
-import { NOT_RECORDED } from '../lib/version-strip';
+import { NOT_RECORDED, SHARED_PROCESS } from '../lib/version-strip';
 import { LivePanel, type PanelState } from '../live/LivePanel';
+import { EmptyState } from './EmptyState';
 
 const LABEL = 'font-mono text-[10px] font-semibold uppercase tracking-[0.04em] text-text-secondary';
 const MONO = 'font-mono text-[12px] tabular-nums';
@@ -46,24 +47,34 @@ function PanelBody<Row>({
   return <>{children(rows, factory)}</>;
 }
 
-/** `DECISIONS.md`, oldest first, each entry linked to the version its `Version:` line names. */
+/**
+ * `DECISIONS.md`, oldest first, each entry linked to the version its `Version:` line names. The
+ * decisions are the shared factory process's; a factory with no laps gets none, and its empty state.
+ */
 export function DecisionsTimeline({ factory }: { factory: string | undefined }): ReactElement {
   return (
     <LivePanel<TimelineRow> query="decisions-timeline" factory={factory}>
-      {(rows, state) => (
-        <>
-          <h1 className={`${LABEL} mb-3`}>Key decisions</h1>
-          <PanelBody rows={rows} state={state} factory={factory} what="decisions">
-            {(loaded, name) =>
-              loaded.length === 0 ? (
-                <p className="text-sm text-text-secondary">No decisions recorded yet.</p>
-              ) : (
-                <Timeline factory={name} entries={timelineEntries(loaded)} />
-              )
-            }
-          </PanelBody>
-        </>
-      )}
+      {(rows, state) =>
+        rows?.length === 0 && state === 'ready' ? (
+          <div data-decisions-empty>
+            <EmptyState title="No decisions recorded for this factory yet." />
+          </div>
+        ) : (
+          <>
+            <h1 className={`${LABEL} mb-3`}>Key decisions</h1>
+            <PanelBody rows={rows} state={state} factory={factory} what="decisions">
+              {(loaded, name) => (
+                <>
+                  <p data-shared className="mb-3 text-sm text-text-secondary">
+                    {SHARED_PROCESS}
+                  </p>
+                  <Timeline factory={name} entries={timelineEntries(loaded)} />
+                </>
+              )}
+            </PanelBody>
+          </>
+        )
+      }
     </LivePanel>
   );
 }
@@ -129,14 +140,17 @@ export function Timeline({
 export function ImprovementsLedger({ factory }: { factory: string | undefined }): ReactElement {
   return (
     <LivePanel<LedgerRow> query="improvements-ledger" factory={factory}>
-      {(rows, state) => (
-        <>
-          <h2 className={`${LABEL} mb-3`}>Improvements being tested</h2>
-          <PanelBody rows={rows} state={state} factory={factory} what="the ledger">
-            {(loaded) => <Ledger {...ledger(loaded)} />}
-          </PanelBody>
-        </>
-      )}
+      {(rows, state) =>
+        // No pins, or a factory with no laps: the timeline's empty state speaks for the screen.
+        rows?.length === 0 && state === 'ready' ? null : (
+          <>
+            <h2 className={`${LABEL} mb-3`}>Improvements being tested</h2>
+            <PanelBody rows={rows} state={state} factory={factory} what="the ledger">
+              {(loaded) => <Ledger {...ledger(loaded)} />}
+            </PanelBody>
+          </>
+        )
+      }
     </LivePanel>
   );
 }
