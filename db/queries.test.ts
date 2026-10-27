@@ -1344,6 +1344,12 @@ describe('one-lap on the seed', () => {
     for (const line of lines) expect(line).not.toHaveProperty('pre_existing');
   });
 
+  test("a sent-back lap's review names the line each disposition answers", async () => {
+    const [sentBack] = await lap('one-lap', '5eed0001-0000-4000-8000-000000000001');
+    expect(sentBack.review_outcome).toBe('sent-back');
+    expect(sentBack.dispositions).toEqual([{ line: 'H2', action: 'blocks' }]);
+  });
+
   test('another factory and a malformed run id find no lap, without an error', async () => {
     for (const name of LAP_PANELS) {
       expect([name, await lap(name, LAP_RUN, 'other')]).toEqual([name, []]);

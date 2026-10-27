@@ -2,7 +2,8 @@ import { expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { createMemoryRouter, RouterProvider } from 'react-router';
 import type { CheckLineRow, OneLapRow, StepAttemptRow } from '../lib/one-lap';
-import { CheckList, LapHeaderBody, StepList } from './OneLap';
+import Lap from '../routes/f.$factory.laps.$runId';
+import { CheckList, isRunId, LapHeaderBody, StepList } from './OneLap';
 
 function render(element: React.ReactElement): string {
   const router = createMemoryRouter([{ path: '/', element }]);
@@ -162,4 +163,23 @@ test('a holdout line shows only its scenario id beside its kind, verdict and evi
   expect(html).toContain('>H-01<');
   expect(html).toContain('data-verdict="FAIL"');
   expect(html).toContain('data-evidence="2"');
+});
+
+test('a lap address that is not a run id shows the id as typed and nothing under it', () => {
+  expect(isRunId(RUN)).toBe(true);
+  expect(isRunId('not-a-uuid')).toBe(false);
+  const router = createMemoryRouter([{ path: '/f/:factory/laps/:runId', element: <Lap /> }], {
+    initialEntries: ['/f/mission-control/laps/not-a-uuid'],
+  });
+  const html = renderToStaticMarkup(<RouterProvider router={router} />);
+  expect(html).toContain('not-a-uuid');
+  expect(html).toContain('data-no-lap');
+  expect(html).not.toContain('data-live');
+  expect(html).not.toContain('No step has started yet.');
+});
+
+test('a value the lap never recorded reads in the secondary text, not the tertiary grey', () => {
+  const html = render(<StepList rows={[step({ model: null, cost_usd: null })]} now={0} />);
+  expect(html).toContain('<span class="text-text-secondary">none</span>');
+  expect(html).not.toContain('text-text-tertiary');
 });

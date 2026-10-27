@@ -32,9 +32,22 @@ const utcSecond = (at: Date) => `${at.toISOString().slice(0, 19).replace('T', ' 
 const tokenColor = (token: `--${string}` | undefined) =>
   token === undefined ? undefined : { color: `var(${token})` };
 
-/** A value the lap never recorded, in the console's quietest text. */
+/** A value the lap never recorded. The console's tertiary grey is below 4.5:1 on a surface. */
 function None({ children = 'none' }: { children?: ReactNode }): ReactElement {
-  return <span className="text-text-tertiary">{children}</span>;
+  return <span className="text-text-secondary">{children}</span>;
+}
+
+/** Whether an address names a run id at all: Archon's run ids are UUIDs. */
+export const isRunId = (runId: string) =>
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(runId);
+
+/** The lap an address names is not in this factory: the id as typed, and nothing under it. */
+export function NoLap({ runId }: { runId: string }): ReactElement {
+  return (
+    <p data-no-lap className="text-sm text-text-secondary [overflow-wrap:anywhere]">
+      No lap <span className={`${MONO} text-text-primary`}>{runId}</span> in this factory.
+    </p>
+  );
 }
 
 /** The lap: its outcome, route and depth, its links, its review and its merge gate. */
@@ -50,13 +63,7 @@ export function LapHeader({
       {(rows, state) => (
         <PanelBody rows={rows} state={state} factory={factory} what="the lap">
           {(loaded) =>
-            loaded[0] === undefined ? (
-              <p className="text-sm text-text-secondary">
-                No lap {shortRunId(runId)} in this factory.
-              </p>
-            ) : (
-              <LapHeaderBody lap={loaded[0]} />
-            )
+            loaded[0] === undefined ? <NoLap runId={runId} /> : <LapHeaderBody lap={loaded[0]} />
           }
         </PanelBody>
       )}
