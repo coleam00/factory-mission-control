@@ -34,11 +34,21 @@ const RENEWALS_IN_180S = 3;
 const CREATE_WAIT_MS = 180_000;
 /** A switch asks the Neon API for the branch before the page reloads. */
 const SWITCH_WAIT_MS = 30_000;
+/**
+ * A seal lives 60 s and is renewed 10 s before it expires, so an open page asks for one at most
+ * 50 s after a switch; #118 allows 5 s more for it to follow.
+ */
+const FOLLOW_LIMIT_MS = 55_000;
+const SWITCHED_AT = 'mc:switchedAt';
 const STRIP_COUNT = `document.querySelector('[data-live="status-strip"] [data-count]')?.getAttribute('data-count') ?? null`;
 const INDICATOR = `document.querySelector('[data-rewind-indicator]')?.getAttribute('data-rewind-indicator') ?? null`;
 const bothReady = QUERIES.map(
   (q) => `document.querySelector('[data-live="${q}"][data-state="ready"]') !== null`,
 ).join(' && ');
+/** The home map's panels: the factory's strip and its map. */
+const homeReady = ['status-strip', 'home-map']
+  .map((q) => `document.querySelector('[data-live="${q}"][data-state="ready"]') !== null`)
+  .join(' && ');
 const listed = (name: string) =>
   `document.querySelector('[data-live="rewind-branches"] [data-rewind-branch="${name}"]') !== null`;
 
@@ -64,6 +74,13 @@ interface RewindTimings extends GroupTimings {
   };
   afterSwitch: GroupTimings;
   switchedBack: boolean | null;
+  /** A second page left open on `/` while the first switches, and switches back. */
+  followed: {
+    switchedMs: number | null;
+    branch: string | null;
+    count: number | null;
+    backMs: number | null;
+  };
   limits: typeof LIMITS;
 }
 
@@ -122,17 +139,46 @@ export async function measureRewindPanels(
   return groupTimings(panels);
 }
 
-/** Clicks `selector` and waits for the page `switchBranch` loads to have both panels ready. */
-async function switchVia(page: Page, selector: string): Promise<void> {
+/**
+ * Waits until `condition` holds on `page` or the clock passes `until` (epoch ms). The old
+ * document never holds a condition that asks for a reload (it carries `__mcNoReload`); the
+ * evaluation fails while the new one loads.
+ */
+async function waitAcrossReload(page: Page, condition: string, until: number): Promise<boolean> {
+  while (Date.now() < until) {
+    const holds = await page.evaluate<boolean>(pageWait(condition, 1000), 5000).catch(() => false);
+    if (holds) return true;
+  }
+  return false;
+}
+
+/**
+ * Keeps in the page's sessionStorage, which outlives the reload a switch makes, the browser's
+ * clock when the server answered the switch.
+ */
+const NOTE_SWITCH = `(() => {
+  sessionStorage.removeItem('${SWITCHED_AT}');
+  const fetch = window.fetch;
+  window.fetch = async (...args) => {
+    const res = await fetch(...args);
+    if (String(args[0]).endsWith('/api/rewind') && res.ok) {
+      sessionStorage.setItem('${SWITCHED_AT}', String(Date.now()));
+    }
+    return res;
+  };
+})()`;
+
+/**
+ * Clicks `selector` and waits for the page `switchBranch` loads to have both panels ready.
+ * Answers the browser's clock when the server switched.
+ */
+async function switchVia(page: Page, selector: string): Promise<number | null> {
+  await page.evaluate(NOTE_SWITCH);
   await page.evaluate(`void document.querySelector('${selector}').click()`);
-  const deadline = performance.now() + SWITCH_WAIT_MS;
-  while (performance.now() < deadline) {
-    // The old document never holds this (it carries the flag); the evaluation fails while the
-    // new one loads.
-    const loaded = await page
-      .evaluate<boolean>(pageWait(`window.__mcNoReload !== true && ${bothReady}`, 1000), 5000)
-      .catch(() => false);
-    if (loaded) return;
+  const loaded = `window.__mcNoReload !== true && ${bothReady}`;
+  if (await waitAcrossReload(page, loaded, Date.now() + SWITCH_WAIT_MS)) {
+    const at = await page.evaluate<string | null>(`sessionStorage.getItem('${SWITCHED_AT}')`);
+    return at === null ? null : Number(at);
   }
   const failure = await page
     .evaluate<string | null>(`document.querySelector('[data-switch-failure]')?.textContent ?? null`)
@@ -166,6 +212,7 @@ export function rewindPhase(ctx: {
     switched: { branch: null, homeCount: null, rewindCount: null, expected: null },
     afterSwitch: emptyGroupTimings(QUERIES),
     switchedBack: null,
+    followed: { switchedMs: null, branch: null, count: null, backMs: null },
     limits: LIMITS,
   };
   const report: string[] = [];
@@ -176,6 +223,8 @@ export function rewindPhase(ctx: {
   const inserted: string[] = [];
   let server: ReturnType<typeof Bun.spawn> | undefined;
   let page: Page | undefined;
+  /** Open on `/` through both switches, which it must follow by itself. */
+  let other: Page | undefined;
   let base = '';
 
   /** Runs `rewind:create` and times its row from the `registering` line to the list. */
@@ -215,6 +264,20 @@ export function rewindPhase(ctx: {
   async function count(on: Page): Promise<number | null> {
     const value = await on.evaluate<string | null>(STRIP_COUNT);
     return value === null ? null : Number(value);
+  }
+
+  /** How long after `switchedAt` the page reloaded itself onto `branch` with its panels ready. */
+  async function followMs(
+    on: Page,
+    switchedAt: number | null,
+    branch: string | null,
+  ): Promise<number | null> {
+    if (switchedAt === null) return null;
+    const followed = `window.__mcNoReload !== true && (${INDICATOR}) === ${JSON.stringify(branch)} && ${homeReady}`;
+    if (!(await waitAcrossReload(on, followed, switchedAt + FOLLOW_LIMIT_MS))) return null;
+    const ms = (await on.evaluate<number>('Date.now()')) - switchedAt;
+    await on.evaluate('window.__mcNoReload = true');
+    return ms;
   }
 
   return {
@@ -257,7 +320,19 @@ export function rewindPhase(ctx: {
       timings.createToListMs = await createToList(page, at);
       const name = rewindBranchName(at);
       timings.noReload = await page.evaluate<boolean>('window.__mcNoReload === true');
-      await switchVia(page, `[data-rewind-branch="${name}"] button`);
+      other = await openPage(deps.env);
+      await other.goto(`${base}/`);
+      if (!(await other.evaluate<boolean>(pageWait(homeReady, READY_WAIT_MS)))) {
+        throw new Error(`/ did not reach data-state="ready" within ${READY_WAIT_MS} ms`);
+      }
+      await other.evaluate('window.__mcNoReload = true');
+      const switchedAt = await switchVia(page, `[data-rewind-branch="${name}"] button`);
+      timings.followed.switchedMs = await followMs(other, switchedAt, name);
+      timings.followed.branch = await other.evaluate<string | null>(INDICATOR);
+      timings.followed.count = await count(other);
+      report.push(
+        `the page open on / followed the switch after ${timings.followed.switchedMs ?? 'never'} ms (limit ${FOLLOW_LIMIT_MS}): it shows ${timings.followed.branch} and ${timings.followed.count} running laps`,
+      );
       timings.afterSwitch = await measureRewindPanels(page, { ...ctx, created });
       timings.switched.branch = await page.evaluate<string | null>(INDICATOR);
       timings.switched.rewindCount = await count(page);
@@ -296,10 +371,15 @@ export function rewindPhase(ctx: {
         { cwd: deps.repoRoot, env: deps.env, stdout: 'ignore', stderr: 'inherit' },
       );
       if (probe.exitCode !== 0) failed.push(`the design probe on /rewind exited ${probe.exitCode}`);
-      await switchVia(page, '[data-switch-back]');
+      const switchedAt = await switchVia(page, '[data-switch-back]');
       timings.switchedBack = (await page.evaluate<string | null>(INDICATOR)) === null;
       report.push(
         `switched back: the indicator is ${timings.switchedBack ? 'gone' : 'still shown'}`,
+      );
+      if (!other) throw new Error('the rewind phase never opened its page on /');
+      timings.followed.backMs = await followMs(other, switchedAt, null);
+      report.push(
+        `the page open on / came back live after ${timings.followed.backMs ?? 'never'} ms (limit ${FOLLOW_LIMIT_MS})`,
       );
     },
 
@@ -307,6 +387,7 @@ export function rewindPhase(ctx: {
     async cleanup(): Promise<string[]> {
       const failures: string[] = [];
       await page?.close().catch(() => undefined);
+      await other?.close().catch(() => undefined);
       if (server) {
         server.kill();
         await server.exited;
@@ -369,6 +450,20 @@ export function rewindPhase(ctx: {
         );
       }
       if (timings.switchedBack !== true) failures.push('switching back left the rewind indicator');
+      const { followed } = timings;
+      if (!within(followed.switchedMs, FOLLOW_LIMIT_MS)) {
+        failures.push(
+          `the other open page followed the switch to ${created[0]} after ${followed.switchedMs ?? 'never'} ms, limit ${FOLLOW_LIMIT_MS}`,
+        );
+      }
+      if (followed.branch !== created[0] || followed.count !== switched.expected) {
+        failures.push(
+          `the other open page showed ${followed.branch} with ${followed.count} running laps, expected ${created[0]} with ${switched.expected}`,
+        );
+      }
+      if (!within(followed.backMs, FOLLOW_LIMIT_MS)) {
+        failures.push(`the other open page did not come back live within ${FOLLOW_LIMIT_MS} ms`);
+      }
       return failures;
     },
   };

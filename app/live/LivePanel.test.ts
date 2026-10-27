@@ -1,6 +1,7 @@
-import { expect, test } from 'bun:test';
+import { afterEach, expect, mock, spyOn, test } from 'bun:test';
 import type { LiveQueryState } from '@neon/realtime/client';
-import { panelState, recovering } from './LivePanel';
+import * as rewind from '../lib/rewind';
+import { panelState, recovering, seal } from './LivePanel';
 
 test('a panel is loading until rows arrive', () => {
   expect(panelState({ status: 'connecting', data: undefined, error: undefined })).toBe('loading');
@@ -59,4 +60,42 @@ test('a panel reconnecting after an error is loading until it is live again', ()
       { status: 'live', data: rows },
     ]),
   ).toEqual(['ready', 'error', 'loading', 'ready']);
+});
+
+const sealed = { capability: 'capability', queryFingerprint: 'a'.repeat(64), expiresAt: 60_000 };
+
+/** Seals `home-map` from a page on `branch`, the server answering a seal for `answered`. */
+async function sealOn(branch: string | null, answered: string | null) {
+  spyOn(globalThis, 'fetch').mockResolvedValue(Response.json({ ...sealed, rewind: answered }));
+  const follow = spyOn(rewind, 'followSwitch').mockImplementation(() => {});
+  const settled = seal('home-map', '{"factory":"factory-a"}', branch).then(
+    (value) => ({ value }),
+    (error) => ({ error }),
+  );
+  const outcome = await Promise.race([settled, Bun.sleep(50).then(() => 'pending')]);
+  return { outcome, follow };
+}
+
+afterEach(() => mock.restore());
+
+test('a seal for the branch the page is on reaches the panel without the branch', async () => {
+  const { outcome, follow } = await sealOn(null, null);
+  expect(outcome).toEqual({ value: sealed });
+  expect(follow).not.toHaveBeenCalled();
+
+  const onRewind = await sealOn('rewind-x', 'rewind-x');
+  expect(onRewind.outcome).toEqual({ value: sealed });
+  expect(onRewind.follow).not.toHaveBeenCalled();
+});
+
+test('a page on home follows a seal for a rewind branch, and the seal never reaches it', async () => {
+  const { outcome, follow } = await sealOn(null, 'rewind-x');
+  expect(follow).toHaveBeenCalledTimes(1);
+  expect(outcome).toBe('pending');
+});
+
+test('a page on a rewind branch follows a seal for home, and the seal never reaches it', async () => {
+  const { outcome, follow } = await sealOn('rewind-x', null);
+  expect(follow).toHaveBeenCalledTimes(1);
+  expect(outcome).toBe('pending');
 });

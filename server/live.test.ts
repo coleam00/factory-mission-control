@@ -93,6 +93,7 @@ describe('POST /api/live/:name', () => {
       capability: 'cap',
       queryFingerprint: 'fp',
       expiresAt: 60_000,
+      rewind: null,
     });
     expect(sealed).toEqual([[queries.get('status-strip') as string, ['mission-control']]]);
   });
@@ -249,17 +250,20 @@ describe('POST /api/rewind', () => {
       factories: ['mission-control'],
       rewind: REWIND,
     });
-    await app.request('/api/live/status-strip', post({ factory: 'mission-control' }));
-    await app.request(
+    const seal = { capability: 'cap', queryFingerprint: 'fp', expiresAt: 60_000 };
+    const strip = () => app.request('/api/live/status-strip', post({ factory: 'mission-control' }));
+    expect(await (await strip()).json()).toEqual({ ...seal, rewind: REWIND });
+    const branches = await app.request(
       '/api/live/rewind-branches',
       post({ factory: 'mission-control', branch: 'home' }),
     );
+    expect(await branches.json()).toEqual({ ...seal, rewind: null });
     expect(sealedOn).toEqual([REWIND, 'home']);
     const html = await (await app.request('/')).text();
     expect(bootConfig(html)).toMatchObject({ url: REWIND_URL, home: HOME_URL, rewind: REWIND });
 
     expect(await (await rewindTo(app, null)).json()).toEqual({ rewind: null });
-    await app.request('/api/live/status-strip', post({ factory: 'mission-control' }));
+    expect(await (await strip()).json()).toEqual({ ...seal, rewind: null });
     expect(sealedOn).toEqual([REWIND, 'home', 'home']);
     expect(await (await app.request('/api/live')).json()).toMatchObject({
       url: HOME_URL,
