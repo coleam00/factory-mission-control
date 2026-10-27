@@ -71,8 +71,16 @@ test('every factory route file has a link; screens needing another parameter hav
       .replaceAll('.', '/');
     expect(found).toContain(`/f/${FACTORY}/${rest}`);
   }
-  expect(found).toHaveLength(screens.length + 1);
+  expect(found).toHaveLength(screens.length + 2);
+  expect(found.at(-1)).toBe('/rewind');
   expect(found.some((href) => href.startsWith('/steps'))).toBe(false);
+});
+
+test('the rewind link shows on every screen and is current on /rewind', () => {
+  for (const path of ['/', `/f/${FACTORY}/issues`, '/rewind']) {
+    const rewind = links(navAt(registeredRoutes(), path).html()).find((l) => l.href === '/rewind');
+    expect(rewind).toEqual({ href: '/rewind', name: 'Rewind', current: path === '/rewind' });
+  }
 });
 
 test('adding a factory route file adds its link with no edit to the shell', () => {
