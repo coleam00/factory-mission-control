@@ -17,6 +17,7 @@ DECLARE
   v_last bigint;
   v_run uuid;
   v_replayed integer := 0;
+  v_sources text[] := ARRAY['mc_project_run_insert', 'mc_project_run_update'];
 BEGIN
   v_last := (SELECT coalesce(max(id), 0) FROM mc.projection_errors);
   CREATE TEMP TABLE IF NOT EXISTS mc_replay_runs
@@ -26,7 +27,7 @@ BEGIN
   FOR v_run IN
     SELECT DISTINCT p.run_id FROM mc.projection_errors p
       JOIN public.remote_agent_workflow_runs r ON r.id = p.run_id
-     WHERE p.source IN ('mc_project_run_insert', 'mc_project_run_update')
+     WHERE p.source = ANY (v_sources)
        AND p.sqlstate = '55P03' AND p.replayed_at IS NULL AND p.id <= v_last
        AND r.status NOT IN ('pending', 'running')
   LOOP
@@ -42,7 +43,7 @@ BEGIN
         RAISE EXCEPTION 'replay of run % recorded an error', v_run;
       END IF;
       UPDATE mc.projection_errors SET replayed_at = now()
-       WHERE run_id = v_run AND source IN ('mc_project_run_insert', 'mc_project_run_update')
+       WHERE run_id = v_run AND source = ANY (v_sources)
          AND sqlstate = '55P03' AND replayed_at IS NULL AND id <= v_last;
       v_replayed := v_replayed + 1;
     EXCEPTION WHEN OTHERS THEN
