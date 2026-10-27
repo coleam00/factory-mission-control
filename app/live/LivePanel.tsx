@@ -218,6 +218,8 @@ export function LivePanel<Row>({
 }: LivePanelProps<Row>): ReactElement {
   const live = useLive();
   const [accepted, setAccepted] = useState<{
+    /** What the seal was asked for: rows sealed for anything else are not this panel's. */
+    asked: string;
     sealed: SealedLiveQuery<Row>;
     observation: QueryObservation;
     requestSeal: () => Promise<SealedLiveQuery<Row>>;
@@ -227,13 +229,14 @@ export function LivePanel<Row>({
   const body = JSON.stringify({ factory, ...(home && { branch: 'home' }), ...(args && { args }) });
   const ready = live.status === 'ready' && factory !== undefined;
   const branch = live.status === 'ready' && !home ? live.rewind : null;
+  const asked = `${query} ${body} ${branch}`;
   useEffect(() => {
     if (!ready || factory === undefined) return;
     let cancelled = false;
     let observation: QueryObservation | undefined;
     const stopped = new AbortController();
     const requestSeal = backOffSeals(() => seal<Row>(query, body, branch), stopped.signal, {
-      backoff: sealBackoff(`${query} ${body} ${branch}`),
+      backoff: sealBackoff(asked),
     });
     markOnce(`live:${query}:requested`);
     const ask = (): void => {
@@ -251,7 +254,7 @@ export function LivePanel<Row>({
           });
           expectSubscribe(first.capability, observation);
           setFailed(false);
-          setAccepted({ sealed: first, observation, requestSeal });
+          setAccepted({ asked, sealed: first, observation, requestSeal });
         },
         () => {
           if (cancelled) return;
@@ -266,9 +269,9 @@ export function LivePanel<Row>({
       stopped.abort();
       if (observation) discardObservation(observation);
     };
-  }, [ready, query, factory, body, home, branch]);
+  }, [ready, query, factory, body, home, branch, asked]);
 
-  if (live.status !== 'ready' || accepted === undefined || failed) {
+  if (live.status !== 'ready' || accepted?.asked !== asked || failed) {
     const state = live.status === 'error' || failed ? 'error' : 'loading';
     return (
       <Frame query={query} state={state} className={className}>
