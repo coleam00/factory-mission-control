@@ -13,7 +13,7 @@ export const REALTIME_ORIGINS = [
 ];
 
 export type Branch = { id: string; name: string; created_at: string };
-export type Endpoint = { id: string; branch_id: string; host: string };
+export type Endpoint = { id: string; branch_id: string; host: string; current_state: string };
 export type Operation = { id: string; status: string };
 export type Realtime = { enabled: boolean; pending: boolean };
 export type CreatedBranch = {
