@@ -8,6 +8,7 @@ import {
   executionTime,
   explainPanel,
   explainQuery,
+  explainWarmQuery,
   groupPerformanceFailures,
   groupTimings,
   measurePanels,
@@ -139,11 +140,12 @@ test('a whole group is observed before sequential EXPLAIN, with exact arguments 
   const second = { ...context, id: 'two', query: 'other', args: ['workflow', 'other-step'] };
   const events: string[] = [];
   const db = database(async (text, params) => {
-    events.push('explain');
+    const explained = text.startsWith('EXPLAIN');
+    events.push(explained ? 'explain' : 'warm-up');
     expect(events[0]).toBe('observed');
-    expect(text).toBe(`EXPLAIN (ANALYZE, FORMAT JSON) ${sql}`);
+    expect(text).toBe(explained ? `EXPLAIN (ANALYZE, FORMAT JSON) ${sql}` : sql);
     expect(params).toEqual(
-      events.length === 2
+      events.length <= 7
         ? ['factory-a', 'workflow', 'step']
         : ['factory-a', 'workflow', 'other-step'],
     );
@@ -177,8 +179,10 @@ test('a whole group is observed before sequential EXPLAIN, with exact arguments 
   expect(events).toEqual([]);
   mark('other', second);
   const result = await measured;
-  expect(events).toEqual(['observed', 'explain', 'explain']);
+  const panel = ['warm-up', ...Array(5).fill('explain')];
+  expect(events).toEqual(['observed', ...panel, ...panel]);
   expect(result['step-detail'].queryExecutionMs).toBe(0.125);
+  expect(result['step-detail'].queryExecutionSamplesMs).toEqual(Array(5).fill(0.125));
   expect(result.other.queryContext).toEqual({ ...second, branch: 'check-owned' });
 });
 
@@ -243,6 +247,50 @@ test('invalid EXPLAIN and driver failures preserve browser evidence and do not l
   expect(JSON.stringify(timing)).not.toContain('secret URL');
 });
 
+function plans(executionMs: readonly number[]) {
+  const seenSql: string[] = [];
+  const db = database(async (text) => {
+    seenSql.push(text);
+    const ms = executionMs[seenSql.length - 1];
+    return [{ 'QUERY PLAN': [{ 'Execution Time': ms }] }];
+  });
+  return { db, seenSql };
+}
+
+test('a cold first execution does not decide the verdict: the warm median of five does', async () => {
+  // The issue's measured cold Neon branch: one cold read, then ~1 ms every time.
+  const { db, seenSql } = plans([213.875, 42.0, 1.16, 1.23, 1.2, 1.18]);
+  const { medianMs, samplesMs } = await explainWarmQuery(db, sql, ['factory-a', 'w', 's']);
+  expect(seenSql[0]).toBe(sql);
+  expect(seenSql.slice(1)).toEqual(Array(5).fill(`EXPLAIN (ANALYZE, FORMAT JSON) ${sql}`));
+  expect(samplesMs).toEqual([42.0, 1.16, 1.23, 1.2, 1.18]);
+  expect(medianMs).toBe(1.2);
+  expect(
+    performanceFailures('home-map', {
+      queryExecutionMs: medianMs,
+      renderMs: 0,
+      measurementError: null,
+    }),
+  ).toEqual([]);
+});
+
+test('a query slow on every sample still fails the unchanged < 100 ms limit', async () => {
+  const { db } = plans([400, 100, 250, 180, 120, 100.5]);
+  const timing = observedTimings(context.query, seen);
+  await explainPanel(
+    context.query,
+    timing,
+    { db, branch: 'check-owned', selectedBranch: null },
+    queries,
+    context.factory,
+  );
+  expect(timing.queryExecutionSamplesMs).toEqual([100, 250, 180, 120, 100.5]);
+  expect(timing.queryExecutionMs).toBe(120);
+  expect(performanceFailures(context.query, timing)).toEqual([
+    `${context.query} query execution 120 ms, requires < 100`,
+  ]);
+});
+
 test('real JSON EXPLAIN binds parameters and a delayed empty query fails the query gate', async () => {
   const pg = new PGlite();
   const db = database(
@@ -252,6 +300,8 @@ test('real JSON EXPLAIN binds parameters and a delayed empty query fails the que
     const copied = 'SELECT $1::text AS factory WHERE false';
     const delayed = `WITH delay AS MATERIALIZED (SELECT pg_sleep(0.2) AS slept) SELECT panel.*, delay.slept FROM delay LEFT JOIN (${copied}) AS panel ON true`;
     const execution = await explainQuery(db, delayed, ['factory-a']);
+    // Warm runs do not hide a query that is slow every time.
+    expect((await explainWarmQuery(db, delayed, ['factory-a'])).medianMs).toBeGreaterThan(100);
     expect(
       performanceFailures('slow-copy', {
         queryExecutionMs: execution,

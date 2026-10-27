@@ -11,7 +11,10 @@ export interface PanelTimings {
   firstSnapshotMs: number | null;
   subscribeToFirstResultMs: number | null;
   renderMs: number | null;
+  /** Median of the warm samples below; the one query on the panel's critical path. */
   queryExecutionMs: number | null;
+  /** Every measured EXPLAIN ANALYZE execution, in order, after one unmeasured warm-up run. */
+  queryExecutionSamplesMs: number[] | null;
   queryContext: QueryObservation | null;
   measurementError: string | null;
 }
@@ -26,6 +29,7 @@ export const emptyPanelTimings = (): PanelTimings => ({
   subscribeToFirstResultMs: null,
   renderMs: null,
   queryExecutionMs: null,
+  queryExecutionSamplesMs: null,
   queryContext: null,
   measurementError: null,
 });
@@ -42,6 +46,7 @@ export function groupTimings(panels: Record<string, PanelTimings>): GroupTimings
     subscribeToFirstResultMs: perQuery('subscribeToFirstResultMs'),
     renderMs: perQuery('renderMs'),
     queryExecutionMs: perQuery('queryExecutionMs'),
+    queryExecutionSamplesMs: perQuery('queryExecutionSamplesMs'),
     queryContext: perQuery('queryContext'),
     measurementError: perQuery('measurementError'),
   };
@@ -154,6 +159,32 @@ export async function explainQuery(db: Db, sql: string, params: string[]): Promi
   return executionTime(await db.query(`EXPLAIN (ANALYZE, FORMAT JSON) ${sql}`, params));
 }
 
+/** Measured executions per query; the verdict is their median. */
+export const EXPLAIN_SAMPLES = 5;
+
+export function median(samples: readonly number[]): number {
+  if (samples.length === 0) throw new Error('median of no samples');
+  const sorted = [...samples].sort((a, b) => a - b);
+  const middle = Math.floor(sorted.length / 2);
+  return sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
+}
+
+/**
+ * Judges a warm query: one unmeasured run with the same parameters first (a just-created
+ * check branch reads its buffers cold once, which is Neon's, not the query's), then the
+ * median of `EXPLAIN_SAMPLES` EXPLAIN ANALYZE executions. A query slow every time stays slow.
+ */
+export async function explainWarmQuery(
+  db: Db,
+  sql: string,
+  params: string[],
+): Promise<{ medianMs: number; samplesMs: number[] }> {
+  await db.query(sql, params);
+  const samplesMs: number[] = [];
+  for (let i = 0; i < EXPLAIN_SAMPLES; i++) samplesMs.push(await explainQuery(db, sql, params));
+  return { medianMs: median(samplesMs), samplesMs };
+}
+
 export interface TimingDatabase {
   db: Db;
   /** Verified through the Neon API before opening the connection. */
@@ -184,10 +215,12 @@ export async function explainPanel(
   }
   timing.queryContext = { ...context, branch: target.branch };
   try {
-    timing.queryExecutionMs = await explainQuery(target.db, sql, [
+    const { medianMs, samplesMs } = await explainWarmQuery(target.db, sql, [
       context.factory,
       ...context.args,
     ]);
+    timing.queryExecutionMs = medianMs;
+    timing.queryExecutionSamplesMs = samplesMs;
   } catch {
     // Driver errors may include connection credentials or SQL data; reports need only the panel.
     timing.measurementError = `${query}: EXPLAIN failed or returned an invalid execution time`;
