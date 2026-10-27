@@ -341,7 +341,7 @@ const countIs = (target: number) =>
  * One panel's timings. `readyMs` is from navigation (connection setup to Neon included);
  * `firstSnapshotMs` retains the combined delivery/render interval as unjudged evidence (#141).
  * The strip's inserts are running laps;
- * the map's are `fixture:write step` events, timed from starting the command.
+ * the map's are `fixture:write step` events, timed from the write's exit.
  */
 interface Timings extends PanelTimings {
   branch: string | null;
