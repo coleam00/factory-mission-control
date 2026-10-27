@@ -46,3 +46,25 @@ test('recent laps are newest first, a lap with no start last, ties by run id', (
     ]).map((l) => l.run_id),
   ).toEqual(['d', 'a', 'b', 'c']);
 });
+
+test('recent laps are ordered by finish, newest first, whatever order they started in (#116)', () => {
+  const lap = (run_id: string, started_at: string, completed_at: string | null) => ({
+    run_id,
+    status: 'completed',
+    started_at: new Date(started_at),
+    completed_at: completed_at === null ? null : new Date(completed_at),
+    issue_number: null,
+    outcome: null,
+    cost_usd: null,
+  });
+  expect(
+    recentLaps([
+      // Started last, finished first: a short lap that found nothing to do.
+      lap('short', '2026-10-01T09:00:00Z', '2026-10-01T09:05:00Z'),
+      // Started first, finished last: the lap that just merged.
+      lap('merged', '2026-10-01T08:00:00Z', '2026-10-01T10:00:00Z'),
+      lap('no-finish', '2026-10-01T11:00:00Z', null),
+      lap('older', '2026-09-30T08:00:00Z', '2026-09-30T09:00:00Z'),
+    ]).map((l) => l.run_id),
+  ).toEqual(['merged', 'short', 'older', 'no-finish']);
+});
