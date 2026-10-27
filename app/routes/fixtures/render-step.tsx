@@ -122,6 +122,7 @@ async function until(done: () => boolean, what: string): Promise<void> {
  * `steps[at]`, and every other query no rows. A seal `hold` matches waits until it is released.
  */
 function mount(url: string, steps: Record<string, StepRow[]>) {
+  performance.clearMarks();
   const originalFetch = window.fetch;
   const header = btoa(JSON.stringify({ alg: 'dir', enc: 'A256GCM', v: 1 })).replace(/=+$/, '');
   const asked: Asked[] = [];
@@ -213,13 +214,26 @@ function shown({ container }: Screen) {
   };
 }
 
-/** Every panel has answered: the step's seven and the picker, or the picker and a sentence. */
+/** The step's seven queries and the picker's: every one the screen asks for. */
+const QUERIES = [
+  'step-versions',
+  'step-detail',
+  'step-nesting',
+  'step-prompt',
+  'step-subagents',
+  'step-scripts',
+  'step-hooks',
+  'step-yaml',
+];
+
+/** Every panel has answered, and step-detail shows the step or its one sentence. */
 function settled({ container }: Screen): boolean {
   const panels = [...container.querySelectorAll('[data-live]')];
   const detail = container.querySelector('[data-live="step-detail"]');
   return (
+    panels.length === QUERIES.length &&
     panels.every((panel) => panel.getAttribute('data-state') === 'ready') &&
-    (panels.length === 8 || (panels.length === 2 && detail?.textContent !== ''))
+    detail?.textContent !== ''
   );
 }
 
@@ -241,6 +255,34 @@ export async function openStep(url: string) {
   try {
     await until(() => settled(screen), 'every panel to answer');
     return { shown: shown(screen), asked: screen.asked };
+  } finally {
+    screen.unmount();
+  }
+}
+
+/**
+ * Opens the review step with step-detail's seal unanswered until every query was asked for: what
+ * was asked, step-detail's state and which panels had marked their request by then, and what the
+ * screen showed once step-detail answered.
+ */
+export async function openHeld() {
+  const screen = mount('/steps/archon-loop/review', STEPS);
+  try {
+    const release = screen.hold(({ query }) => query === 'step-detail');
+    const asked = () => new Set(screen.asked.map(({ query }) => query));
+    await until(() => QUERIES.every((query) => asked().has(query)), 'every query to be asked for');
+    const whileHeld = {
+      asked: [...asked()].sort(),
+      detail: screen.container
+        .querySelector('[data-live="step-detail"]')
+        ?.getAttribute('data-state'),
+      requested: QUERIES.filter(
+        (query) => performance.getEntriesByName(`live:${query}:requested`).length > 0,
+      ).sort(),
+    };
+    release();
+    await until(() => settled(screen), 'every panel to answer');
+    return { whileHeld, after: shown(screen) };
   } finally {
     screen.unmount();
   }

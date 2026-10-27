@@ -87,3 +87,15 @@ test("choosing another version never shows the last one's files while the new on
   expect(pending).toEqual([{ state: 'loading', prompt: null, sentence: '' }]);
   expect(after).toEqual({ state: 'ready', prompt: `Review at ${NEWER}`, sentence: null });
 }, 30_000);
+
+// No step query waits for another's result: each takes only the factory, the address's workflow
+// and path, and its version, so every one is asked for at navigation.
+test('every step panel asks for its seal at navigation, not after step-detail answers', async () => {
+  const { whileHeld, after } = await inPage<{
+    whileHeld: { asked: string[]; detail: string | null; requested: string[] };
+    after: Shown;
+  }>('openHeld()');
+  const all = ['step-versions', ...STEP_QUERIES].sort();
+  expect(whileHeld).toEqual({ asked: all, detail: 'loading', requested: all });
+  expect(after).toEqual({ state: 'ready', prompt: 'Review, current', sentence: null });
+}, 30_000);

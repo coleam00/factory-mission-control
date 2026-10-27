@@ -1,4 +1,4 @@
-import type { ReactElement, ReactNode } from 'react';
+import { type ReactElement, type ReactNode, useLayoutEffect, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router';
 import { EmptyState } from '../components/EmptyState';
 import { StepVersionPicker } from '../components/StepVersionPicker';
@@ -25,10 +25,16 @@ const CODE =
 const NOTE = 'text-sm text-text-secondary';
 const MONO = 'font-mono text-[13px] text-text-primary [overflow-wrap:anywhere]';
 
-/** A panel of one step, at the version pinned `at`, else the current one. */
+/**
+ * A panel of the step at `workflow` and `path`, at the version pinned `at`, else the current one.
+ * It asks for its rows from the address alone, at navigation; `step`, the row step-detail found,
+ * is needed only to show them, and the panel stays hidden until it is known.
+ */
 interface PanelProps {
-  step: StepRow;
-  factory: string;
+  step: StepRow | undefined;
+  workflow: string;
+  path: string;
+  factory: string | undefined;
   at: string | null;
 }
 
@@ -36,20 +42,23 @@ function Unavailable(): ReactElement {
   return <p className={NOTE}>Live data is unavailable.</p>;
 }
 
-/** A panel's heading, then its body once its rows are in. */
+/** A panel's heading, then its body once its rows are in: nothing until its step is known. */
 function Section({
   title,
+  step,
   state,
   children,
 }: {
   title: string;
+  step: StepRow | undefined;
   state: PanelState;
-  children: () => ReactNode;
-}): ReactElement {
+  children: (step: StepRow) => ReactNode;
+}): ReactElement | null {
+  if (step === undefined) return null;
   return (
     <>
       <h2 className={LABEL}>{title}</h2>
-      {state === 'error' ? <Unavailable /> : state === 'ready' ? children() : null}
+      {state === 'error' ? <Unavailable /> : state === 'ready' ? children(step) : null}
     </>
   );
 }
@@ -106,14 +115,16 @@ function StepList({ steps, ...data }: { steps: readonly string[]; [a: `data-${st
 }
 
 /** Where includes put this step, and every node beneath it: on an include, the steps it runs. */
-function Nesting({ step, factory, at }: PanelProps): ReactElement {
+function Nesting({ step, workflow, path, factory, at }: PanelProps): ReactElement {
   return (
     <LivePanel<NestingRow>
       query="step-nesting"
       factory={factory}
-      args={[step.workflow, step.path, at ?? '']}
+      args={[workflow, path, at ?? '']}
+      className={step === undefined ? 'hidden' : undefined}
     >
       {(rows, state) => {
+        if (step === undefined) return null;
         if (state === 'error')
           return (
             <div className={CARD}>
@@ -168,17 +179,17 @@ function Nesting({ step, factory, at }: PanelProps): ReactElement {
   );
 }
 
-function Prompt({ step, factory, at }: PanelProps): ReactElement {
+function Prompt({ step, workflow, path, factory, at }: PanelProps): ReactElement {
   return (
     <LivePanel<PartRow>
       query="step-prompt"
       factory={factory}
-      args={[step.workflow, step.path, at ?? '']}
-      className={CARD}
+      args={[workflow, path, at ?? '']}
+      className={step === undefined ? 'hidden' : CARD}
     >
       {(rows = [], state) => (
-        <Section title="Prompt" state={state}>
-          {() => {
+        <Section title="Prompt" step={step} state={state}>
+          {(step) => {
             if (step.command_file !== null) {
               const text = joinParts(rows, (row) => row.path).get(step.command_file) ?? '';
               return <File path={step.command_file} text={text} open data-prompt="" />;
@@ -197,16 +208,16 @@ function Prompt({ step, factory, at }: PanelProps): ReactElement {
   );
 }
 
-function Subagents({ step, factory, at }: PanelProps): ReactElement {
+function Subagents({ step, workflow, path, factory, at }: PanelProps): ReactElement {
   return (
     <LivePanel<SubagentRow>
       query="step-subagents"
       factory={factory}
-      args={[step.workflow, step.path, at ?? '']}
-      className={CARD}
+      args={[workflow, path, at ?? '']}
+      className={step === undefined ? 'hidden' : CARD}
     >
       {(rows = [], state) => (
-        <Section title="Subagents" state={state}>
+        <Section title="Subagents" step={step} state={state}>
           {() => {
             if (rows.length === 0)
               return <p className={NOTE}>This step has no inline subagents.</p>;
@@ -237,17 +248,17 @@ function Subagents({ step, factory, at }: PanelProps): ReactElement {
   );
 }
 
-function Scripts({ step, factory, at }: PanelProps): ReactElement {
+function Scripts({ step, workflow, path, factory, at }: PanelProps): ReactElement {
   return (
     <LivePanel<PartRow>
       query="step-scripts"
       factory={factory}
-      args={[step.workflow, step.path, at ?? '']}
-      className={CARD}
+      args={[workflow, path, at ?? '']}
+      className={step === undefined ? 'hidden' : CARD}
     >
       {(rows = [], state) => (
-        <Section title="Scripts" state={state}>
-          {() => {
+        <Section title="Scripts" step={step} state={state}>
+          {(step) => {
             const runtime =
               step.runtime !== null ? <Fact label="Runtime">{step.runtime}</Fact> : null;
             let body: ReactNode;
@@ -279,16 +290,16 @@ function Scripts({ step, factory, at }: PanelProps): ReactElement {
 }
 
 /** The hooks that let this step's subagents through: for a holdout step, the fence. */
-function Hooks({ step, factory, at }: PanelProps): ReactElement {
+function Hooks({ step, workflow, path, factory, at }: PanelProps): ReactElement {
   return (
     <LivePanel<HookRow>
       query="step-hooks"
       factory={factory}
-      args={[step.workflow, step.path, at ?? '']}
-      className={CARD}
+      args={[workflow, path, at ?? '']}
+      className={step === undefined ? 'hidden' : CARD}
     >
       {(rows = [], state) => (
-        <Section title="Hooks" state={state}>
+        <Section title="Hooks" step={step} state={state}>
           {() => {
             if (rows.length === 0) return <p className={NOTE}>No hook applies to this step.</p>;
             const hooks = [...new Map(rows.map((row) => [row.path, row])).values()];
@@ -324,17 +335,17 @@ function Hooks({ step, factory, at }: PanelProps): ReactElement {
   );
 }
 
-function Yaml({ step, factory, at }: PanelProps): ReactElement {
+function Yaml({ step, workflow, path, factory, at }: PanelProps): ReactElement {
   return (
     <LivePanel<YamlPartRow>
       query="step-yaml"
       factory={factory}
-      args={[step.workflow, step.path, at ?? '']}
-      className={CARD}
+      args={[workflow, path, at ?? '']}
+      className={step === undefined ? 'hidden' : CARD}
     >
       {(rows = [], state) => (
-        <Section title="Workflow YAML" state={state}>
-          {() => (
+        <Section title="Workflow YAML" step={step} state={state}>
+          {(step) => (
             <File
               path={step.file}
               text={joinParts(rows, (row) => row.name).get(step.defined_in) ?? ''}
@@ -347,12 +358,7 @@ function Yaml({ step, factory, at }: PanelProps): ReactElement {
   );
 }
 
-function Step({
-  step,
-  steps,
-  factory,
-  at,
-}: PanelProps & { steps: readonly StepRow[] }): ReactElement {
+function Step({ step, steps }: { step: StepRow; steps: readonly StepRow[] }): ReactElement {
   return (
     <div className="flex flex-col gap-6">
       <header className="flex flex-col gap-2">
@@ -379,14 +385,23 @@ function Step({
         </Fact>
         <Fact label="Defined in">{step.file}</Fact>
       </dl>
-      <Nesting step={step} factory={factory} at={at} />
-      <Prompt step={step} factory={factory} at={at} />
-      <Subagents step={step} factory={factory} at={at} />
-      <Scripts step={step} factory={factory} at={at} />
-      <Hooks step={step} factory={factory} at={at} />
-      <Yaml step={step} factory={factory} at={at} />
     </div>
   );
+}
+
+/** The step step-detail found for the address `asked`, for the panels beside it. */
+interface Found {
+  asked: string;
+  step: StepRow;
+}
+
+/**
+ * Hands the step step-detail found to the screen before the browser paints, so the panels beside
+ * it show their rows in the same frame as its facts.
+ */
+function FoundStep({ asked, step, onFound }: Found & { onFound: (found: Found) => void }): null {
+  useLayoutEffect(() => onFound({ asked, step }), [asked, step, onFound]);
+  return null;
 }
 
 /**
@@ -398,24 +413,46 @@ export default function StepDetail(): ReactElement {
   const [search] = useSearchParams();
   const at = search.get('at') || null;
   const factory = useFactory();
+  const asked = `${factory} ${workflow} ${step} ${at ?? ''}`;
+  const [known, setKnown] = useState<Found>();
+  const panel = {
+    step: known?.asked === asked ? known.step : undefined,
+    workflow,
+    path: step,
+    factory,
+    at,
+  };
   return (
     <main className="mx-auto max-w-6xl px-6 py-8">
       <StepVersionPicker factory={factory} at={at} workflow={workflow} path={step} />
-      <LivePanel<StepRow> query="step-detail" factory={factory} args={[at ?? '']}>
-        {(rows, state) => {
-          if (state === 'error') return <Unavailable />;
-          if (rows === undefined || factory === undefined) return null;
-          // Every recorded version has steps, so none means the pin has no architecture.
-          if (at !== null && rows.length === 0) {
-            return <EmptyState title={`No version ${at} is recorded for this factory.`} />;
-          }
-          const found = findStep(rows, workflow, step);
-          if (found === undefined) {
-            return <EmptyState title={`No step ${step} in ${workflow} at ${versionName(at)}.`} />;
-          }
-          return <Step step={found} steps={rows} factory={factory} at={at} />;
-        }}
-      </LivePanel>
+      <div className="flex flex-col gap-6">
+        <LivePanel<StepRow> query="step-detail" factory={factory} args={[at ?? '']}>
+          {(rows, state) => {
+            if (state === 'error') return <Unavailable />;
+            if (rows === undefined || factory === undefined) return null;
+            // Every recorded version has steps, so none means the pin has no architecture.
+            if (at !== null && rows.length === 0) {
+              return <EmptyState title={`No version ${at} is recorded for this factory.`} />;
+            }
+            const found = findStep(rows, workflow, step);
+            if (found === undefined) {
+              return <EmptyState title={`No step ${step} in ${workflow} at ${versionName(at)}.`} />;
+            }
+            return (
+              <>
+                <Step step={found} steps={rows} />
+                <FoundStep asked={asked} step={found} onFound={setKnown} />
+              </>
+            );
+          }}
+        </LivePanel>
+        <Nesting {...panel} />
+        <Prompt {...panel} />
+        <Subagents {...panel} />
+        <Scripts {...panel} />
+        <Hooks {...panel} />
+        <Yaml {...panel} />
+      </div>
     </main>
   );
 }
