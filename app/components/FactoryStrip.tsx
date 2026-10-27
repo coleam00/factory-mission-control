@@ -50,32 +50,30 @@ export function RewindIndicator({ rewind }: { rewind: string | null }): ReactEle
 /**
  * The strip's contents. The factory's name stays in every state, so the user still knows which
  * factory they are looking at when its live values are unavailable; only the count is replaced.
- * A URL key that is not a factory yet (`held`) is shown as typed, wrapping however long it is,
- * with no count: marked unknown once the live list is in without it, and plain while it loads.
+ * A URL key that is not a factory (`unknown`) is shown as typed, wrapping however long it is,
+ * marked unknown, with no count.
  */
 export function FactoryStripBody({
   factory,
   rows,
   state,
-  held,
+  unknown = false,
 }: {
   factory: string | undefined;
   rows: readonly StatusStripRow[] | undefined;
   state: PanelState;
-  held?: 'unknown' | 'waiting';
+  unknown?: boolean;
 }): ReactElement {
   const running = rows?.[0]?.running;
-  if (held !== undefined) {
+  if (unknown) {
     return (
       <>
         <span className="whitespace-pre-wrap font-mono text-sm text-text-primary [overflow-wrap:anywhere]">
           {factory}
         </span>
-        {held === 'unknown' ? (
-          <span data-unknown-factory="" className={LABEL}>
-            Unknown factory
-          </span>
-        ) : null}
+        <span data-unknown-factory="" className={LABEL}>
+          Unknown factory
+        </span>
       </>
     );
   }
