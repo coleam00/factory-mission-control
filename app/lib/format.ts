@@ -88,10 +88,17 @@ export function formatCost(usd: number): string {
   return `$${usd.toFixed(decimals).replace(/(\.\d{2}\d*?)0+$/, '$1')}`;
 }
 
+/** `n` rounded to the four decimals the console writes numbers to. */
+export const roundToShown = (n: number): number => Math.round(n * 1e4) / 1e4;
+
 /** A number to at most four decimals, without trailing zeros: `3`, `1.5`, `0.2667`. */
 export function formatNumber(n: number): string {
-  const text = n.toFixed(4).replace(/\.?0+$/, '');
-  return text === '-0' ? '0' : text;
+  return String(roundToShown(n));
+}
+
+/** A whole count with thousands separators: `12,345`. */
+export function formatCount(n: number | string): string {
+  return Number(n).toLocaleString('en-US');
 }
 
 /** A change, written by `format` with its sign in front: `+1`, `0`, `-$3.10`. */

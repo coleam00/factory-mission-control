@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { formatCost, formatElapsed, formatNumber, formatSigned } from './format';
+import { formatCost, formatCount, formatElapsed, formatNumber, formatSigned } from './format';
 
 test.each([
   [0.1, '$0.10'],
@@ -47,8 +47,17 @@ test.each([
   [3.75, '3.75'],
   [100, '100'],
   [-0.00001, '0'],
+  [0.00004, '0'],
 ])('formatNumber(%s) keeps four decimals at most and no trailing zero: %s', (n, expected) => {
   expect(formatNumber(n)).toBe(expected);
+});
+
+test.each([
+  [0, '0'],
+  [12_345, '12,345'],
+  ['1234567', '1,234,567'],
+])('formatCount(%p) writes a whole count with thousands separators: %s', (n, expected) => {
+  expect(formatCount(n)).toBe(expected);
 });
 
 test.each([
@@ -71,12 +80,13 @@ const OWN_FORMATS = [
   /\$\$\{/,
   />\s*\$\{/,
   /['"`]\$\d+\.\d/,
-  /['"`]\$['"`]\s*\+/,
-  /style:\s*['"]currency['"]/,
+  /['"`]\$['"`]\s*(?:\+|\}|\.concat\()/,
+  /\.toLocaleString\(/,
+  /Intl\.NumberFormat/,
 ];
 const formatsItself = (source: string) => OWN_FORMATS.some((pattern) => pattern.test(source));
 
-test('no file in app/ but format.ts writes a number with toFixed or builds a $ amount', () => {
+test('no file in app/ but format.ts writes a number itself or builds a $ amount', () => {
   const offenders = [...new Bun.Glob('**/*.{ts,tsx}').scanSync(appDir)]
     .map((file) => file.replaceAll('\\', '/'))
     .filter((file) => file !== 'lib/format.ts' && !/\.test\.tsx?$/.test(file))
@@ -90,6 +100,10 @@ test.each([
   [`<span>\${cost}</span>`, true],
   ["cost === null ? '$0.00' : text", true],
   ["'$' + cost", true],
+  ["<span>{'$'}{cost}</span>", true],
+  ["'$'.concat(cost)", true],
+  ["Number(n).toLocaleString('en-US')", true],
+  ["new Intl.NumberFormat('en-US').format(n)", true],
   ["new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' })", true],
   [`\`\${a} and \${b}\``, false],
   ["bash: '$',", false],
