@@ -1,12 +1,12 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { openPage, type Page } from '../lib/cdp';
-import type { Deps } from '../lib/cli';
-import type { Db } from '../lib/db';
 import {
   freePort,
   LANE,
   LIMITS,
+  type LiveContext,
+  type LivePhase,
   lapsOnNodes,
   lateWrite,
   MAP,
@@ -16,29 +16,14 @@ import {
   pageWait,
   READY_WAIT_MS,
   waitForHealth,
-} from '../test-live';
+  within,
+} from './shared';
 import {
   emptyPanelTimings,
   measurePanels,
   type PanelTimings,
   performanceFailures,
 } from './timings';
-
-export interface SwitcherContext {
-  deps: Deps;
-  db: Db;
-  homeBranch: string;
-  queries: ReadonlyMap<string, string>;
-  base: string;
-  outDir: string;
-  /** The default factory: factories.json's first. */
-  factory: string;
-  /** The factories file the app's server reads (`MC_FACTORIES_FILE`): factories.json's and the seed's second. */
-  factoriesFile: string;
-  /** Laps test:live inserted; its cleanup deletes them. */
-  inserted: string[];
-  failures: string[];
-}
 
 interface SwitcherTimings extends PanelTimings {
   insertToScreenMs: number | null;
@@ -102,7 +87,7 @@ const namesIn = (file: string): string[] =>
  * and is remembered; a remembered factory that no longer exists falls back with no error. A server reading
  * factories.json alone lists only its factories, though the seed's second is in `mc.factories`.
  */
-export async function switcherPhase(ctx: SwitcherContext): Promise<void> {
+async function checkSwitcher(ctx: LiveContext): Promise<void> {
   const { deps, db, base, outDir, factory, factoriesFile, inserted, failures } = ctx;
   const lines: string[] = [];
   const check = (what: string, shown: unknown, expected: unknown) => {
@@ -308,7 +293,6 @@ export async function switcherPhase(ctx: SwitcherContext): Promise<void> {
     writeFileSync(join(outDir, 'switcher-timings.json'), `${JSON.stringify(timings, null, 2)}\n`);
   }
 
-  const within = (value: number | null, limit: number) => value !== null && value <= limit;
   if (!within(timings.readyMs, LIMITS.readyMs)) {
     failures.push(`the switcher was ready after ${timings.readyMs} ms, limit ${LIMITS.readyMs}`);
   }
@@ -328,4 +312,9 @@ export async function switcherPhase(ctx: SwitcherContext): Promise<void> {
   );
   if (probe.exitCode !== 0)
     failures.push(`the design probe on /f/${second} exited ${probe.exitCode}`);
+}
+
+/** The factory switcher's phase: all of it runs among the writes before the hold. */
+export function switcherPhase(ctx: LiveContext): LivePhase {
+  return { write: () => checkSwitcher(ctx) };
 }
