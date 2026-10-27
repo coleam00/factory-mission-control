@@ -7,6 +7,8 @@ import {
   KINDS,
   type Kind,
 } from '../../app/lib/arch-diff';
+import { isVersionOf, type ScorecardRow } from '../../app/lib/scorecard';
+import { SEED_CODEBASE } from '../../scripts/fixture/seed';
 import type { Db } from '../../scripts/lib/db';
 import { onTheSeed, queries } from './test-seed';
 
@@ -91,7 +93,7 @@ describe('arch-diff on the seed', () => {
     expect(await db.query(sql, ['other'])).toEqual([]);
   });
 
-  test('names each digest a lap ran, so one no lap ran here is not found', () => {
+  test('names each of its versions, so a digest no lap ran here is not found', () => {
     const named = rows.filter((r) => r.kind === 'version').map((r) => r.digest);
     expect(named.sort()).toEqual([...digests].sort());
     const elsewhere = `sha256:${'d4'.repeat(32)}`;
@@ -99,6 +101,37 @@ describe('arch-diff on the seed', () => {
       status: 'not-found',
       digests: [elsewhere],
     });
+  });
+
+  test('a digest only another workflow of this factory ran is not found, as on the scorecard', async () => {
+    const digest = `sha256:${'e5'.repeat(32)}`;
+    const scorecardSql = queries.find(([name]) => name === 'scorecard')?.[1] as string;
+    const rollback = new Error('rollback');
+    await db
+      .transaction(async (tx) => {
+        await tx.query(
+          `INSERT INTO remote_agent_workflow_runs (workflow_name, codebase_id, status, user_message,
+           metadata, started_at, completed_at)
+           VALUES ('archon-assist', $1, 'completed', 'Help', $2, '2026-10-25T10:00:00Z',
+             '2026-10-25T11:00:00Z')`,
+          [SEED_CODEBASE, JSON.stringify({ workflow_source: { digest } })],
+        );
+        const [lap] = await tx.query('SELECT factory FROM mc.laps WHERE digest = $1', [digest]);
+        expect(lap).toEqual({ factory: 'mission-control' });
+        const diffRows = (await tx.query(sql, ['mission-control'])) as unknown as ArchDiffRow[];
+        expect(diffVersions(diffRows, digests[0], digest)).toEqual({
+          status: 'not-found',
+          digests: [digest],
+        });
+        const cardRows = (await tx.query(scorecardSql, [
+          'mission-control',
+        ])) as unknown as ScorecardRow[];
+        expect(isVersionOf(cardRows, digest)).toBe(false);
+        throw rollback;
+      })
+      .catch((error) => {
+        if (error !== rollback) throw error;
+      });
   });
 
   /**

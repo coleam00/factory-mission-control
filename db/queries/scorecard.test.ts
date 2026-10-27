@@ -45,6 +45,10 @@ describe('scorecard on the seed', () => {
     }
   });
 
+  test("names no other factory's laps or versions", async () => {
+    expect(await db.query(sql, ['other'])).toEqual([]);
+  });
+
   test.each([
     ['share one start time', (at: string) => ({ timing: { startedAt: at } })],
     ['carry no start time', () => ({})],
