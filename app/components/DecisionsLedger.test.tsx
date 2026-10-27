@@ -94,3 +94,22 @@ test('the ledger shows waiting laps under being tested and each verdict with its
   expect(helped).toContain('faster.');
   expect(helped).toContain('text-success');
 });
+
+test('the waiting badge says lap for one and laps for every other count, including 0', () => {
+  const html = render(
+    <Ledger
+      testing={[0, 1, 2].map((waiting) => ({
+        pin: `p${waiting}`,
+        reason: 'r',
+        measure: 'over 10 laps.',
+        laps: 10 - waiting,
+        waiting,
+      }))}
+      verdicts={[]}
+    />,
+  );
+  expect(itemHtml(html, 'data-pin="p0"')).toContain('0 laps waiting');
+  expect(itemHtml(html, 'data-pin="p1"')).toContain('1 lap waiting');
+  expect(itemHtml(html, 'data-pin="p1"')).not.toContain('1 laps waiting');
+  expect(itemHtml(html, 'data-pin="p2"')).toContain('2 laps waiting');
+});
