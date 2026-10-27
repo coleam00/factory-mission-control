@@ -19,3 +19,6 @@ LEFT JOIN LATERAL (
   )
   ORDER BY f.first_run_at LIMIT 1
 ) v ON true
+-- Decisions are the shared factory process's (PRD 11.5), listed only on a factory with a lap, so a
+-- factory with no laps shows its empty state. A lap is an archon-loop run.
+WHERE EXISTS (SELECT 1 FROM mc.laps l WHERE l.factory = $1 AND l.workflow_name = 'archon-loop')

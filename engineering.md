@@ -33,6 +33,9 @@ How this repository is built. The product is `docs/mission-control.prd.md`; this
   by Realtime `ready` within 2000 ms of navigation. Never show rows that did not come from a
   delivered subscription (no `initialData`), so a panel reads `ready` only when it is live.
 - Nothing writes to Archon's tables. Triggers on them catch every error into `projection_errors`.
+- Background repairs of the dashboard's own tables run as `reconcile:laps` / `reconcile` on the
+  owner's schedule (every 10 minutes on the reference install), never by the app server or the
+  webhook.
 - Never connect to the `main` database branch from a check, a test or a lap. Use a `check-*` branch
   (`bun run fixture:branch`). `scripts/` refuses any other branch name for writes.
 - Configuration by environment only: `MC_DATABASE_URL`, `NEON_REALTIME_SECRET`, `NEON_API_KEY`,

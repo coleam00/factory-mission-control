@@ -3,6 +3,7 @@ import { Link, useSearchParams } from 'react-router';
 import {
   compareLinks,
   NOT_RECORDED,
+  SHARED_PROCESS,
   type StripEntry,
   scorecardLink,
   stripEntries,
@@ -55,12 +56,17 @@ export function VersionStrip({ factory }: { factory: string | undefined }): Reac
           ) : rows.length === 0 ? (
             <EmptyState title="No versions recorded for this factory yet." />
           ) : (
-            <VersionList
-              factory={factory}
-              entries={stripEntries(rows)}
-              selected={selected}
-              onSelect={select}
-            />
+            <>
+              <p data-shared className="mb-3 text-sm text-text-secondary">
+                {SHARED_PROCESS}
+              </p>
+              <VersionList
+                factory={factory}
+                entries={stripEntries(rows)}
+                selected={selected}
+                onSelect={select}
+              />
+            </>
           )}
         </>
       )}

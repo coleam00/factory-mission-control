@@ -5,7 +5,7 @@ import { DecisionsTimeline, ImprovementsLedger } from '../components/DecisionsLe
 export default function Decisions(): ReactElement {
   const { factory } = useParams();
   return (
-    <main className="mx-auto grid max-w-6xl gap-8 px-6 py-6 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+    <main className="mx-auto grid max-w-6xl gap-8 px-6 py-6 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] lg:has-[[data-decisions-empty]]:grid-cols-1">
       <DecisionsTimeline factory={factory} />
       <ImprovementsLedger factory={factory} />
     </main>

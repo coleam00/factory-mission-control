@@ -30,6 +30,9 @@ export type VersionStripRow = VersionRow | PendingRow;
 
 export const NOT_RECORDED = 'not recorded';
 
+/** Said on the Decisions and Versions screens: neither is one factory's own (PRD 11.5, #155). */
+export const SHARED_PROCESS = 'Decisions and versions come from the shared factory process.';
+
 export interface StripEntry {
   digest: string | null;
   pin: string | null;
