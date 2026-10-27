@@ -26,7 +26,8 @@ export type Live =
       rewind: string | null;
     };
 
-const LiveContext = createContext<Live>({ status: 'loading' });
+/** Exported for tests, which render the shell over a given configuration. */
+export const LiveContext = createContext<Live>({ status: 'loading' });
 
 /** What `GET /api/live` answers: everything the browser needs to subscribe, and no secret. */
 interface LiveConfig {
