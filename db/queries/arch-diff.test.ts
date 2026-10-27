@@ -112,13 +112,14 @@ describe('arch-diff on the seed', () => {
         await tx.query(
           `INSERT INTO remote_agent_workflow_runs (workflow_name, codebase_id, status, user_message,
            metadata, started_at, completed_at)
-           VALUES ('archon-assist', $1, 'completed', 'Help', $2, '2026-10-25T10:00:00Z',
-             '2026-10-25T11:00:00Z')`,
+           VALUES ('archon-assist', $1, 'completed', 'Help', $2, '2026-10-12T10:00:00Z',
+             '2026-10-12T11:00:00Z')`,
           [SEED_CODEBASE, JSON.stringify({ workflow_source: { digest } })],
         );
         const [lap] = await tx.query('SELECT factory FROM mc.laps WHERE digest = $1', [digest]);
         expect(lap).toEqual({ factory: 'mission-control' });
         const diffRows = (await tx.query(sql, ['mission-control'])) as unknown as ArchDiffRow[];
+        expect(diffRows.some((r) => r.digest === digest && r.kind !== 'version')).toBe(true);
         expect(diffVersions(diffRows, digests[0], digest)).toEqual({
           status: 'not-found',
           digests: [digest],
@@ -127,6 +128,16 @@ describe('arch-diff on the seed', () => {
           'mission-control',
         ])) as unknown as ScorecardRow[];
         expect(isVersionOf(cardRows, digest)).toBe(false);
+        const versionRows = new Set(
+          diffRows.filter((r) => r.kind === 'version').map((r) => r.digest),
+        );
+        const seen = new Set([
+          ...diffRows.map((r) => r.digest),
+          ...cardRows.flatMap((r) => ('digest' in r ? [r.digest] : [])),
+        ]);
+        expect([...seen].filter((d) => isVersionOf(cardRows, d)).sort()).toEqual(
+          [...versionRows].sort(),
+        );
         throw rollback;
       })
       .catch((error) => {

@@ -92,7 +92,9 @@ const order = (a: Item, b: Item): number =>
  */
 export function diffVersions(rows: readonly ArchDiffRow[], a: string, b: string): DiffResult {
   const named = [...new Set([a, b])];
-  const notFound = named.filter((digest) => !rows.some((r) => r.digest === digest));
+  const notFound = named.filter(
+    (digest) => !rows.some((r) => r.digest === digest && r.kind === 'version'),
+  );
   if (notFound.length > 0) return { status: 'not-found', digests: notFound };
   const unrecorded = named.filter(
     (digest) => !rows.some((r) => r.digest === digest && r.kind !== 'version'),
