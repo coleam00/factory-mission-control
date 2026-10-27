@@ -97,17 +97,23 @@ function setup({
   };
 }
 afterEach(() => performance.clearMarks());
+/** One unmeasured warm-up run, then five measured EXPLAINs of the same query. */
+const warm = (sql: string) => [sql, ...Array(5).fill(`EXPLAIN (ANALYZE, FORMAT JSON) ${sql}`)];
 
 test('initial panels both explain on home, with no new connection or API calls', async () => {
   marks(null);
   const { ctx, recorder, homeSql, closed } = setup();
   const timings = await measureRewindPanels(page, ctx);
-  expect(homeSql).toHaveLength(2);
+  expect(homeSql).toEqual([
+    ...warm('SELECT $1::text AS home'),
+    ...warm('SELECT $1::text AS active'),
+  ]);
   expect(recorder.opened).toEqual([]);
   expect(recorder.neonCalls).toEqual([]);
   expect(closed()).toBe(0);
   expect(timings.queryContext['status-strip']?.branch).toBe('check-owned');
   expect(timings.queryExecutionMs).toEqual({ 'rewind-branches': 1, 'status-strip': 1 });
+  expect(timings.queryExecutionSamplesMs['status-strip']).toEqual([1, 1, 1, 1, 1]);
 });
 
 test.each([false, true])(
@@ -116,9 +122,11 @@ test.each([false, true])(
     marks(branch);
     const { ctx, recorder, homeSql, closed } = setup({ failQuery });
     const timings = await measureRewindPanels(page, ctx);
-    expect(homeSql).toEqual(['EXPLAIN (ANALYZE, FORMAT JSON) SELECT $1::text AS home']);
-    expect(recorder.sql).toEqual(['EXPLAIN (ANALYZE, FORMAT JSON) SELECT $1::text AS active']);
-    expect(recorder.params).toEqual([['factory-a']]);
+    expect(homeSql).toEqual(warm('SELECT $1::text AS home'));
+    // A failing warm-up stops the panel's measurement before any EXPLAIN.
+    const active = warm('SELECT $1::text AS active').slice(0, failQuery ? 1 : 6);
+    expect(recorder.sql).toEqual(active);
+    expect(recorder.params).toEqual(active.map(() => ['factory-a']));
     expect(recorder.neonCalls).toEqual([
       'listBranches',
       'pooledConnectionUri br-owned',
@@ -147,7 +155,7 @@ test.each([
     const timings = await measureRewindPanels(page, ctx);
     expect(recorder.opened).toEqual([]);
     expect(recorder.sql).toEqual([]);
-    expect(homeSql).toHaveLength(1);
+    expect(homeSql).toEqual(warm('SELECT $1::text AS home'));
     expect(closed()).toBe(0);
     expect(timings.queryExecutionMs['status-strip']).toBeNull();
     expect(timings.measurementError['status-strip']).toContain('owned rewind');
