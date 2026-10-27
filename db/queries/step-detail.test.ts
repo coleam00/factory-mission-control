@@ -231,6 +231,55 @@ ${'x'.repeat(5000)}`;
   });
 });
 
+describe('the version the picker marks current', () => {
+  let db: Db;
+  const sql = (name: string) => queries.find(([n]) => n === name)?.[1] as string;
+
+  beforeAll(async () => {
+    db = await migratedDb();
+  });
+
+  afterAll(() => db.close());
+
+  test('is the one the step queries show without a version, when two pins tie on their commit', async () => {
+    await db.query(`INSERT INTO mc.factories (name, repository, codebase, console)
+      VALUES ('mission-control', 'o/r', 'o/r', 'http://localhost:3090')`);
+    await db.query(`INSERT INTO mc.pins (sha, archon_sha, reason, committed_at) VALUES
+      ('p1', 'a1', 'one', '2026-01-01T00:00:00Z'), ('p2', 'a2', 'two', '2026-01-01T00:00:00Z')`);
+    for (const sha of ['a1', 'a2']) {
+      await db.query(
+        `INSERT INTO mc.arch_steps (archon_sha, factory_sha, workflow, path, position, step_id, kind,
+           description, depends_on, defined_in, file)
+         VALUES ($1, 'f', 'archon-loop', 'review', 0, 'review', 'prompt', $1, '{}', 'archon-loop',
+           'loop/archon-loop.yaml')`,
+        [sha],
+      );
+    }
+    // Each order of parsing in turn: the one parsed last is current.
+    for (const [first, last, current] of [
+      ['a1', 'a2', 'p2'],
+      ['a2', 'a1', 'p1'],
+    ]) {
+      await db.query('DELETE FROM mc.arch_versions');
+      await db.query(
+        `INSERT INTO mc.arch_versions (archon_sha, factory_sha, parsed_at)
+         VALUES ($1, 'f', '2026-01-02T00:00:00Z'), ($2, 'f', '2026-01-03T00:00:00Z')`,
+        [first, last],
+      );
+      const marked = (await db.query(sql('step-versions'), ['mission-control']))
+        .filter((v) => v.is_current)
+        .map((v) => v.sha);
+      expect(marked).toEqual([current]);
+      const shown = async (version: string) =>
+        (await db.query(sql('step-detail'), ['mission-control', version])).map(
+          (s) => s.description,
+        );
+      expect(await shown('')).toEqual(await shown(current));
+      expect(await shown('')).toEqual([last]);
+    }
+  });
+});
+
 describe('step screens of included blocks on the seed', () => {
   let db: Db;
   const sql = (name: string) => queries.find(([n]) => n === name)?.[1] as string;
