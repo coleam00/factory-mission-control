@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import {
   CAUSES,
+  COMPLETIONS,
   countByCause,
   failedLaps,
   type HealthRunRow,
@@ -76,27 +77,28 @@ describe('the health queries on the seed', () => {
     expect(overdueSteps(other, NOW)).toEqual([]);
   });
 
-  test('a step has at most 50 completions, its latest', async () => {
+  test('a step has at most COMPLETIONS completions, its latest', async () => {
     const steps = await rows<HealthStepRow>('health-steps');
     const builds = steps.filter((row) => row.kind === 'completion' && row.step_id === 'build');
     expect(builds.length).toBeGreaterThan(0);
     await db.query(
       `INSERT INTO mc.laps (run_id, factory, workflow_name, status)
        SELECT ('00000000-0000-4000-8000-' || lpad(n::text, 12, '0'))::uuid, $1, 'archon-loop',
-         'completed' FROM (VALUES (0)) v, LATERAL generate_series(1, 60) n`,
-      [FACTORY],
+         'completed' FROM generate_series(1, $2::int) n`,
+      [FACTORY, COMPLETIONS + 10],
     );
     await db.query(
       `INSERT INTO mc.lap_steps (run_id, step_id, status, started_at, completed_at, duration_ms)
        SELECT ('00000000-0000-4000-8000-' || lpad(n::text, 12, '0'))::uuid, 'build', 'completed',
          '2026-10-26T00:00:00Z'::timestamptz + n * interval '1 minute',
          '2026-10-26T00:00:00Z'::timestamptz + n * interval '1 minute' + interval '1 second', 1000
-       FROM generate_series(1, 60) n`,
+       FROM generate_series(1, $1::int) n`,
+      [COMPLETIONS + 10],
     );
     const latest = (await rows<HealthStepRow>('health-steps')).filter(
       (row) => row.kind === 'completion' && row.step_id === 'build',
     );
-    expect(latest).toHaveLength(50);
+    expect(latest).toHaveLength(COMPLETIONS);
     expect(latest.every((row) => Number(row.duration_ms) === 1000)).toBe(true);
     await db.query(`DELETE FROM mc.laps WHERE run_id::text LIKE '00000000-0000-4000-8000-%'`);
     await db.query(`DELETE FROM mc.lap_steps WHERE run_id::text LIKE '00000000-0000-4000-8000-%'`);
