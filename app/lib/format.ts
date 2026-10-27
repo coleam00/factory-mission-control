@@ -88,12 +88,9 @@ export function formatCost(usd: number): string {
   return `$${usd.toFixed(decimals).replace(/(\.\d{2}\d*?)0+$/, '$1')}`;
 }
 
-/** `n` rounded to the four decimals the console writes numbers to. */
-export const roundToShown = (n: number): number => Math.round(n * 1e4) / 1e4;
-
-/** A number to at most four decimals, without trailing zeros: `3`, `1.5`, `0.2667`. */
+/** A plain number, without trailing zeros: `3`, `1.5`, `0.2667`. Its caller owns the rounding. */
 export function formatNumber(n: number): string {
-  return String(roundToShown(n));
+  return String(n);
 }
 
 /** A whole count with thousands separators: `12,345`. */

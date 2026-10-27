@@ -46,9 +46,7 @@ test.each([
   [0.2667, '0.2667'],
   [3.75, '3.75'],
   [100, '100'],
-  [-0.00001, '0'],
-  [0.00004, '0'],
-])('formatNumber(%s) keeps four decimals at most and no trailing zero: %s', (n, expected) => {
+])('formatNumber(%s) writes no trailing zero: %s', (n, expected) => {
   expect(formatNumber(n)).toBe(expected);
 });
 

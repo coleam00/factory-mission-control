@@ -6,7 +6,7 @@
  * finished laps. Pure, no React.
  */
 
-import { roundToShown } from './format';
+import { formatNumber } from './format';
 
 /** An `archon-loop` run of this factory with a digest: a lap. */
 export interface LapRow {
@@ -194,8 +194,8 @@ export type Scorecard = Record<MeasureKey, Measured>;
 
 const HOUR_MS = 3_600_000;
 
-const ratio = (num: number, den: number): number | null =>
-  den === 0 ? null : roundToShown(num / den);
+const round4 = (x: number): number => Math.round(x * 1e4) / 1e4;
+const ratio = (num: number, den: number): number | null => (den === 0 ? null : round4(num / den));
 const sum = (values: readonly number[]): number => values.reduce((s, v) => s + v, 0);
 
 /** The UTC clock hours in which at least one of `laps` was running. */
@@ -253,12 +253,12 @@ export function scorecard(laps: readonly Lap[]): Scorecard {
 
 /** A measure's value as the screen's `data-value` carries it: the plain number, or `n/a`. */
 export function dataValue(value: number | null): string {
-  return value === null ? 'n/a' : String(value);
+  return value === null ? 'n/a' : formatNumber(value);
 }
 
 /** `b` minus `a`, or null when either side divides by zero. */
 export function difference(a: Measured, b: Measured): number | null {
-  return a.value === null || b.value === null ? null : roundToShown(b.value - a.value);
+  return a.value === null || b.value === null ? null : round4(b.value - a.value);
 }
 
 /** PRD 4.2: a difference resting on fewer laps than this on either side is not yet meaningful. */
