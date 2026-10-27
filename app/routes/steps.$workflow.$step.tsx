@@ -397,10 +397,18 @@ interface Found {
 
 /**
  * Hands the step step-detail found to the screen before the browser paints, so the panels beside
- * it show their rows in the same frame as its facts.
+ * it show their rows in the same frame as its facts, and takes it back once step-detail no longer
+ * shows it.
  */
-function FoundStep({ asked, step, onFound }: Found & { onFound: (found: Found) => void }): null {
-  useLayoutEffect(() => onFound({ asked, step }), [asked, step, onFound]);
+function FoundStep({
+  asked,
+  step,
+  onFound,
+}: Found & { onFound: (found: Found | undefined) => void }): null {
+  useLayoutEffect(() => {
+    onFound({ asked, step });
+    return () => onFound(undefined);
+  }, [asked, step, onFound]);
   return null;
 }
 
@@ -414,7 +422,7 @@ export default function StepDetail(): ReactElement {
   const at = search.get('at') || null;
   const factory = useFactory();
   const asked = `${factory} ${workflow} ${step} ${at ?? ''}`;
-  const [known, setKnown] = useState<Found>();
+  const [known, setKnown] = useState<Found | undefined>();
   const panel = {
     step: known?.asked === asked ? known.step : undefined,
     workflow,

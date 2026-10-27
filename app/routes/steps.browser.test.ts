@@ -99,3 +99,17 @@ test('every step panel asks for its seal at navigation, not after step-detail an
   expect(whileHeld).toEqual({ asked: all, detail: 'loading', requested: all });
   expect(after).toEqual({ state: 'ready', prompt: 'Review, current', sentence: null });
 }, 30_000);
+
+test('every panel beside step-detail is sealed for the workflow and path the address names', async () => {
+  const { asked } = await openStep(`/steps/archon-loop/review?at=${OLDER}`);
+  const beside = asked.filter(({ query }) => STEP_QUERIES.slice(1).includes(query));
+  expect(beside.map(({ query, args }) => [query, args])).toEqual(
+    STEP_QUERIES.slice(1).map((query) => [query, ['archon-loop', 'review', OLDER]]),
+  );
+}, 30_000);
+
+test('once step-detail no longer shows the step, no panel beside it shows that step', async () => {
+  expect(
+    await inPage<{ detail: string; sentence: string; headings: string[] }>('loseStep()'),
+  ).toEqual({ detail: 'error', sentence: 'Live data is unavailable.', headings: [] });
+}, 30_000);
