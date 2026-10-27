@@ -13,10 +13,14 @@ import {
   RENEWALS_IN_180S,
   required,
   versionDigests,
-  within,
   writeToScreen,
 } from './shared';
-import { emptyPanelTimings, type PanelTimings, performanceFailures } from './timings';
+import {
+  emptyPanelTimings,
+  type PanelTimings,
+  performanceFailures,
+  readyFailures,
+} from './timings';
 
 const SCORECARD = '[data-live="scorecard"]';
 
@@ -289,11 +293,7 @@ export function scorecardPhase(ctx: LiveContext): LivePhase {
 
     judge() {
       const failures: string[] = [];
-      if (!within(scorecardTimings.readyMs, LIMITS.readyMs)) {
-        failures.push(
-          `scorecard ready after ${scorecardTimings.readyMs} ms, limit ${LIMITS.readyMs}`,
-        );
-      }
+      failures.push(...readyFailures('scorecard', scorecardTimings, LIMITS.readyMs));
       failures.push(...performanceFailures('scorecard', scorecardTimings));
       failures.push(...lateWrite('first merge', 'the scorecard', scorecardTimings.mergeToScreenMs));
       failures.push(

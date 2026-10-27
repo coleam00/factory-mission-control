@@ -15,7 +15,6 @@ import {
   RENEWALS_IN_180S,
   required,
   VERSIONS,
-  within,
   writeToScreen,
 } from './shared';
 import {
@@ -23,6 +22,7 @@ import {
   type GroupTimings,
   groupPerformanceFailures,
   groupTimings,
+  readyFailures,
 } from './timings';
 
 const DECISION_QUERIES = ['decisions-timeline', 'improvements-ledger'] as const;
@@ -580,11 +580,7 @@ export function decisionsPhase(ctx: LiveContext): LivePhase {
 
     judge() {
       const failures: string[] = [];
-      if (!within(decisionTimings.readyMs, LIMITS.readyMs)) {
-        failures.push(
-          `decisions screen ready after ${decisionTimings.readyMs} ms, limit ${LIMITS.readyMs}`,
-        );
-      }
+      failures.push(...readyFailures('decisions screen', decisionTimings, LIMITS.readyMs));
       for (const q of DECISION_QUERIES) {
         failures.push(...groupPerformanceFailures([q], decisionTimings));
         if (holdSeconds >= 180 && (decisionTimings.renewals[q] ?? 0) < RENEWALS_IN_180S) {

@@ -14,7 +14,6 @@ import {
   renewalsOf,
   required,
   screenAgainstSql,
-  within,
   writeToScreen,
 } from './shared';
 import {
@@ -22,6 +21,7 @@ import {
   type GroupTimings,
   groupPerformanceFailures,
   groupTimings,
+  readyFailures,
 } from './timings';
 
 const HEALTH_QUERIES = ['health-runs', 'health-steps', 'health-workable'] as const;
@@ -354,9 +354,7 @@ export function healthPhase(ctx: LiveContext): LivePhase {
 
     judge() {
       const failures: string[] = [];
-      if (!within(timings.readyMs, LIMITS.readyMs)) {
-        failures.push(`health screen ready after ${timings.readyMs} ms, limit ${LIMITS.readyMs}`);
-      }
+      failures.push(...readyFailures('health screen', timings, LIMITS.readyMs));
       failures.push(...groupPerformanceFailures(HEALTH_QUERIES, timings));
       for (const [when, write] of [
         ['first', timings.failureToScreen],

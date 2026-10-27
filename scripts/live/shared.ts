@@ -260,8 +260,6 @@ export async function writeToScreen(
   return untilShown(page, condition);
 }
 
-export const within = (value: number | null, limit: number) => value !== null && value <= limit;
-
 /** Compares what a screen shows with what SQL says, pushing one line to `mismatches` per difference. */
 export const screenAgainstSql =
   (mismatches: string[]) => (what: string, screen: unknown, sql: unknown) => {

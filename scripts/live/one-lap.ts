@@ -16,7 +16,6 @@ import {
   required,
   screenAgainstSql,
   untilShown,
-  within,
   writeToScreen,
 } from './shared';
 import {
@@ -24,6 +23,7 @@ import {
   type GroupTimings,
   groupPerformanceFailures,
   groupTimings,
+  readyFailures,
 } from './timings';
 
 const ONE_LAP_QUERIES = ['one-lap', 'one-lap-steps', 'one-lap-checks'] as const;
@@ -392,11 +392,7 @@ export function oneLapPhase(ctx: LiveContext): LivePhase {
 
     judge() {
       const failures: string[] = [];
-      if (!within(oneLapTimings.readyMs, LIMITS.readyMs)) {
-        failures.push(
-          `one-lap screen ready after ${oneLapTimings.readyMs} ms, limit ${LIMITS.readyMs}`,
-        );
-      }
+      failures.push(...readyFailures('one-lap screen', oneLapTimings, LIMITS.readyMs));
       for (const q of ONE_LAP_QUERIES) {
         failures.push(...groupPerformanceFailures([q], oneLapTimings));
         if (holdSeconds >= 180 && (oneLapTimings.renewals[q] ?? 0) < RENEWALS_IN_180S) {

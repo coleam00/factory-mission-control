@@ -19,7 +19,6 @@ import {
   renewalsOf,
   required,
   untilShown,
-  within,
 } from './shared';
 import {
   collectPanelMarks,
@@ -27,6 +26,7 @@ import {
   explainPanel,
   type PanelTimings,
   performanceFailures,
+  readyFailures,
 } from './timings';
 
 const CLICKED_STEP = 'check-app';
@@ -184,9 +184,7 @@ export function homePhase(ctx: LiveContext): LivePhase {
     judge() {
       const failures: string[] = [];
       for (const { name, timings: t } of panels) {
-        if (!within(t.readyMs, LIMITS.readyMs)) {
-          failures.push(`${name} was ready after ${t.readyMs} ms, limit ${LIMITS.readyMs}`);
-        }
+        failures.push(...readyFailures(name, t, LIMITS.readyMs));
         failures.push(...performanceFailures(name, t));
         failures.push(...lateWrite('the first insert', name, t.insertToScreenMs));
         failures.push(
