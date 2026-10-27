@@ -224,7 +224,7 @@ describe('home-map on the seed', () => {
 
   test('step-detail reads V2, the current pin, whose subject names a short sha', async () => {
     const query = queries.find(([n]) => n === 'step-detail')?.[1] as string;
-    const steps = await db.query(query, ['mission-control']);
+    const steps = await db.query(query, ['mission-control', '']);
     const ids = steps.filter((s) => s.workflow === 'archon-loop').map((s) => s.step_id);
     expect(ids).toContain('check-app');
     expect(ids).toContain('tally');
