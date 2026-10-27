@@ -9,6 +9,7 @@ import { loadLiveQueries, realtimeUrlFor } from '../server/live';
 import { SERVE_PORTS } from '../server/ports';
 import { SECOND_FACTORY } from './fixture/seed';
 import { seedLaps } from './fixture/seed-laps';
+import { MARKER } from './fixture/seed-report';
 import { NEXT_TO_LABEL } from './fixture/write';
 import { openPage, type Page } from './lib/cdp';
 import { type Deps, failing, guardedDatabaseUrl, type Main, runCli } from './lib/cli';
@@ -61,6 +62,10 @@ const USAGE = [
   '  It checks the laps screen against the seed and times the same `fixture:write step` events to',
   '  their lanes before and after the hold, writing lanes-check.txt, lanes-recent-laps-timings.json,',
   '  lanes-recent-laps.png and lanes-recent-laps-design-probe.json.',
+  "  It checks a gate-refused seed lap's page against SQL over the seed, with no holdout text on",
+  "  it, then times the first of those `fixture:write step` events to a running lap's page and",
+  '  one more on that lap after the hold, writing one-lap-check.txt, one-lap-timings.json,',
+  '  one-lap.png, one-lap-design-probe.json and one-lap-refused-design-probe.json.',
   "  Then it opens the diff of the two versions, checks it lists exactly the seed's scripted change,",
   '  and times a step inserted into the second version to that screen before and after the hold,',
   '  writing arch-diff-timings.json, arch-diff.png and arch-diff-design-probe.json.',
@@ -171,6 +176,9 @@ const ISSUES = '[data-live="issue-graph"]';
 const LAPS_QUERIES = ['lanes', 'recent-laps'] as const;
 export const LANE = '[data-live="lanes"] [data-lane]';
 const RECENT_LAP = '[data-live="recent-laps"] [data-recent-lap]';
+const ONE_LAP_QUERIES = ['one-lap', 'one-lap-steps', 'one-lap-checks'] as const;
+/** The row LIVE_STEP's `fixture:write` adds to the one-lap screen. */
+const REVIEW_ROW = `[data-live="one-lap-steps"] [data-step-attempt][data-step="${LIVE_STEP}"]`;
 const laneOn = (runId: string, step: string) =>
   `document.querySelector('[data-live="lanes"] [data-lane="${runId}"]')?.getAttribute('data-step') === '${step}'`;
 const DIFF = '[data-live="arch-diff"]';
@@ -427,7 +435,8 @@ export function mapMismatches(nodes: ShownNode[], lapsOn: (path: string) => numb
 
 /**
  * Runs `fixture:write step` on `runId` and times it to LIVE_STEP's count on the map reaching
- * `target` and to the run's lane on the laps screen reaching LIVE_STEP: the same event feeds both.
+ * `target`, to the run's lane on the laps screen reaching LIVE_STEP, and, given the run's lap
+ * page, to its LIVE_STEP row appearing there: the same event feeds all three.
  */
 async function stepToScreens(
   map: Page,
@@ -435,7 +444,8 @@ async function stepToScreens(
   deps: Deps,
   runId: string,
   target: number,
-): Promise<{ map: number | null; lane: number | null }> {
+  lap?: Page,
+): Promise<{ map: number | null; lane: number | null; lap: number | null }> {
   await fixtureWrite(deps, [
     'step',
     '--run',
@@ -445,11 +455,12 @@ async function stepToScreens(
     '--event',
     'node_started',
   ]);
-  const [onMap, onLane] = await Promise.all([
+  const [onMap, onLane, onLap] = await Promise.all([
     untilShown(map, `${liveCountOf(LIVE_STEP)} === '${target}'`),
     untilShown(laps, laneOn(runId, LIVE_STEP)),
+    lap === undefined ? null : untilShown(lap, `document.querySelector('${REVIEW_ROW}') !== null`),
   ]);
-  return { map: onMap, lane: onLane };
+  return { map: onMap, lane: onLane, lap: onLap };
 }
 
 /** Inserts one running lap and times it from just before the insert to the strip showing it. */
@@ -1713,6 +1724,247 @@ async function seedLapsMismatches(
   return { mismatches, report };
 }
 
+interface OneLapTimings extends GroupTimings {
+  branch: string | null;
+  port: number | null;
+  /** The running lap the screen is timed on, and the gate-refused lap checked against the seed. */
+  run: string | null;
+  refusedRun: string | null;
+  /** The pre-hold `fixture:write step --step review --event node_started` to its review row. */
+  stepToScreen: { run: string; ms: number | null } | null;
+  holdSeconds: number;
+  renewals: Record<(typeof ONE_LAP_QUERIES)[number], number | null>;
+  /** One more review node_started after the hold, to that row's start changing. */
+  afterHoldStepToScreen: { run: string; ms: number | null } | null;
+  noReload: boolean | null;
+  limits: typeof LIMITS;
+}
+
+interface OneLapOnScreen {
+  lap: string | null;
+  route: string | null;
+  depth: string | null;
+  issue: number | null;
+  links: { console: string | null; issue: string | null; pr: string | null };
+  review: string | null;
+  gate: string | null;
+  reason: string | null;
+  steps: {
+    step: string | null;
+    status: string | null;
+    started: string | null;
+    durationMs: number | null;
+    model: string | null;
+    tokensInput: number | null;
+    tokensOutput: number | null;
+    cost: number | null;
+  }[];
+  cost: number | null;
+  checks: {
+    position: number | null;
+    kind: string | null;
+    verdict: string | null;
+    evidence: number | null;
+    scenario: string | null;
+  }[];
+  /** How many times the seed's holdout text marker occurs in the rendered page. */
+  markers: number;
+}
+
+const markersOnScreen = `document.documentElement.outerHTML.split(${JSON.stringify(MARKER)}).length - 1`;
+
+const oneLapOnScreen = `(() => {
+  const attr = (el, name) => el?.getAttribute(name) ?? null;
+  const num = (el, name) => (el?.hasAttribute(name) ? Number(el.getAttribute(name)) : null);
+  const header = document.querySelector('[data-live="one-lap"] [data-lap]');
+  const href = (link) =>
+    attr(document.querySelector('[data-live="one-lap"] a[data-link="' + link + '"]'), 'href');
+  return {
+    lap: attr(header, 'data-lap'),
+    route: attr(header, 'data-route'),
+    depth: attr(header, 'data-depth'),
+    issue: num(header, 'data-issue'),
+    links: { console: href('console'), issue: href('issue'), pr: href('pr') },
+    review: attr(document.querySelector('[data-live="one-lap"] [data-review]'), 'data-review-outcome'),
+    gate: attr(document.querySelector('[data-live="one-lap"] [data-gate]'), 'data-gate-outcome'),
+    reason: document.querySelector('[data-live="one-lap"] [data-gate-reason]')?.textContent ?? null,
+    steps: [...document.querySelectorAll('[data-live="one-lap-steps"] [data-step-attempt]')].map((li) => ({
+      step: attr(li, 'data-step'),
+      status: attr(li, 'data-status'),
+      started: attr(li, 'data-started'),
+      durationMs: num(li, 'data-duration-ms'),
+      model: attr(li, 'data-model'),
+      tokensInput: num(li, 'data-tokens-input'),
+      tokensOutput: num(li, 'data-tokens-output'),
+      cost: num(li, 'data-cost'),
+    })),
+    cost: num(document.querySelector('[data-live="one-lap-steps"] [data-lap-cost]'), 'data-lap-cost'),
+    checks: [...document.querySelectorAll('[data-live="one-lap-checks"] [data-check-line]')].map((li) => ({
+      position: num(li, 'data-position'),
+      kind: attr(li, 'data-kind'),
+      verdict: attr(li, 'data-verdict'),
+      evidence: num(li, 'data-evidence'),
+      scenario: attr(li, 'data-scenario'),
+    })),
+    markers: ${markersOnScreen},
+  };
+})()`;
+
+/** Opens `runId`'s lap page and waits until every one of its panels is `ready`. */
+async function openOneLap(page: Page, base: string, factory: string, runId: string): Promise<void> {
+  await page.goto(`${base}/f/${factory}/laps/${runId}`);
+  await page.evaluate('window.__mcNoReload = true');
+  const ready = await page.evaluate<boolean>(
+    pageWait(
+      ONE_LAP_QUERIES.map(
+        (q) => `document.querySelector('[data-live="${q}"][data-state="ready"]') !== null`,
+      ).join(' && '),
+      READY_WAIT_MS,
+    ),
+  );
+  if (!ready) {
+    throw new Error(`the lap ${runId} did not reach data-state="ready" within ${READY_WAIT_MS} ms`);
+  }
+}
+
+/**
+ * A finished lap's screen against SQL over the seed's tables, not the screen's queries: each
+ * step's single attempt, the lap's cost, its review, merge gate and app-check lines, its links,
+ * and no holdout text anywhere on the page.
+ */
+async function seedOneLapMismatches(
+  page: Page,
+  db: Db,
+  runId: string,
+): Promise<{ mismatches: string[]; report: string }> {
+  const shown = await page.evaluate<OneLapOnScreen>(oneLapOnScreen);
+  const mismatches: string[] = [];
+  const same = (what: string, screen: unknown, sql: unknown) => {
+    if (JSON.stringify(screen) !== JSON.stringify(sql)) {
+      mismatches.push(`${what}: screen ${JSON.stringify(screen)}, SQL ${JSON.stringify(sql)}`);
+    }
+  };
+  const nullable = (value: unknown) => (value === null ? null : Number(value));
+
+  const [lap] = await db.query(
+    `SELECT f.repository,
+       (SELECT c.issue_number FROM mc.claims c WHERE c.factory = l.factory AND c.run_id = l.run_id
+         ORDER BY c.claimed_at DESC NULLS LAST LIMIT 1) AS issue,
+       (SELECT i.url FROM mc.issues i WHERE i.factory = l.factory AND i.number =
+         (SELECT c.issue_number FROM mc.claims c WHERE c.factory = l.factory AND c.run_id = l.run_id
+           ORDER BY c.claimed_at DESC NULLS LAST LIMIT 1)) AS issue_url,
+       pick.output ->> 'route' AS route, pick.output ->> 'depth' AS depth,
+       review.output ->> 'outcome' AS review, review.output ->> 'pr' AS pr,
+       land.output ->> 'outcome' AS gate, land.output ->> 'reason' AS reason
+     FROM mc.laps l
+     JOIN mc.factories f ON f.name = l.factory
+     LEFT JOIN mc.lap_steps pick ON pick.run_id = l.run_id AND pick.step_id = 'pick'
+     LEFT JOIN mc.lap_steps review ON review.run_id = l.run_id AND review.step_id = 'review'
+     LEFT JOIN mc.lap_steps land ON land.run_id = l.run_id AND land.step_id = 'land'
+     WHERE l.run_id = $1`,
+    [runId],
+  );
+  const issue = nullable(lap.issue);
+  const pr = String(lap.pr ?? '').replace(/^#/, '');
+  const headerSql = {
+    lap: runId,
+    route: lap.route,
+    depth: lap.depth,
+    issue,
+    links: {
+      console: `http://localhost:3090/console/r/${runId}`,
+      issue: lap.issue_url,
+      pr: pr === '' ? null : `https://github.com/${lap.repository}/pull/${pr}`,
+    },
+    review: lap.review,
+    gate: lap.gate,
+    reason: lap.reason,
+  };
+  const { lap: shownLap, route, depth, issue: shownIssue, links, review, gate, reason } = shown;
+  const header = { lap: shownLap, route, depth, issue: shownIssue, links, review, gate, reason };
+  same('the lap', header, headerSql);
+
+  // A finished seed lap runs each step once, so each attempt pairs with its step's one row.
+  const steps = await db.query(
+    `SELECT a.step_id AS step, a.status, nullif(a.started_at, '-infinity') AS started,
+       a.duration_ms, s.model, s.tokens_input, s.tokens_output, a.cost_usd
+     FROM mc.lap_step_attempts a
+     JOIN mc.lap_steps s ON s.run_id = a.run_id AND s.step_id = a.step_id
+     WHERE a.run_id = $1`,
+    [runId],
+  );
+  const stepRows = await db.query('SELECT count(*)::int AS n FROM mc.lap_steps WHERE run_id = $1', [
+    runId,
+  ]);
+  if (Number(stepRows[0].n) !== steps.length) {
+    mismatches.push(`${runId} has ${stepRows[0].n} step rows and ${steps.length} attempts`);
+  }
+  const stepsSql = steps.map((r) => ({
+    step: String(r.step),
+    status: r.status,
+    started: r.started instanceof Date ? r.started.toISOString() : null,
+    durationMs: nullable(r.duration_ms),
+    model: r.model,
+    tokensInput: nullable(r.tokens_input),
+    tokensOutput: nullable(r.tokens_output),
+    cost: nullable(r.cost_usd),
+  }));
+  const byStep = <T extends { step: string | null; started: string | null }>(rows: readonly T[]) =>
+    [...rows].sort((a, b) =>
+      `${a.step} ${a.started ?? ''}`.localeCompare(`${b.step} ${b.started ?? ''}`),
+    );
+  same('the steps', byStep(shown.steps), byStep(stepsSql));
+
+  const [total] = await db.query(
+    'SELECT coalesce(sum(cost_usd), 0)::float8 AS cost FROM mc.lap_step_attempts WHERE run_id = $1',
+    [runId],
+  );
+  if (shown.cost === null || Math.abs(shown.cost - Number(total.cost)) > 1e-9) {
+    mismatches.push(`the lap's cost: screen ${shown.cost}, SQL ${total.cost}`);
+  }
+
+  const lines = await db.query(
+    `SELECT position, kind, verdict, evidence_count, scenario_id
+     FROM mc.app_check_lines WHERE run_id = $1 ORDER BY position`,
+    [runId],
+  );
+  const checksSql = lines.map((r) => ({
+    position: Number(r.position),
+    kind: r.kind,
+    verdict: r.verdict,
+    evidence: Number(r.evidence_count),
+    scenario: r.scenario_id,
+  }));
+  same(
+    'the app-check lines',
+    [...shown.checks].sort((a, b) => Number(a.position) - Number(b.position)),
+    checksSql,
+  );
+  if (!checksSql.some((l) => l.kind === 'holdout')) {
+    mismatches.push(`${runId} has no holdout app-check line to show by its scenario id`);
+  }
+  if (shown.markers !== 0) mismatches.push(`${MARKER} occurs ${shown.markers} times on the page`);
+
+  const report = [
+    `lap ${runId}`,
+    'screen:',
+    `  lap ${JSON.stringify(header)}`,
+    `  steps ${JSON.stringify(byStep(shown.steps))}`,
+    `  cost ${shown.cost}`,
+    `  checks ${JSON.stringify(shown.checks)}`,
+    `  ${MARKER} occurrences ${shown.markers}`,
+    'SQL (mc.laps, mc.factories, mc.claims, mc.lap_steps, mc.lap_step_attempts, mc.app_check_lines;',
+    'not the queries in db/queries/):',
+    `  lap ${JSON.stringify(headerSql)}`,
+    `  steps ${JSON.stringify(byStep(stepsSql))}`,
+    `  cost ${total.cost}`,
+    `  checks ${JSON.stringify(checksSql)}`,
+    ...mismatches,
+    `mismatches: ${mismatches.length}`,
+  ].join('\n');
+  return { mismatches, report };
+}
+
 async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promise<void> {
   const databaseUrl = await guardedDatabaseUrl(deps, 'check');
   const homeBranch = await resolveBranchName(databaseUrl, deps.neon());
@@ -1824,6 +2076,20 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
     limits: LIMITS,
   };
   let lapsPage: Page | undefined;
+  const oneLapTimings: OneLapTimings = {
+    branch: timings.branch,
+    port: null,
+    ...emptyGroupTimings(ONE_LAP_QUERIES),
+    run: null,
+    refusedRun: null,
+    stepToScreen: null,
+    holdSeconds,
+    renewals: { 'one-lap': null, 'one-lap-steps': null, 'one-lap-checks': null },
+    afterHoldStepToScreen: null,
+    noReload: null,
+    limits: LIMITS,
+  };
+  let lapPage: Page | undefined;
   const diffTimings: ArchDiffTimings = {
     branch: timings.branch,
     port: null,
@@ -1891,6 +2157,7 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
     decisionTimings.port = port;
     issueTimings.port = port;
     lapsTimings.port = port;
+    oneLapTimings.port = port;
     diffTimings.port = port;
     const base = `http://localhost:${port}`;
     const proc = Bun.spawn(['bun', 'server/main.ts', '--port', String(port)], {
@@ -1978,15 +2245,56 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
       }
     }
 
+    // One lap: a gate-refused seed lap against SQL, then the first running lap, timed live.
+    const [refused] = await db.query(
+      `SELECT l.run_id::text AS run FROM mc.laps l
+       JOIN mc.lap_steps land ON land.run_id = l.run_id AND land.step_id = 'land'
+       WHERE l.factory = $1 AND l.workflow_name = 'archon-loop'
+         AND land.output ->> 'outcome' = 'refused'
+         AND EXISTS (SELECT 1 FROM mc.app_check_lines a
+                      WHERE a.run_id = l.run_id AND a.kind = 'holdout')
+       ORDER BY 1 LIMIT 1`,
+      [factory],
+    );
+    if (refused === undefined) {
+      throw new Error('the check branch has no gate-refused lap with a holdout line');
+    }
+    const refusedRun = String(refused.run);
+    oneLapTimings.refusedRun = refusedRun;
+    const refusedPage = await openPage(deps.env);
+    try {
+      await openOneLap(refusedPage, base, factory, refusedRun);
+      const oneLapSeed = await seedOneLapMismatches(refusedPage, db, refusedRun);
+      writeFileSync(join(outDir, 'one-lap-check.txt'), `${oneLapSeed.report}\n`);
+      failures.push(...oneLapSeed.mismatches.map((m) => `one lap against the seed: ${m}`));
+      writeFileSync(join(outDir, 'one-lap.png'), await refusedPage.screenshot(1440));
+    } finally {
+      await refusedPage.close().catch(() => undefined);
+    }
+    oneLapTimings.run = firstLap;
+    lapPage = await openPage(deps.env);
+    await openOneLap(lapPage, base, factory, firstLap);
+    Object.assign(oneLapTimings, groupTimings(await measure(lapPage, ONE_LAP_QUERIES)));
+    const lapMarkers = await lapPage.evaluate<number>(markersOnScreen);
+    if (lapMarkers !== 0) {
+      failures.push(`${MARKER} occurs ${lapMarkers} times on the lap ${firstLap}`);
+    }
+    if (await lapPage.evaluate<boolean>(`document.querySelector('${REVIEW_ROW}') !== null`)) {
+      throw new Error(`the lap ${firstLap} shows a ${LIVE_STEP} step before any write`);
+    }
+
     timings.insertToScreenMs = await insertToScreen(page, db, inserted, factory, before + 1);
     deps.out(`first insert reached the strip in ${timings.insertToScreenMs ?? 'never'} ms`);
     written.push(firstLap);
-    const firstStep = await stepToScreens(page, lapsPage, deps, firstLap, onLiveStep + 1);
+    const firstStep = await stepToScreens(page, lapsPage, deps, firstLap, onLiveStep + 1, lapPage);
     mapTimings.insertToScreenMs = firstStep.map;
     lapsTimings.stepToLane = { run: firstLap, ms: firstStep.lane };
+    oneLapTimings.stepToScreen = { run: firstLap, ms: firstStep.lap };
     deps.out(
-      `first step event reached the map in ${mapTimings.insertToScreenMs ?? 'never'} ms, its lane in ${lapsTimings.stepToLane.ms ?? 'never'} ms`,
+      `first step event reached the map in ${mapTimings.insertToScreenMs ?? 'never'} ms, its lane in ${lapsTimings.stepToLane.ms ?? 'never'} ms, its lap in ${oneLapTimings.stepToScreen.ms ?? 'never'} ms`,
     );
+    const reviewStart = `document.querySelector('${REVIEW_ROW}')?.getAttribute('data-started') ?? null`;
+    const firstReviewStart = await lapPage.evaluate<string | null>(reviewStart);
 
     decisionsPage = await openPage(deps.env);
     await decisionsPage.goto(`${base}/f/${factory}/decisions`);
@@ -2249,6 +2557,22 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
     lapsTimings.noReload = await lapsPage.evaluate<boolean>('window.__mcNoReload === true');
     await lapsPage.close();
     lapsPage = undefined;
+    for (const q of ONE_LAP_QUERIES) {
+      oneLapTimings.renewals[q] = await lapPage.evaluate<number>(renewalsOf(q));
+    }
+    // firstLap's review is still running: another start moves that row's start, adding no row.
+    oneLapTimings.afterHoldStepToScreen = {
+      run: firstLap,
+      ms: await writeToScreen(
+        lapPage,
+        deps,
+        ['step', '--run', firstLap, '--step', LIVE_STEP, '--event', 'node_started'],
+        `(${reviewStart}) !== null && (${reviewStart}) !== ${JSON.stringify(firstReviewStart)}`,
+      ),
+    };
+    oneLapTimings.noReload = await lapPage.evaluate<boolean>('window.__mcNoReload === true');
+    await lapPage.close();
+    lapPage = undefined;
 
     const target = `/steps/archon-loop/${CLICKED_STEP}`;
     await page.evaluate(`document.querySelector('${MAP} [data-step="${CLICKED_STEP}"]').click()`);
@@ -2462,6 +2786,24 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
     if (lapsProbe.exitCode !== 0) {
       failures.push(`the design probe on the laps screen exited ${lapsProbe.exitCode}`);
     }
+    for (const [run, file] of [
+      [firstLap, 'one-lap-design-probe.json'],
+      [refusedRun, 'one-lap-refused-design-probe.json'],
+    ]) {
+      const lapProbe = Bun.spawnSync(
+        [
+          'bun',
+          'harness/design-probe.js',
+          `${base}/f/${factory}/laps/${run}`,
+          '--out',
+          join(outDir, file),
+        ],
+        { cwd: deps.repoRoot, env: deps.env, stdout: 'ignore', stderr: 'inherit' },
+      );
+      if (lapProbe.exitCode !== 0) {
+        failures.push(`the design probe on the lap ${run} exited ${lapProbe.exitCode}`);
+      }
+    }
     const diffProbe = Bun.spawnSync(
       [
         'bun',
@@ -2507,6 +2849,10 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
       `${JSON.stringify(lapsTimings, null, 2)}\n`,
     );
     writeFileSync(
+      join(outDir, 'one-lap-timings.json'),
+      `${JSON.stringify(oneLapTimings, null, 2)}\n`,
+    );
+    writeFileSync(
       join(outDir, 'arch-diff-timings.json'),
       `${JSON.stringify(diffTimings, null, 2)}\n`,
     );
@@ -2518,6 +2864,7 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
     await decisionsPage?.close().catch(() => undefined);
     await issuesPage?.close().catch(() => undefined);
     await lapsPage?.close().catch(() => undefined);
+    await lapPage?.close().catch(() => undefined);
     await diffPage?.close().catch(() => undefined);
     if (server) {
       server.kill();
@@ -2764,6 +3111,26 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
     failures.push(...lateWrite(`${LIVE_STEP} ${when}`, 'its lane', write?.ms));
   }
   if (lapsTimings.noReload !== true) failures.push('the laps screen reloaded');
+  if (!within(oneLapTimings.readyMs, LIMITS.readyMs)) {
+    failures.push(
+      `one-lap screen ready after ${oneLapTimings.readyMs} ms, limit ${LIMITS.readyMs}`,
+    );
+  }
+  for (const q of ONE_LAP_QUERIES) {
+    failures.push(...groupPerformanceFailures([q], oneLapTimings));
+    if (holdSeconds >= 180 && (oneLapTimings.renewals[q] ?? 0) < RENEWALS_IN_180S) {
+      failures.push(
+        `${oneLapTimings.renewals[q]} ${q} seal renewals in ${holdSeconds}s, expected at least ${RENEWALS_IN_180S}`,
+      );
+    }
+  }
+  for (const [when, write] of [
+    ['first', oneLapTimings.stepToScreen],
+    [`after ${holdSeconds}s`, oneLapTimings.afterHoldStepToScreen],
+  ] as const) {
+    failures.push(...lateWrite(`${LIVE_STEP} ${when}`, 'its one-lap steps', write?.ms));
+  }
+  if (oneLapTimings.noReload !== true) failures.push('the one-lap screen reloaded');
   if (!within(diffTimings.readyMs, LIMITS.readyMs)) {
     failures.push(`diff screen ready after ${diffTimings.readyMs} ms, limit ${LIMITS.readyMs}`);
   }
