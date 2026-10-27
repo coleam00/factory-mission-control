@@ -185,13 +185,13 @@ async function relay(upstream: string) {
 }
 
 test.each([
-  ['Bun SQL', 'next message', 'before the first statement'],
-  ['Bun SQL', 'COMMIT answer', 'at COMMIT'],
-  ['pg.Pool', 'next message', 'before the first statement'],
-  ['pg.Pool', 'COMMIT answer', 'at COMMIT'],
+  ['Bun SQL', 'next message'],
+  ['Bun SQL', 'COMMIT answer'],
+  ['pg.Pool', 'next message'],
+  ['pg.Pool', 'COMMIT answer'],
 ] as const)(
   'a %s connection closed on the %s records the delivery once, on a second try',
-  async (adapter, cut, where) => {
+  async (adapter, cut) => {
     const link = await relay(server.getServerConn());
     const db =
       adapter === 'Bun SQL'
@@ -208,7 +208,7 @@ test.each([
     try {
       expect((await deliver(db, issue)).status).toBe(200);
       expect(warn.mock.calls.map((args) => args.join(' '))).toEqual([
-        expect.stringContaining(`issues ${issue.delivery}: connection closed ${where}`),
+        expect.stringContaining(`issues ${issue.delivery}: connection closed (`),
       ]);
     } finally {
       warn.mockRestore();

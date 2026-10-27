@@ -14,8 +14,8 @@ const USAGE = [
   "  the Neon API each minute for the branch endpoint's state, until the compute suspends or",
   '  --max-minutes (default 15) pass. It then sends three more and counts the rows of their issue.',
   '  It prints the runtime, the connection mode, each answer with its time, and every line the',
-  '  handler printed: a connection that closed under a delivery names its error and where in the',
-  '  transaction it failed. Exits 1 when any delivery after the idle is not recorded exactly once.',
+  '  handler printed: a connection that closed under a delivery names its error. Exits 1 when any',
+  '  delivery after the idle is not recorded exactly once.',
 ].join('\n');
 
 const FIXTURE = '01-issues-opened.json';
