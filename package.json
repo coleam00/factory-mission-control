@@ -8,6 +8,7 @@
     "check": "tsc --noEmit && biome check && bun test app server harness scripts parsers db function",
     "function:dev": "bun function/dev.ts",
     "function:deploy": "bun scripts/function-deploy.ts",
+    "function:idle-check": "bun scripts/idle-check.ts",
     "migrate": "bun scripts/migrate.ts",
     "migrate:main": "bun scripts/migrate.ts --main",
     "arch:parse": "bun scripts/arch-parse.ts",

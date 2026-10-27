@@ -573,3 +573,75 @@ test.each(['deleted', 'transferred'])('an issue %s leaves the mirror', async (ac
     { question_number: 3, closed_at: new Date('2026-10-26T09:00:00Z') },
   ]);
 });
+
+test.each([
+  ['any other error is not retried', () => new Error('duplicate key'), 1],
+  [
+    'a connection that closes again is retried once',
+    () => Object.assign(new Error('closed'), { code: 'ERR_POSTGRES_CONNECTION_CLOSED' }),
+    2,
+  ],
+])('%s', async (_, failure, attempts) => {
+  let transactions = 0;
+  app = createWebhookApp({
+    secret: SECRET,
+    db: {
+      query: (sql, params) => db.query(sql, params),
+      close: () => db.close(),
+      transaction: async () => {
+        transactions += 1;
+        throw failure();
+      },
+    },
+    factories: factories.factories,
+    github: createGitHub(async (url) => respond(url)),
+  });
+  const warn = spyOn(console, 'warn').mockImplementation(() => {});
+  const error = spyOn(console, 'error').mockImplementation(() => {});
+  try {
+    expect((await deliver(named('03-'))).status).toBe(500);
+  } finally {
+    warn.mockRestore();
+    error.mockRestore();
+  }
+  expect(transactions).toBe(attempts);
+});
+
+const terminated = 'terminating connection due to administrator command';
+test.each([
+  [
+    'Bun SQL',
+    () =>
+      Object.assign(new Error(terminated), { code: 'ERR_POSTGRES_SERVER_ERROR', errno: '57P01' }),
+  ],
+  ['pg.Pool', () => Object.assign(new Error(terminated), { code: '57P01' })],
+])(
+  'a %s connection the server terminated is retried once and recorded once',
+  async (_, failure) => {
+    let transactions = 0;
+    app = createWebhookApp({
+      secret: SECRET,
+      db: {
+        query: (sql, params) => db.query(sql, params),
+        close: () => db.close(),
+        transaction: (fn) => {
+          transactions += 1;
+          return transactions === 1 ? Promise.reject(failure()) : db.transaction(fn);
+        },
+      },
+      factories: factories.factories,
+      github: createGitHub(async (url) => respond(url)),
+    });
+    const warn = spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      expect((await deliver(named('03-'))).status).toBe(200);
+      expect(warn.mock.calls.map((args) => args.join(' '))).toEqual([
+        expect.stringContaining(`connection closed before the first statement (${terminated})`),
+      ]);
+    } finally {
+      warn.mockRestore();
+    }
+    expect(transactions).toBe(2);
+    expect(await rows('SELECT number FROM mc.issues')).toEqual([{ number: 44 }]);
+  },
+);
