@@ -4,7 +4,7 @@ import { parseArgs } from 'node:util';
 import { sign } from '../function/signature';
 import { type Deps, failing, guardedDatabaseUrl, type Main, runCli } from './lib/cli';
 import { endpointIdOf } from './lib/target';
-import { freePort } from './test-live';
+import { freePort } from './live/shared';
 
 const USAGE = [
   'usage: bun run function:idle-check [--max-minutes <n>]',
