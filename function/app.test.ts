@@ -453,7 +453,9 @@ test.each([
         pins: `unread: ${status}`,
       });
       expect(warn.mock.calls.map((args) => args.join(' '))).toEqual([
-        expect.stringContaining(`${PACK_PATH} unread for pins: ${status}; pins kept`),
+        expect.stringContaining(
+          `${PACK_PATH} unread for pins: ${status}; pins written without an Archon sha`,
+        ),
       ]);
     } finally {
       warn.mockRestore();
@@ -463,7 +465,7 @@ test.each([
   },
 );
 
-test('a pack file read that fails on a first delivery writes the verdict and no pin', async () => {
+test('a pack file read that fails on a first delivery writes the pin without a sha, and a later read fills it', async () => {
   respond = answering({ pinned: () => new Response('Internal Server Error', { status: 500 }) });
   const warn = spyOn(console, 'warn').mockImplementation(() => {});
   try {
@@ -475,11 +477,19 @@ test('a pack file read that fails on a first delivery writes the verdict and no 
   } finally {
     warn.mockRestore();
   }
-  expect(await pinRows()).toEqual([]);
+  expect(await pinRows()).toEqual([
+    { sha: '85d479ad987dd63e441622ecb03db65233e8a803', archon_sha: null },
+  ]);
   expect(await rows('SELECT verdict FROM mc.verdicts')).toEqual([{ verdict: 'helped' }]);
+
+  respond = answering({});
+  expect(await (await deliver(named('09-'))).json()).toEqual({ event: 'push', written: true });
+  expect(await pinRows()).toEqual([
+    { sha: '85d479ad987dd63e441622ecb03db65233e8a803', archon_sha: PINNED },
+  ]);
 });
 
-test('a pin whose pack file pins another version writes no pin and says which', async () => {
+test('a pin whose pack file pins another version is written without a sha and says which', async () => {
   const other = 'f'.repeat(40);
   respond = answering({ pinned: () => new Response(pack(other)) });
   const warn = spyOn(console, 'warn').mockImplementation(() => {});
@@ -492,7 +502,9 @@ test('a pin whose pack file pins another version writes no pin and says which', 
   } finally {
     warn.mockRestore();
   }
-  expect(await pinRows()).toEqual([]);
+  expect(await pinRows()).toEqual([
+    { sha: '85d479ad987dd63e441622ecb03db65233e8a803', archon_sha: null },
+  ]);
   expect(await rows('SELECT verdict FROM mc.verdicts')).toEqual([{ verdict: 'helped' }]);
 });
 

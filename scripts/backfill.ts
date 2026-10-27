@@ -39,7 +39,7 @@ interface FactoryHistory {
 export interface History {
   factories: FactoryHistory[];
   commits: VersionCommit[];
-  /** Each pin left unwritten because its full Archon sha did not resolve, and why. */
+  /** Each pin written without an Archon sha because its full sha did not resolve, and why. */
   unresolvedPins: string[];
   decisions: string;
 }
@@ -193,7 +193,7 @@ export const main: Main = async (argv, deps) => {
           lines.push(`removed ${removed.issues} issue(s) and ${removed.comments} comment(s)`);
         }
         lines.push(...(await storedCounts(tx, history)));
-        lines.push(...history.unresolvedPins.map((pin) => `skipped pin ${pin}`));
+        lines.push(...history.unresolvedPins.map((pin) => `pin without an Archon sha ${pin}`));
       });
       for (const line of lines) deps.out(line);
     } finally {

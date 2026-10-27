@@ -261,7 +261,7 @@ test('the eligibility upgrade keeps live history and installs the same functions
   }
 });
 
-test('0011 rewrites a short pin to the one full sha it prefixes, and leaves ambiguous and unknown ones', async () => {
+test('0011 rewrites a short pin to the one full sha it prefixes, and clears ambiguous and unknown ones', async () => {
   const historical = await archonDb();
   const full = `abcdef12${'0'.repeat(32)}`;
   const twin = (last: string) => `12345678${'0'.repeat(31)}${last}`;
@@ -290,8 +290,8 @@ test('0011 rewrites a short pin to the one full sha it prefixes, and leaves ambi
     ]);
     const migrated = [
       { sha: 'p1', archon_sha: full },
-      { sha: 'p2', archon_sha: '12345678' },
-      { sha: 'p3', archon_sha: 'deadbeef' },
+      { sha: 'p2', archon_sha: null },
+      { sha: 'p3', archon_sha: null },
       { sha: 'p4', archon_sha: twin('1') },
     ];
     expect(await pinShas()).toEqual(migrated);

@@ -110,7 +110,7 @@ export interface Prepared {
   write: Write;
   /** Set when the push touched `DECISIONS.md` but GitHub would not give it: what GitHub said. */
   decisionsUnread?: string;
-  /** Set when a pin of the push was not written: which, and why. */
+  /** Set when a pin of the push was written without its Archon sha: which, and why. */
   pinsUnread?: string;
 }
 
@@ -198,8 +198,8 @@ function mirrorWrite(
 
 /**
  * The push's commits with each pin's full Archon sha resolved. When GitHub refuses or cannot be
- * reached, no pin of the push is written and the result says so; its verdicts and decisions still
- * are, and the next backfill reads the pins again. A stored pin is never rewritten short.
+ * reached, the push's pins are written without a sha and the result says so; the next backfill
+ * reads them again. A stored sha is never cleared or rewritten short.
  */
 async function pinsAfter(
   push: Payloads['push'],
@@ -626,18 +626,30 @@ export async function writePullRequest(tx: Tx, factory: string, pr: PullRequest)
   );
 }
 
-/** A pin is written only with its resolved full sha (`VersionCommit.archonSha`). */
+/**
+ * A pin is written with its resolved full sha (`VersionCommit.archonSha`), or with none while it is
+ * unresolved, so the version strip shows it at once and the map waits for the next backfill. An
+ * unresolved write never clears a sha already stored.
+ */
 export async function writeCommits(tx: Tx, commits: VersionCommit[]): Promise<void> {
   for (const commit of commits) {
     const pin = parsePin(commit.message);
-    if (pin && commit.archonSha) {
+    if (pin) {
       await tx.query(
         `INSERT INTO mc.pins (sha, archon_sha, reason, hypothesis, measure, committed_at)
           VALUES ($1, $2, $3, $4, $5, $6)
-          ON CONFLICT (sha) DO UPDATE SET archon_sha = EXCLUDED.archon_sha,
+          ON CONFLICT (sha) DO UPDATE SET
+            archon_sha = coalesce(EXCLUDED.archon_sha, mc.pins.archon_sha),
             reason = EXCLUDED.reason, hypothesis = EXCLUDED.hypothesis,
             measure = EXCLUDED.measure, committed_at = EXCLUDED.committed_at`,
-        [commit.id, commit.archonSha, pin.reason, pin.hypothesis, pin.measure, commit.timestamp],
+        [
+          commit.id,
+          commit.archonSha ?? null,
+          pin.reason,
+          pin.hypothesis,
+          pin.measure,
+          commit.timestamp,
+        ],
       );
     }
     const verdict = parseVerdict(commit.message);

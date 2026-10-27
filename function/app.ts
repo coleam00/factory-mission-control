@@ -41,7 +41,9 @@ export function createWebhookApp({ secret, db, ...context }: WebhookOptions): Ho
     }
     const pins = prepared?.pinsUnread;
     if (pins !== undefined) {
-      console.warn(`${delivery}: ${PACK_PATH} unread for pins: ${pins}; pins kept`);
+      console.warn(
+        `${delivery}: ${PACK_PATH} unread for pins: ${pins}; pins written without an Archon sha`,
+      );
       response.pins = `unread: ${pins}`;
     }
     return c.json(response);

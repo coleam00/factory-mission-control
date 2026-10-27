@@ -88,7 +88,7 @@ test('backfill on a check branch stores every recorded issue, comment, label, pu
   ]);
 });
 
-test('a pin whose pack file pins another version is skipped, said so, and the rest is written', async () => {
+test('a pin whose pack file pins another version is written without a sha, said so, with the rest', async () => {
   const other = 'f'.repeat(40);
   const repinned: GetFetch = (url, init) =>
     url.includes('/contents/template/factory/pack.json')
@@ -98,9 +98,10 @@ test('a pin whose pack file pins another version is skipped, said so, and the re
   expect(code).toBe(0);
   expect(out).toEqual([
     'mission-control: 3 issues, 2 comments, 3 labels, 1 pull requests',
-    'coleam00/ai-software-factory: 0 pins, 1 verdicts, 2 decisions',
-    `skipped pin 85d479ad: pins ${other}, not abd85896`,
+    'coleam00/ai-software-factory: 1 pins, 1 verdicts, 2 decisions',
+    `pin without an Archon sha 85d479ad: pins ${other}, not abd85896`,
   ]);
+  expect(await rows('SELECT archon_sha FROM mc.pins')).toEqual([{ archon_sha: null }]);
 });
 
 test('every request backfill and reconcile send to GitHub is a GET, the next page included', async () => {
