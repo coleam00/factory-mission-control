@@ -13,6 +13,7 @@ import { machineLockPath, withMachineLock } from './lib/machine-lock';
 import { resolveBranchName } from './lib/target';
 import { decisionsPhase } from './live/decisions';
 import { diffPhase } from './live/diff';
+import { healthPhase } from './live/health';
 import { homePhase } from './live/home';
 import { issuesPhase } from './live/issues';
 import { lapsPhase } from './live/laps';
@@ -65,6 +66,10 @@ const USAGE = [
   '  It checks the issues screen against the seed and times `fixture:write label` to it before and',
   '  after the hold, writing issue-graph-check.txt, phases-issue-graph-timings.json,',
   '  phases-issue-graph.png and phases-issue-graph-design-probe.json.',
+  '  It checks the health screen against SQL over the seed and times `fixture:write step --event',
+  '  node_failed --error ECONNRESET` on each running lap to its infrastructure count, one before and',
+  '  one after the hold, writing health-check.txt, health-timings.json, health.png and',
+  '  health-design-probe.json.',
   '  It checks the laps screen against the seed and times the same `fixture:write step` events to',
   '  their lanes before and after the hold, writing lanes-check.txt, lanes-recent-laps-timings.json,',
   '  lanes-recent-laps.png and lanes-recent-laps-design-probe.json.',
@@ -238,6 +243,7 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
     scorecardPhase(ctx),
     ownerPhase(ctx),
     issuesPhase(ctx),
+    healthPhase(ctx),
     switcherPhase(ctx),
     diffPhase(ctx),
     { ...rewind, summary: () => [`rewind: ${JSON.stringify(rewind.timings)}`] },
