@@ -3,6 +3,12 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { MemoryRouter } from 'react-router';
 import { UnknownFactory } from './UnknownFactory';
 
+const text = (html: string) =>
+  html
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
 const render = (factory: string, fallback: string | undefined) =>
   renderToStaticMarkup(
     <MemoryRouter>
@@ -10,10 +16,13 @@ const render = (factory: string, fallback: string | undefined) =>
     </MemoryRouter>,
   );
 
-test('names the key as typed, points to the switcher and links to the default map', () => {
+test('names the key as typed in one sentence and links to the default map', () => {
   const html = render('Mission-Control', 'mission-control');
-  expect(html).toContain('No factory is named &quot;Mission-Control&quot;.');
-  expect(html).toContain('switcher');
+  expect(text(html)).toBe(
+    'No factory is named &quot;Mission-Control&quot;. Go to mission-control&#x27;s map',
+  );
+  expect(html.match(/<p/g)).toHaveLength(1);
+  expect(html.match(/<a /g)).toHaveLength(1);
   expect(html).toContain('href="/f/mission-control"');
   expect(html).not.toContain('Live data is unavailable.');
 });
@@ -31,7 +40,9 @@ test('before the server names a default it links home', () => {
 
 test('the empty key names no factory and links home, not to a map', () => {
   const html = render('', 'mission-control');
-  expect(html).toContain('No factory is named in this address.');
+  expect(text(html)).toBe('No factory is named in this address. Go to home');
+  expect(html.match(/<p/g)).toHaveLength(1);
+  expect(html.match(/<a /g)).toHaveLength(1);
   expect(html).toContain('href="/"');
   expect(html).not.toContain('mission-control');
 });
