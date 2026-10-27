@@ -16,6 +16,7 @@ import {
   RENEWALS_IN_180S,
   renewalsOf,
   required,
+  screenAgainstSql,
   untilShown,
   within,
 } from './shared';
@@ -105,11 +106,7 @@ async function seedLapsMismatches(
 ): Promise<{ mismatches: string[]; report: string }> {
   const shown = await page.evaluate<LapsOnScreen>(lapsOnScreen);
   const mismatches: string[] = [];
-  const same = (what: string, screen: unknown, sql: unknown) => {
-    if (JSON.stringify(screen) !== JSON.stringify(sql)) {
-      mismatches.push(`${what}: screen ${JSON.stringify(screen)}, SQL ${JSON.stringify(sql)}`);
-    }
-  };
+  const same = screenAgainstSql(mismatches);
   const byRun = <T extends { run: string }>(rows: readonly T[]) =>
     [...rows].sort((a, b) => a.run.localeCompare(b.run));
 
@@ -265,11 +262,16 @@ export function lapsPhase(ctx: LiveContext): LivePhase {
       deps.out(`first step event reached its lane in ${ms ?? 'never'} ms`);
     },
 
-    async writeAgain() {
+    async beforeLapStep(afterHold) {
+      if (!afterHold) return;
       const page = required(lapsPage, 'laps page');
       for (const q of LAPS_QUERIES) {
         lapsTimings.renewals[q] = await page.evaluate<number>(renewalsOf(q));
       }
+    },
+
+    async writeAgain() {
+      const page = required(lapsPage, 'laps page');
       lapsTimings.noReload = await page.evaluate<boolean>('window.__mcNoReload === true');
       await page.close();
       lapsPage = undefined;

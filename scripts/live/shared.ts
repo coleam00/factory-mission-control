@@ -262,6 +262,14 @@ export async function writeToScreen(
 
 export const within = (value: number | null, limit: number) => value !== null && value <= limit;
 
+/** Compares what a screen shows with what SQL says, pushing one line to `mismatches` per difference. */
+export const screenAgainstSql =
+  (mismatches: string[]) => (what: string, screen: unknown, sql: unknown) => {
+    if (JSON.stringify(screen) !== JSON.stringify(sql)) {
+      mismatches.push(`${what}: screen ${JSON.stringify(screen)}, SQL ${JSON.stringify(sql)}`);
+    }
+  };
+
 /** The factory's version digests by first run, as the versions screen lists them. */
 export async function versionDigests(db: Db, factory: string): Promise<string[]> {
   const rows = await db.query(
@@ -295,7 +303,10 @@ export interface LiveContext {
   base: string;
   /** The two running seed laps that have no LIVE_STEP yet; set before `open`. */
   laps: [string, string];
-  /** Runs `fixture:write step` starting LIVE_STEP on `run` and awaits every phase's `onLapStep`. */
+  /**
+   * Awaits every phase's `beforeLapStep`, runs `fixture:write step` starting LIVE_STEP on `run`,
+   * then awaits every phase's `onLapStep`.
+   */
   lapStep(run: string, afterHold: boolean): Promise<void>;
   /** Laps test:live inserted (any phase); the runner deletes them. */
   inserted: string[];
@@ -314,6 +325,8 @@ export interface LivePhase {
   write?(): Promise<void>;
   /** Last before the hold, once every phase has written. */
   beforeHold?(): Promise<void>;
+  /** Reads what must be read before the shared lap step event is written; `lapStep` calls it first. */
+  beforeLapStep?(afterHold: boolean): Promise<void>;
   /** Times the shared lap step event on its screen; `lapStep` calls it once the write has exited. */
   onLapStep?(run: string, afterHold: boolean): Promise<void>;
   /** After the hold: its renewals, its write again, and closing its page. */

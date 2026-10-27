@@ -14,6 +14,7 @@ import {
   READY_WAIT_MS,
   RENEWALS_IN_180S,
   required,
+  screenAgainstSql,
   within,
   writeToScreen,
 } from './shared';
@@ -90,11 +91,7 @@ async function seedIssueGraphMismatches(
 ): Promise<{ mismatches: string[]; report: string }> {
   const shown = await page.evaluate<IssuesOnScreen>(issuesOnScreen);
   const mismatches: string[] = [];
-  const same = (what: string, screen: unknown, sql: unknown) => {
-    if (JSON.stringify(screen) !== JSON.stringify(sql)) {
-      mismatches.push(`${what}: screen ${JSON.stringify(screen)}, SQL ${JSON.stringify(sql)}`);
-    }
-  };
+  const same = screenAgainstSql(mismatches);
 
   const issues = await db.query('SELECT number FROM mc.issues WHERE factory = $1 ORDER BY number', [
     factory,

@@ -14,6 +14,7 @@ import {
   RENEWALS_IN_180S,
   renewalsOf,
   required,
+  screenAgainstSql,
   untilShown,
   within,
   writeToScreen,
@@ -144,11 +145,7 @@ async function seedOneLapMismatches(
 ): Promise<{ mismatches: string[]; report: string }> {
   const shown = await page.evaluate<OneLapOnScreen>(oneLapOnScreen);
   const mismatches: string[] = [];
-  const same = (what: string, screen: unknown, sql: unknown) => {
-    if (JSON.stringify(screen) !== JSON.stringify(sql)) {
-      mismatches.push(`${what}: screen ${JSON.stringify(screen)}, SQL ${JSON.stringify(sql)}`);
-    }
-  };
+  const same = screenAgainstSql(mismatches);
   const nullable = (value: unknown) => (value === null ? null : Number(value));
 
   const [lap] = await db.query(

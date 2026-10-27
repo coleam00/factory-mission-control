@@ -198,6 +198,7 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
     base: '',
     laps: ['', ''],
     async lapStep(run, afterHold) {
+      for (const phase of phases) await phase.beforeLapStep?.(afterHold);
       written.push(run);
       await fixtureWrite(deps, [
         'step',
