@@ -13,6 +13,7 @@ import {
   freePort,
   insertToScreen,
   LIMITS,
+  lateWrite,
   pageWait,
   READY_WAIT_MS,
   renewalsOf,
@@ -221,7 +222,7 @@ export function rewindPhase(ctx: {
 
     /** Opens `/rewind`, makes a rewind from before a lap it inserts, and switches to it. */
     async beforeHold(): Promise<void> {
-      const port = await freePort();
+      const port = await freePort(deps);
       timings.port = port;
       base = `http://localhost:${port}`;
       const proc = Bun.spawn(['bun', 'server/main.ts', '--port', String(port)], {
@@ -353,11 +354,7 @@ export function rewindPhase(ctx: {
         ['first', timings.createToListMs],
         [`after ${holdSeconds}s`, timings.afterHoldCreateToListMs],
       ] as const) {
-        if (!within(ms, LIMITS.insertToScreenMs)) {
-          failures.push(
-            `the ${when} rewind reached the list after ${ms} ms, limit ${LIMITS.insertToScreenMs}`,
-          );
-        }
+        failures.push(...lateWrite(`the ${when} rewind`, 'the list', ms));
       }
       if (holdSeconds >= 180 && (timings.renewals ?? 0) < RENEWALS_IN_180S) {
         failures.push(
