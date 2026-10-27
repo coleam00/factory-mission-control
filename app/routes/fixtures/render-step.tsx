@@ -84,7 +84,7 @@ class Socket implements WebSocketLike {
 }
 
 /** A step row of the workflow `archon-loop`, its prompt naming the version it was read at. */
-export function stepRow(path: string, prompt: string): StepRow {
+function stepRow(path: string, prompt: string): StepRow {
   return {
     workflow: 'archon-loop',
     path,
@@ -223,10 +223,10 @@ function settled({ container }: Screen): boolean {
   );
 }
 
-export const OLDER = '8e3e1cefaf1e1b7955789d6a43a81b6c2dbd7082';
-export const NEWER = '5ffd60c6c6e591487f2fbb5ec67ccc8fc55ca915';
+const OLDER = '8e3e1cefaf1e1b7955789d6a43a81b6c2dbd7082';
+const NEWER = '5ffd60c6c6e591487f2fbb5ec67ccc8fc55ca915';
 /** A pin at which `review` did not exist yet. */
-export const BEFORE_REVIEW = '1b2a52a5d44d3a1b1d8f2d4d3c6c2e0f9a8b7c6d';
+const BEFORE_REVIEW = '1b2a52a5d44d3a1b1d8f2d4d3c6c2e0f9a8b7c6d';
 
 const STEPS: Record<string, StepRow[]> = {
   '': [stepRow('review', 'Review, current')],
