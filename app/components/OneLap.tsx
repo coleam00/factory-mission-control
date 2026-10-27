@@ -50,8 +50,11 @@ export function NoLap({ runId }: { runId: string }): ReactElement {
   );
 }
 
-/** The lap: its outcome, route and depth, its links, its review and its merge gate. */
-export function LapHeader({
+/**
+ * The lap: its header, and its steps and app check under it. Those are asked for only once the
+ * lap's row is found, so an id with no lap here shows the not-found line and nothing else.
+ */
+export function OneLap({
   factory,
   runId,
 }: {
@@ -62,12 +65,37 @@ export function LapHeader({
     <LivePanel<OneLapRow> query="one-lap" factory={factory} args={[runId]}>
       {(rows, state) => (
         <PanelBody rows={rows} state={state} factory={factory} what="the lap">
-          {(loaded) =>
-            loaded[0] === undefined ? <NoLap runId={runId} /> : <LapHeaderBody lap={loaded[0]} />
-          }
+          {(loaded) => (
+            <LapFound lap={loaded[0]} runId={runId}>
+              <LapSteps factory={factory} runId={runId} />
+              <LapChecks factory={factory} runId={runId} />
+            </LapFound>
+          )}
         </PanelBody>
       )}
     </LivePanel>
+  );
+}
+
+/** The lap's header and the panels under it, or only the not-found line when there is no lap. */
+export function LapFound({
+  lap,
+  runId,
+  children,
+  now,
+}: {
+  lap: OneLapRow | undefined;
+  runId: string;
+  children: ReactNode;
+  /** A fixed clock, for tests; the screen uses the browser's. */
+  now?: number;
+}): ReactElement {
+  if (lap === undefined) return <NoLap runId={runId} />;
+  return (
+    <div className="grid gap-8">
+      <LapHeaderBody lap={lap} now={now} />
+      {children}
+    </div>
   );
 }
 

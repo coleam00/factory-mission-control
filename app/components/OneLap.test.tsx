@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { createMemoryRouter, RouterProvider } from 'react-router';
 import type { CheckLineRow, OneLapRow, StepAttemptRow } from '../lib/one-lap';
 import Lap from '../routes/f.$factory.laps.$runId';
-import { CheckList, isRunId, LapHeaderBody, StepList } from './OneLap';
+import { CheckList, isRunId, LapFound, LapHeaderBody, StepList } from './OneLap';
 
 function render(element: React.ReactElement): string {
   const router = createMemoryRouter([{ path: '/', element }]);
@@ -176,6 +176,27 @@ test('a lap address that is not a run id shows the id as typed and nothing under
   expect(html).toContain('data-no-lap');
   expect(html).not.toContain('data-live');
   expect(html).not.toContain('No step has started yet.');
+});
+
+test('a well-formed id with no lap in this factory shows only the not-found line', () => {
+  const unknown = '5eed0001-0000-4000-8000-0000000000ff';
+  const html = render(
+    <LapFound lap={undefined} runId={unknown}>
+      <p>No step has started yet.</p>
+    </LapFound>,
+  );
+  expect(html).toContain('data-no-lap');
+  expect(html).toContain(unknown);
+  expect(html).not.toContain('No step has started yet.');
+  expect(html).not.toContain('data-lap=');
+  const found = render(
+    <LapFound lap={refused} runId={RUN} now={0}>
+      <p>No step has started yet.</p>
+    </LapFound>,
+  );
+  expect(found).toContain(`data-lap="${RUN}"`);
+  expect(found).toContain('No step has started yet.');
+  expect(found).not.toContain('data-no-lap');
 });
 
 test('a value the lap never recorded reads in the secondary text, not the tertiary grey', () => {
