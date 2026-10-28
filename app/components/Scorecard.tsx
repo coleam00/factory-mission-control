@@ -124,7 +124,7 @@ export function ScorecardView({
   });
   const columns = versions.length === 2 ? COLUMNS.ab : COLUMNS.a;
   return (
-    <div className="border-t border-border/40">
+    <div className="overflow-hidden rounded-[10px] border border-border bg-surface [&_ol>li:last-child]:border-b-0">
       <div className={`${ROW} ${columns}`}>
         <div className={`${LABEL} hidden md:block`}>Measure</div>
         {versions.map((v) => (

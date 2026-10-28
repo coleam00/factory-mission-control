@@ -87,7 +87,7 @@ export function Timeline({
   entries: readonly TimelineRow[];
 }): ReactElement {
   return (
-    <ol className="border-t border-border/40">
+    <ol className="overflow-hidden rounded-[10px] border border-border bg-surface [&>li:last-child]:border-b-0">
       {entries.map((entry) => (
         <li
           key={`${entry.date} ${entry.title}`}
@@ -168,7 +168,7 @@ export function Ledger({
         {testing.length === 0 ? (
           <p className="text-sm text-text-secondary">No version is awaiting a verdict.</p>
         ) : (
-          <ol className="border-t border-border/40">
+          <ol className="overflow-hidden rounded-[10px] border border-border bg-surface [&>li:last-child]:border-b-0">
             {testing.map((entry) => (
               <li
                 key={entry.pin}
@@ -201,7 +201,7 @@ export function Ledger({
         {verdicts.length === 0 ? (
           <p className="text-sm text-text-secondary">No verdicts recorded yet.</p>
         ) : (
-          <ol className="border-t border-border/40">
+          <ol className="overflow-hidden rounded-[10px] border border-border bg-surface [&>li:last-child]:border-b-0">
             {verdicts.map((entry) => (
               <li
                 key={entry.pin}

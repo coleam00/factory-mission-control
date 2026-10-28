@@ -117,11 +117,11 @@ function KindSection({ kind, diff }: { kind: Kind; diff: KindDiff }): ReactEleme
         {TITLES[kind]} <span className="tabular-nums">{items.length}</span>
       </h2>
       {items.length === 0 ? (
-        <p className="border-t border-border/40 px-[18px] py-[10px] text-[13px] text-text-secondary">
+        <p className="rounded-[10px] border border-border bg-surface px-[18px] py-[10px] text-[13px] text-text-secondary">
           No change.
         </p>
       ) : (
-        <ul className="border-t border-border/40">
+        <ul className="overflow-hidden rounded-[10px] border border-border bg-surface [&>li:last-child]:border-b-0">
           {items.map(({ change, item }) => (
             <Row key={`${change}:${itemLabel(item)}`} change={change} item={item} />
           ))}
