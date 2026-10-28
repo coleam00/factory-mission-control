@@ -449,7 +449,7 @@ export function StepPanel({
 export function AttemptError({ error }: { error: string }): ReactElement {
   const { headline, more } = errorHeadline(error);
   return (
-    <div data-attempt-error className="grid gap-1.5">
+    <div data-attempt-error className="grid min-w-0 gap-1.5">
       <p
         data-error-headline
         className="line-clamp-4 text-[12px] text-text-primary [overflow-wrap:anywhere]"
@@ -466,7 +466,7 @@ export function AttemptError({ error }: { error: string }): ReactElement {
           </summary>
           <pre
             data-error-full
-            className="mt-2 max-h-72 overflow-auto rounded-md border border-border bg-background p-2 font-mono text-[11px] leading-relaxed text-text-secondary whitespace-pre"
+            className="mt-2 max-h-72 overflow-auto rounded-md border border-border bg-background p-2 font-mono text-[11px] leading-relaxed text-text-secondary whitespace-pre-wrap [overflow-wrap:anywhere]"
           >
             {error}
           </pre>
