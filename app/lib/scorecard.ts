@@ -129,6 +129,39 @@ export function isVersionOf(rows: readonly ScorecardRow[], digest: string): bool
   );
 }
 
+/**
+ * The newest version a lap ran, by its first run (mc.versions' `first_run_at`, else its earliest
+ * lap's start), for the scorecard to open on when no version is named; null when no lap ran.
+ */
+export function newestVersionWithLaps(rows: readonly ScorecardRow[]): string | null {
+  const firstRun = new Map<string, number>();
+  const versioned = new Set<string>();
+  for (const row of rows) {
+    if (isVersion(row)) {
+      versioned.add(row.digest);
+      firstRun.set(row.digest, row.first_run_at.getTime());
+    }
+  }
+  const ran = new Set<string>();
+  for (const row of rows) {
+    if (!isRun(row) || row.workflow_name !== LAP_WORKFLOW) continue;
+    ran.add(row.digest);
+    if (versioned.has(row.digest)) continue;
+    const at = row.started_at?.getTime() ?? Number.NEGATIVE_INFINITY;
+    firstRun.set(row.digest, Math.min(at, firstRun.get(row.digest) ?? Number.POSITIVE_INFINITY));
+  }
+  let newest: string | null = null;
+  let newestAt = Number.NEGATIVE_INFINITY;
+  for (const digest of ran) {
+    const at = firstRun.get(digest) ?? Number.NEGATIVE_INFINITY;
+    if (newest === null || at > newestAt || (at === newestAt && digest > newest)) {
+      newest = digest;
+      newestAt = at;
+    }
+  }
+  return newest;
+}
+
 /** How the version strip labels `digest`: its version's first run and pin, if it is a version. */
 export function versionPin(
   rows: readonly ScorecardRow[],

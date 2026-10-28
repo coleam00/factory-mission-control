@@ -84,3 +84,13 @@ test('the screen has no form and no button: it answers nothing, links open GitHu
     expect(source).not.toMatch(/<(form|button|input|select|textarea)\b|fetch\(|onClick|onSubmit/);
   }
 });
+
+test('a question with no default says so in one plain sentence, with no countdown', () => {
+  const open = renderToStaticMarkup(
+    <OwnerList rows={[{ ...question, default_option: null, default_at: null }]} now={NOW} />,
+  );
+  expect(open).toContain('No default: this waits for the owner.');
+  expect(open).not.toContain('applies');
+  expect(open).not.toContain('data-default-option="true">');
+  expect(open).not.toContain('bg-warning"');
+});
