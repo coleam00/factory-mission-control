@@ -8,6 +8,8 @@ export interface Tx {
 
 export interface Db extends Tx {
   transaction(fn: (tx: Tx) => Promise<void>): Promise<void>;
+  /** Pools only: the next transaction dials a new connection; one already running finishes. */
+  dropIdleConnections?(): Promise<void>;
   close(): Promise<void>;
 }
 
@@ -15,16 +17,22 @@ export type OpenDb = (url: string) => Db;
 
 /** Bun's client connects on the first query, so opening is free until something runs. */
 export const openDb: OpenDb = (url) => {
-  const sql = new SQL(url);
+  let sql = new SQL(url);
   const queryOn =
     (client: SQL) =>
     async (text: string, params?: unknown[]): Promise<Row[]> => [
       ...(await (params ? client.unsafe(text, params) : client.unsafe(text))),
     ];
   return {
-    query: queryOn(sql),
+    query: (text, params) => queryOn(sql)(text, params),
     async transaction(fn) {
       await sql.begin((tx) => fn({ query: queryOn(tx) }));
+    },
+    async dropIdleConnections() {
+      const ended = sql;
+      sql = new SQL(url);
+      // close() with no timeout lets a transaction already running on the old pool finish.
+      ended.close().catch(() => {});
     },
     close: () => sql.close(),
   };
