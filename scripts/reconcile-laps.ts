@@ -43,6 +43,8 @@ async function lapRows(tx: Tx, runId: string): Promise<string> {
      UNION ALL SELECT 'lap_steps', to_jsonb(s)::text FROM mc.lap_steps s WHERE run_id = $1
      UNION ALL SELECT 'lap_step_attempts', to_jsonb(a)::text FROM mc.lap_step_attempts a
        WHERE run_id = $1
+     UNION ALL SELECT 'lap_step_attempt_usage', to_jsonb(u)::text FROM mc.lap_step_attempt_usage u
+       WHERE run_id = $1
      UNION ALL SELECT 'app_check_lines', to_jsonb(a)::text FROM mc.app_check_lines a WHERE run_id = $1
      UNION ALL SELECT 'versions', to_jsonb(v)::text FROM mc.versions v
        JOIN mc.laps l ON l.factory = v.factory AND l.digest = v.digest WHERE l.run_id = $1
