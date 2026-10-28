@@ -74,7 +74,13 @@ interface OneLapOnScreen {
     scenario: string | null;
   }[];
   /** Every node of the step graph: its path, what happened to it, and its own attempts. */
-  graph: { path: string | null; state: string | null; attempts: number | null }[];
+  graph: {
+    path: string | null;
+    state: string | null;
+    attempts: number | null;
+    /** A folded block: how many steps it holds, drawn when it is opened. */
+    folded: number | null;
+  }[];
   /** How many times the seed's holdout text marker occurs in the rendered page. */
   markers: number;
 }
@@ -118,6 +124,7 @@ const oneLapOnScreen = `(() => {
       path: attr(b, 'data-graph-step'),
       state: attr(b, 'data-step-state'),
       attempts: num(b, 'data-attempts'),
+      folded: num(b, 'data-folded'),
     })),
     markers: ${markersOnScreen},
   };
@@ -295,8 +302,10 @@ async function seedOneLapMismatches(
        ORDER BY p.committed_at DESC, a.parsed_at DESC LIMIT 1)`,
     [runId],
   );
-  if (shown.graph.length < Number(nodes)) {
-    mismatches.push(`the graph has ${shown.graph.length} nodes, the lap's pin maps ${nodes}`);
+  // A folded block (no step in it ran) stands for the steps it holds until it is opened.
+  const reachable = shown.graph.reduce((n, g) => n + 1 + (g.folded ?? 0), 0);
+  if (reachable < Number(nodes)) {
+    mismatches.push(`the graph reaches ${reachable} nodes, the lap's pin maps ${nodes}`);
   }
 
   const report = [

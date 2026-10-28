@@ -298,3 +298,25 @@ test("with no map stored for any pin, the lap's own steps are drawn in the order
   expect(html).toMatch(/data-graph-step="claim" data-step-state="running"/);
   expect(html).toContain('0:01:00');
 });
+
+test('a block where no step ran is one box with its step count, its steps drawn once opened', () => {
+  const html = render(
+    <LapStepsBody
+      map={{ rows: map, state: 'ready' }}
+      rows={[
+        step({ step_id: 'pick', started_at: new Date('2026-10-25T12:00:00Z') }),
+        step({
+          step_id: 'review',
+          status: 'running',
+          started_at: new Date('2026-10-25T12:05:00Z'),
+        }),
+      ]}
+      now={Date.parse('2026-10-25T12:06:00Z')}
+    />,
+  );
+  expect(html).toMatch(/data-graph-step="ship" data-step-state="skipped"[^>]*data-folded="2"/);
+  expect(html).toContain('skipped · 2 steps');
+  expect(html).not.toContain('data-graph-step="ship/intel"');
+  // Every attempt stays a row under the graph.
+  expect(html.match(/data-step-attempt=/g)).toHaveLength(2);
+});

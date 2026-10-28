@@ -243,3 +243,48 @@ export function laneMarks(steps: readonly string[] | null): LaneMark[] {
     i < last && m.state === 'not-reached' ? { ...m, state: 'skipped' } : m,
   );
 }
+
+/** Whether anything ran at a step in this lap: it finished, runs now, or failed. */
+const ran = (state: StepState | undefined) =>
+  state === 'finished' || state === 'running' || state === 'failed';
+
+export interface FoldedGraph {
+  /** The graph with each folded block's steps taken out: the block is one box. */
+  graph: StepGraph;
+  /** Each folded block's path, and how many steps it holds at every depth. */
+  folded: Map<string, number>;
+}
+
+/**
+ * Folds every include or loop group in which no step ran in this lap into one box, unless the
+ * viewer opened it: a simple-route lap then shows `ship` as one box, not its 70 dimmed steps.
+ * A block with any step that ran stays open, and so does every block around it.
+ */
+export function foldGraph(lap: LapGraph, opened: ReadonlySet<string>): FoldedGraph {
+  const { graph, steps } = lap;
+  const inside = (block: string) => graph.steps.filter((s) => s.id.startsWith(`${block}/`));
+  const folded = new Map<string, number>();
+  for (const block of graph.clusters.keys()) {
+    if (opened.has(block)) continue;
+    if ([...folded.keys()].some((outer) => block.startsWith(`${outer}/`))) continue;
+    const members = inside(block);
+    if (ran(steps.get(block)?.state) || members.some((m) => ran(steps.get(m.id)?.state))) continue;
+    folded.set(block, members.length);
+    // A block folded inside one already folded is gone with it.
+    for (const inner of [...folded.keys()]) {
+      if (inner.startsWith(`${block}/`)) folded.delete(inner);
+    }
+  }
+  if (folded.size === 0) return { graph, folded };
+  const hidden = (id: string) => [...folded.keys()].some((block) => id.startsWith(`${block}/`));
+  return {
+    graph: {
+      steps: graph.steps.filter((s) => !hidden(s.id)),
+      edges: graph.edges.filter((e) => !hidden(e.from) && !hidden(e.to)),
+      clusters: new Map(
+        [...graph.clusters].filter(([block]) => !folded.has(block) && !hidden(block)),
+      ),
+    },
+    folded,
+  };
+}

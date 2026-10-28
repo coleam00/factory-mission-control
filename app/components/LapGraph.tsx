@@ -1,8 +1,9 @@
-import { type ReactElement, useMemo } from 'react';
+import { type ReactElement, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router';
 import { formatCost, formatCount, formatElapsed } from '../lib/format';
 import { type Box, layoutSteps, type StepNode } from '../lib/home-map';
 import {
+  foldGraph,
   type LaneMark,
   type LapGraph,
   type LapStep,
@@ -66,9 +67,24 @@ export function StateMark({ state, size = 14 }: { state: StepState; size?: numbe
 
 const latestStart = (step: LapStep | undefined) => step?.attempts.at(-1)?.started_at ?? null;
 
+/** The step to show on arrival: the one running now, or else the one that ran last. */
+export function focusStep(lap: LapGraph): string | null {
+  const nodes = lap.graph.steps;
+  const running = nodes.filter((n) => lap.steps.get(n.id)?.state === 'running').at(-1);
+  if (running) return running.id;
+  let last: { id: string; at: number } | null = null;
+  for (const n of nodes) {
+    const at = latestStart(lap.steps.get(n.id))?.getTime();
+    if (at !== undefined && (last === null || at >= last.at)) last = { id: n.id, at };
+  }
+  return last?.id ?? null;
+}
+
 /**
  * The lap's steps as the map lays them out, each marked by what happened to it in this lap. A
- * step opens its runs in the side panel.
+ * block in which no step ran is one box until opened. A step opens its runs in the side panel.
+ * On arrival the page scrolls to the step running now (or the last one that ran), unless the
+ * viewer has already scrolled.
  */
 export function LapGraphView({
   lap,
@@ -81,16 +97,40 @@ export function LapGraphView({
   selected: string | null;
   onSelect: (path: string) => void;
 }): ReactElement {
-  const laid = useMemo(() => layoutSteps(lap.graph), [lap.graph]);
-  const running = lap.graph.steps.filter((n) => lap.steps.get(n.id)?.state === 'running').at(-1);
-  const anchor = laid.nodes.get(running?.id ?? lap.graph.steps[0]?.id ?? '');
+  const [opened, setOpened] = useState<ReadonlySet<string>>(new Set());
+  const { graph, folded } = useMemo(() => foldGraph(lap, opened), [lap, opened]);
+  const laid = useMemo(() => layoutSteps(graph), [graph]);
+  const focus = focusStep(lap);
+  const anchor = laid.nodes.get(focus ?? graph.steps[0]?.id ?? '');
   const reached = (path: string) => {
     const state = lap.steps.get(path)?.state;
     return state === 'finished' || state === 'running' || state === 'failed';
   };
+  const frame = useRef<HTMLDivElement>(null);
+  const arrived = useRef(false);
+  useEffect(() => {
+    if (arrived.current || focus === null) return;
+    arrived.current = true;
+    // Only on arrival, and never over a scroll the viewer already made.
+    if (window.scrollY > 0) return;
+    frame.current
+      ?.querySelector(`[data-graph-step="${CSS.escape(focus)}"]`)
+      ?.scrollIntoView({ block: 'center', inline: 'nearest' });
+  }, [focus]);
+  const toggle = (block: string, open: boolean) =>
+    setOpened((was) => {
+      const next = new Set(was);
+      if (open) next.add(block);
+      else next.delete(block);
+      return next;
+    });
   return (
     <GraphViewport label="lap steps" anchorX={anchor ? anchor.x + anchor.width / 2 : 0}>
-      <div className="relative mx-auto" style={{ width: laid.width, height: laid.height }}>
+      <div
+        ref={frame}
+        className="relative mx-auto"
+        style={{ width: laid.width, height: laid.height }}
+      >
         <svg
           aria-hidden="true"
           className="absolute inset-0 overflow-visible"
@@ -110,14 +150,26 @@ export function LapGraphView({
         {[...laid.clusters].map(([parent, box]) => (
           <div
             key={parent}
-            aria-hidden="true"
             className="absolute rounded-lg border border-dashed border-border-bright"
             style={placed(box)}
-          />
+          >
+            {opened.has(parent) ? (
+              <button
+                type="button"
+                data-fold={parent}
+                onClick={() => toggle(parent, false)}
+                aria-label={`Fold ${parent} back into one box`}
+                className={`${MONO} absolute top-1.5 right-1.5 cursor-pointer rounded-md border border-border bg-surface px-2 py-0.5 text-[11px] text-text-secondary hover:text-text-primary`}
+              >
+                Fold
+              </button>
+            ) : null}
+          </div>
         ))}
-        {lap.graph.steps.map((node) => {
+        {graph.steps.map((node) => {
           const box = laid.nodes.get(node.id);
           const step = lap.steps.get(node.id);
+          const hidden = folded.get(node.id);
           return box === undefined || step === undefined ? null : (
             <StepBox
               key={node.id}
@@ -126,7 +178,11 @@ export function LapGraphView({
               box={box}
               now={now}
               selected={selected === node.id}
-              onSelect={onSelect}
+              folded={hidden}
+              onSelect={(path) => {
+                if (hidden !== undefined) toggle(path, true);
+                onSelect(path);
+              }}
             />
           );
         })}
@@ -141,6 +197,7 @@ function StepBox({
   box,
   now,
   selected,
+  folded,
   onSelect,
 }: {
   node: StepNode;
@@ -148,6 +205,8 @@ function StepBox({
   box: Box;
   now: number;
   selected: boolean;
+  /** How many steps the folded block holds; undefined for a step or an open block. */
+  folded?: number;
   onSelect: (path: string) => void;
 }): ReactElement {
   const { state } = step;
@@ -161,14 +220,16 @@ function StepBox({
       data-step-state={state}
       data-attempts={step.attempts.length}
       data-off-map={step.offMap ? 'true' : undefined}
+      data-folded={folded}
       aria-pressed={selected}
+      aria-expanded={folded === undefined ? undefined : false}
       aria-label={`${node.id}: ${STATE_LABEL[state]}${
         elapsed === null ? '' : ` for ${formatElapsed(elapsed)}`
-      }. Show its runs.`}
+      }${folded === undefined ? '. Show its runs.' : `, ${folded} steps inside. Open it.`}`}
       title={`${node.id} · ${STATE_LABEL[state]}${step.offMap ? ' · not on this pin’s map' : ''}`}
       onClick={() => onSelect(node.id)}
       className={`absolute flex cursor-pointer items-center gap-2.5 overflow-hidden rounded-[9px] border px-3 text-left transition-[filter] hover:brightness-125 ${
-        state === 'skipped' || step.offMap ? 'border-dashed' : ''
+        state === 'skipped' || step.offMap || folded !== undefined ? 'border-dashed' : ''
       } ${dim ? 'opacity-55' : ''} ${selected ? 'ring-2 ring-text-primary' : ''}`}
       style={{
         ...placed(box),
@@ -181,7 +242,11 @@ function StepBox({
         <span className="truncate font-mono text-[13px] font-semibold text-text-primary">
           {node.label}
         </span>
-        {elapsed !== null ? (
+        {folded !== undefined ? (
+          <span className="truncate font-mono text-[10px] tabular-nums text-text-secondary">
+            {state === 'skipped' ? 'skipped' : 'not run'} · {folded} steps
+          </span>
+        ) : elapsed !== null ? (
           <span data-elapsed className={`${MONO} text-[11px] text-text-primary`}>
             {formatElapsed(elapsed)}
           </span>
@@ -264,7 +329,9 @@ export function StepPanel({
         <p className="text-sm text-text-secondary">
           {step.state === 'not-reached'
             ? 'The lap has not reached this step.'
-            : 'Archon reports no run of its own for this step: its state is the steps inside it.'}
+            : step.state === 'skipped'
+              ? 'The lap went past this step without running it: its route or depth did not need it.'
+              : 'Archon reports no run of its own for this step: its state is the steps inside it.'}
         </p>
       ) : (
         <ol className="grid gap-3">

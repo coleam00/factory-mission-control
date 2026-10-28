@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test';
-import { type LapMapRow, LANE_STEPS, lapGraph, laneMarks, pathOf } from './lap-graph';
+import { foldGraph, type LapMapRow, LANE_STEPS, lapGraph, laneMarks, pathOf } from './lap-graph';
 import type { StepAttemptRow } from './one-lap';
 
 const row = (path: string, position: number, over: Partial<LapMapRow> = {}): LapMapRow => {
@@ -111,4 +111,42 @@ test('a lane mark the lap went past is skipped; one ahead of it is not reached',
     'check-app': 'running',
     evidence: 'not-reached',
   });
+});
+
+test('a block where no step ran folds into one box counting its steps; one that ran stays open', () => {
+  const map = [
+    row('pick', 1),
+    row('build', 2, { depends_on: ['pick'] }),
+    row('ship', 3, { kind: 'include', depends_on: ['pick'] }),
+    row('ship/intel', 4),
+    row('ship/deliver', 5, { kind: 'include', depends_on: ['intel'] }),
+    row('ship/deliver/implement', 6),
+    row('deploy', 7, { kind: 'include', depends_on: ['build', 'ship'] }),
+    row('deploy/verify', 8),
+  ];
+  const simple = lapGraph(map, [
+    attempt('pick', 0),
+    attempt('build', 1),
+    attempt('deploy__verify', 2, 'running'),
+  ]);
+  const { graph, folded } = foldGraph(simple, new Set());
+  expect([...folded]).toEqual([['ship', 3]]);
+  expect(graph.steps.map((s) => s.id)).toEqual([
+    'pick',
+    'build',
+    'ship',
+    'deploy',
+    'deploy/verify',
+  ]);
+  expect([...graph.clusters.keys()]).toEqual(['deploy']);
+  // Opened by the viewer: ship shows again, and its own untouched block inside it folds.
+  const opened = foldGraph(simple, new Set(['ship']));
+  expect([...opened.folded]).toEqual([['ship/deliver', 1]]);
+  expect(opened.graph.steps.map((s) => s.id)).toContain('ship/intel');
+  // A lap that ran inside ship keeps ship open, and only the inner block that did not run folds.
+  const complex = lapGraph(map, [attempt('pick', 0), attempt('ship__intel', 1, 'running')]);
+  expect([...foldGraph(complex, new Set()).folded]).toEqual([
+    ['ship/deliver', 1],
+    ['deploy', 1],
+  ]);
 });
