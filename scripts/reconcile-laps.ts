@@ -12,10 +12,20 @@
 
 import { parseArgs } from 'node:util';
 import { failing, guardedDatabaseUrl, type Main, runCli } from './lib/cli';
-import type { Db, Tx } from './lib/db';
+import type { Db, Row, Tx } from './lib/db';
 
 /** Thrown to roll back a replay that reproduced the lap's rows, so they are not rewritten. */
 class Agrees extends Error {}
+/** How long one replay waits for a lock before it leaves the run, busy, to the next run. */
+export const REPLAY_LOCK_TIMEOUT = '2s';
+
+/** Postgres's lock_not_available: a lock wait that ran past lock_timeout. Bun SQL puts it in `errno`. */
+const lostLockWait = (error: unknown) =>
+  typeof error === 'object' &&
+  error !== null &&
+  (String((error as { errno?: unknown }).errno) === '55P03' ||
+    String((error as { code?: unknown }).code) === '55P03');
+
 /** Thrown to roll back a replay that lost a lock wait, so the next run tries it again. */
 class Busy extends Error {}
 
@@ -61,6 +71,10 @@ async function lapRows(tx: Tx, runId: string): Promise<string> {
  * trigger recorded for the run.
  */
 async function reproject(tx: Tx, runId: string): Promise<void> {
+  // A lock another session holds, a table lock included, makes this replay busy within
+  // REPLAY_LOCK_TIMEOUT rather than waiting without bound (#221). The projection functions set
+  // their own lock_timeout, so this bounds only this transaction's own statements.
+  await tx.query(`SET LOCAL lock_timeout = '${REPLAY_LOCK_TIMEOUT}'`, []);
   const before = await lapRows(tx, runId);
   const [copied] = await tx.query(PROJECTED_RUN, [runId]);
   const [lastError] = await tx.query(
@@ -154,13 +168,23 @@ export async function reconcileLaps(db: Db): Promise<Reconciled> {
     [],
   );
   // Only read, so no live trigger waits on it: a replay would lock the rows Archon's next write
-  // projects to. Steps are not compared here; the run's next write projects them again.
-  const [live] = await db.query(
-    `SELECT count(*)::int AS n FROM public.remote_agent_workflow_runs r
-       LEFT JOIN mc.laps l ON l.run_id = r.id
-      WHERE r.status IN ${sqlList(LIVE)} AND l.status IS DISTINCT FROM r.status`,
-    [],
-  );
+  // projects to. Steps are not compared here; the run's next write projects them again. The read
+  // waits at most REPLAY_LOCK_TIMEOUT too: when mc.laps is locked (#221) every run is busy.
+  let live: Row | undefined;
+  try {
+    await db.transaction(async (tx) => {
+      await tx.query(`SET LOCAL lock_timeout = '${REPLAY_LOCK_TIMEOUT}'`, []);
+      [live] = await tx.query(
+        `SELECT count(*)::int AS n FROM public.remote_agent_workflow_runs r
+           LEFT JOIN mc.laps l ON l.run_id = r.id
+          WHERE r.status IN ${sqlList(LIVE)} AND l.status IS DISTINCT FROM r.status`,
+        [],
+      );
+    });
+  } catch (error) {
+    if (!lostLockWait(error)) throw error;
+    return { repaired: 0, busy: runs.length, live: 0, failed: [] };
+  }
   const result: Reconciled = { repaired: 0, busy: 0, live: Number(live?.n ?? 0), failed: [] };
   for (const { id } of runs) {
     const runId = String(id);
@@ -168,7 +192,7 @@ export async function reconcileLaps(db: Db): Promise<Reconciled> {
       await db.transaction((tx) => reproject(tx, runId));
       result.repaired++;
     } catch (error) {
-      if (error instanceof Busy) result.busy++;
+      if (error instanceof Busy || lostLockWait(error)) result.busy++;
       else if (!(error instanceof Agrees)) {
         result.failed.push({
           runId,
