@@ -202,6 +202,32 @@ test("a loop group's body steps, named <group>.<step> on every iteration, mark t
   expect(lap.steps.get('ship/rounds')?.state).toBe('running');
 });
 
+test("a loop group Archon skipped, as a simple lap skips ship's rounds, skips its body too", () => {
+  const map = [
+    row('pick', 1),
+    row('ship', 2, { kind: 'include', depends_on: ['pick'] }),
+    row('ship/rounds', 3, { kind: 'loop_group' }),
+    row('ship/rounds/implement', 4),
+    row('ship/rounds/review', 5, { kind: 'include', depends_on: ['implement'] }),
+    row('ship/rounds/review/scope', 6),
+    row('land', 7, { depends_on: ['ship'] }),
+  ];
+  const lap = lapGraph(map, [
+    attempt('pick', 0),
+    attempt('ship__rounds', 1, 'skipped'),
+    attempt('land', 2),
+  ]);
+  for (const path of ['ship', 'ship/rounds', 'ship/rounds/implement', 'ship/rounds/review/scope']) {
+    expect(lap.steps.get(path)?.state).toBe('skipped');
+  }
+  // A lap still in a running rounds keeps the steps ahead of it as not reached.
+  const running = lapGraph(map, [
+    attempt('pick', 0),
+    attempt('ship__rounds.implement', 1, 'running'),
+  ]);
+  expect(running.steps.get('ship/rounds/review/scope')?.state).toBe('not-reached');
+});
+
 test("a lap opens each top-level block it ran, ship's own steps on the fork's lit side", () => {
   const map = [
     row('claim', 1),
