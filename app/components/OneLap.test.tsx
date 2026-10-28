@@ -3,7 +3,8 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { createMemoryRouter, RouterProvider } from 'react-router';
 import type { CheckLineRow, OneLapRow, StepAttemptRow } from '../lib/one-lap';
 import Lap from '../routes/f.$factory.laps.$runId';
-import { CheckList, isRunId, LapFound, LapHeaderBody, StepList } from './OneLap';
+import type { LapMapRow } from '../lib/lap-graph';
+import { CheckList, isRunId, LapFound, LapHeaderBody, LapStepsBody, StepList } from './OneLap';
 
 function render(element: React.ReactElement): string {
   const router = createMemoryRouter([{ path: '/', element }]);
@@ -109,9 +110,34 @@ test('a lap with no review or gate yet says so', () => {
   expect(html).not.toContain('data-link="pr"');
 });
 
+/** The loop at a pin, cut down: pick, then ship holding intel and outcome, then review. */
+const mapRow = (path: string, position: number, over: Partial<LapMapRow> = {}): LapMapRow => {
+  const parts = path.split('/');
+  return {
+    pin: '5ffd60c6c6e591487f2fbb5ec67ccc8fc55ca915',
+    path,
+    parent_path: parts.length === 1 ? null : parts.slice(0, -1).join('/'),
+    position,
+    step_id: parts.at(-1) as string,
+    kind: 'prompt',
+    depends_on: [],
+    detail_workflow: 'archon-loop',
+    detail_path: path,
+    ...over,
+  };
+};
+const map: LapMapRow[] = [
+  mapRow('pick', 1),
+  mapRow('ship', 2, { kind: 'include', depends_on: ['pick'] }),
+  mapRow('ship/intel', 3, { detail_workflow: 'archon-ship-block', detail_path: 'intel' }),
+  mapRow('ship/outcome', 4, { depends_on: ['intel'] }),
+  mapRow('review', 5, { depends_on: ['ship'] }),
+];
+
 test('both attempts of a repeated review show, the running one with its time so far', () => {
   const html = render(
-    <StepList
+    <LapStepsBody
+      map={{ rows: map, state: 'ready' }}
       rows={[
         step({}),
         step({
@@ -126,6 +152,11 @@ test('both attempts of a repeated review show, the running one with its time so 
       now={Date.parse('2026-10-25T13:01:30Z')}
     />,
   );
+  // One node for the step, running, with its time so far; its side panel lists both attempts.
+  expect(html).toMatch(/data-graph-step="review" data-step-state="running" data-attempts="2"/);
+  expect(html).toContain('data-step-panel="review"');
+  expect(html.match(/data-panel-attempt=/g)).toHaveLength(2);
+  // Every attempt is still a row, folded away under the graph.
   expect(html.match(/data-step-attempt=/g)).toHaveLength(2);
   expect(html).toContain('data-started="2026-10-25T12:00:00.000Z"');
   expect(html).toContain('data-started="2026-10-25T13:00:00.000Z"');
@@ -203,4 +234,67 @@ test('a value the lap never recorded reads in the secondary text, not the tertia
   const html = render(<StepList rows={[step({ model: null, cost_usd: null })]} now={0} />);
   expect(html).toContain('<span class="text-text-secondary">none</span>');
   expect(html).not.toContain('text-text-tertiary');
+});
+
+test('each step of the map is a node marked by what happened to it, inner steps inside their box', () => {
+  const at = (minute: number) => new Date(Date.UTC(2026, 9, 25, 12, minute));
+  const html = render(
+    <LapStepsBody
+      map={{ rows: map, state: 'ready' }}
+      rows={[
+        step({ step_id: 'pick', started_at: at(0), outcome: null }),
+        step({ step_id: 'ship__intel', started_at: at(5), outcome: null }),
+        step({
+          step_id: 'ship__outcome',
+          status: 'failed',
+          started_at: at(9),
+          outcome: null,
+          error: 'tests failed',
+        }),
+      ]}
+      now={Date.parse('2026-10-25T13:00:00Z')}
+    />,
+  );
+  const state = (path: string) =>
+    html.match(new RegExp(`data-graph-step="${path}" data-step-state="([a-z-]+)"`))?.[1];
+  expect(state('pick')).toBe('finished');
+  expect(state('ship/intel')).toBe('finished');
+  expect(state('ship/outcome')).toBe('failed');
+  // Archon sends no event of its own for an include: its box takes what happened inside it.
+  expect(state('ship')).toBe('failed');
+  expect(state('review')).toBe('not-reached');
+  expect(html).toContain('The loop at pin 5ffd60c');
+  expect(html).toContain('Click a step to see');
+});
+
+test("a step the pin's map lacks is still drawn, after the step that ran before it", () => {
+  const html = render(
+    <LapStepsBody
+      map={{ rows: map, state: 'ready' }}
+      rows={[
+        step({ step_id: 'pick', started_at: new Date('2026-10-25T12:00:00Z') }),
+        step({ step_id: 'briefs', started_at: new Date('2026-10-25T12:01:00Z') }),
+      ]}
+      now={0}
+    />,
+  );
+  expect(html).toMatch(
+    /data-graph-step="briefs" data-step-state="finished" data-attempts="1" data-off-map="true"/,
+  );
+});
+
+test("with no map stored for any pin, the lap's own steps are drawn in the order they ran", () => {
+  const html = render(
+    <LapStepsBody
+      map={{ rows: [], state: 'ready' }}
+      rows={[
+        step({ step_id: 'pick', started_at: new Date('2026-10-25T12:00:00Z') }),
+        step({ step_id: 'claim', status: 'running', started_at: new Date('2026-10-25T12:01:00Z') }),
+      ]}
+      now={Date.parse('2026-10-25T12:02:00Z')}
+    />,
+  );
+  expect(html).toContain('No map is stored for any pin');
+  expect(html).toMatch(/data-graph-step="claim" data-step-state="running"/);
+  expect(html).toContain('0:01:00');
 });

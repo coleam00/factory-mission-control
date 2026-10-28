@@ -38,6 +38,12 @@ describe('lanes and recent-laps on the seed', () => {
         [lane.run_id],
       );
       expect(lane.cost_usd).toBe(cost.c);
+      const steps = await db.query(
+        `SELECT step_id || ' ' || status AS s FROM mc.lap_steps WHERE run_id = $1
+         ORDER BY started_at NULLS LAST, step_id`,
+        [lane.run_id],
+      );
+      expect(lane.steps).toEqual(steps.map((r) => r.s));
       expect(lane.cost_usd).toBeGreaterThan(0);
     }
   });

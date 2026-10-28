@@ -1,4 +1,4 @@
-import { type ReactElement, type ReactNode, useMemo } from 'react';
+import { type ReactElement, type ReactNode, useEffect, useMemo, useState } from 'react';
 import { formatCost, formatCount, formatElapsed, shortRunId } from '../lib/format';
 import { costOf, durationOf, OUTCOME_LABEL, OUTCOME_TOKEN, since, stepLabel } from '../lib/laps';
 import {
@@ -19,7 +19,9 @@ import {
   type StepAttemptRow,
   VERDICT_TOKEN,
 } from '../lib/one-lap';
-import { LivePanel } from '../live/LivePanel';
+import { type LapMapRow, lapGraph } from '../lib/lap-graph';
+import { LivePanel, type PanelState } from '../live/LivePanel';
+import { LapGraphView, StepPanel } from './LapGraph';
 import { Field, LABEL, MONO, NONE, PanelBody, useNow, utcMinute } from './Lanes';
 
 const CARD = 'rounded-[10px] border border-border bg-surface';
@@ -290,7 +292,23 @@ function Gate({ lap }: { lap: OneLapRow }): ReactElement {
   );
 }
 
-/** Every step the lap ran, each attempt of a repeated step on its own row, and the lap's cost. */
+/** The lap's map rows as its panel last delivered them. */
+interface MapState {
+  rows: readonly LapMapRow[] | undefined;
+  state: PanelState;
+}
+
+/** Hands a panel's rows up to the screen that draws them with another panel's rows. */
+function Lift({ rows, state, onChange }: MapState & { onChange: (map: MapState) => void }): null {
+  useEffect(() => onChange({ rows, state }), [rows, state, onChange]);
+  return null;
+}
+
+/**
+ * Every step of the loop at the lap's pin, drawn as the map draws it and marked by what happened
+ * to it in this lap; a step opens its runs in the side panel. The lap's map and its steps are two
+ * panels subscribed side by side.
+ */
 export function LapSteps({
   factory,
   runId,
@@ -298,23 +316,96 @@ export function LapSteps({
   factory: string | undefined;
   runId: string;
 }): ReactElement {
+  const [map, setMap] = useState<MapState>({ rows: undefined, state: 'loading' });
   return (
-    <LivePanel<StepAttemptRow> query="one-lap-steps" factory={factory} args={[runId]}>
-      {(rows, state) => (
-        <>
-          <h2 className={`${LABEL} mb-3`}>Steps</h2>
-          <PanelBody rows={rows} state={state} factory={factory} what="the steps">
-            {(loaded) =>
-              loaded.length === 0 ? (
-                <p className="text-sm text-text-secondary">No step has started yet.</p>
-              ) : (
-                <StepList rows={loaded} />
-              )
-            }
-          </PanelBody>
-        </>
+    <>
+      <LivePanel<LapMapRow>
+        query="one-lap-map"
+        factory={factory}
+        args={[runId]}
+        className="contents"
+      >
+        {(rows, state) => <Lift rows={rows} state={state} onChange={setMap} />}
+      </LivePanel>
+      <LivePanel<StepAttemptRow> query="one-lap-steps" factory={factory} args={[runId]}>
+        {(rows, state) => (
+          <>
+            <h2 className={`${LABEL} mb-3`}>Steps</h2>
+            <PanelBody rows={rows} state={state} factory={factory} what="the steps">
+              {(loaded) => <LapStepsBody rows={loaded} map={map} />}
+            </PanelBody>
+          </>
+        )}
+      </LivePanel>
+    </>
+  );
+}
+
+/** The graph with its side panel, then every attempt as a row, folded away. */
+export function LapStepsBody({
+  rows,
+  map,
+  now: fixed,
+}: {
+  rows: readonly StepAttemptRow[];
+  map: MapState;
+  /** A fixed clock, for tests; the screen uses the browser's. */
+  now?: number;
+}): ReactElement {
+  const ticking = useNow();
+  const now = fixed ?? ticking;
+  const total = lapCost(rows);
+  // Until a map arrives the graph waits; a map that cannot load leaves the lap's own steps.
+  const mapRows = map.state === 'error' ? [] : map.rows;
+  const lap = useMemo(
+    () => (mapRows === undefined ? undefined : lapGraph(mapRows, rows)),
+    [mapRows, rows],
+  );
+  // undefined: follow the step running now; null: the panel was closed.
+  const [picked, setPicked] = useState<string | null | undefined>(undefined);
+  const running = lap?.graph.steps.filter((n) => lap.steps.get(n.id)?.state === 'running').at(-1);
+  const selected = picked === undefined ? (running?.id ?? null) : picked;
+  return (
+    <div className="grid gap-4">
+      <p className={`${MONO} flex flex-wrap gap-x-5 gap-y-1 text-text-secondary`}>
+        <span>
+          Lap cost{' '}
+          <span data-lap-cost={total ?? 0} className="text-text-primary">
+            {formatCost(total ?? 0)}
+          </span>
+        </span>
+        {rows.length === 0 ? <span>No step has started yet.</span> : null}
+        {lap === undefined ? null : (
+          <span data-lap-pin={lap.pin ?? undefined}>
+            {lap.pin === null
+              ? 'No map is stored for any pin: the steps the lap ran, in the order they started.'
+              : `The loop at pin ${lap.pin.slice(0, 7)}`}
+          </span>
+        )}
+      </p>
+      {lap === undefined ? (
+        <p className="text-sm text-text-secondary">Loading the lap's map.</p>
+      ) : (
+        <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
+          <div className="min-w-0">
+            <LapGraphView lap={lap} now={now} selected={selected} onSelect={setPicked} />
+          </div>
+          <div className="lg:sticky lg:top-4">
+            <StepPanel lap={lap} path={selected} now={now} onClose={() => setPicked(null)} />
+          </div>
+        </div>
       )}
-    </LivePanel>
+      <details className="group">
+        <summary
+          className={`${MONO} w-fit cursor-pointer text-text-secondary underline decoration-dotted underline-offset-2 hover:text-text-primary`}
+        >
+          Every attempt, one row each ({rows.length})
+        </summary>
+        <div className="mt-3">
+          <StepList rows={rows} now={now} />
+        </div>
+      </details>
+    </div>
   );
 }
 
@@ -329,15 +420,8 @@ export function StepList({
   const ticking = useNow();
   const now = fixed ?? ticking;
   const sorted = useMemo(() => attemptsInOrder(rows), [rows]);
-  const total = lapCost(rows);
   return (
     <div className="grid gap-3">
-      <p className={`${MONO} text-text-secondary`}>
-        Lap cost{' '}
-        <span data-lap-cost={total ?? 0} className="text-text-primary">
-          {formatCost(total ?? 0)}
-        </span>
-      </p>
       <ol className={`${CARD} overflow-hidden`}>
         {sorted.map((attempt) => {
           const seconds = attemptSeconds(attempt, now);

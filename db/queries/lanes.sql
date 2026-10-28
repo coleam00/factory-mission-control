@@ -1,7 +1,7 @@
 SELECT l.run_id, l.started_at, c.issue_number, i.title AS issue_title, i.url AS issue_url,
   -- The pick step's route, or else the one the lap's claim comment records (often first).
   coalesce(p.output ->> 'route', c.route) AS route, p.output ->> 'depth' AS depth,
-  s.step_id, s.started_at AS step_started_at, k.cost_usd
+  s.step_id, s.started_at AS step_started_at, k.cost_usd, t.steps
 FROM mc.laps l
 LEFT JOIN LATERAL (
   SELECT c.issue_number, c.route FROM mc.claims c
@@ -21,4 +21,11 @@ LEFT JOIN LATERAL (
 LEFT JOIN LATERAL (
   SELECT sum(a.cost_usd)::float8 AS cost_usd FROM mc.lap_step_attempts a WHERE a.run_id = l.run_id
 ) k ON true
+-- Every step the lap has run and how its latest run stands, `<step id> <status>`, for the lane's
+-- row of loop steps.
+LEFT JOIN LATERAL (
+  SELECT array_agg(ls.step_id || ' ' || ls.status ORDER BY ls.started_at NULLS LAST, ls.step_id)
+    AS steps
+  FROM mc.lap_steps ls WHERE ls.run_id = l.run_id
+) t ON true
 WHERE l.factory = $1 AND l.workflow_name = 'archon-loop' AND l.status = 'running'
