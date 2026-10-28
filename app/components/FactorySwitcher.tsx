@@ -80,7 +80,7 @@ function Entries({
             onClick={() => onChoose(factory)}
             aria-current={factory === current ? 'true' : undefined}
             className={`flex items-center justify-between gap-6 px-3 py-1.5 font-mono text-sm hover:bg-surface-inset ${
-              factory === current ? 'text-text-primary' : 'text-text-secondary'
+              factory === current ? 'text-accent-bright' : 'text-text-secondary'
             }`}
           >
             <span>{factory}</span>
@@ -125,8 +125,11 @@ export function FactorySwitcherBody({
     >
       <summary className="flex cursor-pointer items-center gap-3">
         <span className={LABEL}>Factory</span>
-        <span className="font-mono text-sm text-text-primary [overflow-wrap:anywhere]">
+        <span className="inline-flex items-center gap-1.5 rounded-md border border-[color:var(--accent-muted)] bg-[color:var(--accent-soft)] px-2 py-0.5 font-mono text-sm font-semibold text-accent-bright [overflow-wrap:anywhere]">
           {current ?? '-'}
+          <span aria-hidden="true" className="text-[10px]">
+            ▾
+          </span>
         </span>
       </summary>
       {open ? (

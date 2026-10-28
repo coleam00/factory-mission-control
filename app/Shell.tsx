@@ -21,7 +21,7 @@ export function ForFactory({ screens }: { screens: readonly FactoryScreen[] }): 
     // other factory's name or count shows above it, whatever the address under the key.
     return (
       <>
-        <header className="border-b border-border bg-surface">
+        <header className="border-t-2 border-b border-t-[color:var(--dynamous-blue)] border-b-[color:var(--accent-muted)] bg-surface">
           <FactorySwitcher screens={screens} />
           <section
             data-url-factory={inUrl.view}
@@ -39,7 +39,7 @@ export function ForFactory({ screens }: { screens: readonly FactoryScreen[] }): 
   }
   return (
     <>
-      <header className="border-b border-border bg-surface">
+      <header className="border-t-2 border-b border-t-[color:var(--dynamous-blue)] border-b-[color:var(--accent-muted)] bg-surface">
         <FactorySwitcher screens={screens} />
         <FactoryStrip key={factory} />
         <ScreenNav screens={screens} />

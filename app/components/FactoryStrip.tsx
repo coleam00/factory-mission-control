@@ -83,7 +83,14 @@ export function FactoryStripBody({
       ) : (
         <span className="flex items-center gap-2">
           <span className={LABEL}>Running laps</span>
-          <span data-count={running} className="font-mono text-sm tabular-nums text-text-primary">
+          <span
+            data-count={running}
+            className={`font-mono text-sm font-semibold tabular-nums ${
+              running !== undefined && running > 0
+                ? 'text-[color:var(--running)]'
+                : 'text-text-primary'
+            }`}
+          >
             {running ?? '-'}
           </span>
           {running !== undefined && running > 0 ? <LiveDot size={8} /> : null}
