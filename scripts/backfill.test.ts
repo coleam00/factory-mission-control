@@ -98,13 +98,18 @@ test('backfill on a check branch stores every recorded issue, comment, label, pu
   ]);
 });
 
+const repinnedTo =
+  (sha: string): GetFetch =>
+  (url, init) =>
+    url.includes('/contents/template/factory/pack.json')
+      ? Promise.resolve(Response.json({ integration_revision_required: sha }))
+      : recorded(url, init);
+const pinRows = () =>
+  rows('SELECT sha, archon_sha, reason, hypothesis, measure, committed_at FROM mc.pins');
+
 test('a pin whose pack file pins another version is written without a sha, said so, with the rest', async () => {
   const other = 'f'.repeat(40);
-  const repinned: GetFetch = (url, init) =>
-    url.includes('/contents/template/factory/pack.json')
-      ? Promise.resolve(Response.json({ integration_revision_required: other }))
-      : recorded(url, init);
-  const { code, out } = await run([], 'check-abc', repinned);
+  const { code, out } = await run([], 'check-abc', repinnedTo(other));
   expect(code).toBe(0);
   expect(out).toEqual([
     'mission-control: 3 issues, 2 comments, 3 labels, 1 pull requests',
@@ -112,6 +117,30 @@ test('a pin whose pack file pins another version is written without a sha, said 
     `pin without an Archon sha 85d479ad: pins ${other}, not abd85896`,
   ]);
   expect(await rows('SELECT archon_sha FROM mc.pins')).toEqual([{ archon_sha: null }]);
+});
+
+test('reconcile resolves a pin stored without its Archon sha once its pack file reads, and changes nothing else of it', async () => {
+  await run([], 'check-abc', repinnedTo('f'.repeat(40)));
+  const [unresolved] = await pinRows();
+  expect(unresolved).toMatchObject({ archon_sha: null, reason: expect.any(String) });
+
+  const { code, out } = await run(['--reconcile']);
+  expect(code).toBe(0);
+  expect(out.filter((line) => line.startsWith('pin without'))).toEqual([]);
+  expect(await pinRows()).toEqual([
+    { ...unresolved, archon_sha: 'abd85896e7971c9ac5199ed7e87973f27130250f' },
+  ]);
+});
+
+test('reconcile leaves a pin whose pack file pins another version without a sha, and names it and why', async () => {
+  const other = 'e'.repeat(40);
+  await run([], 'check-abc', repinnedTo('f'.repeat(40)));
+  const stored = await pinRows();
+
+  const { code, out } = await run(['--reconcile'], 'check-abc', repinnedTo(other));
+  expect(code).toBe(0);
+  expect(out.at(-1)).toBe(`pin without an Archon sha 85d479ad: pins ${other}, not abd85896`);
+  expect(await pinRows()).toEqual(stored);
 });
 
 test.each([[[]], [['--reconcile']]])(

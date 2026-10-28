@@ -3,6 +3,7 @@ import { Link } from 'react-router';
 import {
   type Box,
   type FrameNode,
+  foldSteps,
   type HomeMapRow,
   homeMap,
   layoutSteps,
@@ -39,28 +40,43 @@ const placed = (box: Box) => ({ left: box.x, top: box.y, width: box.width, heigh
 
 const lapsOf = (n: number) => `${n} ${n === 1 ? 'lap' : 'laps'}`;
 
-function Step({ node, box }: { node: StepNode; box: Box }): ReactElement {
+/**
+ * A step: a link to its detail. A folded include or loop group is a button instead, showing its
+ * step count and the laps anywhere inside it; a click opens it in place.
+ */
+function Step({
+  node,
+  box,
+  onOpen,
+}: {
+  node: StepNode;
+  /** Where the box is drawn; none for a step a folded block hides. */
+  box?: Box;
+  onOpen?: (block: string) => void;
+}): ReactElement {
   const running = node.liveCount > 0;
   const others = node.factories.filter((f) => !f.current);
   const laps = `${lapsOf(node.liveCount)} on it${
     others.length > 0 ? `; ${others.map((f) => `${f.factory} ${lapsOf(f.laps)}`).join(', ')}` : ''
   }`;
-  return (
-    <Link
-      to={node.href}
-      data-node-role={node.role}
-      data-workflow={node.workflow}
-      data-step={node.id}
-      data-live-count={node.liveCount}
-      aria-label={`${node.label}, ${laps}`}
-      title={`${node.id} · ${node.kind} · ${laps}`}
-      className={`${NODE} absolute transition-colors hover:brightness-110 ${
-        running
-          ? 'border-[color:color-mix(in_oklch,var(--running),transparent_40%)] bg-[color:color-mix(in_oklch,var(--running),transparent_90%)]'
-          : 'border-border-bright bg-surface-elevated'
-      }`}
-      style={placed(box)}
-    >
+  const fold = node.folded;
+  const shared = {
+    'data-node-role': node.role,
+    'data-workflow': node.workflow,
+    'data-step': node.id,
+    'data-live-count': node.liveCount,
+    title: `${node.id} · ${node.kind} · ${laps}`,
+    className: `${NODE} absolute text-left transition-colors hover:brightness-110 ${
+      fold === undefined ? '' : 'cursor-pointer border-dashed'
+    } ${
+      running
+        ? 'border-[color:color-mix(in_oklch,var(--running),transparent_40%)] bg-[color:color-mix(in_oklch,var(--running),transparent_90%)]'
+        : 'border-border-bright bg-surface-elevated'
+    }`,
+    style: box === undefined ? undefined : placed(box),
+  };
+  const body = (
+    <>
       <span
         aria-hidden="true"
         className={`w-3 shrink-0 font-mono text-[15px] font-bold leading-none ${
@@ -79,6 +95,15 @@ function Step({ node, box }: { node: StepNode; box: Box }): ReactElement {
             <span key={index === 0 ? 'first' : 'second'}>{line}</span>
           ))}
         </span>
+        {fold?.notes.map((note) => (
+          <span
+            key={note}
+            data-fold-note
+            className="whitespace-nowrap font-mono text-[11px] leading-[15px] tabular-nums text-text-secondary"
+          >
+            {note}
+          </span>
+        ))}
         {others.length > 0 ? (
           <span
             data-factory-counts
@@ -107,7 +132,23 @@ function Step({ node, box }: { node: StepNode; box: Box }): ReactElement {
           {node.liveCount}
         </span>
       )}
+    </>
+  );
+  return fold === undefined ? (
+    <Link to={node.href} aria-label={`${node.label}, ${laps}`} {...shared}>
+      {body}
     </Link>
+  ) : (
+    <button
+      type="button"
+      data-folded={fold.steps}
+      aria-expanded={false}
+      aria-label={`${node.label}: ${fold.notes.join(', ')}, ${laps}. Show its steps.`}
+      onClick={() => onOpen?.(node.id)}
+      {...shared}
+    >
+      {body}
+    </button>
   );
 }
 
@@ -127,9 +168,13 @@ function Frame({ node }: { node: FrameNode }): ReactElement {
   );
 }
 
-/** A workflow's steps laid out with dagre, each include or loop group boxed with what it nests. */
+/**
+ * A workflow's steps laid out with dagre. Each include or loop group opens folded, one box with its
+ * step count; a click opens it in place, boxed with what it nests, and its Fold button folds it
+ * again. Folded, its steps are in the page, hidden: every link and count is there.
+ */
 function StepGraphView({
-  graph,
+  graph: full,
   label,
   narrow,
 }: {
@@ -137,6 +182,15 @@ function StepGraphView({
   label: string;
   narrow: boolean;
 }): ReactElement {
+  const [opened, setOpened] = useState<ReadonlySet<string>>(new Set());
+  const { graph, hidden } = useMemo(() => foldSteps(full, opened), [full, opened]);
+  const toggle = (block: string, open: boolean) =>
+    setOpened((was) => {
+      const next = new Set(was);
+      if (open) next.add(block);
+      else next.delete(block);
+      return next;
+    });
   const laid = useMemo(() => layoutSteps(graph, narrow), [graph, narrow]);
   const first = laid.nodes.get(graph.steps[0]?.id ?? '');
   return (
@@ -161,15 +215,33 @@ function StepGraphView({
         {[...laid.clusters].map(([parent, box]) => (
           <div
             key={parent}
-            aria-hidden="true"
             className="absolute rounded-lg border border-dashed border-border-bright"
             style={placed(box)}
-          />
+          >
+            <button
+              type="button"
+              data-fold={parent}
+              onClick={() => toggle(parent, false)}
+              aria-label={`Fold ${parent} back into one box`}
+              className="absolute -top-2.5 right-3 cursor-pointer rounded-md border border-border-bright bg-surface px-2 py-0 font-mono text-[11px] leading-[18px] text-text-secondary hover:text-text-primary"
+            >
+              Fold
+            </button>
+          </div>
         ))}
         {graph.steps.map((node) => {
           const box = laid.nodes.get(node.id);
-          return box === undefined ? null : <Step key={node.id} node={node} box={box} />;
+          return box === undefined ? null : (
+            <Step key={node.id} node={node} box={box} onOpen={(block) => toggle(block, true)} />
+          );
         })}
+        {hidden.length === 0 ? null : (
+          <div hidden>
+            {hidden.map((node) => (
+              <Step key={node.id} node={node} />
+            ))}
+          </div>
+        )}
       </div>
     </GraphViewport>
   );
@@ -244,8 +316,8 @@ function Band({ label, children }: { label: string; children: ReactNode }): Reac
 
 /**
  * The factory at the pinned version: what feeds it and the manager above the loop, the loop laid
- * out with dagre, and what it produces below. The loop, each input workflow and the manager show
- * every step their includes expand, at every depth, inside a box per include. Every step shows
+ * out with dagre, and what it produces below. The loop, each input workflow and the manager open
+ * with each include folded to one box, opened in place on a click. Every step shows
  * how many of the factory's laps are on it now, and each other shown factory's laps there under
  * that factory's name, and opens its detail under the workflow that declares it.
  */
