@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, expect, test } from 'bun:test';
+import { afterAll, afterEach, beforeEach, expect, mock, test } from 'bun:test';
 import { readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { archonDb, snapshot } from '../db/test-db';
@@ -13,6 +13,16 @@ import { migrationsDir, readMigrationFiles, runMigrations } from './migrate';
 const responses: Record<string, { link?: string; body: unknown }> = JSON.parse(
   readFileSync(join(REPO_ROOT, 'fixtures', 'github', 'responses.json'), 'utf-8'),
 );
+
+/**
+ * backfill reads the factories it follows from the committed factories.json; these tests follow
+ * the one factory `responses` recorded, whatever that file lists, and give it back when done.
+ */
+const readJson = (path: string) => JSON.parse(readFileSync(join(REPO_ROOT, path), 'utf-8'));
+mock.module('../factories.json', () => ({ default: readJson('fixtures/github/factories.json') }));
+afterAll(() => {
+  mock.module('../factories.json', () => ({ default: readJson('factories.json') }));
+});
 
 let db: Db;
 let requests: { url: string; method: string }[];

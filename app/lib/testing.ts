@@ -181,3 +181,116 @@ export function defaultBranch(rows: readonly DefaultHoldoutRow[]): DefaultBranch
     failing: verdicts.filter((v) => v.verdict === 'FAIL'),
   };
 }
+
+/** The order verdicts take inside a bar or a tile: passing, then failing, then unfinished. */
+const VERDICT_ORDER = ['PASS', 'OK', 'FAIL', 'DEFECT', 'INCOMPLETE', 'SURPRISE', 'QUESTION'];
+
+const verdictOrder = (verdict: string) => {
+  const i = VERDICT_ORDER.indexOf(verdict);
+  return i === -1 ? VERDICT_ORDER.length : i;
+};
+
+const byVerdict = (a: { verdict: string }, b: { verdict: string }) =>
+  verdictOrder(a.verdict) - verdictOrder(b.verdict) || a.verdict.localeCompare(b.verdict);
+
+/** The status a verdict reads as on screen: teal passed, red failed, amber unfinished. */
+export type VerdictTone = 'success' | 'error' | 'warning' | 'neutral';
+
+export function verdictTone(verdict: string): VerdictTone {
+  if (verdict === 'PASS' || verdict === 'OK') return 'success';
+  if (verdict === 'FAIL' || verdict === 'DEFECT') return 'error';
+  if (verdict === 'INCOMPLETE' || verdict === 'SURPRISE' || verdict === 'QUESTION')
+    return 'warning';
+  return 'neutral';
+}
+
+const sum = (groups: readonly { lines: readonly Line[] }[]) =>
+  groups.reduce((n, g) => n + g.lines.length, 0);
+
+/** One app-check kind's lines, by verdict, for one stacked bar. */
+export interface KindBar {
+  kind: string;
+  total: number;
+  /** Passing first, then failing, then unfinished. */
+  verdicts: readonly CheckGroup[];
+}
+
+/** One bar per kind (criterion, holdout, probe, defect), each segmented by verdict. */
+export function kindBars(rows: readonly CheckRow[]): KindBar[] {
+  const bars: KindBar[] = [];
+  for (const group of checkMix(rows)) {
+    const last = bars.at(-1);
+    if (last?.kind === group.kind) {
+      last.verdicts = [...last.verdicts, group].sort(byVerdict);
+      last.total += group.lines.length;
+    } else {
+      bars.push({ kind: group.kind, total: group.lines.length, verdicts: [group] });
+    }
+  }
+  return bars;
+}
+
+/** One holdout scenario's pull-request-time lines, by verdict, for one tile. */
+export interface ScenarioTile {
+  scenario: string;
+  total: number;
+  verdicts: readonly ScenarioGroup[];
+}
+
+/** One tile per scenario id, in number order, `unidentified` last. */
+export function scenarioTiles(rows: readonly CheckRow[]): ScenarioTile[] {
+  const tiles: ScenarioTile[] = [];
+  for (const group of prHoldouts(rows)) {
+    const last = tiles.at(-1);
+    if (last?.scenario === group.scenario) {
+      last.verdicts = [...last.verdicts, group].sort(byVerdict);
+    } else {
+      tiles.push({ scenario: group.scenario, total: 0, verdicts: [group] });
+    }
+  }
+  for (const tile of tiles) tile.total = sum(tile.verdicts);
+  return tiles;
+}
+
+/** The routes and depths the loop names, in the order a reader expects them. */
+export const ROUTES = ['simple', 'continue', 'complex', 'none'] as const;
+export const DEPTHS = ['light', 'normal', 'deep'] as const;
+
+export interface RouteGrid {
+  /** Rows: the four routes, any other route a lap recorded, then null (not picked). */
+  routes: readonly (string | null)[];
+  /** Columns: the three depths, any other depth a lap recorded, then null (not picked). */
+  depths: readonly (string | null)[];
+  /** The laps of one route and depth, newest first; an empty list for an empty cell. */
+  laps: (route: string | null, depth: string | null) => readonly string[];
+  /** The most laps any one cell holds, for shading. */
+  most: number;
+  total: number;
+}
+
+const axis = (named: readonly string[], seen: readonly (string | null)[]) => [
+  ...named,
+  ...[...new Set(seen)]
+    .filter((v): v is string => v !== null && !named.includes(v))
+    .sort((a, b) => a.localeCompare(b)),
+  null,
+];
+
+/** Every lap in a route-by-depth grid: each cell is one group of `routeMix`. */
+export function routeGrid(rows: readonly RouteRow[]): RouteGrid {
+  const groups = routeMix(rows);
+  const cells = new Map(groups.map((g) => [JSON.stringify([g.route, g.depth]), g.laps]));
+  return {
+    routes: axis(
+      ROUTES,
+      groups.map((g) => g.route),
+    ),
+    depths: axis(
+      DEPTHS,
+      groups.map((g) => g.depth),
+    ),
+    laps: (route, depth) => cells.get(JSON.stringify([route, depth])) ?? [],
+    most: Math.max(0, ...groups.map((g) => g.laps.length)),
+    total: rows.length,
+  };
+}

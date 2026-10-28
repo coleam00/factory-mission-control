@@ -108,7 +108,7 @@ export function VersionList({
   const selectable = known.size;
   return (
     <>
-      <ol className="border-t border-border/40">
+      <ol className="overflow-hidden rounded-[10px] border border-border bg-surface [&>li:last-child]:border-b-0">
         {entries.map((entry) => (
           <Entry
             key={entry.digest ?? `pin:${entry.pin}`}
@@ -187,7 +187,7 @@ function Entry({
       data-digest={digest ?? undefined}
       data-pin={entry.pin ?? undefined}
       className={`flex flex-col gap-2 border-b border-border/40 px-[18px] py-[13px] ${
-        selected || targeted ? 'bg-surface-hover ring-2 ring-inset ring-accent-bright/40' : ''
+        selected || targeted ? 'bg-[color:var(--accent-soft)] ring-2 ring-inset ring-selected' : ''
       }`}
     >
       <div className="flex flex-wrap items-center gap-x-[18px] gap-y-1">
