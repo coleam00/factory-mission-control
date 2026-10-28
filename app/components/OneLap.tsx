@@ -192,7 +192,7 @@ export function LapHeaderBody({
           </Field>
           <Field label="Pull request">
             {pr === null ? (
-              (lap.pr ?? NONE)
+              NONE
             ) : (
               <a data-link="pr" href={pullUrl(lap.repository, pr)} className={LINK}>
                 #{pr}
