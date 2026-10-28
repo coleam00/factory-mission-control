@@ -122,13 +122,13 @@ Author: writer, 2026-10-24, first set for the whole release (docs/mission-contro
 ## H-05 A comparison stops saying "not yet meaningful" at exactly 10 laps, live
 Protects: 4.2 comparison rule; invariant 5; journey 3
 Touches: version strip, scorecard comparison
-Setup: the check app with two versions A and B of the factory: A has 12 completed laps, B has 9.
+Setup: the check app with two versions A and B of the factory: A has 12 completed laps, B has 9. A version with 0 laps cannot exist (a version is a digest some `archon-loop` run ran, 4.2 and 11.5), so the fewest-laps version is C: a new digest whose only `archon-loop` lap has just started, inserted as Archon would, with no step completed yet. (Tightened 2026-10-27: the earlier 0-lap C is not a state the product allows.)
 Steps:
 1. Pick A and B on the strip and compare them; record which differences carry "not yet meaningful".
 2. Without a reload, insert, as Archon would, one more completed lap for B (10 laps).
-3. Record the labels again; then compare B against a version C that has 0 laps.
+3. Record the labels again; then compare B against C while C's one lap is still running, and again, without a reload, after that lap completes.
 Expect:
-- With 9 laps on B, every difference is labelled "not yet meaningful"; with 10 on each side, none is; any comparison against C is labelled.
+- With 9 laps on B, every difference is labelled "not yet meaningful"; with 10 on each side, none is; every comparison against C is labelled, both while its lap runs and after it completes, and C's side never shows an error, a blank, NaN or a division by zero where a measure has nothing to rest on yet.
 - The change happens without a reload, within 5 seconds of the lap's completion.
 - Each side shows the lap count it rests on.
 - `judges/scorecard.js` PASS on the recorded comparisons.
@@ -232,15 +232,16 @@ Steps, each as Archon would, checking that each statement commits:
 2. A run row with `metadata` null, and one with no `workflow_source`; a run updated to `completed` twice.
 3. In a second session, take an exclusive lock on every dashboard table the triggers write; then, with `statement_timeout = 2s`, insert a `node_completed` and update a run's status. Release the lock.
 4. Rename one dashboard table the triggers write, insert a `node_started`, and rename it back.
-5. Insert 1,000 `provider_event` rows and check whether any dashboard trigger function ran (for example through `pg_stat_user_functions` with function tracking on).
+5. Measure trigger firings in a way the check branch's own role can read (Neon refuses `SET track_functions`, so `pg_stat_user_functions` is not used): (a) as a positive control, `EXPLAIN (ANALYZE) INSERT` one `node_started` event and note the `Trigger <name>: ... calls=` lines the dashboard's triggers print; (b) in one transaction, `EXPLAIN (ANALYZE) INSERT` 1,000 `provider_event` rows, then 10 rows each of two other event types that are not one of the four step-level events, then read `pg_stat_xact_user_tables` for every dashboard table and for `remote_agent_workflow_events` before `COMMIT`; (c) list every trigger on `remote_agent_workflow_events` from `pg_trigger` (with `pg_get_triggerdef`), noting whether each is row-level and its `WHEN` condition. Note `projection_errors` again.
 6. Insert a normal `node_started` and watch the lanes.
 Expect:
 - Every Archon statement in steps 1 to 5 commits; none waits on the lock (step 3 finishes inside the 2-second timeout) or raises.
 - Every committed Archon statement reads back exactly as written: after step 3 the run's status in Archon is the new status, not the old one (tightened 2026-10-26: H-32 covers every write kind under every lock).
 - `projection_errors` grows for the rows that could not be projected (at least steps 3 and 4) and the trigger never raised.
-- No dashboard trigger function runs for `provider_event` rows.
+- No dashboard trigger function runs for `provider_event` rows, nor for any event type outside the four step-level ones: the positive control in step 5(a) shows the dashboard's trigger with `calls=1`, and step 5(b)'s plans show no dashboard trigger with any call (no `Trigger` line, or `calls=0`); `pg_stat_xact_user_tables` shows the events table's 1,020 inserts and zero inserted, updated or deleted rows on every dashboard table; `projection_errors` is unchanged by step 5; and step 5(c) finds no statement-level trigger on the events table and every row-level one has a `WHEN` that admits only the four step-level event types (11.4). If the positive control shows no trigger line, step 5 is INCONCLUSIVE, never PASS.
 - After step 6, the lanes update within 5 seconds: the projection still works after its own failures.
 Author: writer, 2026-10-24, first set for the whole release (docs/mission-control.prd.md)
+Revised: writer, 2026-10-27, #225 (Neon refuses `SET track_functions` on a check branch, so step 5 always read INCOMPLETE): the function-count measurement is replaced by trigger call counts from `EXPLAIN ANALYZE` with a positive control, transaction-level tuple counts on every dashboard table, and the trigger catalog; it now also covers non-step event types.
 
 ## H-13 The check commands only ever touch `check-*` branches and never `main`
 Protects: invariant 8; 11.3 check branches and migrations
@@ -260,19 +261,21 @@ Author: writer, 2026-10-24, first set for the whole release (docs/mission-contro
 ## H-14 Rewind shows the past on every screen, writes nothing, and live comes back
 Protects: 4.7; journey 5; invariant 5
 Touches: rewind list and switch, every screen
-Setup: the check app. Note a moment T. After T, insert a merged lap for a new digest, label an issue `needs-owner`, and add a claim.
+Setup: the check app. A rewind is cut from the branch it is made from (at the pinned code, `main`), so the after-T data it is judged on must be data that branch holds after T. Reading `main` only (never writing to it, invariant 8), pick T inside the last 7 days on `main`'s own history such that `main` holds, before T, at least one finished lap, and after T, at least one lap Archon started or finished (prefer one with a step event, a merged lap, a version first run after T, and a GitHub fact such as a label, claim or comment recorded after T, where `main` has them). Note, read-only, exactly which of `main`'s laps, versions, step events, labels, claims and comments fall before and after T. If `main` has no lap after T within the last 7 days, the "nothing after T" part is INCONCLUSIVE, never PASS. Separately, on the check branch the dashboard runs on live, after noting T insert a merged lap for a new digest, label an issue `needs-owner`, and add a claim (these judge the return to live, not the rewind).
 Steps:
-1. `bun run rewind:create <T>` and switch the dashboard to the new `rewind-<time>` branch.
-2. Visit every screen: home map, version strip and scorecard, factory page, owner queue, testing, a lap from before T, health.
+1. `bun run rewind:create <T>` and switch the dashboard to the new `rewind-<time>` branch. Note, read-only, any row Archon writes to `main` from here to the end of the run.
+2. Visit every screen: home map, version strip and scorecard, factory page, owner queue, testing, a lap of `main`'s from before T, a lap of `main`'s from after T (by its address), health.
 3. While on the rewind, write a new step event to the live branch, and snapshot the rewind branch's row counts before and after visiting every screen.
 4. Switch back to live and write one more step event.
 5. Try `bun run rewind:create` with a time 8 days ago.
 Expect:
 - On the rewind, every screen shows the data as of T: no lap, version, label or claim from after T; every panel reaches `data-state="ready"`; the screen makes plain it is a rewind and of which moment.
+- Judged against what `main` held, as noted in the setup: every lap, version, step event, label, claim and comment `main` recorded after T is absent from every screen on the rewind (counts, scorecard, version strip, recent laps, owner queue, health), and the after-T lap's address reads as not found at that moment, never its detail; `main`'s before-T lap is there with its detail. No row Archon wrote to `main` after the rewind was made appears on it (if Archon wrote none during the run, that part is INCONCLUSIVE).
 - The live write in step 3 does not appear on the rewind; the rewind branch's row counts do not change.
 - The rewind list shows `rewind-*` branches only (no `check-*`, `fixture` or `main`).
 - Back on live, the after-T data is all there and the step 4 write appears within 5 seconds, without a reload.
 - Step 5 is refused or clearly reports that 7 days is the limit; no branch is made.
+(Tightened 2026-10-27: after-T data is now taken from the branch the rewind is cut from, so a rewind that leaks later data fails.)
 Author: writer, 2026-10-24, first set for the whole release (docs/mission-control.prd.md)
 
 ## H-15 The map and every step detail are exactly the pinned code, and change when the code does
@@ -505,13 +508,13 @@ Author: writer, 2026-10-26, escaped defect #105 (steps inside an included block 
 ## H-29 An include of an include is expanded all the way down, in Archon's order
 Protects: 4.1 (ship expanded into the stages parsed from `archon-ship-block` and its includes); 11.4 (includes expanded the way Archon expands them)
 Touches: architecture job include expansion, home map ordering, step detail
-Setup: a local copy of the pack in which an included block of ship itself includes a block that includes a third block (three levels below ship), each with at least two steps; and one block included from two different places. Parse it as a version alongside the committed pack. Work out by hand, from Archon's own include behaviour, the expanded order and occurrences.
+Setup: a local copy of the pack nested to the deepest include level Archon at the pinned sha actually loads, and no deeper: `archon-loop` includes ship (level 1), an included block of ship includes a second block (level 2), and that block includes a third (level 3), each block with at least two steps (Archon's include limit at the pinned sha is 3 levels from the workflow it is loaded as; if the pinned Archon's own limit reads differently, nest to exactly that limit). Also one block included from two different places, both within the limit, one of them at the deepest level. Before parsing, confirm with Archon's own loader at the pinned sha that it loads the copy without refusing it; if Archon refuses the copy, or no nesting deeper than one block below ship is possible within the limit, the scenario is INCONCLUSIVE, never PASS. Parse it as a version alongside the committed pack. Work out by hand, from Archon's own include behaviour, the expanded order and occurrences. (Tightened 2026-10-27: the earlier setup nested one level past what Archon loads.)
 Steps:
 1. Open the map at that version; record the stages under ship in order.
 2. Click every step at every level, including both places the shared block appears.
 3. Change one sentence in the deepest block's command file, parse again, and open the deepest step's detail at the new version and at the previous one.
 Expect:
-- The map shows every step of every level under ship, in the order and with the occurrences Archon's expansion gives; the deepest block's steps are not missing, collapsed or flattened out of order.
+- The map shows every step of every level under ship, in the order and with the occurrences Archon's expansion gives; the deepest block's steps (at Archon's limit) are not missing, collapsed or flattened out of order, and no included block at any level is shown as one box with no way into its steps.
 - Every step at every level opens its own ready, full detail; the shared block's steps open from both places and show that block's file.
 - After step 3, the deepest step's prompt shows the new sentence at the new version and the old one at the previous version.
 - `judges/step-coverage.js` PASS on a record covering this version.
@@ -912,3 +915,48 @@ Expect:
 - After step 4 the version is relabelled by the late pin (as H-23) and its map, step details and diff follow it: they say C3's architecture is not recorded; they never keep showing C2's under the C3 label.
 - After step 5, within 5 seconds and without a reload, they show C3's architecture.
 Author: writer, 2026-10-26, escaped defect #157 (class: label and architecture are one fact seen twice, so they must always agree)
+
+## H-56 Magenta marks only who we are: nothing you can click, select or focus is ever drawn in it
+Protects: 8.3 design contract (magenta only for identity) and engineering.md Design rule ("magenta is identity only"), as decided by the owner on #27 question 4 (2026-10-27): links, selection, focus and highlighted versions on the Versions screen, and anywhere else, use neutral tokens; magenta only on identity
+Touches: every screen and the shared layout, version strip and comparison, home map (nodes, edges, highlighted steps), factory switcher, rewind controls, links, focus, hover and pressed styles, text selection, live-arriving rows
+Setup: the check app on the seed, with two factories (as in H-17) and at least three versions on the strip. Identity means the product's brand mark and wordmark only; anything else the verifier records as identity needs a line of the product document that makes it so, quoted in the record.
+Steps:
+1. On every screen `judges/identity-color.js` names (`REQUIRED_SCREENS`), at 1440 and 390 px, record the computed styles of every link, button, tab, menu item, map node and edge, version entry, and the brand mark: at rest, hovered, keyboard-focused (reached with Tab, not a click, so `:focus-visible` applies), pressed, and, for anything that can be chosen, selected, selected and hovered, and selected and focused. Open every menu and popover first so their items are recorded open.
+2. On the Versions screen, select one version, then pick two for a comparison; then, without a reload, deliver a pin and a lap of a new digest so a new entry arrives while one is selected, and record the arriving entry and the still-selected one. Select the new one by keyboard only and record it.
+3. Select a run of text in a panel and in a step's prompt text, and record the `::selection` colors.
+4. Hover and focus the brand mark (if it is a link) and record those states.
+5. Repeat steps 1 to 4 with the operating system set to light mode.
+Expect:
+- `bun .factory/holdout/judges/identity-color.js <record.json>` prints PASS: no element other than the brand mark and wordmark shows a color in the identity band in any state, including a translucent magenta focus ring or selection wash; the brand mark's own hover and focus cues are not magenta either.
+- The app stays dark in light mode and the same holds there; no state, open menu or newly arrived entry is an exception.
+Author: writer, 2026-10-27, owner decision on #27 question 4 (tracking #229): the class, a non-identity element drawn in the identity color
+
+## H-57 With magenta gone, you can still tell what is selected, hovered and focused, on every screen
+Protects: 8.3 design contract (identity-only magenta, token colors, every control usable) and engineering.md Design rule, as decided by the owner on #27 question 4 (neutral tokens for selection, focus, links and highlighted versions); 4.2 version strip and comparison
+Touches: version strip and comparison picker, factory switcher, rewind picker, home map step selection, tabs and filters, every link and focus style
+Setup: the record from H-56, or a fresh one taken the same way.
+Steps:
+1. On the Versions screen, with no mouse, Tab to a version entry and select it, Tab on to the next, then hover a third with the mouse: record the selected, focused-unselected, hovered-unselected and selected-and-hovered entries and take a screenshot. Repeat with the two versions picked for a comparison, and with the version currently pinned.
+2. Do the same for the selected factory in the switcher, the selected step on the home map, the chosen rewind moment, and the open tab or filter on any screen that has one.
+3. Turn the step 1 screenshot to grayscale and say which entry is selected, which is focused and which is hovered.
+Expect:
+- `judges/identity-color.js` prints PASS on the record: every color that changes for hover, focus, press or selection is a neutral token (no hue: not magenta, and not a status color borrowed for selection); a link's own color is neutral; a selected entry differs visibly from an unselected one at rest and while hovered, and from a merely hovered one, by a neutral cue (surface, border, weight, underline or a marker); every keyboard focus shows a ring with at least 3:1 contrast against what it sits on.
+- In grayscale the selected version, the comparison pair and the focused entry can each be named without guessing; a selected entry never looks like a hovered one.
+- The design probe still reports zero failures on every screen at both widths.
+Author: writer, 2026-10-27, owner decision on #27 question 4 (tracking #229): edges of the identity-color class (selected against unselected, hover and focus, light-mode OS)
+
+## H-58 Cleaning up old check branches never deletes one a running lap still uses
+Protects: 11.3 runtime contract (`fixture:drop` deletes its own branch and any `check-*` branch older than 3 hours, and refuses anything not `check-*`), as amended by the owner decision on #27 question 6 (2026-10-27): the age cleanup skips any `check-*` branch owned by a run that is still running, and orphans of ended runs are still deleted after 3 hours; invariant 8
+Touches: fixture:branch (how it records a branch's owning run), fixture:drop (`--dry-run --at <time>`), Neon branches
+Setup: Neon credentials for the project, and two checkouts K1 and K2. Using `bun run fixture:branch` the way a lap uses it (so it records the owner the way the product records it; name an owner only by what its documentation or `--help` offers), create: K1's own branch, owned by a run that is running now (the verifier's own run); K2's own branch, owned by another running run; a branch owned by a running run with no checkout of its own; and a branch owned by a run that has ended in Archon (for example a completed `archon-loop` run, read from Archon's runs, never written). Make one more `check-<id>` branch from `fixture` with Neon's own tools, so no owner is recorded. Add the decoys of H-13. Note every branch in the project with its creation time and its owner's state. If `fixture:branch` records no owner at all, this scenario is FAIL: running and ended owners cannot be told apart.
+Steps:
+1. From K1, `bun run fixture:drop -- --dry-run --at <T>` for T = the newest of these branches' creation plus 3 hours 1 minute, T = the oldest's creation plus 2 hours 59 minutes, and T = 100 hours from now.
+2. The same three from K2.
+3. From K1, a real `bun run fixture:drop`, then list the project's branches; then, from K2, a dry run at 100 hours from now again.
+4. Let the run that owns the branch with no checkout end (or create a fresh branch owned by a run that then ends), and repeat a dry run at that branch's creation plus 3 hours 1 minute.
+Record every drop in the shape `judges/drop-cleanup.js` documents.
+Expect:
+- `bun .factory/holdout/judges/drop-cleanup.js <record.json>` prints PASS: each drop names exactly its own checkout's branch plus every other `check-*` branch more than 3 hours old at T whose owner has ended or is not recorded; it never names a branch whose owning run is still running (another checkout's branch included), at any T; just under 3 hours it names nothing but its own branch; it never names anything that is not `check-*`, nor `main`.
+- A dry run deletes nothing. The real run deletes only K1's own branch (and any genuinely old orphan); K2's branch and the other running-owned branch are still there, and K2's serve still works on its branch.
+- After step 4 the newly ended run's branch is named: an ended owner does not protect its orphan.
+Author: writer, 2026-10-27, owner decision on #27 question 6 (tracking #230): edges owner running, owner ended, no owner recorded, this checkout's own branch

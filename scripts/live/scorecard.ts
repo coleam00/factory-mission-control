@@ -139,7 +139,7 @@ async function labelFailures(page: Page, pair: string, meaningful: boolean): Pro
 
 /** V2's merges on the open scorecard (version b) equal `target`. */
 const mergesAre = (target: number) =>
-  `document.querySelector('${SCORECARD} [data-version="b"][data-measure="merges"]')?.getAttribute('data-value') === '${target.toFixed(4)}'`;
+  `document.querySelector('${SCORECARD} [data-version="b"][data-measure="merges"]')?.getAttribute('data-value') === '${target}'`;
 
 /**
  * The scorecard of V1 against V2 and of V1 against V3 against fixtures/expected-scorecard.json,

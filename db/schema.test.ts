@@ -93,7 +93,7 @@ test('gives every table in mc a primary key, one table per family', async () => 
   );
 });
 
-test('keeps holdout tables to ids, verdicts, kinds and pre_existing', async () => {
+test('keeps holdout tables to ids, verdicts, kinds and pre-existing references', async () => {
   const textColumns = await db.query(`
     SELECT table_name, column_name FROM information_schema.columns
     WHERE table_schema = 'mc' AND table_name IN ('holdout_verdicts', 'app_check_lines')
@@ -101,7 +101,7 @@ test('keeps holdout tables to ids, verdicts, kinds and pre_existing', async () =
     ORDER BY table_name, column_name`);
   expect(textColumns).toEqual([
     { table_name: 'app_check_lines', column_name: 'kind' },
-    { table_name: 'app_check_lines', column_name: 'pre_existing' },
+    { table_name: 'app_check_lines', column_name: 'pre_existing_refs' },
     { table_name: 'app_check_lines', column_name: 'scenario_id' },
     { table_name: 'app_check_lines', column_name: 'verdict' },
     { table_name: 'holdout_verdicts', column_name: 'scenario_id' },
@@ -127,6 +127,14 @@ test('refuses holdout text wherever a line could carry it', async () => {
     appCheckLine(1, 'holdout', 'FAIL', 'H-03 the user sees HOLDOUT-TEXT-MARKER'),
   ).rejects.toThrow('app_check_lines_scenario_id_check');
   await expect(appCheckLine(2, 'holdout', 'FAIL', null)).rejects.toThrow('app_check_lines_check');
+  await expect(
+    db.query(
+      `INSERT INTO mc.app_check_lines
+         (run_id, position, kind, verdict, evidence_count, pre_existing, pre_existing_refs)
+       VALUES ($1, 6, 'probe', 'FAIL', 1, true, $2)`,
+      [RUN_ID, ['H-03 the user sees HOLDOUT-TEXT-MARKER']],
+    ),
+  ).rejects.toThrow('app_check_lines_pre_existing_refs_check');
   await expect(appCheckLine(3, 'probe', 'the user sees x', null)).rejects.toThrow(
     'app_check_lines_verdict_check',
   );

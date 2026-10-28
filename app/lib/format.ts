@@ -88,6 +88,22 @@ export function formatCost(usd: number): string {
   return `$${usd.toFixed(decimals).replace(/(\.\d{2}\d*?)0+$/, '$1')}`;
 }
 
+/** A plain number, without trailing zeros: `3`, `1.5`, `0.2667`. Its caller owns the rounding. */
+export function formatNumber(n: number): string {
+  return String(n);
+}
+
+/** A whole count with thousands separators: `12,345`. */
+export function formatCount(n: number | string): string {
+  return Number(n).toLocaleString('en-US');
+}
+
+/** A change, written by `format` with its sign in front: `+1`, `0`, `-$3.10`. */
+export function formatSigned(n: number, format: (size: number) => string): string {
+  const size = format(Math.abs(n));
+  return n > 0 ? `+${size}` : n < 0 ? `-${size}` : size;
+}
+
 /**
  * Compact project subtitle. Prefer the local filesystem path because it's
  * what the user actually navigates to (and what worktrees / artifacts hang

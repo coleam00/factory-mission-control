@@ -1,5 +1,6 @@
 import type { ReactElement } from 'react';
 import { Link } from 'react-router';
+import { formatCost, formatNumber, formatSigned } from '../lib/format';
 import {
   dataValue,
   difference,
@@ -187,15 +188,17 @@ function MeasureRow({
       {versions.map((v) => (
         <MeasureCell key={v.side} measure={measure} version={v} />
       ))}
-      {b ? <Difference a={a.card[measure.key]} b={b.card[measure.key]} /> : null}
+      {b ? (
+        <Difference unit={measure.unit} a={a.card[measure.key]} b={b.card[measure.key]} />
+      ) : null}
     </li>
   );
 }
 
+const written = (unit: Measure['unit']) => (unit === 'usd' ? formatCost : formatNumber);
+
 function shown(measure: Measure, value: number | null): string {
-  if (value === null) return 'n/a';
-  if (measure.unit === 'count') return String(value);
-  return measure.unit === 'usd' ? `$${value.toFixed(4)}` : value.toFixed(4);
+  return value === null ? 'n/a' : written(measure.unit)(value);
 }
 
 function MeasureCell({ measure, version }: { measure: Measure; version: Version }): ReactElement {
@@ -272,9 +275,17 @@ function LapLine({
   );
 }
 
-function Difference({ a, b }: { a: Measured; b: Measured }): ReactElement {
+function Difference({
+  unit,
+  a,
+  b,
+}: {
+  unit: Measure['unit'];
+  a: Measured;
+  b: Measured;
+}): ReactElement {
   const d = difference(a, b);
-  const value = d === null ? 'n/a' : `${d > 0 ? '+' : ''}${dataValue(d)}`;
+  const value = d === null ? 'n/a' : formatSigned(d, written(unit));
   const isMeaningful = meaningful(a, b);
   return (
     <div data-difference={value} data-meaningful={isMeaningful} className="min-w-0">

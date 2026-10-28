@@ -56,10 +56,7 @@ export function PanelBody<Row>({
 /** `2026-10-24 10:00 UTC`: the same moment for every viewer. */
 export const utcMinute = (at: Date) => `${at.toISOString().slice(0, 16).replace('T', ' ')} UTC`;
 
-const costText = (value: number | string | null) => {
-  const cost = costOf(value);
-  return cost === null ? '$0.00' : formatCost(cost);
-};
+const costText = (value: number | string | null) => formatCost(costOf(value) ?? 0);
 
 /** One lane per running lap: its issue, route and depth, the step it is on and since when. */
 export function Lanes({ factory }: { factory: string | undefined }): ReactElement {

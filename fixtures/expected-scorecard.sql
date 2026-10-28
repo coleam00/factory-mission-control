@@ -20,7 +20,7 @@ WITH lap AS (
     (SELECT coalesce(sum(s.cost_usd), 0) FROM mc.lap_steps s WHERE s.run_id = l.run_id) AS cost,
     (SELECT count(*) FROM mc.app_check_lines a
       WHERE a.run_id = l.run_id AND a.kind = 'holdout' AND a.verdict = 'FAIL'
-        AND a.pre_existing = '') AS catches
+        AND NOT a.pre_existing) AS catches
   FROM mc.laps l
   WHERE l.factory = 'mission-control' AND l.workflow_name = 'archon-loop'
 ),

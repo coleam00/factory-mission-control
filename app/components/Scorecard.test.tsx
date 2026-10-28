@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { createMemoryRouter, RouterProvider } from 'react-router';
-import type { ScorecardRow } from '../lib/scorecard';
+import { MEASURES, type ScorecardRow } from '../lib/scorecard';
 import { ScorecardView } from './Scorecard';
 
 const V1 = `sha256:${'a1'.repeat(32)}`;
@@ -65,6 +65,9 @@ function render(rows: ScorecardRow[], a: string | undefined, b?: string): string
   return renderToStaticMarkup(<RouterProvider router={router} />);
 }
 
+/** The number a cell or a difference writes on screen. */
+const shownText = (html: string) => /text-\[13px\][^"]*">([^<]*)</.exec(html)?.[1];
+
 /** Each measure cell: its attributes, its summary's number and the laps it lists. */
 function cells(html: string) {
   const starts = [...html.matchAll(/<div data-version="(a|b)"[^>]*data-measure="/g)];
@@ -75,6 +78,7 @@ function cells(html: string) {
       version: m[1],
       measure: attr('data-measure'),
       value: attr('data-value'),
+      text: shownText(cell),
       laps: Number(attr('data-laps')),
       summary: Number(/<summary[^>]*>(\d+) laps?<\/summary>/.exec(cell)?.[1]),
       listed: (cell.split('</details>')[0].match(/data-lap="/g) ?? []).length,
@@ -89,16 +93,65 @@ const differences = (html: string) =>
     ),
   ].map(([, value, isMeaningful, body]) => ({ value, meaningful: isMeaningful, body }));
 
-test('every measure carries its key, a 4-decimal value and its laps, and lists exactly those laps', () => {
+test('every measure carries its key, its plain value and its laps, and lists exactly those laps', () => {
   const shown = cells(render(laps(V1, 12, 3), V1));
   expect(shown).toHaveLength(12);
   for (const cell of shown) {
-    expect(cell.value).toMatch(/^\d+\.\d{4}$/);
+    expect(cell.value).toMatch(/^\d+(\.\d{1,4})?$/);
     expect(cell.summary).toBe(cell.laps);
     expect(cell.listed).toBe(cell.laps);
   }
-  expect(shown.find((c) => c.measure === 'merges')).toMatchObject({ value: '3.0000', laps: 12 });
-  expect(shown.find((c) => c.measure === 'cost_per_merge')?.value).toBe('2.0000');
+  expect(shown.find((c) => c.measure === 'merges')).toMatchObject({ value: '3', laps: 12 });
+  expect(shown.find((c) => c.measure === 'cost_per_merge')?.value).toBe('2');
+});
+
+test('costs read as the laps screen writes them, counts whole, ratios without trailing zeros', () => {
+  const html = render([...laps(V1, 12, 3), ...laps(V2, 12, 4)], V1, V2);
+  const text = (side: string) =>
+    Object.fromEntries(
+      cells(html)
+        .filter((c) => c.version === side)
+        .map((c) => [c.measure, c.text]),
+    );
+  const changes = Object.fromEntries(
+    differences(html).map((d, i) => [MEASURES[i].key, shownText(d.body)]),
+  );
+  expect(text('a')).toEqual({
+    laps: '12',
+    merges: '3',
+    empty_laps: '0',
+    failed_laps: '0',
+    send_backs: '0',
+    gate_refusals: '9',
+    active_hours: '12',
+    merges_per_active_hour: '0.25',
+    lap_hours_per_merge: '2',
+    app_check_share: '0.0006',
+    cost_per_merge: '$2.00',
+    new_holdout_catches: '0',
+  });
+  expect(text('b')).toMatchObject({
+    merges: '4',
+    gate_refusals: '8',
+    merges_per_active_hour: '0.3333',
+    lap_hours_per_merge: '1.5',
+    cost_per_merge: '$1.50',
+  });
+  expect(changes).toEqual({
+    laps: '0',
+    merges: '+1',
+    empty_laps: '0',
+    failed_laps: '0',
+    send_backs: '0',
+    gate_refusals: '-1',
+    active_hours: '0',
+    merges_per_active_hour: '+0.0833',
+    lap_hours_per_merge: '-0.5',
+    app_check_share: '0',
+    cost_per_merge: '-$0.50',
+    new_holdout_catches: '0',
+  });
+  for (const d of differences(html)) expect(shownText(d.body)).toBe(d.value);
 });
 
 test('a count marks the laps it counted, and a gate refusal shows its reason', () => {
@@ -132,7 +185,7 @@ test('a side under 10 laps labels each difference not yet meaningful; 12 against
     expect(d.meaningful).toBe('true');
     expect(d.body).not.toContain('not yet meaningful');
   }
-  expect(both.find((d) => d.value === '+1.0000')).toBeDefined();
+  expect(both.find((d) => d.value === '+1')).toBeDefined();
 });
 
 test('with no version picked, it is an empty state linking to the versions', () => {
@@ -149,13 +202,13 @@ test('a version no lap ran is still compared: 0 laps, n/a where undefined, not y
   expect(shown).toHaveLength(24);
   const a = shown.filter((c) => c.version === 'a');
   const b = shown.filter((c) => c.version === 'b');
-  expect(a.find((c) => c.measure === 'merges')).toMatchObject({ value: '3.0000', laps: 12 });
+  expect(a.find((c) => c.measure === 'merges')).toMatchObject({ value: '3', laps: 12 });
   for (const cell of b) {
     expect(cell).toMatchObject({ laps: 0, summary: 0, listed: 0 });
   }
   const value = (measure: string) => b.find((c) => c.measure === measure)?.value;
   for (const measure of ['laps', 'merges', 'empty_laps', 'active_hours', 'new_holdout_catches']) {
-    expect(value(measure)).toBe('0.0000');
+    expect(value(measure)).toBe('0');
   }
   for (const measure of [
     'merges_per_active_hour',
@@ -171,12 +224,12 @@ test('a version no lap ran is still compared: 0 laps, n/a where undefined, not y
     expect(d.meaningful).toBe('false');
     expect(d.body).toContain('not yet meaningful');
   }
-  expect(diffs.find((d) => d.value === '-3.0000')).toBeDefined();
+  expect(diffs.find((d) => d.value === '-3')).toBeDefined();
   expect(html).toContain('no lap ran yet');
   // The same with the 0-lap version on side a.
   const flipped = cells(render(rows, V2, V1));
   expect(flipped.filter((c) => c.version === 'a').every((c) => c.laps === 0)).toBe(true);
-  expect(flipped.find((c) => c.version === 'b' && c.measure === 'merges')?.value).toBe('3.0000');
+  expect(flipped.find((c) => c.version === 'b' && c.measure === 'merges')?.value).toBe('3');
 });
 
 test("a digest that is not one of this factory's versions is not found, one sentence and one button", () => {
