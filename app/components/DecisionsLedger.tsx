@@ -112,7 +112,10 @@ export function Timeline({
             <span className={LABEL}>Version</span>
             {entry.pin_sha === null ? (
               <span className={`${MONO} min-w-0 break-all text-text-secondary`}>
-                {entry.version}, no pin by that prefix
+                {entry.version},{' '}
+                {entry.ambiguous
+                  ? 'ambiguous: several pins by that prefix'
+                  : 'no pin by that prefix'}
               </span>
             ) : (
               <Link
@@ -207,21 +210,36 @@ export function Ledger({
           <ol className="overflow-hidden rounded-[10px] border border-border bg-surface [&>li:last-child]:border-b-0">
             {verdicts.map((entry) => (
               <li
-                key={entry.pin}
+                key={`${entry.unmatched ?? 'pin'} ${entry.pin}`}
                 data-ledger-entry
-                data-pin={entry.pin}
+                data-pin={entry.unmatched === null ? entry.pin : undefined}
+                data-prefix={entry.unmatched === null ? undefined : entry.pin}
+                data-unmatched={entry.unmatched ?? undefined}
                 data-verdict={entry.verdict}
                 data-sentence={entry.sentence}
                 className={ROW}
               >
                 <div className="flex flex-wrap items-baseline gap-x-[18px] gap-y-1">
-                  <span className={`${MONO} text-text-secondary`}>{entry.pin.slice(0, 8)}</span>
+                  {entry.unmatched === null ? (
+                    <span className={`${MONO} text-text-secondary`}>{entry.pin.slice(0, 8)}</span>
+                  ) : (
+                    <span className={`${MONO} min-w-0 break-all text-text-secondary`}>
+                      {entry.pin},{' '}
+                      {entry.unmatched === 'ambiguous'
+                        ? 'ambiguous: several pins by that prefix'
+                        : 'no pin by that prefix'}
+                    </span>
+                  )}
                   <span className={`${BADGE} ${VERDICT_CLASS[entry.verdict]}`}>
                     {entry.verdict}
                   </span>
                   <span className={`${MONO} ml-auto text-text-secondary`}>{entry.date}</span>
                 </div>
-                <p className="min-w-0 break-words text-[13px] text-text-primary">{entry.reason}</p>
+                {entry.unmatched === null ? (
+                  <p className="min-w-0 break-words text-[13px] text-text-primary">
+                    {entry.reason}
+                  </p>
+                ) : null}
                 <p className="min-w-0 break-words text-[13px] text-text-secondary">
                   {entry.sentence}
                 </p>

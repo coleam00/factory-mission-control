@@ -99,6 +99,18 @@ async function seedVersionMismatches(
       }
     }
   });
+  // The seed's V3 is a bare `Pin Archon <sha>` (#178): listed, its reason not recorded.
+  const reasonless = versions.filter((v) => v.sha !== null && v.reason === null);
+  const reasonlessShown = shown.filter((e) => reasonless.some((v) => v.sha === e.pin));
+  if (
+    reasonless.length === 0 ||
+    reasonlessShown.length !== reasonless.length ||
+    reasonlessShown.some((e) => e.reason !== 'not recorded')
+  ) {
+    mismatches.push(
+      `the seed's pins with no reason (${reasonless.map((v) => v.sha).join(', ') || 'none'}) are not all listed as not recorded`,
+    );
+  }
   const report = [
     'screen:',
     ...shown.map((e) => `  ${JSON.stringify(e)}`),

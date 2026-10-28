@@ -3,7 +3,8 @@
 
 export interface Pin {
   archonSha: string;
-  reason: string;
+  /** Null for a bare `Pin Archon <sha>` subject, which many real pins are (#178). */
+  reason: string | null;
   hypothesis: string | null;
   measure: string | null;
 }
@@ -26,12 +27,12 @@ function trailer(lines: string[], key: string): string | null {
 
 export function parsePin(message: string): Pin | null {
   const lines = message.trim().split(/\r?\n/);
-  const subject = /^Pin Archon ([0-9a-f]{7,40}): (.+?)\s*$/.exec(lines[0] ?? '');
-  if (!subject?.[1] || !subject[2]) return null;
+  const subject = /^Pin Archon ([0-9a-f]{7,40})(?::\s*(.*?))?\s*$/.exec(lines[0] ?? '');
+  if (!subject?.[1]) return null;
   const body = lines.slice(1);
   return {
     archonSha: subject[1],
-    reason: subject[2],
+    reason: subject[2] ? subject[2] : null,
     hypothesis: trailer(body, 'Hypothesis'),
     measure: trailer(body, 'Measure'),
   };
