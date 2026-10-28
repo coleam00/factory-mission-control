@@ -29,8 +29,13 @@ import {
 
 const LAPS_QUERIES = ['lanes', 'recent-laps'] as const;
 const RECENT_LAP = '[data-live="recent-laps"] [data-recent-lap]';
-const laneOn = (runId: string, step: string) =>
-  `document.querySelector('[data-live="lanes"] [data-lane="${runId}"]')?.getAttribute('data-step') === '${step}'`;
+/** The lane names the step, and its row of loop steps pulses that step's top-level mark. */
+const laneOn = (runId: string, step: string) => {
+  const lane = `[data-live="lanes"] [data-lane="${runId}"]`;
+  const top = step.split('__')[0];
+  const mark = top === 'build' || top === 'ship' ? 'build/ship' : top;
+  return `document.querySelector('${lane}')?.getAttribute('data-step') === '${step}' && document.querySelector('${lane} [data-loop-mark="${mark}"]')?.getAttribute('data-step-state') === 'running'`;
+};
 
 type PerLapsQuery = Record<(typeof LAPS_QUERIES)[number], number | null>;
 
@@ -54,6 +59,8 @@ interface LapsOnScreen {
     depth: string | null;
     step: string | null;
     cost: number;
+    /** The marks of the lane's row of loop steps that pulse. */
+    runningMarks: string[];
   }[];
   recent: {
     run: string;
@@ -83,6 +90,9 @@ const lapsOnScreen = `(() => {
       depth: li.getAttribute('data-depth'),
       step: li.getAttribute('data-step'),
       cost: Number(li.getAttribute('data-cost')),
+      runningMarks: [...li.querySelectorAll('[data-loop-mark][data-step-state="running"]')].map(
+        (m) => m.getAttribute('data-loop-mark'),
+      ),
     })),
     recent: [...document.querySelectorAll('${RECENT_LAP}')].map((li) => ({
       run: li.getAttribute('data-recent-lap'),
@@ -124,6 +134,10 @@ async function seedLapsMismatches(
      ORDER BY 1`,
     [factory],
   );
+  const markOf = (step: string) => {
+    const top = step.split('__')[0];
+    return top === 'build' || top === 'ship' ? 'build/ship' : top;
+  };
   const lanesSql = running.map((r) => ({
     run: String(r.run),
     issue: r.issue === null ? null : Number(r.issue),
@@ -131,6 +145,7 @@ async function seedLapsMismatches(
     depth: r.depth,
     step: r.step,
     cost: Number(r.cost),
+    runningMarks: r.step === null ? [] : [markOf(String(r.step))],
   }));
   if (lanesSql.length !== 2) mismatches.push(`the seed has ${lanesSql.length} running laps, not 2`);
   same('lanes', byRun(shown.lanes), lanesSql);

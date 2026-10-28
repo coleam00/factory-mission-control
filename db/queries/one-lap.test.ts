@@ -162,10 +162,86 @@ describe('one-lap on the seed', () => {
     await reviewEvent('node_completed', '2026-10-25T13:20:00Z');
     const shown = (await reviews()).sort((a, b) => Number(a.started_at) - Number(b.started_at));
     expect(shown.map((r) => [r.status, r.started_at, r.model, r.tokens_input])).toEqual([
-      ['completed', new Date(Date.parse('2026-10-25T12:20:00Z') - 184_250), null, null],
+      // Each attempt shows what Archon recorded for it, the earlier one too (#201).
+      ['completed', new Date(Date.parse('2026-10-25T12:20:00Z') - 184_250), 'sonnet', 48_210],
       ['completed', new Date(Date.parse('2026-10-25T13:20:00Z') - 184_250), 'sonnet', 48_210],
     ]);
     expect(shown.reduce((sum, r) => sum + Number(r.cost_usd), 0)).toBeCloseTo(0.8426);
+    expect(await errors()).toEqual(before);
+  });
+  test("one-lap-map: the loop at the lap's own pin, every node, each with its own screen", async () => {
+    const pinOf = async (runId: string) => {
+      const rows = await lap('one-lap-map', runId);
+      return { rows, pins: [...new Set(rows.map((r) => r.pin))] };
+    };
+    // A lap of 10-01 ran under the pin of 09-30.
+    const first = await pinOf(LAP_RUN);
+    expect(first.pins).toEqual(['8e3e1cefaf1e1b7955789d6a43a81b6c2dbd7082']);
+    const [{ n }] = await db.query(
+      `SELECT count(*)::int AS n FROM mc.arch_steps
+       WHERE workflow = 'archon-loop' AND archon_sha = 'abd85896e7971c9ac5199ed7e87973f27130250f'`,
+    );
+    expect(first.rows).toHaveLength(n as number);
+    const intel = first.rows.find((r) => r.path === 'ship/intel');
+    expect(intel).toMatchObject({ parent_path: 'ship', detail_path: 'intel' });
+    expect(intel?.detail_workflow).not.toBe('archon-loop');
+    // The running lap's pin of 10-19 has no architecture stored: the newest one before it is used.
+    expect((await pinOf(running)).pins).toEqual(['5ffd60c6c6e591487f2fbb5ec67ccc8fc55ca915']);
+    // No lap, no rows; another factory's lap is not this factory's.
+    expect(await lap('one-lap-map', '5eed0001-0000-4000-8000-0000000000ff')).toEqual([]);
+    expect(await lap('one-lap-map', LAP_RUN, 'second-factory')).toEqual([]);
+  });
+  test('each attempt of a step run twice shows its own model and tokens, none only where none', async () => {
+    const before = await errors();
+    const event = (type: string, at: string, data: object) =>
+      db.query(
+        `INSERT INTO remote_agent_workflow_events (workflow_run_id, event_type, step_name, data, created_at)
+         VALUES ($1, $2, 'check-app', $3::jsonb, $4)`,
+        [running, type, JSON.stringify(data), at],
+      );
+    const timing = (at: string) => ({ timing: { startedAt: at, durationMs: 60_000 } });
+    // First run: the model only on its start, tokens on its finish.
+    await event('node_started', '2026-10-25T14:00:00Z', {
+      ...timing('2026-10-25T14:00:00Z'),
+      model: 'haiku',
+    });
+    await event('node_completed', '2026-10-25T14:01:00Z', {
+      ...timing('2026-10-25T14:00:00Z'),
+      tokens: { input: 1000, output: 100 },
+      cost_usd: 0.01,
+    });
+    // Second run: a resolved model on its finish, other tokens.
+    await event('node_started', '2026-10-25T15:00:00Z', {
+      ...timing('2026-10-25T15:00:00Z'),
+      model: 'sonnet',
+    });
+    await event('node_completed', '2026-10-25T15:01:00Z', {
+      ...timing('2026-10-25T15:00:00Z'),
+      model_usage: { resolved: 'opus' },
+      tokens: { input: 2000, output: 200, cacheRead: 50 },
+      cost_usd: 0.02,
+    });
+    // Third run: Archon recorded no model and no tokens.
+    await event('node_started', '2026-10-25T16:00:00Z', timing('2026-10-25T16:00:00Z'));
+    await event('node_completed', '2026-10-25T16:01:00Z', timing('2026-10-25T16:00:00Z'));
+    const shown = (await lap('one-lap-steps', running))
+      .filter(
+        (s) =>
+          s.step_id === 'check-app' && Number(s.started_at) >= Date.parse('2026-10-25T14:00:00Z'),
+      )
+      .sort((a, b) => Number(a.started_at) - Number(b.started_at))
+      .map((r) => [
+        r.model,
+        r.tokens_input,
+        r.tokens_output,
+        r.tokens_cache_read,
+        Number(r.cost_usd),
+      ]);
+    expect(shown).toEqual([
+      ['haiku', 1000, 100, null, 0.01],
+      ['opus', 2000, 200, 50, 0.02],
+      [null, null, null, null, 0],
+    ]);
     expect(await errors()).toEqual(before);
   });
 });

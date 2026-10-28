@@ -30,6 +30,8 @@ import {
 } from './timings';
 
 const CLICKED_STEP = 'check-app';
+/** A step of the loop on the map: paths repeat across workflows (`briefs`). */
+const LOOP_STEP = `${MAP} [data-workflow="archon-loop"]`;
 
 export async function observeHomePanels(
   page: Page,
@@ -71,7 +73,7 @@ interface Timings extends PanelTimings {
 }
 
 const liveCountOf = (step: string) =>
-  `document.querySelector('${MAP} [data-step="${step}"]')?.getAttribute('data-live-count')`;
+  `document.querySelector('${LOOP_STEP}[data-step="${step}"]')?.getAttribute('data-live-count')`;
 
 /** The home screen: the factory strip's inserted laps and the map's lap step events. */
 export function homePhase(ctx: LiveContext): LivePhase {
@@ -113,6 +115,16 @@ export function homePhase(ctx: LiveContext): LivePhase {
         ),
       );
       ctx.failures.push(...mapMismatches(await mapNodes(page), await lapsOnNodes(db, factory)));
+      // The inputs and the manager open folded, one card each, so the loop opens above the fold.
+      const cards = await page.evaluate<string[]>(
+        `[...document.querySelectorAll('${MAP} [data-workflow-card]')].map((c) => c.getAttribute('data-workflow-card') + ' ' + c.getAttribute('data-folded'))`,
+      );
+      const expectedCards = ['archon-backlog true', 'archon-holdouts true', 'archon-manager true'];
+      if (JSON.stringify([...cards].sort()) !== JSON.stringify(expectedCards)) {
+        ctx.failures.push(
+          `the map's workflow cards are ${JSON.stringify(cards)}, not ${JSON.stringify(expectedCards)}`,
+        );
+      }
       writeFileSync(join(outDir, 'home-map.png'), await page.screenshot(1440));
       onLiveStep = Number(await page.evaluate<string>(liveCountOf(LIVE_STEP)));
     },
@@ -152,7 +164,9 @@ export function homePhase(ctx: LiveContext): LivePhase {
       await ctx.lapStep(secondLap, true);
 
       const target = `/steps/archon-loop/${CLICKED_STEP}`;
-      await page.evaluate(`document.querySelector('${MAP} [data-step="${CLICKED_STEP}"]').click()`);
+      await page.evaluate(
+        `document.querySelector('${LOOP_STEP}[data-step="${CLICKED_STEP}"]').click()`,
+      );
       await page.evaluate<boolean>(pageWait(`location.pathname === '${target}'`, 2000));
       mapTimings.clickedTo = await page.evaluate<string>('location.pathname');
       if (mapTimings.clickedTo !== target) {

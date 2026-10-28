@@ -53,6 +53,7 @@ const step = (
   kind: 'command',
   depends_on: [],
   detail_workflow: 'wf',
+  detail_path: path,
   lap_factory,
   laps,
   is_current,
@@ -96,6 +97,48 @@ test("another listed factory's laps show under its name, the address factory fir
   expect(counted('/steps/wf/theirs')).toEqual(['north-star 1']);
   expect(linkIn(html, '/steps/wf/ours')).not.toContain('data-factory-counts');
   expect(html).not.toContain('unlisted');
+});
+
+test("an input workflow shows its own steps, each opening that workflow's step", () => {
+  const html = render(
+    [
+      step('first', 0),
+      { ...step('briefs', 0), role: 'input', workflow: 'wf-in', detail_workflow: 'wf-in' },
+      { ...step('verify', 1), role: 'input', workflow: 'wf-in', detail_workflow: 'wf-in' },
+    ],
+    'ready',
+  );
+  for (const path of ['briefs', 'verify']) {
+    const link = linkIn(html, `/steps/wf-in/${path}`);
+    expect(link).toContain('data-workflow="wf-in"');
+    expect(link).toContain(`data-step="${path}"`);
+  }
+  expect(linkIn(html, '/steps/wf/first')).toContain('data-workflow="wf"');
+});
+
+test('an input or manager workflow opens folded: one card with its step count, its steps hidden', () => {
+  const html = render(
+    [
+      step('first', 0),
+      { ...step('briefs', 0), role: 'input', workflow: 'wf-in', detail_workflow: 'wf-in' },
+      { ...step('verify', 1), role: 'input', workflow: 'wf-in', detail_workflow: 'wf-in' },
+      { ...step('manage', 0), role: 'manager', workflow: 'wf-mgr', detail_workflow: 'wf-mgr' },
+    ],
+    'ready',
+  );
+  for (const [card, steps] of [
+    ['wf-in', '2 steps'],
+    ['wf-mgr', '1 step'],
+  ]) {
+    expect(html).toMatch(
+      new RegExp(`data-workflow-card="${card}" data-folded="true" data-live-count="0"`),
+    );
+    expect(html).toContain(`aria-label="${card}: ${steps}, 0 running. Show its steps."`);
+  }
+  expect(html).toContain('aria-expanded="false"');
+  // The loop is never folded; a card's steps are in the page, inside a hidden block.
+  expect(html.split('<div hidden=""').length - 1).toBe(2);
+  expect(linkIn(html, '/steps/wf/first')).toContain('data-workflow="wf"');
 });
 
 /** Every step id in the pinned pack's archon-loop, at every depth. */

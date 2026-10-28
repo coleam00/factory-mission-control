@@ -129,3 +129,22 @@ test('until the factory is known only the home link shows', () => {
   );
   expect(links(html)).toEqual([{ href: '/', name: 'Map', current: true }]);
 });
+
+test("a lap's page marks Laps as current, and a step's page marks the Map, one link only", () => {
+  const lap = links(
+    navAt(registeredRoutes(), `/f/${FACTORY}/laps/5eed0001-0000-4000-8000-000000000003`).html(),
+  );
+  expect(lap.filter((l) => l.current).map((l) => l.href)).toEqual([`/f/${FACTORY}/laps`]);
+  for (const step of ['/steps/archon-loop/build', '/steps/archon-ship-block/intel']) {
+    const found = links(navAt(registeredRoutes(), step).html());
+    expect(found.filter((l) => l.current).map((l) => l.name)).toEqual(['Map']);
+  }
+  // Every screen still marks itself alone.
+  for (const screen of ['laps', 'scorecard', 'issues', 'testing']) {
+    const found = links(navAt(registeredRoutes(), `/f/${FACTORY}/${screen}`).html());
+    expect(found.filter((l) => l.current).map((l) => l.href)).toEqual([`/f/${FACTORY}/${screen}`]);
+  }
+  expect(links(navAt(registeredRoutes(), `/f/${FACTORY}`).html()).filter((l) => l.current)).toEqual(
+    [{ href: `/f/${FACTORY}`, name: 'Map', current: true }],
+  );
+});

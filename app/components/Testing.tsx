@@ -37,6 +37,9 @@ const toneOf = (verdict: string) => `var(${TONE[verdictTone(verdict)]})`;
 const tint = (color: string, percent: number) =>
   `color-mix(in oklch, ${color} ${percent}%, transparent)`;
 
+/** The route grid's shades by lap count, as tokens: no lap has the darkest, the most the brightest. */
+const HEAT = ['--surface-elevated', '--surface-hover', '--border', '--border-bright'] as const;
+
 const plural = (n: number, noun: string) => `${n} ${n === 1 ? noun : `${noun}s`}`;
 
 /** The words a tile or segment is read by: `17 PASS, 1 FAIL`. */
@@ -533,7 +536,11 @@ function RouteRowCells({
               popoverTarget={popover}
               aria-label={`${routeName} route, ${depthName} depth: ${plural(laps.length, 'lap')}. Open them.`}
               className="h-9 w-full cursor-pointer rounded-md border border-border font-semibold text-text-primary transition-colors hover:border-border-bright"
-              style={{ background: tint('var(--text-primary)', Math.round(5 + 23 * share)) }}
+              // Solid surface tokens, darkest to brightest: a see-through tint of an achromatic
+              // token computes to a colour with no hue, which the design probe cannot match.
+              style={{
+                background: `var(${HEAT[Math.min(HEAT.length - 1, Math.floor(share * HEAT.length))]})`,
+              }}
             >
               {laps.length}
             </button>

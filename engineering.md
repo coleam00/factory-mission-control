@@ -61,6 +61,10 @@ How this repository is built. The product is `docs/mission-control.prd.md`; this
   `#047857`, `#B45309` and `#B91C1C` are the `--*-strong` tokens). Magenta is not used. Data in Geist Mono with tabular
   numbers; section labels mono, uppercase, tracked. Empty states are one sentence and at most one
   button.
+- Use a table only for a list of records a person scans row by row (recent laps, scorecard
+  comparison, decisions ledger). Counts, distributions, status across many items and progress are
+  drawn: bars, grids, tiles, graphs (owner decision, #241). A drawn section keeps every number and
+  link the table had, as text beside the drawing, and its live updates.
 - Tests sit next to the code they test (`*.test.ts`). Parsers are tested on the literal examples in
   the PRD's appendix and on `fixtures/pack/`.
 - Stop every process you start by its process id; never kill by name.
