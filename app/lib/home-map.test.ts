@@ -1,5 +1,12 @@
 import { expect, test } from 'bun:test';
-import { type Box, type HomeMapRow, homeMap, layoutSteps, reduceEdges } from './home-map';
+import {
+  type Box,
+  type HomeMapRow,
+  homeMap,
+  layoutSteps,
+  reduceEdges,
+  stepLabelLines,
+} from './home-map';
 
 const workflow = (role: 'input' | 'manager', name: string): HomeMapRow => ({
   role,
@@ -304,4 +311,28 @@ test('the layout places every step apart, and the box around its own step and it
     expect([id, within(laid.nodes.get(id), laid.clusters.get('b'))]).toEqual([id, true]);
   }
   expect(laid.edges.every((e) => e.d.startsWith('M'))).toBe(true);
+});
+
+test('a step name is shown whole: one line up to 16 characters, else two split at a separator', () => {
+  expect(stepLabelLines('build')).toEqual(['build']);
+  expect(stepLabelLines('update-pr-body')).toEqual(['update-pr-body']);
+  expect(stepLabelLines('review-completeness')).toEqual(['review-', 'completeness']);
+  expect(stepLabelLines('a-much-longer-step-name')).toEqual(['a-much-longer-', 'step-name']);
+  expect(stepLabelLines('averyveryverylongstepname')).toEqual(['averyveryverylongstepname']);
+});
+
+test('each step box is wide enough for its longest name line, and taller for a second line', () => {
+  const names = ['build', 'update-pr-body', 'review-completeness', 'averyveryverylongstepname'];
+  const map = homeMap(
+    names.map((name, i) => step(name, i, i === 0 ? [] : [names[i - 1] as string])),
+    SHOWN,
+  );
+  const laid = layoutSteps(map.loop);
+  for (const name of names) {
+    const box = laid.nodes.get(name) as Box;
+    const lines = stepLabelLines(name);
+    // 96px beside the label, 8px per 13px Geist Mono character.
+    expect(box.width).toBeGreaterThanOrEqual(96 + Math.max(...lines.map((l) => l.length)) * 8);
+    expect(box.height).toBe(lines.length === 1 ? 46 : 63);
+  }
 });

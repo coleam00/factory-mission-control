@@ -223,6 +223,31 @@ export function homeMap(rows: readonly HomeMapRow[], shown: readonly string[]): 
 
 const NODE_W = 168;
 const NODE_H = 46;
+/** The 13px Geist Mono label's advance per character, rounded up so a name never clips. */
+const CHAR_W = 8;
+/** Room a step's box keeps beside its label: padding, kind glyph, gaps, live dot and count. */
+const LABEL_RESERVE = 96;
+/** The longest name kept on one line; a longer one breaks onto two. */
+const ONE_LINE_MAX = 16;
+/** Each label line past the first adds this much height. */
+const LINE_H = 17;
+
+/**
+ * A step's name as the lines its box shows, in full: one line up to ONE_LINE_MAX characters,
+ * otherwise two, split after the `-`, `_`, `.` or `/` that leaves the longer line shortest. A
+ * name with no such separator stays on one line and its box widens to fit it.
+ */
+export function stepLabelLines(label: string): string[] {
+  if (label.length <= ONE_LINE_MAX) return [label];
+  let best: number | null = null;
+  for (let i = 1; i < label.length; i++) {
+    if (!'-_./'.includes(label[i - 1] ?? '')) continue;
+    if (best === null || Math.max(i, label.length - i) < Math.max(best, label.length - best)) {
+      best = i;
+    }
+  }
+  return best === null ? [label] : [label.slice(0, best), label.slice(best)];
+}
 const MARGIN = 24;
 const CLUSTER_PAD = 16;
 
@@ -257,14 +282,25 @@ interface Level {
 
 const shifted = <T extends Point>(p: T, by: Point): T => ({ ...p, x: p.x + by.x, y: p.y + by.y });
 
-/** A step's box: one 15px line per factory below the label when another factory has laps on it. */
+/**
+ * A step's box: wide enough for its whole name (on one line or two, as stepLabelLines splits it),
+ * and one 15px line per factory below the label when another factory has laps on it. Dagre gets
+ * the full size, so edges and siblings clear the name and the counts.
+ */
 function stepSize(node: StepNode): { width: number; height: number } {
-  if (!node.factories.some((f) => !f.current)) return { width: NODE_W, height: NODE_H };
+  const lines = stepLabelLines(node.label);
+  const name = LABEL_RESERVE + Math.max(...lines.map((line) => line.length)) * CHAR_W;
+  const height = NODE_H + (lines.length - 1) * LINE_H;
+  if (!node.factories.some((f) => !f.current)) return { width: Math.max(NODE_W, name), height };
   // Reserve 70px horizontally for the padding, glyph, gaps and live dot; 7px per character leaves
-  // room for 10px Geist Mono. Dagre gets the full size so edges and siblings also clear the counts.
+  // room for 10px Geist Mono.
   return {
-    width: Math.max(NODE_W, ...node.factories.map((f) => 70 + `${f.factory} ${f.laps}`.length * 7)),
-    height: NODE_H + node.factories.length * 15,
+    width: Math.max(
+      NODE_W,
+      name,
+      ...node.factories.map((f) => 70 + `${f.factory} ${f.laps}`.length * 7),
+    ),
+    height: height + node.factories.length * 15,
   };
 }
 
