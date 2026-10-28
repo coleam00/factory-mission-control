@@ -5,7 +5,7 @@ import { eventData } from './fixture/write';
 import type { Db, Row, Tx } from './lib/db';
 import { DATABASE_URL, NOW, recordingDeps, scratchRepo } from './lib/test-deps';
 import { runMigrations } from './migrate';
-import { main, STEP_EVENT_TYPES } from './reconcile-laps';
+import { main, REPLAY_LOCK_TIMEOUT, STEP_EVENT_TYPES } from './reconcile-laps';
 
 let db: Db;
 let sql: string[];
@@ -476,4 +476,44 @@ test('reconcile:laps:main refuses a check branch and writes main', async () => {
   expect(written.code).toBe(0);
   expect(written.opened).toEqual([DATABASE_URL]);
   expect(written.out).toEqual(['reconcile: 0 run(s) repaired']);
+});
+
+/** Fails the `nth` (1-based) bounded lock wait the way Postgres does when lock_timeout runs out. */
+const lockTimeoutAt = (nth: number) => {
+  let seen = 0;
+  return async (text: string): Promise<void> => {
+    if (!text.startsWith('SET LOCAL lock_timeout') || ++seen !== nth) return;
+    throw Object.assign(new Error('canceling statement due to lock timeout'), { code: '55P03' });
+  };
+};
+
+test('a replay that waits out its lock timeout leaves the run busy, its lap untouched (#221)', async () => {
+  const runId = await wrongPausedLap();
+  const before = await tuples(runId);
+
+  // The first bounded wait is the read of running laps; the second is the replay's own.
+  const { code, out } = await run([], 'check-abc', lockTimeoutAt(2));
+  expect(sql.filter((text) => text.startsWith('SET LOCAL lock_timeout'))).toEqual([
+    `SET LOCAL lock_timeout = '${REPLAY_LOCK_TIMEOUT}'`,
+    `SET LOCAL lock_timeout = '${REPLAY_LOCK_TIMEOUT}'`,
+  ]);
+  expect(code).toBe(0);
+  expect(out).toEqual([
+    'reconcile: 0 run(s) repaired',
+    'reconcile: 1 run(s) busy, left for the next run',
+  ]);
+  expect(await tuples(runId)).toEqual(before);
+});
+
+test('when mc.laps itself is locked, every run is left busy within the lock timeout (#221)', async () => {
+  const runId = await wrongPausedLap();
+  const before = await tuples(runId);
+
+  const { code, out } = await run([], 'check-abc', lockTimeoutAt(1));
+  expect(code).toBe(0);
+  expect(out).toEqual([
+    'reconcile: 0 run(s) repaired',
+    'reconcile: 1 run(s) busy, left for the next run',
+  ]);
+  expect(await tuples(runId)).toEqual(before);
 });

@@ -3,7 +3,7 @@ import { readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { archonDb, snapshot } from '../db/test-db';
 import { createGitHub, type GetFetch } from '../function/github';
-import { main } from './backfill';
+import { BATCH, type History, inBatches, main, storeHistory } from './backfill';
 import { REPO_ROOT } from './lib/cli';
 import type { Db, Row } from './lib/db';
 import { DATABASE_URL, NOW, recordingDeps, scratchRepo } from './lib/test-deps';
@@ -276,4 +276,126 @@ test('an unknown argument exits 2 with usage before touching Neon', async () => 
   expect(code).toBe(2);
   expect(err.join('\n')).toContain('usage: bun run backfill');
   expect(neonCalls).toEqual([]);
+});
+
+test('no transaction is open while GitHub is asked, and each writes at most BATCH items (#260)', async () => {
+  let open = 0;
+  const transactions: string[][] = [];
+  const askedInTransaction: string[] = [];
+  const watched: GetFetch = async (url, init) => {
+    if (open > 0) askedInTransaction.push(url);
+    return recorded(url, init);
+  };
+  const repoRoot = scratchRepo({ MC_DATABASE_URL: DATABASE_URL });
+  scratch.push(repoRoot);
+  const recorder = recordingDeps({ repoRoot, branchName: 'check-abc' });
+  const deps = {
+    ...recorder.deps,
+    github: () => createGitHub(watched),
+    openDb: (): Db => ({
+      ...db,
+      async transaction(fn) {
+        const statements: string[] = [];
+        transactions.push(statements);
+        open++;
+        try {
+          await db.transaction((tx) =>
+            fn({
+              query: (text, params) => {
+                statements.push(text);
+                return tx.query(text, params);
+              },
+            }),
+          );
+        } finally {
+          open--;
+        }
+      },
+      close: async () => {},
+    }),
+  };
+
+  for (const argv of [[], ['--reconcile']]) {
+    expect(await main(argv, deps)).toBe(0);
+  }
+  expect(askedInTransaction).toEqual([]);
+  expect(requests.length).toBeGreaterThan(0);
+  // Writes are split by kind and batch, never one transaction for the whole run.
+  expect(transactions.length).toBeGreaterThan(2);
+  const upsertsOf = (statements: string[], table: string) =>
+    statements.filter((s) => s.replace(/\s+/g, ' ').includes(`INSERT INTO ${table} (`)).length;
+  // The counting below sees the writes it bounds.
+  expect(transactions.reduce((n, t) => n + upsertsOf(t, 'mc.issues'), 0)).toBeGreaterThan(0);
+  for (const statements of transactions) {
+    for (const table of ['mc.issues', 'mc.comments', 'mc.pull_requests', 'mc.pins']) {
+      const upserts = upsertsOf(statements, table);
+      expect(upserts).toBeLessThanOrEqual(BATCH);
+    }
+  }
+});
+
+test('a history larger than one batch is written in several transactions, rows unchanged', async () => {
+  let transactions = 0;
+  const counting = (): Db => ({
+    ...db,
+    transaction: (fn) => {
+      transactions++;
+      return db.transaction(fn);
+    },
+    close: async () => {},
+  });
+  const history = {
+    factories: [
+      {
+        factory: 'mission-control',
+        issues: Array.from({ length: BATCH * 2 + 1 }, (_, i) => ({
+          number: 1000 + i,
+          title: `batched ${i}`,
+          state: 'open',
+          html_url: `https://github.com/o/r/issues/${1000 + i}`,
+          created_at: '2026-10-01T00:00:00Z',
+          updated_at: '2026-10-01T00:00:00Z',
+          labels: [],
+        })),
+        comments: [],
+        pullRequests: [],
+      },
+    ],
+    commits: [],
+    unresolvedPins: [],
+    decisions: '',
+  } as unknown as History;
+  await storeHistory(counting(), history);
+  // Three batches of issues, then the decisions file.
+  expect(transactions).toBe(4);
+  expect(
+    Number(
+      (await rows(`SELECT count(*)::int AS n FROM mc.issues WHERE title LIKE 'batched %'`))[0]?.n,
+    ),
+  ).toBe(BATCH * 2 + 1);
+});
+
+test('a batch commits once it has been open its time limit, even short of its count', async () => {
+  const batches: number[][] = [];
+  const fake: Db = {
+    ...db,
+    transaction: async (fn) => {
+      batches.push([]);
+      await fn({ query: async () => [] });
+    },
+    close: async () => {},
+  };
+  // Each write takes ~30 ms; a 50 ms limit closes a batch after its second or third item.
+  await inBatches(
+    fake,
+    Array.from({ length: 10 }, (_, i) => i),
+    async (_tx, item) => {
+      batches.at(-1)?.push(item);
+      await Bun.sleep(30);
+    },
+    { count: 25, ms: 50 },
+  );
+  expect(batches.flat()).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9]);
+  expect(batches.length).toBeGreaterThanOrEqual(3);
+  for (const batch of batches) expect(batch.length).toBeLessThanOrEqual(3);
 });
