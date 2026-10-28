@@ -103,7 +103,7 @@ describe('arch-diff on the seed', () => {
     });
   });
 
-  test('a digest only another workflow of this factory ran is not found, as on the scorecard', async () => {
+  test('a digest only another workflow of this factory ran has no architecture and is not found, as on the scorecard', async () => {
     const digest = `sha256:${'e5'.repeat(32)}`;
     const scorecardSql = queries.find(([name]) => name === 'scorecard')?.[1] as string;
     const rollback = new Error('rollback');
@@ -119,7 +119,7 @@ describe('arch-diff on the seed', () => {
         const [lap] = await tx.query('SELECT factory FROM mc.laps WHERE digest = $1', [digest]);
         expect(lap).toEqual({ factory: 'mission-control' });
         const diffRows = (await tx.query(sql, ['mission-control'])) as unknown as ArchDiffRow[];
-        expect(diffRows.some((r) => r.digest === digest && r.kind !== 'version')).toBe(true);
+        expect(diffRows.some((r) => r.digest === digest)).toBe(false);
         expect(diffVersions(diffRows, digests[0], digest)).toEqual({
           status: 'not-found',
           digests: [digest],

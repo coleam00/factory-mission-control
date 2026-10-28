@@ -11,7 +11,7 @@ and rejected when `bun run test:live` ran each probe query on a check branch; `t
 them again on every run and fails when a verdict or an error differs from this table.
 
 - `@neon/realtime`: 0.1.2
-- Run: check-816754c9, check-ff19c267 and check-bfb770e3, 2026-10-25
+- Run: check-816754c9, check-ff19c267 and check-bfb770e3, 2026-10-25; the now() error as worded on check-646f49ad, 2026-10-27
 
 | Feature                 | Probe                                                                                                                                                                                             | Verdict  | Error                                                                                                      |
 | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- | ---------------------------------------------------------------------------------------------------------- |
