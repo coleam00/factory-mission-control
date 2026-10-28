@@ -1,32 +1,46 @@
 import type { ReactElement } from 'react';
-import { NavLink, useParams } from 'react-router';
+import { Link, useLocation, useParams } from 'react-router';
 import { useFactory } from '../live/FactoryProvider';
 import type { FactoryScreen } from '../routing';
 
 const LINK =
   'relative inline-flex items-center px-1 pb-2.5 pt-2 font-mono text-[11px] font-semibold uppercase tracking-[0.1em] transition-colors';
 
-function ScreenLink({ to, label }: { to: string; label: string }): ReactElement {
+/**
+ * Which link is the current screen at `pathname`: the screen's own address, a lap's page
+ * (`.../laps/<run id>`) under Laps, and a step's page (`/steps/...`) under the Map it opens from.
+ * At most one link matches any address.
+ */
+export function currentLink(pathname: string, to: string, kind: 'map' | 'screen'): boolean {
+  if (pathname === to) return true;
+  if (kind === 'map') return pathname.startsWith('/steps/');
+  return to.endsWith('/laps') && pathname.startsWith(`${to}/`);
+}
+
+function ScreenLink({
+  to,
+  label,
+  kind = 'screen',
+}: {
+  to: string;
+  label: string;
+  kind?: 'map' | 'screen';
+}): ReactElement {
+  const isActive = currentLink(useLocation().pathname, to, kind);
   return (
-    <NavLink
+    <Link
       to={to}
-      end
-      className={({ isActive }) =>
-        `${LINK} ${isActive ? 'text-text-primary' : 'text-text-secondary hover:text-text-primary'}`
-      }
+      aria-current={isActive ? 'page' : undefined}
+      className={`${LINK} ${isActive ? 'text-text-primary' : 'text-text-secondary hover:text-text-primary'}`}
     >
-      {({ isActive }) => (
-        <>
-          {label}
-          {isActive ? (
-            <span
-              aria-hidden
-              className="pointer-events-none absolute inset-x-0 -bottom-px h-0.5 rounded-full bg-selected"
-            />
-          ) : null}
-        </>
-      )}
-    </NavLink>
+      {label}
+      {isActive ? (
+        <span
+          aria-hidden
+          className="pointer-events-none absolute inset-x-0 -bottom-px h-0.5 rounded-full bg-selected"
+        />
+      ) : null}
+    </Link>
   );
 }
 
@@ -47,7 +61,7 @@ export function ScreenNavBody({
   const home = inUrl === undefined ? '/' : `/f/${encodeURIComponent(inUrl)}`;
   return (
     <nav aria-label="Screens" className="mx-auto flex max-w-6xl flex-wrap gap-x-5 px-6">
-      <ScreenLink to={home} label="Map" />
+      <ScreenLink to={home} label="Map" kind="map" />
       {factory === undefined ? null : (
         <>
           {screens.map((screen) => (
