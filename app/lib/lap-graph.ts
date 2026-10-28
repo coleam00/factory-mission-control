@@ -3,7 +3,14 @@
  * it out (`homeMap`, `layoutSteps`), each step marked by what happened to it in this lap. Also the
  * lane's one-line version: the loop's top-level steps as marks. Pure, no React.
  */
-import { type HomeMapRow, homeMap, type StepGraph } from './home-map';
+import {
+  type FoldedSteps,
+  foldSteps,
+  type HomeMapRow,
+  homeMap,
+  type StepGraph,
+  stepsCount,
+} from './home-map';
 import type { StepAttemptRow } from './one-lap';
 
 /** A row of `db/queries/one-lap-map.sql`: one node of the loop's expanded tree at the lap's pin. */
@@ -41,6 +48,18 @@ export const STATE_TOKEN: Record<StepState, `--${string}`> = {
 
 /** Archon names a nested step by its path joined with `__` (`ship__deliver__scope`). */
 export const pathOf = (stepId: string) => stepId.split('__').join('/');
+
+/**
+ * The map path a lap's step id runs at. Archon names a loop group's body step `<group>.<step>`
+ * (composing across nested groups: `rounds.review__scope`), the same name on every iteration, so
+ * a dotted name is the pinned step it is an iteration of when the map has that step (#282).
+ */
+export function mapPathOf(stepId: string, known: ReadonlySet<string>): string {
+  const path = pathOf(stepId);
+  if (!path.includes('.') || known.has(path)) return path;
+  const split = path.replaceAll('.', '/');
+  return known.has(split) ? split : path;
+}
 
 const stateOfStatus = (status: string): StepState =>
   status === 'running'
@@ -94,6 +113,9 @@ export function lapGraph(map: readonly LapMapRow[], attempts: readonly StepAttem
     is_current: false,
   }));
   const known = new Set(map.map((r) => r.path));
+  // Every step id at its pinned path, resolved before the steps the map lacks are added.
+  const pinned = new Set(known);
+  const at = (stepId: string) => mapPathOf(stepId, pinned);
   const byStep = new Map<string, StepAttemptRow[]>();
   for (const a of [...attempts].sort((x, y) => startOf(x) - startOf(y))) {
     byStep.set(a.step_id, [...(byStep.get(a.step_id) ?? []), a]);
@@ -106,7 +128,7 @@ export function lapGraph(map: readonly LapMapRow[], attempts: readonly StepAttem
   let position = map.reduce((n, r) => Math.max(n, r.position), 0);
   const ordered = [...byStep.entries()].sort(([, a], [, b]) => startOf(a[0]) - startOf(b[0]));
   for (const [stepId] of ordered) {
-    const parts = pathOf(stepId).split('/');
+    const parts = at(stepId).split('/');
     for (let depth = 1; depth <= parts.length; depth++) {
       const path = parts.slice(0, depth).join('/');
       const parent = depth === 1 ? null : parts.slice(0, depth - 1).join('/');
@@ -138,7 +160,10 @@ export function lapGraph(map: readonly LapMapRow[], attempts: readonly StepAttem
 
   const graph = homeMap(rows, []).loop;
   const children = graph.clusters;
-  const own = new Map([...byStep].map(([id, list]) => [pathOf(id), list]));
+  // Every iteration of a loop's step is an attempt of its one node, oldest first.
+  const own = new Map<string, StepAttemptRow[]>();
+  for (const [id, list] of byStep) own.set(at(id), [...(own.get(at(id)) ?? []), ...list]);
+  for (const list of own.values()) list.sort((x, y) => startOf(x) - startOf(y));
   const steps = new Map<string, LapStep>();
   const stateOf = (path: string): StepState => {
     const done = steps.get(path);
@@ -244,47 +269,33 @@ export function laneMarks(steps: readonly string[] | null): LaneMark[] {
   );
 }
 
-/** Whether anything ran at a step in this lap: it finished, runs now, or failed. */
-const ran = (state: StepState | undefined) =>
-  state === 'finished' || state === 'running' || state === 'failed';
-
-export interface FoldedGraph {
-  /** The graph with each folded block's steps taken out: the block is one box. */
-  graph: StepGraph;
-  /** Each folded block's path, and how many steps it holds at every depth. */
-  folded: Map<string, number>;
-}
-
 /**
- * Folds every include or loop group in which no step ran in this lap into one box, unless the
- * viewer opened it: a simple-route lap then shows `ship` as one box, not its 70 dimmed steps.
- * A block with any step that ran stays open, and so does every block around it.
+ * Folds every include or loop group into one box unless the viewer opened it, whether or not its
+ * steps ran: a complex lap's `ship` is one box, not its 68 steps. The box says how the block
+ * stands in this lap: the step running or failed inside it, and how many of its steps are done.
  */
-export function foldGraph(lap: LapGraph, opened: ReadonlySet<string>): FoldedGraph {
-  const { graph, steps } = lap;
-  const inside = (block: string) => graph.steps.filter((s) => s.id.startsWith(`${block}/`));
-  const folded = new Map<string, number>();
-  for (const block of graph.clusters.keys()) {
-    if (opened.has(block)) continue;
-    if ([...folded.keys()].some((outer) => block.startsWith(`${outer}/`))) continue;
-    const members = inside(block);
-    if (ran(steps.get(block)?.state) || members.some((m) => ran(steps.get(m.id)?.state))) continue;
-    folded.set(block, members.length);
-    // A block folded inside one already folded is gone with it.
-    for (const inner of [...folded.keys()]) {
-      if (inner.startsWith(`${block}/`)) folded.delete(inner);
-    }
-  }
-  if (folded.size === 0) return { graph, folded };
-  const hidden = (id: string) => [...folded.keys()].some((block) => id.startsWith(`${block}/`));
-  return {
-    graph: {
-      steps: graph.steps.filter((s) => !hidden(s.id)),
-      edges: graph.edges.filter((e) => !hidden(e.from) && !hidden(e.to)),
-      clusters: new Map(
-        [...graph.clusters].filter(([block]) => !folded.has(block) && !hidden(block)),
-      ),
-    },
-    folded,
-  };
+export function foldGraph(lap: LapGraph, opened: ReadonlySet<string>): FoldedSteps {
+  const stateOf = (path: string) => lap.steps.get(path)?.state ?? 'not-reached';
+  return foldSteps(lap.graph, opened, (block, inside) => {
+    const n = inside.length;
+    const state = stateOf(block);
+    if (state === 'skipped') return [`skipped · ${stepsCount(n)}`];
+    if (state === 'not-reached') return [`not run · ${stepsCount(n)}`];
+    const done = inside.filter((s) => ['finished', 'skipped'].includes(stateOf(s.id))).length;
+    const progress = `${done} of ${n} done`;
+    const at = (wanted: StepState) => inside.filter((s) => stateOf(s.id) === wanted).at(-1);
+    const step =
+      state === 'running' ? at('running') : state === 'failed' ? at('failed') : undefined;
+    return step === undefined
+      ? [progress]
+      : // The step and the block it sits in, short enough for the box: `review/code`.
+        [
+          `${state}: ${step.id
+            .slice(block.length + 1)
+            .split('/')
+            .slice(-2)
+            .join('/')}`,
+          progress,
+        ];
+  });
 }
