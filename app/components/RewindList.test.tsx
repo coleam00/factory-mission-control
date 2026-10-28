@@ -1,7 +1,7 @@
 import { afterEach, expect, test } from 'bun:test';
 import type { ReactElement, ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import type { RewindBranchRow } from '../lib/rewind';
+import { goneRewinds, type RewindBranchRow } from '../lib/rewind';
 import { RewindIndicator } from './FactoryStrip';
 import { RewindBranches, RewindRows } from './RewindList';
 
@@ -136,4 +136,35 @@ test('a refused Switch back opens /rewind, where the way back says why', async (
   expect(posts).toHaveLength(1);
   expect(assigned).toEqual(['/rewind']);
   expect(reloads).toBe(0);
+});
+
+test('a listed rewind whose branch is gone has no Show button, one sentence instead', () => {
+  const html = renderToStaticMarkup(
+    <RewindRows rows={rows} shown={null} onSwitch={() => {}} gone={new Set([OLDER])} />,
+  );
+  const gone = rowHtml(html, OLDER);
+  expect(gone).not.toMatch(/<button\b/);
+  expect(textOf(gone)).toContain('Its branch no longer exists.');
+  expect(gone).toContain('data-rewind-gone');
+  expect(rowHtml(html, NEWER)).toContain(`aria-label="Show ${NEWER}"`);
+  expect(rowHtml(html, NEWER)).not.toContain('data-rewind-gone');
+});
+
+test('goneRewinds names the listed rewinds Neon has no branch for, and none when it cannot ask', async () => {
+  const asked: string[] = [];
+  const answering = (status: number, body: unknown) => {
+    globalThis.fetch = (async (url: string) => {
+      asked.push(url);
+      return new Response(JSON.stringify(body), { status });
+    }) as typeof fetch;
+  };
+  answering(200, { branches: [NEWER, 'rewind-2026-10-20t00-00-00z'] });
+  expect([...(await goneRewinds([NEWER, OLDER]))]).toEqual([OLDER]);
+  expect(asked).toEqual(['/api/rewind/branches']);
+  answering(503, { error: 'needs NEON_API_KEY and NEON_PROJECT_ID on the server' });
+  expect([...(await goneRewinds([NEWER, OLDER]))]).toEqual([]);
+  globalThis.fetch = (async () => {
+    throw new Error('offline');
+  }) as unknown as typeof fetch;
+  expect([...(await goneRewinds([NEWER, OLDER]))]).toEqual([]);
 });
