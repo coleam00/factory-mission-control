@@ -189,7 +189,8 @@ export function lapGraph(map: readonly LapMapRow[], attempts: readonly StepAttem
   for (const node of graph.steps) stateOf(node.id);
 
   // A step the lap passed without running (the route or depth did not need it) is skipped, not
-  // still ahead: a step after it has run. Everything inside a skipped box is skipped with it.
+  // still ahead: a step after it has run. Everything inside a skipped box is skipped with it,
+  // whether the lap passed the box or Archon skipped it (a simple lap's `ship`, `rounds` in it).
   const next = new Map<string, string[]>();
   for (const { from, to } of graph.edges) next.set(from, [...(next.get(from) ?? []), to]);
   const ran = (path: string) => steps.get(path)?.state !== 'not-reached';
@@ -206,7 +207,11 @@ export function lapGraph(map: readonly LapMapRow[], attempts: readonly StepAttem
     }
     return false;
   };
-  const skipped = new Set(graph.steps.filter((n) => !ran(n.id) && passed(n.id)).map((n) => n.id));
+  const skipped = new Set(
+    graph.steps
+      .filter((n) => (!ran(n.id) && passed(n.id)) || steps.get(n.id)?.state === 'skipped')
+      .map((n) => n.id),
+  );
   for (const node of graph.steps) {
     const inside = [...skipped].some((box) => node.id.startsWith(`${box}/`));
     const step = steps.get(node.id);
