@@ -95,7 +95,14 @@ test('the ledger shows waiting laps under being tested and each verdict with its
         { pin: 'd4', reason: 'r', measure: 'over 10 laps.', laps: 3, waiting: NOT_RECORDED },
       ]}
       verdicts={[
-        { pin: 'a1', reason: 'r', verdict: 'helped', sentence: 'faster.', date: '2026-10-09' },
+        {
+          pin: 'a1',
+          unmatched: null,
+          reason: 'r',
+          verdict: 'helped',
+          sentence: 'faster.',
+          date: '2026-10-09',
+        },
       ]}
     />,
   );
@@ -106,6 +113,39 @@ test('the ledger shows waiting laps under being tested and each verdict with its
   expect(helped).toContain('data-verdict="helped"');
   expect(helped).toContain('faster.');
   expect(helped).toContain('text-success');
+});
+
+test('a verdict on several pins or none shows its prefix as ambiguous or no pin, with no pin', () => {
+  const html = render(
+    <Ledger
+      testing={[]}
+      verdicts={[
+        {
+          pin: 'a8551bfe',
+          unmatched: 'ambiguous',
+          reason: NOT_RECORDED,
+          verdict: 'hurt',
+          sentence: 'slower.',
+          date: '2026-10-21',
+        },
+        {
+          pin: 'deadbeef',
+          unmatched: 'none',
+          reason: NOT_RECORDED,
+          verdict: 'helped',
+          sentence: 'faster.',
+          date: '2026-10-22',
+        },
+      ]}
+    />,
+  );
+  expect(html).not.toContain('data-pin=');
+  const ambiguous = itemHtml(html, 'data-prefix="a8551bfe"');
+  expect(ambiguous).toContain('a8551bfe, ambiguous: several pins by that prefix');
+  expect(ambiguous).toContain('data-verdict="hurt"');
+  expect(ambiguous).toContain('slower.');
+  expect(ambiguous).not.toContain(NOT_RECORDED);
+  expect(itemHtml(html, 'data-prefix="deadbeef"')).toContain('deadbeef, no pin by that prefix');
 });
 
 test('the waiting badge says lap for one and laps for every other count, including 0', () => {

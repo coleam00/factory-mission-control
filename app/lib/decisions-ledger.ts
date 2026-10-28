@@ -24,7 +24,10 @@ export interface TimelineRow {
   digest: string | null;
 }
 
-/** One pin, with this factory's laps of the versions it labels and its latest verdict. */
+/**
+ * One pin, with this factory's laps of the versions it labels and its latest verdict; or the latest
+ * verdict whose prefix names no pin or several, with that prefix as `pin_sha` and no pin fields.
+ */
 export interface LedgerRow {
   pin_sha: string;
   reason: string | null;
@@ -34,6 +37,8 @@ export interface LedgerRow {
   verdict: 'helped' | 'hurt' | 'inconclusive' | null;
   sentence: string | null;
   verdict_at: Date | null;
+  /** 1 for a pin's row; for a verdict's own row, how many pins its prefix names (0 or several). */
+  pin_matches: number;
 }
 
 /** Oldest first; entries on one date keep a stable order by title. */
@@ -70,7 +75,10 @@ export interface TestingEntry {
 }
 
 export interface VerdictEntry {
+  /** The pin's sha, or the verdict's prefix when it names no pin or several. */
   pin: string;
+  /** Why the verdict is on no pin: its prefix names several pins, or none. */
+  unmatched: 'ambiguous' | 'none' | null;
   reason: string;
   verdict: NonNullable<LedgerRow['verdict']>;
   sentence: string;
@@ -106,12 +114,15 @@ export function ledger(rows: readonly LedgerRow[]): {
         : [{ row, verdict: row.verdict, at: row.verdict_at }],
     )
     .sort((a, b) => a.at.getTime() - b.at.getTime())
-    .map(({ row, verdict, at }) => ({
-      pin: row.pin_sha,
-      reason: recorded(row.reason),
-      verdict,
-      sentence: row.sentence ?? NOT_RECORDED,
-      date: at.toISOString().slice(0, 10),
-    }));
+    .map(
+      ({ row, verdict, at }): VerdictEntry => ({
+        pin: row.pin_sha,
+        unmatched: row.pin_matches === 1 ? null : row.pin_matches > 1 ? 'ambiguous' : 'none',
+        reason: recorded(row.reason),
+        verdict,
+        sentence: row.sentence ?? NOT_RECORDED,
+        date: at.toISOString().slice(0, 10),
+      }),
+    );
   return { testing, verdicts };
 }

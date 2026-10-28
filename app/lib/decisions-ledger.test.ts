@@ -83,6 +83,7 @@ const pin = (over: Partial<LedgerRow>): LedgerRow => ({
   verdict: null,
   sentence: null,
   verdict_at: null,
+  pin_matches: 1,
   ...over,
 });
 
@@ -142,4 +143,31 @@ test('a pin committed with no reason reads not recorded, testing or judged', () 
   ]);
   expect(testing.map((t) => t.reason)).toEqual([NOT_RECORDED]);
   expect(verdicts.map((v) => v.reason)).toEqual([NOT_RECORDED]);
+});
+
+test('a verdict whose prefix names several pins or none is listed by its prefix, never on a pin', () => {
+  const { testing, verdicts } = ledger([
+    pin({
+      pin_sha: 'a8551bfe',
+      reason: null,
+      verdict: 'hurt',
+      sentence: 'slower.',
+      verdict_at: new Date('2026-10-21T00:00:00Z'),
+      pin_matches: 2,
+    }),
+    pin({
+      pin_sha: 'deadbeef',
+      reason: null,
+      verdict: 'helped',
+      sentence: 'faster.',
+      verdict_at: new Date('2026-10-22T00:00:00Z'),
+      pin_matches: 0,
+    }),
+    pin({ pin_sha: 'c', measure: 'over 10 laps.' }),
+  ]);
+  expect(testing.map((t) => t.pin)).toEqual(['c']);
+  expect(verdicts.map((v) => [v.pin, v.unmatched, v.verdict])).toEqual([
+    ['a8551bfe', 'ambiguous', 'hurt'],
+    ['deadbeef', 'none', 'helped'],
+  ]);
 });
