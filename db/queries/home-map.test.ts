@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import type { HomeMapRow } from '../../app/lib/home-map';
+import { findStep, type NestingRow, type StepRow } from '../../app/lib/step-detail';
 import type { Db } from '../../scripts/lib/db';
 import { onTheSeed, queries } from './test-seed';
 
@@ -124,6 +125,43 @@ describe('home-map on the seed', () => {
     expect(opens('ship/deliver/rounds')).toEqual(['archon-deliver-block', 'rounds']);
     expect(opens('ship/forge')).toEqual(['archon-ship-block', 'forge']);
     expect(opens('check-app')).toEqual(['archon-loop', 'check-app']);
+  });
+
+  test("every node opens the screen step-nesting opens for it, and that screen's step exists", async () => {
+    const query = (name: string) => queries.find(([n]) => n === name)?.[1] as string;
+    const all = (await rows()).flatMap(({ path, detail_path, ...r }) =>
+      path === null || detail_path === null ? [] : [{ ...r, path, detail_path }],
+    );
+    const screens = (await db.query(query('step-detail'), [
+      'mission-control',
+      '',
+    ])) as unknown as StepRow[];
+    const opens = new Map<string, string>();
+    for (const top of all.filter((r) => r.parent_path === null)) {
+      opens.set(node(top.path, top.workflow), `${top.workflow} / ${top.path}`);
+      const inside = (await db.query(query('step-nesting'), [
+        'mission-control',
+        top.workflow,
+        top.path,
+        '',
+      ])) as unknown as NestingRow[];
+      for (const row of inside.filter((r) => r.relation === 'inside')) {
+        opens.set(node(row.path, row.workflow), `${row.open_workflow} / ${row.open_path}`);
+      }
+    }
+    expect(opens.size).toBe(93);
+    expect(
+      new Map(
+        all.map((r) => [node(r.path, r.workflow), `${r.detail_workflow} / ${r.detail_path}`]),
+      ),
+    ).toEqual(opens);
+    for (const row of all) {
+      const key = node(row.path, row.workflow);
+      expect([key, findStep(screens, row.detail_workflow, row.detail_path)?.path]).toEqual([
+        key,
+        row.detail_path,
+      ]);
+    }
   });
 
   test('a factory with no laps has no map steps, even when shared architecture is stored', async () => {
