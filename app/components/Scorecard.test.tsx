@@ -2,7 +2,7 @@ import { expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { createMemoryRouter, RouterProvider } from 'react-router';
 import { MEASURES, type ScorecardRow } from '../lib/scorecard';
-import { ScorecardView } from './Scorecard';
+import { ScorecardView, SwitchedScorecard } from './Scorecard';
 
 const V1 = `sha256:${'a1'.repeat(32)}`;
 const V2 = `sha256:${'b2'.repeat(32)}`;
@@ -282,6 +282,52 @@ test("a digest that is not one of this factory's versions is not found, one sent
     expect(html.match(/<a /g)).toHaveLength(1);
     expect(html).toContain('href="/f/mission-control/versions"');
   }
+});
+
+test("opened by the switcher, another factory's versions are dropped and this factory's kept", () => {
+  const OTHER = `sha256:${'d4'.repeat(32)}`;
+  const rows = [
+    ...laps(V1, 12, 3),
+    version(V1, '2026-10-01T00:00:00Z', null),
+    ...laps(V2, 2, 1),
+    version(V2, '2026-10-02T00:00:00Z', null),
+  ];
+  const switched = (a: string | undefined, b: string | undefined) =>
+    renderToStaticMarkup(
+      <RouterProvider
+        router={createMemoryRouter([
+          {
+            path: '/',
+            element: <SwitchedScorecard factory="second-factory" a={a} b={b} rows={rows} />,
+          },
+        ])}
+      />,
+    );
+  const headers = (html: string) =>
+    [
+      ...html.matchAll(
+        /<div data-version="(a|b)" data-digest="([^"]*)"(?: data-pin="[^"]*")? class="min-w-0">/g,
+      ),
+    ].map(([, side, digest]) => [side, digest]);
+  // Both versions ran here: the same comparison.
+  expect(headers(switched(V1, V2))).toEqual([
+    ['a', V1],
+    ['b', V2],
+  ]);
+  // One did not: it is dropped and the other kept, never shown as this factory's.
+  for (const [a, b] of [
+    [OTHER, V2],
+    [V2, OTHER],
+  ]) {
+    const html = switched(a, b);
+    expect(headers(html)).toEqual([['a', V2]]);
+    expect(html).not.toContain(OTHER);
+    expect(html).not.toContain('is not a version');
+  }
+  // Neither did: the scorecard opens as it does with none named, on this factory's newest.
+  const none = switched(OTHER, undefined);
+  expect(none).toContain(`data-default-version="${V2}"`);
+  expect(none).not.toContain(OTHER);
 });
 
 test('each version is named by its version row, as the versions screen names it', () => {

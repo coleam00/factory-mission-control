@@ -1,7 +1,7 @@
 import { type ReactElement, useEffect, useState } from 'react';
 import { Link, useLocation } from 'react-router';
 import { shownRows, switcherEntries } from '../lib/factory-choice';
-import { useFactory, usePublishFactories } from '../live/FactoryProvider';
+import { useChooseFactory, useFactory, usePublishFactories } from '../live/FactoryProvider';
 import { LivePanel, type PanelState } from '../live/LivePanel';
 import { useLive } from '../live/LiveProvider';
 import { type FactoryScreen, factoryPath } from '../routing';
@@ -15,6 +15,16 @@ export interface FactorySwitcherRow {
 
 const LABEL = 'font-mono text-[10px] font-semibold uppercase tracking-[0.04em] text-text-secondary';
 const NOTE = 'px-3 py-2 text-sm text-text-secondary';
+
+/** The history state of a page the switcher opened, so its screen can tell (`isSwitched`). */
+const SWITCHED = { switched: true } as const;
+
+/** Whether a location's state says the factory switcher opened it, from another factory's page. */
+export function isSwitched(state: unknown): boolean {
+  return (
+    typeof state === 'object' && state !== null && 'switched' in state && state.switched === true
+  );
+}
 
 export function FactorySetupNotice({
   factories,
@@ -55,7 +65,7 @@ function Entries({
   state: PanelState;
   current: string | undefined;
   hrefFor: (factory: string) => string;
-  onChoose: () => void;
+  onChoose: (factory: string) => void;
 }): ReactElement {
   if (state === 'error') return <p className={NOTE}>Live data is unavailable.</p>;
   if (rows === undefined) return <p className={NOTE}>Loading the factories.</p>;
@@ -66,7 +76,8 @@ function Entries({
         <li key={factory} data-factory-entry={factory} data-running={running}>
           <Link
             to={hrefFor(factory)}
-            onClick={onChoose}
+            state={SWITCHED}
+            onClick={() => onChoose(factory)}
             aria-current={factory === current ? 'true' : undefined}
             className={`flex items-center justify-between gap-6 px-3 py-1.5 font-mono text-sm hover:bg-surface-inset ${
               factory === current ? 'text-text-primary' : 'text-text-secondary'
@@ -95,6 +106,7 @@ export function FactorySwitcherBody({
   hrefFor,
   open,
   onToggle,
+  onChoose = () => {},
 }: {
   rows: readonly FactorySwitcherRow[] | undefined;
   state: PanelState;
@@ -102,6 +114,7 @@ export function FactorySwitcherBody({
   hrefFor: (factory: string) => string;
   open: boolean;
   onToggle: (open: boolean) => void;
+  onChoose?: (factory: string) => void;
 }): ReactElement {
   return (
     <details
@@ -123,7 +136,10 @@ export function FactorySwitcherBody({
             state={state}
             current={current}
             hrefFor={hrefFor}
-            onChoose={() => onToggle(false)}
+            onChoose={(factory) => {
+              onChoose(factory);
+              onToggle(false);
+            }}
           />
         </div>
       ) : null}
@@ -152,12 +168,13 @@ function PublishFactories({
 
 /**
  * The shell's factory switcher: every row of `mc.factories` the server shows, live, opening the
- * same screen.
+ * same screen (`factoryPath`), and remembering the choice for the pages whose URL names no factory.
  */
 export function FactorySwitcher({ screens }: { screens: readonly FactoryScreen[] }): ReactElement {
   const live = useLive();
   const current = useFactory();
-  const { pathname } = useLocation();
+  const choose = useChooseFactory();
+  const { pathname, search } = useLocation();
   const [open, setOpen] = useState(false);
   const factories = live.status === 'ready' ? live.factories : undefined;
   // Sealed for the default factory, so a switch does not re-seal the list.
@@ -177,9 +194,10 @@ export function FactorySwitcher({ screens }: { screens: readonly FactoryScreen[]
               rows={rows}
               state={state}
               current={current}
-              hrefFor={(factory) => factoryPath(pathname, factory, screens)}
+              hrefFor={(factory) => factoryPath(pathname, factory, screens, search)}
               open={open}
               onToggle={setOpen}
+              onChoose={choose}
             />
             <FactorySetupNotice
               factories={factories}

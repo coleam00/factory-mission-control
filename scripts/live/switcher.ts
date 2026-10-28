@@ -40,6 +40,8 @@ const entriesOnScreen = `[...document.querySelectorAll('${SWITCHER} [data-factor
   li.getAttribute('data-factory-entry'), Number(li.getAttribute('data-running'))])`;
 const stripNames = (factory: string) =>
   `document.querySelector('${PANEL}[data-state="ready"] span')?.textContent === ${JSON.stringify(factory)}`;
+const switcherNames = (factory: string) =>
+  `document.querySelector('${SWITCHER} summary span:last-child')?.textContent === ${JSON.stringify(factory)}`;
 const RUNNING_SQL = `SELECT f.name, (SELECT count(*)::int FROM mc.laps l
     WHERE l.factory = f.name AND l.workflow_name = 'archon-loop' AND l.status = 'running') AS running
   FROM mc.factories f ORDER BY f.name`;
@@ -84,8 +86,8 @@ const namesIn = (file: string): string[] =>
 
 /**
  * The factory switcher on the running app (#77): it lists every row of `mc.factories` its
- * server's factories file names, with its running laps, live; choosing the seed's second factory shows its name, map and laps, keeps the screen,
- * and is remembered; a remembered factory that no longer exists falls back with no error. A server reading
+ * server's factories file names, with its running laps, live; choosing the seed's second factory shows its name, map and laps, keeps the screen
+ * (a step's page too), and is remembered; a remembered factory that no longer exists falls back with no error. A server reading
  * factories.json alone lists only its factories, though the seed's second is in `mc.factories`.
  */
 async function checkSwitcher(ctx: LiveContext): Promise<void> {
@@ -209,12 +211,13 @@ async function checkSwitcher(ctx: LiveContext): Promise<void> {
       check(`${second}'s lanes`, lanes, running.map((r) => String(r.run)).sort());
     }
 
-    await page.goto(`${base}/steps/archon-loop/check-app`);
-    check(
-      'choosing it from step detail',
-      await choose(page, second, `/f/${second}`),
-      `/f/${second}`,
-    );
+    // A step's page names no factory: choosing one stays on the step and shows it (#202).
+    const stepPage = '/steps/archon-loop/check-app';
+    for (const name of [factory, second]) {
+      await page.goto(`${base}${stepPage}`);
+      check(`choosing ${name} from step detail`, await choose(page, name, stepPage), stepPage);
+      await waitFor(page, `step detail did not show ${name}`, switcherNames(name));
+    }
 
     await page.goto(`${base}/`);
     await waitFor(page, `/ did not show the remembered ${second}`, stripNames(second));

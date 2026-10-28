@@ -4,6 +4,7 @@ import {
   difference,
   type AttemptRow,
   type LapRow,
+  keptVersions,
   type Measured,
   meaningful,
   type ScorecardRow,
@@ -287,4 +288,21 @@ test('a difference is meaningful only when both sides rest on 10 laps or more', 
   expect(difference(on(10, 7.6), on(10, 4.5))).toBe(-3.1);
   expect(difference(on(10, null), on(10, 4.5))).toBeNull();
   expect(difference(on(10, 1), on(10, null))).toBeNull();
+});
+
+test('a switch keeps the versions this factory has, in order, and drops the others', () => {
+  const W = 'sha256:b2';
+  const OTHER = 'sha256:other-factory';
+  const rows: ScorecardRow[] = [
+    ...lap('loop', '2026-10-05T08:00:00Z', '2026-10-05T09:00:00Z'),
+    version(W, '2026-10-06T08:00:00Z', null),
+  ];
+  expect(keptVersions(rows, V, W)).toEqual({ a: V, b: W });
+  expect(keptVersions(rows, V, undefined)).toEqual({ a: V, b: undefined });
+  expect(keptVersions(rows, OTHER, W)).toEqual({ a: W, b: undefined });
+  expect(keptVersions(rows, V, OTHER)).toEqual({ a: V, b: undefined });
+  expect(keptVersions(rows, OTHER, 'sha256:zzzz')).toEqual({ a: undefined, b: undefined });
+  expect(keptVersions(rows, undefined, undefined)).toEqual({ a: undefined, b: undefined });
+  expect(keptVersions(rows, '', W)).toEqual({ a: W, b: undefined });
+  expect(keptVersions(rows, V, V)).toEqual({ a: V, b: undefined });
 });

@@ -31,12 +31,14 @@ interface FactoryChoice {
   current: string | undefined;
   inUrl: UrlFactory;
   publish: (listed: Listed) => void;
+  choose: (factory: string) => void;
 }
 
 const FactoryContext = createContext<FactoryChoice>({
   current: undefined,
   inUrl: { key: undefined, view: 'screen' },
   publish: () => {},
+  choose: () => {},
 });
 
 /** Reading `localStorage` itself throws where the browser blocks storage. */
@@ -78,6 +80,11 @@ export function FactoryProvider({ children }: { children: ReactNode }): ReactEle
     (next: Listed) => setListed((prev) => (sameListed(prev, next) ? prev : next)),
     [],
   );
+  // Off a factory's pages the URL names none: the switcher's choice is remembered at once.
+  const choose = useCallback((factory: string) => {
+    remember(browserStorage(), factory);
+    setRemembered(factory);
+  }, []);
   const served = live.status === 'ready' ? live.factories : undefined;
   const fallback = served?.[0];
   const view = urlFactoryView({ inUrl, served });
@@ -85,8 +92,8 @@ export function FactoryProvider({ children }: { children: ReactNode }): ReactEle
   const current =
     view === 'unknown' ? undefined : currentFactory({ inUrl, remembered, fallback, listed });
   const value = useMemo(
-    () => ({ current, inUrl: { key: inUrl, view }, publish }),
-    [current, inUrl, view, publish],
+    () => ({ current, inUrl: { key: inUrl, view }, publish, choose }),
+    [current, inUrl, view, publish, choose],
   );
   return <FactoryContext.Provider value={value}>{children}</FactoryContext.Provider>;
 }
@@ -99,6 +106,11 @@ export function useFactory(): string | undefined {
 /** The URL's factory key, and whether the shell shows its screen or calls it unknown. */
 export function useUrlFactory(): UrlFactory {
   return useContext(FactoryContext).inUrl;
+}
+
+/** How the switcher makes a factory the current one where the URL names none (a step's page). */
+export function useChooseFactory(): (factory: string) => void {
+  return useContext(FactoryContext).choose;
 }
 
 /** How the switcher hands the provider the factories it lists. */

@@ -7,6 +7,7 @@ import {
   FactorySetupNotice,
   FactorySwitcherBody,
   type FactorySwitcherRow,
+  isSwitched,
 } from './FactorySwitcher';
 
 const SCREENS = [{ path: 'laps', label: 'Laps' }];
@@ -139,4 +140,43 @@ test('historical absence asks to return live before deciding whether setup is ne
   expect(html).toContain('switch back and, if setup is still needed, run');
   expect(html).toContain('bun run migrate -- --configured-factories');
   expect(html).toContain('bun run migrate:main -- --configured-factories');
+});
+
+test("from a scorecard the entries keep its versions, and from a step's page they stay on it", () => {
+  const rows = [
+    { factory: 'mission-control', running: 0, is_default: true },
+    { factory: 'second-factory', running: 0, is_default: false },
+  ];
+  const hrefs = (pathname: string, search: string) =>
+    entries(
+      renderToStaticMarkup(
+        <MemoryRouter>
+          <FactorySwitcherBody
+            rows={rows}
+            state="ready"
+            current="mission-control"
+            hrefFor={(factory) =>
+              factoryPath(pathname, factory, [{ path: 'scorecard', label: 'Scorecard' }], search)
+            }
+            open
+            onToggle={() => {}}
+          />
+        </MemoryRouter>,
+      ),
+    ).map(({ href }) => href?.replaceAll('&amp;', '&'));
+  expect(hrefs('/f/mission-control/scorecard', '?a=sha256%3Aa1&b=sha256%3Ab2')).toEqual([
+    '/f/mission-control/scorecard?a=sha256%3Aa1&b=sha256%3Ab2',
+    '/f/second-factory/scorecard?a=sha256%3Aa1&b=sha256%3Ab2',
+  ]);
+  expect(hrefs('/steps/archon-loop/review', '?at=8e3e1cef')).toEqual([
+    '/steps/archon-loop/review?at=8e3e1cef',
+    '/steps/archon-loop/review?at=8e3e1cef',
+  ]);
+});
+
+test('only a page the switcher opened reads as switched', () => {
+  expect(isSwitched({ switched: true })).toBe(true);
+  for (const state of [null, undefined, {}, { switched: 'yes' }, 'switched']) {
+    expect(isSwitched(state)).toBe(false);
+  }
 });
