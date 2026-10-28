@@ -20,6 +20,8 @@ export interface ArchDiffRow {
   digest: string;
   kind: Kind | 'edge' | 'version';
   workflow: string | null;
+  /** A `version` row's first run (its earliest lap or mc.versions row); null on every other kind. */
+  first_run_at?: Date | null;
   entries: string[];
 }
 
@@ -75,6 +77,30 @@ function versionOf(
     }
   }
   return { items, dependencies };
+}
+
+/**
+ * The pair the diff opens on when none is named: the newest two versions by first run, older as
+ * `a`. Versions with a recorded architecture come first, so a version not parsed yet does not
+ * hide a diff that can be shown; with fewer than two recorded it is the newest two. Null with
+ * fewer than two versions.
+ */
+export function defaultPair(
+  rows: readonly ArchDiffRow[],
+): { a: string; b: string; recorded: boolean } | null {
+  const firstRun = new Map<string, number>();
+  for (const row of rows) {
+    if (row.kind !== 'version') continue;
+    const at = row.first_run_at?.getTime() ?? Number.NEGATIVE_INFINITY;
+    firstRun.set(row.digest, Math.min(at, firstRun.get(row.digest) ?? Number.POSITIVE_INFINITY));
+  }
+  const byAge = [...firstRun].sort(([da, a], [db, b]) => a - b || da.localeCompare(db));
+  const recorded = new Set(rows.filter((r) => r.kind !== 'version').map((r) => r.digest));
+  const withArch = byAge.filter(([digest]) => recorded.has(digest));
+  const [pool, isRecorded] = withArch.length >= 2 ? [withArch, true] : [byAge, false];
+  if (pool.length < 2) return null;
+  const [[a], [b]] = pool.slice(-2);
+  return { a, b, recorded: isRecorded };
 }
 
 const keyOf = ({ kind, workflow, step, name }: Item): string =>

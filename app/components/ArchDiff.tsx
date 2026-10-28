@@ -3,6 +3,7 @@ import { Link } from 'react-router';
 import {
   type ArchDiffRow,
   type DiffResult,
+  defaultPair,
   diffVersions,
   type Item,
   itemLabel,
@@ -40,7 +41,7 @@ export function ArchDiff({
   const versions =
     factory === undefined ? undefined : (
       <Link to={`/f/${encodeURIComponent(factory)}/versions`} className="text-accent-bright">
-        Versions
+        Open the versions
       </Link>
     );
   return (
@@ -48,13 +49,9 @@ export function ArchDiff({
       {(rows, state) => (
         <>
           <h1 className={`${LABEL} mb-3`}>Architecture diff</h1>
-          {a === null || b === null ? (
-            <EmptyState title="Pick two versions to diff." action={versions} />
-          ) : (
+          {a !== null && b !== null ? (
             <>
-              <p className={`${MONO} mb-4 break-all text-text-secondary`}>
-                <span data-version="a">{short(a)}</span> → <span data-version="b">{short(b)}</span>
-              </p>
+              <Pair a={a} b={b} />
               {state === 'error' ? (
                 <p className="text-sm text-text-secondary">Live data is unavailable.</p>
               ) : rows === undefined ? (
@@ -63,10 +60,50 @@ export function ArchDiff({
                 <DiffView result={diffVersions(rows, a, b)} versions={versions} />
               )}
             </>
+          ) : a !== null || b !== null ? (
+            <EmptyState title="Pick two versions to diff." action={versions} />
+          ) : state === 'error' ? (
+            <p className="text-sm text-text-secondary">Live data is unavailable.</p>
+          ) : rows === undefined ? (
+            <p className="text-sm text-text-secondary">Loading the architecture.</p>
+          ) : (
+            <DefaultDiff rows={rows} versions={versions} />
           )}
         </>
       )}
     </LivePanel>
+  );
+}
+
+function Pair({ a, b }: { a: string; b: string }): ReactElement {
+  return (
+    <p className={`${MONO} mb-4 break-all text-text-secondary`}>
+      <span data-version="a">{short(a)}</span> → <span data-version="b">{short(b)}</span>
+    </p>
+  );
+}
+
+/** No pair named: the newest two versions, said as such, with the way to pick another pair. */
+export function DefaultDiff({
+  rows,
+  versions,
+}: {
+  rows: readonly ArchDiffRow[];
+  versions?: ReactNode;
+}): ReactElement {
+  const pair = defaultPair(rows);
+  if (pair === null) {
+    return <EmptyState title="This factory needs two versions to diff." action={versions} />;
+  }
+  return (
+    <>
+      <p data-default-pair={`${pair.a} ${pair.b}`} className="mb-2 text-sm text-text-secondary">
+        Showing the newest two versions{pair.recorded ? ' with a recorded architecture' : ''}, older
+        to newer. {versions} to pick another pair.
+      </p>
+      <Pair a={pair.a} b={pair.b} />
+      <DiffView result={diffVersions(rows, pair.a, pair.b)} versions={versions} />
+    </>
   );
 }
 

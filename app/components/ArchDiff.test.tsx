@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { type ArchDiffRow, diffVersions } from '../lib/arch-diff';
-import { DiffView } from './ArchDiff';
+import { DefaultDiff, DiffView } from './ArchDiff';
 
 const V1 = `sha256:${'a1'.repeat(32)}`;
 const V3 = `sha256:${'c3'.repeat(32)}`;
@@ -68,4 +68,24 @@ test('each change is one row under its kind, marked added, removed or changed', 
     .map((m) => (m[1] ? `[${m[1]}]` : `${m[2]} ${m[3]}`))
     .join(' ');
   expect(rows).toBe('[workflow] removed archon-loop [step] [prompt] added loop/x.md [subagent]');
+});
+
+test('with no pair named it shows the newest two versions and says so; with one, one sentence', () => {
+  const dated = (row: ArchDiffRow, day: number): ArchDiffRow => ({
+    ...row,
+    first_run_at: new Date(Date.UTC(2026, 9, day)),
+  });
+  const v3Changed: ArchDiffRow = { ...workflows, digest: V3, entries: ['archon-loop\td'] };
+  const html = renderToStaticMarkup(
+    <DefaultDiff
+      rows={[dated(v1, 1), workflows, dated(v3, 4), v3Changed]}
+      versions={<a href="/v">Open the versions</a>}
+    />,
+  );
+  expect(html).toContain(`data-default-pair="${V1} ${V3}"`);
+  expect(html).toContain('Showing the newest two versions with a recorded architecture');
+  expect(html).toContain('data-change="changed"');
+  expect(html).toContain('href="/v"');
+  const one = renderToStaticMarkup(<DefaultDiff rows={[v1, workflows]} />);
+  expect(sentences(one)).toEqual(['This factory needs two versions to diff.']);
 });

@@ -9,6 +9,7 @@ import {
   type Measured,
   MEASURES,
   meaningful,
+  newestVersionWithLaps,
   type Scorecard as Card,
   isVersionOf,
   type ScorecardRow,
@@ -86,12 +87,24 @@ export function ScorecardView({
       Open the versions
     </Link>
   );
+  // No version named: open on the newest version a lap ran, and say so (#camera-polish).
+  const picked = a || newestVersionWithLaps(rows);
+  if (!picked) {
+    return <EmptyState title="No lap has run on this factory yet." action={versionsLink} />;
+  }
   if (!a) {
+    const { pin } = versionPin(rows, picked);
     return (
-      <EmptyState
-        title="Pick a version on the versions screen to see its scorecard."
-        action={versionsLink}
-      />
+      <>
+        <p data-default-version={picked} className="mb-3 text-sm text-text-secondary">
+          Showing the newest version with laps,{' '}
+          <span className="font-mono tabular-nums text-text-primary">
+            {pin === null ? short(picked) : pin.slice(0, 8)}
+          </span>
+          . {versionsLink} to pick or compare another.
+        </p>
+        <ScorecardView factory={factory} a={picked} b={undefined} rows={rows} />
+      </>
     );
   }
   const sides = b

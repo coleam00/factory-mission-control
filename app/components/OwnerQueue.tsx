@@ -167,7 +167,7 @@ function QuestionDetail({ item, now }: { item: OwnerItem; now: number }): ReactE
   const raised = item.waiting_since?.getTime() ?? null;
   const applies = item.default_at?.getTime() ?? null;
   const elapsed =
-    raised === null || applies === null || applies <= raised
+    raised === null || applies === null || applies <= raised || item.default_option === null
       ? null
       : Math.min(1, Math.max(0, (now - raised) / (applies - raised)));
   return (
@@ -212,23 +212,32 @@ function QuestionDetail({ item, now }: { item: OwnerItem; now: number }): ReactE
       </div>
       <div className="mt-4 grid gap-2">
         {/* The date, its UTC and the countdown must all show on a phone: nothing truncates. */}
-        <p className={`${MONO} min-w-0 text-text-secondary`}>
-          Default{' '}
-          <span className="font-bold text-text-primary">
-            <span data-default-option>{item.default_option ?? NONE}</span>
-          </span>{' '}
-          applies{' '}
-          {item.default_at === null || untilDefault === null ? (
-            NONE
-          ) : (
-            <span data-default-at={item.default_at.toISOString()} className="text-text-primary">
-              {utcMinute(item.default_at)}{' '}
-              <span className="whitespace-nowrap font-semibold" style={{ color: 'var(--warning)' }}>
-                {untilDefault > 0 ? `in ${waited(untilDefault)}` : `${waited(-untilDefault)} ago`}
+        {item.default_option === null ? (
+          <p data-no-default className={`${MONO} min-w-0 text-text-secondary`}>
+            No default: this waits for the owner.
+          </p>
+        ) : (
+          <p className={`${MONO} min-w-0 text-text-secondary`}>
+            Default{' '}
+            <span className="font-bold text-text-primary">
+              <span data-default-option>{item.default_option}</span>
+            </span>{' '}
+            applies{' '}
+            {item.default_at === null || untilDefault === null ? (
+              NONE
+            ) : (
+              <span data-default-at={item.default_at.toISOString()} className="text-text-primary">
+                {utcMinute(item.default_at)}{' '}
+                <span
+                  className="whitespace-nowrap font-semibold"
+                  style={{ color: 'var(--warning)' }}
+                >
+                  {untilDefault > 0 ? `in ${waited(untilDefault)}` : `${waited(-untilDefault)} ago`}
+                </span>
               </span>
-            </span>
-          )}
-        </p>
+            )}
+          </p>
+        )}
         {elapsed === null ? null : (
           <div aria-hidden="true" className="h-1.5 overflow-hidden rounded-full bg-surface-inset">
             <div
