@@ -9,10 +9,16 @@ import { HomeMapBody } from './index';
 
 const REPO = join(import.meta.dir, '..', '..');
 
-const render = (rows: HomeMapRow[] | undefined, state: 'loading' | 'ready' | 'error') =>
+const OLDER = '8e3e1cefaf1e1b7955789d6a43a81b6c2dbd7082';
+
+const render = (
+  rows: HomeMapRow[] | undefined,
+  state: 'loading' | 'ready' | 'error',
+  at: string | null = null,
+) =>
   renderToStaticMarkup(
     <MemoryRouter>
-      <HomeMapBody rows={rows} state={state} factories={['here', 'north-star']} />
+      <HomeMapBody rows={rows} state={state} factories={['here', 'north-star']} at={at} />
     </MemoryRouter>,
   );
 
@@ -57,6 +63,34 @@ const step = (
   lap_factory,
   laps,
   is_current,
+});
+
+test('a version the address names with no map is one sentence naming it, and no button', () => {
+  const html = render([], 'ready', 'not-a-pin');
+  expect(textOf(html)).toBe('No version not-a-pin is recorded for this factory.');
+  expect(html).not.toMatch(/<button\b/);
+});
+
+const stepLinks = (html: string) =>
+  [...html.matchAll(/href="(\/steps\/[^"]*)"/g)].map(([, href]) => href);
+
+test('at an older version every step opens its screen at that version; at the current one, none names one', () => {
+  const rows = [
+    step('first', 0, 1),
+    step('second', 1),
+    { ...step('briefs', 0), role: 'input', workflow: 'wf-in', detail_workflow: 'wf-in' },
+  ] satisfies HomeMapRow[];
+  const older = stepLinks(render(rows, 'ready', OLDER));
+  expect(older).toEqual([
+    `/steps/wf-in/briefs?at=${OLDER}`,
+    `/steps/wf/first?at=${OLDER}`,
+    `/steps/wf/second?at=${OLDER}`,
+  ]);
+  expect(stepLinks(render(rows, 'ready'))).toEqual([
+    '/steps/wf-in/briefs',
+    '/steps/wf/first',
+    '/steps/wf/second',
+  ]);
 });
 
 const linkIn = (html: string, href: string) =>

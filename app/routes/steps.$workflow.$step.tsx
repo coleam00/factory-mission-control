@@ -12,6 +12,7 @@ import {
   type PartRow,
   type StepRow,
   type SubagentRow,
+  stepHref,
   versionName,
   type YamlPartRow,
 } from '../lib/step-detail';
@@ -432,7 +433,11 @@ export default function StepDetail(): ReactElement {
   };
   return (
     <main className="mx-auto max-w-6xl px-6 py-8">
-      <StepVersionPicker factory={factory} at={at} workflow={workflow} path={step} />
+      <StepVersionPicker
+        factory={factory}
+        at={at}
+        href={(version) => stepHref(workflow, step, version)}
+      />
       <div className="flex flex-col gap-6">
         <LivePanel<StepRow> query="step-detail" factory={factory} args={[at ?? '']}>
           {(rows, state) => {

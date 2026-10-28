@@ -7,8 +7,8 @@ WITH current AS (
   ORDER BY p.committed_at DESC, a.parsed_at DESC
   LIMIT 1
 )
--- Every pin with architecture: the versions the step screen can open. Pins are shared by every
--- factory (PRD 11.2).
+-- Every pin with architecture: the versions the step screen and the home map can open. Pins are
+-- shared by every factory (PRD 11.2).
 SELECT p.sha, p.reason, p.committed_at, p.sha = c.sha AS is_current
 FROM mc.pins p
 JOIN mc.factories f ON f.name = $1

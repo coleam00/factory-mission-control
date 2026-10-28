@@ -3,6 +3,7 @@ import {
   type Box,
   type HomeMapRow,
   foldSteps,
+  homeHref,
   homeMap,
   exclusiveOn,
   layoutSteps,
@@ -117,6 +118,18 @@ test('a step links to its own workflow, a stage to the workflow its step include
   expect(href('a')).toBe('/steps/wf-loop/a');
   expect(href('b/two')).toBe('/steps/wf-block/two');
   expect(map.loop.steps.find((n) => n.id === 'b/two')?.liveCount).toBe(2);
+});
+
+test("at a version, every step opens its screen at that version; the current map's name none", () => {
+  const at = '8e3e1cefaf1e1b7955789d6a43a81b6c2dbd7082';
+  const hrefs = (map: ReturnType<typeof homeMap>) => [
+    ...map.loop.steps.map((n) => n.href),
+    ...[...map.workflows.values()].flatMap((g) => g.steps.map((n) => n.href)),
+  ];
+  expect(hrefs(homeMap(rows, SHOWN, at)).every((href) => href.endsWith(`?at=${at}`))).toBe(true);
+  expect(hrefs(homeMap(rows, SHOWN)).some((href) => href.includes('?at='))).toBe(false);
+  expect(homeHref(null)).toBe('/');
+  expect(homeHref(at)).toBe(`/?at=${at}`);
 });
 
 test("a step with several factories' laps is one node: the address factory's count, every factory listed", () => {
