@@ -187,14 +187,85 @@ test('token counts Realtime sends as strings still group their thousands', () =>
 
 test('a holdout line shows only its scenario id beside its kind, verdict and evidence', () => {
   const lines: CheckLineRow[] = [
-    { position: 1, kind: 'criterion', verdict: 'PASS', evidence_count: 2, scenario_id: null },
-    { position: 3, kind: 'holdout', verdict: 'FAIL', evidence_count: 1, scenario_id: 'H-01' },
+    {
+      position: 1,
+      line_id: null,
+      kind: 'criterion',
+      verdict: 'PASS',
+      evidence_count: 2,
+      scenario_id: null,
+    },
+    {
+      position: 3,
+      line_id: 'H2',
+      kind: 'holdout',
+      verdict: 'FAIL',
+      evidence_count: 1,
+      scenario_id: 'H-01',
+    },
   ];
   const html = render(<CheckList rows={lines} />);
   expect(html).toContain('data-scenario="H-01"');
   expect(html).toContain('>H-01<');
   expect(html).toContain('data-verdict="FAIL"');
   expect(html).toContain('data-evidence="2"');
+  expect(html).toContain('data-position="3" data-line-id="H2"');
+  expect(html).toContain('>H2<');
+  expect(html.match(/data-line-id=/g)).toHaveLength(1);
+});
+
+test('a disposition marks the one app check line it answers, or says it matches none', () => {
+  const lines: CheckLineRow[] = [
+    {
+      position: 4,
+      line_id: 'H2',
+      kind: 'holdout',
+      verdict: 'FAIL',
+      evidence_count: 1,
+      scenario_id: 'H-02',
+    },
+    {
+      position: 5,
+      line_id: null,
+      kind: 'defect',
+      verdict: 'FAIL',
+      evidence_count: 1,
+      scenario_id: null,
+    },
+  ];
+  const lap: OneLapRow = {
+    ...refused,
+    dispositions: [
+      { line: 'H2', action: 'blocks' },
+      { line: 'H9', action: 'issue' },
+      { line: null, action: 'declined' },
+    ],
+  };
+  const dispositions = (html: string) => html.match(/<li data-disposition[^>]*>/g) ?? [];
+
+  const matched = dispositions(render(<LapHeaderBody lap={lap} checks={lines} now={0} />));
+  expect(matched).toHaveLength(3);
+  expect(matched[0]).toContain('data-check-position="4"');
+  expect(matched[0]).not.toContain('data-unmatched');
+  for (const unmatched of matched.slice(1)) {
+    expect(unmatched).toContain('data-unmatched');
+    expect(unmatched).not.toContain('data-check-position');
+  }
+  expect(render(<LapHeaderBody lap={lap} checks={lines} now={0} />)).toContain(
+    'matches no app check line',
+  );
+
+  // A lap whose lines were projected before they kept an id, or that has none.
+  for (const checks of [[], lines.map((l) => ({ ...l, line_id: null }))]) {
+    const html = render(<LapHeaderBody lap={lap} checks={checks} now={0} />);
+    expect(dispositions(html).every((d) => d.includes('data-unmatched'))).toBe(true);
+    expect(html).not.toContain('data-check-position');
+  }
+
+  // Until the lines load, no disposition is called unmatched.
+  const waiting = render(<LapHeaderBody lap={lap} now={0} />);
+  expect(waiting).not.toContain('data-unmatched');
+  expect(waiting).not.toContain('data-check-position');
 });
 
 test('a lap address that is not a run id shows the id as typed and nothing under it', () => {

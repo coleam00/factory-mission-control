@@ -6,6 +6,7 @@ import {
   attemptSeconds,
   attemptsInOrder,
   type CheckLineRow,
+  checkLineFor,
   consoleUrl,
   GATE_TOKEN,
   lapCost,
@@ -54,7 +55,8 @@ export function NoLap({ runId }: { runId: string }): ReactElement {
 
 /**
  * The lap: its header, and its steps and app check under it. Those are asked for only once the
- * lap's row is found, so an id with no lap here shows the not-found line and nothing else.
+ * lap's row is found, so an id with no lap here shows the not-found line and nothing else. The
+ * app check's lines come back up so the review can say which line each disposition answers.
  */
 export function OneLap({
   factory,
@@ -63,14 +65,16 @@ export function OneLap({
   factory: string | undefined;
   runId: string;
 }): ReactElement {
+  const [checks, setChecks] = useState<Lifted<CheckLineRow>>({ rows: undefined, state: 'loading' });
+  const known = checks.state === 'ready' ? checks.rows : undefined;
   return (
     <LivePanel<OneLapRow> query="one-lap" factory={factory} args={[runId]}>
       {(rows, state) => (
         <PanelBody rows={rows} state={state} factory={factory} what="the lap">
           {(loaded) => (
-            <LapFound lap={loaded[0]} runId={runId}>
+            <LapFound lap={loaded[0]} runId={runId} checks={known}>
               <LapSteps factory={factory} runId={runId} />
-              <LapChecks factory={factory} runId={runId} />
+              <LapChecks factory={factory} runId={runId} onRows={setChecks} />
             </LapFound>
           )}
         </PanelBody>
@@ -83,11 +87,14 @@ export function OneLap({
 export function LapFound({
   lap,
   runId,
+  checks,
   children,
   now,
 }: {
   lap: OneLapRow | undefined;
   runId: string;
+  /** The lap's app-check lines, once they have loaded. */
+  checks?: readonly CheckLineRow[];
   children: ReactNode;
   /** A fixed clock, for tests; the screen uses the browser's. */
   now?: number;
@@ -95,7 +102,7 @@ export function LapFound({
   if (lap === undefined) return <NoLap runId={runId} />;
   return (
     <div className="grid gap-8">
-      <LapHeaderBody lap={lap} now={now} />
+      <LapHeaderBody lap={lap} checks={checks} now={now} />
       {children}
     </div>
   );
@@ -103,9 +110,12 @@ export function LapFound({
 
 export function LapHeaderBody({
   lap,
+  checks,
   now: fixed,
 }: {
   lap: OneLapRow;
+  /** The lap's app-check lines, once they have loaded; until then no disposition is matched. */
+  checks?: readonly CheckLineRow[];
   /** A fixed clock, for tests; the screen uses the browser's. */
   now?: number;
 }): ReactElement {
@@ -199,14 +209,20 @@ export function LapHeaderBody({
         </a>
       </div>
       <div className="grid gap-6 sm:grid-cols-2">
-        <Review lap={lap} />
+        <Review lap={lap} checks={checks} />
         <Gate lap={lap} />
       </div>
     </div>
   );
 }
 
-function Review({ lap }: { lap: OneLapRow }): ReactElement {
+function Review({
+  lap,
+  checks,
+}: {
+  lap: OneLapRow;
+  checks: readonly CheckLineRow[] | undefined;
+}): ReactElement {
   const outcome = lap.review_outcome;
   return (
     <section
@@ -236,6 +252,7 @@ function Review({ lap }: { lap: OneLapRow }): ReactElement {
             <ol className="grid gap-1.5">
               {(lap.dispositions ?? []).map((d, i) => {
                 const action = actionText(d.action);
+                const answered = checks === undefined ? undefined : checkLineFor(d.line, checks);
                 return (
                   <li
                     // biome-ignore lint/suspicious/noArrayIndexKey: a disposition's place in the review is its only identity
@@ -243,10 +260,13 @@ function Review({ lap }: { lap: OneLapRow }): ReactElement {
                     data-disposition
                     data-line={d.line ?? undefined}
                     data-action={action ?? undefined}
+                    data-check-position={answered?.position}
+                    data-unmatched={answered === null ? '' : undefined}
                     className={`${MONO} flex flex-wrap gap-x-3 text-text-primary`}
                   >
                     <span className="text-text-secondary">{d.line ?? 'no line id'}</span>
                     <span className="[overflow-wrap:anywhere]">{action ?? <None />}</span>
+                    {answered === null && <None>matches no app check line</None>}
                   </li>
                 );
               })}
@@ -292,14 +312,18 @@ function Gate({ lap }: { lap: OneLapRow }): ReactElement {
   );
 }
 
-/** The lap's map rows as its panel last delivered them. */
-interface MapState {
-  rows: readonly LapMapRow[] | undefined;
+/** A panel's rows as it last delivered them. */
+interface Lifted<Row> {
+  rows: readonly Row[] | undefined;
   state: PanelState;
 }
 
 /** Hands a panel's rows up to the screen that draws them with another panel's rows. */
-function Lift({ rows, state, onChange }: MapState & { onChange: (map: MapState) => void }): null {
+function Lift<Row>({
+  rows,
+  state,
+  onChange,
+}: Lifted<Row> & { onChange: (lifted: Lifted<Row>) => void }): null {
   useEffect(() => onChange({ rows, state }), [rows, state, onChange]);
   return null;
 }
@@ -316,7 +340,7 @@ export function LapSteps({
   factory: string | undefined;
   runId: string;
 }): ReactElement {
-  const [map, setMap] = useState<MapState>({ rows: undefined, state: 'loading' });
+  const [map, setMap] = useState<Lifted<LapMapRow>>({ rows: undefined, state: 'loading' });
   return (
     <>
       <LivePanel<LapMapRow>
@@ -348,7 +372,7 @@ export function LapStepsBody({
   now: fixed,
 }: {
   rows: readonly StepAttemptRow[];
-  map: MapState;
+  map: Lifted<LapMapRow>;
   /** A fixed clock, for tests; the screen uses the browser's. */
   now?: number;
 }): ReactElement {
@@ -497,18 +521,24 @@ export function StepList({
   );
 }
 
-/** The lap's app-check lines: kind, verdict, evidence count, and a holdout by its scenario id. */
+/**
+ * The lap's app-check lines: the report's line id, kind, verdict, evidence count, and a holdout by
+ * its scenario id.
+ */
 export function LapChecks({
   factory,
   runId,
+  onRows,
 }: {
   factory: string | undefined;
   runId: string;
+  onRows: (lifted: Lifted<CheckLineRow>) => void;
 }): ReactElement {
   return (
     <LivePanel<CheckLineRow> query="one-lap-checks" factory={factory} args={[runId]}>
       {(rows, state) => (
         <>
+          <Lift rows={rows} state={state} onChange={onRows} />
           <h2 className={`${LABEL} mb-3`}>App check</h2>
           <PanelBody rows={rows} state={state} factory={factory} what="the app check">
             {(loaded) =>
@@ -536,13 +566,15 @@ export function CheckList({ rows }: { rows: readonly CheckLineRow[] }): ReactEle
           key={line.position}
           data-check-line
           data-position={line.position}
+          data-line-id={line.line_id ?? undefined}
           data-kind={line.kind}
           data-verdict={line.verdict}
           data-evidence={line.evidence_count}
           data-scenario={line.scenario_id ?? undefined}
-          className={`${MONO} grid grid-cols-[32px_minmax(0,1fr)_auto] items-center gap-x-[18px] gap-y-1 border-b border-border/40 px-[18px] py-[11px] last:border-b-0 sm:grid-cols-[32px_96px_minmax(0,1fr)_72px_120px]`}
+          className={`${MONO} grid grid-cols-[32px_40px_minmax(0,1fr)_auto] items-center gap-x-[18px] gap-y-1 border-b border-border/40 px-[18px] py-[11px] last:border-b-0 sm:grid-cols-[32px_40px_96px_minmax(0,1fr)_72px_120px]`}
         >
           <span className="text-text-secondary">{line.position}</span>
+          <span className="text-text-primary">{line.line_id ?? ''}</span>
           <span className="text-text-primary">{line.kind}</span>
           <span className="text-text-secondary">{line.scenario_id ?? ''}</span>
           <span
@@ -551,7 +583,9 @@ export function CheckList({ rows }: { rows: readonly CheckLineRow[] }): ReactEle
           >
             {line.verdict}
           </span>
-          <span className="text-text-secondary sm:text-right">{line.evidence_count} evidence</span>
+          <span className="col-span-3 text-text-secondary sm:col-span-1 sm:text-right">
+            {line.evidence_count} evidence
+          </span>
         </li>
       ))}
     </ol>

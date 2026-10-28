@@ -101,6 +101,7 @@ test('keeps holdout tables to ids, verdicts, kinds and pre-existing references',
     ORDER BY table_name, column_name`);
   expect(textColumns).toEqual([
     { table_name: 'app_check_lines', column_name: 'kind' },
+    { table_name: 'app_check_lines', column_name: 'line_id' },
     { table_name: 'app_check_lines', column_name: 'pre_existing_refs' },
     { table_name: 'app_check_lines', column_name: 'scenario_id' },
     { table_name: 'app_check_lines', column_name: 'verdict' },
@@ -135,6 +136,13 @@ test('refuses holdout text wherever a line could carry it', async () => {
       [RUN_ID, ['H-03 the user sees HOLDOUT-TEXT-MARKER']],
     ),
   ).rejects.toThrow('app_check_lines_pre_existing_refs_check');
+  await expect(
+    db.query(
+      `INSERT INTO mc.app_check_lines (run_id, position, line_id, kind, verdict, evidence_count)
+       VALUES ($1, 7, $2, 'probe', 'FAIL', 1)`,
+      [RUN_ID, 'H2 the user sees HOLDOUT-TEXT-MARKER'],
+    ),
+  ).rejects.toThrow('app_check_lines_line_id_check');
   await expect(appCheckLine(3, 'probe', 'the user sees x', null)).rejects.toThrow(
     'app_check_lines_verdict_check',
   );
