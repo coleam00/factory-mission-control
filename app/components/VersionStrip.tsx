@@ -205,7 +205,11 @@ function Entry({
       data-kind={digest === null ? 'pending' : 'version'}
       data-digest={digest ?? undefined}
       data-pin={entry.pin ?? undefined}
-      className="grid grid-cols-[96px_minmax(0,1fr)] gap-x-4 sm:grid-cols-[132px_minmax(0,1fr)]"
+      // The highlight sits on the entry itself, rail and card together: a link to this version
+      // (`?pin=`) and a selection both light the whole row.
+      className={`grid grid-cols-[96px_minmax(0,1fr)] gap-x-4 rounded-[10px] pl-2 sm:grid-cols-[132px_minmax(0,1fr)] ${
+        marked ? 'bg-[color:var(--accent-soft)] ring-2 ring-inset ring-selected' : ''
+      }`}
     >
       <div className="relative pt-[13px]">
         {/* The rail: a line through every version, stopping at the newest. */}
@@ -242,8 +246,8 @@ function Entry({
         </div>
       </div>
       <div
-        className={`flex min-w-0 flex-col gap-2 rounded-[10px] border border-border bg-surface px-[18px] py-[13px] ${
-          marked ? 'bg-[color:var(--accent-soft)] ring-2 ring-inset ring-selected' : ''
+        className={`flex min-w-0 flex-col gap-2 rounded-[10px] border border-border px-[18px] py-[13px] ${
+          marked ? 'bg-transparent' : 'bg-surface'
         }`}
       >
         <div className="flex flex-wrap items-center gap-x-[18px] gap-y-1">
