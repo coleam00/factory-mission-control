@@ -130,6 +130,22 @@ export function isVersionOf(rows: readonly ScorecardRow[], digest: string): bool
 }
 
 /**
+ * The versions a scorecard opened from another factory's (by the factory switcher) keeps: each of
+ * `a` and `b` this factory has (`isVersionOf`), in order, so a kept `b` becomes `a` when `a` is
+ * dropped. A version this factory never ran is dropped, never shown as this factory's.
+ */
+export function keptVersions(
+  rows: readonly ScorecardRow[],
+  a: string | undefined,
+  b: string | undefined,
+): { a: string | undefined; b: string | undefined } {
+  const [first, second] = [a, b].filter(
+    (digest): digest is string => !!digest && isVersionOf(rows, digest),
+  );
+  return { a: first, b: second === first ? undefined : second };
+}
+
+/**
  * The newest version a lap ran, by its first run (mc.versions' `first_run_at`, else its earliest
  * lap's start), for the scorecard to open on when no version is named; null when no lap ran.
  */

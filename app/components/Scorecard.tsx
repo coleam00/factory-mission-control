@@ -1,5 +1,5 @@
-import type { ReactElement } from 'react';
-import { Link } from 'react-router';
+import { type ReactElement, useEffect } from 'react';
+import { Link, useNavigate } from 'react-router';
 import { formatCost, formatNumber, formatSigned } from '../lib/format';
 import {
   dataValue,
@@ -12,6 +12,7 @@ import {
   newestVersionWithLaps,
   type Scorecard as Card,
   isVersionOf,
+  keptVersions,
   type ScorecardRow,
   scorecard,
   versionLaps,
@@ -43,15 +44,20 @@ interface Version {
 
 const short = (digest: string): string => digest.slice(0, 'sha256:'.length + 12);
 
-/** One factory's scorecard for version `a`, and `b` beside it when given, by pack digest. */
+/**
+ * One factory's scorecard for version `a`, and `b` beside it when given, by pack digest. Opened by
+ * the factory switcher (`switched`), `a` and `b` are another factory's: those this one ran are kept.
+ */
 export function Scorecard({
   factory,
   a,
   b,
+  switched = false,
 }: {
   factory: string | undefined;
   a: string | undefined;
   b: string | undefined;
+  switched?: boolean;
 }): ReactElement {
   return (
     <LivePanel<ScorecardRow> query="scorecard" factory={factory}>
@@ -62,6 +68,8 @@ export function Scorecard({
             <p className="text-sm text-text-secondary">Live data is unavailable.</p>
           ) : rows === undefined || factory === undefined ? (
             <p className="text-sm text-text-secondary">Loading the scorecard.</p>
+          ) : switched ? (
+            <SwitchedScorecard factory={factory} a={a} b={b} rows={rows} />
           ) : (
             <ScorecardView factory={factory} a={a} b={b} rows={rows} />
           )}
@@ -69,6 +77,32 @@ export function Scorecard({
       )}
     </LivePanel>
   );
+}
+
+/**
+ * The scorecard the switcher opened: the versions this factory ran of those the other factory's
+ * scorecard showed (`keptVersions`), with the address rewritten in place to name only them.
+ */
+export function SwitchedScorecard({
+  factory,
+  a,
+  b,
+  rows,
+}: {
+  factory: string;
+  a: string | undefined;
+  b: string | undefined;
+  rows: readonly ScorecardRow[];
+}): ReactElement {
+  const kept = keptVersions(rows, a, b);
+  const navigate = useNavigate();
+  const search = new URLSearchParams(
+    Object.entries(kept).filter((entry): entry is [string, string] => entry[1] !== undefined),
+  ).toString();
+  useEffect(() => {
+    navigate({ search: search === '' ? '' : `?${search}` }, { replace: true });
+  }, [navigate, search]);
+  return <ScorecardView factory={factory} a={kept.a} b={kept.b} rows={rows} />;
 }
 
 export function ScorecardView({

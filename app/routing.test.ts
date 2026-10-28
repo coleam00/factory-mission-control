@@ -83,8 +83,43 @@ test('choosing a factory keeps the screen, else goes to its home map', () => {
       `/f/second-factory/${path}`,
     );
   }
-  for (const from of ['/', '/f/mission-control', '/steps/archon-loop/check-app', '/f/a/nope']) {
+  for (const from of ['/', '/f/mission-control', '/f/a/nope', '/steps/archon-loop']) {
     expect(factoryPath(from, 'second-factory', screens)).toBe('/f/second-factory');
   }
   expect(factoryPath('/f/a/versions', 'a b/c', screens)).toBe('/f/a%20b%2Fc/versions');
+});
+
+test("choosing a factory from a step's page stays on that step's page, at the same version", () => {
+  const screens = [{ path: 'laps', label: 'Laps' }];
+  expect(factoryPath('/steps/archon-loop/check-app', 'second-factory', screens)).toBe(
+    '/steps/archon-loop/check-app',
+  );
+  expect(factoryPath('/steps/archon-loop/review', 'second-factory', screens, '?at=8e3e1cef')).toBe(
+    '/steps/archon-loop/review?at=8e3e1cef',
+  );
+});
+
+test("choosing a factory from a scorecard keeps its versions; other screens drop the old factory's search", () => {
+  const screens = [
+    { path: 'diff', label: 'Diff' },
+    { path: 'scorecard', label: 'Scorecard' },
+    { path: 'versions', label: 'Versions' },
+  ];
+  const A = `sha256:${'a1'.repeat(32)}`;
+  const B = `sha256:${'b2'.repeat(32)}`;
+  const search = `?a=${encodeURIComponent(A)}&b=${encodeURIComponent(B)}`;
+  expect(factoryPath('/f/mission-control/scorecard', 'second-factory', screens, search)).toBe(
+    `/f/second-factory/scorecard${search}`,
+  );
+  expect(
+    factoryPath('/f/mission-control/scorecard', 'second-factory', screens, `?a=${A}&x=1&b=`),
+  ).toBe(`/f/second-factory/scorecard?a=${encodeURIComponent(A)}`);
+  expect(factoryPath('/f/mission-control/scorecard', 'second-factory', screens)).toBe(
+    '/f/second-factory/scorecard',
+  );
+  for (const screen of ['diff', 'versions']) {
+    expect(factoryPath(`/f/mission-control/${screen}`, 'second-factory', screens, search)).toBe(
+      `/f/second-factory/${screen}`,
+    );
+  }
 });
