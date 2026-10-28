@@ -96,6 +96,12 @@ export const CASES: Case[] = [
     write: stepEvent('pick'),
   },
   {
+    name: 'ACCESS EXCLUSIVE mc.lap_step_attempt_usage: node_completed',
+    hold: exclusive('lap_step_attempt_usage'),
+    errors: 1,
+    write: stepEvent('pick'),
+  },
+  {
     name: 'ACCESS EXCLUSIVE mc.app_check_lines: check-app node_completed',
     hold: exclusive('app_check_lines'),
     errors: 1,
@@ -131,6 +137,7 @@ export const CASES: Case[] = [
       'laps',
       'lap_steps',
       'lap_step_attempts',
+      'lap_step_attempt_usage',
       'app_check_lines',
       'factories',
       'versions',
