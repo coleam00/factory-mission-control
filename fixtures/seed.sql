@@ -672,22 +672,14 @@ WHERE r.codebase_id IN ('5eed0000-0000-4000-8000-000000000000', '5eed0000-0000-4
   AND e.event_type IN ('node_completed', 'node_failed', 'node_skipped')
 ORDER BY e.created_at, e.event_order;
 
--- A check-app line keeps its position, kind, verdict, evidence count, pre_existing and, for a
--- holdout, the first H-<nn> of its text (holdoutId in parsers/metrics.ts); never the text itself.
-INSERT INTO mc.app_check_lines (run_id, position, kind, verdict, evidence_count, pre_existing,
-  scenario_id)
-SELECT e.workflow_run_id, l.position, l.line->>'kind', l.line->>'verdict',
-  jsonb_array_length(l.line->'evidence'), l.line->>'pre_existing',
-  CASE WHEN l.line->>'kind' = 'holdout'
-    THEN coalesce(substring(l.line->>'text' from '\mH-[0-9]{2,}\M'), 'unidentified') END
+-- A check-app report's lines, through the projection's own function.
+SELECT mc.project_app_check_lines(e.workflow_run_id, e.data->'structured_output'->'lines')
 FROM remote_agent_workflow_events e
 JOIN remote_agent_workflow_runs r ON r.id = e.workflow_run_id
-CROSS JOIN LATERAL jsonb_array_elements(e.data->'structured_output'->'lines')
-  WITH ORDINALITY AS l(line, position)
 WHERE r.codebase_id IN ('5eed0000-0000-4000-8000-000000000000', '5eed0000-0000-4000-8000-000000000001')
   AND e.event_type = 'node_completed' AND e.step_name = 'check-app'
   AND jsonb_typeof(e.data->'structured_output'->'lines') = 'array'
-ON CONFLICT DO NOTHING;
+ORDER BY e.created_at, e.event_order;
 
 -- A version is a digest the factory's laps ran, labelled with the last pin before its first run.
 INSERT INTO mc.versions (factory, digest, first_run_at, pin_sha)
