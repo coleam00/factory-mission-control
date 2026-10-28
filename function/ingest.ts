@@ -334,7 +334,9 @@ async function replaceSet(
 
 /**
  * Upserts the issue and every fact its body carries. A delivery older than the stored issue
- * (GitHub does not promise order) writes nothing.
+ * (GitHub does not promise order) writes nothing. A closed issue keeps the phase it already has,
+ * so closing it counts it among that phase's issues whatever `Phase:` line the closing delivery
+ * carries (#182); reopening it takes its body's phase again.
  */
 export async function writeIssue(tx: Tx, factory: string, issue: Issue): Promise<void> {
   const body = issue.body ?? '';
@@ -342,7 +344,9 @@ export async function writeIssue(tx: Tx, factory: string, issue: Issue): Promise
     `INSERT INTO mc.issues (factory, number, title, state, phase, url, created_at, updated_at, closed_at)
       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
       ON CONFLICT (factory, number) DO UPDATE SET title = EXCLUDED.title, state = EXCLUDED.state,
-        phase = EXCLUDED.phase, url = EXCLUDED.url, created_at = EXCLUDED.created_at,
+        phase = CASE WHEN EXCLUDED.state = 'closed' THEN coalesce(mc.issues.phase, EXCLUDED.phase)
+          ELSE EXCLUDED.phase END,
+        url = EXCLUDED.url, created_at = EXCLUDED.created_at,
         updated_at = EXCLUDED.updated_at, closed_at = EXCLUDED.closed_at
       WHERE mc.issues.updated_at <= EXCLUDED.updated_at
       RETURNING number`,
