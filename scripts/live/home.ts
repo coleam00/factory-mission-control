@@ -115,6 +115,16 @@ export function homePhase(ctx: LiveContext): LivePhase {
         ),
       );
       ctx.failures.push(...mapMismatches(await mapNodes(page), await lapsOnNodes(db, factory)));
+      // The inputs and the manager open folded, one card each, so the loop opens above the fold.
+      const cards = await page.evaluate<string[]>(
+        `[...document.querySelectorAll('${MAP} [data-workflow-card]')].map((c) => c.getAttribute('data-workflow-card') + ' ' + c.getAttribute('data-folded'))`,
+      );
+      const expectedCards = ['archon-backlog true', 'archon-holdouts true', 'archon-manager true'];
+      if (JSON.stringify([...cards].sort()) !== JSON.stringify(expectedCards)) {
+        ctx.failures.push(
+          `the map's workflow cards are ${JSON.stringify(cards)}, not ${JSON.stringify(expectedCards)}`,
+        );
+      }
       writeFileSync(join(outDir, 'home-map.png'), await page.screenshot(1440));
       onLiveStep = Number(await page.evaluate<string>(liveCountOf(LIVE_STEP)));
     },

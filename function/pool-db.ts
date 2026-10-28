@@ -40,6 +40,24 @@ export function poolDb(pool: pg.Pool): Db {
         client.release(broken);
       }
     },
+    async dropIdleConnections() {
+      // The pool hands out idle clients first, and destroys each released with `true`. Checked
+      // out, a client needs its own `error` listener, as in `transaction`. A concurrent delivery
+      // can take an idle client first, so a connect may dial and fail: the clients already
+      // checked out are still released, or the pool loses them for good.
+      const checkouts = await Promise.allSettled(
+        Array.from({ length: pool.idleCount }, async () => {
+          const client = await pool.connect();
+          client.on('error', () => {});
+          return client;
+        }),
+      );
+      for (const checkout of checkouts) {
+        if (checkout.status === 'fulfilled') checkout.value.release(true);
+      }
+      const failed = checkouts.find((checkout) => checkout.status === 'rejected');
+      if (failed) throw failed.reason;
+    },
     close: () => pool.end(),
   };
 }

@@ -118,6 +118,17 @@ const MINIMUMS: { name: string; min: number; sql: string }[] = [
     sql: `SELECT count(*) AS n FROM mc.decisions d
       WHERE EXISTS (SELECT 1 FROM mc.pins p WHERE p.sha LIKE d.version || '%')`,
   },
+  {
+    name: 'decisions.joined-by-archon-sha',
+    min: 1,
+    sql: `SELECT count(*) AS n FROM mc.decisions d
+      WHERE EXISTS (SELECT 1 FROM mc.pins p WHERE p.archon_sha LIKE d.version || '%')`,
+  },
+  {
+    name: 'pins.without-a-reason',
+    min: 1,
+    sql: 'SELECT count(*) AS n FROM mc.pins WHERE reason IS NULL',
+  },
   ...['criterion', 'holdout', 'probe', 'defect'].map((kind) => ({
     name: `app-check-lines.${kind}`,
     min: 1,

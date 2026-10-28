@@ -13,6 +13,7 @@ import {
   PACK_PATH,
   pinnedArchonSha,
   replaceDecisions,
+  writeIssue,
 } from './ingest';
 import { sign, verify } from './signature';
 
@@ -109,7 +110,7 @@ interface FixturePayload {
   ref: string;
   deleted: boolean;
   repository: { full_name: string };
-  commits: { id: string; added: string[]; removed: string[] }[];
+  commits: { id: string; message: string; added: string[]; removed: string[] }[];
   comment: { body: string; updated_at: string };
   issue: { body: string; labels: { name: string }[]; updated_at: string };
 }
@@ -254,6 +255,23 @@ test('a push with the appendix pin and verdict stores the full sha pin abd85896 
   expect(requests).toEqual([
     { method: 'GET', url: PACK_URL },
     { method: 'GET', url: DECISIONS_URL },
+  ]);
+});
+
+test('a push of a pin with no reason stores the pin, its reason not recorded', async () => {
+  await deliverChanged('09-', (p) => {
+    for (const commit of p.commits) {
+      if (commit.message.startsWith('Pin Archon ')) commit.message = 'Pin Archon abd85896';
+    }
+  });
+  expect(await rows('SELECT sha, archon_sha, reason, hypothesis, measure FROM mc.pins')).toEqual([
+    {
+      sha: '85d479ad987dd63e441622ecb03db65233e8a803',
+      archon_sha: PINNED,
+      reason: null,
+      hypothesis: null,
+      measure: null,
+    },
   ]);
 });
 
@@ -574,15 +592,49 @@ test.each(['deleted', 'transferred'])('an issue %s leaves the mirror', async (ac
   ]);
 });
 
+const terminated = 'terminating connection due to administrator command';
 test.each([
-  ['any other error is not retried', () => new Error('duplicate key'), 1],
   [
-    'a connection that closes again is retried once',
+    'a constraint violation is not retried',
+    () =>
+      Object.assign(new Error('duplicate key value violates unique constraint'), { code: '23505' }),
+    1,
+  ],
+  [
+    'a Bun SQL connection that closes again is retried once',
     () => Object.assign(new Error('closed'), { code: 'ERR_POSTGRES_CONNECTION_CLOSED' }),
+    2,
+  ],
+  [
+    'a Bun SQL socket that closes while a reply is expected is retried once',
+    () =>
+      Object.assign(new Error('Failed to read data'), { code: 'ERR_POSTGRES_EXPECTED_REQUEST' }),
+    2,
+  ],
+  [
+    'a reset socket is retried once',
+    () => Object.assign(new Error('read ECONNRESET'), { code: 'ECONNRESET' }),
+    2,
+  ],
+  [
+    'a Bun SQL connection the server terminates again is retried once',
+    () =>
+      Object.assign(new Error(terminated), { code: 'ERR_POSTGRES_SERVER_ERROR', errno: '57P01' }),
+    2,
+  ],
+  [
+    'a pg.Pool connection the server terminates again is retried once',
+    () => Object.assign(new Error(terminated), { code: '57P01' }),
+    2,
+  ],
+  [
+    'a node-postgres connection that ends again is retried once',
+    () => new Error('Connection terminated unexpectedly'),
     2,
   ],
 ])('%s', async (_, failure, attempts) => {
   let transactions = 0;
+  let drops = 0;
   app = createWebhookApp({
     secret: SECRET,
     db: {
@@ -591,6 +643,9 @@ test.each([
       transaction: async () => {
         transactions += 1;
         throw failure();
+      },
+      dropIdleConnections: async () => {
+        drops += 1;
       },
     },
     factories: factories.factories,
@@ -605,9 +660,9 @@ test.each([
     error.mockRestore();
   }
   expect(transactions).toBe(attempts);
+  expect(drops).toBe(attempts - 1);
 });
 
-const terminated = 'terminating connection due to administrator command';
 test.each([
   [
     'Bun SQL',
@@ -645,3 +700,70 @@ test.each([
     expect(await rows('SELECT number FROM mc.issues')).toEqual([{ number: 44 }]);
   },
 );
+
+test('a Loop metrics body is written in a few statements, a later line for the same time winning', async () => {
+  const pass = (at: string, merged: number) =>
+    `${at} | merged since last pass: ${merged} (simple ${merged}, complex 0, continue 0) | open PRs: 2 | ` +
+    'loop send-backs since last pass: 1 | merge-gate refusals: 0 | ship correction rounds: 2 | ' +
+    'needs-owner open: 1 | owner questions open: 2 | default branch checks: green (CI) | ' +
+    'laps since last pass: 9 (empty 2, failed 0) | health actions: 1';
+  const lines = [
+    'One line per manager pass.',
+    ...Array.from({ length: 60 }, (_, i) =>
+      pass(`2026-10-${10 + Math.floor(i / 24)}T${String(i % 24).padStart(2, '0')}:00Z`, i),
+    ),
+    // The same time written again, with seconds: the later line wins, as upserting in turn did.
+    pass('2026-10-10T00:00:00Z', 99),
+    '2026-10-25T14:20Z | holdouts at 3e4f5a6b: H-01 PASS, H-02 FAIL #41, H-03 INCOMPLETE #42',
+    // The same report again: its verdicts become this line's, H-03 gone, H-01 its later verdict.
+    '2026-10-25T14:20Z | holdouts at 3e4f5a6c: H-01 FAIL #43, H-02 FAIL #41, H-01 PASS',
+    '2026-10-26T09:00Z | holdouts at 3e4f5a6d: H-04 PASS',
+  ];
+  const statements: string[] = [];
+  await db.transaction((tx) =>
+    writeIssue(
+      {
+        query: (text, params) => {
+          statements.push(text);
+          return tx.query(text, params);
+        },
+      },
+      'mission-control',
+      {
+        number: 777,
+        title: 'Loop metrics',
+        state: 'open',
+        body: lines.join('\n'),
+        html_url: 'https://github.com/o/r/issues/777',
+        created_at: '2026-10-01T00:00:00Z',
+        updated_at: '2026-10-26T09:00:00Z',
+        closed_at: null,
+        labels: [],
+      } as unknown as Parameters<typeof writeIssue>[2],
+    ),
+  );
+  const writes = (table: string) =>
+    statements.filter((s) => s.replace(/\s+/g, ' ').includes(`INSERT INTO ${table} (`)).length;
+  expect(writes('mc.metrics_lines')).toBe(1);
+  expect(writes('mc.holdout_reports')).toBe(1);
+  expect(writes('mc.holdout_verdicts')).toBe(1);
+  expect(
+    await rows('SELECT count(*)::int AS n FROM mc.metrics_lines WHERE issue_number = 777'),
+  ).toEqual([{ n: 60 }]);
+  expect(
+    await rows(
+      `SELECT merged_total FROM mc.metrics_lines WHERE issue_number = 777 AND at = '2026-10-10T00:00Z'`,
+    ),
+  ).toEqual([{ merged_total: 99 }]);
+  expect(
+    await rows(
+      `SELECT r.sha, v.scenario_id, v.verdict, v.issue_number FROM mc.holdout_reports r
+         JOIN mc.holdout_verdicts v ON v.report_id = r.id WHERE r.issue_number = 777
+         ORDER BY r.at, v.scenario_id`,
+    ),
+  ).toEqual([
+    { sha: '3e4f5a6c', scenario_id: 'H-01', verdict: 'PASS', issue_number: null },
+    { sha: '3e4f5a6c', scenario_id: 'H-02', verdict: 'FAIL', issue_number: 41 },
+    { sha: '3e4f5a6d', scenario_id: 'H-04', verdict: 'PASS', issue_number: null },
+  ]);
+});

@@ -50,6 +50,8 @@ interface IssuesOnScreen {
   dependencies: string[];
   phases: { phase: string; merged: number; total: number }[];
   columns: { phase: string; open: number; merged: number; closed: number }[];
+  /** `data-done-phases` and its counts: the phases with no open work, which get no column. */
+  done: { phases: number; merged: number; closed: number };
   /** `data-hidden-open`: open issues the default view's cap left out, 0 when none. */
   hidden: number;
   /** Whether the "Show merged" toggle is on. */
@@ -89,6 +91,14 @@ const issuesOnScreen = `(() => {
       merged: Number(c.getAttribute('data-merged')),
       closed: Number(c.getAttribute('data-closed')),
     })),
+    done: (() => {
+      const p = document.querySelector('${ISSUES} [data-done-phases]');
+      return {
+        phases: Number(p?.getAttribute('data-done-phases') ?? 0),
+        merged: Number(p?.getAttribute('data-done-merged') ?? 0),
+        closed: Number(p?.getAttribute('data-done-closed') ?? 0),
+      };
+    })(),
     hidden: Number(document.querySelector('${ISSUES} [data-hidden-open]')?.getAttribute('data-hidden-open') ?? 0),
     showMerged: document.querySelector('${ISSUES} [data-show-merged]')?.getAttribute('aria-pressed') === 'true',
   };
@@ -184,11 +194,20 @@ async function seedIssueGraphMismatches(
      GROUP BY phase ORDER BY phase IS NULL, min(number)`,
     [factory],
   );
+  // A phase with no open work gets no column; its counts are summed in the done phases line.
   same(
     'phase columns',
     byDefault.columns,
-    columns.map((c) => ({ phase: c.phase, open: c.open, merged: c.merged, closed: c.closed })),
+    columns
+      .filter((c) => Number(c.open) > 0)
+      .map((c) => ({ phase: c.phase, open: c.open, merged: c.merged, closed: c.closed })),
   );
+  const done = columns.filter((c) => Number(c.open) === 0 && c.phase !== '');
+  same('done phases', byDefault.done, {
+    phases: done.length,
+    merged: done.reduce((n, c) => n + Number(c.merged), 0),
+    closed: done.reduce((n, c) => n + Number(c.closed), 0),
+  });
 
   // Show merged: the full history, checked as the graph was before it collapsed merged work.
   if (!(await page.evaluate<boolean>(showMerged(true)))) {

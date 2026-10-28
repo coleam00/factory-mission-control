@@ -166,8 +166,15 @@ test('by default only open issues and what they directly depend on are drawn', (
 });
 
 test('merged and closed issues collapse into counts per phase, phases in order, No phase last', () => {
+  // Skeleton has no open work: no column, its counts go to the done phases.
+  expect(issueView(seed).done).toEqual({ phases: 1, merged: 2, closed: 1, unphased: null });
+  expect(issueView(seed, { showMerged: true }).columns[0]).toEqual({
+    phase: 'Skeleton',
+    open: 0,
+    merged: 2,
+    closed: 1,
+  });
   expect(issueView(seed).columns).toEqual([
-    { phase: 'Skeleton', open: 0, merged: 2, closed: 1 },
     { phase: 'Schema', open: 1, merged: 2, closed: 0 },
     { phase: 'Screens', open: 3, merged: 0, closed: 0 },
     { phase: null, open: 1, merged: 0, closed: 0 },
@@ -225,6 +232,12 @@ test('every edge runs down: an issue sits in a band below everything it depends 
 test('each issue sits inside its phase column, and the columns fit the width given', () => {
   const laid = layoutPhases(issueView(seed, { showMerged: true }), 1104);
   expect(laid.columns.map((c) => c.phase)).toEqual(['Skeleton', 'Schema', 'Screens', null]);
+  // By default Skeleton has no column; #1, done there, sits with #10, which depends on it.
+  const byDefault = layoutPhases(issueView(seed), 1104);
+  expect(byDefault.columns.map((c) => c.phase)).toEqual(['Schema', 'Screens', null]);
+  const none = byDefault.columns.find((c) => c.phase === null);
+  const one = byDefault.issues.find((i) => i.number === 1);
+  expect(one?.x).toBeGreaterThanOrEqual(none?.x ?? Number.NaN);
   expect(laid.width).toBeLessThanOrEqual(1104);
   expect(laid.overflows).toBe(false);
   for (const i of laid.issues) {
@@ -298,4 +311,106 @@ test('no edge runs over an issue it does not join, even where a band wraps', () 
   for (const showMerged of [false, true]) {
     expect(edgesOverIssues(layoutPhases(issueView(seed, { showMerged }), 1104))).toEqual([]);
   }
+});
+
+/** The graph's width at a 1920 x 1080 viewport: the screen's 64 px gutters either side. */
+const AT_1920 = 1920 - 2 * 64;
+
+/**
+ * mission-control's main data on 2026-10-28: 22 phases, every one of them done (1-2 closed issues
+ * each), and all 41 open issues with no phase beside 84 closed ones. Some open issues depend on
+ * others in chains, one on a closed issue.
+ */
+const PHASE_SIZES: [string, number][] = [
+  ['Skeleton', 2],
+  ['Check branches', 1],
+  ['Comment parsers', 1],
+  ['Architecture job', 2],
+  ['Schema and seed', 2],
+  ['Realtime spike and sealing API', 1],
+  ['Archon projection triggers', 2],
+  ['Webhook Function handler', 1],
+  ['backfill and nightly reconcile', 1],
+  ['the home-base map with step detail', 2],
+  ['Version strip', 1],
+  ['scorecard and comparison', 1],
+  ['decisions timeline and improvements ledger', 1],
+  ['architecture diff', 1],
+  ['Phases and issue graph', 1],
+  ['lanes and recent laps', 1],
+  ['Owner queue', 1],
+  ['testing panel', 1],
+  ['One lap', 1],
+  ['rewind', 1],
+  ['Health', 1],
+  ['Maintenance', 2],
+];
+const realShape = (): IssueGraphRow[] => {
+  const rows: IssueGraphRow[] = [];
+  let n = 0;
+  for (const [phase, size] of PHASE_SIZES) {
+    for (let k = 0; k < size; k++) rows.push(issue(++n, k === 1 ? 'closed' : 'merged', phase));
+  }
+  for (let k = 0; k < 84; k++) rows.push(issue(++n, k % 2 ? 'closed' : 'merged', null));
+  const firstOpen = n + 1;
+  const states: IssueState[] = [
+    'waiting',
+    'waiting',
+    'waiting',
+    'claimed',
+    'pr-open',
+    'needs-owner',
+  ];
+  for (let k = 0; k < 41; k++) rows.push(issue(++n, states[k % states.length], null));
+  const o = (k: number) => firstOpen + k;
+  // A chain of four, one of three, a pair, two issues on one, and one on a closed issue.
+  rows.push(edge(o(3), o(2)), edge(o(2), o(1)), edge(o(1), o(0)));
+  rows.push(edge(o(12), o(11)), edge(o(11), o(10)));
+  rows.push(edge(o(20), o(19)));
+  rows.push(edge(o(30), o(25)), edge(o(31), o(25)));
+  rows.push(edge(o(40), firstOpen - 1));
+  return rows;
+};
+
+test('the real shape: no column for a phase with no open work, and the graph fits 1920 px', () => {
+  const g = graph(realShape());
+  const view = issueView(g);
+  expect(view.columns).toEqual([{ phase: null, open: 41, merged: 42, closed: 42 }]);
+  expect(view.done).toEqual({ phases: 22, merged: 22, closed: 6, unphased: null });
+  expect(view.issues).toHaveLength(40);
+  expect(view.hidden).toBeGreaterThan(0);
+  const laid = layoutPhases(view, AT_1920);
+  expect(laid.overflows).toBe(false);
+  expect(laid.width).toBeLessThanOrEqual(AT_1920);
+  expect(laid.columns.map((c) => c.phase)).toEqual([null]);
+  // Across the width, not one tall stack: at least eight issues side by side, a few lines deep.
+  expect(new Set(laid.issues.map((i) => i.x)).size).toBeGreaterThanOrEqual(8);
+  expect(new Set(laid.issues.map((i) => i.y)).size).toBeLessThanOrEqual(8);
+  expect(edgesOverIssues(laid)).toEqual([]);
+  const at = new Map(laid.issues.map((i) => [i.number, i]));
+  for (const { from, on } of laid.dependencies) {
+    expect(at.get(from)?.y ?? 0).toBeGreaterThan((at.get(on)?.y ?? 0) + NODE.height);
+  }
+});
+
+test('the demo shape, open work spread over phases, also fits 1920 px with no scroll', () => {
+  const phases = ['Skeleton', 'Schema', 'Screens', 'Live', 'Health'];
+  const rows: IssueGraphRow[] = [];
+  let n = 0;
+  for (const phase of phases) {
+    rows.push(issue(++n, 'merged', phase), issue(++n, 'merged', phase));
+    for (let k = 0; k < 6; k++) rows.push(issue(++n, k % 3 ? 'waiting' : 'claimed', phase));
+  }
+  for (let k = 0; k < 4; k++) rows.push(issue(++n, 'waiting', null));
+  // Each phase's open work builds on the last one's, and on its own merged trunk.
+  for (let p = 1; p < phases.length; p++)
+    rows.push(edge(p * 8 + 3, p * 8 - 2), edge(p * 8 + 4, p * 8 + 3));
+  for (let p = 0; p < phases.length; p++) rows.push(edge(p * 8 + 3, p * 8 + 1));
+  const view = issueView(graph(rows));
+  expect(view.columns.map((c) => c.phase)).toEqual([...phases, null]);
+  const laid = layoutPhases(view, AT_1920);
+  expect(laid.overflows).toBe(false);
+  expect(laid.width).toBeLessThanOrEqual(AT_1920);
+  expect(edgesOverIssues(laid)).toEqual([]);
+  expect(layoutPhases(issueView(seed), AT_1920).overflows).toBe(false);
 });

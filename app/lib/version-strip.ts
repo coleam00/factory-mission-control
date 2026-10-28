@@ -22,7 +22,7 @@ interface PendingRow extends Trailers {
   digest: null;
   first_run_at: null;
   pin_sha: string;
-  reason: string;
+  reason: string | null;
   committed_at: Date;
 }
 
@@ -43,7 +43,8 @@ export interface StripEntry {
   measure: string;
 }
 
-const recorded = (text: string | null): string =>
+/** A pin's reason or trailer, or `not recorded` when the commit gave none. */
+export const recorded = (text: string | null): string =>
   text === null || text.trim() === '' ? NOT_RECORDED : text;
 
 /** Oldest first; a pin that has not run yet is dated by its commit, so it sorts last. */

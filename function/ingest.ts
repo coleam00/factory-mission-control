@@ -13,7 +13,12 @@ import {
 } from '../parsers/comments';
 import { parsePin, parseVerdict } from '../parsers/commits';
 import { parseDecisions } from '../parsers/decisions';
-import { parseHoldoutsLine, parseMetricsLine } from '../parsers/metrics';
+import {
+  type HoldoutsLine,
+  type MetricsLine,
+  parseHoldoutsLine,
+  parseMetricsLine,
+} from '../parsers/metrics';
 import type { Tx } from '../scripts/lib/db';
 import { type GitHub, GitHubError } from './github';
 
@@ -329,7 +334,9 @@ async function replaceSet(
 
 /**
  * Upserts the issue and every fact its body carries. A delivery older than the stored issue
- * (GitHub does not promise order) writes nothing.
+ * (GitHub does not promise order) writes nothing. A closed issue keeps the phase it already has,
+ * so closing it counts it among that phase's issues whatever `Phase:` line the closing delivery
+ * carries (#182); reopening it takes its body's phase again.
  */
 export async function writeIssue(tx: Tx, factory: string, issue: Issue): Promise<void> {
   const body = issue.body ?? '';
@@ -337,7 +344,9 @@ export async function writeIssue(tx: Tx, factory: string, issue: Issue): Promise
     `INSERT INTO mc.issues (factory, number, title, state, phase, url, created_at, updated_at, closed_at)
       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
       ON CONFLICT (factory, number) DO UPDATE SET title = EXCLUDED.title, state = EXCLUDED.state,
-        phase = EXCLUDED.phase, url = EXCLUDED.url, created_at = EXCLUDED.created_at,
+        phase = CASE WHEN EXCLUDED.state = 'closed' THEN coalesce(mc.issues.phase, EXCLUDED.phase)
+          ELSE EXCLUDED.phase END,
+        url = EXCLUDED.url, created_at = EXCLUDED.created_at,
         updated_at = EXCLUDED.updated_at, closed_at = EXCLUDED.closed_at
       WHERE mc.issues.updated_at <= EXCLUDED.updated_at
       RETURNING number`,
@@ -419,76 +428,117 @@ async function writeOwnerQuestions(tx: Tx, factory: string, issue: Issue): Promi
   );
 }
 
-/** Each manager pass line of the `Loop metrics` body; lines are only ever appended. */
+/**
+ * Each manager pass line of the `Loop metrics` body; lines are only ever appended. Written in a
+ * fixed handful of statements however long the body is (#260): one per line was a round trip
+ * each, and a body of a few hundred lines held its transaction open ~25 s from the owner's
+ * machine. A later line for the same `at` wins, as it did when each line was upserted in turn.
+ */
 async function writeMetrics(tx: Tx, factory: string, issue: number, body: string): Promise<void> {
+  const metrics = new Map<number, MetricsLine>();
+  const reports = new Map<number, HoldoutsLine>();
   for (const line of body.split(/\r?\n/)) {
-    const metrics = parseMetricsLine(line);
-    if (metrics) {
-      await tx.query(
-        `INSERT INTO mc.metrics_lines (factory, at, issue_number, merged_total, merged_simple,
-            merged_complex, merged_continue, open_prs, send_backs, gate_refusals, correction_rounds,
-            needs_owner_open, owner_questions_open, default_branch_checks, laps_total, laps_empty,
-            laps_failed, health_actions)
-          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
-          ON CONFLICT (factory, at) DO UPDATE SET issue_number = EXCLUDED.issue_number,
-            merged_total = EXCLUDED.merged_total, merged_simple = EXCLUDED.merged_simple,
-            merged_complex = EXCLUDED.merged_complex, merged_continue = EXCLUDED.merged_continue,
-            open_prs = EXCLUDED.open_prs, send_backs = EXCLUDED.send_backs,
-            gate_refusals = EXCLUDED.gate_refusals, correction_rounds = EXCLUDED.correction_rounds,
-            needs_owner_open = EXCLUDED.needs_owner_open,
-            owner_questions_open = EXCLUDED.owner_questions_open,
-            default_branch_checks = EXCLUDED.default_branch_checks,
-            laps_total = EXCLUDED.laps_total, laps_empty = EXCLUDED.laps_empty,
-            laps_failed = EXCLUDED.laps_failed, health_actions = EXCLUDED.health_actions`,
-        [
-          factory,
-          metrics.at,
-          issue,
-          metrics.merged.total,
-          metrics.merged.simple,
-          metrics.merged.complex,
-          metrics.merged.continue,
-          metrics.openPrs,
-          metrics.sendBacks,
-          metrics.gateRefusals,
-          metrics.correctionRounds,
-          metrics.needsOwnerOpen,
-          metrics.ownerQuestionsOpen,
-          metrics.defaultBranchChecks,
-          metrics.laps.total,
-          metrics.laps.empty,
-          metrics.laps.failed,
-          metrics.healthActions,
-        ],
-      );
+    const pass = parseMetricsLine(line);
+    if (pass) {
+      metrics.set(Date.parse(pass.at), pass);
       continue;
     }
-
     const holdouts = parseHoldoutsLine(line);
-    if (!holdouts) continue;
-    const [report] = await tx.query(
-      `INSERT INTO mc.holdout_reports (factory, at, issue_number, sha) VALUES ($1, $2, $3, $4)
-        ON CONFLICT (factory, at) DO UPDATE SET issue_number = EXCLUDED.issue_number,
-          sha = EXCLUDED.sha
-        RETURNING id`,
-      [factory, holdouts.at, issue, holdouts.sha],
-    );
-    const ids = holdouts.holdouts.map((h) => h.id);
-    await tx.query(
-      `DELETE FROM mc.holdout_verdicts WHERE report_id = $1
-        AND scenario_id NOT IN (SELECT jsonb_array_elements_text($2::jsonb))`,
-      [report?.id, ids],
-    );
-    for (const h of holdouts.holdouts) {
-      await tx.query(
-        `INSERT INTO mc.holdout_verdicts (report_id, scenario_id, verdict, issue_number)
-          VALUES ($1, $2, $3, $4)
-          ON CONFLICT (report_id, scenario_id) DO UPDATE SET verdict = EXCLUDED.verdict,
-            issue_number = EXCLUDED.issue_number`,
-        [report?.id, h.id, h.verdict, h.issue],
-      );
-    }
+    if (holdouts) reports.set(Date.parse(holdouts.at), holdouts);
   }
+
+  if (metrics.size > 0) {
+    await tx.query(
+      `INSERT INTO mc.metrics_lines (factory, at, issue_number, merged_total, merged_simple,
+          merged_complex, merged_continue, open_prs, send_backs, gate_refusals, correction_rounds,
+          needs_owner_open, owner_questions_open, default_branch_checks, laps_total, laps_empty,
+          laps_failed, health_actions)
+        SELECT $1, m.at, $2, m.merged_total, m.merged_simple, m.merged_complex, m.merged_continue,
+          m.open_prs, m.send_backs, m.gate_refusals, m.correction_rounds, m.needs_owner_open,
+          m.owner_questions_open, m.default_branch_checks, m.laps_total, m.laps_empty,
+          m.laps_failed, m.health_actions
+        FROM jsonb_to_recordset($3::jsonb) AS m(at timestamptz, merged_total integer,
+          merged_simple integer, merged_complex integer, merged_continue integer,
+          open_prs integer, send_backs integer, gate_refusals integer, correction_rounds integer,
+          needs_owner_open integer, owner_questions_open integer, default_branch_checks text,
+          laps_total integer, laps_empty integer, laps_failed integer, health_actions integer)
+        ON CONFLICT (factory, at) DO UPDATE SET issue_number = EXCLUDED.issue_number,
+          merged_total = EXCLUDED.merged_total, merged_simple = EXCLUDED.merged_simple,
+          merged_complex = EXCLUDED.merged_complex, merged_continue = EXCLUDED.merged_continue,
+          open_prs = EXCLUDED.open_prs, send_backs = EXCLUDED.send_backs,
+          gate_refusals = EXCLUDED.gate_refusals, correction_rounds = EXCLUDED.correction_rounds,
+          needs_owner_open = EXCLUDED.needs_owner_open,
+          owner_questions_open = EXCLUDED.owner_questions_open,
+          default_branch_checks = EXCLUDED.default_branch_checks,
+          laps_total = EXCLUDED.laps_total, laps_empty = EXCLUDED.laps_empty,
+          laps_failed = EXCLUDED.laps_failed, health_actions = EXCLUDED.health_actions`,
+      [
+        factory,
+        issue,
+        [...metrics.values()].map((m) => ({
+          at: m.at,
+          merged_total: m.merged.total,
+          merged_simple: m.merged.simple,
+          merged_complex: m.merged.complex,
+          merged_continue: m.merged.continue,
+          open_prs: m.openPrs,
+          send_backs: m.sendBacks,
+          gate_refusals: m.gateRefusals,
+          correction_rounds: m.correctionRounds,
+          needs_owner_open: m.needsOwnerOpen,
+          owner_questions_open: m.ownerQuestionsOpen,
+          default_branch_checks: m.defaultBranchChecks,
+          laps_total: m.laps.total,
+          laps_empty: m.laps.empty,
+          laps_failed: m.laps.failed,
+          health_actions: m.healthActions,
+        })),
+      ],
+    );
+  }
+
+  if (reports.size === 0) return;
+  const stored = await tx.query(
+    `INSERT INTO mc.holdout_reports (factory, at, issue_number, sha)
+      SELECT $1, h.at, $2, h.sha FROM jsonb_to_recordset($3::jsonb) AS h(at timestamptz, sha text)
+      ON CONFLICT (factory, at) DO UPDATE SET issue_number = EXCLUDED.issue_number,
+        sha = EXCLUDED.sha
+      RETURNING id, (extract(epoch FROM at) * 1000)::bigint AS at_ms`,
+    [factory, issue, [...reports.values()].map(({ at, sha }) => ({ at, sha }))],
+  );
+  const idAt = new Map(stored.map((r) => [Number(r.at_ms), r.id]));
+  const verdicts = [...reports].flatMap(([at, report]) => {
+    // A scenario listed twice on one line keeps its last verdict, as upserting in turn did.
+    const byScenario = new Map(report.holdouts.map((h) => [h.id, h]));
+    return [...byScenario.values()].map((h) => ({
+      report_id: idAt.get(at),
+      scenario_id: h.id,
+      verdict: h.verdict,
+      issue_number: h.issue,
+    }));
+  });
+  await tx.query(
+    `DELETE FROM mc.holdout_verdicts v
+      USING jsonb_to_recordset($1::jsonb) AS r(report_id bigint, ids jsonb)
+      WHERE v.report_id = r.report_id
+        AND v.scenario_id NOT IN (SELECT jsonb_array_elements_text(r.ids))`,
+    [
+      [...reports].map(([at, report]) => ({
+        report_id: idAt.get(at),
+        ids: report.holdouts.map((h) => h.id),
+      })),
+    ],
+  );
+  if (verdicts.length === 0) return;
+  await tx.query(
+    `INSERT INTO mc.holdout_verdicts (report_id, scenario_id, verdict, issue_number)
+      SELECT v.report_id, v.scenario_id, v.verdict, v.issue_number
+      FROM jsonb_to_recordset($1::jsonb)
+        AS v(report_id bigint, scenario_id text, verdict text, issue_number integer)
+      ON CONFLICT (report_id, scenario_id) DO UPDATE SET verdict = EXCLUDED.verdict,
+        issue_number = EXCLUDED.issue_number`,
+    [verdicts],
+  );
 }
 
 /**

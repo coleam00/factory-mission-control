@@ -274,6 +274,8 @@ test('the eligibility upgrade keeps live history and installs the same functions
     expect(await runMigrations({ files: migrationFiles, db: upgraded })).toEqual([
       '0013_step_attempt_identity.sql',
       '0014_pre_existing_refs.sql',
+      '0015_step_attempt_usage.sql',
+      '0016_pin_reason_optional.sql',
     ]);
     expect(await projectionDefinitions(upgraded)).toEqual(await projectionDefinitions(db));
     expect(await runMigrations({ files: migrationFiles, db: upgraded })).toEqual([]);
@@ -318,6 +320,8 @@ test('0011 rewrites a short pin to the one full sha it prefixes, and clears ambi
       '0012_arch_text_lf.sql',
       '0013_step_attempt_identity.sql',
       '0014_pre_existing_refs.sql',
+      '0015_step_attempt_usage.sql',
+      '0016_pin_reason_optional.sql',
     ]);
     const migrated = [
       { sha: 'p1', archon_sha: full },
@@ -378,6 +382,8 @@ test('0012 rewrites CRLF to LF in stored architecture texts, and changes nothing
       '0012_arch_text_lf.sql',
       '0013_step_attempt_identity.sql',
       '0014_pre_existing_refs.sql',
+      '0015_step_attempt_usage.sql',
+      '0016_pin_reason_optional.sql',
     ]);
     const migrated = [
       { kind: 'hook', path: '.factory/hooks/gate.sh', text: 'exit 0\n' },
@@ -443,6 +449,8 @@ test('0013 gives back the runs of a step the old key merged, and changes nothing
     expect(await runMigrations({ files: migrationFiles, db: historical })).toEqual([
       '0013_step_attempt_identity.sql',
       '0014_pre_existing_refs.sql',
+      '0015_step_attempt_usage.sql',
+      '0016_pin_reason_optional.sql',
     ]);
     expect(await attempts()).toEqual([
       { step_id: 'land', outcome: 'merged', cost_usd: null },
@@ -591,6 +599,7 @@ test('every projection function stops a lock wait after 100 ms, and only inside 
       'project_run',
       'project_step_event',
       'project_version',
+      'record_attempt_usage',
       'record_projection_error',
       'record_step_attempt',
     ].map((proname) => ({ proname, proconfig: ['lock_timeout=100ms'] })),
@@ -622,6 +631,8 @@ test('0014 keeps only a stored citation’s references, and changes nothing run 
 
     expect(await runMigrations({ files: migrationFiles, db: historical })).toEqual([
       '0014_pre_existing_refs.sql',
+      '0015_step_attempt_usage.sql',
+      '0016_pin_reason_optional.sql',
     ]);
     const lines = () =>
       historical.query(
@@ -645,6 +656,36 @@ test('0014 keeps only a stored citation’s references, and changes nothing run 
     await historical.query(refs?.sql ?? '');
     expect(await snapshot(historical)).toEqual(migrated);
     expect(await lines()).toEqual(converted);
+  } finally {
+    await historical.close();
+  }
+});
+
+test('0016 lets a pin have no reason, keeps stored reasons, and changes nothing run again', async () => {
+  const historical = await archonDb();
+  try {
+    await runMigrations({ files: migrationFiles.filter((f) => f.name < '0016'), db: historical });
+    const pin = (sha: string, reason: string | null) =>
+      historical.query(
+        `INSERT INTO mc.pins (sha, archon_sha, reason, committed_at) VALUES ($1, NULL, $2, $3)`,
+        [sha, reason, NOW],
+      );
+    await pin('a'.repeat(40), 'a reason');
+    await expect(pin('b'.repeat(40), null)).rejects.toThrow();
+
+    expect(await runMigrations({ files: migrationFiles, db: historical })).toEqual([
+      '0016_pin_reason_optional.sql',
+    ]);
+    await pin('b'.repeat(40), null);
+    const reasons = () => historical.query('SELECT sha, reason FROM mc.pins ORDER BY sha');
+    const stored = [
+      { sha: 'a'.repeat(40), reason: 'a reason' },
+      { sha: 'b'.repeat(40), reason: null },
+    ];
+    expect(await reasons()).toEqual(stored);
+    const [optional] = migrationFiles.filter((f) => f.name.startsWith('0016'));
+    await historical.query(optional?.sql ?? '');
+    expect(await reasons()).toEqual(stored);
   } finally {
     await historical.close();
   }

@@ -1,5 +1,12 @@
 import { expect, test } from 'bun:test';
-import { freePort, LIMITS, lateWrite } from './shared';
+import {
+  freePort,
+  LIMITS,
+  lateWrite,
+  mapMismatches,
+  SEED_INCLUDE_STAGES,
+  type ShownNode,
+} from './shared';
 
 test('freePort waits while every port in 8850-8864 is taken and takes the first one freed', async () => {
   const lines: string[] = [];
@@ -47,4 +54,50 @@ test('a missing or late write names its reading and its value', () => {
     `a pin reached the versions screen after ${limit + 1} ms, limit ${limit}`,
   ]);
   expect(lateWrite('a pin', 'the versions screen', limit)).toEqual([]);
+});
+
+/** The seed's loop as the map shows it: top-level steps, then each include's direct stages. */
+function seedMap(stages: Record<string, readonly string[]> = SEED_INCLUDE_STAGES): ShownNode[] {
+  const top = [
+    'pick',
+    'claim',
+    'build',
+    'ship',
+    'subject',
+    'check-app',
+    'evidence',
+    'review',
+    'land',
+    'deploy',
+    'release',
+    'tally',
+  ];
+  const node = (role: string, step: string): ShownNode => ({
+    role,
+    workflow: 'archon-loop',
+    step,
+    count: null,
+  });
+  return [
+    ...top.flatMap((t) => [
+      node('step', t),
+      ...(stages[t] ?? []).map((s) => node('stage', `${t}/${s}`)),
+    ]),
+    // A deeper stage is not a direct stage of its include.
+    node('stage', 'ship/deliver/forge'),
+  ];
+}
+const stageLines = (nodes: ShownNode[]) =>
+  mapMismatches(nodes, () => 0).filter((f) => /^\w+ shows (?!\d)/.test(f) && !f.startsWith('the '));
+
+test("each include's own stages are compared with the seed's, not pooled under ship", () => {
+  expect(stageLines(seedMap())).toEqual([]);
+  // deploy's stages under deploy are right; one missing from ship is caught as ship's.
+  const { ship, deploy } = SEED_INCLUDE_STAGES;
+  expect(stageLines(seedMap({ ship: ship.slice(1), deploy }))).toEqual([
+    `ship shows ${ship.slice(1).join(', ')}`,
+  ]);
+  expect(stageLines(seedMap({ ship, deploy: [] }))).toEqual(['deploy shows no stages']);
+  // An include the seed does not expand must show none.
+  expect(stageLines(seedMap({ ship, deploy, review: ['scope'] }))).toEqual(['review shows scope']);
 });

@@ -59,7 +59,8 @@ type VersionSpec = {
 };
 
 const V2_ARCHON = '2b7c4e9a1f0d3c5b6a7e8f9d0c1b2a3f4e5d6c7b';
-const V3_ARCHON = '7e1d0c9b8a7f6e5d4c3b2a1f0e9d8c7b6a5f4e3d';
+// Starts as the real `Pin Archon a8551bfe` does, which `DECISIONS.md` names as `Version: a8551bfe` (#178).
+const V3_ARCHON = 'a8551bfe8a7f6e5d4c3b2a1f0e9d8c7b6a5f4e3d';
 
 function versionSpecs(v1Archon: string): VersionSpec[] {
   const specs: VersionSpec[] = [
@@ -90,12 +91,14 @@ Measure: lap-hours per merge, lower, over at least 12 laps.`,
       digest: `sha256:${'c3'.repeat(32)}`,
       archonSha: V3_ARCHON,
       pinSha: fakeSha('pin V3'),
-      pinMessage: `Pin Archon ${V3_ARCHON}: follow dev's pack`,
+      // No reason and no trailers, as many real pins are (#178): the strip reads "not recorded".
+      pinMessage: `Pin Archon ${V3_ARCHON.slice(0, 8)}`,
       pinnedAt: '2026-10-19T18:00:00Z',
     },
   ];
   for (const spec of specs) {
-    // A panel that joins `Verdict:` or `Version:` to the Archon sha instead of the pin's fails here.
+    // V1 and V2's decisions name the pin's sha and V3's the Archon sha, so a panel that joins
+    // `Version:` or `Verdict:` to only one of the two fails here.
     if (spec.pinSha.slice(0, 8) === spec.archonSha.slice(0, 8)) {
       throw new Error(`${spec.name}'s pin and Archon shas share a prefix`);
     }
@@ -1065,7 +1068,7 @@ ON CONFLICT DO NOTHING;`;
 // --- The seed -----------------------------------------------------------------------------------
 
 function decisionsText(versions: VersionSpec[]): string {
-  const [v1, v2] = versions;
+  const [v1, v2, v3] = versions;
   return `# Decisions
 
 ## 2026-09-30 Fence the holdouts inside the repository
@@ -1085,6 +1088,12 @@ Decision: The schedule starts a lap while two are running, never a fourth.
 Why: After the first items most work depends only on the seed, not on each other.
 Replaces: one lap at a time.
 Version: none
+
+## 2026-10-19 Follow dev's pack
+Decision: The factory runs the workflow pack dev ships, with no local changes.
+Why: Local changes drifted from dev and each one had to be merged again.
+Replaces: a locally edited pack.
+Version: ${v3?.archonSha.slice(0, 8)}
 `;
 }
 
