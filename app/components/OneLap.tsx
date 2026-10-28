@@ -410,7 +410,7 @@ export function LapStepsBody({
       {lap === undefined ? (
         <p className="text-sm text-text-secondary">Loading the lap's map.</p>
       ) : (
-        <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
+        <div data-lap-steps className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
           <div className="min-w-0">
             <LapGraphView lap={lap} now={now} selected={selected} onSelect={setPicked} />
           </div>

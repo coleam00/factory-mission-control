@@ -12,6 +12,7 @@ import {
   type StepState,
 } from '../lib/lap-graph';
 import { costOf, since } from '../lib/laps';
+import { errorHeadline } from '../lib/error-text';
 import { attemptSeconds } from '../lib/one-lap';
 import { GraphViewport } from './GraphViewport';
 import { LiveDot } from './LiveDot';
@@ -80,13 +81,34 @@ export function focusStep(lap: LapGraph): string | null {
   return last?.id ?? null;
 }
 
+/** The space kept below a step brought into view on arrival, and above the steps section. */
+const ARRIVAL_MARGIN = 24;
+
+/**
+ * How far the window scrolls on arrival so `step` is on screen: not at all when it already is
+ * (the header, nav and lap summary stay in view), else just enough to bring its bottom above the
+ * fold, and never past the top of the steps section, so the section's start stays visible.
+ */
+export function arrivalScroll(step: Element, section: Element | null | undefined): number {
+  const box = step.getBoundingClientRect();
+  const fold = window.innerHeight;
+  if (box.bottom + ARRIVAL_MARGIN <= fold) return window.scrollY;
+  const needed = window.scrollY + box.bottom + ARRIVAL_MARGIN - fold;
+  const sectionTop =
+    section === null || section === undefined
+      ? Number.POSITIVE_INFINITY
+      : window.scrollY + section.getBoundingClientRect().top - ARRIVAL_MARGIN;
+  return Math.max(window.scrollY, Math.min(needed, sectionTop));
+}
+
 /**
  * The lap's steps as the map lays them out, each marked by what happened to it in this lap. Every
  * include or loop group is one box until opened, saying how it stands in this lap; the steps it
  * holds stay in the page, hidden. A step opens its runs in the side panel; a selected or running
  * step inside a folded box marks that box.
- * On arrival the page scrolls to the step running now (or the last one that ran), unless the
- * viewer has already scrolled.
+ * On arrival the page scrolls only as far as it must to show the step running now (or the last
+ * one that ran, or the folded box holding it), never past the top of the steps, and not at all
+ * once the viewer has scrolled.
  */
 export function LapGraphView({
   lap,
@@ -118,9 +140,9 @@ export function LapGraphView({
     arrived.current = true;
     // Only on arrival, and never over a scroll the viewer already made.
     if (window.scrollY > 0) return;
-    frame.current
-      ?.querySelector(`[data-graph-step="${CSS.escape(focus)}"]`)
-      ?.scrollIntoView({ block: 'center', inline: 'nearest' });
+    const step = frame.current?.querySelector(`[data-graph-step="${CSS.escape(focus)}"]`);
+    if (!step) return;
+    window.scrollTo({ top: arrivalScroll(step, frame.current?.closest('[data-lap-steps]')) });
   }, [focus]);
   const toggle = (block: string, open: boolean) =>
     setOpened((was) => {
@@ -404,12 +426,7 @@ export function StepPanel({
                       : `${formatCount(attempt.tokens_cache_read ?? 0)} / ${formatCount(attempt.tokens_cache_write ?? 0)}`}
                   </PanelField>
                 </dl>
-                {attempt.error === null ? null : (
-                  <p className="text-[12px] text-text-primary [overflow-wrap:anywhere]">
-                    <span style={{ color: 'var(--error)' }}>Error </span>
-                    {attempt.error}
-                  </p>
-                )}
+                {attempt.error === null ? null : <AttemptError error={attempt.error} />}
               </li>
             );
           })}
@@ -425,6 +442,37 @@ export function StepPanel({
         </Link>
       )}
     </aside>
+  );
+}
+
+/** The thrown message first, clamped to a few lines; the full text, as recorded, one click away. */
+export function AttemptError({ error }: { error: string }): ReactElement {
+  const { headline, more } = errorHeadline(error);
+  return (
+    <div data-attempt-error className="grid min-w-0 gap-1.5">
+      <p
+        data-error-headline
+        className="line-clamp-4 text-[12px] text-text-primary [overflow-wrap:anywhere]"
+      >
+        <span style={{ color: 'var(--error)' }}>Error </span>
+        {headline}
+      </p>
+      {more ? (
+        <details>
+          <summary
+            className={`${MONO} w-fit cursor-pointer list-none text-[11px] text-text-secondary underline decoration-dotted underline-offset-2 hover:text-text-primary [&::-webkit-details-marker]:hidden`}
+          >
+            Show full error
+          </summary>
+          <pre
+            data-error-full
+            className="mt-2 max-h-72 overflow-auto rounded-md border border-border bg-background p-2 font-mono text-[11px] leading-relaxed text-text-secondary whitespace-pre-wrap [overflow-wrap:anywhere]"
+          >
+            {error}
+          </pre>
+        </details>
+      ) : null}
+    </div>
   );
 }
 
