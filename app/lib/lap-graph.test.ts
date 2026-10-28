@@ -114,7 +114,7 @@ test('a lane mark the lap went past is skipped; one ahead of it is not reached',
   });
 });
 
-test('a block where no step ran folds into one box counting its steps; one that ran stays open', () => {
+test('every block folds into one box saying how it stands in the lap, until opened', () => {
   const map = [
     row('pick', 1),
     row('build', 2, { depends_on: ['pick'] }),
@@ -130,24 +130,66 @@ test('a block where no step ran folds into one box counting its steps; one that 
     attempt('build', 1),
     attempt('deploy__verify', 2, 'running'),
   ]);
-  const { graph, folded } = foldGraph(simple, new Set());
-  expect([...folded]).toEqual([['ship', 3]]);
-  expect(graph.steps.map((s) => s.id)).toEqual([
-    'pick',
-    'build',
-    'ship',
-    'deploy',
+  const { graph, folded, hidden } = foldGraph(simple, new Set());
+  // A block where steps ran folds too: the loop opens as its top-level steps only.
+  expect([...folded]).toEqual([
+    ['ship', 3],
+    ['deploy', 1],
+  ]);
+  expect(graph.steps.map((s) => s.id)).toEqual(['pick', 'build', 'ship', 'deploy']);
+  expect([...graph.clusters.keys()]).toEqual([]);
+  // Every hidden step is still there, in the loop's order.
+  expect(hidden.map((s) => s.id)).toEqual([
+    'ship/intel',
+    'ship/deliver',
+    'ship/deliver/implement',
     'deploy/verify',
   ]);
-  expect([...graph.clusters.keys()]).toEqual(['deploy']);
-  // Opened by the viewer: ship shows again, and its own untouched block inside it folds.
+  const notes = (g: typeof graph, id: string) => g.steps.find((s) => s.id === id)?.folded?.notes;
+  expect(notes(graph, 'ship')).toEqual(['skipped · 3 steps']);
+  expect(notes(graph, 'deploy')).toEqual(['running: verify', '0 of 1 done']);
+  // Opened by the viewer: ship shows again, and the block inside it folds until opened in turn.
   const opened = foldGraph(simple, new Set(['ship']));
-  expect([...opened.folded]).toEqual([['ship/deliver', 1]]);
-  expect(opened.graph.steps.map((s) => s.id)).toContain('ship/intel');
-  // A lap that ran inside ship keeps ship open, and only the inner block that did not run folds.
-  const complex = lapGraph(map, [attempt('pick', 0), attempt('ship__intel', 1, 'running')]);
-  expect([...foldGraph(complex, new Set()).folded]).toEqual([
+  expect([...opened.folded]).toEqual([
     ['ship/deliver', 1],
     ['deploy', 1],
   ]);
+  expect(opened.graph.steps.map((s) => s.id)).toContain('ship/intel');
+  // A lap that ran inside ship: its box names the running step and counts what is done.
+  const complex = lapGraph(map, [
+    attempt('pick', 0),
+    attempt('ship__intel', 1),
+    attempt('ship__deliver__implement', 2, 'running'),
+  ]);
+  const shown = foldGraph(complex, new Set());
+  expect(notes(shown.graph, 'ship')).toEqual(['running: deliver/implement', '1 of 3 done']);
+  const failed = lapGraph(map, [attempt('pick', 0), attempt('ship__intel', 1, 'failed')]);
+  expect(notes(foldGraph(failed, new Set()).graph, 'ship')).toEqual([
+    'failed: intel',
+    '0 of 3 done',
+  ]);
+});
+
+test("a loop group's body steps, named <group>.<step> on every iteration, mark their pinned node once", () => {
+  const map = [
+    row('ship', 1, { kind: 'include' }),
+    row('ship/rounds', 2, { kind: 'loop_group' }),
+    row('ship/rounds/implement', 3),
+    row('ship/rounds/review', 4, { kind: 'include', depends_on: ['implement'] }),
+    row('ship/rounds/review/scope', 5),
+  ];
+  const lap = lapGraph(map, [
+    attempt('ship__rounds.implement', 0),
+    attempt('ship__rounds.review__scope', 1),
+    attempt('ship__rounds.implement', 2),
+    attempt('ship__rounds.review__scope', 3, 'running'),
+  ]);
+  // No duplicate nodes: the graph is the pinned map.
+  expect(lap.graph.steps.map((s) => s.id)).toEqual(map.map((r) => r.path));
+  expect([...lap.steps.values()].some((s) => s.offMap)).toBe(false);
+  const implement = lap.steps.get('ship/rounds/implement');
+  expect(implement?.state).toBe('finished');
+  expect(implement?.attempts).toHaveLength(2);
+  expect(lap.steps.get('ship/rounds/review/scope')?.state).toBe('running');
+  expect(lap.steps.get('ship/rounds')?.state).toBe('running');
 });
