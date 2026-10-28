@@ -218,8 +218,11 @@ export const REALTIME_PROTOCOL = 'neon.realtime.v1';
 export function liveBootScript(config: LiveConfig): string {
   const boot = JSON.stringify({ ...config, protocol: REALTIME_PROTOCOL }).replace(/</g, '\\u003c');
   return (
-    '<script>(function(c){try{var s=new WebSocket(c.url,c.protocol);c.socket=s;c.early=[];' +
-    "s.addEventListener('message',function(e){if(c.early)c.early.push(e.data)})}catch(e){}" +
+    "<script>(function(c){try{var r=0;performance.mark('live:connection:start');" +
+    'var s=new WebSocket(c.url,c.protocol);c.socket=s;c.early=[];' +
+    "s.addEventListener('message',function(e){if(!r)try{if(JSON.parse(e.data).type==='ready'){" +
+    "r=1;performance.mark('live:connection:ready')}}catch(x){}if(c.early)c.early.push(e.data)})" +
+    '}catch(e){}' +
     `window.__MC_LIVE__=c})(${boot})</script>`
   );
 }
