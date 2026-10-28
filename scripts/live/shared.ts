@@ -42,17 +42,11 @@ const SEED_LOOP = [
   'release',
   'tally',
 ];
-const SEED_SHIP_STAGES = [
-  'forge',
-  'triage',
-  'inv',
-  'intel',
-  'planned',
-  'continues',
-  'deliver',
-  'outcome',
-  'report',
-];
+/** Each top-level include of V2's loop and the steps it nests directly, in order. */
+export const SEED_INCLUDE_STAGES: Readonly<Record<string, readonly string[]>> = {
+  ship: ['forge', 'triage', 'inv', 'intel', 'planned', 'continues', 'deliver', 'outcome', 'report'],
+  deploy: ['resolve', 'deploy', 'health', 'verify'],
+};
 /** The nodes of V2's expanded loop, every include at every depth, and of the other workflows. */
 const SEED_NODES = [
   ['archon-loop', 84],
@@ -188,10 +182,19 @@ export function mapMismatches(nodes: ShownNode[], lapsOn: LapsOn): string[] {
   const loop = nodes.filter((n) => n.workflow === 'archon-loop');
   const top = loop.filter((n) => n.role === 'step').map((n) => idOf(n.step));
   if (top.join() !== SEED_LOOP.join()) failures.push(`the loop shows ${top.join(', ')}`);
-  const ship = loop
-    .filter((n) => n.role === 'stage' && n.step?.split('/').length === 2)
-    .map((n) => idOf(n.step));
-  if (ship.join() !== SEED_SHIP_STAGES.join()) failures.push(`ship shows ${ship.join(', ')}`);
+  // Each include's own direct stages, by the include they sit in: ship's and deploy's are listed
+  // apart, and an include the seed does not expand must show none.
+  const stages = new Map<string, string[]>();
+  for (const n of loop.filter((n) => n.role === 'stage' && n.step?.split('/').length === 2)) {
+    const include = (n.step as string).split('/')[0];
+    stages.set(include, [...(stages.get(include) ?? []), idOf(n.step)]);
+  }
+  for (const include of new Set([...Object.keys(SEED_INCLUDE_STAGES), ...stages.keys()])) {
+    const shown = stages.get(include) ?? [];
+    if (shown.join() !== (SEED_INCLUDE_STAGES[include] ?? []).join()) {
+      failures.push(`${include} shows ${shown.join(', ') || 'no stages'}`);
+    }
+  }
   for (const [workflow, expected] of SEED_NODES) {
     const shown = nodes.filter((n) => n.workflow === workflow).length;
     if (shown !== expected) failures.push(`${workflow} shows ${shown} steps, not ${expected}`);

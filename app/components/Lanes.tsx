@@ -14,6 +14,8 @@ import {
   stepLabel,
 } from '../lib/laps';
 import { LivePanel, type PanelState } from '../live/LivePanel';
+import { laneMarks } from '../lib/lap-graph';
+import { LaneMarks } from './LapGraph';
 
 export const LABEL =
   'font-mono text-[10px] font-semibold uppercase tracking-[0.04em] text-text-secondary';
@@ -165,6 +167,9 @@ export function LaneList({
               </Field>
               <Field label="Cost so far">{costText(lane.cost_usd)}</Field>
             </dl>
+            <div className="mt-3 border-t border-border/60 pt-3">
+              <LaneMarks marks={laneMarks(lane.steps)} />
+            </div>
           </li>
         );
       })}
