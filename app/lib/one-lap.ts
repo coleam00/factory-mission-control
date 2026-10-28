@@ -58,6 +58,8 @@ export interface StepAttemptRow {
 /** One app-check line: never its text, and a holdout only by its scenario id. */
 export interface CheckLineRow {
   position: number;
+  /** The report's line id, as a disposition names it; null for a line projected before #184. */
+  line_id: string | null;
   kind: string;
   verdict: string;
   evidence_count: number;
@@ -87,6 +89,16 @@ export function attemptsInOrder(rows: readonly StepAttemptRow[]): StepAttemptRow
 
 export const linesInOrder = (rows: readonly CheckLineRow[]): CheckLineRow[] =>
   [...rows].sort((a, b) => a.position - b.position);
+
+/** The one line a disposition answers; null when it names none, or no line or several match. */
+export function checkLineFor(
+  line: string | null,
+  rows: readonly CheckLineRow[],
+): CheckLineRow | null {
+  if (line === null) return null;
+  const matches = rows.filter((row) => row.line_id === line);
+  return matches.length === 1 ? (matches[0] ?? null) : null;
+}
 
 /** The lap's cost: every attempt's, a repeated step's earlier runs included. Null when none has one. */
 export function lapCost(rows: readonly StepAttemptRow[]): number | null {

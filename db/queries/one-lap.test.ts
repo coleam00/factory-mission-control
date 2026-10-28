@@ -150,7 +150,7 @@ describe('one-lap on the seed', () => {
     const lines = await lap('one-lap-checks', LAP_RUN);
     expect(lines).toEqual(
       await db.query(
-        `SELECT position, kind, verdict, evidence_count, scenario_id
+        `SELECT position, line_id, kind, verdict, evidence_count, scenario_id
          FROM mc.app_check_lines WHERE run_id = $1 ORDER BY position`,
         [LAP_RUN],
       ),
@@ -163,6 +163,41 @@ describe('one-lap on the seed', () => {
     const [sentBack] = await lap('one-lap', '5eed0001-0000-4000-8000-000000000001');
     expect(sentBack.review_outcome).toBe('sent-back');
     expect(sentBack.dispositions).toEqual([{ line: 'H2', action: 'blocks' }]);
+  });
+
+  test("the app-check line a sent-back lap's review blocks on is labelled with its id", async () => {
+    const answered = (await lap('one-lap-checks', '5eed0001-0000-4000-8000-000000000001')).filter(
+      (l) => l.line_id === 'H2',
+    );
+    expect(answered).toEqual([
+      {
+        position: 4,
+        line_id: 'H2',
+        kind: 'holdout',
+        verdict: 'FAIL',
+        evidence_count: 1,
+        scenario_id: 'H-02',
+      },
+    ]);
+  });
+
+  test("every seed lap's review disposition names exactly one of its app-check lines", async () => {
+    let checked = 0;
+    for (const { runId } of seedLaps(seed)) {
+      const [header] = await lap('one-lap', runId);
+      const dispositions = (header?.dispositions ?? []) as { line: string | null }[];
+      const lines = await lap('one-lap-checks', runId);
+      if (dispositions.length === 0 || lines.length === 0) continue;
+      checked += 1;
+      for (const { line } of dispositions) {
+        expect([runId, line, lines.filter((l) => l.line_id === line).length]).toEqual([
+          runId,
+          line,
+          1,
+        ]);
+      }
+    }
+    expect(checked).toBeGreaterThanOrEqual(2);
   });
 
   test('another factory and a malformed run id find no lap, without an error', async () => {

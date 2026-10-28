@@ -2,6 +2,8 @@ import { expect, test } from 'bun:test';
 import {
   attemptSeconds,
   attemptsInOrder,
+  type CheckLineRow,
+  checkLineFor,
   consoleUrl,
   lapCost,
   lapOutcome,
@@ -143,4 +145,23 @@ test("a lap's outcome reads as recent-laps.sql's CASE: failure, gate, review, th
     [{ review_outcome: 'merge' }, null],
   ];
   for (const [over, outcome] of cases) expect(lapOutcome(lap(over))).toBe(outcome);
+});
+
+const check = (position: number, line_id: string | null): CheckLineRow => ({
+  position,
+  line_id,
+  kind: 'holdout',
+  verdict: 'FAIL',
+  evidence_count: 1,
+  scenario_id: 'H-02',
+});
+
+test('a disposition answers the one check line with its id, and no line when none or several do', () => {
+  const lines = [check(1, 'C1'), check(4, 'H2'), check(5, null)];
+  expect(checkLineFor('H2', lines)).toEqual(check(4, 'H2'));
+  expect(checkLineFor('H9', lines)).toBeNull();
+  expect(checkLineFor(null, lines)).toBeNull();
+  expect(checkLineFor('H2', [check(2, 'H2'), check(4, 'H2')])).toBeNull();
+  expect(checkLineFor('H2', [check(1, null), check(2, null)])).toBeNull();
+  expect(checkLineFor('H2', [])).toBeNull();
 });

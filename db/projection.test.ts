@@ -276,6 +276,7 @@ test('the eligibility upgrade keeps live history and installs the same functions
       '0014_pre_existing_refs.sql',
       '0015_step_attempt_usage.sql',
       '0016_pin_reason_optional.sql',
+      '0017_app_check_line_ids.sql',
     ]);
     expect(await projectionDefinitions(upgraded)).toEqual(await projectionDefinitions(db));
     expect(await runMigrations({ files: migrationFiles, db: upgraded })).toEqual([]);
@@ -322,6 +323,7 @@ test('0011 rewrites a short pin to the one full sha it prefixes, and clears ambi
       '0014_pre_existing_refs.sql',
       '0015_step_attempt_usage.sql',
       '0016_pin_reason_optional.sql',
+      '0017_app_check_line_ids.sql',
     ]);
     const migrated = [
       { sha: 'p1', archon_sha: full },
@@ -384,6 +386,7 @@ test('0012 rewrites CRLF to LF in stored architecture texts, and changes nothing
       '0014_pre_existing_refs.sql',
       '0015_step_attempt_usage.sql',
       '0016_pin_reason_optional.sql',
+      '0017_app_check_line_ids.sql',
     ]);
     const migrated = [
       { kind: 'hook', path: '.factory/hooks/gate.sh', text: 'exit 0\n' },
@@ -451,6 +454,7 @@ test('0013 gives back the runs of a step the old key merged, and changes nothing
       '0014_pre_existing_refs.sql',
       '0015_step_attempt_usage.sql',
       '0016_pin_reason_optional.sql',
+      '0017_app_check_line_ids.sql',
     ]);
     expect(await attempts()).toEqual([
       { step_id: 'land', outcome: 'merged', cost_usd: null },
@@ -633,6 +637,7 @@ test('0014 keeps only a stored citation’s references, and changes nothing run 
       '0014_pre_existing_refs.sql',
       '0015_step_attempt_usage.sql',
       '0016_pin_reason_optional.sql',
+      '0017_app_check_line_ids.sql',
     ]);
     const lines = () =>
       historical.query(
@@ -675,6 +680,7 @@ test('0016 lets a pin have no reason, keeps stored reasons, and changes nothing 
 
     expect(await runMigrations({ files: migrationFiles, db: historical })).toEqual([
       '0016_pin_reason_optional.sql',
+      '0017_app_check_line_ids.sql',
     ]);
     await pin('b'.repeat(40), null);
     const reasons = () => historical.query('SELECT sha, reason FROM mc.pins ORDER BY sha');
@@ -689,6 +695,69 @@ test('0016 lets a pin have no reason, keeps stored reasons, and changes nothing 
   } finally {
     await historical.close();
   }
+});
+
+test('0017 keeps lines projected before it without an id, fills new reports’ ids, and changes nothing run again', async () => {
+  const historical = await archonDb();
+  try {
+    await runMigrations({ files: migrationFiles.filter((f) => f.name < '0017'), db: historical });
+    const run = async () => {
+      const [row] = await historical.query(
+        `INSERT INTO public.remote_agent_workflow_runs (workflow_name, user_message)
+         VALUES ('archon-loop', 'historical') RETURNING id`,
+      );
+      return row?.id;
+    };
+    const before = await run();
+    await historical.query(
+      `INSERT INTO mc.app_check_lines (run_id, position, kind, verdict, evidence_count)
+       VALUES ($1, 1, 'defect', 'FAIL', 0)`,
+      [before],
+    );
+
+    expect(await runMigrations({ files: migrationFiles, db: historical })).toEqual([
+      '0017_app_check_line_ids.sql',
+    ]);
+    const after = await run();
+    await historical.query('SELECT mc.project_app_check_lines($1, $2)', [
+      after,
+      JSON.stringify([
+        { id: 'C1', kind: 'criterion', verdict: 'PASS' },
+        { id: ' h2 ', kind: 'holdout', verdict: 'FAIL', text: 'H-02' },
+      ]),
+    ]);
+    const ids = (runId: unknown) =>
+      historical.query(
+        'SELECT position, line_id FROM mc.app_check_lines WHERE run_id = $1 ORDER BY position',
+        [runId],
+      );
+    expect(await ids(before)).toEqual([{ position: 1, line_id: null }]);
+    expect(await ids(after)).toEqual([
+      { position: 1, line_id: 'C1' },
+      { position: 2, line_id: 'H2' },
+    ]);
+    const migrated = await snapshot(historical);
+    const [lineIds] = migrationFiles.filter((f) => f.name.startsWith('0017'));
+    await historical.query(lineIds?.sql ?? '');
+    expect(await snapshot(historical)).toEqual(migrated);
+  } finally {
+    await historical.close();
+  }
+});
+
+test('a check-app line keeps only its report id’s leading letters and digits, as a disposition’s line id', async () => {
+  const report = structuredOutputFor('check-app') as { lines: Record<string, unknown>[] };
+  const ids = ['C1', ' \th2\n', `H3 holdout FAIL H-07 ${MARKER}`, '2', '', MARKER];
+  await insertEvent('node_completed', 'check-app', {
+    ...eventData('check-app', 'node_completed', NOW),
+    structured_output: { ...report, lines: ids.map((id) => ({ ...report.lines[0], id })) },
+  });
+
+  expect(await db.query('SELECT line_id FROM mc.app_check_lines ORDER BY position')).toEqual(
+    ['C1', 'H2', 'H3', null, null, null].map((line_id) => ({ line_id })),
+  );
+  expect(await projectionErrors()).toEqual([]);
+  expect(await markerCount()).toBe(0);
 });
 
 test('check-app lines keep kind, verdict, evidence count and only a holdout’s scenario id', async () => {
