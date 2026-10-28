@@ -125,12 +125,12 @@ test("nesting's links open each screen at the version the step is opened at", ()
   expect(includedAt.map((place) => place.href)).toEqual(['/steps/archon-loop/ship?at=p1']);
 });
 
-test('the versions a step opens at are newest first, the current one marked', () => {
+test('the versions a step opens at are newest first, the current one marked, a bare pin not recorded', () => {
   expect(
     stepVersions([
       {
         sha: 'aaaa1111old',
-        reason: 'one',
+        reason: null,
         committed_at: new Date('2026-01-01T00:00:00Z'),
         is_current: false,
       },
@@ -143,7 +143,7 @@ test('the versions a step opens at are newest first, the current one marked', ()
     ]),
   ).toEqual([
     { sha: 'bbbb2222new', label: 'bbbb2222 2026-02-01', reason: 'two', current: true },
-    { sha: 'aaaa1111old', label: 'aaaa1111 2026-01-01', reason: 'one', current: false },
+    { sha: 'aaaa1111old', label: 'aaaa1111 2026-01-01', reason: 'not recorded', current: false },
   ]);
 });
 
