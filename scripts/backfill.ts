@@ -22,6 +22,7 @@ import {
   writeComment,
   writeCommits,
   writeIssue,
+  writeLabeledAt,
   writePullRequest,
 } from '../function/ingest';
 import { failing, guardedDatabaseUrl, type Main, runCli } from './lib/cli';
@@ -34,6 +35,8 @@ interface FactoryHistory {
   /** Each comment with the issue or pull request it is on. */
   comments: { issue: Issue; comment: Comment }[];
   pullRequests: PullRequest[];
+  /** When each open issue labelled `NEEDS_OWNER` last received that label, where GitHub says. */
+  labelled: { issue: number; label: string; at: string }[];
 }
 
 export interface History {
@@ -48,6 +51,18 @@ interface ListedComment extends Comment {
   issue_url: string;
 }
 
+interface IssueEvent {
+  event: string;
+  label?: { name: string };
+  created_at: string;
+}
+
+/**
+ * The only label whose time the dashboard reads (the owner queue's wait). Reading an issue's events
+ * is a request per issue, so only the open issues carrying it pay for one.
+ */
+const NEEDS_OWNER = 'needs-owner';
+
 interface ListedCommit {
   sha: string;
   commit: { message: string; committer: { date: string } };
@@ -58,12 +73,22 @@ export async function readHistory(github: GitHub, followed: Factory[]): Promise<
   for (const { name, repository } of followed) {
     const listed = await github.list<Issue>(`/repos/${repository}/issues?state=all&per_page=100`);
     const byNumber = new Map(listed.map((issue) => [issue.number, issue]));
+    const issues = listed.filter((issue) => !issue.pull_request);
     const comments = await github.list<ListedComment>(
       `/repos/${repository}/issues/comments?per_page=100`,
     );
+    const labelled: FactoryHistory['labelled'] = [];
+    for (const issue of issues) {
+      if (issue.state !== 'open' || !issue.labels.some((l) => l.name === NEEDS_OWNER)) continue;
+      const events = await github.list<IssueEvent>(
+        `/repos/${repository}/issues/${issue.number}/events?per_page=100`,
+      );
+      const last = events.findLast((e) => e.event === 'labeled' && e.label?.name === NEEDS_OWNER);
+      if (last) labelled.push({ issue: issue.number, label: NEEDS_OWNER, at: last.created_at });
+    }
     read.push({
       factory: name,
-      issues: listed.filter((issue) => !issue.pull_request),
+      issues,
       comments: comments.flatMap((comment) => {
         const issue = byNumber.get(Number(comment.issue_url.split('/').pop()));
         return issue ? [{ issue, comment }] : [];
@@ -71,6 +96,7 @@ export async function readHistory(github: GitHub, followed: Factory[]): Promise<
       pullRequests: await github.list<PullRequest>(
         `/repos/${repository}/pulls?state=all&per_page=100`,
       ),
+      labelled,
     });
   }
 
@@ -146,8 +172,11 @@ export async function inBatches<T>(
  */
 export async function storeHistory(db: Db, history: History, readAt?: string): Promise<Removed> {
   const removed: Removed = { issues: 0, comments: 0 };
-  for (const { factory, issues, comments, pullRequests } of history.factories) {
+  for (const { factory, issues, comments, pullRequests, labelled } of history.factories) {
     await inBatches(db, issues, (tx, issue) => writeIssue(tx, factory, issue));
+    await inBatches(db, labelled, (tx, { issue, label, at }) =>
+      writeLabeledAt(tx, factory, issue, label, at),
+    );
     await inBatches(db, comments, (tx, { issue, comment }) =>
       writeComment(tx, factory, issue, comment),
     );

@@ -191,12 +191,46 @@ test('each fixture returns 2xx and writes the rows it names', async () => {
   ]);
 });
 
-test('a needs-owner label payload sets that label on the issue', async () => {
+const labelTimes = () =>
+  rows('SELECT label, labeled_at FROM mc.issue_labels WHERE issue_number = 10 ORDER BY 1');
+const LABELLED = new Date('2026-10-25T05:10:02Z');
+
+test('a needs-owner label payload sets that label on the issue, labelled when it was delivered', async () => {
   await deliver(named('01-'));
   await deliver(named('02-'));
-  expect(
-    await rows('SELECT label FROM mc.issue_labels WHERE issue_number = 10 ORDER BY 1'),
-  ).toEqual([{ label: 'enhancement' }, { label: 'needs-owner' }]);
+  expect(await labelTimes()).toEqual([
+    { label: 'enhancement', labeled_at: null },
+    { label: 'needs-owner', labeled_at: LABELLED },
+  ]);
+});
+
+test('a comment after the label leaves its time, and a label delivered after the comment still sets it', async () => {
+  await deliver(named('02-'));
+  await deliver(named('05-'));
+  const inOrder = await labelTimes();
+  await db.query('DELETE FROM mc.issue_labels');
+  await deliver(named('05-'));
+  await deliver(named('02-'));
+  expect(await labelTimes()).toEqual(inOrder);
+  expect(inOrder).toContainEqual({ label: 'needs-owner', labeled_at: LABELLED });
+});
+
+test('a label removed and added again is labelled at the second time', async () => {
+  await deliver(named('02-'));
+  await deliverChanged('02-', (p) => {
+    p.action = 'unlabeled';
+    p.issue.labels = [{ name: 'enhancement' }];
+    p.issue.updated_at = '2026-10-26T08:00:00Z';
+  });
+  await deliverChanged('02-', (p) => {
+    p.issue.updated_at = '2026-10-26T09:00:00Z';
+  });
+  // The first labelling, delivered again late, does not take the label back to its time.
+  await deliver(named('02-'));
+  expect(await labelTimes()).toContainEqual({
+    label: 'needs-owner',
+    labeled_at: new Date('2026-10-26T09:00:00Z'),
+  });
 });
 
 test('an older delivery of an issue does not undo a newer one', async () => {

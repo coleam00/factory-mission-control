@@ -92,7 +92,7 @@ export interface Commit {
 export type VersionCommit = Pick<Commit, 'id' | 'message' | 'timestamp'> & { archonSha?: string };
 
 interface Payloads {
-  issues: { action: string; issue: Issue; repository: Repository };
+  issues: { action: string; issue: Issue; label?: { name: string }; repository: Repository };
   issue_comment: { action: string; issue: Issue; comment: Comment; repository: Repository };
   label: {
     action: string;
@@ -171,11 +171,17 @@ function mirrorWrite(
 
   switch (event) {
     case 'issues': {
-      const { action, issue } = payload as Payloads['issues'];
+      const { action, issue, label } = payload as Payloads['issues'];
       if (action === 'deleted' || action === 'transferred') {
         return (tx) => removeIssue(tx, factory, issue.number, issue.updated_at);
       }
-      return (tx) => writeIssue(tx, factory, issue);
+      return async (tx) => {
+        await writeIssue(tx, factory, issue);
+        // Labelling an issue is what moves its updated_at, so that is when it was labelled.
+        if (action === 'labeled' && label) {
+          await writeLabeledAt(tx, factory, issue.number, label.name, issue.updated_at);
+        }
+      };
     }
     case 'issue_comment': {
       const { action, issue, comment } = payload as Payloads['issue_comment'];
@@ -371,6 +377,25 @@ export async function writeIssue(tx: Tx, factory: string, issue: Issue): Promise
   const title = issue.title.trim();
   if (title === OWNER_DECISIONS_TITLE) await writeOwnerQuestions(tx, factory, issue);
   if (title === METRICS_TITLE) await writeMetrics(tx, factory, issue.number, body);
+}
+
+/**
+ * When the issue received `label`, on the row it holds now; nothing when it does not hold it.
+ * Deliveries arrive in any order, so a stored later time stays: an older one can only be from an
+ * earlier labelling of the same row.
+ */
+export async function writeLabeledAt(
+  tx: Tx,
+  factory: string,
+  number: number,
+  label: string,
+  at: string,
+): Promise<void> {
+  await tx.query(
+    `UPDATE mc.issue_labels SET labeled_at = greatest(labeled_at, $4::timestamptz)
+      WHERE factory = $1 AND issue_number = $2 AND label = $3`,
+    [factory, number, label, at],
+  );
 }
 
 /**
@@ -633,8 +658,9 @@ async function deleteLabel(tx: Tx, factory: string, name: string): Promise<void>
 
 async function renameLabel(tx: Tx, factory: string, from: string, to: string): Promise<void> {
   await tx.query(
-    `INSERT INTO mc.issue_labels (factory, issue_number, label)
-      SELECT factory, issue_number, $3 FROM mc.issue_labels WHERE factory = $1 AND label = $2
+    `INSERT INTO mc.issue_labels (factory, issue_number, label, labeled_at)
+      SELECT factory, issue_number, $3, labeled_at FROM mc.issue_labels
+      WHERE factory = $1 AND label = $2
       ON CONFLICT DO NOTHING`,
     [factory, from, to],
   );

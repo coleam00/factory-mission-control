@@ -49,6 +49,8 @@ export interface ShownOwnerItem {
   defaultOption: string | null;
   defaultAt: string | null;
   waitingSince: string | null;
+  /** The item says its wait is approximate: an issue whose label time is not recorded. */
+  approximate: boolean;
   waited: string | null;
 }
 
@@ -65,6 +67,7 @@ const itemsOnScreen = `[...document.querySelectorAll('${ITEM}')].map((li) => ({
   defaultOption: li.querySelector('[data-default-option]')?.textContent ?? null,
   defaultAt: li.querySelector('[data-default-at]')?.getAttribute('data-default-at') ?? null,
   waitingSince: li.getAttribute('data-waiting-since'),
+  approximate: li.hasAttribute('data-approximate'),
   waited: li.querySelector('[data-waited]')?.textContent ?? null,
 }))`;
 
@@ -72,7 +75,8 @@ const itemsOnScreen = `[...document.querySelectorAll('${ITEM}')].map((li) => ({
 const controlsOnScreen = `[...document.querySelectorAll('main form, main button, main input, main select, main textarea')].map((el) => el.outerHTML.slice(0, 120))`;
 
 /** The seed's open needs-owner issues, read apart from db/queries/owner-queue.sql. */
-const OPEN_NEEDS_OWNER_SQL = `SELECT i.number, i.title, i.url, i.updated_at FROM mc.issues i
+const OPEN_NEEDS_OWNER_SQL = `SELECT i.number, i.title, i.url, i.updated_at, l.labeled_at
+  FROM mc.issues i
   JOIN mc.issue_labels l ON l.factory = i.factory AND l.issue_number = i.number
   WHERE i.factory = $1 AND i.state = 'open' AND l.label = 'needs-owner' ORDER BY i.number`;
 
@@ -92,11 +96,14 @@ export function expectedItems(
 ): Map<string, Partial<ShownOwnerItem>> {
   const expected = new Map<string, Partial<ShownOwnerItem>>();
   for (const i of issues) {
+    // Since it was labelled, or since its last update where that time is not recorded.
+    const labelled = i.labeled_at instanceof Date ? i.labeled_at : null;
     expected.set(`issue-${i.number}`, {
       title: String(i.title),
       href: String(i.url),
       options: [],
-      waitingSince: iso(i.updated_at),
+      waitingSince: iso(labelled ?? i.updated_at),
+      approximate: labelled === null,
     });
   }
   for (const q of questions) {
@@ -116,6 +123,7 @@ export function expectedItems(
       defaultOption: q.default_option === null ? null : String(q.default_option),
       defaultAt: iso(q.default_at),
       waitingSince: iso(q.raised_at),
+      approximate: false,
     });
   }
   return expected;
