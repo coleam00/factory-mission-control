@@ -51,6 +51,8 @@ export interface StepAttemptRow {
   cost_usd: number | string | null;
   outcome: string | null;
   error: string | null;
+  /** The step's place in the loop at the lap's pin; null for a step that version lacks. */
+  position: number | null;
 }
 
 /** One app-check line: never its text, and a holdout only by its scenario id. */
@@ -64,13 +66,22 @@ export interface CheckLineRow {
 
 const timeOf = (at: Date | null) => (at === null ? Number.NaN : at.getTime());
 
-/** By start; an attempt with no start goes last, ties by step so the order never jumps. */
+const placeOf = (row: StepAttemptRow) =>
+  row.position === null ? Number.POSITIVE_INFINITY : Number(row.position);
+
+/**
+ * By start; an attempt with no start goes last, in the loop's order (#191), a step the lap's
+ * version lacks after those. Ties by step so the order never jumps.
+ */
 export function attemptsInOrder(rows: readonly StepAttemptRow[]): StepAttemptRow[] {
   return [...rows].sort((a, b) => {
     const ta = timeOf(a.started_at);
     const tb = timeOf(b.started_at);
     if (Number.isNaN(ta) !== Number.isNaN(tb)) return Number.isNaN(ta) ? 1 : -1;
-    return (Number.isNaN(ta) ? 0 : ta - tb) || a.step_id.localeCompare(b.step_id);
+    if (!Number.isNaN(ta)) return ta - tb || a.step_id.localeCompare(b.step_id);
+    const pa = placeOf(a);
+    const pb = placeOf(b);
+    return (pa === pb ? 0 : pa < pb ? -1 : 1) || a.step_id.localeCompare(b.step_id);
   });
 }
 

@@ -52,6 +52,7 @@ const step = (over: Partial<StepAttemptRow>): StepAttemptRow => ({
   cost_usd: '0.4213',
   outcome: 'merge',
   error: null,
+  position: null,
   ...over,
 });
 
