@@ -98,7 +98,7 @@ export function RewindRows({
               data-rewind-branch={row.name}
               data-current={current ? '' : undefined}
               className={`flex flex-wrap items-center gap-x-[18px] gap-y-1 border-b border-border/40 px-[18px] py-[13px] ${
-                current ? 'bg-[color:var(--accent-soft)] ring-2 ring-inset ring-selected' : ''
+                current ? 'bg-surface-hover ring-2 ring-inset ring-selected' : ''
               }`}
             >
               <span className={`${MONO} min-w-0 break-all font-bold text-text-primary`}>

@@ -288,7 +288,7 @@ function Node({
       onFocus={() => onHover(issue.number)}
       onBlur={() => onHover(null)}
       className={`absolute flex flex-col justify-center gap-1 rounded-[9px] border px-2.5 hover:brightness-110 ${
-        highlighted ? 'ring-2 ring-text-primary' : ''
+        highlighted ? 'ring-2 ring-selected' : ''
       } ${issue.context ? 'border-dashed' : ''}`}
       style={{
         left: issue.x,

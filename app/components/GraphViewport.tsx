@@ -71,7 +71,7 @@ export function GraphViewport({
       ) : null}
       <div
         ref={viewport}
-        className="overflow-x-auto rounded-[inherit] border border-border bg-surface"
+        className="overflow-x-auto rounded-[inherit] border border-border bg-surface-inset"
       >
         {children}
       </div>

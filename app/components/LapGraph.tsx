@@ -230,7 +230,7 @@ function StepBox({
       onClick={() => onSelect(node.id)}
       className={`absolute flex cursor-pointer items-center gap-2.5 overflow-hidden rounded-[9px] border px-3 text-left transition-[filter] hover:brightness-125 ${
         state === 'skipped' || step.offMap || folded !== undefined ? 'border-dashed' : ''
-      } ${dim ? 'opacity-55' : ''} ${selected ? 'ring-2 ring-text-primary' : ''}`}
+      } ${dim ? 'opacity-55' : ''} ${selected ? 'ring-2 ring-selected' : ''}`}
       style={{
         ...placed(box),
         background: colored ? tint(STATE_TOKEN[state], 12) : 'var(--surface)',
