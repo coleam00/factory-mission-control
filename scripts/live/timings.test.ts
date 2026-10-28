@@ -36,6 +36,7 @@ const seen = {
   subscribedAt: 100.1,
   context,
   connectionStartAt: 3.4,
+  connectionOpenAt: 50.2,
   connectionReadyAt: 95.6,
 };
 const sql = 'SELECT $1::text AS factory, $2::text AS workflow, $3::text AS step';
@@ -53,6 +54,7 @@ const page: Page = {
 };
 function mark(query = context.query, detail = context) {
   performance.mark('live:connection:start', { startTime: 3.4 });
+  performance.mark('live:connection:open', { startTime: 50.2 });
   performance.mark('live:connection:ready', { startTime: 95.6 });
   performance.mark(`live:${query}:requested`, { startTime: 40.3 });
   performance.mark(`live:${query}:sealed`, { startTime: 70.2 });
@@ -84,6 +86,7 @@ test('delivery stays evidence, rendering stays fractional, legacy and readiness 
   expect(timing.subscribeSentMs).toBe(100);
   expect(timing.firstSnapshotMs).toBe(1100);
   expect(timing.connectionStartMs).toBe(3);
+  expect(timing.connectionOpenMs).toBe(50);
   expect(timing.connectionReadyMs).toBe(96);
   expect(timing.subscribeToFirstResultMs).toBeCloseTo(1000.1);
   expect(timing.renderMs).toBeCloseTo(100.2);
@@ -142,6 +145,7 @@ test('collector joins the first ready observation by ID, including when another 
   expect(timing.subscribeSentMs).toBe(100);
   expect(timing.firstSnapshotMs).toBe(1100);
   expect(timing.connectionStartMs).toBe(3);
+  expect(timing.connectionOpenMs).toBe(50);
   expect(timing.connectionReadyMs).toBe(96);
 });
 
@@ -340,10 +344,10 @@ test('a ready over its limit names the Realtime connection and each stretch from
   const timing = observedTimings(context.query, seen);
   expect(readyFailures('diff screen', timing, 2000)).toEqual([]);
   expect(readyFailures('diff screen', timing, 1199)).toEqual([
-    'diff screen ready after 1200 ms, limit 1199 (Realtime connection started 3 ms, ready 96 ms): navigation to requested 40 ms, requested to sealed 30 ms, sealed to subscribe sent 30 ms, subscribe sent to ready 1100 ms',
+    'diff screen ready after 1200 ms, limit 1199 (Realtime connection started 3 ms, ready 96 ms; connection start to open 47 ms, open to ready 46 ms): navigation to requested 40 ms, requested to sealed 30 ms, sealed to subscribe sent 30 ms, subscribe sent to ready 1100 ms',
   ]);
   expect(readyFailures('diff screen', emptyPanelTimings(), 2000)).toEqual([
-    'diff screen ready after null ms, limit 2000 (Realtime connection started not marked, ready not marked): navigation to requested not marked, requested to sealed not marked, sealed to subscribe sent not marked, subscribe sent to ready not marked',
+    'diff screen ready after null ms, limit 2000 (Realtime connection started not marked, ready not marked; connection start to open not marked, open to ready not marked): navigation to requested not marked, requested to sealed not marked, sealed to subscribe sent not marked, subscribe sent to ready not marked',
   ]);
 });
 
@@ -362,17 +366,53 @@ test('a group carries both marks per panel and its ready failure names every pan
   expect(group.requestedMs).toEqual({ [context.query]: 40, other: 900 });
   expect(group.sealedMs).toEqual({ [context.query]: 70, other: 960 });
   expect(group.subscribeSentMs).toEqual({ [context.query]: 100, other: 1000 });
+  expect(group.connectionOpenMs).toEqual({ [context.query]: 50, other: 50 });
   expect(group.connectionReadyMs).toEqual({ [context.query]: 96, other: 96 });
   expect(JSON.parse(JSON.stringify(group)).requestedMs).toEqual(group.requestedMs);
   expect(readyFailures('laps screen', group, 2000)).toEqual([
-    'laps screen ready after 3451 ms, limit 2000 (Realtime connection started 3 ms, ready 96 ms): ' +
+    'laps screen ready after 3451 ms, limit 2000 (Realtime connection started 3 ms, ready 96 ms; connection start to open 47 ms, open to ready 46 ms): ' +
       `${context.query} navigation to requested 40 ms, requested to sealed 30 ms, sealed to subscribe sent 30 ms, subscribe sent to ready 1100 ms; ` +
       'other navigation to requested 900 ms, requested to sealed 60 ms, sealed to subscribe sent 40 ms, subscribe sent to ready 2451 ms',
   ]);
   expect(
     readyFailures('laps screen', groupTimings({ missing: emptyPanelTimings() }), 2000),
   ).toEqual([
-    'laps screen ready after null ms, limit 2000 (Realtime connection started not marked, ready not marked): ' +
+    'laps screen ready after null ms, limit 2000 (Realtime connection started not marked, ready not marked; connection start to open not marked, open to ready not marked): ' +
       'missing navigation to requested not marked, requested to sealed not marked, sealed to subscribe sent not marked, subscribe sent to ready not marked',
+  ]);
+});
+
+test('a ready failure splits the connection at the open mark and never invents a missing one', () => {
+  const slow = { ...seen, readyAt: 2601.4, connectionReadyAt: 2387.3 };
+  const split = (patch: Partial<Parameters<typeof observedTimings>[1]>) =>
+    readyFailures('decisions screen', observedTimings(context.query, { ...slow, ...patch }), 2000)
+      .join('')
+      .split(': ')[0];
+  expect(split({})).toBe(
+    'decisions screen ready after 2601 ms, limit 2000 (Realtime connection started 3 ms, ready 2387 ms; connection start to open 47 ms, open to ready 2337 ms)',
+  );
+  expect(split({ connectionOpenAt: null })).toBe(
+    'decisions screen ready after 2601 ms, limit 2000 (Realtime connection started 3 ms, ready 2387 ms; connection start to open not marked, open to ready not marked)',
+  );
+  expect(split({ connectionReadyAt: null })).toBe(
+    'decisions screen ready after 2601 ms, limit 2000 (Realtime connection started 3 ms, ready not marked; connection start to open 47 ms, open to ready not marked)',
+  );
+  expect(split({ connectionOpenAt: null, connectionReadyAt: null })).toBe(
+    'decisions screen ready after 2601 ms, limit 2000 (Realtime connection started 3 ms, ready not marked; connection start to open not marked, open to ready not marked)',
+  );
+});
+
+test('a socket that opened before the panel asked for its seal still splits from its own start', async () => {
+  performance.mark('live:connection:start', { startTime: 2.6 });
+  performance.mark('live:connection:open', { startTime: 21.8 });
+  performance.mark('live:connection:ready', { startTime: 2200.1 });
+  performance.mark('live:step-detail:requested', { startTime: 140.3 });
+  performance.mark('live:step-detail:sealed', { startTime: 160.2 });
+  performance.mark('live:step-detail:subscribe-sent', { startTime: 2201.1 });
+  performance.mark('live:step-detail:ready', { startTime: 2400.4, detail: context });
+  const timing = (await collectPanelMarks(page, ['step-detail'], 0))['step-detail'];
+  expect(timing.connectionOpenMs).toBe(22);
+  expect(readyFailures('the step screen', timing, 2000)).toEqual([
+    'the step screen ready after 2400 ms, limit 2000 (Realtime connection started 3 ms, ready 2200 ms; connection start to open 19 ms, open to ready 2178 ms): navigation to requested 140 ms, requested to sealed 20 ms, sealed to subscribe sent 2041 ms, subscribe sent to ready 199 ms',
   ]);
 });
