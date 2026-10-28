@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test';
-import { type HomeMapRow, homeMap, layoutLoop, reduceEdges } from './home-map';
+import { type Box, type HomeMapRow, homeMap, layoutSteps, reduceEdges } from './home-map';
 
 const workflow = (role: 'input' | 'manager', name: string): HomeMapRow => ({
   role,
@@ -11,6 +11,7 @@ const workflow = (role: 'input' | 'manager', name: string): HomeMapRow => ({
   kind: null,
   depends_on: null,
   detail_workflow: name,
+  detail_path: null,
   lap_factory: null,
   laps: 0,
   is_current: false,
@@ -33,6 +34,7 @@ const step = (
     kind: 'script',
     depends_on: dependsOn,
     detail_workflow: parent === null ? 'wf-loop' : 'wf-block',
+    detail_path: parent === null ? path : path.slice(path.indexOf('/') + 1),
     lap_factory: null,
     laps: 0,
     is_current: false,
@@ -56,13 +58,13 @@ const rows: HomeMapRow[] = [
 
 test('the loop is in declaration order, each expanded step followed by its stages', () => {
   const map = homeMap(rows, SHOWN);
-  expect(map.loop.map((n) => n.id)).toEqual(['a', 'b', 'b/one', 'b/two', 'c']);
-  expect(map.loop.map((n) => n.role)).toEqual(['step', 'step', 'stage', 'stage', 'step']);
-  expect(map.clusters).toEqual(new Map([['b', ['b/one', 'b/two']]]));
+  expect(map.loop.steps.map((n) => n.id)).toEqual(['a', 'b', 'b/one', 'b/two', 'c']);
+  expect(map.loop.steps.map((n) => n.role)).toEqual(['step', 'step', 'stage', 'stage', 'step']);
+  expect(map.loop.clusters).toEqual(new Map([['b', ['b/one', 'b/two']]]));
 });
 
 test("a stage's depends_on names its siblings, and a stage with none hangs off its step", () => {
-  const { edges } = homeMap(rows, SHOWN);
+  const { edges } = homeMap(rows, SHOWN).loop;
   expect(edges).toContainEqual({ from: 'b', to: 'b/one' });
   expect(edges).toContainEqual({ from: 'b/one', to: 'b/two' });
   expect(edges).not.toContainEqual({ from: 'one', to: 'b/two' });
@@ -92,16 +94,16 @@ test('an edge another path already implies is not drawn', () => {
     { from: 'c', to: 'd' },
   ]);
   const map = homeMap([...rows, step('d', 10, ['a', 'c'])], SHOWN);
-  expect(map.edges).toContainEqual({ from: 'c', to: 'd' });
-  expect(map.edges).not.toContainEqual({ from: 'a', to: 'd' });
+  expect(map.loop.edges).toContainEqual({ from: 'c', to: 'd' });
+  expect(map.loop.edges).not.toContainEqual({ from: 'a', to: 'd' });
 });
 
 test('a step links to its own workflow, a stage to the workflow its step includes', () => {
   const map = homeMap(rows, SHOWN);
-  const href = (id: string) => map.loop.find((n) => n.id === id)?.href;
+  const href = (id: string) => map.loop.steps.find((n) => n.id === id)?.href;
   expect(href('a')).toBe('/steps/wf-loop/a');
   expect(href('b/two')).toBe('/steps/wf-block/two');
-  expect(map.loop.find((n) => n.id === 'b/two')?.liveCount).toBe(2);
+  expect(map.loop.steps.find((n) => n.id === 'b/two')?.liveCount).toBe(2);
 });
 
 test("a step with several factories' laps is one node: the address factory's count, every factory listed", () => {
@@ -113,16 +115,16 @@ test("a step with several factories' laps is one node: the address factory's cou
     ],
     SHOWN,
   );
-  expect(map.loop.map((n) => n.id)).toEqual(['a', 'b', 'b/one', 'b/two', 'c']);
-  const two = map.loop.find((n) => n.id === 'b/two');
+  expect(map.loop.steps.map((n) => n.id)).toEqual(['a', 'b', 'b/one', 'b/two', 'c']);
+  const two = map.loop.steps.find((n) => n.id === 'b/two');
   expect(two?.liveCount).toBe(2);
   expect(two?.factories).toEqual([
     { factory: 'here', laps: 2, current: true },
     { factory: 'a-other', laps: 4, current: false },
     { factory: 'b-other', laps: 3, current: false },
   ]);
-  expect(map.loop.find((n) => n.id === 'a')?.factories).toEqual([]);
-  expect(map.edges.filter((e) => e.to === 'b/two')).toEqual([{ from: 'b/one', to: 'b/two' }]);
+  expect(map.loop.steps.find((n) => n.id === 'a')?.factories).toEqual([]);
+  expect(map.loop.edges.filter((e) => e.to === 'b/two')).toEqual([{ from: 'b/one', to: 'b/two' }]);
 });
 
 test('a factory the factories file does not name is not on the map, even where it alone has laps', () => {
@@ -134,46 +136,152 @@ test('a factory the factories file does not name is not on the map, even where i
     ],
     SHOWN,
   );
-  expect(map.loop.map((n) => n.id)).toEqual(['a', 'b', 'b/one', 'b/two', 'c']);
-  expect(map.loop.find((n) => n.id === 'b/two')?.factories).toEqual([
+  expect(map.loop.steps.map((n) => n.id)).toEqual(['a', 'b', 'b/one', 'b/two', 'c']);
+  expect(map.loop.steps.find((n) => n.id === 'b/two')?.factories).toEqual([
     { factory: 'here', laps: 2, current: true },
   ]);
-  const a = map.loop.find((n) => n.id === 'a');
+  const a = map.loop.steps.find((n) => n.id === 'a');
   expect([a?.liveCount, a?.factories]).toEqual([0, []]);
 });
 
 test('with no steps stored the map is empty', () => {
   const map = homeMap([workflow('manager', 'wf-manager')], SHOWN);
-  expect([...map.inputs, ...map.manager, ...map.loop, ...map.outputs]).toEqual([]);
+  expect([...map.inputs, ...map.manager, ...map.loop.steps, ...map.outputs]).toEqual([]);
 });
 
-test('the narrow layout keeps the whole spine in one column with full-size stages beside it', () => {
-  const map = homeMap(rows, SHOWN);
-  const desktop = layoutLoop(map);
-  const narrow = layoutLoop(map, true);
-  for (const node of map.loop) {
-    const box = narrow.nodes.get(node.id);
-    const original = desktop.nodes.get(node.id);
-    if (!box || !original) throw new Error(`Missing node ${node.id}`);
-    expect([box.y, box.width, box.height]).toEqual([original.y, original.width, original.height]);
-    if (node.role === 'step') {
-      expect(box.x).toBe(24);
-      expect(box.x + box.width).toBeLessThanOrEqual(340);
-    } else {
-      expect(box).toEqual(original);
-    }
+const within = (inner: Box | undefined, outer: Box | undefined) =>
+  inner !== undefined &&
+  outer !== undefined &&
+  inner.x >= outer.x &&
+  inner.y >= outer.y &&
+  inner.x + inner.width <= outer.x + outer.width &&
+  inner.y + inner.height <= outer.y + outer.height;
+
+const apart = (a: Box, b: Box) =>
+  a.x + a.width <= b.x || b.x + b.width <= a.x || a.y + a.height <= b.y || b.y + b.height <= a.y;
+
+/** `b` includes a block whose step `x` includes another: two levels of include. */
+const twoLevels: HomeMapRow[] = [
+  step('a', 0, []),
+  step('b', 1, ['a'], { kind: 'include' }),
+  step('b/x', 2, [], { kind: 'include', detail_workflow: 'wf-outer', detail_path: 'x' }),
+  step('b/x/y', 3, [], {
+    detail_workflow: 'wf-inner',
+    detail_path: 'y',
+    lap_factory: 'here',
+    laps: 1,
+    is_current: true,
+  }),
+  step('b/x/z', 4, ['y'], { detail_workflow: 'wf-inner', detail_path: 'z' }),
+  step('c', 5, ['b']),
+];
+
+test('an include inside an include expands too, every step inside each box around it', () => {
+  const map = homeMap(twoLevels, SHOWN);
+  expect(map.loop.steps.map((n) => n.id)).toEqual(['a', 'b', 'b/x', 'b/x/y', 'b/x/z', 'c']);
+  expect(map.loop.clusters).toEqual(
+    new Map([
+      ['b', ['b/x']],
+      ['b/x', ['b/x/y', 'b/x/z']],
+    ]),
+  );
+  const laid = layoutSteps(map.loop);
+  for (const id of ['b/x/y', 'b/x/z']) {
+    expect([id, within(laid.nodes.get(id), laid.clusters.get('b/x'))]).toEqual([id, true]);
   }
-  for (const edge of narrow.edges) {
-    const from = narrow.nodes.get(edge.from);
-    const to = narrow.nodes.get(edge.to);
-    if (!from || !to) throw new Error('Missing edge endpoint');
+  expect(within(laid.clusters.get('b/x'), laid.clusters.get('b'))).toBe(true);
+  for (const parent of ['b', 'b/x']) {
+    expect([parent, within(laid.nodes.get(parent), laid.clusters.get(parent))]).toEqual([
+      parent,
+      true,
+    ]);
+  }
+  const boxes = [...laid.nodes.values()];
+  for (const [i, a] of boxes.entries())
+    for (const b of boxes.slice(i + 1)) expect(apart(a, b)).toBe(true);
+  const spine = ['a', 'b', 'c'].map((id) => (laid.clusters.get(id) ?? laid.nodes.get(id))?.y ?? 0);
+  expect(spine).toEqual([...spine].sort((p, q) => p - q));
+});
+
+test('a nested step opens under the workflow that declares it, and counts its own laps', () => {
+  const map = homeMap(twoLevels, SHOWN);
+  const node = (id: string) => map.loop.steps.find((n) => n.id === id);
+  expect(node('b/x/y')?.href).toBe('/steps/wf-inner/y');
+  expect(node('b/x')?.href).toBe('/steps/wf-outer/x');
+  expect(node('b/x/y')?.liveCount).toBe(1);
+  expect(node('b/x/z')?.liveCount).toBe(0);
+});
+
+test("the manager and each input show their own steps, each opening that workflow's step", () => {
+  const own = (name: string, role: 'input' | 'manager', path: string, position: number) =>
+    step(path, position, position === 0 ? [] : ['first'], {
+      role,
+      workflow: name,
+      detail_workflow: name,
+    });
+  const map = homeMap(
+    [
+      ...rows,
+      own('wf-manager', 'manager', 'first', 0),
+      own('wf-manager', 'manager', 'second', 1),
+      own('wf-writer', 'input', 'first', 0),
+    ],
+    SHOWN,
+  );
+  expect(map.inputs.map((n) => n.label)).toEqual([
+    'Product document',
+    'wf-writer',
+    'Owner decisions',
+  ]);
+  expect(map.manager.map((n) => n.label)).toEqual(['wf-manager']);
+  const manager = map.workflows.get('wf-manager');
+  expect(manager?.steps.map((n) => [n.workflow, n.href])).toEqual([
+    ['wf-manager', '/steps/wf-manager/first'],
+    ['wf-manager', '/steps/wf-manager/second'],
+  ]);
+  expect(manager?.edges).toEqual([{ from: 'first', to: 'second' }]);
+  expect(map.workflows.get('wf-writer')?.steps.map((n) => n.id)).toEqual(['first']);
+  expect(map.loop.steps.map((n) => n.id)).toEqual(['a', 'b', 'b/one', 'b/two', 'c']);
+});
+
+test('the narrow layout keeps the spine in one column, each box moving with what it holds', () => {
+  const { loop } = homeMap(twoLevels, SHOWN);
+  const desktop = layoutSteps(loop);
+  const narrow = layoutSteps(loop, true);
+  const outerBox = (laid: typeof desktop, id: string) =>
+    (laid.clusters.get(id) ?? laid.nodes.get(id)) as Box;
+  const spine = ['a', 'b', 'c'];
+  for (const id of spine) {
+    const box = outerBox(narrow, id);
+    const original = outerBox(desktop, id);
+    expect([id, box.x, box.y, box.width, box.height]).toEqual([
+      id,
+      24,
+      original.y,
+      original.width,
+      original.height,
+    ]);
+  }
+  expect(narrow.nodes.get('a')?.x).toBe(24);
+  expect((narrow.nodes.get('a')?.x ?? 0) + (narrow.nodes.get('a')?.width ?? 0)).toBeLessThanOrEqual(
+    340,
+  );
+  const box = outerBox(desktop, 'b');
+  const moved = outerBox(narrow, 'b');
+  for (const id of ['b', 'b/x', 'b/x/y', 'b/x/z']) {
+    const was = desktop.nodes.get(id) as Box;
+    const now = narrow.nodes.get(id) as Box;
+    expect([id, now.x - moved.x, now.y - moved.y]).toEqual([id, was.x - box.x, was.y - box.y]);
+  }
+  for (const edge of narrow.edges.filter((e) => spine.includes(e.from) && spine.includes(e.to))) {
+    const from = outerBox(narrow, edge.from);
+    const to = outerBox(narrow, edge.to);
     expect(edge.d).toStartWith(`M${from.x + from.width / 2},${from.y + from.height}`);
-    expect(edge.d).toEndWith(`H${to.x + to.width / 2} V${to.y}`);
+    expect(edge.d).toEndWith(`L${to.x + to.width / 2},${to.y}`);
   }
-  expect(narrow.clusters).toEqual(desktop.clusters);
 });
 
-test('the layout places every step apart, and the stage box around its stages', () => {
+test('the layout places every step apart, and the box around its own step and its stages', () => {
   const longFactory = 'a-factory-with-a-long-name';
   const map = homeMap(
     [
@@ -183,29 +291,17 @@ test('the layout places every step apart, and the stage box around its stages', 
     ],
     [...SHOWN, longFactory],
   );
-  const laid = layoutLoop(map);
-  const plain = laid.nodes.get('b/one') as NonNullable<ReturnType<typeof laid.nodes.get>>;
-  const counted = laid.nodes.get('b/two') as NonNullable<ReturnType<typeof laid.nodes.get>>;
+  const laid = layoutSteps(map.loop);
+  const plain = laid.nodes.get('b/one') as Box;
+  const counted = laid.nodes.get('b/two') as Box;
   expect(counted.width).toBeGreaterThan(plain.width);
   expect(counted.height).toBeGreaterThan(plain.height);
-  expect([...laid.nodes.keys()]).toEqual(map.loop.map((n) => n.id));
+  expect([...laid.nodes.keys()]).toEqual(map.loop.steps.map((n) => n.id));
   const boxes = [...laid.nodes.values()];
-  for (const [i, a] of boxes.entries()) {
-    for (const b of boxes.slice(i + 1)) {
-      const apart =
-        a.x + a.width <= b.x ||
-        b.x + b.width <= a.x ||
-        a.y + a.height <= b.y ||
-        b.y + b.height <= a.y;
-      expect(apart).toBe(true);
-    }
-  }
-  const cluster = laid.clusters.get('b');
-  for (const id of ['b/one', 'b/two']) {
-    const box = laid.nodes.get(id);
-    expect(box && cluster && box.x >= cluster.x && box.y >= cluster.y).toBe(true);
-    expect(box && cluster && box.x + box.width <= cluster.x + cluster.width).toBe(true);
-    expect(box && cluster && box.y + box.height <= cluster.y + cluster.height).toBe(true);
+  for (const [i, a] of boxes.entries())
+    for (const b of boxes.slice(i + 1)) expect(apart(a, b)).toBe(true);
+  for (const id of ['b', 'b/one', 'b/two']) {
+    expect([id, within(laid.nodes.get(id), laid.clusters.get('b'))]).toEqual([id, true]);
   }
   expect(laid.edges.every((e) => e.d.startsWith('M'))).toBe(true);
 });
