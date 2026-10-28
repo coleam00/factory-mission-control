@@ -4,9 +4,13 @@ import {
   checkMix,
   type DefaultHoldoutRow,
   defaultBranch,
+  kindBars,
   prHoldouts,
   type RouteRow,
+  routeGrid,
   routeMix,
+  scenarioTiles,
+  verdictTone,
 } from './testing';
 
 const lap = (n: number) => `5eed0001-0000-4000-8000-${String(n).padStart(12, '0')}`;
@@ -113,4 +117,56 @@ test("the default branch is the newest line's verdicts; failing is its FAILs onl
   expect(branch?.verdicts.map((v) => v.scenario_id)).toEqual(['H-01', 'H-02', 'H-03', 'H-04']);
   expect(branch?.failing).toEqual([h02]);
   expect(defaultBranch([])).toBeNull();
+});
+
+test('kind bars hold every verdict of a kind, passing first, with their total', () => {
+  const rows = [
+    line(1, 1, { kind: 'holdout', verdict: 'FAIL', scenario_id: 'H-02' }),
+    line(1, 2, { kind: 'holdout', scenario_id: 'H-01' }),
+    line(2, 1, { kind: 'holdout', verdict: 'INCOMPLETE', scenario_id: 'H-01' }),
+    line(2, 2, {}),
+  ];
+  expect(kindBars(rows).map((b) => [b.kind, b.total, b.verdicts.map((v) => v.verdict)])).toEqual([
+    ['criterion', 1, ['PASS']],
+    ['holdout', 3, ['PASS', 'FAIL', 'INCOMPLETE']],
+  ]);
+});
+
+test('scenario tiles: one per id in number order, unidentified last, verdicts passing first', () => {
+  const rows = [
+    line(1, 1, { kind: 'holdout', verdict: 'FAIL', scenario_id: 'unidentified' }),
+    line(1, 2, { kind: 'holdout', verdict: 'FAIL', scenario_id: 'H-10' }),
+    line(2, 1, { kind: 'holdout', scenario_id: 'H-10' }),
+    line(3, 1, { kind: 'holdout', scenario_id: 'H-02' }),
+    line(3, 2, {}),
+  ];
+  expect(
+    scenarioTiles(rows).map((t) => [t.scenario, t.total, t.verdicts.map((v) => v.verdict)]),
+  ).toEqual([
+    ['H-02', 1, ['PASS']],
+    ['H-10', 2, ['PASS', 'FAIL']],
+    ['unidentified', 1, ['FAIL']],
+  ]);
+});
+
+test('the route grid: named routes and depths in order, others after, not picked last', () => {
+  const grid = routeGrid([
+    route(1, {}),
+    route(2, {}),
+    route(3, { route: 'rescue', depth: 'deep' }),
+    route(4, { route: null, depth: null }),
+  ]);
+  expect(grid.routes).toEqual(['simple', 'continue', 'complex', 'none', 'rescue', null]);
+  expect(grid.depths).toEqual(['light', 'normal', 'deep', null]);
+  expect(grid.laps('simple', 'normal')).toEqual([lap(2), lap(1)]);
+  expect(grid.laps(null, null)).toEqual([lap(4)]);
+  expect(grid.laps('none', 'light')).toEqual([]);
+  expect(grid.most).toBe(2);
+  expect(grid.total).toBe(4);
+});
+
+test('verdicts read teal passed, red failed, amber unfinished', () => {
+  expect(
+    ['PASS', 'OK', 'FAIL', 'DEFECT', 'INCOMPLETE', 'SURPRISE', 'NEW'].map(verdictTone),
+  ).toEqual(['success', 'success', 'error', 'error', 'warning', 'warning', 'neutral']);
 });
