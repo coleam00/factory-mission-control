@@ -32,7 +32,7 @@ describe('decisions-timeline and improvements-ledger on the seed', () => {
       const pin = pins.find((p) => p.sha === row.pin_sha);
       expect(
         [pin?.sha, pin?.archon_sha].some((sha) => String(sha).startsWith(String(row.version))),
-      );
+      ).toBe(true);
       expect(versions).toContainEqual({ digest: row.digest, pin_sha: row.pin_sha });
     }
     expect(rows.every((r) => r.ambiguous === false)).toBe(true);

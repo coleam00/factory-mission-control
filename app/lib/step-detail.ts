@@ -1,3 +1,5 @@
+import { recorded } from './version-strip';
+
 /** One row of `db/queries/step-detail.sql`: a node of a workflow's expanded tree. */
 export interface StepRow {
   workflow: string;
@@ -159,7 +161,7 @@ export function nesting(rows: readonly NestingRow[], step: StepRow, at?: string 
  */
 export interface StepVersionRow {
   sha: string;
-  reason: string;
+  reason: string | null;
   committed_at: Date;
   is_current: boolean;
 }
@@ -168,6 +170,7 @@ export interface StepVersion {
   sha: string;
   /** The pin's first 8 characters and its commit date. */
   label: string;
+  /** The pin's reason, or `not recorded` for a bare pin. */
   reason: string;
   current: boolean;
 }
@@ -181,7 +184,7 @@ export function stepVersions(rows: readonly StepVersionRow[]): StepVersion[] {
     .map((row) => ({
       sha: row.sha,
       label: `${row.sha.slice(0, 8)} ${row.committed_at.toISOString().slice(0, 10)}`,
-      reason: row.reason,
+      reason: recorded(row.reason),
       current: row.is_current,
     }));
 }
