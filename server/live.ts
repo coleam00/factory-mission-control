@@ -6,7 +6,13 @@ import { isRewindBranch } from '../scripts/lib/guard';
 import { createNeonApi, type NeonApi } from '../scripts/lib/neon';
 import type { Env } from './check-env';
 import { readFactoryNames } from './factories';
-import { rewindListed, rewindRealtime, UnknownRewindBranch, UnlistedRewindBranch } from './rewind';
+import {
+  rewindBranchNames,
+  rewindListed,
+  rewindRealtime,
+  UnknownRewindBranch,
+  UnlistedRewindBranch,
+} from './rewind';
 
 export const LIVE_QUERY_NAME = /^[a-z0-9-]+$/;
 
@@ -30,6 +36,8 @@ export interface Live {
   rewind?: RewindSealer;
   /** Finds a listed rewind-* branch's sealing; absent without NEON_API_KEY and NEON_PROJECT_ID. */
   openRewind?: (name: string) => Promise<RewindSealer>;
+  /** The rewind-* branches Neon has now; absent without NEON_API_KEY and NEON_PROJECT_ID. */
+  rewindBranches?: () => Promise<string[]>;
 }
 
 export function loadLiveQueries(dir: string): Map<string, string> {
@@ -101,14 +109,13 @@ export function liveFromEnv(env: Env, repoRoot: string): Live | undefined {
   const db = new URL(databaseUrl).pathname.slice(1);
   const apiKey = env.NEON_API_KEY;
   const projectId = env.NEON_PROJECT_ID;
+  const api = apiKey && projectId ? createNeonApi({ apiKey, projectId }) : undefined;
   return {
     factories: factoryNames(env, repoRoot),
     queries: loadLiveQueries(join(repoRoot, 'db', 'queries')),
     home: sealerFor(realtimeUrlFor(databaseUrl), secret, db),
-    openRewind:
-      apiKey && projectId
-        ? rewindOpener(createNeonApi({ apiKey, projectId }), db, rewindListed(databaseUrl))
-        : undefined,
+    openRewind: api ? rewindOpener(api, db, rewindListed(databaseUrl)) : undefined,
+    rewindBranches: api ? () => rewindBranchNames(api) : undefined,
   };
 }
 
@@ -173,6 +180,22 @@ export function liveRoutes(app: Hono, live: Live | undefined): void {
     const rewind = branch === 'home' ? undefined : live.rewind;
     const sealed = await (rewind ?? live.home).seal(sql, [factory, ...args]);
     return c.json({ ...sealed, rewind: rewind?.name ?? null });
+  });
+
+  // The rewind-* branches that exist, so `/rewind` offers no switch to a listed one Neon lost.
+  app.get('/api/rewind/branches', async (c) => {
+    if (!live) return c.json(NOT_CONFIGURED, 503);
+    if (!live.rewindBranches) {
+      return c.json({ error: 'needs NEON_API_KEY and NEON_PROJECT_ID on the server' }, 503);
+    }
+    try {
+      return c.json({ branches: await live.rewindBranches() });
+    } catch (error) {
+      console.error(
+        `listing rewind branches failed: ${error instanceof Error ? error.message : error}`,
+      );
+      return c.json({ error: 'could not list the rewind branches' }, 502);
+    }
   });
 
   // `{ branch: "rewind-..." }` switches every page's sealing to that branch; `{ branch: null }` back.

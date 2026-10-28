@@ -362,6 +362,28 @@ describe('POST /api/rewind', () => {
   });
 });
 
+describe('GET /api/rewind/branches', () => {
+  test('answers the rewind-* branches Neon has', async () => {
+    const { app, live } = fakeLive();
+    live.rewindBranches = async () => [REWIND];
+    const res = await app.request('/api/rewind/branches');
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ branches: [REWIND] });
+  });
+
+  test('without the Neon API it is a 503, and a failed answer a 502 without its text', async () => {
+    const { app, live } = fakeLive();
+    expect((await app.request('/api/rewind/branches')).status).toBe(503);
+    live.rewindBranches = () =>
+      Promise.reject(new Error('Neon API GET failed: 500 upstream detail'));
+    const quiet = spyOn(console, 'error').mockImplementation(() => {});
+    const failed = await app.request('/api/rewind/branches');
+    quiet.mockRestore();
+    expect(failed.status).toBe(502);
+    expect(await failed.text()).not.toContain('upstream detail');
+  });
+});
+
 describe('without Realtime configuration', () => {
   const app = () => createApp({ buildId: 'test', distDir });
 
@@ -375,6 +397,7 @@ describe('without Realtime configuration', () => {
     const res = await app().request('/api/live/status-strip', post({ factory: 'mission-control' }));
     expect(res.status).toBe(503);
     expect((await app().request('/api/rewind', post({ branch: REWIND }))).status).toBe(503);
+    expect((await app().request('/api/rewind/branches')).status).toBe(503);
     expect((await app().request('/api/health')).status).toBe(200);
   });
 });

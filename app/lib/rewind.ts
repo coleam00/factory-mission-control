@@ -44,3 +44,16 @@ export function followSwitch(): void {
 export function rewindMoment(at: Date): string {
   return `${at.toISOString().slice(0, 19).replace('T', ' ')} UTC`;
 }
+
+/**
+ * Which of `names` have no Neon branch any more, as the server's `GET /api/rewind/branches`
+ * answers. A name is gone only when the server says so: when it cannot ask Neon, none is.
+ */
+export async function goneRewinds(names: readonly string[]): Promise<Set<string>> {
+  const res = await fetch('/api/rewind/branches').catch(() => undefined);
+  if (!res?.ok) return new Set();
+  const answer = (await res.json().catch(() => undefined)) as { branches?: unknown } | undefined;
+  const branches = answer?.branches;
+  if (!Array.isArray(branches)) return new Set();
+  return new Set(names.filter((name) => !branches.includes(name)));
+}

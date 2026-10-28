@@ -1,5 +1,5 @@
 import { type OpenDb, openDb } from '../scripts/lib/db';
-import { requireRewindBranch } from '../scripts/lib/guard';
+import { isRewindBranch, requireRewindBranch } from '../scripts/lib/guard';
 import type { NeonApi } from '../scripts/lib/neon';
 
 export class UnknownRewindBranch extends Error {
@@ -52,4 +52,9 @@ export async function rewindRealtime(
   const [endpoint] = await api.branchEndpoints(branch.id);
   if (!endpoint) throw new Error(`${name} has no endpoint`);
   return { host: endpoint.host, secret: await api.getRealtimeSecret(branch.id) };
+}
+
+/** The names of the project's rewind-* branches that exist now, asked of the Neon API. */
+export async function rewindBranchNames(api: NeonApi): Promise<string[]> {
+  return (await api.listBranches()).map((b) => b.name).filter(isRewindBranch);
 }

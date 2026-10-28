@@ -6,7 +6,7 @@ import type { Db, Row } from '../scripts/lib/db';
 import type { NeonApi } from '../scripts/lib/neon';
 import { createApp } from './app';
 import { liveFromEnv, rewindOpener } from './live';
-import { rewindListed, rewindRealtime, UnlistedRewindBranch } from './rewind';
+import { rewindBranchNames, rewindListed, rewindRealtime, UnlistedRewindBranch } from './rewind';
 
 const repoRoot = resolve(import.meta.dir, '..');
 const REWIND = 'rewind-2026-10-24t11-00-00z';
@@ -128,6 +128,16 @@ test('a rewind-* branch the list does not show is refused before any Neon reques
   await expect(refused).rejects.toBeInstanceOf(UnlistedRewindBranch);
   await expect(refused).rejects.toThrow(`${REWIND} is not in the rewind list`);
   expect(calls).toEqual([]);
+});
+
+test('the branches Neon has are its rewind-* names only', async () => {
+  const { api } = fakeNeon();
+  api.listBranches = async () => [
+    { id: 'br-main', name: 'main', created_at: '' },
+    { id: 'br-check', name: 'check-abc', created_at: '' },
+    { id: 'br-rewind', name: REWIND, created_at: '' },
+  ];
+  expect(await rewindBranchNames(api)).toEqual([REWIND]);
 });
 
 test('the list is one query on mc.rewind_branches, and its connection closes after each answer', async () => {
