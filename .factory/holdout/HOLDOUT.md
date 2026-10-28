@@ -122,13 +122,13 @@ Author: writer, 2026-10-24, first set for the whole release (docs/mission-contro
 ## H-05 A comparison stops saying "not yet meaningful" at exactly 10 laps, live
 Protects: 4.2 comparison rule; invariant 5; journey 3
 Touches: version strip, scorecard comparison
-Setup: the check app with two versions A and B of the factory: A has 12 completed laps, B has 9.
+Setup: the check app with two versions A and B of the factory: A has 12 completed laps, B has 9. A version with 0 laps cannot exist (a version is a digest some `archon-loop` run ran, 4.2 and 11.5), so the fewest-laps version is C: a new digest whose only `archon-loop` lap has just started, inserted as Archon would, with no step completed yet. (Tightened 2026-10-27: the earlier 0-lap C is not a state the product allows.)
 Steps:
 1. Pick A and B on the strip and compare them; record which differences carry "not yet meaningful".
 2. Without a reload, insert, as Archon would, one more completed lap for B (10 laps).
-3. Record the labels again; then compare B against a version C that has 0 laps.
+3. Record the labels again; then compare B against C while C's one lap is still running, and again, without a reload, after that lap completes.
 Expect:
-- With 9 laps on B, every difference is labelled "not yet meaningful"; with 10 on each side, none is; any comparison against C is labelled.
+- With 9 laps on B, every difference is labelled "not yet meaningful"; with 10 on each side, none is; every comparison against C is labelled, both while its lap runs and after it completes, and C's side never shows an error, a blank, NaN or a division by zero where a measure has nothing to rest on yet.
 - The change happens without a reload, within 5 seconds of the lap's completion.
 - Each side shows the lap count it rests on.
 - `judges/scorecard.js` PASS on the recorded comparisons.
