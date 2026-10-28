@@ -10,7 +10,7 @@ WITH version AS (
 -- Every node of each shown workflow's expanded tree, at every depth an include or loop group nests.
 steps AS (
   SELECT s.workflow, s.path, s.parent_path, s.position, s.step_id, s.kind, s.depends_on, s.include,
-    s.defined_in
+    s.defined_in, s.when_condition, s.trigger_rule
   FROM mc.arch_steps s
   JOIN version v ON v.archon_sha = s.archon_sha AND v.factory_sha = s.factory_sha
   WHERE s.workflow IN ('archon-holdouts', 'archon-backlog', 'archon-manager', 'archon-loop')
@@ -20,7 +20,7 @@ steps AS (
 -- include cycle), and its own path is what follows that include's path.
 own AS (
   SELECT s.workflow, s.path, s.parent_path, s.position, s.step_id, s.kind, s.depends_on,
-    s.defined_in,
+    s.defined_in, s.when_condition, s.trigger_rule,
     CASE WHEN i.path IS NULL THEN s.path ELSE substr(s.path, length(i.path) + 2) END AS own_path
   FROM steps s
   LEFT JOIN steps i
@@ -61,6 +61,8 @@ SELECT
   s.step_id,
   s.kind,
   s.depends_on,
+  s.when_condition,
+  s.trigger_rule,
   coalesce(s.defined_in, w.name) AS detail_workflow,
   s.own_path AS detail_path,
   c.factory AS lap_factory,

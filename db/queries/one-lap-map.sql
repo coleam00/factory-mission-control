@@ -18,7 +18,7 @@ version AS (
 ),
 steps AS (
   SELECT s.path, s.parent_path, s.position, s.step_id, s.kind, s.depends_on, s.include,
-    s.defined_in, s.workflow
+    s.defined_in, s.workflow, s.when_condition, s.trigger_rule
   FROM mc.arch_steps s
   JOIN version v ON v.archon_sha = s.archon_sha AND v.factory_sha = s.factory_sha
   WHERE s.workflow = 'archon-loop'
@@ -26,6 +26,7 @@ steps AS (
 -- Every node of the loop's expanded tree, with where its own screen is, as home-map.sql gives it:
 -- under the workflow that declares it, at its path there.
 SELECT v.pin, s.path, s.parent_path, s.position, s.step_id, s.kind, s.depends_on,
+  s.when_condition, s.trigger_rule,
   coalesce(s.defined_in, s.workflow) AS detail_workflow,
   CASE WHEN i.path IS NULL THEN s.path ELSE substr(s.path, length(i.path) + 2) END AS detail_path
 FROM steps s

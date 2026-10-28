@@ -10,6 +10,7 @@ import {
   homeMap,
   type StepGraph,
   stepsCount,
+  topBlocks,
 } from './home-map';
 import type { StepAttemptRow } from './one-lap';
 
@@ -22,6 +23,8 @@ export interface LapMapRow {
   step_id: string;
   kind: string;
   depends_on: string[] | null;
+  when_condition?: string | null;
+  trigger_rule?: string | null;
   detail_workflow: string;
   detail_path: string;
 }
@@ -106,6 +109,8 @@ export function lapGraph(map: readonly LapMapRow[], attempts: readonly StepAttem
     step_id: r.step_id,
     kind: r.kind,
     depends_on: r.depends_on,
+    when_condition: r.when_condition ?? null,
+    trigger_rule: r.trigger_rule ?? null,
     detail_workflow: r.detail_workflow,
     detail_path: r.detail_path,
     lap_factory: null,
@@ -270,8 +275,17 @@ export function laneMarks(steps: readonly string[] | null): LaneMark[] {
 }
 
 /**
- * Folds every include or loop group into one box unless the viewer opened it, whether or not its
- * steps ran: a complex lap's `ship` is one box, not its 68 steps. The box says how the block
+ * The blocks a lap opens with: each top-level include or loop group the lap ran (running, failed
+ * or done), so ship's own steps branch beside the spine; one it did not run stays one box.
+ */
+export const ranBlocks = (lap: LapGraph): string[] =>
+  topBlocks(lap.graph).filter((block) =>
+    ['running', 'failed', 'finished'].includes(lap.steps.get(block)?.state ?? 'not-reached'),
+  );
+
+/**
+ * Folds every include or loop group into one box unless it is in `opened` (by default the lap's
+ * `ranBlocks`): a complex lap shows ship's own steps, each block inside it one box, not its 68 steps. The box says how the block
  * stands in this lap: the step running or failed inside it, and how many of its steps are done.
  */
 export function foldGraph(lap: LapGraph, opened: ReadonlySet<string>): FoldedSteps {
