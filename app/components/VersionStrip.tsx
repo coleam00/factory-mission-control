@@ -208,7 +208,7 @@ function Entry({
       // The highlight sits on the entry itself, rail and card together: a link to this version
       // (`?pin=`) and a selection both light the whole row.
       className={`grid grid-cols-[96px_minmax(0,1fr)] gap-x-4 rounded-[10px] pl-2 sm:grid-cols-[132px_minmax(0,1fr)] ${
-        marked ? 'bg-[color:var(--accent-soft)] ring-2 ring-inset ring-selected' : ''
+        marked ? 'bg-surface-hover ring-2 ring-inset ring-selected' : ''
       }`}
     >
       <div className="relative pt-[13px]">

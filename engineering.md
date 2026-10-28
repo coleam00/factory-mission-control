@@ -48,17 +48,15 @@ How this repository is built. The product is `docs/mission-control.prd.md`; this
   `docs/design/archon-console/`. Colors live in one place: the tokens in `index.css` and
   `theme.css` there, copied identically into `app/styles.css` (`styles.test.ts` holds the copy,
   and the design probe fails any rendered color outside them). Change a color by changing its
-  token, never inline. The palette is the Dynamous brand (owner decision, #240): Dynamous Blue
-  `#3B82F6` is the one accent (selection, the active tab, focus), Dynamous Dark `#2563EB` for
-  hover and outlines, Dynamous Light `#60A5FA` for link text and secondary accents; the page is
-  `#07090F` / `#080A13` under a faded brand gradient
-  (`linear-gradient(to bottom, #07090F, rgba(30, 58, 138, 0.9), #080A13)`), never flat black;
-  the header, factory strip and nav sit on deep blue (`#1E3A8A`-tinted); cards, panels and graph
-  nodes on blue-tinted surface steps between `#07090F` and `#1E3A5F`, so sections separate by
-  color; borders `rgba(255, 255, 255, 0.1)`. Text meets WCAG AA (4.5:1) on every surface. Status
-  colors stay distinct from the accent: running is Dynamous Light and always pulses or glows,
-  selection is solid Dynamous Blue; teal success, amber waiting, red failed (the brand's
-  `#047857`, `#B45309` and `#B91C1C` are the `--*-strong` tokens). Magenta is not used. Data in Geist Mono with tabular
+  token, never inline. The surfaces are the near-black neutral console (cool charcoal, hue 265:
+  page `--background`, then `--surface`, `--surface-elevated` and `--surface-hover` for the header,
+  cards, panels and graph nodes), with no gradient and no blue tint on any surface. Dynamous Blue
+  `#3B82F6` is the one accent (owner decisions #240 and 2026-10-28, "just some blue"): the active
+  tab, the selection ring and focus; Dynamous Dark `#2563EB` for hover, Dynamous Light `#60A5FA`
+  for link text. Text meets WCAG AA (4.5:1) on every surface. Status colors stay distinct from
+  the accent: running is Dynamous Light and always pulses or glows; teal success, amber waiting,
+  red failed (the brand's `#047857`, `#B45309` and `#B91C1C` are the `--*-strong` tokens).
+  Magenta is not used. Data in Geist Mono with tabular
   numbers; section labels mono, uppercase, tracked. Empty states are one sentence and at most one
   button.
 - Use a table only for a list of records a person scans row by row (recent laps, scorecard
