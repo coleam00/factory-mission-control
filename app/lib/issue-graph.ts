@@ -2,7 +2,6 @@
  * The issues screen's rows, as `db/queries/issue-graph.sql` returns them: one row per issue with
  * the state the query derived, and one per `Depends on: #n` edge. Pure, no React.
  */
-import dagre, { type EdgeLabel, type GraphLabel, type NodeLabel } from '@dagrejs/dagre';
 
 export const ISSUE_STATES = [
   'waiting',
@@ -152,49 +151,409 @@ export function longestOpenChain({ issues, dependencies }: IssueGraph): number[]
   return longest.length >= 2 ? longest : [];
 }
 
-export const NODE = { width: 184, height: 58 };
+/** Whether an issue is still in play: not merged and not closed. */
+export const isOpen = (issue: Issue) => !CLOSED_STATES.has(issue.state);
 
-export interface PlacedIssue extends Issue {
-  /** Top left, in px. */
+/** Open issues in the order the default view keeps them when it has to drop some. */
+const CLOSEST_TO_MERGE: Record<IssueState, number> = {
+  'pr-open': 0,
+  claimed: 1,
+  'needs-owner': 2,
+  waiting: 3,
+  merged: 4,
+  closed: 5,
+};
+
+/** How many nodes the default view draws at most. */
+export const DEFAULT_CAP = 40;
+
+export interface PhaseColumn {
+  /** Null is the final "No phase" column. */
+  phase: string | null;
+  /** Every issue of the phase, drawn or not. */
+  open: number;
+  merged: number;
+  closed: number;
+}
+
+export interface ViewIssue extends Issue {
+  /** Drawn only because an open issue depends on it (the default view's context). */
+  context: boolean;
+}
+
+export interface IssueView {
+  /** Phases in the PHASES grid's order, then "No phase" when any issue has none. */
+  columns: PhaseColumn[];
+  /** By number. */
+  issues: ViewIssue[];
+  /** Only edges whose two ends are drawn. */
+  dependencies: Dependency[];
+  /** Open issues the cap left out. */
+  hidden: number;
+}
+
+/**
+ * What the issues screen draws. By default: every open issue and the issues it directly depends
+ * on, at most `cap` nodes, the open ones closest to merge first. With `showMerged`: everything.
+ */
+export function issueView(
+  { issues, dependencies }: IssueGraph,
+  { showMerged = false, cap = DEFAULT_CAP }: { showMerged?: boolean; cap?: number } = {},
+): IssueView {
+  const byNumber = new Map(issues.map((i) => [i.number, i]));
+  const dependsOn = new Map<number, number[]>();
+  for (const { from, on } of dependencies)
+    dependsOn.set(from, [...(dependsOn.get(from) ?? []), on]);
+
+  const columns = new Map<string | null, PhaseColumn>();
+  for (const bar of phaseBars(issues)) {
+    columns.set(bar.phase, { phase: bar.phase, open: 0, merged: 0, closed: 0 });
+  }
+  for (const issue of issues) {
+    const column = columns.get(issue.phase) ?? { phase: null, open: 0, merged: 0, closed: 0 };
+    if (issue.state === 'merged') column.merged += 1;
+    else if (issue.state === 'closed') column.closed += 1;
+    else column.open += 1;
+    columns.set(issue.phase, column);
+  }
+
+  const drawn = new Map<number, ViewIssue>();
+  let hidden = 0;
+  if (showMerged) {
+    for (const issue of issues) drawn.set(issue.number, { ...issue, context: false });
+  } else {
+    const open = issues
+      .filter(isOpen)
+      .sort((a, b) => CLOSEST_TO_MERGE[a.state] - CLOSEST_TO_MERGE[b.state] || a.number - b.number);
+    for (const issue of open) {
+      const context = (dependsOn.get(issue.number) ?? [])
+        .map((n) => byNumber.get(n))
+        .filter((d): d is Issue => d !== undefined && !isOpen(d) && !drawn.has(d.number));
+      const adds = (drawn.has(issue.number) ? 0 : 1) + context.length;
+      if (drawn.size + adds > cap) {
+        if (!drawn.has(issue.number)) hidden += 1;
+        continue;
+      }
+      drawn.set(issue.number, { ...issue, context: false });
+      for (const d of context) drawn.set(d.number, { ...d, context: true });
+    }
+  }
+  return {
+    // "No phase" goes last; Map order keeps the phases in the PHASES grid's order.
+    columns: [...columns.values()].sort(
+      (a, b) => Number(a.phase === null) - Number(b.phase === null),
+    ),
+    issues: [...drawn.values()].sort((a, b) => a.number - b.number),
+    dependencies: dependencies.filter((d) => drawn.has(d.from) && drawn.has(d.on)),
+    hidden,
+  };
+}
+
+/** One node's box, and the space between them. */
+export const NODE = { width: 176, shrinkTo: 148, minWidth: 128, height: 54, gap: 14 };
+const COLUMN_GAP = 20;
+const EMPTY_COLUMN = 132;
+const BAND_GAP = 40;
+/** Between two lines of one band, when a column wraps it: room for an edge to pass. */
+const LINE_GAP = 22;
+const PAD = 12;
+
+export interface PlacedIssue extends ViewIssue {
+  /** Top left, in px, inside the graph area under the column headers. */
   x: number;
   y: number;
+  /** A full node, or half of one for a done issue drawn for context. */
+  width: number;
+  depth: number;
 }
 
 export interface PlacedDependency extends Dependency {
-  /** An SVG path from the depended-on issue down to the dependent, routed by dagre. */
+  /** An SVG path from the bottom of the depended-on issue to the top of the dependent. */
   d: string;
 }
 
-export interface GraphLayout {
-  issues: PlacedIssue[];
-  dependencies: PlacedDependency[];
+export interface PlacedColumn extends PhaseColumn {
+  x: number;
   width: number;
-  height: number;
 }
 
-/** Laid out top to bottom with dagre: an issue sits below the issues it depends on. */
-export function layoutGraph({ issues, dependencies }: IssueGraph): GraphLayout {
-  const g = new dagre.graphlib.Graph<GraphLabel, NodeLabel, EdgeLabel>();
-  g.setDefaultEdgeLabel(() => ({}));
-  g.setGraph({ rankdir: 'TB', ranksep: 48, nodesep: 20, marginx: 16, marginy: 16 });
-  for (const issue of issues) g.setNode(String(issue.number), { ...NODE });
-  for (const { from, on } of dependencies) g.setEdge(String(on), String(from));
-  dagre.layout(g);
+export interface PhaseLayout {
+  columns: PlacedColumn[];
+  issues: PlacedIssue[];
+  dependencies: PlacedDependency[];
+  nodeWidth: number;
+  width: number;
+  height: number;
+  /** True when even the narrowest nodes do not fit `width`; the screen then scrolls. */
+  overflows: boolean;
+}
 
-  const placed = issues.map((issue) => {
-    const { x = 0, y = 0 } = g.node(String(issue.number));
-    return { ...issue, x: x - NODE.width / 2, y: y - NODE.height / 2 };
-  });
-  return {
-    issues: placed,
-    dependencies: dependencies.map((dep) => {
-      const points = g.edge(String(dep.on), String(dep.from)).points ?? [];
-      return {
-        ...dep,
-        d: points.map(({ x, y }, i) => `${i === 0 ? 'M' : 'L'}${x},${y}`).join(' '),
+/** Each issue's dependency depth among the drawn issues: 0 with none, else one below its deepest. */
+function depths(view: IssueView): Map<number, number> {
+  const on = new Map<number, number[]>();
+  for (const { from, on: to } of view.dependencies) on.set(from, [...(on.get(from) ?? []), to]);
+  const depth = new Map<number, number>();
+  const visiting = new Set<number>();
+  const of = (n: number): number => {
+    const known = depth.get(n);
+    if (known !== undefined) return known;
+    if (visiting.has(n)) return 0;
+    visiting.add(n);
+    const d = Math.max(-1, ...(on.get(n) ?? []).map(of)) + 1;
+    visiting.delete(n);
+    depth.set(n, d);
+    return d;
+  };
+  for (const issue of view.issues) of(issue.number);
+  return depth;
+}
+
+/**
+ * Phases as columns, left to right; within them, issues in bands by dependency depth, top to
+ * bottom, so every edge runs down from an issue to the ones depending on it. A column is as many
+ * nodes wide as its fullest band, narrowed (wrapping that band) until the whole fits `width`.
+ */
+export function layoutPhases(view: IssueView, width: number): PhaseLayout {
+  const depth = depths(view);
+  const bands = Math.max(0, ...depth.values()) + 1;
+  const keyOf = (phase: string | null) => phase ?? '';
+  const known = new Set(view.columns.map((c) => keyOf(c.phase)));
+  const inColumn = new Map<string, ViewIssue[][]>();
+  for (const c of view.columns) {
+    inColumn.set(
+      keyOf(c.phase),
+      Array.from({ length: bands }, () => []),
+    );
+  }
+  for (const issue of view.issues) {
+    const key = known.has(keyOf(issue.phase)) ? keyOf(issue.phase) : '';
+    inColumn.get(key)?.[depth.get(issue.number) ?? 0].push(issue);
+  }
+
+  const spanOf = (issue: ViewIssue) => (issue.context ? 1 : 2);
+  const slots = new Map(
+    view.columns.map((c) => [
+      keyOf(c.phase),
+      // A done issue drawn for context is a chip half a node wide.
+      Math.max(
+        0,
+        ...(inColumn.get(keyOf(c.phase)) ?? []).map((band) =>
+          Math.ceil(band.reduce((n, i) => n + spanOf(i), 0) / 2),
+        ),
+      ),
+    ]),
+  );
+  const total = (node: number) =>
+    [...slots.values()].reduce(
+      (sum, k) => sum + (k === 0 ? EMPTY_COLUMN : k * (node + NODE.gap) - NODE.gap + 2 * PAD),
+      0,
+    ) +
+    COLUMN_GAP * Math.max(0, slots.size - 1);
+  // Narrower nodes first (titles truncate sooner), then wrap the widest band, then the narrowest
+  // nodes: wrapping costs the most, since an edge into a wrapped line has to route around.
+  let nodeWidth = NODE.width;
+  while (nodeWidth > NODE.shrinkTo && total(nodeWidth) > width) nodeWidth -= 4;
+  while (total(nodeWidth) > width) {
+    const [key, k] = [...slots].reduce((a, b) => (b[1] > a[1] ? b : a), ['', 0]);
+    if (k <= 1) break;
+    slots.set(key, k - 1);
+  }
+  while (nodeWidth > NODE.minWidth && total(nodeWidth) > width) nodeWidth -= 4;
+  const overflows = total(nodeWidth) > width;
+
+  const columns: PlacedColumn[] = [];
+  let x = 0;
+  for (const c of view.columns) {
+    const k = slots.get(keyOf(c.phase)) ?? 0;
+    const w = k === 0 ? EMPTY_COLUMN : k * (nodeWidth + NODE.gap) - NODE.gap + 2 * PAD;
+    columns.push({ ...c, x, width: w });
+    x += w + COLUMN_GAP;
+  }
+  // Spread the columns over the full width when there is room to spare.
+  const spare = width - (x - COLUMN_GAP);
+  if (spare > 0 && columns.length > 0) {
+    const grow = spare / columns.length;
+    let shift = 0;
+    for (const c of columns) {
+      c.x += shift;
+      c.width += grow;
+      shift += grow;
+    }
+  }
+
+  const unit = (nodeWidth + NODE.gap) / 2;
+  const slot = 2 * unit;
+  /**
+   * A column that wraps any band puts every band on one grid, left-aligned in a centred block,
+   * so the gaps between its slots run its whole height: an edge into a wrapped line goes down
+   * one of them. Other columns centre each line.
+   */
+  const grid = new Map<string, number>();
+  for (const c of columns) {
+    const key = keyOf(c.phase);
+    const k = Math.max(1, slots.get(key) ?? 1);
+    const wraps = (inColumn.get(key) ?? []).some(
+      (band) => band.reduce((n, i) => n + spanOf(i), 0) > 2 * k,
+    );
+    if (wraps) grid.set(key, c.x + (c.width - (k * slot - NODE.gap)) / 2);
+  }
+  const placed = new Map<number, PlacedIssue>();
+  /** The gap under each issue's line: between two lines of a band, or after the band. */
+  const gapBelow = new Map<number, number>();
+  let y = PAD;
+  for (let band = 0; band < bands; band++) {
+    let lines = 0;
+    const inBand: { number: number; line: number }[] = [];
+    for (const c of columns) {
+      const k = Math.max(1, slots.get(keyOf(c.phase)) ?? 1);
+      const centre = (n: number) => {
+        const deps = view.dependencies
+          .filter((d) => d.from === n)
+          .map((d) => placed.get(d.on))
+          .filter((p): p is PlacedIssue => p !== undefined);
+        return deps.length === 0
+          ? Number.POSITIVE_INFINITY
+          : deps.reduce((s, p) => s + p.x, 0) / deps.length;
       };
-    }),
-    width: g.graph().width ?? 0,
-    height: g.graph().height ?? 0,
+      const here = [...(inColumn.get(keyOf(c.phase))?.[band] ?? [])].sort(
+        (a, b) => centre(a.number) - centre(b.number) || a.number - b.number,
+      );
+      // Fill lines of 2k half-node units; a full node starts on a whole slot.
+      const gridLeft = grid.get(keyOf(c.phase));
+      const rows: { issue: ViewIssue; at: number }[][] = [];
+      let used = 2 * k;
+      for (const issue of here) {
+        let at = used;
+        if (gridLeft !== undefined && spanOf(issue) === 2 && at % 2 === 1) at += 1;
+        if (at + spanOf(issue) > 2 * k) {
+          rows.push([]);
+          at = 0;
+        }
+        rows[rows.length - 1].push({ issue, at });
+        used = at + spanOf(issue);
+      }
+      rows.forEach((row, line) => {
+        const units = row.reduce((n, { issue, at }) => Math.max(n, at + spanOf(issue)), 0);
+        const left = gridLeft ?? c.x + (c.width - (units * unit - NODE.gap)) / 2;
+        for (const { issue, at } of row) {
+          placed.set(issue.number, {
+            ...issue,
+            depth: band,
+            width: spanOf(issue) * unit - NODE.gap,
+            x: left + at * unit,
+            y: y + line * (NODE.height + LINE_GAP),
+          });
+          inBand.push({ number: issue.number, line });
+        }
+      });
+      lines = Math.max(lines, rows.length);
+    }
+    for (const { number, line } of inBand) {
+      gapBelow.set(number, line < lines - 1 ? LINE_GAP : BAND_GAP);
+    }
+    if (lines > 0) y += lines * (NODE.height + LINE_GAP) - LINE_GAP + BAND_GAP;
+  }
+
+  const boxes = [...placed.values()];
+  /** Whether a curve between two issues would run over any other issue. */
+  const blocked = (curve: (t: number) => [number, number], ends: Set<number>) => {
+    for (let s = 1; s < 24; s++) {
+      const [px, py] = curve(s / 24);
+      for (const b of boxes) {
+        if (ends.has(b.number)) continue;
+        if (px > b.x - 3 && px < b.x + b.width + 3 && py > b.y - 3 && py < b.y + NODE.height + 3)
+          return true;
+      }
+    }
+    return false;
+  };
+  const columnOf = (issue: PlacedIssue) =>
+    columns.find((c) => issue.x >= c.x && issue.x < c.x + c.width) ?? columns[0];
+  const lineTop = (issue: PlacedIssue) => {
+    // The gap above an issue's line: a line gap inside a band, the band gap above its first line.
+    const above = boxes.some(
+      (b) => b.depth === issue.depth && b.y < issue.y && b.y + NODE.height + LINE_GAP >= issue.y,
+    );
+    return issue.y - (above ? LINE_GAP : BAND_GAP) / 2;
+  };
+
+  const dependencies = view.dependencies.flatMap((dep) => {
+    const from = placed.get(dep.from);
+    const on = placed.get(dep.on);
+    if (!from || !on) return [];
+    const sx = on.x + on.width / 2;
+    const sy = on.y + NODE.height;
+    const tx = from.x + from.width / 2;
+    const ty = from.y;
+    const bend = Math.max(16, (ty - sy) / 2);
+    const cubic = (t: number): [number, number] => {
+      const u = 1 - t;
+      return [
+        u ** 3 * sx + 3 * u * u * t * sx + 3 * u * t * t * tx + t ** 3 * tx,
+        u ** 3 * sy + 3 * u * u * t * (sy + bend) + 3 * u * t * t * (ty - bend) + t ** 3 * ty,
+      ];
+    };
+    if (!blocked(cubic, new Set([dep.from, dep.on]))) {
+      return [{ ...dep, d: `M${sx},${sy} C${sx},${sy + bend} ${tx},${ty - bend} ${tx},${ty}` }];
+    }
+    // Around: down into the gap under its source, along it to the gap beside the target's column,
+    // down that gap to the gap over the target's line, along it, and down into the target. Lines
+    // and bands start at the same height in every column, so those gaps hold no issue.
+    const below = sy + (gapBelow.get(dep.on) ?? BAND_GAP) / 2;
+    const over = lineTop(from);
+    const column = columnOf(from);
+    const gridLeft = grid.get(keyOf(column.phase));
+    // On a grid: the slot gap right beside the target. Otherwise: the gap beside its column.
+    const [leftGap, rightGap] =
+      gridLeft === undefined
+        ? [column.x - COLUMN_GAP / 2, column.x + column.width + COLUMN_GAP / 2]
+        : (() => {
+            const j = Math.floor((from.x - gridLeft + 1) / slot);
+            const l = gridLeft - NODE.gap / 2 + j * slot;
+            return [l, l + slot];
+          })();
+    const gx =
+      leftGap < 0 || (rightGap <= width && Math.abs(rightGap - sx) < Math.abs(leftGap - sx))
+        ? rightGap
+        : leftGap;
+    const r = 6;
+    if (Math.abs(over - below) < 1) {
+      // The same gap runs from under the source to over the target: no need for the column gap.
+      const t = tx > sx ? r : -r;
+      return [
+        {
+          ...dep,
+          d: `M${sx},${sy} L${sx},${below - r} Q${sx},${below} ${sx + t},${below} L${tx - t},${below} Q${tx},${below} ${tx},${below + r} L${tx},${ty}`,
+        },
+      ];
+    }
+    const turn = (ax: number, bx: number) => (bx > ax ? r : -r);
+    return [
+      {
+        ...dep,
+        d: [
+          `M${sx},${sy}`,
+          `L${sx},${below - r}`,
+          `Q${sx},${below} ${sx + turn(sx, gx)},${below}`,
+          `L${gx - turn(sx, gx)},${below}`,
+          `Q${gx},${below} ${gx},${below + r}`,
+          `L${gx},${over - r}`,
+          `Q${gx},${over} ${gx + turn(gx, tx)},${over}`,
+          `L${tx - turn(gx, tx)},${over}`,
+          `Q${tx},${over} ${tx},${over + r}`,
+          `L${tx},${ty}`,
+        ].join(' '),
+      },
+    ];
+  });
+  const last = columns.at(-1);
+  return {
+    columns,
+    issues: [...placed.values()].sort((a, b) => a.number - b.number),
+    dependencies,
+    nodeWidth,
+    width: last ? last.x + last.width : 0,
+    height: Math.max(y - BAND_GAP + PAD, NODE.height + 2 * PAD),
+    overflows,
   };
 }
