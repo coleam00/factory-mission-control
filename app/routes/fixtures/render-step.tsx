@@ -31,6 +31,8 @@ const cell = (value: Cell): string | null =>
 class Socket implements WebSocketLike {
   readyState = 1;
   private listeners = new Map<string, ((event: { data: unknown }) => void)[]>();
+  /** Each subscription's live id, by the capability that authorized it. */
+  readonly live = new Map<string, string>();
 
   constructor(private rowsOf: (capability: string) => Rows) {}
 
@@ -48,6 +50,7 @@ class Socket implements WebSocketLike {
     if (message.type !== 'subscribe') return;
     const rows = this.rowsOf(message.authorization);
     const live_id = message.request_id;
+    this.live.set(message.authorization, live_id);
     queueMicrotask(() => {
       const first = rows[0] ?? { value: null };
       this.receive({
@@ -76,6 +79,12 @@ class Socket implements WebSocketLike {
         });
       this.receive({ type: 'baseline_sync_end', ...version, batch_count: rows.length > 0 ? 1 : 0 });
     });
+  }
+
+  /** Ends the subscription `capability` authorized with an error it cannot recover from. */
+  fail(capability: string) {
+    const live_id = this.live.get(capability);
+    this.receive({ type: 'subscription_error', live_id, code: 'protocol_error', message: 'test' });
   }
 
   close() {
@@ -122,6 +131,7 @@ async function until(done: () => boolean, what: string): Promise<void> {
  * `steps[at]`, and every other query no rows. A seal `hold` matches waits until it is released.
  */
 function mount(url: string, steps: Record<string, StepRow[]>) {
+  performance.clearMarks();
   const originalFetch = window.fetch;
   const header = btoa(JSON.stringify({ alg: 'dir', enc: 'A256GCM', v: 1 })).replace(/=+$/, '');
   const asked: Asked[] = [];
@@ -146,6 +156,7 @@ function mount(url: string, steps: Record<string, StepRow[]>) {
     const { query, args } = asked[Number(capability.split('.')[2])];
     return query === 'step-detail' ? (steps[args[0]] ?? []).map((row) => ({ ...row })) : [];
   };
+  const socket = new Socket(rowsOf);
   window.__MC_LIVE__ = {
     url: 'wss://test/',
     home: 'wss://test/',
@@ -153,7 +164,7 @@ function mount(url: string, steps: Record<string, StepRow[]>) {
     rewind: null,
     protocol: 'neon.realtime.v1',
     early: [JSON.stringify({ type: 'ready' })],
-    socket: new Socket(rowsOf) as unknown as WebSocket,
+    socket: socket as unknown as WebSocket,
   };
   const router = createMemoryRouter(
     [
@@ -180,6 +191,10 @@ function mount(url: string, steps: Record<string, StepRow[]>) {
     container,
     asked,
     navigate: (to: string) => router.navigate(to),
+    fail(query: string) {
+      for (const capability of socket.live.keys())
+        if (asked[Number(capability.split('.')[2])].query === query) socket.fail(capability);
+    },
     hold(next: (asked: Asked) => boolean): () => void {
       let open = () => {};
       released = new Promise((resolve) => {
@@ -213,13 +228,26 @@ function shown({ container }: Screen) {
   };
 }
 
-/** Every panel has answered: the step's seven and the picker, or the picker and a sentence. */
+/** The step's seven queries and the picker's: every one the screen asks for. */
+const QUERIES = [
+  'step-versions',
+  'step-detail',
+  'step-nesting',
+  'step-prompt',
+  'step-subagents',
+  'step-scripts',
+  'step-hooks',
+  'step-yaml',
+];
+
+/** Every panel has answered, and step-detail shows the step or its one sentence. */
 function settled({ container }: Screen): boolean {
   const panels = [...container.querySelectorAll('[data-live]')];
   const detail = container.querySelector('[data-live="step-detail"]');
   return (
+    panels.length === QUERIES.length &&
     panels.every((panel) => panel.getAttribute('data-state') === 'ready') &&
-    (panels.length === 8 || (panels.length === 2 && detail?.textContent !== ''))
+    detail?.textContent !== ''
   );
 }
 
@@ -241,6 +269,34 @@ export async function openStep(url: string) {
   try {
     await until(() => settled(screen), 'every panel to answer');
     return { shown: shown(screen), asked: screen.asked };
+  } finally {
+    screen.unmount();
+  }
+}
+
+/**
+ * Opens the review step with step-detail's seal unanswered until every query was asked for: what
+ * was asked, step-detail's state and which panels had marked their request by then, and what the
+ * screen showed once step-detail answered.
+ */
+export async function openHeld() {
+  const screen = mount('/steps/archon-loop/review', STEPS);
+  try {
+    const release = screen.hold(({ query }) => query === 'step-detail');
+    const asked = () => new Set(screen.asked.map(({ query }) => query));
+    await until(() => QUERIES.every((query) => asked().has(query)), 'every query to be asked for');
+    const whileHeld = {
+      asked: [...asked()].sort(),
+      detail: screen.container
+        .querySelector('[data-live="step-detail"]')
+        ?.getAttribute('data-state'),
+      requested: QUERIES.filter(
+        (query) => performance.getEntriesByName(`live:${query}:requested`).length > 0,
+      ).sort(),
+    };
+    release();
+    await until(() => settled(screen), 'every panel to answer');
+    return { whileHeld, after: shown(screen) };
   } finally {
     screen.unmount();
   }
@@ -271,6 +327,28 @@ export async function switchVersion() {
       'the newer version',
     );
     return { pending: [...pending].map((json) => JSON.parse(json)), after: shown(screen) };
+  } finally {
+    screen.unmount();
+  }
+}
+
+/**
+ * Opens the review step, then ends step-detail's subscription with an error once the step shows:
+ * step-detail's state then, and the headings of every section still shown.
+ */
+export async function loseStep() {
+  const screen = mount('/steps/archon-loop/review', STEPS);
+  try {
+    await until(() => settled(screen) && shown(screen).prompt !== null, 'the step');
+    screen.fail('step-detail');
+    const detail = () =>
+      screen.container.querySelector('[data-live="step-detail"]')?.getAttribute('data-state');
+    await until(() => detail() !== 'ready', 'step-detail to leave ready');
+    return {
+      detail: detail(),
+      sentence: shown(screen).sentence,
+      headings: [...screen.container.querySelectorAll('h2')].map((h2) => h2.textContent),
+    };
   } finally {
     screen.unmount();
   }

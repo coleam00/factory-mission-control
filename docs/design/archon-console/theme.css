@@ -51,7 +51,9 @@
   --outline-variant: rgba(255, 255, 255, 0.3);
 
   /* Text: blue-white, readable (WCAG AA) on every surface above. */
-  --text-primary: #f1f5fb;
+  /* Blue enough (oklch chroma above 0.02) that Chrome keeps its hue in a color-mix: at #f1f5fb a
+     see-through mix lost the hue and rendered off-palette (TESTING's heat cells). */
+  --text-primary: #e4edfd;
   --text-secondary: #aebbd3;
   --text-tertiary: #8796b3;
 

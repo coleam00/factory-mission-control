@@ -233,6 +233,33 @@ describe('the page the server answers', () => {
     });
     expect(script.indexOf('</script>')).toBe(script.length - '</script>'.length);
   });
+
+  test('marks when the socket was opened and when Realtime first said ready, once', () => {
+    const script = liveBootScript({
+      url: 'wss://x/',
+      home: 'wss://x/',
+      factories: [],
+      rewind: null,
+    });
+    const marks: string[] = [];
+    let receive = (_event: { data: string }): void => {};
+    class FakeSocket {
+      constructor() {
+        marks.push('socket opened');
+      }
+      addEventListener(_type: string, listener: typeof receive): void {
+        receive = listener;
+      }
+    }
+    const page: { __MC_LIVE__?: { early: string[] } } = {};
+    new Function('WebSocket', 'window', 'performance', script.slice(8, -9))(FakeSocket, page, {
+      mark: (name: string) => marks.push(name),
+    });
+    const frames = ['not json', '{"type":"ready"}', '{"type":"ready"}'];
+    for (const data of frames) receive({ data });
+    expect(marks).toEqual(['live:connection:start', 'socket opened', 'live:connection:ready']);
+    expect(page.__MC_LIVE__?.early).toEqual(frames);
+  });
 });
 
 describe('POST /api/rewind', () => {

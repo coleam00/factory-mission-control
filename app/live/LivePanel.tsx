@@ -47,7 +47,7 @@ export function recovering(wasRecovering: boolean, status: LiveQueryState['statu
 }
 
 /**
- * Read by `bun run test:live`: when the panel asked for its seal, got rows, and renewed. The
+ * Read by `bun run test:live`: when the panel asked for its seal, got it, got rows, and renewed. The
  * moment its subscribe is sent is marked by the socket (`subscribe-marks.ts`).
  */
 function markOnce(name: string): void {
@@ -243,6 +243,7 @@ export function LivePanel<Row>({
       requestSeal().then(
         (first) => {
           if (cancelled) return;
+          markOnce(`live:${query}:sealed`);
           const parameters: { args?: string[] } = JSON.parse(body);
           observation = observeQuery({
             query,
