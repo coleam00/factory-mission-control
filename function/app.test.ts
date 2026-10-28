@@ -442,6 +442,7 @@ const pinRows = () => rows('SELECT sha, archon_sha FROM mc.pins');
 
 test.each([
   ['403', () => new Response('rate limit exceeded', { status: 403 }), '403'],
+  ['a 404', () => new Response('Not Found', { status: 404 }), `85d479ad: ${PACK_PATH} missing`],
   ['500', () => new Response('Internal Server Error', { status: 500 }), '500'],
   [
     'a network error',
@@ -483,29 +484,59 @@ test.each([
   },
 );
 
-test('a pack file read that fails on a first delivery writes the pin without a sha, and a later read fills it', async () => {
-  respond = answering({ pinned: () => new Response('Internal Server Error', { status: 500 }) });
-  const warn = spyOn(console, 'warn').mockImplementation(() => {});
-  try {
-    expect(await (await deliver(named('09-'))).json()).toEqual({
-      event: 'push',
-      written: true,
-      pins: 'unread: 500',
-    });
-  } finally {
-    warn.mockRestore();
-  }
-  expect(await pinRows()).toEqual([
-    { sha: '85d479ad987dd63e441622ecb03db65233e8a803', archon_sha: null },
-  ]);
-  expect(await rows('SELECT verdict FROM mc.verdicts')).toEqual([{ verdict: 'helped' }]);
+const pinRow = () =>
+  rows('SELECT sha, archon_sha, reason, hypothesis, measure, committed_at FROM mc.pins');
 
-  respond = answering({});
-  expect(await (await deliver(named('09-'))).json()).toEqual({ event: 'push', written: true });
-  expect(await pinRows()).toEqual([
-    { sha: '85d479ad987dd63e441622ecb03db65233e8a803', archon_sha: PINNED },
-  ]);
-});
+test.each([
+  ['403', () => new Response('rate limit exceeded', { status: 403 }), '403'],
+  [
+    'a 404, the file missing at that commit',
+    () => new Response('Not Found', { status: 404 }),
+    `85d479ad: ${PACK_PATH} missing`,
+  ],
+  ['500', () => new Response('Internal Server Error', { status: 500 }), '500'],
+  [
+    'a network error',
+    (): Response => {
+      throw new TypeError('fetch failed');
+    },
+    'network error (fetch failed)',
+  ],
+])(
+  'a pack file read answered by %s on a first delivery writes the whole pin without a sha, and a later read fills it',
+  async (_, failure, status) => {
+    await deliver(named('09-'));
+    const [resolved] = await pinRow();
+    expect(resolved).toMatchObject({
+      archon_sha: PINNED,
+      reason: expect.stringMatching(/^holdouts fenced in the repository/),
+      hypothesis: expect.stringMatching(/^complex laps finish faster/),
+      measure: expect.stringMatching(/^on the mission-control factory/),
+    });
+    await db.query('DELETE FROM mc.pins');
+    await db.query('DELETE FROM mc.verdicts');
+
+    respond = answering({ pinned: failure });
+    const warn = spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const response = await deliver(named('09-'));
+      expect(response.status).toBe(200);
+      expect(await response.json()).toEqual({
+        event: 'push',
+        written: true,
+        pins: `unread: ${status}`,
+      });
+    } finally {
+      warn.mockRestore();
+    }
+    expect(await pinRow()).toEqual([{ ...resolved, archon_sha: null }]);
+    expect(await rows('SELECT verdict FROM mc.verdicts')).toEqual([{ verdict: 'helped' }]);
+
+    respond = answering({});
+    expect(await (await deliver(named('09-'))).json()).toEqual({ event: 'push', written: true });
+    expect(await pinRow()).toEqual([resolved]);
+  },
+);
 
 test('a pin whose pack file pins another version is written without a sha and says which', async () => {
   const other = 'f'.repeat(40);
