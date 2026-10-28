@@ -1,5 +1,5 @@
 import { type ReactElement, type ReactNode, useMemo } from 'react';
-import { formatCost, formatElapsed, shortRunId } from '../lib/format';
+import { formatCost, formatCount, formatElapsed, shortRunId } from '../lib/format';
 import { costOf, durationOf, OUTCOME_LABEL, OUTCOME_TOKEN, since, stepLabel } from '../lib/laps';
 import {
   actionText,
@@ -318,8 +318,6 @@ export function LapSteps({
   );
 }
 
-const thousands = (n: number | string) => Number(n).toLocaleString('en-US');
-
 export function StepList({
   rows,
   now: fixed,
@@ -348,7 +346,7 @@ export function StepList({
           const cache =
             attempt.tokens_cache_read === null && attempt.tokens_cache_write === null
               ? undefined
-              : `cache read ${thousands(attempt.tokens_cache_read ?? 0)}, cache write ${thousands(attempt.tokens_cache_write ?? 0)}`;
+              : `cache read ${formatCount(attempt.tokens_cache_read ?? 0)}, cache write ${formatCount(attempt.tokens_cache_write ?? 0)}`;
           return (
             <li
               key={`${attempt.step_id} ${attempt.started_at?.toISOString() ?? attempt.status}`}
@@ -401,7 +399,7 @@ export function StepList({
                 {attempt.tokens_input === null && attempt.tokens_output === null ? (
                   <None />
                 ) : (
-                  `${thousands(attempt.tokens_input ?? 0)} / ${thousands(attempt.tokens_output ?? 0)}`
+                  `${formatCount(attempt.tokens_input ?? 0)} / ${formatCount(attempt.tokens_output ?? 0)}`
                 )}
               </span>
               <span className="text-right text-text-primary">
