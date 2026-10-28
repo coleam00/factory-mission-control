@@ -1,9 +1,10 @@
 import { type ReactElement, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router';
 import { formatCost, formatCount, formatElapsed } from '../lib/format';
-import { type Box, layoutSteps, type StepNode, shownAs } from '../lib/home-map';
+import { type Box, layoutSteps, openedBlocks, type StepNode, shownAs } from '../lib/home-map';
 import {
   foldGraph,
+  ranBlocks,
   type LaneMark,
   type LapGraph,
   type LapStep,
@@ -102,9 +103,10 @@ export function arrivalScroll(step: Element, section: Element | null | undefined
 }
 
 /**
- * The lap's steps as the map lays them out, each marked by what happened to it in this lap. Every
- * include or loop group is one box until opened, saying how it stands in this lap; the steps it
- * holds stay in the page, hidden. A step opens its runs in the side panel; a selected or running
+ * The lap's steps as the map lays them out, each marked by what happened to it in this lap. A
+ * top-level include the lap ran opens with its own steps beside the spine; every other include or
+ * loop group is one box until opened, saying how it stands in this lap; the steps it holds stay
+ * in the page, hidden. A step opens its runs in the side panel; a selected or running
  * step inside a folded box marks that box.
  * On arrival the page scrolls only as far as it must to show the step running now (or the last
  * one that ran, or the folded box holding it), never past the top of the steps, and not at all
@@ -121,7 +123,9 @@ export function LapGraphView({
   selected: string | null;
   onSelect: (path: string) => void;
 }): ReactElement {
-  const [opened, setOpened] = useState<ReadonlySet<string>>(new Set());
+  const [toggled, setToggled] = useState<ReadonlyMap<string, boolean>>(new Map());
+  // Live: a block the lap starts running opens unless the viewer folded it.
+  const opened = useMemo(() => openedBlocks(ranBlocks(lap), toggled), [lap, toggled]);
   const { graph, folded, hidden } = useMemo(() => foldGraph(lap, opened), [lap, opened]);
   const laid = useMemo(() => layoutSteps(graph), [graph]);
   const found = focusStep(lap);
@@ -145,12 +149,7 @@ export function LapGraphView({
     window.scrollTo({ top: arrivalScroll(step, frame.current?.closest('[data-lap-steps]')) });
   }, [focus]);
   const toggle = (block: string, open: boolean) =>
-    setOpened((was) => {
-      const next = new Set(was);
-      if (open) next.add(block);
-      else next.delete(block);
-      return next;
-    });
+    setToggled((was) => new Map(was).set(block, open));
   return (
     <GraphViewport label="lap steps" anchorX={anchor ? anchor.x + anchor.width / 2 : 0}>
       <div
@@ -174,6 +173,24 @@ export function LapGraphView({
             />
           ))}
         </svg>
+        {/* A route fork's labels: the side this lap took is lit, the other dimmed. */}
+        {laid.edges.map((e) =>
+          e.label === undefined || e.labelAt === undefined ? null : (
+            <span
+              key={`label:${e.from}→${e.to}`}
+              data-edge-label={e.to}
+              data-taken={reached(e.to) ? 'true' : 'false'}
+              className={`absolute -translate-x-1/2 font-mono -translate-y-1/2 whitespace-nowrap rounded-md border bg-surface px-1.5 text-[11px] leading-[16px] ${
+                reached(e.to)
+                  ? 'border-border-bright text-text-primary'
+                  : 'border-border text-text-secondary opacity-55'
+              }`}
+              style={{ left: e.labelAt.x, top: e.labelAt.y }}
+            >
+              {e.label}
+            </span>
+          ),
+        )}
         {[...laid.clusters].map(([parent, box]) => (
           <div
             key={parent}

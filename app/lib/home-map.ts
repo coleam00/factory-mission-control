@@ -11,6 +11,10 @@ export interface HomeMapRow {
   step_id: string | null;
   kind: string | null;
   depends_on: string[] | null;
+  /** The step's `when`, as written; null or absent when it always runs. */
+  when_condition?: string | null;
+  /** The step's `trigger_rule`; null or absent for Archon's default (all succeeded). */
+  trigger_rule?: string | null;
   /** The workflow that declares the step: an include's steps are steps of the workflow it includes. */
   detail_workflow: string;
   /** The step's path in `detail_workflow`. */
@@ -76,6 +80,8 @@ export interface FactoryLaps {
 export interface Edge {
   from: string;
   to: string;
+  /** On an edge into one side of a route fork: the values of the route that take it. */
+  label?: string;
 }
 
 /** One workflow's expanded tree. */
@@ -150,16 +156,80 @@ function stepsByPath(
   return [...byPath.values()].sort((a, b) => a.row.position - b.row.position);
 }
 
-/** One workflow's steps and edges: a step's `depends_on` names its siblings, as Archon scopes it. */
+/**
+ * Each variable a `when` pins to listed values on every branch of it, with those values in the
+ * order written: `$a.x == 'p' || $a.x == 'q'` pins `$a.x` to p and q. Only `==` against a quoted
+ * value pins; any other test only narrows a branch, so ignoring it keeps the values a superset.
+ */
+export function pinnedValues(when: string | null | undefined): Map<string, string[]> {
+  if (!when) return new Map();
+  const branches = when.split('||').map((branch) => {
+    const pins = new Map<string, string>();
+    for (const atom of branch.split('&&')) {
+      const m = /^\s*(\$[\w.]+)\s*==\s*(['"])(.*?)\2\s*$/.exec(atom);
+      if (m) pins.set(m[1] as string, m[3] as string);
+    }
+    return pins;
+  });
+  const out = new Map<string, string[]>();
+  const first = branches[0] ?? new Map<string, string>();
+  for (const name of first.keys()) {
+    if (!branches.every((b) => b.has(name))) continue;
+    out.set(name, [...new Set(branches.map((b) => b.get(name) as string))]);
+  }
+  return out;
+}
+
+/**
+ * The variable on which two `when`s can never both hold, with each side's values, or null: some
+ * variable both pin, to values no one shared (route simple/continue against complex).
+ */
+export function exclusiveOn(
+  a: string | null | undefined,
+  b: string | null | undefined,
+): { on: string; a: string[]; b: string[] } | null {
+  const pa = pinnedValues(a);
+  const pb = pinnedValues(b);
+  for (const [on, va] of pa) {
+    const vb = pb.get(on);
+    if (vb && !va.some((v) => vb.includes(v))) return { on, a: va, b: vb };
+  }
+  return null;
+}
+
+/** Trigger rules under which a step runs when one of its dependencies was skipped. */
+const ANY_RAN = /none_failed|one_success/;
+
+/**
+ * One workflow's steps and edges: a step's `depends_on` names its siblings, as Archon scopes it.
+ * A route fork is drawn as one: a step that depends on a sibling whose `when` can never hold with
+ * its own, under a trigger rule that lets it run with that sibling skipped (ship after build),
+ * waits on it only for order, so the edge is dropped and the two stand side by side, each edge
+ * into them labelled with the route values that take it.
+ */
 function stepGraph(rows: readonly StepRow[], shown: readonly string[]): StepGraph {
   const nodes = stepsByPath(rows, shown);
   const edges: Edge[] = [];
   const clusters = new Map<string, string[]>();
   const paths = new Set(nodes.map((n) => n.row.path));
+  const rowOf = new Map(nodes.map((n) => [n.row.path, n.row]));
+  const labels = new Map<string, string>();
   for (const { row } of nodes) {
     const scope = row.parent_path === null ? '' : `${row.parent_path}/`;
     const deps = (row.depends_on ?? []).map((d) => `${scope}${d}`).filter((d) => paths.has(d));
-    for (const dep of deps) edges.push({ from: dep, to: row.path });
+    for (const dep of deps) {
+      const sibling = rowOf.get(dep);
+      const fork =
+        sibling && ANY_RAN.test(row.trigger_rule ?? '')
+          ? exclusiveOn(sibling.when_condition, row.when_condition)
+          : null;
+      if (fork) {
+        labels.set(dep, fork.a.join(' / '));
+        labels.set(row.path, fork.b.join(' / '));
+        continue;
+      }
+      edges.push({ from: dep, to: row.path });
+    }
     if (row.parent_path !== null) {
       clusters.set(row.parent_path, [...(clusters.get(row.parent_path) ?? []), row.path]);
       if (deps.length === 0) edges.push({ from: row.parent_path, to: row.path });
@@ -176,7 +246,10 @@ function stepGraph(rows: readonly StepRow[], shown: readonly string[]): StepGrap
       liveCount: factories.find((f) => f.current)?.laps ?? 0,
       factories,
     })),
-    edges: reduceEdges(edges),
+    edges: reduceEdges(edges).map((edge) => {
+      const label = labels.get(edge.to);
+      return label === undefined ? edge : { ...edge, label };
+    }),
     clusters,
   };
 }
@@ -285,6 +358,23 @@ export function foldSteps(
   };
 }
 
+/**
+ * The blocks a workflow opens with: each top-level include or loop group, so its own steps branch
+ * beside the spine (the loop's ship); every block inside one stays folded until opened.
+ */
+export const topBlocks = (graph: StepGraph): string[] =>
+  [...graph.clusters.keys()].filter((block) => !block.includes('/'));
+
+/** The blocks shown open: each of `defaults` the viewer has not folded, and each one opened. */
+export function openedBlocks(
+  defaults: readonly string[],
+  toggled: ReadonlyMap<string, boolean>,
+): Set<string> {
+  const open = new Set(defaults.filter((block) => toggled.get(block) !== false));
+  for (const [block, isOpen] of toggled) if (isOpen) open.add(block);
+  return open;
+}
+
 /** The block a folded graph shows in place of `path`: the step itself, or the folded box it is in. */
 export function shownAs(folded: ReadonlyMap<string, number>, path: string): string {
   for (const block of folded.keys()) if (path.startsWith(`${block}/`)) return block;
@@ -322,6 +412,8 @@ export function stepLabelLines(label: string): string[] {
   return best === null ? [label] : [label.slice(0, best), label.slice(best)];
 }
 const MARGIN = 24;
+/** A route label on an edge: 11px Geist Mono, its advance per character rounded up. */
+const EDGE_CHAR_W = 7;
 const CLUSTER_PAD = 16;
 
 export interface Box {
@@ -331,16 +423,20 @@ export interface Box {
   height: number;
 }
 
-interface Point {
+export interface Point {
   x: number;
   y: number;
 }
 
 export interface StepLayout {
   nodes: Map<string, Box>;
-  /** The box around each include or loop group: its own step at the top, then the steps it nests. */
+  /**
+   * The box around each open include or loop group: at the top level the steps it nests, beside
+   * its own step on the spine; deeper, its own step at the top, then the steps it nests.
+   */
   clusters: Map<string, Box>;
-  edges: (Edge & { d: string })[];
+  /** Each edge's path, and where a labelled edge's label is centred. */
+  edges: (Edge & { d: string; labelAt?: Point })[];
   width: number;
   height: number;
 }
@@ -348,7 +444,7 @@ export interface StepLayout {
 interface Level {
   nodes: Map<string, Box>;
   clusters: Map<string, Box>;
-  edges: (Edge & { points: Point[] })[];
+  edges: (Edge & { points: Point[]; labelAt?: Point })[];
   width: number;
   height: number;
 }
@@ -382,9 +478,12 @@ function stepSize(node: StepNode): { width: number; height: number } {
 }
 
 /**
- * Lays a workflow out top to bottom with dagre, innermost first: each include or loop group is
- * laid out on its own, its step on top, and placed in its parent's layout as one box of that size.
- * Every nested step sits inside each box around it, and the spine keeps its order past the boxes.
+ * Lays a workflow out top to bottom with dagre, innermost first. A top-level include or loop group
+ * that is open keeps its own step on the spine and draws the steps it nests in a box beside it,
+ * branching and joining as they depend on each other (the loop's ship beside subject and
+ * the rest). A block opened inside one is laid out on its own, its step on top, and placed in its
+ * parent's layout as one box of that size. Every nested step sits inside each box around it, and
+ * the spine keeps its order past the boxes.
  */
 export function layoutSteps(graph: StepGraph, narrow = false): StepLayout {
   const byId = new Map(graph.steps.map((s) => [s.id, s]));
@@ -395,33 +494,92 @@ export function layoutSteps(graph: StepGraph, narrow = false): StepLayout {
       parent === null
         ? graph.steps.filter((s) => !nested.has(s.id)).map((s) => s.id)
         : (graph.clusters.get(parent) ?? []);
-    const local = parent === null ? members : [parent, ...members];
+    // At the top, each open block's stages join the spine's layout, boxed beside its step.
+    const beside = parent === null ? members.filter((id) => graph.clusters.has(id)) : [];
+    const stagesOf = new Map(beside.map((id) => [id, graph.clusters.get(id) ?? []]));
+    const local = [
+      ...(parent === null ? members : [parent, ...members]),
+      ...[...stagesOf.values()].flat(),
+    ];
     const margin = parent === null ? MARGIN : CLUSTER_PAD;
-    const g = new dagre.graphlib.Graph<GraphLabel, NodeLabel, EdgeLabel>();
+    const g = new dagre.graphlib.Graph<GraphLabel, NodeLabel, EdgeLabel>({
+      compound: beside.length > 0,
+    });
     g.setDefaultEdgeLabel(() => ({}));
     g.setGraph({ rankdir: 'TB', ranksep: 36, nodesep: 28, marginx: margin, marginy: margin });
     const blocks = new Map<string, Level>();
     for (const id of local) {
-      const block = id !== parent && graph.clusters.has(id) ? level(id) : undefined;
+      const opens = id !== parent && !stagesOf.has(id) && graph.clusters.has(id);
+      const block = opens ? level(id) : undefined;
       if (block) blocks.set(id, block);
       g.setNode(id, block ?? stepSize(byId.get(id) as StepNode));
     }
-    const edges = graph.edges.filter((e) => local.includes(e.from) && local.includes(e.to));
-    for (const edge of edges) g.setEdge(edge.from, edge.to);
+    for (const [id, stages] of stagesOf) {
+      g.setNode(`cluster:${id}`, {
+        width: 0,
+        height: 0,
+        paddingLeft: CLUSTER_PAD,
+        paddingRight: CLUSTER_PAD,
+        paddingTop: CLUSTER_PAD,
+        paddingBottom: CLUSTER_PAD,
+      });
+      for (const stage of stages) g.setParent(stage, `cluster:${id}`);
+    }
+    // What follows an open block leaves from the end of its stages, so its box sits inside its
+    // own path: a fork's ship rejoins subject after report, not from its own step.
+    const sinks = (block: string): string[] => {
+      const stages = stagesOf.get(block) ?? [];
+      const out = stages.filter(
+        (s) => !graph.edges.some((e) => e.from === s && stages.includes(e.to)),
+      );
+      return out.length > 0 ? out : [block];
+    };
+    const edges = graph.edges
+      .filter((e) => local.includes(e.from) && local.includes(e.to))
+      .flatMap((e) =>
+        stagesOf.has(e.from) && !(stagesOf.get(e.from) ?? []).includes(e.to)
+          ? sinks(e.from).map((from) => ({ ...e, from }))
+          : [e],
+      );
+    for (const edge of edges) {
+      g.setEdge(
+        edge.from,
+        edge.to,
+        edge.label === undefined
+          ? {}
+          : // Weighted so each side of a fork starts right under the fork, not at its join.
+            { width: edge.label.length * EDGE_CHAR_W + 12, height: 18, labelpos: 'c', weight: 8 },
+      );
+    }
     dagre.layout(g);
 
-    const outer = new Map(
-      local.map((id): [string, Box] => {
-        const { x = 0, y = 0, width, height } = g.node(id);
-        return [id, { x: x - width / 2, y: y - height / 2, width, height }];
-      }),
-    );
-    // The desktop spine bends around the boxes. On a phone keep every spine node, and each box
-    // with everything in it, in the first column; a wide box scrolls sideways at full size.
+    const boxOf = (id: string): Box => {
+      const { x = 0, y = 0, width, height } = g.node(id);
+      return { x: x - width / 2, y: y - height / 2, width, height };
+    };
+    const outer = new Map(local.map((id): [string, Box] => [id, boxOf(id)]));
+    const besideBoxes = new Map(beside.map((id): [string, Box] => [id, boxOf(`cluster:${id}`)]));
+    // On a phone keep every spine node in the first column, and each box beside it to its right
+    // with what it holds, at full size: the page scrolls sideways to it.
     const column = narrow && parent === null;
-    if (column) for (const box of outer.values()) box.x = MARGIN;
+    if (column) {
+      const spine = members.map((id) => outer.get(id) as Box);
+      for (const box of spine) box.x = MARGIN;
+      const right = Math.max(MARGIN, ...spine.map((b) => b.x + b.width)) + 28;
+      for (const [id, box] of besideBoxes) {
+        const by = Math.max(0, right - box.x);
+        box.x += by;
+        for (const stage of stagesOf.get(id) ?? []) (outer.get(stage) as Box).x += by;
+      }
+    }
 
-    const laid: Level = { nodes: new Map(), clusters: new Map(), edges: [], width: 0, height: 0 };
+    const laid: Level = {
+      nodes: new Map(),
+      clusters: new Map(besideBoxes),
+      edges: [],
+      width: 0,
+      height: 0,
+    };
     for (const [id, box] of outer) {
       const block = blocks.get(id);
       if (block === undefined) {
@@ -432,7 +590,11 @@ export function layoutSteps(graph: StepGraph, narrow = false): StepLayout {
       for (const [k, b] of block.nodes) laid.nodes.set(k, shifted(b, box));
       for (const [k, b] of block.clusters) laid.clusters.set(k, shifted(b, box));
       for (const e of block.edges) {
-        laid.edges.push({ ...e, points: e.points.map((p) => shifted(p, box)) });
+        laid.edges.push({
+          ...e,
+          points: e.points.map((p) => shifted(p, box)),
+          ...(e.labelAt === undefined ? {} : { labelAt: shifted(e.labelAt, box) }),
+        });
       }
     }
     for (const edge of edges) {
@@ -451,10 +613,21 @@ export function layoutSteps(graph: StepGraph, narrow = false): StepLayout {
             { x: x2, y: y2 },
           ]
         : (g.edge(edge.from, edge.to).points ?? []);
-      laid.edges.push({ ...edge, points });
+      const at = g.edge(edge.from, edge.to);
+      const labelAt =
+        edge.label === undefined
+          ? undefined
+          : column || at.x === undefined || at.y === undefined
+            ? { x: (x1 + x2) / 2, y: mid }
+            : { x: at.x, y: at.y };
+      laid.edges.push({ ...edge, points, ...(labelAt === undefined ? {} : { labelAt }) });
     }
     const size = g.graph();
-    laid.width = size.width ?? 0;
+    const right = Math.max(
+      0,
+      ...[...laid.nodes.values(), ...laid.clusters.values()].map((b) => b.x + b.width),
+    );
+    laid.width = Math.max(size.width ?? 0, column ? right + margin : 0);
     laid.height = size.height ?? 0;
     return laid;
   };

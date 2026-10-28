@@ -77,34 +77,49 @@ interface Timings extends PanelTimings {
 const shownLoop = `[...document.querySelectorAll('${LOOP_STEP}[data-node-role]')].filter((el) => el.closest('[hidden]') === null)`;
 
 /**
- * The loop opens as its top-level steps, each top-level include one folded box; opening one shows
- * its own steps in place, and folding it hides them again.
+ * The loop opens with each top-level include's own steps drawn beside the spine and every block
+ * inside one folded; the route fork's two sides carry their labels; folding ship hides its steps
+ * and opening it again shows them.
  */
 async function foldedLoopMismatches(page: Page): Promise<string[]> {
   const failures: string[] = [];
   const shown = await page.evaluate<{ step: string; folded: string | null }[]>(
     `${shownLoop}.map((el) => ({ step: el.getAttribute('data-step'), folded: el.getAttribute('data-folded') }))`,
   );
-  const nested = shown.filter((n) => n.step.includes('/')).map((n) => n.step);
-  if (nested.length > 0)
-    failures.push(`the map opens with nested steps shown: ${nested.join(', ')}`);
-  for (const include of Object.keys(SEED_INCLUDE_STAGES)) {
-    if (shown.find((n) => n.step === include)?.folded == null) {
-      failures.push(`${include} does not open folded`);
+  const deep = shown.filter((n) => n.step.split('/').length > 2).map((n) => n.step);
+  if (deep.length > 0) failures.push(`the map opens with deeper steps shown: ${deep.join(', ')}`);
+  for (const [include, stages] of Object.entries(SEED_INCLUDE_STAGES)) {
+    if (shown.find((n) => n.step === include)?.folded != null) {
+      failures.push(`${include} opens folded, not with its steps beside the spine`);
+    }
+    const drawn = shown.filter((n) => n.step.startsWith(`${include}/`)).map((n) => n.step);
+    if (drawn.join() !== stages.map((s) => `${include}/${s}`).join()) {
+      failures.push(`${include} opens showing ${drawn.join(', ') || 'no steps'}`);
+    }
+  }
+  if (shown.find((n) => n.step === 'ship/deliver')?.folded == null) {
+    failures.push('ship/deliver does not open folded');
+  }
+  const labels = await page.evaluate<string[]>(
+    `[...document.querySelectorAll('${MAP} [data-edge-label]')].map((el) => el.getAttribute('data-edge-label') + ' ' + el.textContent)`,
+  );
+  for (const expected of ['build continue / simple', 'ship complex']) {
+    if (!labels.includes(expected)) {
+      failures.push(`the route fork has labels ${JSON.stringify(labels)}, not ${expected}`);
     }
   }
   const stages = SEED_INCLUDE_STAGES.ship ?? [];
   const shipShown = (open: boolean) =>
     `${shownLoop}.filter((el) => (el.getAttribute('data-step') ?? '').split('/').length === 2 && el.getAttribute('data-step').startsWith('ship/')).length === ${open ? stages.length : 0}`;
-  await page.evaluate(
-    `document.querySelector('${LOOP_STEP}[data-step="ship"][data-folded]').click()`,
-  );
-  if (!(await page.evaluate<boolean>(pageWait(shipShown(true), 2000)))) {
-    failures.push(`opening ship does not show its ${stages.length} steps`);
-  }
   await page.evaluate(`document.querySelector('${MAP} [data-fold="ship"]')?.click()`);
   if (!(await page.evaluate<boolean>(pageWait(shipShown(false), 2000)))) {
-    failures.push('folding ship again does not hide its steps');
+    failures.push('folding ship does not hide its steps');
+  }
+  await page.evaluate(
+    `document.querySelector('${LOOP_STEP}[data-step="ship"][data-folded]')?.click()`,
+  );
+  if (!(await page.evaluate<boolean>(pageWait(shipShown(true), 2000)))) {
+    failures.push(`opening ship again does not show its ${stages.length} steps`);
   }
   return failures;
 }

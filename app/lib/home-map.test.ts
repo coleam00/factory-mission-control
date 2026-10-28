@@ -4,10 +4,14 @@ import {
   type HomeMapRow,
   foldSteps,
   homeMap,
+  exclusiveOn,
   layoutSteps,
+  openedBlocks,
+  pinnedValues,
   reduceEdges,
   shownAs,
   stepLabelLines,
+  topBlocks,
 } from './home-map';
 
 const workflow = (role: 'input' | 'manager', name: string): HomeMapRow => ({
@@ -199,16 +203,13 @@ test('an include inside an include expands too, every step inside each box aroun
     expect([id, within(laid.nodes.get(id), laid.clusters.get('b/x'))]).toEqual([id, true]);
   }
   expect(within(laid.clusters.get('b/x'), laid.clusters.get('b'))).toBe(true);
-  for (const parent of ['b', 'b/x']) {
-    expect([parent, within(laid.nodes.get(parent), laid.clusters.get(parent))]).toEqual([
-      parent,
-      true,
-    ]);
-  }
+  // The inner block's box holds its own step; the top-level block's step stays on the spine.
+  expect(within(laid.nodes.get('b/x'), laid.clusters.get('b/x'))).toBe(true);
+  expect(within(laid.nodes.get('b'), laid.clusters.get('b'))).toBe(false);
   const boxes = [...laid.nodes.values()];
   for (const [i, a] of boxes.entries())
     for (const b of boxes.slice(i + 1)) expect(apart(a, b)).toBe(true);
-  const spine = ['a', 'b', 'c'].map((id) => (laid.clusters.get(id) ?? laid.nodes.get(id))?.y ?? 0);
+  const spine = ['a', 'b', 'c'].map((id) => laid.nodes.get(id)?.y ?? 0);
   expect(spine).toEqual([...spine].sort((p, q) => p - q));
 });
 
@@ -253,16 +254,14 @@ test("the manager and each input show their own steps, each opening that workflo
   expect(map.loop.steps.map((n) => n.id)).toEqual(['a', 'b', 'b/one', 'b/two', 'c']);
 });
 
-test('the narrow layout keeps the spine in one column, each box moving with what it holds', () => {
+test('the narrow layout keeps the spine in one column, each box beside it moving with what it holds', () => {
   const { loop } = homeMap(twoLevels, SHOWN);
   const desktop = layoutSteps(loop);
   const narrow = layoutSteps(loop, true);
-  const outerBox = (laid: typeof desktop, id: string) =>
-    (laid.clusters.get(id) ?? laid.nodes.get(id)) as Box;
   const spine = ['a', 'b', 'c'];
   for (const id of spine) {
-    const box = outerBox(narrow, id);
-    const original = outerBox(desktop, id);
+    const box = narrow.nodes.get(id) as Box;
+    const original = desktop.nodes.get(id) as Box;
     expect([id, box.x, box.y, box.width, box.height]).toEqual([
       id,
       24,
@@ -271,26 +270,31 @@ test('the narrow layout keeps the spine in one column, each box moving with what
       original.height,
     ]);
   }
-  expect(narrow.nodes.get('a')?.x).toBe(24);
   expect((narrow.nodes.get('a')?.x ?? 0) + (narrow.nodes.get('a')?.width ?? 0)).toBeLessThanOrEqual(
     340,
   );
-  const box = outerBox(desktop, 'b');
-  const moved = outerBox(narrow, 'b');
-  for (const id of ['b', 'b/x', 'b/x/y', 'b/x/z']) {
+  const box = desktop.clusters.get('b') as Box;
+  const moved = narrow.clusters.get('b') as Box;
+  // The box is to the right of the spine, never over it.
+  const right = Math.max(
+    ...spine.map((id) => (narrow.nodes.get(id) as Box).x + (narrow.nodes.get(id) as Box).width),
+  );
+  expect(moved.x).toBeGreaterThan(right);
+  expect(narrow.width).toBeGreaterThanOrEqual(moved.x + moved.width);
+  for (const id of ['b/x', 'b/x/y', 'b/x/z']) {
     const was = desktop.nodes.get(id) as Box;
     const now = narrow.nodes.get(id) as Box;
     expect([id, now.x - moved.x, now.y - moved.y]).toEqual([id, was.x - box.x, was.y - box.y]);
   }
   for (const edge of narrow.edges.filter((e) => spine.includes(e.from) && spine.includes(e.to))) {
-    const from = outerBox(narrow, edge.from);
-    const to = outerBox(narrow, edge.to);
+    const from = narrow.nodes.get(edge.from) as Box;
+    const to = narrow.nodes.get(edge.to) as Box;
     expect(edge.d).toStartWith(`M${from.x + from.width / 2},${from.y + from.height}`);
     expect(edge.d).toEndWith(`L${to.x + to.width / 2},${to.y}`);
   }
 });
 
-test('the layout places every step apart, and the box around its own step and its stages', () => {
+test('the layout places every step apart, and the box around the stages beside their step', () => {
   const longFactory = 'a-factory-with-a-long-name';
   const map = homeMap(
     [
@@ -309,9 +313,10 @@ test('the layout places every step apart, and the box around its own step and it
   const boxes = [...laid.nodes.values()];
   for (const [i, a] of boxes.entries())
     for (const b of boxes.slice(i + 1)) expect(apart(a, b)).toBe(true);
-  for (const id of ['b', 'b/one', 'b/two']) {
+  for (const id of ['b/one', 'b/two']) {
     expect([id, within(laid.nodes.get(id), laid.clusters.get('b'))]).toEqual([id, true]);
   }
+  expect(within(laid.nodes.get('b'), laid.clusters.get('b'))).toBe(false);
   expect(laid.edges.every((e) => e.d.startsWith('M'))).toBe(true);
 });
 
@@ -371,4 +376,96 @@ test('each block opens folded: one box with its step count and laps, its steps h
   const box = layoutSteps(folded.graph).nodes.get('b') as Box;
   expect(box.height).toBeGreaterThan(plain.height);
   expect(layoutSteps(folded.graph).height).toBeLessThan(layoutSteps(loop).height);
+});
+
+test('a when pins a variable to the values every branch of it names', () => {
+  expect(
+    pinnedValues(
+      "$c.output.held == 'true' && $p.output.route == 'continue' || $c.output.held == 'true' && $p.output.route == 'simple'",
+    ),
+  ).toEqual(
+    new Map([
+      ['$c.output.held', ['true']],
+      ['$p.output.route', ['continue', 'simple']],
+    ]),
+  );
+  expect(pinnedValues("$p.output.route != 'none'")).toEqual(new Map());
+  expect(pinnedValues(null)).toEqual(new Map());
+  expect(exclusiveOn("$p.output.route == 'simple'", "$p.output.route == 'complex'")).toEqual({
+    on: '$p.output.route',
+    a: ['simple'],
+    b: ['complex'],
+  });
+  expect(exclusiveOn("$p.output.route == 'simple'", "$p.output.route == 'simple'")).toBeNull();
+  expect(exclusiveOn('$x.output.n > 0', "$p.output.route == 'complex'")).toBeNull();
+});
+
+// The loop's route split: build on simple or continue, ship on complex, waiting on build only for
+// order, both joining at subject.
+const fork: HomeMapRow[] = [
+  step('claim', 0, []),
+  step('build', 1, ['claim'], {
+    when_condition: "$pick.output.route == 'simple' || $pick.output.route == 'continue'",
+  }),
+  step('ship', 2, ['claim', 'build'], {
+    kind: 'include',
+    trigger_rule: 'none_failed_min_one_success',
+    when_condition: "$pick.output.route == 'complex'",
+  }),
+  step('ship/forge', 3, []),
+  step('ship/report', 4, ['forge']),
+  step('subject', 5, ['claim', 'build', 'ship'], { trigger_rule: 'all_done' }),
+];
+
+test('a route fork is drawn side by side, each edge into it labelled, rejoining after', () => {
+  const { loop } = homeMap(fork, SHOWN);
+  expect(loop.edges).toEqual([
+    { from: 'claim', to: 'build', label: 'simple / continue' },
+    { from: 'claim', to: 'ship', label: 'complex' },
+    { from: 'ship', to: 'ship/forge' },
+    { from: 'ship/forge', to: 'ship/report' },
+    { from: 'build', to: 'subject' },
+    { from: 'ship', to: 'subject' },
+  ]);
+  // Without the trigger rule that lets ship run past a skipped build, the edge is a real order.
+  const ordered = homeMap(
+    fork.map((r) => (r.path === 'ship' ? { ...r, trigger_rule: null } : r)),
+    SHOWN,
+  ).loop;
+  expect(ordered.edges).toContainEqual({ from: 'build', to: 'ship' });
+  expect(ordered.edges.some((e) => e.label !== undefined)).toBe(false);
+});
+
+test("an open top-level block's steps sit in a box beside its step, and what follows leaves its end", () => {
+  const { loop } = homeMap(fork, SHOWN);
+  expect(topBlocks(loop)).toEqual(['ship']);
+  const laid = layoutSteps(foldSteps(loop, new Set(topBlocks(loop))).graph);
+  const box = laid.clusters.get('ship') as Box;
+  for (const id of ['ship/forge', 'ship/report']) {
+    expect([id, within(laid.nodes.get(id), box)]).toEqual([id, true]);
+  }
+  expect(within(laid.nodes.get('ship'), box)).toBe(false);
+  const ship = laid.nodes.get('ship') as Box;
+  const build = laid.nodes.get('build') as Box;
+  // The two sides of the fork stand side by side, on the same row, under claim.
+  expect(ship.y).toBe(build.y);
+  expect(apart(ship, build)).toBe(true);
+  expect(laid.edges.map((e) => `${e.from}>${e.to}`)).toContain('ship/report>subject');
+  expect(laid.edges.map((e) => `${e.from}>${e.to}`)).not.toContain('ship>subject');
+  for (const e of laid.edges.filter((e) => e.label !== undefined)) {
+    expect([e.to, e.labelAt === undefined]).toEqual([e.to, false]);
+  }
+});
+
+test('the blocks shown open are the defaults the viewer has not folded, and each one opened', () => {
+  expect([...openedBlocks(['ship', 'deploy'], new Map())]).toEqual(['ship', 'deploy']);
+  expect([
+    ...openedBlocks(
+      ['ship', 'deploy'],
+      new Map([
+        ['ship', false],
+        ['ship/deliver', true],
+      ]),
+    ),
+  ]).toEqual(['deploy', 'ship/deliver']);
 });
