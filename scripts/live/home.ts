@@ -18,6 +18,7 @@ import {
   RENEWALS_IN_180S,
   renewalsOf,
   required,
+  SEED_INCLUDE_STAGES,
   untilShown,
 } from './shared';
 import {
@@ -70,6 +71,42 @@ interface Timings extends PanelTimings {
   /** Where clicking a map step went. */
   clickedTo?: string | null;
   limits: typeof LIMITS;
+}
+
+/** The loop's steps drawn on screen, not hidden inside a folded block. */
+const shownLoop = `[...document.querySelectorAll('${LOOP_STEP}[data-node-role]')].filter((el) => el.closest('[hidden]') === null)`;
+
+/**
+ * The loop opens as its top-level steps, each top-level include one folded box; opening one shows
+ * its own steps in place, and folding it hides them again.
+ */
+async function foldedLoopMismatches(page: Page): Promise<string[]> {
+  const failures: string[] = [];
+  const shown = await page.evaluate<{ step: string; folded: string | null }[]>(
+    `${shownLoop}.map((el) => ({ step: el.getAttribute('data-step'), folded: el.getAttribute('data-folded') }))`,
+  );
+  const nested = shown.filter((n) => n.step.includes('/')).map((n) => n.step);
+  if (nested.length > 0)
+    failures.push(`the map opens with nested steps shown: ${nested.join(', ')}`);
+  for (const include of Object.keys(SEED_INCLUDE_STAGES)) {
+    if (shown.find((n) => n.step === include)?.folded == null) {
+      failures.push(`${include} does not open folded`);
+    }
+  }
+  const stages = SEED_INCLUDE_STAGES.ship ?? [];
+  const shipShown = (open: boolean) =>
+    `${shownLoop}.filter((el) => (el.getAttribute('data-step') ?? '').split('/').length === 2 && el.getAttribute('data-step').startsWith('ship/')).length === ${open ? stages.length : 0}`;
+  await page.evaluate(
+    `document.querySelector('${LOOP_STEP}[data-step="ship"][data-folded]').click()`,
+  );
+  if (!(await page.evaluate<boolean>(pageWait(shipShown(true), 2000)))) {
+    failures.push(`opening ship does not show its ${stages.length} steps`);
+  }
+  await page.evaluate(`document.querySelector('${MAP} [data-fold="ship"]')?.click()`);
+  if (!(await page.evaluate<boolean>(pageWait(shipShown(false), 2000)))) {
+    failures.push('folding ship again does not hide its steps');
+  }
+  return failures;
 }
 
 const liveCountOf = (step: string) =>
@@ -125,6 +162,7 @@ export function homePhase(ctx: LiveContext): LivePhase {
           `the map's workflow cards are ${JSON.stringify(cards)}, not ${JSON.stringify(expectedCards)}`,
         );
       }
+      ctx.failures.push(...(await foldedLoopMismatches(page)));
       writeFileSync(join(outDir, 'home-map.png'), await page.screenshot(1440));
       onLiveStep = Number(await page.evaluate<string>(liveCountOf(LIVE_STEP)));
     },

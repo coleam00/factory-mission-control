@@ -2,9 +2,11 @@ import { expect, test } from 'bun:test';
 import {
   type Box,
   type HomeMapRow,
+  foldSteps,
   homeMap,
   layoutSteps,
   reduceEdges,
+  shownAs,
   stepLabelLines,
 } from './home-map';
 
@@ -335,4 +337,38 @@ test('each step box is wide enough for its longest name line, and taller for a s
     expect(box.width).toBeGreaterThanOrEqual(96 + Math.max(...lines.map((l) => l.length)) * 8);
     expect(box.height).toBe(lines.length === 1 ? 46 : 63);
   }
+});
+
+test('each block opens folded: one box with its step count and laps, its steps hidden in order', () => {
+  const nested: HomeMapRow[] = [
+    step('a', 0, []),
+    step('b', 1, ['a'], { kind: 'include', lap_factory: 'here', laps: 2, is_current: true }),
+    step('b/one', 2, []),
+    step('b/two', 3, ['one'], { kind: 'include', lap_factory: 'here', laps: 2, is_current: true }),
+    step('b/two/x', 4, [], { lap_factory: 'here', laps: 2, is_current: true }),
+    step('c', 5, ['b']),
+  ];
+  const { loop } = homeMap(nested, SHOWN);
+  const folded = foldSteps(loop, new Set());
+  expect(folded.graph.steps.map((s) => s.id)).toEqual(['a', 'b', 'c']);
+  expect(folded.graph.edges).toEqual([
+    { from: 'a', to: 'b' },
+    { from: 'b', to: 'c' },
+  ]);
+  const b = folded.graph.steps.find((s) => s.id === 'b');
+  expect(b?.folded).toEqual({ steps: 3, notes: ['3 steps'] });
+  // The block counts the laps anywhere inside it.
+  expect(b?.liveCount).toBe(2);
+  expect(folded.hidden.map((s) => s.id)).toEqual(['b/one', 'b/two', 'b/two/x']);
+  expect(shownAs(folded.folded, 'b/two/x')).toBe('b');
+  // Opened, b shows its own steps; the block inside it stays folded until opened in turn.
+  const open = foldSteps(loop, new Set(['b']));
+  expect(open.graph.steps.map((s) => s.id)).toEqual(['a', 'b', 'b/one', 'b/two', 'c']);
+  expect([...open.folded]).toEqual([['b/two', 1]]);
+  expect(shownAs(open.folded, 'b/two/x')).toBe('b/two');
+  // A folded box is taller for its note and fits it.
+  const plain = layoutSteps(loop).nodes.get('a') as Box;
+  const box = layoutSteps(folded.graph).nodes.get('b') as Box;
+  expect(box.height).toBeGreaterThan(plain.height);
+  expect(layoutSteps(folded.graph).height).toBeLessThan(layoutSteps(loop).height);
 });

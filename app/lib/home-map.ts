@@ -57,6 +57,14 @@ export interface StepNode {
   liveCount: number;
   /** Every shown factory with laps on it now, the factory in the address first, then by name. */
   factories: FactoryLaps[];
+  /** Set on an include or loop group folded into one box: what it holds, and the lines it shows. */
+  folded?: Fold;
+}
+
+/** A folded block: how many steps it holds at every depth, and the short lines its box shows. */
+export interface Fold {
+  steps: number;
+  notes: string[];
 }
 
 export interface FactoryLaps {
@@ -221,6 +229,68 @@ export function homeMap(rows: readonly HomeMapRow[], shown: readonly string[]): 
   };
 }
 
+export interface FoldedSteps {
+  /** The graph with each folded block's steps taken out: the block is one box, `folded` set. */
+  graph: StepGraph;
+  /** Each folded block's path, and how many steps it holds at every depth. */
+  folded: Map<string, number>;
+  /** The steps the folded blocks hold, in the graph's order: in the page, hidden. */
+  hidden: StepNode[];
+}
+
+export const stepsCount = (n: number) => `${n} ${n === 1 ? 'step' : 'steps'}`;
+
+/**
+ * Folds every include or loop group the viewer has not opened into one box, so a workflow opens
+ * as its top-level steps only. Opening a block shows its own steps; a block inside it stays folded
+ * until opened in turn. `notes` gives a folded block's lines; by default its step count.
+ */
+export function foldSteps(
+  graph: StepGraph,
+  opened: ReadonlySet<string>,
+  notes: (block: string, inside: StepNode[]) => string[] = (_, inside) => [
+    stepsCount(inside.length),
+  ],
+): FoldedSteps {
+  const inside = (block: string) => graph.steps.filter((s) => s.id.startsWith(`${block}/`));
+  const folded = new Map<string, number>();
+  for (const block of graph.clusters.keys()) {
+    if (opened.has(block)) continue;
+    if ([...folded.keys()].some((outer) => block.startsWith(`${outer}/`))) continue;
+    folded.set(block, inside(block).length);
+    // A block folded inside one now folded is gone with it.
+    for (const inner of [...folded.keys()]) {
+      if (inner.startsWith(`${block}/`)) folded.delete(inner);
+    }
+  }
+  if (folded.size === 0) return { graph, folded, hidden: [] };
+  const isHidden = (id: string) => [...folded.keys()].some((block) => id.startsWith(`${block}/`));
+  return {
+    graph: {
+      steps: graph.steps
+        .filter((s) => !isHidden(s.id))
+        .map((s) => {
+          const steps = folded.get(s.id);
+          return steps === undefined
+            ? s
+            : { ...s, folded: { steps, notes: notes(s.id, inside(s.id)) } };
+        }),
+      edges: graph.edges.filter((e) => !isHidden(e.from) && !isHidden(e.to)),
+      clusters: new Map(
+        [...graph.clusters].filter(([block]) => !folded.has(block) && !isHidden(block)),
+      ),
+    },
+    folded,
+    hidden: graph.steps.filter((s) => isHidden(s.id)),
+  };
+}
+
+/** The block a folded graph shows in place of `path`: the step itself, or the folded box it is in. */
+export function shownAs(folded: ReadonlyMap<string, number>, path: string): string {
+  for (const block of folded.keys()) if (path.startsWith(`${block}/`)) return block;
+  return path;
+}
+
 const NODE_W = 168;
 const NODE_H = 46;
 /** The 13px Geist Mono label's advance per character, rounded up so a name never clips. */
@@ -231,6 +301,9 @@ const LABEL_RESERVE = 96;
 const ONE_LINE_MAX = 16;
 /** Each label line past the first adds this much height. */
 const LINE_H = 17;
+/** A folded block's note line: 11px Geist Mono, its advance per character rounded up. */
+const NOTE_H = 15;
+const NOTE_CHAR_W = 7;
 
 /**
  * A step's name as the lines its box shows, in full: one line up to ONE_LINE_MAX characters,
@@ -289,8 +362,12 @@ const shifted = <T extends Point>(p: T, by: Point): T => ({ ...p, x: p.x + by.x,
  */
 function stepSize(node: StepNode): { width: number; height: number } {
   const lines = stepLabelLines(node.label);
-  const name = LABEL_RESERVE + Math.max(...lines.map((line) => line.length)) * CHAR_W;
-  const height = NODE_H + (lines.length - 1) * LINE_H;
+  const notes = node.folded?.notes ?? [];
+  const name = Math.max(
+    LABEL_RESERVE + Math.max(...lines.map((line) => line.length)) * CHAR_W,
+    ...notes.map((note) => LABEL_RESERVE + note.length * NOTE_CHAR_W),
+  );
+  const height = NODE_H + (lines.length - 1) * LINE_H + notes.length * NOTE_H;
   if (!node.factories.some((f) => !f.current)) return { width: Math.max(NODE_W, name), height };
   // Reserve 70px horizontally for the padding, glyph, gaps and live dot; 7px per character leaves
   // room for 10px Geist Mono.
