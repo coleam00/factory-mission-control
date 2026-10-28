@@ -94,6 +94,16 @@ test('a pull request number is read from its #n text or its URL, and nothing els
   expect(prNumber('#103 and #104')).toBeNull();
 });
 
+test('a pull request written as a JSON object is read from its number or url field', () => {
+  expect(prNumber('{"repo": {"host": "github.com"}, "number": 293}')).toBe(293);
+  expect(prNumber('{"url": "https://github.com/coleam00/factory-mission-control/pull/293"}')).toBe(
+    293,
+  );
+  expect(prNumber('{"repo": {"host": "github.com"}}')).toBeNull();
+  expect(prNumber('{"number": "293"}')).toBeNull();
+  expect(prNumber('{not json')).toBeNull();
+});
+
 test('a finished attempt takes its recorded duration; a running one its time so far', () => {
   const now = Date.parse('2026-10-25T12:03:04Z');
   expect(attemptSeconds(attempt({ duration_ms: '184250' }), now)).toBe(184.25);
