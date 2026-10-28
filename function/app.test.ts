@@ -574,15 +574,49 @@ test.each(['deleted', 'transferred'])('an issue %s leaves the mirror', async (ac
   ]);
 });
 
+const terminated = 'terminating connection due to administrator command';
 test.each([
-  ['any other error is not retried', () => new Error('duplicate key'), 1],
   [
-    'a connection that closes again is retried once',
+    'a constraint violation is not retried',
+    () =>
+      Object.assign(new Error('duplicate key value violates unique constraint'), { code: '23505' }),
+    1,
+  ],
+  [
+    'a Bun SQL connection that closes again is retried once',
     () => Object.assign(new Error('closed'), { code: 'ERR_POSTGRES_CONNECTION_CLOSED' }),
+    2,
+  ],
+  [
+    'a Bun SQL socket that closes while a reply is expected is retried once',
+    () =>
+      Object.assign(new Error('Failed to read data'), { code: 'ERR_POSTGRES_EXPECTED_REQUEST' }),
+    2,
+  ],
+  [
+    'a reset socket is retried once',
+    () => Object.assign(new Error('read ECONNRESET'), { code: 'ECONNRESET' }),
+    2,
+  ],
+  [
+    'a Bun SQL connection the server terminates again is retried once',
+    () =>
+      Object.assign(new Error(terminated), { code: 'ERR_POSTGRES_SERVER_ERROR', errno: '57P01' }),
+    2,
+  ],
+  [
+    'a pg.Pool connection the server terminates again is retried once',
+    () => Object.assign(new Error(terminated), { code: '57P01' }),
+    2,
+  ],
+  [
+    'a node-postgres connection that ends again is retried once',
+    () => new Error('Connection terminated unexpectedly'),
     2,
   ],
 ])('%s', async (_, failure, attempts) => {
   let transactions = 0;
+  let drops = 0;
   app = createWebhookApp({
     secret: SECRET,
     db: {
@@ -591,6 +625,9 @@ test.each([
       transaction: async () => {
         transactions += 1;
         throw failure();
+      },
+      dropIdleConnections: async () => {
+        drops += 1;
       },
     },
     factories: factories.factories,
@@ -605,9 +642,9 @@ test.each([
     error.mockRestore();
   }
   expect(transactions).toBe(attempts);
+  expect(drops).toBe(attempts - 1);
 });
 
-const terminated = 'terminating connection due to administrator command';
 test.each([
   [
     'Bun SQL',

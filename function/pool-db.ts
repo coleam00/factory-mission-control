@@ -40,6 +40,18 @@ export function poolDb(pool: pg.Pool): Db {
         client.release(broken);
       }
     },
+    async dropIdleConnections() {
+      // The pool hands out idle clients first, and destroys each released with `true`. Checked
+      // out, a client needs its own `error` listener, as in `transaction`.
+      const idle = await Promise.all(
+        Array.from({ length: pool.idleCount }, async () => {
+          const client = await pool.connect();
+          client.on('error', () => {});
+          return client;
+        }),
+      );
+      for (const client of idle) client.release(true);
+    },
     close: () => pool.end(),
   };
 }

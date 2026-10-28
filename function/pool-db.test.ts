@@ -133,19 +133,40 @@ test('a ROLLBACK that fails keeps the original error and destroys the client', a
   expect(released).toEqual([dropped]);
 });
 
+/** The ErrorResponse a backend ended by `pg_terminate_backend` sends on the client's next message. */
+const TERMINATED = (() => {
+  const fields = Buffer.from(
+    'SFATAL\0VFATAL\0C57P01\0Mterminating connection due to administrator command\0\0',
+  );
+  const head = Buffer.alloc(5);
+  head.write('E');
+  head.writeInt32BE(fields.length + 4, 1);
+  return Buffer.concat([head, fields]);
+})();
+
 /**
  * A TCP relay to the socket server that can close a connection the way a dead one fails: on the
  * next message the client sends, or once the server has answered a COMMIT, before the client
- * hears it. PGlite serves every connection from one session, so a cut also drops the prepared
+ * hears it. `terminate` ends every open connection the way the server does before the client has
+ * read it: the backend is gone, and the client's next message is answered with FATAL 57P01.
+ * PGlite serves every connection from one session, so a cut or a terminate also drops the prepared
  * statements that Postgres would have dropped with the connection.
  */
 async function relay(upstream: string) {
   const [host, port] = upstream.split(':');
   let cut: 'next message' | 'COMMIT answer' | undefined;
+  const terminators = new Set<() => void>();
   const server = net.createServer((client) => {
     const backend = net.connect(Number(port), host);
     let committing = false;
+    let terminated = false;
+    const terminate = () => {
+      terminated = true;
+      backend.destroy();
+    };
+    terminators.add(terminate);
     const close = () => {
+      terminators.delete(terminate);
       client.destroy();
       backend.destroy();
     };
@@ -155,9 +176,16 @@ async function relay(upstream: string) {
     };
     for (const socket of [client, backend]) {
       socket.on('error', () => {});
-      socket.on('close', close);
     }
+    client.on('close', close);
+    backend.on('close', () => {
+      if (!terminated) close();
+    });
     client.on('data', (chunk) => {
+      if (terminated) {
+        client.end(TERMINATED);
+        return;
+      }
       if (cut === 'next message') {
         cut = undefined;
         return cutHere();
@@ -179,6 +207,10 @@ async function relay(upstream: string) {
     url: `postgres://postgres@127.0.0.1:${relayPort}/postgres`,
     cutOn: (at: typeof cut) => {
       cut = at;
+    },
+    terminate: async () => {
+      for (const terminate of terminators) terminate();
+      await lite.exec('DEALLOCATE ALL');
     },
     close: () => new Promise<void>((done) => server.close(() => done())),
   };
@@ -209,6 +241,46 @@ test.each([
       expect((await deliver(db, issue)).status).toBe(200);
       expect(warn.mock.calls.map((args) => args.join(' '))).toEqual([
         expect.stringContaining(`issues ${issue.delivery}: connection closed ${where}`),
+      ]);
+    } finally {
+      warn.mockRestore();
+    }
+    expect(await snapshot(pgliteDb(lite))).toEqual(await snapshot(reference));
+    await Promise.all([db.close(), reference.close()]);
+    await link.close();
+  },
+);
+
+test.each(['Bun SQL', 'pg.Pool'] as const)(
+  'a %s pool whose idle connections the server ended records the delivery on its one retry',
+  async (adapter) => {
+    const link = await relay(server.getServerConn());
+    const db =
+      adapter === 'Bun SQL'
+        ? openDb(link.url)
+        : poolDb(new pg.Pool({ connectionString: link.url, max: 5 }));
+    const issue = deliveries[0];
+    const reference = await archonDb();
+    await runMigrations({ files, db: reference });
+    expect((await deliver(reference, issue)).status).toBe(200);
+
+    // Several connections at once, so the pool holds more than one idle when the server ends them.
+    await Promise.all(
+      Array.from({ length: 4 }, () =>
+        db.transaction(async (tx) => {
+          await tx.query('SELECT 1');
+          await Bun.sleep(20);
+        }),
+      ),
+    );
+    await link.terminate();
+    const warn = spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      expect((await deliver(db, issue)).status).toBe(200);
+      expect(warn.mock.calls.map((args) => args.join(' '))).toEqual([
+        expect.stringContaining(
+          `issues ${issue.delivery}: connection closed before the first statement`,
+        ),
       ]);
     } finally {
       warn.mockRestore();
