@@ -133,6 +133,23 @@ test('a ROLLBACK that fails keeps the original error and destroys the client', a
   expect(released).toEqual([dropped]);
 });
 
+test('a drop whose connect fails still destroys every client it checked out', async () => {
+  const refused = new Error('connect ECONNREFUSED');
+  const released: unknown[] = [];
+  const client = { on: () => {}, release: (arg?: unknown) => released.push(arg) };
+  let connects = 0;
+  const fakePool = {
+    idleCount: 3,
+    connect: async () => {
+      connects += 1;
+      if (connects === 2) throw refused;
+      return client;
+    },
+  } as unknown as pg.Pool;
+  await expect(poolDb(fakePool).dropIdleConnections?.()).rejects.toBe(refused);
+  expect(released).toEqual([true, true]);
+});
+
 /** The ErrorResponse a backend ended by `pg_terminate_backend` sends on the client's next message. */
 const TERMINATED = (() => {
   const fields = Buffer.from(
