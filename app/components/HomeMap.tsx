@@ -7,9 +7,11 @@ import {
   type HomeMapRow,
   homeMap,
   layoutSteps,
+  openedBlocks,
   type StepGraph,
   type StepNode,
   stepLabelLines,
+  topBlocks,
 } from '../lib/home-map';
 import { LiveDot } from './LiveDot';
 import { GraphViewport } from './GraphViewport';
@@ -169,9 +171,11 @@ function Frame({ node }: { node: FrameNode }): ReactElement {
 }
 
 /**
- * A workflow's steps laid out with dagre. Each include or loop group opens folded, one box with its
- * step count; a click opens it in place, boxed with what it nests, and its Fold button folds it
- * again. Folded, its steps are in the page, hidden: every link and count is there.
+ * A workflow's steps laid out with dagre. Each top-level include or loop group opens with its own
+ * steps boxed beside the spine, branching as they run; each block inside one opens folded, one box
+ * with its step count. A click opens a folded block in place, boxed with what it nests, and its
+ * Fold button folds it again. Folded, its steps are in the page, hidden: every link and count is
+ * there.
  */
 function StepGraphView({
   graph: full,
@@ -182,15 +186,11 @@ function StepGraphView({
   label: string;
   narrow: boolean;
 }): ReactElement {
-  const [opened, setOpened] = useState<ReadonlySet<string>>(new Set());
+  const [toggled, setToggled] = useState<ReadonlyMap<string, boolean>>(new Map());
+  const opened = useMemo(() => openedBlocks(topBlocks(full), toggled), [full, toggled]);
   const { graph, hidden } = useMemo(() => foldSteps(full, opened), [full, opened]);
   const toggle = (block: string, open: boolean) =>
-    setOpened((was) => {
-      const next = new Set(was);
-      if (open) next.add(block);
-      else next.delete(block);
-      return next;
-    });
+    setToggled((was) => new Map(was).set(block, open));
   const laid = useMemo(() => layoutSteps(graph, narrow), [graph, narrow]);
   const first = laid.nodes.get(graph.steps[0]?.id ?? '');
   return (
@@ -212,6 +212,19 @@ function StepGraphView({
             />
           ))}
         </svg>
+        {/* A route fork's labels: the values of the route each side runs on. */}
+        {laid.edges.map((e) =>
+          e.label === undefined || e.labelAt === undefined ? null : (
+            <span
+              key={`label:${e.from}→${e.to}`}
+              data-edge-label={e.to}
+              className="absolute -translate-x-1/2 -translate-y-1/2 whitespace-nowrap rounded-md border border-border bg-surface px-1.5 font-mono text-[11px] leading-[16px] text-text-secondary"
+              style={{ left: e.labelAt.x, top: e.labelAt.y }}
+            >
+              {e.label}
+            </span>
+          ),
+        )}
         {[...laid.clusters].map(([parent, box]) => (
           <div
             key={parent}
@@ -317,7 +330,8 @@ function Band({ label, children }: { label: string; children: ReactNode }): Reac
 /**
  * The factory at the pinned version: what feeds it and the manager above the loop, the loop laid
  * out with dagre, and what it produces below. The loop, each input workflow and the manager open
- * with each include folded to one box, opened in place on a click. Every step shows
+ * with each top-level include's own steps beside the spine and every deeper include folded to one
+ * box, opened in place on a click. Every step shows
  * how many of the factory's laps are on it now, and each other shown factory's laps there under
  * that factory's name, and opens its detail under the workflow that declares it.
  */

@@ -1,5 +1,13 @@
 import { expect, test } from 'bun:test';
-import { foldGraph, type LapMapRow, LANE_STEPS, lapGraph, laneMarks, pathOf } from './lap-graph';
+import {
+  foldGraph,
+  type LapMapRow,
+  LANE_STEPS,
+  lapGraph,
+  laneMarks,
+  pathOf,
+  ranBlocks,
+} from './lap-graph';
 import type { StepAttemptRow } from './one-lap';
 
 const row = (path: string, position: number, over: Partial<LapMapRow> = {}): LapMapRow => {
@@ -192,4 +200,36 @@ test("a loop group's body steps, named <group>.<step> on every iteration, mark t
   expect(implement?.attempts).toHaveLength(2);
   expect(lap.steps.get('ship/rounds/review/scope')?.state).toBe('running');
   expect(lap.steps.get('ship/rounds')?.state).toBe('running');
+});
+
+test("a lap opens each top-level block it ran, ship's own steps on the fork's lit side", () => {
+  const map = [
+    row('claim', 1),
+    row('build', 2, { depends_on: ['claim'], when_condition: "$pick.output.route == 'simple'" }),
+    row('ship', 3, {
+      kind: 'include',
+      depends_on: ['claim', 'build'],
+      trigger_rule: 'none_failed_min_one_success',
+      when_condition: "$pick.output.route == 'complex'",
+    }),
+    row('ship/intel', 4),
+    row('ship/deliver', 5, { kind: 'include', depends_on: ['intel'] }),
+    row('ship/deliver/implement', 6),
+    row('subject', 7, { depends_on: ['build', 'ship'], trigger_rule: 'all_done' }),
+  ];
+  const complex = lapGraph(map, [
+    attempt('claim', 0),
+    attempt('ship__intel', 1),
+    attempt('ship__deliver__implement', 2, 'running'),
+  ]);
+  expect(ranBlocks(complex)).toEqual(['ship']);
+  const { folded } = foldGraph(complex, new Set(ranBlocks(complex)));
+  expect([...folded.keys()]).toEqual(['ship/deliver']);
+  // The fork is a fork: build waits on nothing but claim, and the lap did not take it.
+  expect(complex.graph.edges).toContainEqual({ from: 'claim', to: 'ship', label: 'complex' });
+  expect(complex.graph.edges).not.toContainEqual({ from: 'build', to: 'ship' });
+  const simple = lapGraph(map, [attempt('claim', 0), attempt('build', 1), attempt('subject', 2)]);
+  expect(ranBlocks(simple)).toEqual([]);
+  expect(simple.steps.get('ship')?.state).toBe('skipped');
+  expect(foldGraph(simple, new Set(ranBlocks(simple))).folded.get('ship')).toBe(3);
 });
