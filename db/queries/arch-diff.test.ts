@@ -68,25 +68,30 @@ describe('arch-diff on the seed', () => {
     expect(diffVersions(rows, v1, v3)).toEqual({ status: 'unrecorded', digests: [v3] });
   });
 
-  test('a version whose pin has no Archon sha yet stays on the strip and is unrecorded, never another', async () => {
+  test('a version whose pin has no Archon sha yet stays on the strip and is unrecorded, never another, until its sha is stored', async () => {
     const [v1, v2] = digests;
     const [pin] = await db.query(
       'SELECT p.sha, p.archon_sha FROM mc.versions v JOIN mc.pins p ON p.sha = v.pin_sha WHERE v.digest = $1',
       [v2],
     );
     const strip = queries.find(([name]) => name === 'version-strip')?.[1] as string;
-    await db.query('UPDATE mc.pins SET archon_sha = NULL WHERE sha = $1', [pin?.sha]);
+    const homeMap = queries.find(([name]) => name === 'home-map')?.[1] as string;
+    const map = () => db.query(homeMap, ['mission-control']);
+    const resolvedMap = await map();
+    const storeSha = (sha: unknown) =>
+      db.query('UPDATE mc.pins SET archon_sha = $2 WHERE sha = $1', [pin?.sha, sha]);
+    await storeSha(null);
     try {
       const unresolved = (await db.query(sql, ['mission-control'])) as unknown as ArchDiffRow[];
       expect(diffVersions(unresolved, v1, v2)).toEqual({ status: 'unrecorded', digests: [v2] });
       const listed = await db.query(strip, ['mission-control']);
       expect(listed.find((r) => r.digest === v2)).toMatchObject({ pin_sha: pin?.sha });
+      expect(await map()).not.toEqual(resolvedMap);
     } finally {
-      await db.query('UPDATE mc.pins SET archon_sha = $2 WHERE sha = $1', [
-        pin?.sha,
-        pin?.archon_sha,
-      ]);
+      await storeSha(pin?.archon_sha);
     }
+    expect((await db.query(sql, ['mission-control'])) as unknown as ArchDiffRow[]).toEqual(rows);
+    expect(await map()).toEqual(resolvedMap);
   });
 
   test("names no other factory's versions", async () => {

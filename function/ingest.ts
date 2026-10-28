@@ -203,8 +203,8 @@ function mirrorWrite(
 
 /**
  * The push's commits with each pin's full Archon sha resolved. When GitHub refuses or cannot be
- * reached, the push's pins are written without a sha and the result says so; the next backfill
- * reads them again. A stored sha is never cleared or rewritten short.
+ * reached, the push's pins are written without a sha and the result says so; the next scheduled
+ * reconcile reads them again. A stored sha is never cleared or rewritten short.
  */
 async function pinsAfter(
   push: Payloads['push'],
@@ -678,8 +678,8 @@ export async function writePullRequest(tx: Tx, factory: string, pr: PullRequest)
 
 /**
  * A pin is written with its resolved full sha (`VersionCommit.archonSha`), or with none while it is
- * unresolved, so the version strip shows it at once and the map waits for the next backfill. An
- * unresolved write never clears a sha already stored.
+ * unresolved, so the version strip shows it at once and the map waits for the next scheduled
+ * reconcile. An unresolved write never clears a sha already stored.
  */
 export async function writeCommits(tx: Tx, commits: VersionCommit[]): Promise<void> {
   for (const commit of commits) {
