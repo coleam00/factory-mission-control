@@ -36,7 +36,7 @@ interface FactoryHistory {
   comments: { issue: Issue; comment: Comment }[];
   pullRequests: PullRequest[];
   /** When each open issue labelled `NEEDS_OWNER` last received that label, where GitHub says. */
-  labelled: { issue: number; label: string; at: string }[];
+  labelled: { issue: number; at: string }[];
 }
 
 export interface History {
@@ -84,7 +84,7 @@ export async function readHistory(github: GitHub, followed: Factory[]): Promise<
         `/repos/${repository}/issues/${issue.number}/events?per_page=100`,
       );
       const last = events.findLast((e) => e.event === 'labeled' && e.label?.name === NEEDS_OWNER);
-      if (last) labelled.push({ issue: issue.number, label: NEEDS_OWNER, at: last.created_at });
+      if (last) labelled.push({ issue: issue.number, at: last.created_at });
     }
     read.push({
       factory: name,
@@ -174,8 +174,8 @@ export async function storeHistory(db: Db, history: History, readAt?: string): P
   const removed: Removed = { issues: 0, comments: 0 };
   for (const { factory, issues, comments, pullRequests, labelled } of history.factories) {
     await inBatches(db, issues, (tx, issue) => writeIssue(tx, factory, issue));
-    await inBatches(db, labelled, (tx, { issue, label, at }) =>
-      writeLabeledAt(tx, factory, issue, label, at),
+    await inBatches(db, labelled, (tx, { issue, at }) =>
+      writeLabeledAt(tx, factory, issue, NEEDS_OWNER, at),
     );
     await inBatches(db, comments, (tx, { issue, comment }) =>
       writeComment(tx, factory, issue, comment),
