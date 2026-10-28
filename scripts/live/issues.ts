@@ -39,9 +39,21 @@ interface IssueGraphTimings extends PanelTimings {
 }
 
 interface IssuesOnScreen {
-  issues: { number: number; state: string; chain: boolean; dot: string; token: string | null }[];
+  issues: {
+    number: number;
+    state: string;
+    chain: boolean;
+    context: boolean;
+    dot: string;
+    token: string | null;
+  }[];
   dependencies: string[];
   phases: { phase: string; merged: number; total: number }[];
+  columns: { phase: string; open: number; merged: number; closed: number }[];
+  /** `data-hidden-open`: open issues the default view's cap left out, 0 when none. */
+  hidden: number;
+  /** Whether the "Show merged" toggle is on. */
+  showMerged: boolean;
 }
 
 const issuesOnScreen = `(() => {
@@ -59,6 +71,7 @@ const issuesOnScreen = `(() => {
       number: Number(a.getAttribute('data-issue')),
       state: a.getAttribute('data-issue-state'),
       chain: a.getAttribute('data-longest-chain') === 'true',
+      context: a.getAttribute('data-context') === 'true',
       dot: getComputedStyle(a.querySelector('[data-state-dot]')).backgroundColor,
       token: token(tokens[a.getAttribute('data-issue-state')]),
     })),
@@ -70,8 +83,38 @@ const issuesOnScreen = `(() => {
       merged: Number(li.getAttribute('data-merged')),
       total: Number(li.getAttribute('data-total')),
     })),
+    columns: [...document.querySelectorAll('${ISSUES} [data-phase-column]')].map((c) => ({
+      phase: c.getAttribute('data-phase-column'),
+      open: Number(c.getAttribute('data-open')),
+      merged: Number(c.getAttribute('data-merged')),
+      closed: Number(c.getAttribute('data-closed')),
+    })),
+    hidden: Number(document.querySelector('${ISSUES} [data-hidden-open]')?.getAttribute('data-hidden-open') ?? 0),
+    showMerged: document.querySelector('${ISSUES} [data-show-merged]')?.getAttribute('aria-pressed') === 'true',
   };
 })()`;
+
+/** Clicks the "Show merged" toggle into `on` and waits for the graph to redraw that way. */
+const showMerged = (on: boolean) =>
+  pageWait(
+    `(() => {
+      const toggle = document.querySelector('${ISSUES} [data-show-merged]');
+      if (toggle && (toggle.getAttribute('aria-pressed') === 'true') !== ${on}) toggle.click();
+      return toggle?.getAttribute('aria-pressed') === '${on}';
+    })()`,
+    READY_WAIT_MS,
+  );
+
+/** Open issues by default, with the issues they directly depend on and every phase's counts. */
+const defaultViewSql = (liveSql: string) => `WITH states AS (${liveSql.trim()}), open AS (
+    SELECT number FROM states WHERE kind = 'issue' AND state NOT IN ('merged', 'closed')
+  ), drawn AS (
+    SELECT number FROM open
+    UNION
+    SELECT d.depends_on FROM mc.issue_dependencies d JOIN open o ON o.number = d.issue_number
+    WHERE d.factory = $1 AND EXISTS (SELECT 1 FROM mc.issues i WHERE i.factory = $1 AND i.number = d.depends_on)
+  )
+  SELECT number FROM drawn ORDER BY number`;
 
 /** Every open chain of `Depends on` edges through open issues, longest first. */
 const OPEN_CHAINS_SQL = `WITH RECURSIVE open AS (
@@ -93,9 +136,65 @@ async function seedIssueGraphMismatches(
   factory: string,
   liveSql: string,
 ): Promise<{ mismatches: string[]; report: string }> {
-  const shown = await page.evaluate<IssuesOnScreen>(issuesOnScreen);
   const mismatches: string[] = [];
   const same = screenAgainstSql(mismatches);
+
+  // The default view: open issues and what they directly depend on, merged work counted per phase.
+  const byDefault = await page.evaluate<IssuesOnScreen>(issuesOnScreen);
+  if (byDefault.showMerged) mismatches.push('the issues screen opened with Show merged on');
+  const drawn = (await db.query(defaultViewSql(liveSql), [factory])).map((r) => Number(r.number));
+  if (drawn.length > 40) {
+    mismatches.push(`the seed has ${drawn.length} default nodes, past the cap this check reads`);
+  }
+  same(
+    'default nodes',
+    byDefault.issues.map((i) => i.number).sort((a, b) => a - b),
+    drawn,
+  );
+  same('default hidden', byDefault.hidden, 0);
+  const defaultEdges = await db.query(
+    `SELECT issue_number, depends_on FROM mc.issue_dependencies
+     WHERE factory = $1 AND issue_number = ANY($2::int[]) AND depends_on = ANY($2::int[])
+     ORDER BY 1, 2`,
+    [factory, `{${drawn.join(',')}}`],
+  );
+  const byNumbersDefault = (a: string, b: string) => {
+    const [a1, a2] = a.split('-').map(Number);
+    const [b1, b2] = b.split('-').map(Number);
+    return a1 - b1 || a2 - b2;
+  };
+  same(
+    'default edges',
+    [...byDefault.dependencies].sort(byNumbersDefault),
+    defaultEdges.map((e) => `${e.issue_number}-${e.depends_on}`),
+  );
+  for (const i of byDefault.issues) {
+    const closedState = i.state === 'merged' || i.state === 'closed';
+    if (i.context !== closedState) {
+      mismatches.push(`#${i.number} ${i.state} is drawn as ${i.context ? 'context' : 'open work'}`);
+    }
+  }
+  const columns = await db.query(
+    `WITH states AS (${liveSql.trim()})
+     SELECT coalesce(phase, '') AS phase,
+       count(*) FILTER (WHERE state NOT IN ('merged', 'closed'))::int AS open,
+       count(*) FILTER (WHERE state = 'merged')::int AS merged,
+       count(*) FILTER (WHERE state = 'closed')::int AS closed
+     FROM states WHERE kind = 'issue'
+     GROUP BY phase ORDER BY phase IS NULL, min(number)`,
+    [factory],
+  );
+  same(
+    'phase columns',
+    byDefault.columns,
+    columns.map((c) => ({ phase: c.phase, open: c.open, merged: c.merged, closed: c.closed })),
+  );
+
+  // Show merged: the full history, checked as the graph was before it collapsed merged work.
+  if (!(await page.evaluate<boolean>(showMerged(true)))) {
+    mismatches.push('the Show merged toggle did not turn on');
+  }
+  const shown = await page.evaluate<IssuesOnScreen>(issuesOnScreen);
 
   const issues = await db.query('SELECT number FROM mc.issues WHERE factory = $1 ORDER BY number', [
     factory,
@@ -170,8 +269,16 @@ async function seedIssueGraphMismatches(
     [...(longest[0] ?? [])].sort((a, b) => a - b),
   );
 
+  if (!(await page.evaluate<boolean>(showMerged(false)))) {
+    mismatches.push('the Show merged toggle did not turn back off');
+  }
+
   const report = [
-    'screen:',
+    'screen by default:',
+    `  ${JSON.stringify(byDefault)}`,
+    `  SQL default nodes ${JSON.stringify(drawn)}`,
+    `  SQL phase columns ${JSON.stringify(columns)}`,
+    'screen with Show merged:',
     `  ${JSON.stringify(shown)}`,
     'SQL (mc.issues, mc.issue_dependencies, db/queries/issue-graph.sql, phase counts, open chains):',
     `  nodes ${JSON.stringify(issues.map((i) => i.number))}`,
