@@ -220,6 +220,7 @@ export function liveBootScript(config: LiveConfig): string {
   return (
     "<script>(function(c){try{var r=0;performance.mark('live:connection:start');" +
     'var s=new WebSocket(c.url,c.protocol);c.socket=s;c.early=[];' +
+    "s.addEventListener('open',function(){performance.mark('live:connection:open')});" +
     "s.addEventListener('message',function(e){if(!r)try{if(JSON.parse(e.data).type==='ready'){" +
     "r=1;performance.mark('live:connection:ready')}}catch(x){}if(c.early)c.early.push(e.data)})" +
     '}catch(e){}' +
