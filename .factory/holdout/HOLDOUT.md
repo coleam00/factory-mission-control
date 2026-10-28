@@ -960,3 +960,263 @@ Expect:
 - A dry run deletes nothing. The real run deletes only K1's own branch (and any genuinely old orphan); K2's branch and the other running-owned branch are still there, and K2's serve still works on its branch.
 - After step 4 the newly ended run's branch is named: an ended owner does not protect its orphan.
 Author: writer, 2026-10-27, owner decision on #27 question 6 (tracking #230): edges owner running, owner ended, no owner recorded, this checkout's own branch
+
+## Shared setup for H-59..H-65: a lap drawn as a graph
+
+The owner's requirement (2026-10-27, not yet a PRD section): a lap's page draws the lap as a graph with the same layout as the MAP at the lap's own pin (included blocks such as `ship` expanded the way the map draws them), each step marked by what happened to it in this lap: finished (green check), running now (blue, pulsing, with its elapsed time), failed (red cross), skipped because the route or depth did not need it (dimmed, dashed outline), not reached yet (dimmed). Clicking a step opens its details (started, duration, model, tokens, cost, attempts) in a side panel, not a table row. The REVIEW, MERGE GATE and APP CHECK sections stay as they are. Each running lap's card on LAPS > LANES carries one row of marks for the loop's top-level steps, in this order: pick, claim, build/ship, subject, briefs, check-app, evidence, handoff, review, land, deploy, release (check, pulsing or dim). It must work for a finished and a running lap (live, no reload), for both factories, and for a lap on an older pin whose map lacks a step it ran (that step still shown); every step a lap ran is reachable in the graph.
+
+"Reading the lap's events" means reading Archon's own `remote_agent_workflow_events` rows for the run on the check branch (never the dashboard's tables or payloads) and writing them, per step and attempt, into the shape `judges/lap-graph.js` documents. A step's mark is read from what the screen draws (icon, colour, outline, animation), recorded in the judge's words and confirmed by a screenshot. "The map at the lap's pin" is the MAP screen at the version the lap ran, picked from the version strip.
+
+## H-59 A finished lap's graph tells exactly what happened to every step, and nothing that did not
+Protects: owner requirement 2026-10-27 (lap as a graph: the map's layout at the lap's pin, the five marks, every step reachable, details in a side panel, REVIEW / MERGE GATE / APP CHECK unchanged); 4.6 (every step the lap ran with start, duration, model, tokens, cost); invariant 6
+Touches: one lap, the map at a pinned version, step side panel, Archon projection
+Setup: the check app. Insert, as Archon would, four finished `archon-loop` laps on the latest version: (a) a merged complex-route lap that ran every loop step including at least one stage inside an include of ship, with `node_skipped` for any step its route did not need; (b) a failed lap whose `build` failed, with no later step started; (c) an empty lap (`pick` output `route = none`, later steps `node_skipped`); (d) a simple-route lap whose route skipped at least one ship stage the complex route runs; and give (a) a gate refusal on an earlier `land` attempt with a reason, and app-check lines of several kinds.
+Steps:
+1. Open the map at that version and record every step it shows, with ship expanded. Open each lap's page.
+2. On each lap's graph, record every step's mark; click every step that has any event and record the side panel. Record REVIEW, MERGE GATE and APP CHECK (outcome, dispositions, gate reason, app-check lines with kind, verdict and evidence count).
+3. Read each lap's events and run `judges/lap-graph.js` on each.
+Expect:
+- `judges/lap-graph.js` PASS for all four: every step on the map is in the graph, in the map's arrangement (the same columns and order, ship expanded the same way, not a flat list), and every step the lap ran is a node you can click.
+- (a) shows only green checks and dashed-dim skipped steps; (b) shows `build` as a red cross and every later step dim as not reached (not dashed, not a check); (c) shows `pick` checked and the rest dashed-dim as skipped, never as failed; (d) draws its skipped ship stages dashed and dim, never as not reached or failed.
+- Skipped (dashed) and not reached (dim, solid outline) can be told apart in a screenshot without hovering; a failed step is never green or dim.
+- The side panel opens beside the graph (the graph stays on screen), names the step it belongs to, and closes by the keyboard as well as the mouse; no step's details appear as a table row instead.
+- REVIEW, MERGE GATE and APP CHECK show the same facts a lap page showed before this change: the refusal reason text, the dispositions and every app-check line are still there, not moved behind the graph or lost.
+Author: writer, 2026-10-27, owner requirement 1 of 2026-10-27 (a lap's progress as a graph), before the loop builds it
+
+## H-60 A running lap's graph moves while you watch, and the pulse is always on the step it is on
+Protects: owner requirement 2026-10-27 (running: blue, pulsing, with its elapsed time; updating live, no reload); 8.1; invariant 5
+Touches: one lap graph, side panel, lanes row, Archon projection, live queries and seal renewal
+Setup: the check app. Insert, as Archon would, a running `archon-loop` lap with `pick` and `claim` completed and `node_started` for `build`. Open its lap page and LAPS > LANES in two tabs; set the reload marker in each; on the lap page open `build`'s side panel.
+Steps:
+1. Record the graph, the open side panel and the lane row. Wait 70 seconds with no write and record the elapsed time on `build` again.
+2. Insert `node_completed` for `build` and `node_started` for the first stage inside ship that comes from an include. Record when each tab changes.
+3. Insert `node_failed` for that stage, then, 10 seconds later, a fresh `node_started` for the same stage (a retry).
+4. Insert `node_skipped` for a ship stage the route does not need, then complete the remaining stages up to `review` and leave `review` running. Leave the tabs open for 190 seconds (three seal renewals), then complete `review` and start `land`.
+5. Complete `land` with `outcome = merged`, then mark the run completed. Record both tabs.
+6. At each recorded moment, read the lap's events and run `judges/lap-graph.js`; record each write for `judges/liveness.js` with panels `lap-graph`, `lap-side-panel` and `lane-row`.
+Expect:
+- At every recorded moment exactly the step Archon has running pulses blue with its elapsed time; that time counts on by itself (about 70 seconds more after step 1's wait) and restarts from zero when a new step or a retry starts; no finished, failed, skipped or not-reached step pulses.
+- After step 3 the stage shows a red cross until its retry starts, then pulses again; its side panel, opened then, shows both attempts.
+- After step 5 nothing pulses on the graph or the lane; every step the lap ran is checked, crossed or dashed as it happened; the lap is no longer shown as a running lane; the side panel left open on `build` still shows `build`'s own finished details and was not replaced by another step's.
+- Every change appears on every tab within 5 seconds without a reload, including after the three seal renewals (`judges/liveness.js` PASS; `judges/lap-graph.js` PASS at every recorded moment).
+Author: writer, 2026-10-27, owner requirement 1 of 2026-10-27 (a lap's progress as a graph), before the loop builds it
+
+## H-61 A step that ran several times shows every attempt, and its mark follows the last one
+Protects: owner requirement 2026-10-27 (details: started, duration, model, tokens, cost, attempts); 4.6; the rule of H-39 that every attempt keeps its own facts
+Touches: one lap graph, side panel, lanes row
+Setup: the check app. Insert, as Archon would, three laps on one version, giving every attempt visibly different start, model, tokens, cost and duration: L1 (finished, merged) whose `check-app` failed once and then completed; L2 (failed) whose `build` completed once, then a later `build` attempt failed and the run failed; L3 (running) whose `build` failed twice and is running a third time.
+Steps:
+1. Open each lap's graph and click the step that ran several times; record the panel. Open LAPS > LANES and record L3's row.
+2. Read each lap's events and run `judges/lap-graph.js`.
+Expect:
+- The panel says how many attempts there were (L1: 2, L2: 2, L3: 3) and shows each attempt's own start, duration, model, tokens and cost; no attempt borrows another's numbers, and the earlier attempts are never dropped in favour of the last one.
+- The mark follows the last attempt: L1's `check-app` is a green check, L2's `build` a red cross, L3's `build` pulses blue with the third attempt's elapsed time; L3's lane shows build/ship pulsing.
+- The step is drawn once in the graph, not once per attempt.
+- `judges/lap-graph.js` PASS on each.
+Author: writer, 2026-10-27, owner requirement 1 of 2026-10-27 (a lap's progress as a graph), before the loop builds it
+
+## H-62 A lap from an older pin, a lap with no pin and a lap with no steps still tell the truth
+Protects: owner requirement 2026-10-27 (a lap on an older pin whose map lacks a step it ran: that step still shown; every step a lap ran reachable); 4.6; invariant 6; engineering.md empty states (one sentence, at most one button)
+Touches: one lap graph, version keying, architecture at a pin, lanes row
+Setup: the check app with two parsed versions (as H-15: the committed pack, and a local copy parsed as the newer version). In the copy remove one loop step S1 and one stage S2 inside an include of ship, and add a new step S3. Insert, as Archon would: LA, a finished lap of the older version that ran S1 and S2; LB, a finished lap of the newer version that also has events for a step id neither version has; LC, a running lap whose run has no `workflow_source` digest, with two steps run; LD, a running lap of the newer version with no step event at all yet; LE, a finished lap whose digest's pin has no parsed architecture (as H-49).
+Steps:
+1. Open each lap's graph; click every step with an event; record the panel. Open LAPS > LANES and record the rows of LC and LD.
+2. For LA, open the map at its own (older) version and at the newer one; then pick the newer version on the strip and return to LA's page.
+3. Read each lap's events and run `judges/lap-graph.js` (with `pinned_map_keys` null where the lap's pin has no architecture).
+Expect:
+- LA's graph is the older version's map, with S1 and S2 in their places and checked, and without S3; it never takes the newer map's layout because that version is current or picked elsewhere.
+- LB's unknown step is shown, marked as it happened and clickable for its details, set apart from the map's own steps; it is neither dropped nor placed as if the map had it.
+- LC, LD and LE never show an error, a blank panel or a spinner: each says in one sentence what it lacks (no pin recorded, nothing has run yet, no architecture for that version) and still shows every step that did run, marked and clickable; LD's lane row shows twelve dim marks and nothing pulsing or checked.
+- `judges/lap-graph.js` PASS on every lap (INCONCLUSIVE only for the layout parity of LC and LE, which have no map).
+Author: writer, 2026-10-27, owner requirement 1 of 2026-10-27 (a lap's progress as a graph), before the loop builds it
+
+## H-63 The lanes row tells how far each running lap has got, and leads to that step's details
+Protects: owner requirement 2026-10-27 (each running lap's card: the loop's top-level steps as a row of marks, check / pulsing / dim); 4.3 lanes (the step it is on, elapsed time, cost so far); journey 2; the journey from a lane's mark to the step's details
+Touches: LAPS > LANES cards, one lap graph, side panel, browser history
+Setup: the check app with four running laps, inserted as Archon would, each at a different place: one on `pick`; one inside a stage of an include of ship (two levels down if the pack has one); one on `handoff`, with a top-level step before it skipped by its route; one on `release`. Set the reload marker on LAPS > LANES.
+Steps:
+1. Record each card's row of marks, its step, elapsed time and cost so far. Read each lap's events and run `judges/lap-graph.js` with the lane recorded.
+2. On the lap inside ship, go from its card to that step's details using the app's own controls only (the pulsing mark if it is a control, otherwise the card and then the step). Record each page and its address.
+3. Use Back, Forward, then Back to the lanes. Open the copied address of the step's details in a fresh tab.
+4. Insert `node_completed` and the next `node_started` for each lap and watch the lanes.
+Expect:
+- Each row has exactly the twelve marks in the stated order and nothing else (no ship stages, no steps of other workflows); marks before the current step are checks, the current step pulses (build/ship pulses while any build step or ship stage runs, however deep), later steps are dim; the skipped top-level step is dim, never a check.
+- The row agrees with the card's own "step it is on" and with the lap's graph at the same moment.
+- Every mark has an accessible name giving its step and state, so a check, a pulse and a dim mark can be told apart without colour; if a mark is a control it opens that lap's graph with that step's details, never another lap's or another step's.
+- The step's details for that lap are reached without typing an address; Back returns to the lanes with the reload marker intact; the copied address opens the same lap with the same step's details.
+- After step 4 every row moves on within 5 seconds without a reload (`judges/liveness.js` PASS with panel `lane-row`; `judges/lap-graph.js` PASS on every lane).
+Author: writer, 2026-10-27, owner requirement 1 of 2026-10-27 (a lap's progress as a graph), before the loop builds it
+
+## H-64 The lap graph keeps every existing promise: factories, rewind, hidden holdouts, phone width, colours, speed
+Protects: owner requirement 2026-10-27 (both factories); 11.6; 4.7; invariant 3; 8.3 (status colours, magenta only for identity, no overflow at 390 px, every control named); 8.4 and the timing bar of H-45; owner decision on #27 question 4 (neutral selection)
+Touches: one lap graph and side panel, lanes row, factory switcher, rewind, design probe, live query timing
+Setup: the check app with two factories A and B (as H-17), each with a finished and a running lap whose step ids overlap, on versions with different maps. A's finished lap has a `check-app` output with a holdout line carrying the canary `CANARY-HERON-5530` (as H-01). Note a moment T after A's finished lap completed and before A's running lap started; create a rewind at T.
+Steps:
+1. Open A's running lap; switch to B with the app's own controls; open B's running lap; switch back. Open A's lap address with B's factory key in place of A's.
+2. Click a step in each graph so it is selected, hover another, focus a third with Tab; screenshot; record the computed colours of every mark state, the selected step and the focused step as H-56 does.
+3. Run `harness/design-probe.js` on a finished and a running lap's page, side panel open and closed, at 1440 and 390 px; at 390 px reach every step of the graph and open and close its side panel.
+4. Search every screen, attribute and payload of steps 1 to 3 for the canary.
+5. On the rewind at T, open A's finished lap and the address of A's running lap.
+6. Measure the lap page and LAPS > LANES as H-45 does, cold and after a factory switch.
+Expect:
+- Each factory's lap graph is drawn from that factory's own pinned map and own events; nothing of B's appears under A or the other way round; a lap address under the wrong factory reads as not found in that factory (as H-21).
+- The marks use the console's status colours (green or teal finished, blue running, red failed) plus dimming; selection, hover and focus use neutral cues, never a status colour and never magenta (`judges/identity-color.js` PASS), and a selected finished step is still told apart from a selected failed one.
+- The design probe reports zero failures in every recorded state; at 390 px the page does not scroll sideways and every step can be reached and its side panel read and closed.
+- The canary appears nowhere; APP CHECK shows the line by id and verdict only.
+- On the rewind, A's finished lap shows its graph as of T and A's running lap reads as not found at that moment; nothing pulses on a rewind.
+- `judges/speed.js` PASS on both screens, cold and after the switch.
+Author: writer, 2026-10-27, owner requirement 1 of 2026-10-27 (a lap's progress as a graph), before the loop builds it
+
+## H-65 Every step a lap ran is reachable, whatever the graph would rather fold away
+Protects: owner requirement 2026-10-27 (every step a lap ran reachable; included blocks expanded the way the map draws them); 11.4 (includes expanded the way Archon expands them)
+Touches: one lap graph, include expansion, same-named steps, side panel
+Setup: the check app with a version parsed from a local pack copy where two included blocks of ship each have a step with the same id as a top-level loop step (as H-28), and ship nests to Archon's include limit (as H-29; INCONCLUSIVE if Archon refuses the copy). Insert, as Archon would, a finished lap that ran all three same-named steps with different costs and models, and steps at every include level.
+Steps:
+1. Open the lap's graph; click each same-named step and each step at the deepest level; record the panels.
+2. Read the lap's events, keying each by its include path, and run `judges/lap-graph.js`.
+Expect:
+- Each same-named step is its own node in its own place, marked by its own events and opening its own details; no two share a panel, and none shows the other's attempts or a sum of them.
+- The deepest level's steps are drawn and clickable, not folded into one box for their block.
+- `judges/lap-graph.js` PASS.
+Author: writer, 2026-10-27, owner requirement 1 of 2026-10-27 (a lap's progress as a graph), before the loop builds it
+
+## Shared setup for H-66..H-72: the issue graph on ISSUES
+
+The owner's requirement (2026-10-27, not yet a PRD section): the ISSUES graph's default view is what is still in play: open issues (waiting, claimed, PR open, needs owner) and the issues they directly depend on. Merged and closed issues collapse into a count per phase ("Skeleton: 12 merged") instead of being drawn. Columns are phases in PRD order (the PHASES grid's order); issues with no phase go in a final "No phase" column. Within a column, issues stack by dependency depth so every edge runs left to right or top to bottom. Each node shows #number, a short title and its state colour. The longest open chain stays highlighted. A "Show merged" toggle brings the full history back. The default view is capped (about 40 nodes); with more open, it shows the 40 closest to merge and says how many are hidden. The default graph fits 1920x1080 without horizontal scrolling; a factory with no phases shows its open issues under "No phase" with the merged count; an issue that merges leaves the graph and its phase's count rises live.
+
+Issues, phases, labels, claims, pull requests and `Depends on: #n` lines are delivered as GitHub would (signed payloads through `bun run function:dev`, or `bun run fixture:write` where it covers the case). "The source issues" are those deliveries as the verifier recorded them, never read back from the dashboard. Each observation is recorded in the shape `judges/issue-graph.js` documents. Where the owner's words leave a case open (whether a merged or closed direct dependency of an open issue is drawn as a node or only counted), either reading passes and the judge accepts both; neither may leave an edge pointing at nothing. "Closest to merge" is judged only as an order the owner's words imply: PR open, then claimed, then waiting with every dependency closed, then waiting behind an open dependency; needs owner is not ranked.
+
+## H-66 The default graph shows what is in play, counts the rest, and reads left to right
+Protects: owner requirement 2026-10-27 (default view, per-phase counts, PRD-ordered columns, "No phase" last, depth stacking, node contents, longest open chain, fits 1920x1080); 4.3 issue graph states; 8.2 (the graph equals the seed's `Depends on` lines)
+Touches: ISSUES graph, PHASES grid, GitHub ingestion
+Setup: the check app on the seed, plus deliveries so the factory has at least four phases, issues in each of the six states, an issue with no phase, a dependency chain of four open issues spanning two phases, an open issue whose only dependency is merged, and a phase whose issues are all merged. Fewer than 40 open in all.
+Steps:
+1. Open ISSUES at 1920x1080; record the default view, the PHASES grid order and the source issues; run `judges/issue-graph.js`.
+2. Screenshot; turn it to grayscale. Tab through the nodes and record each one's accessible name.
+Expect:
+- `judges/issue-graph.js` PASS: every open issue is a node in its phase's column, columns follow the PHASES grid with "No phase" last, every edge runs left to right or top to bottom, each phase's merged count is right, the highlighted nodes are one longest open chain, and nothing scrolls sideways at 1920 px.
+- No merged or closed issue is drawn except as a direct dependency of a drawn open issue; the all-merged phase still shows its count ("<phase>: N merged"), so it is not silently missing.
+- Each node shows its #number, a title short enough to fit the node, and a colour naming its state; its accessible name carries the number, full title and state. The six states are told apart from each other, and the longest-chain highlight from every state colour and from a selected node, also in grayscale.
+Author: writer, 2026-10-27, owner requirement 2 of 2026-10-27 (a readable issue graph on ISSUES), before the loop builds it
+
+## H-67 More than 40 open issues: the 40 closest to merge, and an honest count of the rest
+Protects: owner requirement 2026-10-27 (cap the default view; show the closest to merge; say how many are hidden); 4.3
+Touches: ISSUES graph cap, hidden count, longest chain, live updates
+Setup: the check app; deliver issues so the factory has 55 open: 5 with a pull request open, 8 claimed, 20 waiting with every dependency closed, 20 waiting behind an open dependency, 2 needing the owner; spread over three phases and "No phase". Open ISSUES at 1920x1080 and set the reload marker.
+Steps:
+1. Record the default view and run `judges/issue-graph.js`.
+2. Without a reload, one at a time: open a pull request for a hidden waiting issue; merge one drawn pull request; close one drawn waiting issue as not planned; deliver 10 more open issues. Record and judge after each.
+3. Close issues until 39 are open; record and judge.
+Expect:
+- `judges/issue-graph.js` PASS at every observation: never more than the cap drawn; the view says how many open issues are hidden and the number is right; no hidden issue is closer to merge than a drawn one.
+- Each change in step 2 moves the right issue in or out within 5 seconds, and the hidden count follows (`judges/liveness.js` PASS with panels `issue-graph` and `hidden-count`).
+- At 39 open the hidden-count message is gone and every open issue is drawn.
+- With the cap full the graph still fits 1920 px wide without sideways scrolling.
+Author: writer, 2026-10-27, owner requirement 2 of 2026-10-27 (a readable issue graph on ISSUES), before the loop builds it
+
+## H-68 Odd dependency lines never break the graph or invent issues
+Protects: owner requirement 2026-10-27 (edges left to right or top to bottom; longest open chain); 4.3 (graph from `Depends on: #n` lines); 4.8 workable issues; 8.2; engineering.md (panels settle)
+Touches: dependency parser, ISSUES graph layout, longest chain, PHASES grid, health workable count
+Setup: the check app. Deliver open issues with these `Depends on` lines: #A on itself; #B on #C and #C on #B (a cycle of two), and #D on #B; #E on a closed, not merged, issue; #F on a merged issue; #G on an issue number that does not exist in the repository; #H on an open issue in a later phase than #H's own; #I with `Depends on: #J` written twice; and a chain of four open issues #P1 to #P4 that is the longest acyclic open chain.
+Steps:
+1. Open ISSUES, the PHASES grid and health; record the default view and run `judges/issue-graph.js`.
+2. Deliver an edit of #B's body removing its dependency on #C (the cycle is broken); record and judge again.
+Expect:
+- Every panel reaches `data-state="ready"` within 2 seconds; the page neither hangs nor shows an error; each issue is drawn once.
+- The self-dependency and the cycle are drawn without any node appearing twice and without the chain length counting round the loop; the highlighted chain is #P1 to #P4, never a path through the cycle.
+- #E and #F are not shown as blocked by a closed dependency, and health counts them as workable if nothing else blocks them; neither has an edge to an empty place; each closed dependency is either drawn in its closed or merged colour or only counted, never shown as open.
+- #G draws no node for an issue that does not exist and no dangling edge; nothing is invented.
+- #H's backward edge is drawn and joins its two issues (exempt from the left-to-right rule, never dropped).
+- #I has one edge to #J, not two.
+- After step 2 the graph lays out again without a reload and every edge outside a cycle runs left to right or top to bottom; `judges/issue-graph.js` PASS at both observations.
+Author: writer, 2026-10-27, owner requirement 2 of 2026-10-27 (a readable issue graph on ISSUES), before the loop builds it
+
+## H-69 Show merged and back again, while the factory keeps moving
+Protects: owner requirement 2026-10-27 ("Show merged" brings the full history back; the default view is what is in play); invariant 5; 11.6
+Touches: ISSUES graph toggle, browser history, factory switcher, live updates
+Setup: the check app with two factories A and B, each with merged, closed and open issues, A with more than 40 open. Open A's ISSUES and set the reload marker.
+Steps:
+1. Turn Show merged on; record and judge (`view: show-merged`). Turn it off; record and judge (`view: default`).
+2. With Show merged on, merge one of A's open issues, then turn it off. With it off, merge another.
+3. With Show merged on, switch to B with the app's own controls; then back to A. Use Back and Forward.
+4. Reload A's ISSUES with Show merged on, and open its address in a fresh tab.
+Expect:
+- On: every issue of the factory is drawn, merged and closed in their own colours, with every dependency edge. Off: exactly the default view again (the same nodes, counts and hidden count as before it was turned on), with no merged node left behind.
+- A merge while the toggle is on keeps the issue drawn, now as merged; after turning it off it is gone and its phase count is one higher. A merge while off removes it from the graph and raises its phase count within 5 seconds without a reload.
+- The toggle shows its own state (pressed or not, with an accessible name), and the graph always matches it, after a factory switch, Back, Forward and a reload; B never shows A's issues and A never shows B's.
+- `judges/issue-graph.js` PASS at every observation.
+Author: writer, 2026-10-27, owner requirement 2 of 2026-10-27 (a readable issue graph on ISSUES), before the loop builds it
+
+## H-70 A factory with no phases, and an issue that merges while you watch
+Protects: owner requirement 2026-10-27 (no phases: open issues under "No phase" with the merged count; an issue that merges leaves the graph and its count rises live); journey 2; 8.1
+Touches: ISSUES graph, PHASES grid, GitHub ingestion, lanes
+Setup: the check app with a second factory whose product document has no phases (its issues carry none), with open, merged and closed issues. On the main factory, a running lap has claimed open issue #N in phase P, with a pull request open, and #N is on the highlighted chain. Open both factories' ISSUES in two tabs and set reload markers.
+Steps:
+1. Record and judge the no-phase factory's default view.
+2. On the main factory, deliver the merge of #N's pull request, the issue's close and the `Loop review: merged ...` comment (as H-03). Record when each change shows.
+3. Deliver a phase for one of the no-phase factory's issues, the way the product records an issue's phase.
+Expect:
+- The no-phase factory shows one "No phase" column with every open issue and a merged count equal to its merged issues; no empty phase columns, no error, no dead end saying there are no phases.
+- After step 2, within 5 seconds and without a reload, #N is gone from the default graph, phase P's merged count is one higher, the PHASES grid agrees, and the highlight moves to the new longest open chain (`judges/liveness.js` PASS with panels `issue-graph`, `phase-count` and `phases-grid`). The other factory's tab does not change.
+- After step 3 that issue moves into its phase's column and "No phase" stays last.
+- `judges/issue-graph.js` PASS at every observation.
+Author: writer, 2026-10-27, owner requirement 2 of 2026-10-27 (a readable issue graph on ISSUES), before the loop builds it
+
+## H-71 The issue graph keeps every existing promise: rewind, phone width, colours, speed, read-only
+Protects: owner requirement 2026-10-27 (issue graph); 4.7; 8.3 (status colours, magenta only for identity, no overflow at 390 px, every control named); 8.4 and H-45; owner decision on #27 question 4; invariant 2
+Touches: ISSUES graph, rewind, design probe, identity colour, live query timing
+Setup: the check app with more than 40 open issues (as H-67). Note a moment T; after T merge three issues and label one `needs-owner`; create a rewind at T.
+Steps:
+1. Run `harness/design-probe.js` on ISSUES in the default view and with Show merged on, at 1440 and 390 px; at 390 px reach every drawn node and the Show merged toggle.
+2. Select a node, hover another, focus a third with Tab; record colours as H-56 does and run `judges/identity-color.js`.
+3. Click a node and follow what it offers; log every request.
+4. Switch to the rewind at T and record the graph and counts; switch back.
+5. Measure ISSUES as H-45 does: cold, after a factory switch, and after toggling Show merged.
+Expect:
+- Zero design-probe failures in every state; at 390 px the page does not scroll sideways, and every node can be reached by the graph's own scrolling or panning.
+- State colours are the console's; the longest-chain highlight, selection, hover and focus are neutral cues that never look like a state (`judges/identity-color.js` PASS); a needs-owner node is told apart from a selected one.
+- A node leads to the issue on GitHub or to its detail in the app; nothing on the graph writes anything (the request log holds only seal renewals).
+- On the rewind the graph and counts are those of T: the three issues open, the label absent; back on live they are merged and labelled.
+- `judges/speed.js` PASS for every measured transition.
+Author: writer, 2026-10-27, owner requirement 2 of 2026-10-27 (a readable issue graph on ISSUES), before the loop builds it
+
+## H-72 The default issue graph stays readable when the factory is large
+Protects: owner requirement 2026-10-27 (the default graph fits 1920x1080 without horizontal scrolling; columns by phase; depth stacking); 8.3
+Touches: ISSUES graph layout
+Setup: the check app with 12 phases, 40 open issues all in two of them, a longest open chain of 12 issues within one phase, and issue titles up to 120 characters.
+Steps: open ISSUES at 1920x1080; record and judge; screenshot.
+Expect:
+- `judges/issue-graph.js` PASS: no sideways scrolling at 1920 px, columns in PHASES order, edges left to right or top to bottom, the 12-issue chain highlighted.
+- Phases with only merged issues take only the room their count needs; no node overlaps another node or an edge's arrowhead, and no title spills out of its node.
+Author: writer, 2026-10-27, owner requirement 2 of 2026-10-27 (a readable issue graph on ISSUES), before the loop builds it
+
+## H-73 A pack Archon would refuse is marked refused, with Archon's reason, on MAP and VERSIONS
+Protects: owner answer to question 9 (dated 2026-10-28): a version whose pinned pack Archon itself would refuse to load (for example, includes nested deeper than Archon's limit of 3) is marked as refused on the MAP and VERSIONS screens, with the reason; a loadable version shows no such mark. Also 4.1, 4.2, invariant 6, 11.4
+Touches: architecture job, MAP, VERSIONS strip and comparison, architecture diff
+Setup: the check app. From local copies of `fixtures/pack/`, parse as versions, each with a real pin and laps (as the shared setup for H-47..H-55): VOK, nested to exactly Archon's limit (as H-29); VDEEP, the same with one include level more; VTWO, refused for two different reasons at once (one level too deep, and an include naming a block file that does not exist); VMISS, refused only for the missing include. Run Archon's own loader at the pinned sha on each copy and record whether it loads and the exact reasons it gives. If Archon refuses VOK, or loads any of the other three, the scenario is INCONCLUSIVE, never PASS.
+Steps:
+1. Open the MAP at each version (picked from the strip) and the VERSIONS screen; record every mark and reason shown, and screenshot.
+2. Compare VOK with VDEEP, and open the architecture diff of the two.
+Expect:
+- VDEEP, VTWO and VMISS each carry a refused mark on the MAP and on their VERSIONS entry, with the reason in words a user can read: the depth reason names the limit of 3 and where the nesting goes past it; the missing-include reason names the missing block. VTWO shows every reason Archon's loader gave for it (if Archon reports only the first, that one), and none it did not give.
+- VOK and every seed version carry no refused mark anywhere.
+- The refused mark is its own state: it never reads as "not recorded" (H-49), as an outage, or as a failed lap, is not drawn in magenta, and passes the design probe at 1440 and 390 px.
+- The comparison and diff still open and say which side is refused; the mark never spreads to the other version.
+Author: writer, 2026-10-27, owner answer to question 9 (a refused pack, dated 2026-10-28), before the loop builds it
+
+## H-74 A refused version stays marked wherever and whenever you meet it
+Protects: owner answer to question 9 (dated 2026-10-28) (refused marked on MAP and VERSIONS with the reason; a loadable version shows no mark); 4.1 (the home map at the pinned version); 4.7; 11.6; invariant 5
+Touches: MAP as it first opens, VERSIONS strip, factory switcher, rewind, architecture job, live queries
+Setup: the check app with two factories A and B (as H-17), and VOK and VDEEP's pack copies as in H-73, with a version on VOK's pack the latest on A. Open A's MAP as it first opens and A's VERSIONS screen; set reload markers. Note a moment T.
+Steps:
+1. Deliver a pin and laps for a new version VDEEP2 on A whose pack is VDEEP's, making it the latest; record both open screens; then run `bun run arch:parse` for it and record them again.
+2. Deliver a later pin VFIX on A whose pack is VOK's (the nesting fixed), with laps, and parse it.
+3. On B, give a version the same Archon commit and pack as VOK. Switch between A and B with the app's own controls.
+4. Create a rewind at T (before VDEEP2's pin) and open A's MAP and VERSIONS there; return to live.
+Expect:
+- Before the parse, VDEEP2 reads as not recorded (H-49), neither refused nor loadable. Within 5 seconds of the parse, without a reload, the home MAP as it first opens and VDEEP2's VERSIONS entry show the refused mark and reason.
+- After step 2 the home MAP shows VFIX with no mark; VDEEP2 keeps its mark on VERSIONS.
+- B's version is unmarked; a mark on A's version never shows under B.
+- On the rewind, VDEEP2 is absent and no refused mark shows that did not exist at T; back on live the marks are as before.
+- `judges/liveness.js` PASS on the step 1 and step 2 timings.
+Author: writer, 2026-10-27, owner answer to question 9 (a refused pack, dated 2026-10-28), before the loop builds it
