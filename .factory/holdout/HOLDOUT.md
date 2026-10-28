@@ -261,19 +261,21 @@ Author: writer, 2026-10-24, first set for the whole release (docs/mission-contro
 ## H-14 Rewind shows the past on every screen, writes nothing, and live comes back
 Protects: 4.7; journey 5; invariant 5
 Touches: rewind list and switch, every screen
-Setup: the check app. Note a moment T. After T, insert a merged lap for a new digest, label an issue `needs-owner`, and add a claim.
+Setup: the check app. A rewind is cut from the branch it is made from (at the pinned code, `main`), so the after-T data it is judged on must be data that branch holds after T. Reading `main` only (never writing to it, invariant 8), pick T inside the last 7 days on `main`'s own history such that `main` holds, before T, at least one finished lap, and after T, at least one lap Archon started or finished (prefer one with a step event, a merged lap, a version first run after T, and a GitHub fact such as a label, claim or comment recorded after T, where `main` has them). Note, read-only, exactly which of `main`'s laps, versions, step events, labels, claims and comments fall before and after T. If `main` has no lap after T within the last 7 days, the "nothing after T" part is INCONCLUSIVE, never PASS. Separately, on the check branch the dashboard runs on live, after noting T insert a merged lap for a new digest, label an issue `needs-owner`, and add a claim (these judge the return to live, not the rewind).
 Steps:
-1. `bun run rewind:create <T>` and switch the dashboard to the new `rewind-<time>` branch.
-2. Visit every screen: home map, version strip and scorecard, factory page, owner queue, testing, a lap from before T, health.
+1. `bun run rewind:create <T>` and switch the dashboard to the new `rewind-<time>` branch. Note, read-only, any row Archon writes to `main` from here to the end of the run.
+2. Visit every screen: home map, version strip and scorecard, factory page, owner queue, testing, a lap of `main`'s from before T, a lap of `main`'s from after T (by its address), health.
 3. While on the rewind, write a new step event to the live branch, and snapshot the rewind branch's row counts before and after visiting every screen.
 4. Switch back to live and write one more step event.
 5. Try `bun run rewind:create` with a time 8 days ago.
 Expect:
 - On the rewind, every screen shows the data as of T: no lap, version, label or claim from after T; every panel reaches `data-state="ready"`; the screen makes plain it is a rewind and of which moment.
+- Judged against what `main` held, as noted in the setup: every lap, version, step event, label, claim and comment `main` recorded after T is absent from every screen on the rewind (counts, scorecard, version strip, recent laps, owner queue, health), and the after-T lap's address reads as not found at that moment, never its detail; `main`'s before-T lap is there with its detail. No row Archon wrote to `main` after the rewind was made appears on it (if Archon wrote none during the run, that part is INCONCLUSIVE).
 - The live write in step 3 does not appear on the rewind; the rewind branch's row counts do not change.
 - The rewind list shows `rewind-*` branches only (no `check-*`, `fixture` or `main`).
 - Back on live, the after-T data is all there and the step 4 write appears within 5 seconds, without a reload.
 - Step 5 is refused or clearly reports that 7 days is the limit; no branch is made.
+(Tightened 2026-10-27: after-T data is now taken from the branch the rewind is cut from, so a rewind that leaks later data fails.)
 Author: writer, 2026-10-24, first set for the whole release (docs/mission-control.prd.md)
 
 ## H-15 The map and every step detail are exactly the pinned code, and change when the code does
@@ -506,13 +508,13 @@ Author: writer, 2026-10-26, escaped defect #105 (steps inside an included block 
 ## H-29 An include of an include is expanded all the way down, in Archon's order
 Protects: 4.1 (ship expanded into the stages parsed from `archon-ship-block` and its includes); 11.4 (includes expanded the way Archon expands them)
 Touches: architecture job include expansion, home map ordering, step detail
-Setup: a local copy of the pack in which an included block of ship itself includes a block that includes a third block (three levels below ship), each with at least two steps; and one block included from two different places. Parse it as a version alongside the committed pack. Work out by hand, from Archon's own include behaviour, the expanded order and occurrences.
+Setup: a local copy of the pack nested to the deepest include level Archon at the pinned sha actually loads, and no deeper: `archon-loop` includes ship (level 1), an included block of ship includes a second block (level 2), and that block includes a third (level 3), each block with at least two steps (Archon's include limit at the pinned sha is 3 levels from the workflow it is loaded as; if the pinned Archon's own limit reads differently, nest to exactly that limit). Also one block included from two different places, both within the limit, one of them at the deepest level. Before parsing, confirm with Archon's own loader at the pinned sha that it loads the copy without refusing it; if Archon refuses the copy, or no nesting deeper than one block below ship is possible within the limit, the scenario is INCONCLUSIVE, never PASS. Parse it as a version alongside the committed pack. Work out by hand, from Archon's own include behaviour, the expanded order and occurrences. (Tightened 2026-10-27: the earlier setup nested one level past what Archon loads.)
 Steps:
 1. Open the map at that version; record the stages under ship in order.
 2. Click every step at every level, including both places the shared block appears.
 3. Change one sentence in the deepest block's command file, parse again, and open the deepest step's detail at the new version and at the previous one.
 Expect:
-- The map shows every step of every level under ship, in the order and with the occurrences Archon's expansion gives; the deepest block's steps are not missing, collapsed or flattened out of order.
+- The map shows every step of every level under ship, in the order and with the occurrences Archon's expansion gives; the deepest block's steps (at Archon's limit) are not missing, collapsed or flattened out of order, and no included block at any level is shown as one box with no way into its steps.
 - Every step at every level opens its own ready, full detail; the shared block's steps open from both places and show that block's file.
 - After step 3, the deepest step's prompt shows the new sentence at the new version and the old one at the previous version.
 - `judges/step-coverage.js` PASS on a record covering this version.
