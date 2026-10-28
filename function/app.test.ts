@@ -110,7 +110,7 @@ interface FixturePayload {
   ref: string;
   deleted: boolean;
   repository: { full_name: string };
-  commits: { id: string; added: string[]; removed: string[] }[];
+  commits: { id: string; message: string; added: string[]; removed: string[] }[];
   comment: { body: string; updated_at: string };
   issue: { body: string; labels: { name: string }[]; updated_at: string };
 }
@@ -255,6 +255,23 @@ test('a push with the appendix pin and verdict stores the full sha pin abd85896 
   expect(requests).toEqual([
     { method: 'GET', url: PACK_URL },
     { method: 'GET', url: DECISIONS_URL },
+  ]);
+});
+
+test('a push of a pin with no reason stores the pin, its reason not recorded', async () => {
+  await deliverChanged('09-', (p) => {
+    for (const commit of p.commits) {
+      if (commit.message.startsWith('Pin Archon ')) commit.message = 'Pin Archon abd85896';
+    }
+  });
+  expect(await rows('SELECT sha, archon_sha, reason, hypothesis, measure FROM mc.pins')).toEqual([
+    {
+      sha: '85d479ad987dd63e441622ecb03db65233e8a803',
+      archon_sha: PINNED,
+      reason: null,
+      hypothesis: null,
+      measure: null,
+    },
   ]);
 });
 

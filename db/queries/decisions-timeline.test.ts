@@ -23,14 +23,84 @@ describe('decisions-timeline and improvements-ledger on the seed', () => {
       'mission-control',
     ]);
     const decisions = await db.query('SELECT date::text AS date, title, version FROM mc.decisions');
+    const pins = await db.query('SELECT sha, archon_sha FROM mc.pins');
     const rows = await timeline();
     expect(rows.map((r) => r.title).sort()).toEqual(decisions.map((d) => d.title).sort());
     const joined = rows.filter((r) => r.pin_sha !== null);
-    expect(joined).toHaveLength(2);
+    expect(joined).toHaveLength(3);
     for (const row of joined) {
-      expect(String(row.pin_sha)).toStartWith(String(row.version));
+      const pin = pins.find((p) => p.sha === row.pin_sha);
+      expect(
+        [pin?.sha, pin?.archon_sha].some((sha) => String(sha).startsWith(String(row.version))),
+      ).toBe(true);
       expect(versions).toContainEqual({ digest: row.digest, pin_sha: row.pin_sha });
     }
+    expect(rows.every((r) => r.ambiguous === false)).toBe(true);
+  });
+
+  test('Version: a8551bfe links to the pin of Archon a8551bfe, as a prefix of its own sha would', async () => {
+    const [v3] = await db.query(
+      `SELECT sha FROM mc.pins WHERE starts_with(archon_sha, 'a8551bfe') AND reason IS NULL`,
+    );
+    const row = (await timeline()).find((r) => r.version === 'a8551bfe');
+    expect(row).toMatchObject({ pin_sha: v3?.sha, ambiguous: false });
+    expect(row?.digest).not.toBeNull();
+  });
+
+  test('Version: none and none (factory consumer ...) link to no pin and are not ambiguous', async () => {
+    const rollback = new Error('rollback');
+    await db
+      .transaction(async (tx) => {
+        await tx.query(`INSERT INTO mc.decisions (date, title, decision, why, replaces, version)
+          VALUES ('2026-10-16', 'Consume the factory', 'd', 'w', 'r',
+            'none (factory consumer of coleam00/ai-software-factory)')`);
+        const rows = await tx.query(named('decisions-timeline'), ['mission-control']);
+        const none = rows.filter((r) => String(r.version).startsWith('none'));
+        expect(none).toHaveLength(2);
+        for (const row of none)
+          expect(row).toMatchObject({ pin_sha: null, ambiguous: false, digest: null });
+        throw rollback;
+      })
+      .catch((error) => {
+        if (error !== rollback) throw error;
+      });
+  });
+
+  test('a prefix that names two pins, one by its sha and one by its Archon sha, links to neither', async () => {
+    const rollback = new Error('rollback');
+    await db
+      .transaction(async (tx) => {
+        await tx.query(
+          `INSERT INTO mc.pins (sha, archon_sha, reason, committed_at)
+          VALUES ($1, $2, NULL, '2026-10-20T18:00:00Z')`,
+          ['f'.repeat(40), `8e3e1cef${'0'.repeat(32)}`],
+        );
+        await tx.query(
+          `INSERT INTO mc.verdicts (sha, pin, verdict, sentence, committed_at)
+          VALUES ($1, '5ffd60c6', 'hurt', 'slower.', '2026-10-21T00:00:00Z')`,
+          ['e'.repeat(40)],
+        );
+        const rows = await tx.query(named('decisions-timeline'), ['mission-control']);
+        expect(rows.find((r) => r.version === '8e3e1cef')).toMatchObject({
+          pin_sha: null,
+          ambiguous: true,
+          digest: null,
+        });
+        const ledger = await tx.query(named('improvements-ledger'), ['mission-control']);
+        // V1's verdict names 8e3e1cef, now a prefix of two pins: neither has it, and it is listed
+        // by its prefix as naming two pins.
+        expect(ledger.filter((r) => r.verdict === 'helped')).toEqual([
+          expect.objectContaining({ pin_sha: '8e3e1cef', pin_matches: 2, reason: null, laps: 0 }),
+        ]);
+        expect(ledger.find((r) => String(r.pin_sha).startsWith('5ffd60c6'))).toMatchObject({
+          verdict: 'hurt',
+          pin_matches: 1,
+        });
+        throw rollback;
+      })
+      .catch((error) => {
+        if (error !== rollback) throw error;
+      });
   });
 
   test('a digest only another workflow ran after a pin never becomes that pin’s version', async () => {
@@ -128,5 +198,82 @@ describe('decisions-timeline and improvements-ledger on the seed', () => {
     });
     expect(await byPin('5ffd60c6')).toMatchObject({ verdict: 'inconclusive' });
     expect(await byPin('58c5f774')).toMatchObject({ verdict: null });
+  });
+
+  test('a verdict naming a pin by its Archon sha gives that pin the verdict', async () => {
+    const rollback = new Error('rollback');
+    await db
+      .transaction(async (tx) => {
+        await tx.query(
+          `INSERT INTO mc.verdicts (sha, pin, verdict, sentence, committed_at)
+          VALUES ($1, 'a8551bfe', 'inconclusive', 'too few laps.', '2026-10-26T12:00:00Z')`,
+          ['d'.repeat(40)],
+        );
+        const ledger = await tx.query(named('improvements-ledger'), ['mission-control']);
+        const v3 = ledger.find((r) => String(r.pin_sha).startsWith('58c5f774'));
+        expect(v3).toMatchObject({ verdict: 'inconclusive', reason: null });
+        throw rollback;
+      })
+      .catch((error) => {
+        if (error !== rollback) throw error;
+      });
+  });
+
+  test('Verdict: a8551bfe on two pins, by one Archon sha and one commit sha, is listed as ambiguous', async () => {
+    const rollback = new Error('rollback');
+    await db
+      .transaction(async (tx) => {
+        await tx.query(
+          `INSERT INTO mc.verdicts (sha, pin, verdict, sentence, committed_at)
+          VALUES ($1, 'a8551bfe', 'hurt', 'slower.', '2026-10-26T12:00:00Z'),
+            ($2, 'a8551bfe', 'inconclusive', 'too few laps.', '2026-10-25T12:00:00Z')`,
+          ['d'.repeat(40), 'c'.repeat(40)],
+        );
+        const before = await tx.query(named('improvements-ledger'), ['mission-control']);
+        expect(before.find((r) => String(r.pin_sha).startsWith('58c5f774'))).toMatchObject({
+          verdict: 'hurt',
+        });
+        await tx.query(
+          `INSERT INTO mc.pins (sha, archon_sha, reason, committed_at)
+          VALUES ($1, $2, 'conflict', '2026-10-27T00:00:00Z')`,
+          [`a8551bfe${'1'.repeat(32)}`, '2'.repeat(40)],
+        );
+        const ledger = await tx.query(named('improvements-ledger'), ['mission-control']);
+        // V3 (Archon a8551bfe) loses the verdict; the new pin a8551bfe1... never gets it.
+        const named8551 = ledger.filter(
+          (r) => r.verdict !== null && /^(a8551bfe|58c5f774)/.test(String(r.pin_sha)),
+        );
+        expect(named8551).toEqual([
+          expect.objectContaining({ pin_sha: 'a8551bfe', pin_matches: 2, sentence: 'slower.' }),
+        ]);
+        expect(ledger.filter((r) => r.pin_matches === 1).length).toBe(
+          before.filter((r) => r.pin_matches === 1).length + 1,
+        );
+        throw rollback;
+      })
+      .catch((error) => {
+        if (error !== rollback) throw error;
+      });
+  });
+
+  test('a verdict whose prefix names no pin is listed with no pin', async () => {
+    const rollback = new Error('rollback');
+    await db
+      .transaction(async (tx) => {
+        await tx.query(
+          `INSERT INTO mc.verdicts (sha, pin, verdict, sentence, committed_at)
+          VALUES ($1, 'deadbeef', 'helped', 'faster.', '2026-10-26T12:00:00Z')`,
+          ['d'.repeat(40)],
+        );
+        const ledger = await tx.query(named('improvements-ledger'), ['mission-control']);
+        expect(ledger.filter((r) => r.pin_sha === 'deadbeef')).toEqual([
+          expect.objectContaining({ pin_matches: 0, verdict: 'helped', measure: null }),
+        ]);
+        expect(await tx.query(named('improvements-ledger'), ['empty-check'])).toEqual([]);
+        throw rollback;
+      })
+      .catch((error) => {
+        if (error !== rollback) throw error;
+      });
   });
 });

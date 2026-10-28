@@ -71,14 +71,16 @@ const decisionsOnScreen = `[...document.querySelectorAll('${DECISION}')].map((li
   text: li.textContent ?? '',
 }))`;
 
-// Read the seed's materialized version joins independently of the live timeline query.
+// Read the seed's materialized version joins independently of the live timeline query: a version
+// names the one pin whose sha or Archon sha it prefixes, and a prefix of several is ambiguous.
 const DECISION_DESTINATIONS_SQL = `SELECT d.date::text AS date, d.title, d.version,
-  p.sha AS pin_sha, v.digest
+  p.sha AS pin_sha, p.ambiguous, v.digest
 FROM mc.decisions d
-LEFT JOIN LATERAL (
-  SELECT sha FROM mc.pins WHERE d.version <> '' AND starts_with(sha, d.version)
-  ORDER BY committed_at DESC LIMIT 1
-) p ON true
+CROSS JOIN LATERAL (
+  SELECT CASE WHEN count(*) = 1 THEN min(sha) END AS sha, count(*) > 1 AS ambiguous
+  FROM mc.pins
+  WHERE d.version <> '' AND (starts_with(sha, d.version) OR starts_with(archon_sha, d.version))
+) p
 LEFT JOIN LATERAL (
   SELECT digest FROM mc.versions WHERE factory = $1 AND pin_sha = p.sha
   ORDER BY first_run_at LIMIT 1
@@ -109,7 +111,10 @@ export function compareDecision(
       mismatches.push(`${key}: screen ${shown?.[key]}, seed ${expected[key]}`);
     }
   }
-  if (seed.pin_sha === null && !shown?.text.includes(`${seed.version}, no pin by that prefix`)) {
+  const unlinked = seed.ambiguous
+    ? 'ambiguous: several pins by that prefix'
+    : 'no pin by that prefix';
+  if (seed.pin_sha === null && !shown?.text.includes(`${seed.version}, ${unlinked}`)) {
     mismatches.push('unmatched decision is missing its non-link explanation');
   }
   return mismatches;
@@ -362,8 +367,9 @@ async function seedDecisionMismatches(
   const decisions = await page.evaluate<ShownDecision[]>(decisionsOnScreen);
   const ledgerShown = await page.evaluate<ShownLedgerEntry[]>(ledgerOnScreen);
   const seedDecisions = await db.query(DECISION_DESTINATIONS_SQL, [factory]);
-  const pins = await db.query('SELECT sha FROM mc.pins ORDER BY committed_at');
-  const [v1, v2] = pins.map((p) => String(p.sha));
+  const pins = await db.query('SELECT sha, archon_sha FROM mc.pins ORDER BY committed_at');
+  const [v1, v2, v3] = pins.map((p) => String(p.sha));
+  const v3Archon = String(pins[2]?.archon_sha);
   const [v2Sql] = await db.query(V2_WAITING_SQL, [factory, v2]);
   const [v1Verdict] = await db.query(
     `SELECT verdict, sentence FROM mc.verdicts WHERE $1 LIKE pin || '%' ORDER BY committed_at DESC LIMIT 1`,
@@ -382,8 +388,18 @@ async function seedDecisionMismatches(
     );
   });
   const joined = decisions.flatMap((d) => (d.link === null ? [] : [d.link]));
-  if (joined.length !== 2 || !joined.includes(v1) || !joined.includes(v2)) {
-    mismatches.push(`the joined decisions link to ${joined.join(', ')}, expected V1 and V2`);
+  if (joined.length !== 3 || ![v1, v2, v3].every((pin) => joined.includes(pin))) {
+    mismatches.push(`the joined decisions link to ${joined.join(', ')}, expected V1, V2 and V3`);
+  }
+  // V3's decision names it by its Archon sha, as `DECISIONS.md` does (#178).
+  const byArchon = seedDecisions.find(
+    (d) => d.version !== 'none' && v3Archon.startsWith(String(d.version)),
+  );
+  const byArchonShown = decisions.find((d) => d.title === byArchon?.title);
+  if (byArchon === undefined || byArchonShown?.link !== v3) {
+    mismatches.push(
+      `the decision naming V3's Archon sha ${v3Archon.slice(0, 8)} links to ${byArchonShown?.link ?? 'nothing'}, expected V3`,
+    );
   }
   const v2Shown = ledgerShown.find((e) => e.pin === v2);
   if (v2Shown?.group !== 'testing') {
@@ -410,7 +426,7 @@ async function seedDecisionMismatches(
     ...seedDecisions.map((d) => `  ${JSON.stringify(d)}`),
     'ledger on screen:',
     ...ledgerShown.map((e) => `  ${JSON.stringify(e)}`),
-    `V1 = ${v1}, V2 = ${v2} (seed pins by commit)`,
+    `V1 = ${v1}, V2 = ${v2}, V3 = ${v3} (Archon ${v3Archon}) (seed pins by commit)`,
     `V2 laps waiting by SQL ($1 = ${factory}, $2 = V2):`,
     ...V2_WAITING_SQL.split('\n').map((line) => `  ${line}`),
     `  -> ${JSON.stringify(v2Sql)}`,
