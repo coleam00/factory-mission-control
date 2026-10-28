@@ -75,9 +75,9 @@ export function FactoryStripBody({
   }
   return (
     <>
-      <span className="font-mono text-sm text-text-primary [overflow-wrap:anywhere]">
-        {factory ?? '-'}
-      </span>
+      {/* The switcher above already names the factory on screen; this copy is for assistive
+          tech and for checks that read the strip's text, so the name shows once. */}
+      <span className="sr-only">{factory ?? '-'}</span>
       {state === 'error' ? (
         <p className="text-sm text-text-secondary">Live data is unavailable.</p>
       ) : (
