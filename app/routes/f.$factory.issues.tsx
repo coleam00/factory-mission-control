@@ -4,7 +4,7 @@ import { IssueGraph } from '../components/IssueGraph';
 
 export default function Issues(): ReactElement {
   return (
-    <main className="mx-auto max-w-6xl px-6 py-6">
+    <main className="mx-auto max-w-[1840px] px-6 py-6">
       <IssueGraph factory={useParams().factory} />
     </main>
   );
