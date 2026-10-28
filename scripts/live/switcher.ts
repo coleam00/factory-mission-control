@@ -1,5 +1,6 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { SECOND_FACTORY } from '../fixture/seed';
 import { openPage, type Page } from '../lib/cdp';
 import {
   freePort,
@@ -83,7 +84,7 @@ const namesIn = (file: string): string[] =>
 
 /**
  * The factory switcher on the running app (#77): it lists every row of `mc.factories` its
- * server's factories file names, with its running laps, live; choosing the second factory shows its name, map and laps, keeps the screen,
+ * server's factories file names, with its running laps, live; choosing the seed's second factory shows its name, map and laps, keeps the screen,
  * and is remembered; a remembered factory that no longer exists falls back with no error. A server reading
  * factories.json alone lists only its factories, though the seed's second is in `mc.factories`.
  */
@@ -111,10 +112,10 @@ async function checkSwitcher(ctx: LiveContext): Promise<void> {
   const shownBy = (names: readonly string[]) =>
     counts().then((rows) => rows.filter(([name]) => names.includes(name)));
   const listed = await shownBy(namesIn(factoriesFile));
-  const second = listed.map(([name]) => name).find((name) => name !== factory);
-  if (second === undefined) {
+  const second = SECOND_FACTORY.name;
+  if (!listed.some(([name]) => name === second)) {
     failures.push(
-      `switcher: mc.factories holds ${listed.length} of the factories file's, the check needs two`,
+      `switcher: mc.factories holds no ${second}, the check needs the seed's second factory`,
     );
     return;
   }

@@ -31,6 +31,7 @@ const attempt = (step_id: string, minute: number, status = 'completed'): StepAtt
   cost_usd: null,
   outcome: null,
   error: null,
+  position: null,
 });
 
 test("a nested step's Archon id is its path joined with __", () => {
