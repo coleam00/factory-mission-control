@@ -80,10 +80,11 @@ async function dashboardCounts(): Promise<Record<string, number>> {
   return counts;
 }
 
-/** How many values in every mc text and json column contain the marker. */
+/** How many values in every mc text, json and array column contain the marker. */
 async function markerCount(): Promise<number> {
   const columns = await db.query(`SELECT table_name, column_name FROM information_schema.columns
-    WHERE table_schema = 'mc' AND data_type IN ('text', 'character varying', 'jsonb', 'json')`);
+    WHERE table_schema = 'mc'
+      AND data_type IN ('text', 'character varying', 'jsonb', 'json', 'ARRAY')`);
   expect(columns.length).toBeGreaterThan(0);
   let found = 0;
   for (const { table_name, column_name } of columns) {
@@ -272,6 +273,7 @@ test('the eligibility upgrade keeps live history and installs the same functions
     expect(await snapshot(upgraded)).toEqual(before);
     expect(await runMigrations({ files: migrationFiles, db: upgraded })).toEqual([
       '0013_step_attempt_identity.sql',
+      '0014_pre_existing_refs.sql',
     ]);
     expect(await projectionDefinitions(upgraded)).toEqual(await projectionDefinitions(db));
     expect(await runMigrations({ files: migrationFiles, db: upgraded })).toEqual([]);
@@ -315,6 +317,7 @@ test('0011 rewrites a short pin to the one full sha it prefixes, and clears ambi
       '0011_pin_full_archon_sha.sql',
       '0012_arch_text_lf.sql',
       '0013_step_attempt_identity.sql',
+      '0014_pre_existing_refs.sql',
     ]);
     const migrated = [
       { sha: 'p1', archon_sha: full },
@@ -374,6 +377,7 @@ test('0012 rewrites CRLF to LF in stored architecture texts, and changes nothing
     expect(await runMigrations({ files: migrationFiles, db: historical })).toEqual([
       '0012_arch_text_lf.sql',
       '0013_step_attempt_identity.sql',
+      '0014_pre_existing_refs.sql',
     ]);
     const migrated = [
       { kind: 'hook', path: '.factory/hooks/gate.sh', text: 'exit 0\n' },
@@ -438,6 +442,7 @@ test('0013 gives back the runs of a step the old key merged, and changes nothing
 
     expect(await runMigrations({ files: migrationFiles, db: historical })).toEqual([
       '0013_step_attempt_identity.sql',
+      '0014_pre_existing_refs.sql',
     ]);
     expect(await attempts()).toEqual([
       { step_id: 'land', outcome: 'merged', cost_usd: null },
@@ -595,6 +600,56 @@ test('every projection function stops a lock wait after 100 ms, and only inside 
   expect(await db.query('SHOW lock_timeout')).toEqual([{ lock_timeout: '0' }]);
 });
 
+test('0014 keeps only a stored citation’s references, and changes nothing run again', async () => {
+  const historical = await archonDb();
+  try {
+    await runMigrations({ files: migrationFiles.filter((f) => f.name < '0014'), db: historical });
+    const [run] = await historical.query(
+      `INSERT INTO public.remote_agent_workflow_runs (workflow_name, user_message)
+       VALUES ('archon-loop', 'historical') RETURNING id`,
+    );
+    for (const [position, citation] of [
+      '',
+      'baseline/health.txt',
+      `${MARKER} fails on main in run 675828cb-50ab-4296-9ba0-3c999bee3960, see #14`,
+    ].entries()) {
+      await historical.query(
+        `INSERT INTO mc.app_check_lines (run_id, position, kind, verdict, evidence_count, pre_existing)
+         VALUES ($1, $2, 'probe', 'FAIL', 0, $3)`,
+        [run?.id, position + 1, citation],
+      );
+    }
+
+    expect(await runMigrations({ files: migrationFiles, db: historical })).toEqual([
+      '0014_pre_existing_refs.sql',
+    ]);
+    const lines = () =>
+      historical.query(
+        `SELECT position, pre_existing, pre_existing_refs, pre_existing_refs::text LIKE $1 AS marked
+         FROM mc.app_check_lines ORDER BY position`,
+        [`%${MARKER}%`],
+      );
+    const converted = [
+      { position: 1, pre_existing: false, pre_existing_refs: [], marked: false },
+      { position: 2, pre_existing: true, pre_existing_refs: [], marked: false },
+      {
+        position: 3,
+        pre_existing: true,
+        pre_existing_refs: ['#14', '675828cb-50ab-4296-9ba0-3c999bee3960'],
+        marked: false,
+      },
+    ];
+    expect(await lines()).toEqual(converted);
+    const migrated = await snapshot(historical);
+    const [refs] = migrationFiles.filter((f) => f.name.startsWith('0014'));
+    await historical.query(refs?.sql ?? '');
+    expect(await snapshot(historical)).toEqual(migrated);
+    expect(await lines()).toEqual(converted);
+  } finally {
+    await historical.close();
+  }
+});
+
 test('check-app lines keep kind, verdict, evidence count and only a holdout’s scenario id', async () => {
   const report = structuredOutputFor('check-app') as {
     lines: Record<string, unknown>[];
@@ -622,7 +677,7 @@ test('check-app lines keep kind, verdict, evidence count and only a holdout’s 
 
   expect(
     await db.query(
-      `SELECT position, kind, verdict, evidence_count, pre_existing, scenario_id
+      `SELECT position, kind, verdict, evidence_count, pre_existing, pre_existing_refs, scenario_id
        FROM mc.app_check_lines ORDER BY position`,
     ),
   ).toEqual([
@@ -631,7 +686,8 @@ test('check-app lines keep kind, verdict, evidence count and only a holdout’s 
       kind: 'criterion',
       verdict: 'PASS',
       evidence_count: 1,
-      pre_existing: '',
+      pre_existing: false,
+      pre_existing_refs: [],
       scenario_id: null,
     },
     {
@@ -639,7 +695,8 @@ test('check-app lines keep kind, verdict, evidence count and only a holdout’s 
       kind: 'holdout',
       verdict: 'FAIL',
       evidence_count: 2,
-      pre_existing: '',
+      pre_existing: false,
+      pre_existing_refs: [],
       scenario_id: 'H-07',
     },
     {
@@ -647,7 +704,8 @@ test('check-app lines keep kind, verdict, evidence count and only a holdout’s 
       kind: 'holdout',
       verdict: 'PASS',
       evidence_count: 0,
-      pre_existing: '',
+      pre_existing: false,
+      pre_existing_refs: [],
       scenario_id: 'unidentified',
     },
     {
@@ -655,7 +713,8 @@ test('check-app lines keep kind, verdict, evidence count and only a holdout’s 
       kind: 'probe',
       verdict: 'OK',
       evidence_count: 1,
-      pre_existing: 'baseline/health.txt',
+      pre_existing: true,
+      pre_existing_refs: [],
       scenario_id: null,
     },
   ]);
@@ -663,6 +722,81 @@ test('check-app lines keep kind, verdict, evidence count and only a holdout’s 
     { output: { pr: '#29', head: report.head, merged_with: report.merged_with, overall: 'PASS' } },
   ]);
 
+  expect(await markerCount()).toBe(0);
+});
+
+test('a line’s pre-existing citation keeps only the references it names, never its text', async () => {
+  const report = structuredOutputFor('check-app') as { lines: Record<string, unknown>[] };
+  const holdout = (id: string, preExisting: string) => ({
+    id,
+    kind: 'holdout',
+    verdict: 'FAIL',
+    text: `H-0${id} ${MARKER}`,
+    evidence: [],
+    pre_existing: preExisting,
+  });
+  const [event] = await insertEvent('node_completed', 'check-app', {
+    ...eventData('check-app', 'node_completed', NOW),
+    structured_output: {
+      ...report,
+      lines: [
+        holdout(
+          '1',
+          `${MARKER} fails on main at 8AAD49143CFCB155CA918A0513CF99D381263E30, tracked in #14 and https://github.com/o/r/pull/216; see C:\\runs\\675828CB-50AB-4296-9BA0-3c999bee3960\\holdout-runs\\base-results.txt`,
+        ),
+        holdout('2', `${MARKER} the same thing happens on main`),
+        holdout('3', ' \t\n'),
+        holdout('4', ''),
+      ],
+    },
+  });
+
+  expect(
+    await db.query(
+      `SELECT position, verdict, scenario_id, pre_existing, pre_existing_refs
+       FROM mc.app_check_lines ORDER BY position`,
+    ),
+  ).toEqual([
+    {
+      position: 1,
+      verdict: 'FAIL',
+      scenario_id: 'H-01',
+      pre_existing: true,
+      pre_existing_refs: [
+        '#14',
+        '#216',
+        '675828cb-50ab-4296-9ba0-3c999bee3960',
+        '8aad49143cfcb155ca918a0513cf99d381263e30',
+      ],
+    },
+    {
+      position: 2,
+      verdict: 'FAIL',
+      scenario_id: 'H-02',
+      pre_existing: true,
+      pre_existing_refs: [],
+    },
+    {
+      position: 3,
+      verdict: 'FAIL',
+      scenario_id: 'H-03',
+      pre_existing: false,
+      pre_existing_refs: [],
+    },
+    {
+      position: 4,
+      verdict: 'FAIL',
+      scenario_id: 'H-04',
+      pre_existing: false,
+      pre_existing_refs: [],
+    },
+  ]);
+  expect(
+    await db.query('SELECT holdout_catches FROM mc.lap_step_attempts WHERE event_id = $1', [
+      event?.id,
+    ]),
+  ).toEqual([{ holdout_catches: 2 }]);
+  expect(await projectionErrors()).toEqual([]);
   expect(await markerCount()).toBe(0);
 });
 

@@ -67,7 +67,7 @@ export function RewindRows({
           </button>
         </div>
       )}
-      <ol className="border-t border-border/40">
+      <ol className="overflow-hidden rounded-[10px] border border-border bg-surface [&>li:last-child]:border-b-0">
         {rows.map((row) => {
           const current = row.name === shown;
           return (
@@ -76,7 +76,7 @@ export function RewindRows({
               data-rewind-branch={row.name}
               data-current={current ? '' : undefined}
               className={`flex flex-wrap items-center gap-x-[18px] gap-y-1 border-b border-border/40 px-[18px] py-[13px] ${
-                current ? 'bg-surface-hover ring-2 ring-inset ring-accent-bright/40' : ''
+                current ? 'bg-[color:var(--accent-soft)] ring-2 ring-inset ring-selected' : ''
               }`}
             >
               <span className={`${MONO} min-w-0 break-all font-bold text-text-primary`}>

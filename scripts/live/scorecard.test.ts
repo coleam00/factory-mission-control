@@ -26,10 +26,10 @@ test('the scorecard comparison counts a number missing from the screen as a mism
   };
   const { comparisons, mismatches, lapListFailures } = compareScorecard(
     [
-      cell('merges', '3.0000'),
+      cell('merges', '3'),
       cell('cost_per_merge', 'n/a'),
-      cell('send_backs', '2.0000', { laps: '11', listed: 11, summary: '11 laps' }),
-      cell('laps', '12.0000', { listed: 11 }),
+      cell('send_backs', '2', { laps: '11', listed: 11, summary: '11 laps' }),
+      cell('laps', '12', { listed: 11 }),
     ],
     expected,
   );

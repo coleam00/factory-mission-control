@@ -218,7 +218,7 @@ test('with no check-app on a finished lap, app-check share is 0, not n/a', () =>
     ...lap('y', '2026-10-01T09:00:00Z', null, [step('y', 'check-app', { duration_ms: 60_000 })]),
   ]);
   expect(s.app_check_share).toEqual({ value: 0, laps: ['x'] });
-  expect(dataValue(s.app_check_share.value)).toBe('0.0000');
+  expect(dataValue(s.app_check_share.value)).toBe('0');
   const timed = card(
     lap('x', '2026-10-01T09:00:00Z', '2026-10-01T10:00:00Z', [
       step('x', 'check-app', { duration_ms: 0 }),

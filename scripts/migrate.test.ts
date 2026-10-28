@@ -9,6 +9,15 @@ import { loadFactories, main, migrationsDir, readMigrationFiles, runMigrations }
 
 const REPO_ROOT = join(import.meta.dir, '..');
 const FACTORIES = factories.factories;
+/** One factory, independent of what the committed factories.json lists. */
+const MISSION_CONTROL = [
+  {
+    name: 'mission-control',
+    repository: 'coleam00/factory-mission-control',
+    codebase: 'coleam00/factory-mission-control',
+    console: 'http://localhost:3090',
+  },
+];
 
 const scratch: string[] = [];
 afterEach(() => {
@@ -340,9 +349,12 @@ test('loading the factories updates stale rows and attributes the laps projected
       [none]: '',
     });
 
-    expect(await loadFactories({ entries: FACTORIES, db })).toEqual({ factories: 1, laps: 2 });
+    expect(await loadFactories({ entries: MISSION_CONTROL, db })).toEqual({
+      factories: 1,
+      laps: 2,
+    });
     expect(await db.query(`SELECT * FROM mc.factories WHERE name = 'mission-control'`)).toEqual(
-      FACTORIES,
+      MISSION_CONTROL,
     );
     expect(await factoryOf()).toEqual({
       [named]: 'mission-control',
@@ -354,7 +366,10 @@ test('loading the factories updates stale rows and attributes the laps projected
       { name: 'mission-control' },
       { name: 'retired' },
     ]);
-    expect(await loadFactories({ entries: FACTORIES, db })).toEqual({ factories: 0, laps: 0 });
+    expect(await loadFactories({ entries: MISSION_CONTROL, db })).toEqual({
+      factories: 0,
+      laps: 0,
+    });
   } finally {
     await db.close();
   }

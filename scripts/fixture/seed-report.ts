@@ -127,7 +127,7 @@ const MINIMUMS: { name: string; min: number; sql: string }[] = [
     name: 'app-check-lines.holdout-fail-empty-pre-existing',
     min: 1,
     sql: `SELECT count(*) AS n FROM mc.app_check_lines
-      WHERE kind = 'holdout' AND verdict = 'FAIL' AND pre_existing = ''`,
+      WHERE kind = 'holdout' AND verdict = 'FAIL' AND NOT pre_existing`,
   },
   {
     name: 'app-check-lines.holdout-unidentified',

@@ -44,11 +44,23 @@ How this repository is built. The product is `docs/mission-control.prd.md`; this
   Never `DATABASE_URL`. Never commit a secret; `.mc-check.env` is gitignored.
 - Serve on `127.0.0.1:<port>`, open as `http://localhost:<port>`, ports 8850-8864 only.
 - Holdout scenario text never enters the dashboard's tables or screens: ids and verdicts only.
-- Design: copy from `docs/design/archon-console/` (tokens in `index.css` and `theme.css`, and the
-  components). Dark only. No color or font outside the tokens. Data in Geist Mono with tabular
-  numbers; section labels mono, uppercase, tracked. Status colors: blue running, teal success,
-  amber waiting, red failed; magenta is identity only. Empty states are one sentence and at most
-  one button.
+- Design: dark only, Geist for text and Geist Mono for data. Copy the components from
+  `docs/design/archon-console/`. Colors live in one place: the tokens in `index.css` and
+  `theme.css` there, copied identically into `app/styles.css` (`styles.test.ts` holds the copy,
+  and the design probe fails any rendered color outside them). Change a color by changing its
+  token, never inline. The palette is the Dynamous brand (owner decision, #240): Dynamous Blue
+  `#3B82F6` is the one accent (selection, the active tab, focus), Dynamous Dark `#2563EB` for
+  hover and outlines, Dynamous Light `#60A5FA` for link text and secondary accents; the page is
+  `#07090F` / `#080A13` under a faded brand gradient
+  (`linear-gradient(to bottom, #07090F, rgba(30, 58, 138, 0.9), #080A13)`), never flat black;
+  the header, factory strip and nav sit on deep blue (`#1E3A8A`-tinted); cards, panels and graph
+  nodes on blue-tinted surface steps between `#07090F` and `#1E3A5F`, so sections separate by
+  color; borders `rgba(255, 255, 255, 0.1)`. Text meets WCAG AA (4.5:1) on every surface. Status
+  colors stay distinct from the accent: running is Dynamous Light and always pulses or glows,
+  selection is solid Dynamous Blue; teal success, amber waiting, red failed (the brand's
+  `#047857`, `#B45309` and `#B91C1C` are the `--*-strong` tokens). Magenta is not used. Data in Geist Mono with tabular
+  numbers; section labels mono, uppercase, tracked. Empty states are one sentence and at most one
+  button.
 - Tests sit next to the code they test (`*.test.ts`). Parsers are tested on the literal examples in
   the PRD's appendix and on `fixtures/pack/`.
 - Stop every process you start by its process id; never kill by name.
