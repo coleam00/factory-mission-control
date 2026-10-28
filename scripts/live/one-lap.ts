@@ -68,6 +68,7 @@ interface OneLapOnScreen {
   cost: number | null;
   checks: {
     position: number | null;
+    label: string | null;
     kind: string | null;
     verdict: string | null;
     evidence: number | null;
@@ -115,6 +116,7 @@ const oneLapOnScreen = `(() => {
     cost: num(document.querySelector('[data-live="one-lap-steps"] [data-lap-cost]'), 'data-lap-cost'),
     checks: [...document.querySelectorAll('[data-live="one-lap-checks"] [data-check-line]')].map((li) => ({
       position: num(li, 'data-position'),
+      label: attr(li, 'data-line-id'),
       kind: attr(li, 'data-kind'),
       verdict: attr(li, 'data-verdict'),
       evidence: num(li, 'data-evidence'),
@@ -240,12 +242,13 @@ async function seedOneLapMismatches(
   }
 
   const lines = await db.query(
-    `SELECT position, kind, verdict, evidence_count, scenario_id
+    `SELECT position, line_id, kind, verdict, evidence_count, scenario_id
      FROM mc.app_check_lines WHERE run_id = $1 ORDER BY position`,
     [runId],
   );
   const checksSql = lines.map((r) => ({
     position: Number(r.position),
+    label: r.line_id,
     kind: r.kind,
     verdict: r.verdict,
     evidence: Number(r.evidence_count),
