@@ -5,8 +5,10 @@ import {
   type FrameNode,
   type HomeMapRow,
   homeMap,
-  layoutLoop,
+  layoutSteps,
+  type StepGraph,
   type StepNode,
+  stepLabelLines,
 } from '../lib/home-map';
 import { LiveDot } from './LiveDot';
 import { GraphViewport } from './GraphViewport';
@@ -47,10 +49,11 @@ function Step({ node, box }: { node: StepNode; box: Box }): ReactElement {
     <Link
       to={node.href}
       data-node-role={node.role}
+      data-workflow={node.workflow}
       data-step={node.id}
       data-live-count={node.liveCount}
       aria-label={`${node.label}, ${laps}`}
-      title={`${node.label} · ${node.kind} · ${laps}`}
+      title={`${node.id} · ${node.kind} · ${laps}`}
       className={`${NODE} absolute transition-colors hover:brightness-110 ${
         running
           ? 'border-[color:color-mix(in_oklch,var(--running),transparent_40%)] bg-[color:color-mix(in_oklch,var(--running),transparent_90%)]'
@@ -67,8 +70,14 @@ function Step({ node, box }: { node: StepNode; box: Box }): ReactElement {
         {KIND_GLYPH[node.kind] ?? '·'}
       </span>
       <span className="flex min-w-0 flex-1 flex-col">
-        <span className="truncate font-mono text-[13px] font-semibold text-text-primary">
-          {node.label}
+        {/* The whole name, never cut: the layout sized this box for these lines. */}
+        <span
+          data-step-name
+          className="flex flex-col whitespace-nowrap font-mono text-[13px] font-semibold leading-[17px] text-text-primary"
+        >
+          {stepLabelLines(node.label).map((line, index) => (
+            <span key={index === 0 ? 'first' : 'second'}>{line}</span>
+          ))}
         </span>
         {others.length > 0 ? (
           <span
@@ -118,6 +127,77 @@ function Frame({ node }: { node: FrameNode }): ReactElement {
   );
 }
 
+/** A workflow's steps laid out with dagre, each include or loop group boxed with what it nests. */
+function StepGraphView({
+  graph,
+  label,
+  narrow,
+}: {
+  graph: StepGraph;
+  label: string;
+  narrow: boolean;
+}): ReactElement {
+  const laid = useMemo(() => layoutSteps(graph, narrow), [graph, narrow]);
+  const first = laid.nodes.get(graph.steps[0]?.id ?? '');
+  return (
+    <GraphViewport label={label} anchorX={first ? first.x + first.width / 2 : 0}>
+      <div className="relative mx-auto" style={{ width: laid.width, height: laid.height }}>
+        <svg
+          aria-hidden="true"
+          className="absolute inset-0 overflow-visible"
+          width={laid.width}
+          height={laid.height}
+        >
+          {laid.edges.map((e) => (
+            <path
+              key={`${e.from}→${e.to}`}
+              d={e.d}
+              fill="none"
+              stroke="var(--border-bright)"
+              strokeWidth={1.5}
+            />
+          ))}
+        </svg>
+        {[...laid.clusters].map(([parent, box]) => (
+          <div
+            key={parent}
+            aria-hidden="true"
+            className="absolute rounded-lg border border-dashed border-border-bright"
+            style={placed(box)}
+          />
+        ))}
+        {graph.steps.map((node) => {
+          const box = laid.nodes.get(node.id);
+          return box === undefined ? null : <Step key={node.id} node={node} box={box} />;
+        })}
+      </div>
+    </GraphViewport>
+  );
+}
+
+/** An input or the manager: a workflow of the pack shows its own steps under its name. */
+function WorkflowCard({
+  node,
+  graph,
+  narrow,
+}: {
+  node: FrameNode;
+  graph: StepGraph;
+  narrow: boolean;
+}): ReactElement {
+  return (
+    <div
+      data-node-role={node.role}
+      className="flex max-w-full flex-col gap-2 rounded-[9px] border border-border-bright bg-surface-elevated p-2.5"
+    >
+      <span className="px-1 font-mono text-[13px] font-semibold text-text-primary">
+        {node.label}
+      </span>
+      <StepGraphView graph={graph} label={node.label} narrow={narrow} />
+    </div>
+  );
+}
+
 function Band({ label, children }: { label: string; children: ReactNode }): ReactElement {
   return (
     <section className="flex flex-col gap-2">
@@ -127,19 +207,12 @@ function Band({ label, children }: { label: string; children: ReactNode }): Reac
   );
 }
 
-const frames = (nodes: FrameNode[]) => (
-  <div className="flex flex-wrap gap-2">
-    {nodes.map((node) => (
-      <Frame key={node.id} node={node} />
-    ))}
-  </div>
-);
-
 /**
  * The factory at the pinned version: what feeds it and the manager above the loop, the loop laid
- * out with dagre (each expanded step's stages boxed beside it), and what it produces below. Every
- * step shows how many of the factory's laps are on it now, and each other shown factory's laps
- * there under that factory's name, and opens its detail.
+ * out with dagre, and what it produces below. The loop, each input workflow and the manager show
+ * every step their includes expand, at every depth, inside a box per include. Every step shows
+ * how many of the factory's laps are on it now, and each other shown factory's laps there under
+ * that factory's name, and opens its detail under the workflow that declares it.
  */
 export function HomeMap({
   rows,
@@ -151,45 +224,24 @@ export function HomeMap({
 }): ReactElement {
   const map = useMemo(() => homeMap(rows, factories), [rows, factories]);
   const narrow = useSyncExternalStore(subscribeScreen, narrowScreen, () => false);
-  const laid = useMemo(() => layoutLoop(map, narrow), [map, narrow]);
-  const first = laid.nodes.get(map.loop[0]?.id ?? '');
+  const frames = (nodes: FrameNode[]) => (
+    <div className="flex flex-wrap items-start gap-2">
+      {nodes.map((node) => {
+        const graph = map.workflows.get(node.label);
+        return graph && graph.steps.length > 0 ? (
+          <WorkflowCard key={node.id} node={node} graph={graph} narrow={narrow} />
+        ) : (
+          <Frame key={node.id} node={node} />
+        );
+      })}
+    </div>
+  );
   return (
     <div className="flex flex-col gap-5">
       <Band label="Inputs">{frames(map.inputs)}</Band>
       <Band label="Manager">{frames(map.manager)}</Band>
       <Band label="Loop">
-        <GraphViewport label="loop" anchorX={first ? first.x + first.width / 2 : 0}>
-          <div className="relative mx-auto" style={{ width: laid.width, height: laid.height }}>
-            <svg
-              aria-hidden="true"
-              className="absolute inset-0 overflow-visible"
-              width={laid.width}
-              height={laid.height}
-            >
-              {laid.edges.map((e) => (
-                <path
-                  key={`${e.from}→${e.to}`}
-                  d={e.d}
-                  fill="none"
-                  stroke="var(--border-bright)"
-                  strokeWidth={1.5}
-                />
-              ))}
-            </svg>
-            {[...laid.clusters].map(([parent, box]) => (
-              <div
-                key={parent}
-                aria-hidden="true"
-                className="absolute rounded-lg border border-dashed border-border-bright"
-                style={placed(box)}
-              />
-            ))}
-            {map.loop.map((node) => {
-              const box = laid.nodes.get(node.id);
-              return box === undefined ? null : <Step key={node.id} node={node} box={box} />;
-            })}
-          </div>
-        </GraphViewport>
+        <StepGraphView graph={map.loop} label="loop" narrow={narrow} />
       </Band>
       <Band label="Outputs">{frames(map.outputs)}</Band>
     </div>

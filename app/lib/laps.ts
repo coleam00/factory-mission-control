@@ -50,6 +50,8 @@ export interface LaneRow {
   step_id: string | null;
   step_started_at: Date | null;
   cost_usd: number | string | null;
+  /** Every step the lap has run, `<step id> <status>`, oldest first; null before the first. */
+  steps: string[] | null;
 }
 
 /** One finished lap: completed, failed or cancelled. `outcome` is null when none applies. */

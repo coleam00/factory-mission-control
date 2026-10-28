@@ -29,11 +29,14 @@ const context = {
 const seen = {
   readyAt: 1200.4,
   requestedAt: 40.3,
+  sealedAt: 70.2,
   sentAt: 100.1,
   firstAt: 1100.2,
   renderedAt: 1200.4,
   subscribedAt: 100.1,
   context,
+  connectionStartAt: 3.4,
+  connectionReadyAt: 95.6,
 };
 const sql = 'SELECT $1::text AS factory, $2::text AS workflow, $3::text AS step';
 const queries = new Map([[context.query, sql]]);
@@ -49,7 +52,10 @@ const page: Page = {
   async close() {},
 };
 function mark(query = context.query, detail = context) {
+  performance.mark('live:connection:start', { startTime: 3.4 });
+  performance.mark('live:connection:ready', { startTime: 95.6 });
   performance.mark(`live:${query}:requested`, { startTime: 40.3 });
+  performance.mark(`live:${query}:sealed`, { startTime: 70.2 });
   performance.mark(`live:${query}:subscribe-sent`, { startTime: 100.1 });
   performance.mark(`live:${query}:first-result`, {
     startTime: 1100.2,
@@ -74,8 +80,11 @@ test('delivery stays evidence, rendering stays fractional, legacy and readiness 
   const timing = observedTimings(context.query, seen);
   expect(timing.readyMs).toBe(1200);
   expect(timing.requestedMs).toBe(40);
+  expect(timing.sealedMs).toBe(70);
   expect(timing.subscribeSentMs).toBe(100);
   expect(timing.firstSnapshotMs).toBe(1100);
+  expect(timing.connectionStartMs).toBe(3);
+  expect(timing.connectionReadyMs).toBe(96);
   expect(timing.subscribeToFirstResultMs).toBeCloseTo(1000.1);
   expect(timing.renderMs).toBeCloseTo(100.2);
   expect(performanceFailures(context.query, { ...timing, queryExecutionMs: 99.999 })).toEqual([]);
@@ -129,8 +138,11 @@ test('collector joins the first ready observation by ID, including when another 
   expect(timing.queryContext).toEqual(context);
   expect(timing.renderMs).toBeCloseTo(100.2);
   expect(timing.requestedMs).toBe(40);
+  expect(timing.sealedMs).toBe(70);
   expect(timing.subscribeSentMs).toBe(100);
   expect(timing.firstSnapshotMs).toBe(1100);
+  expect(timing.connectionStartMs).toBe(3);
+  expect(timing.connectionReadyMs).toBe(96);
 });
 
 test('collector awaits effect marks without resetting their timestamps and missing marks time out', async () => {
@@ -140,6 +152,7 @@ test('collector awaits effect marks without resetting their timestamps and missi
   const absent = await collectPanelMarks(page, ['absent'], 0);
   expect(absent.absent.readyMs).toBeNull();
   expect(absent.absent.requestedMs).toBeNull();
+  expect(absent.absent.sealedMs).toBeNull();
   expect(absent.absent.subscribeSentMs).toBeNull();
   expect(absent.absent.measurementError).toContain('absent');
 });
@@ -323,14 +336,14 @@ test('real JSON EXPLAIN binds parameters and a delayed empty query fails the que
   }
 });
 
-test('a ready over its limit names navigation to requested, requested to subscribe sent and subscribe sent to ready', () => {
+test('a ready over its limit names the Realtime connection and each stretch from navigation to ready', () => {
   const timing = observedTimings(context.query, seen);
   expect(readyFailures('diff screen', timing, 2000)).toEqual([]);
   expect(readyFailures('diff screen', timing, 1199)).toEqual([
-    'diff screen ready after 1200 ms, limit 1199: navigation to requested 40 ms, requested to subscribe sent 60 ms, subscribe sent to ready 1100 ms',
+    'diff screen ready after 1200 ms, limit 1199 (Realtime connection started 3 ms, ready 96 ms): navigation to requested 40 ms, requested to sealed 30 ms, sealed to subscribe sent 30 ms, subscribe sent to ready 1100 ms',
   ]);
   expect(readyFailures('diff screen', emptyPanelTimings(), 2000)).toEqual([
-    'diff screen ready after null ms, limit 2000: navigation to requested not marked, requested to subscribe sent not marked, subscribe sent to ready not marked',
+    'diff screen ready after null ms, limit 2000 (Realtime connection started not marked, ready not marked): navigation to requested not marked, requested to sealed not marked, sealed to subscribe sent not marked, subscribe sent to ready not marked',
   ]);
 });
 
@@ -339,6 +352,7 @@ test('a group carries both marks per panel and its ready failure names every pan
     ...seen,
     readyAt: 3451.2,
     requestedAt: 900.4,
+    sealedAt: 960.3,
     sentAt: 1000.1,
   });
   const group = groupTimings({
@@ -346,11 +360,19 @@ test('a group carries both marks per panel and its ready failure names every pan
     other: slow,
   });
   expect(group.requestedMs).toEqual({ [context.query]: 40, other: 900 });
+  expect(group.sealedMs).toEqual({ [context.query]: 70, other: 960 });
   expect(group.subscribeSentMs).toEqual({ [context.query]: 100, other: 1000 });
+  expect(group.connectionReadyMs).toEqual({ [context.query]: 96, other: 96 });
   expect(JSON.parse(JSON.stringify(group)).requestedMs).toEqual(group.requestedMs);
   expect(readyFailures('laps screen', group, 2000)).toEqual([
-    'laps screen ready after 3451 ms, limit 2000: ' +
-      `${context.query} navigation to requested 40 ms, requested to subscribe sent 60 ms, subscribe sent to ready 1100 ms; ` +
-      'other navigation to requested 900 ms, requested to subscribe sent 100 ms, subscribe sent to ready 2451 ms',
+    'laps screen ready after 3451 ms, limit 2000 (Realtime connection started 3 ms, ready 96 ms): ' +
+      `${context.query} navigation to requested 40 ms, requested to sealed 30 ms, sealed to subscribe sent 30 ms, subscribe sent to ready 1100 ms; ` +
+      'other navigation to requested 900 ms, requested to sealed 60 ms, sealed to subscribe sent 40 ms, subscribe sent to ready 2451 ms',
+  ]);
+  expect(
+    readyFailures('laps screen', groupTimings({ missing: emptyPanelTimings() }), 2000),
+  ).toEqual([
+    'laps screen ready after null ms, limit 2000 (Realtime connection started not marked, ready not marked): ' +
+      'missing navigation to requested not marked, requested to sealed not marked, sealed to subscribe sent not marked, subscribe sent to ready not marked',
   ]);
 });

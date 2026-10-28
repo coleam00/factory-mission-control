@@ -22,6 +22,7 @@ const lane = (over: Partial<LaneRow>): LaneRow => ({
   step_id: 'ship__intel',
   step_started_at: new Date('2026-10-21T09:04:00Z'),
   cost_usd: '1.3',
+  steps: ['pick completed', 'claim completed', 'ship__intel running'],
   ...over,
 });
 
@@ -120,4 +121,17 @@ test('every outcome is labelled and links its lap; a lap with none says its stat
   expect(html).toContain('href="/f/mission-control/laps/5eed0001-0000-4000-8000-000000000000"');
   expect(html).toContain('1:30:00');
   expect(html).toContain('ended 2026-10-01 09:30 UTC');
+});
+
+test("a lane's row of loop steps checks what is done, pulses what runs, dims the rest", () => {
+  const html = render(<LaneList rows={[lane({})]} factory="mission-control" now={0} />);
+  const mark = (step: string) =>
+    html.match(
+      new RegExp(`data-loop-mark="${step.replace('/', '/')}" data-step-state="([a-z-]+)"`),
+    )?.[1];
+  expect(mark('pick')).toBe('finished');
+  expect(mark('claim')).toBe('finished');
+  expect(mark('build/ship')).toBe('running');
+  expect(mark('subject')).toBe('not-reached');
+  expect(mark('release')).toBe('not-reached');
 });

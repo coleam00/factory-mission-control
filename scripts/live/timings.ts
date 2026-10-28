@@ -9,6 +9,8 @@ export interface PanelTimings {
   readyMs: number | null;
   /** The panel asked for its seal (`live:<query>:requested`), from navigation, rounded. */
   requestedMs: number | null;
+  /** The server answered the panel's first seal (`live:<query>:sealed`), from navigation, rounded. */
+  sealedMs: number | null;
   /** The panel sent its subscribe (`live:<query>:subscribe-sent`), from navigation, rounded. */
   subscribeSentMs: number | null;
   /** Legacy evidence: ready minus subscribe-sent, rounded, including delivery and rendering. */
@@ -21,6 +23,13 @@ export interface PanelTimings {
   queryExecutionSamplesMs: number[] | null;
   queryContext: QueryObservation | null;
   measurementError: string | null;
+  /**
+   * The page opened its Realtime socket (`live:connection:start`) and Realtime said `ready` on it
+   * (`live:connection:ready`), from navigation, rounded: the same on every panel of a page. No
+   * subscribe is sent before that `ready`.
+   */
+  connectionStartMs: number | null;
+  connectionReadyMs: number | null;
 }
 
 export type GroupTimings = { readyMs: number | null } & {
@@ -30,6 +39,7 @@ export type GroupTimings = { readyMs: number | null } & {
 export const emptyPanelTimings = (): PanelTimings => ({
   readyMs: null,
   requestedMs: null,
+  sealedMs: null,
   subscribeSentMs: null,
   firstSnapshotMs: null,
   subscribeToFirstResultMs: null,
@@ -38,6 +48,8 @@ export const emptyPanelTimings = (): PanelTimings => ({
   queryExecutionSamplesMs: null,
   queryContext: null,
   measurementError: null,
+  connectionStartMs: null,
+  connectionReadyMs: null,
 });
 
 export function groupTimings(panels: Record<string, PanelTimings>): GroupTimings {
@@ -49,6 +61,7 @@ export function groupTimings(panels: Record<string, PanelTimings>): GroupTimings
     readyMs:
       ready.length > 0 && ready.every((ms) => ms !== null) ? Math.round(Math.max(...ready)) : null,
     requestedMs: perQuery('requestedMs'),
+    sealedMs: perQuery('sealedMs'),
     subscribeSentMs: perQuery('subscribeSentMs'),
     firstSnapshotMs: perQuery('firstSnapshotMs'),
     subscribeToFirstResultMs: perQuery('subscribeToFirstResultMs'),
@@ -57,6 +70,8 @@ export function groupTimings(panels: Record<string, PanelTimings>): GroupTimings
     queryExecutionSamplesMs: perQuery('queryExecutionSamplesMs'),
     queryContext: perQuery('queryContext'),
     measurementError: perQuery('measurementError'),
+    connectionStartMs: perQuery('connectionStartMs'),
+    connectionReadyMs: perQuery('connectionReadyMs'),
   };
 }
 
@@ -67,11 +82,14 @@ export function emptyGroupTimings(queries: readonly string[]): GroupTimings {
 interface BrowserObservation {
   readyAt: number | null;
   requestedAt: number | null;
+  sealedAt: number | null;
   sentAt: number | null;
   firstAt: number | null;
   renderedAt: number | null;
   subscribedAt: number | null;
   context: unknown;
+  connectionStartAt: number | null;
+  connectionReadyAt: number | null;
 }
 
 function queryContext(value: unknown, query: string): QueryObservation | null {
@@ -109,6 +127,11 @@ export function observedTimings(query: string, seen: BrowserObservation): PanelT
   const timing = emptyPanelTimings();
   if (seen.readyAt !== null) timing.readyMs = Math.round(seen.readyAt);
   if (seen.requestedAt !== null) timing.requestedMs = Math.round(seen.requestedAt);
+  if (seen.sealedAt !== null) timing.sealedMs = Math.round(seen.sealedAt);
+  if (seen.connectionStartAt !== null)
+    timing.connectionStartMs = Math.round(seen.connectionStartAt);
+  if (seen.connectionReadyAt !== null)
+    timing.connectionReadyMs = Math.round(seen.connectionReadyAt);
   if (seen.sentAt !== null) timing.subscribeSentMs = Math.round(seen.sentAt);
   if (seen.readyAt !== null && seen.sentAt !== null)
     timing.firstSnapshotMs = Math.round(seen.readyAt - seen.sentAt);
@@ -136,6 +159,8 @@ export async function collectPanelMarks(
   const observations = await page.evaluate<Record<string, BrowserObservation>>(`(async () => {
     const queries = ${JSON.stringify(queries)};
     const first = (query, kind) => performance.getEntriesByName('live:' + query + ':' + kind)[0];
+    const connectionStartAt = first('connection', 'start')?.startTime ?? null;
+    const connectionReadyAt = first('connection', 'ready')?.startTime ?? null;
     const complete = () => queries.every((query) => first(query, 'ready'));
     if (!complete()) await new Promise((done) => {
       const observer = new PerformanceObserver(() => { if (complete()) finish(); });
@@ -150,9 +175,11 @@ export async function collectPanelMarks(
         .find((mark) => ready?.detail?.id && mark.detail?.id === ready.detail.id);
       const arrived = matched('first-result');
       return [query, { readyAt: ready?.startTime ?? null,
-        requestedAt: first(query, 'requested')?.startTime ?? null, sentAt: first(query, 'subscribe-sent')?.startTime ?? null,
+        requestedAt: first(query, 'requested')?.startTime ?? null,
+        sealedAt: first(query, 'sealed')?.startTime ?? null, sentAt: first(query, 'subscribe-sent')?.startTime ?? null,
         firstAt: arrived?.startTime ?? null, renderedAt: matched('rendered')?.startTime ?? null,
-        subscribedAt: arrived?.detail?.subscribedAt ?? null, context: ready?.detail ?? null }];
+        subscribedAt: arrived?.detail?.subscribedAt ?? null, context: ready?.detail ?? null,
+        connectionStartAt, connectionReadyAt }];
     }));
   })()`);
   return Object.fromEntries(
@@ -285,18 +312,31 @@ export function groupPerformanceFailures(
   );
 }
 
-type ReadyStretches = Pick<PanelTimings, 'requestedMs' | 'subscribeSentMs' | 'firstSnapshotMs'>;
+type ReadyStretches = Pick<
+  PanelTimings,
+  'requestedMs' | 'sealedMs' | 'subscribeSentMs' | 'firstSnapshotMs'
+>;
 
-function stretches({ requestedMs, subscribeSentMs, firstSnapshotMs }: ReadyStretches): string {
-  const ms = (value: number | null) => (value === null ? 'not marked' : `${value} ms`);
-  const sentAfterRequest =
-    requestedMs !== null && subscribeSentMs !== null ? subscribeSentMs - requestedMs : null;
+const ms = (value: number | null) => (value === null ? 'not marked' : `${value} ms`);
+const between = (from: number | null, to: number | null) =>
+  from !== null && to !== null ? to - from : null;
+
+function stretches({ requestedMs, sealedMs, subscribeSentMs, firstSnapshotMs }: ReadyStretches) {
   return [
     `navigation to requested ${ms(requestedMs)}`,
-    `requested to subscribe sent ${ms(sentAfterRequest)}`,
+    `requested to sealed ${ms(between(requestedMs, sealedMs))}`,
+    `sealed to subscribe sent ${ms(between(sealedMs, subscribeSentMs))}`,
     `subscribe sent to ready ${ms(firstSnapshotMs)}`,
   ].join(', ');
 }
+
+/** The page's one Realtime connection: a subscribe sealed before it was ready waited for it. */
+function connection(startMs: number | null, readyMs: number | null): string {
+  return `Realtime connection started ${ms(startMs)}, ready ${ms(readyMs)}`;
+}
+
+const firstMarked = (values: Record<string, number | null>) =>
+  Object.values(values).find((value) => value !== null) ?? null;
 
 export const within = (value: number | null, limit: number) => value !== null && value <= limit;
 
@@ -311,16 +351,24 @@ export function readyFailures(
 ): string[] {
   if (within(timings.readyMs, limitMs)) return [];
   const head = `${screen} ready after ${timings.readyMs} ms, limit ${limitMs}`;
-  if (!isGroup(timings)) return [`${head}: ${stretches(timings)}`];
+  if (!isGroup(timings)) {
+    const opened = connection(timings.connectionStartMs, timings.connectionReadyMs);
+    return [`${head} (${opened}): ${stretches(timings)}`];
+  }
+  const opened = connection(
+    firstMarked(timings.connectionStartMs),
+    firstMarked(timings.connectionReadyMs),
+  );
   const panels = Object.keys(timings.firstSnapshotMs).map(
     (query) =>
       `${query} ${stretches({
         requestedMs: timings.requestedMs[query],
+        sealedMs: timings.sealedMs[query],
         subscribeSentMs: timings.subscribeSentMs[query],
         firstSnapshotMs: timings.firstSnapshotMs[query],
       })}`,
   );
-  return [`${head}: ${panels.join('; ')}`];
+  return [`${head} (${opened}): ${panels.join('; ')}`];
 }
 
 const isGroup = (timings: PanelTimings | GroupTimings): timings is GroupTimings =>

@@ -125,7 +125,7 @@ test('an unused pin is the destination and an unknown or mismatched version neve
   const html = render([], '?pin=f00dfeed00');
   const pending = entryHtml(html, 'data-kind="pending"');
   expect(pending).toContain('aria-current="true"');
-  expect(pending).toContain('bg-surface-hover');
+  expect(pending).toContain('ring-selected');
   expect(pending).toContain('Not yet run');
   expect(html.match(/aria-current="true"/g)).toHaveLength(1);
   expect(render([], '?pin=unknown')).not.toContain('aria-current');

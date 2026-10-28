@@ -12,8 +12,9 @@ export default function Lap(): ReactElement {
       </main>
     );
   }
+  // Wide enough for the loop's graph and the step panel beside it.
   return (
-    <main className="mx-auto grid max-w-6xl gap-8 px-6 py-6">
+    <main className="mx-auto grid max-w-[1840px] gap-8 px-6 py-6">
       <OneLap factory={factory} runId={runId} />
     </main>
   );

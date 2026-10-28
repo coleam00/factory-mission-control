@@ -21,7 +21,7 @@ function ScreenLink({ to, label }: { to: string; label: string }): ReactElement 
           {isActive ? (
             <span
               aria-hidden
-              className="pointer-events-none bg-text-primary absolute inset-x-0 -bottom-px h-0.5 rounded-full"
+              className="pointer-events-none absolute inset-x-0 -bottom-px h-0.5 rounded-full bg-selected"
             />
           ) : null}
         </>

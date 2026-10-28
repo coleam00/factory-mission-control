@@ -1,7 +1,7 @@
 import dagre, { type EdgeLabel, type GraphLabel, type NodeLabel } from '@dagrejs/dagre';
 import { stepHref } from './step-detail';
 
-/** One row of `db/queries/home-map.sql`: a workflow the map shows, or one of the loop's steps. */
+/** One row of `db/queries/home-map.sql`: a workflow the map shows, or one of its steps. */
 export interface HomeMapRow {
   role: 'input' | 'manager' | 'step' | 'stage';
   workflow: string;
@@ -11,11 +11,13 @@ export interface HomeMapRow {
   step_id: string | null;
   kind: string | null;
   depends_on: string[] | null;
-  /** The workflow whose step this is: a stage is a step of the workflow its parent includes. */
+  /** The workflow that declares the step: an include's steps are steps of the workflow it includes. */
   detail_workflow: string;
+  /** The step's path in `detail_workflow`. */
+  detail_path: string | null;
   /** The factory whose laps `laps` counts; null on a step no factory has a lap on. */
   lap_factory: string | null;
-  /** That factory's running laps on the step or anywhere beneath it. */
+  /** That factory's running runs of the workflow on the step or anywhere beneath it. */
   laps: number;
   /** Whether `lap_factory` is the factory in the address. */
   is_current: boolean;
@@ -43,8 +45,10 @@ export interface FrameNode {
 }
 
 export interface StepNode {
-  /** The step's path: unique in the loop, and the key of its edges. */
+  /** The step's path: unique in its workflow, and the key of its edges. */
   id: string;
+  workflow: string;
+  /** A step of the workflow itself, or one an include or loop group nests beneath another. */
   role: 'step' | 'stage';
   label: string;
   kind: string;
@@ -66,25 +70,29 @@ export interface Edge {
   to: string;
 }
 
+/** One workflow's expanded tree. */
+export interface StepGraph {
+  /** In declaration order, each include or loop group followed by the steps it nests. */
+  steps: StepNode[];
+  /** Each step's `depends_on`, less every edge another path between the same steps implies. */
+  edges: Edge[];
+  /** The steps directly beneath each include or loop group, keyed by its path. */
+  clusters: Map<string, string[]>;
+}
+
 export interface HomeMap {
   inputs: FrameNode[];
   manager: FrameNode[];
-  /** The loop's steps in declaration order, each expanded step followed by its stages. */
-  loop: StepNode[];
+  loop: StepGraph;
+  /** The steps of each input and manager workflow, keyed by its name. */
+  workflows: Map<string, StepGraph>;
   outputs: FrameNode[];
-  /** Each step's `depends_on`, less every edge another path between the same steps implies. */
-  edges: Edge[];
-  /** The stages of each expanded step, keyed by that step's path. */
-  clusters: Map<string, string[]>;
 }
 
 type StepRow = HomeMapRow & { path: string; step_id: string; position: number };
 
 const isStep = (row: HomeMapRow): row is StepRow =>
-  (row.role === 'step' || row.role === 'stage') &&
-  row.path !== null &&
-  row.step_id !== null &&
-  row.position !== null;
+  row.path !== null && row.step_id !== null && row.position !== null;
 
 /** Drops every edge whose target its source also reaches through another step. */
 export function reduceEdges(edges: readonly Edge[]): Edge[] {
@@ -110,16 +118,16 @@ export function reduceEdges(edges: readonly Edge[]): Edge[] {
 }
 
 /**
- * Each step path once, with the laps each shown factory has on it: the query gives a row per
- * factory with laps, including a factory the server's factories file does not name, which the map
- * does not show (PRD 11.6), as the switcher does not list it.
+ * Each step path of one workflow once, with the laps each shown factory has on it: the query
+ * gives a row per factory with laps, including a factory the server's factories file does not
+ * name, which the map does not show (PRD 11.6), as the switcher does not list it.
  */
 function stepsByPath(
-  rows: readonly HomeMapRow[],
+  rows: readonly StepRow[],
   shown: readonly string[],
 ): { row: StepRow; factories: FactoryLaps[] }[] {
   const byPath = new Map<string, { row: StepRow; factories: FactoryLaps[] }>();
-  for (const row of rows.filter(isStep)) {
+  for (const row of rows) {
     const step = byPath.get(row.path) ?? { row, factories: [] };
     byPath.set(row.path, step);
     if (row.lap_factory !== null && shown.includes(row.lap_factory)) {
@@ -134,65 +142,113 @@ function stepsByPath(
   return [...byPath.values()].sort((a, b) => a.row.position - b.row.position);
 }
 
+/** One workflow's steps and edges: a step's `depends_on` names its siblings, as Archon scopes it. */
+function stepGraph(rows: readonly StepRow[], shown: readonly string[]): StepGraph {
+  const nodes = stepsByPath(rows, shown);
+  const edges: Edge[] = [];
+  const clusters = new Map<string, string[]>();
+  const paths = new Set(nodes.map((n) => n.row.path));
+  for (const { row } of nodes) {
+    const scope = row.parent_path === null ? '' : `${row.parent_path}/`;
+    const deps = (row.depends_on ?? []).map((d) => `${scope}${d}`).filter((d) => paths.has(d));
+    for (const dep of deps) edges.push({ from: dep, to: row.path });
+    if (row.parent_path !== null) {
+      clusters.set(row.parent_path, [...(clusters.get(row.parent_path) ?? []), row.path]);
+      if (deps.length === 0) edges.push({ from: row.parent_path, to: row.path });
+    }
+  }
+  return {
+    steps: nodes.map(({ row, factories }) => ({
+      id: row.path,
+      workflow: row.workflow,
+      role: row.parent_path === null ? 'step' : 'stage',
+      label: row.step_id,
+      kind: row.kind ?? '',
+      href: stepHref(row.detail_workflow, row.detail_path ?? row.path),
+      liveCount: factories.find((f) => f.current)?.laps ?? 0,
+      factories,
+    })),
+    edges: reduceEdges(edges),
+    clusters,
+  };
+}
+
 /**
  * Turns the live rows into the map, counting the laps of the factories in `shown` (the server's
  * factories file); every part is empty when no architecture is stored.
  */
 export function homeMap(rows: readonly HomeMapRow[], shown: readonly string[]): HomeMap {
-  const nodes = stepsByPath(rows, shown);
-  const steps = nodes.map((n) => n.row);
-  if (steps.length === 0) {
-    return { inputs: [], manager: [], loop: [], outputs: [], edges: [], clusters: new Map() };
+  const steps = rows.filter(isStep);
+  const loop = steps.filter((r) => r.role === 'step' || r.role === 'stage');
+  if (loop.length === 0) {
+    return {
+      inputs: [],
+      manager: [],
+      loop: { steps: [], edges: [], clusters: new Map() },
+      workflows: new Map(),
+      outputs: [],
+    };
   }
   const frame = (role: FrameNode['role'], label: string): FrameNode => ({
     id: `${role}:${label}`,
     role,
     label,
   });
-  const workflows = (role: 'input' | 'manager') =>
-    rows
-      .filter((r) => r.role === role)
-      .map((r) => r.workflow)
-      .sort()
-      .map((name) => frame(role, name));
-
-  const edges: Edge[] = [];
-  const clusters = new Map<string, string[]>();
-  const paths = new Set(steps.map((s) => s.path));
-  for (const step of steps) {
-    const scope = step.parent_path === null ? '' : `${step.parent_path}/`;
-    const deps = (step.depends_on ?? []).map((d) => `${scope}${d}`).filter((d) => paths.has(d));
-    for (const dep of deps) edges.push({ from: dep, to: step.path });
-    if (step.parent_path !== null) {
-      clusters.set(step.parent_path, [...(clusters.get(step.parent_path) ?? []), step.path]);
-      if (deps.length === 0) edges.push({ from: step.parent_path, to: step.path });
-    }
-  }
+  const named = (role: 'input' | 'manager') =>
+    [...new Set(rows.filter((r) => r.role === role).map((r) => r.workflow))].sort();
+  const graphs = (role: 'input' | 'manager') =>
+    named(role).map(
+      (name) =>
+        [
+          name,
+          stepGraph(
+            steps.filter((r) => r.workflow === name),
+            shown,
+          ),
+        ] as const,
+    );
 
   return {
     inputs: [
       ...FRAME_INPUTS_BEFORE.map((label) => frame('frame-input', label)),
-      ...workflows('input'),
+      ...named('input').map((name) => frame('input', name)),
       ...FRAME_INPUTS_AFTER.map((label) => frame('frame-input', label)),
     ],
-    manager: workflows('manager'),
-    loop: nodes.map(({ row, factories }) => ({
-      id: row.path,
-      role: row.role as StepNode['role'],
-      label: row.step_id,
-      kind: row.kind ?? '',
-      href: stepHref(row.detail_workflow, row.step_id),
-      liveCount: factories.find((f) => f.current)?.laps ?? 0,
-      factories,
-    })),
+    manager: named('manager').map((name) => frame('manager', name)),
+    loop: stepGraph(loop, shown),
+    workflows: new Map([...graphs('input'), ...graphs('manager')]),
     outputs: FRAME_OUTPUTS.map((label) => frame('output', label)),
-    edges: reduceEdges(edges),
-    clusters,
   };
 }
 
 const NODE_W = 168;
 const NODE_H = 46;
+/** The 13px Geist Mono label's advance per character, rounded up so a name never clips. */
+const CHAR_W = 8;
+/** Room a step's box keeps beside its label: padding, kind glyph, gaps, live dot and count. */
+const LABEL_RESERVE = 96;
+/** The longest name kept on one line; a longer one breaks onto two. */
+const ONE_LINE_MAX = 16;
+/** Each label line past the first adds this much height. */
+const LINE_H = 17;
+
+/**
+ * A step's name as the lines its box shows, in full: one line up to ONE_LINE_MAX characters,
+ * otherwise two, split after the `-`, `_`, `.` or `/` that leaves the longer line shortest. A
+ * name with no such separator stays on one line and its box widens to fit it.
+ */
+export function stepLabelLines(label: string): string[] {
+  if (label.length <= ONE_LINE_MAX) return [label];
+  let best: number | null = null;
+  for (let i = 1; i < label.length; i++) {
+    if (!'-_./'.includes(label[i - 1] ?? '')) continue;
+    if (best === null || Math.max(i, label.length - i) < Math.max(best, label.length - best)) {
+      best = i;
+    }
+  }
+  return best === null ? [label] : [label.slice(0, best), label.slice(best)];
+}
+const MARGIN = 24;
 const CLUSTER_PAD = 16;
 
 export interface Box {
@@ -202,71 +258,139 @@ export interface Box {
   height: number;
 }
 
-export interface LoopLayout {
+interface Point {
+  x: number;
+  y: number;
+}
+
+export interface StepLayout {
   nodes: Map<string, Box>;
+  /** The box around each include or loop group: its own step at the top, then the steps it nests. */
   clusters: Map<string, Box>;
   edges: (Edge & { d: string })[];
   width: number;
   height: number;
 }
 
-/** Lays the loop out top to bottom with dagre, each expanded step's stages in a box. */
-export function layoutLoop(map: HomeMap, narrow = false): LoopLayout {
-  const g = new dagre.graphlib.Graph<GraphLabel, NodeLabel, EdgeLabel>({ compound: true });
-  g.setDefaultEdgeLabel(() => ({}));
-  g.setGraph({ rankdir: 'TB', ranksep: 36, nodesep: 28, marginx: 24, marginy: 24 });
-  for (const node of map.loop) {
-    const labelled = node.factories.some((f) => !f.current);
-    // One 15px line per factory, below the step label. Reserve 70px horizontally for the
-    // padding, glyph, gaps and live dot; 7px per character leaves room for 10px Geist Mono.
-    // Give dagre the full size so edges, siblings and stage clusters also clear the counts.
-    g.setNode(node.id, {
-      width: labelled
-        ? Math.max(NODE_W, ...node.factories.map((f) => 70 + `${f.factory} ${f.laps}`.length * 7))
-        : NODE_W,
-      height: labelled ? NODE_H + node.factories.length * 15 : NODE_H,
-    });
-  }
-  for (const [parent, members] of map.clusters) {
-    const cluster = `cluster:${parent}`;
-    g.setNode(cluster, {
-      width: 0,
-      height: 0,
-      paddingLeft: CLUSTER_PAD,
-      paddingRight: CLUSTER_PAD,
-    });
-    for (const member of members) g.setParent(member, cluster);
-  }
-  for (const edge of map.edges) g.setEdge(edge.from, edge.to);
-  dagre.layout(g);
+interface Level {
+  nodes: Map<string, Box>;
+  clusters: Map<string, Box>;
+  edges: (Edge & { points: Point[] })[];
+  width: number;
+  height: number;
+}
 
-  const boxOf = (id: string): Box => {
-    const { x = 0, y = 0, width, height } = g.node(id);
-    return { x: x - width / 2, y: y - height / 2, width, height };
+const shifted = <T extends Point>(p: T, by: Point): T => ({ ...p, x: p.x + by.x, y: p.y + by.y });
+
+/**
+ * A step's box: wide enough for its whole name (on one line or two, as stepLabelLines splits it),
+ * and one 15px line per factory below the label when another factory has laps on it. Dagre gets
+ * the full size, so edges and siblings clear the name and the counts.
+ */
+function stepSize(node: StepNode): { width: number; height: number } {
+  const lines = stepLabelLines(node.label);
+  const name = LABEL_RESERVE + Math.max(...lines.map((line) => line.length)) * CHAR_W;
+  const height = NODE_H + (lines.length - 1) * LINE_H;
+  if (!node.factories.some((f) => !f.current)) return { width: Math.max(NODE_W, name), height };
+  // Reserve 70px horizontally for the padding, glyph, gaps and live dot; 7px per character leaves
+  // room for 10px Geist Mono.
+  return {
+    width: Math.max(
+      NODE_W,
+      name,
+      ...node.factories.map((f) => 70 + `${f.factory} ${f.laps}`.length * 7),
+    ),
+    height: height + node.factories.length * 15,
   };
-  const nodes = new Map(map.loop.map((node) => [node.id, boxOf(node.id)]));
-  // The desktop spine bends around expanded stages. On a phone keep every spine node
-  // in the first column, leaving the expanded stages reachable beside it at full size.
-  if (narrow) {
-    for (const node of map.loop) {
-      const box = nodes.get(node.id);
-      if (node.role === 'step' && box) box.x = 24;
+}
+
+/**
+ * Lays a workflow out top to bottom with dagre, innermost first: each include or loop group is
+ * laid out on its own, its step on top, and placed in its parent's layout as one box of that size.
+ * Every nested step sits inside each box around it, and the spine keeps its order past the boxes.
+ */
+export function layoutSteps(graph: StepGraph, narrow = false): StepLayout {
+  const byId = new Map(graph.steps.map((s) => [s.id, s]));
+  const nested = new Set([...graph.clusters.values()].flat());
+
+  const level = (parent: string | null): Level => {
+    const members =
+      parent === null
+        ? graph.steps.filter((s) => !nested.has(s.id)).map((s) => s.id)
+        : (graph.clusters.get(parent) ?? []);
+    const local = parent === null ? members : [parent, ...members];
+    const margin = parent === null ? MARGIN : CLUSTER_PAD;
+    const g = new dagre.graphlib.Graph<GraphLabel, NodeLabel, EdgeLabel>();
+    g.setDefaultEdgeLabel(() => ({}));
+    g.setGraph({ rankdir: 'TB', ranksep: 36, nodesep: 28, marginx: margin, marginy: margin });
+    const blocks = new Map<string, Level>();
+    for (const id of local) {
+      const block = id !== parent && graph.clusters.has(id) ? level(id) : undefined;
+      if (block) blocks.set(id, block);
+      g.setNode(id, block ?? stepSize(byId.get(id) as StepNode));
     }
-  }
-  const clusters = new Map([...map.clusters.keys()].map((p) => [p, boxOf(`cluster:${p}`)]));
-  const edges = map.edges.map((edge) => {
-    const from = nodes.get(edge.from);
-    const to = nodes.get(edge.to);
-    if (narrow && from && to) {
+    const edges = graph.edges.filter((e) => local.includes(e.from) && local.includes(e.to));
+    for (const edge of edges) g.setEdge(edge.from, edge.to);
+    dagre.layout(g);
+
+    const outer = new Map(
+      local.map((id): [string, Box] => {
+        const { x = 0, y = 0, width, height } = g.node(id);
+        return [id, { x: x - width / 2, y: y - height / 2, width, height }];
+      }),
+    );
+    // The desktop spine bends around the boxes. On a phone keep every spine node, and each box
+    // with everything in it, in the first column; a wide box scrolls sideways at full size.
+    const column = narrow && parent === null;
+    if (column) for (const box of outer.values()) box.x = MARGIN;
+
+    const laid: Level = { nodes: new Map(), clusters: new Map(), edges: [], width: 0, height: 0 };
+    for (const [id, box] of outer) {
+      const block = blocks.get(id);
+      if (block === undefined) {
+        laid.nodes.set(id, box);
+        continue;
+      }
+      laid.clusters.set(id, box);
+      for (const [k, b] of block.nodes) laid.nodes.set(k, shifted(b, box));
+      for (const [k, b] of block.clusters) laid.clusters.set(k, shifted(b, box));
+      for (const e of block.edges) {
+        laid.edges.push({ ...e, points: e.points.map((p) => shifted(p, box)) });
+      }
+    }
+    for (const edge of edges) {
+      const from = outer.get(edge.from) as Box;
+      const to = outer.get(edge.to) as Box;
       const x1 = from.x + from.width / 2;
       const y1 = from.y + from.height;
       const x2 = to.x + to.width / 2;
       const y2 = to.y;
-      return { ...edge, d: `M${x1},${y1} V${(y1 + y2) / 2} H${x2} V${y2}` };
+      const mid = (y1 + y2) / 2;
+      const points = column
+        ? [
+            { x: x1, y: y1 },
+            { x: x1, y: mid },
+            { x: x2, y: mid },
+            { x: x2, y: y2 },
+          ]
+        : (g.edge(edge.from, edge.to).points ?? []);
+      laid.edges.push({ ...edge, points });
     }
-    const points = g.edge(edge.from, edge.to).points ?? [];
-    return { ...edge, d: points.map((p, i) => `${i === 0 ? 'M' : 'L'}${p.x},${p.y}`).join(' ') };
-  });
-  const graph = g.graph();
-  return { nodes, clusters, edges, width: graph.width ?? 0, height: graph.height ?? 0 };
+    const size = g.graph();
+    laid.width = size.width ?? 0;
+    laid.height = size.height ?? 0;
+    return laid;
+  };
+
+  const top = level(null);
+  return {
+    nodes: new Map(graph.steps.map((s) => [s.id, top.nodes.get(s.id) as Box])),
+    clusters: top.clusters,
+    edges: top.edges.map(({ points, ...edge }) => ({
+      ...edge,
+      d: points.map((p, i) => `${i === 0 ? 'M' : 'L'}${p.x},${p.y}`).join(' '),
+    })),
+    width: top.width,
+    height: top.height,
+  };
 }

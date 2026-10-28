@@ -53,6 +53,7 @@ const step = (
   kind: 'command',
   depends_on: [],
   detail_workflow: 'wf',
+  detail_path: path,
   lap_factory,
   laps,
   is_current,
@@ -96,6 +97,23 @@ test("another listed factory's laps show under its name, the address factory fir
   expect(counted('/steps/wf/theirs')).toEqual(['north-star 1']);
   expect(linkIn(html, '/steps/wf/ours')).not.toContain('data-factory-counts');
   expect(html).not.toContain('unlisted');
+});
+
+test("an input workflow shows its own steps, each opening that workflow's step", () => {
+  const html = render(
+    [
+      step('first', 0),
+      { ...step('briefs', 0), role: 'input', workflow: 'wf-in', detail_workflow: 'wf-in' },
+      { ...step('verify', 1), role: 'input', workflow: 'wf-in', detail_workflow: 'wf-in' },
+    ],
+    'ready',
+  );
+  for (const path of ['briefs', 'verify']) {
+    const link = linkIn(html, `/steps/wf-in/${path}`);
+    expect(link).toContain('data-workflow="wf-in"');
+    expect(link).toContain(`data-step="${path}"`);
+  }
+  expect(linkIn(html, '/steps/wf/first')).toContain('data-workflow="wf"');
 });
 
 /** Every step id in the pinned pack's archon-loop, at every depth. */

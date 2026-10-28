@@ -168,4 +168,26 @@ describe('one-lap on the seed', () => {
     expect(shown.reduce((sum, r) => sum + Number(r.cost_usd), 0)).toBeCloseTo(0.8426);
     expect(await errors()).toEqual(before);
   });
+  test("one-lap-map: the loop at the lap's own pin, every node, each with its own screen", async () => {
+    const pinOf = async (runId: string) => {
+      const rows = await lap('one-lap-map', runId);
+      return { rows, pins: [...new Set(rows.map((r) => r.pin))] };
+    };
+    // A lap of 10-01 ran under the pin of 09-30.
+    const first = await pinOf(LAP_RUN);
+    expect(first.pins).toEqual(['8e3e1cefaf1e1b7955789d6a43a81b6c2dbd7082']);
+    const [{ n }] = await db.query(
+      `SELECT count(*)::int AS n FROM mc.arch_steps
+       WHERE workflow = 'archon-loop' AND archon_sha = 'abd85896e7971c9ac5199ed7e87973f27130250f'`,
+    );
+    expect(first.rows).toHaveLength(n as number);
+    const intel = first.rows.find((r) => r.path === 'ship/intel');
+    expect(intel).toMatchObject({ parent_path: 'ship', detail_path: 'intel' });
+    expect(intel?.detail_workflow).not.toBe('archon-loop');
+    // The running lap's pin of 10-19 has no architecture stored: the newest one before it is used.
+    expect((await pinOf(running)).pins).toEqual(['5ffd60c6c6e591487f2fbb5ec67ccc8fc55ca915']);
+    // No lap, no rows; another factory's lap is not this factory's.
+    expect(await lap('one-lap-map', '5eed0001-0000-4000-8000-0000000000ff')).toEqual([]);
+    expect(await lap('one-lap-map', LAP_RUN, 'second-factory')).toEqual([]);
+  });
 });

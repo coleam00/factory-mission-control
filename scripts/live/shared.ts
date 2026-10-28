@@ -42,17 +42,18 @@ const SEED_LOOP = [
   'release',
   'tally',
 ];
-const SEED_SHIP_STAGES = [
-  'forge',
-  'triage',
-  'inv',
-  'intel',
-  'planned',
-  'continues',
-  'deliver',
-  'outcome',
-  'report',
-];
+/** Each top-level include of V2's loop and the steps it nests directly, in order. */
+export const SEED_INCLUDE_STAGES: Readonly<Record<string, readonly string[]>> = {
+  ship: ['forge', 'triage', 'inv', 'intel', 'planned', 'continues', 'deliver', 'outcome', 'report'],
+  deploy: ['resolve', 'deploy', 'health', 'verify'],
+};
+/** The nodes of V2's expanded loop, every include at every depth, and of the other workflows. */
+const SEED_NODES = [
+  ['archon-loop', 84],
+  ['archon-backlog', 5],
+  ['archon-holdouts', 2],
+  ['archon-manager', 2],
+] as const;
 /** The step `fixture:write` starts on running laps. */
 export const LIVE_STEP = 'review';
 export const VERSIONS = '[data-live="version-strip"]';
@@ -135,6 +136,7 @@ const countIs = (target: number) =>
 
 export interface ShownNode {
   role: string;
+  workflow: string | null;
   step: string | null;
   count: string | null;
 }
@@ -143,43 +145,59 @@ export const mapNodes = (page: Page) =>
   page.evaluate<ShownNode[]>(
     `[...document.querySelectorAll('${MAP} [data-node-role]')].map((el) => ({
       role: el.getAttribute('data-node-role'),
+      workflow: el.getAttribute('data-workflow'),
       step: el.getAttribute('data-step'),
       count: el.getAttribute('data-live-count'),
     }))`,
   );
 
+export type LapsOn = (path: string, workflow?: string) => number;
+
 /**
- * Running laps per map node for `factory`, straight from the laps tables. Archon names a nested
- * step by its path joined with `__`, and a node counts the laps on it or anywhere beneath it.
+ * Running runs of a workflow per map node for `factory`, straight from the laps tables. Archon
+ * names a nested step by its path joined with `__`, and a node counts the runs on it or anywhere
+ * beneath it.
  */
-export async function lapsOnNodes(db: Db, factory: string): Promise<(path: string) => number> {
+export async function lapsOnNodes(db: Db, factory: string): Promise<LapsOn> {
   const running = await db.query(
-    `SELECT ls.run_id, ls.step_id
+    `SELECT l.workflow_name, ls.run_id, ls.step_id
        FROM mc.lap_steps ls JOIN mc.laps l ON l.run_id = ls.run_id
-      WHERE l.factory = $1 AND l.workflow_name = 'archon-loop' AND l.status = 'running'
-        AND ls.status = 'running'`,
+      WHERE l.factory = $1 AND l.status = 'running' AND ls.status = 'running'`,
     [factory],
   );
-  return (path) => {
+  return (path, workflow = 'archon-loop') => {
     const key = path.replaceAll('/', '__');
     const on = running.filter((r) => {
       const step = String(r.step_id);
-      return step === key || step.startsWith(`${key}__`);
+      return r.workflow_name === workflow && (step === key || step.startsWith(`${key}__`));
     });
     return new Set(on.map((r) => String(r.run_id))).size;
   };
 }
 
 /** Where the map, in document order, differs from the seed and from `lapsOn`: one line each. */
-export function mapMismatches(nodes: ShownNode[], lapsOn: (path: string) => number): string[] {
+export function mapMismatches(nodes: ShownNode[], lapsOn: LapsOn): string[] {
   const failures: string[] = [];
   const idOf = (path: string | null) => path?.slice(path.lastIndexOf('/') + 1) ?? '';
-  const ids = (role: string) => nodes.filter((n) => n.role === role).map((n) => idOf(n.step));
-  if (ids('step').join() !== SEED_LOOP.join()) {
-    failures.push(`the loop shows ${ids('step').join(', ')}`);
+  const loop = nodes.filter((n) => n.workflow === 'archon-loop');
+  const top = loop.filter((n) => n.role === 'step').map((n) => idOf(n.step));
+  if (top.join() !== SEED_LOOP.join()) failures.push(`the loop shows ${top.join(', ')}`);
+  // Each include's own direct stages, by the include they sit in: ship's and deploy's are listed
+  // apart, and an include the seed does not expand must show none.
+  const stages = new Map<string, string[]>();
+  for (const n of loop.filter((n) => n.role === 'stage' && n.step?.split('/').length === 2)) {
+    const include = (n.step as string).split('/')[0];
+    stages.set(include, [...(stages.get(include) ?? []), idOf(n.step)]);
   }
-  if (ids('stage').join() !== SEED_SHIP_STAGES.join()) {
-    failures.push(`ship shows ${ids('stage').join(', ')}`);
+  for (const include of new Set([...Object.keys(SEED_INCLUDE_STAGES), ...stages.keys()])) {
+    const shown = stages.get(include) ?? [];
+    if (shown.join() !== (SEED_INCLUDE_STAGES[include] ?? []).join()) {
+      failures.push(`${include} shows ${shown.join(', ') || 'no stages'}`);
+    }
+  }
+  for (const [workflow, expected] of SEED_NODES) {
+    const shown = nodes.filter((n) => n.workflow === workflow).length;
+    if (shown !== expected) failures.push(`${workflow} shows ${shown} steps, not ${expected}`);
   }
   const count = (...roles: string[]) => nodes.filter((n) => roles.includes(n.role)).length;
   for (const [what, shown, expected] of [
@@ -190,9 +208,11 @@ export function mapMismatches(nodes: ShownNode[], lapsOn: (path: string) => numb
     if (shown !== expected) failures.push(`the map shows ${shown} ${what}, not ${expected}`);
   }
   for (const node of nodes.filter((n) => n.count !== null)) {
-    const expected = lapsOn(node.step ?? '');
+    const expected = lapsOn(node.step ?? '', node.workflow ?? undefined);
     if (Number(node.count) !== expected) {
-      failures.push(`${node.step} shows ${node.count} laps, the database has ${expected}`);
+      failures.push(
+        `${node.workflow} ${node.step} shows ${node.count} laps, the database has ${expected}`,
+      );
     }
   }
   return failures;

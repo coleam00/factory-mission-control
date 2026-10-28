@@ -1,6 +1,8 @@
 /*
- * Tokens copied from docs/design/archon-console/ (index.css and theme.css) with identical
- * values; styles.test.ts holds them to that. Geist and Geist Mono are served from the
+ * The app's token layer: every color is declared here, copied from docs/design/archon-console/
+ * (index.css and theme.css) with identical values; styles.test.ts holds them to that, and
+ * harness/design-probe.js fails any rendered color outside them. The palette is the Dynamous
+ * brand system (#240). Geist and Geist Mono are served from the
  * build rather than fetched from Google Fonts.
  */
 @import 'tailwindcss';
@@ -75,6 +77,9 @@
   --color-node-loop: var(--node-loop);
   --color-node-approval: var(--node-approval);
   --color-node-wait: var(--node-wait);
+  --color-running: var(--running);
+  --color-selected: var(--selected);
+  --color-surface-header: var(--surface-header);
   --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
   --font-mono: 'JetBrains Mono', ui-monospace, monospace;
 
@@ -97,67 +102,68 @@
 /* `.console-root` sits on <html>, which `:root` also matches at equal specificity: this block
    must stay after `:root` to win. */
 .console-root {
-  /* Surfaces — cool charcoal (hue 265) */
-  --surface: oklch(0.175 0.007 265);
-  --surface-inset: oklch(0.13 0.006 265);
-  --surface-elevated: oklch(0.205 0.009 265);
-  --surface-hover: oklch(0.225 0.01 265);
-  --surface-variant: oklch(0.21 0.009 265);
-  --surface-bright: oklch(0.275 0.012 265);
+  /* Dynamous brand (#240): deep blue surfaces, Dynamous Blue as the one accent. */
+  --dynamous-blue: #3b82f6;
+  --dynamous-dark: #2563eb;
+  --dynamous-light: #60a5fa;
+  --dynamous-deep: #1e3a8a;
+  --dynamous-navy: #1e3a5f;
+  --brand-gradient: linear-gradient(to bottom, #07090f, rgba(30, 58, 138, 0.9), #080a13);
+
+  /* Surfaces: blue-tinted steps from the page (#07090f) up to navy (#1e3a5f). */
+  --background-alt: #080a13;
+  --surface: #0d1830;
+  --surface-inset: #0a1222;
+  --surface-elevated: #12213f;
+  --surface-hover: #172a4d;
+  --surface-variant: #10203c;
+  --surface-bright: var(--dynamous-navy);
+  /* The header, factory strip and nav: deep blue (#1e3a8a-tinted) over the gradient. */
+  --surface-header: #0f1f4a;
+  --header-gradient: linear-gradient(to bottom, rgba(30, 58, 138, 0.9), #0f1f4a 70%, #0c1838);
+  /* The page: the brand gradient, faded, so no screen is flat black. */
+  --page-gradient: linear-gradient(to bottom, #07090f, rgba(30, 58, 138, 0.3) 45%, #080a13);
 
   /* Borders */
-  --border: oklch(0.275 0.012 265);
-  --border-bright: oklch(0.355 0.016 265);
-  --outline-variant: oklch(0.4 0.018 265);
+  --border: rgba(255, 255, 255, 0.1);
+  --border-bright: rgba(255, 255, 255, 0.22);
+  --outline-variant: rgba(255, 255, 255, 0.3);
 
-  /* Text */
-  --text-primary: oklch(0.975 0.004 265);
-  --text-secondary: oklch(0.745 0.014 265);
-  --text-tertiary: oklch(0.56 0.017 265);
+  /* Text: blue-white, readable (WCAG AA) on every surface above. */
+  /* Blue enough (oklch chroma above 0.02) that Chrome keeps its hue in a color-mix: at #f1f5fb a
+     see-through mix lost the hue and rendered off-palette (TESTING's heat cells). */
+  --text-primary: #e4edfd;
+  --text-secondary: #aebbd3;
+  --text-tertiary: #8796b3;
 
-  /* Brand thread — the duotone */
-  --brand-magenta: oklch(0.64 0.295 330);
-  --brand-magenta-2: oklch(0.72 0.26 335);
-  --brand-violet: oklch(0.56 0.215 305);
-  --brand-teal: oklch(0.755 0.165 168);
-  --brand-teal-2: oklch(0.7 0.15 175);
-  --brand-gradient: linear-gradient(
-    135deg,
-    var(--brand-magenta) 0%,
-    var(--brand-violet) 50%,
-    var(--brand-teal) 100%
-  );
-  --brand-gradient-soft: linear-gradient(
-    135deg,
-    oklch(0.64 0.295 330 / 0.18) 0%,
-    oklch(0.56 0.215 305 / 0.12) 50%,
-    oklch(0.755 0.165 168 / 0.18) 100%
-  );
+  /* Accent: Dynamous Blue. Links read in Dynamous Light, which stays above 4.5:1 on the
+     lightest surface; selection and the active tab are solid Dynamous Blue. */
+  --accent: var(--dynamous-blue);
+  --accent-bright: var(--dynamous-light);
+  --accent-hover: var(--dynamous-dark);
+  --accent-muted: rgba(59, 130, 246, 0.3);
+  --accent-soft: rgba(59, 130, 246, 0.16);
+  --accent-ring: rgba(59, 130, 246, 0.55);
+  --selected: var(--dynamous-blue);
 
-  /* Accent — brand magenta (default). All accent tokens point to the same
-     hue so `bg-accent-bright`, `text-accent-bright`, etc. all read as brand. */
-  --accent: var(--brand-magenta);
-  --accent-bright: var(--brand-magenta);
-  --accent-hover: oklch(0.7 0.28 330);
-  --accent-muted: oklch(0.64 0.295 330 / 0.3);
-  --accent-soft: oklch(0.64 0.295 330 / 0.14);
-  --accent-ring: oklch(0.64 0.295 330 / 0.3);
-
-  /* Status — kept distinct from accent so brand swaps don't break meaning.
-     - running   electric blue (active/in-progress)
-     - success   brand teal (affirmative IS brand)
-     - warning   amber
-     - error     hot red */
-  --running: oklch(0.72 0.155 245);
-  --running-soft: oklch(0.72 0.155 245 / 0.14);
-  --success: var(--brand-teal);
-  --success-soft: oklch(0.755 0.165 168 / 0.14);
+  /* Status: kept distinct from the accent.
+     - running   Dynamous Light, always with a pulse or glow (selection is solid Blue)
+     - success   teal-green, filled with the brand's #047857
+     - warning   amber, filled with #b45309
+     - error     red, filled with #b91c1c */
+  --running: var(--dynamous-light);
+  --running-soft: rgba(96, 165, 250, 0.16);
+  --success: oklch(0.755 0.165 168);
+  --success-strong: #047857;
+  --success-soft: rgba(4, 120, 87, 0.22);
   --warning: oklch(0.8 0.14 85);
-  --warning-soft: oklch(0.8 0.14 85 / 0.14);
+  --warning-strong: #b45309;
+  --warning-soft: rgba(180, 83, 9, 0.22);
   --error: oklch(0.68 0.215 18);
-  --error-soft: oklch(0.68 0.215 18 / 0.14);
+  --error-strong: #b91c1c;
+  --error-soft: rgba(185, 28, 28, 0.22);
 
-  /* Node variant stripes — the builder renders all eight variants. Six tokens
+  /* Node variant stripes â€” the builder renders all eight variants. Six tokens
      (--node-command/-prompt/-bash/-loop/-approval/-wait) inherit from the
      shared :root in index.css; script and cancel exist only here. */
   --node-script: oklch(0.7 0.14 140);
@@ -167,12 +173,12 @@
   --node-opaque: oklch(0.6 0.02 265);
 
   /* Console values for semantic utility names defined by the global theme. */
-  --background: oklch(0.145 0.006 265);
+  --background: #07090f;
   --foreground: var(--text-primary);
-  --primary: var(--brand-magenta);
-  --primary-foreground: oklch(0.985 0 0);
+  --primary: var(--dynamous-blue);
+  --primary-foreground: #ffffff;
   --destructive: var(--error);
-  --ring: var(--brand-magenta);
+  --ring: var(--dynamous-blue);
 
   /* Typography — Geist, with the SS01/CV11 alternates the brand uses. */
   font-family: 'Geist', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
@@ -238,5 +244,7 @@
   }
   body {
     @apply bg-background text-foreground;
+    background-image: var(--page-gradient);
+    background-attachment: fixed;
   }
 }

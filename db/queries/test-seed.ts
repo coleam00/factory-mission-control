@@ -24,7 +24,7 @@ export const STEP_PANELS = [
 ];
 export const CHECK_APP = ['archon-loop', 'check-app'];
 /** The one-lap screen's panels: keyed by the lap's run id too. */
-export const LAP_PANELS = ['one-lap', 'one-lap-steps', 'one-lap-checks'];
+export const LAP_PANELS = ['one-lap', 'one-lap-steps', 'one-lap-checks', 'one-lap-map'];
 export const LAP_RUN = '5eed0001-0000-4000-8000-000000000003';
 export const paramsFor = (name: string, factory: string) =>
   name === 'step-detail'

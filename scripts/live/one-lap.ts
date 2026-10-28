@@ -26,7 +26,7 @@ import {
   readyFailures,
 } from './timings';
 
-const ONE_LAP_QUERIES = ['one-lap', 'one-lap-steps', 'one-lap-checks'] as const;
+const ONE_LAP_QUERIES = ['one-lap', 'one-lap-steps', 'one-lap-checks', 'one-lap-map'] as const;
 /** The row LIVE_STEP's `fixture:write` adds to the one-lap screen. */
 const REVIEW_ROW = `[data-live="one-lap-steps"] [data-step-attempt][data-step="${LIVE_STEP}"]`;
 
@@ -73,6 +73,14 @@ interface OneLapOnScreen {
     evidence: number | null;
     scenario: string | null;
   }[];
+  /** Every node of the step graph: its path, what happened to it, and its own attempts. */
+  graph: {
+    path: string | null;
+    state: string | null;
+    attempts: number | null;
+    /** A folded block: how many steps it holds, drawn when it is opened. */
+    folded: number | null;
+  }[];
   /** How many times the seed's holdout text marker occurs in the rendered page. */
   markers: number;
 }
@@ -111,6 +119,12 @@ const oneLapOnScreen = `(() => {
       verdict: attr(li, 'data-verdict'),
       evidence: num(li, 'data-evidence'),
       scenario: attr(li, 'data-scenario'),
+    })),
+    graph: [...document.querySelectorAll('[data-live="one-lap-steps"] [data-graph-step]')].map((b) => ({
+      path: attr(b, 'data-graph-step'),
+      state: attr(b, 'data-step-state'),
+      attempts: num(b, 'data-attempts'),
+      folded: num(b, 'data-folded'),
     })),
     markers: ${markersOnScreen},
   };
@@ -247,6 +261,53 @@ async function seedOneLapMismatches(
   }
   if (shown.markers !== 0) mismatches.push(`${MARKER} occurs ${shown.markers} times on the page`);
 
+  // The graph: every step the lap ran is a node at its path, with its own attempts and a mark
+  // from its latest run; every node of the loop at the lap's pin is drawn.
+  const ran = await db.query(
+    `SELECT a.step_id, count(*)::int AS attempts,
+       (array_agg(a.status ORDER BY a.started_at DESC))[1] AS status
+     FROM mc.lap_step_attempts a WHERE a.run_id = $1 GROUP BY a.step_id`,
+    [runId],
+  );
+  const markOf: Record<string, string> = {
+    completed: 'finished',
+    running: 'running',
+    failed: 'failed',
+    skipped: 'skipped',
+  };
+  const node = new Map(shown.graph.map((g) => [g.path, g]));
+  for (const r of ran) {
+    const path = String(r.step_id).split('__').join('/');
+    const g = node.get(path);
+    if (g === undefined) {
+      mismatches.push(`the step ${r.step_id} the lap ran is not in its graph`);
+      continue;
+    }
+    if (g.attempts !== Number(r.attempts)) {
+      mismatches.push(`${path}: the graph has ${g.attempts} attempts, SQL ${r.attempts}`);
+    }
+    // An include's own mark also reflects the steps inside it, so only a plain step is compared.
+    const inner = shown.graph.some((o) => o.path?.startsWith(`${path}/`));
+    if (!inner && g.state !== markOf[String(r.status)]) {
+      mismatches.push(`${path}: the graph marks it ${g.state}, its latest run is ${r.status}`);
+    }
+  }
+  const [{ nodes }] = await db.query(
+    `SELECT count(*)::int AS nodes FROM mc.arch_steps s
+     WHERE s.workflow = 'archon-loop' AND (s.archon_sha, s.factory_sha) = (
+       SELECT a.archon_sha, a.factory_sha FROM mc.pins p
+       JOIN mc.arch_versions a ON a.archon_sha = p.archon_sha
+       JOIN mc.laps l ON l.run_id = $1
+       WHERE p.committed_at <= l.started_at
+       ORDER BY p.committed_at DESC, a.parsed_at DESC LIMIT 1)`,
+    [runId],
+  );
+  // A folded block (no step in it ran) stands for the steps it holds until it is opened.
+  const reachable = shown.graph.reduce((n, g) => n + 1 + (g.folded ?? 0), 0);
+  if (reachable < Number(nodes)) {
+    mismatches.push(`the graph reaches ${reachable} nodes, the lap's pin maps ${nodes}`);
+  }
+
   const report = [
     `lap ${runId}`,
     'screen:',
@@ -254,6 +315,7 @@ async function seedOneLapMismatches(
     `  steps ${JSON.stringify(byStep(shown.steps))}`,
     `  cost ${shown.cost}`,
     `  checks ${JSON.stringify(shown.checks)}`,
+    `  graph ${JSON.stringify(shown.graph)}`,
     `  ${MARKER} occurrences ${shown.markers}`,
     'SQL (mc.laps, mc.factories, mc.claims, mc.lap_steps, mc.lap_step_attempts, mc.app_check_lines;',
     'not the queries in db/queries/):',
@@ -261,6 +323,7 @@ async function seedOneLapMismatches(
     `  steps ${JSON.stringify(byStep(stepsSql))}`,
     `  cost ${total.cost}`,
     `  checks ${JSON.stringify(checksSql)}`,
+    `  steps ran ${JSON.stringify(ran)}, nodes at the lap's pin ${nodes}`,
     ...mismatches,
     `mismatches: ${mismatches.length}`,
   ].join('\n');
@@ -281,7 +344,12 @@ export function oneLapPhase(ctx: LiveContext): LivePhase {
     refusedRun: null,
     stepToScreen: null,
     holdSeconds,
-    renewals: { 'one-lap': null, 'one-lap-steps': null, 'one-lap-checks': null },
+    renewals: {
+      'one-lap': null,
+      'one-lap-steps': null,
+      'one-lap-checks': null,
+      'one-lap-map': null,
+    },
     afterHoldStepToScreen: null,
     noReload: null,
     limits: LIMITS,
