@@ -189,6 +189,9 @@ export function Ledger({
                     {entry.laps} laps run
                   </span>
                 </div>
+                {entry.waiting === NOT_RECORDED ? null : (
+                  <LapsTowardVerdict laps={entry.laps} waiting={entry.waiting} />
+                )}
                 <p className="min-w-0 break-words text-[13px] text-text-primary">{entry.reason}</p>
                 <Trailer label="Measure" text={entry.measure} />
               </li>
@@ -227,6 +230,28 @@ export function Ledger({
           </ol>
         )}
       </section>
+    </div>
+  );
+}
+
+/** Laps run toward the laps the measure wants before a verdict: a progress bar, not a count. */
+function LapsTowardVerdict({ laps, waiting }: { laps: number; waiting: number }): ReactElement {
+  const wanted = laps + waiting;
+  const done = wanted === 0 ? 1 : laps / wanted;
+  return (
+    <div aria-hidden="true" className="flex items-center gap-3">
+      <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-surface-inset">
+        <div
+          className="h-full rounded-full"
+          style={{
+            width: `${Math.max(2, Math.min(100, done * 100))}%`,
+            backgroundColor: waiting === 0 ? 'var(--success)' : 'var(--warning)',
+          }}
+        />
+      </div>
+      <span className={`${MONO} shrink-0 text-text-secondary`}>
+        {laps} of {wanted}
+      </span>
     </div>
   );
 }

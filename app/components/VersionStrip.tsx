@@ -108,11 +108,13 @@ export function VersionList({
   const selectable = known.size;
   return (
     <>
-      <ol className="overflow-hidden rounded-[10px] border border-border bg-surface [&>li:last-child]:border-b-0">
-        {entries.map((entry) => (
+      <ol className="grid gap-3">
+        {entries.map((entry, index) => (
           <Entry
             key={entry.digest ?? `pin:${entry.pin}`}
             entry={entry}
+            after={daysBetween(entries[index - 1]?.date, entry.date)}
+            last={index === entries.length - 1}
             targeted={entry === destination}
             selected={entry.digest !== null && kept.includes(entry.digest)}
             onToggle={onToggle}
@@ -160,13 +162,29 @@ export function VersionList({
   );
 }
 
+/** Whole days from one `YYYY-MM-DD` date to the next, or null when either is not recorded. */
+export function daysBetween(from: string | undefined, to: string): number | null {
+  const start = from === undefined ? Number.NaN : Date.parse(`${from}T00:00:00Z`);
+  const end = Date.parse(`${to}T00:00:00Z`);
+  return Number.isNaN(start) || Number.isNaN(end) ? null : Math.round((end - start) / 86_400_000);
+}
+
+/**
+ * One version on the timeline: its date and pin on the rail, with the days since the version
+ * before, and its card beside it. Oldest first, so the line reads as the factory's history.
+ */
 function Entry({
   entry,
+  after,
+  last,
   targeted,
   selected,
   onToggle,
 }: {
   entry: StripEntry;
+  /** Days since the version before this one, when both dates are known. */
+  after: number | null;
+  last: boolean;
   targeted: boolean;
   selected: boolean;
   onToggle: (digest: string) => void;
@@ -178,6 +196,7 @@ function Entry({
   useEffect(() => {
     if (targeted) row.current?.scrollIntoView({ block: 'center' });
   }, [targeted]);
+  const marked = selected || targeted;
   return (
     <li
       ref={row}
@@ -186,49 +205,81 @@ function Entry({
       data-kind={digest === null ? 'pending' : 'version'}
       data-digest={digest ?? undefined}
       data-pin={entry.pin ?? undefined}
-      className={`flex flex-col gap-2 border-b border-border/40 px-[18px] py-[13px] ${
-        selected || targeted ? 'bg-[color:var(--accent-soft)] ring-2 ring-inset ring-selected' : ''
-      }`}
+      className="grid grid-cols-[96px_minmax(0,1fr)] gap-x-4 sm:grid-cols-[132px_minmax(0,1fr)]"
     >
-      <div className="flex flex-wrap items-center gap-x-[18px] gap-y-1">
-        <span data-date={entry.date} className={`${MONO} text-text-primary`}>
-          {entry.date}
-        </span>
-        <span className={`${MONO} text-text-secondary`}>
-          {entry.pin === null ? NOT_RECORDED : entry.pin.slice(0, 8)}
-        </span>
-        {digest === null ? (
-          <span className="font-mono text-[11px] font-semibold uppercase tracking-[0.05em] text-warning">
-            Not yet run
+      <div className="relative pt-[13px]">
+        {/* The rail: a line through every version, stopping at the newest. */}
+        <span
+          aria-hidden="true"
+          className={`absolute top-0 right-[5px] w-px bg-border-bright ${last ? 'h-[22px]' : '-bottom-3'}`}
+        />
+        {/* Colors inline, as on the issue graph: `.console-root *` outranks border utilities. */}
+        <span
+          aria-hidden="true"
+          className="absolute top-[16px] right-0 h-[11px] w-[11px] rounded-full border-2"
+          style={{
+            borderColor:
+              digest === null
+                ? 'var(--warning)'
+                : marked
+                  ? 'var(--selected)'
+                  : 'var(--accent-bright)',
+            backgroundColor: marked ? 'var(--selected)' : 'var(--background)',
+          }}
+        />
+        <div className="flex flex-col items-start gap-0.5 pr-6">
+          <span data-date={entry.date} className={`${MONO} font-semibold text-text-primary`}>
+            {entry.date}
           </span>
-        ) : (
-          <span className={`${MONO} min-w-0 break-all text-text-secondary`}>
-            {shortDigest(digest)}
+          <span className={`${MONO} text-text-secondary`}>
+            {entry.pin === null ? NOT_RECORDED : entry.pin.slice(0, 8)}
           </span>
-        )}
-        {digest === null ? null : (
-          <button
-            type="button"
-            aria-pressed={selected}
-            aria-label={selectName(entry, digest, selected)}
-            onClick={() => onToggle(digest)}
-            className={`ml-auto font-mono text-[11px] font-semibold uppercase tracking-[0.1em] transition-colors ${
-              selected ? 'text-text-primary' : 'text-text-secondary hover:text-text-primary'
-            }`}
-          >
-            {selected ? `Selected ${entry.date}` : `Select ${entry.date}`}
-          </button>
-        )}
-      </div>
-      <p data-reason={entry.reason} className="min-w-0 break-words text-[13px] text-text-primary">
-        {entry.reason}
-      </p>
-      <div className="grid gap-2 md:grid-cols-2">
-        <div data-hypothesis={entry.hypothesis} className="min-w-0">
-          <Trailer label="Hypothesis" text={entry.hypothesis} />
+          {after === null ? null : (
+            <span className="font-mono text-[11px] text-text-secondary">
+              {after === 0 ? 'same day' : `${after} ${after === 1 ? 'day' : 'days'} later`}
+            </span>
+          )}
         </div>
-        <div data-measure={entry.measure} className="min-w-0">
-          <Trailer label="Measure" text={entry.measure} />
+      </div>
+      <div
+        className={`flex min-w-0 flex-col gap-2 rounded-[10px] border border-border bg-surface px-[18px] py-[13px] ${
+          marked ? 'bg-[color:var(--accent-soft)] ring-2 ring-inset ring-selected' : ''
+        }`}
+      >
+        <div className="flex flex-wrap items-center gap-x-[18px] gap-y-1">
+          {digest === null ? (
+            <span className="font-mono text-[11px] font-semibold uppercase tracking-[0.05em] text-warning">
+              Not yet run
+            </span>
+          ) : (
+            <span className={`${MONO} min-w-0 break-all text-text-secondary`}>
+              {shortDigest(digest)}
+            </span>
+          )}
+          {digest === null ? null : (
+            <button
+              type="button"
+              aria-pressed={selected}
+              aria-label={selectName(entry, digest, selected)}
+              onClick={() => onToggle(digest)}
+              className={`ml-auto font-mono text-[11px] font-semibold uppercase tracking-[0.1em] transition-colors ${
+                selected ? 'text-text-primary' : 'text-text-secondary hover:text-text-primary'
+              }`}
+            >
+              {selected ? `Selected ${entry.date}` : `Select ${entry.date}`}
+            </button>
+          )}
+        </div>
+        <p data-reason={entry.reason} className="min-w-0 break-words text-[14px] text-text-primary">
+          {entry.reason}
+        </p>
+        <div className="grid gap-2 md:grid-cols-2">
+          <div data-hypothesis={entry.hypothesis} className="min-w-0">
+            <Trailer label="Hypothesis" text={entry.hypothesis} />
+          </div>
+          <div data-measure={entry.measure} className="min-w-0">
+            <Trailer label="Measure" text={entry.measure} />
+          </div>
         </div>
       </div>
     </li>
