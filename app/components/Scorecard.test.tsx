@@ -188,11 +188,38 @@ test('a side under 10 laps labels each difference not yet meaningful; 12 against
   expect(both.find((d) => d.value === '+1')).toBeDefined();
 });
 
-test('with no version picked, it is an empty state linking to the versions', () => {
-  const html = render(laps(V1, 2, 1), undefined);
-  expect(html).not.toContain('data-measure=');
+test('with no version picked, it opens on the newest version with laps and says which', () => {
+  const rows = [
+    ...laps(V1, 2, 1),
+    version(V1, '2026-10-01T00:00:00Z', 'aaaa1111bbbb'),
+    ...laps(V2, 3, 2),
+    version(V2, '2026-10-05T00:00:00Z', 'cccc2222dddd'),
+  ];
+  const html = render(rows, undefined);
+  expect(html).toContain(`data-default-version="${V2}"`);
+  expect(html).toContain('Showing the newest version with laps');
+  expect(html).toContain('cccc2222');
   expect(html).toContain('href="/f/mission-control/versions"');
-  expect(render([], undefined)).toContain('Pick a version on the versions screen');
+  const shown = cells(html);
+  expect(shown).toHaveLength(MEASURES.length);
+  expect(shown.every((c) => c.version === 'a')).toBe(true);
+  expect(shown.find((c) => c.measure === 'laps')?.value).toBe('3');
+});
+
+test('a newer version no lap ran is not the default; a named version still wins', () => {
+  const rows = [...laps(V1, 2, 1), version(V1, '2026-10-01T00:00:00Z', null)];
+  const withEmpty = [...rows, version(V2, '2026-10-09T00:00:00Z', null)];
+  expect(render(withEmpty, undefined)).toContain(`data-default-version="${V1}"`);
+  const named = render([...rows, ...laps(V2, 3, 2)], V1);
+  expect(named).not.toContain('data-default-version');
+  expect(named).toContain(`data-digest="${V1}"`);
+});
+
+test('with no lap at all, it is an empty state linking to the versions', () => {
+  const html = render([], undefined);
+  expect(html).not.toContain('data-measure=');
+  expect(html).toContain('No lap has run on this factory yet.');
+  expect(html).toContain('href="/f/mission-control/versions"');
 });
 
 test('a version no lap ran is still compared: 0 laps, n/a where undefined, not yet meaningful', () => {
