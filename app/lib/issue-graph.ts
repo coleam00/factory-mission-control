@@ -181,9 +181,23 @@ export interface ViewIssue extends Issue {
   context: boolean;
 }
 
+/** The phases left without a column by default because none of their issues is open. */
+export interface DonePhases {
+  phases: number;
+  merged: number;
+  closed: number;
+  /** The issues with no phase, when none of them is open either; else null. */
+  unphased: { merged: number; closed: number } | null;
+}
+
 export interface IssueView {
-  /** Phases in the PHASES grid's order, then "No phase" when any issue has none. */
+  /**
+   * Phases in the PHASES grid's order, then "No phase" when any issue has none. By default only
+   * the ones with open work: a phase whose issues are all merged or closed is counted in `done`.
+   */
   columns: PhaseColumn[];
+  /** By default, the phases with no column; with Show merged, none. */
+  done: DonePhases;
   /** By number. */
   issues: ViewIssue[];
   /** Only edges whose two ends are drawn. */
@@ -238,11 +252,22 @@ export function issueView(
       for (const d of context) drawn.set(d.number, { ...d, context: true });
     }
   }
+  const done: DonePhases = { phases: 0, merged: 0, closed: 0, unphased: null };
+  const shown: PhaseColumn[] = [];
+  for (const column of columns.values()) {
+    if (showMerged || column.open > 0) shown.push(column);
+    else if (column.phase === null)
+      done.unphased = { merged: column.merged, closed: column.closed };
+    else {
+      done.phases += 1;
+      done.merged += column.merged;
+      done.closed += column.closed;
+    }
+  }
   return {
     // "No phase" goes last; Map order keeps the phases in the PHASES grid's order.
-    columns: [...columns.values()].sort(
-      (a, b) => Number(a.phase === null) - Number(b.phase === null),
-    ),
+    columns: shown.sort((a, b) => Number(a.phase === null) - Number(b.phase === null)),
+    done,
     issues: [...drawn.values()].sort((a, b) => a.number - b.number),
     dependencies: dependencies.filter((d) => drawn.has(d.from) && drawn.has(d.on)),
     hidden,
@@ -288,7 +313,13 @@ export interface PhaseLayout {
   overflows: boolean;
 }
 
-/** Each issue's dependency depth among the drawn issues: 0 with none, else one below its deepest. */
+/**
+ * Each issue's band: its dependency depth among the drawn issues (0 with none, else one below its
+ * deepest), except that an issue joined to no other drawn issue goes in a band of its own after
+ * the deepest. The chains then sit together at the top, each issue just under what it depends on,
+ * instead of under a wall of unrelated issues their edges would have to cross. (`layoutPhases`
+ * moves them back to the top of a column that holds no chain.)
+ */
 function depths(view: IssueView): Map<number, number> {
   const on = new Map<number, number[]>();
   for (const { from, on: to } of view.dependencies) on.set(from, [...(on.get(from) ?? []), to]);
@@ -305,6 +336,11 @@ function depths(view: IssueView): Map<number, number> {
     return d;
   };
   for (const issue of view.issues) of(issue.number);
+  const joined = new Set(view.dependencies.flatMap((d) => [d.from, d.on]));
+  if (joined.size > 0 && joined.size < view.issues.length) {
+    const after = Math.max(...[...joined].map((n) => depth.get(n) ?? 0)) + 1;
+    for (const issue of view.issues) if (!joined.has(issue.number)) depth.set(issue.number, after);
+  }
   return depth;
 }
 
@@ -325,9 +361,25 @@ export function layoutPhases(view: IssueView, width: number): PhaseLayout {
       Array.from({ length: bands }, () => []),
     );
   }
+  // A done issue drawn for context whose phase has no column (no open work) sits in the column of
+  // the open issue that depends on it.
+  const columnKey = (issue: ViewIssue, seen = new Set<number>()): string => {
+    const own = keyOf(issue.phase);
+    if (known.has(own)) return own;
+    seen.add(issue.number);
+    for (const d of view.dependencies) {
+      const dependent = d.on === issue.number ? view.issues.find((i) => i.number === d.from) : null;
+      if (dependent && !seen.has(dependent.number)) return columnKey(dependent, seen);
+    }
+    return keyOf(view.columns.at(-1)?.phase ?? null);
+  };
+  // In a column with no chain, the unjoined issues have nothing to sit under: they go at the top.
+  const joined = new Set(view.dependencies.flatMap((d) => [d.from, d.on]));
+  const chained = new Set(view.issues.filter((i) => joined.has(i.number)).map((i) => columnKey(i)));
   for (const issue of view.issues) {
-    const key = known.has(keyOf(issue.phase)) ? keyOf(issue.phase) : '';
-    inColumn.get(key)?.[depth.get(issue.number) ?? 0].push(issue);
+    const key = columnKey(issue);
+    const band = !joined.has(issue.number) && !chained.has(key) ? 0 : depth.get(issue.number);
+    inColumn.get(key)?.[band ?? 0].push(issue);
   }
 
   const spanOf = (issue: ViewIssue) => (issue.context ? 1 : 2);
@@ -359,6 +411,8 @@ export function layoutPhases(view: IssueView, width: number): PhaseLayout {
     slots.set(key, k - 1);
   }
   while (nodeWidth > NODE.minWidth && total(nodeWidth) > width) nodeWidth -= 4;
+  // Wrapping may have freed room: give the titles back what fits.
+  while (nodeWidth < NODE.width && total(nodeWidth + 4) <= width) nodeWidth += 4;
   const overflows = total(nodeWidth) > width;
 
   const columns: PlacedColumn[] = [];
