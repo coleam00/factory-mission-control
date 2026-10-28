@@ -8,6 +8,7 @@ import {
   layoutSteps,
   type StepGraph,
   type StepNode,
+  stepLabelLines,
 } from '../lib/home-map';
 import { LiveDot } from './LiveDot';
 import { GraphViewport } from './GraphViewport';
@@ -69,8 +70,14 @@ function Step({ node, box }: { node: StepNode; box: Box }): ReactElement {
         {KIND_GLYPH[node.kind] ?? '·'}
       </span>
       <span className="flex min-w-0 flex-1 flex-col">
-        <span className="truncate font-mono text-[13px] font-semibold text-text-primary">
-          {node.label}
+        {/* The whole name, never cut: the layout sized this box for these lines. */}
+        <span
+          data-step-name
+          className="flex flex-col whitespace-nowrap font-mono text-[13px] font-semibold leading-[17px] text-text-primary"
+        >
+          {stepLabelLines(node.label).map((line, index) => (
+            <span key={index === 0 ? 'first' : 'second'}>{line}</span>
+          ))}
         </span>
         {others.length > 0 ? (
           <span
