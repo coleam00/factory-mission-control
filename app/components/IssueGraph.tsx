@@ -109,6 +109,11 @@ export function IssueScreen({
   const open = view.columns.reduce((n, c) => n + c.open, 0);
   const merged = view.columns.reduce((n, c) => n + c.merged, 0);
   const closed = view.columns.reduce((n, c) => n + c.closed, 0);
+  const { done } = view;
+  const doneCounts = (counts: { merged: number; closed: number }) =>
+    [`${counts.merged} merged`, counts.closed > 0 ? `${counts.closed} closed` : null]
+      .filter((c) => c !== null)
+      .join(', ');
   return (
     <>
       <h1 className={`${LABEL} mb-3`}>Phases</h1>
@@ -127,8 +132,23 @@ export function IssueScreen({
           <p data-graph-summary className={`${MONO} text-text-secondary`}>
             {showMerged
               ? `Every issue: ${open} open, ${merged} merged, ${closed} closed`
-              : `${plural(open, 'open issue')} and what they depend on · ${merged} merged, ${closed} closed counted in their phase`}
+              : `${plural(open, 'open issue')} and what they depend on`}
           </p>
+          {!showMerged && done.phases > 0 ? (
+            <p
+              data-done-phases={done.phases}
+              data-done-merged={done.merged}
+              data-done-closed={done.closed}
+              className={`${MONO} text-text-secondary`}
+            >
+              {`${plural(done.phases, 'phase')} done: ${doneCounts(done)}`}
+            </p>
+          ) : null}
+          {!showMerged && done.unphased ? (
+            <p className={`${MONO} text-text-secondary`}>
+              {`No phase: ${doneCounts(done.unphased)}`}
+            </p>
+          ) : null}
           {view.hidden > 0 ? (
             <p data-hidden-open={view.hidden} className={`${MONO} text-text-primary`}>
               {plural(view.hidden, 'more open issue')} not drawn (furthest from merge)
@@ -151,6 +171,9 @@ export function IssueScreen({
       </div>
       <Legend context={!showMerged} />
       <div ref={ref} className="mt-3 w-full">
+        {layout.columns.length === 0 ? (
+          <p className="text-sm text-text-secondary">No open issues: every phase is done.</p>
+        ) : null}
         <div
           className={layout.overflows ? 'overflow-x-auto' : undefined}
           data-graph-overflows={layout.overflows ? 'true' : undefined}
@@ -253,7 +276,9 @@ function Node({
   return (
     <a
       href={issue.url}
-      title={`#${issue.number} ${issue.title}${issue.context ? ' (an open issue depends on it)' : ''}`}
+      title={`#${issue.number} ${issue.title}${
+        issue.context ? ` (${issue.phase ?? 'no phase'}, done; an open issue depends on it)` : ''
+      }`}
       data-issue={issue.number}
       data-issue-state={issue.state}
       data-longest-chain={highlighted ? 'true' : undefined}
