@@ -1,4 +1,4 @@
-import { type ReactElement, type ReactNode, useMemo, useSyncExternalStore } from 'react';
+import { type ReactElement, type ReactNode, useMemo, useState, useSyncExternalStore } from 'react';
 import { Link } from 'react-router';
 import {
   type Box,
@@ -175,7 +175,12 @@ function StepGraphView({
   );
 }
 
-/** An input or the manager: a workflow of the pack shows its own steps under its name. */
+/**
+ * An input or the manager: a workflow of the pack, folded to one card with its name, how many
+ * steps it has and how many of the factory's runs are in it now, so the loop opens above the fold.
+ * A click shows its steps in place, and folds them again; folded, they are in the page but hidden. It stays folded while a run is in it:
+ * the card's count and live dot show the run, and the page keeps its shape.
+ */
 function WorkflowCard({
   node,
   graph,
@@ -185,15 +190,45 @@ function WorkflowCard({
   graph: StepGraph;
   narrow: boolean;
 }): ReactElement {
+  const [open, setOpen] = useState(false);
+  const nested = new Set([...graph.clusters.values()].flat());
+  // A run is on one top-level step at a time, and counts on it from anywhere beneath it.
+  const running = graph.steps.filter((s) => !nested.has(s.id)).reduce((n, s) => n + s.liveCount, 0);
+  const steps = `${graph.steps.length} ${graph.steps.length === 1 ? 'step' : 'steps'}`;
   return (
     <div
       data-node-role={node.role}
+      data-workflow-card={node.label}
+      data-folded={open ? 'false' : 'true'}
+      data-live-count={running}
       className="flex max-w-full flex-col gap-2 rounded-[9px] border border-border-bright bg-surface-elevated p-2.5"
     >
-      <span className="px-1 font-mono text-[13px] font-semibold text-text-primary">
-        {node.label}
-      </span>
-      <StepGraphView graph={graph} label={node.label} narrow={narrow} />
+      <button
+        type="button"
+        data-card-toggle
+        aria-expanded={open}
+        aria-label={`${node.label}: ${steps}, ${running} running. ${open ? 'Fold' : 'Show'} its steps.`}
+        onClick={() => setOpen((was) => !was)}
+        className="flex cursor-pointer items-center gap-2.5 rounded-md bg-surface-elevated px-1 text-left hover:brightness-125"
+      >
+        <span aria-hidden="true" className="w-3 font-mono text-[12px] text-text-secondary">
+          {open ? '▾' : '▸'}
+        </span>
+        <span className="font-mono text-[13px] font-semibold text-text-primary">{node.label}</span>
+        <span className="font-mono text-[12px] text-text-secondary">· {steps}</span>
+        {running > 0 ? <LiveDot size={8} /> : null}
+        <span
+          className={`ml-auto font-mono text-[12px] tabular-nums ${
+            running > 0 ? 'text-text-primary' : 'text-text-secondary'
+          }`}
+        >
+          {running}
+        </span>
+      </button>
+      {/* Folded, its steps stay in the page, hidden: every link is there to open. */}
+      <div hidden={!open}>
+        <StepGraphView graph={graph} label={node.label} narrow={narrow} />
+      </div>
     </div>
   );
 }
