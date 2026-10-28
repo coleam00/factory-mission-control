@@ -27,6 +27,7 @@ const attempt = (over: Partial<StepAttemptRow>): StepAttemptRow => ({
   cost_usd: '0.4',
   outcome: 'merge',
   error: null,
+  position: null,
   ...over,
 });
 
@@ -46,6 +47,25 @@ test('attempts run in start order, an attempt with no start last, ties by step',
     ['review', '2026-10-01T15:00:00.000Z'],
     ['deploy', null],
     ['ship', null],
+  ]);
+});
+
+test("an attempt with no start goes in the loop's order, a step the version lacks after (#191)", () => {
+  const rows = [
+    attempt({ step_id: 'tally', status: 'skipped', started_at: null, position: 83 }),
+    attempt({ step_id: 'briefs', status: 'skipped', started_at: null }),
+    attempt({ step_id: 'deploy', status: 'skipped', started_at: null, position: 77 }),
+    attempt({ step_id: 'ship', status: 'skipped', started_at: null, position: 3 }),
+    attempt({ step_id: 'build', started_at: new Date('2026-10-01T14:00:00Z'), position: 2 }),
+    attempt({ step_id: 'pick', started_at: new Date('2026-10-01T15:00:00Z'), position: 0 }),
+  ];
+  expect(attemptsInOrder(rows).map((r) => r.step_id)).toEqual([
+    'build',
+    'pick',
+    'ship',
+    'deploy',
+    'tally',
+    'briefs',
   ]);
 });
 

@@ -234,7 +234,7 @@ describe('the page the server answers', () => {
     expect(script.indexOf('</script>')).toBe(script.length - '</script>'.length);
   });
 
-  test('marks when the socket was opened and when Realtime first said ready, once', () => {
+  test('marks when the socket was created, when it opened and when Realtime first said ready, once', () => {
     const script = liveBootScript({
       url: 'wss://x/',
       home: 'wss://x/',
@@ -242,22 +242,28 @@ describe('the page the server answers', () => {
       rewind: null,
     });
     const marks: string[] = [];
-    let receive = (_event: { data: string }): void => {};
+    const listeners = new Map<string, (event: { data: string }) => void>();
     class FakeSocket {
       constructor() {
-        marks.push('socket opened');
+        marks.push('socket created');
       }
-      addEventListener(_type: string, listener: typeof receive): void {
-        receive = listener;
+      addEventListener(type: string, listener: (event: { data: string }) => void): void {
+        listeners.set(type, listener);
       }
     }
     const page: { __MC_LIVE__?: { early: string[] } } = {};
     new Function('WebSocket', 'window', 'performance', script.slice(8, -9))(FakeSocket, page, {
       mark: (name: string) => marks.push(name),
     });
+    listeners.get('open')?.({ data: '' });
     const frames = ['not json', '{"type":"ready"}', '{"type":"ready"}'];
-    for (const data of frames) receive({ data });
-    expect(marks).toEqual(['live:connection:start', 'socket opened', 'live:connection:ready']);
+    for (const data of frames) listeners.get('message')?.({ data });
+    expect(marks).toEqual([
+      'live:connection:start',
+      'socket created',
+      'live:connection:open',
+      'live:connection:ready',
+    ]);
     expect(page.__MC_LIVE__?.early).toEqual(frames);
   });
 });

@@ -24,11 +24,13 @@ export interface PanelTimings {
   queryContext: QueryObservation | null;
   measurementError: string | null;
   /**
-   * The page opened its Realtime socket (`live:connection:start`) and Realtime said `ready` on it
-   * (`live:connection:ready`), from navigation, rounded: the same on every panel of a page. No
-   * subscribe is sent before that `ready`.
+   * The page created its Realtime socket (`live:connection:start`), the socket opened
+   * (`live:connection:open`) and Realtime said `ready` on it (`live:connection:ready`), from
+   * navigation, rounded: the same on every panel of a page. No subscribe is sent before that
+   * `ready`.
    */
   connectionStartMs: number | null;
+  connectionOpenMs: number | null;
   connectionReadyMs: number | null;
 }
 
@@ -49,6 +51,7 @@ export const emptyPanelTimings = (): PanelTimings => ({
   queryContext: null,
   measurementError: null,
   connectionStartMs: null,
+  connectionOpenMs: null,
   connectionReadyMs: null,
 });
 
@@ -71,6 +74,7 @@ export function groupTimings(panels: Record<string, PanelTimings>): GroupTimings
     queryContext: perQuery('queryContext'),
     measurementError: perQuery('measurementError'),
     connectionStartMs: perQuery('connectionStartMs'),
+    connectionOpenMs: perQuery('connectionOpenMs'),
     connectionReadyMs: perQuery('connectionReadyMs'),
   };
 }
@@ -89,6 +93,7 @@ interface BrowserObservation {
   subscribedAt: number | null;
   context: unknown;
   connectionStartAt: number | null;
+  connectionOpenAt: number | null;
   connectionReadyAt: number | null;
 }
 
@@ -130,6 +135,7 @@ export function observedTimings(query: string, seen: BrowserObservation): PanelT
   if (seen.sealedAt !== null) timing.sealedMs = Math.round(seen.sealedAt);
   if (seen.connectionStartAt !== null)
     timing.connectionStartMs = Math.round(seen.connectionStartAt);
+  if (seen.connectionOpenAt !== null) timing.connectionOpenMs = Math.round(seen.connectionOpenAt);
   if (seen.connectionReadyAt !== null)
     timing.connectionReadyMs = Math.round(seen.connectionReadyAt);
   if (seen.sentAt !== null) timing.subscribeSentMs = Math.round(seen.sentAt);
@@ -160,6 +166,7 @@ export async function collectPanelMarks(
     const queries = ${JSON.stringify(queries)};
     const first = (query, kind) => performance.getEntriesByName('live:' + query + ':' + kind)[0];
     const connectionStartAt = first('connection', 'start')?.startTime ?? null;
+    const connectionOpenAt = first('connection', 'open')?.startTime ?? null;
     const connectionReadyAt = first('connection', 'ready')?.startTime ?? null;
     const complete = () => queries.every((query) => first(query, 'ready'));
     if (!complete()) await new Promise((done) => {
@@ -179,7 +186,7 @@ export async function collectPanelMarks(
         sealedAt: first(query, 'sealed')?.startTime ?? null, sentAt: first(query, 'subscribe-sent')?.startTime ?? null,
         firstAt: arrived?.startTime ?? null, renderedAt: matched('rendered')?.startTime ?? null,
         subscribedAt: arrived?.detail?.subscribedAt ?? null, context: ready?.detail ?? null,
-        connectionStartAt, connectionReadyAt }];
+        connectionStartAt, connectionOpenAt, connectionReadyAt }];
     }));
   })()`);
   return Object.fromEntries(
@@ -330,9 +337,21 @@ function stretches({ requestedMs, sealedMs, subscribeSentMs, firstSnapshotMs }: 
   ].join(', ');
 }
 
-/** The page's one Realtime connection: a subscribe sealed before it was ready waited for it. */
-function connection(startMs: number | null, readyMs: number | null): string {
-  return `Realtime connection started ${ms(startMs)}, ready ${ms(readyMs)}`;
+type ConnectionMarks = Pick<
+  PanelTimings,
+  'connectionStartMs' | 'connectionOpenMs' | 'connectionReadyMs'
+>;
+
+/**
+ * The page's one Realtime connection: a subscribe sealed before it was ready waited for it. Start
+ * to open is the network and the WebSocket upgrade; open to ready is Realtime's own handshake.
+ */
+function connection({ connectionStartMs, connectionOpenMs, connectionReadyMs }: ConnectionMarks) {
+  return (
+    `Realtime connection started ${ms(connectionStartMs)}, ready ${ms(connectionReadyMs)}; ` +
+    `connection start to open ${ms(between(connectionStartMs, connectionOpenMs))}, ` +
+    `open to ready ${ms(between(connectionOpenMs, connectionReadyMs))}`
+  );
 }
 
 const firstMarked = (values: Record<string, number | null>) =>
@@ -352,13 +371,13 @@ export function readyFailures(
   if (within(timings.readyMs, limitMs)) return [];
   const head = `${screen} ready after ${timings.readyMs} ms, limit ${limitMs}`;
   if (!isGroup(timings)) {
-    const opened = connection(timings.connectionStartMs, timings.connectionReadyMs);
-    return [`${head} (${opened}): ${stretches(timings)}`];
+    return [`${head} (${connection(timings)}): ${stretches(timings)}`];
   }
-  const opened = connection(
-    firstMarked(timings.connectionStartMs),
-    firstMarked(timings.connectionReadyMs),
-  );
+  const opened = connection({
+    connectionStartMs: firstMarked(timings.connectionStartMs),
+    connectionOpenMs: firstMarked(timings.connectionOpenMs),
+    connectionReadyMs: firstMarked(timings.connectionReadyMs),
+  });
   const panels = Object.keys(timings.firstSnapshotMs).map(
     (query) =>
       `${query} ${stretches({

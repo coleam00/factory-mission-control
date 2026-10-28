@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { attemptsInOrder, type StepAttemptRow } from '../../app/lib/one-lap';
 import { seedLaps } from '../../scripts/fixture/seed-laps';
 import { eventData } from '../../scripts/fixture/write';
 import type { Db, Row } from '../../scripts/lib/db';
@@ -107,6 +108,42 @@ describe('one-lap on the seed', () => {
         [LAP_RUN],
       ),
     );
+  });
+
+  test("steps that ran go by start, then the steps that never started in the loop's order (#191)", async () => {
+    const order = async (runId: string) =>
+      attemptsInOrder((await lap('one-lap-steps', runId)) as unknown as StepAttemptRow[]).map(
+        (s) => s.step_id,
+      );
+    // The failed lap stopped at build; the sent-back lap skipped ship, land and deploy.
+    expect(await order('5eed0003-0000-4000-8000-000000000002')).toEqual([
+      'pick',
+      'claim',
+      'build',
+      'ship',
+      'subject',
+      'check-app',
+      'evidence',
+      'review',
+      'land',
+      'deploy',
+      'release',
+      'tally',
+    ]);
+    expect(await order('5eed0002-0000-4000-8000-000000000003')).toEqual([
+      'pick',
+      'claim',
+      'build',
+      'subject',
+      'check-app',
+      'evidence',
+      'review',
+      'release',
+      'tally',
+      'ship',
+      'land',
+      'deploy',
+    ]);
   });
 
   test('the app-check lines are kind, verdict, evidence and a holdout scenario id, never text', async () => {

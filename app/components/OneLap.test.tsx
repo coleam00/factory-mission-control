@@ -52,6 +52,7 @@ const step = (over: Partial<StepAttemptRow>): StepAttemptRow => ({
   cost_usd: '0.4213',
   outcome: 'merge',
   error: null,
+  position: null,
   ...over,
 });
 
@@ -387,7 +388,11 @@ test('a block where no step ran is one box with its step count, its steps drawn 
   );
   expect(html).toMatch(/data-graph-step="ship" data-step-state="skipped"[^>]*data-folded="2"/);
   expect(html).toContain('skipped · 2 steps');
-  expect(html).not.toContain('data-graph-step="ship/intel"');
+  // Its steps are in the page, hidden, until it is opened.
+  const hiddenAt = html.indexOf('<div hidden="">');
+  expect(hiddenAt).toBeGreaterThan(0);
+  expect(html.slice(0, hiddenAt)).not.toContain('data-graph-step="ship/intel"');
+  expect(html.slice(hiddenAt)).toContain('data-graph-step="ship/intel"');
   // Every attempt stays a row under the graph.
   expect(html.match(/data-step-attempt=/g)).toHaveLength(2);
 });
