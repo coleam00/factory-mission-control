@@ -31,10 +31,21 @@ describe('pin commits', () => {
     });
   });
 
+  test('a pin with no reason, as the newest real pin is', () => {
+    expect(parsePin('Pin Archon 1cfb8fc5')).toEqual({
+      archonSha: '1cfb8fc5',
+      reason: null,
+      hypothesis: null,
+      measure: null,
+    });
+    expect(parsePin('Pin Archon 1cfb8fc5: ')?.reason).toBeNull();
+  });
+
   test('a commit that is not a pin returns null', () => {
     expect(parsePin(VERDICT)).toBeNull();
     expect(parsePin('Repin the factory to Archon c23d423f')).toBeNull();
     expect(parsePin('Pin Archon : no sha')).toBeNull();
+    expect(parsePin('Pin Archon 1cfb8fc5 without a colon')).toBeNull();
   });
 });
 

@@ -29,7 +29,8 @@ describe('version-strip on the seed', () => {
       versions.map(({ digest, pin_sha }) => ({ digest, pin_sha })),
     );
     expect(rows.map((r) => r.pin_sha)).toEqual(pins.map((p) => p.sha));
-    expect(rows[2]).toMatchObject({ hypothesis: null, measure: null });
+    // V3 is a bare `Pin Archon <sha>`: listed, with nothing recorded but the sha (#178).
+    expect(rows[2]).toMatchObject({ reason: null, hypothesis: null, measure: null });
   });
 
   test('each pin written after the last run adds one entry that has not run yet', async () => {

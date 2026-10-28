@@ -16,6 +16,7 @@ const decision = (over: Partial<TimelineRow>): TimelineRow => ({
   replaces: 'holdouts outside the repository.',
   version: '8e3e1cef',
   pin_sha: V1_PIN,
+  ambiguous: false,
   digest: V1,
   ...over,
 });
@@ -54,6 +55,18 @@ test('a joined decision links to the versions screen by its pin; an unjoined one
   expect(unjoined).not.toContain('data-version-link');
   expect(unjoined).not.toContain('<a');
   expect(unjoined).toContain('none, no pin by that prefix');
+});
+
+test('a Version: prefix of several pins links to none of them and says so', () => {
+  const html = render(
+    <Timeline
+      factory="mission-control"
+      entries={[decision({ version: '8e3e', pin_sha: null, ambiguous: true, digest: null })]}
+    />,
+  );
+  expect(html).not.toContain('data-version-link');
+  expect(html).toContain('8e3e, ambiguous: several pins by that prefix');
+  expect(html).not.toContain('no pin by that prefix');
 });
 
 test('different pins have distinct destinations, including an unused pin in another factory', () => {

@@ -112,7 +112,10 @@ export function Timeline({
             <span className={LABEL}>Version</span>
             {entry.pin_sha === null ? (
               <span className={`${MONO} min-w-0 break-all text-text-secondary`}>
-                {entry.version}, no pin by that prefix
+                {entry.version},{' '}
+                {entry.ambiguous
+                  ? 'ambiguous: several pins by that prefix'
+                  : 'no pin by that prefix'}
               </span>
             ) : (
               <Link

@@ -16,6 +16,7 @@ const decision = (date: string, title: string): TimelineRow => ({
   replaces: 'r',
   version: 'none',
   pin_sha: null,
+  ambiguous: false,
   digest: null,
 });
 
@@ -126,4 +127,19 @@ test('a pin with a verdict leaves being tested and shows its verdict and sentenc
     ['c', 'inconclusive', 'too few laps.', '2026-10-02'],
     ['a', 'helped', 'faster.', '2026-10-09'],
   ]);
+});
+
+test('a pin committed with no reason reads not recorded, testing or judged', () => {
+  const { testing, verdicts } = ledger([
+    pin({ pin_sha: 'a', reason: null, measure: 'over at least 10 laps.' }),
+    pin({
+      pin_sha: 'b',
+      reason: null,
+      verdict: 'hurt',
+      sentence: 'slower.',
+      verdict_at: new Date('2026-10-09T17:00:00Z'),
+    }),
+  ]);
+  expect(testing.map((t) => t.reason)).toEqual([NOT_RECORDED]);
+  expect(verdicts.map((v) => v.reason)).toEqual([NOT_RECORDED]);
 });

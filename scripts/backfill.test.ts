@@ -114,6 +114,34 @@ test('a pin whose pack file pins another version is written without a sha, said 
   expect(await rows('SELECT archon_sha FROM mc.pins')).toEqual([{ archon_sha: null }]);
 });
 
+test.each([[[]], [['--reconcile']]])(
+  '%p stores a pin with no reason, its reason not recorded',
+  async (argv) => {
+    const commits =
+      'https://api.github.com/repos/coleam00/ai-software-factory/commits?sha=main&per_page=100';
+    const bare: GetFetch = async (url, init) => {
+      if (url !== commits) return recorded(url, init);
+      const listed = responses[url]?.body as { commit: { message: string } }[];
+      return Response.json(
+        listed.map((c) =>
+          c.commit.message.startsWith('Pin Archon ')
+            ? { ...c, commit: { ...c.commit, message: 'Pin Archon abd85896' } }
+            : c,
+        ),
+      );
+    };
+    expect((await run(argv, 'check-abc', bare)).code).toBe(0);
+    expect(await rows('SELECT archon_sha, reason, hypothesis, measure FROM mc.pins')).toEqual([
+      {
+        archon_sha: 'abd85896e7971c9ac5199ed7e87973f27130250f',
+        reason: null,
+        hypothesis: null,
+        measure: null,
+      },
+    ]);
+  },
+);
+
 test('every request backfill and reconcile send to GitHub is a GET, the next page included', async () => {
   await run([]);
   await run(['--reconcile']);

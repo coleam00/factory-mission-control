@@ -4,9 +4,12 @@
  * `Date`. Pure, no React.
  */
 
-import { NOT_RECORDED } from './version-strip';
+import { NOT_RECORDED, recorded } from './version-strip';
 
-/** One `DECISIONS.md` entry, with the pin its `Version:` line names by prefix, if any. */
+/**
+ * One `DECISIONS.md` entry, with the one pin its `Version:` line names by a prefix of the pin's
+ * sha or of its Archon sha, if any; `ambiguous` when the prefix matches several pins.
+ */
 export interface TimelineRow {
   /** `YYYY-MM-DD`, cast to text so no timezone moves it. */
   date: string;
@@ -16,6 +19,7 @@ export interface TimelineRow {
   replaces: string;
   version: string;
   pin_sha: string | null;
+  ambiguous: boolean;
   /** The first digest this factory ran after that pin, before any later pin. */
   digest: string | null;
 }
@@ -23,7 +27,7 @@ export interface TimelineRow {
 /** One pin, with this factory's laps of the versions it labels and its latest verdict. */
 export interface LedgerRow {
   pin_sha: string;
-  reason: string;
+  reason: string | null;
   measure: string | null;
   committed_at: Date;
   laps: number;
@@ -89,7 +93,7 @@ export function ledger(rows: readonly LedgerRow[]): {
       const wanted = lapsWanted(row.measure);
       return {
         pin: row.pin_sha,
-        reason: row.reason,
+        reason: recorded(row.reason),
         measure: row.measure as string,
         laps: row.laps,
         waiting: wanted === null ? NOT_RECORDED : Math.max(0, wanted - row.laps),
@@ -104,7 +108,7 @@ export function ledger(rows: readonly LedgerRow[]): {
     .sort((a, b) => a.at.getTime() - b.at.getTime())
     .map(({ row, verdict, at }) => ({
       pin: row.pin_sha,
-      reason: row.reason,
+      reason: recorded(row.reason),
       verdict,
       sentence: row.sentence ?? NOT_RECORDED,
       date: at.toISOString().slice(0, 10),
