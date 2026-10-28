@@ -25,7 +25,7 @@ import {
   writePullRequest,
 } from '../function/ingest';
 import { failing, guardedDatabaseUrl, type Main, runCli } from './lib/cli';
-import type { Tx } from './lib/db';
+import type { Db, Tx } from './lib/db';
 
 interface FactoryHistory {
   factory: string;
@@ -104,43 +104,84 @@ export interface Removed {
 }
 
 /**
- * Writes `history` with the webhook's upserts. With `readAt`, the time reading `history` began,
- * also removes each issue and comment of a factory created before then that `history` no longer
- * holds, closing the removed issues' open owner questions at that time. Rows created later came
- * from the webhook while GitHub was being read and stay.
+ * How many items one transaction writes at most, and how long it may stay open before it commits
+ * after the item it is on. Each batch commits on its own, so a run never holds the dashboard's
+ * rows locked, or Realtime's starting snapshot back, for longer than about one batch (#260): from
+ * the owner's machine each statement is a ~250 ms round trip to Neon, so a count alone let one
+ * transaction of 25 issues stay open 28 s. Every write is an idempotent upsert or removal, so a run
+ * that stops part way leaves rows the next run completes.
  */
-export async function storeHistory(tx: Tx, history: History, readAt?: string): Promise<Removed> {
+export const BATCH = 25;
+export const BATCH_MS = 2000;
+
+/**
+ * Runs `write` over `items`, in order, in short transactions: each commits after BATCH items or
+ * once it has been open BATCH_MS, whichever comes first, and always writes at least one item.
+ */
+export async function inBatches<T>(
+  db: Db,
+  items: readonly T[],
+  write: (tx: Tx, item: T) => Promise<void>,
+  limits: { count: number; ms: number } = { count: BATCH, ms: BATCH_MS },
+): Promise<void> {
+  let next = 0;
+  while (next < items.length) {
+    await db.transaction(async (tx) => {
+      const opened = performance.now();
+      for (let n = 0; next < items.length && n < limits.count; n++) {
+        if (n > 0 && performance.now() - opened >= limits.ms) break;
+        await write(tx, items[next] as T);
+        next++;
+      }
+    });
+  }
+}
+
+/**
+ * Writes `history` with the webhook's upserts, in short transactions (see BATCH and BATCH_MS), after
+ * every GitHub read is done: no transaction is open across a network call. With `readAt`, the time
+ * reading `history` began, also removes each issue and comment of a factory created before then
+ * that `history` no longer holds, closing the removed issues' open owner questions at that time.
+ * Rows created later came from the webhook while GitHub was being read and stay.
+ */
+export async function storeHistory(db: Db, history: History, readAt?: string): Promise<Removed> {
   const removed: Removed = { issues: 0, comments: 0 };
   for (const { factory, issues, comments, pullRequests } of history.factories) {
-    for (const issue of issues) await writeIssue(tx, factory, issue);
-    for (const { issue, comment } of comments) await writeComment(tx, factory, issue, comment);
-    for (const pr of pullRequests) await writePullRequest(tx, factory, pr);
+    await inBatches(db, issues, (tx, issue) => writeIssue(tx, factory, issue));
+    await inBatches(db, comments, (tx, { issue, comment }) =>
+      writeComment(tx, factory, issue, comment),
+    );
+    await inBatches(db, pullRequests, (tx, pr) => writePullRequest(tx, factory, pr));
     if (readAt === undefined) continue;
 
-    const goneIssues = await tx.query(
+    // Read outside a transaction; each removal re-checks nothing, it is an idempotent delete.
+    const goneIssues = await db.query(
       `SELECT number FROM mc.issues WHERE factory = $1 AND created_at < $3
         AND number NOT IN (SELECT v::integer FROM jsonb_array_elements_text($2::jsonb) v)`,
       [factory, issues.map((issue) => issue.number), readAt],
     );
-    for (const { number } of goneIssues) await removeIssue(tx, factory, Number(number), readAt);
-    const goneComments = await tx.query(
+    await inBatches(db, goneIssues, (tx, { number }) =>
+      removeIssue(tx, factory, Number(number), readAt),
+    );
+    const goneComments = await db.query(
       `SELECT id FROM mc.comments WHERE factory = $1 AND created_at < $3
         AND id NOT IN (SELECT v::bigint FROM jsonb_array_elements_text($2::jsonb) v)`,
       [factory, comments.map(({ comment }) => comment.id), readAt],
     );
-    for (const { id } of goneComments) await deleteComment(tx, factory, Number(id));
+    await inBatches(db, goneComments, (tx, { id }) => deleteComment(tx, factory, Number(id)));
     removed.issues += goneIssues.length;
     removed.comments += goneComments.length;
   }
-  await writeCommits(tx, history.commits);
-  await replaceDecisions(tx, history.decisions);
+  await inBatches(db, history.commits, (tx, commit) => writeCommits(tx, [commit]));
+  // DECISIONS.md replaces the stored decisions wholesale, so it stays one transaction: one file.
+  await db.transaction((tx) => replaceDecisions(tx, history.decisions));
   return removed;
 }
 
 /** The rows the dashboard now holds for each factory and for the versions repository. */
-async function storedCounts(tx: Tx, history: History): Promise<string[]> {
+async function storedCounts(db: Tx, history: History): Promise<string[]> {
   const count = async (sql: string, params: unknown[] = []) =>
-    Number((await tx.query(`SELECT count(*)::int AS n FROM ${sql}`, params))[0]?.n);
+    Number((await db.query(`SELECT count(*)::int AS n FROM ${sql}`, params))[0]?.n);
   const lines: string[] = [];
   for (const { factory } of history.factories) {
     const of = (table: string) => count(`${table} WHERE factory = $1`, [factory]);
@@ -184,17 +225,17 @@ export const main: Main = async (argv, deps) => {
     const url = await guardedDatabaseUrl(deps, values.main ? 'main' : 'check');
     const readAt = deps.now().toISOString();
     const history = await readHistory(deps.github(), factories.factories);
+    // Every GitHub read is done before the first write, and each write is its own short
+    // transaction: nothing holds the dashboard's rows while GitHub answers (#260).
     const db = deps.openDb(url);
     try {
       const lines: string[] = [];
-      await db.transaction(async (tx) => {
-        const removed = await storeHistory(tx, history, values.reconcile ? readAt : undefined);
-        if (values.reconcile) {
-          lines.push(`removed ${removed.issues} issue(s) and ${removed.comments} comment(s)`);
-        }
-        lines.push(...(await storedCounts(tx, history)));
-        lines.push(...history.unresolvedPins.map((pin) => `pin without an Archon sha ${pin}`));
-      });
+      const removed = await storeHistory(db, history, values.reconcile ? readAt : undefined);
+      if (values.reconcile) {
+        lines.push(`removed ${removed.issues} issue(s) and ${removed.comments} comment(s)`);
+      }
+      lines.push(...(await storedCounts(db, history)));
+      lines.push(...history.unresolvedPins.map((pin) => `pin without an Archon sha ${pin}`));
       for (const line of lines) deps.out(line);
     } finally {
       await db.close();
