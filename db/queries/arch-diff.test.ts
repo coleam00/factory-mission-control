@@ -76,7 +76,7 @@ describe('arch-diff on the seed', () => {
     );
     const strip = queries.find(([name]) => name === 'version-strip')?.[1] as string;
     const homeMap = queries.find(([name]) => name === 'home-map')?.[1] as string;
-    const map = () => db.query(homeMap, ['mission-control']);
+    const map = () => db.query(homeMap, ['mission-control', '']);
     const resolvedMap = await map();
     const storeSha = (sha: unknown) =>
       db.query('UPDATE mc.pins SET archon_sha = $2 WHERE sha = $1', [pin?.sha, sha]);

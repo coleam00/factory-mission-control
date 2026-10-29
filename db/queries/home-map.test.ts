@@ -21,7 +21,7 @@ describe('home-map on the seed', () => {
     | 'laps'
     | 'is_current'
   >;
-  const rows = async (factory = 'mission-control') => (await db.query(sql, [factory])) as Row[];
+  const rows = async (factory = 'mission-control') => (await db.query(sql, [factory, ''])) as Row[];
   /** A node's key: paths are unique only within a workflow. */
   const node = (path: string, workflow = 'archon-loop') => `${workflow} ${path}`;
   const pathOf = (key: string) => {
@@ -351,5 +351,66 @@ describe('home-map on the seed', () => {
     expect(ids).toContain('check-app');
     expect(ids).toContain('tally');
     expect(ids).not.toContain('briefs');
+  });
+});
+
+describe('home-map at a version the address names', () => {
+  let db: Db;
+  const sql = queries.find(([name]) => name === 'home-map')?.[1] as string;
+  const V1 = '8e3e1cefaf1e1b7955789d6a43a81b6c2dbd7082';
+  const V2 = '5ffd60c6c6e591487f2fbb5ec67ccc8fc55ca915';
+  const V3 = '58c5f774e1bbe57c80c85ee91df8d44075664232';
+  const at = async (pin: string) =>
+    (await db.query(sql, ['mission-control', pin])) as Pick<
+      HomeMapRow,
+      'role' | 'workflow' | 'path' | 'step_id' | 'laps' | 'is_current'
+    >[];
+  const loopSteps = async (pin: string) =>
+    (await at(pin))
+      .filter((r) => r.workflow === 'archon-loop' && r.role === 'step')
+      .map((r) => r.step_id);
+  /** The address factory's laps on each loop node that has any. */
+  const laps = async (pin: string) =>
+    Object.fromEntries(
+      (await at(pin))
+        .filter((r) => r.workflow === 'archon-loop' && r.is_current && r.laps > 0)
+        .map((r) => [r.path, r.laps]),
+    );
+
+  beforeAll(async () => {
+    db = await onTheSeed();
+  }, 60_000);
+  afterAll(() => db.close());
+
+  test("'' draws the current version, V2, with every running lap", async () => {
+    expect(await loopSteps('')).toContain('tally');
+    expect(await loopSteps('')).not.toContain('briefs');
+    expect(await laps('')).toEqual({ build: 1, 'check-app': 1 });
+  });
+
+  test("an older pin draws its own steps, and none of the seed's laps, which ran V3", async () => {
+    expect(await loopSteps(V1)).toContain('briefs');
+    expect(await loopSteps(V1)).not.toContain('tally');
+    expect(await laps(V1)).toEqual({});
+  });
+
+  test('a pin with no architecture, an unknown value and a short sha draw nothing', async () => {
+    for (const pin of [V3, 'nope', V1.slice(0, 8)]) expect(await at(pin)).toEqual([]);
+  });
+
+  test('a lap counts at the version its digest ran, and on the current map as today', async () => {
+    const run = '00000000-0000-0000-0000-0000000000a1';
+    await db.query(
+      `INSERT INTO mc.laps (run_id, factory, workflow_name, status, digest) VALUES
+        ($1, 'mission-control', 'archon-loop', 'running', 'sha256:${'a1'.repeat(32)}')`,
+      [run],
+    );
+    await db.query(
+      `INSERT INTO mc.lap_steps (run_id, step_id, status) VALUES ($1, 'check-app', 'running')`,
+      [run],
+    );
+    expect(await laps(V1)).toEqual({ 'check-app': 1 });
+    expect(await laps(V2)).toEqual({});
+    expect(await laps('')).toEqual({ build: 1, 'check-app': 2 });
   });
 });
