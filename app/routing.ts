@@ -64,19 +64,34 @@ export function factoryScreens(routes: readonly RouteObject[]): FactoryScreen[] 
   return screens.sort((a, b) => a.path.localeCompare(b.path));
 }
 
+/** The search a factory's scorecard keeps across a switch: the versions it compares. */
+const KEPT_SEARCH: Readonly<Record<string, readonly string[]>> = { scorecard: ['a', 'b'] };
+
 /**
- * Where choosing `factory` goes from `pathname`: the same screen for it when `pathname` is one of
- * `screens`, otherwise its home map (`/f/:factory`). Pass the pathname only: a screen's search
- * names the old factory's versions.
+ * Where choosing `factory` goes from `pathname` and its `search`: the same screen for it when
+ * `pathname` is one of `screens`, a step's page as it is (a step's page names no factory: the
+ * switcher remembers the chosen one), otherwise its home map (`/f/:factory`). A screen's search
+ * names the old factory's versions, so only the scorecard keeps its `a` and `b`, which the
+ * scorecard then checks against the new factory's versions (`keptVersions`).
  */
 export function factoryPath(
   pathname: string,
   factory: string,
   screens: readonly FactoryScreen[],
+  search = '',
 ): string {
+  if (/^\/steps\/[^/]+\/[^/]+$/.test(pathname)) return `${pathname}${search}`;
   const home = `/f/${encodeURIComponent(factory)}`;
   const rest = pathname.match(/^\/f\/[^/]+\/(.+)$/)?.[1];
-  return screens.some((screen) => screen.path === rest) ? `${home}/${rest}` : home;
+  if (rest === undefined || !screens.some((screen) => screen.path === rest)) return home;
+  const from = new URLSearchParams(search);
+  const kept = new URLSearchParams();
+  for (const name of KEPT_SEARCH[rest] ?? []) {
+    const value = from.get(name);
+    if (value) kept.set(name, value);
+  }
+  const query = kept.toString();
+  return `${home}/${rest}${query === '' ? '' : `?${query}`}`;
 }
 
 /**

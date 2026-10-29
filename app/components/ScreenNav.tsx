@@ -31,7 +31,7 @@ function ScreenLink({
     <Link
       to={to}
       aria-current={isActive ? 'page' : undefined}
-      className={`${LINK} ${isActive ? 'text-text-primary' : 'text-text-secondary hover:text-text-primary'}`}
+      className={`${LINK} ${isActive ? 'text-accent-bright' : 'text-text-secondary hover:text-text-primary'}`}
     >
       {label}
       {isActive ? (

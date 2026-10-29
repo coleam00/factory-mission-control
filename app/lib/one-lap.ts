@@ -121,13 +121,23 @@ export const consoleUrl = (console: string, runId: string) =>
 
 /**
  * `#103`, `103` or a pull request URL ending `/pull/103` (what the loop's steps write) is pull
- * request 103; any other text names none.
+ * request 103. Some packs write a JSON object instead; its `number` or `url` field is read the
+ * same way. Any other text names none.
  */
 export function prNumber(text: string | null): number | null {
-  const match = /^#?(\d+)$|^https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/pull\/(\d+)\/?$/.exec(
-    text?.trim() ?? '',
-  );
-  return match === null ? null : Number(match[1] ?? match[2]);
+  const trimmed = text?.trim() ?? '';
+  const match = /^#?(\d+)$|^https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/pull\/(\d+)\/?$/.exec(trimmed);
+  if (match !== null) return Number(match[1] ?? match[2]);
+  if (!trimmed.startsWith('{')) return null;
+  try {
+    const value = JSON.parse(trimmed) as { number?: unknown; url?: unknown };
+    if (typeof value.number === 'number' && Number.isInteger(value.number) && value.number > 0) {
+      return value.number;
+    }
+    return typeof value.url === 'string' ? prNumber(value.url) : null;
+  } catch {
+    return null;
+  }
 }
 
 export const pullUrl = (repository: string, n: number) =>

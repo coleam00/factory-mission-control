@@ -75,15 +75,22 @@ export function FactoryStripBody({
   }
   return (
     <>
-      <span className="font-mono text-sm text-text-primary [overflow-wrap:anywhere]">
-        {factory ?? '-'}
-      </span>
+      {/* The switcher above already names the factory on screen; this copy is for assistive
+          tech and for checks that read the strip's text, so the name shows once. */}
+      <span className="sr-only">{factory ?? '-'}</span>
       {state === 'error' ? (
         <p className="text-sm text-text-secondary">Live data is unavailable.</p>
       ) : (
         <span className="flex items-center gap-2">
           <span className={LABEL}>Running laps</span>
-          <span data-count={running} className="font-mono text-sm tabular-nums text-text-primary">
+          <span
+            data-count={running}
+            className={`font-mono text-sm font-semibold tabular-nums ${
+              running !== undefined && running > 0
+                ? 'text-[color:var(--running)]'
+                : 'text-text-primary'
+            }`}
+          >
             {running ?? '-'}
           </span>
           {running !== undefined && running > 0 ? <LiveDot size={8} /> : null}
