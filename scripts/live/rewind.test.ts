@@ -3,7 +3,7 @@ import type { Page } from '../lib/cdp';
 import { REPO_ROOT } from '../lib/cli';
 import type { Db } from '../lib/db';
 import { POOLED_URL, recordingDeps } from '../lib/test-deps';
-import { measureRewindPanels } from './rewind';
+import { afterSwitchFailures, measureRewindPanels } from './rewind';
 
 const branch = 'rewind-owned';
 const page: Page = {
@@ -162,3 +162,19 @@ test.each([
     expect(timings.renderMs['status-strip']).toBe(25);
   },
 );
+
+test('an after-switch navigation over 2000 ms to ready or 500 ms to render fails the phase', async () => {
+  marks(branch);
+  const timings = await measureRewindPanels(page, setup().ctx);
+  expect(afterSwitchFailures(timings)).toEqual([]);
+
+  const late = afterSwitchFailures({ ...timings, readyMs: 2001 });
+  expect(late).toHaveLength(1);
+  expect(late[0]).toStartWith('/rewind after the switch ready after 2001 ms, limit 2000');
+  expect(
+    afterSwitchFailures({ ...timings, renderMs: { ...timings.renderMs, 'status-strip': 501 } }),
+  ).toEqual(['after the switch, status-strip render 501 ms, limit 500']);
+  expect(afterSwitchFailures({ ...timings, readyMs: null })[0]).toStartWith(
+    '/rewind after the switch ready after null ms, limit 2000',
+  );
+});

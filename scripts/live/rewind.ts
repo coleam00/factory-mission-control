@@ -59,10 +59,10 @@ const listed = (name: string) =>
   `document.querySelector('[data-live="rewind-branches"] [data-rewind-branch="${name}"]') !== null`;
 
 /**
- * The rewind screen's timings. The first navigation to `/rewind` (home state) is judged against
- * the limits; `afterSwitch`, the navigation a switch makes, also waits on the rewind branch's
- * compute, so it is recorded only. A new rewind's way to the list is timed from the line
- * `rewind:create` prints just before its INSERT, since making the Neon branch comes first.
+ * The rewind screen's timings. The first navigation to `/rewind` (home state) and `afterSwitch`,
+ * the navigation a switch makes, are both judged against the limits. A new rewind's way to the
+ * list is timed from the line `rewind:create` prints just before its INSERT, since making the
+ * Neon branch comes first.
  */
 interface RewindTimings extends GroupTimings {
   branch: string | null;
@@ -152,6 +152,14 @@ export async function measureRewindPanels(
     }
   }
   return groupTimings(panels);
+}
+
+/** The navigation a switch into a rewind makes is held to the same limits as any other. */
+export function afterSwitchFailures(timings: GroupTimings): string[] {
+  return [
+    ...readyFailures('/rewind after the switch', timings, LIMITS.readyMs),
+    ...groupPerformanceFailures(QUERIES, timings).map((failure) => `after the switch, ${failure}`),
+  ];
 }
 
 /**
@@ -508,6 +516,7 @@ export function rewindPhase(ctx: {
       const failures = [...failed];
       failures.push(...readyFailures('/rewind', timings, LIMITS.readyMs));
       failures.push(...groupPerformanceFailures(QUERIES, timings));
+      failures.push(...afterSwitchFailures(timings.afterSwitch));
       for (const [when, ms] of [
         ['first', timings.createToListMs],
         [`after ${holdSeconds}s`, timings.afterHoldCreateToListMs],
