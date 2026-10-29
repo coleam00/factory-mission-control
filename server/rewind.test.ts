@@ -6,7 +6,13 @@ import type { Db, Row } from '../scripts/lib/db';
 import type { NeonApi } from '../scripts/lib/neon';
 import { createApp } from './app';
 import { liveFromEnv, rewindOpener } from './live';
-import { rewindBranchNames, rewindListed, rewindRealtime, UnlistedRewindBranch } from './rewind';
+import {
+  rewindBranchNames,
+  rewindListed,
+  rewindRealtime,
+  UnknownRewindBranch,
+  UnlistedRewindBranch,
+} from './rewind';
 
 const repoRoot = resolve(import.meta.dir, '..');
 const REWIND = 'rewind-2026-10-24t11-00-00z';
@@ -127,6 +133,15 @@ test('a rewind-* branch the list does not show is refused before its endpoint or
   const refused = rewindRealtime(api, REWIND, async () => false);
   await expect(refused).rejects.toBeInstanceOf(UnlistedRewindBranch);
   await expect(refused).rejects.toThrow(`${REWIND} is not in the rewind list`);
+  expect(calls).toEqual(['listBranches']);
+});
+
+test('a listed branch Neon no longer has is refused before its endpoint or secret is asked for', async () => {
+  const { api, calls } = fakeNeon();
+  const gone = 'rewind-2026-10-24t12-00-00z';
+  const refused = rewindRealtime(api, gone, listed);
+  await expect(refused).rejects.toBeInstanceOf(UnknownRewindBranch);
+  await expect(refused).rejects.toThrow(`no branch named ${gone}`);
   expect(calls).toEqual(['listBranches']);
 });
 
