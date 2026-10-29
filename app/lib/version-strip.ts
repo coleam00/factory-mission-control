@@ -17,7 +17,7 @@ interface VersionRow extends Trailers {
   committed_at: Date | null;
 }
 
-/** A pin no lap of this factory has started after yet. */
+/** A shared pin that labels none of this factory's versions. */
 interface PendingRow extends Trailers {
   digest: null;
   first_run_at: null;
@@ -47,7 +47,7 @@ export interface StripEntry {
 export const recorded = (text: string | null): string =>
   text === null || text.trim() === '' ? NOT_RECORDED : text;
 
-/** Oldest first; a pin that has not run yet is dated by its commit, so it sorts last. */
+/** Oldest first; a pin that has not run yet is dated by its commit. */
 export function stripEntries(rows: readonly VersionStripRow[]): StripEntry[] {
   const at = (row: VersionStripRow) => (row.digest === null ? row.committed_at : row.first_run_at);
   return [...rows]
