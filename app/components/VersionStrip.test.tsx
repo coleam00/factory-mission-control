@@ -125,7 +125,11 @@ test("a refused pin's entry says so with the reason, a loadable one says neither
     committed_at: new Date('2026-10-20T00:00:00Z'),
     refusal,
   });
-  const html = render([], '', stripEntries([pin('refused1', sentence), pin('loads01', null), pin('older01')]));
+  const html = render(
+    [],
+    '',
+    stripEntries([pin('refused1', sentence), pin('loads01', null), pin('older01')]),
+  );
   const refused = entryHtml(html, 'data-pin="refused1"');
   expect(refused).toContain('Refused');
   expect(refused).toContain(`data-refusal="${sentence}"`);

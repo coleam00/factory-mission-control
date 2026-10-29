@@ -399,8 +399,7 @@ describe('home-map at a version the address names', () => {
   });
 
   test("every row carries its version's refusal, and only that version's", async () => {
-    const refusals = async (pin: string) =>
-      new Set((await at(pin)).map((r) => r.refusal));
+    const refusals = async (pin: string) => new Set((await at(pin)).map((r) => r.refusal));
     expect(await refusals('')).toEqual(new Set([null]));
     const write = (refusal: string | null) =>
       db.query(
