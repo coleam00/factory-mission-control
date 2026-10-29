@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { SEED_CODEBASE } from '../../scripts/fixture/seed';
 import { writeRow } from '../../scripts/fixture/write';
-import type { Db } from '../../scripts/lib/db';
+import type { Db, Tx } from '../../scripts/lib/db';
 import { onTheSeed, queries } from './test-seed';
 
 describe('version-strip on the seed', () => {
@@ -33,7 +33,7 @@ describe('version-strip on the seed', () => {
     expect(rows[2]).toMatchObject({ reason: null, hypothesis: null, measure: null });
   });
 
-  test('each pin written after the last run adds one entry that has not run yet', async () => {
+  test('each pin no version is labelled by adds one entry that has not run yet', async () => {
     await db.transaction(async (tx) => {
       await writeRow(tx, 'pin', new Date('2026-10-25T12:00:00Z'));
     });
@@ -74,12 +74,67 @@ describe('version-strip on the seed', () => {
         expect(rows.filter((r) => r.digest !== null)).toMatchObject([
           { digest: 'north-star-digest', pin_sha: label.sha },
         ]);
+        expect(rows.filter((r) => r.digest === null).map((r) => r.pin_sha)).toEqual(
+          expect.arrayContaining(unused),
+        );
+        throw rollback;
+      })
+      .catch((error) => {
+        if (error !== rollback) throw error;
+      });
+  });
+
+  test('a second factory lists every pin its laps have not run, older or newer than those they have', async () => {
+    const rollback = new Error('rollback');
+    const lap = async (tx: Tx, id: string, digest: string, startedAt: string) => {
+      await tx.query(
+        `INSERT INTO mc.laps (run_id, factory, workflow_name, status, digest, started_at)
+        VALUES ($1, 'north-star', 'archon-loop', 'completed', $2, $3)`,
+        [id, digest, startedAt],
+      );
+      await tx.query(`SELECT mc.project_version('north-star', $1)`, [digest]);
+    };
+    const unused = async (tx: Tx) =>
+      (await tx.query(sql, ['north-star']))
+        .filter((r) => r.digest === null)
+        .map((r) => r.pin_sha)
+        .sort();
+    await db
+      .transaction(async (tx) => {
+        await tx.query(`INSERT INTO mc.factories (name, repository, codebase, console)
+          VALUES ('north-star', 'coleam00/north-star', 'coleam00/north-star', 'http://localhost:3090')`);
+        const pins = (await tx.query('SELECT sha FROM mc.pins ORDER BY committed_at')).map(
+          (p) => p.sha,
+        );
+        const [older, newer] = [pins[0], pins[2]];
+        expect(await tx.query(sql, ['north-star'])).toEqual([]);
+
+        await lap(
+          tx,
+          '00000000-0000-0000-0000-0000000000d1',
+          'north-star-newer',
+          '2026-10-20T00:00:00Z',
+        );
+        expect(await unused(tx)).toEqual(pins.filter((p) => p !== newer).sort());
+        expect(await unused(tx)).toContain(older);
+
+        await lap(
+          tx,
+          '00000000-0000-0000-0000-0000000000d2',
+          'north-star-older',
+          '2026-10-01T00:00:00Z',
+        );
+        expect(await unused(tx)).toEqual(pins.filter((p) => p !== newer && p !== older).sort());
         expect(
-          rows
-            .filter((r) => r.digest === null)
-            .map((r) => r.pin_sha)
-            .sort(),
-        ).toEqual(unused);
+          (await tx.query(sql, ['north-star']))
+            .filter((r) => r.digest !== null)
+            .map(({ digest, pin_sha }) => ({ digest, pin_sha })),
+        ).toEqual(
+          expect.arrayContaining([
+            { digest: 'north-star-newer', pin_sha: newer },
+            { digest: 'north-star-older', pin_sha: older },
+          ]),
+        );
         throw rollback;
       })
       .catch((error) => {
