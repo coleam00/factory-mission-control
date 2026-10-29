@@ -10,6 +10,7 @@ const issues = [
     title: 'The architecture diff',
     url: URL13,
     updated_at: new Date('2026-10-10T21:00:00Z'),
+    labeled_at: new Date('2026-10-10T20:30:00Z'),
   },
 ];
 const questions = [
@@ -38,8 +39,9 @@ const shown: ShownOwnerItem[] = [
     recommendation: null,
     defaultOption: null,
     defaultAt: null,
-    waitingSince: '2026-10-10T21:00:00.000Z',
-    waited: '16d 13h',
+    waitingSince: '2026-10-10T20:30:00.000Z',
+    approximate: false,
+    waited: '16d 14h',
   },
   {
     id: 'question-17-2',
@@ -53,6 +55,7 @@ const shown: ShownOwnerItem[] = [
     defaultOption: 'A',
     defaultAt: '2026-10-27T14:00:00.000Z',
     waitingSince: '2026-10-23T09:00:00.000Z',
+    approximate: false,
     waited: '4d 1h',
   },
 ];
@@ -74,6 +77,14 @@ test('a missing item, a wrong link and a wrong default are each a mismatch', () 
   expect(ownerMismatches([issue, { ...question, href: null }], expected)).toContain(
     'question-17-2 links to null, not a GitHub issue',
   );
+});
+
+test('an issue with no recorded label time is expected to wait since its last update, approximately', () => {
+  const unlabelled = expectedItems([{ ...issues[0], labeled_at: null }], questions);
+  expect(ownerMismatches(shown, unlabelled)).toEqual([
+    'issue-13 waitingSince: screen "2026-10-10T20:30:00.000Z", SQL "2026-10-10T21:00:00.000Z"',
+    'issue-13 approximate: screen false, SQL true',
+  ]);
 });
 
 test('options read as JSON text, as Realtime may deliver them, give the same expectation', () => {

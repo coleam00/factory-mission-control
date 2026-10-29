@@ -78,10 +78,13 @@ test('backfill on a check branch stores every recorded issue, comment, label, pu
     { number: 11, state: 'closed' },
     { number: 45, state: 'open' },
   ]);
-  expect(await rows('SELECT issue_number, label FROM mc.issue_labels ORDER BY 1, 2')).toEqual([
-    { issue_number: 10, label: 'enhancement' },
-    { issue_number: 10, label: 'needs-owner' },
-    { issue_number: 11, label: 'enhancement' },
+  // Only an open needs-owner issue's events are read, for the last time it was labelled so.
+  expect(
+    await rows('SELECT issue_number, label, labeled_at FROM mc.issue_labels ORDER BY 1, 2'),
+  ).toEqual([
+    { issue_number: 10, label: 'enhancement', labeled_at: null },
+    { issue_number: 10, label: 'needs-owner', labeled_at: new Date('2026-10-25T05:10:02Z') },
+    { issue_number: 11, label: 'enhancement', labeled_at: null },
   ]);
   expect(await rows('SELECT run_id FROM mc.claims')).toEqual([
     { run_id: 'a1ba5462-3544-481a-92b4-25c62ad62d17' },
@@ -388,6 +391,7 @@ test('a history larger than one batch is written in several transactions, rows u
         })),
         comments: [],
         pullRequests: [],
+        labelled: [],
       },
     ],
     commits: [],

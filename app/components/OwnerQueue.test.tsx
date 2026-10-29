@@ -18,6 +18,7 @@ const issue: OwnerQueueRow = {
   default_option: null,
   default_at: null,
   waiting_since: new Date('2026-10-10T21:00:00Z'),
+  approximate: false,
 };
 
 const question: OwnerQueueRow = {
@@ -31,6 +32,7 @@ const question: OwnerQueueRow = {
   default_option: 'A',
   default_at: new Date('2026-10-27T14:00:00Z'),
   waiting_since: new Date('2026-10-23T09:00:00Z'),
+  approximate: false,
 };
 
 const NOW = Date.parse('2026-10-27T10:30:00Z');
@@ -56,8 +58,21 @@ test('a question shows its options, recommendation, default, the date it applies
   expect(html).toContain('data-waited="true">4d 1h<');
 });
 
-test('a needs-owner issue shows how long it has waited since its last update', () => {
+test('a needs-owner issue shows how long it has waited since it was labelled', () => {
   expect(html).toContain('data-waited="true">16d 13h<');
+  expect(html).toContain('title="Since the issue was labelled needs-owner"');
+  expect(html).not.toContain('Approximate');
+});
+
+test('only an issue whose label time is not recorded says its wait is approximate', () => {
+  const approximate = renderToStaticMarkup(
+    <OwnerList rows={[question, { ...issue, approximate: true }]} now={NOW} />,
+  );
+  expect(approximate).toContain('data-approximate="true"');
+  expect(approximate.match(/title="Approximate: since the issue was last updated/g)).toHaveLength(
+    1,
+  );
+  expect(approximate).toContain('title="Since the question was raised"');
 });
 
 test('a default whose date has passed says how long ago it applied', () => {
