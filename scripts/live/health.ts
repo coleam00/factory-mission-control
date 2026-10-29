@@ -130,6 +130,7 @@ const CAUSES_SQL = `SELECT CASE
 
 const WORKABLE_SQL = `SELECT i.number FROM mc.issues i
   WHERE i.factory = $1 AND i.state = 'open'
+    AND i.title <> 'Owner decisions needed' AND i.title <> 'Loop metrics'
     AND i.number NOT IN (SELECT issue_number FROM mc.issue_labels
                           WHERE factory = $1 AND label = 'needs-owner')
     AND i.number NOT IN (SELECT issue_number FROM mc.claims
