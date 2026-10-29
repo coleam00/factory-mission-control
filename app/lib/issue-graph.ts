@@ -20,7 +20,8 @@ export const STATE_TOKEN: Record<IssueState, `--${string}`> = {
   waiting: '--text-secondary',
   claimed: '--running',
   'pr-open': '--running',
-  'needs-owner': '--error',
+  // Waiting on the owner is the one warm color: amber, as on the owner screen. Red stays for errors.
+  'needs-owner': '--warning',
   merged: '--success',
   closed: '--text-tertiary',
 };
