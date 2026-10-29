@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { type Issue, writeIssue, writeLabeledAt } from '../../function/ingest';
 import { writeRow } from '../../scripts/fixture/write';
 import type { Db } from '../../scripts/lib/db';
 import { onTheSeed, queries } from './test-seed';
@@ -49,13 +50,15 @@ describe('owner-queue on the seed', () => {
     ]);
   });
 
-  test('an issue carries its title, URL and last update', async () => {
-    const issue = (await queue()).find((r) => r.kind === 'issue');
-    expect(issue).toMatchObject({
-      issue_number: 13,
+  const issueRow = async (number: number) =>
+    (await queue()).find((r) => r.kind === 'issue' && r.issue_number === number);
+
+  test('an issue carries its title, URL and when it was labelled, before its later comment', async () => {
+    expect(await issueRow(13)).toMatchObject({
       title: 'The architecture diff',
       url: 'https://github.com/coleam00/factory-mission-control/issues/13',
-      waiting_since: new Date('2026-10-10T21:00:00Z'),
+      waiting_since: new Date('2026-10-10T20:30:00Z'),
+      approximate: false,
     });
   });
 
@@ -64,6 +67,10 @@ describe('owner-queue on the seed', () => {
       await writeRow(tx, 'label', new Date('2026-10-25T12:00:00Z'));
     });
     expect(await ids()).toEqual(['#13', '#17 Q2', '#17 Q3', '#18']);
+    expect(await issueRow(18)).toMatchObject({
+      waiting_since: new Date('2026-10-25T12:00:00Z'),
+      approximate: false,
+    });
   });
 
   test('a closed issue or question leaves the queue', async () => {
@@ -76,6 +83,57 @@ describe('owner-queue on the seed', () => {
       ['mission-control'],
     );
     expect(await ids()).toEqual(['#13', '#17 Q2']);
+  });
+
+  /** Issue `number` as GitHub sends it at `updatedAt`, carrying `labels`. */
+  const delivered = (number: number, updatedAt: string, labels: string[]): Issue => ({
+    number,
+    title: `Issue ${number}`,
+    state: 'open',
+    body: null,
+    html_url: `https://github.com/coleam00/factory-mission-control/issues/${number}`,
+    created_at: '2026-09-29T11:00:00Z',
+    updated_at: updatedAt,
+    closed_at: null,
+    labels: labels.map((name) => ({ name })),
+  });
+  const deliver = (issue: Issue, labelled?: string) =>
+    db.transaction(async (tx) => {
+      await writeIssue(tx, 'mission-control', issue);
+      if (labelled) {
+        await writeLabeledAt(tx, 'mission-control', issue.number, labelled, issue.updated_at);
+      }
+    });
+
+  test('a comment, edit or other label after labelling leaves the wait unchanged', async () => {
+    await deliver(delivered(13, '2026-10-26T08:00:00Z', ['needs-owner']));
+    await deliver(
+      delivered(13, '2026-10-26T08:05:00Z', ['needs-owner', 'enhancement']),
+      'enhancement',
+    );
+    expect(await issueRow(13)).toMatchObject({
+      waiting_since: new Date('2026-10-10T20:30:00Z'),
+      approximate: false,
+    });
+  });
+
+  test('removing the label and adding it again restarts the wait', async () => {
+    await deliver(delivered(13, '2026-10-26T09:00:00Z', []));
+    expect(await issueRow(13)).toBeUndefined();
+    await deliver(delivered(13, '2026-10-26T09:30:00Z', ['needs-owner']), 'needs-owner');
+    await deliver(delivered(13, '2026-10-26T10:00:00Z', ['needs-owner']));
+    expect(await issueRow(13)).toMatchObject({
+      waiting_since: new Date('2026-10-26T09:30:00Z'),
+      approximate: false,
+    });
+  });
+
+  test('an issue whose label time was never recorded waits since its last update, approximately', async () => {
+    await deliver(delivered(14, '2026-10-26T11:00:00Z', ['needs-owner']));
+    expect(await issueRow(14)).toMatchObject({
+      waiting_since: new Date('2026-10-26T11:00:00Z'),
+      approximate: true,
+    });
   });
 
   test('another factory sees none of these items', async () => {

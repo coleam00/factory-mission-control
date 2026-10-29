@@ -91,6 +91,7 @@ function OwnerEntry({
       data-question={item.question_number ?? undefined}
       data-url={item.url ?? undefined}
       data-waiting-since={item.waiting_since?.toISOString()}
+      data-approximate={item.approximate || undefined}
       className="relative overflow-hidden rounded-[10px] border border-border bg-surface py-[13px] pr-[18px] pl-[22px]"
     >
       <span
@@ -133,9 +134,11 @@ function OwnerEntry({
       <div
         className="mt-3 grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-[18px]"
         title={
-          item.kind === 'issue'
-            ? 'Since the issue was last updated on GitHub'
-            : 'Since the question was raised'
+          item.kind === 'question'
+            ? 'Since the question was raised'
+            : item.approximate
+              ? 'Approximate: since the issue was last updated on GitHub, as when it was labelled is not recorded'
+              : 'Since the issue was labelled needs-owner'
         }
       >
         <div aria-hidden="true" className="h-2 overflow-hidden rounded-full bg-surface-inset">

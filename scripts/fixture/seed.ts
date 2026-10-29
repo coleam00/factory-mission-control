@@ -892,7 +892,15 @@ function githubSql(runs: Run[]): string[] {
   }
   issue(OWNER_ISSUE, 'Owner decisions needed', OWNER_BODY, ms('2026-09-30T09:00:00Z'));
   issue(METRICS_ISSUE, 'Loop metrics', METRICS_BODY, ms('2026-09-30T09:00:00Z'));
-  out.push(insert('mc.issue_labels', { factory: FACTORY, issue_number: 13, label: 'needs-owner' }));
+  // Labelled between its two loop comments, so its wait is not its last update.
+  out.push(
+    insert('mc.issue_labels', {
+      factory: FACTORY,
+      issue_number: 13,
+      label: 'needs-owner',
+      labeled_at: iso(ms('2026-10-10T20:30:00Z')),
+    }),
+  );
 
   out.push('', '-- GitHub: pull requests, each opened by the lap that built it.');
   for (const [number, pr] of [...prs].sort(([a], [b]) => a - b)) {

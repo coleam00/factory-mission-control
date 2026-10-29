@@ -211,11 +211,11 @@ const ROW_KINDS = {
   label: {
     table: 'mc.issue_labels',
     needs: `an open ${FACTORY} issue without needs-owner`,
-    insert: () => ({
-      sql: `INSERT INTO mc.issue_labels (factory, issue_number, label)
-        SELECT next.factory, next.number, 'needs-owner' FROM (${NEXT_TO_LABEL}) next
+    insert: (at) => ({
+      sql: `INSERT INTO mc.issue_labels (factory, issue_number, label, labeled_at)
+        SELECT next.factory, next.number, 'needs-owner', $2::timestamptz FROM (${NEXT_TO_LABEL}) next
         RETURNING issue_number`,
-      params: [FACTORY],
+      params: [FACTORY, at.toISOString()],
     }),
   },
   comment: {
