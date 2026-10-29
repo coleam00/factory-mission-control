@@ -546,3 +546,16 @@ test('when mc.laps itself is locked, every run is left busy within the lock time
   ]);
   expect(await tuples(runId)).toEqual(before);
 });
+
+test('when mc.laps itself is locked, a running run with no lap is reported busy, not a clean pass (#269)', async () => {
+  const runId = await archonRun('running');
+  await rows('DELETE FROM mc.laps WHERE run_id = $1', [runId]);
+
+  const { code, out } = await run([], 'check-abc', lockTimeoutAt(1));
+  expect(code).toBe(0);
+  expect(out).toEqual([
+    'reconcile: 0 run(s) repaired',
+    'reconcile: 1 run(s) busy, left for the next run',
+  ]);
+  expect(await rows('SELECT 1 FROM mc.laps WHERE run_id = $1', [runId])).toEqual([]);
+});

@@ -166,16 +166,17 @@ type Reconciled = {
  * status, which it leaves to their live triggers.
  */
 export async function reconcileLaps(db: Db): Promise<Reconciled> {
-  const finished = await db.query(
-    `SELECT id FROM public.remote_agent_workflow_runs WHERE status NOT IN ${sqlList(LIVE)}
+  const runs = await db.query(
+    `SELECT id, status IN ${sqlList(LIVE)} AS live FROM public.remote_agent_workflow_runs
       ORDER BY started_at, id`,
     [],
   );
+  const finished = runs.filter((run) => !run.live);
   // Only read, so no live trigger waits on it: a replay would lock the rows Archon's next write
   // projects to. A running run with no lap is the exception: its insert lost a locked mc.laps
   // (#269), and no trigger projects it again until its status changes. Steps are not compared
   // here; the run's next write projects them again. The read waits at most REPLAY_LOCK_TIMEOUT
-  // too: when mc.laps is locked (#221) every run is busy.
+  // too: when mc.laps is locked (#221) every run, running or not, is busy.
   let unprojected: Row[] = [];
   let live: Row | undefined;
   try {
@@ -197,7 +198,7 @@ export async function reconcileLaps(db: Db): Promise<Reconciled> {
     });
   } catch (error) {
     if (!lostLockWait(error)) throw error;
-    return { repaired: 0, busy: finished.length, live: 0, failed: [] };
+    return { repaired: 0, busy: runs.length, live: 0, failed: [] };
   }
   const result: Reconciled = { repaired: 0, busy: 0, live: Number(live?.n ?? 0), failed: [] };
   for (const { id } of [...finished, ...unprojected]) {
