@@ -10,12 +10,19 @@ export function HomeMapBody({
   rows,
   state,
   factories,
+  configured,
 }: {
   rows: readonly HomeMapRow[] | undefined;
   state: PanelState;
   factories: readonly string[];
+  /** False once the server has answered with no factory; undefined while it has not. */
+  configured?: boolean;
 }): ReactElement {
   if (state === 'error') return <EmptyState title="Live data is unavailable." />;
+  // The server is ready and shows no factory: nothing will ever load, so say why (#215).
+  if (rows === undefined && configured === false) {
+    return <EmptyState title="No factory is configured." />;
+  }
   if (rows === undefined) return <EmptyState title="Loading the factory map." />;
   if (rows.length === 0) {
     return <EmptyState title="No factory map is available yet." />;
@@ -32,7 +39,14 @@ export default function Home(): ReactElement {
     <main className="mx-auto max-w-6xl px-6 py-6">
       <h1 className="mb-4 text-base font-semibold text-text-primary">Factory map</h1>
       <LivePanel<HomeMapRow> query="home-map" factory={factory}>
-        {(rows, state) => <HomeMapBody rows={rows} state={state} factories={factories} />}
+        {(rows, state) => (
+          <HomeMapBody
+            rows={rows}
+            state={state}
+            factories={factories}
+            configured={live.status === 'ready' ? live.factories.length > 0 : undefined}
+          />
+        )}
       </LivePanel>
     </main>
   );

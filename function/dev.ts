@@ -1,9 +1,11 @@
 // `bun run function:dev -- --port <port>`: the webhook Function on this machine, writing to the
 // check branch in `.mc-check.env` and refusing any other (PRD 6.8).
+
+import { resolve } from 'node:path';
 import { parseArgs } from 'node:util';
-import factories from '../factories.json';
 import { defaultDeps, guardedDatabaseUrl } from '../scripts/lib/cli';
 import { openDb } from '../scripts/lib/db';
+import { readFactories } from '../server/factories';
 import { SERVE_PORTS } from '../server/ports';
 import { createWebhookApp } from './app';
 import { createGitHub } from './github';
@@ -21,7 +23,8 @@ try {
   app = createWebhookApp({
     secret: deps.env.GITHUB_WEBHOOK_SECRET ?? '',
     db: openDb(await guardedDatabaseUrl(deps, 'check')),
-    factories: factories.factories,
+    // The same factories file the server reads: MC_FACTORIES_FILE when set (#163).
+    factories: readFactories(deps.env, resolve(import.meta.dir, '..')),
     github: createGitHub(),
   });
 } catch (error) {
