@@ -297,6 +297,43 @@ export async function versionDigests(db: Db, factory: string): Promise<string[]>
   return rows.map((r) => String(r.digest));
 }
 
+/** The current version's architecture key and the pin it is the architecture of. */
+export interface ArchVersion {
+  archon_sha: string;
+  factory_sha: string;
+  pin: string;
+}
+
+/** The architecture key of the seed's current version, as the map and step queries choose it. */
+export async function currentArchVersion(db: Db): Promise<ArchVersion> {
+  const [version] = await db.query(
+    `SELECT a.archon_sha, a.factory_sha, p.sha AS pin FROM mc.arch_versions a
+       JOIN mc.pins p ON p.archon_sha = a.archon_sha
+      ORDER BY p.committed_at DESC, a.parsed_at DESC LIMIT 1`,
+  );
+  if (!version) throw new Error('the check branch has no pin with architecture rows');
+  return version as unknown as ArchVersion;
+}
+
+/**
+ * Records `refusal` (null clears it) for the pack at `archonSha` and times it from just before the
+ * write to `condition` holding on the page.
+ */
+export async function refusalToScreen(
+  page: Page,
+  db: Db,
+  archonSha: string,
+  refusal: string | null,
+  condition: string,
+): Promise<number | null> {
+  const shown = untilShown(page, condition);
+  await db.query('UPDATE mc.arch_versions SET refusal = $2 WHERE archon_sha = $1', [
+    archonSha,
+    refusal,
+  ]);
+  return shown;
+}
+
 /** Runs harness/design-probe.js on `url`; `on` names the screen in the failure. */
 export type DesignProbe = (url: string, file: string, on?: string) => void;
 

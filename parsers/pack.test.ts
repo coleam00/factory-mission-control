@@ -1,7 +1,8 @@
-import { describe, expect, test } from 'bun:test';
-import { readFileSync } from 'node:fs';
+import { afterEach, describe, expect, test } from 'bun:test';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { parsePack, type Step, type Workflow } from './pack';
+import { loadRefusal, parsePack, type Step, type Workflow } from './pack';
 
 const repoRoot = resolve(import.meta.dir, '..');
 const packDir = join(repoRoot, 'fixtures', 'pack', 'sdlc');
@@ -180,5 +181,63 @@ describe('the pack', () => {
 
   test('parsing twice gives deep-equal output', () => {
     expect(parsePack(packDir, templateDir)).toEqual(parsed);
+  });
+});
+
+describe('load refusal', () => {
+  const made: string[] = [];
+  afterEach(() => {
+    for (const dir of made.splice(0)) rmSync(dir, { recursive: true, force: true });
+  });
+
+  /** A pack of workflows by name, each a YAML `nodes:` list; parsed with an empty template. */
+  function refusalOf(workflows: Record<string, string>): string | null {
+    const root = mkdtempSync(join(tmpdir(), 'mc-refusal-'));
+    made.push(root);
+    for (const [name, nodes] of Object.entries(workflows)) {
+      mkdirSync(join(root, 'sdlc', name), { recursive: true });
+      writeFileSync(join(root, 'sdlc', name, `${name}.yaml`), `name: ${name}\nnodes:\n${nodes}`);
+    }
+    mkdirSync(join(root, 'template'));
+    return loadRefusal(parsePack(join(root, 'sdlc'), join(root, 'template')).workflows);
+  }
+
+  const include = (name: string) => `  - id: inc\n    include: ${name}\n`;
+  const leaf = '  - id: leaf\n    bash: echo\n';
+
+  /** w0 includes w1, and so on down to `wN`, which runs a command. */
+  function chain(includes: number): Record<string, string> {
+    const workflows: Record<string, string> = {};
+    for (let i = 0; i < includes; i++) workflows[`w${i}`] = include(`w${i + 1}`);
+    workflows[`w${includes}`] = leaf;
+    return workflows;
+  }
+
+  test('the fixture pack loads', () => {
+    expect(loadRefusal(parsed.workflows)).toBeNull();
+  });
+
+  test('three nested includes load, as Archon allows', () => {
+    expect(refusalOf(chain(3))).toBeNull();
+  });
+
+  test("a fourth nested include refuses its root, in Archon's words", () => {
+    expect(refusalOf(chain(4))).toBe(
+      'Archon would refuse to load workflow w0: include depth limit exceeded (max 3 levels): w0 -> w1 -> w2 -> w3 -> w4.',
+    );
+  });
+
+  test('every refused workflow is counted', () => {
+    expect(refusalOf({ ...chain(4), x0: include('w0') })).toBe(
+      'Archon would refuse to load workflow w0 and 1 other: include depth limit exceeded (max 3 levels): w0 -> w1 -> w2 -> w3 -> w4.',
+    );
+  });
+
+  test('a loop group adds no depth', () => {
+    const grouped =
+      '  - id: group\n    loop_group:\n      nodes:\n        - id: inc\n          include: w2\n';
+    expect(refusalOf({ ...chain(4), w1: grouped })).toBe(
+      'Archon would refuse to load workflow w0: include depth limit exceeded (max 3 levels): w0 -> w1 -> w2 -> w3 -> w4.',
+    );
   });
 });

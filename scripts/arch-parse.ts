@@ -2,13 +2,14 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
-import { HOOKS_DIR, type PackVersion, parsePack, type Step } from '../parsers/pack';
+import { HOOKS_DIR, loadRefusal, type PackVersion, parsePack, type Step } from '../parsers/pack';
 import { type Deps, failing, guardedDatabaseUrl, type Main, runCli } from './lib/cli';
 import type { Row, Tx } from './lib/db';
 import { readDirectoryAt } from './lib/github';
 
 // The architecture job (PRD 11.4): one version's pack and factory template, parsed and stored as
-// that version's architecture rows. A version is keyed by full commit shas, whichever form the
+// that version's architecture rows, with whether Archon would refuse to load the pack and why. A
+// version is keyed by full commit shas, whichever form the
 // command was given.
 
 export const ARCHON_REPOSITORY = 'coleam00/Archon';
@@ -39,6 +40,8 @@ interface Version {
   archonSha: string;
   factorySha: string;
   pack: PackVersion;
+  /** Why Archon would refuse to load the pack, or null when it would load it. */
+  refusal: string | null;
 }
 
 type ArchRows = Record<ArchTable, Row[]>;
@@ -115,13 +118,15 @@ export function archRows(pack: PackVersion): ArchRows {
 
 /**
  * Replaces the version's rows with `pack`'s, in the caller's transaction. A version's sources never
- * change, so a re-run writes the same rows back, and `parsed_at` keeps the first run's time.
+ * change, so a re-run writes the same rows back, and `parsed_at` keeps the first run's time. The
+ * refusal is rewritten, so a re-run records it for a version parsed before the job judged one.
  */
 async function storeVersion(tx: Tx, version: Version, parsedAt: Date): Promise<void> {
   const key = [version.archonSha, version.factorySha];
   await tx.query(
-    'INSERT INTO mc.arch_versions (archon_sha, factory_sha, parsed_at) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING',
-    [...key, parsedAt.toISOString()],
+    `INSERT INTO mc.arch_versions (archon_sha, factory_sha, parsed_at, refusal) VALUES ($1, $2, $3, $4)
+     ON CONFLICT (archon_sha, factory_sha) DO UPDATE SET refusal = EXCLUDED.refusal`,
+    [...key, parsedAt.toISOString(), version.refusal],
   );
   const rows = archRows(version.pack);
   for (const table of ARCH_TABLES) {
@@ -217,6 +222,7 @@ async function readVersion(
       archonSha: archon.sha ?? localSha(args.archonSha, pack.archonCommit, archon.dir),
       factorySha: factory.sha ?? localSha(args.factorySha, pack.factoryCommit, factory.dir),
       pack,
+      refusal: loadRefusal(pack.workflows),
     };
   } finally {
     rmSync(scratch, { recursive: true, force: true });
@@ -278,6 +284,7 @@ export const main: Main = async (argv, deps) => {
         counts = await rowCounts(tx, version.archonSha, version.factorySha);
       });
       deps.out(`archon ${version.archonSha} factory ${version.factorySha}`);
+      if (version.refusal !== null) deps.out(`refused: ${version.refusal}`);
       for (const [table, n] of Object.entries(counts)) deps.out(`${table} ${n}`);
     } finally {
       await db.close();

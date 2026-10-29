@@ -36,7 +36,17 @@ export function HomeMapBody({
       <EmptyState title={`No version ${at} is recorded for this factory.`} />
     );
   }
-  return <HomeMap rows={rows} factories={factories} at={at} />;
+  const refusal = rows[0].refusal ?? null;
+  return (
+    <>
+      {refusal === null ? null : (
+        <p data-refusal={refusal} className="mb-3 text-sm text-error">
+          {refusal}
+        </p>
+      )}
+      <HomeMap rows={rows} factories={factories} at={at} />
+    </>
+  );
 }
 
 /**

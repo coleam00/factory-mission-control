@@ -3,6 +3,8 @@ import { join } from 'node:path';
 import { openPage, type Page } from '../lib/cdp';
 import type { Db } from '../lib/db';
 import {
+  type ArchVersion,
+  currentArchVersion,
   LIMITS,
   type LiveContext,
   type LivePhase,
@@ -61,21 +63,7 @@ interface StepTimings extends GroupTimings {
   limits: typeof LIMITS;
 }
 
-interface Version {
-  archon_sha: string;
-  factory_sha: string;
-}
-
-/** The architecture key of the seed's current version, as the step queries choose it. */
-async function currentVersion(db: Db): Promise<Version> {
-  const [version] = await db.query(
-    `SELECT a.archon_sha, a.factory_sha FROM mc.arch_versions a
-       JOIN mc.pins p ON p.archon_sha = a.archon_sha
-      ORDER BY p.committed_at DESC, a.parsed_at DESC LIMIT 1`,
-  );
-  if (!version) throw new Error('the check branch has no pin with architecture rows');
-  return version as unknown as Version;
-}
+type Version = Pick<ArchVersion, 'archon_sha' | 'factory_sha'>;
 
 const stepPanelsReady = `document.querySelectorAll('${STEP_QUERIES.map((q) => `[data-live="${q}"][data-state="ready"]`).join(', ')}').length === ${STEP_QUERIES.length}`;
 
@@ -261,7 +249,7 @@ export function stepDetailPhase(ctx: LiveContext): LivePhase {
     // check-app's description is written only once every phase has written: it is in V2's
     // architecture, so the diff screen would list it as changed.
     async beforeHold() {
-      const version = await currentVersion(db);
+      const version = await currentArchVersion(db);
       const [checkApp] = await db.query(
         `SELECT description FROM mc.arch_steps
           WHERE archon_sha = $1 AND factory_sha = $2 AND workflow = 'archon-loop' AND path = 'check-app'`,

@@ -211,3 +211,12 @@ test('the map names no step: every node comes from the architecture rows', () =>
     expect({ file, named }).toEqual({ file, named: [] });
   }
 });
+
+test("a refused version's reason shows above the map, and a loadable one shows none", () => {
+  const sentence = 'Archon would refuse to load workflow w0: include depth limit exceeded.';
+  const refused = render([{ ...step('a', 0), refusal: sentence }], 'ready');
+  expect(refused).toContain(`data-refusal="${sentence}"`);
+  expect(refused.indexOf('data-refusal')).toBeLessThan(refused.indexOf('<svg'));
+  expect(render([{ ...step('a', 0), refusal: null }], 'ready')).not.toContain('data-refusal');
+  expect(render([step('a', 0)], 'ready')).not.toContain('data-refusal');
+});

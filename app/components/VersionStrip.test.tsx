@@ -17,6 +17,7 @@ const entry = (over: Partial<StripEntry>): StripEntry => ({
   reason: 'a reason',
   hypothesis: 'a hypothesis',
   measure: 'a measure',
+  refusal: null,
   ...over,
 });
 
@@ -110,6 +111,32 @@ test('a version with no trailers shows not recorded, and a pin not yet run canno
   expect(pending).toContain('Not yet run');
   expect(pending).not.toContain('<button');
   expect(html).not.toContain('data-compare');
+});
+
+test("a refused pin's entry says so with the reason, a loadable one says neither", () => {
+  const sentence = 'Archon would refuse to load workflow w0: include depth limit exceeded.';
+  const pin = (sha: string, refusal?: string | null) => ({
+    digest: null,
+    first_run_at: null,
+    pin_sha: sha,
+    reason: 'a reason',
+    hypothesis: null,
+    measure: null,
+    committed_at: new Date('2026-10-20T00:00:00Z'),
+    refusal,
+  });
+  const html = render(
+    [],
+    '',
+    stripEntries([pin('refused1', sentence), pin('loads01', null), pin('older01')]),
+  );
+  const refused = entryHtml(html, 'data-pin="refused1"');
+  expect(refused).toContain('Refused');
+  expect(refused).toContain(`data-refusal="${sentence}"`);
+  for (const loads of ['data-pin="loads01"', 'data-pin="older01"']) {
+    expect(entryHtml(html, loads)).not.toContain('Refused');
+    expect(entryHtml(html, loads)).not.toContain('data-refusal');
+  }
 });
 
 test('a copied destination highlights only its exact pin and digest without picking comparisons', () => {

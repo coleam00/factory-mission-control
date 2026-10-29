@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { openPage, type Page } from '../lib/cdp';
 import type { Db } from '../lib/db';
 import {
+  currentArchVersion,
   ENTRY,
   LIMITS,
   type LiveContext,
@@ -11,6 +12,7 @@ import {
   pageWait,
   READY_WAIT_MS,
   RENEWALS_IN_180S,
+  refusalToScreen,
   required,
   VERSIONS,
   writeToScreen,
@@ -29,6 +31,10 @@ interface VersionStripTimings extends PanelTimings {
   holdSeconds: number;
   renewals: number | null;
   afterHoldPinToScreenMs: number | null;
+  /** A refusal recorded for the current version's pack, until its entry shows it. */
+  refusalToScreenMs: number | null;
+  /** The same refusal cleared, until the entry shows none. */
+  refusalClearedMs: number | null;
   noReload: boolean | null;
   links: { scorecard: string | null; diff: string | null };
   limits: typeof LIMITS;
@@ -186,11 +192,15 @@ export function versionsPhase(ctx: LiveContext): LivePhase {
     holdSeconds,
     renewals: null,
     afterHoldPinToScreenMs: null,
+    refusalToScreenMs: null,
+    refusalClearedMs: null,
     noReload: null,
     links: { scorecard: null, diff: null },
     limits: LIMITS,
   };
   const pinned: string[] = [];
+  /** The pack test:live recorded a refusal for, cleared again in cleanup. */
+  let refusedSha: string | undefined;
   let versionsPage: Page | undefined;
   let entries = 0;
   const latestPin = async () => {
@@ -237,6 +247,28 @@ export function versionsPhase(ctx: LiveContext): LivePhase {
       deps.out(
         `first pin reached the versions screen in ${versionTimings.pinToScreenMs ?? 'never'} ms`,
       );
+
+      const version = await currentArchVersion(db);
+      refusedSha = version.archon_sha;
+      const refusal = `test:live refusal ${crypto.randomUUID()}.`;
+      const entry = `${ENTRY}[data-pin="${version.pin}"]`;
+      versionTimings.refusalToScreenMs = await refusalToScreen(
+        page,
+        db,
+        version.archon_sha,
+        refusal,
+        `document.querySelector('${entry} [data-refusal]')?.getAttribute('data-refusal') === '${refusal}'`,
+      );
+      versionTimings.refusalClearedMs = await refusalToScreen(
+        page,
+        db,
+        version.archon_sha,
+        null,
+        `document.querySelector('${entry}') !== null && document.querySelector('${entry} [data-refusal]') === null`,
+      );
+      deps.out(
+        `a refusal reached the versions screen in ${versionTimings.refusalToScreenMs ?? 'never'} ms, cleared in ${versionTimings.refusalClearedMs ?? 'never'} ms`,
+      );
     },
 
     async writeAgain() {
@@ -275,16 +307,26 @@ export function versionsPhase(ctx: LiveContext): LivePhase {
     },
 
     async cleanup() {
+      const failures: string[] = [];
       try {
         if (pinned.length > 0) {
           await db.query('DELETE FROM mc.pins WHERE sha = ANY($1::text[])', [
             `{${pinned.join(',')}}`,
           ]);
         }
-        return [];
       } catch (err) {
-        return [`removing the written pins failed: ${(err as Error).message}`];
+        failures.push(`removing the written pins failed: ${(err as Error).message}`);
       }
+      try {
+        if (refusedSha !== undefined) {
+          await db.query('UPDATE mc.arch_versions SET refusal = NULL WHERE archon_sha = $1', [
+            refusedSha,
+          ]);
+        }
+      } catch (err) {
+        failures.push(`clearing the written refusal failed: ${(err as Error).message}`);
+      }
+      return failures;
     },
 
     judge() {
@@ -303,6 +345,20 @@ export function versionsPhase(ctx: LiveContext): LivePhase {
           `the pin after the ${holdSeconds}s hold (afterHoldPinToScreenMs)`,
           'the versions screen',
           versionTimings.afterHoldPinToScreenMs,
+        ),
+      );
+      failures.push(
+        ...lateWrite(
+          'a refusal (refusalToScreenMs)',
+          'the versions screen',
+          versionTimings.refusalToScreenMs,
+        ),
+      );
+      failures.push(
+        ...lateWrite(
+          'a cleared refusal (refusalClearedMs)',
+          'the versions screen',
+          versionTimings.refusalClearedMs,
         ),
       );
       if (holdSeconds >= 180 && (versionTimings.renewals ?? 0) < RENEWALS_IN_180S) {

@@ -2,6 +2,7 @@ import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { openPage, type Page } from '../lib/cdp';
 import {
+  currentArchVersion,
   insertToScreen,
   LIMITS,
   LIVE_STEP,
@@ -16,6 +17,7 @@ import {
   pageWait,
   READY_WAIT_MS,
   RENEWALS_IN_180S,
+  refusalToScreen,
   renewalsOf,
   required,
   SEED_INCLUDE_STAGES,
@@ -70,6 +72,10 @@ interface Timings extends PanelTimings {
   noReload: boolean | null;
   /** Where clicking a map step went. */
   clickedTo?: string | null;
+  /** A refusal recorded for the current version's pack, until the map shows it. */
+  refusalToScreenMs?: number | null;
+  /** The same refusal cleared, until the map shows none. */
+  refusalClearedMs?: number | null;
   limits: typeof LIMITS;
 }
 
@@ -142,12 +148,19 @@ export function homePhase(ctx: LiveContext): LivePhase {
     limits: LIMITS,
   });
   const timings = panelTimings();
-  const mapTimings: Timings = { ...panelTimings(), clickedTo: null };
+  const mapTimings: Timings = {
+    ...panelTimings(),
+    clickedTo: null,
+    refusalToScreenMs: null,
+    refusalClearedMs: null,
+  };
   const panels = [
     { name: 'the strip', query: 'status-strip', selector: PANEL, timings, file: 'realtime' },
     { name: 'the map', query: 'home-map', selector: MAP, timings: mapTimings, file: 'home-map' },
   ];
   let homePage: Page | undefined;
+  /** The pack test:live recorded a refusal for, cleared again in cleanup. */
+  let refusedSha: string | undefined;
   let before = 0;
   let onLiveStep = 0;
 
@@ -189,6 +202,27 @@ export function homePhase(ctx: LiveContext): LivePhase {
       deps.out(`first insert reached the strip in ${timings.insertToScreenMs ?? 'never'} ms`);
       await ctx.lapStep(firstLap, false);
       deps.out(`first step event reached the map in ${mapTimings.insertToScreenMs ?? 'never'} ms`);
+
+      const version = await currentArchVersion(db);
+      refusedSha = version.archon_sha;
+      const refusal = `test:live refusal ${crypto.randomUUID()}.`;
+      mapTimings.refusalToScreenMs = await refusalToScreen(
+        page,
+        db,
+        version.archon_sha,
+        refusal,
+        `document.querySelector('[data-refusal]')?.getAttribute('data-refusal') === '${refusal}'`,
+      );
+      mapTimings.refusalClearedMs = await refusalToScreen(
+        page,
+        db,
+        version.archon_sha,
+        null,
+        `document.querySelector('${MAP} [data-node-role]') !== null && document.querySelector('[data-refusal]') === null`,
+      );
+      deps.out(
+        `a refusal reached the map in ${mapTimings.refusalToScreenMs ?? 'never'} ms, cleared in ${mapTimings.refusalClearedMs ?? 'never'} ms`,
+      );
     },
 
     async onLapStep(_run, afterHold) {
@@ -263,8 +297,22 @@ export function homePhase(ctx: LiveContext): LivePhase {
           );
         }
       }
+      failures.push(...lateWrite('a refusal', 'the map', mapTimings.refusalToScreenMs));
+      failures.push(...lateWrite('a cleared refusal', 'the map', mapTimings.refusalClearedMs));
       if (timings.noReload !== true) failures.push('the page reloaded');
       return failures;
+    },
+
+    async cleanup() {
+      if (refusedSha === undefined) return [];
+      try {
+        await db.query('UPDATE mc.arch_versions SET refusal = NULL WHERE archon_sha = $1', [
+          refusedSha,
+        ]);
+        return [];
+      } catch (err) {
+        return [`clearing the written refusal failed: ${(err as Error).message}`];
+      }
     },
 
     summary: () => [`live: ${JSON.stringify(timings)}`, `home map: ${JSON.stringify(mapTimings)}`],

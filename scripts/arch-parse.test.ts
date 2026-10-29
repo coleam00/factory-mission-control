@@ -1,6 +1,7 @@
 import { afterEach, beforeAll, expect, test } from 'bun:test';
 import {
   cpSync,
+  mkdirSync,
   mkdtempSync,
   readdirSync,
   readFileSync,
@@ -110,6 +111,49 @@ test('a second run for the same shas leaves every row as it was', async () => {
   expect(second.exit).toBe(0);
   expect(counts(second.out)).toEqual(counts(first.out));
   expect(await everyRow()).toEqual(before);
+});
+
+const refusalOf = async (archonSha: string) =>
+  (await pg.query('SELECT refusal FROM mc.arch_versions WHERE archon_sha = $1', [archonSha]))[0]
+    ?.refusal;
+
+test('a pack Archon would load records no refusal', async () => {
+  const job = await run([ARCHON_SHA, FACTORY_SHA, ...LOCAL]);
+  expect(job.exit).toBe(0);
+  expect(job.out.filter((line) => line.startsWith('refused:'))).toEqual([]);
+  expect(await refusalOf(ARCHON_SHA)).toBeNull();
+});
+
+test('a pack nesting includes four deep records why Archon would refuse it', async () => {
+  const archon = mkdtempSync(join(tmpdir(), 'arch-parse-deep-'));
+  scratch.push(archon);
+  for (let i = 0; i <= 4; i++) {
+    const node = i < 4 ? `  - id: inc\n    include: w${i + 1}\n` : '  - id: leaf\n    bash: echo\n';
+    mkdirSync(join(archon, 'sdlc', `w${i}`), { recursive: true });
+    writeFileSync(join(archon, 'sdlc', `w${i}`, `w${i}.yaml`), `name: w${i}\nnodes:\n${node}`);
+  }
+  const sha = 'd'.repeat(40);
+  writeFileSync(join(archon, 'ARCHON_COMMIT'), sha);
+  const sentence =
+    'Archon would refuse to load workflow w0: include depth limit exceeded (max 3 levels): w0 -> w1 -> w2 -> w3 -> w4.';
+
+  const job = await run([sha, FACTORY_SHA, '--archon-path', archon, '--factory-path', TEMPLATE]);
+  expect(job.exit).toBe(0);
+  expect(job.out).toContain(`refused: ${sentence}`);
+  expect(await refusalOf(sha)).toBe(sentence);
+});
+
+test('a re-run rewrites the refusal and keeps the first parse time', async () => {
+  expect((await run([ARCHON_SHA, FACTORY_SHA, ...LOCAL])).exit).toBe(0);
+  await pg.query("UPDATE mc.arch_versions SET refusal = 'stale' WHERE archon_sha = $1", [
+    ARCHON_SHA,
+  ]);
+  const [before] = await pg.query('SELECT parsed_at FROM mc.arch_versions');
+
+  const again = await run([ARCHON_SHA, FACTORY_SHA, ...LOCAL], {}, new Date('2026-10-25T00:00Z'));
+  expect(again.exit).toBe(0);
+  expect(await refusalOf(ARCHON_SHA)).toBeNull();
+  expect(await pg.query('SELECT parsed_at FROM mc.arch_versions')).toEqual([before]);
 });
 
 test('a CRLF checkout stores the same rows as an LF one', async () => {

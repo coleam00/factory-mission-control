@@ -333,7 +333,10 @@ Archon's `provider_event` rows (about 30 per step) are never read by a live quer
   path), and stores, per version: workflows, steps (id, kind, description, model tier, `when`,
   `depends_on`, `trigger_rule`, includes, inline subagents), edges, the workflow YAML, command and
   instruction text, and scripts. Includes are expanded the way Archon expands them. Its tests run
-  on the committed pack snapshot in `fixtures/pack/` (no network).
+  on the committed pack snapshot in `fixtures/pack/` (no network). It also records whether Archon
+  would refuse to load the pack by Archon's own load rules (an include nested deeper than Archon's
+  limit of 3 levels), and the map and versions screens mark a version whose pack Archon would
+  refuse, with the reason.
 - **Projection:** triggers on `remote_agent_workflow_events` declared
   `WHEN (NEW.event_type IN ('node_started','node_completed','node_failed','node_skipped'))` and on
   `remote_agent_workflow_runs` project into the dashboard's step and lap tables (step id from
