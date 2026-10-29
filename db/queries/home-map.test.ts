@@ -363,7 +363,7 @@ describe('home-map at a version the address names', () => {
   const at = async (pin: string) =>
     (await db.query(sql, ['mission-control', pin])) as Pick<
       HomeMapRow,
-      'role' | 'workflow' | 'path' | 'step_id' | 'laps' | 'is_current'
+      'role' | 'workflow' | 'path' | 'step_id' | 'laps' | 'is_current' | 'refusal'
     >[];
   const loopSteps = async (pin: string) =>
     (await at(pin))
@@ -396,6 +396,25 @@ describe('home-map at a version the address names', () => {
 
   test('a pin with no architecture, an unknown value and a short sha draw nothing', async () => {
     for (const pin of [V3, 'nope', V1.slice(0, 8)]) expect(await at(pin)).toEqual([]);
+  });
+
+  test("every row carries its version's refusal, and only that version's", async () => {
+    const refusals = async (pin: string) =>
+      new Set((await at(pin)).map((r) => r.refusal));
+    expect(await refusals('')).toEqual(new Set([null]));
+    const write = (refusal: string | null) =>
+      db.query(
+        'UPDATE mc.arch_versions SET refusal = $2 WHERE archon_sha = (SELECT archon_sha FROM mc.pins WHERE sha = $1)',
+        [V2, refusal],
+      );
+    await write('Archon would refuse it.');
+    try {
+      expect(await refusals('')).toEqual(new Set(['Archon would refuse it.']));
+      expect(await refusals(V2)).toEqual(new Set(['Archon would refuse it.']));
+      expect(await refusals(V1)).toEqual(new Set([null]));
+    } finally {
+      await write(null);
+    }
   });
 
   test('a lap counts at the version its digest ran, and on the current map as today', async () => {

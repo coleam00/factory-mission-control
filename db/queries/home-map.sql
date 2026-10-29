@@ -1,7 +1,7 @@
 WITH version AS (
   -- The version the address names by its pin, $2, or for '' the current version: the
-  -- architecture of the newest pin that has any.
-  SELECT a.archon_sha, a.factory_sha
+  -- architecture of the newest pin that has any. Its refusal says why Archon would refuse its pack.
+  SELECT a.archon_sha, a.factory_sha, a.refusal
   FROM mc.arch_versions a
   JOIN mc.pins p ON p.archon_sha = a.archon_sha
   -- Like the version strip, an empty factory does not borrow the shared pin history.
@@ -74,7 +74,8 @@ SELECT
   s.own_path AS detail_path,
   c.factory AS lap_factory,
   coalesce(c.laps, 0) AS laps,
-  coalesce(c.factory = $1, false) AS is_current
+  coalesce(c.factory = $1, false) AS is_current,
+  v.refusal
 FROM mc.arch_workflows w
 JOIN version v ON v.archon_sha = w.archon_sha AND v.factory_sha = w.factory_sha
 LEFT JOIN own s ON s.workflow = w.name

@@ -274,6 +274,16 @@ function Entry({
             </button>
           )}
         </div>
+        {entry.refusal === null ? null : (
+          <div className="flex flex-col gap-1">
+            <span className="font-mono text-[11px] font-semibold uppercase tracking-[0.05em] text-error">
+              Refused
+            </span>
+            <p data-refusal={entry.refusal} className="min-w-0 break-words text-[13px] text-error">
+              {entry.refusal}
+            </p>
+          </div>
+        )}
         <p data-reason={entry.reason} className="min-w-0 break-words text-[14px] text-text-primary">
           {entry.reason}
         </p>

@@ -6,6 +6,8 @@
 interface Trailers {
   hypothesis: string | null;
   measure: string | null;
+  /** Why Archon would refuse to load the pin's pack; null or absent when it would load it. */
+  refusal?: string | null;
 }
 
 /** A digest this factory's laps ran, labelled by the latest pin before its first run, if any. */
@@ -41,6 +43,8 @@ export interface StripEntry {
   reason: string;
   hypothesis: string;
   measure: string;
+  /** Why Archon would refuse to load the pin's pack, or null when it would load it. */
+  refusal: string | null;
 }
 
 /** A pin's reason or trailer, or `not recorded` when the commit gave none. */
@@ -59,6 +63,7 @@ export function stripEntries(rows: readonly VersionStripRow[]): StripEntry[] {
       reason: recorded(row.reason),
       hypothesis: recorded(row.hypothesis),
       measure: recorded(row.measure),
+      refusal: row.refusal ?? null,
     }));
 }
 

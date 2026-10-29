@@ -142,6 +142,39 @@ describe('version-strip on the seed', () => {
       });
   });
 
+  test("each entry carries the refusal recorded for its pin's pack, a pin not yet run too", async () => {
+    const rollback = new Error('rollback');
+    const V2 = '5ffd60c6c6e591487f2fbb5ec67ccc8fc55ca915';
+    const refused = 'Archon would refuse it.';
+    const refusals = async (tx: Tx) =>
+      Object.fromEntries(
+        (await tx.query(sql, ['mission-control'])).map((r) => [r.pin_sha, r.refusal]),
+      );
+    await db
+      .transaction(async (tx) => {
+        expect(new Set(Object.values(await refusals(tx)))).toEqual(new Set([null]));
+
+        await tx.query(
+          'UPDATE mc.arch_versions SET refusal = $2 WHERE archon_sha = (SELECT archon_sha FROM mc.pins WHERE sha = $1)',
+          [V2, refused],
+        );
+        await tx.query(
+          `INSERT INTO mc.pins (sha, archon_sha, reason, committed_at)
+          SELECT 'pending-refused', archon_sha, 'Re-pin', '2026-10-26T00:00:00Z' FROM mc.pins WHERE sha = $1`,
+          [V2],
+        );
+        const after = await refusals(tx);
+        expect(Object.entries(after).filter(([, refusal]) => refusal !== null)).toEqual([
+          [V2, refused],
+          ['pending-refused', refused],
+        ]);
+        throw rollback;
+      })
+      .catch((error) => {
+        if (error !== rollback) throw error;
+      });
+  });
+
   test('a digest only a non-archon-loop run used is not a version and uses up no pin', async () => {
     const rollback = new Error('rollback');
     const digest = 'sha256:fence-proof';

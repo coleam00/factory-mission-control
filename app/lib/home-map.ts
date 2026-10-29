@@ -25,6 +25,8 @@ export interface HomeMapRow {
   laps: number;
   /** Whether `lap_factory` is the factory in the address. */
   is_current: boolean;
+  /** Why Archon would refuse to load the version's pack, the same on every row; null when it loads. */
+  refusal?: string | null;
 }
 
 /**
