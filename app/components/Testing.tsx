@@ -73,7 +73,11 @@ function Section({
   );
 }
 
-function Swatch({ verdict }: { verdict: string }): ReactElement {
+/** A scenario as the screen names it: a line with no `H-nn` in its text has no scenario id. */
+const scenarioName = (scenario: string) =>
+  scenario === 'unidentified' ? 'no scenario id' : scenario;
+
+function Swatch({ verdict, label }: { verdict: string; label?: string }): ReactElement {
   return (
     <span className="inline-flex items-center gap-1.5">
       <span
@@ -81,7 +85,7 @@ function Swatch({ verdict }: { verdict: string }): ReactElement {
         className="inline-block size-2 rounded-[2px]"
         style={{ background: toneOf(verdict) }}
       />
-      {verdict}
+      {label ?? verdict}
     </span>
   );
 }
@@ -259,12 +263,12 @@ function TilesSummary({ rows }: { rows: readonly CheckRow[] }): ReactElement {
   const lines = tiles.reduce((n, t) => n + t.total, 0);
   return (
     <>
-      <span>
-        {plural(tiles.length, 'scenario')} · {plural(lines, 'line')}
+      <span title="Every lap this factory has run, added up">
+        {plural(tiles.length, 'scenario')} · {plural(lines, 'line')} across every lap
       </span>
       <Swatch verdict="PASS" />
       <Swatch verdict="FAIL" />
-      <Swatch verdict="INCOMPLETE" />
+      <Swatch verdict="INCOMPLETE" label="INCOMPLETE (could not finish)" />
     </>
   );
 }
@@ -298,16 +302,26 @@ export function PrHoldouts({
     return <p className="text-sm text-text-secondary">No holdout line in any app check yet.</p>;
   }
   return (
-    <ol className="grid grid-cols-[repeat(auto-fill,minmax(100px,1fr))] gap-1.5">
-      {tiles.map((tile) => (
-        <HoldoutTile
-          key={tile.scenario}
-          tile={tile}
-          factory={factory}
-          popover={`${id}pr-${tile.scenario}`}
-        />
-      ))}
-    </ol>
+    <>
+      <p data-incomplete-note className="mb-3 max-w-3xl text-[13px] text-text-secondary">
+        INCOMPLETE means the checker could not finish the scenario: the app did not start, the check
+        branch lacks something the scenario needs, or the machine was too busy to trust a timing.
+        The merge gate treats it as a failure, but it is not proof of a bug.
+        {tiles.every((tile) => tile.scenario === 'unidentified')
+          ? ' This factory names its scenarios with words, not H-nn ids, so its lines are not split by scenario yet.'
+          : null}
+      </p>
+      <ol className="grid grid-cols-[repeat(auto-fill,minmax(100px,1fr))] gap-1.5">
+        {tiles.map((tile) => (
+          <HoldoutTile
+            key={tile.scenario}
+            tile={tile}
+            factory={factory}
+            popover={`${id}pr-${tile.scenario}`}
+          />
+        ))}
+      </ol>
+    </>
   );
 }
 
@@ -320,7 +334,8 @@ function HoldoutTile({
   factory: string;
   popover: string;
 }): ReactElement {
-  const words = `${tile.scenario}: ${plural(tile.total, 'line')}, ${countsText(tile.verdicts)}`;
+  const name = scenarioName(tile.scenario);
+  const words = `${name}: ${plural(tile.total, 'line')}, ${countsText(tile.verdicts)}`;
   return (
     <li
       data-scenario-tile
@@ -335,7 +350,7 @@ function HoldoutTile({
         className="grid w-full cursor-pointer gap-1.5 rounded-md border border-border bg-surface px-2.5 pt-1.5 pb-2 text-left transition-colors hover:border-border-bright hover:bg-surface-hover"
       >
         <span className={`${MONO} flex items-baseline justify-between gap-2`}>
-          <span className="font-semibold text-text-primary">{tile.scenario}</span>
+          <span className="font-semibold text-text-primary">{name}</span>
           <span className="flex gap-1.5 text-[11px]">
             {tile.verdicts.map((v) => (
               <span key={v.verdict} style={{ color: toneOf(v.verdict) }}>
@@ -355,12 +370,9 @@ function HoldoutTile({
         </span>
       </button>
       <Tip>
-        {tile.scenario} · {countsText(tile.verdicts)}
+        {name} · {countsText(tile.verdicts)}
       </Tip>
-      <Popover
-        id={popover}
-        title={`${tile.scenario} at pull-request time · ${plural(tile.total, 'line')}`}
-      >
+      <Popover id={popover} title={`${name} at pull-request time · ${plural(tile.total, 'line')}`}>
         {tile.verdicts.map((v) => (
           <LineList
             key={v.verdict}

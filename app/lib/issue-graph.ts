@@ -16,7 +16,8 @@ export type IssueState = (typeof ISSUE_STATES)[number];
 
 /** The design token each state's color comes from (PRD 8.3); closed is the console's grey. */
 export const STATE_TOKEN: Record<IssueState, `--${string}`> = {
-  waiting: '--warning',
+  // Open and queued for a lap: neutral, so only needs-owner reads as waiting on the owner.
+  waiting: '--text-secondary',
   claimed: '--running',
   'pr-open': '--running',
   'needs-owner': '--error',

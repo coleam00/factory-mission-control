@@ -189,7 +189,7 @@ export function Ledger({
                       : `${entry.waiting} ${entry.waiting === 1 ? 'lap' : 'laps'} waiting`}
                   </span>
                   <span className={`${MONO} ml-auto text-text-secondary`}>
-                    {entry.laps} laps run
+                    {entry.laps} {entry.laps === 1 ? 'lap' : 'laps'} run
                   </span>
                 </div>
                 {entry.waiting === NOT_RECORDED ? null : (

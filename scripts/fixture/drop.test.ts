@@ -286,6 +286,30 @@ test.each([
   expect(existsSync(join(repoRoot, CHECK_ENV_FILE))).toBe(true);
 });
 
+test.each([
+  [['--dry-run', '--at', '2026-01-01', '--bogus']],
+  [['--bogus', '--dry-run', '--at', '2026-01-01']],
+  [['--at', '2026-01-01', '--bogus', '--dry-run']],
+])('names the unknown argument in %j, with the usage and exit 2', async (argv) => {
+  const run = recordingDeps({
+    repoRoot: repo({ MC_CHECK_BRANCH: 'check-abc' }),
+    branches: AT_SELECTION,
+  });
+  expect(await main(argv, run.deps)).toBe(2);
+  expect(run.err.join('\n')).toContain('unknown argument --bogus');
+  expect(run.err.join('\n')).toContain('bun run fixture:drop --dry-run --at <time>');
+  expect(run.neonCalls).toEqual([]);
+});
+
+test('--at without --dry-run and nothing unknown keeps its message', async () => {
+  const run = recordingDeps({
+    repoRoot: repo({ MC_CHECK_BRANCH: 'check-abc' }),
+    branches: AT_SELECTION,
+  });
+  expect(await main(['--at', hoursAfter(4)], run.deps)).toBe(2);
+  expect(run.err.join('\n')).toContain('--at is only taken with --dry-run');
+});
+
 test('--dry-run --at refuses MC_CHECK_BRANCH=main before any Neon call', async () => {
   const repoRoot = repo({ MC_CHECK_BRANCH: 'main' });
   const run = recordingDeps({ repoRoot, branches: AT_SELECTION });

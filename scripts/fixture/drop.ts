@@ -66,6 +66,9 @@ async function drop(deps: Deps, dryRun: boolean, at?: Date): Promise<void> {
 function dryRunAt(argv: string[], deps: Deps): Date | string {
   const flag = argv.indexOf('--at');
   const rest = argv.filter((_, index) => index !== flag && index !== flag + 1);
+  // An unknown flag is the real problem whatever else is given, so it is named first (#71).
+  const unknown = rest.find((arg) => arg.startsWith('-') && arg !== '--dry-run' && arg !== '--at');
+  if (unknown !== undefined) return `unknown argument ${unknown}`;
   if (rest.length !== 1 || rest[0] !== '--dry-run') return '--at is only taken with --dry-run';
   const value = argv[flag + 1];
   if (value === undefined) return '--at needs a time';
