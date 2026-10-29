@@ -277,6 +277,7 @@ test('the eligibility upgrade keeps live history and installs the same functions
       '0015_step_attempt_usage.sql',
       '0016_pin_reason_optional.sql',
       '0017_app_check_line_ids.sql',
+      '0018_issue_label_time.sql',
     ]);
     expect(await projectionDefinitions(upgraded)).toEqual(await projectionDefinitions(db));
     expect(await runMigrations({ files: migrationFiles, db: upgraded })).toEqual([]);
@@ -324,6 +325,7 @@ test('0011 rewrites a short pin to the one full sha it prefixes, and clears ambi
       '0015_step_attempt_usage.sql',
       '0016_pin_reason_optional.sql',
       '0017_app_check_line_ids.sql',
+      '0018_issue_label_time.sql',
     ]);
     const migrated = [
       { sha: 'p1', archon_sha: full },
@@ -387,6 +389,7 @@ test('0012 rewrites CRLF to LF in stored architecture texts, and changes nothing
       '0015_step_attempt_usage.sql',
       '0016_pin_reason_optional.sql',
       '0017_app_check_line_ids.sql',
+      '0018_issue_label_time.sql',
     ]);
     const migrated = [
       { kind: 'hook', path: '.factory/hooks/gate.sh', text: 'exit 0\n' },
@@ -455,6 +458,7 @@ test('0013 gives back the runs of a step the old key merged, and changes nothing
       '0015_step_attempt_usage.sql',
       '0016_pin_reason_optional.sql',
       '0017_app_check_line_ids.sql',
+      '0018_issue_label_time.sql',
     ]);
     expect(await attempts()).toEqual([
       { step_id: 'land', outcome: 'merged', cost_usd: null },
@@ -638,6 +642,7 @@ test('0014 keeps only a stored citation’s references, and changes nothing run 
       '0015_step_attempt_usage.sql',
       '0016_pin_reason_optional.sql',
       '0017_app_check_line_ids.sql',
+      '0018_issue_label_time.sql',
     ]);
     const lines = () =>
       historical.query(
@@ -681,6 +686,7 @@ test('0016 lets a pin have no reason, keeps stored reasons, and changes nothing 
     expect(await runMigrations({ files: migrationFiles, db: historical })).toEqual([
       '0016_pin_reason_optional.sql',
       '0017_app_check_line_ids.sql',
+      '0018_issue_label_time.sql',
     ]);
     await pin('b'.repeat(40), null);
     const reasons = () => historical.query('SELECT sha, reason FROM mc.pins ORDER BY sha');
@@ -717,6 +723,7 @@ test('0017 keeps lines projected before it without an id, fills new reports’ i
 
     expect(await runMigrations({ files: migrationFiles, db: historical })).toEqual([
       '0017_app_check_line_ids.sql',
+      '0018_issue_label_time.sql',
     ]);
     const after = await run();
     await historical.query('SELECT mc.project_app_check_lines($1, $2)', [

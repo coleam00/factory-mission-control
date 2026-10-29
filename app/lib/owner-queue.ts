@@ -19,6 +19,8 @@ export interface OwnerQueueRow {
   default_option: string | null;
   default_at: Date | null;
   waiting_since: Date | null;
+  /** True for an issue whose label time was never recorded: it waits since its last update. */
+  approximate: boolean;
 }
 
 export interface OwnerOption {

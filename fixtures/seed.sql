@@ -725,7 +725,7 @@ INSERT INTO mc.issue_dependencies (factory, issue_number, depends_on) VALUES ('m
 INSERT INTO mc.issues (factory, number, title, state, phase, url, created_at, updated_at, closed_at) VALUES ('mission-control', 16, 'The owner queue', 'open', 'Screens', 'https://github.com/coleam00/factory-mission-control/issues/16', '2026-09-29T11:52:00.000Z', '2026-10-23T15:04:00.000Z', NULL);
 INSERT INTO mc.issues (factory, number, title, state, phase, url, created_at, updated_at, closed_at) VALUES ('mission-control', 17, 'Owner decisions needed', 'open', NULL, 'https://github.com/coleam00/factory-mission-control/issues/17', '2026-09-30T09:00:00.000Z', '2026-09-30T09:00:00.000Z', NULL);
 INSERT INTO mc.issues (factory, number, title, state, phase, url, created_at, updated_at, closed_at) VALUES ('mission-control', 18, 'Loop metrics', 'open', NULL, 'https://github.com/coleam00/factory-mission-control/issues/18', '2026-09-30T09:00:00.000Z', '2026-09-30T09:00:00.000Z', NULL);
-INSERT INTO mc.issue_labels (factory, issue_number, label) VALUES ('mission-control', 13, 'needs-owner');
+INSERT INTO mc.issue_labels (factory, issue_number, label, labeled_at) VALUES ('mission-control', 13, 'needs-owner', '2026-10-10T20:30:00.000Z');
 
 -- GitHub: pull requests, each opened by the lap that built it.
 INSERT INTO mc.pull_requests (factory, number, title, state, merged_at, head_sha, url, created_at, updated_at, closed_at) VALUES ('mission-control', 101, 'Serve the app with health and build id', 'closed', '2026-10-01T09:30:00.000Z', '8aad49143cfcb155ca918a0513cf99d381263e30', 'https://github.com/coleam00/factory-mission-control/pull/101', '2026-10-01T08:24:00.000Z', '2026-10-01T09:30:00.000Z', '2026-10-01T09:30:00.000Z');
