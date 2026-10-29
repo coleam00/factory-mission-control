@@ -37,8 +37,9 @@ export function rewindListed(
 
 /**
  * Where a rewind branch serves Realtime and the secret that seals for it, asked of the Neon API.
- * Refuses a name that is not `rewind-*`, or that `/rewind` does not list, before any request;
- * both values stay on the server.
+ * Refuses a name that is not `rewind-*` before any request, and one `/rewind` does not list before
+ * any request for its endpoint or secret; both values stay on the server. The requests run two at
+ * a time because a switch waits on all of them (#254).
  */
 export async function rewindRealtime(
   api: NeonApi,
@@ -46,12 +47,18 @@ export async function rewindRealtime(
   listed: (name: string) => Promise<boolean>,
 ): Promise<{ host: string; secret: string }> {
   requireRewindBranch(name);
-  if (!(await listed(name))) throw new UnlistedRewindBranch(name);
-  const branch = (await api.listBranches()).find((b) => b.name === name);
+  const [shown, branches] = await Promise.allSettled([listed(name), api.listBranches()]);
+  if (shown.status === 'rejected') throw shown.reason;
+  if (!shown.value) throw new UnlistedRewindBranch(name);
+  if (branches.status === 'rejected') throw branches.reason;
+  const branch = branches.value.find((b) => b.name === name);
   if (!branch) throw new UnknownRewindBranch(name);
-  const [endpoint] = await api.branchEndpoints(branch.id);
+  const [[endpoint], secret] = await Promise.all([
+    api.branchEndpoints(branch.id),
+    api.getRealtimeSecret(branch.id),
+  ]);
   if (!endpoint) throw new Error(`${name} has no endpoint`);
-  return { host: endpoint.host, secret: await api.getRealtimeSecret(branch.id) };
+  return { host: endpoint.host, secret };
 }
 
 /** The names of the project's rewind-* branches that exist now, asked of the Neon API. */

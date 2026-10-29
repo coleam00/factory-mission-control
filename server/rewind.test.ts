@@ -122,12 +122,42 @@ test('a branch that is not rewind-* is refused before any Neon request', async (
   expect(calls).toEqual([]);
 });
 
-test('a rewind-* branch the list does not show is refused before any Neon request', async () => {
+test('a rewind-* branch the list does not show is refused before its endpoint or secret is asked for', async () => {
   const { api, calls } = fakeNeon();
   const refused = rewindRealtime(api, REWIND, async () => false);
   await expect(refused).rejects.toBeInstanceOf(UnlistedRewindBranch);
   await expect(refused).rejects.toThrow(`${REWIND} is not in the rewind list`);
-  expect(calls).toEqual([]);
+  expect(calls).toEqual(['listBranches']);
+});
+
+test('an unlisted branch is refused as unlisted even when listing the branches fails', async () => {
+  const { api } = fakeNeon();
+  api.listBranches = () => Promise.reject(new Error('Neon API answered 500'));
+  await expect(rewindRealtime(api, REWIND, async () => false)).rejects.toBeInstanceOf(
+    UnlistedRewindBranch,
+  );
+});
+
+test('a switch asks the list and the branches together, then the endpoint and the secret together', async () => {
+  const { api, calls } = fakeNeon();
+  const answers =
+    (name: string) =>
+    async <T>(answer: T) => {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      calls.push(`${name} answered`);
+      return answer;
+    };
+  const { listBranches, branchEndpoints, getRealtimeSecret } = api;
+  api.listBranches = () => listBranches().then(answers('listBranches'));
+  api.branchEndpoints = (id) => branchEndpoints(id).then(answers('branchEndpoints'));
+  api.getRealtimeSecret = (id) => getRealtimeSecret(id).then(answers('getRealtimeSecret'));
+  const listedLater = () => {
+    calls.push('listed');
+    return answers('listed')(true);
+  };
+  await rewindRealtime(api, REWIND, listedLater);
+  expect(calls.slice(0, 2).sort()).toEqual(['listBranches', 'listed']);
+  expect(calls.slice(4, 6)).toEqual(['branchEndpoints br-rewind', 'getRealtimeSecret br-rewind']);
 });
 
 test('the branches Neon has are its rewind-* names only', async () => {
