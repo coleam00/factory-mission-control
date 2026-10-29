@@ -1,9 +1,14 @@
 WITH version AS (
   -- The version the address names by its pin, $2, or for '' the current version: the
-  -- architecture of the newest pin that has any. Its refusal says why Archon would refuse its pack.
-  SELECT a.archon_sha, a.factory_sha, a.refusal
+  -- architecture of the newest pin that has any.
+  SELECT a.archon_sha, a.factory_sha, r.refusal
   FROM mc.arch_versions a
   JOIN mc.pins p ON p.archon_sha = a.archon_sha
+  -- Why Archon would refuse the pack, read as the version strip reads it.
+  LEFT JOIN LATERAL (
+    SELECT r.refusal FROM mc.arch_versions r WHERE r.archon_sha = a.archon_sha
+    ORDER BY r.refusal IS NULL, r.parsed_at DESC LIMIT 1
+  ) r ON true
   -- Like the version strip, an empty factory does not borrow the shared pin history.
   WHERE EXISTS (SELECT 1 FROM mc.laps l WHERE l.factory = $1)
     AND ($2 = '' OR p.sha = $2)

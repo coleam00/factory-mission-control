@@ -416,6 +416,35 @@ describe('home-map at a version the address names', () => {
     }
   });
 
+  test('the map and the version strip read one refusal when a pack has two rows', async () => {
+    const rollback = new Error('rollback');
+    const strip = queries.find(([name]) => name === 'version-strip')?.[1] as string;
+    const refused = 'Archon would refuse it.';
+    await db
+      .transaction(async (tx) => {
+        // An older row of V2's pack, parsed with another factory template, records the refusal;
+        // the newer row the map draws records none.
+        await tx.query(
+          `INSERT INTO mc.arch_versions (archon_sha, factory_sha, parsed_at, refusal)
+          SELECT a.archon_sha, 'another-template', a.parsed_at - interval '1 day', $2
+          FROM mc.arch_versions a JOIN mc.pins p ON p.archon_sha = a.archon_sha WHERE p.sha = $1`,
+          [V2, refused],
+        );
+        for (const pin of ['', V2]) {
+          const map = new Set(
+            (await tx.query(sql, ['mission-control', pin])).map((r) => r.refusal),
+          );
+          expect(map).toEqual(new Set([refused]));
+        }
+        const entries = await tx.query(strip, ['mission-control']);
+        expect(entries.find((r) => r.pin_sha === V2)?.refusal).toBe(refused);
+        throw rollback;
+      })
+      .catch((error) => {
+        if (error !== rollback) throw error;
+      });
+  });
+
   test('a lap counts at the version its digest ran, and on the current map as today', async () => {
     const run = '00000000-0000-0000-0000-0000000000a1';
     await db.query(
