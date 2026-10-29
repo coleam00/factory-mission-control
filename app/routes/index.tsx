@@ -13,14 +13,21 @@ export function HomeMapBody({
   state,
   factories,
   at,
+  configured,
 }: {
   rows: readonly HomeMapRow[] | undefined;
   state: PanelState;
   factories: readonly string[];
   /** The pin the address names, or null for the current version. */
   at: string | null;
+  /** False once the server has answered with no factory; undefined while it has not. */
+  configured?: boolean;
 }): ReactElement {
   if (state === 'error') return <EmptyState title="Live data is unavailable." />;
+  // The server is ready and shows no factory: nothing will ever load, so say why (#215).
+  if (rows === undefined && configured === false) {
+    return <EmptyState title="No factory is configured." />;
+  }
   if (rows === undefined) return <EmptyState title="Loading the factory map." />;
   if (rows.length === 0) {
     return at === null ? (
@@ -47,7 +54,15 @@ export default function Home(): ReactElement {
       <h1 className="mb-4 text-base font-semibold text-text-primary">Factory map</h1>
       <StepVersionPicker factory={factory} at={at} href={homeHref} />
       <LivePanel<HomeMapRow> query="home-map" factory={factory} args={[at ?? '']}>
-        {(rows, state) => <HomeMapBody rows={rows} state={state} factories={factories} at={at} />}
+        {(rows, state) => (
+          <HomeMapBody
+            rows={rows}
+            state={state}
+            factories={factories}
+            at={at}
+            configured={live.status === 'ready' ? live.factories.length > 0 : undefined}
+          />
+        )}
       </LivePanel>
     </main>
   );

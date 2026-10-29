@@ -12,8 +12,13 @@ import { SERVE_PORTS } from './ports';
 
 const { values } = parseArgs({
   args: Bun.argv.slice(2),
-  options: { port: { type: 'string' } },
+  options: { port: { type: 'string' }, help: { type: 'boolean', short: 'h' } },
 });
+
+if (values.help) {
+  console.log(`usage: bun run serve -- --port <${SERVE_PORTS.min}-${SERVE_PORTS.max}>`);
+  process.exit(0);
+}
 
 const port = Number(values.port);
 if (!Number.isInteger(port) || port < SERVE_PORTS.min || port > SERVE_PORTS.max) {

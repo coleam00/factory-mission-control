@@ -34,7 +34,7 @@ function look(label: string, state: IssueState) {
  * Tailwind's border utilities.
  */
 const STATE_LOOK: Record<IssueState, { label: string; color: string; text: string }> = {
-  waiting: look('Waiting', 'waiting'),
+  waiting: look('Queued', 'waiting'),
   claimed: look('Claimed', 'claimed'),
   'pr-open': look('PR open', 'pr-open'),
   'needs-owner': look('Needs owner', 'needs-owner'),

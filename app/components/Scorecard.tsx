@@ -24,13 +24,37 @@ import { EmptyState } from './EmptyState';
 
 const LABEL = 'font-mono text-[10px] font-semibold uppercase tracking-[0.04em] text-text-secondary';
 const MONO = 'font-mono text-[12px] tabular-nums';
-const ROW = 'grid gap-x-[18px] gap-y-3 border-b border-border/40 px-[18px] py-[13px]';
-const COLUMNS = {
-  a: 'md:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]',
-  ab: 'md:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)]',
-};
 
 type Side = 'a' | 'b';
+
+/** Each version's color, so A and B read apart at a glance on every card. */
+const SIDE_COLOR: Record<Side, string> = {
+  a: 'var(--accent-bright)',
+  b: 'var(--node-prompt)',
+};
+
+/**
+ * What each measure is about, as a colored stripe on its card, and which way is better. Only a
+ * rate says better or worse: a count grows with the laps a version ran, so its change is not
+ * colored.
+ */
+const GROUP: Record<string, { color: string; better: 'up' | 'down' | null }> = {
+  laps: { color: 'var(--accent-bright)', better: null },
+  active_hours: { color: 'var(--accent-bright)', better: null },
+  merges: { color: 'var(--node-loop)', better: null },
+  merges_per_active_hour: { color: 'var(--node-loop)', better: 'up' },
+  empty_laps: { color: 'var(--node-approval)', better: null },
+  failed_laps: { color: 'var(--node-approval)', better: null },
+  send_backs: { color: 'var(--node-approval)', better: null },
+  gate_refusals: { color: 'var(--node-approval)', better: null },
+  lap_hours_per_merge: { color: 'var(--node-prompt)', better: 'down' },
+  app_check_share: { color: 'var(--node-prompt)', better: 'down' },
+  cost_per_merge: { color: 'var(--node-prompt)', better: 'down' },
+  new_holdout_catches: { color: 'var(--success)', better: null },
+};
+const groupOf = (key: string) => GROUP[key] ?? { color: 'var(--accent-bright)', better: null };
+const tint = (color: string, transparent: number) =>
+  `color-mix(in oklch, ${color}, transparent ${transparent}%)`;
 
 interface Version {
   side: Side;
@@ -169,21 +193,32 @@ export function ScorecardView({
     const laps = versionLaps(rows, digest);
     return { side, digest, laps, card: scorecard(laps), ...versionPin(rows, digest) };
   });
-  const columns = versions.length === 2 ? COLUMNS.ab : COLUMNS.a;
   return (
-    <div className="overflow-hidden rounded-[10px] border border-border bg-surface [&_ol>li:last-child]:border-b-0">
-      <div className={`${ROW} ${columns}`}>
-        <div className={`${LABEL} hidden md:block`}>Measure</div>
+    <div className="flex flex-col gap-4">
+      <div className="flex flex-wrap items-stretch gap-3">
         {versions.map((v) => (
-          <VersionHeader key={v.side} version={v} />
+          <div
+            key={v.side}
+            className="relative min-w-56 overflow-hidden rounded-[10px] border bg-surface px-4 py-3 pl-5"
+            style={{ borderColor: tint(SIDE_COLOR[v.side], 55) }}
+          >
+            <span
+              aria-hidden="true"
+              className="absolute inset-y-0 left-0 w-[3px]"
+              style={{ background: SIDE_COLOR[v.side] }}
+            />
+            <VersionHeader version={v} />
+          </div>
         ))}
         {versions.length === 2 ? (
-          <div className={`${LABEL} hidden md:block`}>Difference, B against A</div>
+          <p className="self-center text-sm text-text-secondary">
+            Each card shows B against A, and says when too few laps back it.
+          </p>
         ) : null}
       </div>
-      <ol>
+      <ol className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
         {MEASURES.map((measure) => (
-          <MeasureRow key={measure.key} measure={measure} versions={versions} columns={columns} />
+          <MeasureRow key={measure.key} measure={measure} versions={versions} />
         ))}
       </ol>
     </div>
@@ -200,8 +235,10 @@ function VersionHeader({ version }: { version: Version }): ReactElement {
       data-pin={version.pin ?? undefined}
       className="min-w-0"
     >
-      <div className={LABEL}>Version {version.side.toUpperCase()}</div>
-      <div className={`${MONO} text-text-primary`}>
+      <div className={LABEL} style={{ color: SIDE_COLOR[version.side] }}>
+        Version {version.side.toUpperCase()}
+      </div>
+      <div className={`${MONO} text-[15px] font-semibold text-text-primary`}>
         {version.pin === null ? NOT_RECORDED : version.pin.slice(0, 8)}
       </div>
       <div className={`${MONO} break-all text-text-secondary`}>{short(version.digest)}</div>
@@ -220,23 +257,38 @@ function VersionHeader({ version }: { version: Version }): ReactElement {
 function MeasureRow({
   measure,
   versions,
-  columns,
 }: {
   measure: Measure;
   versions: readonly Version[];
-  columns: string;
 }): ReactElement {
   const [a, b] = versions;
+  const group = groupOf(measure.key);
   return (
-    <li data-measure-row={measure.key} className={`${ROW} ${columns}`}>
+    <li
+      data-measure-row={measure.key}
+      className="relative flex flex-col gap-3 overflow-hidden rounded-[10px] border bg-surface px-4 pb-3.5 pt-4"
+      style={{ borderColor: tint(group.color, 70) }}
+    >
+      <span
+        aria-hidden="true"
+        className="absolute inset-x-0 top-0 h-[3px]"
+        style={{ background: group.color }}
+      />
       <div className="font-mono text-[11px] font-semibold uppercase tracking-[0.05em] text-text-primary">
         {measure.label}
       </div>
-      {versions.map((v) => (
-        <MeasureCell key={v.side} measure={measure} version={v} />
-      ))}
+      <div className="flex flex-wrap gap-x-8 gap-y-2">
+        {versions.map((v) => (
+          <MeasureCell key={v.side} measure={measure} version={v} />
+        ))}
+      </div>
       {b ? (
-        <Difference unit={measure.unit} a={a.card[measure.key]} b={b.card[measure.key]} />
+        <Difference
+          unit={measure.unit}
+          better={group.better}
+          a={a.card[measure.key]}
+          b={b.card[measure.key]}
+        />
       ) : null}
     </li>
   );
@@ -262,8 +314,10 @@ function MeasureCell({ measure, version }: { measure: Measure; version: Version 
       className="min-w-0"
     >
       <div className="flex items-baseline gap-2">
-        <span className={`${LABEL} md:hidden`}>{version.side.toUpperCase()}</span>
-        <span className={`${MONO} text-[13px] text-text-primary`}>
+        <span className={LABEL} style={{ color: SIDE_COLOR[version.side] }}>
+          {version.side.toUpperCase()}
+        </span>
+        <span className={`${MONO} font-semibold text-text-primary text-[13px] md:text-[26px]`}>
           {shown(measure, measured.value)}
         </span>
       </div>
@@ -324,21 +378,47 @@ function LapLine({
 
 function Difference({
   unit,
+  better,
   a,
   b,
 }: {
   unit: Measure['unit'];
+  better: 'up' | 'down' | null;
   a: Measured;
   b: Measured;
 }): ReactElement {
   const d = difference(a, b);
   const value = d === null ? 'n/a' : formatSigned(d, written(unit));
   const isMeaningful = meaningful(a, b);
+  // Better is green and worse red, whichever way the measure counts; no change, or a measure
+  // that is neither, stays neutral.
+  const verdict =
+    d === null || d === 0 || better === null
+      ? null
+      : d > 0 === (better === 'up')
+        ? 'var(--success)'
+        : 'var(--error)';
+  const color = verdict ?? 'var(--text-secondary)';
   return (
-    <div data-difference={value} data-meaningful={isMeaningful} className="min-w-0">
+    <div
+      data-difference={value}
+      data-meaningful={isMeaningful}
+      className="min-w-0 self-start rounded-md border px-2.5 py-1.5"
+      style={{ borderColor: tint(color, 55), background: tint(color, 88) }}
+    >
       <div className="flex flex-wrap items-baseline gap-x-2">
-        <span className={`${LABEL} md:hidden`}>B against A</span>
-        <span className={`${MONO} text-[13px] text-text-primary`}>{value}</span>
+        <span className={LABEL}>B against A</span>
+        <span
+          className={`${MONO} font-semibold ${
+            verdict === 'var(--success)'
+              ? 'text-success'
+              : verdict === 'var(--error)'
+                ? 'text-error'
+                : 'text-text-primary'
+          } text-[13px]`}
+        >
+          {value}
+        </span>
       </div>
       {isMeaningful ? null : (
         <div className="mt-1 font-mono text-[11px] font-semibold uppercase tracking-[0.05em] text-warning">
