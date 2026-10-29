@@ -104,9 +104,9 @@ describe('the health queries on the seed', () => {
     await db.query(`DELETE FROM mc.lap_steps WHERE run_id::text LIKE '00000000-0000-4000-8000-%'`);
   });
 
-  test('three issues are workable against two running laps', async () => {
+  test('one issue is workable against two running laps', async () => {
     const shown = workable(await rows<HealthWorkableRow>('health-workable'));
-    expect(shown.issues.map((issue) => issue.issue_number)).toEqual([9, 17, 18]);
+    expect(shown.issues.map((issue) => issue.issue_number)).toEqual([9]);
     expect(shown.running).toBe(2);
   });
 
@@ -125,7 +125,38 @@ describe('the health queries on the seed', () => {
       `INSERT INTO mc.issue_labels (factory, issue_number, label) VALUES ($1, 18, 'needs-owner')`,
       [FACTORY],
     );
-    expect(await workableNumbers()).toEqual([9, 14, 16, 17]);
+    expect(await workableNumbers()).toEqual([9, 14, 16]);
+  });
+
+  test("the manager's tracking issues are never workable; a title only containing one is", async () => {
+    const workableNumbers = async () =>
+      workable(await rows<HealthWorkableRow>('health-workable')).issues.map((i) => i.issue_number);
+    const seeded = await db.query(
+      `SELECT number, title FROM mc.issues WHERE factory = $1 AND number IN (17, 18) ORDER BY number`,
+      [FACTORY],
+    );
+    expect(seeded).toEqual([
+      { number: 17, title: 'Owner decisions needed' },
+      { number: 18, title: 'Loop metrics' },
+    ]);
+    await db.query(`DELETE FROM mc.issue_labels WHERE factory = $1 AND issue_number = 18`, [
+      FACTORY,
+    ]);
+    const before = await workableNumbers();
+    expect(before).not.toContain(17);
+    expect(before).not.toContain(18);
+    await db.query(
+      `INSERT INTO mc.issues (factory, number, title, state, url, created_at, updated_at) VALUES
+         ($1, 9001, 'Show Owner decisions needed on the home map', 'open',
+           'https://example.test/9001', '2026-10-26T00:00:00Z', '2026-10-26T00:00:00Z'),
+         ($1, 9002, 'Loop metrics chart', 'open',
+           'https://example.test/9002', '2026-10-26T00:00:00Z', '2026-10-26T00:00:00Z')`,
+      [FACTORY],
+    );
+    expect(await workableNumbers()).toEqual([...before, 9001, 9002]);
+    await db.query(`DELETE FROM mc.issues WHERE factory = $1 AND number IN (9001, 9002)`, [
+      FACTORY,
+    ]);
   });
 
   test('a failed step on a running lap counts it as failed by its error, as fixture:write writes it', async () => {

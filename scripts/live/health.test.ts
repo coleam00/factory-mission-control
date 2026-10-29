@@ -6,7 +6,7 @@ const expected: ExpectedHealth = {
   paused: ['p'],
   overdue: ['a build', 'b check-app'],
   causes: { 'usage-limit': 2, authentication: 2, infrastructure: 1, other: 1 },
-  workable: [9, 17, 18],
+  workable: [9],
   running: 2,
 };
 
@@ -15,8 +15,8 @@ const shown: ShownHealth = {
   paused: ['p'],
   overdue: ['b check-app', 'a build'],
   causes: { 'usage-limit': 2, authentication: 2, infrastructure: 1, other: 1 },
-  workable: [9, 17, 18],
-  workableCount: 3,
+  workable: [9],
+  workableCount: 1,
   running: 2,
 };
 
@@ -28,13 +28,13 @@ test('a wrong count, a missing overdue step and a wrong workable count are each 
   const wrong = {
     ...shown,
     overdue: ['a build'],
-    workableCount: 2,
+    workableCount: 0,
     causes: { ...shown.causes, other: 0 },
   };
   expect(healthMismatches(wrong, expected)).toEqual([
     'overdue steps: screen ["a build"], SQL ["a build","b check-app"]',
     'failed laps by cause: screen {"usage-limit":2,"authentication":2,"infrastructure":1,"other":0}, SQL {"usage-limit":2,"authentication":2,"infrastructure":1,"other":1}',
-    'workable count: screen 2, SQL 3',
+    'workable count: screen 0, SQL 1',
   ]);
 });
 
