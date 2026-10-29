@@ -371,6 +371,48 @@ export function parsePack(packDir: string, templateDir: string): PackVersion {
   };
 }
 
+/**
+ * Archon's include nesting limit (`INCLUDE_MAX_DEPTH` in its
+ * `packages/workflows/src/include-expander.ts`): three nested includes load, a fourth refuses.
+ */
+const INCLUDE_MAX_DEPTH = 3;
+
+/** Archon's message for the first include of `chain`'s tree nested past its limit, if any. */
+function tooDeep(steps: readonly Step[], chain: readonly string[]): string | null {
+  for (const step of steps) {
+    let found: string | null;
+    if (step.include) {
+      const reached = [...chain, step.include];
+      found =
+        chain.length > INCLUDE_MAX_DEPTH
+          ? `include depth limit exceeded (max ${INCLUDE_MAX_DEPTH} levels): ${reached.join(' -> ')}`
+          : tooDeep(step.steps, reached);
+    } else {
+      // A loop group's nodes sit at the depth of the group itself.
+      found = tooDeep(step.steps, chain);
+    }
+    if (found) return found;
+  }
+  return null;
+}
+
+/**
+ * Why Archon would refuse to load the pack, as one sentence, or null when it would load every
+ * workflow. Archon refuses per workflow and loads the rest, so the sentence names the first
+ * refused workflow, how many others it refuses, and the first one's reason in Archon's words.
+ */
+export function loadRefusal(workflows: readonly Workflow[]): string | null {
+  const refused = workflows.flatMap((workflow) => {
+    const reason = tooDeep(workflow.steps, [workflow.name]);
+    return reason === null ? [] : [{ name: workflow.name, reason }];
+  });
+  const [first] = refused;
+  if (!first) return null;
+  const others = refused.length - 1;
+  const more = others === 0 ? '' : ` and ${others} ${others === 1 ? 'other' : 'others'}`;
+  return `Archon would refuse to load workflow ${first.name}${more}: ${first.reason}.`;
+}
+
 /** The agent names in a hook's `*_AGENTS = {...}` set, in the order the file lists them. */
 function admitted(text: string): string[] {
   const names: string[] = [];
