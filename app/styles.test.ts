@@ -45,10 +45,11 @@ function declarations(css: string): Declaration[] {
 
 const app = declarations(read('app/styles.css'));
 
-describe('console tokens', () => {
+describe('console and v2 role tokens', () => {
   for (const source of [
     'docs/design/archon-console/theme.css',
     'docs/design/archon-console/index.css',
+    'docs/design/v2/tokens.css',
   ]) {
     test(`every custom property in ${source} is declared identically in app/styles.css`, () => {
       const tokens = declarations(read(source)).filter((d) => d.property.startsWith('--'));

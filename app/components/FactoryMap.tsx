@@ -1,0 +1,668 @@
+import {
+  type CSSProperties,
+  type KeyboardEvent,
+  type PointerEvent,
+  type ReactElement,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from 'react';
+import {
+  type Card,
+  cardWidth,
+  type FactoryMap as Map_,
+  type Line,
+  type LineStyle,
+  linePoints,
+  midpoint,
+  neighbours,
+  type Point,
+  pathOf,
+  type Role,
+  tourPoints,
+  worldSize,
+} from '../map/factory-map';
+import type { CardLive } from '../map/live';
+import { MapDetails } from './MapDetails';
+
+const ROLE_COLOR: Record<Role, string> = {
+  source: 'var(--role-source)',
+  agent: 'var(--role-agent)',
+  test: 'var(--role-test)',
+  person: 'var(--role-person)',
+};
+
+/** A color over transparent, so every rendered color stays a token (harness/design-probe.js). */
+const over = (color: string, amount: string) =>
+  `color-mix(in srgb, ${color} ${amount}, transparent)`;
+
+const LINE_COLOR: Record<LineStyle, string> = {
+  flow: 'var(--text-tertiary)',
+  loop: 'var(--text-tertiary)',
+  ask: 'var(--role-person)',
+  holdout: 'var(--role-test)',
+};
+const LINE_DASH: Record<LineStyle, string | undefined> = {
+  flow: undefined,
+  loop: '6 5',
+  ask: '3 4',
+  holdout: '2 4',
+};
+
+/** A wire label's 10.5px Geist Mono advance per character, rounded up. */
+const LABEL_CHAR_W = 6.4;
+const MIN_ZOOM = 0.3;
+const MAX_ZOOM = 2.4;
+const FIT_PAD = 40;
+/** Room the fit keeps under the map for the controls. */
+const FIT_FOOT = 30;
+
+interface Camera {
+  x: number;
+  y: number;
+  k: number;
+}
+
+const reducedQuery = '(prefers-reduced-motion: reduce)';
+const reducedMotion = () => window.matchMedia(reducedQuery).matches;
+const subscribeMotion = (onChange: () => void) => {
+  const query = window.matchMedia(reducedQuery);
+  query.addEventListener('change', onChange);
+  return () => query.removeEventListener('change', onChange);
+};
+
+/** The point `fraction` of the way along a polyline, and how far along each vertex lies. */
+function along(points: readonly Point[]): {
+  at: (fraction: number) => Point;
+  vertices: number[];
+} {
+  const vertices = [0];
+  for (const [i, [x, y]] of points.slice(1).entries()) {
+    const [px, py] = points[i] as Point;
+    vertices.push((vertices[i] as number) + Math.hypot(x - px, y - py));
+  }
+  const total = vertices[vertices.length - 1] as number;
+  return {
+    vertices: vertices.map((v) => v / total),
+    at: (fraction) => {
+      const distance = fraction * total;
+      const i = Math.max(
+        0,
+        vertices.findIndex((v) => v >= distance),
+      );
+      if (i === 0) return points[0] as Point;
+      const [x0, y0] = points[i - 1] as Point;
+      const [x1, y1] = points[i] as Point;
+      const span = (vertices[i] as number) - (vertices[i - 1] as number);
+      const t = span === 0 ? 0 : (distance - (vertices[i - 1] as number)) / span;
+      return [x0 + (x1 - x0) * t, y0 + (y1 - y0) * t];
+    },
+  };
+}
+
+/**
+ * One dot travels the tour on a loop and each card pulses once as the dot reaches it. Drawn
+ * straight to the DOM each frame, so the map does not re-render 60 times a second.
+ */
+function useTour(
+  map: Map_,
+  running: boolean,
+  dot: React.RefObject<SVGCircleElement | null>,
+  cards: React.RefObject<Map<string, HTMLElement>>,
+): void {
+  useEffect(() => {
+    if (!running) return;
+    const points = tourPoints(map);
+    const path = along(points);
+    const centres = new Set(
+      map.tour.map((id) => {
+        const card = map.cards.find((c) => c.id === id) as Card;
+        return `${card.x + cardWidth(map, card) / 2},${card.y + map.cardSize.height / 2}`;
+      }),
+    );
+    const stops = points
+      .map((p, i) => [p, path.vertices[i] as number] as const)
+      .filter(([p]) => centres.has(`${p[0]},${p[1]}`))
+      .map(([, at], i) => ({ at, id: map.tour[i] as string }));
+    const duration = Math.max(5000, map.tour.length * 1100);
+    const started = performance.now();
+    let last = -1;
+    let frame = 0;
+    const step = (now: number) => {
+      const fraction = ((now - started) % duration) / duration;
+      const [x, y] = path.at(fraction);
+      dot.current?.setAttribute('cx', String(x));
+      dot.current?.setAttribute('cy', String(y));
+      for (const [i, stop] of stops.entries()) {
+        if (i === last || Math.abs(fraction - stop.at) >= 0.012) continue;
+        last = i;
+        const card = cards.current.get(stop.id);
+        if (card) {
+          card.classList.remove('animate-map-hit');
+          void card.offsetWidth;
+          card.classList.add('animate-map-hit');
+        }
+      }
+      frame = requestAnimationFrame(step);
+    };
+    frame = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(frame);
+  }, [map, running, dot, cards]);
+}
+
+function chipsOf(live: CardLive | undefined) {
+  if (live === undefined) return [];
+  const chips: { chip: string; text: string; className: string; pulse?: boolean }[] = [];
+  const add = (chip: string, n: number | undefined, word: string, className: string) => {
+    if (n) chips.push({ chip, text: `${n} ${word}`, className, pulse: chip === 'here' });
+  };
+  add(
+    'here',
+    live.here.length,
+    'here',
+    'bg-[color:var(--accent-soft)] text-[color:var(--running)]',
+  );
+  add('queued', live.queued?.length, 'queued', 'bg-surface-hover text-text-secondary');
+  add(
+    'failing',
+    live.failing?.length,
+    'failing',
+    'bg-[color:var(--error-soft)] text-[color:var(--error)]',
+  );
+  add(
+    'waiting',
+    live.waiting?.length,
+    'waiting',
+    'bg-[color:var(--role-person-soft)] text-[color:var(--role-person)]',
+  );
+  add(
+    'merged',
+    live.merged?.length,
+    'merged',
+    'bg-[color:var(--success-soft)] text-[color:var(--success)]',
+  );
+  return chips;
+}
+
+function MapCard({
+  map,
+  card,
+  live,
+  state,
+  onSelect,
+  register,
+}: {
+  map: Map_;
+  card: Card;
+  live: CardLive | undefined;
+  state: 'selected' | 'near' | 'dim' | 'plain';
+  onSelect: (id: string) => void;
+  register: (id: string, el: HTMLElement | null) => void;
+}): ReactElement {
+  const color = ROLE_COLOR[card.role];
+  const chips = chipsOf(live);
+  const counts = chips.map((c) => c.text).join(', ');
+  const onKey = (event: KeyboardEvent) => {
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    event.preventDefault();
+    onSelect(card.id);
+  };
+  return (
+    // biome-ignore lint/a11y/useSemanticElements: a card holds blocks, which a <button> may not
+    <div
+      ref={(el) => register(card.id, el)}
+      role="button"
+      tabIndex={0}
+      aria-pressed={state === 'selected'}
+      aria-label={`${card.title}. ${card.text}${counts ? `. ${counts}` : ''}`}
+      data-card={card.id}
+      data-role={card.role}
+      data-live-count={live?.here.length ?? 0}
+      onClick={(event) => {
+        event.stopPropagation();
+        onSelect(card.id);
+      }}
+      onPointerDown={(event) => event.stopPropagation()}
+      onKeyDown={onKey}
+      className={`absolute cursor-pointer select-none overflow-hidden rounded-[10px] border bg-surface-elevated py-2.5 pr-3 pl-3.5 transition-[opacity,box-shadow,border-color] duration-200 hover:border-[color:var(--text-tertiary)] ${
+        state === 'dim' ? 'opacity-30' : ''
+      } ${state === 'selected' ? 'shadow-[0_0_0_3px_var(--accent-soft)]' : ''}`}
+      style={{
+        left: card.x,
+        top: card.y,
+        width: cardWidth(map, card),
+        minHeight: map.cardSize.height,
+        borderColor:
+          state === 'selected' ? 'var(--accent)' : over(color, 'var(--card-border-tint)'),
+      }}
+    >
+      <span
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-0"
+        style={{ background: over(color, 'var(--card-tint)') }}
+      />
+      <span
+        aria-hidden="true"
+        className="absolute top-2.5 bottom-2.5 left-0 w-[3px] rounded-r-[3px]"
+        style={{ background: color }}
+      />
+      <span className="relative flex flex-col">
+        <span className="font-mono text-[10px] uppercase tracking-[0.08em]" style={{ color }}>
+          {card.kind}
+        </span>
+        <span className="mt-0.5 text-[15px] font-semibold leading-[1.25] text-text-primary">
+          {card.title}
+        </span>
+        <span className="mt-[3px] text-[12.5px] leading-[1.35] text-text-secondary">
+          {card.text}
+        </span>
+        {chips.length > 0 ? (
+          <span className="mt-2 flex flex-wrap gap-[5px]">
+            {chips.map((c) => (
+              <span
+                key={c.chip}
+                data-chip={c.chip}
+                className={`inline-flex items-center gap-[5px] whitespace-nowrap rounded-[5px] px-1.5 py-px font-mono text-[10.5px] tabular-nums ${c.className}`}
+              >
+                {c.pulse ? (
+                  <span
+                    aria-hidden="true"
+                    className="h-1.5 w-1.5 rounded-full bg-[color:var(--running)] motion-safe:animate-pulse"
+                  />
+                ) : null}
+                {c.text}
+              </span>
+            ))}
+          </span>
+        ) : null}
+      </span>
+    </div>
+  );
+}
+
+function Wire({
+  line,
+  points,
+  hot,
+  dimmed,
+  flow,
+}: {
+  line: Line;
+  points: Point[];
+  hot: boolean;
+  dimmed: boolean;
+  flow: boolean;
+}): ReactElement {
+  const d = pathOf(points);
+  return (
+    <g data-line={`${line.from}-${line.to}`} data-hot={hot || undefined}>
+      <path
+        d={d}
+        fill="none"
+        stroke={LINE_COLOR[line.style]}
+        strokeWidth={1.8}
+        strokeDasharray={LINE_DASH[line.style]}
+        opacity={dimmed ? 0.18 : 0.75}
+        markerEnd={line.arrow === false ? undefined : `url(#map-arrow-${line.style})`}
+      />
+      {flow && line.style === 'flow' ? (
+        <path
+          data-flow
+          d={d}
+          fill="none"
+          stroke="var(--accent)"
+          strokeWidth={2}
+          strokeDasharray="8 64"
+          opacity={0.55}
+          className="animate-map-flow motion-reduce:hidden"
+        />
+      ) : null}
+    </g>
+  );
+}
+
+function WireLabel({ text, at }: { text: string; at: Point }): ReactElement {
+  const width = text.length * LABEL_CHAR_W + 8;
+  return (
+    <g>
+      <rect
+        x={at[0] - width / 2}
+        y={at[1] - 18}
+        width={width}
+        height={16}
+        rx={4}
+        fill="var(--surface)"
+      />
+      <text
+        x={at[0]}
+        y={at[1] - 6}
+        textAnchor="middle"
+        className="font-mono"
+        fontSize={10.5}
+        fill="var(--text-secondary)"
+      >
+        {text}
+      </text>
+    </g>
+  );
+}
+
+const CONTROL =
+  'cursor-pointer rounded-md px-[9px] py-1 font-mono text-[12px] text-text-secondary hover:bg-surface-elevated hover:text-text-primary disabled:cursor-default disabled:text-text-tertiary disabled:hover:bg-transparent';
+
+/**
+ * The factory map's root view (PRD 4.1): the owner's drawing with live chips on its cards, a camera
+ * that pans, zooms around the cursor and fits the stage, and a details strip for the card clicked.
+ * `flow` off, or `prefers-reduced-motion`, stops the travelling dot and the flowing dashes.
+ */
+export function FactoryMap({
+  map,
+  live,
+  factory,
+  at,
+  flow,
+}: {
+  map: Map_;
+  live: ReadonlyMap<string, CardLive>;
+  factory: string;
+  at: string | null;
+  flow: boolean;
+}): ReactElement {
+  const world = useMemo(() => worldSize(map), [map]);
+  const stage = useRef<HTMLElement>(null);
+  const dot = useRef<SVGCircleElement>(null);
+  const cardEls = useRef(new Map<string, HTMLElement>());
+  const [cam, setCam] = useState<Camera>({ x: 0, y: 0, k: 0.5 });
+  const [selected, setSelected] = useState<string | null>(null);
+  const drag = useRef<{ x: number; y: number; cam: Camera; moved: boolean } | null>(null);
+  const reduced = useSyncExternalStore(subscribeMotion, reducedMotion, () => false);
+  const moving = flow && !reduced;
+  useTour(map, moving, dot, cardEls);
+
+  const fit = useCallback(() => {
+    const box = stage.current?.getBoundingClientRect();
+    if (!box) return;
+    const k = Math.max(
+      0.35,
+      Math.min(
+        (box.width - FIT_PAD * 2) / world.width,
+        (box.height - FIT_PAD * 2 - FIT_FOOT) / world.height,
+        1.15,
+      ),
+    );
+    setCam({
+      k,
+      x: (box.width - world.width * k) / 2,
+      y: Math.max(FIT_PAD, (box.height - FIT_FOOT - world.height * k) / 2),
+    });
+  }, [world]);
+
+  useEffect(() => {
+    const el = stage.current;
+    if (!el) return;
+    fit();
+    const observer = new ResizeObserver(() => fit());
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [fit]);
+
+  const zoomAround = useCallback((factor: number, mx: number, my: number) => {
+    setCam((was) => {
+      const k = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, was.k * factor));
+      return { k, x: mx - (mx - was.x) * (k / was.k), y: my - (my - was.y) * (k / was.k) };
+    });
+  }, []);
+
+  // A wheel listener React would attach passive, and a passive one cannot keep the page still.
+  useEffect(() => {
+    const el = stage.current;
+    if (!el) return;
+    const onWheel = (event: WheelEvent) => {
+      event.preventDefault();
+      const box = el.getBoundingClientRect();
+      // A trackpad's two-finger swipe pans; a wheel, or a pinch (ctrl), zooms.
+      const swipe =
+        !event.ctrlKey &&
+        (Math.abs(event.deltaX) > Math.abs(event.deltaY) ||
+          (event.deltaMode === 0 && Math.abs(event.deltaY) < 40 && event.deltaY % 1 !== 0));
+      if (swipe) {
+        setCam((was) => ({ ...was, x: was.x - event.deltaX, y: was.y - event.deltaY }));
+        return;
+      }
+      zoomAround(
+        Math.exp(-event.deltaY * 0.0022),
+        event.clientX - box.left,
+        event.clientY - box.top,
+      );
+    };
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => el.removeEventListener('wheel', onWheel);
+  }, [zoomAround]);
+
+  useEffect(() => {
+    if (selected === null) return;
+    const onKey = (event: globalThis.KeyboardEvent) => {
+      if (event.key === 'Escape') setSelected(null);
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [selected]);
+
+  const zoomCentre = (factor: number) => {
+    const box = stage.current?.getBoundingClientRect();
+    if (box) zoomAround(factor, box.width / 2, box.height / 2);
+  };
+
+  const onPointerDown = (event: PointerEvent<HTMLElement>) => {
+    drag.current = { x: event.clientX, y: event.clientY, cam, moved: false };
+    event.currentTarget.setPointerCapture(event.pointerId);
+  };
+  const onPointerMove = (event: PointerEvent<HTMLElement>) => {
+    const was = drag.current;
+    if (!was) return;
+    const dx = event.clientX - was.x;
+    const dy = event.clientY - was.y;
+    if (Math.abs(dx) + Math.abs(dy) > 3) was.moved = true;
+    setCam({ ...was.cam, x: was.cam.x + dx, y: was.cam.y + dy });
+  };
+  const onPointerUp = () => {
+    if (drag.current && !drag.current.moved) setSelected(null);
+    drag.current = null;
+  };
+
+  const near = useMemo(() => neighbours(map, selected), [map, selected]);
+  const lines = useMemo(
+    () => map.lines.map((line) => ({ line, points: linePoints(map, line) })),
+    [map],
+  );
+  const register = useCallback((id: string, el: HTMLElement | null) => {
+    if (el) cardEls.current.set(id, el);
+    else cardEls.current.delete(id);
+  }, []);
+  const selectedCard = map.cards.find((c) => c.id === selected);
+  const worldStyle: CSSProperties = {
+    width: world.width,
+    height: world.height,
+    transform: `translate(${cam.x}px, ${cam.y}px) scale(${cam.k})`,
+    transformOrigin: '0 0',
+  };
+
+  return (
+    <div className="flex flex-col">
+      <p data-map-caption className="mb-3 max-w-[78ch] text-sm text-text-secondary">
+        {map.caption}
+      </p>
+      <section
+        ref={stage}
+        aria-label="Factory map. Drag to move, scroll to zoom, click a step for details."
+        data-map-stage
+        data-flow={moving ? 'on' : 'off'}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onPointerCancel={() => {
+          drag.current = null;
+        }}
+        className="relative h-[460px] cursor-grab touch-none overflow-hidden rounded-xl border border-border bg-surface active:cursor-grabbing min-[701px]:h-[600px]"
+      >
+        <div data-map-world className="absolute top-0 left-0" style={worldStyle}>
+          <svg
+            aria-hidden="true"
+            className="pointer-events-none absolute top-0 left-0 overflow-visible"
+            width={world.width}
+            height={world.height}
+          >
+            <defs>
+              {(Object.keys(LINE_COLOR) as LineStyle[]).map((style) => (
+                <marker
+                  key={style}
+                  id={`map-arrow-${style}`}
+                  viewBox="0 0 10 10"
+                  refX={9}
+                  refY={5}
+                  markerWidth={7}
+                  markerHeight={7}
+                  orient="auto-start-reverse"
+                >
+                  <path d="M0,1 L9,5 L0,9 z" fill={LINE_COLOR[style]} />
+                </marker>
+              ))}
+            </defs>
+            {lines.map(({ line, points }) => {
+              const hot = selected !== null && (line.from === selected || line.to === selected);
+              return (
+                <Wire
+                  key={`${line.from}-${line.to}`}
+                  line={line}
+                  points={points}
+                  hot={hot}
+                  dimmed={selected !== null && !hot}
+                  flow={moving}
+                />
+              );
+            })}
+            {lines.map(({ line, points }) =>
+              line.label === undefined ? null : (
+                <WireLabel
+                  key={`label-${line.from}-${line.to}`}
+                  text={line.label}
+                  at={midpoint(points)}
+                />
+              ),
+            )}
+            {moving ? (
+              <circle
+                ref={dot}
+                data-tour
+                r={6}
+                cx={-20}
+                cy={-20}
+                fill="var(--running)"
+                className="motion-reduce:hidden"
+              />
+            ) : null}
+          </svg>
+          <div
+            data-map-group
+            className="pointer-events-none absolute rounded-[14px] border border-dashed border-[color:var(--border-bright)]"
+            style={{
+              left: map.group.x,
+              top: map.group.y,
+              width: map.group.width,
+              height: map.group.height,
+            }}
+          >
+            <span className="absolute -top-[9px] left-3.5 bg-surface px-1.5 font-mono text-[10.5px] uppercase tracking-[0.06em] text-text-secondary">
+              {map.group.label}
+            </span>
+          </div>
+          {map.cards.map((card) => (
+            <MapCard
+              key={card.id}
+              map={map}
+              card={card}
+              live={live.get(card.id)}
+              state={
+                selected === null
+                  ? 'plain'
+                  : card.id === selected
+                    ? 'selected'
+                    : near.has(card.id)
+                      ? 'near'
+                      : 'dim'
+              }
+              onSelect={setSelected}
+              register={register}
+            />
+          ))}
+        </div>
+        <div className="pointer-events-none absolute bottom-3 left-3 hidden rounded-lg border border-border bg-surface px-[9px] py-[5px] font-mono text-[11px] text-text-secondary min-[701px]:block">
+          drag = move · scroll = zoom · click = details · Esc = deselect
+        </div>
+        <div
+          data-map-controls
+          onPointerDown={(event) => event.stopPropagation()}
+          className="absolute right-3 bottom-3 flex gap-1 rounded-[9px] border border-border bg-surface p-1"
+        >
+          <button
+            type="button"
+            disabled
+            aria-label="Up a level"
+            title="Up a level"
+            className={CONTROL}
+          >
+            ↑
+          </button>
+          <button
+            type="button"
+            aria-label="Zoom out"
+            title="Zoom out"
+            onClick={() => zoomCentre(1 / 1.3)}
+            className={CONTROL}
+          >
+            −
+          </button>
+          <button type="button" aria-label="Fit" title="Fit" onClick={fit} className={CONTROL}>
+            fit
+          </button>
+          <button
+            type="button"
+            aria-label="Zoom in"
+            title="Zoom in"
+            onClick={() => zoomCentre(1.3)}
+            className={CONTROL}
+          >
+            +
+          </button>
+        </div>
+      </section>
+      <ul
+        data-map-legend
+        className="mt-2.5 flex flex-wrap gap-x-[18px] gap-y-2 text-[12px] text-text-secondary"
+      >
+        {map.legend.map((entry) => (
+          <li key={entry.role} className="flex items-center">
+            <span
+              aria-hidden="true"
+              className="mr-1.5 inline-block h-2.5 w-2.5 rounded-[3px]"
+              style={{ background: ROLE_COLOR[entry.role] }}
+            />
+            {entry.label}
+          </li>
+        ))}
+      </ul>
+      {selectedCard ? (
+        <MapDetails
+          card={selectedCard}
+          live={live.get(selectedCard.id)}
+          factory={factory}
+          at={at}
+          onClose={() => setSelected(null)}
+        />
+      ) : null}
+    </div>
+  );
+}

@@ -1,5 +1,6 @@
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { cardForStep, FACTORY_MAP } from '../../app/map/factory-map';
 import { openPage, type Page } from '../lib/cdp';
 import {
   insertToScreen,
@@ -7,18 +8,17 @@ import {
   LIVE_STEP,
   type LiveContext,
   type LivePhase,
-  lapsOnNodes,
+  lapsOnCards,
   lateWrite,
   MAP,
+  mapCards,
   mapMismatches,
-  mapNodes,
   PANEL,
   pageWait,
   READY_WAIT_MS,
   RENEWALS_IN_180S,
   renewalsOf,
   required,
-  SEED_INCLUDE_STAGES,
   untilShown,
 } from './shared';
 import {
@@ -30,9 +30,12 @@ import {
   readyFailures,
 } from './timings';
 
-const CLICKED_STEP = 'check-app';
-/** A step of the loop on the map: paths repeat across workflows (`briefs`). */
-const LOOP_STEP = `${MAP} [data-workflow="archon-loop"]`;
+/** Journey 1: App check's details, then its Behind the scenes, open check-app's step screen. */
+const CLICKED_CARD = 'app';
+const CLICKED_STEP = 'archon-loop check-app';
+const CLICKED_SCREEN = '/steps/archon-loop/check-app';
+/** The card `fixture:write` moves a lap onto: the one covering LIVE_STEP. */
+const LIVE_CARD = cardForStep(FACTORY_MAP, 'archon-loop', LIVE_STEP)?.id ?? '';
 
 export async function observeHomePanels(
   page: Page,
@@ -68,64 +71,22 @@ interface Timings extends PanelTimings {
   renewals: number | null;
   afterHoldInsertToScreenMs: number | null;
   noReload: boolean | null;
-  /** Where clicking a map step went. */
+  /** Where App check's Behind the scenes link to check-app went. */
   clickedTo?: string | null;
   limits: typeof LIMITS;
 }
 
-/** The loop's steps drawn on screen, not hidden inside a folded block. */
-const shownLoop = `[...document.querySelectorAll('${LOOP_STEP}[data-node-role]')].filter((el) => el.closest('[hidden]') === null)`;
+const liveCountOf = (card: string) =>
+  `document.querySelector('${MAP} [data-card="${card}"]')?.getAttribute('data-live-count')`;
 
-/**
- * The loop opens with each top-level include's own steps drawn beside the spine and every block
- * inside one folded; the route fork's two sides carry their labels; folding ship hides its steps
- * and opening it again shows them.
- */
-async function foldedLoopMismatches(page: Page): Promise<string[]> {
-  const failures: string[] = [];
-  const shown = await page.evaluate<{ step: string; folded: string | null }[]>(
-    `${shownLoop}.map((el) => ({ step: el.getAttribute('data-step'), folded: el.getAttribute('data-folded') }))`,
+/** Clicks `selector` on the page once it is there; false when it never shows. */
+async function click(page: Page, selector: string): Promise<boolean> {
+  const shown = await page.evaluate<boolean>(
+    pageWait(`document.querySelector('${selector}') !== null`, 2000),
   );
-  const deep = shown.filter((n) => n.step.split('/').length > 2).map((n) => n.step);
-  if (deep.length > 0) failures.push(`the map opens with deeper steps shown: ${deep.join(', ')}`);
-  for (const [include, stages] of Object.entries(SEED_INCLUDE_STAGES)) {
-    if (shown.find((n) => n.step === include)?.folded != null) {
-      failures.push(`${include} opens folded, not with its steps beside the spine`);
-    }
-    const drawn = shown.filter((n) => n.step.startsWith(`${include}/`)).map((n) => n.step);
-    if (drawn.join() !== stages.map((s) => `${include}/${s}`).join()) {
-      failures.push(`${include} opens showing ${drawn.join(', ') || 'no steps'}`);
-    }
-  }
-  if (shown.find((n) => n.step === 'ship/deliver')?.folded == null) {
-    failures.push('ship/deliver does not open folded');
-  }
-  const labels = await page.evaluate<string[]>(
-    `[...document.querySelectorAll('${MAP} [data-edge-label]')].map((el) => el.getAttribute('data-edge-label') + ' ' + el.textContent)`,
-  );
-  for (const expected of ['build continue / simple', 'ship complex']) {
-    if (!labels.includes(expected)) {
-      failures.push(`the route fork has labels ${JSON.stringify(labels)}, not ${expected}`);
-    }
-  }
-  const stages = SEED_INCLUDE_STAGES.ship ?? [];
-  const shipShown = (open: boolean) =>
-    `${shownLoop}.filter((el) => (el.getAttribute('data-step') ?? '').split('/').length === 2 && el.getAttribute('data-step').startsWith('ship/')).length === ${open ? stages.length : 0}`;
-  await page.evaluate(`document.querySelector('${MAP} [data-fold="ship"]')?.click()`);
-  if (!(await page.evaluate<boolean>(pageWait(shipShown(false), 2000)))) {
-    failures.push('folding ship does not hide its steps');
-  }
-  await page.evaluate(
-    `document.querySelector('${LOOP_STEP}[data-step="ship"][data-folded]')?.click()`,
-  );
-  if (!(await page.evaluate<boolean>(pageWait(shipShown(true), 2000)))) {
-    failures.push(`opening ship again does not show its ${stages.length} steps`);
-  }
-  return failures;
+  if (shown) await page.evaluate(`document.querySelector('${selector}').click()`);
+  return shown;
 }
-
-const liveCountOf = (step: string) =>
-  `document.querySelector('${LOOP_STEP}[data-step="${step}"]')?.getAttribute('data-live-count')`;
 
 /** The home screen: the factory strip's inserted laps and the map's lap step events. */
 export function homePhase(ctx: LiveContext): LivePhase {
@@ -166,20 +127,9 @@ export function homePhase(ctx: LiveContext): LivePhase {
           `document.querySelector('${PANEL} [data-count]').getAttribute('data-count')`,
         ),
       );
-      ctx.failures.push(...mapMismatches(await mapNodes(page), await lapsOnNodes(db, factory)));
-      // The inputs and the manager open folded, one card each, so the loop opens above the fold.
-      const cards = await page.evaluate<string[]>(
-        `[...document.querySelectorAll('${MAP} [data-workflow-card]')].map((c) => c.getAttribute('data-workflow-card') + ' ' + c.getAttribute('data-folded'))`,
-      );
-      const expectedCards = ['archon-backlog true', 'archon-holdouts true', 'archon-manager true'];
-      if (JSON.stringify([...cards].sort()) !== JSON.stringify(expectedCards)) {
-        ctx.failures.push(
-          `the map's workflow cards are ${JSON.stringify(cards)}, not ${JSON.stringify(expectedCards)}`,
-        );
-      }
-      ctx.failures.push(...(await foldedLoopMismatches(page)));
+      ctx.failures.push(...mapMismatches(await mapCards(page), await lapsOnCards(db, factory)));
       writeFileSync(join(outDir, 'home-map.png'), await page.screenshot(1440));
-      onLiveStep = Number(await page.evaluate<string>(liveCountOf(LIVE_STEP)));
+      onLiveStep = Number(await page.evaluate<string>(liveCountOf(LIVE_CARD)));
     },
 
     async write() {
@@ -193,12 +143,12 @@ export function homePhase(ctx: LiveContext): LivePhase {
 
     async onLapStep(_run, afterHold) {
       const target = onLiveStep + (afterHold ? 2 : 1);
-      const ms = await untilShown(
-        required(homePage, 'home page'),
-        `${liveCountOf(LIVE_STEP)} === '${target}'`,
-      );
+      const page = required(homePage, 'home page');
+      const ms = await untilShown(page, `${liveCountOf(LIVE_CARD)} === '${target}'`);
       if (afterHold) mapTimings.afterHoldInsertToScreenMs = ms;
       else mapTimings.insertToScreenMs = ms;
+      // The lap left the card it was on: every card's count agrees with the laps tables.
+      ctx.failures.push(...mapMismatches(await mapCards(page), await lapsOnCards(db, factory)));
     },
 
     async writeAgain() {
@@ -216,14 +166,18 @@ export function homePhase(ctx: LiveContext): LivePhase {
       );
       await ctx.lapStep(secondLap, true);
 
-      const target = `/steps/archon-loop/${CLICKED_STEP}`;
-      await page.evaluate(
-        `document.querySelector('${LOOP_STEP}[data-step="${CLICKED_STEP}"]').click()`,
-      );
-      await page.evaluate<boolean>(pageWait(`location.pathname === '${target}'`, 2000));
+      const opened =
+        (await click(page, `${MAP} [data-card="${CLICKED_CARD}"]`)) &&
+        (await click(page, `[data-details="${CLICKED_CARD}"] [data-tab="behind"]`)) &&
+        (await click(page, `[data-step-link="${CLICKED_STEP}"]`));
+      if (opened) {
+        await page.evaluate<boolean>(pageWait(`location.pathname === '${CLICKED_SCREEN}'`, 2000));
+      }
       mapTimings.clickedTo = await page.evaluate<string>('location.pathname');
-      if (mapTimings.clickedTo !== target) {
-        ctx.failures.push(`clicking ${CLICKED_STEP} opened ${mapTimings.clickedTo}, not ${target}`);
+      if (mapTimings.clickedTo !== CLICKED_SCREEN) {
+        ctx.failures.push(
+          `App check's Behind the scenes ${CLICKED_STEP} opened ${mapTimings.clickedTo}, not ${CLICKED_SCREEN}`,
+        );
       }
       timings.noReload = await page.evaluate<boolean>('window.__mcNoReload === true');
       mapTimings.noReload = timings.noReload;

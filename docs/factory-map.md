@@ -1,32 +1,63 @@
 # Viewing the factory map
 
-The selected factory needs at least one recorded lap before its map shows steps, even when
-shared pinned architecture is already stored. A completed lap counts; no lap needs to be running.
-This matches the versions screen's empty-factory rule and does not make pins factory-specific.
+The home screen (`/f/<factory>`, and `/` for the selected factory) draws the factory map of PRD
+4.1, as `docs/design/v2/` designs it: one horizontal map with live counts on its cards.
 
-To follow the “See the factory” journey, select a factory with recorded laps and stored pinned
-architecture, then open check-app from its map to read the prompt, holdout verifier and fence.
-A factory with no laps instead shows “No factory map is available yet.” with no step links.
-The same sentence covers missing architecture; it does not diagnose which prerequisite is absent.
+## The drawing is data
 
-The map updates live when the first lap arrives or the last lap is removed. Populated factories
-keep their existing step details and per-factory counts.
+`app/map/factory-map.json` holds the map: its caption, every card (id, role, kind label, title,
+one-line text, position, optional width, the chips it carries, the workflows and steps it covers,
+and its details text), every line (from, to, style `flow`, `ask`, `loop` or `holdout`, an optional
+label and, for the routed lines, explicit points), the dashed group, the tour order and the legend.
+Change what the map says there; the React components (`app/components/FactoryMap.tsx`,
+`MapDetails.tsx`) only draw it.
 
-The map draws every step a lap can run. Each include or loop group is a dashed box with the
-including step at its top and the steps it expands inside, at every depth: ship holds deliver,
-deliver holds rounds, and rounds holds implement, whose box holds its own implement step. A nested
-step opens its own screen under the workflow that declares it: `ship/deliver/rounds/implement/implement`
-opens `/steps/archon-implement/implement`. A lap on a nested step counts on that step and on every
-box around it. The inputs archon-backlog and archon-holdouts and the manager archon-manager show
-their own steps the same way, each counting that workflow's running runs. On a phone the loop's
-spine stays in the first column, and a box wider than the screen scrolls sideways inside the map.
+A card's `covers` lists, per workflow, the steps it covers. Each entry covers that step and every
+step under it; a step under two entries belongs to the deeper one, so Build covers `ship` and
+Review the two review rounds inside it. An entry an include expanded names its own screen
+(`screens`), under the workflow that declares it.
 
-An include's own screen, such as deliver's, lists every step beneath it by its path there
-(`rounds/implement/implement`, `rounds/reshape/implement`). Each entry opens that step's own
-screen, which lists every place an include puts it and links back to each.
+## The map check
 
-The Version control above the map lists every pin with recorded architecture, newest first, and
-opens the map at an older one (`/?at=<pin>`). At that version each step opens its screen at the
-same version, and the counts include only the running laps that ran it. Choosing the current
-version removes `at`. A version that is not recorded for the factory reads “No version <pin> is
-recorded for this factory.”
+`bun run map:check` (part of `bun run check`) parses `fixtures/pack/` with the architecture parser,
+offline, and fails, naming the step, when a step of a workflow a card covers is covered by no card
+or by two, when a card names a workflow or a step the pack lacks, or when an entry's screen is not
+the step's own. When the pack changes, update `covers` until the check passes.
+
+## Live counts
+
+The cards' chips come from four live queries: `home-map` (each running run of the factory with its
+running steps, the open pull requests whose latest app check failed, and whether the version the
+address names is recorded), `health-workable`, `owner-queue` and `recent-laps`.
+
+- "<n> here" on any card: a run counts once, on the card covering its deepest running step (the
+  newest of those as deep). A card with runs on it carries `data-live-count` above 0.
+- "<n> queued" on Build: the workable issues, as Health counts them.
+- "<n> failing" on App check: open pull requests whose latest app check came out FAIL.
+- "<n> waiting" on the Manager: open owner questions and open `needs-owner` issues.
+- "<n> merged" on Shipped: laps that merged today, the browser's local day.
+
+A chip of 0 is not drawn. A chip appears once its query has answered.
+
+## Clicking a card
+
+A card keeps itself and the cards a line joins to it lit and dims the rest; its details strip opens
+under the map. Right now lists the runs and items the card's chips count, each opening its page.
+Behind the scenes lists the workflows and steps the card covers, each opening its step screen:
+App check's includes `check-app`, whose screen shows its prompt, the holdout verifier and the fence
+(journey 1). Esc, the close button or a click on empty canvas deselects.
+
+No card has a deeper view yet: none shows ⤢ or an Open button until its view is built.
+
+## Versions
+
+The Version control above the map opens it at an older pin (`/?at=<pin>`). The drawing is the same;
+step links open their screens at that version, and the "here" counts include only the runs that
+ran it. A version that is not recorded for the factory reads “No version <pin> is recorded for this
+factory.” The queued, failing, waiting and merged chips count the factory as it is now.
+
+## Motion
+
+One dot travels Product document to Shipped and each card it reaches pulses once; dashes flow along
+the forward lines. The flow button beside the screen's title, or `prefers-reduced-motion`, stops
+both.
