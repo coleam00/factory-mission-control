@@ -532,20 +532,21 @@ Expect:
 Author: writer, 2026-10-26, escaped defect classes #121 and #122, PRD 4.7 state boundaries
 
 ## H-38 A lost renewal does not strand the dashboard after the connection returns
-Protects: 8.1; invariant 5; invariant 7; 11.1 seal lifetime; 4.7
-Touches: live-query lifecycle, renewal, navigation, all live panels and rewind context
-Setup: the check app with a running lap; open home, factory and one-lap screens in separate tabs, with reload markers and network recording. Also open a rewind tab with visibly different facts. Use browser request interception or network controls without changing application code or server clocks.
+Protects: 8.1; invariant 5; invariant 7; 11.1 seal lifetime
+Touches: live-query lifecycle, renewal, navigation, factory switcher, all live panels
+Setup: the check app with a running lap; open home, factory and one-lap screens in separate tabs, with reload markers and network recording. Use browser request interception or network controls without changing application code or server clocks.
 Steps:
 1. Keep the tabs open past three normal seal renewals and record a live step transition.
 2. Make the sealing service unreachable until the current seals expire. During the interruption, navigate between two screens, open and close a step detail, and change the selected factory in one tab. Record what the pages and request log do.
 3. Restore the sealing service. After subscriptions are ready, insert a new step event and then a GitHub label affecting the open panels. Do not reload or press a refresh control.
 4. Repeat with a rejected renewal response instead of a disconnected request. Close a tab and navigate away from a subscribed screen while its renewal is pending; release the delayed response afterward.
 Expect:
-- Unavailable data is never presented as a live, ready subscription, and navigation remains usable during the interruption. A rejected or expired seal does not trap the page in a visible error/reconnect cycle after the service is healthy.
+- Unavailable data is never presented as a live, ready subscription, and navigation remains usable during the interruption. The factory switcher saying live data is unavailable is expected only while sealing is down; it is not expected before the interruption or after recovery. A rejected or expired seal does not trap the page in a visible error/reconnect cycle after the service is healthy.
 - Recovery obtains usable sealed queries automatically, without polling panel data or accepting an expired seal. Each post-recovery write appears in every relevant live panel within 5 seconds; `judges/liveness.js` passes with the recorded post-recovery writes and `require_open_seconds: 0`.
-- A completed late renewal cannot resurrect a closed screen's data, undo the chosen factory or rewind, or replace a newer subscription with the expired one. The rewind tab continues to show only its past facts.
+- A completed late renewal cannot resurrect a closed screen's data, undo the chosen factory, or replace a newer subscription with the expired one.
 - The request record contains no secret and no browser-originated SQL; errors are safe to display. The original tabs retain their reload markers.
 Author: writer, 2026-10-26, escaped defect class #120 and PRD 8.1 recovery across seal boundaries
+Revised: 2026-11-03 by the owner, PRD 4.9 (#331): rewind is retired, so the rewind tab and every rewind expectation are removed; the factory switcher is expected to say live data is unavailable only while sealing is down
 
 ## H-39 A lap that revisits a step keeps all of its work in its story and totals
 Protects: 4.6 every step the lap ran; 4.2 measure definitions; 4.3 lanes and recent laps; invariant 4
