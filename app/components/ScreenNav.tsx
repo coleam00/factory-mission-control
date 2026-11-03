@@ -1,7 +1,8 @@
-import type { ReactElement } from 'react';
+import type { ReactElement, ReactNode } from 'react';
 import { Link, useLocation, useParams } from 'react-router';
 import { useFactory } from '../live/FactoryProvider';
 import type { FactoryScreen } from '../routing';
+import { DecisionsCount } from './DecisionsCount';
 
 const LINK =
   'relative inline-flex items-center px-1 pb-2.5 pt-2 font-mono text-[11px] font-semibold uppercase tracking-[0.1em] transition-colors';
@@ -21,10 +22,12 @@ function ScreenLink({
   to,
   label,
   kind = 'screen',
+  children,
 }: {
   to: string;
   label: string;
   kind?: 'map' | 'screen';
+  children?: ReactNode;
 }): ReactElement {
   const isActive = currentLink(useLocation().pathname, to, kind);
   return (
@@ -34,6 +37,7 @@ function ScreenLink({
       className={`${LINK} ${isActive ? 'text-accent-bright' : 'text-text-secondary hover:text-text-primary'}`}
     >
       {label}
+      {children}
       {isActive ? (
         <span
           aria-hidden
@@ -53,9 +57,12 @@ function ScreenLink({
 export function ScreenNavBody({
   screens,
   factory,
+  badge,
 }: {
   screens: readonly FactoryScreen[];
   factory: string | undefined;
+  /** What follows a screen's label, such as the Decisions tab's count. */
+  badge?: (path: string) => ReactNode;
 }): ReactElement {
   const inUrl = useParams().factory;
   const home = inUrl === undefined ? '/' : `/f/${encodeURIComponent(inUrl)}`;
@@ -69,7 +76,9 @@ export function ScreenNavBody({
               key={screen.path}
               to={`/f/${encodeURIComponent(factory)}/${screen.path}`}
               label={screen.label}
-            />
+            >
+              {badge?.(screen.path)}
+            </ScreenLink>
           ))}
           <ScreenLink to="/rewind" label="Rewind" />
         </>
@@ -80,5 +89,14 @@ export function ScreenNavBody({
 
 /** The links for the factory every panel shows. */
 export function ScreenNav({ screens }: { screens: readonly FactoryScreen[] }): ReactElement {
-  return <ScreenNavBody screens={screens} factory={useFactory()} />;
+  const factory = useFactory();
+  return (
+    <ScreenNavBody
+      screens={screens}
+      factory={factory}
+      badge={(path) =>
+        path === 'decisions' && factory !== undefined ? <DecisionsCount factory={factory} /> : null
+      }
+    />
+  );
 }
