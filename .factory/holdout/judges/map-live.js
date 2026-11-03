@@ -14,7 +14,9 @@
 //   greater than 0. Product document, New issue, Found by the factory and Shipped never show laps here.
 // - "<n> failing" on App check: the selected factory's open pull requests whose latest app check (by
 //   time) failed. The chip is red (judged by v2-colors.js; here only its number).
-// - "<n> waiting" on the Manager: the selected factory's open owner questions.
+// - "<n> waiting" on the Manager: the selected factory's open owner questions plus its open issues
+//   labelled `needs-owner` (PRD 4.1 as amended 2026-11-03, owner decision #330). A closed issue never
+//   counts, whatever its labels; an issue counts once, however many times it was labelled.
 // - "<n> merged" on Shipped: the selected factory's merges (laps whose `land` output has
 //   `outcome = merged`) whose time falls inside "today_window". If the record has
 //   "header_merged_today", it must equal the same number.
@@ -39,6 +41,9 @@
 //       "prs": [ { "factory": "A", "number": 41, "state": "open" | "closed" | "merged",
 //                  "app_checks": [ { "at": "ISO", "verdict": "pass" | "fail" | "pending" } ] } ],
 //       "owner_questions": [ { "factory": "A", "id": "Q3", "open": true } ],
+//       "needs_owner_issues": [ { "factory": "A", "number": 57, "state": "open" | "closed",
+//                                 "labelled": true } ],   // every issue that ever carried `needs-owner`,
+//                                                         // with its state and whether it carries it now
 //       "merges": [ { "factory": "A", "run_id": "...", "merged_at": "ISO" } ],
 //       "cards": { "intake": { "here": 1, "data_live_count": 1, "pulsing": true },
 //                  "build": { "here": 0, "data_live_count": 0, "pulsing": false, "queued": 2 },
@@ -167,8 +172,14 @@ for (const [i, o] of obs.entries()) {
   }
   // waiting
   if (o.owner_questions == null) gaps.push(`${L}: owner_questions not recorded`);
+  else if (o.needs_owner_issues == null) gaps.push(`${L}: needs_owner_issues not recorded`);
   else {
-    const waiting = o.owner_questions.filter((q) => q.factory === f && q.open).length;
+    const issues = new Set(
+      o.needs_owner_issues
+        .filter((i) => i.factory === f && i.state === "open" && i.labelled)
+        .map((i) => i.number),
+    );
+    const waiting = o.owner_questions.filter((q) => q.factory === f && q.open).length + issues.size;
     const s = shown(o.cards, "manager", "waiting");
     if (s !== waiting) fails.push(`${L}: Manager shows ${s} waiting, expected ${waiting}`);
   }
