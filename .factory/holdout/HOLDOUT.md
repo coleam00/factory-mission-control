@@ -960,3 +960,300 @@ Expect:
 - A dry run deletes nothing. The real run deletes only K1's own branch (and any genuinely old orphan); K2's branch and the other running-owned branch are still there, and K2's serve still works on its branch.
 - After step 4 the newly ended run's branch is named: an ended owner does not protect its orphan.
 Author: writer, 2026-10-27, owner decision on #27 question 6 (tracking #230): edges owner running, owner ended, no owner recorded, this checkout's own branch
+
+## Shared setup for H-59..H-77: the v2 factory map
+
+"The v2 map" is the Factory screen (`/f/<factory>`) as PRD 4.1 (amended 2026-11-03) and `docs/design/v2/` describe it. The design is `docs/design/v2/mockup.html` and its `refs/` screenshots; `README.md` there says what is binding (cards, order, relative positions, lines, groups, wording, color roles, interactions, motion) and what is not (numbers, tickets and KPI values are example data; the light theme; the mockup's code). Open the mockup as its README says and use `window.__mcView`, `__mcSelect`, `__mcTab` and `__mcTicket` to put it in the state a scenario compares against. Card names used below: Product document, Plan, Holdouts, Manager, New issue, Found by the factory, Intake, Build, Review, App check, Merge, Staging, Shipped. Their roles (README "Color roles"): source (sky) for Product document, Plan, New issue, Found by the factory; agent (blue) for Intake, Build, Review, Merge; test (teal) for Holdouts, App check, Staging, Shipped; person (violet) for the Manager.
+
+Step paths are written as in the 4.1 coverage table, inside `archon-loop` unless named otherwise (`ship/deliver/rounds/review` is the `review` step of the rounds block of the deliver block of `ship`; the top-level `review` is a different step). Insert a step event for a nested step with the `step_name` Archon itself writes for that step at the pinned pack (read the pinned pack and Archon's own include expansion to learn it; never the dashboard's code). When a lap moves from one step to the next, insert the next step's `node_started` and the previous step's `node_completed` in one transaction, so the lap is never between steps when it is observed. For live checks, the browser's time zone is UTC and the scenario is run between 03:00 and 21:00 UTC.
+
+Judges for these scenarios: `judges/map-live.js` (the live chips, from the source rows), `judges/v2-colors.js` (the v2 colors), and the existing `judges/liveness.js` (timing, with `require_open_seconds: 0` unless a scenario says otherwise).
+
+## H-59 The home map is the drawing the owner designed, card for card and line for line
+Protects: 4.1 What the map shows (three ways in, Holdouts above Intake, one line in a dashed box, the manager above it, one loop back); 4.9 Factory screen; docs/design/v2/README.md binding items (cards, order, relative positions, every line, the two groups, the one dashed loop, every card's wording)
+Touches: Factory screen, `app/map/factory-map.json`, map rendering, legend
+Setup: the check app on the seed; the mockup open beside it at 1440 x 900 with nothing selected.
+Steps:
+1. Open `/f/<factory>` for the one factory. Record every card on the map: its kind label, title, one-line description, whether it carries ⤢, and its position relative to the others. Record the caption above the map, the dashed group and its label, and the legend.
+2. Record every line: which card it leaves, which card or box it enters, its label, whether it is dashed, and which way its arrow points.
+3. Read the whole page's text and accessibility tree.
+Expect:
+- Exactly the thirteen cards of the mockup's home view, and no other card: three ways in on the left (Product document leading to Plan; New issue; Found by the factory), Holdouts directly above Intake, the Manager centred above the line as one card, and the line Intake, Build, Review, App check, Merge, Staging, Shipped left to right inside one dashed box labelled "the manager watches everything on this line". Each card's kind label, title and description, and the caption, equal the mockup's word for word; ⤢ is on exactly Plan, Intake, Build, Review, App check, Merge, Staging and the Manager.
+- The lines are exactly: Product document to Plan; Plan to Intake; New issue to Intake; Found by the factory to Intake; Plan to Holdouts; Holdouts along the top into App check ("only App check reads them"); Intake to Build; Build to Review ("PR"); Review to App check; App check to Merge ("passed"); Merge to Staging; Staging to Shipped; one arrow from the Manager down into the box ("keeps it moving"); and one dashed line along the bottom fed by Review, App check and Staging that runs back into Found by the factory ("problems found become new tickets"). That loop is the only line that runs right to left. No line skips a card on the line (nothing from Review or Build straight to Merge, nothing around App check).
+- Plumbing is never drawn: no card or box is titled or labelled pick, claim, subject, briefs, handoff, evidence, land or release, and the page is not v1's tall graph of `archon-loop` steps.
+- The legend names the four roles and that ⤢ opens a deeper view.
+- Nothing on the page says "example data", and no example ticket or number from the mockup appears unless the seed holds it.
+Author: writer, 2026-11-03, PRD 4.1 and 4.9 as amended 2026-11-03 (owner decision), docs/design/v2/
+
+## H-60 Every chip on the map counts exactly what its definition says, and nothing else
+Protects: 4.1 Live (a lap counts once, on its deepest running step's card; "<n> here", "<n> queued", "<n> failing", "<n> waiting", "<n> merged"; `data-live-count` and the pulse); 4.1 coverage table; 4.2 lap and merge definitions; 11.6 (per factory)
+Touches: Archon projection, map live counts, coverage from `factory-map.json`, owner question parser, app-check results, Shipped
+Setup: the check app with a second factory B (as in H-17). For factory A insert, as Archon would, running `archon-loop` laps sitting on: `claim`; `subject`; `ship` and, under it, a step of the deliver block that is not under the rounds' review or rereview; `ship` and `ship/deliver/rounds/review` and one step under it (a lens, if the pack has one), all three running at once; `ship/deliver/rounds/rereview`; the top-level `review`; `check-app`; `handoff`; `release`; `deploy` and a step under it. Also: a completed lap and a failed lap whose last step was `check-app`; a paused lap; running `archon-manager`, `archon-holdouts` and `archon-backlog` runs of A's codebase; a running lap of B on `check-app`; a running `archon-loop` lap of a codebase in no factory. Pull requests of A: one whose app checks were fail then pass; one whose only check failed; one whose check failed and that was then merged; one closed unmerged after a failed check; one with no check; and one of B that failed. A's `Owner decisions needed` issue with two questions, then an edit removing one of them; one open question for B. Merges (a `land` output `outcome = merged`) for A: two today, one yesterday at noon UTC; one for B today.
+Steps:
+1. Open A's Factory screen. For every card record the numbers its chips show, its `data-live-count`, and whether its chip pulses. Record the source rows in the shape `judges/map-live.js` documents (the runs with their running steps, pull requests with their app checks, owner questions, merges, today's window, and the header's merged-today number if the header shows one).
+2. Without a reload, complete one of the running laps and record again.
+Expect:
+- `bun .factory/holdout/judges/map-live.js <record.json>` prints PASS: in particular the lap running `ship` and `ship/deliver/rounds/review` counts once, on Review, never also on Build; the lap on the top-level `review` counts on Merge, never on Review; `handoff` counts on App check and `release` on Merge.
+- Completed, failed and paused laps, the manager, holdouts and backlog runs, B's laps and the foreign codebase's lap change no line card's count. Plan, Holdouts and the Manager never show a line lap; Product document, New issue, Found by the factory and Shipped never show "here" at all.
+- App check shows 1 failing (the open pull request whose only check failed), the Manager 1 waiting (the removed question and B's do not count), and Shipped 2 merged (not yesterday's, not B's).
+- Build shows "<n> queued" for A's issues waiting to start and the number never includes a closed issue, a claimed issue or one of B's.
+Author: writer, 2026-11-03, PRD 4.1 Live and coverage table as amended 2026-11-03 (owner decision)
+
+## H-61 One lap walking the whole line moves exactly one count at a time, live
+Protects: 4.1 Live (deepest running step's card; Shipped merges today); invariant 5; 8.1; journey 1 (live counts on the cards)
+Touches: Archon projection, map live counts, header line of live numbers, details strip Right now
+Setup: the check app, A's Factory screen open with the reload marker set, no lap of A running, and an open issue I of A waiting to start. The lap below claims I.
+Steps:
+1. Insert, as Archon would, one `archon-loop` lap for A and walk it through every step the pinned `archon-loop` runs, in the pinned pack's own order, including every step under `ship` it reaches (into `ship/deliver/rounds/review`, `ship/deliver/rounds/rereview`, and back out to `ship`'s next step), `briefs`, `check-app`, `evidence`, `handoff`, the top-level `review`, `land` with `outcome = merged`, `release` and `deploy` with a step under it; then mark the run completed. Pause at least 6 seconds after each write.
+2. After each write record every card's numbers, `data-live-count` and pulse, the Build card's "queued" number, and the header's merged-today number; record each change's commit time and when each card showed it, for `judges/liveness.js` and `judges/map-live.js`.
+3. With Build selected while the lap is on Build, keep the details strip's Right now tab open through the moves to Review and back.
+Expect:
+- At every moment exactly one line card counts the lap and every other line card's count is unchanged from before the lap began: Intake while on `pick` and `claim`; Build on `build`, `subject` and every step under `ship` outside the review and rereview blocks; Review inside them; App check on `briefs` to `handoff`; Merge on the top-level `review`, `land` and `release`; Staging on `deploy`. After the run completes, no card counts it.
+- Claiming the issue lowers Build's "queued" by one; it never comes back when the lap moves on.
+- Shipped's "merged" and the header's merged-today number rise by one together when `land` completes with `outcome = merged`, and neither changes at any other write.
+- Build's Right now lists the lap's issue while it is on Build, drops it when it moves to Review, and lists it again when it returns, without the strip closing.
+- `judges/map-live.js` PASS on every observation and `judges/liveness.js` PASS: every change within 5 seconds, no reload, no polling.
+Author: writer, 2026-11-03, PRD 4.1 Live and journey 1 as amended 2026-11-03 (owner decision)
+
+## H-62 "Failing" follows each open pull request's latest app check, and only open ones
+Protects: 4.1 Live (App check shows open pull requests whose latest app check failed as "<n> failing" in red); 8.3 (red for real failures only); invariant 5; 11.6
+Touches: app-check results, pull request ingestion, App check card, details strip Right now
+Setup: the check app, A's Factory screen open with the reload marker set, A with no open pull request that has a failed app check. Record app-check results the way the factory records them for a pull request (a lap's `check-app` step on that pull request, inserted as Archon would; and, if the product also reads a commit status or comment for app-check results, deliver that too, consistently).
+Steps, recording App check's number and the color of its chip after each, with commit times:
+1. Open pull request P1 for A; record a failed app check on it.
+2. Record a second failed app check on P1 (a new head).
+3. Record a passing app check on P1.
+4. Record a failed one again; then open pull request P2 with a failed app check.
+5. Merge P2; close P1 without merging; then reopen P1.
+6. Open a pull request of factory B with a failed check.
+Expect:
+- The number reads 1, 1, 0, 1 then 2, then 1 after the merge, 0 after the close, 1 after P1 reopens (its latest check is still the failure), and is unchanged by step 6. A pull request is never counted twice.
+- Whenever the number is above 0 the chip is red; at 0 no red is shown on App check.
+- Right now on App check names exactly the failing pull requests among what it lists.
+- `judges/map-live.js` PASS on the recorded observations and `judges/liveness.js` PASS.
+Author: writer, 2026-11-03, PRD 4.1 Live as amended 2026-11-03 (owner decision)
+
+## H-63 "Waiting" follows the open owner questions, in violet, and a question is never a warning
+Protects: 4.1 Live (the Manager shows open owner questions as "<n> waiting" in violet); 8.3 (waiting on a person is violet, never amber); 4.4; invariant 5
+Touches: owner decisions parser, Manager card, details strip, header "waiting on you", Decisions tab count where served
+Setup: the check app, A's Factory screen open with the reload marker set; A's `Owner decisions needed` issue holds no question.
+Steps, recording the Manager's number, its chip's computed colors, and any other place on the page that counts what waits on the owner, after each:
+1. Deliver, as GitHub would, an edit adding Q1 in the appendix format; then one adding Q2.
+2. Deliver an edit that changes Q2's recommendation only.
+3. Deliver an edit that removes Q1; then close the issue with Q2 still in its body; then reopen it.
+4. Deliver the same edit event again (a redelivery).
+Expect:
+- The number reads 1, 2, 2, then 1, 0 on the close, 1 on the reopen, and is unchanged by the redelivery; each within 5 seconds and without a reload (`judges/liveness.js` PASS; `judges/map-live.js` PASS).
+- The chip is violet (`--role-person`) every time it shows; it is never amber, orange, yellow or red, and the Manager card is never drawn as an alert. Every other count on the page of what waits on the owner is violet too.
+Author: writer, 2026-11-03, PRD 4.1 Live and 8.3 as amended 2026-11-03 (owner decision)
+
+## H-64 Clicking a card lights it and its neighbours only, and the details strip follows the selection
+Protects: 4.1 Clicking a card (dims everything but the card and its direct neighbours; details strip with tabs When it runs, What it does, How it works, Right now, Behind the scenes); docs/design/v2/README.md interactions (everything else to 30%, its lines stay lit); 8.3 (accessible names)
+Touches: map selection, details strip, keyboard handling
+Setup: the check app, A's Factory screen at 1440 x 900, nothing selected.
+Steps:
+1. Click Build; record each card's opacity, which lines stay lit, and the strip. Then click App check, Holdouts, Intake, Found by the factory and Staging in turn, without closing anything between them.
+2. In App check's strip, open each tab in turn.
+3. Close the strip with its close control; select App check again and press Esc; select it again and click empty map space; select it again and drag the map.
+4. With no mouse, Tab to Build and select it with Enter; Tab through the strip's tabs.
+Expect:
+- Selected Build: Build, Intake and Review are lit and every other card is at about 30% opacity; only Build's lines stay lit. App check: App check, Review, Merge, Holdouts and Found by the factory are lit. Holdouts: Holdouts, Plan and App check. Intake: Intake, Plan, New issue, Found by the factory and Build. Found by the factory: it, Intake, Review, App check and Staging. Staging: Staging, Merge, Shipped and Found by the factory. Each new click moves the selection; no earlier card stays lit.
+- The strip opens under the map with the card's kind label and title, and the tabs When it runs, What it does, How it works, Right now and Behind the scenes (a card with nothing for a tab may leave that tab out, but Right now is always there); its wording equals the mockup's for that card. Moving the selection replaces the strip's content; it never shows a previous card's text.
+- Close, Esc and a click on empty space each clear the selection and restore every card to full opacity; a drag pans the map and does not change the selection.
+- Keyboard alone can select a card and reach every tab; every card and tab has an accessible name.
+Author: writer, 2026-11-03, PRD 4.1 Clicking a card as amended 2026-11-03 (owner decision)
+
+## H-65 Right now tells the same story as the card's chip, and keeps telling it live
+Protects: 4.1 (Right now: the issues and laps on it; a lap counts once); invariant 4 (every number can be traced); invariant 5
+Touches: details strip Right now, map live counts, issue and lap links
+Setup: the check app with A's laps placed as in H-60; A's Factory screen open, reload marker set.
+Steps:
+1. Select each line card in turn and open Right now; record the issues and laps listed and every link.
+2. With Review's Right now open, move one lap from `ship/deliver/rounds/review` to `ship`'s next step and another from `ship/deliver/rounds/rereview` into `briefs`, as Archon would.
+3. Select a card with nothing on it.
+Expect:
+- For every card, the laps Right now lists are exactly the laps its "here" chip counts (same number, same laps), each with its issue; no lap is listed on two cards; Shipped's Right now, if it lists merges, lists exactly the merges its chip counts.
+- Each lap links to its one-lap page and each issue to its ticket or its GitHub thread, in A's repository.
+- After step 2, without a reload and within 5 seconds, Review's list loses both laps while its chip drops by two; Build's and App check's chips rise by one each (`judges/liveness.js` PASS).
+- A card with nothing on it says so in one sentence, with no spinner and no error.
+Author: writer, 2026-11-03, PRD 4.1 Clicking a card and Live as amended 2026-11-03 (owner decision)
+
+## H-66 Journey 1: from the map to how the app check and its fence work, by mouse, by keyboard and by address
+Protects: journey 1 (open the dashboard: the factory map with live counts; click App check; from its Behind the scenes open check-app's step screen and read its prompt, its holdout verifier and how the fence works); 4.1 (App check's Behind the scenes links `check-app`'s step screen); invariant 3; invariant 6
+Touches: root address, Factory screen, details strip, step screen `/steps/<workflow>/<step>`, browser history
+Setup: the check app at the pinned version, with laps running so some card carries a count, and a canary scenario as in H-15 written into the template's holdout scenario file of a parsed copy (to prove no scenario text leaks).
+Steps:
+1. Open the app's root address. Without typing any other address, click App check, open Behind the scenes, and follow its `check-app` link. Read the step screen.
+2. Use Back, then Forward.
+3. Repeat step 1 with the keyboard alone.
+4. Open the step screen's address in a fresh tab and reload it.
+Expect:
+- The root lands on the Factory map of the factory with live counts on its cards, not a picker, a v1 graph or a blank.
+- App check's Behind the scenes lists `briefs`, `check-app`, `evidence` and `handoff`, each linking to its step screen, with their models and source paths.
+- The `check-app` step screen is that step at the pinned version: its prompt equal to the pinned command file, the holdout verifier and its instruction file, and how the fence works (the hook `.factory/hooks/holdout_fence.py`, that only the holdout-writer and holdout-verifier read the scenarios, and how a verdict comes back as an id and a verdict).
+- Back returns to the map; Forward returns to the step screen. The keyboard path reaches the same screen. The fresh tab and the reload show the same full step screen.
+- The canary appears on no screen and in no payload.
+Author: writer, 2026-11-03, PRD journey 1 and 4.1 as amended 2026-11-03 (owner decision)
+
+## H-67 Behind the scenes on every card covers exactly its row of the coverage table, and a step of the same name goes to the right card
+Protects: 4.1 What each card covers (the table; Product document, New issue, Found by the factory and Shipped cover no steps); 4.1 Behind the scenes (workflows and steps, each linking to its step screen, its models, its source paths); invariant 6 (step details come from the pinned code, never typed in)
+Touches: `factory-map.json` coverage, details strip Behind the scenes, step screens, architecture job
+Setup: the check app at the pinned version. Independently of the app (from the pinned pack and the 4.1 table only), list for each card the workflows and steps it covers, expanding "every step" and "every step under it" through includes the way Archon does, with each step's model tier and source file.
+Steps:
+1. Select every card, open Behind the scenes, record every workflow, step, model and source path it lists and every link's target.
+2. Follow every step link; record the screen after 3 seconds.
+Expect:
+- Plan lists `archon-backlog`, Holdouts `archon-holdouts`, the Manager `archon-manager`; Intake `pick` and `claim`; Build `build`, `subject` and `ship` (with what is under it, but never the rounds' review or rereview blocks); Review `ship/deliver/rounds/review` and `ship/deliver/rounds/rereview`; App check `briefs`, `check-app`, `evidence` and `handoff`; Merge `review`, `land` and `release`; Staging `deploy`. No step is listed on two cards, and Product document, New issue, Found by the factory and Shipped list no workflow or step.
+- Merge's `review` link opens the top-level `review` step of `archon-loop`; Review's links open the rounds' `review` and `rereview` steps inside `ship`. Neither opens the other's screen, and each screen shows that step's own YAML and prompt.
+- Every link opens a ready step screen of the step it names at the pinned version; none reads as not found, empty or an error.
+- The models and source paths listed equal the pinned code's for the covered steps.
+Author: writer, 2026-11-03, PRD 4.1 coverage table and invariant 6 as amended 2026-11-03 (owner decision)
+
+## H-68 The map check fails when the map drifts from the code, and only then, even offline
+Protects: invariant 6 (coverage checked against the pinned code by `bun run map:check`); 4.1 (fails when a step of a covered workflow at the current pin is covered by no card, or a card names a step that does not exist; part of `bun run check`); 11.3 (`bun run check` runs with no network)
+Touches: `bun run map:check`, `bun run check`, `app/map/factory-map.json`, the pinned pack the check reads
+Setup: a scratch clone of the repository at the commit under test, never the lap's branch. Find how the check is pointed at the pinned code only from its documentation or `--help`; change the pinned pack it reads by the means those offer, or in the pack copy the repository commits. Disable the network for every run.
+Steps: from a clean scratch state each time, run `bun run map:check` and `bun run check`, recording exit codes and output, for:
+1. Nothing changed.
+2. A new top-level step added to `archon-loop`.
+3. A new step added inside `ship`, outside the rounds' review and rereview blocks.
+4. A new step added inside `ship/deliver/rounds/review`.
+5. A new step added to each of `archon-backlog`, `archon-holdouts` and `archon-manager`.
+6. `check-app` renamed in the pack.
+7. In `factory-map.json`, Merge's `release` misspelled; separately, `release` removed from Merge's coverage.
+8. In `factory-map.json`, a card's wording and position changed only.
+9. The pinned pack made unreadable (its files removed from where the check reads them).
+Expect:
+- Cases 1, 3, 4, 5 and 8 pass both commands.
+- Case 2 fails both, naming the new step as covered by no card. Case 6 fails both, naming `check-app` as a step a card names that does not exist, and the new name as uncovered. Case 7 fails both, naming the misspelt step, and `release` as uncovered.
+- Case 9 fails; the check never passes because it could not read the code.
+- Every verdict is the same with the network off; no case needs GitHub.
+Author: writer, 2026-11-03, PRD invariant 6 and 4.1 as amended 2026-11-03 (owner decision)
+
+## H-69 The owner's words come from the map file, and step details never do
+Protects: 4.1 Why it is hand-authored (layout, grouping and wording authored in `app/map/factory-map.json`; step details still come from the pinned code); invariant 6
+Touches: `factory-map.json`, Factory screen, details strip, step screens, the architecture job
+Setup: a scratch clone of the repository and a parsed copy of the pinned pack as in H-15.
+Steps:
+1. In the scratch clone, change in `factory-map.json` only: Build's one-line description, the caption above the map, and App check's What it does text. Set up, build and serve; open the Factory screen and App check's strip.
+2. In the parsed pack copy, change one sentence of `check-app`'s command file and its model tier; parse it as a version and make it the current one. Open the map, App check's Behind the scenes and the `check-app` step screen.
+Expect:
+- After step 1, the map, caption and strip show the new words exactly, with no code change; nothing else on the map moves or changes; `bun run map:check` still passes.
+- After step 2, the card wording and the map are unchanged, while the `check-app` step screen shows the new sentence and Behind the scenes the new model: what describes a step comes from the code at that version, never from the map file, and the map file never has to be edited to keep a step screen true.
+Author: writer, 2026-11-03, PRD 4.1 and invariant 6 as amended 2026-11-03 (owner decision)
+
+## H-70 Every card with ⤢ opens its deeper view by every route, and every way back up works
+Protects: 4.1 (a card with a deeper view opens it by double-click, Enter or the Open button; deeper views drawn as `refs/1x-*.png` show); docs/design/v2/README.md interactions (one level down with a zoom through the card, breadcrumbs and Esc to go up, the returning card flashing once) and wording (the caption above each view)
+Touches: Factory screen, every deeper view (Plan, Intake, Build, Deliver, Review, App check, Merge, Staging, Manager), breadcrumbs, keyboard handling, details strip
+Setup: the check app, A's Factory screen at 1440 x 900; the mockup beside it, put into each view with `window.__mcView`.
+Steps:
+1. For each card with ⤢, open its view by double-click; go back up with Esc. Again by selecting it and using the strip's Open button; back up with the breadcrumb. Again with the keyboard alone (focus it, Enter, pressing Enter again if the first press only selects it); back up with Esc.
+2. Open Build, then its Deliver card, then Deliver's Review card. Record the breadcrumbs. Press Esc three times, recording the view and which card flashes after each. Repeat, but jump from the third level straight to the top with the first breadcrumb.
+3. Double-click, and press Enter on, each card without ⤢ (Product document, New issue, Found by the factory, Holdouts, Shipped); look for an Open button in their strips.
+4. In each view, read every card and the caption.
+Expect:
+- Every route opens the same view for the same card, and the strip's Open button names the view it opens. Each view's caption, cards (kind label, title, description), lines and groups match the mockup's view and its `refs/1x-*.png` screenshot; `13-drill-build-deliver.png` for two levels down.
+- The breadcrumbs read the factory, then Build, Deliver, Review; each Esc goes up exactly one level, and the card that was opened flashes once when its view is left (Review in Deliver, Deliver in Build, Build on the home map). The first breadcrumb returns straight to the home map.
+- Cards without ⤢ never open a view, and their strips have no Open button.
+- App check's view shows the fenced holdout verifier with ids and verdicts only, and no scenario text appears in any view.
+- A view not yet built is INCOMPLETE for that card, never PASS; but no ⤢ card ever opens an empty, broken or wrong view.
+Author: writer, 2026-11-03, PRD 4.1 deeper views as amended 2026-11-03 (owner decision), docs/design/v2/refs/10..18
+
+## H-71 Counts stay true across a trip down into a view and back up
+Protects: 4.1 Live; invariant 5; 8.1
+Touches: deeper views, home map live counts, details strip, other tabs of the v2 header
+Setup: the check app, A's Factory screen with the reload marker set, laps placed as in H-60.
+Steps:
+1. Open Build, then Deliver. While there, as Archon would, move one lap from Build to Review, one from Review to App check, start a new lap on `pick`, and add an owner question.
+2. Go back up to the home map with Esc. Record every card at once and again 5 seconds later.
+3. Go to another top-level screen of the v2 header (Board or Decisions, where served) and back to the Factory screen; repeat a move while away.
+4. Select App check, open its view, go back up; record whether the strip and selection are in a sensible state.
+Expect:
+- On return, every card shows the counts that are true now (`judges/map-live.js` PASS on observations taken immediately after the return and after each move), with no reload and no stale count waiting for the next write.
+- The writes made while away are all shown within 5 seconds of the return (`judges/liveness.js` PASS with `require_open_seconds: 0`).
+- Coming back up never leaves the map dimmed with no card selected, nor a strip open for a card that is not selected.
+Author: writer, 2026-11-03, PRD 4.1 Live and deeper views as amended 2026-11-03 (owner decision)
+
+## H-72 The dot and the flowing lines show the path, and stop when asked
+Protects: 4.1 Motion (one dot travels Product document to Shipped every few seconds and each card it reaches pulses once; dashes flow along the forward lines; both stop under `prefers-reduced-motion` and when the flow toggle is off); docs/design/v2/README.md motion
+Touches: map animation, flow toggle, reduced-motion handling, live counts
+Setup: the check app, A's Factory screen, motion allowed.
+Steps:
+1. Watch the map for 30 seconds; record which cards pulse, in what order, and which lines show moving dashes.
+2. Turn the flow toggle off; watch 30 seconds while inserting a step event that changes a card's count. Turn it back on.
+3. Set the browser to `prefers-reduced-motion: reduce` while the page is open, watch 30 seconds; then reload with it set; then remove the setting while the page is open.
+Expect:
+- The dot runs Product document, Plan, Intake, Build, Review, App check, Merge, Staging, Shipped, reaching Shipped at least twice in the 30 seconds, and each of those cards pulses once as the dot reaches it; Holdouts, the Manager, New issue and Found by the factory are never pulsed by the dot. Dashes move along the forward lines; the dashed loop back along the bottom does not flow.
+- With the toggle off, and under reduced motion (whether set before load or while open), no dot moves, no dash flows and no card is pulsed by the dot; the count change still appears within 5 seconds. Turning the toggle on, or removing the setting, starts both again without a reload.
+- The flow toggle is a real control with an accessible name and shows whether flow is on.
+Author: writer, 2026-11-03, PRD 4.1 Motion as amended 2026-11-03 (owner decision)
+
+## H-73 Every card, chip and line wears the color of who is acting
+Protects: 8.3 as amended (v2 role colors from `docs/design/v2/tokens.css`: sky for where work comes from and scripts, blue for agents, teal for testing and shipping, violet for the manager and the owner; running is Dynamous Light; success teal; failed red; nothing grey where a role applies; dark only); docs/design/v2/README.md color roles (a card's border and fill are tinted by its role)
+Touches: Factory screen, every deeper view, details strip, legend, chips, lines
+Setup: the check app with laps placed as in H-60 (so a here chip, a failing chip, a waiting chip and a merged chip all show).
+Steps:
+1. At 1440 and at 390 px, on the home map and in every deeper view, record for every card its role stripe or kind-label color, border and fill, and the background of the map stage where no card is (as "untinted"); for every chip and line that carries a role, its color; the legend's swatches. Record cards at rest, hovered, selected and dimmed.
+2. Record the same with the operating system set to light mode.
+3. Run `bun .factory/holdout/judges/v2-colors.js <record.json>`.
+Expect:
+- `v2-colors.js` prints PASS, with the roles: Product document, Plan, New issue and Found by the factory source; Intake, Build, Review and Merge agent; Holdouts, App check, Staging and Shipped test; the Manager person. In the deeper views, script cards are source, agent cards agent, cards that wait on the owner person, test cards test. The "here" chips are running, "failing" failed, "waiting" person, "merged" success; the Manager's line into the box is person and the Holdouts line test (both as tints).
+- The legend's four swatches are the four role colors.
+- In light mode the app is still dark and the record still passes.
+Author: writer, 2026-11-03, PRD 8.3 as amended 2026-11-03 (owner decision), docs/design/v2/tokens.css
+
+## H-74 Waiting on a person is violet on every screen, and amber and magenta appear nowhere
+Protects: 8.3 as amended (waiting on a person is violet, never amber; amber and magenta are not used; red for failures only); 4.9 (the v2 colors on every screen); docs/design/v2/README.md (red stays for real failures only; nothing is grey)
+Touches: every served screen, old and new: Factory and its deeper views, Board and a ticket's page, Decisions, Changes, and every v1 screen still served (factory page and issue graph, owner queue, testing, health, versions and comparison, one lap); shared header and its live numbers; factory switcher
+Setup: the check app with, for factory A: an issue labelled `needs-owner`; open owner questions; a paused run and a pending run; a stuck step (as in H-16); a failed lap; a lap whose outcome is needs owner; a pin NOT YET RUN; a comparison labelled "not yet meaningful"; holdout verdicts FAIL, INCOMPLETE and unidentified; a version marked "not recorded".
+Steps:
+1. On every screen the app serves, at 1440 and 390 px, record every element's computed colors at rest, and for controls hovered, focused and selected, with each element's role: mark as "waiting" everything that says something waits on the owner or a person (needs-owner states and badges, owner questions and their ages, the header's waiting-on-you number, the Decisions tab count, the Board's Your decision column, a paused run, a needs-owner lap outcome, waiting pips on a ticket's timeline), and as "failed" only real failures (failed laps and steps, failed app checks, FAIL verdicts). Include the brand mark and any factory avatar or icon.
+2. Run `bun .factory/holdout/judges/v2-colors.js <record.json>`.
+Expect:
+- `v2-colors.js` prints PASS: everything waiting on a person is violet; no element on any screen, in any state, is amber or magenta (the brand mark and factory icons included); red appears only on real failures, so a stuck step, an INCOMPLETE or unidentified verdict, "not yet meaningful", NOT YET RUN and "not recorded" are neither red nor amber.
+- Every screen served is in the record; a served screen left out is INCONCLUSIVE, never PASS.
+Author: writer, 2026-11-03, PRD 8.3 and 4.9 as amended 2026-11-03 (owner decision)
+
+## H-75 The map holds up at phone width and side by side with the owner's screenshots
+Protects: 8.3 as amended (each touched v2 screen compared side by side with the matching `refs/` image, the judgement quoted; the design probe reports zero failures at 1440 and 390 px); docs/design/v2/README.md (compare at 1440 x 900 and at 400 wide; drag to pan, wheel to zoom around the cursor, fit)
+Touches: Factory screen layout, map pan and zoom, details strip, deeper views, design probe
+Setup: the check app on the seed; the mockup beside it in the same state for each comparison.
+Steps:
+1. At 1440 x 900, screenshot the home map with nothing selected, with Build selected and with App check selected, and every deeper view; put the mockup in each state and screenshot it. Compare each pair with its `refs/` image and write down the judgement.
+2. At 400 and at 390 px wide, open the home map; pan with a touch drag, zoom, use fit, select a card, read its strip and every tab, open its deeper view and come back. Compare with `40-home-phone.png`.
+3. With a mouse, zoom with the wheel over Shipped and then over Product document.
+4. Run `harness/design-probe.js` on the Factory screen, the strip open and every deeper view, at 1440 and 390 px.
+Expect:
+- Every binding item matches its reference: cards, order, relative positions, lines, groups, wording and colors. A difference in a binding item is FAIL; a difference only in numbers, tickets or KPI values is not.
+- At phone width the page never scrolls sideways; the map pans and zooms inside its frame, fit brings the whole map into view, and every card, strip tab and the Open button can be reached and read.
+- Wheel zoom keeps the point under the cursor still.
+- The design probe reports zero failures at both widths in every state.
+Author: writer, 2026-11-03, PRD 8.3 as amended 2026-11-03 (owner decision), docs/design/v2/refs/
+
+## H-76 The map, the header and the board agree, and each factory sees only its own
+Protects: 4.1 Live (laps of the selected factory); 4.9 (Board columns are the stages of the map; one line of live numbers above every screen, each traceable); invariant 4; 11.6; 10 (never summed across factories)
+Touches: factory switcher, Factory screen chips, header live numbers, Board columns, Decisions
+Setup: the check app with factories A and B (as in H-17), each with laps on several cards, issues waiting to start, open owner questions and merges today; A with many more of each than B.
+Steps:
+1. On A's Factory screen record every chip and the header's numbers; then, where served, A's Board (each column's tickets) and Decisions (the open questions).
+2. Switch to B with the app's own control, from the Factory screen and from a deeper view; record the same. Throttle the network and switch A, B, A, B quickly, stopping on B.
+3. While on B, move one of A's laps to another card, as Archon would; then one of B's.
+Expect:
+- On each factory: Shipped's merged count equals the header's merged today; a ticket whose lap is counted on a card is in the Board column of that stage (Intake, Build, Review, App check, Merge), Build's queued count equals the Queued column, and the Manager's waiting count equals the open questions Decisions lists. No number sums A and B.
+- After every switch, including the throttled race, every chip, the header and every panel show only B's facts within 2 seconds of the last switch; no late result from A ever lands on B's screen; switching from a deeper view lands on B's map or the same view of B.
+- A's move changes nothing on B's screen; B's appears within 5 seconds (`judges/liveness.js` PASS; `judges/map-live.js` PASS for B).
+Author: writer, 2026-11-03, PRD 4.1 Live and 4.9 as amended 2026-11-03 (owner decision)
+
+## H-77 While v2 lands, every old screen and every step screen keeps working
+Protects: 4.9 sequencing (until a screen's replacement merges, the old one stays and keeps working; the screens they replace are removed last; the one-lap page stays); 4.1 (step details from the existing step screens `/steps/<workflow>/<step>`)
+Touches: routing, v2 header and navigation, every v1 screen, step screens, one-lap page
+Setup: the check app at the commit under test. From the previous release's root, list every screen it served (by following its own links), and note which of them the commit under test replaces with a merged v2 screen (Factory replaces Map; Board replaces Issues, Laps and Testing; Decisions replaces Owner and Health; Changes replaces Versions, Scorecard, Diff and Decisions).
+Steps:
+1. Open the root address and every screen of that list through the app's own navigation, and by its old address in a fresh tab.
+2. Open step screens for a top-level, an included and a twice-included step, directly and from the map's Behind the scenes; open a lap's one-lap page from wherever the app links it.
+Expect:
+- Every listed screen whose replacement has not merged is still reachable from the app's own navigation and works: it reaches ready with its own data, not an error, a blank or not found.
+- A screen whose replacement has merged either still works or its old address leads to the screen that replaces it; it is never a dead end.
+- The root address and the old home map address lead to the v2 Factory map.
+- Every step screen opens ready with its full detail; the one-lap page is reachable and works.
+Author: writer, 2026-11-03, PRD 4.9 sequencing and 4.1 as amended 2026-11-03 (owner decision)
