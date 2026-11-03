@@ -5,6 +5,7 @@
  */
 
 import {
+  lapsWanted,
   ledger,
   type LedgerRow,
   type TestingEntry,
@@ -90,9 +91,8 @@ export function changeTimeline(
 
 /** The chip text of a version being tested: laps so far of the laps its Measure wants. */
 export function testingChip(t: TestingEntry): string {
-  return t.waiting === NOT_RECORDED
-    ? `testing, ${t.laps} laps`
-    : `testing, ${t.laps} of ${t.laps + t.waiting} laps`;
+  const wanted = lapsWanted(t.measure);
+  return wanted === null ? `testing, ${t.laps} laps` : `testing, ${t.laps} of ${wanted} laps`;
 }
 
 /** The two versions compared, `a` the older. */
@@ -117,6 +117,12 @@ function inTimelineOrder(
     .sort((x, y) => order.indexOf(y) - order.indexOf(x));
 }
 
+/** The digest of the version row just older than `digest`, or null for the oldest or an unknown one. */
+export function previousDigest(items: readonly ChangeItem[], digest: string): string | null {
+  const order = digestsNewestFirst(items);
+  return order.includes(digest) ? (order[order.indexOf(digest) + 1] ?? null) : null;
+}
+
 /**
  * The pair the address names (`a` and `b`, in either order), without any digest that is not a
  * version here; with none left, the default: the newest version with laps against the version
@@ -135,11 +141,10 @@ export function resolvePair(
       : { a: first, b: second, isDefault: false };
   const newest = scorecardRows === undefined ? null : newestVersionWithLaps(scorecardRows);
   if (newest === null) return { isDefault: true };
-  const order = digestsNewestFirst(items);
-  const previous = order[order.indexOf(newest) + 1];
-  return order.includes(newest) && previous !== undefined
-    ? { a: previous, b: newest, isDefault: true }
-    : { a: newest, isDefault: true };
+  const previous = previousDigest(items, newest);
+  return previous === null
+    ? { a: newest, isDefault: true }
+    : { a: previous, b: newest, isDefault: true };
 }
 
 /** The pair after pressing `digest`'s box: unchecks it, else adds it, replacing the older of two. */

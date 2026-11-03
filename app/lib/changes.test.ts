@@ -1,5 +1,13 @@
 import { expect, test } from 'bun:test';
-import { type ChangeItem, changeTimeline, pairSearch, resolvePair, togglePair } from './changes';
+import {
+  type ChangeItem,
+  changeTimeline,
+  pairSearch,
+  previousDigest,
+  resolvePair,
+  testingChip,
+  togglePair,
+} from './changes';
 import type { LedgerRow, TimelineRow } from './decisions-ledger';
 import type { ScorecardRow } from './scorecard';
 import type { VersionStripRow } from './version-strip';
@@ -185,4 +193,19 @@ test('pairSearch sets a and b and keeps the rest', () => {
   expect(next.get('x')).toBe('1');
   expect([next.get('a'), next.get('b')]).toEqual([V1, V2]);
   expect(pairSearch(next, {}).toString()).toBe('x=1');
+});
+
+test("the testing chip states the Measure's lap count, even once laps pass it", () => {
+  const testing = (laps: number, measure: string) =>
+    ({ pin: P3, reason: 'r', measure, laps, waiting: Math.max(0, 10 - laps) }) as const;
+  expect(testingChip(testing(3, '10 laps'))).toBe('testing, 3 of 10 laps');
+  expect(testingChip(testing(12, '10 laps'))).toBe('testing, 12 of 10 laps');
+  expect(testingChip(testing(4, 'merge rate improves'))).toBe('testing, 4 laps');
+});
+
+test('the previous version is the next older row, none for the oldest or an unknown digest', () => {
+  expect(previousDigest(items, V3)).toBe(V2);
+  expect(previousDigest(items, V2)).toBe(V1);
+  expect(previousDigest(items, V1)).toBeNull();
+  expect(previousDigest(items, 'sha256:unknown')).toBeNull();
 });

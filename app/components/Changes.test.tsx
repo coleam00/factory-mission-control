@@ -134,3 +134,9 @@ test('the comparison links the diff of the pair and uses no amber', () => {
   expect(html).toContain('what changed in the workflows');
   expect(render(items, {}) + html).not.toMatch(/warning|node-approval/);
 });
+
+test('every version row but the oldest offers comparing with its previous version', () => {
+  const html = render(items, {});
+  expect(li(html, `data-digest="${V2}"`)).toContain(`data-compare-previous="${V1}"`);
+  expect(li(html, `data-digest="${V1}"`)).not.toContain('data-compare-previous');
+});

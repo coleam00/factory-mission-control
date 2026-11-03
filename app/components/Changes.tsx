@@ -4,12 +4,13 @@ import {
   type ChangeItem,
   changeTimeline,
   type Pair,
+  previousDigest,
   resolvePair,
   testingChip,
   togglePair,
 } from '../lib/changes';
 import type { LedgerRow, TimelineRow, VerdictEntry } from '../lib/decisions-ledger';
-import type { ScorecardRow } from '../lib/scorecard';
+import { type ScorecardRow, versionPin } from '../lib/scorecard';
 import {
   compareLinks,
   NOT_RECORDED,
@@ -135,9 +136,7 @@ export function Changes({
           <ChangeTimeline
             items={items}
             pair={resolvePair(items, scorecard.rows, a, b)}
-            onPick={(digest) =>
-              onPick(togglePair(items, resolvePair(items, scorecard.rows, a, b), digest))
-            }
+            onPick={onPick}
           />
         </>
       )}
@@ -170,7 +169,7 @@ export function ChangeTimeline({
 }: {
   items: readonly ChangeItem[];
   pair: Pair;
-  onPick: (digest: string) => void;
+  onPick: (pair: Pair) => void;
 }): ReactElement {
   return (
     <ol className="grid grid-cols-[72px_14px_minmax(0,1fr)] gap-x-3 rounded-[12px] border border-border bg-surface px-4 py-4 sm:grid-cols-[86px_14px_minmax(0,1fr)]">
@@ -198,7 +197,7 @@ function Row({
   item: ChangeItem;
   items: readonly ChangeItem[];
   pair: Pair;
-  onPick: (digest: string) => void;
+  onPick: (pair: Pair) => void;
 }): ReactElement {
   if (item.kind === 'version') {
     return <VersionRow item={item} items={items} pair={pair} onPick={onPick} />;
@@ -291,14 +290,14 @@ function VersionRow({
   item: ChangeItem & { kind: 'version' };
   items: readonly ChangeItem[];
   pair: Pair;
-  onPick: (digest: string) => void;
+  onPick: (pair: Pair) => void;
 }): ReactElement {
   const { entry, verdict, testing, decisions } = item;
   const { digest } = entry;
   const pin8 = entry.pin === null ? NOT_RECORDED : entry.pin.slice(0, 8);
   const state: Chip | 'none' = verdict?.verdict ?? (testing === null ? 'none' : 'testing');
   const checked = digest !== null && (pair.a === digest || pair.b === digest);
-  const previous = previousDigest(items, digest);
+  const previous = digest === null ? null : previousDigest(items, digest);
   return (
     <Entry
       marker={{
@@ -323,21 +322,21 @@ function VersionRow({
         ) : (
           <span className="ml-auto flex items-center gap-4 text-[12px] text-text-secondary">
             {previous === null ? null : (
-              <Link
-                replace
-                data-compare-previous
-                to={`?a=${encodeURIComponent(previous)}&b=${encodeURIComponent(digest)}`}
+              <button
+                type="button"
+                data-compare-previous={previous}
+                onClick={() => onPick({ a: previous, b: digest })}
                 className="text-accent-bright"
               >
                 compare with previous
-              </Link>
+              </button>
             )}
             <label className="flex items-center gap-1.5">
               <input
                 type="checkbox"
                 className="accent-accent"
                 checked={checked}
-                onChange={() => onPick(digest)}
+                onChange={() => onPick(togglePair(items, pair, digest))}
                 aria-label={`Compare ${entry.date}, pin ${pin8}, ${short(digest)}`}
               />
               Compare
@@ -375,14 +374,6 @@ function VersionRow({
       )}
     </Entry>
   );
-}
-
-/** The digest of the version row just older than `digest`, or null for the oldest. */
-function previousDigest(items: readonly ChangeItem[], digest: string | null): string | null {
-  const digests = items.flatMap((item) =>
-    item.kind === 'version' && item.entry.digest !== null ? [item.entry.digest] : [],
-  );
-  return digest === null ? null : (digests[digests.indexOf(digest) + 1] ?? null);
 }
 
 function Pairing({ label, text }: { label: string; text: string }): ReactElement {
@@ -429,9 +420,7 @@ export function Comparison({
   if (rows === undefined)
     return <p className="text-sm text-text-secondary">Loading the scorecard.</p>;
   if (pair.a === undefined) return null;
-  const pin = (digest: string) =>
-    rows.find((row) => row.run_id === null && row.digest === digest)?.pin_sha?.slice(0, 8) ??
-    short(digest);
+  const pin = (digest: string) => versionPin(rows, digest).pin?.slice(0, 8) ?? short(digest);
   return (
     <>
       <h2 className={`${LABEL} mb-3`}>Comparison</h2>
