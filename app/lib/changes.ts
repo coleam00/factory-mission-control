@@ -101,10 +101,15 @@ export interface Pair {
   b?: string;
 }
 
+/** Digests of the versions that have run, newest first: what can be paired. */
 const digestsNewestFirst = (items: readonly ChangeItem[]): string[] =>
   items.flatMap((item) =>
     item.kind === 'version' && item.entry.digest !== null ? [item.entry.digest] : [],
   );
+
+/** How many versions on the timeline can be compared. */
+export const selectableVersions = (items: readonly ChangeItem[]): number =>
+  digestsNewestFirst(items).length;
 
 /** `digests` that are versions on the timeline, older first, without repeats. */
 function inTimelineOrder(

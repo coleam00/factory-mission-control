@@ -6,6 +6,7 @@ import {
   type Pair,
   previousDigest,
   resolvePair,
+  selectableVersions,
   testingChip,
   togglePair,
 } from '../lib/changes';
@@ -153,9 +154,7 @@ export function Changes({
                 rows={rows}
                 state={state}
                 pair={resolvePair(items, rows, a, b)}
-                selectable={
-                  items.filter((i) => i.kind === 'version' && i.entry.digest !== null).length
-                }
+                selectable={selectableVersions(items)}
               />
             )}
           </>
@@ -210,7 +209,7 @@ function Row({
     return (
       <Entry
         marker={{
-          'data-change': 'decision',
+          'data-change': item.kind,
           'data-date': decision.date,
           'data-title': decision.title,
           'data-pin': decision.pin_sha ?? undefined,
@@ -229,7 +228,7 @@ function Row({
   return (
     <Entry
       marker={{
-        'data-change': 'verdict',
+        'data-change': item.kind,
         'data-prefix': verdict.pin,
         'data-verdict': verdict.verdict,
       }}
@@ -304,7 +303,7 @@ function VersionRow({
   return (
     <Entry
       marker={{
-        'data-change': 'version',
+        'data-change': item.kind,
         'data-digest': digest ?? undefined,
         'data-pin': entry.pin ?? undefined,
         'data-verdict': state,

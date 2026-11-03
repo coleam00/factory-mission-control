@@ -1,5 +1,6 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import type { ChangeItem } from '../../app/lib/changes';
 import { openPage, type Page } from '../lib/cdp';
 import type { Deps } from '../lib/cli';
 import {
@@ -21,7 +22,7 @@ export interface OldScreens {
 
 /** One `[data-change]` item on the Changes screen, in document order. */
 export interface ShownChange {
-  change: 'version' | 'decision' | 'verdict';
+  change: ChangeItem['kind'];
   digest: string | null;
   pin: string | null;
   verdict: string | null;

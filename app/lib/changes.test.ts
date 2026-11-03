@@ -5,6 +5,7 @@ import {
   pairSearch,
   previousDigest,
   resolvePair,
+  selectableVersions,
   testingChip,
   togglePair,
 } from './changes';
@@ -208,4 +209,12 @@ test('the previous version is the next older row, none for the oldest or an unkn
   expect(previousDigest(items, V2)).toBe(V1);
   expect(previousDigest(items, V1)).toBeNull();
   expect(previousDigest(items, 'sha256:unknown')).toBeNull();
+});
+
+test('only versions that have run are selectable, not pending pins or decisions', () => {
+  const oneRun = [strip[0], strip[3]].filter((r): r is VersionStripRow => r !== undefined);
+  const items = changeTimeline(oneRun, [], [decision({ title: 'none', date: '2026-10-21' })]);
+  expect(items.length).toBeGreaterThan(1);
+  expect(selectableVersions(items)).toBe(1);
+  expect(selectableVersions(changeTimeline(strip, [], []))).toBe(3);
 });
