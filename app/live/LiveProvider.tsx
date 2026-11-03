@@ -39,41 +39,97 @@ interface LiveConfig {
 
 const newSocket: WebSocketFactory = (url, protocols) => new WebSocket(url, protocols);
 
-/** The clients for `config`; a second one for the home branch only while rewound. */
-function clientsFor(
-  config: LiveConfig,
-  transport: WebSocketFactory,
-): { client: RealtimeClient; homeClient: RealtimeClient } {
-  const client = createRealtimeClient({
-    url: config.url,
+/** What `@neon/realtime` reports when a client's connection has ended for good. */
+const CONNECTION_ENDED: ReadonlySet<string> = new Set([
+  'connection_failed',
+  'connection_reconnect_exhausted',
+]);
+
+/** The wait before replacing a client whose connection ended; it doubles to the ceiling. */
+export const REPLACE_FIRST_MS = 1_000;
+export const REPLACE_CEILING_MS = 16_000;
+
+type Clients = { client: RealtimeClient; homeClient: RealtimeClient };
+
+/** A client on `url` that calls `ended` once its connection has ended for good. */
+function connect(url: string, transport: WebSocketFactory, ended: () => void): RealtimeClient {
+  return createRealtimeClient({
+    url,
     webSocketFactory: markingSubscribes(transport),
+    logLevel: 'error',
+    logger: (entry) => {
+      if (!CONNECTION_ENDED.has(entry.event)) return;
+      console.warn(`Realtime connection ended for good (${entry.event}); opening a new one`);
+      ended();
+    },
   });
-  const homeClient =
-    config.rewind === null
-      ? client
-      : createRealtimeClient({ url: config.home, webSocketFactory: markingSubscribes(newSocket) });
-  return { client, homeClient };
 }
 
 /**
  * Opens the Realtime connection the app shares; panels render `error` when it cannot. When the
  * server put the configuration in the page, the client takes over the socket the page already
  * opened; otherwise it asks `GET /api/live`.
+ *
+ * A client whose connection ended for good (a protocol failure, or a reconnect it gave up on)
+ * never connects again and rejects every renewal, so the panels on it would stay in `error` until
+ * a reload. It is replaced by a new client on the same URL, after a wait that doubles from
+ * `REPLACE_FIRST_MS` to `REPLACE_CEILING_MS` for as long as the page is open, and the panels
+ * subscribe on the new one. The ended client has already closed its socket; it is dropped, not
+ * closed, so its panels never read `closed` before they move.
  */
 export function LiveProvider({ children }: { children: ReactNode }): ReactElement {
   const [live, setLive] = useState<Live>({ status: 'loading' });
 
   useEffect(() => {
-    let clients: { client: RealtimeClient; homeClient: RealtimeClient } | undefined;
+    let config: LiveConfig | undefined;
+    let clients: Clients | undefined;
     let cancelled = false;
+    let wait = 0;
+    let replacing: ReturnType<typeof setTimeout> | undefined;
+    const publish = () => {
+      if (cancelled || !config || !clients) return;
+      setLive({ status: 'ready', factories: config.factories, rewind: config.rewind, ...clients });
+    };
+    const replace = (ended: RealtimeClient) => {
+      if (!config || !clients) return;
+      const { client, homeClient } = clients;
+      const shared = client === homeClient;
+      if (ended === client) {
+        const next = connect(config.url, newSocket, () => onEnded(next));
+        clients = { client: next, homeClient: shared ? next : homeClient };
+      } else if (ended === homeClient) {
+        const next = connect(config.home, newSocket, () => onEnded(next));
+        clients = { client, homeClient: next };
+      }
+      publish();
+    };
+    const onEnded = (ended: RealtimeClient) => {
+      if (cancelled || replacing !== undefined) return;
+      wait = Math.min(REPLACE_CEILING_MS, Math.max(REPLACE_FIRST_MS, wait * 2));
+      replacing = setTimeout(() => {
+        replacing = undefined;
+        if (!cancelled) replace(ended);
+      }, wait);
+    };
+    /** The clients for `config`; a second one for the home branch only while rewound. */
+    const clientsFor = (transport: WebSocketFactory): Clients => {
+      const at = config as LiveConfig;
+      const client = connect(at.url, transport, () => onEnded(client));
+      const homeClient =
+        at.rewind === null ? client : connect(at.home, newSocket, () => onEnded(homeClient));
+      return { client, homeClient };
+    };
     const close = () => {
+      cancelled = true;
+      clearTimeout(replacing);
       clients?.client.close();
       if (clients?.homeClient !== clients?.client) clients?.homeClient.close();
     };
     const boot = window.__MC_LIVE__;
     if (boot) {
-      clients = clientsFor(boot, earlySocketFactory(boot));
-      setLive({ status: 'ready', factories: boot.factories, rewind: boot.rewind, ...clients });
+      config = boot;
+      clients = clientsFor(earlySocketFactory(boot));
+      publish();
       return () => {
         close();
         discardEarlySocket(boot);
@@ -82,23 +138,16 @@ export function LiveProvider({ children }: { children: ReactNode }): ReactElemen
     fetch('/api/live')
       .then(async (res) => {
         if (!res.ok) throw new Error(`GET /api/live answered ${res.status}`);
-        const config = (await res.json()) as LiveConfig;
+        const answered = (await res.json()) as LiveConfig;
         if (cancelled) return;
-        clients = clientsFor(config, newSocket);
-        setLive({
-          status: 'ready',
-          factories: config.factories,
-          rewind: config.rewind,
-          ...clients,
-        });
+        config = answered;
+        clients = clientsFor(newSocket);
+        publish();
       })
       .catch(() => {
         if (!cancelled) setLive({ status: 'error' });
       });
-    return () => {
-      cancelled = true;
-      close();
-    };
+    return close;
   }, []);
 
   return <LiveContext.Provider value={live}>{children}</LiveContext.Provider>;

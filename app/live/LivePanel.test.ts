@@ -6,6 +6,7 @@ import {
   newSealBackoff,
   panelState,
   recovering,
+  resetSealBackoff,
   SEAL_RETRY_CEILING_MS,
   SEAL_RETRY_FIRST_MS,
   seal,
@@ -182,12 +183,31 @@ test('a seal too close to expiry to wait before renewing is handed on, and the n
   expect(sent).toEqual([0, 1_000, 3_000, 7_000]);
 });
 
-test('once the endpoint answers again, a full seal comes one wait later and resets the wait', async () => {
-  const { sent, outcomes } = await backOff(6, (at) =>
-    at < 10_000 ? 'fail' : { expiresAt: at + 60_000 },
+test('once the endpoint answers again, a full seal comes one wait later, and the wait holds until live', async () => {
+  const sent: number[] = [];
+  const backoff = newSealBackoff();
+  const request = onClock(
+    sent,
+    (at) => (at < 10_000 ? 'fail' : { expiresAt: at + 60_000 }),
+    undefined,
+    backoff,
   );
+  const outcomes: string[] = [];
+  for (let i = 0; i < 6; i++) {
+    outcomes.push(
+      await request().then(
+        () => 'sealed',
+        () => 'thrown',
+      ),
+    );
+  }
   expect(outcomes).toEqual(['thrown', 'thrown', 'thrown', 'thrown', 'sealed', 'sealed']);
-  expect(sent).toEqual([0, 1_000, 3_000, 7_000, 15_000, 15_000]);
+  // A full seal alone is not recovery: the subscription can still refuse it.
+  expect(sent).toEqual([0, 1_000, 3_000, 7_000, 15_000, 31_000]);
+  // Live on it: the next seal owes no wait.
+  resetSealBackoff(backoff);
+  await request();
+  expect(sent.at(-1)).toBe(31_000);
 });
 
 test('a panel that stopped asking sends no more seal requests', async () => {
@@ -281,4 +301,128 @@ test('a live panel renewing against a replayed expired seal backs off, however o
   // The tight loop sent ~11,000 requests per panel in 30 s; the acceptance limit is 30.
   expect(sent.length).toBeLessThanOrEqual(30);
   expect(sent).toEqual([0, 1_000, 3_000, 7_000, 15_000]);
+});
+
+/**
+ * A panel whose subscription refuses every renewal (its connection failed for good), renewed by
+ * `@neon/realtime`'s own controller, which asks again 1 s after each refusal, while the endpoint
+ * seals: it fails `failures` times, then answers full seals. Returns when each request was sent,
+ * in ms from when the live seal was due to renew.
+ */
+async function renewRefused(seconds: number, failures: number): Promise<number[]> {
+  jest.useFakeTimers();
+  try {
+    const start = Date.now();
+    const renewAt = start + 50_000;
+    const header = Buffer.from('{"alg":"dir","enc":"A256GCM","v":1}').toString('base64url');
+    const live = {
+      ...sealed,
+      capability: `${header}..iv.ciphertext.tag`,
+      expiresAt: start + 60_000,
+    };
+    const sent: number[] = [];
+    const refreshQuery = backOffSeals(async () => {
+      sent.push(Date.now() - renewAt);
+      if (sent.length <= failures) throw new Error('sealing one-lap answered 503');
+      return { ...live, expiresAt: Date.now() + 60_000 };
+    }, new AbortController().signal);
+    const controller = new QueryRefreshController({
+      query: live,
+      refreshQuery,
+      renewSubscription: async () => {
+        throw new Error('Realtime connection cannot recover');
+      },
+      onRefreshExhausted: () => {},
+    });
+    controller.start();
+    while (Date.now() < renewAt + seconds * 1_000) {
+      jest.advanceTimersByTime(100);
+      for (let i = 0; i < 10; i++) await Promise.resolve();
+    }
+    controller.stop();
+    return sent;
+  } finally {
+    jest.useRealTimers();
+  }
+}
+
+test('a seal its subscription refuses does not reset the wait, so the panel never asks once a second', async () => {
+  const sent = await renewRefused(60, 3);
+  // Before #274 every full seal reset the wait: after the outage, one request a second for good.
+  expect(sent).toEqual([0, 1_000, 3_000, 7_000, 15_000, 31_000, 47_000]);
+  for (let i = 0; i + 1 < sent.length; i++) {
+    expect(sent.filter((at) => at >= sent[i] && at < sent[i] + 10_000).length).toBeLessThanOrEqual(
+      5,
+    );
+  }
+});
+
+/**
+ * A page of `panels` live panels sealed together, each renewed by `@neon/realtime`'s controller,
+ * while the endpoint fails for `outage` seconds from when they were due to renew, then seals again.
+ * Returns when each request was sent, in ms from then, and how many panels got a seal after it.
+ */
+async function pageThroughOutage(panels: number, outage: number, seconds: number, latency = 0) {
+  jest.useFakeTimers();
+  try {
+    const start = Date.now();
+    const renewAt = start + 50_000;
+    const header = Buffer.from('{"alg":"dir","enc":"A256GCM","v":1}').toString('base64url');
+    const live = {
+      ...sealed,
+      capability: `${header}..iv.ciphertext.tag`,
+      expiresAt: start + 60_000,
+    };
+    const sent: number[] = [];
+    const renewed = new Set<number>();
+    const tab = newSealBackoff();
+    const controllers = Array.from({ length: panels }, (_, panel) => {
+      const request = backOffSeals(
+        async () => {
+          sent.push(Date.now() - renewAt);
+          if (latency > 0) await new Promise((resolve) => setTimeout(resolve, latency));
+          if (Date.now() < renewAt + outage * 1_000) throw new Error('sealing answered 503');
+          return { ...live, expiresAt: Date.now() + 60_000 };
+        },
+        new AbortController().signal,
+        { tab },
+      );
+      // As the panel renews: one at a time in the tab.
+      const refreshQuery = () => request(true);
+      return new QueryRefreshController({
+        query: live,
+        refreshQuery,
+        renewSubscription: async () => {
+          renewed.add(panel);
+        },
+        onRefreshExhausted: () => {},
+      });
+    });
+    for (const controller of controllers) controller.start();
+    while (Date.now() < renewAt + seconds * 1_000) {
+      jest.advanceTimersByTime(100);
+      for (let i = 0; i < 10; i++) await Promise.resolve();
+    }
+    for (const controller of controllers) controller.stop();
+    return { sent, renewed: renewed.size };
+  } finally {
+    jest.useRealTimers();
+  }
+}
+
+test('a page of panels in a sealing outage asks no more than 5 times in any 10 s, and every panel recovers (#274)', async () => {
+  const { sent, renewed } = await pageThroughOutage(6, 90, 120);
+  const during = sent.filter((at) => at < 90_000);
+  for (const at of during) {
+    expect(during.filter((other) => other >= at && other < at + 10_000).length).toBeLessThanOrEqual(
+      5,
+    );
+  }
+  // The waits between the tab's requests grow to the ceiling instead of staying near a second.
+  const gaps = during.slice(1).map((at, i) => at - during[i]);
+  expect(gaps.slice(0, 4)).toEqual([1_000, 2_000, 4_000, 8_000]);
+  expect(gaps.slice(4).every((gap) => gap === 16_000)).toBe(true);
+  // Sealing is back at 90 s: every panel has its seal within 30 s.
+  expect(renewed).toBe(6);
+  expect(sent.filter((at) => at >= 90_000 && at < 120_000).length).toBeGreaterThanOrEqual(6);
 });
