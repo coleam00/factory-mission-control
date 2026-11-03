@@ -2,22 +2,17 @@ import {
   existsSync,
   mkdirSync,
   readdirSync,
-  readFileSync,
-  renameSync,
   rmSync,
+  statSync,
+  utimesSync,
   writeFileSync,
 } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { isCheckBranch } from '../scripts/lib/guard';
 
-const LEASE_HOURS = 1;
-
 /** How long after its last refresh a lease keeps an old check branch from another checkout's `fixture:drop`. */
-export const LEASE_MS = LEASE_HOURS * 60 * 60 * 1000;
-
-/** `LEASE_MS` in words, for help text. */
-export const LEASE_LENGTH = LEASE_HOURS === 1 ? 'an hour' : `${LEASE_HOURS} hours`;
+export const LEASE_MS = 60 * 60 * 1000;
 
 /** How often `serve` refreshes its branch's lease: well inside `LEASE_MS`. */
 export const LEASE_REFRESH_MS = 10 * 60 * 1000;
@@ -27,29 +22,22 @@ export function defaultLeaseDir(): string {
   return join(homedir(), '.mc-check-leases');
 }
 
-/**
- * A checkout's claim that it still uses `branch`, as of `refreshed_at`. `null` is a lease file
- * that exists but cannot be read: it holds its branch at every moment, since deleting a branch a
- * run still uses cannot be undone and keeping one too long can.
- */
-export type Lease = { branch: string; refreshed_at: string | null };
+/** A checkout's claim that it still uses `branch`, as of `refreshed_at`: the lease file's mtime. */
+export type Lease = { branch: string; refreshed_at: string };
 
 function leaseFile(dir: string, branch: string): string {
-  return join(dir, `${branch}.json`);
+  return join(dir, `${branch}.lease`);
 }
 
 /** Records `branch` as in use at `at`; false when it is not a check branch or the write failed. */
 export function writeLease(dir: string, branch: string, at: Date): boolean {
   if (!isCheckBranch(branch)) return false;
-  // Written aside and renamed in, so a concurrent drop never reads a half-written lease.
-  const pending = `${leaseFile(dir, branch)}.${process.pid}.tmp`;
   try {
     mkdirSync(dir, { recursive: true });
-    writeFileSync(pending, JSON.stringify({ refreshed_at: at.toISOString() }));
-    renameSync(pending, leaseFile(dir, branch));
+    writeFileSync(leaseFile(dir, branch), '');
+    utimesSync(leaseFile(dir, branch), at, at);
     return true;
   } catch {
-    removeLeaseFile(pending);
     return false;
   }
 }
@@ -59,7 +47,9 @@ export function writeLease(dir: string, branch: string, at: Date): boolean {
  * False only when a lease exists and could not be moved.
  */
 export function refreshLease(dir: string, branch: string, at: Date): boolean {
-  return !existsSync(leaseFile(dir, branch)) || writeLease(dir, branch, at);
+  const file = leaseFile(dir, branch);
+  const lease = existsSync(file) && statSync(file, { throwIfNoEntry: false });
+  return !lease || (lease.isFile() && writeLease(dir, branch, at));
 }
 
 /**
@@ -86,48 +76,35 @@ export function startLeaseRefresh(
 
 /**
  * Every lease on a check branch in `dir`. A missing directory holds none; any other failure to
- * list it throws, so a drop never mistakes leases it cannot see for none.
+ * read it throws, so a drop never mistakes leases it cannot see for none.
  */
 export function readLeases(dir: string): Lease[] {
-  let names: string[];
   try {
-    names = readdirSync(dir);
+    const leases: Lease[] = [];
+    for (const name of readdirSync(dir)) {
+      if (!name.endsWith('.lease')) continue;
+      const branch = name.slice(0, -'.lease'.length);
+      if (!isCheckBranch(branch)) continue;
+      const lease = statSync(join(dir, name), { throwIfNoEntry: false });
+      if (lease?.isFile()) leases.push({ branch, refreshed_at: lease.mtime.toISOString() });
+    }
+    return leases;
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return [];
     throw new Error(
       `cannot read the leases in ${dir}: ${error instanceof Error ? error.message : error}`,
     );
   }
-  const leases: Lease[] = [];
-  for (const name of names) {
-    if (!name.endsWith('.json')) continue;
-    const branch = name.slice(0, -'.json'.length);
-    if (isCheckBranch(branch)) leases.push({ branch, refreshed_at: refreshedAt(join(dir, name)) });
-  }
-  return leases;
-}
-
-function refreshedAt(file: string): string | null {
-  try {
-    const refreshed = JSON.parse(readFileSync(file, 'utf-8'))?.refreshed_at;
-    return typeof refreshed === 'string' && !Number.isNaN(Date.parse(refreshed)) ? refreshed : null;
-  } catch {
-    return null;
-  }
 }
 
 /** Best effort, like every lease write: a lease left behind protects nothing once its branch is gone. */
 export function removeLease(dir: string, branch: string): void {
-  removeLeaseFile(leaseFile(dir, branch));
-}
-
-function removeLeaseFile(file: string): void {
   try {
-    rmSync(file, { force: true });
+    rmSync(leaseFile(dir, branch), { force: true });
   } catch {}
 }
 
-/** True while `at` is no more than `LEASE_MS` after the lease's last refresh, and always for an unreadable lease. */
+/** True while `at` is no more than `LEASE_MS` after the lease's last refresh. */
 export function isLeaseLive(lease: Lease, at: Date): boolean {
-  return lease.refreshed_at === null || at.getTime() - Date.parse(lease.refreshed_at) <= LEASE_MS;
+  return at.getTime() - Date.parse(lease.refreshed_at) <= LEASE_MS;
 }

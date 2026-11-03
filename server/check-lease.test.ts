@@ -1,5 +1,5 @@
 import { afterEach, expect, test } from 'bun:test';
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -40,37 +40,21 @@ test('writes, reads and removes a lease, creating the directory', () => {
 test.each(['main', 'fixture', 'rewind-x'])('refuses a lease on %s', (name) => {
   const dir = leaseDir();
   expect(writeLease(dir, name, AT)).toBe(false);
-  expect(existsSync(join(dir, `${name}.json`))).toBe(false);
+  expect(existsSync(join(dir, `${name}.lease`))).toBe(false);
 });
 
-test('a lease file that cannot be read holds its branch; other files are no lease', () => {
+test('only a file named for a check branch is a lease', () => {
   const dir = leaseDir();
-  const valid = JSON.stringify({ refreshed_at: AT.toISOString() });
-  writeFileSync(join(dir, 'check-bad.json'), '{not json');
-  writeFileSync(join(dir, 'check-empty.json'), '{}');
-  writeFileSync(join(dir, 'check-when.json'), '{"refreshed_at":"soon"}');
-  mkdirSync(join(dir, 'check-dir.json'));
-  writeFileSync(join(dir, 'main.json'), valid);
-  writeFileSync(join(dir, 'check-abc.txt'), valid);
-  expect(readLeases(dir).sort((a, b) => a.branch.localeCompare(b.branch))).toEqual([
-    { branch: 'check-bad', refreshed_at: null },
-    { branch: 'check-dir', refreshed_at: null },
-    { branch: 'check-empty', refreshed_at: null },
-    { branch: 'check-when', refreshed_at: null },
-  ]);
+  writeFileSync(join(dir, 'main.lease'), '');
+  writeFileSync(join(dir, 'check-abc.txt'), '');
+  mkdirSync(join(dir, 'check-dir.lease'));
+  expect(readLeases(dir)).toEqual([]);
 });
 
 test('a lease directory that cannot be listed throws rather than reading as no leases', () => {
   const file = join(leaseDir(), 'not-a-dir');
   writeFileSync(file, '');
   expect(() => readLeases(file)).toThrow(`cannot read the leases in ${file}`);
-});
-
-test('a write leaves only the lease file behind', () => {
-  const dir = leaseDir();
-  writeLease(dir, 'check-abc', AT);
-  writeLease(dir, 'check-abc', AT);
-  expect(readdirSync(dir)).toEqual(['check-abc.json']);
 });
 
 test('a refresh moves an existing lease and never creates one', () => {
@@ -84,7 +68,7 @@ test('a refresh moves an existing lease and never creates one', () => {
 
 test('a refresh that cannot move an existing lease says so', () => {
   const dir = leaseDir();
-  mkdirSync(join(dir, 'check-abc.json'));
+  mkdirSync(join(dir, 'check-abc.lease'));
   expect(refreshLease(dir, 'check-abc', AT)).toBe(false);
 });
 
@@ -133,7 +117,7 @@ test('serve registers nothing without MC_CHECK_BRANCH', () => {
 
 test('serve warns once when its lease cannot be refreshed', () => {
   const dir = leaseDir();
-  mkdirSync(join(dir, 'check-abc.json'));
+  mkdirSync(join(dir, 'check-abc.lease'));
   const serve = serveRefresh('check-abc', dir);
   serve.tick(new Date(AT.getTime() + LEASE_REFRESH_MS));
   expect(serve.warnings).toEqual([`could not refresh the lease for check-abc in ${dir}`]);

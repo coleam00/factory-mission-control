@@ -2,7 +2,7 @@ import { afterEach, expect, test } from 'bun:test';
 import { existsSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { CHECK_ENV_FILE } from '../../server/check-env';
-import { defaultLeaseDir, LEASE_LENGTH, LEASE_MS, writeLease } from '../../server/check-lease';
+import { defaultLeaseDir, LEASE_MS, writeLease } from '../../server/check-lease';
 import { hoursAgo, NOW, recordingDeps, scratchRepo } from '../lib/test-deps';
 import { branchesToDrop, main } from './drop';
 
@@ -327,7 +327,7 @@ function anotherCheckoutOwnsCheckOld() {
     branches: BRANCHES,
     leaseDir,
   });
-  return { leaseDir, a, lease: (branch: string) => join(leaseDir, `${branch}.json`) };
+  return { leaseDir, a, lease: (branch: string) => join(leaseDir, `${branch}.lease`) };
 }
 
 test("a running lap's old branch survives another checkout's fixture:drop", async () => {
@@ -336,33 +336,6 @@ test("a running lap's old branch survives another checkout's fixture:drop", asyn
   expect(await main([], a.deps)).toBe(0);
   expect(a.mutatingCalls).toEqual(['deleteBranch check-abc']);
   expect(existsSync(lease('check-old'))).toBe(true);
-});
-
-test('an old branch whose lease cannot be read is kept, and drop says so', async () => {
-  const { leaseDir, a, lease } = anotherCheckoutOwnsCheckOld();
-  writeFileSync(lease('check-old'), '{"refreshed_at":');
-  expect(await main([], a.deps)).toBe(0);
-  expect(a.mutatingCalls).toEqual(['deleteBranch check-abc']);
-  expect(existsSync(lease('check-old'))).toBe(true);
-  expect(a.err.join('\n')).toContain(`cannot read the lease for check-old in ${leaseDir}`);
-});
-
-test("this checkout's own branch with an unreadable lease is deleted, and drop does not say it is kept", async () => {
-  const { a, lease } = anotherCheckoutOwnsCheckOld();
-  writeFileSync(lease('check-abc'), '{"refreshed_at":');
-  expect(await main([], a.deps)).toBe(0);
-  expect(a.mutatingCalls).toEqual(['deleteBranch check-old', 'deleteBranch check-abc']);
-  expect(a.out).toContain('deleted check-abc');
-  expect(existsSync(lease('check-abc'))).toBe(false);
-  expect(a.err.join('\n')).not.toContain('cannot read the lease');
-});
-
-test('an unreadable lease warns only when it is what keeps a listed branch', async () => {
-  const { a, lease } = anotherCheckoutOwnsCheckOld();
-  writeFileSync(lease('check-new'), '{"refreshed_at":');
-  writeFileSync(lease('check-gone'), '{"refreshed_at":');
-  expect(await main([], a.deps)).toBe(0);
-  expect(a.err.join('\n')).not.toContain('cannot read the lease');
 });
 
 test('a lease directory that cannot be listed stops drop before any Neon call', async () => {
@@ -404,7 +377,7 @@ test('a branch that fails to delete keeps its lease', async () => {
     throwsOn: ['deleteBranch check-abc'],
   });
   expect(await main([], run.deps)).toBe(1);
-  expect(existsSync(join(leaseDir, 'check-abc.json'))).toBe(true);
+  expect(existsSync(join(leaseDir, 'check-abc.lease'))).toBe(true);
 });
 
 test('--dry-run --at judges a lease at that time and removes none', async () => {
@@ -427,7 +400,7 @@ test('--dry-run --at judges a lease at that time and removes none', async () => 
   expect(await listed(['--dry-run', '--at', hoursAfter(3 + 1 / 60)])).toContain(
     'would delete check-young',
   );
-  expect(existsSync(join(leaseDir, 'check-old.json'))).toBe(true);
+  expect(existsSync(join(leaseDir, 'check-old.lease'))).toBe(true);
 });
 
 test('a lease is live until exactly LEASE_MS after its last refresh, and only for its branch', () => {
@@ -446,10 +419,8 @@ test('--help states the lease rule', async () => {
   const usage = run.out.join('\n');
   expect(usage).toContain('unless the checkout that owns it still uses it');
   expect(usage).toContain(`Ownership is a lease in ${defaultLeaseDir()}:`);
-  expect(usage).toContain(
-    `an old branch whose lease was refreshed less than ${LEASE_LENGTH} ago, or whose lease file cannot be read, is kept`,
-  );
+  expect(usage).toContain('an old branch whose lease was refreshed less than an hour ago is kept');
   expect(usage).toContain('`serve` while it runs refresh it');
   expect(usage).toContain('a lease is judged at <time> too');
-  expect(usage).toContain(`keeps its branch until ${LEASE_LENGTH} after its last refresh`);
+  expect(usage).toContain('keeps its branch until an hour after its last refresh');
 });
