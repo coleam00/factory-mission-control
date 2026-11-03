@@ -40,8 +40,9 @@ const entriesOnScreen = `[...document.querySelectorAll('${SWITCHER} [data-factor
   li.getAttribute('data-factory-entry'), Number(li.getAttribute('data-running'))])`;
 const stripNames = (factory: string) =>
   `document.querySelector('${PANEL}[data-state="ready"] span')?.textContent === ${JSON.stringify(factory)}`;
+// The name is the pill's own text; the caret beside it is a child span (#297).
 const switcherNames = (factory: string) =>
-  `document.querySelector('${SWITCHER} summary span:last-child')?.textContent === ${JSON.stringify(factory)}`;
+  `document.querySelector('${SWITCHER} summary span:last-child')?.firstChild?.textContent === ${JSON.stringify(factory)}`;
 const RUNNING_SQL = `SELECT f.name, (SELECT count(*)::int FROM mc.laps l
     WHERE l.factory = f.name AND l.workflow_name = 'archon-loop' AND l.status = 'running') AS running
   FROM mc.factories f ORDER BY f.name`;
