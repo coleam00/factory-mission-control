@@ -36,7 +36,7 @@ test.each([false, true])(
   30_000,
 );
 
-test('a panel whose connection ended for good shows its rows again once sealing is back, asking at the backoff (#274)', async () => {
+test('a panel whose connection ended for good shows its rows again once sealing is back, never asking back to back (#274)', async () => {
   const bundle = await Bun.build({
     entrypoints: [`${import.meta.dir}/fixtures/render-recovery.tsx`],
     target: 'browser',
@@ -62,14 +62,10 @@ test('a panel whose connection ended for good shows its rows again once sealing 
     expect(recovered.states).toContain('error error');
     expect(recovered.state).toBe('ready');
     expect(recovered.text).toBe('the lap');
-    // The first seal; then, once the connection ended (300 ms after the rows), one a wait of 1 s
-    // later, the failed ones, and the one the panel is live on: never back to back, each at least
-    // the backoff's first wait after the last, and none once the panel is live. (Whether the wait
-    // then doubles depends on which comes first, the new client going live on the seal it still
-    // has, which resets the wait, or the next failed seal: `LivePanel.test.ts` tests the doubling.)
-    expect(recovered.asked).toHaveLength(2 + failures);
-    expect(recovered.asked[1]).toBeGreaterThanOrEqual(1_300);
-    const gaps = recovered.asked.slice(2).map((at, i) => at - recovered.asked[i + 1]);
+    // Never back to back: each seal after the first waits at least the backoff's first wait for the
+    // last. Whether any is asked before the new client goes live on the seal it still has depends
+    // on which comes first: `LivePanel.test.ts` tests the doubling.
+    const gaps = recovered.asked.slice(1).map((at, i) => at - recovered.asked[i]);
     expect(gaps.every((gap) => gap >= 1_000)).toBe(true);
   } finally {
     await page.close();
@@ -108,3 +104,26 @@ test.each([
   },
   40_000,
 );
+
+test('a subscription that is live for a moment and then fails again and again does not reset the seal backoff (#274)', async () => {
+  const bundle = await Bun.build({
+    entrypoints: [`${import.meta.dir}/fixtures/render-recovery.tsx`],
+    target: 'browser',
+    format: 'esm',
+    define: { 'process.env.NODE_ENV': '"production"' },
+  });
+  expect(bundle.success).toBe(true);
+  const source = Buffer.from(await bundle.outputs[0].text()).toString('base64');
+  const page = await openPage(process.env);
+  try {
+    const { asked } = await page.evaluate<{ asked: number[] }>(
+      `import('data:text/javascript;base64,${source}').then(m => m.renderFlapping(12000))`,
+    );
+    // Every seal is answered 200 and each subscription is live before it fails, so a wait reset by
+    // going live asks about once a second: 10 seals in 12 s. The doubling wait asks 3 or 4 times.
+    expect(asked.length).toBeLessThanOrEqual(5);
+    expect(asked.length).toBeGreaterThanOrEqual(3);
+  } finally {
+    await page.close();
+  }
+}, 40_000);

@@ -86,6 +86,8 @@ export const SEAL_TIMEOUT_MS = 10_000;
 /** The wait before retrying a seal that failed or came back expired; it doubles to the ceiling. */
 export const SEAL_RETRY_FIRST_MS = 1_000;
 export const SEAL_RETRY_CEILING_MS = 16_000;
+/** How long a panel must stay live for its seal backoff to reset: past the longest wait. */
+export const LIVE_STABLE_MS = SEAL_RETRY_CEILING_MS;
 
 /**
  * Where one seal's requests stand: the wait the next one owes, counted from when the last was
@@ -128,10 +130,12 @@ export function sealBackoff(key: string): SealBackoff {
 export const tabSealing: SealBackoff = newSealBackoff();
 
 /**
- * The panel is live on what it was sealed: the next seal it asks for owes no wait. Only this
- * resets the wait. A seal answered with a full lifetime is not enough: the subscription it was for
- * can still refuse it (a connection that failed for good rejects every renewal at once), and the
- * library asks again a second later, so a reset there would ask about once a second for good.
+ * The panel has stayed live on what it was sealed for `LIVE_STABLE_MS`: the next seal it asks for
+ * owes no wait. Only this resets the wait. A seal answered with a full lifetime is not enough: the
+ * subscription it was for can still refuse it (a connection that failed for good rejects every
+ * renewal at once), and the library asks again a second later. Nor is going live: a subscription
+ * that is live for a moment and then fails for good, again and again, would reset the wait each
+ * time and ask about once a second for good.
  */
 export function resetSealBackoff(backoff: SealBackoff): void {
   backoff.delay = 0;
@@ -364,7 +368,7 @@ export function LivePanel<Row>({
 /**
  * A subscription that reports `error` has failed for good: `@neon/realtime` rejects every renewal
  * of it, so the panel asks for a new seal and subscribes again (`onFailed`), a wait later
- * (`failSealBackoff`), showing `error` until then. Going `live` resets the wait.
+ * (`failSealBackoff`), showing `error` until then. Staying `live` (`LIVE_STABLE_MS`) resets the wait.
  */
 function Subscribed<Row>({
   query,
@@ -402,7 +406,10 @@ function Subscribed<Row>({
   }, [state, observation]);
 
   useEffect(() => {
-    if (status === 'live') resetSealBackoff(backoff);
+    if (status === 'live') {
+      const stable = setTimeout(() => resetSealBackoff(backoff), LIVE_STABLE_MS);
+      return () => clearTimeout(stable);
+    }
     if (status === 'error') {
       failSealBackoff(backoff);
       onFailed();

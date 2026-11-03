@@ -6,15 +6,18 @@ import { LiveProvider } from '../LiveProvider';
 /**
  * A Realtime socket that answers every subscribe with one row. With `failAfterRows`, it then
  * reports a backend protocol error, which ends the client's connection for good: the library never
- * reconnects that client, and rejects every renewal on it.
+ * reconnects that client, and rejects every renewal on it. With `flap`, every subscription fails
+ * for good 300 ms after its rows.
  */
 class RowSocket implements WebSocketLike {
   readyState = 1;
+  private subscribes = 0;
   private listeners = new Map<string, ((event: { data: unknown }) => void)[]>();
 
   constructor(
     private failAfterRows: boolean,
     private greet: boolean,
+    private flap = false,
   ) {}
 
   addEventListener(type: string, listener: (event: { data: unknown }) => void) {
@@ -33,16 +36,17 @@ class RowSocket implements WebSocketLike {
   send(data: string) {
     const message = JSON.parse(data);
     if (message.type !== 'subscribe') return;
+    const liveId = String(++this.subscribes);
     queueMicrotask(() => {
       this.receive({
         type: 'subscribed',
         request_id: message.request_id,
-        live_id: '1',
+        live_id: liveId,
         epoch: '1',
         first_sequence: '1',
         columns: [{ name: 'value', type_oid: 25, typmod: -1, codec: 'pg_text' }],
       });
-      const version = { live_id: '1', epoch: '1', baseline_sync_attempt: '1' };
+      const version = { live_id: liveId, epoch: '1', baseline_sync_attempt: '1' };
       this.receive({
         type: 'baseline_sync_start',
         ...version,
@@ -55,6 +59,15 @@ class RowSocket implements WebSocketLike {
         rows: [{ row_key: 'a'.repeat(64), values: ['the lap'] }],
       });
       this.receive({ type: 'baseline_sync_end', ...version, batch_count: 1 });
+      if (this.flap)
+        setTimeout(() => {
+          this.receive({
+            type: 'subscription_error',
+            live_id: liveId,
+            code: 'baseline_sync_failed',
+            message: 'the subscription failed',
+          });
+        }, 300);
       if (this.failAfterRows)
         setTimeout(() => {
           this.receive({
@@ -177,6 +190,64 @@ export async function renderRecovery(
     };
   } finally {
     observer.disconnect();
+    root.unmount();
+    container.remove();
+    window.fetch = originalFetch;
+    window.WebSocket = OriginalWebSocket;
+    delete window.__MC_LIVE__;
+  }
+}
+
+/**
+ * A panel whose every subscription is live for a moment and then fails for good, while sealing
+ * answers every request. Resolves after `windowMs` with when each seal was asked for.
+ */
+export async function renderFlapping(windowMs: number) {
+  const originalFetch = window.fetch;
+  const OriginalWebSocket = window.WebSocket;
+  const header = btoa(JSON.stringify({ alg: 'dir', enc: 'A256GCM', v: 1 })).replace(/=+$/, '');
+  const asked: number[] = [];
+  const started = performance.now();
+  window.fetch = Object.assign(
+    async () => {
+      asked.push(Math.round(performance.now() - started));
+      return Response.json({
+        capability: `${header}..nonce.test.tag`,
+        queryFingerprint: 'a'.repeat(64),
+        expiresAt: Date.now() + 600_000,
+        rewind: null,
+      });
+    },
+    { preconnect: originalFetch.preconnect },
+  );
+  window.WebSocket = class extends RowSocket {
+    constructor() {
+      super(false, true, true);
+    }
+  } as unknown as typeof WebSocket;
+  window.__MC_LIVE__ = {
+    url: 'wss://test/',
+    home: 'wss://test/',
+    factories: ['factory-a'],
+    rewind: null,
+    protocol: 'neon.realtime.v1',
+    early: [JSON.stringify({ type: 'ready' })],
+    socket: new RowSocket(false, false, true) as unknown as WebSocket,
+  };
+  const container = document.createElement('div');
+  document.body.append(container);
+  const root = createRoot(container);
+  try {
+    root.render(
+      <LiveProvider>
+        <LivePanel<{ value: string }> query="one-lap" factory="factory-a">
+          {(rows, state) => <p>{state === 'ready' ? rows?.map((row) => row.value) : state}</p>}
+        </LivePanel>
+      </LiveProvider>,
+    );
+    await new Promise((resolve) => setTimeout(resolve, windowMs));
+    return { asked };
+  } finally {
     root.unmount();
     container.remove();
     window.fetch = originalFetch;
