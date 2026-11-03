@@ -238,9 +238,7 @@ function VersionHeader({ version }: { version: Version }): ReactElement {
       data-pin={version.pin ?? undefined}
       className="min-w-0"
     >
-      <div className={LABEL}>
-        Version {version.side.toUpperCase()}
-      </div>
+      <div className={LABEL}>Version {version.side.toUpperCase()}</div>
       <div className={`${MONO} text-[15px] font-semibold text-text-primary`}>
         {version.pin === null ? NOT_RECORDED : version.pin.slice(0, 8)}
       </div>
@@ -317,9 +315,7 @@ function MeasureCell({ measure, version }: { measure: Measure; version: Version 
       className="min-w-0"
     >
       <div className="flex items-baseline gap-2">
-        <span className={LABEL}>
-          {version.side.toUpperCase()}
-        </span>
+        <span className={LABEL}>{version.side.toUpperCase()}</span>
         <span className={`${MONO} font-semibold text-text-primary text-[13px] md:text-[26px]`}>
           {shown(measure, measured.value)}
         </span>
