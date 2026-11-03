@@ -115,6 +115,13 @@ export async function failing(deps: Deps, work: () => Promise<void>): Promise<nu
   }
 }
 
+/** Refreshes this checkout's lease on check branch `name`, warning when an existing one cannot be moved. */
+export function refreshCheckLease(deps: Deps, name: string): void {
+  if (!refreshLease(deps.leaseDir, name, deps.now())) {
+    deps.err(`could not refresh the lease for ${name} in ${deps.leaseDir}`);
+  }
+}
+
 /**
  * `MC_DATABASE_URL` once the Neon API says it points at a `check-*` branch, or, for the owner's
  * `:main` commands, at `main`. Nothing may connect to the URL before this returns.
@@ -126,7 +133,7 @@ export async function guardedDatabaseUrl(deps: Deps, target: 'check' | 'main'): 
   const name = await resolveBranchName(url, deps.neon());
   if (target === 'check') {
     requireCheckBranch(name);
-    refreshLease(deps.leaseDir, name, deps.now());
+    refreshCheckLease(deps, name);
     return url;
   }
   if (name !== 'main') throw new RefusedBranch(name, 'a :main command only writes main');

@@ -1,8 +1,8 @@
 import { afterEach, expect, test } from 'bun:test';
-import { existsSync, rmSync } from 'node:fs';
+import { existsSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { CHECK_ENV_FILE } from '../../server/check-env';
-import { LEASE_MS, writeLease } from '../../server/check-lease';
+import { defaultLeaseDir, LEASE_LENGTH, LEASE_MS, writeLease } from '../../server/check-lease';
 import { hoursAgo, NOW, recordingDeps, scratchRepo } from '../lib/test-deps';
 import { branchesToDrop, main } from './drop';
 
@@ -338,6 +338,28 @@ test("a running lap's old branch survives another checkout's fixture:drop", asyn
   expect(existsSync(lease('check-old'))).toBe(true);
 });
 
+test('an old branch whose lease cannot be read is kept, and drop says so', async () => {
+  const { leaseDir, a, lease } = anotherCheckoutOwnsCheckOld();
+  writeFileSync(lease('check-old'), '{"refreshed_at":');
+  expect(await main([], a.deps)).toBe(0);
+  expect(a.mutatingCalls).toEqual(['deleteBranch check-abc']);
+  expect(existsSync(lease('check-old'))).toBe(true);
+  expect(a.err.join('\n')).toContain(`cannot read the lease for check-old in ${leaseDir}`);
+});
+
+test('a lease directory that cannot be listed stops drop before any Neon call', async () => {
+  const leaseDir = join(repo(), 'not-a-dir');
+  writeFileSync(leaseDir, '');
+  const run = recordingDeps({
+    repoRoot: repo({ MC_CHECK_BRANCH: 'check-abc' }),
+    branches: BRANCHES,
+    leaseDir,
+  });
+  expect(await main([], run.deps)).toBe(1);
+  expect(run.neonCalls).toEqual([]);
+  expect(run.err.join('\n')).toContain(`cannot read the leases in ${leaseDir}`);
+});
+
 test("an ended run's old branch is deleted, and its lease with it", async () => {
   const { leaseDir, a, lease } = anotherCheckoutOwnsCheckOld();
   writeLease(leaseDir, 'check-old', new Date(hoursAgo(1 + 1 / 60)));
@@ -405,6 +427,11 @@ test('--help states the lease rule', async () => {
   expect(await main(['--help'], run.deps)).toBe(0);
   const usage = run.out.join('\n');
   expect(usage).toContain('unless the checkout that owns it still uses it');
-  expect(usage).toContain('an old branch whose lease was refreshed in the last hour is kept');
+  expect(usage).toContain(`Ownership is a lease in ${defaultLeaseDir()}:`);
+  expect(usage).toContain(
+    `an old branch whose lease was refreshed less than ${LEASE_LENGTH} ago, or whose lease file cannot be read, is kept`,
+  );
+  expect(usage).toContain('`serve` while it runs refresh it');
   expect(usage).toContain('a lease is judged at <time> too');
+  expect(usage).toContain(`keeps its branch until ${LEASE_LENGTH} after its last refresh`);
 });
