@@ -3,6 +3,7 @@ import {
   type KeyboardEvent,
   type PointerEvent,
   type ReactElement,
+  type RefObject,
   useCallback,
   useEffect,
   useMemo,
@@ -13,7 +14,7 @@ import {
 import {
   type Card,
   cardWidth,
-  type FactoryMap as Map_,
+  type FactoryMap as FactoryMapData,
   type Line,
   type LineStyle,
   linePoints,
@@ -108,10 +109,10 @@ function along(points: readonly Point[]): {
  * straight to the DOM each frame, so the map does not re-render 60 times a second.
  */
 function useTour(
-  map: Map_,
+  map: FactoryMapData,
   running: boolean,
-  dot: React.RefObject<SVGCircleElement | null>,
-  cards: React.RefObject<Map<string, HTMLElement>>,
+  dot: RefObject<SVGCircleElement | null>,
+  cards: RefObject<Map<string, HTMLElement>>,
 ): void {
   useEffect(() => {
     if (!running) return;
@@ -195,7 +196,7 @@ function MapCard({
   onSelect,
   register,
 }: {
-  map: Map_;
+  map: FactoryMapData;
   card: Card;
   live: CardLive | undefined;
   state: 'selected' | 'near' | 'dim' | 'plain';
@@ -351,7 +352,7 @@ function WireLabel({ text, at }: { text: string; at: Point }): ReactElement {
 }
 
 const CONTROL =
-  'cursor-pointer rounded-md px-[9px] py-1 font-mono text-[12px] text-text-secondary hover:bg-surface-elevated hover:text-text-primary disabled:cursor-default disabled:text-text-tertiary disabled:hover:bg-transparent';
+  'cursor-pointer rounded-md px-[9px] py-1 font-mono text-[12px] text-text-secondary hover:bg-surface-elevated hover:text-text-primary disabled:cursor-default disabled:hover:bg-transparent disabled:hover:text-text-secondary';
 
 /**
  * The factory map's root view (PRD 4.1): the owner's drawing with live chips on its cards, a camera
@@ -365,7 +366,7 @@ export function FactoryMap({
   at,
   flow,
 }: {
-  map: Map_;
+  map: FactoryMapData;
   live: ReadonlyMap<string, CardLive>;
   factory: string;
   at: string | null;

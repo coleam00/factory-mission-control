@@ -131,16 +131,17 @@ const ANY_RAN = /none_failed|one_success/;
  * A route fork is drawn as one: a step that depends on a sibling whose `when` can never hold with
  * its own, under a trigger rule that lets it run with that sibling skipped (ship after build),
  * waits on it only for order, so the edge is dropped and the two stand side by side, each edge
- * into them labelled with the route values that take it.
+ * into them labelled with the route values that take it. Each step opens its screen at `at`, the
+ * version shown, or at the current version for null.
  */
 export function stepGraph(rows: readonly StepTreeRow[], at: string | null = null): StepGraph {
-  const nodes = [...rows].sort((a, b) => a.position - b.position).map((row) => ({ row }));
+  const nodes = [...rows].sort((a, b) => a.position - b.position);
   const edges: Edge[] = [];
   const clusters = new Map<string, string[]>();
-  const paths = new Set(nodes.map((n) => n.row.path));
-  const rowOf = new Map(nodes.map((n) => [n.row.path, n.row]));
+  const paths = new Set(nodes.map((row) => row.path));
+  const rowOf = new Map(nodes.map((row) => [row.path, row]));
   const labels = new Map<string, string>();
-  for (const { row } of nodes) {
+  for (const row of nodes) {
     const scope = row.parent_path === null ? '' : `${row.parent_path}/`;
     const deps = (row.depends_on ?? []).map((d) => `${scope}${d}`).filter((d) => paths.has(d));
     for (const dep of deps) {
@@ -162,7 +163,7 @@ export function stepGraph(rows: readonly StepTreeRow[], at: string | null = null
     }
   }
   return {
-    steps: nodes.map(({ row }) => ({
+    steps: nodes.map((row) => ({
       id: row.path,
       workflow: row.workflow,
       role: row.parent_path === null ? 'step' : 'stage',
