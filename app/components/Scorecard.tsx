@@ -27,7 +27,10 @@ const MONO = 'font-mono text-[12px] tabular-nums';
 
 type Side = 'a' | 'b';
 
-/** Each version's color, so A and B read apart at a glance on every card. */
+/**
+ * Each version's color, on its card's stripe and border so A and B read apart at a glance. The
+ * labels stay in the text tokens: Version B's violet is below 4.5:1 as 10px text (#302).
+ */
 const SIDE_COLOR: Record<Side, string> = {
   a: 'var(--accent-bright)',
   b: 'var(--node-prompt)',
@@ -235,9 +238,7 @@ function VersionHeader({ version }: { version: Version }): ReactElement {
       data-pin={version.pin ?? undefined}
       className="min-w-0"
     >
-      <div className={LABEL} style={{ color: SIDE_COLOR[version.side] }}>
-        Version {version.side.toUpperCase()}
-      </div>
+      <div className={LABEL}>Version {version.side.toUpperCase()}</div>
       <div className={`${MONO} text-[15px] font-semibold text-text-primary`}>
         {version.pin === null ? NOT_RECORDED : version.pin.slice(0, 8)}
       </div>
@@ -314,9 +315,7 @@ function MeasureCell({ measure, version }: { measure: Measure; version: Version 
       className="min-w-0"
     >
       <div className="flex items-baseline gap-2">
-        <span className={LABEL} style={{ color: SIDE_COLOR[version.side] }}>
-          {version.side.toUpperCase()}
-        </span>
+        <span className={LABEL}>{version.side.toUpperCase()}</span>
         <span className={`${MONO} font-semibold text-text-primary text-[13px] md:text-[26px]`}>
           {shown(measure, measured.value)}
         </span>

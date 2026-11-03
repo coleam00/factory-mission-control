@@ -126,11 +126,10 @@ function Step({
       <Stripe color={running ? 'var(--running)' : color} />
       <span
         aria-hidden="true"
-        className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md font-mono text-[14px] font-bold leading-none"
-        style={{
-          color: running ? 'var(--running)' : color,
-          background: tint(running ? 'var(--running)' : color, 78),
-        }}
+        className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md font-mono text-[14px] font-bold leading-none text-text-primary"
+        // The kind's color fills the badge; the glyph is text, and the darker kinds (command,
+        // prompt, read-only) fall below 4.5:1 as glyph color at any tint (#302).
+        style={{ background: tint(running ? 'var(--running)' : color, 78) }}
       >
         {KIND_GLYPH[node.kind] ?? '·'}
       </span>
