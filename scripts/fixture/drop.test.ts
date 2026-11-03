@@ -347,6 +347,24 @@ test('an old branch whose lease cannot be read is kept, and drop says so', async
   expect(a.err.join('\n')).toContain(`cannot read the lease for check-old in ${leaseDir}`);
 });
 
+test("this checkout's own branch with an unreadable lease is deleted, and drop does not say it is kept", async () => {
+  const { a, lease } = anotherCheckoutOwnsCheckOld();
+  writeFileSync(lease('check-abc'), '{"refreshed_at":');
+  expect(await main([], a.deps)).toBe(0);
+  expect(a.mutatingCalls).toEqual(['deleteBranch check-old', 'deleteBranch check-abc']);
+  expect(a.out).toContain('deleted check-abc');
+  expect(existsSync(lease('check-abc'))).toBe(false);
+  expect(a.err.join('\n')).not.toContain('cannot read the lease');
+});
+
+test('an unreadable lease warns only when it is what keeps a listed branch', async () => {
+  const { a, lease } = anotherCheckoutOwnsCheckOld();
+  writeFileSync(lease('check-new'), '{"refreshed_at":');
+  writeFileSync(lease('check-gone'), '{"refreshed_at":');
+  expect(await main([], a.deps)).toBe(0);
+  expect(a.err.join('\n')).not.toContain('cannot read the lease');
+});
+
 test('a lease directory that cannot be listed stops drop before any Neon call', async () => {
   const leaseDir = join(repo(), 'not-a-dir');
   writeFileSync(leaseDir, '');

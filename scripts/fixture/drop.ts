@@ -59,15 +59,18 @@ async function drop(deps: Deps, dryRun: boolean, at?: Date): Promise<void> {
   const own = deps.env.MC_CHECK_BRANCH;
   if (own !== undefined) requireCheckBranch(own);
   const leases = readLeases(deps.leaseDir);
-  for (const lease of leases) {
-    if (lease.refreshed_at === null) {
+  const api = deps.neon();
+  const branches = await api.listBranches();
+  const now = at ?? deps.now();
+  const selected = branchesToDrop(branches, own, now, leases);
+  const readable = leases.filter((lease) => lease.refreshed_at !== null);
+  for (const kept of branchesToDrop(branches, own, now, readable)) {
+    if (!selected.includes(kept)) {
       deps.err(
-        `cannot read the lease for ${lease.branch} in ${deps.leaseDir}: it is kept until that file is fixed or removed`,
+        `cannot read the lease for ${kept.name} in ${deps.leaseDir}: it is kept until that file is fixed or removed`,
       );
     }
   }
-  const api = deps.neon();
-  const selected = branchesToDrop(await api.listBranches(), own, at ?? deps.now(), leases);
   if (dryRun) {
     for (const branch of selected) deps.out(`would delete ${branch.name}`);
     return;
