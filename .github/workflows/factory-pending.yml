@@ -1,0 +1,28 @@
+name: Factory required checks
+
+# Every new pull request head starts with factory/app-check and factory/policy pending. Archon's
+# merge gate refuses a pending check, and the factory's app check replaces both with its result
+# for that head, so nothing merges before the factory has looked at it.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  statuses: write
+
+jobs:
+  pending:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Mark the factory checks pending for this head
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ github.event.pull_request.head.sha }}
+          REPO: ${{ github.repository }}
+        run: |
+          for context in factory/app-check factory/policy; do
+            seen=$(gh api "repos/$REPO/commits/$SHA/statuses" --jq "[.[] | select(.context == \"$context\")] | length")
+            if [ "$seen" = "0" ]; then
+              gh api "repos/$REPO/statuses/$SHA" -f state=pending -f "context=$context" -f "description=waiting for the factory app check"
+            fi
+          done
