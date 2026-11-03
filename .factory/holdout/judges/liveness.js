@@ -1,4 +1,4 @@
-// Judge for H-02, H-03, H-07, H-23, H-24: every write visible in every watched panel within 5 s, with
+// Judge for H-78 (the 3-minute rule; first H-02, retired), H-03, H-07, H-23 and others: every write visible in every watched panel within 5 s, with
 // the page open at least 180 s before one of the writes, no reload and no data polling.
 //
 // Record shape:
