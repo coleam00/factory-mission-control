@@ -1,0 +1,86 @@
+# Project-owned factory settings. Run factory-setup after editing.
+project:
+  repo_host: github.com
+  repo_path: coleam00/factory-mission-control
+
+# Nearly everything in this repo reaches a screen or a live query, so every pull request is checked.
+app_check:
+  enabled: true
+  trigger: always
+  frontend_paths: []
+  depth: auto
+
+# Private scenarios, outside the repository. A pull request runs only the ones it exercises.
+holdouts:
+  enabled: true
+  path: C:/Users/colem/.archon-mc/holdouts/factory-mission-control
+  max_per_check: 8
+  sweep_size: 10
+
+protected_paths:
+  - MISSION.md
+  - FACTORY.md
+  - FACTORY_RULES.md
+  - harness/**
+  - .factory/**
+  - factory/**
+  - .claude/settings.json
+  - .ignore
+  - docs/mission-control.prd.md
+  - engineering.md
+  - factories.json
+  - docs/design/**
+  - fixtures/pack/**
+  - fixtures/factory-template/**
+  - .archon/**
+  - .github/workflows/**
+autonomy: standard
+
+# Mission Control needs its own Neon check branch and a port in a fixed range, so it runs from the
+# owner's instructions rather than a single start command.
+app:
+  prepare: ""
+  start: ""
+  port_env: PORT
+  database_env: ""
+  health_path: /api/health
+  runtime: C:/Users/colem/OpenSource/mc-runtime/runtime-v1.md
+  teardown: bash C:/Users/colem/OpenSource/mc-runtime/teardown.sh
+
+# One place for every model: `think` plans, routes, reviews the whole change, decides merges and
+# judges the running app; `build` writes code, runs the narrow review lenses and picks holdouts.
+models:
+  assistant: claude
+  tiers:
+    large: &think { provider: claude, model: claude-opus-5-5 }
+    medium: &build { provider: claude, model: claude-sonnet-5-5 }
+    small: *build
+  aliases:
+    '@triage': *think
+    '@planner': *think
+    '@investigator': *think
+    '@reviewer': *think
+    '@review-seams': *think
+    '@review-code': *think
+    '@review-tests': *build
+    '@review-errors': *build
+    '@review-docs': *build
+    '@review-simplify': *build
+    '@factory-planner': *think
+    '@factory-reviewer': *think
+    '@factory-manager': *build
+    '@factory-holdout-selector': *build
+    '@implementer': *build
+    '@factory-deployer': *build
+
+# Timers live in mc-runtime/triggers (build runs three at once, which the generated files cannot say).
+triggers:
+  enabled: false
+  host_id: ""
+  run_as_user_id: ""
+  build_queue: { interval_seconds: 300 }
+  merge_queue: { interval_seconds: 300 }
+  discoveries: { interval_seconds: 14400 }
+  manager: { interval_seconds: 1800 }
+  app_check: { interval_seconds: 300 }
+  holdout_sweep: { interval_seconds: 7200 }
