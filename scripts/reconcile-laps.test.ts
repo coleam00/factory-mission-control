@@ -346,6 +346,35 @@ test.each(['running', 'pending'])(
   },
 );
 
+test.each(['running', 'pending'])(
+  'a %s run whose insert lost a locked lap gets one, once, beside a differing lap it leaves (#269)',
+  async (status) => {
+    const runId = await archonRun(status);
+    await archonEvent(runId, 1, 'pick', 'node_started');
+    const differing = await archonRun(status);
+    await rows(`UPDATE mc.laps SET status = 'paused' WHERE run_id = $1`, [differing]);
+    const projected = await snapshot(db);
+    expect(projected.lap_steps).toHaveLength(1);
+    const left = await tuples(differing);
+    // What the run's insert and step event leave when mc.laps is locked: no lap and no steps.
+    await rows('DELETE FROM mc.lap_steps WHERE run_id = $1', [runId]);
+    await rows('DELETE FROM mc.laps WHERE run_id = $1', [runId]);
+
+    const first = await run([]);
+    expect(first.code).toBe(0);
+    expect(first.out).toEqual([
+      'reconcile: 1 run(s) repaired',
+      'reconcile: 1 run(s) differ but are still running, left to live triggers',
+    ]);
+    expect(await snapshot(db)).toEqual(projected);
+    expect(await tuples(differing)).toEqual(left);
+
+    const second = await run([]);
+    expect(second.out).toEqual(first.out.with(0, 'reconcile: 0 run(s) repaired'));
+    expect(await snapshot(db)).toEqual(projected);
+  },
+);
+
 /** A paused run whose lap a dropped projection left `running`. */
 async function wrongPausedLap(): Promise<string> {
   const runId = await archonRun('running');
@@ -516,4 +545,17 @@ test('when mc.laps itself is locked, every run is left busy within the lock time
     'reconcile: 1 run(s) busy, left for the next run',
   ]);
   expect(await tuples(runId)).toEqual(before);
+});
+
+test('when mc.laps itself is locked, a running run with no lap is reported busy, not a clean pass (#269)', async () => {
+  const runId = await archonRun('running');
+  await rows('DELETE FROM mc.laps WHERE run_id = $1', [runId]);
+
+  const { code, out } = await run([], 'check-abc', lockTimeoutAt(1));
+  expect(code).toBe(0);
+  expect(out).toEqual([
+    'reconcile: 0 run(s) repaired',
+    'reconcile: 1 run(s) busy, left for the next run',
+  ]);
+  expect(await rows('SELECT 1 FROM mc.laps WHERE run_id = $1', [runId])).toEqual([]);
 });
