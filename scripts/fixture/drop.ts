@@ -17,7 +17,7 @@ const STALE_MS = 3 * 60 * 60 * 1000;
 const USAGE = [
   `usage: bun run fixture:drop (deletes this checkout's check branch, the <branch>-stale-* branches \`fixture:branch --stale\` made for it, and every check-* branch older than 3 hours unless the checkout that owns it still uses it; other sessions' younger check-* branches are kept. Ownership is a lease in ${defaultLeaseDir()}: fixture:branch records it, every command that uses the branch and \`serve\` while it runs refresh it, and an old branch whose lease was refreshed less than an hour ago is kept. A lease is seen only by checkouts on this machine; an old branch with no lease, or one last refreshed over an hour ago, is deleted with its lease)`,
   '       bun run fixture:drop --dry-run (prints `would delete <name>` for each branch fixture:drop would delete, and deletes nothing; an unattended check runs it to observe the selection live while its own branch keeps serving)',
-  `       bun run fixture:drop --dry-run --at <time> (prints what fixture:drop would delete if run at <time>, an ISO-8601 time with Z or an offset, not before now, and deletes nothing; a lease is judged at <time> too, as if nothing refreshes it before then, so it keeps its branch until an hour after its last refresh; an unattended check proves age cleanup without waiting 3 hours: it reads the created_at of a young check-* branch it created and sees that branch listed at created_at + 3h + 1m and not at created_at + 3h - 1m (this checkout's own branch and its -stale- markers are listed at any time). Only --dry-run takes --at: a real drop always uses the real clock)`,
+  `       bun run fixture:drop --dry-run --at <time> (prints what fixture:drop would delete if run at <time>, an ISO-8601 time with Z or an offset, not before now, and deletes nothing; only age is judged at <time>: a lease is judged now, so a branch whose lease is live now is not listed at any <time>, and one with no lease or one last refreshed over an hour ago is listed once it is over 3 hours old at <time>; an unattended check proves age cleanup without waiting 3 hours: it reads the created_at of a young check-* branch it created that has no live lease (for example, one it made ownerless by removing its lease) and sees that branch listed at created_at + 3h + 1m and not at created_at + 3h - 1m (this checkout's own branch and its -stale- markers are listed at any time). Only --dry-run takes --at: a real drop always uses the real clock)`,
 ].join('\n');
 
 /** An ISO-8601 date and time with an explicit zone, so `--at` names the same moment on every machine. */
@@ -30,13 +30,15 @@ export function staleBranchPrefix(own: string): string {
 
 /**
  * This checkout's branch, the stale markers it made, and every `check-*` branch older than three
- * hours whose lease is not live at `now`.
+ * hours as of `at` whose lease is not live `now`. A lease is judged on the real clock only: its
+ * owner may refresh it again before `at`, so a later `at` never makes it expire.
  */
 export function branchesToDrop(
   branches: Branch[],
   own: string | undefined,
-  now: Date,
+  at: Date,
   leases: Lease[],
+  now: Date = at,
 ): Branch[] {
   if (own !== undefined) requireCheckBranch(own);
   const leased = (name: string) =>
@@ -48,7 +50,7 @@ export function branchesToDrop(
         isCheckBranch(branch.name) &&
         branch.name.startsWith(staleBranchPrefix(own))) ||
       (isCheckBranch(branch.name) &&
-        now.getTime() - Date.parse(branch.created_at) > STALE_MS &&
+        at.getTime() - Date.parse(branch.created_at) > STALE_MS &&
         !leased(branch.name)),
   );
 }
@@ -60,7 +62,8 @@ async function drop(deps: Deps, dryRun: boolean, at?: Date): Promise<void> {
   const leases = readLeases(deps.leaseDir);
   const api = deps.neon();
   const branches = await api.listBranches();
-  const selected = branchesToDrop(branches, own, at ?? deps.now(), leases);
+  const now = deps.now();
+  const selected = branchesToDrop(branches, own, at ?? now, leases, now);
   if (dryRun) {
     for (const branch of selected) deps.out(`would delete ${branch.name}`);
     return;

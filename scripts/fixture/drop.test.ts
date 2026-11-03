@@ -380,27 +380,24 @@ test('a branch that fails to delete keeps its lease', async () => {
   expect(existsSync(join(leaseDir, 'check-abc.lease'))).toBe(true);
 });
 
-test('--dry-run --at judges a lease at that time and removes none', async () => {
-  const leaseDir = repo();
-  writeLease(leaseDir, 'check-old', NOW);
-  writeLease(leaseDir, 'check-young', NOW);
-  const listed = async (argv: string[]) => {
-    const run = recordingDeps({ repoRoot: repo(), branches: AT_SELECTION, leaseDir });
-    expect(await main(argv, run.deps)).toBe(0);
+test('--dry-run --at judges a lease now and age at that time, and removes none', async () => {
+  const listedWith = async (lease: Date | undefined, at: number) => {
+    const leaseDir = repo();
+    if (lease !== undefined) writeLease(leaseDir, 'check-young', lease);
+    const run = recordingDeps({ repoRoot: repo(), branches: [YOUNG], leaseDir });
+    expect(await main(['--dry-run', '--at', hoursAfter(at)], run.deps)).toBe(0);
     expect(run.mutatingCalls).toEqual([]);
+    if (lease !== undefined) expect(existsSync(join(leaseDir, 'check-young.lease'))).toBe(true);
     return run.out;
   };
-  expect(await listed(['--dry-run'])).toEqual([]);
-  expect(await listed(['--dry-run', '--at', hoursAfter(1 + 1 / 60)])).toEqual([
-    'would delete check-old',
-  ]);
-  expect(await listed(['--dry-run', '--at', hoursAfter(3 - 1 / 60)])).not.toContain(
-    'would delete check-young',
-  );
-  expect(await listed(['--dry-run', '--at', hoursAfter(3 + 1 / 60)])).toContain(
-    'would delete check-young',
-  );
-  expect(existsSync(join(leaseDir, 'check-old.lease'))).toBe(true);
+  for (const at of [1 + 1 / 60, 3 + 1 / 60, 100]) {
+    expect(await listedWith(NOW, at)).toEqual([]);
+  }
+  const stale = new Date(NOW.getTime() - LEASE_MS - 1);
+  for (const lease of [stale, undefined]) {
+    expect(await listedWith(lease, 3 - 1 / 60)).toEqual([]);
+    expect(await listedWith(lease, 3 + 1 / 60)).toEqual(['would delete check-young']);
+  }
 });
 
 test('a lease is live until exactly LEASE_MS after its last refresh, and only for its branch', () => {
@@ -421,6 +418,7 @@ test('--help states the lease rule', async () => {
   expect(usage).toContain(`Ownership is a lease in ${defaultLeaseDir()}:`);
   expect(usage).toContain('an old branch whose lease was refreshed less than an hour ago is kept');
   expect(usage).toContain('`serve` while it runs refresh it');
-  expect(usage).toContain('a lease is judged at <time> too');
-  expect(usage).toContain('keeps its branch until an hour after its last refresh');
+  expect(usage).toContain('only age is judged at <time>: a lease is judged now');
+  expect(usage).toContain('a branch whose lease is live now is not listed at any <time>');
+  expect(usage).toContain('a young check-* branch it created that has no live lease');
 });
