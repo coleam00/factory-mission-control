@@ -32,7 +32,7 @@ describe.each(queries)('db/queries/%s.sql', (name, sql) => {
     expect(sql).not.toMatch(/remote_agent_|provider_event/i);
   });
 
-  test("is keyed by one factory, $1, a step panel's by the step's workflow, path and version, a lap's by its run id", () => {
+  test("is keyed by one factory, $1, the home map's and a step panel's by the version too, a lap's by its run id", () => {
     expect(sql).toMatch(/\$1\b/);
     expect(parameterCount(sql)).toBe(paramsFor(name, '').length);
   });

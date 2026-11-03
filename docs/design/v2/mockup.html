@@ -1,0 +1,608 @@
+<title>Mission Control V2</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap">
+<style>
+/* Layout: one horizontal factory map (camera pans/zooms, stages drill in), a details strip under it, and a board view. Archon console look: dark-first, Geist, one blue accent, status colors. */
+:root{
+  --bg:#08090d; --surface:#0f1117; --surface-2:#151821; --surface-3:#1c202b;
+  --line:#262b38; --line-2:#323949; --fg:#e7e9ee; --fg-2:#a3a9b8; --fg-3:#737a8c;
+  --accent:#3b82f6; --accent-2:#60a5fa; --accent-soft:rgba(59,130,246,.14);
+  --ok:#14b8a6; --ok-soft:rgba(20,184,166,.13); --wait:#f59e0b; --wait-soft:rgba(245,158,11,.13);
+  --bad:#ef4444; --bad-soft:rgba(239,68,68,.13); --opt:#8b93a7;
+  --you:#a78bfa; --you-soft:rgba(167,139,250,.15); --src:#38bdf8; --src-soft:rgba(56,189,248,.13);
+  --dot:rgba(255,255,255,.045);
+  --sans:"Geist",ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;
+  --mono:"Geist Mono",ui-monospace,"SFMono-Regular",Consolas,monospace;
+  color-scheme:dark;
+}
+@media (prefers-color-scheme: light){:root:not([data-theme="dark"]){
+  --bg:#f5f6f9; --surface:#ffffff; --surface-2:#f0f2f6; --surface-3:#e6e9f0;
+  --line:#d9dde6; --line-2:#c5cbd8; --fg:#141824; --fg-2:#4a5266; --fg-3:#6b7386;
+  --accent:#2563eb; --accent-2:#1d4ed8; --accent-soft:rgba(37,99,235,.10);
+  --ok:#0f766e; --ok-soft:rgba(15,118,110,.10); --wait:#b45309; --wait-soft:rgba(180,83,9,.10);
+  --bad:#b91c1c; --bad-soft:rgba(185,28,28,.09); --opt:#6b7386; --dot:rgba(20,24,36,.06);
+  --you:#7c3aed; --you-soft:rgba(124,58,237,.10); --src:#0284c7; --src-soft:rgba(2,132,199,.10);
+  color-scheme:light;}}
+:root[data-theme="light"]{
+  --bg:#f5f6f9; --surface:#ffffff; --surface-2:#f0f2f6; --surface-3:#e6e9f0;
+  --line:#d9dde6; --line-2:#c5cbd8; --fg:#141824; --fg-2:#4a5266; --fg-3:#6b7386;
+  --accent:#2563eb; --accent-2:#1d4ed8; --accent-soft:rgba(37,99,235,.10);
+  --ok:#0f766e; --ok-soft:rgba(15,118,110,.10); --wait:#b45309; --wait-soft:rgba(180,83,9,.10);
+  --bad:#b91c1c; --bad-soft:rgba(185,28,28,.09); --opt:#6b7386; --dot:rgba(20,24,36,.06);
+  --you:#7c3aed; --you-soft:rgba(124,58,237,.10); --src:#0284c7; --src-soft:rgba(2,132,199,.10);
+  color-scheme:light;}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--fg);font-family:var(--sans);font-size:14px;line-height:1.5;margin:0}
+.wrap{max-width:1440px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:20px 48px}
+.mono{font-family:var(--mono)}
+.label{font-family:var(--mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--fg-3)}
+a{color:var(--accent-2)}
+button{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+/* header */
+.top{display:flex;flex-wrap:wrap;align-items:center;gap:12px 20px;padding-bottom:14px;border-bottom:1px solid var(--line)}
+.brand{display:flex;align-items:center;gap:10px;font-weight:600;font-size:15px}
+.brand i{width:9px;height:9px;border-radius:50%;background:var(--accent);box-shadow:0 0 0 4px var(--accent-soft)}
+.factory{font-family:var(--mono);font-size:13px;background:var(--accent-soft);color:var(--accent-2);border:1px solid transparent;border-radius:6px;padding:3px 9px}
+.tabs{display:flex;gap:4px;margin-left:auto}
+.tab{background:none;border:1px solid transparent;border-radius:7px;padding:6px 12px;color:var(--fg-2);cursor:pointer;font-weight:500}
+.tab[aria-selected="true"]{background:var(--surface-2);border-color:var(--line);color:var(--fg)}
+.tab .n{font-family:var(--mono);font-size:11px;background:var(--you-soft);color:var(--you);border-radius:10px;padding:1px 7px;margin-left:6px}
+.tools{display:flex;gap:6px}
+.icon-btn{background:var(--surface);border:1px solid var(--line);border-radius:7px;padding:6px 10px;cursor:pointer;color:var(--fg-2);font-size:12px;font-family:var(--mono)}
+.icon-btn:hover{color:var(--fg);border-color:var(--line-2)}
+.kpis{display:flex;flex-wrap:wrap;gap:8px 28px;padding:14px 0 4px;align-items:baseline}
+.kpi b{font-family:var(--mono);font-size:18px;font-weight:600;font-variant-numeric:tabular-nums;margin-right:6px}
+.kpi span{color:var(--fg-3);font-size:12px}
+.example{font-family:var(--mono);font-size:11px;color:var(--wait);border:1px dashed var(--wait);border-radius:5px;padding:1px 7px}
+
+/* map */
+.mapbar{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin:16px 0 10px}
+.crumbs{display:flex;flex-wrap:wrap;gap:6px;align-items:center;font-family:var(--mono);font-size:13px}
+.crumbs button{background:none;border:none;color:var(--fg-2);cursor:pointer;padding:2px 4px;border-radius:4px}
+.crumbs button:last-child{color:var(--fg);background:var(--surface-2)}
+.crumbs .sep{color:var(--fg-3)}
+.caption{color:var(--fg-2);max-width:78ch;margin:0 0 12px;text-wrap:pretty}
+.stage{position:relative;height:600px;border:1px solid var(--line);border-radius:12px;overflow:hidden;cursor:grab;touch-action:none;
+  background-color:var(--surface);background-image:radial-gradient(var(--dot) 1px,transparent 1.4px);background-size:22px 22px}
+.stage.dragging{cursor:grabbing}
+.world{position:absolute;left:0;top:0;transform-origin:0 0;transition:opacity .16s ease}
+.world.anim{transition:transform .42s cubic-bezier(.65,0,.35,1),opacity .16s ease}
+.world.fade{opacity:0}
+svg.wires{position:absolute;left:0;top:0;overflow:visible;pointer-events:none}
+.wire{fill:none;stroke:var(--fg-3);stroke-width:1.8;opacity:.75}
+.wire.back{stroke-dasharray:6 5;stroke:var(--fg-3)}
+.wire.ask{stroke:var(--wait);stroke-dasharray:3 4;opacity:.7}
+.wire.gate{stroke:var(--ok);stroke-dasharray:2 4}
+.flowline{fill:none;stroke:var(--accent);stroke-width:2;stroke-dasharray:8 64;opacity:.55;animation:flow 2.6s linear infinite}
+.flowing-off .flowline,.flowing-off .tour{display:none}
+@keyframes flow{to{stroke-dashoffset:-144}}
+.wire-label{font-family:var(--mono);font-size:10.5px;fill:var(--fg-3)}
+.wire-pill{fill:var(--surface);}
+.tour{fill:var(--accent-2);filter:drop-shadow(0 0 6px var(--accent))}
+
+.node{position:absolute;border-radius:10px;border:1px solid color-mix(in srgb,var(--kind,var(--line-2)) 45%,var(--line));background:color-mix(in srgb,var(--kind,var(--surface-2)) 9%,var(--surface-2));padding:10px 12px 10px 14px;cursor:pointer;
+  transition:opacity .2s,box-shadow .2s,border-color .2s,transform .2s;user-select:none}
+.node::before{content:"";position:absolute;left:0;top:10px;bottom:10px;width:3px;border-radius:0 3px 3px 0;background:var(--kind,var(--line-2))}
+.node:hover{border-color:var(--fg-3)}
+.node .k{font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--kind,var(--fg-3));display:flex;gap:6px;align-items:center}
+.node .t{font-weight:600;font-size:15px;line-height:1.25;margin-top:2px}
+.node .s{color:var(--fg-2);font-size:12.5px;line-height:1.35;margin-top:3px}
+.node .meta{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+.chip{font-family:var(--mono);font-size:10.5px;border-radius:5px;padding:1px 6px;background:var(--surface-3);color:var(--fg-2);white-space:nowrap}
+.chip.live{background:var(--accent-soft);color:var(--accent-2)}
+.chip.live::before{content:"";display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--accent-2);margin-right:5px;vertical-align:1px;animation:pulse 1.6s ease-in-out infinite}
+.chip.wait{background:var(--wait-soft);color:var(--wait)}
+.chip.bad{background:var(--bad-soft);color:var(--bad)}
+.chip.ok{background:var(--ok-soft);color:var(--ok)}
+@keyframes pulse{50%{opacity:.35}}
+.node.stack{box-shadow:5px 5px 0 -1px var(--surface-2),5px 5px 0 0 var(--line-2)}
+.node .open{position:absolute;right:9px;top:8px;font-family:var(--mono);font-size:10.5px;color:var(--fg-3)}
+.node.k-input{--kind:var(--src)}
+.node.k-stage{--kind:var(--accent)}
+.node.k-lane{--kind:var(--ok)}
+.node.k-wait{--kind:var(--you)}
+.node.k-opt{--kind:var(--ok)}
+.node.k-out{--kind:var(--ok)}
+.node.k-agent{--kind:var(--accent)}
+.node.k-script{--kind:var(--src)}
+.node.k-timer{--kind:var(--you)}
+.chip.you{background:var(--you-soft);color:var(--you)}
+.wire.ask{stroke:var(--you)!important;stroke-dasharray:3 4}
+.node.sel{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+.focusing .node:not(.sel):not(.nb){opacity:.3}
+.focusing .wire:not(.hot),.focusing .wire-g:not(.hot){opacity:.18}
+.node.hit{animation:hit .7s ease-out}
+@keyframes hit{30%{transform:scale(1.035);box-shadow:0 0 0 4px var(--accent-soft),0 0 22px var(--accent-soft)}}
+.group{position:absolute;border:1px dashed var(--line-2);border-radius:14px;pointer-events:none}
+.group span{position:absolute;top:-9px;left:14px;background:var(--surface);padding:0 6px;font-family:var(--mono);font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--fg-3)}
+.ctrls{position:absolute;right:12px;bottom:12px;display:flex;gap:4px;background:var(--surface);border:1px solid var(--line);border-radius:9px;padding:4px}
+.ctrls button{background:none;border:none;border-radius:6px;padding:4px 9px;cursor:pointer;color:var(--fg-2);font-family:var(--mono);font-size:12px}
+.ctrls button:hover{background:var(--surface-2);color:var(--fg)}
+.hint{position:absolute;left:12px;bottom:12px;font-family:var(--mono);font-size:11px;color:var(--fg-3);background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:5px 9px}
+.legend{display:flex;flex-wrap:wrap;gap:8px 18px;margin-top:10px;font-size:12px;color:var(--fg-2)}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:6px;vertical-align:-1px}
+
+/* details strip */
+.panel{margin-top:14px;border:1px solid var(--line);border-radius:12px;background:var(--surface);animation:rise .2s ease-out}
+@keyframes rise{from{transform:translateY(8px);opacity:0}}
+.panel-head{display:flex;flex-wrap:wrap;gap:10px 16px;align-items:center;padding:14px 16px;border-bottom:1px solid var(--line)}
+.panel-head h3{margin:0;font-size:17px}
+.panel-head .sp{flex:1}
+.btn{background:var(--accent);border:none;color:#fff;border-radius:7px;padding:6px 12px;font-weight:600;cursor:pointer;font-size:13px}
+.btn.ghost{background:var(--surface-2);color:var(--fg);border:1px solid var(--line)}
+.ptabs{display:flex;gap:2px;padding:0 10px;border-bottom:1px solid var(--line);overflow-x:auto}
+.ptab{background:none;border:none;border-bottom:2px solid transparent;padding:9px 10px;cursor:pointer;color:var(--fg-2);white-space:nowrap}
+.ptab[aria-selected="true"]{color:var(--fg);border-bottom-color:var(--accent)}
+.pbody{padding:14px 16px 18px;display:grid;gap:10px;max-width:96ch}
+.pbody ul{margin:0;padding-left:18px;display:grid;gap:5px}
+.pbody p{margin:0}
+.kv{display:grid;grid-template-columns:max-content 1fr;gap:6px 16px;font-size:13px}
+.kv dt{color:var(--fg-3);font-family:var(--mono);font-size:12px}
+.kv dd{margin:0;font-family:var(--mono);font-size:12.5px;min-width:0;overflow-wrap:anywhere}
+.empty{color:var(--fg-3);padding:18px 16px}
+
+/* board */
+.board{display:grid;grid-template-columns:repeat(7,minmax(180px,1fr));gap:10px;overflow-x:auto;padding-bottom:6px;margin-top:16px}
+.col{background:var(--surface);border:1px solid var(--line);border-radius:11px;min-height:300px;display:flex;flex-direction:column}
+.col h4{margin:0;padding:10px 12px 8px;font-size:13px;display:flex;justify-content:space-between;align-items:baseline;border-bottom:1px solid var(--line)}
+.col h4 small{font-family:var(--mono);color:var(--fg-3);font-weight:400}
+.col .who{font-family:var(--mono);font-size:11px;color:var(--fg-3);padding:6px 12px 0}
+.col .cards{padding:8px;display:grid;gap:8px;align-content:start}
+.card{background:var(--surface-2);border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-size:13px;cursor:pointer}
+.card:hover{border-color:var(--line-2)}
+.card .num{font-family:var(--mono);color:var(--fg-3);font-size:12px}
+.card .meta{display:flex;flex-wrap:wrap;gap:4px;margin-top:6px}
+.col.c-wait h4{color:var(--you)}
+.col.c-done h4{color:var(--ok)}
+.timeline{display:grid;gap:0;margin:4px 0 0;padding:0;list-style:none}
+.timeline li{display:grid;grid-template-columns:86px 14px 1fr;gap:10px;font-size:13px;padding:5px 0}
+.timeline li .when{font-family:var(--mono);font-size:12px;color:var(--fg-3);text-align:right}
+.timeline li .pip{width:9px;height:9px;border-radius:50%;margin-top:5px;background:var(--line-2)}
+.timeline li.ok .pip{background:var(--ok)} .timeline li.bad .pip{background:var(--bad)} .timeline li.wait .pip{background:var(--you)} .timeline li.live .pip{background:var(--accent-2);animation:pulse 1.6s infinite}
+
+/* notes */
+.notes{margin-top:36px;display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px}
+.note{border:1px solid var(--line);border-radius:12px;background:var(--surface);padding:16px 18px;min-width:0}
+.note h3{margin:0 0 8px;font-size:15px;text-wrap:balance}
+.note ul{margin:0;padding-left:18px;display:grid;gap:5px;color:var(--fg-2);font-size:13.5px}
+.note b{color:var(--fg)}
+h2{font-size:20px;margin:40px 0 4px;text-wrap:balance}
+.sub{color:var(--fg-2);margin:0 0 6px;max-width:80ch}
+@media (max-width:700px){.stage{height:460px}.tabs{margin-left:0}.hint{display:none}}
+@media (prefers-reduced-motion:reduce){.flowline,.chip.live::before,.timeline li.live .pip{animation:none}.world.anim{transition:none}.tour{display:none}}
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <div class="brand"><i></i>Factory Mission Control</div>
+    <span class="factory">north-star-v1 ▾</span>
+    <span class="example">example data</span>
+    <nav class="tabs" role="tablist">
+      <button class="tab" role="tab" id="t-map" aria-selected="true">Factory</button>
+      <button class="tab" role="tab" id="t-board" aria-selected="false">Board</button>
+      <button class="tab" role="tab" id="t-you" aria-selected="false">Decisions<span class="n" id="you-n">2</span></button>
+    </nav>
+    <div class="tools">
+      <button class="icon-btn" id="flowbtn" title="Toggle flow animation">≋ flow</button>
+      <button class="icon-btn" id="themebtn" title="Toggle theme">◐</button>
+    </div>
+  </header>
+
+  <div class="kpis" aria-label="Today">
+    <div class="kpi"><b>4</b><span>merged today</span></div>
+    <div class="kpi"><b>3</b><span>in flight</span></div>
+    <div class="kpi"><b>2</b><span>waiting on you</span></div>
+    <div class="kpi"><b>$21</b><span>per merge, 7 days</span></div>
+    <div class="kpi"><b>2.6 h</b><span>ticket to merge, median</span></div>
+    <div class="kpi"><span>numbers from Archon metrics (<span class="mono">sdlc.prs_merged</span>, cost) · <a href="#map">open in console</a></span></div>
+  </div>
+
+  <section id="v-map">
+    <div class="mapbar"><div class="crumbs" id="crumbs"></div></div>
+    <p class="caption" id="caption"></p>
+    <div class="stage" id="stage" aria-label="Factory map. Drag to move, scroll to zoom, click a step for details, double-click to open it.">
+      <div class="world" id="world"></div>
+      <div class="hint">drag = move · scroll = zoom · click = details · double-click ⤢ = open · Esc = up</div>
+      <div class="ctrls">
+        <button id="up" title="Up a level">↑</button>
+        <button id="zout" title="Zoom out">−</button>
+        <button id="fit" title="Fit">fit</button>
+        <button id="zin" title="Zoom in">+</button>
+      </div>
+    </div>
+    <div class="legend">
+      <span><i style="background:var(--src)"></i>Where work comes from · scripts</span>
+      <span><i style="background:var(--accent)"></i>Agents building</span>
+      <span><i style="background:var(--ok)"></i>Testing and shipping</span>
+      <span><i style="background:var(--you)"></i>You and the manager</span>
+      <span>⤢ opens a deeper view</span>
+    </div>
+    <div id="panel"></div>
+  </section>
+
+  <section id="v-board" hidden>
+    <p class="caption" style="margin-top:16px">Every ticket, by who holds it right now. The columns are the work item's state in Archon, so this board never disagrees with the factory. Click a ticket to see its rounds.</p>
+    <div class="board" id="board"></div>
+    <div id="ticket"></div>
+  </section>
+
+  <section id="v-you" hidden>
+    <p class="caption" style="margin-top:16px">Decisions the manager brought you, each with its recommended answer. You answer in the Archon console or Slack; this page only shows them.</p>
+    <div id="asks" style="display:grid;gap:12px"></div>
+  </section>
+
+  <h2>What V2 changes</h2>
+  <p class="sub">Mockup for discussion. The map is authored by hand and checked against the pinned workflows, so it stays simple and never silently goes stale.</p>
+  <div class="notes">
+    <div class="note"><h3>Three screens instead of eleven</h3><ul>
+      <li><b>Factory</b>: the map, with where every ticket is right now.</li>
+      <li><b>Board</b>: tickets by who holds them, each with its round history.</li>
+      <li><b>Decisions</b>: what the manager brought you, with its recommended answer.</li>
+      <li>Cut: scorecard, versions, diff, decisions, testing, health, rewind, laps. Outcome numbers come from Archon's own metrics.</li></ul></div>
+    <div class="note"><h3>One line at the top</h3><ul>
+      <li>Three ways in (product document, new issue, found by the factory), one Intake, then one line: Build, Review, App check, Merge, Staging.</li>
+      <li>Build is one card. Its 68 nodes open in three levels: rounds, then delivery rounds, then the review lenses.</li>
+      <li>Plumbing (claims, facts, policy, report, prune) is never drawn. It is named in each step's "behind the scenes".</li></ul></div>
+    <div class="note"><h3>Hand-authored, machine-checked</h3><ul>
+      <li>One <span class="mono">factory-map.json</span>: views, positions, captions, copy, and which Archon workflow and node ids each card covers.</li>
+      <li>A check fails when the pinned pack has a workflow or node no card covers, or a card names one that is gone.</li>
+      <li>Live counts attach through those node ids, so the drawing is yours and the numbers are Archon's.</li></ul></div>
+    <div class="note"><h3>Matches the new design</h3><ul>
+      <li>Unit of work is the ticket (Archon's <span class="mono">work/&lt;n&gt;</span> state), not the lap.</li>
+      <li>App check sits on the line between Review and Merge: Merge will not land a PR until its result is green.</li>
+      <li>Owner questions are Archon attention items, not a GitHub issue.</li></ul></div>
+    <div class="note"><h3>Color means who, not how worried to be</h3><ul>
+      <li><b>Sky</b>: where work comes from, and scripts. <b>Blue</b>: agents building. <b>Green</b>: testing and shipping.</li>
+      <li><b>Violet</b>: you and the manager. A question is a normal part of the process, so it is never drawn as a warning.</li>
+      <li>Red is kept for real failures only. Amber is not used. Nothing is grey.</li></ul></div>
+  </div>
+</div>
+
+<script>
+(function(){
+"use strict";
+var W=196,H=92;
+// Example tickets shaped like the North Star v1 run. Not live data.
+var T=[
+ {n:1,t:"Runnable skeleton: hero walks the first room",st:"merged",route:"deliver",size:"m"},
+ {n:2,t:"Camera follows the hero",st:"merged",route:"deliver",size:"s"},
+ {n:4,t:"Enemy contact damage",st:"merged",route:"deliver",size:"s"},
+ {n:7,t:"Room transitions",st:"merged",route:"plan",size:"m"},
+ {n:3,t:"Hero dash with cooldown",st:"build",route:"deliver",size:"m",round:"2/3",dr:"3/5",at:"review",app:"pending",pr:41},
+ {n:5,t:"Enemy waves per room",st:"build",route:"plan",size:"l",round:"1/3",dr:"2/5",at:"implement",app:"fail",pr:43},
+ {n:6,t:"Pause menu",st:"ready",route:"deliver",size:"s",app:"pass",pr:42},
+ {n:8,t:"Shop screen",st:"asking",route:"plan",size:"m",ask:"build: scope"},
+ {n:11,t:"Wave clear reward",st:"asking",route:"deliver",size:"s",ask:"merge: pr",app:"pass",pr:44},
+ {n:9,t:"Save slots",st:"intake"},
+ {n:10,t:"Boss room",st:"next",route:"plan",size:"l"},
+ {n:12,t:"Settings: audio sliders",st:"next",route:"deliver",size:"s"}
+];
+function count(f){return T.filter(f).length}
+
+/* ---------- the hand-authored map ---------- */
+var V={
+root:{title:"north-star-v1",minH:640,caption:"Tickets come from three places: a product document that Plan splits up, an issue you file, or a problem the factory found. Plan also writes the holdouts, hidden scenarios that only App check runs. Each ticket goes through Intake, then down the line: Build writes the code, Review checks it, App check tries it in the running app, Merge lands it, and Staging deploys it. The manager watches the whole line and brings you the decisions.",
+ nodes:[
+  {id:"prd",x:0,y:0,k:"input",kl:"input",t:"Product document",s:"What to build and why"},
+  {id:"plan",x:280,y:0,k:"input",kl:"plan",t:"Plan",s:"Splits the PRD into tickets and writes the holdouts",open:"plan"},
+  {id:"hold",x:560,y:130,k:"opt",kl:"test",t:"Holdouts",s:"Hidden test scenarios only App check sees"},
+  {id:"mgr",x:1040,y:0,w:520,k:"timer",kl:"manager",t:"Manager",s:"Keeps the factory healthy and tickets moving. Brings you the decisions it can't make.",open:"you",asks:function(){return count(function(x){return x.st==="asking"})}},
+  {id:"issue",x:280,y:300,k:"input",kl:"input",t:"New issue",s:"A ticket you file yourself"},
+  {id:"disc",x:280,y:440,k:"input",kl:"input",t:"Found by the factory",s:"Problems spotted in review, app check or staging"},
+  {id:"intake",x:560,y:300,k:"stage",kl:"triage",t:"Intake",s:"Checks each ticket is clear, picks its route and size",open:"intake",live:function(){return count(function(x){return x.st==="intake"})}},
+  {id:"build",x:840,y:300,k:"stage",kl:"build",t:"Build",s:"Writes the code and opens the PR",open:"build",live:function(){return count(function(x){return x.st==="build"&&x.at!=="review"})},queued:function(){return count(function(x){return x.st==="next"})}},
+  {id:"review",x:1120,y:300,k:"stage",kl:"review",t:"Review",s:"Five reviewers read the change",open:"review",live:function(){return count(function(x){return x.at==="review"})}},
+  {id:"app",x:1400,y:300,k:"lane",kl:"test",t:"App check",s:"Tries the change in the running app",open:"app",live:function(){return count(function(x){return x.app==="pending"})},fails:function(){return count(function(x){return x.app==="fail"})}},
+  {id:"merge",x:1680,y:300,k:"stage",kl:"gate",t:"Merge",s:"Lands only what passed",open:"merge",live:function(){return count(function(x){return x.st==="ready"})}},
+  {id:"deploy",x:1960,y:300,k:"lane",kl:"ship",t:"Staging",s:"Deploys and checks it is really live",open:"deploy"},
+  {id:"out",x:2240,y:300,k:"out",kl:"output",t:"Shipped",s:"Merged PRs, closed tickets",done:function(){return count(function(x){return x.st==="merged"})}}
+ ],
+ groups:[{x:530,y:250,w:1936,h:196,l:"the manager watches everything on this line"}],
+ edges:[
+  {f:"prd",t:"plan"},{f:"plan",t:"intake"},{f:"issue",t:"intake"},{f:"disc",t:"intake"},
+  {f:"plan",t:"hold",c:"gate",nf:1},
+  {f:"hold",t:"app",c:"gate",nf:1,l:"only App check reads them",d:function(N){var a=N.hold,b=N.app;return "M"+(a.x+W)+","+(a.y+H/2)+"H"+(b.x+W/2)+"V"+b.y}},
+  {f:"intake",t:"build"},{f:"build",t:"review",l:"PR"},{f:"review",t:"app"},{f:"app",t:"merge",l:"passed"},{f:"merge",t:"deploy"},{f:"deploy",t:"out"},
+  {f:"mgr",t:"merge",c:"ask",nf:1,l:"keeps it moving",d:function(N){var a=N.mgr;return "M"+(a.x+490)+","+(a.y+H)+"V250"}},
+  {f:"review",t:"disc",c:"back",nf:1,d:function(N){var a=N.review,b=N.disc;return "M"+(a.x+W/2)+","+(a.y+H)+"V590H"+(b.x+W/2)+"V"+(b.y+H)}},
+  {f:"app",t:"disc",c:"back",nf:1,nm:1,d:function(N){var a=N.app;return "M"+(a.x+W/2)+","+(a.y+H)+"V590"}},
+  {f:"deploy",t:"disc",c:"back",l:"problems found become new tickets",d:function(N){var a=N.deploy,b=N.disc;return "M"+(a.x+W/2)+","+(a.y+H)+"V590H"+(b.x+W/2)+"V"+(b.y+H)}}
+ ],
+ tour:["prd","plan","intake","build","review","app","merge","deploy","out"]
+},
+plan:{title:"Plan",caption:"You start Plan with a product document. It slices the document into tickets small enough for one build, checks the slice in a script, and files them as issues. Filing them is what starts Intake.",
+ nodes:[
+  {id:"p-read",x:0,y:120,k:"script",kl:"script",t:"Read the PRD",s:"From an issue or a file"},
+  {id:"p-slice",x:270,y:120,k:"agent",kl:"agent · @factory-planner",t:"Slice into tickets",s:"First ticket makes the app runnable"},
+  {id:"p-check",x:540,y:120,k:"script",kl:"script",t:"Check the slice",s:"Shape, order, no duplicates"},
+  {id:"p-pub",x:810,y:120,k:"script",kl:"script",t:"File the issues",s:"With Depends on: #n"},
+  {id:"p-hold",x:270,y:300,k:"opt",kl:"agent · test",t:"Write holdouts",s:"Scenarios kept out of the repo"},
+  {id:"p-next",x:1080,y:120,k:"input",kl:"next",t:"Intake",s:"Each new issue is triaged"}
+ ],
+ edges:[{f:"p-read",t:"p-slice"},{f:"p-slice",t:"p-check"},{f:"p-check",t:"p-pub",l:"passes"},{f:"p-pub",t:"p-next"},{f:"p-slice",t:"p-hold",p:"b-t",c:"back",nf:1}],
+ tour:["p-read","p-slice","p-check","p-pub","p-next"]
+},
+intake:{title:"Intake",caption:"Every new or edited ticket passes through Intake. It checks who wrote it, then triage decides the route by how uncertain the work is, not how big it is.",
+ nodes:[
+  {id:"i-trust",x:0,y:150,k:"script",kl:"script",t:"Who wrote it?",s:"Maintainers in, others wait"},
+  {id:"i-tri",x:270,y:150,k:"agent",kl:"agent · @triage",t:"Triage",s:"Route, size, importance"},
+  {id:"i-del",x:560,y:20,k:"input",kl:"route",t:"Deliver",s:"Ready to implement"},
+  {id:"i-plan",x:560,y:130,k:"input",kl:"route",t:"Plan first",s:"A design call is open"},
+  {id:"i-inv",x:560,y:240,k:"input",kl:"route",t:"Investigate",s:"The cause is unproven"},
+  {id:"i-ask",x:270,y:330,k:"wait",kl:"waits",t:"Needs a contract",s:"Missing problem, outcome or acceptance"},
+  {id:"i-next",x:850,y:130,k:"input",kl:"next",t:"Build queue",s:"Picks up the next ready ticket"}
+ ],
+ edges:[{f:"i-trust",t:"i-tri"},{f:"i-tri",t:"i-del"},{f:"i-tri",t:"i-plan"},{f:"i-tri",t:"i-inv"},{f:"i-del",t:"i-next"},{f:"i-plan",t:"i-next"},{f:"i-inv",t:"i-next"},{f:"i-tri",t:"i-ask",p:"b-t",c:"ask",nf:1}],
+ tour:["i-trust","i-tri","i-plan","i-next"]
+},
+build:{title:"Build",caption:"One build run takes one ticket one round forward. A round writes a brief, plans or investigates if triage asked for it, then delivers: implement, open the PR, review, fix. After the round an agent decides: done, another round (up to 3), or ask you.",
+ nodes:[
+  {id:"b-brief",x:0,y:150,k:"agent",kl:"agent · large",t:"Write the brief",s:"Checks the contract, reproduces the bug"},
+  {id:"b-inv",x:270,y:40,k:"agent",kl:"agent · @investigator",t:"Investigate",s:"Prove the cause first"},
+  {id:"b-plan",x:270,y:260,k:"agent",kl:"agent · @planner",t:"Plan",s:"Settle the design first"},
+  {id:"b-del",x:540,y:150,k:"stage",kl:"up to 5 rounds",t:"Deliver",s:"Implement, PR, review, CI",open:"deliver",live:function(){return count(function(x){return x.st==="build"})}},
+  {id:"b-dec",x:810,y:150,k:"agent",kl:"agent · large",t:"Decide",s:"Done, another round, or ask"},
+  {id:"b-push",x:1080,y:150,k:"script",kl:"script",t:"Record the round",s:"Push, release the ticket"},
+  {id:"b-ask",x:810,y:330,k:"wait",kl:"waits",t:"Ask you",s:"Route, stop, or scope"},
+  {id:"b-next",x:1350,y:150,k:"input",kl:"next",t:"Merge queue",s:"When the PR is Ready and green"}
+ ],
+ edges:[{f:"b-brief",t:"b-del",l:"deliver"},{f:"b-brief",t:"b-inv",p:"r-l",l:"investigate"},{f:"b-brief",t:"b-plan",p:"r-l",l:"plan"},{f:"b-inv",t:"b-del",p:"r-l"},{f:"b-plan",t:"b-del",p:"r-l"},
+  {f:"b-del",t:"b-dec"},{f:"b-dec",t:"b-push"},{f:"b-push",t:"b-next",l:"done"},{f:"b-dec",t:"b-ask",p:"b-t",c:"ask",nf:1},
+  {f:"b-dec",t:"b-brief",p:"top",c:"back",nf:1,l:"another round (max 3)"}],
+ tour:["b-brief","b-del","b-dec","b-push","b-next"]
+},
+deliver:{title:"Deliver",caption:"The inner loop. Each delivery round implements or fixes, publishes a draft PR, and runs the review. A Ready review gets one simplify pass and a light re-review, then CI. Findings send it back to Implement, up to 5 times.",
+ nodes:[
+  {id:"d-impl",x:0,y:150,k:"agent",kl:"agent · @implementer",t:"Implement",s:"Build it, or fix findings"},
+  {id:"d-pr",x:270,y:150,k:"script",kl:"script + agent",t:"Draft PR",s:"Publish the description"},
+  {id:"d-rev",x:540,y:150,k:"stage",kl:"5 lenses",t:"Review",s:"Ready, or findings",open:"review"},
+  {id:"d-simp",x:810,y:150,k:"agent",kl:"agent",t:"Simplify",s:"Names a smaller shape"},
+  {id:"d-ci",x:1080,y:150,k:"agent",kl:"agent · medium",t:"CI",s:"Waits for green, marks ready"},
+  {id:"d-out",x:1350,y:150,k:"input",kl:"back to",t:"Decide",s:"In the Build view"}
+ ],
+ edges:[{f:"d-impl",t:"d-pr"},{f:"d-pr",t:"d-rev"},{f:"d-rev",t:"d-simp",l:"Ready"},{f:"d-simp",t:"d-ci",l:"reshape + re-review"},{f:"d-ci",t:"d-out",l:"green"},
+  {f:"d-rev",t:"d-impl",p:"top",c:"back",nf:1,l:"findings (max 5 rounds)"}],
+ tour:["d-impl","d-pr","d-rev","d-simp","d-ci","d-out"]
+},
+review:{title:"Review",caption:"Five reviewers read the change through one lens each. A synthesis agent merges what they found into one PR comment. That comment's Ready verdict at the PR's head is what the merge gate trusts.",
+ nodes:[
+  {id:"r-scope",x:0,y:200,k:"agent",kl:"agent",t:"Scope the change",s:"What changed and why"},
+  {id:"r-l1",x:280,y:0,k:"agent",kl:"lens",t:"Seams",s:"Boundaries and contracts"},
+  {id:"r-l2",x:280,y:100,k:"agent",kl:"lens · large",t:"Code",s:"Correctness"},
+  {id:"r-l3",x:280,y:200,k:"agent",kl:"lens",t:"Tests",s:"Do they protect anything?"},
+  {id:"r-l4",x:280,y:300,k:"agent",kl:"lens",t:"Errors",s:"Failure paths"},
+  {id:"r-l5",x:280,y:400,k:"agent",kl:"lens",t:"Docs",s:"What a reader needs"},
+  {id:"r-syn",x:570,y:200,k:"agent",kl:"agent · @reviewer",t:"Synthesize",s:"One verdict"},
+  {id:"r-pub",x:840,y:200,k:"script",kl:"script",t:"Post the verdict",s:"One canonical PR comment"}
+ ],
+ edges:[{f:"r-scope",t:"r-l1",p:"r-l"},{f:"r-scope",t:"r-l2",p:"r-l"},{f:"r-scope",t:"r-l3"},{f:"r-scope",t:"r-l4",p:"r-l"},{f:"r-scope",t:"r-l5",p:"r-l"},
+  {f:"r-l1",t:"r-syn",p:"r-l"},{f:"r-l2",t:"r-syn",p:"r-l"},{f:"r-l3",t:"r-syn"},{f:"r-l4",t:"r-syn",p:"r-l"},{f:"r-l5",t:"r-syn",p:"r-l"},{f:"r-syn",t:"r-pub"}],
+ tour:["r-scope","r-l3","r-syn","r-pub"]
+},
+app:{title:"App check",caption:"Every PR passes through App check before Merge. It picks a PR, merges it with the latest main in a scratch checkout, starts the app and uses it like a person. Holdout scenarios are run by a fenced verifier that is the only agent allowed to read them. The result is a commit status the merge gate requires.",
+ nodes:[
+  {id:"a-pick",x:0,y:150,k:"script",kl:"script",t:"Pick a PR",s:"Oldest without a current result"},
+  {id:"a-scope",x:270,y:150,k:"script",kl:"script",t:"How deep?",s:"From size and front-end paths"},
+  {id:"a-pol",x:270,y:330,k:"script",kl:"script",t:"Protected paths",s:"Posts factory/policy"},
+  {id:"a-prep",x:540,y:150,k:"script",kl:"script",t:"PR + main, started",s:"The real merge result"},
+  {id:"a-check",x:810,y:150,k:"agent",kl:"agent · @factory-reviewer",t:"Use the app",s:"Browser, like a user"},
+  {id:"a-hold",x:810,y:330,k:"opt",kl:"fenced agent",t:"Holdout verifier",s:"Ids and verdicts only"},
+  {id:"a-seal",x:1080,y:150,k:"script",kl:"script",t:"Seal the evidence",s:"Every claim cites a fresh file"},
+  {id:"a-pub",x:1350,y:150,k:"lane",kl:"commit status",t:"factory/app-check",s:"Pass or fail at head + base"}
+ ],
+ edges:[{f:"a-pick",t:"a-scope"},{f:"a-scope",t:"a-prep"},{f:"a-scope",t:"a-pol",p:"b-t"},{f:"a-prep",t:"a-check"},{f:"a-check",t:"a-hold",p:"b-t",c:"back",nf:1,l:"normal / deep"},{f:"a-check",t:"a-seal"},{f:"a-seal",t:"a-pub"}],
+ tour:["a-pick","a-scope","a-prep","a-check","a-seal","a-pub"]
+},
+merge:{title:"Merge",caption:"One sweep looks at all Ready PRs at once. An agent decides merge, send back, or ask; only a script can actually merge, and only when every condition holds at the PR's head.",
+ nodes:[
+  {id:"m-snap",x:0,y:150,k:"script",kl:"script",t:"Snapshot",s:"Every Ready PR, one read"},
+  {id:"m-sweep",x:270,y:150,k:"agent",kl:"agent · large",t:"Sweep",s:"Merge, send back, or ask"},
+  {id:"m-gate",x:540,y:150,k:"script",kl:"script · the gate",t:"Merge gate",s:"Ready at head, all checks green, main green"},
+  {id:"m-rec",x:810,y:150,k:"script",kl:"script",t:"Read it back",s:"Close the ticket via Intake"},
+  {id:"m-back",x:270,y:330,k:"input",kl:"send back",t:"Build queue",s:"With a brief of what to fix"},
+  {id:"m-ask",x:540,y:330,k:"wait",kl:"waits",t:"Ask you",s:"Borderline PR or red main"}
+ ],
+ edges:[{f:"m-snap",t:"m-sweep"},{f:"m-sweep",t:"m-gate",l:"merge"},{f:"m-gate",t:"m-rec",l:"merged"},{f:"m-sweep",t:"m-back",p:"b-t",c:"back",nf:1},{f:"m-sweep",t:"m-ask",p:"b-l",c:"ask",nf:1}],
+ tour:["m-snap","m-sweep","m-gate","m-rec"]
+},
+deploy:{title:"Staging",caption:"Puts the merged build on the staging environment. It runs only the commands in DEPLOY.md, then checks health and reads the running revision back, so a deploy that silently served the old build fails.",
+ nodes:[
+  {id:"y-pre",x:0,y:120,k:"script",kl:"script",t:"Preflight",s:"Which revision, is main green"},
+  {id:"y-dep",x:270,y:120,k:"agent",kl:"agent · @factory-deployer",t:"Deploy",s:"Only DEPLOY.md commands"},
+  {id:"y-ver",x:540,y:120,k:"script",kl:"script",t:"Verify",s:"Health + revision read back"}
+ ],
+ edges:[{f:"y-pre",t:"y-dep"},{f:"y-dep",t:"y-ver"}],tour:["y-pre","y-dep","y-ver"]
+},
+you:{title:"Manager",caption:"The manager keeps tickets moving and brings you the decisions it should not make itself. It answers on its own when one of your written rules covers the question, like “always ask before merging a database change”. If you keep giving the same answer, add it as a rule.",
+ nodes:[
+  {id:"u-c",x:0,y:40,k:"wait",kl:"from intake",t:"Ticket is unclear",s:"What should it do, and how do we know it works?"},
+  {id:"u-b",x:270,y:40,k:"wait",kl:"from build",t:"Build is stuck on a choice",s:"Keep going, stop, or change what is in scope?"},
+  {id:"u-m",x:540,y:40,k:"wait",kl:"from merge",t:"Risky merge",s:"Touches the database or login, or is very large"},
+  {id:"u-d",x:810,y:40,k:"wait",kl:"from findings",t:"Is this a real problem?",s:"Make it a ticket, or drop it?"},
+  {id:"u-mgr",x:405,y:230,k:"timer",kl:"manager",t:"Manager",s:"Answers when your rules cover it"},
+  {id:"u-pol",x:675,y:230,k:"script",kl:"your rules",t:"Written rules",s:"When to ask, when to just go"}
+ ],
+ edges:[{f:"u-mgr",t:"u-b",p:"t-b",c:"ask",nf:1},{f:"u-mgr",t:"u-m",p:"t-b",c:"ask",nf:1},{f:"u-pol",t:"u-mgr",p:"l-r",c:"back",nf:1,l:"reads"}],tour:[]
+}
+};
+
+/* ---------- details copy per node ---------- */
+var D={
+ prd:{what:["The intent: problem, users, what done looks like.","Lives as an issue or a file in the repo."],how:["Plan reads it once per release. Nothing else in the factory edits it."],bts:{source:"MISSION.md, docs/*.prd.md"}},
+ plan:{when:["You start it when there is a new product document or a new PRD section.","When Rasmus's split route (#5322) lands, a PRD filed as an issue goes here through Intake on its own."],what:["Slices the PRD into tickets with Depends on links.","The first ticket always makes the product runnable end to end."],how:["An agent slices, a script checks shape, order and duplicates, then the issues are filed.","Filing an issue is what starts Intake."],bts:{workflows:"factory-backlog (today) · archon-split (PR #5322)",nodes:"read · slice · check · publish",models:"@factory-planner",source:".archon/workflows/factory/backlog/"}},
+ hold:{when:["You start it per release, or after a bug gets past the checks.","Kept up to date by the writer agent; escaped bug."],what:["Writes test scenarios the builders never see."],how:["Stored outside the repo. Only the holdout verifier inside App check may read them. The dashboard shows ids and verdicts, never text."],bts:{workflows:"factory-holdouts",nodes:"config · write",models:"@factory-reviewer",source:".archon/workflows/factory/holdouts/ · .factory/hooks/holdout_fence.py"}},
+ intake:{when:["On every new, edited or relabelled ticket (GitHub event)."],what:["Decides if the ticket is ready, and which route it takes."],how:["Trust check against maintainers.json, then triage. Intake is the only step that closes tickets."],bts:{workflows:"archon-intake → archon-triage-block",nodes:"facts · triage(policy, triage, verdict) · outcome",models:"@triage",source:".archon/workflows/sdlc/intake/"}},
+ build:{when:["Whenever a triaged ticket is ready, one ticket per run, most urgent first."],what:["Takes a triaged ticket to a reviewed PR with green CI.","Up to 3 rounds per ticket. Each round can deliver up to 5 times."],how:["Brief, then plan or investigate if needed, then deliver, then an agent decides done, another round, or ask you."],bts:{workflows:"archon-build-queue → archon-ship-block → archon-deliver-block → archon-review-block",nodes:"68 when fully expanded",models:"@planner · @investigator · @implementer · @reviewer",source:".archon/workflows/sdlc/build-queue/"}},
+ app:{when:["On every open PR that has no result yet for its current head and main.","Depth scales with the ticket's size and whether it touches the front end."],what:["Uses the running app the way a person would and reports what it saw.","Its commit status must be green before Merge will land the PR."],how:["Tests the PR merged with the latest main, not the branch alone.","Every claim must cite a file written during this check, sealed by a script."],bts:{workflows:"factory-app-check",nodes:"config · select · pending · scope · policy · holdouts · prepare · check · evidence · publish · finalize · cleanup",models:"@factory-reviewer",source:".archon/workflows/factory/app-check/"}},
+ merge:{when:["When PRs are Ready, all of them in one sweep."],what:["Lands only what is proven, sends the rest back with a brief, asks you on borderline cases."],how:["The agent decides; a script merges, and only if the Ready verdict, every check and the default branch are green at the PR's head."],bts:{workflows:"archon-merge-queue",nodes:"facts · sweep · record · retriage · ask · ruling",models:"large",source:".archon/workflows/sdlc/merge-queue/scripts/gate.ts"}},
+ deploy:{when:["After a merge, on the new revision of main."],what:["Puts the merged build on the staging environment."],how:["Health check plus revision read-back, so a stale deploy fails loudly."],bts:{workflows:"factory-deploy",nodes:"preflight · deploy · verify",models:"@factory-deployer",source:".archon/workflows/factory/deploy/"}},
+ review:{when:["Every time Build pushes a change to the PR."],what:["Five reviewers each read the change for one thing: how parts fit together, correctness, tests, error handling, docs.","One agent combines what they found into a single comment: Ready, or a list of fixes."],how:["Fixes go back to Build. Merge only trusts a Ready comment on the latest commit."],bts:{workflows:"archon-review-block (inside the build queue's delivery rounds)",nodes:"scope · route · 5 lenses · synthesize · publish",models:"@reviewer · @review-<lens>",source:".archon/workflows/sdlc/review/"}},
+ issue:{when:["Whenever you or a teammate files one."],what:["A single ticket, written with the six elements: problem, why, why now, outcome, invariants, acceptance."],how:["Intake checks it like any other ticket. A ticket missing the six elements comes to you as a question."]},
+ out:{what:["Merged PRs and the tickets Intake closed as delivered."]},
+ you:{when:["Whenever the factory reaches a decision it should not make alone."],what:["Examples: a ticket too vague to build, a merge that changes the database, a build that keeps growing in scope, a problem that may or may not deserve a ticket.","Each question shows the recommended answer and the other options, and you can always write your own."],how:["Answering resumes the paused run. The answer is written back into the ticket as a dated ruling."],bts:{workflows:"wait: attention nodes in intake, build-queue, merge-queue, discoveries",source:"GET /api/runs/attention"}},
+ mgr:{when:["All the time, while the factory runs. You can also talk to it directly."],what:["Health: finds runs that are stuck, silent or failing and reports them.","Questions: answers the ones your written rules already cover, for example “dependency updates can merge without asking”.","Everything else it passes to you with a recommendation."],how:["Your rules are plain text files (triage, build, merge) in the repo.","It never cancels a run and never decides what the product should be."],bts:{workflows:"factory-manager",models:"@factory-manager",source:".archon/workflows/factory/manager/ · skills/factory-manager/SKILL.md"}},
+ disc:{when:["After review, app check or staging notices something it was not asked to fix."],what:["Each problem becomes a new ticket, or is dropped if it is not real. Unsure ones come to you."],how:["Small findings are batched into one cleanup ticket per area. New tickets go through Intake like any other."],bts:{workflows:"archon-discoveries",nodes:"facts · decide · outcome · ask · answer"}}
+};
+
+/* ---------- state ---------- */
+var stack=["root"],sel=null,cam={x:0,y:0,k:1},flowOn=true,tourRaf=0;
+var stage=document.getElementById("stage"),world=document.getElementById("world");
+function el(tag,attrs,html){var e=document.createElement(tag);if(attrs)for(var a in attrs)e.setAttribute(a,attrs[a]);if(html!=null)e.innerHTML=html;return e}
+function esc(s){return String(s).replace(/[&<>"]/g,function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]})}
+
+function nodeW(n){return n.w||W}
+function port(n,side){var w=nodeW(n);
+ if(side==="r")return[n.x+w,n.y+H/2];if(side==="l")return[n.x,n.y+H/2];
+ if(side==="t")return[n.x+w/2,n.y];if(side==="b")return[n.x+w/2,n.y+H];
+ if(side==="bl")return[n.x+28,n.y+H];if(side==="tl")return[n.x+28,n.y];return[n.x+w/2,n.y+H/2]}
+function pathFor(e,N){if(e.d)return e.d(N);var a=N[e.f],b=N[e.t],p=e.p||"r-l",d;
+ if(p==="r-l"){var s=port(a,"r"),t=port(b,"l"),m=(s[0]+t[0])/2;d=s[1]===t[1]?"M"+s+"H"+t[0]:"M"+s+"H"+m+"V"+t[1]+"H"+t[0]}
+ else if(p==="b-t"||p==="t-b"){var s2=port(a,p==="b-t"?"b":"t"),t2=port(b,p==="b-t"?"t":"b"),my=(s2[1]+t2[1])/2;d="M"+s2+"V"+my+"H"+t2[0]+"V"+t2[1]}
+ else if(p==="bx-t"){var s3=port(a,"b"),bx=Math.min(Math.max(s3[0],b.x+30),b.x+nodeW(b)-30);d="M"+s3+"V"+b.y;if(bx!==s3[0])d="M"+s3+"V"+((s3[1]+b.y)/2)+"H"+bx+"V"+b.y}
+ else if(p==="tx-b"){var s9=port(a,"t"),x9=Math.min(Math.max(s9[0],b.x+30),b.x+nodeW(b)-30);d=x9===s9[0]?"M"+s9+"V"+(b.y+H):"M"+s9+"V"+((s9[1]+b.y+H)/2)+"H"+x9+"V"+(b.y+H)}
+ else if(p==="b-l"){var s4=port(a,"b"),t4=port(b,"l");d="M"+s4+"V"+t4[1]+"H"+t4[0]}
+ else if(p==="r-b"){var s5=port(a,"r"),t5=port(b,"b");d="M"+s5+"H"+t5[0]+"V"+t5[1]}
+ else if(p==="l-r"){var s6=port(a,"l"),t6=port(b,"r");d="M"+s6+"H"+t6[0]}
+ else if(p==="t-bl"){var s7=port(a,"t"),t7=port(b,"bl");d="M"+s7+"V"+(s7[1]-40)+"H"+t7[0]+"V"+t7[1]}
+ else if(p==="top"){var s8=port(a,"t"),t8=port(b,"t"),y=Math.min.apply(null,Object.keys(N).map(function(k){return N[k].y}))-36;d="M"+s8+"V"+y+"H"+t8[0]+"V"+t8[1]}
+ return d}
+function mid(d){var nums=d.match(/-?\d+(\.\d+)?/g).map(Number);return null}
+
+function render(){
+ var view=V[stack[stack.length-1]],N={};
+ world.innerHTML="";world.classList.remove("focusing");cancelAnimationFrame(tourRaf);
+ view.nodes.forEach(function(n){N[n.id]=n});
+ var maxX=0,maxY=view.minH||0;view.nodes.forEach(function(n){maxX=Math.max(maxX,n.x+nodeW(n));maxY=Math.max(maxY,n.y+H)});
+ world.style.width=(maxX+40)+"px";world.style.height=(maxY+40)+"px";
+ var ns="http://www.w3.org/2000/svg",svg=document.createElementNS(ns,"svg");svg.setAttribute("class","wires");svg.setAttribute("width",maxX+40);svg.setAttribute("height",maxY+40);
+ var defs=document.createElementNS(ns,"defs");defs.innerHTML='<marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,1 L9,5 L0,9 z" fill="currentColor"/></marker>';svg.appendChild(defs);
+ view.edges.forEach(function(e){var d=pathFor(e,N),g=document.createElementNS(ns,"g");g.setAttribute("class","wire-g");g.dataset.f=e.f;g.dataset.t=e.t;
+  var p=document.createElementNS(ns,"path");p.setAttribute("d",d);p.setAttribute("class","wire "+(e.c||""));p.style.color=e.c==="ask"?"var(--wait)":e.c==="gate"?"var(--ok)":"var(--fg-3)";if(!e.nm)p.setAttribute("marker-end","url(#ar)");g.appendChild(p);
+  if(!e.nf){var fl=document.createElementNS(ns,"path");fl.setAttribute("d",d);fl.setAttribute("class","flowline");g.appendChild(fl)}
+  svg.appendChild(g);
+  if(e.l){var L=p.getTotalLength?null:null;g._label=e.l;g._path=p}
+ });
+ world.appendChild(svg);
+ (view.groups||[]).forEach(function(g){var b=el("div",{"class":"group"},"<span>"+esc(g.l)+"</span>");b.style.left=g.x+"px";b.style.top=g.y+"px";b.style.width=g.w+"px";b.style.height=g.h+"px";world.appendChild(b)});
+ // labels after attach so getTotalLength works
+ Array.prototype.forEach.call(svg.querySelectorAll(".wire-g"),function(g){if(!g._label)return;var len=g._path.getTotalLength(),pt=g._path.getPointAtLength(len*0.5);
+  var tx=document.createElementNS(ns,"text");tx.setAttribute("x",pt.x);tx.setAttribute("y",pt.y-6);tx.setAttribute("text-anchor","middle");tx.setAttribute("class","wire-label");tx.textContent=g._label;
+  svg.appendChild(tx);var bb=tx.getBBox();var r=document.createElementNS(ns,"rect");r.setAttribute("x",bb.x-4);r.setAttribute("y",bb.y-1);r.setAttribute("width",bb.width+8);r.setAttribute("height",bb.height+2);r.setAttribute("rx",4);r.setAttribute("class","wire-pill");svg.insertBefore(r,tx)});
+ view.nodes.forEach(function(n){
+  var d=el("div",{"class":"node k-"+n.k+(n.open?" stack":""),tabindex:"0",role:"button","aria-label":n.t+". "+n.s});d.dataset.id=n.id;
+  d.style.left=n.x+"px";d.style.top=n.y+"px";d.style.width=nodeW(n)+"px";d.style.minHeight=H+"px";
+  var meta=[];
+  if(n.live){var c=n.live();if(c)meta.push('<span class="chip live">'+c+' here</span>')}
+  if(n.queued){var q=n.queued();if(q)meta.push('<span class="chip">'+q+' queued</span>')}
+  if(n.fails){var f=n.fails();if(f)meta.push('<span class="chip bad">'+f+' failing</span>')}
+  if(n.asks){var a=n.asks();if(a)meta.push('<span class="chip you">'+a+' waiting</span>')}
+  if(n.done){meta.push('<span class="chip ok">'+n.done()+' merged</span>')}
+  d.innerHTML='<div class="k">'+esc(n.kl)+'</div><div class="t">'+esc(n.t)+'</div><div class="s">'+esc(n.s)+'</div>'+(meta.length?'<div class="meta">'+meta.join("")+'</div>':'')+(n.open?'<span class="open">⤢</span>':'');
+  d.addEventListener("click",function(ev){ev.stopPropagation();select(n.id)});
+  d.addEventListener("dblclick",function(ev){ev.stopPropagation();if(n.open)openView(n.open)});
+  d.addEventListener("keydown",function(ev){if(ev.key==="Enter"){if(sel===n.id&&n.open)openView(n.open);else select(n.id)}});
+  world.appendChild(d)});
+ document.getElementById("caption").textContent=view.caption;
+ renderCrumbs();
+ if(view.tour&&view.tour.length>1)startTour(view,N,svg,ns);
+}
+function startTour(view,N,svg,ns){
+ var pts=view.tour.map(function(id){var n=N[id];return[n.x+nodeW(n)/2,n.y+H/2]});
+ var d="M"+pts[0];for(var i=1;i<pts.length;i++){var a=pts[i-1],b=pts[i];d+=a[1]===b[1]?"H"+b[0]:"H"+((a[0]+b[0])/2)+"V"+b[1]+"H"+b[0]}
+ var path=document.createElementNS(ns,"path");path.setAttribute("d",d);path.setAttribute("fill","none");path.setAttribute("stroke","none");svg.appendChild(path);
+ var dot=document.createElementNS(ns,"circle");dot.setAttribute("r",6);dot.setAttribute("class","tour");svg.appendChild(dot);
+ var len=path.getTotalLength(),dur=Math.max(5000,view.tour.length*1100),t0=performance.now(),last=-1;
+ var stops=view.tour.map(function(id){var n=N[id],cx=n.x+nodeW(n)/2,best=0,bd=1e9;for(var s=0;s<=200;s++){var p=path.getPointAtLength(len*s/200),dd=Math.abs(p.x-cx)+Math.abs(p.y-(n.y+H/2));if(dd<bd){bd=dd;best=s/200}}return best});
+ function step(now){var f=((now-t0)%dur)/dur,p=path.getPointAtLength(len*f);dot.setAttribute("cx",p.x);dot.setAttribute("cy",p.y);
+  for(var i=0;i<stops.length;i++){if(i!==last&&Math.abs(f-stops[i])<0.012){last=i;var nd=world.querySelector('.node[data-id="'+view.tour[i]+'"]');if(nd){nd.classList.remove("hit");void nd.offsetWidth;nd.classList.add("hit")}}}
+  tourRaf=requestAnimationFrame(step)}
+ if(!window.matchMedia("(prefers-reduced-motion: reduce)").matches)tourRaf=requestAnimationFrame(step);
+}
+function renderCrumbs(){var c=document.getElementById("crumbs");c.innerHTML="";
+ stack.forEach(function(v,i){if(i){c.appendChild(el("span",{"class":"sep"},"›"))}var b=el("button",null,esc(V[v].title));b.addEventListener("click",function(){if(i<stack.length-1){stack=stack.slice(0,i+1);transition(false)}});c.appendChild(b)})}
+
+/* camera */
+function apply(){world.style.transform="translate("+cam.x+"px,"+cam.y+"px) scale("+cam.k+")"}
+function fit(anim){var r=stage.getBoundingClientRect(),w=parseFloat(world.style.width),h=parseFloat(world.style.height),pad=40;
+ var k=Math.min((r.width-pad*2)/w,(r.height-pad*2-30)/h,1.15);k=Math.max(k,.35);cam.k=k;cam.x=(r.width-w*k)/2;cam.y=Math.max(pad,(r.height-30-h*k)/2);
+ world.classList.toggle("anim",!!anim);apply()}
+function transition(into,fromId){
+ world.classList.add("anim");
+ if(into&&fromId){var n=world.querySelector('.node[data-id="'+fromId+'"]');if(n){var r=stage.getBoundingClientRect(),nx=parseFloat(n.style.left)+W/2,ny=parseFloat(n.style.top)+H/2;cam.k=cam.k*2.2;cam.x=r.width/2-nx*cam.k;cam.y=r.height/2-ny*cam.k;apply()}}
+ world.classList.add("fade");
+ setTimeout(function(){sel=null;document.getElementById("panel").innerHTML="";world.classList.remove("anim");render();
+  var r=stage.getBoundingClientRect();cam.k=into?.5:1.6;cam.x=r.width/2-parseFloat(world.style.width)*cam.k/2;cam.y=r.height/2-parseFloat(world.style.height)*cam.k/2;apply();
+  void world.offsetWidth;world.classList.remove("fade");fit(true)},240)}
+function openView(v){if(!V[v])return;var from=sel;stack.push(v);transition(true,from)}
+function up(){if(stack.length>1){var parent=stack[stack.length-2],child=stack.pop();transition(false);setTimeout(function(){var owner=V[parent].nodes.filter(function(n){return n.open===child})[0];if(owner)flash(owner.id)},700)}}
+function flash(id){var n=world.querySelector('.node[data-id="'+id+'"]');if(n){n.classList.remove("hit");void n.offsetWidth;n.classList.add("hit")}}
+
+var drag=null;
+stage.addEventListener("pointerdown",function(e){if(e.target.closest(".node,.ctrls"))return;drag={x:e.clientX,y:e.clientY,cx:cam.x,cy:cam.y,moved:false};stage.setPointerCapture(e.pointerId);stage.classList.add("dragging");world.classList.remove("anim")});
+stage.addEventListener("pointermove",function(e){if(!drag)return;var dx=e.clientX-drag.x,dy=e.clientY-drag.y;if(Math.abs(dx)+Math.abs(dy)>3)drag.moved=true;cam.x=drag.cx+dx;cam.y=drag.cy+dy;apply()});
+stage.addEventListener("pointerup",function(){if(drag&&!drag.moved)select(null);drag=null;stage.classList.remove("dragging")});
+stage.addEventListener("wheel",function(e){e.preventDefault();world.classList.remove("anim");var r=stage.getBoundingClientRect(),mx=e.clientX-r.left,my=e.clientY-r.top;
+ if(!e.ctrlKey&&(Math.abs(e.deltaX)>Math.abs(e.deltaY)||(e.deltaMode===0&&Math.abs(e.deltaY)<40&&e.deltaY%1!==0))){cam.x-=e.deltaX;cam.y-=e.deltaY;apply();return}
+ var k2=Math.min(2.4,Math.max(.3,cam.k*Math.exp(-e.deltaY*.0022)));cam.x=mx-(mx-cam.x)*(k2/cam.k);cam.y=my-(my-cam.y)*(k2/cam.k);cam.k=k2;apply()},{passive:false});
+function zoom(f){var r=stage.getBoundingClientRect(),mx=r.width/2,my=r.height/2,k2=Math.min(2.4,Math.max(.3,cam.k*f));cam.x=mx-(mx-cam.x)*(k2/cam.k);cam.y=my-(my-cam.y)*(k2/cam.k);cam.k=k2;world.classList.add("anim");apply()}
+document.getElementById("zin").onclick=function(){zoom(1.3)};document.getElementById("zout").onclick=function(){zoom(1/1.3)};document.getElementById("fit").onclick=function(){fit(true)};document.getElementById("up").onclick=up;
+document.addEventListener("keydown",function(e){if(document.getElementById("v-map").hidden)return;if(e.key==="Escape"||e.key==="Backspace"&&e.target===document.body){if(sel)select(null);else up()}});
+
+/* selection + panel */
+function select(id){sel=id;var view=V[stack[stack.length-1]];
+ var nb={};if(id)view.edges.forEach(function(e){if(e.f===id)nb[e.t]=1;if(e.t===id)nb[e.f]=1});
+ world.classList.toggle("focusing",!!id);
+ Array.prototype.forEach.call(world.querySelectorAll(".node"),function(n){n.classList.toggle("sel",n.dataset.id===id);n.classList.toggle("nb",!!nb[n.dataset.id])});
+ Array.prototype.forEach.call(world.querySelectorAll(".wire-g"),function(g){g.classList.toggle("hot",g.dataset.f===id||g.dataset.t===id)});
+ renderPanel(id?view.nodes.filter(function(n){return n.id===id})[0]:null)}
+var ptab="when";
+function renderPanel(n){var P=document.getElementById("panel");if(!n){P.innerHTML="";return}
+ var d=D[n.id]||{what:[n.s]};var tabs=[["when","When it runs"],["what","What it does"],["how","How it works"],["live","Right now"],["bts","Behind the scenes"]].filter(function(t){return t[0]==="live"||t[0]==="bts"&&d.bts||d[t[0]]});
+ if(!tabs.some(function(t){return t[0]===ptab}))ptab=tabs[0][0];
+ var body="";
+ if(ptab==="bts"){var b=d.bts||{};body='<dl class="kv">'+(b.workflows?'<dt>workflows</dt><dd>'+esc(b.workflows)+'</dd>':'')+(b.nodes?'<dt>nodes</dt><dd>'+esc(b.nodes)+'</dd>':'')+(b.models?'<dt>models</dt><dd>'+esc(b.models)+'</dd>':'')+(b.trigger?'<dt>trigger</dt><dd>'+esc(b.trigger)+'</dd>':'')+(b.source?'<dt>source</dt><dd>'+esc(b.source)+'</dd>':'')+'</dl><p class="label" style="margin-top:6px">From the pinned code. The map check fails if any of these names disappear.</p>'}
+ else if(ptab==="live"){var here=liveFor(n.id);body=here.length?'<ul>'+here.map(function(x){return '<li><span class="mono">#'+x.n+'</span> '+esc(x.t)+' <span class="chip">'+esc(x.note)+'</span></li>'}).join("")+'</ul>':'<p style="color:var(--fg-3)">Nothing on this step right now.</p>'}
+ else body='<ul>'+d[ptab].map(function(s){return "<li>"+esc(s)+"</li>"}).join("")+'</ul>';
+ P.innerHTML='<div class="panel"><div class="panel-head"><div><div class="label">'+esc(n.kl)+'</div><h3>'+esc(n.t)+'</h3></div><span class="sp"></span>'+(n.open?'<button class="btn" id="popen">⤢ Open '+esc(V[n.open].title)+' · '+V[n.open].nodes.length+' steps</button>':'')+'<button class="btn ghost" id="pclose" aria-label="Close details">✕</button></div><div class="ptabs" role="tablist">'+tabs.map(function(t){return '<button class="ptab" role="tab" data-t="'+t[0]+'" aria-selected="'+(t[0]===ptab)+'">'+t[1]+'</button>'}).join("")+'</div><div class="pbody">'+body+'</div></div>';
+ Array.prototype.forEach.call(P.querySelectorAll(".ptab"),function(b){b.onclick=function(){ptab=b.dataset.t;renderPanel(n)}});
+ document.getElementById("pclose").onclick=function(){select(null)};
+ var o=document.getElementById("popen");if(o)o.onclick=function(){openView(n.open)}}
+function liveFor(id){var f={intake:function(x){return x.st==="intake"},build:function(x){return x.st==="build"||x.st==="next"},"b-del":function(x){return x.st==="build"},app:function(x){return !!x.app&&x.st!=="merged"},merge:function(x){return x.st==="ready"},you:function(x){return x.st==="asking"},mgr:function(x){return x.st==="asking"},review:function(x){return x.at==="review"},out:function(x){return x.st==="merged"}}[id];
+ if(!f)return[];return T.filter(f).map(function(x){return{n:x.n,t:x.t,note:x.st==="build"?"round "+x.round+" · delivery "+x.dr+" · "+x.at:x.st==="next"?"queued":x.st==="asking"?x.ask:x.app&&id==="app"?"app check "+x.app:x.st}})}
+
+/* board */
+var COLS=[["intake","Intake","triage"],["next","Queued","build queue"],["build","Building","build queue"],["ready","Ready to merge","merge queue"],["asking","Your decision","manager","c-wait"],["merged","Merged","done","c-done"],["parked","Parked","you"]];
+function renderBoard(){var B=document.getElementById("board");B.innerHTML="";
+ COLS.forEach(function(c){var items=T.filter(function(x){return x.st===c[0]});var col=el("div",{"class":"col "+(c[3]||"")});
+  col.innerHTML='<h4>'+c[1]+'<small>'+items.length+'</small></h4><div class="who">'+c[2]+'</div>';var cards=el("div",{"class":"cards"});
+  items.forEach(function(x){var m=[];if(x.route)m.push('<span class="chip">'+x.route+'</span>');if(x.round)m.push('<span class="chip live">round '+x.round+'</span>');
+   if(x.app)m.push('<span class="chip '+(x.app==="pass"?"ok":x.app==="fail"?"bad":"")+'">app '+x.app+'</span>');if(x.ask)m.push('<span class="chip you">'+x.ask+'</span>');if(x.pr)m.push('<span class="chip">PR #'+x.pr+'</span>');
+   var card=el("div",{"class":"card",tabindex:"0",role:"button"},'<span class="num">#'+x.n+'</span> '+esc(x.t)+(m.length?'<div class="meta">'+m.join("")+'</div>':''));card.onclick=function(){showTicket(x)};cards.appendChild(card)});
+  if(!items.length)cards.innerHTML='<div style="color:var(--fg-3);font-size:12px;padding:4px">Empty</div>';col.appendChild(cards);B.appendChild(col)})}
+function showTicket(x){var tl=[["Tue 09:12","Filed by Plan","ok"],["09:14","Intake: route "+(x.route||"?")+", size "+(x.size||"?"),"ok"]];
+ if(x.n===3){tl=tl.concat([["10:02","Round 1: delivery 1-4, review found 6 issues, then Ready","ok"],["12:40","Round 1 decided: another round (scope grew)","wait"],["13:05","Round 2: delivery 3 of 5, review running now","live"],["13:10","App check pending at head 8f2c41a + main","live"]])}
+ else if(x.n===5){tl=tl.concat([["11:20","Plan written: 4 waves, spawner per room","ok"],["12:55","App check FAILED: wave 3 never spawns (evidence: 2 screenshots)","bad"],["13:02","Round 1: delivery 2 of 5, implementing the fix","live"]])}
+ else if(x.st==="merged"){tl=tl.concat([["10:30","Round 1: Ready on delivery 2","ok"],["10:55","App check passed (normal depth, 3 holdouts PASS)","ok"],["11:00","Merged by the gate","ok"]])}
+ else if(x.st==="asking"){tl=tl.concat([["12:00","Round 1 done","ok"],["12:05","Paused: "+x.ask+". Recommendation waiting for you","wait"]])}
+ document.getElementById("ticket").innerHTML='<div class="panel"><div class="panel-head"><div><div class="label">ticket #'+x.n+'</div><h3>'+esc(x.t)+'</h3></div><span class="sp"></span><a class="btn ghost" href="#board" style="text-decoration:none">Issue</a>'+(x.pr?'<a class="btn ghost" href="#board" style="text-decoration:none">PR #'+x.pr+'</a>':'')+'<a class="btn ghost" href="#board" style="text-decoration:none">Runs in console</a></div><div class="pbody"><ul class="timeline">'+tl.map(function(r){return '<li class="'+r[2]+'"><span class="when">'+r[0]+'</span><span class="pip"></span><span>'+esc(r[1])+'</span></li>'}).join("")+'</ul></div></div>'}
+
+/* needs you */
+function renderAsks(){var A=document.getElementById("asks");var asks=[
+ {n:8,kind:"build: scope",q:"Shop screen: the PRD lists 6 items but no prices. Ship with placeholder prices, or wait for a pricing ticket?",opts:["Ship with placeholders, file a pricing ticket","Wait for pricing","Other"],rec:0,age:"1 h 40 m"},
+ {n:11,kind:"merge: pr",q:"PR #44 changes the save file format. merge.md says ask on schema changes. Merge?",opts:["Merge","Send back with a migration","Other"],rec:1,age:"25 m"}];
+ A.innerHTML=asks.map(function(a){return '<div class="panel" style="margin-top:0"><div class="panel-head"><div><div class="label">'+a.kind+' · ticket #'+a.n+' · waiting '+a.age+'</div><h3 style="font-size:15px;font-weight:600;max-width:80ch">'+esc(a.q)+'</h3></div></div><div class="pbody"><ul>'+a.opts.map(function(o,i){return '<li>'+(i===a.rec?'<span class="chip you">recommended</span> ':'')+esc(o)+'</li>'}).join("")+'</ul><p style="color:var(--fg-3);font-size:12.5px">Answer in the Archon console or Slack. If the same call comes up again, it should become a line in the policy files.</p></div></div>'}).join("")}
+
+/* tabs, theme, flow */
+function showTab(t){["map","board","you"].forEach(function(x){document.getElementById("v-"+x).hidden=x!==t;document.getElementById("t-"+x).setAttribute("aria-selected",x===t)});if(t==="map")fit(false)}
+document.getElementById("t-map").onclick=function(){showTab("map")};document.getElementById("t-board").onclick=function(){showTab("board")};document.getElementById("t-you").onclick=function(){showTab("you")};
+document.getElementById("themebtn").onclick=function(){var r=document.documentElement,cur=r.getAttribute("data-theme")||(matchMedia("(prefers-color-scheme: light)").matches?"light":"dark");r.setAttribute("data-theme",cur==="dark"?"light":"dark")};
+document.getElementById("flowbtn").onclick=function(){flowOn=!flowOn;stage.classList.toggle("flowing-off",!flowOn)};
+window.addEventListener("resize",function(){fit(false)});
+
+render();fit(false);renderBoard();renderAsks();
+window.__mcView=function(v){stack=["root"].concat(v||[]);sel=null;document.getElementById("panel").innerHTML="";render();fit(false)};window.__mcSelect=function(id){select(id)};window.__mcTab=showTab;window.__mcTicket=function(n){showTicket(T.filter(function(x){return x.n===n})[0])};
+})();
+</script>

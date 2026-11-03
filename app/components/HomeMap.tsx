@@ -392,7 +392,7 @@ function Band({ label, children }: { label: string; children: ReactNode }): Reac
 }
 
 /**
- * The factory at the pinned version: what feeds it and the manager above the loop, the loop laid
+ * The factory at the version its address names, else the current one: what feeds it and the manager above the loop, the loop laid
  * out with dagre, and what it produces below. The loop, each input workflow and the manager open
  * with each top-level include's own steps beside the spine and every deeper include folded to one
  * box, opened in place on a click. Every step shows
@@ -402,12 +402,15 @@ function Band({ label, children }: { label: string; children: ReactNode }): Reac
 export function HomeMap({
   rows,
   factories,
+  at,
 }: {
   rows: readonly HomeMapRow[];
   /** The factories the server shows; another factory's laps are not on the map. */
   factories: readonly string[];
+  /** The pin of the version the map shows, or null for the current version. */
+  at: string | null;
 }): ReactElement {
-  const map = useMemo(() => homeMap(rows, factories), [rows, factories]);
+  const map = useMemo(() => homeMap(rows, factories, at), [rows, factories, at]);
   const narrow = useSyncExternalStore(subscribeScreen, narrowScreen, () => false);
   const frames = (nodes: FrameNode[], color: string) => (
     <div className="flex flex-wrap items-start gap-2">

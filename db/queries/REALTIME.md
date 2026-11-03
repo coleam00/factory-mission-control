@@ -5,8 +5,9 @@ factory as `$1`, sealed by the server and subscribed through Neon Realtime (engi
 PRD 11.1). The step screen's panels below `step-detail` also take the step's workflow and path as
 `$2` and `$3`, so each answers with that step's files alone: a panel's first snapshot grows with
 the size of its answer (#103). Every step query also takes, as its last parameter, the pin of the
-version the step's address names, `''` for the current version; `step-versions` lists the versions
-it can name. Realtime refuses some SQL a database would run. The table below is what it accepted
+version the step's address names, `''` for the current version, and `home-map` takes the pin of the
+version the map's address names the same way, as `$2`; `step-versions` lists the versions either
+can name. Realtime refuses some SQL a database would run. The table below is what it accepted
 and rejected when `bun run test:live` ran each probe query on a check branch; `test:live` runs
 them again on every run and fails when a verdict or an error differs from this table.
 

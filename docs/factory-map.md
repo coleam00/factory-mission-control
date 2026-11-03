@@ -24,3 +24,9 @@ spine stays in the first column, and a box wider than the screen scrolls sideway
 An include's own screen, such as deliver's, lists every step beneath it by its path there
 (`rounds/implement/implement`, `rounds/reshape/implement`). Each entry opens that step's own
 screen, which lists every place an include puts it and links back to each.
+
+The Version control above the map lists every pin with recorded architecture, newest first, and
+opens the map at an older one (`/?at=<pin>`). At that version each step opens its screen at the
+same version, and the counts include only the running laps that ran it. Choosing the current
+version removes `at`. A version that is not recorded for the factory reads “No version <pin> is
+recorded for this factory.”

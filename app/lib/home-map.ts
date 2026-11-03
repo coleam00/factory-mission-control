@@ -207,7 +207,11 @@ const ANY_RAN = /none_failed|one_success/;
  * waits on it only for order, so the edge is dropped and the two stand side by side, each edge
  * into them labelled with the route values that take it.
  */
-function stepGraph(rows: readonly StepRow[], shown: readonly string[]): StepGraph {
+function stepGraph(
+  rows: readonly StepRow[],
+  shown: readonly string[],
+  at: string | null,
+): StepGraph {
   const nodes = stepsByPath(rows, shown);
   const edges: Edge[] = [];
   const clusters = new Map<string, string[]>();
@@ -242,7 +246,7 @@ function stepGraph(rows: readonly StepRow[], shown: readonly string[]): StepGrap
       role: row.parent_path === null ? 'step' : 'stage',
       label: row.step_id,
       kind: row.kind ?? '',
-      href: stepHref(row.detail_workflow, row.detail_path ?? row.path),
+      href: stepHref(row.detail_workflow, row.detail_path ?? row.path, at),
       liveCount: factories.find((f) => f.current)?.laps ?? 0,
       factories,
     })),
@@ -254,11 +258,21 @@ function stepGraph(rows: readonly StepRow[], shown: readonly string[]): StepGrap
   };
 }
 
+/** The home map's address at a version's pin, or at the current version for none. */
+export function homeHref(at?: string | null): string {
+  return at ? `/?at=${encodeURIComponent(at)}` : '/';
+}
+
 /**
  * Turns the live rows into the map, counting the laps of the factories in `shown` (the server's
- * factories file); every part is empty when no architecture is stored.
+ * factories file); every part is empty when no architecture is stored. Each step opens its screen
+ * at `at`, the version the map shows, or at the current version for null.
  */
-export function homeMap(rows: readonly HomeMapRow[], shown: readonly string[]): HomeMap {
+export function homeMap(
+  rows: readonly HomeMapRow[],
+  shown: readonly string[],
+  at: string | null = null,
+): HomeMap {
   const steps = rows.filter(isStep);
   const loop = steps.filter((r) => r.role === 'step' || r.role === 'stage');
   if (loop.length === 0) {
@@ -285,6 +299,7 @@ export function homeMap(rows: readonly HomeMapRow[], shown: readonly string[]): 
           stepGraph(
             steps.filter((r) => r.workflow === name),
             shown,
+            at,
           ),
         ] as const,
     );
@@ -296,7 +311,7 @@ export function homeMap(rows: readonly HomeMapRow[], shown: readonly string[]): 
       ...FRAME_INPUTS_AFTER.map((label) => frame('frame-input', label)),
     ],
     manager: named('manager').map((name) => frame('manager', name)),
-    loop: stepGraph(loop, shown),
+    loop: stepGraph(loop, shown, at),
     workflows: new Map([...graphs('input'), ...graphs('manager')]),
     outputs: FRAME_OUTPUTS.map((label) => frame('output', label)),
   };
