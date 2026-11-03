@@ -1,3 +1,6 @@
+/** The stylesheets whose custom properties are the only colors a page may render. */
+export const TOKEN_SOURCES: string[];
+
 export interface Failure {
   width: number;
   /** The page as first rendered, or once no live panel was loading. */
