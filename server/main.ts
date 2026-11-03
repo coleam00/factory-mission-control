@@ -6,6 +6,7 @@ import { createNeonApi } from '../scripts/lib/neon';
 import { createApp } from './app';
 import { resolveBuildId } from './build-id';
 import { loadCheckEnv } from './check-env';
+import { defaultLeaseDir, LEASE_REFRESH_MS, refreshLease } from './check-lease';
 import { syncFactoriesAtStart } from './factory-sync';
 import { liveFromEnv } from './live';
 import { SERVE_PORTS } from './ports';
@@ -54,3 +55,10 @@ const app = createApp({
 });
 const server = Bun.serve({ hostname: '127.0.0.1', port, fetch: app.fetch });
 console.log(`serving http://localhost:${server.port}`);
+
+const checkBranch = Bun.env.MC_CHECK_BRANCH;
+if (checkBranch) {
+  const refresh = () => refreshLease(defaultLeaseDir(), checkBranch, new Date());
+  refresh();
+  setInterval(refresh, LEASE_REFRESH_MS);
+}

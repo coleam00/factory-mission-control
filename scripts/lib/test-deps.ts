@@ -64,6 +64,8 @@ export function scratchRepo(checkEnv?: Record<string, string>): string {
  */
 export function recordingDeps(options: {
   repoRoot: string;
+  /** Where leases live; defaults to `leases` under `repoRoot`, never the real home directory. */
+  leaseDir?: string;
   env?: Env;
   branches?: Branch[];
   branchName?: string;
@@ -174,6 +176,7 @@ export function recordingDeps(options: {
   const deps: Deps = {
     env: { NEON_PROJECT_ID: PROJECT, ...options.env },
     repoRoot: options.repoRoot,
+    leaseDir: options.leaseDir ?? join(options.repoRoot, 'leases'),
     neon: () => neon,
     github: () =>
       createGitHub(async (url) => {

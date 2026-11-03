@@ -1,6 +1,7 @@
 import { resolve } from 'node:path';
 import { createGitHub, type GetFetch, type GitHub } from '../../function/github';
 import { type Env, loadCheckEnv } from '../../server/check-env';
+import { defaultLeaseDir, refreshLease } from '../../server/check-lease';
 import { type OpenDb, openDb } from './db';
 import { RefusedBranch, requireCheckBranch } from './guard';
 import { createNeonApi, type NeonApi, type Sleep } from './neon';
@@ -12,6 +13,8 @@ export const REPO_ROOT = resolve(import.meta.dir, '..', '..');
 export type Deps = {
   env: Env;
   repoRoot: string;
+  /** The directory every checkout on this machine shares for check-branch leases (`fixture:drop --help`). */
+  leaseDir: string;
   neon: () => NeonApi;
   github: () => GitHub;
   openDb: OpenDb;
@@ -61,6 +64,7 @@ export function defaultDeps(): Deps {
   return {
     env: Bun.env,
     repoRoot: REPO_ROOT,
+    leaseDir: defaultLeaseDir(),
     neon: () => neonFromEnv(Bun.env),
     github: () => createGitHub(fetch, Bun.env.GITHUB_TOKEN),
     openDb,
@@ -122,6 +126,7 @@ export async function guardedDatabaseUrl(deps: Deps, target: 'check' | 'main'): 
   const name = await resolveBranchName(url, deps.neon());
   if (target === 'check') {
     requireCheckBranch(name);
+    refreshLease(deps.leaseDir, name, deps.now());
     return url;
   }
   if (name !== 'main') throw new RefusedBranch(name, 'a :main command only writes main');

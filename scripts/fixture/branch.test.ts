@@ -2,7 +2,8 @@ import { afterEach, expect, test } from 'bun:test';
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { CHECK_ENV_FILE, parseCheckEnv } from '../../server/check-env';
-import { CREATED_URL, hoursAgo, recordingDeps, scratchRepo } from '../lib/test-deps';
+import { readLeases } from '../../server/check-lease';
+import { CREATED_URL, hoursAgo, NOW, recordingDeps, scratchRepo } from '../lib/test-deps';
 import { main } from './branch';
 
 const scratch: string[] = [];
@@ -41,6 +42,19 @@ test('forks check-<8 hex> from fixture, seeds it and writes the env file', async
   expect(run.opened).toEqual([CREATED_URL]);
   expect(run.sql).toContain('INSERT INTO seeded VALUES (1);');
   expect(run.out).toContain(`created ${env.MC_CHECK_BRANCH}`);
+  expect(readLeases(run.deps.leaseDir)).toEqual([
+    { branch: env.MC_CHECK_BRANCH, refreshed_at: NOW.toISOString() },
+  ]);
+});
+
+test('warns, and still succeeds, when the lease cannot be written', async () => {
+  const repoRoot = repo();
+  const leaseDir = join(repoRoot, 'not-a-directory');
+  writeFileSync(leaseDir, '');
+  const run = recordingDeps({ repoRoot, branches: BRANCHES, leaseDir });
+  expect(await main([], run.deps)).toBe(0);
+  expect(existsSync(join(repoRoot, CHECK_ENV_FILE))).toBe(true);
+  expect(run.err.join('\n')).toContain('could not record a lease for check-');
 });
 
 test('refuses before any Neon call when the env file already names a branch', async () => {
@@ -70,6 +84,7 @@ test('deletes the new branch and writes no env file when a later step fails', as
   expect(rest).toEqual([`deleteBranch ${name}`]);
   expect(run.opened).toEqual([]);
   expect(existsSync(join(repoRoot, CHECK_ENV_FILE))).toBe(false);
+  expect(readLeases(run.deps.leaseDir)).toEqual([]);
 });
 
 test.each([[['--help']], [['--name', 'check-mine']], [['--stale', 'x']]])(
@@ -96,6 +111,7 @@ test('--stale creates <own>-stale-<8 hex> from fixture and leaves the env file a
   expect(run.opened).toEqual([]);
   expect(readFileSync(envFile, 'utf-8')).toBe(before);
   expect(run.out).toEqual([`created ${name} (stale for fixture:drop)`]);
+  expect(readLeases(run.deps.leaseDir)).toEqual([]);
 });
 
 test.each(['main', 'fixture', 'rewind-x'])(
