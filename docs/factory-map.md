@@ -59,7 +59,7 @@ merged with when it finished, and whether the version the address names is recor
 - "<n> failing" on App check: open pull requests whose latest app check came out FAIL.
 - "<n> waiting" on the Manager: open owner questions and open `needs-owner` issues.
 - "<n> merged" on Shipped: laps whose land step merged today, the browser's local day, counted
-  from the moment that step finished, not when the run ends.
+  from the moment that step finished, not when the run ends. The count moves on at local midnight.
 
 A chip of 0 is not drawn. A chip appears once its query has answered. A chip whose query failed
 shows as `? queued` or `? waiting`, never as a count; Right now says the count is unavailable, and
@@ -68,8 +68,10 @@ Behind the scenes says the pinned steps are unavailable when `step-detail` faile
 ## Clicking a card
 
 A card keeps itself and the cards a line joins to it lit and dims the rest; its details strip opens
-under the map. Right now lists the runs and items the card's chips count, each opening its page.
-Behind the scenes lists, per workflow, the steps the card covers that the version shown has, each
+under the map. Right now lists the runs and items the card's chips count, each opening its page;
+a lap with a claimed issue also links that issue on GitHub, until the ticket page exists (#317).
+Behind the scenes lists, per workflow, its YAML path in the pinned pack (from the parsed
+architecture, and none when the version lacks it) and the steps the card covers that the version shown has, each
 opening its step screen beside the model its parsed architecture gives it (`step-detail`, the
 step screens' own query): only facts from the factory's pinned code, never a step or path the
 version lacks (owner, #307). App check's includes `check-app`, whose screen shows its prompt, the

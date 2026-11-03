@@ -5,9 +5,10 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { MemoryRouter } from 'react-router';
 import { parsePack, type Step } from '../../parsers/pack';
 import { Behind, RightNow } from '../components/MapDetails';
-import { FACTORY_MAP } from '../map/factory-map';
+import type { StepRow } from '../lib/step-detail';
+import { FACTORY_MAP, workflowFile } from '../map/factory-map';
 import type { HomeMapRow, MapSources } from '../map/live';
-import { HomeMapBody } from './index';
+import { HomeMapBody, msToLocalMidnight } from './index';
 
 const REPO = join(import.meta.dir, '..', '..');
 
@@ -325,4 +326,34 @@ test('Right now says a chip count is unavailable', () => {
     </MemoryRouter>,
   );
   expect(html).toContain('The queued count is unavailable.');
+});
+
+test('Behind the scenes shows each workflow its own YAML path, and none for a workflow the version lacks', () => {
+  const row = (workflow: string, path: string, file: string) =>
+    ({ workflow, path, file, model: null }) as unknown as StepRow;
+  const steps = [row('wf-a', 'one', 'workflows/a.yaml'), row('wf-b', 'two', 'workflows/b.yaml')];
+  const card = {
+    ...FACTORY_MAP.cards[0],
+    covers: [
+      { workflow: 'wf-a', steps: ['one'] },
+      { workflow: 'wf-b', steps: ['two'] },
+    ],
+  } as (typeof FACTORY_MAP.cards)[0];
+  const html = renderToStaticMarkup(
+    <MemoryRouter>
+      <Behind card={card} at={null} steps={steps} failed={false} />
+    </MemoryRouter>,
+  );
+  const block = (workflow: string) =>
+    html.split('data-behind-workflow="').find((part) => part.startsWith(`${workflow}"`)) ?? '';
+  expect(block('wf-a')).toContain('workflows/a.yaml');
+  expect(block('wf-a')).not.toContain('workflows/b.yaml');
+  expect(block('wf-b')).toContain('workflows/b.yaml');
+  expect(workflowFile(steps, 'missing')).toBeUndefined();
+});
+
+test('the home clock turns over at the next local midnight', () => {
+  const lateEvening = new Date(2026, 10, 3, 23, 59, 30);
+  expect(msToLocalMidnight(lateEvening)).toBe(30_000);
+  expect(msToLocalMidnight(new Date(2026, 10, 4, 0, 0, 0))).toBeGreaterThan(23 * 3_600_000);
 });

@@ -20,6 +20,20 @@ import { cardLive, type HomeMapRow, type MapSources, versionRecorded } from '../
 /** The app's column, which the title row, the version control and the empty states keep. */
 const COLUMN = 'mx-auto w-full max-w-6xl px-6';
 
+/** Milliseconds from `now` to the next local midnight, when "today" changes. */
+export const msToLocalMidnight = (now: Date): number =>
+  new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1).getTime() - now.getTime();
+
+/** The browser's clock, moved on at each local midnight so "merged today" never keeps yesterday. */
+function useToday(): Date {
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const timer = setTimeout(() => setNow(new Date()), msToLocalMidnight(now));
+    return () => clearTimeout(timer);
+  }, [now]);
+  return now;
+}
+
 export function HomeMapBody({
   sources,
   state,
@@ -120,6 +134,7 @@ export default function Home(): ReactElement {
   const factory = useFactory();
   const live = useLive();
   const [flow, setFlow] = useState(true);
+  const now = useToday();
   // The toggle shows with the map it moves, and reads off while the system asks for no motion.
   const [drawn, setDrawn] = useState(false);
   const reduced = useReducedMotion();
@@ -169,6 +184,7 @@ export default function Home(): ReactElement {
             configured={configured}
             flow={flow}
             onDrawn={setDrawn}
+            now={now}
           />
         )}
       </LivePanel>
