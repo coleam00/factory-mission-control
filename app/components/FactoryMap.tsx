@@ -261,8 +261,10 @@ function MapCard({
       onKeyDown={onKey}
       data-selected={state === 'selected' || undefined}
       className={`absolute cursor-pointer select-none rounded-[16px] border-2 bg-surface-elevated pt-3 pr-3 pb-3 pl-4 transition-[opacity,box-shadow,border-color] duration-200 ${
-        state === 'selected' ? '' : 'hover:border-[color:var(--text-secondary)]'
-      } ${state === 'dim' ? 'opacity-30' : ''} ${
+        state === 'selected'
+          ? ''
+          : 'hover:border-[color:var(--text-primary)] hover:shadow-[0_0_0_3px_var(--text-secondary)]'
+      } ${state === 'dim' ? 'opacity-30 focus-visible:opacity-100' : ''} ${
         state === 'selected' ? 'shadow-[0_0_0_7px_var(--accent)]' : ''
       }`}
       style={{

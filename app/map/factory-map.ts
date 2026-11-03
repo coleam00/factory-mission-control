@@ -250,6 +250,10 @@ export const stepLinks = (card: Card, at: string | null) =>
     }),
   );
 
+/** A workflow's own YAML path in the pinned pack, from the parsed architecture; undefined when the version lacks it. */
+export const workflowFile = (steps: readonly StepRow[], workflow: string): string | undefined =>
+  steps.find((s) => s.workflow === workflow)?.file;
+
 /**
  * The steps of `stepLinks` the pinned version has, by `step-detail`'s rows, each with the model
  * its parsed architecture gives it (null for a step that names none).

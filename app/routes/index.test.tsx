@@ -291,6 +291,33 @@ test('Behind the scenes says the steps are unavailable, not loading, once their 
   expect(html(false)).toContain('Loading the pinned steps.');
 });
 
+test('Right now links a lap entry to its page and to its GitHub issue, and only its page without one', () => {
+  const lap = (
+    run: string,
+    issue: { number: number; title: string | null; url: string | null } | null,
+  ) => ({
+    run,
+    step: 'plan',
+    issue,
+  });
+  const html = renderToStaticMarkup(
+    <MemoryRouter>
+      <RightNow
+        live={{
+          here: [
+            lap('aaaaaaaa-1', { number: 7, title: 'T', url: 'https://github.com/o/r/issues/7' }),
+            lap('bbbbbbbb-2', null),
+          ],
+        }}
+        factory="here"
+      />
+    </MemoryRouter>,
+  );
+  expect(html).toContain('href="https://github.com/o/r/issues/7"');
+  expect(html).toContain('/f/here/laps/bbbbbbbb-2');
+  expect(html.match(/data-lap-issue/g)).toHaveLength(1);
+});
+
 test('Right now says a chip count is unavailable', () => {
   const html = renderToStaticMarkup(
     <MemoryRouter>

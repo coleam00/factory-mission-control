@@ -1,7 +1,7 @@
 import { type ReactElement, type ReactNode, useState } from 'react';
 import { Link } from 'react-router';
 import type { StepRow } from '../lib/step-detail';
-import { type Card, pinnedStepLinks } from '../map/factory-map';
+import { type Card, pinnedStepLinks, workflowFile } from '../map/factory-map';
 import type { CardLive, MapItem } from '../map/live';
 
 type Tab = 'when' | 'what' | 'how' | 'live' | 'behind';
@@ -75,6 +75,11 @@ export function RightNow({
             <span className="font-mono">lap {lap.run.slice(0, 8)}</span>
           )}
         </Link>
+        {lap.issue?.url ? (
+          <a href={lap.issue.url} data-lap-issue className={`${LINK} ml-1.5 font-mono text-[12px]`}>
+            GitHub #{lap.issue.number}
+          </a>
+        ) : null}
         <span className={CHIP}>{lap.step}</span>
       </li>
     )),
@@ -137,7 +142,12 @@ export function Behind({
     <>
       {workflows.map((workflow) => (
         <div key={workflow} data-behind-workflow={workflow} className="grid gap-1.5">
-          <div className="font-mono text-[12px] text-text-secondary">{workflow}</div>
+          <div className="font-mono text-[12px] text-text-secondary">
+            {workflow}
+            <span data-workflow-file className="ml-2">
+              {workflowFile(steps, workflow)}
+            </span>
+          </div>
           <ul className="grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1 font-mono text-[12.5px]">
             {links
               .filter((l) => l.workflow === workflow)
