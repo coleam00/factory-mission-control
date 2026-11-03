@@ -1,7 +1,8 @@
 import { expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { MemoryRouter } from 'react-router';
-import type { StepVersionRow } from '../lib/step-detail';
+import { homeHref } from '../lib/home-map';
+import { type StepVersionRow, stepHref } from '../lib/step-detail';
 import type { PanelState } from '../live/LivePanel';
 import { StepVersionPickerBody } from './StepVersionPicker';
 
@@ -12,15 +13,19 @@ const ROWS: StepVersionRow[] = [
   { sha: CURRENT, reason: 'V2', committed_at: new Date('2026-02-01T00:00:00Z'), is_current: true },
 ];
 
-const render = (rows: StepVersionRow[] | undefined, state: PanelState, at: string | null) =>
+const render = (
+  rows: StepVersionRow[] | undefined,
+  state: PanelState,
+  at: string | null,
+  href = (version: string | null) => stepHref('archon-loop', 'review', version),
+) =>
   renderToStaticMarkup(
     <MemoryRouter>
       <StepVersionPickerBody
         rows={rows}
         state={state}
         at={at}
-        workflow="archon-loop"
-        path="review"
+        href={href}
         open
         onToggle={() => {}}
       />
@@ -73,4 +78,11 @@ test('loading, unavailable and empty lists each read one sentence', () => {
   expect(render(undefined, 'loading', null)).toContain('Loading versions.');
   expect(render(undefined, 'error', null)).toContain('Live data is unavailable.');
   expect(render([], 'ready', null)).toContain('No version with architecture is recorded.');
+});
+
+test('on the home map each version opens the map at it, the current one without a version', () => {
+  expect(entries(render(ROWS, 'ready', OLDER, homeHref))).toEqual([
+    { sha: CURRENT, href: '/', shown: false },
+    { sha: OLDER, href: `/?at=${OLDER}`, shown: true },
+  ]);
 });

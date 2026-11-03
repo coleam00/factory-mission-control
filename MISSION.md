@@ -17,7 +17,10 @@ writes. The product document is `docs/mission-control.prd.md`; it decides.
 4. Never send a secret to the browser: the Realtime secret, database URLs and GitHub tokens stay
    on the server and in the Neon Function.
 5. Never poll. A panel that is not a live query (or derived from one) is not done.
-6. Never hand-write the factory's architecture. It is parsed from the pinned code.
-7. Never invent a look. The design is the Archon console's (docs/design/archon-console/).
+6. Never let the map drift from the code. Its layout and wording are the owner's, authored in
+   `app/map/factory-map.json`; what each card covers is checked against the pinned code, and step
+   details are parsed from it.
+7. Never invent a look. The design is `docs/design/v2/` (the owner's mockup and its screenshots),
+   built on the Archon console's tokens (`docs/design/archon-console/`).
 8. Never become a second Archon console: one lap links to the console for its full log.
 9. Never sum numbers across factories; each factory's numbers stand alone.

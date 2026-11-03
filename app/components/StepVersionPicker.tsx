@@ -1,6 +1,6 @@
 import { type ReactElement, useState } from 'react';
 import { Link } from 'react-router';
-import { type StepVersionRow, stepHref, stepVersions } from '../lib/step-detail';
+import { type StepVersionRow, stepVersions } from '../lib/step-detail';
 import { LivePanel, type PanelState } from '../live/LivePanel';
 
 const LABEL = 'font-mono text-[10px] font-semibold uppercase tracking-[0.04em] text-text-secondary';
@@ -10,15 +10,13 @@ function Entries({
   rows,
   state,
   at,
-  workflow,
-  path,
+  href,
   onChoose,
 }: {
   rows: readonly StepVersionRow[] | undefined;
   state: PanelState;
   at: string | null;
-  workflow: string;
-  path: string;
+  href: (at: string | null) => string;
   onChoose: () => void;
 }): ReactElement {
   if (state === 'error') return <p className={NOTE}>Live data is unavailable.</p>;
@@ -31,7 +29,7 @@ function Entries({
         return (
           <li key={version.sha} data-version-entry={version.sha}>
             <Link
-              to={stepHref(workflow, path, version.current ? null : version.sha)}
+              to={href(version.current ? null : version.sha)}
               onClick={onChoose}
               title={version.reason}
               aria-current={shown ? 'true' : undefined}
@@ -50,16 +48,15 @@ function Entries({
 }
 
 /**
- * The step screen's version choice: the version shown, and when open every version with
- * architecture, newest first, each opening this step at it. The current one opens the address
- * without a version, so it follows the next pin live.
+ * A screen's version choice: the version shown, and when open every version with architecture,
+ * newest first, each opening the screen at it. The current one opens the address without a
+ * version, so it follows the next pin live.
  */
 export function StepVersionPickerBody({
   rows,
   state,
   at,
-  workflow,
-  path,
+  href,
   open,
   onToggle,
 }: {
@@ -67,8 +64,8 @@ export function StepVersionPickerBody({
   state: PanelState;
   /** The pin the address names, or null for the current version. */
   at: string | null;
-  workflow: string;
-  path: string;
+  /** The screen's address at a version's pin, or at the current version for null. */
+  href: (at: string | null) => string;
   open: boolean;
   onToggle: (open: boolean) => void;
 }): ReactElement {
@@ -90,31 +87,22 @@ export function StepVersionPickerBody({
       </summary>
       {open ? (
         <div className="absolute left-0 top-full z-10 mt-2 min-w-64 rounded-md border border-border bg-surface">
-          <Entries
-            rows={rows}
-            state={state}
-            at={at}
-            workflow={workflow}
-            path={path}
-            onChoose={() => onToggle(false)}
-          />
+          <Entries rows={rows} state={state} at={at} href={href} onChoose={() => onToggle(false)} />
         </div>
       ) : null}
     </details>
   );
 }
 
-/** The versions of `step-versions.sql`, live, as the step screen's version choice. */
+/** The versions of `step-versions.sql`, live, as a screen's version choice. */
 export function StepVersionPicker({
   factory,
   at,
-  workflow,
-  path,
+  href,
 }: {
   factory: string | undefined;
   at: string | null;
-  workflow: string;
-  path: string;
+  href: (at: string | null) => string;
 }): ReactElement {
   const [open, setOpen] = useState(false);
   return (
@@ -124,8 +112,7 @@ export function StepVersionPicker({
           rows={rows}
           state={state}
           at={at}
-          workflow={workflow}
-          path={path}
+          href={href}
           open={open}
           onToggle={setOpen}
         />

@@ -1,5 +1,7 @@
-// Judge for H-26 (and the coverage parts of H-28 and H-29): every step of the parsed architecture,
-// at every include depth, is on the map, the map leads to it, and its detail is a real page.
+// Judge for H-79 (first written for H-26, H-28 and H-29, retired 2026-11-03): every step of the parsed
+// architecture, at every include depth, is on the map, the map leads to it, and its detail is a real
+// page. Under the v2 map (H-79), "map_steps" are the steps the cards' Behind the scenes list, with
+// the step-screen link each gives.
 //
 // Record shape:
 // {

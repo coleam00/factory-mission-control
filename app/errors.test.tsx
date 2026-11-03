@@ -59,5 +59,5 @@ test('a route that fails renders the error empty state', async () => {
 });
 
 test('registered routes still render through the error boundary', () => {
-  expect(mainText(render('/'))).toBe('Factory map Loading the factory map.');
+  expect(mainText(render('/'))).toBe('Factory map Version - Loading the factory map.');
 });

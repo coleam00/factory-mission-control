@@ -1,9 +1,12 @@
 WITH version AS (
+  -- The version the address names by its pin, $2, or for '' the current version: the
+  -- architecture of the newest pin that has any.
   SELECT a.archon_sha, a.factory_sha
   FROM mc.arch_versions a
   JOIN mc.pins p ON p.archon_sha = a.archon_sha
   -- Like the version strip, an empty factory does not borrow the shared pin history.
   WHERE EXISTS (SELECT 1 FROM mc.laps l WHERE l.factory = $1)
+    AND ($2 = '' OR p.sha = $2)
   ORDER BY p.committed_at DESC, a.parsed_at DESC
   LIMIT 1
 ),
@@ -27,11 +30,15 @@ own AS (
     ON s.defined_in <> s.workflow AND i.workflow = s.workflow AND i.include = s.defined_in
     AND starts_with(s.path, i.path || '/')
 ),
+-- At a version the address names, only the laps that ran it: a lap's version is its factory's
+-- digest's, labelled with its pin (PRD 11.2).
 running AS (
   SELECT l.factory, l.workflow_name, ls.run_id, ls.step_id
   FROM mc.lap_steps ls
   JOIN mc.laps l ON l.run_id = ls.run_id
   WHERE l.status = 'running' AND ls.status = 'running'
+    AND ($2 = '' OR EXISTS (SELECT 1 FROM mc.versions vr
+      WHERE vr.factory = l.factory AND vr.digest = l.digest AND vr.pin_sha = $2))
 ),
 -- Archon names a nested step by its path joined with `__` (`ship__intel`) and emits no event for
 -- the step that includes it, so a node counts its workflow's runs on it or anywhere beneath it,

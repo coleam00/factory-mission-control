@@ -54,11 +54,21 @@ How this repository is built. The product is `docs/mission-control.prd.md`; this
   `#3B82F6` is the one accent (owner decisions #240 and 2026-10-28, "just some blue"): the active
   tab, the selection ring and focus; Dynamous Dark `#2563EB` for hover, Dynamous Light `#60A5FA`
   for link text. Text meets WCAG AA (4.5:1) on every surface. Status colors stay distinct from
-  the accent: running is Dynamous Light and always pulses or glows; teal success, amber waiting,
-  red failed (the brand's `#047857`, `#B45309` and `#B91C1C` are the `--*-strong` tokens).
+  the accent: running is Dynamous Light and always pulses or glows; teal success, red failed
+  (the brand's `#047857` and `#B91C1C` are the `--*-strong` tokens).
   Magenta is not used. Data in Geist Mono with tabular
   numbers; section labels mono, uppercase, tracked. Empty states are one sentence and at most one
   button.
+- v2 design (owner decision 2026-11-03): `docs/design/v2/` is the design for every v2 screen (its
+  README says what is binding). The role tokens in `docs/design/v2/tokens.css` are copied
+  identically into `app/styles.css` beside the console tokens, and the design probe accepts them:
+  `--role-source` sky (where work comes from, scripts), `--role-agent` blue (agents),
+  `--role-test` teal (testing and shipping), `--role-person` violet (the manager and the owner).
+  Waiting on a person is `--role-person`, never amber; amber is not used anywhere, and the existing
+  amber usages move to violet (waiting) or teal/red (status) as each screen is redone. A map card's
+  border and fill are its role color mixed into the panel surface (`--card-border-tint`,
+  `--card-tint`), which is the one place a tint on a surface is allowed. Copy the mockup's wording
+  exactly; plain words a newcomer understands, never pack jargon on a card.
 - Use a table only for a list of records a person scans row by row (recent laps, scorecard
   comparison, decisions ledger). Counts, distributions, status across many items and progress are
   drawn: bars, grids, tiles, graphs (owner decision, #241). A drawn section keeps every number and
