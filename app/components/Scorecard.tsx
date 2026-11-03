@@ -46,10 +46,10 @@ const GROUP: Record<string, { color: string; better: 'up' | 'down' | null }> = {
   active_hours: { color: 'var(--accent-bright)', better: null },
   merges: { color: 'var(--node-loop)', better: null },
   merges_per_active_hour: { color: 'var(--node-loop)', better: 'up' },
-  empty_laps: { color: 'var(--node-approval)', better: null },
-  failed_laps: { color: 'var(--node-approval)', better: null },
-  send_backs: { color: 'var(--node-approval)', better: null },
-  gate_refusals: { color: 'var(--node-approval)', better: null },
+  empty_laps: { color: 'var(--error)', better: null },
+  failed_laps: { color: 'var(--error)', better: null },
+  send_backs: { color: 'var(--error)', better: null },
+  gate_refusals: { color: 'var(--error)', better: null },
   lap_hours_per_merge: { color: 'var(--node-prompt)', better: 'down' },
   app_check_share: { color: 'var(--node-prompt)', better: 'down' },
   cost_per_merge: { color: 'var(--node-prompt)', better: 'down' },
@@ -420,7 +420,7 @@ function Difference({
         </span>
       </div>
       {isMeaningful ? null : (
-        <div className="mt-1 font-mono text-[11px] font-semibold uppercase tracking-[0.05em] text-warning">
+        <div className="mt-1 font-mono text-[11px] font-semibold uppercase tracking-[0.05em] text-accent-bright">
           not yet meaningful
         </div>
       )}

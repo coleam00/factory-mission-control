@@ -45,7 +45,7 @@ export interface ShownCell {
   summary: string | null;
 }
 
-const cellsOnScreen = `[...document.querySelectorAll('${SCORECARD} [data-version][data-measure]')].map((cell) => ({
+export const cellsOnScreen = `[...document.querySelectorAll('${SCORECARD} [data-version][data-measure]')].map((cell) => ({
   digest: cell.getAttribute('data-digest'),
   measure: cell.getAttribute('data-measure'),
   value: cell.getAttribute('data-value'),
@@ -54,7 +54,7 @@ const cellsOnScreen = `[...document.querySelectorAll('${SCORECARD} [data-version
   summary: cell.querySelector('summary')?.textContent ?? null,
 }))`;
 
-interface ExpectedScorecard {
+export interface ExpectedScorecard {
   versions: { digest: string; measures: Record<string, { value: number | null; laps: number }> }[];
 }
 

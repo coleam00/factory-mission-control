@@ -178,6 +178,7 @@ test('a side under 10 laps labels each difference not yet meaningful; 12 against
   for (const d of thin) {
     expect(d.meaningful).toBe('false');
     expect(d.body).toContain('not yet meaningful');
+    expect(d.body).not.toContain('text-warning');
   }
   const both = differences(render([...laps(V1, 12, 3), ...laps(V2, 12, 4)], V1, V2));
   expect(both).toHaveLength(12);

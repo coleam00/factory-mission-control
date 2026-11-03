@@ -11,6 +11,7 @@ import { SECOND_FACTORY } from './fixture/seed';
 import { type Deps, failing, guardedDatabaseUrl, type Main, runCli } from './lib/cli';
 import { machineLockPath, withMachineLock } from './lib/machine-lock';
 import { resolveBranchName } from './lib/target';
+import { changesPhase } from './live/changes';
 import { decisionsPhase } from './live/decisions';
 import { diffPhase } from './live/diff';
 import { healthPhase } from './live/health';
@@ -58,6 +59,8 @@ const USAGE = [
   '  `fixture:write step --step land` on a V2 lap to the screen before and after the hold, writing',
   '  scorecard-vs-expected.json, scorecard-timings.json, scorecard.png and',
   "  scorecard-design-probe.json; it restores those laps' land steps afterwards.",
+  '  It checks the changes screen against the versions and decisions screens and the same expected',
+  '  scorecard on the untouched seed, writing changes.png and changes-design-probe.json.',
   '  It checks the testing screen against SQL over the seed, with no holdout text on it, and times',
   '  `fixture:write step --step check-app --event node_completed` on a lap with no app check to its',
   '  kind and verdict counts before the hold and on a second such lap after it, writing',
@@ -247,6 +250,7 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
     stepDetailPhase(ctx),
     versionsPhase(ctx),
     scorecardPhase(ctx),
+    changesPhase(ctx),
     testingPhase(ctx),
     ownerPhase(ctx),
     issuesPhase(ctx),

@@ -1,3 +1,6 @@
+/** The design-token stylesheets, as absolute paths, in the order they layer. */
+export const TOKEN_SOURCES: string[];
+
 export interface Failure {
   width: number;
   /** The page as first rendered, or once no live panel was loading. */

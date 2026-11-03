@@ -1,9 +1,10 @@
 /*
  * The app's token layer: every color is declared here, copied from docs/design/archon-console/
  * (index.css and theme.css) with identical values; styles.test.ts holds them to that, and
- * harness/design-probe.js fails any rendered color outside them. The palette is near-black
- * neutral surfaces with Dynamous Blue as the one accent (#240). Geist and Geist Mono are served
- * from the build rather than fetched from Google Fonts.
+ * harness/design-probe.js fails any rendered color outside them. The v2 role colors are copied the
+ * same way from docs/design/v2/tokens.css. The palette is near-black neutral surfaces with
+ * Dynamous Blue as the one accent (#240). Geist and Geist Mono are served from the build rather
+ * than fetched from Google Fonts.
  */
 @import 'tailwindcss';
 @import '@fontsource/geist/300.css';
@@ -50,6 +51,20 @@
   --destructive: oklch(0.6 0.2 25);
   --border: oklch(0.28 0.01 260);
   --ring: oklch(0.65 0.18 250);
+
+  /* v2 role colors, copied from docs/design/v2/tokens.css: who is acting on a map card. */
+  --role-source: #38bdf8;
+  --role-source-soft: rgba(56, 189, 248, 0.13);
+  --role-agent: #3b82f6;
+  --role-agent-soft: rgba(59, 130, 246, 0.14);
+  --role-test: #14b8a6;
+  --role-test-soft: rgba(20, 184, 166, 0.13);
+  --role-person: #a78bfa;
+  --role-person-soft: rgba(167, 139, 250, 0.15);
+
+  /* A map card's fill and border: its role color mixed into the panel surface. */
+  --card-tint: 9%;
+  --card-border-tint: 45%;
 }
 
 @theme inline {
