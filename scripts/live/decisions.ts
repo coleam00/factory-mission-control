@@ -79,6 +79,12 @@ const attentionOnScreen = `[...document.querySelectorAll('${ATTENTION}')].map((l
   waited: li.querySelector('[data-waited]')?.textContent ?? null,
 }))`;
 
+/** The tab badge's own panels, named apart from the screen's panels of the same queries. */
+const BADGE_PANELS = [
+  'nav [data-live="decisions-count:attention-items"]',
+  'nav [data-live="decisions-count:owner-queue"]',
+];
+
 /** The Decisions tab's count, or null when no count is drawn. */
 const tabCount = `(() => {
   const el = document.querySelector('nav [data-decisions-count]');
@@ -199,9 +205,9 @@ export function decisionsPhase(ctx: LiveContext): LivePhase {
       await page.evaluate('window.__mcNoReload = true');
       const ready = await page.evaluate<boolean>(
         pageWait(
-          QUERIES.map(
-            (q) => `document.querySelector('[data-live="${q}"][data-state="ready"]') !== null`,
-          ).join(' && '),
+          [...QUERIES.map((q) => `[data-live="${q}"]`), ...BADGE_PANELS]
+            .map((p) => `document.querySelector('${p}[data-state="ready"]') !== null`)
+            .join(' && '),
           READY_WAIT_MS,
         ),
       );

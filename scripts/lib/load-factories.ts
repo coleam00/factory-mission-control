@@ -1,6 +1,11 @@
 import type { FactoryEntry } from '../../server/factories';
 import type { Db } from './db';
 
+/** Each run with its codebase and the factory mc.factory_of_codebase (migration 0019) gives it. */
+const RUN_FACTORIES = `SELECT r.id, c.name AS codebase, mc.factory_of_codebase(c.name) AS factory
+                   FROM public.remote_agent_workflow_runs r
+                   JOIN public.remote_agent_codebases c ON c.id = r.codebase_id`;
+
 /**
  * Upserts `entries` into mc.factories by name, deleting none, and gives each lap projected
  * before its factory existed (factory '' or its codebase's name) the factory the projection would
@@ -36,11 +41,7 @@ export async function loadFactories({
     ).length;
     const moved = await tx.query(
       `UPDATE mc.laps l SET factory = m.factory
-           FROM (SELECT r.id, c.name AS codebase,
-                   (SELECT f.name FROM mc.factories f WHERE f.codebase = c.name
-                     ORDER BY f.name LIMIT 1) AS factory
-                   FROM public.remote_agent_workflow_runs r
-                   JOIN public.remote_agent_codebases c ON c.id = r.codebase_id) m
+           FROM (${RUN_FACTORIES}) m
           WHERE l.run_id = m.id AND l.factory IN ('', m.codebase) AND l.factory <> m.factory
          RETURNING l.factory, m.codebase AS was, l.digest`,
       [],
@@ -48,11 +49,7 @@ export async function loadFactories({
     changed.laps = moved.length;
     await tx.query(
       `UPDATE mc.attention_items a SET factory = m.factory
-           FROM (SELECT r.id, c.name AS codebase,
-                   (SELECT f.name FROM mc.factories f WHERE f.codebase = c.name
-                     ORDER BY f.name LIMIT 1) AS factory
-                   FROM public.remote_agent_workflow_runs r
-                   JOIN public.remote_agent_codebases c ON c.id = r.codebase_id) m
+           FROM (${RUN_FACTORIES}) m
           WHERE a.run_id = m.id AND a.factory IN ('', m.codebase) AND a.factory <> m.factory`,
       [],
     );

@@ -21,6 +21,13 @@ CREATE TABLE IF NOT EXISTS mc.attention_items (
 
 CREATE INDEX IF NOT EXISTS attention_items_factory ON mc.attention_items (factory);
 
+-- The factory a codebase belongs to: the first, by name, whose codebase it is. The one place the
+-- attention projection and loadFactories (scripts/lib/load-factories.ts) re-attribution agree on that rule.
+CREATE OR REPLACE FUNCTION mc.factory_of_codebase(p_codebase text) RETURNS text
+LANGUAGE sql STABLE AS $$
+  SELECT f.name FROM mc.factories f WHERE f.codebase = p_codebase ORDER BY f.name LIMIT 1
+$$;
+
 CREATE OR REPLACE FUNCTION mc.project_attention_item(
   p_run_id uuid,
   p_codebase_id uuid,
@@ -49,10 +56,7 @@ BEGIN
     waiting_since, form, options, labels, message)
   VALUES (
     p_run_id,
-    coalesce(
-      (SELECT f.name FROM mc.factories f WHERE f.codebase = v_codebase ORDER BY f.name LIMIT 1),
-      v_codebase,
-      ''),
+    coalesce(mc.factory_of_codebase(v_codebase), v_codebase, ''),
     p_workflow,
     CASE WHEN v_wait ->> 'owner' = 'loop_group'
       THEN (v_wait ->> 'nodeId') || '.' || (v_wait ->> 'bodyWaitId')

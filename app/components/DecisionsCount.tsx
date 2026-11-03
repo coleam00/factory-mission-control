@@ -8,9 +8,19 @@ import { LivePanel } from '../live/LivePanel';
  */
 export function DecisionsCount({ factory }: { factory: string }): ReactElement {
   return (
-    <LivePanel<object> query="attention-items" factory={factory} className="inline">
+    <LivePanel<object>
+      query="attention-items"
+      name="decisions-count:attention-items"
+      factory={factory}
+      className="inline"
+    >
       {(attention) => (
-        <LivePanel<object> query="owner-queue" factory={factory} className="inline">
+        <LivePanel<object>
+          query="owner-queue"
+          name="decisions-count:owner-queue"
+          factory={factory}
+          className="inline"
+        >
           {(owner) => {
             const count =
               attention === undefined || owner === undefined ? 0 : attention.length + owner.length;
