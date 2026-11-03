@@ -9,6 +9,7 @@ import {
   resetSealBackoff,
   SEAL_RETRY_CEILING_MS,
   SEAL_RETRY_FIRST_MS,
+  SEAL_TIMEOUT_MS,
   seal,
 } from './LivePanel';
 
@@ -86,6 +87,25 @@ async function sealOn(branch: string | null, answered: string | null) {
 }
 
 afterEach(() => mock.restore());
+
+test('a seal request nobody answers fails when the timeout fires, so it cannot hold the tab', async () => {
+  const timeout = new AbortController();
+  const timer = spyOn(AbortSignal, 'timeout').mockReturnValue(timeout.signal);
+  spyOn(globalThis, 'fetch').mockImplementation(
+    ((_url, init) =>
+      new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener('abort', () => reject(new Error('timed out')));
+      })) as typeof fetch,
+  );
+  const settled = seal('home-map', '{}', null).then(
+    () => 'sealed',
+    (error: Error) => error.message,
+  );
+  expect(timer).toHaveBeenCalledWith(SEAL_TIMEOUT_MS);
+  expect(await Promise.race([settled, Bun.sleep(50).then(() => 'pending')])).toBe('pending');
+  timeout.abort();
+  expect(await settled).toBe('timed out');
+});
 
 test('a seal for the branch the page is on reaches the panel without the branch', async () => {
   const { outcome, follow } = await sealOn(null, null);

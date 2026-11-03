@@ -75,3 +75,36 @@ test('a panel whose connection ended for good shows its rows again once sealing 
     await page.close();
   }
 }, 40_000);
+
+test.each([
+  ['both', 'both of its clients'],
+  ['home', 'only its home client'],
+] as const)(
+  'a rewound page whose connection ended for good on %s recovers every panel (#274)',
+  async (rewound) => {
+    const bundle = await Bun.build({
+      entrypoints: [`${import.meta.dir}/fixtures/render-recovery.tsx`],
+      target: 'browser',
+      format: 'esm',
+      define: { 'process.env.NODE_ENV': '"production"' },
+    });
+    expect(bundle.success).toBe(true);
+    const source = Buffer.from(await bundle.outputs[0].text()).toString('base64');
+    const page = await openPage(process.env);
+    try {
+      const result = await page.evaluate<{
+        state: string;
+        text: string;
+        homeState: string;
+        homeText: string;
+      }>(
+        `import('data:text/javascript;base64,${source}').then(m => m.renderRecovery(1, 20000, '${rewound}'))`,
+      );
+      expect([result.state, result.text]).toEqual(['ready', 'the lap']);
+      expect([result.homeState, result.homeText]).toEqual(['ready', 'the lap']);
+    } finally {
+      await page.close();
+    }
+  },
+  40_000,
+);

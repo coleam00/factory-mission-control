@@ -1,6 +1,7 @@
 import {
   createRealtimeClient,
   type RealtimeClient,
+  type RealtimeLogEvent,
   type WebSocketFactory,
 } from '@neon/realtime/client';
 import {
@@ -40,7 +41,7 @@ interface LiveConfig {
 const newSocket: WebSocketFactory = (url, protocols) => new WebSocket(url, protocols);
 
 /** What `@neon/realtime` reports when a client's connection has ended for good. */
-const CONNECTION_ENDED: ReadonlySet<string> = new Set([
+const CONNECTION_ENDED: ReadonlySet<RealtimeLogEvent> = new Set([
   'connection_failed',
   'connection_reconnect_exhausted',
 ]);
@@ -90,25 +91,34 @@ export function LiveProvider({ children }: { children: ReactNode }): ReactElemen
       if (cancelled || !config || !clients) return;
       setLive({ status: 'ready', factories: config.factories, rewind: config.rewind, ...clients });
     };
-    const replace = (ended: RealtimeClient) => {
+    const ended = new Set<RealtimeClient>();
+    const replaceEnded = () => {
       if (!config || !clients) return;
       const { client, homeClient } = clients;
       const shared = client === homeClient;
-      if (ended === client) {
+      let nextClient = client;
+      let nextHome = homeClient;
+      if (ended.has(client)) {
         const next = connect(config.url, newSocket, () => onEnded(next));
-        clients = { client: next, homeClient: shared ? next : homeClient };
-      } else if (ended === homeClient) {
-        const next = connect(config.home, newSocket, () => onEnded(next));
-        clients = { client, homeClient: next };
+        nextClient = next;
+        if (shared) nextHome = next;
       }
+      if (!shared && ended.has(homeClient)) {
+        const next = connect(config.home, newSocket, () => onEnded(next));
+        nextHome = next;
+      }
+      ended.clear();
+      clients = { client: nextClient, homeClient: nextHome };
       publish();
     };
-    const onEnded = (ended: RealtimeClient) => {
-      if (cancelled || replacing !== undefined) return;
+    const onEnded = (client: RealtimeClient) => {
+      if (cancelled) return;
+      ended.add(client);
+      if (replacing !== undefined) return;
       wait = Math.min(REPLACE_CEILING_MS, Math.max(REPLACE_FIRST_MS, wait * 2));
       replacing = setTimeout(() => {
         replacing = undefined;
-        if (!cancelled) replace(ended);
+        if (!cancelled) replaceEnded();
       }, wait);
     };
     /** The clients for `config`; a second one for the home branch only while rewound. */
