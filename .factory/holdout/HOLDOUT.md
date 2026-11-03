@@ -58,11 +58,11 @@ Run them with `bun .factory/holdout/judges/<name>.js <record.json>`.
 
 ## H-01 No holdout's words ever show up anywhere in the dashboard
 Protects: invariant 3; section 5 (no scenario text copied); 4.5; 4.6; 11.7
-Touches: Archon projection, app-check lines, testing panel, one lap, scorecard (new holdout catch), health, sealing API, every dashboard table
+Touches: Archon projection, app-check lines, Factory map (cards, chips, details strip and its tabs, deeper views), step screens, testing panel, one lap, scorecard (new holdout catch), health, sealing API, every dashboard table
 Setup: the check app. Pick a canary string that is nowhere in the seed or the code, e.g. `CANARY-ZEBRA-7741`.
 Steps:
 1. Insert, as Archon would, a completed `archon-loop` lap whose `check-app` step output carries four app-check lines of kind `holdout`: (a) text "H-07 the user sees CANARY-ZEBRA-7741 on the lanes", verdict FAIL, empty `pre_existing`; (b) text "CANARY-ZEBRA-7741 with no scenario id", verdict PASS; (c) text "H-12 then H-03 CANARY-ZEBRA-7741", verdict FAIL, non-empty `pre_existing`; (d) text "h-9 and H-7 are not ids CANARY-ZEBRA-7741", verdict PASS.
-2. Without a reload, visit every screen: the home map and the `check-app` step detail, the factory page (graph, lanes, recent laps), the scorecard for that lap's version, the testing panel, the one-lap page of that lap, health, the owner queue, and the rewind list. Hover every badge that has a tooltip.
+2. Without a reload, visit every screen: the Factory map (`/f/<factory>`), selecting every card and opening every tab of its details strip (App check's Right now and Behind the scenes included), every deeper view a ⤢ card opens (App check's included), and the `check-app` step screen reached from App check's Behind the scenes; the factory page (graph, lanes, recent laps), the scorecard for that lap's version, the testing panel, the one-lap page of that lap, health, the owner queue, and the rewind list. Hover every badge that has a tooltip.
 3. Record the full text and attributes of every page's DOM and every network payload the browser received (HTTP responses and Realtime frames).
 4. On the check branch, search every column of every table and view the repository's migrations created (not Archon's own tables) for the canary, including `projection_errors`.
 Expect:
@@ -70,11 +70,12 @@ Expect:
 - The testing panel and the one-lap page show line (a) as `H-07` FAIL, line (c) as `H-12` (the first id, never `H-03`), and lines (b) and (d) as `unidentified`.
 - The scorecard's new holdout catches for that version rise by exactly one (line (a) only: (c) has `pre_existing`).
 Author: writer, 2026-10-24, first set for the whole release (docs/mission-control.prd.md)
+Revised: 2026-11-03 by the owner, PRD 4.1 v2: the v1 home map and its step detail in step 2 are replaced by the v2 Factory map (every card, every details-strip tab, every deeper view) and the `check-app` step screen reached from Behind the scenes
 
 ## H-03 When a lap merges, every screen agrees on the next update
-Protects: journey 2; 4.3; the `merge` definition in 4.2; invariant 4
-Touches: lanes, recent laps, issue graph, phase bars, home map live counts, scorecard, health workable count
-Setup: the check app; a running lap (seed or inserted) that has claimed open issue #N in phase P, with a pull request open for #N. Open the factory page, the home map and the scorecard for the lap's version in separate tabs; note phase P's merged/total, the scorecard's laps and merges and the lap counts they show, and the map's live counts.
+Protects: journey 2; 4.3; the `merge` definition in 4.2; invariant 4; 4.1 Live (a lap counts once, on its deepest running step's card; Shipped shows merges today)
+Touches: lanes, recent laps, issue graph, phase bars, Factory map chips (Merge's "here", Shipped's "merged") and Right now, scorecard, health workable count
+Setup: the check app; a running lap (seed or inserted) that has claimed open issue #N in phase P, with a pull request open for #N. Open the factory page, the Factory map (`/f/<factory>`) and the scorecard for the lap's version in separate tabs; note phase P's merged/total, the scorecard's laps and merges and the lap counts they show, and every card's chips and `data-live-count` on the Factory map. On the map, select Merge and keep its Right now tab open. Run with the browser's time zone UTC, between 03:00 and 21:00 UTC (as the shared setup for H-59..H-77), so the merge falls in today.
 Steps:
 1. Insert, as Archon would, `node_started` and `node_completed` for `land` with output `outcome = merged`, then mark the run completed with `completed_at`.
 2. Deliver, as GitHub would, the pull request's merge, the issue's close, a `Loop review: merged (route: simple) at <sha> by the merge gate, after the review above.` comment, and the matching `Loop claim released: run <id> ended.` comment.
@@ -82,10 +83,11 @@ Steps:
 Expect:
 - The lap's lane is gone from the running lanes; recent laps lists it with outcome merged, a duration equal to its `completed_at` minus `started_at`, and a cost equal to the sum of its steps' `cost_usd`.
 - Issue #N shows as merged in the graph; phase P's merged count rises by one and its total does not change; if #N was on the highlighted longest open chain, the highlight moves to the new longest open chain.
-- No step on the map counts the lap any more.
+- No card on the Factory map counts the lap any more: while the lap was on `land` it counted once, on Merge; after the run completes Merge's "here" and `data-live-count` drop by one, no other card's count rises, and Merge's Right now no longer lists the lap or #N. Shipped's "merged" rises by exactly one, and only once although the merge is told by both Archon's `land` output and GitHub's events (`judges/map-live.js` PASS on the observations before and after).
 - The scorecard's merges rise by exactly one and its laps do not change: the lap already counted as a lap while it was running (4.2: a lap is an `archon-loop` run, whatever its status). The lap count the count measures say they rest on does not change; only the time measures (those built on lap durations) newly take in this lap, now that it has finished.
 - Every change is visible within 5 seconds of the last write it depends on (`judges/liveness.js` PASS).
 Author: writer, 2026-10-24, first set for the whole release (docs/mission-control.prd.md)
+Revised: 2026-11-03 by the owner, PRD 4.1 v2: the v1 home map's per-step live counts are replaced by the v2 Factory map's cards, chips and Right now (the lap leaves Merge's count, Shipped's merged rises once)
 
 ## H-04 The scorecard computes every measure exactly as defined, including the awkward laps
 Protects: 4.2 measure table; 8.2; invariant 4; 10 (never summed across factories)
@@ -287,18 +289,19 @@ Author: writer, 2026-10-24, first set for the whole release (docs/mission-contro
 
 ## H-17 Everything is per factory: one works on its own, two never mix
 Protects: 11.6; 10 (never summed across factories); 4.3 to 4.8 "per factory"
-Touches: factories.json, every per-factory screen, home map live counts
+Touches: factories.json, every per-factory screen, Factory map chips and Right now, factory switcher
 Setup: the check app with `factories.json` as committed (mission control only).
 Steps:
 1. Visit every screen with exactly one factory; note any error or empty-state message.
 2. Add a second factory to `factories.json` (another repository and Archon codebase name and console URL). Insert, as Archon would, running and finished laps for its codebase, and deliver GitHub issues, labels, claims and an owner question for its repository. Restart serve.
-3. Visit every screen for each factory, and the home map's live counts.
+3. Visit every screen for each factory, and each factory's Factory map (`/f/<factory>`): every card's chips and `data-live-count`, and every card's Right now.
 4. Insert laps for a codebase that is in no factory.
 Expect:
 - With one factory every screen works and reaches ready, with no factory-picker error.
-- With two, each factory's lanes, recent laps, graph, phases, owner queue, testing, health, scorecard and versions show only its own facts; no number anywhere sums both; the map's live counts are shown per factory; one-lap console links use that factory's console URL.
+- With two, each factory's lanes, recent laps, graph, phases, owner queue, testing, health, scorecard and versions show only its own facts; no number anywhere sums both; each factory's Factory map counts only its own laps, queued issues, failing pull requests, open owner questions and merges today on its cards, and each card's Right now lists only its own laps and issues; one-lap console links use that factory's console URL.
 - Laps from a codebase in no factory appear nowhere.
 Author: writer, 2026-10-24, first set for the whole release (docs/mission-control.prd.md)
+Revised: 2026-11-03 by the owner, PRD 4.1 v2: the v1 home map's live counts are replaced by each factory's v2 Factory map (its cards' chips and Right now)
 
 ## H-18 One lap tells the same story as every other screen
 Protects: 4.6; 4.3 recent laps outcomes; 4.2 definitions; invariant 4
@@ -401,8 +404,8 @@ Expect:
 Author: writer, 2026-10-25, coverage of PRD 11.2 version row and 4.2 version strip before the loop builds them
 
 ## H-25 With exactly one factory nothing offers a phantom second
-Protects: 11.6 (must work with exactly one); engineering.md (empty states are one sentence and at most one button); 4.1 per-factory live counts
-Touches: factory strip or picker, shared header, home map, every factory-keyed screen, the root address
+Protects: 11.6 (must work with exactly one); engineering.md (empty states are one sentence and at most one button); 4.1 Live (the laps of the selected factory)
+Touches: factory switcher, shared header, Factory map (cards, chips, details strip), every factory-keyed screen, the root address
 Setup: the check app with `factories.json` as committed (one factory). Separately, a copy with one factory whose codebase has no laps, no issues and no versions yet (serve restarted).
 Steps:
 1. Open the app's root address and every screen reachable from it; open every menu, picker and dropdown.
@@ -410,36 +413,22 @@ Steps:
 3. Repeat step 1 on the factory with no data yet.
 Expect:
 - The root opens straight onto working screens: no "choose a factory" prompt, no "all factories" or combined view, no empty, blank, placeholder or second entry in any factory list, and no control that switches to nothing.
-- The home map's live counts show the one factory's laps only; the lap of the codebase in no factory appears nowhere and changes no count.
-- With a factory that has no data, every screen reaches ready and shows a one-sentence empty state with at most one button: never an outage message, and never "does not exist" for a factory that is in the list.
+- The Factory map's chips count the one factory's laps only: the factory's lap is counted once, on the card of the step it is on, and the lap of the codebase in no factory appears nowhere (no chip, no `data-live-count`, no Right now) and changes no count.
+- With a factory that has no data, every screen reaches ready and shows a one-sentence empty state with at most one button: never an outage message, and never "does not exist" for a factory that is in the list. Its Factory map still draws every card and line, with no chip showing a number above zero, and every card's Right now says in one sentence that nothing is there.
 Author: writer, 2026-10-25, coverage of PRD 11.6 factories before the loop builds it
-
-## H-27 A step address works on its own, survives reload, and follows the version
-Protects: 4.1 step detail; 4.2 (versions and the architecture diff); invariant 6
-Touches: step detail addressing, version strip or pin selector, architecture diff, browser history
-Setup: the check app with two versions parsed (as H-15: the committed pack, and a local copy). In the copy, change one sentence of the command file of a step that lives inside an included block (not a top-level loop step), and remove a different step from inside an included block.
-Steps:
-1. From the map at the newer version, open the changed included step's detail; copy its address. Open it in a fresh tab, reload it, then use Back and Forward.
-2. On that detail, switch to the older version by the app's own controls.
-3. Open the removed included step's detail at the version that has it, then switch to the version that does not.
-4. Open the architecture diff between the two versions and follow whatever it offers toward the changed and removed steps.
-Expect:
-- The copied address opens the same step's full detail in a fresh tab and after a reload, never the map's home state, a parent step, or a not-found; Back and Forward return to the same pages.
-- Switching versions on the changed step shows that version's text for the same step; nothing from the other version lingers.
-- On the version without the removed step, its detail reads as not found at that version (one sentence, at most one button), never the other version's content.
-- The diff names the changed prompt and the removed step by the included step's own name, as steps, not as a change to the step that includes them; where the diff links to a step, the link opens that step's detail at the right version.
-Author: writer, 2026-10-26, escaped defect #105 (steps inside an included block had no detail page)
+Revised: 2026-11-03 by the owner, PRD 4.1 v2: the v1 home map's live counts are replaced by the v2 Factory map's chips and Right now; the factory with no data still draws the whole map
 
 ## H-30 A step that does not exist still reads as not found, and only those do
-Protects: 4.1 step detail; engineering.md (an empty state is one sentence and at most one button); 8.4 (panels settle)
-Touches: step detail addressing, shared header, home map
-Setup: the check app at the pinned version. Take a real included step's address (from H-26) and a real top-level step's address.
+Protects: 4.1 (step details from the existing step screens `/steps/<workflow>/<step>`; Behind the scenes links each covered step's screen); engineering.md (an empty state is one sentence and at most one button); 8.4 (panels settle)
+Touches: step screen addressing, shared header, Factory map details strip (Behind the scenes)
+Setup: the check app at the pinned version. From the Factory map, take a real included step's address from Review's Behind the scenes (the `ship/deliver/rounds/review` link) and a real top-level step's address from Merge's Behind the scenes (the top-level `review` link).
 Steps: open, each in a fresh tab, step addresses with: an id no workflow has (`nope`); a real included step's id placed under the wrong parent workflow or block, if the address carries one; a real step id in a different letter case; a real id with a trailing `%20`; an empty id; a 300-character id; `..%2F`; and the id of a step that exists only at another version, under this version. Record each page after 3 seconds and every panel's `data-state`.
 Expect:
 - Every one reads as this step not found (or words to that effect) in one sentence with at most one button that leads somewhere working (for example the map); none shows another step's detail, a parent step, an outage message or a spinner, and every panel has settled within 2 seconds.
-- The real included and top-level addresses, opened the same way, show their full detail: the not-found rule catches only steps that are truly not in the parsed architecture at that version.
+- The real included and top-level addresses, opened the same way, show their full detail, the same as when reached from Behind the scenes: the not-found rule catches only steps that are truly not in the parsed architecture at that version.
 - A differently cased or padded id is treated as the real step everywhere on the page or as not found everywhere, never a real step's name over an empty detail.
 Author: writer, 2026-10-26, escaped defect #105 (steps inside an included block had no detail page)
+Revised: 2026-11-03 by the owner, PRD 4.1 v2: the real addresses now come from the v2 Factory map's Behind the scenes (retired H-26 and the v1 home map no longer supply them), and the not-found button may lead to the Factory map
 
 ## H-32 No lock on any dashboard table ever makes any Archon write fail or wait
 Protects: invariant 1 (never make an Archon write fail or wait; a trigger never raises); 11.4 (every trigger body catches every error into `projection_errors`); engineering.md ("Nothing writes to Archon's tables. Triggers on them catch every error into projection_errors")
@@ -722,21 +711,6 @@ Expect:
 - The verdict and the decision naming the shared prefix attach to neither PA nor PB; PA and PB remain listed as being tested. The unknown verdict and decision attach to no version. None of them is shown under another version, and none of them changes any version's label.
 - After step 3 nothing is duplicated or relinked.
 Author: writer, 2026-10-26, escaped defect #157 (class: every join between a short and a full sha, on every surface that joins one)
-
-## H-56 Magenta marks only who we are: nothing you can click, select or focus is ever drawn in it
-Protects: 8.3 design contract (magenta only for identity) and engineering.md Design rule ("magenta is identity only"), as decided by the owner on #27 question 4 (2026-10-27): links, selection, focus and highlighted versions on the Versions screen, and anywhere else, use neutral tokens; magenta only on identity
-Touches: every screen and the shared layout, version strip and comparison, home map (nodes, edges, highlighted steps), factory switcher, rewind controls, links, focus, hover and pressed styles, text selection, live-arriving rows
-Setup: the check app on the seed, with two factories (as in H-17) and at least three versions on the strip. Identity means the product's brand mark and wordmark only; anything else the verifier records as identity needs a line of the product document that makes it so, quoted in the record.
-Steps:
-1. On every screen `judges/identity-color.js` names (`REQUIRED_SCREENS`), at 1440 and 390 px, record the computed styles of every link, button, tab, menu item, map node and edge, version entry, and the brand mark: at rest, hovered, keyboard-focused (reached with Tab, not a click, so `:focus-visible` applies), pressed, and, for anything that can be chosen, selected, selected and hovered, and selected and focused. Open every menu and popover first so their items are recorded open.
-2. On the Versions screen, select one version, then pick two for a comparison; then, without a reload, deliver a pin and a lap of a new digest so a new entry arrives while one is selected, and record the arriving entry and the still-selected one. Select the new one by keyboard only and record it.
-3. Select a run of text in a panel and in a step's prompt text, and record the `::selection` colors.
-4. Hover and focus the brand mark (if it is a link) and record those states.
-5. Repeat steps 1 to 4 with the operating system set to light mode.
-Expect:
-- `bun .factory/holdout/judges/identity-color.js <record.json>` prints PASS: no element other than the brand mark and wordmark shows a color in the identity band in any state, including a translucent magenta focus ring or selection wash; the brand mark's own hover and focus cues are not magenta either.
-- The app stays dark in light mode and the same holds there; no state, open menu or newly arrived entry is an exception.
-Author: writer, 2026-10-27, owner decision on #27 question 4 (tracking #229): the class, a non-identity element drawn in the identity color
 
 ## H-58 Cleaning up old check branches never deletes one a running lap still uses
 Protects: 11.3 runtime contract (`fixture:drop` deletes its own branch and any `check-*` branch older than 3 hours, and refuses anything not `check-*`), as amended by the owner decision on #27 question 6 (2026-10-27): the age cleanup skips any `check-*` branch owned by a run that is still running, and orphans of ended runs are still deleted after 3 hours; invariant 8
@@ -1192,6 +1166,23 @@ Expect:
 - `judges/step-coverage.js` prints PASS.
 Author: writer, 2026-10-26, escaped defect #105 (steps inside an included block had no detail page)
 
+### H-27 A step address works on its own, survives reload, and follows the version
+Retired: 2026-11-03 by the owner, PRD 4.1/8.3 amended (v2 map)
+Protects: 4.1 step detail; 4.2 (versions and the architecture diff); invariant 6
+Touches: step detail addressing, version strip or pin selector, architecture diff, browser history
+Setup: the check app with two versions parsed (as H-15: the committed pack, and a local copy). In the copy, change one sentence of the command file of a step that lives inside an included block (not a top-level loop step), and remove a different step from inside an included block.
+Steps:
+1. From the map at the newer version, open the changed included step's detail; copy its address. Open it in a fresh tab, reload it, then use Back and Forward.
+2. On that detail, switch to the older version by the app's own controls.
+3. Open the removed included step's detail at the version that has it, then switch to the version that does not.
+4. Open the architecture diff between the two versions and follow whatever it offers toward the changed and removed steps.
+Expect:
+- The copied address opens the same step's full detail in a fresh tab and after a reload, never the map's home state, a parent step, or a not-found; Back and Forward return to the same pages.
+- Switching versions on the changed step shows that version's text for the same step; nothing from the other version lingers.
+- On the version without the removed step, its detail reads as not found at that version (one sentence, at most one button), never the other version's content.
+- The diff names the changed prompt and the removed step by the included step's own name, as steps, not as a change to the step that includes them; where the diff links to a step, the link opens that step's detail at the right version.
+Author: writer, 2026-10-26, escaped defect #105 (steps inside an included block had no detail page)
+
 ### H-28 Two blocks with a step of the same name each keep their own detail
 Retired: 2026-11-03 by the owner, PRD 4.1/8.3 amended (v2 map)
 Protects: 4.1 step detail; 11.4 (steps stored per workflow; includes expanded the way Archon expands them); invariant 6
@@ -1336,6 +1327,22 @@ Expect:
 - After step 4 the version is relabelled by the late pin (as H-23) and its map, step details and diff follow it: they say C3's architecture is not recorded; they never keep showing C2's under the C3 label.
 - After step 5, within 5 seconds and without a reload, they show C3's architecture.
 Author: writer, 2026-10-26, escaped defect #157 (class: label and architecture are one fact seen twice, so they must always agree)
+
+### H-56 Magenta marks only who we are: nothing you can click, select or focus is ever drawn in it
+Retired: 2026-11-03 by the owner, PRD 8.3 amended (v2 colors): H-74 checks the stricter rule (amber and magenta appear nowhere)
+Protects: 8.3 design contract (magenta only for identity) and engineering.md Design rule ("magenta is identity only"), as decided by the owner on #27 question 4 (2026-10-27): links, selection, focus and highlighted versions on the Versions screen, and anywhere else, use neutral tokens; magenta only on identity
+Touches: every screen and the shared layout, version strip and comparison, home map (nodes, edges, highlighted steps), factory switcher, rewind controls, links, focus, hover and pressed styles, text selection, live-arriving rows
+Setup: the check app on the seed, with two factories (as in H-17) and at least three versions on the strip. Identity means the product's brand mark and wordmark only; anything else the verifier records as identity needs a line of the product document that makes it so, quoted in the record.
+Steps:
+1. On every screen `judges/identity-color.js` names (`REQUIRED_SCREENS`), at 1440 and 390 px, record the computed styles of every link, button, tab, menu item, map node and edge, version entry, and the brand mark: at rest, hovered, keyboard-focused (reached with Tab, not a click, so `:focus-visible` applies), pressed, and, for anything that can be chosen, selected, selected and hovered, and selected and focused. Open every menu and popover first so their items are recorded open.
+2. On the Versions screen, select one version, then pick two for a comparison; then, without a reload, deliver a pin and a lap of a new digest so a new entry arrives while one is selected, and record the arriving entry and the still-selected one. Select the new one by keyboard only and record it.
+3. Select a run of text in a panel and in a step's prompt text, and record the `::selection` colors.
+4. Hover and focus the brand mark (if it is a link) and record those states.
+5. Repeat steps 1 to 4 with the operating system set to light mode.
+Expect:
+- `bun .factory/holdout/judges/identity-color.js <record.json>` prints PASS: no element other than the brand mark and wordmark shows a color in the identity band in any state, including a translucent magenta focus ring or selection wash; the brand mark's own hover and focus cues are not magenta either.
+- The app stays dark in light mode and the same holds there; no state, open menu or newly arrived entry is an exception.
+Author: writer, 2026-10-27, owner decision on #27 question 4 (tracking #229): the class, a non-identity element drawn in the identity color
 
 ### H-57 With magenta gone, you can still tell what is selected, hovered and focused, on every screen
 Retired: 2026-11-03 by the owner, PRD 4.1/8.3 amended (v2 map)
