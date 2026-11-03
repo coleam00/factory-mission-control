@@ -54,7 +54,7 @@ export interface ShownOwnerItem {
   waited: string | null;
 }
 
-const itemsOnScreen = `[...document.querySelectorAll('${ITEM}')].map((li) => ({
+export const itemsOnScreen = `[...document.querySelectorAll('${ITEM}')].map((li) => ({
   id: li.getAttribute('data-owner-item'),
   title: li.querySelector('[data-title]')?.textContent ?? '',
   href: li.querySelector('a[data-thread]')?.getAttribute('href') ?? null,
@@ -72,16 +72,16 @@ const itemsOnScreen = `[...document.querySelectorAll('${ITEM}')].map((li) => ({
 }))`;
 
 /** Controls that could send something: the owner screen has none, only links to GitHub. */
-const controlsOnScreen = `[...document.querySelectorAll('main form, main button, main input, main select, main textarea')].map((el) => el.outerHTML.slice(0, 120))`;
+export const controlsOnScreen = `[...document.querySelectorAll('main form, main button, main input, main select, main textarea')].map((el) => el.outerHTML.slice(0, 120))`;
 
 /** The seed's open needs-owner issues, read apart from db/queries/owner-queue.sql. */
-const OPEN_NEEDS_OWNER_SQL = `SELECT i.number, i.title, i.url, i.updated_at, l.labeled_at
+export const OPEN_NEEDS_OWNER_SQL = `SELECT i.number, i.title, i.url, i.updated_at, l.labeled_at
   FROM mc.issues i
   JOIN mc.issue_labels l ON l.factory = i.factory AND l.issue_number = i.number
   WHERE i.factory = $1 AND i.state = 'open' AND l.label = 'needs-owner' ORDER BY i.number`;
 
 /** The seed's open owner questions with their issue's URL. */
-const OPEN_QUESTIONS_SQL = `SELECT q.issue_number, q.question_number, q.question, q.options,
+export const OPEN_QUESTIONS_SQL = `SELECT q.issue_number, q.question_number, q.question, q.options,
     q.recommendation, q.default_option, q.default_at, q.raised_at, i.url
   FROM mc.owner_questions q
   LEFT JOIN mc.issues i ON i.factory = q.factory AND i.number = q.issue_number
@@ -168,7 +168,7 @@ export function ownerMismatches(
  * Runs `fixture:write label`, which labels the highest-numbered open issue without `needs-owner`,
  * and times it from the write's exit to that issue appearing in the queue.
  */
-async function labelToScreen(
+export async function labelToScreen(
   page: Page,
   db: Db,
   deps: Deps,

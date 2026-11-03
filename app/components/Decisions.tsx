@@ -239,7 +239,10 @@ export function WaitingItems({
   );
 }
 
-/** What waits on the owner: Archon's attention items, and the old loop's questions and issues. */
+/**
+ * What waits on the owner: Archon's attention items, and the old loop's questions and issues. The
+ * second panel sits inside the first's render, so both subscribe at once.
+ */
 export function WaitingOnYou({ factory }: { factory: string | undefined }): ReactElement {
   return (
     <section className="grid gap-3">
@@ -247,15 +250,15 @@ export function WaitingOnYou({ factory }: { factory: string | undefined }): Reac
       <p className="text-sm text-text-secondary">{CAPTION}</p>
       <LivePanel<AttentionRow> query="attention-items" factory={factory}>
         {(attention, attentionState) => (
-          <PanelBody
-            rows={attention}
-            state={attentionState}
-            factory={factory}
-            what="what is waiting on you"
-          >
-            {(loadedAttention) => (
-              <LivePanel<OwnerQueueRow> query="owner-queue" factory={factory}>
-                {(owner, ownerState) => (
+          <LivePanel<OwnerQueueRow> query="owner-queue" factory={factory}>
+            {(owner, ownerState) => (
+              <PanelBody
+                rows={attention}
+                state={attentionState}
+                factory={factory}
+                what="what is waiting on you"
+              >
+                {(loadedAttention) => (
                   <PanelBody
                     rows={owner}
                     state={ownerState}
@@ -267,9 +270,9 @@ export function WaitingOnYou({ factory }: { factory: string | undefined }): Reac
                     )}
                   </PanelBody>
                 )}
-              </LivePanel>
+              </PanelBody>
             )}
-          </PanelBody>
+          </LivePanel>
         )}
       </LivePanel>
     </section>
@@ -317,23 +320,24 @@ export function DecisionsHealth({ factory }: { factory: string | undefined }): R
       <h2 className={LABEL}>Factory health</h2>
       <LivePanel<HealthRunRow> query="health-runs" factory={factory} className="grid gap-8">
         {(runs, runsState) => (
-          <PanelBody rows={runs} state={runsState} factory={factory} what="waiting and failed runs">
-            {(loadedRuns, name) => (
-              <LivePanel<HealthStepRow>
-                query="health-steps"
+          <LivePanel<HealthStepRow> query="health-steps" factory={factory} className="grid gap-8">
+            {(steps, stepsState) => (
+              <PanelBody
+                rows={runs}
+                state={runsState}
                 factory={factory}
-                className="grid gap-8"
+                what="waiting and failed runs"
               >
-                {(steps, stepsState) => (
+                {(loadedRuns, name) => (
                   <PanelBody rows={steps} state={stepsState} factory={factory} what="running steps">
                     {(loadedSteps) => (
                       <HealthDrawn runs={loadedRuns} steps={loadedSteps} factory={name} />
                     )}
                   </PanelBody>
                 )}
-              </LivePanel>
+              </PanelBody>
             )}
-          </PanelBody>
+          </LivePanel>
         )}
       </LivePanel>
       <LivePanel<HealthWorkableRow> query="health-workable" factory={factory}>

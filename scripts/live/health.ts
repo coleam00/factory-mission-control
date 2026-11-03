@@ -55,7 +55,7 @@ export interface ShownHealth {
   running: number | null;
 }
 
-const healthOnScreen = `(() => {
+export const healthOnScreen = `(() => {
   const all = (selector) => [...document.querySelectorAll(selector)];
   const count = (el) => (el === null ? null : Number(el.getAttribute('data-count')));
   const waiting = (status) =>
@@ -154,7 +154,7 @@ export interface ExpectedHealth {
 }
 
 /** What SQL says the screen should show, at the check's clock `now`. */
-async function expectedHealth(
+export async function expectedHealth(
   db: Db,
   factory: string,
   now: Date,
