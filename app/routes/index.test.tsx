@@ -212,3 +212,21 @@ test('the map code names no step: what each card covers lives in factory-map.jso
     expect({ file, named }).toEqual({ file, named: [] });
   }
 });
+
+test('a failed workable or owner source draws its chip as unavailable, never as zero', () => {
+  const html = renderToStaticMarkup(
+    <MemoryRouter>
+      <HomeMapBody
+        sources={{ map: [] }}
+        states={{ workable: 'error', owner: 'error', steps: 'error' }}
+        state="ready"
+        factory="here"
+        at={null}
+        flow={false}
+      />
+    </MemoryRouter>,
+  );
+  expect(html).toContain('? queued');
+  expect(html).toContain('? waiting');
+  expect(html).not.toContain('0 queued');
+});

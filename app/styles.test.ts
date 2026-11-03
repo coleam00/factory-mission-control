@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { join, relative, resolve } from 'node:path';
+import { TOKEN_SOURCES } from '../harness/design-probe';
 
 const repoRoot = resolve(import.meta.dir, '..');
 const read = (path: string) => readFileSync(join(repoRoot, path), 'utf-8');
@@ -46,11 +47,7 @@ function declarations(css: string): Declaration[] {
 const app = declarations(read('app/styles.css'));
 
 describe('console and v2 role tokens', () => {
-  for (const source of [
-    'docs/design/archon-console/theme.css',
-    'docs/design/archon-console/index.css',
-    'docs/design/v2/tokens.css',
-  ]) {
+  for (const source of TOKEN_SOURCES.map((path) => relative(repoRoot, path))) {
     test(`every custom property in ${source} is declared identically in app/styles.css`, () => {
       const tokens = declarations(read(source)).filter((d) => d.property.startsWith('--'));
       expect(tokens.length).toBeGreaterThan(0);

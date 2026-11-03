@@ -25,7 +25,7 @@ const HEIGHT = 900;
 /** How long one DevTools command, the page load or the in-page checks may take. */
 const STEP_TIMEOUT_MS = 20000;
 /** The console's tokens, then the v2 role colors laid over them (docs/design/v2/README.md). */
-const TOKEN_SOURCES = [
+export const TOKEN_SOURCES = [
   ['archon-console', 'index.css'],
   ['archon-console', 'theme.css'],
   ['v2', 'tokens.css'],

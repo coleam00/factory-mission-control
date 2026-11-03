@@ -7,11 +7,14 @@ import { type StepRow, stepHref } from '../lib/step-detail';
 import data from './factory-map.json';
 
 /** Who is acting on a card, which is its color (docs/design/v2/tokens.css). */
-export type Role = 'source' | 'agent' | 'test' | 'person';
+export const ROLES = ['source', 'agent', 'test', 'person'] as const;
+export type Role = (typeof ROLES)[number];
 
-export type Chip = 'queued' | 'failing' | 'waiting' | 'merged';
+export const CHIPS = ['queued', 'failing', 'waiting', 'merged'] as const;
+export type Chip = (typeof CHIPS)[number];
 
-export type LineStyle = 'flow' | 'ask' | 'loop' | 'holdout';
+export const LINE_STYLES = ['flow', 'ask', 'loop', 'holdout'] as const;
+export type LineStyle = (typeof LINE_STYLES)[number];
 
 /** A step's own screen: the workflow that declares it and its path there. */
 export interface Screen {
@@ -103,6 +106,24 @@ export function worldSize(map: FactoryMap): { width: number; height: number } {
   };
 }
 
+/** The fit's margin around the map, in pixels. */
+export const FIT_PAD = 16;
+/** Room the fit keeps under the map for the hint and the controls. */
+export const FIT_FOOT = 48;
+/** The frame's least height (owner, PR #326 review). */
+export const MIN_FRAME = 420;
+/** The largest scale a fit uses. */
+export const FIT_MAX = 1.15;
+
+/**
+ * The frame's height for a `width` of at least the phone's: the map's height at the scale that
+ * fits its width, so a fit leaves no empty bands (owner, PR #326 review, acceptance 10).
+ */
+export function heroFrameHeight(world: { width: number; height: number }, width: number): number {
+  const k = Math.min((width - FIT_PAD * 2) / world.width, FIT_MAX);
+  return Math.max(MIN_FRAME, Math.ceil(world.height * k + FIT_PAD * 2 + FIT_FOOT));
+}
+
 const cardById = (map: FactoryMap, id: string): Card => {
   const card = map.cards.find((c) => c.id === id);
   if (card === undefined) throw new Error(`the factory map has no card ${id}`);
@@ -180,7 +201,8 @@ export function neighbours(map: FactoryMap, id: string | null): Set<string> {
  * A step's path from Archon's step id. Archon names a nested step by its path joined with `__`
  * (`ship__deliver__rounds__review`), and a loop group's body step `<group>.<step>` on every
  * iteration (`ship__deliver__rounds.review__policy`, lap-graph.ts), so both separate segments.
- * No pinned step's own name holds a dot.
+ * That is lap-graph's `mapPathOf` while no pinned path holds a dot, which `bun run map:check`
+ * holds for every covered workflow.
  */
 export const stepPath = (stepId: string) => stepId.split('__').join('/').replaceAll('.', '/');
 

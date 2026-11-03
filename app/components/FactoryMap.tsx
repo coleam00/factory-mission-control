@@ -14,6 +14,11 @@ import {
 import {
   type Card,
   cardWidth,
+  FIT_FOOT,
+  FIT_MAX,
+  FIT_PAD,
+  heroFrameHeight,
+  MIN_FRAME,
   type FactoryMap as FactoryMapData,
   type Line,
   type LineStyle,
@@ -63,14 +68,6 @@ export const MAP_TYPE = { kind: 18, title: 25, text: 20, chip: 15, label: 18 } a
 const LABEL_CHAR_W = Math.ceil(MAP_TYPE.label * 0.6);
 const MIN_ZOOM = 0.1;
 const MAX_ZOOM = 2.4;
-/** The fit's margin around the map, in pixels. */
-const FIT_PAD = 16;
-/** Room the fit keeps under the map for the hint and the controls. */
-const FIT_FOOT = 48;
-/** The frame's least height (owner, PR #326 review). */
-const MIN_FRAME = 420;
-/** The largest scale a fit uses. */
-const FIT_MAX = 1.15;
 /**
  * Below this width the map opens as refs/40-home-phone.png draws it: the line at a readable scale,
  * centred between Review and App check, the rest a pan away. Fit still fits the whole map.
@@ -198,6 +195,9 @@ function chipsOf(live: CardLive | undefined) {
     'bg-[color:var(--accent-soft)] text-[color:var(--running)]',
   );
   add('queued', live.queued?.length, 'queued', 'bg-surface-hover text-text-primary');
+  for (const chip of live.unavailable ?? []) {
+    chips.push({ chip, text: `? ${chip}`, className: 'bg-surface-hover text-text-secondary' });
+  }
   add(
     'failing',
     live.failing?.length,
@@ -419,6 +419,7 @@ export function FactoryMap({
   flow,
   onDrawn,
   steps,
+  stepsFailed,
 }: {
   map: FactoryMapData;
   live: ReadonlyMap<string, CardLive>;
@@ -429,6 +430,8 @@ export function FactoryMap({
   onDrawn?: (drawn: boolean) => void;
   /** The pinned version's steps, for Behind the scenes; undefined until they arrive. */
   steps?: readonly StepRow[];
+  /** True when `step-detail` failed, so Behind the scenes says so instead of loading forever. */
+  stepsFailed?: boolean;
 }): ReactElement {
   const world = useMemo(() => worldSize(map), [map]);
   const stage = useRef<HTMLElement>(null);
@@ -475,8 +478,7 @@ export function FactoryMap({
     if (!el) return;
     const width = el.clientWidth;
     if (width >= PHONE) {
-      const k = Math.min((width - FIT_PAD * 2) / world.width, FIT_MAX);
-      const height = Math.max(MIN_FRAME, Math.ceil(world.height * k + FIT_PAD * 2 + FIT_FOOT));
+      const height = heroFrameHeight(world, width);
       setFrameHeight(height);
       if (el.offsetHeight === height) fit();
       return;
@@ -766,6 +768,7 @@ export function FactoryMap({
           factory={factory}
           at={at}
           steps={steps}
+          stepsFailed={stepsFailed}
           onClose={() => setSelected(null)}
         />
       ) : null}

@@ -54,6 +54,8 @@ export interface CardLive {
   failing?: MapItem[];
   waiting?: MapItem[];
   merged?: MapMerge[];
+  /** Chips whose source failed: not zero, unknown, so drawn as such. */
+  unavailable?: Chip[];
 }
 
 export interface MapSources {
@@ -142,6 +144,7 @@ export function cardLive(
   factoryMap: FactoryMap,
   sources: MapSources,
   now: Date,
+  unavailable: readonly Chip[] = [],
 ): Map<string, CardLive> {
   const live = new Map(factoryMap.cards.map((card): [string, CardLive] => [card.id, { here: [] }]));
   for (const row of sources.map) {
@@ -157,6 +160,10 @@ export function cardLive(
     });
   }
   const items = chipItems(sources, now);
+  for (const card of factoryMap.cards) {
+    const lost = (card.chips ?? []).filter((chip) => unavailable.includes(chip));
+    if (lost.length > 0) (live.get(card.id) as CardLive).unavailable = lost;
+  }
   for (const card of factoryMap.cards) {
     const entry = live.get(card.id) as CardLive;
     entry.here.sort(

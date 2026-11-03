@@ -1,5 +1,13 @@
 import { join } from 'node:path';
-import { coveringCards, FACTORY_MAP, type FactoryMap, screenOf } from '../app/map/factory-map';
+import {
+  CHIPS,
+  coveringCards,
+  FACTORY_MAP,
+  type FactoryMap,
+  LINE_STYLES,
+  ROLES,
+  screenOf,
+} from '../app/map/factory-map';
 import { type PackVersion, parsePack, type Step } from '../parsers/pack';
 import { failing, type Main, noArguments, runCli } from './lib/cli';
 
@@ -31,13 +39,31 @@ function ownScreen(workflow: string, nodes: ReadonlyMap<string, Step>, path: str
   return { workflow: node.definedIn, path };
 }
 
+/** The values the owner's JSON holds outside the closed sets the drawing indexes by. */
+function unknownValues(map: FactoryMap): string[] {
+  const outside = (what: string, value: string, allowed: readonly string[]) =>
+    allowed.includes(value)
+      ? []
+      : [`${what} ${JSON.stringify(value)} is not one of ${allowed.join(', ')}`];
+  return [
+    ...map.cards.flatMap((card) => [
+      ...outside(`${card.title} role`, card.role, ROLES),
+      ...(card.chips ?? []).flatMap((chip) => outside(`${card.title} chip`, chip, CHIPS)),
+    ]),
+    ...map.lines.flatMap((line) =>
+      outside(`line ${line.from} to ${line.to} style`, line.style, LINE_STYLES),
+    ),
+    ...map.legend.flatMap((entry) => outside(`legend ${entry.label} role`, entry.role, ROLES)),
+  ];
+}
+
 /**
  * Where the map has drifted from the pack (PRD 4.1, invariant 6), one line each: a card naming a
  * workflow or a step the pack lacks, an entry whose screen is not the step's own, and a step of a
  * covered workflow that no card covers or that two do.
  */
 export function mapCheck(map: FactoryMap, pack: PackVersion): string[] {
-  const failures: string[] = [];
+  const failures: string[] = unknownValues(map);
   const workflows = new Map(pack.workflows.map((w) => [w.name, nodesByPath(w.steps)]));
   const covered = new Set<string>();
   for (const card of map.cards) {
@@ -65,6 +91,9 @@ export function mapCheck(map: FactoryMap, pack: PackVersion): string[] {
   }
   for (const workflow of covered) {
     for (const path of (workflows.get(workflow) as Map<string, Step>).keys()) {
+      if (path.includes('.')) {
+        failures.push(`${workflow} ${path} holds a dot, which the home map reads as a loop group`);
+      }
       const cards = coveringCards(map, workflow, path);
       if (cards.length === 0) failures.push(`${workflow} ${path} is covered by no card`);
       if (cards.length > 1) {

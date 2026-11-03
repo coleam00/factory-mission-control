@@ -84,4 +84,39 @@ describe('map:check', () => {
       'archon-loop deploy/verify is covered by Merge and Staging',
     ]);
   });
+
+  test('a value outside the closed sets fails naming it', () => {
+    const pack = parsePack(PACK, TEMPLATE);
+    const map: FactoryMap = {
+      ...FACTORY_MAP,
+      cards: FACTORY_MAP.cards.map((card, i) =>
+        i === 0 ? { ...card, role: 'robot' as never, chips: ['lost' as never] } : card,
+      ),
+      lines: FACTORY_MAP.lines.map((line, i) =>
+        i === 0 ? { ...line, style: 'flwo' as never } : line,
+      ),
+      legend: FACTORY_MAP.legend.map((e, i) => (i === 0 ? { ...e, role: 'ghost' as never } : e)),
+    };
+    const first = FACTORY_MAP.cards[0] as FactoryMap['cards'][number];
+    const line = FACTORY_MAP.lines[0] as FactoryMap['lines'][number];
+    const entry = FACTORY_MAP.legend[0] as FactoryMap['legend'][number];
+    expect(mapCheck(map, pack)).toEqual([
+      `${first.title} role "robot" is not one of source, agent, test, person`,
+      `${first.title} chip "lost" is not one of queued, failing, waiting, merged`,
+      `line ${line.from} to ${line.to} style "flwo" is not one of flow, ask, loop, holdout`,
+      `legend ${entry.label} role "ghost" is not one of source, agent, test, person`,
+    ]);
+  });
+
+  test('a step id with a dot in the pack fails, because the home map would split it', () => {
+    const pack = editedPack((yaml) =>
+      yaml.replace(
+        '  - id: release\n',
+        '  - id: t.ally\n    script: release\n    runtime: bun\n    depends_on: [land]\n  - id: release\n',
+      ),
+    );
+    expect(mapCheck(FACTORY_MAP, pack)).toContain(
+      'archon-loop t.ally holds a dot, which the home map reads as a loop group',
+    );
+  });
 });

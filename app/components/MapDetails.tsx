@@ -78,6 +78,11 @@ function RightNow({
         <span className={CHIP}>{lap.step}</span>
       </li>
     )),
+    ...(live?.unavailable ?? []).map((chip) => (
+      <li key={`unavailable-${chip}`} className="text-text-secondary">
+        The {chip} count is unavailable.
+      </li>
+    )),
     ...(live?.queued ?? []).map((item) => <Item key={item.key} item={item} note="queued" />),
     ...(live?.failing ?? []).map((item) => (
       <Item key={item.key} item={item} note="app check failed" />
@@ -111,14 +116,17 @@ function Behind({
   card,
   at,
   steps,
+  failed,
 }: {
   card: Card;
   at: string | null;
   steps: readonly StepRow[] | undefined;
+  failed: boolean;
 }): ReactElement {
   if (card.covers.length === 0) {
     return <p className="text-text-secondary">This card runs no workflow step.</p>;
   }
+  if (failed) return <p className="text-text-secondary">The pinned steps are unavailable.</p>;
   if (steps === undefined) return <p className="text-text-secondary">Loading the pinned steps.</p>;
   const links = pinnedStepLinks(card, at, steps);
   if (links.length === 0) {
@@ -164,11 +172,13 @@ export function MapDetails({
   factory,
   at,
   steps,
+  stepsFailed = false,
   onClose,
   className = '',
 }: {
   className?: string;
   steps: readonly StepRow[] | undefined;
+  stepsFailed?: boolean;
   card: Card;
   live: CardLive | undefined;
   factory: string;
@@ -230,7 +240,7 @@ export function MapDetails({
           {tab === 'live' ? (
             <RightNow live={live} factory={factory} />
           ) : tab === 'behind' ? (
-            <Behind card={card} at={at} steps={steps} />
+            <Behind card={card} at={at} steps={steps} failed={stepsFailed} />
           ) : (
             <Bullets lines={details[tab] ?? []} />
           )}

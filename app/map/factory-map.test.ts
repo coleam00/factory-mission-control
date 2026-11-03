@@ -1,7 +1,11 @@
 import { expect, test } from 'bun:test';
 import {
   FACTORY_MAP,
+  FIT_FOOT,
+  FIT_PAD,
+  heroFrameHeight,
   linePoints,
+  MIN_FRAME,
   midpoint,
   neighbours,
   stepLinks,
@@ -99,4 +103,20 @@ test("App check's steps open their screens, check-app's among them; a nested one
     '/steps/archon-deliver-block/rounds%2Freview?at=abc',
     '/steps/archon-deliver-block/rounds%2Frereview?at=abc',
   ]);
+});
+
+test('the hero frame is the map at the width-fitting scale plus padding, at least 420 high', () => {
+  const world = worldSize(FACTORY_MAP);
+  const at = (width: number) => (width - FIT_PAD * 2) / world.width;
+  expect(heroFrameHeight(world, 1384)).toBe(
+    Math.max(
+      MIN_FRAME,
+      Math.ceil(world.height * Math.min(at(1384), 1.15) + FIT_PAD * 2 + FIT_FOOT),
+    ),
+  );
+  expect(heroFrameHeight(world, 1384)).toBeGreaterThan(MIN_FRAME);
+  expect(heroFrameHeight(world, 701)).toBe(MIN_FRAME);
+  expect(heroFrameHeight(world, 5000)).toBe(
+    Math.ceil(world.height * 1.15 + FIT_PAD * 2 + FIT_FOOT),
+  );
 });
