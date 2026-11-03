@@ -110,7 +110,7 @@ Product document, New issue, Found by the factory and Shipped cover no steps.
 **Live:** a card shows the laps of the selected factory on any step it covers right now (a lap
 counts once, on its deepest running step's card) as "<n> here"; Build also shows issues waiting to
 start as "<n> queued"; App check shows open pull requests whose latest app check failed as
-"<n> failing" in red; the Manager shows open owner questions as "<n> waiting" in violet; Shipped
+"<n> failing" in red; the Manager shows open owner questions plus open `needs-owner` issues as "<n> waiting" in violet; Shipped
 shows merges today as "<n> merged". A card with laps on it carries `data-live-count` greater than 0
 and pulses its chip. Every number updates live (invariant 5).
 
@@ -118,7 +118,7 @@ and pulses its chip. Every number updates live (invariant 5).
 strip under the map with tabs: When it runs, What it does, How it works, Right now (the issues and
 laps on it), and Behind the scenes (the workflows and steps it covers, each linking to its step
 screen, its models, and its source paths). App check's Behind the scenes links `check-app`'s step
-screen, which explains the holdout verifier and the fence. A card with a deeper view (⤢) opens it
+screen, which explains the holdout verifier and the fence. A card shows ⤢ only once its deeper view exists (until then no ⤢, no Open button and no legend entry for it, whatever `refs/` shows); it opens it
 by double-click, Enter or the Open button; the deeper views are built by their own issues, each
 drawn as `docs/design/v2/refs/1x-*.png` shows.
 
