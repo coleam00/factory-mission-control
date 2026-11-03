@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { MemoryRouter } from 'react-router';
 import { parsePack, type Step } from '../../parsers/pack';
+import { Behind, RightNow } from '../components/MapDetails';
 import { FACTORY_MAP } from '../map/factory-map';
 import type { HomeMapRow, MapSources } from '../map/live';
 import { HomeMapBody } from './index';
@@ -229,4 +230,47 @@ test('a failed workable or owner source draws its chip as unavailable, never as 
   expect(html).toContain('? queued');
   expect(html).toContain('? waiting');
   expect(html).not.toContain('0 queued');
+});
+
+test('a source in error that still holds rows draws "?" and no count', () => {
+  const html = renderToStaticMarkup(
+    <MemoryRouter>
+      <HomeMapBody
+        sources={{
+          map: [],
+          workable: [{ kind: 'issue', issue_number: 2, title: 'w', url: null, run_id: null }],
+        }}
+        states={{ workable: 'error' }}
+        state="ready"
+        factory="here"
+        at={null}
+        flow={false}
+      />
+    </MemoryRouter>,
+  );
+  expect(html).toContain('? queued');
+  expect(html).not.toContain('1 queued');
+  expect(html).not.toContain('2 queued');
+});
+
+test('Behind the scenes says the steps are unavailable, not loading, once their query failed', () => {
+  const card = FACTORY_MAP.cards.find((c) => c.covers.length > 0) as (typeof FACTORY_MAP.cards)[0];
+  const html = (failed: boolean) =>
+    renderToStaticMarkup(
+      <MemoryRouter>
+        <Behind card={card} at={null} steps={undefined} failed={failed} />
+      </MemoryRouter>,
+    );
+  expect(html(true)).toContain('The pinned steps are unavailable.');
+  expect(html(true)).not.toContain('Loading');
+  expect(html(false)).toContain('Loading the pinned steps.');
+});
+
+test('Right now says a chip count is unavailable', () => {
+  const html = renderToStaticMarkup(
+    <MemoryRouter>
+      <RightNow live={{ here: [], unavailable: ['queued'] }} factory="here" />
+    </MemoryRouter>,
+  );
+  expect(html).toContain('The queued count is unavailable.');
 });

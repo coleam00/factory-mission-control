@@ -54,7 +54,7 @@ const time = (at: Date) =>
   at.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
 
 /** The issues and laps on the card now, each opening its page. */
-function RightNow({
+export function RightNow({
   live,
   factory,
 }: {
@@ -112,7 +112,7 @@ function RightNow({
  * The steps the card covers that the pinned version has, each opening its step screen with the
  * model the parsed architecture gives it (owner, #307): never a step or a path the version lacks.
  */
-function Behind({
+export function Behind({
   card,
   at,
   steps,

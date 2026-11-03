@@ -41,8 +41,9 @@ fits the whole map, at any width.
 
 `bun run map:check` (part of `bun run check`) parses `fixtures/pack/` with the architecture parser,
 offline, and fails, naming the step, when a step of a workflow a card covers is covered by no card
-or by two, when a card names a workflow or a step the pack lacks, or when an entry's screen is not
-the step's own. When the pack changes, update `covers` until the check passes.
+or by two, when a card names a workflow or a step the pack lacks, when an entry's screen is not
+the step's own, when a role, chip, line style or legend role is outside the closed sets, or when a
+covered step's pack path holds a dot (the map reads a step's path by its dots). When the pack changes, update `covers` until the check passes.
 
 ## Live counts
 
@@ -60,7 +61,9 @@ merged with when it finished, and whether the version the address names is recor
 - "<n> merged" on Shipped: laps whose land step merged today, the browser's local day, counted
   from the moment that step finished, not when the run ends.
 
-A chip of 0 is not drawn. A chip appears once its query has answered.
+A chip of 0 is not drawn. A chip appears once its query has answered. A chip whose query failed
+shows as `? queued` or `? waiting`, never as a count; Right now says the count is unavailable, and
+Behind the scenes says the pinned steps are unavailable when `step-detail` failed.
 
 ## Clicking a card
 

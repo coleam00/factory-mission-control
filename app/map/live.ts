@@ -6,6 +6,7 @@
  */
 import type { HealthWorkableRow } from '../lib/health';
 import type { OwnerQueueRow } from '../lib/owner-queue';
+import type { PanelState } from '../live/LivePanel';
 import { type Chip, cardForStep, type FactoryMap, stepPath } from './factory-map';
 
 /** One row of `db/queries/home-map.sql`. */
@@ -62,6 +63,8 @@ export interface MapSources {
   map: readonly HomeMapRow[];
   workable?: readonly HealthWorkableRow[];
   owner?: readonly OwnerQueueRow[];
+  /** A source in `error` keeps its rows, but its chip is unavailable, never a count. */
+  states?: { workable?: PanelState; owner?: PanelState };
 }
 
 const depth = (step: string) => stepPath(step).split('/').length;
@@ -95,7 +98,7 @@ const byNumber = (a: MapItem, b: MapItem) => a.number - b.number || a.key.locale
 
 /** The items each chip kind counts; a source not delivered yet counts nothing and draws no chip. */
 function chipItems(
-  { map, workable, owner }: MapSources,
+  { map, workable, owner, states = {} }: MapSources,
   now: Date,
 ): { [K in Chip]?: Required<CardLive>[K] } {
   return {
@@ -108,30 +111,32 @@ function chipItems(
         url: r.url,
       }))
       .sort(byNumber),
-    ...(workable && {
-      queued: workable
-        .filter((r) => r.kind === 'issue' && r.issue_number !== null)
-        .map((r) => ({
-          key: `issue-${r.issue_number}`,
-          number: Number(r.issue_number),
-          title: r.title ?? '',
-          url: r.url,
-        }))
-        .sort(byNumber),
-    }),
-    ...(owner && {
-      waiting: owner
-        .map((r) => ({
-          key:
-            r.kind === 'issue'
-              ? `issue-${r.issue_number}`
-              : `question-${r.issue_number}-${r.question_number}`,
-          number: r.issue_number,
-          title: r.title,
-          url: r.url,
-        }))
-        .sort(byNumber),
-    }),
+    ...(workable &&
+      states.workable !== 'error' && {
+        queued: workable
+          .filter((r) => r.kind === 'issue' && r.issue_number !== null)
+          .map((r) => ({
+            key: `issue-${r.issue_number}`,
+            number: Number(r.issue_number),
+            title: r.title ?? '',
+            url: r.url,
+          }))
+          .sort(byNumber),
+      }),
+    ...(owner &&
+      states.owner !== 'error' && {
+        waiting: owner
+          .map((r) => ({
+            key:
+              r.kind === 'issue'
+                ? `issue-${r.issue_number}`
+                : `question-${r.issue_number}-${r.question_number}`,
+            number: r.issue_number,
+            title: r.title,
+            url: r.url,
+          }))
+          .sort(byNumber),
+      }),
     merged: mergedToday(map, now),
   };
 }
@@ -144,7 +149,6 @@ export function cardLive(
   factoryMap: FactoryMap,
   sources: MapSources,
   now: Date,
-  unavailable: readonly Chip[] = [],
 ): Map<string, CardLive> {
   const live = new Map(factoryMap.cards.map((card): [string, CardLive] => [card.id, { here: [] }]));
   for (const row of sources.map) {
@@ -160,8 +164,12 @@ export function cardLive(
     });
   }
   const items = chipItems(sources, now);
+  const failed: Chip[] = [
+    ...(sources.states?.workable === 'error' ? (['queued'] as const) : []),
+    ...(sources.states?.owner === 'error' ? (['waiting'] as const) : []),
+  ];
   for (const card of factoryMap.cards) {
-    const lost = (card.chips ?? []).filter((chip) => unavailable.includes(chip));
+    const lost = (card.chips ?? []).filter((chip) => failed.includes(chip));
     if (lost.length > 0) (live.get(card.id) as CardLive).unavailable = lost;
   }
   for (const card of factoryMap.cards) {

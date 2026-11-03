@@ -10,7 +10,7 @@ import type { StepRow } from '../lib/step-detail';
 import { useFactory } from '../live/FactoryProvider';
 import { LivePanel, type PanelState } from '../live/LivePanel';
 import { useLive } from '../live/LiveProvider';
-import { type Chip, FACTORY_MAP } from '../map/factory-map';
+import { FACTORY_MAP } from '../map/factory-map';
 import { cardLive, type HomeMapRow, type MapSources, versionRecorded } from '../map/live';
 
 /**
@@ -60,11 +60,7 @@ export function HomeMapBody({
   if (map === undefined && configured === false) return empty('No factory is configured.');
   if (map === undefined) return empty('Loading the factory map.');
   if (!versionRecorded(map, at)) return empty(`No version ${at} is recorded for this factory.`);
-  const unavailable: Chip[] = [
-    ...(states.workable === 'error' ? (['queued'] as const) : []),
-    ...(states.owner === 'error' ? (['waiting'] as const) : []),
-  ];
-  const live = cardLive(FACTORY_MAP, { map, workable, owner }, now, unavailable);
+  const live = cardLive(FACTORY_MAP, { map, workable, owner, states }, now);
   return (
     <FactoryMap
       map={FACTORY_MAP}
