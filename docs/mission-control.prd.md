@@ -1,7 +1,7 @@
 ---
 title: "Factory Mission Control - PRD v1"
 type: prd
-status: APPROVED for the first factory run (2026-10-24; Cole delegated sign-off; decisions in plans/factory-mission-control-2026-10-24.md section 9; reviewed by a subagent against them the same evening)
+status: APPROVED for the first factory run (2026-10-24; Cole delegated sign-off; decisions in plans/factory-mission-control-2026-10-24.md section 9; reviewed by a subagent against them the same evening). AMENDED 2026-11-03 for v2 (4.1 rewritten, 4.9 added, invariant 6, journey 1 and 8.3 changed; design in docs/design/v2/)
 created: 2026-10-24
 owner: Cole
 product: Factory Mission Control, the live dashboard of the AI Software Factory
@@ -58,27 +58,73 @@ scripts, or still discovering stuck laps from a watchdog line.
 
 ## 4. In scope
 
-### 4.1 Factory architecture: the home base (factory-agnostic)
+### 4.1 The factory map: the home base (v2, owner decision 2026-11-03)
 
-The default screen. One map of the whole AI Software Factory process at the pinned version, from
-inputs to outputs, laid out from the parsed workflows (section 11.4):
+The default screen. One horizontal map of the whole factory that a newcomer understands in a
+minute, drawn exactly as `docs/design/v2/` shows it (the mockup and its `refs/` screenshots are the
+design; copy its cards, wording, lines and motion). It replaces v1's map, which drew every step of
+`archon-loop` as a tall graph and showed plumbing (claim, subject, briefs, handoff, release) as
+peers of the real stages.
 
-- **Inputs:** the product document; `archon-holdouts` (writing holdout scenarios); `archon-backlog`
-  (slicing the product document into issues); the owner's decisions.
-- **The loop:** every step of `archon-loop` in order (pick, claim, build, ship, subject, briefs,
-  check-app, evidence, review, land, deploy, release), with ship expanded into the stages parsed
-  from `archon-ship-block` and its includes.
-- **The manager:** `archon-manager` above the loop.
-- **Outputs:** merged pull requests, closed issues, deploys, owner questions, metrics lines.
-- **Live:** each step shows, per factory, how many laps are on it now; a step with laps on it carries
-  `data-live-count` greater than 0 and a running style.
+**Why it is hand-authored.** The map's layout, grouping and wording are authored in one data file,
+`app/map/factory-map.json`, not derived from the workflows, so the owner controls what the map
+says and fixes anything that reads badly. What it may not do is drift from the code: every card
+names the workflows and steps it covers, and a check (`bun run map:check`, part of `bun run check`)
+fails when a step of a covered workflow at the current pin is covered by no card, or a card names
+a step that does not exist. Step details still come from the pinned code (the existing step
+screens, `/steps/<workflow>/<step>`).
 
-Clicking a step opens its detail: its description; its inputs and outputs; the `when` condition
-that routes a lap through it; its model tier; its workflow YAML; its prompt (the command file);
-its inline subagents and their instruction files; the scripts it runs; and the hooks that apply
-to it. For the holdout steps, the detail explains the fence: the hook file
-(`.factory/hooks/holdout_fence.py` in the factory template), which agents it lets read the
-scenarios, and how a verdict comes back. All of it comes from the pinned code, never typed in.
+**What the map shows** (left to right; see `refs/01-home-map.png`):
+
+- **Three ways in**, on the left: Product document -> **Plan** (splits the PRD into tickets and
+  writes the holdouts); **New issue** (a ticket the owner files); **Found by the factory**
+  (problems spotted in review, app check or staging). All three feed **Intake** on one line.
+- **Holdouts** directly above Intake. Plan points to it and to Intake; Holdouts points along the
+  top into App check.
+- **One line:** Intake -> Build -> Review -> App check -> Merge -> Staging -> Shipped, inside a dashed
+  box labelled "the manager watches everything on this line".
+- **The manager**, centred above the line: one card, the orchestrator the owner talks to. It keeps
+  the factory healthy and tickets moving and brings the owner the decisions it can't make. One
+  arrow comes down from it into the box.
+- **One loop back:** Review, App check and Staging each drop to a dashed line along the bottom that
+  runs back into Found by the factory, labelled "problems found become new tickets". It is the only
+  line that runs right to left.
+
+**What each card covers** (for laps running `archon-loop` at the current pin; a factory on another
+pack gets its own coverage entries in the same file when it joins):
+
+| Card | Covers |
+|---|---|
+| Plan | `archon-backlog` (every step) |
+| Holdouts | `archon-holdouts` (every step) |
+| Intake | `archon-loop` `pick`, `claim` |
+| Build | `archon-loop` `build`, `subject`, and `ship` with every step under it except the two below |
+| Review | `ship/deliver/rounds/review` and `ship/deliver/rounds/rereview`, with every step under them |
+| App check | `briefs`, `check-app`, `evidence`, `handoff` |
+| Merge | `review`, `land`, `release` |
+| Staging | `deploy` and every step under it |
+| Manager | `archon-manager` (every step) |
+
+Product document, New issue, Found by the factory and Shipped cover no steps.
+
+**Live:** a card shows the laps of the selected factory on any step it covers right now (a lap
+counts once, on its deepest running step's card) as "<n> here"; Build also shows issues waiting to
+start as "<n> queued"; App check shows open pull requests whose latest app check failed as
+"<n> failing" in red; the Manager shows open owner questions as "<n> waiting" in violet; Shipped
+shows merges today as "<n> merged". A card with laps on it carries `data-live-count` greater than 0
+and pulses its chip. Every number updates live (invariant 5).
+
+**Clicking a card** dims everything but the card and its direct neighbours and opens a details
+strip under the map with tabs: When it runs, What it does, How it works, Right now (the issues and
+laps on it), and Behind the scenes (the workflows and steps it covers, each linking to its step
+screen, its models, and its source paths). App check's Behind the scenes links `check-app`'s step
+screen, which explains the holdout verifier and the fence. A card with a deeper view (⤢) opens it
+by double-click, Enter or the Open button; the deeper views are built by their own issues, each
+drawn as `docs/design/v2/refs/1x-*.png` shows.
+
+**Motion:** one dot travels Product document to Shipped every few seconds and each card it reaches
+pulses once; dashes flow along the forward lines. Both stop under `prefers-reduced-motion` and when
+the flow toggle is off.
 
 ### 4.2 How the factory evolves
 
@@ -162,6 +208,27 @@ the failing step's error text (`usage limit|429` = usage limit, `401|unauthor` =
 `ECONN|ETIMEDOUT|fetch failed` = infrastructure, anything else = other); and workable issues (open,
 no `needs-owner`, every `Depends on` closed, no live claim) against running laps.
 
+### 4.9 Where v2 is going: fewer screens, one story (owner decision 2026-11-03)
+
+v1 was a proof of concept: eleven tabs, most of them tables, and the owner had to know the factory's
+internals to read them. v2 answers four questions, each on one screen, in the design of
+`docs/design/v2/`:
+
+| Screen | Answers | Replaces |
+|---|---|---|
+| **Factory** (home, `/f/<factory>`) | How does the factory work, and where is every ticket right now? The map of 4.1 and its deeper views | Map |
+| **Board** (`/f/<factory>/board`) | Where is each ticket? One column per stage of the map (Queued, Intake, Build, Review, App check, Merge, Your decision, Merged), PRD phase progress above it. A ticket opens its own page: every lap on it as a timeline of stages, its app-check results, review outcomes, pull request and console links | Issues, Laps, Testing |
+| **Decisions** (`/f/<factory>/decisions`) | What is waiting on me, and is the factory healthy? Owner questions with options, recommendation and default date; `needs-owner` items; then health (stuck, pending and paused runs, failed laps by cause) | Owner, Health |
+| **Changes** (`/f/<factory>/changes`) | Did my last change to the factory help? Versions newest first with reason, hypothesis and verdict, two versions compared on the scorecard of 4.2, decisions from `DECISIONS.md` on the same timeline, the architecture diff one click away | Versions, Scorecard, Diff, Decisions |
+
+Above every screen: the factory switcher and one line of live numbers (merged today, in flight,
+waiting on you, cost per merge over 7 days, median hours from a ticket's first lap to its merge),
+each traceable (invariant 4). Rewind is retired. The one-lap page stays, opened from a ticket.
+
+Sequencing: the Factory map ships first (4.1), then its deeper views, then the v2 colors on every
+screen, then the screens above, and the screens they replace are removed last, each in its own issue.
+Until a screen's replacement merges, the old one stays and keeps working.
+
 ## 5. Out of scope, forever
 
 - Writing to GitHub, Archon or any factory from the dashboard in v1: no answering, approving,
@@ -186,8 +253,10 @@ no `needs-owner`, every `Depends on` closed, no live claim) against running laps
    many.
 5. **Live means live.** Every panel is a Neon Realtime live query or derived from one. No polling
    and no refresh button.
-6. **The architecture is the code.** The map, prompts and step details come from the pinned code at
-   that version, parsed by a job, never typed in.
+6. **The map never drifts from the code.** The map's layout, grouping and wording are authored by
+   the owner in `app/map/factory-map.json` (4.1); which workflows and steps each card covers is
+   checked against the pinned code by `bun run map:check`, and prompts and step details come from
+   the pinned code at that version, parsed by a job, never typed in.
 7. **Secrets never reach the browser.** The browser gets sealed live queries only; the Realtime
    secret, database URLs, the Neon API key and GitHub tokens stay on the server and in the Function.
 8. **The `main` database branch is the owner's.** Laps and checks never migrate, seed, write to or
@@ -195,9 +264,9 @@ no `needs-owner`, every `Depends on` closed, no live claim) against running laps
 
 ## 7. The observable core journeys
 
-1. **See the factory.** Open the dashboard: the architecture map at the current version, with live
-   lap counts on the steps; open check-app and read its prompt, its holdout verifier and how the
-   fence works.
+1. **See the factory.** Open the dashboard: the factory map (4.1) with live counts on its cards;
+   click App check, and from its Behind the scenes open check-app's step screen and read its
+   prompt, its holdout verifier and how the fence works.
 2. **Watch a lap.** While a lap runs, its lane moves from step to step without a reload; when it
    merges, its issue turns merged and its phase bar fills.
 3. **Judge a change.** Pick two versions on the strip and compare their scorecards and the
@@ -224,8 +293,14 @@ issues' `Depends on` lines.
 ### 8.3 Design contract
 
 The dashboard is part of Archon to the eye: the Archon console's theme tokens, fonts (Geist, Geist
-Mono), status colors (blue running, teal success, amber waiting, red failed, magenta only for
-identity) and component shapes, copied from `docs/design/archon-console/`. Dark only. On every
+Mono) and component shapes, copied from `docs/design/archon-console/`, with the v2 role colors of
+`docs/design/v2/tokens.css` on top (owner decision 2026-11-03): sky for where work comes from and
+scripts, blue for agents, teal for testing and shipping, violet for the manager and the owner.
+Waiting on a person is violet, never amber: a question for the owner is a normal part of the
+process, not a warning. Status: running is Dynamous Light and pulses, success teal, failed red.
+Amber and magenta are not used. Nothing is drawn grey where a role color applies. Dark only. On
+every change that touches a v2 screen, its screenshot is compared side by side with the matching
+`docs/design/v2/refs/` image (or the mockup put in the same state) and the judgement quoted. On every
 change that touches the frontend, `harness/design-probe.js` (written by the skeleton issue) reports
 zero failures: only token colors and fonts, no browser-default controls, text contrast at least
 4.5:1, no horizontal overflow at 1440 and 390 px, every control with an accessible name. A screenshot

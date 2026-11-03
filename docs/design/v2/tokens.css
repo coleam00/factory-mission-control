@@ -1,0 +1,21 @@
+/*
+ * Mission Control v2 role tokens (owner design, 2026-11-03). Added on top of the console tokens in
+ * ../archon-console/. app/styles.css copies these with identical values.
+ *
+ * Color says who is acting, not how worried to be. Amber is not used: waiting on a person is
+ * --role-person. Red (the console's error tokens) is kept for real failures only.
+ */
+:root {
+  --role-source: #38bdf8;
+  --role-source-soft: rgba(56, 189, 248, 0.13);
+  --role-agent: #3b82f6;
+  --role-agent-soft: rgba(59, 130, 246, 0.14);
+  --role-test: #14b8a6;
+  --role-test-soft: rgba(20, 184, 166, 0.13);
+  --role-person: #a78bfa;
+  --role-person-soft: rgba(167, 139, 250, 0.15);
+
+  /* A map card's fill and border: its role color mixed into the panel surface. */
+  --card-tint: 9%;
+  --card-border-tint: 45%;
+}
