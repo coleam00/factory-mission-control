@@ -1,8 +1,10 @@
 SELECT 'issue' AS kind, i.number AS issue_number, i.title, i.url, NULL::uuid AS run_id
 FROM mc.issues i
 -- Workable: open, not labelled needs-owner, every `Depends on` closed (one that is not mirrored
--- is not known to be closed) and no live claim, one not yet released.
+-- is not known to be closed) and no live claim, one not yet released. The manager's two tracking
+-- issues, kept by exact title, are never work a lap picks (#247).
 WHERE i.factory = $1 AND i.state = 'open'
+  AND i.title NOT IN ('Owner decisions needed', 'Loop metrics')
   AND NOT EXISTS (
     SELECT 1 FROM mc.issue_labels lb
     WHERE lb.factory = i.factory AND lb.issue_number = i.number AND lb.label = 'needs-owner'
