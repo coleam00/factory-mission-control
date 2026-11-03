@@ -138,11 +138,14 @@ export function WaitingList({
   rows,
   factory,
   now: fixed,
+  color = 'var(--warning)',
 }: {
   rows: readonly HealthRunRow[];
   factory: string;
   /** A fixed clock, for tests; the screen uses the browser's. */
   now?: number;
+  /** The status and bar color. */
+  color?: string;
 }): ReactElement {
   const ticking = useNow();
   const now = fixed ?? ticking;
@@ -166,15 +169,13 @@ export function WaitingList({
                 className="grid gap-x-[18px] gap-y-2 sm:grid-cols-[220px_minmax(0,1fr)_88px_84px] sm:items-center"
               >
                 <span className="flex min-w-0 items-center gap-x-3">
-                  <Status color="var(--warning)">{WAITING_LABEL[run.status]}</Status>
+                  <Status color={color}>{WAITING_LABEL[run.status]}</Status>
                   <span className={`${MONO} min-w-0 truncate font-bold text-text-primary`}>
                     {run.workflow_name}
                   </span>
                 </span>
                 <span className="grid min-w-0 gap-1.5">
-                  {wait === null ? null : (
-                    <Bar width={share(wait, longest)} color="var(--warning)" />
-                  )}
+                  {wait === null ? null : <Bar width={share(wait, longest)} color={color} />}
                   <span className={`${MONO} text-[11px] text-text-secondary`}>
                     {run.started_at === null
                       ? 'start not recorded'
@@ -191,7 +192,11 @@ export function WaitingList({
                   )}
                 </span>
                 <span className="sm:text-right">
-                  <LapLink factory={factory} runId={run.run_id} />
+                  {run.workflow_name === 'archon-loop' ? (
+                    <LapLink factory={factory} runId={run.run_id} />
+                  ) : (
+                    <span className={`${MONO} text-text-secondary`}>{shortRunId(run.run_id)}</span>
+                  )}
                 </span>
               </li>
             );
