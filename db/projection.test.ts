@@ -278,6 +278,7 @@ test('the eligibility upgrade keeps live history and installs the same functions
       '0016_pin_reason_optional.sql',
       '0017_app_check_line_ids.sql',
       '0018_issue_label_time.sql',
+      '0019_structured_output_string.sql',
     ]);
     expect(await projectionDefinitions(upgraded)).toEqual(await projectionDefinitions(db));
     expect(await runMigrations({ files: migrationFiles, db: upgraded })).toEqual([]);
@@ -326,6 +327,7 @@ test('0011 rewrites a short pin to the one full sha it prefixes, and clears ambi
       '0016_pin_reason_optional.sql',
       '0017_app_check_line_ids.sql',
       '0018_issue_label_time.sql',
+      '0019_structured_output_string.sql',
     ]);
     const migrated = [
       { sha: 'p1', archon_sha: full },
@@ -390,6 +392,7 @@ test('0012 rewrites CRLF to LF in stored architecture texts, and changes nothing
       '0016_pin_reason_optional.sql',
       '0017_app_check_line_ids.sql',
       '0018_issue_label_time.sql',
+      '0019_structured_output_string.sql',
     ]);
     const migrated = [
       { kind: 'hook', path: '.factory/hooks/gate.sh', text: 'exit 0\n' },
@@ -459,6 +462,7 @@ test('0013 gives back the runs of a step the old key merged, and changes nothing
       '0016_pin_reason_optional.sql',
       '0017_app_check_line_ids.sql',
       '0018_issue_label_time.sql',
+      '0019_structured_output_string.sql',
     ]);
     expect(await attempts()).toEqual([
       { step_id: 'land', outcome: 'merged', cost_usd: null },
@@ -554,27 +558,72 @@ test('a provider_event changes no dashboard row and never fires the trigger', as
   expect(types.sort()).toEqual(['node_completed', 'node_failed', 'node_skipped', 'node_started']);
 });
 
-test('a structured_output that is a JSON string commits in Archon, is recorded and keeps its step', async () => {
+test('a structured_output that is a JSON string holding an object is projected as that object', async () => {
   const completed = eventData('pick', 'node_completed', NOW);
-  const data = { ...completed, structured_output: '{"route":"x"}' };
-  const [event] = await insertEvent('node_completed', 'pick', data);
+  await insertEvent('node_completed', 'pick', {
+    ...completed,
+    structured_output: '{"route":"x"}',
+  });
 
-  expect(
-    await db.query('SELECT count(*)::int AS n FROM public.remote_agent_workflow_events'),
-  ).toEqual([{ n: 1 }]);
-  expect(await projectionErrors()).toEqual([
+  expect(await projectionErrors()).toEqual([]);
+  expect(await db.query('SELECT step_id, status, cost_usd, output FROM mc.lap_steps')).toEqual([
     {
-      source: 'mc_project_step_event',
-      run_id: runId,
-      event_id: event?.id,
-      sqlstate: '22000',
-      message: 'structured_output is a jsonb string, not an object',
+      step_id: 'pick',
+      status: 'completed',
+      cost_usd: String(completed.cost_usd),
+      output: { route: 'x' },
     },
   ]);
-  // The step still ran and cost what it cost: only its unreadable output is dropped.
-  expect(await db.query('SELECT step_id, status, cost_usd, output FROM mc.lap_steps')).toEqual([
-    { step_id: 'pick', status: 'completed', cost_usd: String(completed.cost_usd), output: null },
-  ]);
+  expect(await db.query('SELECT route FROM mc.lap_step_attempts')).toEqual([{ route: 'x' }]);
+});
+
+test.each(['text', '[1]', '{', '"{}"'])(
+  'a structured_output string %p holding no object commits in Archon, is recorded and keeps its step',
+  async (text) => {
+    const completed = eventData('pick', 'node_completed', NOW);
+    const [event] = await insertEvent('node_completed', 'pick', {
+      ...completed,
+      structured_output: text,
+    });
+
+    expect(
+      await db.query('SELECT count(*)::int AS n FROM public.remote_agent_workflow_events'),
+    ).toEqual([{ n: 1 }]);
+    expect(await projectionErrors()).toEqual([
+      {
+        source: 'mc_project_step_event',
+        run_id: runId,
+        event_id: event?.id,
+        sqlstate: '22000',
+        message: 'structured_output is a jsonb string, not an object',
+      },
+    ]);
+    // The step still ran and cost what it cost: only its unreadable output is dropped.
+    expect(await db.query('SELECT step_id, status, cost_usd, output FROM mc.lap_steps')).toEqual([
+      { step_id: 'pick', status: 'completed', cost_usd: String(completed.cost_usd), output: null },
+    ]);
+  },
+);
+
+test('a check-app report stored as a JSON string projects the same lines as the object', async () => {
+  const data = eventData('check-app', 'node_completed', NOW);
+  const report = structuredOutputFor('check-app');
+  const projected = async () => ({
+    lines: await db.query('SELECT * FROM mc.app_check_lines ORDER BY position'),
+    output: await db.query('SELECT output FROM mc.lap_steps'),
+  });
+
+  await insertEvent('node_completed', 'check-app', {
+    ...data,
+    structured_output: JSON.stringify(report),
+  });
+  const fromString = await projected();
+  await db.query('DELETE FROM mc.app_check_lines');
+  await insertEvent('node_completed', 'check-app', { ...data, structured_output: report });
+
+  expect(await projectionErrors()).toEqual([]);
+  expect(fromString.lines.length).toBeGreaterThan(0);
+  expect(fromString).toEqual(await projected());
 });
 
 test('an error the projection cannot even record still never fails Archon’s write', async () => {
@@ -610,6 +659,7 @@ test('every projection function stops a lock wait after 100 ms, and only inside 
       'record_attempt_usage',
       'record_projection_error',
       'record_step_attempt',
+      'structured_output',
     ].map((proname) => ({ proname, proconfig: ['lock_timeout=100ms'] })),
   ]);
 
@@ -643,6 +693,7 @@ test('0014 keeps only a stored citation’s references, and changes nothing run 
       '0016_pin_reason_optional.sql',
       '0017_app_check_line_ids.sql',
       '0018_issue_label_time.sql',
+      '0019_structured_output_string.sql',
     ]);
     const lines = () =>
       historical.query(
@@ -687,6 +738,7 @@ test('0016 lets a pin have no reason, keeps stored reasons, and changes nothing 
       '0016_pin_reason_optional.sql',
       '0017_app_check_line_ids.sql',
       '0018_issue_label_time.sql',
+      '0019_structured_output_string.sql',
     ]);
     await pin('b'.repeat(40), null);
     const reasons = () => historical.query('SELECT sha, reason FROM mc.pins ORDER BY sha');
@@ -724,6 +776,7 @@ test('0017 keeps lines projected before it without an id, fills new reports’ i
     expect(await runMigrations({ files: migrationFiles, db: historical })).toEqual([
       '0017_app_check_line_ids.sql',
       '0018_issue_label_time.sql',
+      '0019_structured_output_string.sql',
     ]);
     const after = await run();
     await historical.query('SELECT mc.project_app_check_lines($1, $2)', [

@@ -131,7 +131,7 @@ const tuples = (runId: string) =>
   );
 
 test('a dropped projection is repaired once, an agreeing lap is left alone, and Archon is only read', async () => {
-  const dropped = await finishedRun('{"route":"x"}');
+  const dropped = await finishedRun('text');
   const agreeing = await finishedRun();
   const projected = await snapshot(db);
   expect(projected.projection_errors).toHaveLength(1);
@@ -411,7 +411,7 @@ test('a live trigger that lost its lock wait on the run rolls the repair back as
 });
 
 test('a replay error no live trigger recorded fails that run alone and is reported', async () => {
-  const unrecorded = await finishedRun('{"route":"x"}');
+  const unrecorded = await finishedRun('text');
   const repairable = await finishedRun();
   const [recorded] = await rows('SELECT message FROM mc.projection_errors');
   // The live trigger's record of the error was itself dropped.
@@ -433,6 +433,28 @@ test('a replay error no live trigger recorded fails that run alone and is report
     { status: 'completed' },
   ]);
   expect(await rows('SELECT * FROM mc.projection_errors')).toEqual([]);
+});
+
+test('a finished lap whose step output is a JSON string holding an object is repaired with that object', async () => {
+  const lap = await finishedRun('{"route":"x"}');
+  const later = await finishedRun();
+  expect(await rows('SELECT * FROM mc.projection_errors')).toEqual([]);
+  await rows('DELETE FROM mc.projection_errors');
+  await rows(`UPDATE mc.laps SET status = 'running', completed_at = NULL WHERE run_id = ANY($1)`, [
+    [lap, later],
+  ]);
+
+  const { code, out, err } = await run([]);
+  expect(code).toBe(0);
+  expect(out).toEqual(['reconcile: 2 run(s) repaired']);
+  expect(err).toEqual([]);
+  expect(await rows('SELECT status FROM mc.laps WHERE run_id = ANY($1)', [[lap, later]])).toEqual([
+    { status: 'completed' },
+    { status: 'completed' },
+  ]);
+  expect(
+    await rows(`SELECT output FROM mc.lap_steps WHERE run_id = $1 AND step_id = 'pick'`, [lap]),
+  ).toEqual([{ output: { route: 'x' } }]);
 });
 
 test('the replay projects the step-level event types the live trigger projects', async () => {
