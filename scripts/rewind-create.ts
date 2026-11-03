@@ -1,7 +1,7 @@
 import { parseArgs } from 'node:util';
 import { loadCheckEnv } from '../server/check-env';
 import { ISO_TIME } from './fixture/drop';
-import { type Deps, failing, type Main, runCli } from './lib/cli';
+import { type Deps, failing, type Main, refreshCheckLease, runCli } from './lib/cli';
 import { requireCheckBranch } from './lib/guard';
 import { type NeonApi, poll, waitForOperations } from './lib/neon';
 import { resolveBranchName } from './lib/target';
@@ -44,6 +44,7 @@ async function servedBranch(deps: Deps, api: NeonApi): Promise<{ url: string; na
     }
   } else {
     requireCheckBranch(name);
+    refreshCheckLease(deps, name);
   }
   return { url, name };
 }
