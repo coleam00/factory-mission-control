@@ -153,6 +153,9 @@ export function Changes({
                 rows={rows}
                 state={state}
                 pair={resolvePair(items, rows, a, b)}
+                selectable={
+                  items.filter((i) => i.kind === 'version' && i.entry.digest !== null).length
+                }
               />
             )}
           </>
@@ -408,11 +411,14 @@ export function Comparison({
   rows,
   state,
   pair,
+  selectable,
 }: {
   factory: string;
   rows: readonly ScorecardRow[] | undefined;
   state: PanelState;
   pair: Pair & { isDefault: boolean };
+  /** How many versions have run and so have a box to check. */
+  selectable: number;
 }): ReactElement | null {
   if (state === 'error') {
     return <p className="text-sm text-text-secondary">Live data is unavailable.</p>;
@@ -439,7 +445,11 @@ export function Comparison({
       ) : null}
       <ScorecardView factory={factory} a={pair.a} b={pair.b} rows={rows} />
       {pair.b === undefined ? (
-        <p className="mt-3 text-sm text-text-secondary">Select another version to compare.</p>
+        <p className="mt-3 text-sm text-text-secondary">
+          {selectable < 2
+            ? 'Only one version has run; there is nothing to compare yet.'
+            : 'Select another version to compare.'}
+        </p>
       ) : (
         <p className="mt-3 text-sm text-text-secondary">
           See{' '}

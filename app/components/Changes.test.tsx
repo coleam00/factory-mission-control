@@ -123,6 +123,7 @@ test('the comparison links the diff of the pair and uses no amber', () => {
           rows={[]}
           state="ready"
           pair={{ a: V1, b: V2, isDefault: false }}
+          selectable={2}
         />
       ),
     },
@@ -133,6 +134,32 @@ test('the comparison links the diff of the pair and uses no amber', () => {
   );
   expect(html).toContain('what changed in the workflows');
   expect(render(items, {}) + html).not.toMatch(/warning|node-approval/);
+});
+
+test('with one selectable version the comparison says there is nothing to compare, not to select another', () => {
+  const panel = (selectable: number) =>
+    renderToStaticMarkup(
+      <RouterProvider
+        router={createMemoryRouter([
+          {
+            path: '/',
+            element: (
+              <Comparison
+                factory="mission-control"
+                rows={[]}
+                state="ready"
+                pair={{ a: V1, isDefault: true }}
+                selectable={selectable}
+              />
+            ),
+          },
+        ])}
+      />,
+    );
+  const one = panel(1);
+  expect(one).toContain('there is nothing to compare yet');
+  expect(one).not.toContain('Select another version');
+  expect(panel(2)).toContain('Select another version to compare.');
 });
 
 test('every version row but the oldest offers comparing with its previous version', () => {
