@@ -1091,6 +1091,228 @@ Expect:
 - B's VB2 shows C2's code, as A's V2 does; A's screens never list B's versions and B's never list A's.
 Author: writer, 2026-11-03, PRD invariant 6 and 4.2 as amended 2026-11-03 (owner decision); carries the parts of retired H-47, H-48, H-49, H-50, H-54 and H-55 that still guard the product (the version-to-code join on step screens and the diff, in any sha form, ambiguous or missing, live, after a relabel, per factory), now that the map no longer draws a version's architecture
 
+## Shared setup for H-81..H-93: the v2 screens of PRD 4.9
+
+"The v2 screens" are Board (`/f/<factory>/board`) with each ticket's own page, Decisions (`/f/<factory>/decisions`), Changes (`/f/<factory>/changes`) and the one line of live numbers above every screen (merged today, in flight, waiting on you, cost per merge over 7 days, median hours from a ticket's first lap to its merge), as PRD 4.9 (owner decision 2026-11-03) describes them. A ticket page's address is whatever the Board's own link to it gives; never guess it from the code. The shared setup for H-59..H-77 applies (browser time zone UTC, run between 03:00 and 21:00 UTC, step paths, one transaction per move).
+
+4.9 lets each screen land in its own issue and keeps the v1 screen working until its replacement merges. So: a part of a scenario that judges a v2 screen the commit under test does not serve (its address says nothing is there, and no control in the app leads to it) is INCOMPLETE, never PASS and never FAIL; a scenario whose every part is on unserved screens is INCOMPLETE. A ticket's page counts as served when a ticket on a served Board opens a page of its own; the header line counts as served when any screen shows one of its five numbers. A served screen that lacks something the scenario expects of it is FAIL, as is a v1 screen that is gone while its replacement is not served (H-77).
+
+Where 4.9 and the mockup differ, the PRD is judged: the mockup's Board columns (Intake, Queued, Building, Ready to merge, Your decision, Merged, Parked) and its sentences about answering in the Archon console or Slack are example content; 4.9's columns and 4.4's GitHub threads are the product.
+
+## H-81 Every open ticket sits in exactly one Board column, the column of the stage it is in
+Protects: 4.9 Board (one column per stage of the map: Queued, Intake, Build, Review, App check, Merge, Your decision, Merged; PRD phase progress above it); 4.3 phases (merged and total per phase) and issue states; 4.1 Live (a lap counts once, on its deepest running step's card; Build's queued); 11.6; invariant 5
+Touches: Board columns and phase progress, issue, label and claim ingestion, Archon projection, Factory map chips
+Setup: the check app with factories A and B (as in H-17). For A, issues in phases P1 and P2 and one issue with no phase: #Q1 open, unclaimed, workable; #Q2 open, unclaimed, with one `Depends on` still open; #I claimed by a running lap on `claim`; #Bd claimed by a lap running `ship` and a step under the deliver block outside the rounds' review and rereview; #Rv claimed by a lap on `ship/deliver/rounds/rereview`; #Ac by a lap on `evidence`; #Mg by a lap on the top-level `review`; #D whose lap merged it (pull request merged, issue closed) and is still running `deploy`; #N labelled `needs-owner`, no claim; #F whose only lap failed and whose claim was released; #M merged earlier today; #C closed without a merge, with no `Depends on`. B has an open issue with #Q1's number and a merged one with #N's number. Open A's Board and A's Factory screen, reload markers set.
+Steps:
+1. Record the Board's columns in order with the tickets in each, and the phase progress; record every chip on the Factory screen.
+2. Without a reload, as Archon and GitHub would: move #Bd's lap into `ship/deliver/rounds/review`; start a new lap on `pick` and claim #Q1 with it; remove `needs-owner` from #N; complete #Mg's lap through `land` with `outcome = merged`, merge its pull request and close #Mg; reopen #C. Observe both tabs every second until 10 seconds after the last write, recording each ticket's column at each observation.
+Expect:
+- The Board has exactly the eight columns of 4.9, in that order; no Staging, Parked, Building, Ready to merge or any other column.
+- Every ticket on A's Board is an issue of A's repository, and at every observation every open issue of A is in exactly one column, never two and never none while it moves: #Q1 and #F in Queued; #I in Intake; #Bd in Build; #Rv in Review; #Ac in App check; #Mg in Merge; #N in Your decision; #M and #D in Merged (#D's lap still running `deploy` never puts it back in a stage column). #Q2 is never in a stage column. #C, while closed without a merge, is in no column and never in Merged. None of B's issues appears.
+- The Queued column holds exactly the issues Build's "<n> queued" chip counts, and each stage column holds exactly the tickets of the laps its card counts here.
+- Each phase shows merged and total equal to A's issues in that phase; the issue with no phase is counted in no phase; nothing of B's is counted.
+- After step 2, within 5 seconds of each write and without a reload: #Bd is in Review; #Q1 in Intake and the Queued column and Build's queued both drop by one; #N in Queued; #Mg in Merged, its phase's merged rises by one and its total does not change; #C (open again, unclaimed, every `Depends on` closed) in Queued, never in Merged (`judges/liveness.js` PASS with `require_open_seconds: 0`).
+Author: writer, 2026-11-03, PRD 4.9 Board (owner decision 2026-11-03), manager pass 4e0a5b0d
+
+## H-82 A ticket's page tells the whole story of every lap on it, from none to a dozen
+Protects: 4.9 Board (a ticket opens its own page: every lap on it as a timeline of stages, its app-check results, review outcomes, pull request and console links; the one-lap page stays, opened from a ticket); 4.6; 4.3 outcomes; 4.2 lap definition; 11.6 console URL; 11.7; invariant 5
+Touches: ticket page, Board, one-lap page, claim and review parsers, app-check lines, browser history
+Setup: the check app. For factory A, issue #Z with no lap ever. Issue #T, worked over two days by twelve `archon-loop` laps, each claiming #T as the appendix writes a claim: L1 reaches `build` and fails (usage limit); eight more laps each fail early; L2 goes through the rounds' review and its top-level `review` output is `outcome = sent-back`; then the owner labels #T `needs-owner` (parked) and two hours later removes the label (unparked); L3's app check carries lines including a holdout line "H-07 ..." FAIL and an `e2e` line FAIL, and its `land` output is `outcome = refused` with a `reason`; L4 is running on `check-app`, with app-check lines PASS so far. L2, L3 and L4 work on one pull request P of A's repository. Also: an `archon-manager` run and an empty lap (`pick` route `none`) whose outputs mention #T; a lap of factory B claiming B's issue with #T's number.
+Steps:
+1. From A's Board, open #Z's page; record it after 3 seconds.
+2. From A's Board, open #T's page; record it. Without a reload, as Archon and GitHub would, finish L4: `evidence`, `handoff`, top-level `review`, `land` with `outcome = merged`, the run completed, P merged and #T closed. Record when each change shows.
+3. From #T's page, open each of L1, L2, L3 and L4 by the page's own links; on each one-lap page record outcome, cost and duration; use Back each time.
+4. Open #T's page address typed in a fresh tab, reload it, and use Back and Forward from the Board into it.
+Expect:
+- #Z's page says in one sentence that no lap has worked on it yet, with its issue link; no empty timeline frame, no console link, no cost or duration of 0 shown as if spent, no spinner; every panel ready within 2 seconds.
+- #T's page lists the twelve laps that claimed it, each exactly once, in time order, each as a timeline of the stages it reached, named as the map names them; laps before and after the park both remain, none dropped, repeated or reordered by it. The manager run, the empty lap and B's lap are not on it.
+- Each lap shows its outcome from the six of 4.3 (L1 failed, L2 sent back, L3 gate refused with the `reason` text, L4 merged after step 2); its app-check results by kind and verdict, holdout lines by scenario id and verdict only (L3's as `H-07` FAIL); its review outcome; the link to P in A's repository and the issue link; and its console link exactly `<A's console URL from factories.json>/console/r/<runId>`.
+- After step 2, within 5 seconds and without a reload, L4's timeline gains each stage and its merged outcome, and #T is in the Board's Merged column (`judges/liveness.js` PASS with `require_open_seconds: 0`).
+- Every one-lap page reached from #T is that lap's, and its outcome, cost (the sum of its steps' `cost_usd`) and duration (`completed_at` minus `started_at`) equal what #T's page shows for it. Back returns to #T's page, not to the Board or the top of the app.
+- The typed address and the reload show the same full page; Back and Forward move between the Board and #T's page with each intact.
+- `harness/design-probe.js` reports zero failures on #T's page and #Z's page at 1440 and 390 px; twelve laps never make the page scroll sideways.
+Author: writer, 2026-11-03, PRD 4.9 Board and ticket page (owner decision 2026-11-03), manager pass 4e0a5b0d
+
+## H-83 A ticket address that is not a ticket of this factory says so, and never shows another
+Protects: 4.9 Board (a ticket opens its own page); 11.6 (every view keyed by factory); engineering.md (an empty state is one sentence and at most one button); 8.4 (panels settle); invariant 7
+Touches: ticket page addressing, shared header and header line, browser history, factory identity
+Setup: the check app with factories A and B (as in H-17). A has open issue #7 with laps; A's pull request #12 (a pull request, not an issue); A's issue #9 closed without a merge; B has issue #40 and A has no #40. Take a real ticket page address from a link on A's Board, and change only its ticket part.
+Steps:
+1. Open, each typed in a fresh tab and recorded after 3 seconds with every panel's `data-state`: ticket 99999 (no such issue); 12; 40; 9; 0; -3; `abc`; `7.0`; `007`; a 25-digit number; `7%20`; ticket 7 followed by `?lap=nope&lap=x#frag`; ticket 7 under the factory key `nope`.
+2. From each missing-ticket page use its one button, if any, then Back and Forward.
+3. Restart serve with a wrong Realtime secret; open ticket 7 and ticket 99999 under A. Restore.
+Expect:
+- 99999, 12, 40, 0, -3, `abc` and the 25-digit number each read as this ticket not found in A (or words to that effect), in one sentence with at most one button that leads somewhere working (for example A's Board); never another ticket's title, laps or links, never B's #40, never an outage message or a spinner; every panel settles within 2 seconds. The header keeps A's name and A's own numbers (A is a real factory) and nothing of B's.
+- #9 is a real ticket: its page shows it as closed without a merge, never as merged and never as not found.
+- `7.0`, `007` and `7%20` are each treated as #7 everywhere on the page or as not found everywhere, never #7's title over an empty or not-found body.
+- The query string and fragment change nothing: ticket 7 shows its own full page.
+- Under the key `nope` the page reads as a factory that does not exist, with no factory's name or numbers in the header (as H-21).
+- Back and Forward land on the same truthful states again.
+- During the outage, ticket 7 reads as live data unavailable, with A named, never as "not found"; no secret appears on any page (as H-11).
+Author: writer, 2026-11-03, PRD 4.9 Board and ticket page (owner decision 2026-11-03), manager pass 4e0a5b0d
+
+## H-84 Decisions shows every open question in full, past its default date too, and only GitHub answers it
+Protects: 4.9 Decisions (owner questions with options, recommendation and default date; `needs-owner` items; then health); 4.4 (how long each has waited; each links to its GitHub thread, where it is answered; v1 never answers anything itself); section 5; invariant 2; 8.3 (waiting on a person is violet); invariant 5; journey 4
+Touches: owner decisions parser, Decisions screen, header waiting-on-you, Decisions tab count, Manager chip, label ingestion
+Setup: the check app with factories A and B. A's `Owner decisions needed` issue, in the appendix format, holds: Q1 whose default date is 3 days ahead; Q2 whose default date was yesterday (still open, not answered); Q3 whose default date is 3 minutes after the scenario starts; Q4 written without its "If there is no answer by ..." line; Q5 with long options and a long recommendation. A also has open issue #N1 labelled `needs-owner` and closed issue #N2 still carrying the label. B has its own open question and `needs-owner` issue. Open A's Decisions with the reload marker set, and A's Factory screen in another tab.
+Steps:
+1. Record Decisions top to bottom: its sections in order, every question with its options, recommendation, default, default date and waiting age, every `needs-owner` item, every link target. Record the header's waiting-on-you number, the Decisions tab's count if it shows one, and the Manager chip.
+2. Keep the screen open past Q3's default time; record Q3 before and after.
+3. Without a reload, deliver as GitHub would: an edit adding Q6; an edit removing Q1; `needs-owner` added to a new open issue #N3. Record when each change shows on Decisions, in the header and on the Manager chip.
+4. Click, focus and hover every control on Decisions, logging every request the page makes.
+Expect:
+- Owner questions come first, then the `needs-owner` items, then health.
+- Every open question of A is listed with its options, recommendation, default, the date the default applies and how long it has waited, and a link to its thread in A's repository. Nothing of B's is listed; #N1 is listed and #N2 is not.
+- Q2 is still listed as open: its date as written; any relative wording says the date has passed, never a negative or zero countdown; it is not hidden, not shown as answered, and not drawn red or amber (violet, as every waiting item). Q3 crossing its date while open changes at most that wording, without a reload, and it stays listed.
+- Q4 is listed with its options and recommendation, and its default reads as not recorded; it never borrows another question's date.
+- After step 3, within 5 seconds and without a reload, Q6 and #N3 appear and Q1 leaves, and the header's waiting-on-you number, the tab count and the Manager chip each change in the same direction as the list's counterpart, never left stale (`judges/liveness.js` PASS with `require_open_seconds: 0`).
+- No control answers, approves, dismisses, snoozes or edits anything; every action is a link that opens GitHub; after its first load the page sends nothing but seal renewals. No text on the page tells the owner to answer on the page itself.
+Author: writer, 2026-11-03, PRD 4.9 Decisions and 4.4 (owner decision 2026-11-03), manager pass 4e0a5b0d
+
+## H-85 With nothing waiting on the owner, every surface says so the same way
+Protects: 4.9 Decisions and the header line (waiting on you); 4.4; 4.1 Live (the Manager's waiting); engineering.md (an empty state is one sentence and at most one button); invariant 5; 11.6
+Touches: Decisions, header line, Decisions tab count, Board's Your decision column, Manager chip
+Setup: the check app, A with no open owner question (its `Owner decisions needed` issue exists with every question removed), no open `needs-owner` issue, and no pending, paused, stuck or failed lap; B with open questions. Separately, a fresh factory F (as in H-25) whose repository has no `Owner decisions needed` issue at all.
+Steps:
+1. On A, record Decisions, the header's waiting-on-you number, the Decisions tab count, the Board's Your decision column and the Manager chip, with every panel's `data-state` after 3 seconds.
+2. Without a reload, add one question to A's issue, then remove it; then label an issue `needs-owner` and unlabel it. Record after each.
+3. Repeat step 1 on F.
+Expect:
+- A's Decisions says in one sentence that nothing is waiting on the owner, with no empty headings over blank rows, no spinner and no error; its health part still shows (an empty health reads as such in one sentence each, never as an outage).
+- The header reads 0 waiting on you (never blank, never B's number, never a stale count); the tab count reads 0 or is absent; the Your decision column is empty and says so; the Manager shows no number above 0. All of these agree at every observation.
+- Each add and remove moves every one of them to 1 and back to 0 together, within 5 seconds and without a reload (`judges/liveness.js` PASS with `require_open_seconds: 0`).
+- F, with no decisions issue at all, shows the same zero state: never "does not exist", never an outage, never "not recorded" as if something were missing.
+Author: writer, 2026-11-03, PRD 4.9 Decisions and header line (owner decision 2026-11-03), manager pass 4e0a5b0d
+
+## H-86 Health on Decisions is judged exactly as health always was, live and per factory
+Protects: 4.9 Decisions (then health: stuck, pending and paused runs, failed laps by cause); 4.8 (definitions); invariant 4; invariant 5; 11.6
+Touches: Decisions health part, failed-lap cause classifier, stuck-step detection, pending and paused lists, one-lap links
+Setup: the check app with A set up as in H-16 (eight failed laps with the error texts listed there, step S with 60 completions, a pending run and a paused run), and B with one failed lap ("socket ETIMEDOUT") and a paused run of its own. Open A's Decisions with the reload marker set.
+Steps:
+1. Record the health part: each failed lap with its cause and link, the pending and paused runs, and any stuck step.
+2. Insert `node_started` for S on a running lap of A, watch Decisions, and record when S is flagged, in the shape `judges/health.js` documents.
+3. As Archon would, move A's pending run to running and its paused run to running; complete S.
+4. Switch to B with the app's own control and record B's health part.
+Expect:
+- The causes are those of H-16 (usage limit, authentication, infrastructure, other), each failed lap linking to its one-lap page, and every count names the laps it rests on and how many.
+- `judges/health.js` prints PASS on the recorded causes and flag time: S is flagged on Decisions only past twice its latest 50 completions' 90th percentile, without a reload.
+- After step 3, within 5 seconds and without a reload, the runs leave the pending and paused lists and S's flag clears (`judges/liveness.js` PASS with `require_open_seconds: 0`).
+- A's health shows nothing of B's and B's nothing of A's; no number sums both.
+Author: writer, 2026-11-03, PRD 4.9 Decisions (health) and 4.8 (owner decision 2026-11-03), manager pass 4e0a5b0d
+
+## H-87 Changes answers "did my last change help" honestly, from no versions to a fresh verdict
+Protects: 4.9 Changes (versions newest first with reason, hypothesis and verdict; two versions compared on the scorecard of 4.2; decisions from `DECISIONS.md` on the same timeline; the architecture diff one click away); 4.2 (not recorded; not yet meaningful under 10 laps; improvements being tested); 11.5; 11.6; invariant 5
+Touches: Changes screen, version strip data, scorecard comparison, decisions timeline, architecture diff, verdict ingestion, browser history
+Setup: the check app. For A, three versions from real pins (as the shared setup for H-51..H-53 and H-80 defines them), oldest to newest: V1 with `Measure` and a verdict "helped" with its sentence, 12 laps; V2 with `Measure` and no verdict, 4 laps; V3, the newest, with a reason and no trailers, 2 laps. Also a pin P4 newer than all, run by no lap. `DECISIONS.md` entries whose `Version:` lines name V1 and V2 by unique prefixes, and one by a prefix two pins share. B has versions of its own. Separately: a fresh factory F with no laps (so no versions), and a factory G with laps of exactly one version.
+Steps:
+1. Open A's Changes; record the order of entries and, for each, its reason, Hypothesis, Measure, verdict or state, and the decisions shown beside it.
+2. Compare V1 and V2 from Changes; record each measure with the laps it rests on, in the shape `judges/scorecard.js` documents. From there, open the architecture diff of that pair with one click. Use Back, Forward, and open the comparison's address in a fresh tab.
+3. Without a reload, push a verdict `Verdict: <V2 pin prefix> hurt: <sentence>` and a new `DECISIONS.md` entry naming V3.
+4. Open F's Changes and G's Changes.
+Expect:
+- Newest first: V3, V2, V1 (P4, if listed, is marked as not yet run and has no scorecard, verdict or lap count). Never ordered by sha, label or factory.
+- V1 shows "helped" and its sentence; V2 shows that it is being tested, with the laps it still waits for, and no verdict word (not "inconclusive", not "helped" by default); V3's Hypothesis and Measure read "not recorded", it has no verdict and is not listed as being tested.
+- Each decision sits on the same timeline linked to the version its `Version:` line names; the shared-prefix decision attaches to no version.
+- The comparison is the scorecard of 4.2 with every number's lap count; V2's side (4 laps) makes every difference "not yet meaningful"; `judges/scorecard.js` prints PASS. The diff reached in one click is of the same two versions; history and the fresh tab return the same pair, never another.
+- After step 3, within 5 seconds and without a reload, V2 shows "hurt" and its sentence and is no longer being tested, and the new decision appears beside V3 (`judges/liveness.js` PASS with `require_open_seconds: 0`).
+- F's Changes says in one sentence, with at most one button, that this factory has no versions yet: no comparison controls asking for an impossible pick, no NaN, no 0 where nothing was measured, never an outage or "does not exist". G's shows its one version and explains a comparison needs a second, never a comparison of the version with itself.
+- Nothing of B's appears on A's Changes.
+Author: writer, 2026-11-03, PRD 4.9 Changes (owner decision 2026-11-03), manager pass 4e0a5b0d
+
+## H-88 The header line's five numbers are exact, traceable, and the same above every screen
+Protects: 4.9 (above every screen one line of live numbers: merged today, in flight, waiting on you, cost per merge over 7 days, median hours from a ticket's first lap to its merge, each traceable); invariant 4 (each metric names the laps or rows it was computed from, and how many); 4.2 (lap, merge, cost per merge); invariant 5; 11.6; 10 (never summed across factories)
+Touches: header line, its traces, every served screen, Archon projection, owner queue data
+Setup: the check app with a fresh factory F (as in H-25) and A (the seed). Let now be the scenario's start. Insert, as Archon would, `archon-loop` laps of F's codebase, each claiming its ticket as the appendix writes a claim, with costs on their completed steps:
+- #1: L1a started now minus 10 h, failed after 1 h, cost $4; L1b started now minus 4 h, merged (`land` `outcome = merged`, pull request merged) at now minus 1 h, cost $6.
+- #2: one lap started now minus 3 h, merged at now minus 1 h, cost $5.
+- #3: one lap started three days ago at 10:00 UTC, merged at 15:00 UTC that day, cost $9.
+- an empty lap (`pick` route `none`) now minus 2 h, cost $1; a failed lap on #4 nine days ago, cost $100.
+- two running laps, on #5 and #6, started now minus 2 h, with `node_started` rows only; a running `archon-manager` run of F's codebase with $50 of cost.
+- F's `Owner decisions needed` issue with two open questions, and one open issue labelled `needs-owner`.
+Steps:
+1. Open F's Factory screen; record the five numbers and open each one's trace (whatever the app offers: a hover, a link, an expanded view), recording the laps or rows and the count it names.
+2. Visit every served screen of F without typing an address (Factory and a deeper view, Board, a ticket page, Decisions, Changes, a one-lap page, a step screen, every v1 screen still served); record the header on each. Then A's Factory screen.
+3. Without a reload, on F's Board: complete #5's lap through `land` with `outcome = merged` (cost $3 on its steps) and merge its pull request at now. Record the header on that screen and on another open tab of F.
+4. Repeat step 1 on a second fresh factory G whose only lap is running and that has never merged.
+Expect:
+- F's header reads: merged today 2; in flight 2; waiting on you equal to the number of items F's Decisions lists as waiting on the owner (2 questions, plus 1 if it lists the `needs-owner` issue, the same composition in both places); cost per merge over 7 days $8.33 ((4 + 6 + 5 + 9 + 1) / 3, within the shown rounding: the empty and failed laps count, the 9-day-old lap and the manager run do not); median 5 h (from 9, 2 and 5 hours: a ticket's time runs from its first lap, so #1 counts 9 h, never 3 h).
+- Each trace names exactly those laps or rows and their count: merged today #1 and #2 (2); in flight the laps on #5 and #6 (2); cost per merge the five laps and three merges; the median the three tickets.
+- The header is identical on every screen of F in step 2, and A's header shows only A's numbers.
+- After step 3, within 5 seconds and without a reload, on both tabs: merged today 3, in flight 1, cost per merge $7.00 ((25 + 3) / 4), median 3.5 h (from 9, 2, 5 and 2) (`judges/liveness.js` PASS with `require_open_seconds: 0`).
+- G reads merged today 0 and in flight 1, and shows no number for cost per merge and the median: not 0, $0, "0 h", NaN, Infinity or a blank that looks like zero.
+Author: writer, 2026-11-03, PRD 4.9 header line and invariant 4 (owner decision 2026-11-03), manager pass 4e0a5b0d
+
+## H-89 A retired screen's old address, however it is written, lands on its replacement for the same factory
+Protects: 4.9 (Factory replaces Map; Board replaces Issues, Laps and Testing; Decisions replaces Owner and Health; Changes replaces Versions, Scorecard, Diff and Decisions; the replaced screens are removed last; the one-lap page stays); 11.6; invariant 4 (a version pair is the pair named)
+Touches: routing and redirects, every v2 screen, one-lap and step screens, browser history, factory identity
+Setup: the check app with factories A and B (as in H-17). From the previous release's own links (as H-77), list every v1 address, including those that carry a version, a comparison pair, a lap or a filter. Keep only those whose screen the commit under test no longer serves and whose replacement it does serve; if none, this scenario is INCOMPLETE.
+Steps:
+1. Open each kept address typed in a fresh tab: as listed; with a trailing slash; with a doubled slash; with its path upper-cased; with an unknown query (`?x=1`); with a repeated parameter (`?v=<A's V1>&v=<A's V2>`); with an empty parameter value; with a fragment; with an encoded slash in a parameter; under B's key; under the key `nope`; with a parameter naming B's version or lap under A's key.
+2. From a v2 screen, follow a link or bookmark to a kept address, then use Back and Forward.
+3. Open the one-lap page and a step screen by their old addresses.
+Expect:
+- Each lands on the replacement screen of the same factory, keeping what the replacement can show: an old comparison of two versions lands on Changes comparing that same pair; an old lap address keeps the one-lap page. A repeated or ambiguous parameter never lands on a pair the address did not name.
+- Unknown, empty or garbled parameters, slashes and case are ignored or read as not found on the replacement, in one sentence with at most one button: never a crash, a blank, a spinner or another factory's facts.
+- Under B's key the address lands on B's replacement; under `nope` it reads as a factory that does not exist (as H-21) and is never sent to A or B; B's version or lap under A's key never shows B's facts under A.
+- Back from the landing returns to the page before the old address in one press: no redirect loop and no bounce.
+- The one-lap page and step screens keep working at their addresses.
+Author: writer, 2026-11-03, PRD 4.9 sequencing and the retirement of the v1 screens (owner decision 2026-11-03), manager pass 4e0a5b0d
+
+## H-90 Once Rewind is retired, nothing anywhere still pretends to show the past
+Protects: 4.9 (Rewind is retired); invariant 5 (live means live); invariant 4; 11.6
+Touches: shared header, every served screen, old rewind addresses and parameters, stored browser state from the previous release
+Setup: the check app at the commit under test, if no control in it offers a rewind; otherwise this scenario is INCOMPLETE (the rewind scenarios judge it while it is served). Using the previous release (the parent commit of the change that removed Rewind), open the dashboard in a browser profile, select a rewind there so whatever it stores in the browser is stored, and note its old rewind addresses and parameters. Keep that browser profile.
+Steps:
+1. With the kept profile, open the commit under test's root and every served screen; set the reload marker.
+2. Open the old rewind addresses, and served screens with the old rewind parameter or branch name added to their address.
+3. Insert, as Archon would, a step event that changes a number on the open screen.
+Expect:
+- Every screen shows live data labelled as live: no rewind label, picker, branch name or past moment anywhere, and no empty control left where the rewind picker was.
+- The old rewind addresses lead to a working live screen or read as not found in one sentence with at most one button; an old rewind parameter is ignored and never makes a screen show older data or freeze.
+- The step event shows within 5 seconds without a reload, in the kept profile too (`judges/liveness.js` PASS with `require_open_seconds: 0`).
+Author: writer, 2026-11-03, PRD 4.9 (Rewind is retired; owner decision 2026-11-03), manager pass 4e0a5b0d
+
+## H-91 No holdout's words on the Board, a ticket, Decisions, Changes or the header line
+Protects: invariant 3; section 5 (no scenario text copied); 4.5 and 11.7 (holdout verdicts by scenario id only; `unidentified`); 4.9 (the ticket page's app-check results; Changes' scorecard)
+Touches: Board and ticket cards, ticket page, Decisions, Changes and its comparison, header line traces, sealing API, every dashboard table
+Setup: the check app, and the lap and canary of H-01 (four holdout lines carrying `CANARY-ZEBRA-7741`), with that lap claiming an open issue #T of A. Also deliver a `Loop metrics` line `holdouts at <sha>: H-07 FAIL #41, H-12 PASS`.
+Steps:
+1. Without a reload, open A's Board (every card, every badge, every tooltip), #T's page and every lap on it, Decisions, Changes with a comparison including that lap's version, and every trace of the header line. Record every page's text and attributes and every payload the browser received (HTTP and Realtime frames).
+2. Search every dashboard table and view, including `projection_errors`, for the canary.
+Expect:
+- The canary is found in no screen, attribute, tooltip, payload, table or view.
+- #T's page shows the lap's holdout lines as `H-07` FAIL, `H-12` (never `H-03`), and the two others as `unidentified`; any badge on #T's Board card says only a kind and verdict.
+- Changes' new holdout catches for that version rise by exactly one, as H-01 states.
+Author: writer, 2026-11-03, PRD invariant 3 on the v2 screens of 4.9 (owner decision 2026-11-03), manager pass 4e0a5b0d
+
+## H-92 A newcomer answers the four questions from the Factory screen, without typing an address
+Protects: 4.9 (four questions, each on one screen; above every screen the factory switcher and the line of live numbers); 4.1 (the default screen; a newcomer understands it in a minute); journeys 1, 2 and 4 as v2 tells them; invariant 4
+Touches: root address, header navigation, Factory screen and its strip, Board, ticket page, Decisions, Changes, one-lap page, keyboard handling, browser history
+Setup: the check app on the seed, A with ticket #T claimed by a lap on `ship/deliver/rounds/review`, one open owner question, one failed lap, V1 with a verdict and a newer V2 being tested. The verifier plays a newcomer: it starts at the root, never types an address, and uses only visible, labelled controls (nothing reachable only by hover or a hidden shortcut).
+Steps:
+1. From the root, answer in turn, recording each click: where is #T right now? what is waiting on me? is the factory healthy? did my last change help? Then open #T's latest lap and return to the Factory screen.
+2. Repeat with the keyboard alone.
+Expect:
+- The root opens on A's Factory screen. Each of Board, Decisions and Changes is one labelled control away from every v2 screen, and the switcher and the line of live numbers are above each.
+- Where is #T: the Factory screen shows it on Review (Review's chip and Right now), and the Board shows it in the Review column; the two agree. What waits on me: Decisions lists the question, and its count equals the header's waiting on you. Healthy: Decisions shows the failed lap with its cause. Last change: Changes shows V2 first, as being tested, and V1's verdict below it.
+- #T's latest lap opens from its ticket page; Back and the header return to the Factory screen. The keyboard path reaches every answer.
+- No question needs a screen that is not one of the four, the one-lap page or a step screen; a served v2 screen that the header does not lead to is FAIL.
+Author: writer, 2026-11-03, PRD 4.9 (four questions, one screen each) and journeys (owner decision 2026-11-03), manager pass 4e0a5b0d
+
+## H-93 The new screens hold up at phone width and beside the owner's screenshots
+Protects: 8.3 as amended (each touched v2 screen compared side by side with the matching `refs/` image, the judgement quoted; the design probe's zero failures at 1440 and 390 px; dark only); 4.9 (the design of `docs/design/v2/`)
+Touches: Board, ticket page, Decisions, Changes, header line, design probe
+Setup: the check app on the seed, plus a ticket with a 200-character title and twelve laps (as #T in H-82), and an owner question with long options (as Q5 in H-84). The mockup beside it, put in its Board-with-ticket and Decisions states with `window.__mcTab` and `window.__mcTicket`.
+Steps:
+1. At 1440 x 900, screenshot the Board with a ticket's page open, and Decisions; compare each with `refs/20-board-ticket.png` and `refs/30-decisions.png` and write down the judgement for the header line, the column and card shapes, the ticket timeline, the question cards and the color roles. Screenshot Changes and compare it with the console references in `docs/design/archon-console/`.
+2. At 390 px, open the Board (all eight columns), the long ticket's page, Decisions with the long question, and Changes with a comparison open; scroll each top to bottom.
+3. Run `harness/design-probe.js` on every state of steps 1 and 2 at both widths, and once with the operating system in light mode.
+Expect:
+- The judgement is quoted for each comparison; the header line, the ticket timeline and the question cards follow the references' design (the numbers, tickets and column set are judged by the PRD, not the mockup).
+- At 390 px the page never scrolls sideways: the eight columns and long titles fit, wrap or scroll inside their own frame, and every ticket, question, link and control can be reached and read.
+- The design probe reports zero failures on every state at both widths; the app stays dark in light mode.
+Author: writer, 2026-11-03, PRD 8.3 on the v2 screens of 4.9 (owner decision 2026-11-03), manager pass 4e0a5b0d
+
 ## Retired
 
 The holdout verifier never runs anything under this heading. Each scenario here keeps its id, which is never reused, and records who retired it and why.
