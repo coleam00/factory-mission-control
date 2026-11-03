@@ -110,7 +110,7 @@ Product document, New issue, Found by the factory and Shipped cover no steps.
 **Live:** a card shows the laps of the selected factory on any step it covers right now (a lap
 counts once, on its deepest running step's card) as "<n> here"; Build also shows issues waiting to
 start as "<n> queued"; App check shows open pull requests whose latest app check failed as
-"<n> failing" in red; the Manager shows open owner questions plus open `needs-owner` issues as "<n> waiting" in violet; Shipped
+"<n> failing" in red; the Manager shows what waits on a person as "<n> waiting" in violet (open Archon attention items, plus open owner questions and `needs-owner` issues on a factory still on the old loop); Shipped
 shows merges today as "<n> merged". A card with laps on it carries `data-live-count` greater than 0
 and pulses its chip. Every number updates live (invariant 5).
 
@@ -218,7 +218,7 @@ internals to read them. v2 answers four questions, each on one screen, in the de
 |---|---|---|
 | **Factory** (home, `/f/<factory>`) | How does the factory work, and where is every ticket right now? The map of 4.1 and its deeper views | Map |
 | **Board** (`/f/<factory>/board`) | Where is each ticket? One column per stage of the map (Queued, Intake, Build, Review, App check, Merge, Your decision, Merged), PRD phase progress above it. A ticket opens its own page: every lap on it as a timeline of stages, its app-check results, review outcomes, pull request and console links | Issues, Laps, Testing |
-| **Decisions** (`/f/<factory>/decisions`) | What is waiting on me, and is the factory healthy? Owner questions with options, recommendation and default date; `needs-owner` items; then health (stuck, pending and paused runs, failed laps by cause) | Owner, Health |
+| **Decisions** (`/f/<factory>/decisions`) | What is waiting on me, and is the factory healthy? Archon attention items (paused runs waiting on a person) with their question, choices and recommendation, answered in the Archon console or Slack; on a factory still on the old loop, owner questions and `needs-owner` items, answered on GitHub; then health (stuck, pending and paused runs, failed laps by cause) | Owner, Health |
 | **Changes** (`/f/<factory>/changes`) | Did my last change to the factory help? Versions newest first with reason, hypothesis and verdict, two versions compared on the scorecard of 4.2, decisions from `DECISIONS.md` on the same timeline, the architecture diff one click away | Versions, Scorecard, Diff, Decisions |
 
 Above every screen: the factory switcher and one line of live numbers (merged today, in flight,
