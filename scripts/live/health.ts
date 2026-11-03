@@ -204,7 +204,7 @@ export function healthMismatches(shown: ShownHealth, expected: ExpectedHealth): 
   same('running laps', shown.running, expected.running);
   if (expected.pending.length !== 1)
     mismatches.push('the seed does not have exactly 1 pending run');
-  if (expected.paused.length !== 1) mismatches.push('the seed does not have exactly 1 paused run');
+  if (expected.paused.length === 0) mismatches.push('the seed has no paused run');
   if (expected.overdue.length === 0) mismatches.push('the seed has no overdue step');
   for (const cause of CAUSES) {
     if (expected.causes[cause] === 0) mismatches.push(`the seed has no failed lap of ${cause}`);

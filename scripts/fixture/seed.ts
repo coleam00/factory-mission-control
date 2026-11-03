@@ -1196,6 +1196,90 @@ function archonSql(factory: FactoryEntry, runs: Run[]): string[] {
 }
 
 /**
+ * Two runs paused on a `wait: attention` node, the shape Archon records in `metadata.wait` and the
+ * pack's queues render with `renderAttention`: a title, what it is, why it matters, the
+ * recommendation, the choices. They write no `mc` row here: the projection trigger firing on these
+ * inserts is what puts them in `mc.attention_items`, so loading the seed proves it on a check
+ * branch's real Postgres.
+ */
+function attentionSql(): string[] {
+  const waits = [
+    {
+      id: '5eed0005-0000-4000-8000-000000000001',
+      workflow: 'archon-build-queue',
+      waitingSince: '2026-10-24T10:20:00.000Z',
+      pauseId: 'seed-build-ask',
+      labels: { build: 'scope' },
+      options: [
+        { id: 'split', label: 'Split the issue in two' },
+        { id: 'build', label: 'Build it as written' },
+        { id: 'other', label: 'Something else' },
+      ],
+      message: [
+        '**Build queue, issue 15: scope decision**',
+        '**What it is.** Issue 15 asks for the lanes panel and the one-lap page in one change, and the two touch different screens.',
+        '**Why it matters.** A change that spans both screens is hard to review and holds the queue behind it.',
+        '**Recommendation: `split`** (high confidence). Two small changes land sooner than one large one.',
+        '**Choices.**\n- `split`: Split the issue in two\n- `build`: Build it as written\n- `other`: Something else',
+        '**If nobody answers.** The queue stays on this issue and takes the next ready one.',
+        '**Evidence.** https://github.com/coleam00/factory-mission-control/issues/15',
+      ].join('\n\n'),
+    },
+    {
+      id: '5eed0005-0000-4000-8000-000000000002',
+      workflow: 'archon-merge-queue',
+      waitingSince: '2026-10-24T11:35:00.000Z',
+      pauseId: 'seed-merge-ask',
+      labels: { merge: 'pr' },
+      options: [
+        { id: 'merge', label: 'Merge it now' },
+        { id: 'hold', label: 'Hold it for the next lap' },
+        { id: 'other', label: 'Something else' },
+      ],
+      message: [
+        '**Merge queue, pull request 16: ready to merge**',
+        '**What it is.** Pull request 16 has every check green and no open review finding.',
+        '**Why it matters.** It is the last change before the version is pinned.',
+        '**Recommendation: `merge`** (medium confidence). Nothing in it waits on another change.',
+        '**Choices.**\n- `merge`: Merge it now\n- `hold`: Hold it for the next lap\n- `other`: Something else',
+        '**If nobody answers.** The queue leaves it open and moves to the next pull request.',
+        '**Evidence.** https://github.com/coleam00/factory-mission-control/pull/16',
+      ].join('\n\n'),
+    },
+  ];
+  return [
+    '',
+    '-- Attention items: two runs paused on a `wait: attention` node, projected by the trigger.',
+    ...waits.flatMap((w) => [
+      insert('remote_agent_workflow_runs', {
+        id: w.id,
+        workflow_name: w.workflow,
+        codebase_id: SEED_CODEBASE,
+        status: 'paused',
+        user_message: 'Work the queue',
+        metadata: json({
+          wait: {
+            owner: 'node',
+            nodeId: 'ask',
+            kind: 'attention',
+            pauseId: w.pauseId,
+            revision: 1,
+            form: 'select',
+            options: w.options,
+            labels: w.labels,
+            waitingSince: w.waitingSince,
+            message: w.message,
+          },
+        }),
+        started_at: w.waitingSince,
+        completed_at: null,
+        last_activity_at: w.waitingSince,
+      }),
+    ]),
+  ];
+}
+
+/**
  * A second factory, in the fixture only, so the factory switcher (#77) has one to switch to: its
  * own codebase and one archon-loop lap running on `claim`. Its name is no real factory's, so a
  * check branch never mixes it with one from factories.json; it runs no digest, so it adds no
@@ -1275,6 +1359,7 @@ export function buildSeed(repoRoot: string): string {
     insert('mc.factories', factory),
     ...versionsSql(versions),
     ...archonSql(factory, runs),
+    ...attentionSql(),
     ...secondFactorySql(v2Loop),
     '',
     "-- Laps, steps, app-check lines and versions, projected from Archon's rows above.",
