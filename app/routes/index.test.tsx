@@ -57,6 +57,7 @@ const lap = (run: string, step: string): HomeMapRow => ({
   number: null,
   title: null,
   url: null,
+  at: null,
 });
 
 const cardTag = (html: string, id: string) =>
@@ -109,6 +110,17 @@ test('queued, failing, waiting and merged chips sit on Build, App check, the Man
               number: 4,
               title: 't',
               url: null,
+              at: null,
+            },
+            {
+              kind: 'merged',
+              run_id: 'm',
+              workflow: 'archon-loop',
+              steps: null,
+              number: 1,
+              title: null,
+              url: null,
+              at: new Date(2026, 10, 3, 9),
             },
           ],
           workable: [{ kind: 'issue', issue_number: 2, title: 'w', url: null, run_id: null }],
@@ -125,17 +137,6 @@ test('queued, failing, waiting and merged chips sit on Build, App check, the Man
               default_at: null,
               waiting_since: null,
               approximate: true,
-            },
-          ],
-          recent: [
-            {
-              run_id: 'm',
-              status: 'completed',
-              started_at: null,
-              completed_at: new Date(2026, 10, 3, 9),
-              issue_number: 1,
-              outcome: 'merged',
-              cost_usd: null,
             },
           ],
         }}

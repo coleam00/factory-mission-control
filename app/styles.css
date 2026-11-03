@@ -240,6 +240,14 @@
   border-radius: 6px;
 }
 
+/* A map card is drawn scaled down to fit the map, so its focus ring is drawn thicker and solid in
+   map units: at the fitted scale it stays about 3px of Dynamous Blue, above 3:1 on the frame. */
+.console-root [data-card]:focus-visible {
+  outline: 5px solid var(--accent);
+  outline-offset: 10px;
+  border-radius: 16px;
+}
+
 /* Scrollbar styling for dark theme */
 ::-webkit-scrollbar {
   width: 8px;

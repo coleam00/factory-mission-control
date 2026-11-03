@@ -11,8 +11,12 @@ import {
   lapsOnCards,
   lateWrite,
   MAP,
+  MAP_READABLE,
+  type MapType,
   mapCards,
   mapMismatches,
+  mapType,
+  mapTypeFailures,
   PANEL,
   pageWait,
   READY_WAIT_MS,
@@ -73,6 +77,8 @@ interface Timings extends PanelTimings {
   noReload: boolean | null;
   /** Where App check's Behind the scenes link to check-app went. */
   clickedTo?: string | null;
+  /** The map's smallest type at 1440 fitted, and its frame's width. */
+  type?: MapType | null;
   limits: typeof LIMITS;
 }
 
@@ -117,6 +123,7 @@ export function homePhase(ctx: LiveContext): LivePhase {
       const { base } = ctx;
       const page = await openPage(deps.env);
       homePage = page;
+      await page.setViewport(MAP_READABLE.width);
       await page.goto(`${base}/`);
       await page.evaluate('window.__mcNoReload = true');
       await observeHomePanels(page, panels);
@@ -128,6 +135,11 @@ export function homePhase(ctx: LiveContext): LivePhase {
         ),
       );
       ctx.failures.push(...mapMismatches(await mapCards(page), await lapsOnCards(db, factory)));
+      await page.evaluate(
+        pageWait(`document.querySelector('${MAP} [data-placed]') !== null`, 2000),
+      );
+      mapTimings.type = await mapType(page);
+      ctx.failures.push(...mapTypeFailures(mapTimings.type));
       writeFileSync(join(outDir, 'home-map.png'), await page.screenshot(1440));
       onLiveStep = Number(await page.evaluate<string>(liveCountOf(LIVE_CARD)));
     },

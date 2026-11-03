@@ -1,12 +1,12 @@
 import { type ReactElement, useState } from 'react';
 import { useSearchParams } from 'react-router';
 import { EmptyState } from '../components/EmptyState';
-import { FactoryMap } from '../components/FactoryMap';
+import { FactoryMap, useReducedMotion } from '../components/FactoryMap';
 import { StepVersionPicker } from '../components/StepVersionPicker';
 import type { HealthWorkableRow } from '../lib/health';
 import { homeHref } from '../lib/home-map';
-import type { RecentLapRow } from '../lib/laps';
 import type { OwnerQueueRow } from '../lib/owner-queue';
+import type { StepRow } from '../lib/step-detail';
 import { useFactory } from '../live/FactoryProvider';
 import { LivePanel, type PanelState } from '../live/LivePanel';
 import { useLive } from '../live/LiveProvider';
@@ -17,6 +17,9 @@ import { cardLive, type HomeMapRow, type MapSources, versionRecorded } from '../
  * The map once `home-map` has answered: the owner's drawing, always the same, with the chips the
  * live rows count. Each other source's chips appear as its rows arrive.
  */
+/** The app's column, which the title row, the version control and the empty states keep. */
+const COLUMN = 'mx-auto w-full max-w-6xl px-6';
+
 export function HomeMapBody({
   sources,
   state,
@@ -24,6 +27,8 @@ export function HomeMapBody({
   at,
   configured,
   flow,
+  onDrawn,
+  steps,
   now = new Date(),
 }: {
   /** `map` is undefined until `home-map` has answered. */
@@ -35,21 +40,35 @@ export function HomeMapBody({
   /** False once the server has answered with no factory; undefined while it has not. */
   configured?: boolean;
   flow: boolean;
+  onDrawn?: (drawn: boolean) => void;
+  /** The pinned version's steps, for Behind the scenes; undefined until `step-detail` answers. */
+  steps?: readonly StepRow[];
   /** The browser's clock, which decides what "today" is for the merges. */
   now?: Date;
 }): ReactElement {
-  const { map, workable, owner, recent } = sources;
-  if (state === 'error') return <EmptyState title="Live data is unavailable." />;
+  const { map, workable, owner } = sources;
+  const empty = (title: string) => (
+    <div className={COLUMN}>
+      <EmptyState title={title} />
+    </div>
+  );
+  if (state === 'error') return empty('Live data is unavailable.');
   // The server is ready and shows no factory: nothing will ever load, so say why (#215).
-  if (map === undefined && configured === false) {
-    return <EmptyState title="No factory is configured." />;
-  }
-  if (map === undefined) return <EmptyState title="Loading the factory map." />;
-  if (!versionRecorded(map, at)) {
-    return <EmptyState title={`No version ${at} is recorded for this factory.`} />;
-  }
-  const live = cardLive(FACTORY_MAP, { map, workable, owner, recent }, now);
-  return <FactoryMap map={FACTORY_MAP} live={live} factory={factory} at={at} flow={flow} />;
+  if (map === undefined && configured === false) return empty('No factory is configured.');
+  if (map === undefined) return empty('Loading the factory map.');
+  if (!versionRecorded(map, at)) return empty(`No version ${at} is recorded for this factory.`);
+  const live = cardLive(FACTORY_MAP, { map, workable, owner }, now);
+  return (
+    <FactoryMap
+      map={FACTORY_MAP}
+      live={live}
+      factory={factory}
+      at={at}
+      flow={flow}
+      onDrawn={onDrawn}
+      steps={steps}
+    />
+  );
 }
 
 /**
@@ -62,40 +81,54 @@ export default function Home(): ReactElement {
   const factory = useFactory();
   const live = useLive();
   const [flow, setFlow] = useState(true);
+  // The toggle shows with the map it moves, and reads off while the system asks for no motion.
+  const [drawn, setDrawn] = useState(false);
+  const reduced = useReducedMotion();
   const configured = live.status === 'ready' ? live.factories.length > 0 : undefined;
   return (
-    <main className="mx-auto max-w-6xl px-6 py-6">
-      <div className="mb-4 flex items-center gap-3">
+    <main className="py-6">
+      <div className={`${COLUMN} mb-4 flex min-h-8 items-center gap-3`}>
         <h1 className="text-base font-semibold text-text-primary">Factory map</h1>
-        <button
-          type="button"
-          aria-pressed={flow}
-          aria-label="Flow animation"
-          title="Toggle flow animation"
-          onClick={() => setFlow((was) => !was)}
-          className={`ml-auto cursor-pointer rounded-[7px] border border-border bg-surface px-2.5 py-1.5 font-mono text-[12px] hover:border-border-bright hover:text-text-primary ${
-            flow ? 'text-text-primary' : 'text-text-secondary'
-          }`}
-        >
-          ≋ flow
-        </button>
+        {drawn ? (
+          <button
+            type="button"
+            aria-pressed={flow && !reduced}
+            aria-label="Flow animation"
+            title={
+              reduced
+                ? 'Flow animation is off: your system asks for reduced motion'
+                : 'Toggle flow animation'
+            }
+            disabled={reduced}
+            onClick={() => setFlow((was) => !was)}
+            className={`ml-auto cursor-pointer rounded-[7px] border border-border bg-surface px-2.5 py-1.5 font-mono text-[12px] hover:border-border-bright hover:text-text-primary disabled:cursor-default ${
+              flow && !reduced ? 'text-text-primary' : 'text-text-secondary'
+            }`}
+          >
+            ≋ flow
+          </button>
+        ) : null}
       </div>
-      <StepVersionPicker factory={factory} at={at} href={homeHref} />
+      <div className={COLUMN}>
+        <StepVersionPicker factory={factory} at={at} href={homeHref} />
+      </div>
       <LivePanel<HomeMapRow> query="home-map" factory={factory} args={[at ?? '']}>
         {(map, state) => (
           <LivePanel<HealthWorkableRow> query="health-workable" factory={factory}>
             {(workable) => (
               <LivePanel<OwnerQueueRow> query="owner-queue" factory={factory}>
                 {(owner) => (
-                  <LivePanel<RecentLapRow> query="recent-laps" factory={factory}>
-                    {(recent) => (
+                  <LivePanel<StepRow> query="step-detail" factory={factory} args={[at ?? '']}>
+                    {(steps) => (
                       <HomeMapBody
-                        sources={{ map, workable, owner, recent }}
+                        sources={{ map, workable, owner }}
+                        steps={steps}
                         state={state}
                         factory={factory ?? ''}
                         at={at}
                         configured={configured}
                         flow={flow}
+                        onDrawn={setDrawn}
                       />
                     )}
                   </LivePanel>

@@ -17,6 +17,26 @@ step under it; a step under two entries belongs to the deeper one, so Build cove
 Review the two review rounds inside it. An entry an include expanded names its own screen
 (`screens`), under the workflow that declares it.
 
+## Size and readability (owner deviation from the mockup)
+
+The map is the home screen's hero. Its frame spans the window between the page gutters; the
+caption, legend and details strip stay in the app's column. The frame's height is the map's height
+at the scale that fits its width, plus its padding (at least 420px), so a fit leaves no empty band;
+the page scrolls below it.
+
+The owner chose readability over the mockup's proportions (PR #326 review, 2026-11-03): at 1440x900,
+fitted, a card's title renders at least 14px, its text 11px, and its kind label and the line labels
+10px. So the type inside the map is larger than the mockup's (in map units: title 25, text 20, kind
+18, line labels 18, chips 15; `MAP_TYPE` in `FactoryMap.tsx`), cards are 208 wide and 212 tall so
+texts wrap to two or three lines, and columns sit closer: 52 between cards, 84 between App check and
+Merge, where the "passed" label needs the room (the mockup has about 84 everywhere). Which card sits
+where, and every line, are the mockup's. `bun run test:live` measures the rendered sizes at 1440
+fitted and fails below these numbers.
+
+Below 701px wide the map opens as `refs/40-home-phone.png` draws it: the line at a readable scale
+in a 460px frame, centred on the line's box with the Manager above, the rest a pan away. Fit always
+fits the whole map, at any width.
+
 ## The map check
 
 `bun run map:check` (part of `bun run check`) parses `fixtures/pack/` with the architecture parser,
@@ -26,16 +46,19 @@ the step's own. When the pack changes, update `covers` until the check passes.
 
 ## Live counts
 
-The cards' chips come from four live queries: `home-map` (each running run of the factory with its
-running steps, the open pull requests whose latest app check failed, and whether the version the
-address names is recorded), `health-workable`, `owner-queue` and `recent-laps`.
+The cards' chips come from three live queries: `home-map` (each running run of the factory with its
+running steps, the open pull requests whose latest app check failed, the laps whose land step
+merged with when it finished, and whether the version the address names is recorded),
+`health-workable` and `owner-queue`.
 
 - "<n> here" on any card: a run counts once, on the card covering its deepest running step (the
-  newest of those as deep). A card with runs on it carries `data-live-count` above 0.
+  newest of those as deep). A loop group's iteration of a step (`rounds.review__policy`) counts as
+  that step (`rounds/review/policy`). A card with runs on it carries `data-live-count` above 0.
 - "<n> queued" on Build: the workable issues, as Health counts them.
 - "<n> failing" on App check: open pull requests whose latest app check came out FAIL.
 - "<n> waiting" on the Manager: open owner questions and open `needs-owner` issues.
-- "<n> merged" on Shipped: laps that merged today, the browser's local day.
+- "<n> merged" on Shipped: laps whose land step merged today, the browser's local day, counted
+  from the moment that step finished, not when the run ends.
 
 A chip of 0 is not drawn. A chip appears once its query has answered.
 
@@ -43,9 +66,12 @@ A chip of 0 is not drawn. A chip appears once its query has answered.
 
 A card keeps itself and the cards a line joins to it lit and dims the rest; its details strip opens
 under the map. Right now lists the runs and items the card's chips count, each opening its page.
-Behind the scenes lists the workflows and steps the card covers, each opening its step screen:
-App check's includes `check-app`, whose screen shows its prompt, the holdout verifier and the fence
-(journey 1). Esc, the close button or a click on empty canvas deselects.
+Behind the scenes lists, per workflow, the steps the card covers that the version shown has, each
+opening its step screen beside the model its parsed architecture gives it (`step-detail`, the
+step screens' own query): only facts from the factory's pinned code, never a step or path the
+version lacks (owner, #307). App check's includes `check-app`, whose screen shows its prompt, the
+holdout verifier and the fence (journey 1). Esc, the close button or a click on empty canvas
+deselects.
 
 No card has a deeper view yet: none shows ⤢ or an Open button until its view is built.
 
@@ -60,4 +86,5 @@ factory.” The queued, failing, waiting and merged chips count the factory as i
 
 One dot travels Product document to Shipped and each card it reaches pulses once; dashes flow along
 the forward lines. The flow button beside the screen's title, or `prefers-reduced-motion`, stops
-both.
+both; the button shows once the map is drawn, and under reduced motion it reads off and is
+disabled.

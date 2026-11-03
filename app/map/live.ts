@@ -1,17 +1,16 @@
 /**
  * What the factory map's chips count (PRD 4.1 "Live"), from the live rows: the laps on each card
- * from `home-map`, Build's workable issues from `health-workable`, the owner's open items from
- * `owner-queue` and today's merges from `recent-laps`. Every chip keeps the items it counted,
+ * and today's merges from `home-map`, Build's workable issues from `health-workable` and the
+ * owner's open items from `owner-queue`. Every chip keeps the items it counted,
  * which the details strip's Right now lists (invariant 4). Pure, no React.
  */
 import type { HealthWorkableRow } from '../lib/health';
-import type { RecentLapRow } from '../lib/laps';
 import type { OwnerQueueRow } from '../lib/owner-queue';
 import { type Chip, cardForStep, type FactoryMap, stepPath } from './factory-map';
 
 /** One row of `db/queries/home-map.sql`. */
 export interface HomeMapRow {
-  kind: 'version' | 'lap' | 'failing';
+  kind: 'version' | 'lap' | 'failing' | 'merged';
   /** A lap's run. */
   run_id: string | null;
   /** A lap's workflow. */
@@ -22,6 +21,8 @@ export interface HomeMapRow {
   number: number | null;
   title: string | null;
   url: string | null;
+  /** When a merged lap's land step finished. */
+  at: Date | null;
 }
 
 /** A lap on the map: its run, its claimed issue, and the step it counts on. */
@@ -59,10 +60,9 @@ export interface MapSources {
   map: readonly HomeMapRow[];
   workable?: readonly HealthWorkableRow[];
   owner?: readonly OwnerQueueRow[];
-  recent?: readonly RecentLapRow[];
 }
 
-const depth = (step: string) => step.split('__').length;
+const depth = (step: string) => stepPath(step).split('/').length;
 
 /** A lap's deepest running step, the newest of those as deep; undefined while none runs. */
 export function deepestStep(steps: readonly string[] | null): string | undefined {
@@ -78,12 +78,12 @@ const sameLocalDay = (a: Date, b: Date) =>
   a.getMonth() === b.getMonth() &&
   a.getDate() === b.getDate();
 
-/** The laps that merged on `now`'s local day, newest first. */
-export function mergedToday(rows: readonly RecentLapRow[], now: Date): MapMerge[] {
+/** The laps whose land step merged on `now`'s local day, newest first. */
+export function mergedToday(rows: readonly HomeMapRow[], now: Date): MapMerge[] {
   return rows
     .flatMap((row) =>
-      row.outcome === 'merged' && row.completed_at !== null && sameLocalDay(row.completed_at, now)
-        ? [{ run: row.run_id, issue: row.issue_number, at: row.completed_at }]
+      row.kind === 'merged' && row.run_id !== null && row.at !== null && sameLocalDay(row.at, now)
+        ? [{ run: row.run_id, issue: row.number, at: row.at }]
         : [],
     )
     .sort((a, b) => b.at.getTime() - a.at.getTime() || a.run.localeCompare(b.run));
@@ -93,7 +93,7 @@ const byNumber = (a: MapItem, b: MapItem) => a.number - b.number || a.key.locale
 
 /** The items each chip kind counts; a source not delivered yet counts nothing and draws no chip. */
 function chipItems(
-  { map, workable, owner, recent }: MapSources,
+  { map, workable, owner }: MapSources,
   now: Date,
 ): { [K in Chip]?: Required<CardLive>[K] } {
   return {
@@ -130,7 +130,7 @@ function chipItems(
         }))
         .sort(byNumber),
     }),
-    ...(recent && { merged: mergedToday(recent, now) }),
+    merged: mergedToday(map, now),
   };
 }
 

@@ -3,7 +3,7 @@
  * read here. Its coverage is held to the pinned pack by `bun run map:check` (invariant 6). Pure,
  * no React.
  */
-import { stepHref } from '../lib/step-detail';
+import { type StepRow, stepHref } from '../lib/step-detail';
 import data from './factory-map.json';
 
 /** Who is acting on a card, which is its color (docs/design/v2/tokens.css). */
@@ -35,7 +35,6 @@ export interface Details {
   when?: string[];
   what?: string[];
   how?: string[];
-  behind?: { models?: string; source?: string };
 }
 
 export interface Card {
@@ -70,7 +69,6 @@ export interface Line {
 export interface FactoryMap {
   caption: string;
   cardSize: { width: number; height: number };
-  minHeight: number;
   cards: Card[];
   group: { x: number; y: number; width: number; height: number; label: string };
   lines: Line[];
@@ -82,12 +80,26 @@ export const FACTORY_MAP = data as FactoryMap;
 
 export const cardWidth = (map: FactoryMap, card: Card) => card.width ?? map.cardSize.width;
 
-/** The world the cards are placed in, with the margin the mockup leaves past the last card. */
+/** Past the drawing's right and bottom edges: room for the loop line and its arrowheads. */
+const WORLD_MARGIN = 12;
+
+/** The world the map is drawn in: every card, the group box and every routed line, with margin. */
 export function worldSize(map: FactoryMap): { width: number; height: number } {
   const { height } = map.cardSize;
+  const routed = map.lines.flatMap((l) => l.route ?? []);
   return {
-    width: Math.max(...map.cards.map((c) => c.x + cardWidth(map, c))) + 40,
-    height: Math.max(map.minHeight, ...map.cards.map((c) => c.y + height)) + 40,
+    width:
+      Math.max(
+        ...map.cards.map((c) => c.x + cardWidth(map, c)),
+        map.group.x + map.group.width,
+        ...routed.map(([x]) => x),
+      ) + WORLD_MARGIN,
+    height:
+      Math.max(
+        ...map.cards.map((c) => c.y + height),
+        map.group.y + map.group.height,
+        ...routed.map(([, y]) => y),
+      ) + WORLD_MARGIN,
   };
 }
 
@@ -164,8 +176,13 @@ export function neighbours(map: FactoryMap, id: string | null): Set<string> {
   return near;
 }
 
-/** Archon names a nested step by its path joined with `__` (`ship__deliver__rounds__review`). */
-export const stepPath = (stepId: string) => stepId.split('__').join('/');
+/**
+ * A step's path from Archon's step id. Archon names a nested step by its path joined with `__`
+ * (`ship__deliver__rounds__review`), and a loop group's body step `<group>.<step>` on every
+ * iteration (`ship__deliver__rounds.review__policy`, lap-graph.ts), so both separate segments.
+ * No pinned step's own name holds a dot.
+ */
+export const stepPath = (stepId: string) => stepId.split('__').join('/').replaceAll('.', '/');
 
 const under = (path: string, entry: string) => path === entry || path.startsWith(`${entry}/`);
 
@@ -210,3 +227,26 @@ export const stepLinks = (card: Card, at: string | null) =>
       return { workflow: cover.workflow, step, href: stepHref(screen.workflow, screen.path, at) };
     }),
   );
+
+/**
+ * The steps of `stepLinks` the pinned version has, by `step-detail`'s rows, each with the model
+ * its parsed architecture gives it (null for a step that names none).
+ */
+export function pinnedStepLinks(card: Card, at: string | null, steps: readonly StepRow[]) {
+  const pinned = new Map(steps.map((s) => [`${s.workflow} ${s.path}`, s]));
+  return card.covers.flatMap((cover) =>
+    cover.steps.flatMap((step) => {
+      const screen = screenOf(cover, step);
+      const row = pinned.get(`${screen.workflow} ${screen.path}`);
+      if (row === undefined) return [];
+      return [
+        {
+          workflow: cover.workflow,
+          step,
+          model: row.model,
+          href: stepHref(screen.workflow, screen.path, at),
+        },
+      ];
+    }),
+  );
+}

@@ -1,7 +1,9 @@
 {
   "caption": "Tickets come from three places: a product document that Plan splits up, an issue you file, or a problem the factory found. Plan also writes the holdouts, hidden scenarios that only App check runs. Each ticket goes through Intake, then down the line: Build writes the code, Review checks it, App check tries it in the running app, Merge lands it, and Staging deploys it. The manager watches the whole line and brings you the decisions.",
-  "cardSize": { "width": 196, "height": 92 },
-  "minHeight": 640,
+  "cardSize": {
+    "width": 208,
+    "height": 212
+  },
   "cards": [
     {
       "id": "prd",
@@ -17,8 +19,7 @@
           "The intent: problem, users, what done looks like.",
           "Lives as an issue or a file in the repo."
         ],
-        "how": ["Plan reads it once per release. Nothing else in the factory edits it."],
-        "behind": { "source": "MISSION.md, docs/*.prd.md" }
+        "how": ["Plan reads it once per release. Nothing else in the factory edits it."]
       }
     },
     {
@@ -27,7 +28,7 @@
       "kind": "plan",
       "title": "Plan",
       "text": "Splits the PRD into tickets and writes the holdouts",
-      "x": 280,
+      "x": 260,
       "y": 0,
       "covers": [
         {
@@ -47,8 +48,7 @@
         "how": [
           "An agent slices, a script checks shape, order and duplicates, then the issues are filed.",
           "Filing an issue is what starts Intake."
-        ],
-        "behind": { "models": "@factory-planner", "source": ".archon/workflows/factory/backlog/" }
+        ]
       }
     },
     {
@@ -57,9 +57,14 @@
       "kind": "test",
       "title": "Holdouts",
       "text": "Hidden test scenarios only App check sees",
-      "x": 560,
-      "y": 130,
-      "covers": [{ "workflow": "archon-holdouts", "steps": ["briefs", "write"] }],
+      "x": 520,
+      "y": 252,
+      "covers": [
+        {
+          "workflow": "archon-holdouts",
+          "steps": ["briefs", "write"]
+        }
+      ],
       "details": {
         "when": [
           "You start it per release, or after a bug gets past the checks.",
@@ -68,11 +73,7 @@
         "what": ["Writes test scenarios the builders never see."],
         "how": [
           "Stored outside the repo. Only the holdout verifier inside App check may read them. The dashboard shows ids and verdicts, never text."
-        ],
-        "behind": {
-          "models": "@factory-reviewer",
-          "source": ".archon/workflows/factory/holdouts/ · .factory/hooks/holdout_fence.py"
-        }
+        ]
       }
     },
     {
@@ -81,11 +82,16 @@
       "kind": "manager",
       "title": "Manager",
       "text": "Keeps the factory healthy and tickets moving. Brings you the decisions it can't make.",
-      "x": 1040,
+      "x": 992,
       "y": 0,
-      "width": 520,
+      "width": 478,
       "chips": ["waiting"],
-      "covers": [{ "workflow": "archon-manager", "steps": ["briefs", "manage"] }],
+      "covers": [
+        {
+          "workflow": "archon-manager",
+          "steps": ["briefs", "manage"]
+        }
+      ],
       "details": {
         "when": ["All the time, while the factory runs. You can also talk to it directly."],
         "what": [
@@ -96,11 +102,7 @@
         "how": [
           "Your rules are plain text files (triage, build, merge) in the repo.",
           "It never cancels a run and never decides what the product should be."
-        ],
-        "behind": {
-          "models": "@factory-manager",
-          "source": ".archon/workflows/factory/manager/ · skills/factory-manager/SKILL.md"
-        }
+        ]
       }
     },
     {
@@ -109,8 +111,8 @@
       "kind": "input",
       "title": "New issue",
       "text": "A ticket you file yourself",
-      "x": 280,
-      "y": 300,
+      "x": 260,
+      "y": 542,
       "covers": [],
       "details": {
         "when": ["Whenever you or a teammate files one."],
@@ -128,8 +130,8 @@
       "kind": "input",
       "title": "Found by the factory",
       "text": "Problems spotted in review, app check or staging",
-      "x": 280,
-      "y": 440,
+      "x": 260,
+      "y": 802,
       "covers": [],
       "details": {
         "when": ["After review, app check or staging notices something it was not asked to fix."],
@@ -147,16 +149,20 @@
       "kind": "triage",
       "title": "Intake",
       "text": "Checks each ticket is clear, picks its route and size",
-      "x": 560,
-      "y": 300,
-      "covers": [{ "workflow": "archon-loop", "steps": ["pick", "claim"] }],
+      "x": 520,
+      "y": 542,
+      "covers": [
+        {
+          "workflow": "archon-loop",
+          "steps": ["pick", "claim"]
+        }
+      ],
       "details": {
         "when": ["On every new, edited or relabelled ticket (GitHub event)."],
         "what": ["Decides if the ticket is ready, and which route it takes."],
         "how": [
           "Trust check against maintainers.json, then triage. Intake is the only step that closes tickets."
-        ],
-        "behind": { "models": "@triage", "source": ".archon/workflows/sdlc/intake/" }
+        ]
       }
     },
     {
@@ -165,10 +171,15 @@
       "kind": "build",
       "title": "Build",
       "text": "Writes the code and opens the PR",
-      "x": 840,
-      "y": 300,
+      "x": 780,
+      "y": 542,
       "chips": ["queued"],
-      "covers": [{ "workflow": "archon-loop", "steps": ["build", "ship", "subject"] }],
+      "covers": [
+        {
+          "workflow": "archon-loop",
+          "steps": ["build", "ship", "subject"]
+        }
+      ],
       "details": {
         "when": ["Whenever a triaged ticket is ready, one ticket per run, most urgent first."],
         "what": [
@@ -177,11 +188,7 @@
         ],
         "how": [
           "Brief, then plan or investigate if needed, then deliver, then an agent decides done, another round, or ask you."
-        ],
-        "behind": {
-          "models": "@planner · @investigator · @implementer · @reviewer",
-          "source": ".archon/workflows/sdlc/build-queue/"
-        }
+        ]
       }
     },
     {
@@ -190,8 +197,8 @@
       "kind": "review",
       "title": "Review",
       "text": "Five reviewers read the change",
-      "x": 1120,
-      "y": 300,
+      "x": 1040,
+      "y": 542,
       "covers": [
         {
           "workflow": "archon-loop",
@@ -214,11 +221,7 @@
           "Five reviewers each read the change for one thing: how parts fit together, correctness, tests, error handling, docs.",
           "One agent combines what they found into a single comment: Ready, or a list of fixes."
         ],
-        "how": ["Fixes go back to Build. Merge only trusts a Ready comment on the latest commit."],
-        "behind": {
-          "models": "@reviewer · @review-<lens>",
-          "source": ".archon/workflows/sdlc/review/"
-        }
+        "how": ["Fixes go back to Build. Merge only trusts a Ready comment on the latest commit."]
       }
     },
     {
@@ -227,10 +230,15 @@
       "kind": "test",
       "title": "App check",
       "text": "Tries the change in the running app",
-      "x": 1400,
-      "y": 300,
+      "x": 1300,
+      "y": 542,
       "chips": ["failing"],
-      "covers": [{ "workflow": "archon-loop", "steps": ["briefs", "check-app", "evidence"] }],
+      "covers": [
+        {
+          "workflow": "archon-loop",
+          "steps": ["briefs", "check-app", "evidence"]
+        }
+      ],
       "details": {
         "when": [
           "On every open PR that has no result yet for its current head and main.",
@@ -243,11 +251,7 @@
         "how": [
           "Tests the PR merged with the latest main, not the branch alone.",
           "Every claim must cite a file written during this check, sealed by a script."
-        ],
-        "behind": {
-          "models": "@factory-reviewer",
-          "source": ".archon/workflows/factory/app-check/"
-        }
+        ]
       }
     },
     {
@@ -256,9 +260,14 @@
       "kind": "gate",
       "title": "Merge",
       "text": "Lands only what passed",
-      "x": 1680,
-      "y": 300,
-      "covers": [{ "workflow": "archon-loop", "steps": ["review", "land", "release"] }],
+      "x": 1592,
+      "y": 542,
+      "covers": [
+        {
+          "workflow": "archon-loop",
+          "steps": ["review", "land", "release"]
+        }
+      ],
       "details": {
         "when": ["When PRs are Ready, all of them in one sweep."],
         "what": [
@@ -266,11 +275,7 @@
         ],
         "how": [
           "The agent decides; a script merges, and only if the Ready verdict, every check and the default branch are green at the PR's head."
-        ],
-        "behind": {
-          "models": "large",
-          "source": ".archon/workflows/sdlc/merge-queue/scripts/gate.ts"
-        }
+        ]
       }
     },
     {
@@ -279,17 +284,18 @@
       "kind": "ship",
       "title": "Staging",
       "text": "Deploys and checks it is really live",
-      "x": 1960,
-      "y": 300,
-      "covers": [{ "workflow": "archon-loop", "steps": ["deploy"] }],
+      "x": 1852,
+      "y": 542,
+      "covers": [
+        {
+          "workflow": "archon-loop",
+          "steps": ["deploy"]
+        }
+      ],
       "details": {
         "when": ["After a merge, on the new revision of main."],
         "what": ["Puts the merged build on the staging environment."],
-        "how": ["Health check plus revision read-back, so a stale deploy fails loudly."],
-        "behind": {
-          "models": "@factory-deployer",
-          "source": ".archon/workflows/factory/deploy/"
-        }
+        "how": ["Health check plus revision read-back, so a stale deploy fails loudly."]
       }
     },
     {
@@ -298,72 +304,132 @@
       "kind": "output",
       "title": "Shipped",
       "text": "Merged PRs, closed tickets",
-      "x": 2240,
-      "y": 300,
+      "x": 2112,
+      "y": 542,
       "chips": ["merged"],
       "covers": [],
-      "details": { "what": ["Merged PRs and the tickets Intake closed as delivered."] }
+      "details": {
+        "what": ["Merged PRs and the tickets Intake closed as delivered."]
+      }
     }
   ],
   "group": {
-    "x": 530,
-    "y": 250,
-    "width": 1936,
-    "height": 196,
+    "x": 490,
+    "y": 492,
+    "width": 1860,
+    "height": 316,
     "label": "the manager watches everything on this line"
   },
   "lines": [
-    { "from": "prd", "to": "plan", "style": "flow" },
-    { "from": "plan", "to": "intake", "style": "flow" },
-    { "from": "issue", "to": "intake", "style": "flow" },
-    { "from": "disc", "to": "intake", "style": "flow" },
-    { "from": "plan", "to": "hold", "style": "holdout" },
+    {
+      "from": "prd",
+      "to": "plan",
+      "style": "flow"
+    },
+    {
+      "from": "plan",
+      "to": "intake",
+      "style": "flow"
+    },
+    {
+      "from": "issue",
+      "to": "intake",
+      "style": "flow"
+    },
+    {
+      "from": "disc",
+      "to": "intake",
+      "style": "flow"
+    },
+    {
+      "from": "plan",
+      "to": "hold",
+      "style": "holdout"
+    },
     {
       "from": "hold",
       "to": "app",
       "style": "holdout",
       "label": "only App check reads them",
-      "route": [[756, 176], [1498, 176], [1498, 300]]
+      "route": [[728, 358], [1404, 358], [1404, 542]]
     },
-    { "from": "intake", "to": "build", "style": "flow" },
-    { "from": "build", "to": "review", "style": "flow", "label": "PR" },
-    { "from": "review", "to": "app", "style": "flow" },
-    { "from": "app", "to": "merge", "style": "flow", "label": "passed" },
-    { "from": "merge", "to": "deploy", "style": "flow" },
-    { "from": "deploy", "to": "out", "style": "flow" },
+    {
+      "from": "intake",
+      "to": "build",
+      "style": "flow"
+    },
+    {
+      "from": "build",
+      "to": "review",
+      "style": "flow",
+      "label": "PR"
+    },
+    {
+      "from": "review",
+      "to": "app",
+      "style": "flow"
+    },
+    {
+      "from": "app",
+      "to": "merge",
+      "style": "flow",
+      "label": "passed"
+    },
+    {
+      "from": "merge",
+      "to": "deploy",
+      "style": "flow"
+    },
+    {
+      "from": "deploy",
+      "to": "out",
+      "style": "flow"
+    },
     {
       "from": "mgr",
       "to": "merge",
       "style": "ask",
       "label": "keeps it moving",
-      "route": [[1530, 92], [1530, 250]]
+      "route": [[1440, 212], [1440, 492]]
     },
     {
       "from": "review",
       "to": "disc",
       "style": "loop",
-      "route": [[1218, 392], [1218, 590], [378, 590], [378, 532]]
+      "route": [[1144, 754], [1144, 1072], [364, 1072], [364, 1014]]
     },
     {
       "from": "app",
       "to": "disc",
       "style": "loop",
       "arrow": false,
-      "route": [[1498, 392], [1498, 590]]
+      "route": [[1404, 754], [1404, 1072]]
     },
     {
       "from": "deploy",
       "to": "disc",
       "style": "loop",
       "label": "problems found become new tickets",
-      "route": [[2058, 392], [2058, 590], [378, 590], [378, 532]]
+      "route": [[1956, 754], [1956, 1072], [364, 1072], [364, 1014]]
     }
   ],
   "tour": ["prd", "plan", "intake", "build", "review", "app", "merge", "deploy", "out"],
   "legend": [
-    { "role": "source", "label": "Where work comes from · scripts" },
-    { "role": "agent", "label": "Agents building" },
-    { "role": "test", "label": "Testing and shipping" },
-    { "role": "person", "label": "You and the manager" }
+    {
+      "role": "source",
+      "label": "Where work comes from · scripts"
+    },
+    {
+      "role": "agent",
+      "label": "Agents building"
+    },
+    {
+      "role": "test",
+      "label": "Testing and shipping"
+    },
+    {
+      "role": "person",
+      "label": "You and the manager"
+    }
   ]
 }

@@ -1,5 +1,4 @@
 import { expect, test } from 'bun:test';
-import type { RecentLapRow } from '../lib/laps';
 import { FACTORY_MAP } from './factory-map';
 import { cardLive, deepestStep, type HomeMapRow, mergedToday, versionRecorded } from './live';
 
@@ -16,6 +15,7 @@ const lap = (
   number,
   title: number === null ? null : `issue ${number}`,
   url: null,
+  at: null,
 });
 
 const here = (rows: HomeMapRow[]) =>
@@ -61,30 +61,35 @@ test('of steps as deep, the newest (first) counts', () => {
   expect(deepestStep([])).toBeUndefined();
 });
 
-const recent = (
-  run: string,
-  completed: Date | null,
-  outcome: RecentLapRow['outcome'],
-): RecentLapRow => ({
-  run_id: run,
-  status: 'completed',
-  started_at: null,
-  completed_at: completed,
-  issue_number: 3,
-  outcome,
-  cost_usd: null,
+test("a loop group's iteration of a step counts on the card covering that step", () => {
+  expect(
+    here([
+      lap('policy', ['ship__deliver__rounds.review__policy', 'ship__deliver__rounds', 'ship']),
+      lap('rereview', ['ship__deliver__rounds.rereview__scope']),
+      lap('implement', ['ship__deliver__rounds.implement__implement']),
+    ]),
+  ).toEqual({ review: ['policy', 'rereview'], build: ['implement'] });
+  expect(deepestStep(['ship__deliver__rounds', 'ship__deliver__rounds.review__policy'])).toBe(
+    'ship__deliver__rounds.review__policy',
+  );
 });
 
-test("merged counts the laps that merged on the browser's local day, newest first", () => {
+const merged = (run: string, at: Date | null): HomeMapRow => ({
+  ...lap(run, null, 'archon-loop', 3),
+  kind: 'merged',
+  at,
+});
+
+test("merged counts the land steps that merged on the browser's local day, newest first", () => {
   const now = new Date(2026, 10, 3, 15, 0);
   expect(
     mergedToday(
       [
-        recent('morning', new Date(2026, 10, 3, 0, 5), 'merged'),
-        recent('noon', new Date(2026, 10, 3, 12, 0), 'merged'),
-        recent('yesterday', new Date(2026, 10, 2, 23, 59), 'merged'),
-        recent('refused', new Date(2026, 10, 3, 9, 0), 'gate-refused'),
-        recent('unfinished', null, 'merged'),
+        merged('morning', new Date(2026, 10, 3, 0, 5)),
+        merged('noon', new Date(2026, 10, 3, 12, 0)),
+        merged('yesterday', new Date(2026, 10, 2, 23, 59)),
+        { ...lap('running', ['deploy'], 'archon-loop', 4), at: new Date(2026, 10, 3, 9, 0) },
+        merged('unfinished', null),
       ],
       now,
     ).map((m) => m.run),
@@ -100,6 +105,7 @@ test('each chip sits on the card that carries it, and a source not delivered yet
     number: 109,
     title: 'Broken thing',
     url: 'https://github.com/o/r/pull/109',
+    at: null,
   };
   const live = cardLive(
     FACTORY_MAP,
@@ -130,7 +136,7 @@ test('each chip sits on the card that carries it, and a source not delivered yet
   expect(live.get('app')?.failing?.map((i) => i.number)).toEqual([109]);
   expect(live.get('build')?.queued?.map((i) => i.number)).toEqual([5]);
   expect(live.get('mgr')?.waiting?.map((i) => i.key)).toEqual(['question-9-2']);
-  expect(live.get('out')?.merged).toBeUndefined();
+  expect(live.get('out')?.merged).toEqual([]);
   expect(live.get('review')).toEqual({ here: [] });
 });
 

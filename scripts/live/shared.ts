@@ -136,7 +136,8 @@ export async function lapsOnCards(db: Db, factory: string): Promise<Map<string, 
     const run = String(row.run_id);
     const step = String(row.step_id);
     const was = deepest.get(run);
-    if (was === undefined || step.split('__').length > was.step.split('__').length) {
+    const depth = (id: string) => stepPath(id).split('/').length;
+    if (was === undefined || depth(step) > depth(was.step)) {
       deepest.set(run, { workflow: String(row.workflow_name), step });
     }
   }
@@ -146,6 +147,60 @@ export async function lapsOnCards(db: Db, factory: string): Promise<Map<string, 
     if (card) counts.set(card.id, (counts.get(card.id) ?? 0) + 1);
   }
   return counts;
+}
+
+/**
+ * The map's type at the fitted scale, in rendered pixels, its smallest of each kind, and how wide
+ * its frame is against the window: what the owner's readability rule judges (PR #326 review).
+ */
+export interface MapType {
+  title: number;
+  text: number;
+  kind: number;
+  /** A line's label or the group box's. */
+  label: number;
+  frameWidth: number;
+  windowWidth: number;
+}
+
+/** The least rendered size of each, at 1440x900 fitted (owner, PR #326 review). */
+export const MAP_READABLE = { width: 1440, title: 14, text: 11, kind: 10, label: 10 } as const;
+/** The page's gutters either side of the map's frame, which spans the window between them. */
+const MAP_GUTTERS = 48;
+
+export const mapType = (page: Page) =>
+  page.evaluate<MapType>(
+    `(() => {
+      const k = new DOMMatrix(getComputedStyle(document.querySelector('${MAP} [data-map-world]')).transform).a;
+      const least = (selector) => Math.min(...[...document.querySelectorAll('${MAP} ' + selector)]
+        .map((el) => parseFloat(getComputedStyle(el).fontSize) * k));
+      return {
+        title: least('[data-card-title]'),
+        text: least('[data-card-text]'),
+        kind: least('[data-card-kind]'),
+        label: Math.min(least('[data-line-label] text'), least('[data-group-label]')),
+        frameWidth: document.querySelector('${MAP} [data-map-stage]').getBoundingClientRect().width,
+        windowWidth: document.documentElement.clientWidth,
+      };
+    })()`,
+  );
+
+/** Each size below the owner's least, and a frame narrower than the window between its gutters. */
+export function mapTypeFailures(type: MapType): string[] {
+  const failures: string[] = [];
+  for (const what of ['title', 'text', 'kind', 'label'] as const) {
+    if (!(type[what] >= MAP_READABLE[what])) {
+      failures.push(
+        `a map card's ${what} renders ${type[what].toFixed(1)}px at ${MAP_READABLE.width} fitted, under ${MAP_READABLE[what]}px`,
+      );
+    }
+  }
+  if (type.frameWidth < type.windowWidth - MAP_GUTTERS - 1) {
+    failures.push(
+      `the map's frame is ${Math.round(type.frameWidth)}px wide in a ${type.windowWidth}px window: it should span the window inside the gutters`,
+    );
+  }
+  return failures;
 }
 
 /** Where the map, in document order, differs from factory-map.json and from `counts`: one line each. */

@@ -33,23 +33,23 @@ test('every line, the tour and the legend name cards and roles the map has', () 
 
 test("a line joins its cards' sides, turning halfway across when they are not level", () => {
   expect(linePoints(FACTORY_MAP, line('prd', 'plan'))).toEqual([
-    [196, 46],
-    [280, 46],
+    [208, 106],
+    [260, 106],
   ]);
   expect(linePoints(FACTORY_MAP, line('plan', 'hold'))).toEqual([
-    [476, 46],
-    [518, 46],
-    [518, 176],
-    [560, 176],
+    [468, 106],
+    [494, 106],
+    [494, 358],
+    [520, 358],
   ]);
   expect(linePoints(FACTORY_MAP, line('mgr', 'merge'))).toEqual([
-    [1530, 92],
-    [1530, 250],
+    [1440, 212],
+    [1440, 492],
   ]);
 });
 
 test("a label sits halfway along its line's length", () => {
-  expect(midpoint(linePoints(FACTORY_MAP, line('build', 'review')))).toEqual([1078, 346]);
+  expect(midpoint(linePoints(FACTORY_MAP, line('build', 'review')))).toEqual([1014, 648]);
   expect(
     midpoint([
       [0, 0],
@@ -61,8 +61,8 @@ test("a label sits halfway along its line's length", () => {
 
 test('the tour runs card centre to card centre along the line, Product document to Shipped', () => {
   const points = tourPoints(FACTORY_MAP);
-  expect(points[0]).toEqual([98, 46]);
-  expect(points.at(-1)).toEqual([2338, 346]);
+  expect(points[0]).toEqual([104, 106]);
+  expect(points.at(-1)).toEqual([2216, 648]);
   for (const [i, [x, y]] of points.slice(1).entries()) {
     const [px, py] = points[i] as [number, number];
     expect(x === px || y === py).toBe(true);
@@ -75,9 +75,18 @@ test("a card's neighbours are the cards a line joins to it", () => {
   expect(neighbours(FACTORY_MAP, null).size).toBe(0);
 });
 
-test('the world holds every card with margin', () => {
-  expect(worldSize(FACTORY_MAP)).toEqual({ width: 2476, height: 680 });
-  expect(card('mgr').width).toBe(520);
+test('the world holds every card, the group box and the routed lines, with margin', () => {
+  expect(worldSize(FACTORY_MAP)).toEqual({ width: 2362, height: 1084 });
+  expect(card('mgr').width).toBe(478);
+});
+
+test("the owner's tighter pitch: 52 between cards, 84 where App check's passed label sits", () => {
+  const line = ['intake', 'build', 'review', 'app', 'merge', 'deploy', 'out'].map(card);
+  const gaps = line.slice(1).map((c, i) => {
+    const before = line[i] as (typeof line)[number];
+    return c.x - before.x - FACTORY_MAP.cardSize.width;
+  });
+  expect(gaps).toEqual([52, 52, 52, 84, 52, 52]);
 });
 
 test("App check's steps open their screens, check-app's among them; a nested one opens under the workflow that declares it", () => {

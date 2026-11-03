@@ -1,6 +1,7 @@
 import { type ReactElement, type ReactNode, useState } from 'react';
 import { Link } from 'react-router';
-import { type Card, stepLinks } from '../map/factory-map';
+import type { StepRow } from '../lib/step-detail';
+import { type Card, pinnedStepLinks } from '../map/factory-map';
 import type { CardLive, MapItem } from '../map/live';
 
 type Tab = 'when' | 'what' | 'how' | 'live' | 'behind';
@@ -102,49 +103,53 @@ function RightNow({
   );
 }
 
-/** The workflows and steps the card covers, each opening its step screen, its models and source. */
-function Behind({ card, at }: { card: Card; at: string | null }): ReactElement {
-  const { models, source } = card.details.behind ?? {};
-  const term = 'font-mono text-[12px] text-text-secondary';
-  const value = 'm-0 min-w-0 font-mono text-[12.5px] [overflow-wrap:anywhere]';
+/**
+ * The steps the card covers that the pinned version has, each opening its step screen with the
+ * model the parsed architecture gives it (owner, #307): never a step or a path the version lacks.
+ */
+function Behind({
+  card,
+  at,
+  steps,
+}: {
+  card: Card;
+  at: string | null;
+  steps: readonly StepRow[] | undefined;
+}): ReactElement {
+  if (card.covers.length === 0) {
+    return <p className="text-text-secondary">This card runs no workflow step.</p>;
+  }
+  if (steps === undefined) return <p className="text-text-secondary">Loading the pinned steps.</p>;
+  const links = pinnedStepLinks(card, at, steps);
+  if (links.length === 0) {
+    return <p className="text-text-secondary">This version has none of this card's steps.</p>;
+  }
+  const workflows = [...new Set(links.map((l) => l.workflow))];
   return (
     <>
-      <dl className="grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1.5 text-[13px]">
-        {card.covers.length > 0 ? (
-          <>
-            <dt className={term}>workflows</dt>
-            <dd className={value}>{card.covers.map((c) => c.workflow).join(' · ')}</dd>
-            <dt className={term}>steps</dt>
-            <dd className={value}>
-              <ul className="flex flex-wrap gap-x-3 gap-y-1">
-                {stepLinks(card, at).map((link) => (
-                  <li key={`${link.workflow} ${link.step}`}>
-                    <Link
-                      to={link.href}
-                      data-step-link={`${link.workflow} ${link.step}`}
-                      className={LINK}
-                    >
-                      {link.step}
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-            </dd>
-          </>
-        ) : null}
-        {models ? (
-          <>
-            <dt className={term}>models</dt>
-            <dd className={value}>{models}</dd>
-          </>
-        ) : null}
-        {source ? (
-          <>
-            <dt className={term}>source</dt>
-            <dd className={value}>{source}</dd>
-          </>
-        ) : null}
-      </dl>
+      {workflows.map((workflow) => (
+        <div key={workflow} data-behind-workflow={workflow} className="grid gap-1.5">
+          <div className="font-mono text-[12px] text-text-secondary">{workflow}</div>
+          <ul className="grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1 font-mono text-[12.5px]">
+            {links
+              .filter((l) => l.workflow === workflow)
+              .map((link) => (
+                <li key={link.step} className="contents">
+                  <Link
+                    to={link.href}
+                    data-step-link={`${link.workflow} ${link.step}`}
+                    className={LINK}
+                  >
+                    {link.step}
+                  </Link>
+                  <span className="text-text-secondary">
+                    {link.model === null ? 'no model' : `model ${link.model}`}
+                  </span>
+                </li>
+              ))}
+          </ul>
+        </div>
+      ))}
       <p className={`${LABEL} mt-1.5`}>
         From the pinned code. The map check fails if any of these names disappear.
       </p>
@@ -158,8 +163,12 @@ export function MapDetails({
   live,
   factory,
   at,
+  steps,
   onClose,
+  className = '',
 }: {
+  className?: string;
+  steps: readonly StepRow[] | undefined;
   card: Card;
   live: CardLive | undefined;
   factory: string;
@@ -169,10 +178,7 @@ export function MapDetails({
   const { details } = card;
   const tabs = TABS.filter(
     ({ tab }) =>
-      tab === 'live' ||
-      (tab === 'behind'
-        ? details.behind !== undefined || card.covers.length > 0
-        : details[tab] !== undefined),
+      tab === 'live' || (tab === 'behind' ? card.covers.length > 0 : details[tab] !== undefined),
   );
   const [chosen, setChosen] = useState<Tab>('when');
   const tab = tabs.some((t) => t.tab === chosen) ? chosen : (tabs[0]?.tab ?? 'live');
@@ -180,53 +186,55 @@ export function MapDetails({
     <section
       data-details={card.id}
       aria-label={`${card.title} details`}
-      className="mt-3.5 rounded-xl border border-border bg-surface"
+      className={`${className} mt-3.5`}
     >
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-2.5 border-b border-border px-4 py-3.5">
-        <div>
-          <div className={LABEL}>{card.kind}</div>
-          <h2 className="m-0 text-[17px] font-semibold text-text-primary">{card.title}</h2>
-        </div>
-        <span className="flex-1" />
-        <button
-          type="button"
-          onClick={onClose}
-          aria-label="Close details"
-          className="cursor-pointer rounded-[7px] border border-border bg-surface-elevated px-3 py-1.5 text-[13px] font-semibold text-text-primary hover:bg-surface-hover"
-        >
-          ✕
-        </button>
-      </div>
-      <div role="tablist" className="flex gap-0.5 overflow-x-auto border-b border-border px-2.5">
-        {tabs.map((t) => (
+      <div className="rounded-xl border border-border bg-surface">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2.5 border-b border-border px-4 py-3.5">
+          <div>
+            <div className={LABEL}>{card.kind}</div>
+            <h2 className="m-0 text-[17px] font-semibold text-text-primary">{card.title}</h2>
+          </div>
+          <span className="flex-1" />
           <button
-            key={t.tab}
             type="button"
-            role="tab"
-            aria-selected={t.tab === tab}
-            data-tab={t.tab}
-            onClick={() => setChosen(t.tab)}
-            className={`cursor-pointer whitespace-nowrap border-b-2 px-2.5 py-[9px] text-sm ${
-              t.tab === tab
-                ? 'border-[color:var(--accent)] text-text-primary'
-                : 'border-transparent text-text-secondary hover:text-text-primary'
-            }`}
+            onClick={onClose}
+            aria-label="Close details"
+            className="cursor-pointer rounded-[7px] border border-border bg-surface-elevated px-3 py-1.5 text-[13px] font-semibold text-text-primary hover:bg-surface-hover"
           >
-            {t.label}
+            ✕
           </button>
-        ))}
-      </div>
-      <div
-        role="tabpanel"
-        className="grid max-w-[96ch] gap-2.5 px-4 pt-3.5 pb-[18px] text-sm text-text-primary"
-      >
-        {tab === 'live' ? (
-          <RightNow live={live} factory={factory} />
-        ) : tab === 'behind' ? (
-          <Behind card={card} at={at} />
-        ) : (
-          <Bullets lines={details[tab] ?? []} />
-        )}
+        </div>
+        <div role="tablist" className="flex gap-0.5 overflow-x-auto border-b border-border px-2.5">
+          {tabs.map((t) => (
+            <button
+              key={t.tab}
+              type="button"
+              role="tab"
+              aria-selected={t.tab === tab}
+              data-tab={t.tab}
+              onClick={() => setChosen(t.tab)}
+              className={`cursor-pointer whitespace-nowrap border-b-2 px-2.5 py-[9px] text-sm ${
+                t.tab === tab
+                  ? 'border-[color:var(--accent)] text-text-primary'
+                  : 'border-transparent text-text-secondary hover:text-text-primary'
+              }`}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+        <div
+          role="tabpanel"
+          className="grid max-w-[96ch] gap-2.5 px-4 pt-3.5 pb-[18px] text-sm text-text-primary"
+        >
+          {tab === 'live' ? (
+            <RightNow live={live} factory={factory} />
+          ) : tab === 'behind' ? (
+            <Behind card={card} at={at} steps={steps} />
+          ) : (
+            <Bullets lines={details[tab] ?? []} />
+          )}
+        </div>
       </div>
     </section>
   );

@@ -1,9 +1,10 @@
--- The live part of the factory map (PRD 4.1): the drawing is app/map/factory-map.json, and these
--- rows are what its chips count. $2 is the pin the address names, '' for the current version.
--- The version the address names, as the version strip lists it: a pin with stored architecture,
--- for a factory with a lap (an empty factory does not borrow the shared pin history).
-SELECT 'version' AS kind, NULL::uuid AS run_id, NULL::text AS workflow, NULL::text[] AS steps,
-  NULL::integer AS number, NULL::text AS title, NULL::text AS url
+SELECT
+  -- The live part of the factory map (PRD 4.1): the drawing is app/map/factory-map.json, and these
+  -- rows are what its chips count. $2 is the pin the address names, '' for the current version.
+  -- First the version the address names, as the version strip lists it: a pin with stored
+  -- architecture, for a factory with a lap (an empty factory does not borrow the shared pin history).
+  'version' AS kind, NULL::uuid AS run_id, NULL::text AS workflow, NULL::text[] AS steps,
+  NULL::integer AS number, NULL::text AS title, NULL::text AS url, NULL::timestamptz AS at
 FROM mc.factories f
 WHERE f.name = $1
   AND EXISTS (SELECT 1 FROM mc.laps l WHERE l.factory = f.name)
@@ -17,7 +18,7 @@ UNION ALL
 -- run's version is its factory's digest's, labelled with its pin, PRD 11.2), with its running
 -- steps, newest first, and the issue it claimed. The browser counts it on the card covering its
 -- deepest running step.
-SELECT 'lap', l.run_id, l.workflow_name, s.steps, c.issue_number, i.title, i.url
+SELECT 'lap', l.run_id, l.workflow_name, s.steps, c.issue_number, i.title, i.url, NULL
 FROM mc.laps l
 LEFT JOIN LATERAL (
   SELECT array_agg(ls.step_id ORDER BY ls.started_at DESC NULLS LAST, ls.step_id) AS steps
@@ -34,7 +35,7 @@ WHERE l.factory = $1 AND l.status = 'running'
     WHERE vr.factory = l.factory AND vr.digest = l.digest AND vr.pin_sha = $2))
 UNION ALL
 -- Each open pull request whose latest app check came out FAIL overall.
-SELECT 'failing', NULL, NULL, NULL, pr.number, pr.title, pr.url
+SELECT 'failing', NULL, NULL, NULL, pr.number, pr.title, pr.url, NULL
 FROM mc.pull_requests pr
 JOIN LATERAL (
   SELECT s.output ->> 'overall' AS overall
@@ -45,3 +46,22 @@ JOIN LATERAL (
   ORDER BY s.started_at DESC NULLS LAST, s.run_id LIMIT 1
 ) latest ON latest.overall = 'FAIL'
 WHERE pr.factory = $1 AND pr.state = 'open'
+UNION ALL
+-- Each lap of the factory whose land step merged, the newest 200, timed when that step finished
+-- (the run goes on after it). The browser keeps those of its own local day.
+SELECT * FROM (
+  SELECT 'merged', l.run_id, l.workflow_name, NULL::text[], c.issue_number, i.title, i.url,
+    coalesce(land.completed_at, land.started_at + land.duration_ms * interval '1 millisecond')
+  FROM mc.laps l
+  JOIN mc.lap_steps land ON land.run_id = l.run_id AND land.step_id = 'land'
+    AND land.status = 'completed' AND land.output ->> 'outcome' = 'merged'
+  LEFT JOIN LATERAL (
+    SELECT c.issue_number FROM mc.claims c
+    WHERE c.factory = l.factory AND c.run_id = l.run_id
+    ORDER BY c.claimed_at DESC NULLS LAST, c.issue_number LIMIT 1
+  ) c ON true
+  LEFT JOIN mc.issues i ON i.factory = l.factory AND i.number = c.issue_number
+  WHERE l.factory = $1 AND l.workflow_name = 'archon-loop'
+  ORDER BY 8 DESC NULLS LAST, l.run_id
+  LIMIT 200
+) merged

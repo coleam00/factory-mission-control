@@ -26,6 +26,7 @@ import {
   tourPoints,
   worldSize,
 } from '../map/factory-map';
+import type { StepRow } from '../lib/step-detail';
 import type { CardLive } from '../map/live';
 import { MapDetails } from './MapDetails';
 
@@ -53,13 +54,30 @@ const LINE_DASH: Record<LineStyle, string | undefined> = {
   holdout: '2 4',
 };
 
-/** A wire label's 10.5px Geist Mono advance per character, rounded up. */
-const LABEL_CHAR_W = 6.4;
-const MIN_ZOOM = 0.3;
+/**
+ * The map's type in map units, larger than the mockup's so that at 1440 wide, fitted, a card's
+ * title renders at least 14px, its text 11px and the labels 10px (owner, PR #326 review).
+ */
+export const MAP_TYPE = { kind: 18, title: 25, text: 20, chip: 15, label: 18 } as const;
+/** A wire label's Geist Mono advance per character, 0.6em, rounded up. */
+const LABEL_CHAR_W = Math.ceil(MAP_TYPE.label * 0.6);
+const MIN_ZOOM = 0.1;
 const MAX_ZOOM = 2.4;
-const FIT_PAD = 40;
-/** Room the fit keeps under the map for the controls. */
-const FIT_FOOT = 30;
+/** The fit's margin around the map, in pixels. */
+const FIT_PAD = 16;
+/** Room the fit keeps under the map for the hint and the controls. */
+const FIT_FOOT = 48;
+/** The frame's least height (owner, PR #326 review). */
+const MIN_FRAME = 420;
+/** The largest scale a fit uses. */
+const FIT_MAX = 1.15;
+/**
+ * Below this width the map opens as refs/40-home-phone.png draws it: the line at a readable scale,
+ * centred between Review and App check, the rest a pan away. Fit still fits the whole map.
+ */
+const PHONE = 701;
+const PHONE_SCALE = 0.42;
+const PHONE_FRAME = 460;
 
 interface Camera {
   x: number;
@@ -74,6 +92,10 @@ const subscribeMotion = (onChange: () => void) => {
   query.addEventListener('change', onChange);
   return () => query.removeEventListener('change', onChange);
 };
+
+/** Whether the system asks for reduced motion, which stops the map's motion whatever the toggle says. */
+export const useReducedMotion = () =>
+  useSyncExternalStore(subscribeMotion, reducedMotion, () => false);
 
 /** The point `fraction` of the way along a polyline, and how far along each vertex lies. */
 function along(points: readonly Point[]): {
@@ -154,6 +176,15 @@ function useTour(
   }, [map, running, dot, cards]);
 }
 
+/**
+ * Where the phone view centres (refs/40-home-phone.png): the middle of the line's box, high
+ * enough that the card above the line shows too.
+ */
+const phoneCentre = ({ group }: FactoryMapData): Point => [
+  group.x + group.width / 2,
+  (group.y + group.height) / 2,
+];
+
 function chipsOf(live: CardLive | undefined) {
   if (live === undefined) return [];
   const chips: { chip: string; text: string; className: string; pulse?: boolean }[] = [];
@@ -166,7 +197,7 @@ function chipsOf(live: CardLive | undefined) {
     'here',
     'bg-[color:var(--accent-soft)] text-[color:var(--running)]',
   );
-  add('queued', live.queued?.length, 'queued', 'bg-surface-hover text-text-secondary');
+  add('queued', live.queued?.length, 'queued', 'bg-surface-hover text-text-primary');
   add(
     'failing',
     live.failing?.length,
@@ -183,7 +214,7 @@ function chipsOf(live: CardLive | undefined) {
     'merged',
     live.merged?.length,
     'merged',
-    'bg-[color:var(--success-soft)] text-[color:var(--success)]',
+    'bg-[color:var(--role-test-soft)] text-[color:var(--role-test)]',
   );
   return chips;
 }
@@ -228,50 +259,66 @@ function MapCard({
       }}
       onPointerDown={(event) => event.stopPropagation()}
       onKeyDown={onKey}
-      className={`absolute cursor-pointer select-none overflow-hidden rounded-[10px] border bg-surface-elevated py-2.5 pr-3 pl-3.5 transition-[opacity,box-shadow,border-color] duration-200 hover:border-[color:var(--text-tertiary)] ${
-        state === 'dim' ? 'opacity-30' : ''
-      } ${state === 'selected' ? 'shadow-[0_0_0_3px_var(--accent-soft)]' : ''}`}
+      data-selected={state === 'selected' || undefined}
+      className={`absolute cursor-pointer select-none rounded-[16px] border-2 bg-surface-elevated pt-3 pr-3 pb-3 pl-4 transition-[opacity,box-shadow,border-color] duration-200 ${
+        state === 'selected' ? '' : 'hover:border-[color:var(--text-secondary)]'
+      } ${state === 'dim' ? 'opacity-30' : ''} ${
+        state === 'selected' ? 'shadow-[0_0_0_7px_var(--accent)]' : ''
+      }`}
       style={{
         left: card.x,
         top: card.y,
         width: cardWidth(map, card),
-        minHeight: map.cardSize.height,
+        height: map.cardSize.height,
         borderColor:
-          state === 'selected' ? 'var(--accent)' : over(color, 'var(--card-border-tint)'),
+          state === 'selected' ? 'var(--surface)' : over(color, 'var(--card-border-tint)'),
       }}
     >
       <span
         aria-hidden="true"
-        className="pointer-events-none absolute inset-0"
+        className="pointer-events-none absolute inset-0 rounded-[14px]"
         style={{ background: over(color, 'var(--card-tint)') }}
       />
       <span
         aria-hidden="true"
-        className="absolute top-2.5 bottom-2.5 left-0 w-[3px] rounded-r-[3px]"
+        className="absolute top-3.5 bottom-3.5 left-0 w-[5px] rounded-r-[4px]"
         style={{ background: color }}
       />
       <span className="relative flex flex-col">
-        <span className="font-mono text-[10px] uppercase tracking-[0.08em]" style={{ color }}>
+        <span
+          data-card-kind
+          className="font-mono uppercase leading-[1.2] tracking-[0.06em]"
+          style={{ color, fontSize: MAP_TYPE.kind }}
+        >
           {card.kind}
         </span>
-        <span className="mt-0.5 text-[15px] font-semibold leading-[1.25] text-text-primary">
+        <span
+          data-card-title
+          className="mt-1 font-semibold leading-[1.15] text-text-primary"
+          style={{ fontSize: MAP_TYPE.title }}
+        >
           {card.title}
         </span>
-        <span className="mt-[3px] text-[12.5px] leading-[1.35] text-text-secondary">
+        <span
+          data-card-text
+          className="mt-1.5 leading-[1.3] text-text-secondary"
+          style={{ fontSize: MAP_TYPE.text }}
+        >
           {card.text}
         </span>
         {chips.length > 0 ? (
-          <span className="mt-2 flex flex-wrap gap-[5px]">
+          <span className="mt-2.5 flex flex-wrap gap-1.5">
             {chips.map((c) => (
               <span
                 key={c.chip}
                 data-chip={c.chip}
-                className={`inline-flex items-center gap-[5px] whitespace-nowrap rounded-[5px] px-1.5 py-px font-mono text-[10.5px] tabular-nums ${c.className}`}
+                className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-[6px] px-1.5 py-0.5 font-mono tabular-nums ${c.className}`}
+                style={{ fontSize: MAP_TYPE.chip }}
               >
                 {c.pulse ? (
                   <span
                     aria-hidden="true"
-                    className="h-1.5 w-1.5 rounded-full bg-[color:var(--running)] motion-safe:animate-pulse"
+                    className="h-2 w-2 rounded-full bg-[color:var(--running)] motion-safe:animate-pulse"
                   />
                 ) : null}
                 {c.text}
@@ -304,7 +351,7 @@ function Wire({
         d={d}
         fill="none"
         stroke={LINE_COLOR[line.style]}
-        strokeWidth={1.8}
+        strokeWidth={2.4}
         strokeDasharray={LINE_DASH[line.style]}
         opacity={dimmed ? 0.18 : 0.75}
         markerEnd={line.arrow === false ? undefined : `url(#map-arrow-${line.style})`}
@@ -315,7 +362,7 @@ function Wire({
           d={d}
           fill="none"
           stroke="var(--accent)"
-          strokeWidth={2}
+          strokeWidth={3}
           strokeDasharray="8 64"
           opacity={0.55}
           className="animate-map-flow motion-reduce:hidden"
@@ -326,23 +373,25 @@ function Wire({
 }
 
 function WireLabel({ text, at }: { text: string; at: Point }): ReactElement {
-  const width = text.length * LABEL_CHAR_W + 8;
+  const width = text.length * LABEL_CHAR_W + 12;
+  const height = MAP_TYPE.label + 8;
   return (
-    <g>
+    <g data-line-label>
       <rect
         x={at[0] - width / 2}
-        y={at[1] - 18}
+        y={at[1] - height - 3}
         width={width}
-        height={16}
-        rx={4}
+        height={height}
+        rx={5}
         fill="var(--surface)"
       />
       <text
         x={at[0]}
-        y={at[1] - 6}
+        y={at[1] - 3 - height / 2}
+        dominantBaseline="central"
         textAnchor="middle"
         className="font-mono"
-        fontSize={10.5}
+        fontSize={MAP_TYPE.label}
         fill="var(--text-secondary)"
       >
         {text}
@@ -350,6 +399,9 @@ function WireLabel({ text, at }: { text: string; at: Point }): ReactElement {
     </g>
   );
 }
+
+/** The app's column, which the caption, legend and details keep while the map spans the window. */
+const COLUMN = 'mx-auto w-full max-w-6xl px-6';
 
 const CONTROL =
   'cursor-pointer rounded-md px-[9px] py-1 font-mono text-[12px] text-text-secondary hover:bg-surface-elevated hover:text-text-primary disabled:cursor-default disabled:hover:bg-transparent disabled:hover:text-text-secondary';
@@ -365,50 +417,89 @@ export function FactoryMap({
   factory,
   at,
   flow,
+  onDrawn,
+  steps,
 }: {
   map: FactoryMapData;
   live: ReadonlyMap<string, CardLive>;
   factory: string;
   at: string | null;
   flow: boolean;
+  /** Told true once the map is on the page and false when it leaves, for the flow toggle. */
+  onDrawn?: (drawn: boolean) => void;
+  /** The pinned version's steps, for Behind the scenes; undefined until they arrive. */
+  steps?: readonly StepRow[];
 }): ReactElement {
   const world = useMemo(() => worldSize(map), [map]);
   const stage = useRef<HTMLElement>(null);
   const dot = useRef<SVGCircleElement>(null);
   const cardEls = useRef(new Map<string, HTMLElement>());
   const [cam, setCam] = useState<Camera>({ x: 0, y: 0, k: 0.5 });
+  /** Whether the camera has been placed for the frame yet (read by `bun run test:live`). */
+  const [placed, setPlaced] = useState(false);
   const [selected, setSelected] = useState<string | null>(null);
   const drag = useRef<{ x: number; y: number; cam: Camera; moved: boolean } | null>(null);
-  const reduced = useSyncExternalStore(subscribeMotion, reducedMotion, () => false);
+  const reduced = useReducedMotion();
   const moving = flow && !reduced;
   useTour(map, moving, dot, cardEls);
+  useEffect(() => {
+    onDrawn?.(true);
+    return () => onDrawn?.(false);
+  }, [onDrawn]);
 
+  /** The whole map in the frame, centred, as large as both of the frame's sides allow. */
   const fit = useCallback(() => {
-    const box = stage.current?.getBoundingClientRect();
-    if (!box) return;
-    const k = Math.max(
-      0.35,
-      Math.min(
-        (box.width - FIT_PAD * 2) / world.width,
-        (box.height - FIT_PAD * 2 - FIT_FOOT) / world.height,
-        1.15,
-      ),
+    const el = stage.current;
+    if (!el) return;
+    const { clientWidth: width, clientHeight: height } = el;
+    const k = Math.min(
+      (width - FIT_PAD * 2) / world.width,
+      (height - FIT_PAD * 2 - FIT_FOOT) / world.height,
+      FIT_MAX,
     );
     setCam({
       k,
-      x: (box.width - world.width * k) / 2,
-      y: Math.max(FIT_PAD, (box.height - FIT_FOOT - world.height * k) / 2),
+      x: (width - world.width * k) / 2,
+      y: Math.max(FIT_PAD, (height - FIT_FOOT - world.height * k) / 2),
     });
+    setPlaced(true);
   }, [world]);
+
+  /**
+   * The frame's height for its width: the map's height at the scale that fits its width, so a fit
+   * leaves no empty bands (owner, PR #326 review), and the phone frame below `PHONE`.
+   */
+  const [frameHeight, setFrameHeight] = useState(MIN_FRAME);
+  const opened = useCallback(() => {
+    const el = stage.current;
+    if (!el) return;
+    const width = el.clientWidth;
+    if (width >= PHONE) {
+      const k = Math.min((width - FIT_PAD * 2) / world.width, FIT_MAX);
+      const height = Math.max(MIN_FRAME, Math.ceil(world.height * k + FIT_PAD * 2 + FIT_FOOT));
+      setFrameHeight(height);
+      if (el.offsetHeight === height) fit();
+      return;
+    }
+    setFrameHeight(PHONE_FRAME);
+    if (el.offsetHeight !== PHONE_FRAME) return;
+    const at = phoneCentre(map);
+    setCam({
+      k: PHONE_SCALE,
+      x: width / 2 - at[0] * PHONE_SCALE,
+      y: (PHONE_FRAME - FIT_FOOT) / 2 - at[1] * PHONE_SCALE,
+    });
+    setPlaced(true);
+  }, [map, world, fit]);
 
   useEffect(() => {
     const el = stage.current;
     if (!el) return;
-    fit();
-    const observer = new ResizeObserver(() => fit());
+    opened();
+    const observer = new ResizeObserver(() => opened());
     observer.observe(el);
     return () => observer.disconnect();
-  }, [fit]);
+  }, [opened]);
 
   const zoomAround = useCallback((factor: number, mx: number, my: number) => {
     setCam((was) => {
@@ -493,7 +584,7 @@ export function FactoryMap({
 
   return (
     <div className="flex flex-col">
-      <p data-map-caption className="mb-3 max-w-[78ch] text-sm text-text-secondary">
+      <p data-map-caption className={`${COLUMN} mb-3 text-sm text-text-secondary`}>
         {map.caption}
       </p>
       <section
@@ -501,13 +592,21 @@ export function FactoryMap({
         aria-label="Factory map. Drag to move, scroll to zoom, click a step for details."
         data-map-stage
         data-flow={moving ? 'on' : 'off'}
+        data-placed={placed || undefined}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
         onPointerCancel={() => {
           drag.current = null;
         }}
-        className="relative h-[460px] cursor-grab touch-none overflow-hidden rounded-xl border border-border bg-surface active:cursor-grabbing min-[701px]:h-[600px]"
+        className="relative mx-3 cursor-grab touch-none overflow-hidden rounded-xl border border-border bg-surface active:cursor-grabbing min-[701px]:mx-6"
+        style={{
+          height: frameHeight,
+          // The one gradient on a surface the owner allows: the map frame's dot grid (#307).
+          backgroundImage:
+            'radial-gradient(color-mix(in srgb, var(--text-tertiary) 28%, transparent) 1px, transparent 1.5px)',
+          backgroundSize: '22px 22px',
+        }}
       >
         <div data-map-world className="absolute top-0 left-0" style={worldStyle}>
           <svg
@@ -558,7 +657,7 @@ export function FactoryMap({
               <circle
                 ref={dot}
                 data-tour
-                r={6}
+                r={9}
                 cx={-20}
                 cy={-20}
                 fill="var(--running)"
@@ -576,7 +675,11 @@ export function FactoryMap({
               height: map.group.height,
             }}
           >
-            <span className="absolute -top-[9px] left-3.5 bg-surface px-1.5 font-mono text-[10.5px] uppercase tracking-[0.06em] text-text-secondary">
+            <span
+              data-group-label
+              className="absolute left-5 bg-surface px-2 font-mono uppercase leading-none tracking-[0.06em] text-text-secondary"
+              style={{ fontSize: MAP_TYPE.label, top: -MAP_TYPE.label / 2 - 1 }}
+            >
               {map.group.label}
             </span>
           </div>
@@ -642,7 +745,7 @@ export function FactoryMap({
       </section>
       <ul
         data-map-legend
-        className="mt-2.5 flex flex-wrap gap-x-[18px] gap-y-2 text-[12px] text-text-secondary"
+        className={`${COLUMN} mt-2.5 flex flex-wrap gap-x-[18px] gap-y-2 text-[12px] text-text-secondary`}
       >
         {map.legend.map((entry) => (
           <li key={entry.role} className="flex items-center">
@@ -657,10 +760,12 @@ export function FactoryMap({
       </ul>
       {selectedCard ? (
         <MapDetails
+          className={COLUMN}
           card={selectedCard}
           live={live.get(selectedCard.id)}
           factory={factory}
           at={at}
+          steps={steps}
           onClose={() => setSelected(null)}
         />
       ) : null}

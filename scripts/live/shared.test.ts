@@ -1,6 +1,13 @@
 import { expect, test } from 'bun:test';
 import { FACTORY_MAP } from '../../app/map/factory-map';
-import { freePort, LIMITS, lateWrite, mapMismatches, type ShownCard } from './shared';
+import {
+  freePort,
+  LIMITS,
+  lateWrite,
+  mapMismatches,
+  mapTypeFailures,
+  type ShownCard,
+} from './shared';
 
 test('freePort waits while every port in 8850-8864 is taken and takes the first one freed', async () => {
   const lines: string[] = [];
@@ -63,4 +70,24 @@ test("the map is compared card for card with factory-map.json and each card's la
   expect(mapMismatches(shown({ app: 1 }).slice(1), counts)[0]).toStartWith(
     'the map shows cards plan, ',
   );
+});
+
+test("the map's type passes at the owner's least sizes and fails, naming it, under any", () => {
+  const fitted = {
+    title: 14.3,
+    text: 11.5,
+    kind: 10.3,
+    label: 10.3,
+    frameWidth: 1392,
+    windowWidth: 1440,
+  };
+  expect(mapTypeFailures(fitted)).toEqual([]);
+  expect(mapTypeFailures({ ...fitted, title: 8, text: 5 })).toEqual([
+    "a map card's title renders 8.0px at 1440 fitted, under 14px",
+    "a map card's text renders 5.0px at 1440 fitted, under 11px",
+  ]);
+  expect(mapTypeFailures({ ...fitted, label: Number.NaN })).toHaveLength(1);
+  expect(mapTypeFailures({ ...fitted, frameWidth: 1104 })).toEqual([
+    "the map's frame is 1104px wide in a 1440px window: it should span the window inside the gutters",
+  ]);
 });

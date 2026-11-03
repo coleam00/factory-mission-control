@@ -75,6 +75,34 @@ describe('home-map on the seed', () => {
     expect((await rows()).filter((r) => r.kind === 'failing')).toEqual([]);
   });
 
+  test('merged: each lap whose land step merged, timed when the land step finished, running laps too', async () => {
+    const recount = await db.query(
+      `SELECT l.run_id, s.completed_at FROM mc.laps l JOIN mc.lap_steps s USING (run_id)
+        WHERE l.factory = 'mission-control' AND s.step_id = 'land' AND s.status = 'completed'
+          AND s.output ->> 'outcome' = 'merged'
+        ORDER BY s.completed_at DESC, l.run_id`,
+    );
+    const merged = async () =>
+      (await rows()).filter((r) => r.kind === 'merged').map((r): unknown[] => [r.run_id, r.at]);
+    expect(await merged()).toEqual(recount.map((r) => [r.run_id, r.completed_at]));
+    expect(recount.length).toBeGreaterThan(0);
+    const [running] = await db.query(
+      `SELECT run_id FROM mc.laps WHERE factory = 'mission-control' AND status = 'running' LIMIT 1`,
+    );
+    await db.query(
+      `INSERT INTO mc.lap_steps (run_id, step_id, status, started_at, completed_at, output)
+        VALUES ($1, 'land', 'completed', '2026-11-03T10:00:00Z', '2026-11-03T10:02:00Z', '{"outcome":"merged"}')`,
+      [running?.run_id],
+    );
+    try {
+      expect((await merged())[0]).toEqual([running?.run_id, new Date('2026-11-03T10:02:00Z')]);
+    } finally {
+      await db.query(`DELETE FROM mc.lap_steps WHERE run_id = $1 AND step_id = 'land'`, [
+        running?.run_id,
+      ]);
+    }
+  });
+
   test('the current version is recorded for a factory with laps; a factory with none has no version', async () => {
     expect(await versions('mission-control', '')).toBe(1);
     expect(await versions('zero-laps', '')).toBe(0);
