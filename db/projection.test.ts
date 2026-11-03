@@ -21,7 +21,7 @@ afterAll(() => db.close());
 
 beforeEach(async () => {
   await db.query(`TRUNCATE public.remote_agent_workflow_runs, public.remote_agent_codebases CASCADE;
-    TRUNCATE mc.laps, mc.lap_steps, mc.lap_step_attempts, mc.app_check_lines, mc.projection_errors,
+    TRUNCATE mc.laps, mc.lap_steps, mc.attention_items, mc.lap_step_attempts, mc.app_check_lines, mc.projection_errors,
       mc.factories, mc.versions, mc.pins`);
   runId = await newRun();
 });
@@ -278,6 +278,7 @@ test('the eligibility upgrade keeps live history and installs the same functions
       '0016_pin_reason_optional.sql',
       '0017_app_check_line_ids.sql',
       '0018_issue_label_time.sql',
+      '0019_attention_items.sql',
     ]);
     expect(await projectionDefinitions(upgraded)).toEqual(await projectionDefinitions(db));
     expect(await runMigrations({ files: migrationFiles, db: upgraded })).toEqual([]);
@@ -326,6 +327,7 @@ test('0011 rewrites a short pin to the one full sha it prefixes, and clears ambi
       '0016_pin_reason_optional.sql',
       '0017_app_check_line_ids.sql',
       '0018_issue_label_time.sql',
+      '0019_attention_items.sql',
     ]);
     const migrated = [
       { sha: 'p1', archon_sha: full },
@@ -390,6 +392,7 @@ test('0012 rewrites CRLF to LF in stored architecture texts, and changes nothing
       '0016_pin_reason_optional.sql',
       '0017_app_check_line_ids.sql',
       '0018_issue_label_time.sql',
+      '0019_attention_items.sql',
     ]);
     const migrated = [
       { kind: 'hook', path: '.factory/hooks/gate.sh', text: 'exit 0\n' },
@@ -459,6 +462,7 @@ test('0013 gives back the runs of a step the old key merged, and changes nothing
       '0016_pin_reason_optional.sql',
       '0017_app_check_line_ids.sql',
       '0018_issue_label_time.sql',
+      '0019_attention_items.sql',
     ]);
     expect(await attempts()).toEqual([
       { step_id: 'land', outcome: 'merged', cost_usd: null },
@@ -604,6 +608,8 @@ test('every projection function stops a lock wait after 100 ms, and only inside 
     { proname: 'label_versions', proconfig: null },
     ...[
       'project_app_check_lines',
+      'project_attention',
+      'project_attention_item',
       'project_run',
       'project_step_event',
       'project_version',
@@ -643,6 +649,7 @@ test('0014 keeps only a stored citation’s references, and changes nothing run 
       '0016_pin_reason_optional.sql',
       '0017_app_check_line_ids.sql',
       '0018_issue_label_time.sql',
+      '0019_attention_items.sql',
     ]);
     const lines = () =>
       historical.query(
@@ -687,6 +694,7 @@ test('0016 lets a pin have no reason, keeps stored reasons, and changes nothing 
       '0016_pin_reason_optional.sql',
       '0017_app_check_line_ids.sql',
       '0018_issue_label_time.sql',
+      '0019_attention_items.sql',
     ]);
     await pin('b'.repeat(40), null);
     const reasons = () => historical.query('SELECT sha, reason FROM mc.pins ORDER BY sha');
@@ -724,6 +732,7 @@ test('0017 keeps lines projected before it without an id, fills new reports’ i
     expect(await runMigrations({ files: migrationFiles, db: historical })).toEqual([
       '0017_app_check_line_ids.sql',
       '0018_issue_label_time.sql',
+      '0019_attention_items.sql',
     ]);
     const after = await run();
     await historical.query('SELECT mc.project_app_check_lines($1, $2)', [
@@ -1332,4 +1341,151 @@ test('a run status update commits and is recorded when the trigger cannot reach 
     throw new Error('rollback after the run committed');
   });
   await expect(rolledBack).rejects.toThrow('rollback after the run committed');
+});
+
+const WAIT = {
+  owner: 'node',
+  nodeId: 'ask',
+  kind: 'attention',
+  waitingSince: '2026-10-24T10:20:00.000Z',
+  message: '**Build queue, issue 15: scope decision**\n\n**What it is.** Ship it?',
+  pauseId: 'p1',
+  form: 'select',
+  options: [
+    { id: 'ship', label: 'Ship' },
+    { id: 'other', label: 'Something else' },
+  ],
+  labels: { build: 'scope' },
+};
+
+async function pausedRun(wait: object = WAIT, extra: object = {}): Promise<string> {
+  const [row] = await db.query(
+    `INSERT INTO public.remote_agent_workflow_runs (workflow_name, status, user_message, metadata)
+     VALUES ('archon-build-queue', 'paused', 'queue', $1) RETURNING id`,
+    [JSON.stringify({ wait, ...extra })],
+  );
+  return String(row?.id);
+}
+
+const setMetadata = (id: string, metadata: object) =>
+  db.query('UPDATE public.remote_agent_workflow_runs SET metadata = $2 WHERE id = $1', [
+    id,
+    JSON.stringify(metadata),
+  ]);
+
+const attentionItems = () =>
+  db.query(
+    `SELECT run_id, node_id, form, options::text AS options, labels::text AS labels,
+       length(message)::int AS length FROM mc.attention_items`,
+  );
+
+test('a run paused at an open attention wait is one attention item, and leaves when it is not', async () => {
+  const id = await pausedRun();
+  const [item] = await db.query(`SELECT * FROM mc.attention_items WHERE run_id = $1`, [id]);
+  expect(item).toMatchObject({
+    factory: '',
+    workflow_name: 'archon-build-queue',
+    node_id: 'ask',
+    occurrence: 'p1',
+    form: 'select',
+    options: WAIT.options,
+    labels: { build: 'scope' },
+    message: WAIT.message,
+  });
+  expect(new Date(String(item?.waiting_since)).toISOString()).toBe('2026-10-24T10:20:00.000Z');
+
+  await setMetadata(id, { wait: { ...WAIT, labels: { build: 'stop' } } });
+  expect((await attentionItems())[0]?.labels).toBe('{"build": "stop"}');
+
+  for (const gone of [
+    { wait: { ...WAIT, answer: { decision: 'ship' } } },
+    { wait: WAIT, source_release: { nodeId: 'ask' } },
+  ]) {
+    await setMetadata(id, gone);
+    expect(await attentionItems()).toEqual([]);
+    await setMetadata(id, { wait: WAIT });
+    expect(await attentionItems()).toHaveLength(1);
+  }
+  await db.query(`UPDATE public.remote_agent_workflow_runs SET status = 'running' WHERE id = $1`, [
+    id,
+  ]);
+  expect(await attentionItems()).toEqual([]);
+});
+
+test('an attention item’s node and choices follow the wait’s owner and form', async () => {
+  await pausedRun({
+    ...WAIT,
+    owner: 'loop_group',
+    nodeId: 'rounds',
+    bodyWaitId: 'ask',
+    form: 'approval',
+  });
+  await pausedRun({ ...WAIT, form: 'message' });
+  const items = await attentionItems();
+  expect(items.map((i) => [i.node_id, i.form, i.options])).toEqual(
+    expect.arrayContaining([
+      ['rounds.ask', 'approval', '[{"id": "approve"}, {"id": "reject"}]'],
+      ['ask', 'message', '[]'],
+    ]),
+  );
+});
+
+test('an attention message is stored as its first 4000 characters', async () => {
+  await pausedRun({ ...WAIT, message: 'x'.repeat(5000) });
+  expect((await attentionItems())[0]?.length).toBe(4000);
+});
+
+test('an update that changes nothing an attention item shows does not fire the projection', async () => {
+  const id = await pausedRun();
+  await db.query(`UPDATE mc.attention_items SET labels = '{"by":"hand"}'`);
+  await db.query(
+    `UPDATE public.remote_agent_workflow_runs SET last_activity_at = now() + interval '1 minute'
+     WHERE id = $1`,
+    [id],
+  );
+  expect((await attentionItems())[0]?.labels).toBe('{"by": "hand"}');
+});
+
+test('an unreadable wait time commits Archon’s write and records one projection error', async () => {
+  const id = await pausedRun();
+  await setMetadata(id, { wait: { ...WAIT, waitingSince: 'not a time' } });
+  expect(await attentionItems()).toHaveLength(1);
+  expect(await db.query('SELECT source, run_id FROM mc.projection_errors')).toEqual([
+    { source: 'mc_project_attention_update', run_id: id },
+  ]);
+  const [run] = await db.query(
+    'SELECT metadata FROM public.remote_agent_workflow_runs WHERE id = $1',
+    [id],
+  );
+  expect(JSON.stringify(run?.metadata)).toContain('not a time');
+});
+
+test('deleting a paused run removes its attention item', async () => {
+  const id = await pausedRun();
+  await db.query('DELETE FROM public.remote_agent_workflow_runs WHERE id = $1', [id]);
+  expect(await attentionItems()).toEqual([]);
+});
+
+test('0019 projects the attention runs already paused, and changes nothing run again', async () => {
+  const historical = await archonDb();
+  try {
+    await runMigrations({ files: migrationFiles.filter((f) => f.name < '0019'), db: historical });
+    await historical.query(
+      `INSERT INTO public.remote_agent_workflow_runs (workflow_name, status, user_message, metadata)
+       VALUES ('archon-build-queue', 'paused', 'queue', $1)`,
+      [JSON.stringify({ wait: WAIT })],
+    );
+    expect(await runMigrations({ files: migrationFiles, db: historical })).toEqual([
+      '0019_attention_items.sql',
+    ]);
+    expect(await historical.query('SELECT node_id FROM mc.attention_items')).toEqual([
+      { node_id: 'ask' },
+    ]);
+    const before = await historical.query('SELECT * FROM mc.attention_items');
+    const [attention] = migrationFiles.filter((f) => f.name.startsWith('0019'));
+    await historical.query(attention?.sql ?? '');
+    expect(await historical.query('SELECT * FROM mc.attention_items')).toEqual(before);
+  } finally {
+    await historical.close();
+  }
 });
