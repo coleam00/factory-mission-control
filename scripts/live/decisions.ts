@@ -81,8 +81,8 @@ const attentionOnScreen = `[...document.querySelectorAll('${ATTENTION}')].map((l
 
 /** The Decisions tab's count, or null when no count is drawn. */
 const tabCount = `(() => {
-  const el = document.querySelector('[data-live="decisions-count"] [data-count]');
-  return el === null ? null : Number(el.getAttribute('data-count'));
+  const el = document.querySelector('nav [data-decisions-count]');
+  return el === null ? null : Number(el.getAttribute('data-decisions-count'));
 })()`;
 
 /**
@@ -199,9 +199,9 @@ export function decisionsPhase(ctx: LiveContext): LivePhase {
       await page.evaluate('window.__mcNoReload = true');
       const ready = await page.evaluate<boolean>(
         pageWait(
-          [...QUERIES, 'decisions-count']
-            .map((q) => `document.querySelector('[data-live="${q}"][data-state="ready"]') !== null`)
-            .join(' && '),
+          QUERIES.map(
+            (q) => `document.querySelector('[data-live="${q}"][data-state="ready"]') !== null`,
+          ).join(' && '),
           READY_WAIT_MS,
         ),
       );

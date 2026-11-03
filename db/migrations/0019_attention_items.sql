@@ -12,7 +12,6 @@ CREATE TABLE IF NOT EXISTS mc.attention_items (
   factory text NOT NULL,
   workflow_name text NOT NULL,
   node_id text NOT NULL,
-  occurrence text,
   waiting_since timestamptz NOT NULL,
   form text NOT NULL,
   options jsonb NOT NULL,
@@ -46,7 +45,7 @@ BEGIN
   END IF;
   v_codebase := (SELECT c.name FROM public.remote_agent_codebases c WHERE c.id = p_codebase_id);
   v_form := coalesce(v_wait ->> 'form', 'message');
-  INSERT INTO mc.attention_items AS a (run_id, factory, workflow_name, node_id, occurrence,
+  INSERT INTO mc.attention_items AS a (run_id, factory, workflow_name, node_id,
     waiting_since, form, options, labels, message)
   VALUES (
     p_run_id,
@@ -58,7 +57,6 @@ BEGIN
     CASE WHEN v_wait ->> 'owner' = 'loop_group'
       THEN (v_wait ->> 'nodeId') || '.' || (v_wait ->> 'bodyWaitId')
       ELSE v_wait ->> 'nodeId' END,
-    v_wait ->> 'pauseId',
     (v_wait ->> 'waitingSince')::timestamptz,
     v_form,
     CASE v_form
@@ -74,7 +72,6 @@ BEGIN
     factory = EXCLUDED.factory,
     workflow_name = EXCLUDED.workflow_name,
     node_id = EXCLUDED.node_id,
-    occurrence = EXCLUDED.occurrence,
     waiting_since = EXCLUDED.waiting_since,
     form = EXCLUDED.form,
     options = EXCLUDED.options,

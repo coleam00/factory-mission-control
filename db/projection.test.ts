@@ -1386,7 +1386,6 @@ test('a run paused at an open attention wait is one attention item, and leaves w
     factory: '',
     workflow_name: 'archon-build-queue',
     node_id: 'ask',
-    occurrence: 'p1',
     form: 'select',
     options: WAIT.options,
     labels: { build: 'scope' },

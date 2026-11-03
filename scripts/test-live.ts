@@ -238,10 +238,10 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
   const { failures } = ctx;
   const rewind = rewindPhase(ctx);
   // The order is the order of every write against every read that judges it: the laps screen
-  // and the lap open before the strip's first insert, the decisions screen writes before the
+  // and the lap open before the strip's first insert, the ledger screen writes before the
   // step, versions and scorecard screens open and judges the versions screen's pin after the
   // hold, and the switcher runs before the diff adds steps to the architecture the second
-  // factory's map shows. The owner queue labels just before the issues screen does, so each of the
+  // factory's map shows. The owner queue and the Decisions screen label just before the issues screen does, so each of the
   // issues screen's labels lands on a waiting issue. Rewind is last: making a rewind branch starts a new Neon compute on the
   // project, so every other screen's first snapshots are timed before it.
   const phases: LivePhase[] = [

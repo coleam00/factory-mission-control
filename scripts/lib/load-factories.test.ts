@@ -88,6 +88,41 @@ test('loading the factories updates stale rows and attributes the laps projected
   }
 });
 
+test('a factory registered after its run paused for the owner shows that run as its attention item', async () => {
+  const db = await archonDb();
+  try {
+    await runMigrations({ files: migrationFiles, db });
+    const [codebase] = await db.query(
+      `INSERT INTO public.remote_agent_codebases (name) VALUES ($1) RETURNING id`,
+      [MISSION_CONTROL[0]?.codebase],
+    );
+    const [run] = await db.query(
+      `INSERT INTO public.remote_agent_workflow_runs
+         (workflow_name, codebase_id, status, user_message, metadata)
+       VALUES ('archon-build-queue', $1, 'paused', 'queue', $2::jsonb) RETURNING id`,
+      [
+        codebase?.id,
+        JSON.stringify({
+          wait: {
+            kind: 'attention',
+            nodeId: 'ask',
+            waitingSince: '2026-10-24T10:20:00Z',
+            message: 'Which?',
+          },
+        }),
+      ],
+    );
+    const factoryOfItem = async () =>
+      (await db.query('SELECT factory FROM mc.attention_items WHERE run_id = $1', [run?.id]))[0]
+        ?.factory;
+    expect(await factoryOfItem()).toBe(MISSION_CONTROL[0]?.codebase);
+    await loadFactories({ entries: MISSION_CONTROL, db });
+    expect(await factoryOfItem()).toBe('mission-control');
+  } finally {
+    await db.close();
+  }
+});
+
 test('a factory registered after its runs lists their versions on the version strip', async () => {
   const db = await archonDb();
   try {

@@ -51,6 +51,17 @@ test('a paused run of another workflow has no lap page to open', () => {
   expect(html).toContain('archon-build-queue');
 });
 
+test('a failed run of another workflow has no lap page to open', () => {
+  const html = render(
+    <Failures
+      rows={[run({ run_id: 'q', workflow_name: 'archon-build-queue', failed_step: 'build' })]}
+      factory="mission-control"
+    />,
+  );
+  expect(html).not.toContain('data-lap-link');
+  expect(html).toContain('data-failed-lap="q"');
+});
+
 test('failed laps show a count per cause, every cause even at zero, and each lap with its error', () => {
   const html = render(
     <Failures

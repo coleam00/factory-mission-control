@@ -189,7 +189,7 @@ export async function expectedHealth(
 
 /**
  * Where the screen differs from SQL, and where the seed lacks what the screen must show: one
- * pending and one paused run, an overdue step and a failed lap of every cause.
+ * pending and at least one paused run, an overdue step and a failed lap of every cause.
  */
 export function healthMismatches(shown: ShownHealth, expected: ExpectedHealth): string[] {
   const mismatches: string[] = [];

@@ -4,7 +4,7 @@ import type { Db } from './db';
 /**
  * Upserts `entries` into mc.factories by name, deleting none, and gives each lap projected
  * before its factory existed (factory '' or its codebase's name) the factory the projection would
- * now choose, then projects the versions (mc.project_version) of every digest those laps moved to
+ * now choose, and does the same for each open attention item (mc.attention_items), then projects the versions (mc.project_version) of every digest those laps moved to
  * and from, so a factory registered after its runs lists them on the version strip. Returns how
  * many factory and lap rows changed. `entries` is bound as the array itself: Bun
  * encodes a string bound to `::jsonb` as a jsonb string, which jsonb_to_recordset rejects.
@@ -46,6 +46,16 @@ export async function loadFactories({
       [],
     );
     changed.laps = moved.length;
+    await tx.query(
+      `UPDATE mc.attention_items a SET factory = m.factory
+           FROM (SELECT r.id, c.name AS codebase,
+                   (SELECT f.name FROM mc.factories f WHERE f.codebase = c.name
+                     ORDER BY f.name LIMIT 1) AS factory
+                   FROM public.remote_agent_workflow_runs r
+                   JOIN public.remote_agent_codebases c ON c.id = r.codebase_id) m
+          WHERE a.run_id = m.id AND a.factory IN ('', m.codebase) AND a.factory <> m.factory`,
+      [],
+    );
     await tx.query(
       `SELECT mc.project_version(p.factory, p.digest)
          FROM (SELECT DISTINCT factory, digest FROM jsonb_to_recordset($1::jsonb)
