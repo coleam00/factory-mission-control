@@ -232,26 +232,51 @@ test('a failed workable or owner source draws its chip as unavailable, never as 
   expect(html).not.toContain('0 queued');
 });
 
-test('a source in error that still holds rows draws "?" and no count', () => {
-  const html = renderToStaticMarkup(
-    <MemoryRouter>
-      <HomeMapBody
-        sources={{
-          map: [],
-          workable: [{ kind: 'issue', issue_number: 2, title: 'w', url: null, run_id: null }],
-        }}
-        states={{ workable: 'error' }}
-        state="ready"
-        factory="here"
-        at={null}
-        flow={false}
-      />
-    </MemoryRouter>,
-  );
-  expect(html).toContain('? queued');
-  expect(html).not.toContain('1 queued');
-  expect(html).not.toContain('2 queued');
-});
+test.each([
+  [
+    'workable',
+    'queued',
+    { workable: [{ kind: 'issue', issue_number: 2, title: 'w', url: null, run_id: null }] },
+  ],
+  [
+    'owner',
+    'waiting',
+    {
+      owner: [
+        {
+          kind: 'issue',
+          issue_number: 2,
+          question_number: null,
+          title: 'o',
+          url: null,
+          options: null,
+          recommendation: null,
+          default_option: null,
+          default_at: null,
+        },
+      ],
+    },
+  ],
+] as const)(
+  'a %s source in error that still holds rows draws "?" and no count',
+  (source, chip, rows) => {
+    const html = renderToStaticMarkup(
+      <MemoryRouter>
+        <HomeMapBody
+          sources={{ map: [], ...(rows as object) }}
+          states={{ [source]: 'error' }}
+          state="ready"
+          factory="here"
+          at={null}
+          flow={false}
+        />
+      </MemoryRouter>,
+    );
+    expect(html).toContain(`? ${chip}`);
+    expect(html).not.toContain(`1 ${chip}`);
+    expect(html).not.toContain(`2 ${chip}`);
+  },
+);
 
 test('Behind the scenes says the steps are unavailable, not loading, once their query failed', () => {
   const card = FACTORY_MAP.cards.find((c) => c.covers.length > 0) as (typeof FACTORY_MAP.cards)[0];

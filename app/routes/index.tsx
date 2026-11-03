@@ -45,7 +45,7 @@ export function HomeMapBody({
   /** The pinned version's steps, for Behind the scenes; undefined until `step-detail` answers. */
   steps?: readonly StepRow[];
   /** The secondary sources' states: a failed one is unavailable, not empty. */
-  states?: { workable?: PanelState; owner?: PanelState; steps?: PanelState };
+  states?: NonNullable<MapSources['states']> & { steps?: PanelState };
   /** The browser's clock, which decides what "today" is for the merges. */
   now?: Date;
 }): ReactElement {

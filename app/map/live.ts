@@ -100,7 +100,7 @@ const byNumber = (a: MapItem, b: MapItem) => a.number - b.number || a.key.locale
 function chipItems(
   { map, workable, owner, states = {} }: MapSources,
   now: Date,
-): { [K in Chip]?: Required<CardLive>[K] } {
+): { [K in Chip]?: Required<CardLive>[K] | 'unavailable' } {
   return {
     failing: map
       .filter((r) => r.kind === 'failing' && r.number !== null)
@@ -111,6 +111,7 @@ function chipItems(
         url: r.url,
       }))
       .sort(byNumber),
+    ...(states.workable === 'error' && { queued: 'unavailable' as const }),
     ...(workable &&
       states.workable !== 'error' && {
         queued: workable
@@ -123,6 +124,7 @@ function chipItems(
           }))
           .sort(byNumber),
       }),
+    ...(states.owner === 'error' && { waiting: 'unavailable' as const }),
     ...(owner &&
       states.owner !== 'error' && {
         waiting: owner
@@ -164,14 +166,6 @@ export function cardLive(
     });
   }
   const items = chipItems(sources, now);
-  const failed: Chip[] = [
-    ...(sources.states?.workable === 'error' ? (['queued'] as const) : []),
-    ...(sources.states?.owner === 'error' ? (['waiting'] as const) : []),
-  ];
-  for (const card of factoryMap.cards) {
-    const lost = (card.chips ?? []).filter((chip) => failed.includes(chip));
-    if (lost.length > 0) (live.get(card.id) as CardLive).unavailable = lost;
-  }
   for (const card of factoryMap.cards) {
     const entry = live.get(card.id) as CardLive;
     entry.here.sort(
@@ -179,7 +173,8 @@ export function cardLive(
     );
     for (const chip of card.chips ?? []) {
       const counted = items[chip];
-      if (counted !== undefined) Object.assign(entry, { [chip]: counted });
+      if (counted === 'unavailable') entry.unavailable = [...(entry.unavailable ?? []), chip];
+      else if (counted !== undefined) Object.assign(entry, { [chip]: counted });
     }
   }
   return live;
