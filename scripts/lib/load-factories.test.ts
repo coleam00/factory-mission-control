@@ -153,3 +153,50 @@ test('loading the factories binds them as a jsonb array, which Bun sends unchang
     await db.close();
   }
 });
+
+test('two factories on one codebase: loadFactories and the run projection choose the same factory', async () => {
+  const db = await archonDb();
+  try {
+    await runMigrations({ files: migrationFiles, db });
+    const [codebase] = await db.query(
+      `INSERT INTO public.remote_agent_codebases (name) VALUES ('coleam00/shared') RETURNING id`,
+    );
+    const run = async () =>
+      String(
+        (
+          await db.query(
+            `INSERT INTO public.remote_agent_workflow_runs (workflow_name, codebase_id, user_message)
+             VALUES ('archon-loop', $1, 'Run the loop') RETURNING id`,
+            [codebase?.id],
+          )
+        )[0]?.id,
+      );
+    const factoryOf = async (runId: string) =>
+      (await db.query('SELECT factory FROM mc.laps WHERE run_id = $1', [runId]))[0]?.factory;
+    const first = await run();
+    expect(await factoryOf(first)).toBe('coleam00/shared');
+
+    // Registered out of name order, so only the rule's ORDER BY picks alpha.
+    const entry = (name: string) => ({
+      name,
+      repository: `coleam00/${name}`,
+      codebase: 'coleam00/shared',
+      console: `http://localhost/${name}`,
+    });
+    expect(await loadFactories({ entries: [entry('zeta'), entry('alpha')], db })).toEqual({
+      factories: 2,
+      laps: 1,
+    });
+    expect(await factoryOf(first)).toBe('alpha');
+
+    const second = await run();
+    expect(await factoryOf(second)).toBe('alpha');
+    await db.query(
+      `UPDATE public.remote_agent_workflow_runs SET status = 'completed' WHERE id = $1`,
+      [first],
+    );
+    expect(await factoryOf(first)).toBe('alpha');
+  } finally {
+    await db.close();
+  }
+});

@@ -13,7 +13,7 @@ How this repository is built. The product is `docs/mission-control.prd.md`; this
 | `function/` | The Neon Function that receives GitHub webhooks (Hono, TypeScript). |
 | `parsers/` | Pure functions: comment formats, pin trailers, DECISIONS.md, the architecture parser. |
 | `scripts/` | `fixture:branch`, `fixture:drop`, `fixture:write`, `migrate`, `backfill`, `rewind:create`, `function:deploy`, `function:idle-check`. |
-| `fixtures/` | `seed.sql`, `expected-scorecard.json`, `webhooks/` sample payloads, `pack/` (a snapshot of the pinned workflow pack), `factory-template/` (the fence files). |
+| `fixtures/` | `seed.sql`, `expected-scorecard.json`, `webhooks/` sample payloads, `pack/` (a snapshot of the pinned workflow pack), `archon-rules.json` (Archon's attention and inline-script rules at the pinned commits, which the projection and parser tests hold MC to), `factory-template/` (the fence files). |
 | `harness/` | `design-probe.js` and the factory harness configuration. |
 | `docs/design/archon-console/` | The Archon console's tokens and components, copied from Archon. The design source of truth. |
 | `factories.json` | The factories the dashboard shows (PRD 11.6). |
