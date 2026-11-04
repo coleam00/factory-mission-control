@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, beforeEach, expect, test } from 'bun:test';
+import { FACTORY_MAP } from '../app/map/factory-map';
 import { holdoutId } from '../parsers/metrics';
 import { eventData, structuredOutputFor } from '../scripts/fixture/write';
 import type { Db, Row } from '../scripts/lib/db';
@@ -1455,5 +1456,50 @@ test('a queue run’s step events project steps and attempts, as the old pack’
   ).toEqual([{ step_id: 'record' }]);
   const manager = await archonEvent('archon-manager', 'node_started', 'steer', {});
   expect(await projectedSteps(manager)).toEqual([]);
+  expect(await projectionErrors()).toEqual([]);
+});
+
+test('the workflows projecting step events are the map’s queue covers and the old loop, no other', async () => {
+  const covers = FACTORY_MAP.cards.flatMap((c) => c.covers ?? []);
+  const projecting = new Set(
+    covers.filter((c) => c.pack === 'queue' || c.workflow === 'archon-loop').map((c) => c.workflow),
+  );
+  const notProjecting = new Set(covers.map((c) => c.workflow).filter((w) => !projecting.has(w)));
+  expect([...notProjecting].sort()).toEqual([
+    'archon-backlog',
+    'archon-holdouts',
+    'archon-manager',
+  ]);
+  for (const workflow of [...projecting, ...notProjecting]) {
+    const [row] = await db.query('SELECT mc.projects_step_events($1) AS projects', [workflow]);
+    expect({ workflow, projects: row?.projects }).toEqual({
+      workflow,
+      projects: projecting.has(workflow),
+    });
+  }
+});
+
+test('a holdout workflow’s steps keep status and timing but no output, route or reason', async () => {
+  const secret = 'H-07 SECRET report text';
+  const cases: [string, string, Record<string, unknown>][] = [
+    ['factory-app-check', 'evidence', { report: secret, overall: 'FAIL' }],
+    ['factory-app-check', 'choose', { route: 'fix', reason: secret }],
+    ['factory-holdouts', 'write', { summary: secret }],
+    ['factory-holdout-sweep', 'check', { summary: secret }],
+  ];
+  for (const [workflow, step, structured_output] of cases) {
+    const id = await archonEvent(workflow, 'node_completed', step, {
+      structured_output,
+      duration_ms: 5,
+    });
+    expect(await projectedSteps(id)).toEqual([
+      { step_id: step, status: 'completed', output: null },
+    ]);
+    expect(
+      await db.query('SELECT route, outcome, reason FROM mc.lap_step_attempts WHERE run_id = $1', [
+        id,
+      ]),
+    ).toEqual([{ route: null, outcome: null, reason: null }]);
+  }
   expect(await projectionErrors()).toEqual([]);
 });

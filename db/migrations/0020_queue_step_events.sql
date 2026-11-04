@@ -11,12 +11,23 @@
 -- cannot raise inside Archon's write (0006's invariant 1); the trigger's own handler is unchanged.
 -- Runs finished before this file get no steps from it: `reconcile:laps` replays them through these
 -- functions. Run again, it changes nothing.
+--
+-- The holdout workflows (`factory-holdouts`, `factory-app-check`, `factory-holdout-sweep`) take
+-- holdout scenarios as input, and mc.step_output only knows the old loop's `check-app` and
+-- `review` steps. Their steps keep status and timing but no output, no route, outcome or reason
+-- (MISSION rule 3: never store a holdout scenario's text).
 
 CREATE OR REPLACE FUNCTION mc.projects_step_events(p_workflow text)
 RETURNS boolean LANGUAGE sql IMMUTABLE AS $$
   SELECT coalesce(p_workflow IN ('archon-loop', 'archon-intake', 'archon-build-queue',
     'archon-merge-queue', 'archon-discoveries', 'factory-app-check', 'factory-backlog',
     'factory-deploy', 'factory-holdout-sweep', 'factory-holdouts', 'factory-manager'), false)
+$$;
+
+CREATE OR REPLACE FUNCTION mc.keeps_step_output(p_workflow text)
+RETURNS boolean LANGUAGE sql IMMUTABLE AS $$
+  SELECT p_workflow IS NULL
+    OR p_workflow NOT IN ('factory-holdouts', 'factory-app-check', 'factory-holdout-sweep')
 $$;
 
 CREATE OR REPLACE FUNCTION mc.record_step_attempt(
@@ -40,6 +51,10 @@ BEGIN
     v_raw := NULL;
   END IF;
   v_output := mc.step_output(p_step, v_raw);
+  IF NOT mc.keeps_step_output((SELECT workflow_name FROM public.remote_agent_workflow_runs
+    WHERE id = p_run_id)) THEN
+    v_output := NULL;
+  END IF;
   INSERT INTO mc.lap_step_attempts AS a (run_id, step_id, event_id, started_at, status,
     duration_ms, cost_usd, route, outcome, reason, holdout_catches)
   VALUES (
@@ -134,6 +149,10 @@ BEGIN
     v_output := NULL;
   END IF;
   v_output := mc.step_output(NEW.step_name, v_output);
+  IF NOT mc.keeps_step_output((SELECT workflow_name FROM public.remote_agent_workflow_runs
+    WHERE id = NEW.workflow_run_id)) THEN
+    v_output := NULL;
+  END IF;
   v_started := (NEW.data -> 'timing' ->> 'startedAt')::timestamptz;
   v_duration := coalesce(NEW.data ->> 'duration_ms', NEW.data -> 'timing' ->> 'durationMs');
   v_model := coalesce(NEW.data -> 'model_usage' ->> 'resolved', NEW.data ->> 'model');
