@@ -23,7 +23,7 @@ steps AS (
   JOIN version v ON v.archon_sha = s.archon_sha AND v.factory_sha = s.factory_sha
   WHERE s.workflow = 'archon-loop'
 )
--- Every node of the loop's expanded tree; each opens its own place in archon-loop.
+-- Every node of the loop's expanded tree, and each opens its own place in archon-loop.
 SELECT v.pin, s.path, s.parent_path, s.position, s.step_id, s.kind, s.depends_on,
   s.when_condition, s.trigger_rule
 FROM steps s
