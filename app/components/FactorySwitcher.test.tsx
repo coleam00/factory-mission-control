@@ -56,6 +56,28 @@ test('two factories are listed with their running laps, the default first, linki
   expect(html).toContain('data-factory-switcher');
 });
 
+test('the chosen row, and only it, carries a check mark and aria-current, whichever factory is chosen', () => {
+  const rows = [
+    { factory: 'mission-control', running: 0, is_default: true },
+    { factory: 'second-factory', running: 0, is_default: false },
+  ];
+  for (const chosen of ['mission-control', 'second-factory']) {
+    const html = render(rows, 'ready', chosen);
+    const marked = html
+      .split('<li ')
+      .filter((li) => li.includes('data-chosen-mark'))
+      .map((li) => li.match(/data-factory-entry="([^"]*)"/)?.[1]);
+    expect(marked).toEqual([chosen]);
+    expect(html.match(/data-chosen-mark/g)).toHaveLength(1);
+    expect(
+      entries(html)
+        .filter((e) => e.current)
+        .map((e) => e.factory),
+    ).toEqual([chosen]);
+    expect(html).toContain('✓');
+  }
+});
+
 test('with one factory the switcher lists that factory and nothing else', () => {
   const html = render([{ factory: 'mission-control', running: 0, is_default: true }], 'ready');
   expect(entries(html)).toEqual([
