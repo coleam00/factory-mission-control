@@ -165,6 +165,7 @@ describe('decisions-timeline and improvements-ledger on the seed', () => {
             'north-star-digest', '2026-10-20T00:00:00Z'),
           ('00000000-0000-0000-0000-0000000000d2', 'north-star', 'archon-loop', 'completed',
             'north-star-digest', '2026-10-20T01:00:00Z')`);
+        await tx.query(`SELECT mc.project_version('north-star', 'north-star-digest')`);
         const [label] = await tx.query(
           'SELECT sha FROM mc.pins WHERE committed_at < $1 ORDER BY committed_at DESC LIMIT 1',
           ['2026-10-20T00:00:00Z'],

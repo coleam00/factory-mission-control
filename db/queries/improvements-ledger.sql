@@ -1,19 +1,10 @@
-WITH labelled AS (
-  -- A digest's pin is mc.version_pin of its first archon-loop lap, the rule mc.project_version applies,
-  -- so the ledger and mc.versions cannot disagree. Unlike mc.versions this also covers a factory not
-  -- named in mc.factories.
-  SELECT l.digest, mc.version_pin(min(l.started_at)) AS pin_sha
-  FROM mc.laps l
-  WHERE l.factory = $1 AND l.workflow_name = 'archon-loop'
-    AND l.digest IS NOT NULL AND l.started_at IS NOT NULL
-  GROUP BY l.digest
-)
 SELECT p.sha AS pin_sha, p.reason, p.measure, p.committed_at, n.laps,
   v.verdict, v.sentence, v.committed_at AS verdict_at, 1 AS pin_matches
 FROM mc.pins p
 CROSS JOIN LATERAL (
   SELECT count(*)::int AS laps
-  FROM mc.laps l JOIN labelled b ON b.digest = l.digest
+  FROM mc.laps l JOIN mc.versions b ON b.factory = l.factory AND b.digest = l.digest
+  -- The pin is the one mc.versions gives the lap's digest, so the ledger and the version strip agree.
   WHERE l.factory = $1 AND l.workflow_name = 'archon-loop' AND b.pin_sha = p.sha
 ) n
 -- A verdict names its pin like a decision's `Version:` does, and counts only for the one pin its

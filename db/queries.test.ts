@@ -28,6 +28,11 @@ describe.each(queries)('db/queries/%s.sql', (name, sql) => {
     expect(sql).not.toMatch(VOLATILE);
   });
 
+  test('calls no function of the mc schema', () => {
+    // A user-defined STABLE function is not approved either; #357's mc.version_pin call was refused.
+    expect(sql).not.toMatch(/\bmc\.\w+\s*\(/i);
+  });
+
   test("reads the dashboard's own tables, never Archon's", () => {
     expect(sql).not.toMatch(/remote_agent_|provider_event/i);
   });

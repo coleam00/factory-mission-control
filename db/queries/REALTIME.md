@@ -42,3 +42,9 @@ the largest value Realtime answers are not measured. Realtime did not answer suc
 `test:live` seals the probes in debug mode to record why a query was rejected; the app seals in
 safe mode, where the browser sees only `upstream_rejected: upstream rejected` and no database
 structure.
+
+A user-defined function is not probed on a check branch. The app check of #357 saw a query that
+called the `STABLE` function `mc.version_pin` refused with `upstream_rejected`, where the same
+query reading `mc.versions` was subscribed, so a live query reads `mc.versions` and calls no
+function of the `mc` schema (`db/queries.test.ts` fails one that does). The rejection reason is
+not recorded, because the app seals in safe mode.
