@@ -441,35 +441,68 @@ test('a running lap with no recorded lost write is not replayed, even if its row
   expect(await snapshot(db)).toEqual(before);
 });
 
-/** Counts, in a scratch table, each statement that deletes from mc.lap_steps, replays included. */
-async function countStepDeletes(): Promise<() => Promise<number>> {
-  await rows('CREATE TABLE mc.step_deletes (n int)', []);
-  await rows(
-    `CREATE FUNCTION mc.count_step_delete() RETURNS trigger LANGUAGE plpgsql AS $$
-     BEGIN INSERT INTO mc.step_deletes VALUES (1); RETURN NULL; END $$`,
-    [],
-  );
-  await rows(
-    `CREATE TRIGGER count_step_delete AFTER DELETE ON mc.lap_steps
-       FOR EACH STATEMENT EXECUTE FUNCTION mc.count_step_delete()`,
-    [],
-  );
-  return async () =>
-    Number((await rows('SELECT count(*)::int AS n FROM mc.step_deletes', []))[0]?.n);
-}
+/** How many statements of the last `run` deleted a run's lap steps: the replay's first write. */
+const stepReplays = () => sql.filter((text) => text.includes('DELETE FROM mc.lap_steps')).length;
 
 test('a repaired running lap is not replayed again, though its error row stays (#343)', async () => {
   const { runId, checkStart } = await runningLap();
   await recordLostStepWrite(runId, checkStart);
   await rows(`DELETE FROM mc.lap_steps WHERE run_id = $1 AND step_id = 'check-app'`, [runId]);
-  const deletes = await countStepDeletes();
 
   expect((await run([])).out).toEqual(['reconcile: 1 run(s) repaired']);
-  const afterRepair = await deletes();
-  expect(afterRepair).toBeGreaterThan(0);
+  expect(stepReplays()).toBe(1);
+
+  sql = [];
+  expect((await run([])).out).toEqual(['reconcile: 0 run(s) repaired']);
+  expect(stepReplays()).toBe(0);
+});
+
+// A replay that reproduces the rows rolls back, so only the statement log shows it ran.
+test.each(STEP_EVENT_TYPES)(
+  'a lost %s write the live trigger later projected is never replayed (#343)',
+  async (event) => {
+    const runId = await archonRun('running');
+    await archonEvent(runId, 1, 'pick', 'node_started');
+    const [row] = await rows(
+      `INSERT INTO public.remote_agent_workflow_events
+         (workflow_run_id, event_order, event_type, step_name, data, created_at)
+       VALUES ($1, 2, $2, 'check-app', $3, $4) RETURNING id`,
+      [
+        runId,
+        event,
+        JSON.stringify(
+          eventData('check-app', event === 'node_started' ? event : 'node_failed', NOW),
+        ),
+        NOW.toISOString(),
+      ],
+    );
+    const lost = String(row?.id);
+    await recordLostStepWrite(runId, lost);
+
+    expect((await run([])).out).toEqual(['reconcile: 0 run(s) repaired']);
+    expect(stepReplays()).toBe(0);
+  },
+);
+
+test('a lost write whose step a later event projected is not replayed (#343)', async () => {
+  const { runId, checkStart } = await runningLap();
+  await archonEvent(runId, 4, 'check-app', 'node_completed');
+  await recordLostStepWrite(runId, checkStart);
 
   expect((await run([])).out).toEqual(['reconcile: 0 run(s) repaired']);
-  expect(await deletes()).toBe(afterRepair);
+  expect(stepReplays()).toBe(0);
+});
+
+test('a lost step finish whose step shows another status is replayed (#343)', async () => {
+  const { runId, pickDone } = await runningLap();
+  await recordLostStepWrite(runId, pickDone);
+  const projected = await snapshot(db);
+  await rows(`UPDATE mc.lap_steps SET status = 'failed' WHERE run_id = $1 AND step_id = 'pick'`, [
+    runId,
+  ]);
+
+  expect((await run([])).out).toEqual(['reconcile: 1 run(s) repaired']);
+  expect(await snapshot(db)).toEqual(projected);
 });
 
 test('a running lap whose only error is a string step output is not replayed (#343)', async () => {
@@ -479,10 +512,9 @@ test('a running lap whose only error is a string step output is not replayed (#3
      VALUES ('mc_project_step_event', $1, $2, '22000', 'structured_output is a jsonb string, not an object')`,
     [runId, checkStart],
   );
-  const deletes = await countStepDeletes();
 
   expect((await run([])).out).toEqual(['reconcile: 0 run(s) repaired']);
-  expect(await deletes()).toBe(0);
+  expect(stepReplays()).toBe(0);
 });
 
 /** A paused run whose lap a dropped projection left `running`. */

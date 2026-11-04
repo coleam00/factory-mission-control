@@ -36,6 +36,10 @@ class Busy extends Error {}
 
 /** The live trigger's WHEN (0006_projection.sql): the step-level events it projects. */
 export const STEP_EVENT_TYPES = ['node_started', 'node_completed', 'node_failed', 'node_skipped'];
+
+/** Archon's event chronology as a row expression: created_at, then event_order, then id. */
+const eventKey = (alias: string) =>
+  `${alias}.created_at, coalesce(${alias}.event_order, 0), ${alias}.id`;
 /**
  * Archon is writing a run in these, so its next write projects its lap again; one with no lap is
  * replayed in full, and one with a lap has its steps and attempts replayed. Every
@@ -129,7 +133,7 @@ async function reproject(tx: Tx, runId: string, scope: Scope): Promise<void> {
   await tx.query(
     `INSERT INTO mc_reconcile_events SELECT * FROM public.remote_agent_workflow_events
        WHERE workflow_run_id = $1 AND event_type IN ${sqlList(STEP_EVENT_TYPES)}
-       ORDER BY created_at, coalesce(event_order, 0), id`,
+       ORDER BY ${eventKey('public.remote_agent_workflow_events')}`,
     [runId],
   );
   const busy = await tx.query(
@@ -181,12 +185,12 @@ const LOST_STEP_WRITE = `
        OR (v.event_type <> 'node_started' AND NOT EXISTS (
              SELECT 1 FROM mc.lap_step_attempts a
               WHERE a.run_id = v.workflow_run_id AND a.step_id = v.step_name AND a.event_id = v.id))
-       OR (s.status <> substring(v.event_type FROM 6) AND NOT EXISTS (
+       OR (s.status <> CASE WHEN v.event_type = 'node_started' THEN 'running'
+                            ELSE substring(v.event_type FROM 6) END AND NOT EXISTS (
              SELECT 1 FROM public.remote_agent_workflow_events n
               WHERE n.workflow_run_id = v.workflow_run_id AND n.step_name = v.step_name
                 AND n.event_type IN ${sqlList(STEP_EVENT_TYPES)}
-                AND (n.created_at, coalesce(n.event_order, 0), n.id)
-                  > (v.created_at, coalesce(v.event_order, 0), v.id))))`;
+                AND (${eventKey('n')}) > (${eventKey('v')}))))`;
 
 type Reconciled = {
   repaired: number;
