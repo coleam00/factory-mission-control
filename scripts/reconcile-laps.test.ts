@@ -560,6 +560,28 @@ test('a lost restart over a running step restores its start, once (#343)', async
   expect(stepReplays()).toBe(0);
 });
 
+test('a lost restart without a startedAt over a running step clears its start, once (#343)', async () => {
+  const runId = await archonRun('running');
+  await archonEvent(runId, 1, 'pick', 'node_started');
+  const restart = await archonEvent(runId, 2, 'pick', 'node_started', {
+    ...eventData('pick', 'node_started', NOW),
+    timing: {},
+  });
+  await recordLostStepWrite(runId, restart);
+  const projected = await snapshot(db);
+  await rows(`UPDATE mc.lap_steps SET started_at = $2 WHERE run_id = $1 AND step_id = 'pick'`, [
+    runId,
+    NOW.toISOString(),
+  ]);
+
+  expect((await run([])).out).toEqual(['reconcile: 1 run(s) repaired']);
+  expect(await snapshot(db)).toEqual(projected);
+
+  sql = [];
+  expect((await run([])).out).toEqual(['reconcile: 0 run(s) repaired']);
+  expect(stepReplays()).toBe(0);
+});
+
 test('a lost restart whose startedAt is not a timestamp is never replayed, nor does it throw (#343)', async () => {
   await lostRestart('soon');
 

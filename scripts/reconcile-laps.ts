@@ -180,9 +180,10 @@ const LOST_STEP_WRITE = `
   SELECT 1 FROM mc.projection_errors e
     JOIN public.remote_agent_workflow_events v ON v.id = e.event_id
     LEFT JOIN mc.lap_steps s ON s.run_id = v.workflow_run_id AND s.step_id = v.step_name
-    -- A startedAt that is not a timestamp is never applied, and must not throw here, where a
+    -- A startedAt that is not a timestamp is never applied, while an absent one is applied as NULL;
+    -- the cast must not throw here, where a
     -- failed cast aborts the whole candidate read.
-    CROSS JOIN LATERAL (SELECT CASE
+    CROSS JOIN LATERAL (SELECT (v.data -> 'timing' ->> 'startedAt') IS NULL AS absent, CASE
         WHEN pg_input_is_valid(v.data -> 'timing' ->> 'startedAt', 'timestamptz')
         THEN (v.data -> 'timing' ->> 'startedAt')::timestamptz END AS ts) t
    WHERE e.run_id = r.id AND e.source NOT IN ${REPLAY_SOURCES} AND e.sqlstate = '55P03'
@@ -194,7 +195,7 @@ const LOST_STEP_WRITE = `
        OR (CASE WHEN v.event_type = 'node_started'
                 -- 0015:116 applies a restart over a running step, or over one completed before
                 -- it started
-                THEN CASE WHEN s.status = 'running' THEN t.ts IS NOT NULL AND s.started_at IS DISTINCT FROM t.ts
+                THEN CASE WHEN s.status = 'running' THEN (t.absent OR t.ts IS NOT NULL) AND s.started_at IS DISTINCT FROM t.ts
                           ELSE s.completed_at < t.ts END
                 ELSE s.status <> substring(v.event_type FROM 6) END
            AND NOT EXISTS (
