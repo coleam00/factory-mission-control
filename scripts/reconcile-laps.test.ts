@@ -431,7 +431,7 @@ test('a running lap whose attempt write lost a locked mc.lap_step_attempts gets 
   expect(await snapshot(db)).toEqual(projected);
 });
 
-test('a running lap with no recorded projection error is not replayed, even if its rows differ (#343)', async () => {
+test('a running lap with no recorded lost write is not replayed, even if its rows differ (#343)', async () => {
   const { runId } = await runningLap();
   await rows(`DELETE FROM mc.lap_steps WHERE run_id = $1 AND step_id = 'check-app'`, [runId]);
   const before = await snapshot(db);
@@ -439,6 +439,50 @@ test('a running lap with no recorded projection error is not replayed, even if i
   const { out } = await run([]);
   expect(out).toEqual(['reconcile: 0 run(s) repaired']);
   expect(await snapshot(db)).toEqual(before);
+});
+
+/** Counts, in a scratch table, each statement that deletes from mc.lap_steps, replays included. */
+async function countStepDeletes(): Promise<() => Promise<number>> {
+  await rows('CREATE TABLE mc.step_deletes (n int)', []);
+  await rows(
+    `CREATE FUNCTION mc.count_step_delete() RETURNS trigger LANGUAGE plpgsql AS $$
+     BEGIN INSERT INTO mc.step_deletes VALUES (1); RETURN NULL; END $$`,
+    [],
+  );
+  await rows(
+    `CREATE TRIGGER count_step_delete AFTER DELETE ON mc.lap_steps
+       FOR EACH STATEMENT EXECUTE FUNCTION mc.count_step_delete()`,
+    [],
+  );
+  return async () =>
+    Number((await rows('SELECT count(*)::int AS n FROM mc.step_deletes', []))[0]?.n);
+}
+
+test('a repaired running lap is not replayed again, though its error row stays (#343)', async () => {
+  const { runId, checkStart } = await runningLap();
+  await recordLostStepWrite(runId, checkStart);
+  await rows(`DELETE FROM mc.lap_steps WHERE run_id = $1 AND step_id = 'check-app'`, [runId]);
+  const deletes = await countStepDeletes();
+
+  expect((await run([])).out).toEqual(['reconcile: 1 run(s) repaired']);
+  const afterRepair = await deletes();
+  expect(afterRepair).toBeGreaterThan(0);
+
+  expect((await run([])).out).toEqual(['reconcile: 0 run(s) repaired']);
+  expect(await deletes()).toBe(afterRepair);
+});
+
+test('a running lap whose only error is a string step output is not replayed (#343)', async () => {
+  const { runId, checkStart } = await runningLap();
+  await rows(
+    `INSERT INTO mc.projection_errors (source, run_id, event_id, sqlstate, message)
+     VALUES ('mc_project_step_event', $1, $2, '22000', 'structured_output is a jsonb string, not an object')`,
+    [runId, checkStart],
+  );
+  const deletes = await countStepDeletes();
+
+  expect((await run([])).out).toEqual(['reconcile: 0 run(s) repaired']);
+  expect(await deletes()).toBe(0);
 });
 
 /** A paused run whose lap a dropped projection left `running`. */
