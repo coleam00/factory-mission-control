@@ -441,7 +441,7 @@ test('a running lap with no recorded lost write is not replayed, even if its row
   expect(await snapshot(db)).toEqual(before);
 });
 
-/** How many statements of the last `run` deleted a run's lap steps: the replay's first write. */
+/** How many logged statements since `sql` was last reset (by `beforeEach`, or by hand with `sql = []`) deleted a run's lap steps: the replay's first write. */
 const stepReplays = () => sql.filter((text) => text.includes('DELETE FROM mc.lap_steps')).length;
 
 test('a repaired running lap is not replayed again, though its error row stays (#343)', async () => {
