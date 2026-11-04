@@ -9,6 +9,7 @@ import {
   type Measured,
   MEASURES,
   meaningful,
+  NOT_YET_MEANINGFUL,
   newestVersionWithLaps,
   type Scorecard as Card,
   isVersionOf,
@@ -18,7 +19,7 @@ import {
   versionLaps,
   versionPin,
 } from '../lib/scorecard';
-import { NOT_RECORDED } from '../lib/version-strip';
+import { NOT_RECORDED, notVersionSentence, shortDigest } from '../lib/version-strip';
 import { LivePanel } from '../live/LivePanel';
 import { EmptyState } from './EmptyState';
 
@@ -68,8 +69,6 @@ interface Version {
   pin: string | null;
   firstRunAt: Date | null;
 }
-
-const short = (digest: string): string => digest.slice(0, 'sha256:'.length + 12);
 
 /**
  * One factory's scorecard for version `a`, and `b` beside it when given, by pack digest. Opened by
@@ -160,7 +159,7 @@ export function ScorecardView({
         <p data-default-version={picked} className="mb-3 text-sm text-text-secondary">
           Showing the newest version with laps,{' '}
           <span className="font-mono tabular-nums text-text-primary">
-            {pin === null ? short(picked) : pin.slice(0, 8)}
+            {pin === null ? shortDigest(picked) : pin.slice(0, 8)}
           </span>
           . {versionsLink} to pick or compare another.
         </p>
@@ -178,17 +177,7 @@ export function ScorecardView({
     (digest) => !isVersionOf(rows, digest),
   );
   if (unknown.length > 0) {
-    const [first, second] = unknown.map(short);
-    return (
-      <EmptyState
-        title={
-          second === undefined
-            ? `${first} is not a version of this factory.`
-            : `${first} and ${second} are not versions of this factory.`
-        }
-        action={versionsLink}
-      />
-    );
+    return <EmptyState title={notVersionSentence(unknown)[0]} action={versionsLink} />;
   }
   const versions = sides.map(([side, digest]): Version => {
     // A version no lap ran stays on screen: each measure rests on 0 laps, and every difference
@@ -242,7 +231,7 @@ function VersionHeader({ version }: { version: Version }): ReactElement {
       <div className={`${MONO} text-[15px] font-semibold text-text-primary`}>
         {version.pin === null ? NOT_RECORDED : version.pin.slice(0, 8)}
       </div>
-      <div className={`${MONO} break-all text-text-secondary`}>{short(version.digest)}</div>
+      <div className={`${MONO} break-all text-text-secondary`}>{shortDigest(version.digest)}</div>
       {first ? (
         <div className={`${MONO} text-text-secondary`}>
           first run {first.toISOString().slice(0, 10)}
@@ -423,7 +412,7 @@ function Difference({
       </div>
       {isMeaningful ? null : (
         <div className="mt-1 font-mono text-[11px] font-semibold uppercase tracking-[0.05em] text-text-secondary">
-          not yet meaningful
+          {NOT_YET_MEANINGFUL}
         </div>
       )}
     </div>

@@ -11,6 +11,7 @@ import {
   type Kind,
   type KindDiff,
 } from '../lib/arch-diff';
+import { notVersionSentence, shortDigest } from '../lib/version-strip';
 import { LivePanel } from '../live/LivePanel';
 import { EmptyState } from './EmptyState';
 
@@ -25,8 +26,6 @@ const TITLES: Record<Kind, string> = {
 };
 const CHANGES = ['added', 'removed', 'changed'] as const;
 const MARKS: Record<(typeof CHANGES)[number], string> = { added: '+', removed: '−', changed: '~' };
-
-const short = (digest: string) => digest.slice(0, 'sha256:'.length + 12);
 
 /** What changed in one factory's architecture from version `a` to version `b`, by digest. */
 export function ArchDiff({
@@ -78,7 +77,8 @@ export function ArchDiff({
 function Pair({ a, b }: { a: string; b: string }): ReactElement {
   return (
     <p className={`${MONO} mb-4 break-all text-text-secondary`}>
-      <span data-version="a">{short(a)}</span> → <span data-version="b">{short(b)}</span>
+      <span data-version="a">{shortDigest(a)}</span> →{' '}
+      <span data-version="b">{shortDigest(b)}</span>
     </p>
   );
 }
@@ -115,22 +115,12 @@ export function DiffView({
   versions?: ReactNode;
 }): ReactElement {
   if (result.status === 'not-found') {
-    const [first, second] = result.digests.map(short);
-    return (
-      <EmptyState
-        title={
-          second === undefined
-            ? `${first} is not a version of this factory.`
-            : `${first} and ${second} are not versions of this factory.`
-        }
-        action={versions}
-      />
-    );
+    return <EmptyState title={notVersionSentence(result.digests)[0]} action={versions} />;
   }
   if (result.status === 'unrecorded') {
     return (
       <EmptyState
-        title={`No architecture is recorded for ${result.digests.map(short).join(' or ')}.`}
+        title={`No architecture is recorded for ${result.digests.map(shortDigest).join(' or ')}.`}
       />
     );
   }

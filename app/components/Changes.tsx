@@ -18,6 +18,9 @@ import {
   compareLinks,
   NOT_RECORDED,
   SHARED_PROCESS,
+  digestSentence,
+  notVersionSentence,
+  shortDigest,
   type VersionStripRow,
 } from '../lib/version-strip';
 import { LivePanel, type PanelState } from '../live/LivePanel';
@@ -25,7 +28,6 @@ import { unmatchedText } from './DecisionsLedger';
 import { EmptyState } from './EmptyState';
 import { Lift, type Lifted } from './OneLap';
 import { ScorecardView } from './Scorecard';
-import { shortDigest } from './VersionStrip';
 
 const LABEL = 'font-mono text-[10px] font-semibold uppercase tracking-[0.04em] text-text-secondary';
 const MONO = 'font-mono text-[12px] tabular-nums';
@@ -404,13 +406,6 @@ function DecisionBody({ decision, note }: { decision: TimelineRow; note?: string
   );
 }
 
-/** "<digest> <one>." for one digest, "<digest> and <digest> <many>." for two; nothing for none. */
-function sentence(digests: readonly string[], one: string, many: string): string[] {
-  const [first, second] = digests.map(shortDigest);
-  if (first === undefined) return [];
-  return [second === undefined ? `${first} ${one}.` : `${first} and ${second} ${many}.`];
-}
-
 /** The scorecard of the pair, under the timeline, with the way to the workflows that changed. */
 export function Comparison({
   factory,
@@ -435,12 +430,12 @@ export function Comparison({
   if (rows === undefined)
     return <p className="text-sm text-text-secondary">Loading the scorecard.</p>;
   const reasons = [
-    ...sentence(
-      unavailable.absent,
-      'is not a version of this factory',
-      'are not versions of this factory',
+    ...notVersionSentence(unavailable.absent),
+    ...digestSentence(
+      unavailable.unplaced,
+      'is not on the timeline yet',
+      'are not on the timeline yet',
     ),
-    ...sentence(unavailable.unplaced, 'is not on the timeline yet', 'are not on the timeline yet'),
   ];
   const notice =
     reasons.length === 0 ? null : (

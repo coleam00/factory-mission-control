@@ -77,3 +77,16 @@ export function compareLinks(
   const base = `/f/${encodeURIComponent(factory)}`;
   return { scorecard: `${base}/scorecard${query}`, diff: `${base}/diff${query}` };
 }
+
+export const shortDigest = (digest: string): string => digest.slice(0, 'sha256:'.length + 12);
+
+/** "<digest> <one>." for one digest, "<digest> and <digest> <many>." for two; nothing for none. */
+export function digestSentence(digests: readonly string[], one: string, many: string): string[] {
+  const [first, second] = digests.map(shortDigest);
+  if (first === undefined) return [];
+  return [second === undefined ? `${first} ${one}.` : `${first} and ${second} ${many}.`];
+}
+
+/** The notice for digests an address names that this factory never ran. */
+export const notVersionSentence = (digests: readonly string[]): string[] =>
+  digestSentence(digests, 'is not a version of this factory', 'are not versions of this factory');

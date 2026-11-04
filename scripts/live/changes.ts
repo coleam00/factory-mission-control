@@ -1,6 +1,7 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { ChangeItem } from '../../app/lib/changes';
+import { shortDigest } from '../../app/lib/version-strip';
 import { openPage, type Page } from '../lib/cdp';
 import type { Deps } from '../lib/cli';
 import {
@@ -225,7 +226,7 @@ export function changesPhase(ctx: LiveContext): LivePhase {
         failures.push(
           `an address naming an absent version shows no missing-version notice: ${notice}`,
         );
-      } else if (notice.includes(v2.slice(0, 19))) {
+      } else if (notice.includes(shortDigest(v2))) {
         failures.push(`the missing-version notice names a real version: ${notice}`);
       }
     },
