@@ -193,7 +193,10 @@ function tables(version: PackVersion): Table[] {
     {
       name: 'mc.arch_texts',
       key: ['path'],
-      rows: archRows(version).arch_texts.map((t) => ({ path: String(t.path), text: String(t.text) })),
+      rows: archRows(version).arch_texts.map((t) => ({
+        path: String(t.path),
+        text: String(t.text),
+      })),
     },
     {
       name: 'mc.arch_scripts',
