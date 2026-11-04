@@ -4,13 +4,17 @@ import * as rewind from '../lib/rewind';
 import {
   backOffSeals,
   newSealBackoff,
+  panelSealer,
   panelState,
+  RENEW_EARLY_MS,
   recovering,
+  renewSeal,
   resetSealBackoff,
   SEAL_RETRY_CEILING_MS,
   SEAL_RETRY_FIRST_MS,
   SEAL_TIMEOUT_MS,
   seal,
+  tabSealing,
 } from './LivePanel';
 
 test('a panel is loading until rows arrive', () => {
@@ -297,7 +301,7 @@ async function renewWhileStale(seconds: number): Promise<number[]> {
   jest.useFakeTimers();
   try {
     const start = Date.now();
-    const renewAt = start + 50_000;
+    const renewAt = start + 60_000 - RENEW_EARLY_MS;
     const header = Buffer.from('{"alg":"dir","enc":"A256GCM","v":1}').toString('base64url');
     const live = {
       ...sealed,
@@ -407,9 +411,10 @@ async function pageThroughOutage(panels: number, outage: number, seconds: number
     };
     const sent: number[] = [];
     const renewed = new Set<number>();
-    const tab = newSealBackoff();
+    Object.assign(tabSealing, newSealBackoff());
     const controllers = Array.from({ length: panels }, (_, panel) => {
-      const request = backOffSeals(
+      // As LivePanel builds and renews its seals, in the tab's real sealing.
+      const request = panelSealer(
         async () => {
           sent.push(Date.now() - renewAt);
           if (latency > 0) await new Promise((resolve) => setTimeout(resolve, latency));
@@ -417,10 +422,9 @@ async function pageThroughOutage(panels: number, outage: number, seconds: number
           return { ...live, expiresAt: Date.now() + 60_000 };
         },
         new AbortController().signal,
-        { tab },
+        newSealBackoff(),
       );
-      // As the panel renews: one at a time in the tab.
-      const refreshQuery = () => request(true);
+      const refreshQuery = () => renewSeal(request);
       return new QueryRefreshController({
         query: live,
         refreshQuery,

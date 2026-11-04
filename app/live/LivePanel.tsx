@@ -89,7 +89,7 @@ export const SEAL_RETRY_CEILING_MS = 16_000;
 /** How long a panel must stay live for its seal backoff to reset: past the longest wait. */
 export const LIVE_STABLE_MS = SEAL_RETRY_CEILING_MS;
 /** The library renews a seal this long before it expires; one with less left than this is renewed at once. */
-const RENEW_EARLY_MS = 10_000;
+export const RENEW_EARLY_MS = 10_000;
 
 /**
  * Where one seal's requests stand: the wait the next one owes, counted from when the last was
@@ -234,6 +234,22 @@ export function backOffSeals<Row>(
   };
 }
 
+/** How a panel asks for its seals: backed off on its own `backoff` and in the tab's sealing. */
+export function panelSealer<Row>(
+  request: () => Promise<SealedLiveQuery<Row>>,
+  signal: AbortSignal,
+  backoff: SealBackoff,
+): (renewal?: boolean) => Promise<SealedLiveQuery<Row>> {
+  return backOffSeals(request, signal, { backoff, tab: tabSealing });
+}
+
+/** A renewal is asked for in the tab's turn, one at a time, not beside the other panels'. */
+export function renewSeal<Row>(
+  requestSeal: (renewal?: boolean) => Promise<SealedLiveQuery<Row>>,
+): Promise<SealedLiveQuery<Row>> {
+  return requestSeal(true);
+}
+
 type Render<Row> = (rows: readonly Row[] | undefined, state: PanelState) => ReactNode;
 
 interface LivePanelProps<Row> {
@@ -307,10 +323,7 @@ export function LivePanel<Row>({
     let observation: QueryObservation | undefined;
     const stopped = new AbortController();
     const backoff = sealBackoff(asked);
-    const requestSeal = backOffSeals(() => seal<Row>(query, body, branch), stopped.signal, {
-      backoff,
-      tab: tabSealing,
-    });
+    const requestSeal = panelSealer(() => seal<Row>(query, body, branch), stopped.signal, backoff);
     markOnce(`live:${query}:requested`);
     const ask = (): void => {
       requestSeal().then(
@@ -394,7 +407,7 @@ function Subscribed<Row>({
   render: Render<Row>;
 }): ReactElement {
   const refreshQuery = useCallback(async () => {
-    const renewed = await requestSeal(true);
+    const renewed = await renewSeal(requestSeal);
     expectSubscribe(renewed.capability, observation);
     performance.mark(`live:${query}:renewed`);
     return renewed;
