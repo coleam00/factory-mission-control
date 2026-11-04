@@ -189,31 +189,24 @@ export function stepHref(workflow: string, path: string, at?: string | null): st
   return at ? `${href}?at=${encodeURIComponent(at)}` : href;
 }
 
-export interface Nesting {
-  /** Every node beneath the step, by its path beneath it, in declaration order. */
-  inside: { label: string; depth: number; kind: string; href: string }[];
-}
-
 /** The nodes beneath `path`, each opening its place in `workflow` at the version pinned `at`. */
 export function nesting(
   rows: readonly NestingRow[],
   workflow: string,
   path: string,
   at?: string | null,
-): Nesting {
-  return {
-    inside: [...rows]
-      .sort((a, b) => a.position - b.position)
-      .map((row) => {
-        const label = row.path.slice(path.length + 1);
-        return {
-          label,
-          depth: label.split('/').length - 1,
-          kind: row.kind,
-          href: stepHref(workflow, row.path, at),
-        };
-      }),
-  };
+): { label: string; depth: number; kind: string; href: string }[] {
+  return [...rows]
+    .sort((x, y) => x.position - y.position)
+    .map((row) => {
+      const label = row.path.slice(path.length + 1);
+      return {
+        label,
+        depth: label.split('/').length - 1,
+        kind: row.kind,
+        href: stepHref(workflow, row.path, at),
+      };
+    });
 }
 
 /**

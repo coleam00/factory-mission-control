@@ -136,7 +136,7 @@ function Nesting({ step, workflow, path, factory, at }: PanelProps): ReactElemen
             </div>
           );
         if (rows === undefined || rows.length === 0) return null;
-        const { inside } = nesting(rows, workflow, path, at);
+        const inside = nesting(rows, workflow, path, at);
         return (
           <div className={CARD}>
             <h2 className={LABEL}>Steps inside</h2>

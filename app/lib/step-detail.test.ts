@@ -149,7 +149,7 @@ test("a step's link keeps the version it is opened at, and has none for the curr
 });
 
 test("nesting's links open each node's place in the address's workflow at the version", () => {
-  const { inside } = nesting(
+  const inside = nesting(
     [nested('ship/deliver/rounds/implement', 2)],
     'archon-loop',
     'ship/deliver',
@@ -188,7 +188,7 @@ test('a sentence names the version the step is shown at', () => {
 });
 
 test('repeated occurrences beneath a step are two entries, by their path beneath it, in order', () => {
-  const { inside } = nesting(
+  const inside = nesting(
     [
       nested('deliver/rounds/reshape/implement', 7),
       nested('deliver/rounds/implement', 2),
