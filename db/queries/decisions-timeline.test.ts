@@ -217,7 +217,9 @@ describe('decisions-timeline and improvements-ledger on the seed', () => {
         expect(versions.map((v) => v.pin_sha)).toEqual([sha('b'), sha('d')]);
         const ledger = await tx.query(named('improvements-ledger'), ['mission-control']);
         const laps = (pin: string) => ledger.find((r) => r.pin_sha === pin)?.laps;
-        expect([laps(sha('a')), laps(sha('b')), laps(sha('c')), laps(sha('d'))]).toEqual([0, 1, 0, 1]);
+        expect([laps(sha('a')), laps(sha('b')), laps(sha('c')), laps(sha('d'))]).toEqual([
+          0, 1, 0, 1,
+        ]);
         throw rollback;
       })
       .catch((error) => {
