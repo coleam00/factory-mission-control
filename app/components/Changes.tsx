@@ -21,6 +21,7 @@ import {
   type VersionStripRow,
 } from '../lib/version-strip';
 import { LivePanel, type PanelState } from '../live/LivePanel';
+import { unmatchedText } from './DecisionsLedger';
 import { EmptyState } from './EmptyState';
 import { Lift, type Lifted } from './OneLap';
 import { ScorecardView } from './Scorecard';
@@ -48,9 +49,6 @@ const PIP_COLOR: Record<Chip | 'none', string> = {
   testing: 'var(--accent-bright)',
   none: 'var(--border-bright)',
 };
-
-const unmatchedText = (unmatched: 'ambiguous' | 'none'): string =>
-  unmatched === 'ambiguous' ? 'ambiguous: several pins by that prefix' : 'no pin by that prefix';
 
 function VerdictChip({ kind, text }: { kind: Chip; text: string }): ReactElement {
   const { fg, bg } = CHIP_COLOR[kind];
