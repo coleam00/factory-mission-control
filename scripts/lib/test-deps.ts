@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createGitHub, type GetFetch } from '../../function/github';
 import { CHECK_ENV_FILE, type Env } from '../../server/check-env';
+import type { RunStatus } from './archon-run';
 import type { Deps, NeonctlResult } from './cli';
 import type { Db, Row } from './db';
 import type { Branch, NeonApi } from './neon';
@@ -41,6 +42,8 @@ export type Recorder = {
   params: (unknown[] | undefined)[];
   /** Every neonctl argv, in order. */
   neonctlCalls: string[][];
+  /** Every run `fixture:drop` asked Archon about, in order. */
+  runStatusCalls: string[];
   out: string[];
   err: string[];
 };
@@ -77,6 +80,8 @@ export function recordingDeps(options: {
   fetch?: GetFetch;
   /** Answers `deps.neonctl`; without it every call succeeds as a deploy reporting `FUNCTION_URL`. */
   neonctl?: (args: string[]) => NeonctlResult;
+  /** Answers `deps.runStatus`; without it Archon cannot be asked, so no run is ever judged ended. */
+  runStatus?: (run: string) => RunStatus;
 }): Recorder {
   const recorder: Omit<Recorder, 'deps'> = {
     neonCalls: [],
@@ -87,6 +92,7 @@ export function recordingDeps(options: {
     requests: [],
     params: [],
     neonctlCalls: [],
+    runStatusCalls: [],
     out: [],
     err: [],
   };
@@ -202,6 +208,10 @@ export function recordingDeps(options: {
       if (options.neonctl) return options.neonctl(args);
       const report = { id: 1, status: 'completed', invocation_url: FUNCTION_URL };
       return { code: 0, stdout: `${JSON.stringify(report)}\n`, stderr: '' };
+    },
+    runStatus: async (run) => {
+      recorder.runStatusCalls.push(run);
+      return options.runStatus?.(run) ?? { state: 'unknown', reason: 'fake Archon: no answer' };
     },
   };
   return { ...recorder, deps };

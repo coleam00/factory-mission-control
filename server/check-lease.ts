@@ -2,6 +2,7 @@ import {
   existsSync,
   mkdirSync,
   readdirSync,
+  readFileSync,
   rmSync,
   statSync,
   utimesSync,
@@ -11,7 +12,10 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { isCheckBranch } from '../scripts/lib/guard';
 
-/** How long after its last refresh a lease keeps an old check branch from another checkout's `fixture:drop`. */
+/**
+ * How long after its last refresh a lease keeps an old check branch from another checkout's
+ * `fixture:drop` without asking whose run it is.
+ */
 export const LEASE_MS = 60 * 60 * 1000;
 
 /** How often `serve` refreshes its branch's lease: well inside `LEASE_MS`. */
@@ -22,19 +26,22 @@ export function defaultLeaseDir(): string {
   return join(homedir(), '.mc-check-leases');
 }
 
-/** A checkout's claim that it still uses `branch`, as of `refreshed_at`: the lease file's mtime. */
-export type Lease = { branch: string; refreshed_at: string };
+/**
+ * A checkout's claim that it still uses `branch`, as of `refreshed_at`: the lease file's mtime.
+ * `run` is the Archon run the branch was made in, the file's content, when there was one.
+ */
+export type Lease = { branch: string; refreshed_at: string; run?: string };
 
 function leaseFile(dir: string, branch: string): string {
   return join(dir, `${branch}.lease`);
 }
 
-/** Records `branch` as in use at `at`; false when it is not a check branch or the write failed. */
-export function writeLease(dir: string, branch: string, at: Date): boolean {
+/** Records `branch` as in use at `at`, made in `run` when given; false when it is not a check branch or the write failed. */
+export function writeLease(dir: string, branch: string, at: Date, run?: string): boolean {
   if (!isCheckBranch(branch)) return false;
   try {
     mkdirSync(dir, { recursive: true });
-    writeFileSync(leaseFile(dir, branch), '');
+    writeFileSync(leaseFile(dir, branch), run?.trim() ?? '');
     utimesSync(leaseFile(dir, branch), at, at);
     return true;
   } catch {
@@ -43,13 +50,20 @@ export function writeLease(dir: string, branch: string, at: Date): boolean {
 }
 
 /**
- * Moves an existing lease to `at`; never creates one, so only `fixture:branch` claims a branch.
- * False only when a lease exists and could not be moved.
+ * Moves an existing lease to `at`, keeping its run; never creates one, so only `fixture:branch`
+ * claims a branch. False only when a lease exists and could not be moved.
  */
 export function refreshLease(dir: string, branch: string, at: Date): boolean {
   const file = leaseFile(dir, branch);
   const lease = existsSync(file) && statSync(file, { throwIfNoEntry: false });
-  return !lease || (lease.isFile() && writeLease(dir, branch, at));
+  if (!lease) return true;
+  if (!lease.isFile()) return false;
+  try {
+    utimesSync(file, at, at);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -86,7 +100,9 @@ export function readLeases(dir: string): Lease[] {
       const branch = name.slice(0, -'.lease'.length);
       if (!isCheckBranch(branch)) continue;
       const lease = statSync(join(dir, name), { throwIfNoEntry: false });
-      if (lease?.isFile()) leases.push({ branch, refreshed_at: lease.mtime.toISOString() });
+      if (!lease?.isFile()) continue;
+      const run = readFileSync(join(dir, name), 'utf-8').trim();
+      leases.push({ branch, refreshed_at: lease.mtime.toISOString(), ...(run && { run }) });
     }
     return leases;
   } catch (error) {

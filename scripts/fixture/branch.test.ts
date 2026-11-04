@@ -47,6 +47,16 @@ test('forks check-<8 hex> from fixture, seeds it and writes the env file', async
   ]);
 });
 
+test('the lease names the Archon run the branch was made in', async () => {
+  const run = recordingDeps({
+    repoRoot: repo(),
+    branches: BRANCHES,
+    env: { WORKFLOW_ID: 'run-1f15f9a4' },
+  });
+  expect(await main([], run.deps)).toBe(0);
+  expect(readLeases(run.deps.leaseDir).map((lease) => lease.run)).toEqual(['run-1f15f9a4']);
+});
+
 test('warns, and still succeeds, when the lease cannot be written', async () => {
   const repoRoot = repo();
   const leaseDir = join(repoRoot, 'not-a-directory');

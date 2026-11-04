@@ -24,6 +24,7 @@ function leaseDir(): string {
 }
 
 const AT = new Date('2026-10-24T12:00:00Z');
+const RUN = '0f0a3290-aaaa-bbbb-cccc-000000000001';
 
 test('a missing directory holds no leases', () => {
   expect(readLeases(join(leaseDir(), 'missing'))).toEqual([]);
@@ -35,6 +36,16 @@ test('writes, reads and removes a lease, creating the directory', () => {
   expect(readLeases(dir)).toEqual([{ branch: 'check-abc', refreshed_at: AT.toISOString() }]);
   removeLease(dir, 'check-abc');
   expect(readLeases(dir)).toEqual([]);
+});
+
+test('a lease names the run it was written for', () => {
+  const dir = leaseDir();
+  writeLease(dir, 'check-run', AT, ` ${RUN}\n`);
+  writeLease(dir, 'check-none', AT, '  ');
+  expect(readLeases(dir).sort((a, b) => a.branch.localeCompare(b.branch))).toEqual([
+    { branch: 'check-none', refreshed_at: AT.toISOString() },
+    { branch: 'check-run', refreshed_at: AT.toISOString(), run: RUN },
+  ]);
 });
 
 test.each(['main', 'fixture', 'rewind-x'])('refuses a lease on %s', (name) => {
@@ -64,6 +75,15 @@ test('a refresh moves an existing lease and never creates one', () => {
   writeLease(dir, 'check-abc', new Date(AT.getTime() - 3_600_000));
   refreshLease(dir, 'check-abc', AT);
   expect(readLeases(dir)).toEqual([{ branch: 'check-abc', refreshed_at: AT.toISOString() }]);
+});
+
+test('a refresh keeps the run its lease names', () => {
+  const dir = leaseDir();
+  writeLease(dir, 'check-abc', new Date(AT.getTime() - 5 * 3_600_000), RUN);
+  expect(refreshLease(dir, 'check-abc', AT)).toBe(true);
+  expect(readLeases(dir)).toEqual([
+    { branch: 'check-abc', refreshed_at: AT.toISOString(), run: RUN },
+  ]);
 });
 
 test('a refresh that cannot move an existing lease says so', () => {
