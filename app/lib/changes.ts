@@ -89,8 +89,9 @@ export function changeTimeline(
   return items;
 }
 
-/** The chip text of a version being tested: laps so far of the laps its Measure wants. */
+/** The chip text of a version being tested: laps so far of the laps its Measure wants; no count before a lap has run. */
 export function testingChip(t: TestingEntry): string {
+  if (t.laps === 0) return 'testing';
   const wanted = lapsWanted(t.measure);
   return wanted === null ? `testing, ${t.laps} laps` : `testing, ${t.laps} of ${wanted} laps`;
 }

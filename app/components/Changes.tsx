@@ -145,10 +145,7 @@ export function Changes({
         {(rows, state) => (
           <>
             <Lift rows={rows} state={state} onChange={setScorecard} />
-            {items === undefined ||
-            failed ||
-            factory === undefined ||
-            strip.rows?.length === 0 ? null : (
+            {items === undefined || failed || factory === undefined ? null : (
               <Comparison
                 factory={factory}
                 rows={rows}
@@ -424,7 +421,16 @@ export function Comparison({
   }
   if (rows === undefined)
     return <p className="text-sm text-text-secondary">Loading the scorecard.</p>;
-  if (pair.a === undefined) return null;
+  if (pair.a === undefined) {
+    return (
+      <>
+        <h2 className={`${LABEL} mb-3`}>Comparison</h2>
+        <p className="text-sm text-text-secondary">
+          No version has run yet, so there is nothing to compare.
+        </p>
+      </>
+    );
+  }
   const pin = (digest: string) => versionPin(rows, digest).pin?.slice(0, 8) ?? short(digest);
   return (
     <>

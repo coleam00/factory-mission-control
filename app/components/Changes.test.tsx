@@ -162,6 +162,29 @@ test('with one selectable version the comparison says there is nothing to compar
   expect(panel(2)).toContain('Select another version to compare.');
 });
 
+test('with zero selectable versions the comparison still renders and says there is nothing to compare', () => {
+  const html = renderToStaticMarkup(
+    <RouterProvider
+      router={createMemoryRouter([
+        {
+          path: '/',
+          element: (
+            <Comparison
+              factory="mission-control"
+              rows={[]}
+              state="ready"
+              pair={{ isDefault: true }}
+              selectable={0}
+            />
+          ),
+        },
+      ])}
+    />,
+  );
+  expect(html).toContain('Comparison');
+  expect(html).toContain('No version has run yet, so there is nothing to compare.');
+});
+
 test('every version row but the oldest offers comparing with its previous version', () => {
   const html = render(items, {});
   expect(li(html, `data-digest="${V2}"`)).toContain(`data-compare-previous="${V1}"`);

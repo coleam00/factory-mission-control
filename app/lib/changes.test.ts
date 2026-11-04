@@ -202,6 +202,8 @@ test("the testing chip states the Measure's lap count, even once laps pass it", 
   expect(testingChip(testing(3, '10 laps'))).toBe('testing, 3 of 10 laps');
   expect(testingChip(testing(12, '10 laps'))).toBe('testing, 12 of 10 laps');
   expect(testingChip(testing(4, 'merge rate improves'))).toBe('testing, 4 laps');
+  expect(testingChip(testing(0, '10 laps'))).toBe('testing');
+  expect(testingChip(testing(0, 'merge rate improves'))).toBe('testing');
 });
 
 test('the previous version is the next older row, none for the oldest or an unknown digest', () => {
