@@ -209,6 +209,11 @@ describe('decisions-timeline and improvements-ledger on the seed', () => {
           ('00000000-0000-0000-0000-0000000000e1', 'mission-control', 'archon-manager', 'completed', 'dX', '2030-01-01T12:00:00Z'),
           ('00000000-0000-0000-0000-0000000000e2', 'mission-control', 'archon-loop', 'completed', 'dX', '2030-01-02T12:00:00Z'),
           ('00000000-0000-0000-0000-0000000000e3', 'mission-control', 'archon-loop', 'completed', 'dY', '2030-02-02T00:00:00Z')`);
+        await tx.query(`INSERT INTO mc.factories (name, repository, codebase, console)
+          VALUES ('north-star', 'coleam00/north-star', 'coleam00/north-star', 'http://localhost:3090')`);
+        await tx.query(`INSERT INTO mc.laps (run_id, factory, workflow_name, status, digest, started_at)
+          VALUES ('00000000-0000-0000-0000-0000000000e4', 'north-star', 'archon-loop', 'completed', 'dX', '2030-02-01T12:00:00Z')`);
+        await tx.query(`SELECT mc.project_version('north-star', 'dX')`);
         await tx.query(`SELECT mc.project_version('mission-control', 'dX')`);
         await tx.query(`SELECT mc.project_version('mission-control', 'dY')`);
         const versions = await tx.query(
@@ -221,6 +226,9 @@ describe('decisions-timeline and improvements-ledger on the seed', () => {
         expect([laps(sha('a')), laps(sha('b')), laps(sha('c')), laps(sha('d'))]).toEqual([
           0, 1, 0, 1,
         ]);
+        const north = await tx.query(named('improvements-ledger'), ['north-star']);
+        expect(north.find((r) => r.pin_sha === sha('d'))?.laps).toBe(1);
+        expect(north.find((r) => r.pin_sha === sha('b'))?.laps).toBe(0);
         throw rollback;
       })
       .catch((error) => {
