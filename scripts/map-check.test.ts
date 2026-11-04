@@ -1,11 +1,11 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { FACTORY_MAP, type FactoryMap } from '../app/map/factory-map';
 import { parsePack } from '../parsers/pack';
 import { REPO_ROOT } from './lib/cli';
-import { mapCheck, NO_QUEUE_PACK, parseQueuePack, QUEUE_FAILURE } from './map-check';
+import { mapCheck, parseQueuePack } from './map-check';
 
 const PACK = join(REPO_ROOT, 'fixtures', 'pack', 'sdlc');
 const QUEUE_ROOT = join(REPO_ROOT, 'fixtures', 'pack', 'queue');
@@ -30,17 +30,9 @@ function editedPack(edit: (yaml: string) => string) {
   return parsePack(dir, TEMPLATE);
 }
 
-// Until the owner commits the snapshot (fixtures/pack is protected), the queue half is skipped, as map:check does.
-const hasQueue = existsSync(join(QUEUE_ROOT, 'sdlc'));
-const queueTest = test.skipIf(!hasQueue);
-
-/** The queue pack, parsed from the snapshot the owner commits. */
-const queue = () => (hasQueue ? parseQueuePack(QUEUE_ROOT, TEMPLATE) : NO_QUEUE_PACK);
+const queue = () => parseQueuePack(QUEUE_ROOT, TEMPLATE);
 const loop = () => parsePack(PACK, TEMPLATE);
-const check = (map: FactoryMap, pack = loop()) =>
-  mapCheck(map, { loop: pack, queue: queue() }).filter(
-    (failure) => hasQueue || !failure.startsWith(QUEUE_FAILURE),
-  );
+const check = (map: FactoryMap, pack = loop()) => mapCheck(map, { loop: pack, queue: queue() });
 
 const withCards = (cards: FactoryMap['cards']): FactoryMap => ({ ...FACTORY_MAP, cards });
 
@@ -109,46 +101,43 @@ describe('map:check', () => {
     ]);
   });
 
-  queueTest(
-    'a step two cards cover, a workflow the pack lacks and a wrong screen each fail',
-    () => {
-      const cards = FACTORY_MAP.cards.map((card) => {
-        if (card.id === 'merge') {
-          return {
-            ...card,
-            covers: [
-              {
-                pack: 'loop' as const,
-                workflow: 'archon-loop',
-                steps: ['review', 'land', 'release', 'deploy'],
-              },
-            ],
-          };
-        }
-        if (card.id === 'plan')
-          return {
-            ...card,
-            covers: [{ pack: 'loop' as const, workflow: 'archon-split', steps: ['slice'] }],
-          };
-        if (card.id === 'review') {
-          return { ...card, covers: card.covers.map(({ screens: _, ...cover }) => cover) };
-        }
-        return card;
-      });
-      expect(check(withCards(cards))).toEqual([
-        'loop pack: Plan names workflow archon-split, which the pack lacks',
-        'loop pack: Review opens archon-loop ship/deliver/rounds/review at archon-loop ship/deliver/rounds/review, not its own screen archon-deliver-block rounds/review',
-        'loop pack: Review opens archon-loop ship/deliver/rounds/rereview at archon-loop ship/deliver/rounds/rereview, not its own screen archon-deliver-block rounds/rereview',
-        'queue pack: Review opens archon-build-queue ship/deliver/rounds/review at archon-build-queue ship/deliver/rounds/review, not its own screen archon-deliver-block rounds/review',
-        'queue pack: Review opens archon-build-queue ship/deliver/rounds/rereview at archon-build-queue ship/deliver/rounds/rereview, not its own screen archon-deliver-block rounds/rereview',
-        'loop pack: archon-loop deploy is covered by Merge and Staging',
-        'loop pack: archon-loop deploy/resolve is covered by Merge and Staging',
-        'loop pack: archon-loop deploy/deploy is covered by Merge and Staging',
-        'loop pack: archon-loop deploy/health is covered by Merge and Staging',
-        'loop pack: archon-loop deploy/verify is covered by Merge and Staging',
-      ]);
-    },
-  );
+  test('a step two cards cover, a workflow the pack lacks and a wrong screen each fail', () => {
+    const cards = FACTORY_MAP.cards.map((card) => {
+      if (card.id === 'merge') {
+        return {
+          ...card,
+          covers: [
+            {
+              pack: 'loop' as const,
+              workflow: 'archon-loop',
+              steps: ['review', 'land', 'release', 'deploy'],
+            },
+          ],
+        };
+      }
+      if (card.id === 'plan')
+        return {
+          ...card,
+          covers: [{ pack: 'loop' as const, workflow: 'archon-split', steps: ['slice'] }],
+        };
+      if (card.id === 'review') {
+        return { ...card, covers: card.covers.map(({ screens: _, ...cover }) => cover) };
+      }
+      return card;
+    });
+    expect(check(withCards(cards))).toEqual([
+      'loop pack: Plan names workflow archon-split, which the pack lacks',
+      'loop pack: Review opens archon-loop ship/deliver/rounds/review at archon-loop ship/deliver/rounds/review, not its own screen archon-deliver-block rounds/review',
+      'loop pack: Review opens archon-loop ship/deliver/rounds/rereview at archon-loop ship/deliver/rounds/rereview, not its own screen archon-deliver-block rounds/rereview',
+      'queue pack: Review opens archon-build-queue ship/deliver/rounds/review at archon-build-queue ship/deliver/rounds/review, not its own screen archon-deliver-block rounds/review',
+      'queue pack: Review opens archon-build-queue ship/deliver/rounds/rereview at archon-build-queue ship/deliver/rounds/rereview, not its own screen archon-deliver-block rounds/rereview',
+      'loop pack: archon-loop deploy is covered by Merge and Staging',
+      'loop pack: archon-loop deploy/resolve is covered by Merge and Staging',
+      'loop pack: archon-loop deploy/deploy is covered by Merge and Staging',
+      'loop pack: archon-loop deploy/health is covered by Merge and Staging',
+      'loop pack: archon-loop deploy/verify is covered by Merge and Staging',
+    ]);
+  });
 
   test('a value outside the closed sets fails naming it', () => {
     const map: FactoryMap = {
@@ -184,7 +173,7 @@ describe('map:check', () => {
     );
   });
 
-  queueTest('a queue step removed from a copy of the snapshot fails naming the step', () => {
+  test('a queue step removed from a copy of the snapshot fails naming the step', () => {
     const dir = mkdtempSync(join(tmpdir(), 'map-check-queue-'));
     copies.push(dir);
     cpSync(QUEUE_ROOT, dir, { recursive: true });
@@ -198,29 +187,26 @@ describe('map:check', () => {
     ]);
   });
 
-  queueTest(
-    'a queue entry that reaches into a step of the loop pack fails: a live row cannot tell the packs apart',
-    () => {
-      const cards = FACTORY_MAP.cards.map((card) =>
-        card.id === 'merge'
-          ? {
-              ...card,
-              covers: [
-                ...card.covers,
-                { pack: 'queue' as const, workflow: 'archon-merge-queue', steps: ['merge'] },
-              ],
-            }
-          : card,
-      );
-      const failures = check(withCards(cards));
-      expect(failures).toContain(
-        'queue pack: Merge names archon-merge-queue merge, which the pack lacks',
-      );
-      expect(failures).toContain(
-        'loop pack: archon-merge-queue merge, which no loop card covers, counts on Merge',
-      );
-    },
-  );
+  test('a queue entry that reaches into a step of the loop pack fails: a live row cannot tell the packs apart', () => {
+    const cards = FACTORY_MAP.cards.map((card) =>
+      card.id === 'merge'
+        ? {
+            ...card,
+            covers: [
+              ...card.covers,
+              { pack: 'queue' as const, workflow: 'archon-merge-queue', steps: ['merge'] },
+            ],
+          }
+        : card,
+    );
+    const failures = check(withCards(cards));
+    expect(failures).toContain(
+      'queue pack: Merge names archon-merge-queue merge, which the pack lacks',
+    );
+    expect(failures).toContain(
+      'loop pack: archon-merge-queue merge, which no loop card covers, counts on Merge',
+    );
+  });
 
   test('a cover for a pack outside the closed set fails naming it', () => {
     const cards = FACTORY_MAP.cards.map((card) =>

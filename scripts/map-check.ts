@@ -1,4 +1,3 @@
-import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { LANE_STEPS } from '../app/lib/lap-graph';
 import {
@@ -16,26 +15,6 @@ import { type PackVersion, parsePack, type Step } from '../parsers/pack';
 import { failing, type Main, noArguments, runCli } from './lib/cli';
 
 const USAGE = 'usage: bun run map:check';
-
-/** Printed when the check skips itself; what the owner commits, since `fixtures/pack/**` is protected: the pins are the commits this factory runs. */
-const SNAPSHOT_MISSING =
-  'map:check: SKIPPED, fixtures/pack/queue is missing, so no queue covers are checked against the pack. ' +
-  'The owner commits the queue pack snapshot: ' +
-  'fixtures/pack/queue/sdlc is .archon/workflows/sdlc of coleam00/Archon at ' +
-  '69ab40f57e1af07460c294d2464c788747c32994, fixtures/pack/queue/factory is ' +
-  '.archon/workflows/factory of coleam00/ai-software-factory at ' +
-  '776db2fd86e2734458909662757e823320f35baf';
-
-/** Stands in for the queue pack while its snapshot is missing; the failures it causes all start with `QUEUE_FAILURE`. */
-export const NO_QUEUE_PACK: PackVersion = {
-  archonCommit: null,
-  factoryCommit: null,
-  workflows: [],
-  commands: [],
-  scripts: [],
-  hooks: [],
-};
-export const QUEUE_FAILURE = 'queue pack: ';
 
 /** The loop steps a lap's row marks and its header counts; a running lap on one counts on a card. */
 const LOOP_LANE_STEPS = LANE_STEPS.flatMap((step) => step.split('/'));
@@ -205,15 +184,11 @@ export const main: Main = async (argv, deps) =>
   failing(deps, async () => {
     const template = join(deps.repoRoot, 'fixtures', 'factory-template');
     const queueRoot = join(deps.repoRoot, 'fixtures', 'pack', 'queue');
-    const hasQueue = existsSync(join(queueRoot, 'sdlc')) || existsSync(join(queueRoot, 'factory'));
-    if (!hasQueue) deps.err(SNAPSHOT_MISSING);
     const packs = {
       loop: parsePack(join(deps.repoRoot, 'fixtures', 'pack', 'sdlc'), template),
-      queue: hasQueue ? parseQueuePack(queueRoot, template) : NO_QUEUE_PACK,
+      queue: parseQueuePack(queueRoot, template),
     };
-    const failures = mapCheck(FACTORY_MAP, packs).filter(
-      (failure) => hasQueue || !failure.startsWith(QUEUE_FAILURE),
-    );
+    const failures = mapCheck(FACTORY_MAP, packs);
     for (const failure of failures) deps.err(failure);
     if (failures.length > 0) {
       throw new Error(

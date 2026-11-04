@@ -57,9 +57,7 @@ pack changes, update `covers` until the check passes.
 
 The queue pack is the snapshot `fixtures/pack/queue/`: `sdlc/` is `.archon/workflows/sdlc` of
 coleam00/Archon and `factory/` is `.archon/workflows/factory` of coleam00/ai-software-factory, at
-the commits this factory runs, with `ARCHON_COMMIT` and `FACTORY_COMMIT` beside them. A checkout
-without it skips the queue covers, with a note naming what to commit, and still checks the loop
-pack.
+the commits this factory runs, with `ARCHON_COMMIT` and `FACTORY_COMMIT` beside them.
 
 ## Live counts
 
