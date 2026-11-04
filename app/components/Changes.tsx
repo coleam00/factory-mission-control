@@ -314,7 +314,7 @@ function VersionRow({
         {verdict ? (
           <VerdictChip kind={verdict.verdict} text={verdict.verdict} />
         ) : testing ? (
-          <VerdictChip kind="testing" text={testingChip(testing)} />
+          <VerdictChip kind="testing" text={testingChip(testing, digest)} />
         ) : null}
         {digest === null ? (
           <span className="ml-auto text-[12px] text-text-secondary">not yet run</span>

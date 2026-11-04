@@ -89,9 +89,12 @@ export function changeTimeline(
   return items;
 }
 
-/** The chip text of a version being tested: laps so far of the laps its Measure wants; no count before a lap has run. */
-export function testingChip(t: TestingEntry): string {
-  if (t.laps === 0) return 'testing';
+/**
+ * The chip text of a version being tested: laps so far of the laps its Measure wants; no count
+ * before a lap has run, which the version strip decides by its digest being null.
+ */
+export function testingChip(t: TestingEntry, digest: string | null): string {
+  if (digest === null || t.laps === 0) return 'testing';
   const wanted = lapsWanted(t.measure);
   return wanted === null ? `testing, ${t.laps} laps` : `testing, ${t.laps} of ${wanted} laps`;
 }
@@ -132,7 +135,7 @@ export function previousDigest(items: readonly ChangeItem[], digest: string): st
 /**
  * The pair the address names (`a` and `b`, in either order), without any digest that is not a
  * version here; with none left, the default: the newest version with laps against the version
- * before it. Until the scorecard's rows arrive the default names nothing.
+ * before it, when that digest is a version here. Until the scorecard's rows arrive the default names nothing.
  */
 export function resolvePair(
   items: readonly ChangeItem[],
@@ -146,7 +149,7 @@ export function resolvePair(
       ? { a: first, isDefault: false }
       : { a: first, b: second, isDefault: false };
   const newest = scorecardRows === undefined ? null : newestVersionWithLaps(scorecardRows);
-  if (newest === null) return { isDefault: true };
+  if (newest === null || !digestsNewestFirst(items).includes(newest)) return { isDefault: true };
   const previous = previousDigest(items, newest);
   return previous === null
     ? { a: newest, isDefault: true }

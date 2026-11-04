@@ -175,6 +175,12 @@ test('the default pair is the newest version with laps and the one before it', (
   expect(resolvePair(items, undefined, null, null)).toEqual({ isDefault: true });
 });
 
+test('a digest with laps but no version row is never the default', () => {
+  const ghost = 'sha256:unversioned';
+  const rows = [...scorecardRows([V1, V2, V3]), withLaps(ghost, 'rg')];
+  expect(resolvePair(items, rows, null, null)).toEqual({ isDefault: true });
+});
+
 test('a pair from the address is sorted, and unknown digests are dropped', () => {
   expect(resolvePair(items, [], V3, V1)).toEqual({ a: V1, b: V3, isDefault: false });
   expect(resolvePair(items, [], 'sha256:nope', V2)).toEqual({ a: V2, isDefault: false });
@@ -199,11 +205,12 @@ test('pairSearch sets a and b and keeps the rest', () => {
 test("the testing chip states the Measure's lap count, even once laps pass it", () => {
   const testing = (laps: number, measure: string) =>
     ({ pin: P3, reason: 'r', measure, laps, waiting: Math.max(0, 10 - laps) }) as const;
-  expect(testingChip(testing(3, '10 laps'))).toBe('testing, 3 of 10 laps');
-  expect(testingChip(testing(12, '10 laps'))).toBe('testing, 12 of 10 laps');
-  expect(testingChip(testing(4, 'merge rate improves'))).toBe('testing, 4 laps');
-  expect(testingChip(testing(0, '10 laps'))).toBe('testing');
-  expect(testingChip(testing(0, 'merge rate improves'))).toBe('testing');
+  expect(testingChip(testing(3, '10 laps'), 'sha256:x')).toBe('testing, 3 of 10 laps');
+  expect(testingChip(testing(12, '10 laps'), 'sha256:x')).toBe('testing, 12 of 10 laps');
+  expect(testingChip(testing(4, 'merge rate improves'), 'sha256:x')).toBe('testing, 4 laps');
+  expect(testingChip(testing(0, '10 laps'), 'sha256:x')).toBe('testing');
+  expect(testingChip(testing(0, 'merge rate improves'), 'sha256:x')).toBe('testing');
+  expect(testingChip(testing(3, '10 laps'), null)).toBe('testing');
 });
 
 test('the previous version is the next older row, none for the oldest or an unknown digest', () => {
