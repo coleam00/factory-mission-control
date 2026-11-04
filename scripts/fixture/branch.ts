@@ -6,6 +6,7 @@ import {
   loadCheckEnv,
   parseCheckEnv,
 } from '../../server/check-env';
+import { writeLease } from '../../server/check-lease';
 import { type Deps, failing, type Main, noArguments, runCli } from '../lib/cli';
 import type { Db } from '../lib/db';
 import { requireCheckBranch } from '../lib/guard';
@@ -16,7 +17,7 @@ import { staleBranchPrefix } from './drop';
 const PARENT_BRANCH = 'fixture';
 
 const USAGE = [
-  'usage: bun run fixture:branch (creates a check-* branch from fixture, migrates and seeds it, and writes .mc-check.env)',
+  "usage: bun run fixture:branch (creates a check-* branch from fixture, migrates and seeds it, writes .mc-check.env, and records this checkout's lease on the branch, naming the Archon run it runs in when there is one, so other checkouts' fixture:drop keep it while that run or this checkout still uses it; see fixture:drop --help)",
   "       bun run fixture:branch --stale (creates <MC_CHECK_BRANCH>-stale-<id>, a bare branch that this checkout's fixture:drop deletes as stale and other sessions' drops leave until it is 3 hours old; an unattended check runs it, then fixture:drop, to prove stale cleanup while other sessions hold check-* branches)",
 ].join('\n');
 
@@ -142,6 +143,11 @@ async function createSessionBranch(deps: Deps): Promise<void> {
         NEON_REALTIME_SECRET: secret,
       }),
     );
+    if (!writeLease(deps.leaseDir, name, deps.now(), deps.env.WORKFLOW_ID)) {
+      deps.err(
+        `could not record a lease for ${name} in ${deps.leaseDir}: other checkouts' fixture:drop will delete it once it is 3 hours old`,
+      );
+    }
   } catch (error) {
     await deleteAfterFailure(api, branch, deps);
     throw error;

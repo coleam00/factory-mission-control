@@ -1,82 +1,67 @@
-WITH version AS (
-  -- The version the address names by its pin, $2, or for '' the current version: the
-  -- architecture of the newest pin that has any.
-  SELECT a.archon_sha, a.factory_sha
-  FROM mc.arch_versions a
-  JOIN mc.pins p ON p.archon_sha = a.archon_sha
-  -- Like the version strip, an empty factory does not borrow the shared pin history.
-  WHERE EXISTS (SELECT 1 FROM mc.laps l WHERE l.factory = $1)
-    AND ($2 = '' OR p.sha = $2)
-  ORDER BY p.committed_at DESC, a.parsed_at DESC
-  LIMIT 1
-),
--- Every node of each shown workflow's expanded tree, at every depth an include or loop group nests.
-steps AS (
-  SELECT s.workflow, s.path, s.parent_path, s.position, s.step_id, s.kind, s.depends_on, s.include,
-    s.defined_in, s.when_condition, s.trigger_rule
-  FROM mc.arch_steps s
-  JOIN version v ON v.archon_sha = s.archon_sha AND v.factory_sha = s.factory_sha
-  WHERE s.workflow IN ('archon-holdouts', 'archon-backlog', 'archon-manager', 'archon-loop')
-),
--- Where each node's own screen is: under the workflow that declares it, at its path there. A node
--- an include expanded sits beneath exactly one include of that workflow (the parser refuses an
--- include cycle), and its own path is what follows that include's path.
-own AS (
-  SELECT s.workflow, s.path, s.parent_path, s.position, s.step_id, s.kind, s.depends_on,
-    s.defined_in, s.when_condition, s.trigger_rule,
-    CASE WHEN i.path IS NULL THEN s.path ELSE substr(s.path, length(i.path) + 2) END AS own_path
-  FROM steps s
-  LEFT JOIN steps i
-    ON s.defined_in <> s.workflow AND i.workflow = s.workflow AND i.include = s.defined_in
-    AND starts_with(s.path, i.path || '/')
-),
--- At a version the address names, only the laps that ran it: a lap's version is its factory's
--- digest's, labelled with its pin (PRD 11.2).
-running AS (
-  SELECT l.factory, l.workflow_name, ls.run_id, ls.step_id
-  FROM mc.lap_steps ls
-  JOIN mc.laps l ON l.run_id = ls.run_id
-  WHERE l.status = 'running' AND ls.status = 'running'
-    AND ($2 = '' OR EXISTS (SELECT 1 FROM mc.versions vr
-      WHERE vr.factory = l.factory AND vr.digest = l.digest AND vr.pin_sha = $2))
-),
--- Archon names a nested step by its path joined with `__` (`ship__intel`) and emits no event for
--- the step that includes it, so a node counts its workflow's runs on it or anywhere beneath it,
--- per factory.
-on_node AS (
-  SELECT s.workflow, s.path, r.factory, count(DISTINCT r.run_id)::int AS laps
-  FROM steps s
-  JOIN running r
-    ON r.workflow_name = s.workflow
-    AND (r.step_id = replace(s.path, '/', '__')
-      OR starts_with(r.step_id, replace(s.path, '/', '__') || '__'))
-  GROUP BY s.workflow, s.path, r.factory
-)
--- A node has one row per factory with laps on it, or one row with no factory when none has.
--- `is_current` marks the factory in the address.
 SELECT
-  CASE
-    WHEN w.name = 'archon-manager' THEN 'manager'
-    WHEN w.name <> 'archon-loop' THEN 'input'
-    WHEN s.parent_path IS NULL THEN 'step'
-    ELSE 'stage'
-  END AS role,
-  w.name AS workflow,
-  s.path,
-  s.parent_path,
-  s.position,
-  s.step_id,
-  s.kind,
-  s.depends_on,
-  s.when_condition,
-  s.trigger_rule,
-  coalesce(s.defined_in, w.name) AS detail_workflow,
-  s.own_path AS detail_path,
-  c.factory AS lap_factory,
-  coalesce(c.laps, 0) AS laps,
-  coalesce(c.factory = $1, false) AS is_current
-FROM mc.arch_workflows w
-JOIN version v ON v.archon_sha = w.archon_sha AND v.factory_sha = w.factory_sha
-LEFT JOIN own s ON s.workflow = w.name
-LEFT JOIN on_node c ON c.workflow = s.workflow AND c.path = s.path
-WHERE w.name IN ('archon-holdouts', 'archon-backlog', 'archon-manager', 'archon-loop')
+  -- The live part of the factory map (PRD 4.1): the drawing is app/map/factory-map.json, and these
+  -- rows are what its chips count. $2 is the pin the address names, '' for the current version.
+  -- First the version the address names, as the version strip lists it: a pin with stored
+  -- architecture, for a factory with a lap (an empty factory does not borrow the shared pin history).
+  'version' AS kind, NULL::uuid AS run_id, NULL::text AS workflow, NULL::text[] AS steps,
+  NULL::integer AS number, NULL::text AS title, NULL::text AS url, NULL::timestamptz AS at
+FROM mc.factories f
+WHERE f.name = $1
+  AND EXISTS (SELECT 1 FROM mc.laps l WHERE l.factory = f.name)
+  AND EXISTS (
+    SELECT 1 FROM mc.arch_versions a
+    JOIN mc.pins p ON p.archon_sha = a.archon_sha
+    WHERE $2 = '' OR p.sha = $2
+  )
+UNION ALL
+-- Each running run of the factory, at a version the address names only the runs that ran it (a
+-- run's version is its factory's digest's, labelled with its pin, PRD 11.2), with its running
+-- steps, newest first, and the issue it claimed. The browser counts it on the card covering its
+-- deepest running step.
+SELECT 'lap', l.run_id, l.workflow_name, s.steps, c.issue_number, i.title, i.url, NULL
+FROM mc.laps l
+LEFT JOIN LATERAL (
+  SELECT array_agg(ls.step_id ORDER BY ls.started_at DESC NULLS LAST, ls.step_id) AS steps
+  FROM mc.lap_steps ls WHERE ls.run_id = l.run_id AND ls.status = 'running'
+) s ON true
+LEFT JOIN LATERAL (
+  SELECT c.issue_number FROM mc.claims c
+  WHERE c.factory = l.factory AND c.run_id = l.run_id
+  ORDER BY c.claimed_at DESC NULLS LAST, c.issue_number LIMIT 1
+) c ON true
+LEFT JOIN mc.issues i ON i.factory = l.factory AND i.number = c.issue_number
+WHERE l.factory = $1 AND l.status = 'running'
+  AND ($2 = '' OR EXISTS (SELECT 1 FROM mc.versions vr
+    WHERE vr.factory = l.factory AND vr.digest = l.digest AND vr.pin_sha = $2))
+UNION ALL
+-- Each open pull request whose latest app check came out FAIL overall.
+SELECT 'failing', NULL, NULL, NULL, pr.number, pr.title, pr.url, NULL
+FROM mc.pull_requests pr
+JOIN LATERAL (
+  SELECT s.output ->> 'overall' AS overall
+  FROM mc.lap_steps s
+  JOIN mc.laps l ON l.run_id = s.run_id
+  WHERE l.factory = pr.factory AND s.step_id = 'check-app'
+    AND substring(s.output ->> 'pr' FROM '([0-9]+)/?$')::integer = pr.number
+  ORDER BY s.started_at DESC NULLS LAST, s.run_id LIMIT 1
+) latest ON latest.overall = 'FAIL'
+WHERE pr.factory = $1 AND pr.state = 'open'
+UNION ALL
+-- Each lap of the factory whose land step merged, the newest 200, timed when that step finished
+-- (the run goes on after it). The browser keeps those of its own local day.
+SELECT * FROM (
+  SELECT 'merged', l.run_id, l.workflow_name, NULL::text[], c.issue_number, i.title, i.url,
+    coalesce(land.completed_at, land.started_at + land.duration_ms * interval '1 millisecond')
+  FROM mc.laps l
+  JOIN mc.lap_steps land ON land.run_id = l.run_id AND land.step_id = 'land'
+    AND land.status = 'completed' AND land.output ->> 'outcome' = 'merged'
+  LEFT JOIN LATERAL (
+    SELECT c.issue_number FROM mc.claims c
+    WHERE c.factory = l.factory AND c.run_id = l.run_id
+    ORDER BY c.claimed_at DESC NULLS LAST, c.issue_number LIMIT 1
+  ) c ON true
+  LEFT JOIN mc.issues i ON i.factory = l.factory AND i.number = c.issue_number
+  WHERE l.factory = $1 AND l.workflow_name = 'archon-loop'
+  ORDER BY 8 DESC NULLS LAST, l.run_id
+  LIMIT 200
+) merged

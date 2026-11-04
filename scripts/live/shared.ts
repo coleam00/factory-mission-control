@@ -1,3 +1,4 @@
+import { cardForStep, FACTORY_MAP, stepPath } from '../../app/map/factory-map';
 import { SERVE_PORTS } from '../../server/ports';
 import type { Page } from '../lib/cdp';
 import type { Deps } from '../lib/cli';
@@ -24,36 +25,6 @@ export function lateWrite(
 export const RENEWALS_IN_180S = 3;
 export const PANEL = '[data-live="status-strip"]';
 export const MAP = '[data-live="home-map"]';
-/**
- * The seed's pinned architecture: the newest pin with architecture rows is V2 (V3 stores none),
- * whose loop drops `briefs` and adds `tally` (scripts/fixture/seed.ts).
- */
-const SEED_LOOP = [
-  'pick',
-  'claim',
-  'build',
-  'ship',
-  'subject',
-  'check-app',
-  'evidence',
-  'review',
-  'land',
-  'deploy',
-  'release',
-  'tally',
-];
-/** Each top-level include of V2's loop and the steps it nests directly, in order. */
-export const SEED_INCLUDE_STAGES: Readonly<Record<string, readonly string[]>> = {
-  ship: ['forge', 'triage', 'inv', 'intel', 'planned', 'continues', 'deliver', 'outcome', 'report'],
-  deploy: ['resolve', 'deploy', 'health', 'verify'],
-};
-/** The nodes of V2's expanded loop, every include at every depth, and of the other workflows. */
-const SEED_NODES = [
-  ['archon-loop', 84],
-  ['archon-backlog', 5],
-  ['archon-holdouts', 2],
-  ['archon-manager', 2],
-] as const;
 /** The step `fixture:write` starts on running laps. */
 export const LIVE_STEP = 'review';
 export const VERSIONS = '[data-live="version-strip"]';
@@ -134,85 +105,114 @@ export function pageWait(condition: string, ms: number): string {
 const countIs = (target: number) =>
   `document.querySelector('${PANEL} [data-count]')?.getAttribute('data-count') === '${target}'`;
 
-export interface ShownNode {
-  role: string;
-  workflow: string | null;
-  step: string | null;
+/** A card on the map and the laps it counts (`data-live-count`). */
+export interface ShownCard {
+  card: string;
   count: string | null;
 }
 
-export const mapNodes = (page: Page) =>
-  page.evaluate<ShownNode[]>(
-    `[...document.querySelectorAll('${MAP} [data-node-role]')].map((el) => ({
-      role: el.getAttribute('data-node-role'),
-      workflow: el.getAttribute('data-workflow'),
-      step: el.getAttribute('data-step'),
+export const mapCards = (page: Page) =>
+  page.evaluate<ShownCard[]>(
+    `[...document.querySelectorAll('${MAP} [data-card]')].map((el) => ({
+      card: el.getAttribute('data-card'),
       count: el.getAttribute('data-live-count'),
     }))`,
   );
 
-export type LapsOn = (path: string, workflow?: string) => number;
-
 /**
- * Running runs of a workflow per map node for `factory`, straight from the laps tables. Archon
- * names a nested step by its path joined with `__`, and a node counts the runs on it or anywhere
- * beneath it.
+ * The running runs of `factory` on each card, recounted from the laps tables by the PRD's rule: a
+ * run counts once, on the card covering its deepest running step (the newest of those as deep).
  */
-export async function lapsOnNodes(db: Db, factory: string): Promise<LapsOn> {
+export async function lapsOnCards(db: Db, factory: string): Promise<Map<string, number>> {
   const running = await db.query(
-    `SELECT l.workflow_name, ls.run_id, ls.step_id
+    `SELECT l.run_id, l.workflow_name, ls.step_id
        FROM mc.lap_steps ls JOIN mc.laps l ON l.run_id = ls.run_id
-      WHERE l.factory = $1 AND l.status = 'running' AND ls.status = 'running'`,
+      WHERE l.factory = $1 AND l.status = 'running' AND ls.status = 'running'
+      ORDER BY ls.started_at DESC NULLS LAST, ls.step_id`,
     [factory],
   );
-  return (path, workflow = 'archon-loop') => {
-    const key = path.replaceAll('/', '__');
-    const on = running.filter((r) => {
-      const step = String(r.step_id);
-      return r.workflow_name === workflow && (step === key || step.startsWith(`${key}__`));
-    });
-    return new Set(on.map((r) => String(r.run_id))).size;
-  };
-}
-
-/** Where the map, in document order, differs from the seed and from `lapsOn`: one line each. */
-export function mapMismatches(nodes: ShownNode[], lapsOn: LapsOn): string[] {
-  const failures: string[] = [];
-  const idOf = (path: string | null) => path?.slice(path.lastIndexOf('/') + 1) ?? '';
-  const loop = nodes.filter((n) => n.workflow === 'archon-loop');
-  const top = loop.filter((n) => n.role === 'step').map((n) => idOf(n.step));
-  if (top.join() !== SEED_LOOP.join()) failures.push(`the loop shows ${top.join(', ')}`);
-  // Each include's own direct stages, by the include they sit in: ship's and deploy's are listed
-  // apart, and an include the seed does not expand must show none.
-  const stages = new Map<string, string[]>();
-  for (const n of loop.filter((n) => n.role === 'stage' && n.step?.split('/').length === 2)) {
-    const include = (n.step as string).split('/')[0];
-    stages.set(include, [...(stages.get(include) ?? []), idOf(n.step)]);
-  }
-  for (const include of new Set([...Object.keys(SEED_INCLUDE_STAGES), ...stages.keys()])) {
-    const shown = stages.get(include) ?? [];
-    if (shown.join() !== (SEED_INCLUDE_STAGES[include] ?? []).join()) {
-      failures.push(`${include} shows ${shown.join(', ') || 'no stages'}`);
+  const deepest = new Map<string, { workflow: string; step: string }>();
+  for (const row of running) {
+    const run = String(row.run_id);
+    const step = String(row.step_id);
+    const was = deepest.get(run);
+    const depth = (id: string) => stepPath(id).split('/').length;
+    if (was === undefined || depth(step) > depth(was.step)) {
+      deepest.set(run, { workflow: String(row.workflow_name), step });
     }
   }
-  for (const [workflow, expected] of SEED_NODES) {
-    const shown = nodes.filter((n) => n.workflow === workflow).length;
-    if (shown !== expected) failures.push(`${workflow} shows ${shown} steps, not ${expected}`);
+  const counts = new Map<string, number>();
+  for (const { workflow, step } of deepest.values()) {
+    const card = cardForStep(FACTORY_MAP, workflow, stepPath(step));
+    if (card) counts.set(card.id, (counts.get(card.id) ?? 0) + 1);
   }
-  const count = (...roles: string[]) => nodes.filter((n) => roles.includes(n.role)).length;
-  for (const [what, shown, expected] of [
-    ['inputs', count('input', 'frame-input'), 4],
-    ['managers', count('manager'), 1],
-    ['outputs', count('output'), 5],
-  ] as const) {
-    if (shown !== expected) failures.push(`the map shows ${shown} ${what}, not ${expected}`);
-  }
-  for (const node of nodes.filter((n) => n.count !== null)) {
-    const expected = lapsOn(node.step ?? '', node.workflow ?? undefined);
-    if (Number(node.count) !== expected) {
+  return counts;
+}
+
+/**
+ * The map's type at the fitted scale, in rendered pixels, its smallest of each kind, and how wide
+ * its frame is against the window: what the owner's readability rule judges (PR #326 review).
+ */
+export interface MapType {
+  title: number;
+  text: number;
+  kind: number;
+  /** A line's label or the group box's. */
+  label: number;
+  frameWidth: number;
+  windowWidth: number;
+}
+
+/** The least rendered size of each, at 1440x900 fitted (owner, PR #326 review). */
+export const MAP_READABLE = { width: 1440, title: 14, text: 11, kind: 10, label: 10 } as const;
+/** The page's gutters either side of the map's frame, which spans the window between them. */
+const MAP_GUTTERS = 48;
+
+export const mapType = (page: Page) =>
+  page.evaluate<MapType>(
+    `(() => {
+      const k = new DOMMatrix(getComputedStyle(document.querySelector('${MAP} [data-map-world]')).transform).a;
+      const least = (selector) => Math.min(...[...document.querySelectorAll('${MAP} ' + selector)]
+        .map((el) => parseFloat(getComputedStyle(el).fontSize) * k));
+      return {
+        title: least('[data-card-title]'),
+        text: least('[data-card-text]'),
+        kind: least('[data-card-kind]'),
+        label: Math.min(least('[data-line-label] text'), least('[data-group-label]')),
+        frameWidth: document.querySelector('${MAP} [data-map-stage]').getBoundingClientRect().width,
+        windowWidth: document.documentElement.clientWidth,
+      };
+    })()`,
+  );
+
+/** Each size below the owner's least, and a frame narrower than the window between its gutters. */
+export function mapTypeFailures(type: MapType): string[] {
+  const failures: string[] = [];
+  for (const what of ['title', 'text', 'kind', 'label'] as const) {
+    if (!(type[what] >= MAP_READABLE[what])) {
       failures.push(
-        `${node.workflow} ${node.step} shows ${node.count} laps, the database has ${expected}`,
+        `a map card's ${what} renders ${type[what].toFixed(1)}px at ${MAP_READABLE.width} fitted, under ${MAP_READABLE[what]}px`,
       );
+    }
+  }
+  if (type.frameWidth < type.windowWidth - MAP_GUTTERS - 1) {
+    failures.push(
+      `the map's frame is ${Math.round(type.frameWidth)}px wide in a ${type.windowWidth}px window: it should span the window inside the gutters`,
+    );
+  }
+  return failures;
+}
+
+/** Where the map, in document order, differs from factory-map.json and from `counts`: one line each. */
+export function mapMismatches(cards: ShownCard[], counts: ReadonlyMap<string, number>): string[] {
+  const failures: string[] = [];
+  const shown = cards.map((c) => c.card).join(', ');
+  const drawn = FACTORY_MAP.cards.map((c) => c.id).join(', ');
+  if (shown !== drawn) failures.push(`the map shows cards ${shown}, not ${drawn}`);
+  for (const { card, count } of cards) {
+    const expected = counts.get(card) ?? 0;
+    if (Number(count) !== expected) {
+      failures.push(`${card} shows ${count} laps, the database has ${expected}`);
     }
   }
   return failures;

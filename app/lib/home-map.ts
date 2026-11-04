@@ -1,14 +1,16 @@
 import dagre, { type EdgeLabel, type GraphLabel, type NodeLabel } from '@dagrejs/dagre';
 import { stepHref } from './step-detail';
 
-/** One row of `db/queries/home-map.sql`: a workflow the map shows, or one of its steps. */
-export interface HomeMapRow {
-  role: 'input' | 'manager' | 'step' | 'stage';
+/**
+ * A node of a workflow's expanded tree, as `db/queries/one-lap-map.sql` gives the loop's at a lap's
+ * pin: a step, or one an include or loop group nests beneath another.
+ */
+export interface StepTreeRow {
   workflow: string;
-  path: string | null;
+  path: string;
   parent_path: string | null;
-  position: number | null;
-  step_id: string | null;
+  position: number;
+  step_id: string;
   kind: string | null;
   depends_on: string[] | null;
   /** The step's `when`, as written; null or absent when it always runs. */
@@ -19,33 +21,6 @@ export interface HomeMapRow {
   detail_workflow: string;
   /** The step's path in `detail_workflow`. */
   detail_path: string | null;
-  /** The factory whose laps `laps` counts; null on a step no factory has a lap on. */
-  lap_factory: string | null;
-  /** That factory's running runs of the workflow on the step or anywhere beneath it. */
-  laps: number;
-  /** Whether `lap_factory` is the factory in the address. */
-  is_current: boolean;
-}
-
-/**
- * What flows into and out of the factory without being a workflow of the pack (PRD 4.1). The
- * architecture rows hold workflows and steps only, so these are the map's frame.
- */
-const FRAME_INPUTS_BEFORE = ['Product document'];
-const FRAME_INPUTS_AFTER = ['Owner decisions'];
-const FRAME_OUTPUTS = [
-  'Merged pull requests',
-  'Closed issues',
-  'Deploys',
-  'Owner questions',
-  'Metrics lines',
-];
-
-/** An input, the manager or an output: a workflow of the pack, or a fixed part of the frame. */
-export interface FrameNode {
-  id: string;
-  role: 'frame-input' | 'input' | 'manager' | 'output';
-  label: string;
 }
 
 export interface StepNode {
@@ -57,10 +32,6 @@ export interface StepNode {
   label: string;
   kind: string;
   href: string;
-  /** The laps of the factory in the address on it now. */
-  liveCount: number;
-  /** Every shown factory with laps on it now, the factory in the address first, then by name. */
-  factories: FactoryLaps[];
   /** Set on an include or loop group folded into one box: what it holds, and the lines it shows. */
   folded?: Fold;
 }
@@ -69,12 +40,6 @@ export interface StepNode {
 export interface Fold {
   steps: number;
   notes: string[];
-}
-
-export interface FactoryLaps {
-  factory: string;
-  laps: number;
-  current: boolean;
 }
 
 export interface Edge {
@@ -93,20 +58,6 @@ export interface StepGraph {
   /** The steps directly beneath each include or loop group, keyed by its path. */
   clusters: Map<string, string[]>;
 }
-
-export interface HomeMap {
-  inputs: FrameNode[];
-  manager: FrameNode[];
-  loop: StepGraph;
-  /** The steps of each input and manager workflow, keyed by its name. */
-  workflows: Map<string, StepGraph>;
-  outputs: FrameNode[];
-}
-
-type StepRow = HomeMapRow & { path: string; step_id: string; position: number };
-
-const isStep = (row: HomeMapRow): row is StepRow =>
-  row.path !== null && row.step_id !== null && row.position !== null;
 
 /** Drops every edge whose target its source also reaches through another step. */
 export function reduceEdges(edges: readonly Edge[]): Edge[] {
@@ -129,31 +80,6 @@ export function reduceEdges(edges: readonly Edge[]): Edge[] {
     return false;
   };
   return edges.filter((edge) => !reachesAvoiding(edge.from, edge.to, edge));
-}
-
-/**
- * Each step path of one workflow once, with the laps each shown factory has on it: the query
- * gives a row per factory with laps, including a factory the server's factories file does not
- * name, which the map does not show (PRD 11.6), as the switcher does not list it.
- */
-function stepsByPath(
-  rows: readonly StepRow[],
-  shown: readonly string[],
-): { row: StepRow; factories: FactoryLaps[] }[] {
-  const byPath = new Map<string, { row: StepRow; factories: FactoryLaps[] }>();
-  for (const row of rows) {
-    const step = byPath.get(row.path) ?? { row, factories: [] };
-    byPath.set(row.path, step);
-    if (row.lap_factory !== null && shown.includes(row.lap_factory)) {
-      step.factories.push({ factory: row.lap_factory, laps: row.laps, current: row.is_current });
-    }
-  }
-  for (const { factories } of byPath.values()) {
-    factories.sort(
-      (a, b) => Number(b.current) - Number(a.current) || a.factory.localeCompare(b.factory),
-    );
-  }
-  return [...byPath.values()].sort((a, b) => a.row.position - b.row.position);
 }
 
 /**
@@ -205,20 +131,17 @@ const ANY_RAN = /none_failed|one_success/;
  * A route fork is drawn as one: a step that depends on a sibling whose `when` can never hold with
  * its own, under a trigger rule that lets it run with that sibling skipped (ship after build),
  * waits on it only for order, so the edge is dropped and the two stand side by side, each edge
- * into them labelled with the route values that take it.
+ * into them labelled with the route values that take it. Each step opens its screen at `at`, the
+ * version shown, or at the current version for null.
  */
-function stepGraph(
-  rows: readonly StepRow[],
-  shown: readonly string[],
-  at: string | null,
-): StepGraph {
-  const nodes = stepsByPath(rows, shown);
+export function stepGraph(rows: readonly StepTreeRow[], at: string | null = null): StepGraph {
+  const nodes = [...rows].sort((a, b) => a.position - b.position);
   const edges: Edge[] = [];
   const clusters = new Map<string, string[]>();
-  const paths = new Set(nodes.map((n) => n.row.path));
-  const rowOf = new Map(nodes.map((n) => [n.row.path, n.row]));
+  const paths = new Set(nodes.map((row) => row.path));
+  const rowOf = new Map(nodes.map((row) => [row.path, row]));
   const labels = new Map<string, string>();
-  for (const { row } of nodes) {
+  for (const row of nodes) {
     const scope = row.parent_path === null ? '' : `${row.parent_path}/`;
     const deps = (row.depends_on ?? []).map((d) => `${scope}${d}`).filter((d) => paths.has(d));
     for (const dep of deps) {
@@ -240,15 +163,13 @@ function stepGraph(
     }
   }
   return {
-    steps: nodes.map(({ row, factories }) => ({
+    steps: nodes.map((row) => ({
       id: row.path,
       workflow: row.workflow,
       role: row.parent_path === null ? 'step' : 'stage',
       label: row.step_id,
       kind: row.kind ?? '',
       href: stepHref(row.detail_workflow, row.detail_path ?? row.path, at),
-      liveCount: factories.find((f) => f.current)?.laps ?? 0,
-      factories,
     })),
     edges: reduceEdges(edges).map((edge) => {
       const label = labels.get(edge.to);
@@ -261,60 +182,6 @@ function stepGraph(
 /** The home map's address at a version's pin, or at the current version for none. */
 export function homeHref(at?: string | null): string {
   return at ? `/?at=${encodeURIComponent(at)}` : '/';
-}
-
-/**
- * Turns the live rows into the map, counting the laps of the factories in `shown` (the server's
- * factories file); every part is empty when no architecture is stored. Each step opens its screen
- * at `at`, the version the map shows, or at the current version for null.
- */
-export function homeMap(
-  rows: readonly HomeMapRow[],
-  shown: readonly string[],
-  at: string | null = null,
-): HomeMap {
-  const steps = rows.filter(isStep);
-  const loop = steps.filter((r) => r.role === 'step' || r.role === 'stage');
-  if (loop.length === 0) {
-    return {
-      inputs: [],
-      manager: [],
-      loop: { steps: [], edges: [], clusters: new Map() },
-      workflows: new Map(),
-      outputs: [],
-    };
-  }
-  const frame = (role: FrameNode['role'], label: string): FrameNode => ({
-    id: `${role}:${label}`,
-    role,
-    label,
-  });
-  const named = (role: 'input' | 'manager') =>
-    [...new Set(rows.filter((r) => r.role === role).map((r) => r.workflow))].sort();
-  const graphs = (role: 'input' | 'manager') =>
-    named(role).map(
-      (name) =>
-        [
-          name,
-          stepGraph(
-            steps.filter((r) => r.workflow === name),
-            shown,
-            at,
-          ),
-        ] as const,
-    );
-
-  return {
-    inputs: [
-      ...FRAME_INPUTS_BEFORE.map((label) => frame('frame-input', label)),
-      ...named('input').map((name) => frame('input', name)),
-      ...FRAME_INPUTS_AFTER.map((label) => frame('frame-input', label)),
-    ],
-    manager: named('manager').map((name) => frame('manager', name)),
-    loop: stepGraph(loop, shown, at),
-    workflows: new Map([...graphs('input'), ...graphs('manager')]),
-    outputs: FRAME_OUTPUTS.map((label) => frame('output', label)),
-  };
 }
 
 export interface FoldedSteps {
@@ -468,8 +335,7 @@ const shifted = <T extends Point>(p: T, by: Point): T => ({ ...p, x: p.x + by.x,
 
 /**
  * A step's box: wide enough for its whole name (on one line or two, as stepLabelLines splits it),
- * and one 15px line per factory below the label when another factory has laps on it. Dagre gets
- * the full size, so edges and siblings clear the name and the counts.
+ * and a folded block's note lines. Dagre gets the full size, so edges and siblings clear the name.
  */
 function stepSize(node: StepNode): { width: number; height: number } {
   const lines = stepLabelLines(node.label);
@@ -479,17 +345,7 @@ function stepSize(node: StepNode): { width: number; height: number } {
     ...notes.map((note) => LABEL_RESERVE + note.length * NOTE_CHAR_W),
   );
   const height = NODE_H + (lines.length - 1) * LINE_H + notes.length * NOTE_H;
-  if (!node.factories.some((f) => !f.current)) return { width: Math.max(NODE_W, name), height };
-  // Reserve 70px horizontally for the padding, glyph, gaps and live dot; 7px per character leaves
-  // room for 10px Geist Mono.
-  return {
-    width: Math.max(
-      NODE_W,
-      name,
-      ...node.factories.map((f) => 70 + `${f.factory} ${f.laps}`.length * 7),
-    ),
-    height: height + node.factories.length * 15,
-  };
+  return { width: Math.max(NODE_W, name), height };
 }
 
 /**

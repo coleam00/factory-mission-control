@@ -1,0 +1,435 @@
+{
+  "caption": "Tickets come from three places: a product document that Plan splits up, an issue you file, or a problem the factory found. Plan also writes the holdouts, hidden scenarios that only App check runs. Each ticket goes through Intake, then down the line: Build writes the code, Review checks it, App check tries it in the running app, Merge lands it, and Staging deploys it. The manager watches the whole line and brings you the decisions.",
+  "cardSize": {
+    "width": 208,
+    "height": 212
+  },
+  "cards": [
+    {
+      "id": "prd",
+      "role": "source",
+      "kind": "input",
+      "title": "Product document",
+      "text": "What to build and why",
+      "x": 0,
+      "y": 0,
+      "covers": [],
+      "details": {
+        "what": [
+          "The intent: problem, users, what done looks like.",
+          "Lives as an issue or a file in the repo."
+        ],
+        "how": ["Plan reads it once per release. Nothing else in the factory edits it."]
+      }
+    },
+    {
+      "id": "plan",
+      "role": "source",
+      "kind": "plan",
+      "title": "Plan",
+      "text": "Splits the PRD into tickets and writes the holdouts",
+      "x": 260,
+      "y": 0,
+      "covers": [
+        {
+          "workflow": "archon-backlog",
+          "steps": ["read-prd", "slice", "check", "authorize", "publish"]
+        }
+      ],
+      "details": {
+        "when": [
+          "You start it when there is a new product document or a new PRD section.",
+          "When Rasmus's split route (#5322) lands, a PRD filed as an issue goes here through Intake on its own."
+        ],
+        "what": [
+          "Slices the PRD into tickets with Depends on links.",
+          "The first ticket always makes the product runnable end to end."
+        ],
+        "how": [
+          "An agent slices, a script checks shape, order and duplicates, then the issues are filed.",
+          "Filing an issue is what starts Intake."
+        ]
+      }
+    },
+    {
+      "id": "hold",
+      "role": "test",
+      "kind": "test",
+      "title": "Holdouts",
+      "text": "Hidden test scenarios only App check sees",
+      "x": 520,
+      "y": 252,
+      "covers": [
+        {
+          "workflow": "archon-holdouts",
+          "steps": ["briefs", "write"]
+        }
+      ],
+      "details": {
+        "when": [
+          "You start it per release, or after a bug gets past the checks.",
+          "Kept up to date by the writer agent; escaped bug."
+        ],
+        "what": ["Writes test scenarios the builders never see."],
+        "how": [
+          "Stored outside the repo. Only the holdout verifier inside App check may read them. The dashboard shows ids and verdicts, never text."
+        ]
+      }
+    },
+    {
+      "id": "mgr",
+      "role": "person",
+      "kind": "manager",
+      "title": "Manager",
+      "text": "Keeps the factory healthy and tickets moving. Brings you the decisions it can't make.",
+      "x": 992,
+      "y": 0,
+      "width": 478,
+      "chips": ["waiting"],
+      "covers": [
+        {
+          "workflow": "archon-manager",
+          "steps": ["briefs", "manage"]
+        }
+      ],
+      "details": {
+        "when": ["All the time, while the factory runs. You can also talk to it directly."],
+        "what": [
+          "Health: finds runs that are stuck, silent or failing and reports them.",
+          "Questions: answers the ones your written rules already cover, for example “dependency updates can merge without asking”.",
+          "Everything else it passes to you with a recommendation."
+        ],
+        "how": [
+          "Your rules are plain text files (triage, build, merge) in the repo.",
+          "It never cancels a run and never decides what the product should be."
+        ]
+      }
+    },
+    {
+      "id": "issue",
+      "role": "source",
+      "kind": "input",
+      "title": "New issue",
+      "text": "A ticket you file yourself",
+      "x": 260,
+      "y": 542,
+      "covers": [],
+      "details": {
+        "when": ["Whenever you or a teammate files one."],
+        "what": [
+          "A single ticket, written with the six elements: problem, why, why now, outcome, invariants, acceptance."
+        ],
+        "how": [
+          "Intake checks it like any other ticket. A ticket missing the six elements comes to you as a question."
+        ]
+      }
+    },
+    {
+      "id": "disc",
+      "role": "source",
+      "kind": "input",
+      "title": "Found by the factory",
+      "text": "Problems spotted in review, app check or staging",
+      "x": 260,
+      "y": 802,
+      "covers": [],
+      "details": {
+        "when": ["After review, app check or staging notices something it was not asked to fix."],
+        "what": [
+          "Each problem becomes a new ticket, or is dropped if it is not real. Unsure ones come to you."
+        ],
+        "how": [
+          "Small findings are batched into one cleanup ticket per area. New tickets go through Intake like any other."
+        ]
+      }
+    },
+    {
+      "id": "intake",
+      "role": "agent",
+      "kind": "triage",
+      "title": "Intake",
+      "text": "Checks each ticket is clear, picks its route and size",
+      "x": 520,
+      "y": 542,
+      "covers": [
+        {
+          "workflow": "archon-loop",
+          "steps": ["pick", "claim"]
+        }
+      ],
+      "details": {
+        "when": ["On every new, edited or relabelled ticket (GitHub event)."],
+        "what": ["Decides if the ticket is ready, and which route it takes."],
+        "how": [
+          "Trust check against maintainers.json, then triage. Intake is the only step that closes tickets."
+        ]
+      }
+    },
+    {
+      "id": "build",
+      "role": "agent",
+      "kind": "build",
+      "title": "Build",
+      "text": "Writes the code and opens the PR",
+      "x": 780,
+      "y": 542,
+      "chips": ["queued"],
+      "covers": [
+        {
+          "workflow": "archon-loop",
+          "steps": ["build", "ship", "subject"]
+        }
+      ],
+      "details": {
+        "when": ["Whenever a triaged ticket is ready, one ticket per run, most urgent first."],
+        "what": [
+          "Takes a triaged ticket to a reviewed PR with green CI.",
+          "Up to 3 rounds per ticket. Each round can deliver up to 5 times."
+        ],
+        "how": [
+          "Brief, then plan or investigate if needed, then deliver, then an agent decides done, another round, or ask you."
+        ]
+      }
+    },
+    {
+      "id": "review",
+      "role": "agent",
+      "kind": "review",
+      "title": "Review",
+      "text": "Five reviewers read the change",
+      "x": 1040,
+      "y": 542,
+      "covers": [
+        {
+          "workflow": "archon-loop",
+          "steps": ["ship/deliver/rounds/review", "ship/deliver/rounds/rereview"],
+          "screens": {
+            "ship/deliver/rounds/review": {
+              "workflow": "archon-deliver-block",
+              "path": "rounds/review"
+            },
+            "ship/deliver/rounds/rereview": {
+              "workflow": "archon-deliver-block",
+              "path": "rounds/rereview"
+            }
+          }
+        }
+      ],
+      "details": {
+        "when": ["Every time Build pushes a change to the PR."],
+        "what": [
+          "Five reviewers each read the change for one thing: how parts fit together, correctness, tests, error handling, docs.",
+          "One agent combines what they found into a single comment: Ready, or a list of fixes."
+        ],
+        "how": ["Fixes go back to Build. Merge only trusts a Ready comment on the latest commit."]
+      }
+    },
+    {
+      "id": "app",
+      "role": "test",
+      "kind": "test",
+      "title": "App check",
+      "text": "Tries the change in the running app",
+      "x": 1300,
+      "y": 542,
+      "chips": ["failing"],
+      "covers": [
+        {
+          "workflow": "archon-loop",
+          "steps": ["briefs", "check-app", "evidence", "handoff"]
+        }
+      ],
+      "details": {
+        "when": [
+          "On every open PR that has no result yet for its current head and main.",
+          "Depth scales with the ticket's size and whether it touches the front end."
+        ],
+        "what": [
+          "Uses the running app the way a person would and reports what it saw.",
+          "Its commit status must be green before Merge will land the PR."
+        ],
+        "how": [
+          "Tests the PR merged with the latest main, not the branch alone.",
+          "Every claim must cite a file written during this check, sealed by a script."
+        ]
+      }
+    },
+    {
+      "id": "merge",
+      "role": "agent",
+      "kind": "gate",
+      "title": "Merge",
+      "text": "Lands only what passed",
+      "x": 1592,
+      "y": 542,
+      "covers": [
+        {
+          "workflow": "archon-loop",
+          "steps": ["review", "land", "release"]
+        }
+      ],
+      "details": {
+        "when": ["When PRs are Ready, all of them in one sweep."],
+        "what": [
+          "Lands only what is proven, sends the rest back with a brief, asks you on borderline cases."
+        ],
+        "how": [
+          "The agent decides; a script merges, and only if the Ready verdict, every check and the default branch are green at the PR's head."
+        ]
+      }
+    },
+    {
+      "id": "deploy",
+      "role": "test",
+      "kind": "ship",
+      "title": "Staging",
+      "text": "Deploys and checks it is really live",
+      "x": 1852,
+      "y": 542,
+      "covers": [
+        {
+          "workflow": "archon-loop",
+          "steps": ["deploy"]
+        }
+      ],
+      "details": {
+        "when": ["After a merge, on the new revision of main."],
+        "what": ["Puts the merged build on the staging environment."],
+        "how": ["Health check plus revision read-back, so a stale deploy fails loudly."]
+      }
+    },
+    {
+      "id": "out",
+      "role": "test",
+      "kind": "output",
+      "title": "Shipped",
+      "text": "Merged PRs, closed tickets",
+      "x": 2112,
+      "y": 542,
+      "chips": ["merged"],
+      "covers": [],
+      "details": {
+        "what": ["Merged PRs and the tickets Intake closed as delivered."]
+      }
+    }
+  ],
+  "group": {
+    "x": 490,
+    "y": 492,
+    "width": 1860,
+    "height": 316,
+    "label": "the manager watches everything on this line"
+  },
+  "lines": [
+    {
+      "from": "prd",
+      "to": "plan",
+      "style": "flow"
+    },
+    {
+      "from": "plan",
+      "to": "intake",
+      "style": "flow"
+    },
+    {
+      "from": "issue",
+      "to": "intake",
+      "style": "flow"
+    },
+    {
+      "from": "disc",
+      "to": "intake",
+      "style": "flow"
+    },
+    {
+      "from": "plan",
+      "to": "hold",
+      "style": "holdout"
+    },
+    {
+      "from": "hold",
+      "to": "app",
+      "style": "holdout",
+      "label": "only App check reads them",
+      "route": [[728, 358], [1404, 358], [1404, 542]]
+    },
+    {
+      "from": "intake",
+      "to": "build",
+      "style": "flow"
+    },
+    {
+      "from": "build",
+      "to": "review",
+      "style": "flow",
+      "label": "PR"
+    },
+    {
+      "from": "review",
+      "to": "app",
+      "style": "flow"
+    },
+    {
+      "from": "app",
+      "to": "merge",
+      "style": "flow",
+      "label": "passed"
+    },
+    {
+      "from": "merge",
+      "to": "deploy",
+      "style": "flow"
+    },
+    {
+      "from": "deploy",
+      "to": "out",
+      "style": "flow"
+    },
+    {
+      "from": "mgr",
+      "to": "merge",
+      "style": "ask",
+      "label": "keeps it moving",
+      "route": [[1440, 212], [1440, 492]]
+    },
+    {
+      "from": "review",
+      "to": "disc",
+      "style": "loop",
+      "route": [[1144, 754], [1144, 1072], [364, 1072], [364, 1014]]
+    },
+    {
+      "from": "app",
+      "to": "disc",
+      "style": "loop",
+      "arrow": false,
+      "route": [[1404, 754], [1404, 1072]]
+    },
+    {
+      "from": "deploy",
+      "to": "disc",
+      "style": "loop",
+      "label": "problems found become new tickets",
+      "route": [[1956, 754], [1956, 1072], [364, 1072], [364, 1014]]
+    }
+  ],
+  "tour": ["prd", "plan", "intake", "build", "review", "app", "merge", "deploy", "out"],
+  "legend": [
+    {
+      "role": "source",
+      "label": "Where work comes from · scripts"
+    },
+    {
+      "role": "agent",
+      "label": "Agents building"
+    },
+    {
+      "role": "test",
+      "label": "Testing and shipping"
+    },
+    {
+      "role": "person",
+      "label": "You and the manager"
+    }
+  ]
+}

@@ -75,9 +75,13 @@ describe('arch-diff on the seed', () => {
       [v2],
     );
     const strip = queries.find(([name]) => name === 'version-strip')?.[1] as string;
+    // The home map at the pin's own address reads its version as recorded only while the pin's
+    // architecture is: the `version` row home-map.sql answers with.
     const homeMap = queries.find(([name]) => name === 'home-map')?.[1] as string;
-    const map = () => db.query(homeMap, ['mission-control', '']);
-    const resolvedMap = await map();
+    const mapVersions = async () =>
+      (await db.query(homeMap, ['mission-control', pin?.sha])).filter((r) => r.kind === 'version')
+        .length;
+    expect(await mapVersions()).toBe(1);
     const storeSha = (sha: unknown) =>
       db.query('UPDATE mc.pins SET archon_sha = $2 WHERE sha = $1', [pin?.sha, sha]);
     await storeSha(null);
@@ -86,12 +90,12 @@ describe('arch-diff on the seed', () => {
       expect(diffVersions(unresolved, v1, v2)).toEqual({ status: 'unrecorded', digests: [v2] });
       const listed = await db.query(strip, ['mission-control']);
       expect(listed.find((r) => r.digest === v2)).toMatchObject({ pin_sha: pin?.sha });
-      expect(await map()).not.toEqual(resolvedMap);
+      expect(await mapVersions()).toBe(0);
     } finally {
       await storeSha(pin?.archon_sha);
     }
     expect((await db.query(sql, ['mission-control'])) as unknown as ArchDiffRow[]).toEqual(rows);
-    expect(await map()).toEqual(resolvedMap);
+    expect(await mapVersions()).toBe(1);
   });
 
   test("names no other factory's versions", async () => {

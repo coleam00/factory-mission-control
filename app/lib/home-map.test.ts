@@ -1,10 +1,10 @@
 import { expect, test } from 'bun:test';
 import {
   type Box,
-  type HomeMapRow,
   foldSteps,
   homeHref,
-  homeMap,
+  stepGraph,
+  type StepTreeRow,
   exclusiveOn,
   layoutSteps,
   openedBlocks,
@@ -15,31 +15,14 @@ import {
   topBlocks,
 } from './home-map';
 
-const workflow = (role: 'input' | 'manager', name: string): HomeMapRow => ({
-  role,
-  workflow: name,
-  path: null,
-  parent_path: null,
-  position: null,
-  step_id: null,
-  kind: null,
-  depends_on: null,
-  detail_workflow: name,
-  detail_path: null,
-  lap_factory: null,
-  laps: 0,
-  is_current: false,
-});
-
 const step = (
   path: string,
   position: number,
   dependsOn: string[],
-  extra: Partial<HomeMapRow> = {},
-): HomeMapRow => {
+  extra: Partial<StepTreeRow> = {},
+): StepTreeRow => {
   const parent = path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : null;
   return {
-    role: parent === null ? 'step' : 'stage',
     workflow: 'wf-loop',
     path,
     parent_path: parent,
@@ -49,50 +32,31 @@ const step = (
     depends_on: dependsOn,
     detail_workflow: parent === null ? 'wf-loop' : 'wf-block',
     detail_path: parent === null ? path : path.slice(path.indexOf('/') + 1),
-    lap_factory: null,
-    laps: 0,
-    is_current: false,
     ...extra,
   };
 };
 
 // Out of order, as a live query may deliver them.
-/** The factories the server's factories file names. */
-const SHOWN = ['here', 'a-other', 'b-other'];
-
-const rows: HomeMapRow[] = [
+const rows: StepTreeRow[] = [
   step('c', 9, ['b']),
-  workflow('manager', 'wf-manager'),
-  step('b/two', 3, ['one'], { lap_factory: 'here', laps: 2, is_current: true }),
+  step('b/two', 3, ['one']),
   step('a', 0, []),
-  workflow('input', 'wf-writer'),
   step('b', 1, ['a'], { kind: 'include' }),
   step('b/one', 2, []),
 ];
 
 test('the loop is in declaration order, each expanded step followed by its stages', () => {
-  const map = homeMap(rows, SHOWN);
-  expect(map.loop.steps.map((n) => n.id)).toEqual(['a', 'b', 'b/one', 'b/two', 'c']);
-  expect(map.loop.steps.map((n) => n.role)).toEqual(['step', 'step', 'stage', 'stage', 'step']);
-  expect(map.loop.clusters).toEqual(new Map([['b', ['b/one', 'b/two']]]));
+  const loop = stepGraph(rows);
+  expect(loop.steps.map((n) => n.id)).toEqual(['a', 'b', 'b/one', 'b/two', 'c']);
+  expect(loop.steps.map((n) => n.role)).toEqual(['step', 'step', 'stage', 'stage', 'step']);
+  expect(loop.clusters).toEqual(new Map([['b', ['b/one', 'b/two']]]));
 });
 
 test("a stage's depends_on names its siblings, and a stage with none hangs off its step", () => {
-  const { edges } = homeMap(rows, SHOWN).loop;
+  const { edges } = stepGraph(rows);
   expect(edges).toContainEqual({ from: 'b', to: 'b/one' });
   expect(edges).toContainEqual({ from: 'b/one', to: 'b/two' });
   expect(edges).not.toContainEqual({ from: 'one', to: 'b/two' });
-});
-
-test('inputs, the manager and the outputs frame the loop', () => {
-  const map = homeMap(rows, SHOWN);
-  expect(map.inputs.map((n) => n.label)).toEqual([
-    'Product document',
-    'wf-writer',
-    'Owner decisions',
-  ]);
-  expect(map.manager.map((n) => n.label)).toEqual(['wf-manager']);
-  expect(map.outputs).toHaveLength(5);
 });
 
 test('an edge another path already implies is not drawn', () => {
@@ -107,72 +71,29 @@ test('an edge another path already implies is not drawn', () => {
     { from: 'b', to: 'c' },
     { from: 'c', to: 'd' },
   ]);
-  const map = homeMap([...rows, step('d', 10, ['a', 'c'])], SHOWN);
-  expect(map.loop.edges).toContainEqual({ from: 'c', to: 'd' });
-  expect(map.loop.edges).not.toContainEqual({ from: 'a', to: 'd' });
+  const loop = stepGraph([...rows, step('d', 10, ['a', 'c'])]);
+  expect(loop.edges).toContainEqual({ from: 'c', to: 'd' });
+  expect(loop.edges).not.toContainEqual({ from: 'a', to: 'd' });
 });
 
 test('a step links to its own workflow, a stage to the workflow its step includes', () => {
-  const map = homeMap(rows, SHOWN);
-  const href = (id: string) => map.loop.steps.find((n) => n.id === id)?.href;
+  const loop = stepGraph(rows);
+  const href = (id: string) => loop.steps.find((n) => n.id === id)?.href;
   expect(href('a')).toBe('/steps/wf-loop/a');
   expect(href('b/two')).toBe('/steps/wf-block/two');
-  expect(map.loop.steps.find((n) => n.id === 'b/two')?.liveCount).toBe(2);
 });
 
 test("at a version, every step opens its screen at that version; the current map's name none", () => {
   const at = '8e3e1cefaf1e1b7955789d6a43a81b6c2dbd7082';
-  const hrefs = (map: ReturnType<typeof homeMap>) => [
-    ...map.loop.steps.map((n) => n.href),
-    ...[...map.workflows.values()].flatMap((g) => g.steps.map((n) => n.href)),
-  ];
-  expect(hrefs(homeMap(rows, SHOWN, at)).every((href) => href.endsWith(`?at=${at}`))).toBe(true);
-  expect(hrefs(homeMap(rows, SHOWN)).some((href) => href.includes('?at='))).toBe(false);
+  const hrefs = (at?: string) => stepGraph(rows, at).steps.map((n) => n.href);
+  expect(hrefs(at).every((href) => href.endsWith(`?at=${at}`))).toBe(true);
+  expect(hrefs().some((href) => href.includes('?at='))).toBe(false);
   expect(homeHref(null)).toBe('/');
   expect(homeHref(at)).toBe(`/?at=${at}`);
 });
 
-test("a step with several factories' laps is one node: the address factory's count, every factory listed", () => {
-  const map = homeMap(
-    [
-      ...rows,
-      step('b/two', 3, ['one'], { lap_factory: 'b-other', laps: 3 }),
-      step('b/two', 3, ['one'], { lap_factory: 'a-other', laps: 4 }),
-    ],
-    SHOWN,
-  );
-  expect(map.loop.steps.map((n) => n.id)).toEqual(['a', 'b', 'b/one', 'b/two', 'c']);
-  const two = map.loop.steps.find((n) => n.id === 'b/two');
-  expect(two?.liveCount).toBe(2);
-  expect(two?.factories).toEqual([
-    { factory: 'here', laps: 2, current: true },
-    { factory: 'a-other', laps: 4, current: false },
-    { factory: 'b-other', laps: 3, current: false },
-  ]);
-  expect(map.loop.steps.find((n) => n.id === 'a')?.factories).toEqual([]);
-  expect(map.loop.edges.filter((e) => e.to === 'b/two')).toEqual([{ from: 'b/one', to: 'b/two' }]);
-});
-
-test('a factory the factories file does not name is not on the map, even where it alone has laps', () => {
-  const map = homeMap(
-    [
-      ...rows.filter((r) => r.path !== 'a'),
-      step('b/two', 3, ['one'], { lap_factory: 'unlisted', laps: 5 }),
-      step('a', 0, [], { lap_factory: 'unlisted', laps: 1 }),
-    ],
-    SHOWN,
-  );
-  expect(map.loop.steps.map((n) => n.id)).toEqual(['a', 'b', 'b/one', 'b/two', 'c']);
-  expect(map.loop.steps.find((n) => n.id === 'b/two')?.factories).toEqual([
-    { factory: 'here', laps: 2, current: true },
-  ]);
-  const a = map.loop.steps.find((n) => n.id === 'a');
-  expect([a?.liveCount, a?.factories]).toEqual([0, []]);
-});
-
-test('with no steps stored the map is empty', () => {
-  const map = homeMap([workflow('manager', 'wf-manager')], SHOWN);
-  expect([...map.inputs, ...map.manager, ...map.loop.steps, ...map.outputs]).toEqual([]);
+test('with no steps stored the graph is empty', () => {
+  expect(stepGraph([])).toEqual({ steps: [], edges: [], clusters: new Map() });
 });
 
 const within = (inner: Box | undefined, outer: Box | undefined) =>
@@ -187,31 +108,28 @@ const apart = (a: Box, b: Box) =>
   a.x + a.width <= b.x || b.x + b.width <= a.x || a.y + a.height <= b.y || b.y + b.height <= a.y;
 
 /** `b` includes a block whose step `x` includes another: two levels of include. */
-const twoLevels: HomeMapRow[] = [
+const twoLevels: StepTreeRow[] = [
   step('a', 0, []),
   step('b', 1, ['a'], { kind: 'include' }),
   step('b/x', 2, [], { kind: 'include', detail_workflow: 'wf-outer', detail_path: 'x' }),
   step('b/x/y', 3, [], {
     detail_workflow: 'wf-inner',
     detail_path: 'y',
-    lap_factory: 'here',
-    laps: 1,
-    is_current: true,
   }),
   step('b/x/z', 4, ['y'], { detail_workflow: 'wf-inner', detail_path: 'z' }),
   step('c', 5, ['b']),
 ];
 
 test('an include inside an include expands too, every step inside each box around it', () => {
-  const map = homeMap(twoLevels, SHOWN);
-  expect(map.loop.steps.map((n) => n.id)).toEqual(['a', 'b', 'b/x', 'b/x/y', 'b/x/z', 'c']);
-  expect(map.loop.clusters).toEqual(
+  const loop = stepGraph(twoLevels);
+  expect(loop.steps.map((n) => n.id)).toEqual(['a', 'b', 'b/x', 'b/x/y', 'b/x/z', 'c']);
+  expect(loop.clusters).toEqual(
     new Map([
       ['b', ['b/x']],
       ['b/x', ['b/x/y', 'b/x/z']],
     ]),
   );
-  const laid = layoutSteps(map.loop);
+  const laid = layoutSteps(loop);
   for (const id of ['b/x/y', 'b/x/z']) {
     expect([id, within(laid.nodes.get(id), laid.clusters.get('b/x'))]).toEqual([id, true]);
   }
@@ -226,49 +144,15 @@ test('an include inside an include expands too, every step inside each box aroun
   expect(spine).toEqual([...spine].sort((p, q) => p - q));
 });
 
-test('a nested step opens under the workflow that declares it, and counts its own laps', () => {
-  const map = homeMap(twoLevels, SHOWN);
-  const node = (id: string) => map.loop.steps.find((n) => n.id === id);
+test('a nested step opens under the workflow that declares it', () => {
+  const loop = stepGraph(twoLevels);
+  const node = (id: string) => loop.steps.find((n) => n.id === id);
   expect(node('b/x/y')?.href).toBe('/steps/wf-inner/y');
   expect(node('b/x')?.href).toBe('/steps/wf-outer/x');
-  expect(node('b/x/y')?.liveCount).toBe(1);
-  expect(node('b/x/z')?.liveCount).toBe(0);
-});
-
-test("the manager and each input show their own steps, each opening that workflow's step", () => {
-  const own = (name: string, role: 'input' | 'manager', path: string, position: number) =>
-    step(path, position, position === 0 ? [] : ['first'], {
-      role,
-      workflow: name,
-      detail_workflow: name,
-    });
-  const map = homeMap(
-    [
-      ...rows,
-      own('wf-manager', 'manager', 'first', 0),
-      own('wf-manager', 'manager', 'second', 1),
-      own('wf-writer', 'input', 'first', 0),
-    ],
-    SHOWN,
-  );
-  expect(map.inputs.map((n) => n.label)).toEqual([
-    'Product document',
-    'wf-writer',
-    'Owner decisions',
-  ]);
-  expect(map.manager.map((n) => n.label)).toEqual(['wf-manager']);
-  const manager = map.workflows.get('wf-manager');
-  expect(manager?.steps.map((n) => [n.workflow, n.href])).toEqual([
-    ['wf-manager', '/steps/wf-manager/first'],
-    ['wf-manager', '/steps/wf-manager/second'],
-  ]);
-  expect(manager?.edges).toEqual([{ from: 'first', to: 'second' }]);
-  expect(map.workflows.get('wf-writer')?.steps.map((n) => n.id)).toEqual(['first']);
-  expect(map.loop.steps.map((n) => n.id)).toEqual(['a', 'b', 'b/one', 'b/two', 'c']);
 });
 
 test('the narrow layout keeps the spine in one column, each box beside it moving with what it holds', () => {
-  const { loop } = homeMap(twoLevels, SHOWN);
+  const loop = stepGraph(twoLevels);
   const desktop = layoutSteps(loop);
   const narrow = layoutSteps(loop, true);
   const spine = ['a', 'b', 'c'];
@@ -308,21 +192,9 @@ test('the narrow layout keeps the spine in one column, each box beside it moving
 });
 
 test('the layout places every step apart, and the box around the stages beside their step', () => {
-  const longFactory = 'a-factory-with-a-long-name';
-  const map = homeMap(
-    [
-      ...rows,
-      step('b/two', 3, ['one'], { lap_factory: longFactory, laps: 123 }),
-      step('b/two', 3, ['one'], { lap_factory: 'b-other', laps: 4 }),
-    ],
-    [...SHOWN, longFactory],
-  );
-  const laid = layoutSteps(map.loop);
-  const plain = laid.nodes.get('b/one') as Box;
-  const counted = laid.nodes.get('b/two') as Box;
-  expect(counted.width).toBeGreaterThan(plain.width);
-  expect(counted.height).toBeGreaterThan(plain.height);
-  expect([...laid.nodes.keys()]).toEqual(map.loop.steps.map((n) => n.id));
+  const loop = stepGraph(rows);
+  const laid = layoutSteps(loop);
+  expect([...laid.nodes.keys()]).toEqual(loop.steps.map((n) => n.id));
   const boxes = [...laid.nodes.values()];
   for (const [i, a] of boxes.entries())
     for (const b of boxes.slice(i + 1)) expect(apart(a, b)).toBe(true);
@@ -343,11 +215,10 @@ test('a step name is shown whole: one line up to 16 characters, else two split a
 
 test('each step box is wide enough for its longest name line, and taller for a second line', () => {
   const names = ['build', 'update-pr-body', 'review-completeness', 'averyveryverylongstepname'];
-  const map = homeMap(
+  const loop = stepGraph(
     names.map((name, i) => step(name, i, i === 0 ? [] : [names[i - 1] as string])),
-    SHOWN,
   );
-  const laid = layoutSteps(map.loop);
+  const laid = layoutSteps(loop);
   for (const name of names) {
     const box = laid.nodes.get(name) as Box;
     const lines = stepLabelLines(name);
@@ -357,16 +228,16 @@ test('each step box is wide enough for its longest name line, and taller for a s
   }
 });
 
-test('each block opens folded: one box with its step count and laps, its steps hidden in order', () => {
-  const nested: HomeMapRow[] = [
+test('each block opens folded: one box with its step count, its steps hidden in order', () => {
+  const nested: StepTreeRow[] = [
     step('a', 0, []),
-    step('b', 1, ['a'], { kind: 'include', lap_factory: 'here', laps: 2, is_current: true }),
+    step('b', 1, ['a'], { kind: 'include' }),
     step('b/one', 2, []),
-    step('b/two', 3, ['one'], { kind: 'include', lap_factory: 'here', laps: 2, is_current: true }),
-    step('b/two/x', 4, [], { lap_factory: 'here', laps: 2, is_current: true }),
+    step('b/two', 3, ['one'], { kind: 'include' }),
+    step('b/two/x', 4, []),
     step('c', 5, ['b']),
   ];
-  const { loop } = homeMap(nested, SHOWN);
+  const loop = stepGraph(nested);
   const folded = foldSteps(loop, new Set());
   expect(folded.graph.steps.map((s) => s.id)).toEqual(['a', 'b', 'c']);
   expect(folded.graph.edges).toEqual([
@@ -375,8 +246,6 @@ test('each block opens folded: one box with its step count and laps, its steps h
   ]);
   const b = folded.graph.steps.find((s) => s.id === 'b');
   expect(b?.folded).toEqual({ steps: 3, notes: ['3 steps'] });
-  // The block counts the laps anywhere inside it.
-  expect(b?.liveCount).toBe(2);
   expect(folded.hidden.map((s) => s.id)).toEqual(['b/one', 'b/two', 'b/two/x']);
   expect(shownAs(folded.folded, 'b/two/x')).toBe('b');
   // Opened, b shows its own steps; the block inside it stays folded until opened in turn.
@@ -415,7 +284,7 @@ test('a when pins a variable to the values every branch of it names', () => {
 
 // The loop's route split: build on simple or continue, ship on complex, waiting on build only for
 // order, both joining at subject.
-const fork: HomeMapRow[] = [
+const fork: StepTreeRow[] = [
   step('claim', 0, []),
   step('build', 1, ['claim'], {
     when_condition: "$pick.output.route == 'simple' || $pick.output.route == 'continue'",
@@ -431,7 +300,7 @@ const fork: HomeMapRow[] = [
 ];
 
 test('a route fork is drawn side by side, each edge into it labelled, rejoining after', () => {
-  const { loop } = homeMap(fork, SHOWN);
+  const loop = stepGraph(fork);
   expect(loop.edges).toEqual([
     { from: 'claim', to: 'build', label: 'simple / continue' },
     { from: 'claim', to: 'ship', label: 'complex' },
@@ -441,16 +310,15 @@ test('a route fork is drawn side by side, each edge into it labelled, rejoining 
     { from: 'ship', to: 'subject' },
   ]);
   // Without the trigger rule that lets ship run past a skipped build, the edge is a real order.
-  const ordered = homeMap(
+  const ordered = stepGraph(
     fork.map((r) => (r.path === 'ship' ? { ...r, trigger_rule: null } : r)),
-    SHOWN,
-  ).loop;
+  );
   expect(ordered.edges).toContainEqual({ from: 'build', to: 'ship' });
   expect(ordered.edges.some((e) => e.label !== undefined)).toBe(false);
 });
 
 test("an open top-level block's steps sit in a box beside its step, and what follows leaves its end", () => {
-  const { loop } = homeMap(fork, SHOWN);
+  const loop = stepGraph(fork);
   expect(topBlocks(loop)).toEqual(['ship']);
   const laid = layoutSteps(foldSteps(loop, new Set(topBlocks(loop))).graph);
   const box = laid.clusters.get('ship') as Box;

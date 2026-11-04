@@ -1,6 +1,8 @@
 import { resolve } from 'node:path';
 import { createGitHub, type GetFetch, type GitHub } from '../../function/github';
 import { type Env, loadCheckEnv } from '../../server/check-env';
+import { defaultLeaseDir, refreshLease } from '../../server/check-lease';
+import { askArchon, type RunStatus } from './archon-run';
 import { type OpenDb, openDb } from './db';
 import { RefusedBranch, requireCheckBranch } from './guard';
 import { createNeonApi, type NeonApi, type Sleep } from './neon';
@@ -12,6 +14,8 @@ export const REPO_ROOT = resolve(import.meta.dir, '..', '..');
 export type Deps = {
   env: Env;
   repoRoot: string;
+  /** The directory every checkout on this machine shares for check-branch leases (`fixture:drop --help`). */
+  leaseDir: string;
   neon: () => NeonApi;
   github: () => GitHub;
   openDb: OpenDb;
@@ -28,6 +32,8 @@ export type Deps = {
    * connection string's `&` to the Windows `.cmd` shim.
    */
   neonctl: (args: string[]) => Promise<NeonctlResult>;
+  /** Asks Archon, read-only, whether run `run` is still active (`fixture:drop`). */
+  runStatus: (run: string) => Promise<RunStatus>;
 };
 
 export type NeonctlResult = { code: number; stdout: string; stderr: string };
@@ -61,6 +67,7 @@ export function defaultDeps(): Deps {
   return {
     env: Bun.env,
     repoRoot: REPO_ROOT,
+    leaseDir: defaultLeaseDir(),
     neon: () => neonFromEnv(Bun.env),
     github: () => createGitHub(fetch, Bun.env.GITHUB_TOKEN),
     openDb,
@@ -71,6 +78,7 @@ export function defaultDeps(): Deps {
     err: (line) => console.error(line),
     confirmOwner: confirmOwnerAtTerminal,
     neonctl: runNeonctl,
+    runStatus: (run) => askArchon(Bun.env, REPO_ROOT, run),
   };
 }
 
@@ -111,6 +119,13 @@ export async function failing(deps: Deps, work: () => Promise<void>): Promise<nu
   }
 }
 
+/** Refreshes this checkout's lease on check branch `name`, warning when an existing one cannot be moved. */
+export function refreshCheckLease(deps: Deps, name: string): void {
+  if (!refreshLease(deps.leaseDir, name, deps.now())) {
+    deps.err(`could not refresh the lease for ${name} in ${deps.leaseDir}`);
+  }
+}
+
 /**
  * `MC_DATABASE_URL` once the Neon API says it points at a `check-*` branch, or, for the owner's
  * `:main` commands, at `main`. Nothing may connect to the URL before this returns.
@@ -122,6 +137,7 @@ export async function guardedDatabaseUrl(deps: Deps, target: 'check' | 'main'): 
   const name = await resolveBranchName(url, deps.neon());
   if (target === 'check') {
     requireCheckBranch(name);
+    refreshCheckLease(deps, name);
     return url;
   }
   if (name !== 'main') throw new RefusedBranch(name, 'a :main command only writes main');

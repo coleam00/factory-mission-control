@@ -77,3 +77,18 @@ describe('fonts', () => {
     for (const path of fontImports) expect(path).toMatch(/^@fontsource\/geist(-mono)?\/\d+\.css$/);
   });
 });
+
+describe('keyboard focus', () => {
+  const rule = (scope: string) =>
+    app.find((d) => d.scope.includes(scope) && d.property.startsWith('outline'));
+
+  test("the details strip's controls and the zoom controls ring in the solid accent, not the translucent one", () => {
+    for (const scope of [
+      '[data-details] button:focus-visible',
+      '[data-map-controls] button:focus-visible',
+    ]) {
+      expect(rule(scope)?.value).toBe('var(--accent)');
+    }
+    expect(rule("[data-details] [role='tab']:focus-visible")?.value).toBe('-2px');
+  });
+});

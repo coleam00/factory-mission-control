@@ -1,14 +1,14 @@
 /**
- * A lap drawn as a graph of its steps: the loop at the lap's own pin, laid out as the home map lays
- * it out (`homeMap`, `layoutSteps`), each step marked by what happened to it in this lap. Also the
+ * A lap drawn as a graph of its steps: the loop at the lap's own pin, laid out by home-map.ts
+ * (`stepGraph`, `layoutSteps`), each step marked by what happened to it in this lap. Also the
  * lane's one-line version: the loop's top-level steps as marks. Pure, no React.
  */
 import {
   type FoldedSteps,
   foldSteps,
-  type HomeMapRow,
-  homeMap,
   type StepGraph,
+  type StepTreeRow,
+  stepGraph,
   stepsCount,
   topBlocks,
 } from './home-map';
@@ -100,8 +100,7 @@ export interface LapGraph {
  * steps that started before it.
  */
 export function lapGraph(map: readonly LapMapRow[], attempts: readonly StepAttemptRow[]): LapGraph {
-  const rows: HomeMapRow[] = map.map((r) => ({
-    role: r.parent_path === null ? 'step' : 'stage',
+  const rows: StepTreeRow[] = map.map((r) => ({
     workflow: 'archon-loop',
     path: r.path,
     parent_path: r.parent_path,
@@ -113,9 +112,6 @@ export function lapGraph(map: readonly LapMapRow[], attempts: readonly StepAttem
     trigger_rule: r.trigger_rule ?? null,
     detail_workflow: r.detail_workflow,
     detail_path: r.detail_path,
-    lap_factory: null,
-    laps: 0,
-    is_current: false,
   }));
   const known = new Set(map.map((r) => r.path));
   // Every step id at its pinned path, resolved before the steps the map lacks are added.
@@ -142,7 +138,6 @@ export function lapGraph(map: readonly LapMapRow[], attempts: readonly StepAttem
         const previous = lastStarted.get(parent);
         position += 1;
         rows.push({
-          role: parent === null ? 'step' : 'stage',
           workflow: 'archon-loop',
           path,
           parent_path: parent,
@@ -152,9 +147,6 @@ export function lapGraph(map: readonly LapMapRow[], attempts: readonly StepAttem
           depends_on: previous === undefined || previous === name ? [] : [previous],
           detail_workflow: 'archon-loop',
           detail_path: path,
-          lap_factory: null,
-          laps: 0,
-          is_current: false,
         });
         known.add(path);
         offMap.add(path);
@@ -163,7 +155,7 @@ export function lapGraph(map: readonly LapMapRow[], attempts: readonly StepAttem
     }
   }
 
-  const graph = homeMap(rows, []).loop;
+  const graph = stepGraph(rows);
   const children = graph.clusters;
   // Every iteration of a loop's step is an attempt of its one node, oldest first.
   const own = new Map<string, StepAttemptRow[]>();

@@ -1,4 +1,4 @@
-/** The stylesheets whose custom properties are the only colors a page may render. */
+/** The design-token stylesheets, as absolute paths, in the order they layer. */
 export const TOKEN_SOURCES: string[];
 
 export interface Failure {
