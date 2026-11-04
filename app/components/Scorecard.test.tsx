@@ -189,6 +189,26 @@ test('a side under 10 laps labels each difference not yet meaningful; 12 against
   expect(both.find((d) => d.value === '+1')).toBeDefined();
 });
 
+test('10 laps a side label the time measures like the rest, though some laps are unfinished', () => {
+  const unfinished = laps(V2, 10, 4).map((row) =>
+    row.run_id === 'b2b2-09' && 'completed_at' in row ? { ...row, completed_at: null } : row,
+  );
+  const shown = differences(render([...laps(V1, 12, 3), ...unfinished], V1, V2));
+  expect(shown).toHaveLength(12);
+  for (const d of shown) {
+    expect(d.meaningful).toBe('true');
+    expect(d.body).not.toContain('not yet meaningful');
+  }
+});
+
+test('a worse difference not yet meaningful is neutral, not red; a meaningful one is red', () => {
+  const thin = differences(render([...laps(V1, 12, 6), ...laps(V2, 9, 1)], V1, V2));
+  expect(thin.every((d) => d.body.includes('not yet meaningful'))).toBe(true);
+  expect(thin.some((d) => d.body.includes('text-error'))).toBe(false);
+  const full = differences(render([...laps(V1, 12, 6), ...laps(V2, 12, 1)], V1, V2));
+  expect(full.some((d) => d.body.includes('text-error'))).toBe(true);
+});
+
 test('with no version picked, it opens on the newest version with laps and says which', () => {
   const rows = [
     ...laps(V1, 2, 1),

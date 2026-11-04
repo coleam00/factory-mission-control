@@ -289,6 +289,7 @@ function MeasureRow({
           better={group.better}
           a={a.card[measure.key]}
           b={b.card[measure.key]}
+          isMeaningful={meaningful(a.laps.length, b.laps.length)}
         />
       ) : null}
     </li>
@@ -380,19 +381,20 @@ function Difference({
   better,
   a,
   b,
+  isMeaningful,
 }: {
   unit: Measure['unit'];
   better: 'up' | 'down' | null;
   a: Measured;
   b: Measured;
+  isMeaningful: boolean;
 }): ReactElement {
   const d = difference(a, b);
   const value = d === null ? 'n/a' : formatSigned(d, written(unit));
-  const isMeaningful = meaningful(a, b);
-  // Better is green and worse red, whichever way the measure counts; no change, or a measure
-  // that is neither, stays neutral.
+  // Better is green and worse red, whichever way the measure counts; no change, a measure that
+  // is neither, or a difference not yet meaningful stays neutral: red is for real failures.
   const verdict =
-    d === null || d === 0 || better === null
+    d === null || d === 0 || better === null || !isMeaningful
       ? null
       : d > 0 === (better === 'up')
         ? 'var(--success)'
