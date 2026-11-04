@@ -181,6 +181,11 @@ test('a digest with laps but no version row is never the default', () => {
   expect(resolvePair(items, rows, null, null)).toEqual({ isDefault: true });
 });
 
+test('a newer lap digest off the timeline does not hide the default on it', () => {
+  const rows = [...scorecardRows([V1, V2, V3]), withLaps(V2, 'r2'), { ...withLaps('sha256:unversioned', 'rg'), started_at: at(9) }];
+  expect(resolvePair(items, rows, null, null)).toEqual({ a: V1, b: V2, isDefault: true });
+});
+
 test('a pair from the address is sorted, and unknown digests are dropped', () => {
   expect(resolvePair(items, [], V3, V1)).toEqual({ a: V1, b: V3, isDefault: false });
   expect(resolvePair(items, [], 'sha256:nope', V2)).toEqual({ a: V2, isDefault: false });

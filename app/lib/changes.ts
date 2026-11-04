@@ -148,8 +148,12 @@ export function resolvePair(
     return second === undefined
       ? { a: first, isDefault: false }
       : { a: first, b: second, isDefault: false };
-  const newest = scorecardRows === undefined ? null : newestVersionWithLaps(scorecardRows);
-  if (newest === null || !digestsNewestFirst(items).includes(newest)) return { isDefault: true };
+  const onTimeline = new Set(digestsNewestFirst(items));
+  const newest =
+    scorecardRows === undefined
+      ? null
+      : newestVersionWithLaps(scorecardRows.filter((row) => onTimeline.has(row.digest)));
+  if (newest === null) return { isDefault: true };
   const previous = previousDigest(items, newest);
   return previous === null
     ? { a: newest, isDefault: true }
