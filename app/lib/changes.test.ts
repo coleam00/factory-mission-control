@@ -182,7 +182,11 @@ test('a digest with laps but no version row is never the default', () => {
 });
 
 test('a newer lap digest off the timeline does not hide the default on it', () => {
-  const rows = [...scorecardRows([V1, V2, V3]), withLaps(V2, 'r2'), { ...withLaps('sha256:unversioned', 'rg'), started_at: at(9) }];
+  const rows = [
+    ...scorecardRows([V1, V2, V3]),
+    withLaps(V2, 'r2'),
+    { ...withLaps('sha256:unversioned', 'rg'), started_at: at(9) },
+  ];
   expect(resolvePair(items, rows, null, null)).toEqual({ a: V1, b: V2, isDefault: true });
 });
 

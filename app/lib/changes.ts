@@ -152,7 +152,9 @@ export function resolvePair(
   const newest =
     scorecardRows === undefined
       ? null
-      : newestVersionWithLaps(scorecardRows.filter((row) => onTimeline.has(row.digest)));
+      : newestVersionWithLaps(
+          scorecardRows.filter((row) => 'digest' in row && onTimeline.has(row.digest)),
+        );
   if (newest === null) return { isDefault: true };
   const previous = previousDigest(items, newest);
   return previous === null
