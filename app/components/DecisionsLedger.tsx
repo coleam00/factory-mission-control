@@ -24,6 +24,10 @@ const VERDICT_CLASS: Record<VerdictEntry['verdict'], string> = {
   inconclusive: 'border-border-bright text-text-secondary',
 };
 
+/** What a decision's or verdict's version prefix failed to match. */
+export const unmatchedText = (unmatched: 'ambiguous' | 'none'): string =>
+  unmatched === 'ambiguous' ? 'ambiguous: several pins by that prefix' : 'no pin by that prefix';
+
 /** The error and loading sentences both panels on this screen share. */
 function PanelBody<Row>({
   rows,
@@ -112,10 +116,7 @@ export function Timeline({
             <span className={LABEL}>Version</span>
             {entry.pin_sha === null ? (
               <span className={`${MONO} min-w-0 break-all text-text-secondary`}>
-                {entry.version},{' '}
-                {entry.ambiguous
-                  ? 'ambiguous: several pins by that prefix'
-                  : 'no pin by that prefix'}
+                {entry.version}, {unmatchedText(entry.ambiguous ? 'ambiguous' : 'none')}
               </span>
             ) : (
               <Link
@@ -224,10 +225,7 @@ export function Ledger({
                     <span className={`${MONO} text-text-secondary`}>{entry.pin.slice(0, 8)}</span>
                   ) : (
                     <span className={`${MONO} min-w-0 break-all text-text-secondary`}>
-                      {entry.pin},{' '}
-                      {entry.unmatched === 'ambiguous'
-                        ? 'ambiguous: several pins by that prefix'
-                        : 'no pin by that prefix'}
+                      {entry.pin}, {unmatchedText(entry.unmatched)}
                     </span>
                   )}
                   <span className={`${BADGE} ${VERDICT_CLASS[entry.verdict]}`}>

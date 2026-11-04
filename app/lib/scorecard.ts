@@ -310,9 +310,13 @@ export function difference(a: Measured, b: Measured): number | null {
   return a.value === null || b.value === null ? null : round4(b.value - a.value);
 }
 
-/** PRD 4.2: a difference resting on fewer laps than this on either side is not yet meaningful. */
+/**
+ * PRD 4.2: a difference resting on fewer laps than this on either side is not yet meaningful. The
+ * rule counts each side's laps, so a time measure that rests on fewer finished laps is labelled
+ * like every other measure of the same comparison.
+ */
 export const MEANINGFUL_LAPS = 10;
 
-export function meaningful(a: Measured, b: Measured): boolean {
-  return a.laps.length >= MEANINGFUL_LAPS && b.laps.length >= MEANINGFUL_LAPS;
+export function meaningful(aLaps: number, bLaps: number): boolean {
+  return aLaps >= MEANINGFUL_LAPS && bLaps >= MEANINGFUL_LAPS;
 }

@@ -46,10 +46,10 @@ const GROUP: Record<string, { color: string; better: 'up' | 'down' | null }> = {
   active_hours: { color: 'var(--accent-bright)', better: null },
   merges: { color: 'var(--node-loop)', better: null },
   merges_per_active_hour: { color: 'var(--node-loop)', better: 'up' },
-  empty_laps: { color: 'var(--node-approval)', better: null },
-  failed_laps: { color: 'var(--node-approval)', better: null },
-  send_backs: { color: 'var(--node-approval)', better: null },
-  gate_refusals: { color: 'var(--node-approval)', better: null },
+  empty_laps: { color: 'var(--error)', better: null },
+  failed_laps: { color: 'var(--error)', better: null },
+  send_backs: { color: 'var(--error)', better: null },
+  gate_refusals: { color: 'var(--error)', better: null },
   lap_hours_per_merge: { color: 'var(--node-prompt)', better: 'down' },
   app_check_share: { color: 'var(--node-prompt)', better: 'down' },
   cost_per_merge: { color: 'var(--node-prompt)', better: 'down' },
@@ -289,6 +289,7 @@ function MeasureRow({
           better={group.better}
           a={a.card[measure.key]}
           b={b.card[measure.key]}
+          isMeaningful={meaningful(a.laps.length, b.laps.length)}
         />
       ) : null}
     </li>
@@ -380,23 +381,27 @@ function Difference({
   better,
   a,
   b,
+  isMeaningful,
 }: {
   unit: Measure['unit'];
   better: 'up' | 'down' | null;
   a: Measured;
   b: Measured;
+  isMeaningful: boolean;
 }): ReactElement {
   const d = difference(a, b);
   const value = d === null ? 'n/a' : formatSigned(d, written(unit));
-  const isMeaningful = meaningful(a, b);
-  // Better is green and worse red, whichever way the measure counts; no change, or a measure
-  // that is neither, stays neutral.
+  // Better is green and worse red, whichever way the measure counts; no change, a measure that
+  // is neither stays neutral; a worse difference not yet meaningful is neutral too, since red
+  // is for real failures.
   const verdict =
     d === null || d === 0 || better === null
       ? null
       : d > 0 === (better === 'up')
         ? 'var(--success)'
-        : 'var(--error)';
+        : isMeaningful
+          ? 'var(--error)'
+          : null;
   const color = verdict ?? 'var(--text-secondary)';
   return (
     <div
@@ -420,7 +425,7 @@ function Difference({
         </span>
       </div>
       {isMeaningful ? null : (
-        <div className="mt-1 font-mono text-[11px] font-semibold uppercase tracking-[0.05em] text-warning">
+        <div className="mt-1 font-mono text-[11px] font-semibold uppercase tracking-[0.05em] text-accent-bright">
           not yet meaningful
         </div>
       )}
