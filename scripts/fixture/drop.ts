@@ -4,6 +4,7 @@ import { CHECK_ENV_FILE, loadCheckEnv } from '../../server/check-env';
 import {
   defaultLeaseDir,
   isLeaseLive,
+  LEASE_MS,
   type Lease,
   readLeases,
   removeLease,
@@ -13,12 +14,25 @@ import { type Deps, failing, type Main, noArguments, runCli } from '../lib/cli';
 import { isCheckBranch, requireCheckBranch } from '../lib/guard';
 import { type Branch, waitForOperations } from '../lib/neon';
 
-const STALE_MS = 3 * 60 * 60 * 1000;
+/** How old a check-* branch must be before another checkout's drop may delete it. */
+export const STALE_MS = 3 * 60 * 60 * 1000;
+
+const HOUR_MS = 60 * 60 * 1000;
+
+/** A window of whole hours in words, so help and warning text follows the constant it states. */
+export function hoursPhrase(ms: number): string {
+  const hours = ms / HOUR_MS;
+  return hours === 1 ? 'an hour' : `${hours} hours`;
+}
+
+const LEASE = hoursPhrase(LEASE_MS);
+const STALE = hoursPhrase(STALE_MS);
+const STALE_H = `${STALE_MS / HOUR_MS}h`;
 
 const USAGE = [
-  `usage: bun run fixture:drop (deletes this checkout's check branch, the <branch>-stale-* branches \`fixture:branch --stale\` made for it, and every check-* branch older than 3 hours unless the run or checkout that owns it still uses it; other sessions' younger check-* branches are kept. Ownership is a lease in ${defaultLeaseDir()}: fixture:branch records it, naming the Archon run it runs in (WORKFLOW_ID) when there is one, and every command that uses the branch and \`serve\` while it runs refresh it. An old branch is kept while its lease was refreshed less than an hour ago, or while the run its lease names is pending, running or paused, however long that run goes without touching the branch; drop asks Archon, read-only, with \`ARCHON_CLI_COMMAND workflow get <run> --json\`, and keeps the branch, with a warning, when it cannot ask. A lease is seen only by checkouts on this machine; an old branch with no lease, or whose lease is over an hour old and names no run or a run that has completed, failed, been cancelled or is unknown to Archon, is deleted with its lease)`,
+  `usage: bun run fixture:drop (deletes this checkout's check branch, the <branch>-stale-* branches \`fixture:branch --stale\` made for it, and every check-* branch older than ${STALE} unless the run or checkout that owns it still uses it; other sessions' younger check-* branches are kept. Ownership is a lease in ${defaultLeaseDir()}: fixture:branch records it, naming the Archon run it runs in (WORKFLOW_ID) when there is one, and every command that uses the branch and \`serve\` while it runs refresh it. An old branch is kept while its lease was refreshed less than ${LEASE} ago, or while the run its lease names is pending, running or paused, however long that run goes without touching the branch; drop asks Archon, read-only, with \`ARCHON_CLI_COMMAND workflow get <run> --json\`, and keeps the branch, with a warning, when it cannot ask. A lease is seen only by checkouts on this machine; an old branch with no lease, or whose lease is over ${LEASE} old and names no run or a run that has completed, failed, been cancelled or is unknown to Archon, is deleted with its lease)`,
   '       bun run fixture:drop --dry-run (prints `would delete <name>` for each branch fixture:drop would delete, and deletes nothing; an unattended check runs it to observe the selection live while its own branch keeps serving)',
-  `       bun run fixture:drop --dry-run --at <time> (prints what fixture:drop would delete if run at <time>, an ISO-8601 time with Z or an offset, not before now, and deletes nothing; only age is judged at <time>: a lease and its run are judged now, so a branch whose lease is live now, or whose run is still running now, is not listed at any <time>, and one with no lease, or one last refreshed over an hour ago whose run has ended or that names none, is listed once it is over 3 hours old at <time>; an unattended check proves age cleanup without waiting 3 hours: it reads the created_at of a young check-* branch it created that has no live lease (for example, one it made ownerless by removing its lease) and sees that branch listed at created_at + 3h + 1m and not at created_at + 3h - 1m (this checkout's own branch and its -stale- markers are listed at any time). Only --dry-run takes --at: a real drop always uses the real clock)`,
+  `       bun run fixture:drop --dry-run --at <time> (prints what fixture:drop would delete if run at <time>, an ISO-8601 time with Z or an offset, not before now, and deletes nothing; only age is judged at <time>: a lease and its run are judged now, so a branch whose lease is live now, or whose run is still running now, is not listed at any <time>, and one with no lease, or one last refreshed over ${LEASE} ago whose run has ended or that names none, is listed once it is over ${STALE} old at <time>; an unattended check proves age cleanup without waiting ${STALE}: it reads the created_at of a young check-* branch it created that has no live lease (for example, one it made ownerless by removing its lease) and sees that branch listed at created_at + ${STALE_H} + 1m and not at created_at + ${STALE_H} - 1m (this checkout's own branch and its -stale- markers are listed at any time). Only --dry-run takes --at: a real drop always uses the real clock)`,
 ].join('\n');
 
 /** An ISO-8601 date and time with an explicit zone, so `--at` names the same moment on every machine. */

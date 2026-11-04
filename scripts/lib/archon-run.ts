@@ -5,9 +5,9 @@ export type RunStatus =
   | { state: 'ended' }
   | { state: 'unknown'; reason: string };
 
-/** The same split as `factory/consumer.py`'s `ACTIVE` and `ENDED`; an unrecognized status reads as `unknown`, which `drop` keeps. */
-const ACTIVE = new Set(['pending', 'running', 'paused']);
-const ENDED = new Set(['completed', 'failed', 'cancelled']);
+/** The same split as `factory/consumer.py`'s `ACTIVE` and `ENDED`, which `archon-run.test.ts` checks; an unrecognized status reads as `unknown`, which `drop` keeps. */
+export const ACTIVE = new Set(['pending', 'running', 'paused']);
+export const ENDED = new Set(['completed', 'failed', 'cancelled']);
 
 const ASK_TIMEOUT_MS = 30_000;
 

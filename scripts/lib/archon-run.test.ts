@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Env } from '../../server/check-env';
-import { askArchon, runStatusFrom } from './archon-run';
+import { ACTIVE, askArchon, ENDED, runStatusFrom } from './archon-run';
 
 test.each(['pending', 'running', 'paused'])('a %s run is active', (status) => {
   expect(runStatusFrom(0, JSON.stringify({ status }))).toEqual({ state: 'active' });
@@ -72,4 +72,15 @@ describe('askArchon spawns the Archon CLI', () => {
     const env = fakeArchon('{"status":"running"}', 0);
     expect((await askArchon(env, '.', 'run-2')).state).toBe('unknown');
   });
+});
+
+test('the status split is the one factory/consumer.py owns', () => {
+  const source = readFileSync(join(import.meta.dir, '../../factory/consumer.py'), 'utf8');
+  const owner = (name: string) => {
+    const set = source.match(new RegExp(`^${name} = [{]([^}]*)[}]`, 'm'));
+    return new Set((set?.[1] ?? '').match(/[a-z_]+/g));
+  };
+  expect(owner('ACTIVE').size).toBeGreaterThan(0);
+  expect(ACTIVE).toEqual(owner('ACTIVE'));
+  expect(ENDED).toEqual(owner('ENDED'));
 });
