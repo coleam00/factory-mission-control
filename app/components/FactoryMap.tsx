@@ -50,13 +50,11 @@ const LINE_COLOR: Record<LineStyle, string> = {
   flow: 'var(--text-tertiary)',
   loop: 'var(--text-tertiary)',
   ask: 'var(--role-person)',
-  holdout: 'var(--role-test)',
 };
 const LINE_DASH: Record<LineStyle, string | undefined> = {
   flow: undefined,
   loop: '6 5',
   ask: '3 4',
-  holdout: '2 4',
 };
 
 /**
@@ -216,6 +214,7 @@ function chipsOf(live: CardLive | undefined) {
     'merged',
     'bg-[color:var(--role-test-soft)] text-[color:var(--role-test)]',
   );
+  add('orders', live.orders?.length, 'open', 'bg-surface-hover text-text-primary');
   return chips;
 }
 
@@ -681,7 +680,7 @@ export function FactoryMap({
           >
             <span
               data-group-label
-              className="absolute left-5 bg-surface px-2 font-mono uppercase leading-none tracking-[0.06em] text-text-secondary"
+              className="absolute right-5 bg-surface px-2 font-mono uppercase leading-none tracking-[0.06em] text-text-secondary"
               style={{ fontSize: MAP_TYPE.label, top: -MAP_TYPE.label / 2 - 1 }}
             >
               {map.group.label}

@@ -2,7 +2,7 @@ import { type ReactElement, type ReactNode, useState } from 'react';
 import { Link } from 'react-router';
 import type { StepRow } from '../lib/step-detail';
 import { type Card, pinnedStepLinks, workflowFile } from '../map/factory-map';
-import type { CardLive, MapItem } from '../map/live';
+import type { CardLive, MapItem, WorkOrderRow } from '../map/live';
 
 type Tab = 'when' | 'what' | 'how' | 'live' | 'behind';
 
@@ -53,6 +53,19 @@ function Item({ item, note }: { item: MapItem; note: string }): ReactElement {
   );
 }
 
+/** A work order with its open and merged issues and where it lands. */
+function Order({ order }: { order: WorkOrderRow }): ReactElement {
+  const lands = order.lands_on === null ? '' : `, lands on ${order.lands_on}`;
+  return (
+    <li data-work-order={order.name}>
+      <span className="font-mono">{order.name}</span>
+      <span className={CHIP}>
+        {order.open_count} open, {order.merged_count} merged{lands}
+      </span>
+    </li>
+  );
+}
+
 const time = (at: Date) =>
   at.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
 
@@ -96,6 +109,7 @@ export function RightNow({
       <Item key={item.key} item={item} note="app check failed" />
     )),
     ...(live?.waiting ?? []).map((item) => <Item key={item.key} item={item} note="waiting" />),
+    ...(live?.orders ?? []).map((order) => <Order key={`order-${order.name}`} order={order} />),
     ...(live?.merged ?? []).map((merge) => (
       <li key={`merged-${merge.run}-${merge.number ?? 'lap'}`} data-lap={merge.run}>
         <Link to={lapHref(merge.run)} className={LINK}>

@@ -1,7 +1,7 @@
 /**
  * What the factory map's chips count (PRD 4.1 "Live"), from the live rows: the laps on each card
- * and today's merges from `home-map`, Build's workable issues from `health-workable` and the
- * owner's open items from `owner-queue`. Every chip keeps the items it counted,
+ * and today's merges from `home-map`, Build's workable issues from `health-workable`, the
+ * owner's open items from `owner-queue` and the work orders with open issues from `work-orders`. Every chip keeps the items it counted,
  * which the details strip's Right now lists (invariant 4). Pure, no React.
  */
 import type { HealthWorkableRow } from '../lib/health';
@@ -52,12 +52,22 @@ export interface MapMerge {
   at: Date;
 }
 
+/** One row of `db/queries/work-orders.sql`: a work order with an open issue. */
+export interface WorkOrderRow {
+  name: string;
+  open_count: number;
+  merged_count: number;
+  /** The `lands-on:<target>` label its issues carry, when one does. */
+  lands_on: string | null;
+}
+
 export interface CardLive {
   here: MapLap[];
   queued?: MapItem[];
   failing?: MapItem[];
   waiting?: MapItem[];
   merged?: MapMerge[];
+  orders?: WorkOrderRow[];
   /** Chips whose source failed: not zero, unknown, so drawn as such. */
   unavailable?: Chip[];
 }
@@ -66,8 +76,9 @@ export interface MapSources {
   map: readonly HomeMapRow[];
   workable?: readonly HealthWorkableRow[];
   owner?: readonly OwnerQueueRow[];
+  orders?: readonly WorkOrderRow[];
   /** A source in `error` keeps its rows, but its chip is unavailable, never a count. */
-  states?: { workable?: PanelState; owner?: PanelState };
+  states?: { workable?: PanelState; owner?: PanelState; orders?: PanelState };
 }
 
 const depth = (step: string) => stepPath(step).split('/').length;
@@ -168,7 +179,7 @@ function chipItems(
   sources: MapSources,
   now: Date,
 ): { [K in Chip]?: Required<CardLive>[K] | 'unavailable' } {
-  const { map, workable, states = {} } = sources;
+  const { map, workable, orders, states = {} } = sources;
   return {
     failing: map
       .filter((r) => r.kind === 'failing' && r.number !== null)
@@ -194,6 +205,8 @@ function chipItems(
       }),
     waiting: waitingItems(sources),
     merged: mergedToday(map, now),
+    ...(states.orders === 'error' && { orders: 'unavailable' as const }),
+    ...(orders && states.orders !== 'error' && { orders: [...orders] }),
   };
 }
 

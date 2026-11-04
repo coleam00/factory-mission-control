@@ -40,8 +40,7 @@ test('a lap counts once, on the card covering its deepest running step', () => {
       lap('h', ['claim']),
     ]),
   ).toEqual({
-    plan: ['e'],
-    hold: ['g'],
+    split: ['e'],
     mgr: ['f'],
     intake: ['h'],
     build: ['c'],
@@ -170,13 +169,15 @@ test('a queue run counts on the card covering its deepest step: implement on Bui
       lap('rerev', ['ship__deliver__rounds.rereview__scope'], 'archon-build-queue'),
       lap('ask', ['ask'], 'archon-build-queue'),
       lap('sweep', ['sweep'], 'archon-merge-queue'),
-      lap('hold', ['write'], 'factory-holdouts'),
+      lap('slice', ['slice'], 'archon-split'),
+      lap('take', ['triage'], 'archon-intake'),
     ]),
   ).toEqual({
     build: ['ask', 'impl'],
     review: ['rerev', 'rev'],
     merge: ['sweep'],
-    hold: ['hold'],
+    split: ['slice'],
+    intake: ['take'],
   });
 });
 
@@ -262,4 +263,17 @@ test('a merge-queue lap merges each pull request its record read back; a malform
   expect(mergedToday([{ ...queued('old', '[]'), prs: null, number: 12 }], now)).toEqual([
     { run: 'old', number: 12, at },
   ]);
+});
+
+test('the work orders with an open issue are the chip of the Work order card: absent until answered, unavailable on error', () => {
+  const order = { name: 'combat', open_count: 2, merged_count: 1, lands_on: 'staging' };
+  const ordersOf = (sources: Partial<Parameters<typeof cardLive>[1]>) =>
+    cardLive(FACTORY_MAP, { map: [], ...sources }, new Date()).get('order');
+  expect(ordersOf({ orders: [order] })?.orders).toEqual([order]);
+  expect(ordersOf({ orders: [] })?.orders).toEqual([]);
+  expect(ordersOf({})?.orders).toBeUndefined();
+  expect(ordersOf({ orders: [order], states: { orders: 'error' } })).toEqual({
+    here: [],
+    unavailable: ['orders'],
+  });
 });
