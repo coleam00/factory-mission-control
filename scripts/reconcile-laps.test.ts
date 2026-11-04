@@ -493,16 +493,75 @@ test('a lost write whose step a later event projected is not replayed (#343)', a
   expect(stepReplays()).toBe(0);
 });
 
-test('a lost restart the trigger would not apply is never replayed, nor does a bad startedAt throw (#343)', async () => {
+/** A step started and completed, then restarted by an event that lost its write; `startedAt` is the restart's. */
+async function lostRestart(startedAt: string): Promise<string> {
   const runId = await archonRun('running');
   await archonEvent(runId, 1, 'pick', 'node_started');
   await archonEvent(runId, 2, 'pick', 'node_completed');
-  const restart = await archonEvent(runId, 3, 'pick', 'node_started');
+  const restart = await archonEvent(runId, 3, 'pick', 'node_started', {
+    ...eventData('pick', 'node_started', NOW),
+    timing: { startedAt },
+  });
   await recordLostStepWrite(runId, restart);
-  await rows(`UPDATE public.remote_agent_workflow_events SET data = $2 WHERE id = $1`, [
-    restart,
-    JSON.stringify({ ...eventData('pick', 'node_started', NOW), timing: { startedAt: 'soon' } }),
-  ]);
+  return runId;
+}
+
+const stepStatus = async (runId: string) =>
+  (await rows(`SELECT status FROM mc.lap_steps WHERE run_id = $1 AND step_id = 'pick'`, [runId]))[0]
+    ?.status;
+
+test('a lost restart the trigger would not apply is never replayed (#343)', async () => {
+  // Before the step's completion (NOW), so 0015:116 refuses it.
+  const runId = await lostRestart(new Date(NOW.getTime() - 3_600_000).toISOString());
+
+  for (let pass = 0; pass < 2; pass++) {
+    expect((await run([])).out).toEqual(['reconcile: 0 run(s) repaired']);
+    expect(stepReplays()).toBe(0);
+  }
+  expect(await stepStatus(runId)).toBe('completed');
+});
+
+test('a lost restart after the step completed is replayed, once (#343)', async () => {
+  const runId = await lostRestart(new Date(NOW.getTime() + 60_000).toISOString());
+  await rows(
+    `UPDATE mc.lap_steps SET status = 'completed', completed_at = $2 WHERE run_id = $1 AND step_id = 'pick'`,
+    [runId, NOW.toISOString()],
+  );
+
+  expect((await run([])).out).toEqual(['reconcile: 1 run(s) repaired']);
+  expect(stepReplays()).toBe(1);
+  expect(await stepStatus(runId)).toBe('running');
+
+  sql = [];
+  expect((await run([])).out).toEqual(['reconcile: 0 run(s) repaired']);
+  expect(stepReplays()).toBe(0);
+});
+
+test('a lost restart over a running step restores its start, once (#343)', async () => {
+  const runId = await archonRun('running');
+  await archonEvent(runId, 1, 'pick', 'node_started');
+  const restart = await archonEvent(runId, 2, 'pick', 'node_started', {
+    ...eventData('pick', 'node_started', NOW),
+    provider: 'other',
+    timing: { startedAt: new Date(NOW.getTime() + 60_000).toISOString() },
+  });
+  await recordLostStepWrite(runId, restart);
+  const projected = await snapshot(db);
+  await rows(
+    `UPDATE mc.lap_steps SET started_at = $2, provider = 'claude' WHERE run_id = $1 AND step_id = 'pick'`,
+    [runId, new Date(NOW.getTime() - 184_250).toISOString()],
+  );
+
+  expect((await run([])).out).toEqual(['reconcile: 1 run(s) repaired']);
+  expect(await snapshot(db)).toEqual(projected);
+
+  sql = [];
+  expect((await run([])).out).toEqual(['reconcile: 0 run(s) repaired']);
+  expect(stepReplays()).toBe(0);
+});
+
+test('a lost restart whose startedAt is not a timestamp is never replayed, nor does it throw (#343)', async () => {
+  await lostRestart('soon');
 
   for (let pass = 0; pass < 2; pass++) {
     expect((await run([])).out).toEqual(['reconcile: 0 run(s) repaired']);

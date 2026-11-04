@@ -172,7 +172,7 @@ async function reproject(tx: Tx, runId: string, scope: Scope): Promise<void> {
 
 /**
  * A step event whose live write lost a lock wait (0006 records it as 55P03) and that the lap still
- * does not show: its step row is missing, shows another status while this is the step's latest
+ * does not show: its step row is missing, shows another status (or, for a start, another start time) while this is the step's latest
  * event, or a finishing event has no attempt row. Once a replay or the step's next live event
  * projects it, nothing matches, though the append-only error row stays. Reads `r`.
  */
@@ -180,21 +180,23 @@ const LOST_STEP_WRITE = `
   SELECT 1 FROM mc.projection_errors e
     JOIN public.remote_agent_workflow_events v ON v.id = e.event_id
     LEFT JOIN mc.lap_steps s ON s.run_id = v.workflow_run_id AND s.step_id = v.step_name
+    -- A startedAt that is not a timestamp is never applied, and must not throw here, where a
+    -- failed cast aborts the whole candidate read.
+    CROSS JOIN LATERAL (SELECT CASE
+        WHEN pg_input_is_valid(v.data -> 'timing' ->> 'startedAt', 'timestamptz')
+        THEN (v.data -> 'timing' ->> 'startedAt')::timestamptz END AS ts) t
    WHERE e.run_id = r.id AND e.source NOT IN ${REPLAY_SOURCES} AND e.sqlstate = '55P03'
      AND v.workflow_run_id = r.id AND v.event_type IN ${sqlList(STEP_EVENT_TYPES)}
      AND (s.run_id IS NULL
        OR (v.event_type <> 'node_started' AND NOT EXISTS (
              SELECT 1 FROM mc.lap_step_attempts a
               WHERE a.run_id = v.workflow_run_id AND a.step_id = v.step_name AND a.event_id = v.id))
-       OR (s.status <> CASE WHEN v.event_type = 'node_started' THEN 'running'
-                            ELSE substring(v.event_type FROM 6) END
-           -- 0015:116 applies a restart only over a running step or one completed before it
-           -- started; a startedAt that is not a timestamp is never applied, and must not throw
-           -- here, where a failed cast aborts the whole candidate read.
-           AND (v.event_type <> 'node_started'
-             OR s.completed_at < CASE
-                  WHEN pg_input_is_valid(v.data -> 'timing' ->> 'startedAt', 'timestamptz')
-                  THEN (v.data -> 'timing' ->> 'startedAt')::timestamptz END)
+       OR (CASE WHEN v.event_type = 'node_started'
+                -- 0015:116 applies a restart over a running step, or over one completed before
+                -- it started
+                THEN CASE WHEN s.status = 'running' THEN t.ts IS NOT NULL AND s.started_at IS DISTINCT FROM t.ts
+                          ELSE s.completed_at < t.ts END
+                ELSE s.status <> substring(v.event_type FROM 6) END
            AND NOT EXISTS (
              SELECT 1 FROM public.remote_agent_workflow_events n
               WHERE n.workflow_run_id = v.workflow_run_id AND n.step_name = v.step_name
