@@ -492,7 +492,7 @@ it; both share one resource so runs queue rather than overlap:
 
 The label binding is the same with `"bindingId": "intake-labels"`, a selector of
 `{"kind": "label.changed", "actions": ["added"], "predicates": [{"field": "label.name",
-"in": ["archon-triage", "archon-ready", "archon-plan", "archon-investigate"]}]}`, and two
+"in": ["archon-triage", "archon-ready", "archon-plan", "archon-investigate", "archon-split"]}]}`, and two
 more mappings: `label` from `label.name` and `label_actor` from `label.actor.login`.
 The predicate only saves runs; intake ignores any other label. A binding installed before the investigate label was renamed still lists `archon-issue`: replace it with `archon-investigate` in that binding, and in any build-queue binding that selects on it, because `label.name` predicates match exactly.
 
@@ -506,7 +506,8 @@ which a project extends with its own `.archon/sdlc/policy/build.md`.
 
 - **Pickup.** A run claims one item with intake's claim and order. An item waits for the build queue when its work item's stage is a READY
   route (`deliver`, `continue`, `plan` or `investigate`) and the queue has not
-  recorded it, or recorded it as waiting for its next round. A re-triage after the
+  recorded it, or recorded it as waiting for its next round. A `split` item is the
+  split queue's, never the build queue's. A re-triage after the
   queue's last decision starts the item over. The build queue's claim takes none of
   the item's intake requests, so an edit or label request recorded while it holds the
   item waits for intake's next pickup. The queue writes no labels; intake's mirror
@@ -531,7 +532,9 @@ which a project extends with its own `.archon/sdlc/policy/build.md`.
   waits for the build queue. Every listed item records the revisit.
 - **Route.** The `route` agent checks that the issue body is a contract (the six
   elements, with its dated "Current scope" sections), proves a bug's symptom before
-  its first round, and writes the brief `archon-ship` starts from. A bug that needs a
+  its first round, and writes the brief `archon-ship` starts from. A bug also needs
+  evidence that it happened in real use, such as a user's report or a failing CI run;
+  without it the route asks, recommending `park`. A bug that needs a
   browser is reproduced with the playwright-cli skill, which the prompt names rather
   than a `skills:` entry, because a provider that cannot load named skills refuses a
   whole run that declares one.
@@ -539,7 +542,7 @@ which a project extends with its own `.archon/sdlc/policy/build.md`.
   it ended and decides: `done` when the pull request's latest review says Ready at its
   head commit and no check no round can run is still outstanding (a dated scope section records such a check as met; otherwise it asks for it once), `continue` with a brief when the contract already answers what stopped
   it (a correctable finding, CI red the change caused, a false blocker naming a later
-  step), or `ask`. Before any `continue`, it compares the whole change with the contract's shape, and asks when a correction would add machinery the contract does not name. A Ready, green pull request whose only remaining check no round can run is asked about once rather than continued. It declares the pull request when the round left commits unpushed.
+  step), or `ask`. Before any `continue`, it compares the whole change with the contract's shape, and asks when a correction would add machinery the contract does not name. It never continues a pull request that changed nothing material since its last review, no commits or only cosmetic edits; that round ends as done or ask by the same rules. A Ready, green pull request whose only remaining check no round can run is asked about once rather than continued. It declares the pull request when the round left commits unpushed.
   A `continue` starts the item's next round at once, a detached `archon-build-queue
   --input number=<n>` on the run config and the `retriage_as` and
   `round_limit` this run started with; if that launch fails, the item waits for the
@@ -554,13 +557,21 @@ which a project extends with its own `.archon/sdlc/policy/build.md`.
   default branch, and its brief asks for the old
   pull request to be closed as superseded once the replacement opens. A round that failed
   after publishing still records its pull request. A round that continues none opens its
-  pull request from `build/<issue>-<slug>-<run>`, a name never reused. A closed or
+  pull request from `build/<issue>-<slug>-<run>`, a name never reused, and facts records
+  that branch on the claim. When a pickup releases the claim of a run that ended before
+  recording its round, a pull request from that branch, in any state, is recorded as the
+  run's round with reason `ended_undecided`, and the next round sees it as its
+  candidate. On the forge source only an open one is found. A closed or
   merged pull request, or one from a fork, is asked about; a round launched anyway
   never continues it, since ship gets `none` for it too.
-- **Round cap.** When a round ends wanting another and `round_limit` rounds (default 3)
+- **Round cap.** When a round ends wanting another and `round_limit` rounds (default 2)
   have run since the item's scope last changed, by a re-triage or a maintainer's
-  answer, the `answer` agent also compares their reviews. Each round finding new
-  defects asks the scope question instead of running another round.
+  answer, the `answer` agent also compares their reviews. A latest review with any
+  blocking finding the review before it did not have asks the scope question instead
+  of running another round.
+- **Size budget.** Every `continue` also compares the change's lines, counted from the
+  merge base, with the budget `build.md` gives for triage's size. Past twice the budget
+  the `answer` agent asks whether to narrow the work or accept the larger size.
 - **Writes.** The `apply` script refuses an attention item without the choice it
   recommends, pushes the declared commits (never forcing, and reading the remote head
   back), then records the decision on the work item and releases the claim, in one
@@ -628,6 +639,80 @@ changes its checkout, so every run needs its own worktree:
 To start a run as soon as intake routes an item, add a label binding on the same
 resource, with intake's label selector narrowed to the route labels intake writes
 (`archon-ready`, `archon-plan`, `archon-investigate`) and the same launch.
+
+## Split queue
+
+[`archon-split`](split/archon-split.yaml) files the issues a PRD or a bundle of tasks
+splits into. Triage routes an item `split` when it asks for more than one run's work;
+the default triage policy, [`.shared/policy/triage.md`](.shared/policy/triage.md), says
+how triage tells a PRD (a release that tests a hypothesis) from a bundle of tasks and
+from a single work item, and holds a PRD to its hypothesis, its signal with the command
+that measures it, and its threshold and window. A PRD missing any of them gets
+`archon-needs-contract`, naming the gap.
+
+- **Pickup.** A run claims one item with intake's claim and order. An item waits for
+  the split queue when its stage is `split` and no split finished on it, or a
+  re-triage came after the last one. The `number` input claims that issue instead,
+  and refuses the run with why when it cannot, as the build queue's does. The claim
+  takes none of the item's intake requests.
+- **Slice.** One agent reads the issue (written to `split/prd.md`), the project's
+  direction and current code, and lists at most twelve issues, each a contract of its
+  own with a key, a size and the keys it depends on. A PRD's first issue puts its
+  hypothesis in front of real data, adding the measurement when the signal has no
+  source or its command does not exist yet. In a product that already runs, no issue
+  rebuilds or sets up what exists. A bundle is split as written, one issue per task.
+  An open issue that already owns a piece of the outcome is listed as existing, with
+  why the outcome depends on it, instead of being filed again. For a PRD the agent also
+  declares the signal command and the window in days.
+- **Publish.** The `publish` script files each issue with a hidden first line,
+  `<!-- archon-split: <item> <key> -->`, and a `Depends on: #n` line per dependency.
+  Each filed issue is recorded on the work item before the next is filed, and a key
+  already recorded is never filed again; a key whose issue was filed but not recorded
+  is recovered by its marker, from one scan of the repository's issues per run. So a
+  run that stops part way, or a split repeated after a re-triage, files no issue
+  twice. Each existing issue the agent listed is read to prove it is an issue of the
+  repository. The item then gets one marked comment listing its
+  issues. A PRD is labelled `archon-prd` and stays open until its hypothesis has a
+  verdict; a bundle is closed as completed. The last write records the split done and
+  releases the claim. An issue closed before its split finishes is recorded and
+  files nothing more.
+- **Record.** The work item's `facts.split` holds the status (`filing`, `done` or
+  `closed`), whether the item is a `prd` or a `bundle`, every issue filed from it by
+  key, the existing issues it adopted with why, and a PRD's signal command and window.
+  The comment on the item lists both.
+- **The filed issues** come back through intake like any other issue. They are opened
+  by the install's own identity, so intake trusts them only when that login is on the
+  maintainer list.
+
+The pack installs no binding. A schedule keeps items moving, as for the build queue.
+The run reads the checkout and writes only to the tracker and the state store, so it
+needs no worktree:
+
+```json
+{
+  "version": 1,
+  "sourceInstanceId": "widgets-split-queue",
+  "binding": {
+    "bindingId": "split-queue",
+    "bindingRevision": null,
+    "hostId": "build-host-1",
+    "runAsUserId": "<archon user id>",
+    "resource": "forge:github.com/acme/widgets:split",
+    "capacity": 1,
+    "overlap": "skip",
+    "launch": {
+      "cwd": "/srv/archon/widgets",
+      "workflowName": "archon-split",
+      "inputs": { "repo_host": "github.com", "repo_path": "acme/widgets" },
+      "isolation": { "kind": "default" }
+    }
+  },
+  "schedule": { "intervalSeconds": 1800, "runAtLoad": false }
+}
+```
+
+To split an item as soon as intake routes it, add a label binding on the same
+resource, with intake's label selector narrowed to `archon-split` and the same launch.
 
 ## Merge queue
 
@@ -865,6 +950,185 @@ back:
 }
 ```
 
+## Metrics
+
+[`archon-metrics-prs`](metrics-prs/archon-metrics-prs.yaml) records the outcomes of the
+pull requests the build queue opened, for `archon metrics` to aggregate:
+
+| Metric | Kind | Unit | One record per pull request, at |
+|---|---|---|---|
+| `sdlc.prs_opened` | count | `prs` | its creation |
+| `sdlc.prs_merged` | count | `prs` | its merge |
+| `sdlc.prs_abandoned` | count | `prs` | its close (1) when it closed without merging; else its merge or creation (0) |
+| `sdlc.pr_merge_rate` | score | `ratio` | its merge (1) or its close without merging (0) |
+
+A pull request still open counts as opened and has no merge rate yet. Abandoned means
+closed without merging, whoever closed it. Every pull request records 0 or 1 for
+abandoned, so a reopened pull request replaces its earlier 1; the abandoned value counts
+abandoned pull requests, and its `n` counts every pull request measured.
+
+The pull requests come from the build rounds on the work items: a factory pull request is
+one a round opened from a `build/` branch in the repository itself. A pull request a round
+only continued, such as a contributor's, counts in no metric and is listed in the node's
+`skipped` output. Each record names its pull request as the subject and the build-queue
+runs that built it as its producing runs, so it lands in the cohort of those runs, not of
+the day the metric ran:
+
+```bash
+archon metrics sdlc.pr_merge_rate --compare <when this checkout picked up a pack change>
+```
+
+Records whose build runs started on both sides of the cut are counted as straddling and
+left out of both sides. The comparison is observational: anything else that changed
+around the cut is mixed in.
+
+Cost per merged pull request is the cost `archon metrics sdlc.prs_opened` reports
+(`cost.usd` with `--json`), divided by the `sdlc.prs_merged` value over the same window.
+It covers the build-queue runs that built a pull request; queue runs that built none are
+not attributed to any. It is a floor: runs on a provider that reports no cost add nothing
+and are counted instead.
+
+Two kinds of factory pull request are missed, and both are mostly ones closed without
+merging, so the abandoned count is low and the merge rate high:
+
+- A round is recorded when its run reaches the queue's decision. A run cancelled after
+  it opened a pull request records no round, so that pull request is missed.
+- A work item keeps its last ten rounds. A pull request whose rounds all fell out of that
+  record is missed, and one whose early rounds fell out is attributed to its later runs
+  only, so it can land in a later cohort with a lower cost.
+
+The workflow holds no state and reads every pull request again on each run; a re-run
+replaces the earlier records. It reads pull request timestamps through the GitHub CLI and
+refuses on `ARCHON_SDLC_FORGE=forge`. Run it on demand:
+
+```bash
+archon workflow run archon-metrics-prs
+```
+
+The pack installs no binding. A native schedule refreshes the records daily:
+
+```json
+{
+  "version": 1,
+  "sourceInstanceId": "widgets-metrics-prs",
+  "binding": {
+    "bindingId": "metrics-prs",
+    "bindingRevision": null,
+    "hostId": "build-host-1",
+    "runAsUserId": "<archon user id>",
+    "resource": "metrics-prs:widgets",
+    "capacity": 1,
+    "overlap": "skip",
+    "launch": {
+      "cwd": "/srv/archon/widgets",
+      "workflowName": "archon-metrics-prs",
+      "inputs": {},
+      "isolation": { "kind": "default" }
+    }
+  },
+  "schedule": { "intervalSeconds": 86400, "runAtLoad": false }
+}
+```
+
+### Test value
+
+[`archon-metrics-test-value`](metrics-test-value/archon-metrics-test-value.yaml) judges
+the tests in each factory pull request merged since its `since` input, one
+[`archon-metrics-test-value-judge`](metrics-test-value-judge/archon-metrics-test-value-judge.yaml)
+run per pull request, and records per pull request:
+
+| Metric | Kind | Unit | Meaning |
+|---|---|---|---|
+| `sdlc.tests_added` | count | `tests` | tests the pull request added or changed, as the judge listed them |
+| `sdlc.tests_unprotective` | count | `tests` | those that no plausible regression would fail |
+
+Both are the judge's counts: a test the judge leaves out is in neither, and calibration
+scores such omissions as disagreements. Both are attributed to the build-queue runs that
+built the pull request, at its merge time, like the PR metrics. A pull request whose
+judge run failed has no record and is listed in the node's `skipped` output. Each pull
+request costs one judge run on the `large` tier, so the window sets the cost.
+
+The judge applies the review pack's test lens
+([`review/commands/review-tests.md`](review/commands/review-tests.md)), read when it runs,
+plus the rules in its own prompt. It has no tools and records no metric of its own.
+
+**Calibration.** A judged count is only as good as the judge.
+[`archon-metrics-test-value-calibrate`](metrics-test-value-calibrate/archon-metrics-test-value-calibrate.yaml)
+runs the same judge over the pull requests the project labeled by hand in
+`.archon/sdlc/metrics/test-value-cases.json`, read from the checkout the run starts in,
+and scores it, one 0/1 record per labeled test:
+
+- `sdlc.tests_unprotective_judge_agreement`: the verdict matches the label.
+- `sdlc.tests_unprotective_judge_catch_rate`: for tests labeled unprotective only, the
+  judge flagged it. A judge that calls every test protective scores 0 here, however high
+  its agreement.
+
+A labeled test the judge did not list counts as a disagreement. The node's
+`disagreements` output lists every test it got wrong, with the judge's reason. The run
+refuses when the file is missing or empty, and when the judge failed on any case, since
+agreement over a different set of cases is not comparable. Each record's `n` and interval
+say how much the labels can tell; a handful of cases gives a wide interval. The pack ships
+no labels: they are the project's own pull requests.
+
+The file is a list with one case per pull request:
+
+```json
+[
+  {
+    "pr": "<pull request URL>",
+    "tests": [{ "file": "<path>", "name": "<suite> > <test>", "protects": true }]
+  }
+]
+```
+
+`name` is the test's suite titles and own title joined by ` > `. Placeholders such as `%s`
+or `${value}` are ignored when labels and verdicts are matched. Label by hand: labels a
+model drafted calibrate the judge against itself.
+
+**One judge, one identity.** All four records name the same instrument: a hash of the
+judge workflow's files and the criteria text it inlines. The engine adds the models that
+ran the judge node, so `archon metrics` reports one entry per judge and model, and never
+averages two. Editing the judge's prompt, the test lens or anything in the judge's
+directory, or remapping the `large` tier to another model, starts a new identity. Run
+the calibration again before trusting the counts it produces. Compare the agreement the
+two models reached after calibrating with each:
+
+```bash
+archon metrics sdlc.tests_unprotective_judge_agreement --by-model judge
+```
+
+`since` takes an ISO date or a number of days back, such as `7d`:
+
+```bash
+archon workflow run archon-metrics-test-value --input since=7d
+```
+
+The pack installs no binding. A native schedule judges the last day's merges daily; a
+pull request judged twice keeps its latest record:
+
+```json
+{
+  "version": 1,
+  "sourceInstanceId": "widgets-metrics-test-value",
+  "binding": {
+    "bindingId": "metrics-test-value",
+    "bindingRevision": null,
+    "hostId": "build-host-1",
+    "runAsUserId": "<archon user id>",
+    "resource": "metrics-test-value:widgets",
+    "capacity": 1,
+    "overlap": "skip",
+    "launch": {
+      "cwd": "/srv/archon/widgets",
+      "workflowName": "archon-metrics-test-value",
+      "inputs": { "since": "1d" },
+      "isolation": { "kind": "default" }
+    }
+  },
+  "schedule": { "intervalSeconds": 86400, "runAtLoad": false }
+}
+```
+
 ## Worktree cleanup
 
 [`archon-worktree-cleanup`](cleanup/archon-worktree-cleanup.yaml) runs the host CLI's
@@ -922,3 +1186,15 @@ pass every few hours:
   "schedule": { "intervalSeconds": 21600, "runAtLoad": false }
 }
 ```
+
+## Docker verification
+
+For disposable verification images, use `docker build --label "archon.run_id=$WORKFLOW_ID" -t "verify-$WORKFLOW_ID:check" .` (or the same `--label` with `docker buildx build --load`). Give each run unique tags and use the same Docker context as the Archon host. A child run uses its own `$WORKFLOW_ID`. Remove verification containers when the check finishes, including stopped containers.
+
+Cleanup is a one-shot attempt after a completed or non-recoverable cancelled run stops writing. Failed runs (including SIGINT/SIGTERM interruptions) and recoverable fan-out-cancelled children retain their images because they can resume under the same run ID. Failed runs can release their images through explicit abandonment or safe manual recovery. Recoverable fan-out-cancelled children require the safe manual recovery below; explicit abandonment does not release their images. Container-used images and ambiguous/live owners retain their images too. There is no watcher for containers removed later. Docker errors are reported; terminal run status is unchanged.
+
+If the initial verification-image inventory fails on a host run, Archon preserves the run's own exit code and reports a run-named warning with manual recovery guidance, regardless of the failure's cause. Cleanup is inconclusive; images may remain. Restore access to the intended Docker context and use the recovery steps below. Failures after inventory (inspection, container-use checks, or removal) still fail an otherwise successful foreground command, as do container-run cleanup failures. Host runs skip optional image cleanup only when Docker is absent at both host setup and cleanup. Container runs always require Docker.
+
+Use one tag per image. Cleanup deletes immutable image IDs without force or parent pruning; Docker refuses IDs with multiple repository references. Those images require manual cleanup under exclusive control of their tags. After removing late test containers and confirming the run cannot resume or write, list its images with `docker image ls --all --no-trunc --filter "label=archon.run_id=<run-id>"`, inspect each full ID with `docker image inspect <full-id>`, and check all containers with `docker container ls --all --filter ancestor=<full-id>`. For a confirmed owned, unused image, use `docker image rm --no-prune <full-id>`. If multiple tags prevent removal, verify and remove those references manually only while no other build or operator can reassign them. Never force removal or prune shared images/cache.
+
+Unlabelled images and other runs' images are left alone. Shared build cache is retained: Docker cannot filter it by this image label.

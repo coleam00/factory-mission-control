@@ -8,7 +8,8 @@
  *
  * It also resolves the item's pull request as the forge reports it now. An open one
  * whose head is in the item's repository is the candidate the round continues;
- * otherwise the round opens one from a new branch named after the issue.
+ * otherwise the round opens one from a new branch named after the issue, which it
+ * records on the claim.
  */
 
 import { mkdirSync, writeFileSync } from 'node:fs';
@@ -17,7 +18,6 @@ import {
   BUILD_PICKUP,
   type BuildRound,
   buildBranch,
-  claimNamed,
   countedRounds,
   itemPullRequest,
 } from '../../.shared/build.ts';
@@ -26,7 +26,7 @@ import { artifactsDir, emit, refuse, text, trimmed } from '../../.shared/io.ts';
 import { viewIssue } from '../../.shared/issue.ts';
 import { POLICY_DEFAULTS } from '../../.shared/policy-defaults.ts';
 import { viewPr } from '../../.shared/pr.ts';
-import { claimNext, type WorkItem, withPlainReports } from '../../.shared/workitem.ts';
+import { claimNamed, claimNext, updateClaimed, type WorkItem, withPlainReports } from '../../.shared/workitem.ts';
 
 function positive(name: string, value: string): number {
   const parsed = Number(value);
@@ -106,7 +106,7 @@ function main(): void {
   const doc =
     number === ''
       ? claimNext(new Date().toISOString(), runId, BUILD_PICKUP)
-      : claimNamed(positive('number', number), new Date().toISOString(), runId);
+      : claimNamed(positive('number', number), new Date().toISOString(), runId, BUILD_PICKUP);
   if (doc === null) {
     emit({
       path: 'idle',
@@ -125,15 +125,15 @@ function main(): void {
   writeIssue(issue.title, issue.url, issue.body);
   const closed = issue.state === 'closed';
   const rounds = doc.facts.build?.rounds ?? [];
-  emitItem(
-    closed ? 'closed' : 'route',
-    doc.subject,
-    issue.url,
-    doc,
-    rounds,
-    countedRounds(doc) + 1 >= limit,
-    closed ? NO_ITEM_PR : resolvePr(doc.subject, issue.title, doc, rounds, runId)
-  );
+  const itemPr = closed ? NO_ITEM_PR : resolvePr(doc.subject, issue.title, doc, rounds, runId);
+  // A release reads the branch from the claim: the title can change before then.
+  const recorded = closed
+    ? doc
+    : updateClaimed(doc.subject, runId, held => ({
+        ...held,
+        claim: held.claim && { ...held.claim, branch: itemPr.branch },
+      }));
+  emitItem(closed ? 'closed' : 'route', doc.subject, issue.url, recorded, rounds, countedRounds(doc) + 1 >= limit, itemPr);
 }
 
 try {
