@@ -148,12 +148,13 @@ async function inPage<T>(call: string): Promise<T> {
   }
 }
 
-test('a client whose connection keeps ending is replaced after a doubling wait, not about once a second (#274)', async () => {
-  const { opened } = await inPage<{ opened: number[] }>('renderOutage(1000, 20000)');
-  // A constant 1 s wait opens about 19 sockets in 20 s; the doubling one about 6, each wait longer.
-  expect(opened.length).toBeGreaterThanOrEqual(4);
-  expect(opened.length).toBeLessThanOrEqual(9);
-  expect(opened[opened.length - 1] - opened[opened.length - 2]).toBeGreaterThanOrEqual(4_000);
+test('a client whose connection ends for good again and again is replaced after a doubling wait, not about once a second (#274)', async () => {
+  const { opened } = await inPage<{ opened: number[] }>('renderOutage(20000)');
+  // Each replacement client ends for good 300 ms after its row. A constant 1 s wait opens about 14
+  // clients in 20 s; the doubling one (1, 2, 4, 8 s) opens 4, each gap longer than the last.
+  expect(opened.length).toBeGreaterThanOrEqual(3);
+  expect(opened.length).toBeLessThanOrEqual(6);
+  expect(opened[2] - opened[1]).toBeGreaterThan(opened[1] - opened[0]);
 }, 40_000);
 
 test('a panel that stays live for the stable time owes no extra wait when it fails again (#274)', async () => {

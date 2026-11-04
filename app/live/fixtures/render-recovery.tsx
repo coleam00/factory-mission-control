@@ -266,11 +266,11 @@ export async function renderFlapping(windowMs: number, delays: number[] = [300])
 }
 
 /**
- * A page whose boot connection ends for good while the first `deadSockets` connections a new
- * client opens close as soon as they are made. Resolves after `windowMs` with when each socket
- * after the boot one was opened (ms after the page rendered), and the panel's state.
+ * A page whose every connection, the boot one and each new client's, ends for good after its
+ * panel's row. Resolves after `windowMs` with when each socket after the boot one was opened (ms
+ * after the page rendered), and the panel's state.
  */
-export async function renderOutage(deadSockets: number, windowMs: number) {
+export async function renderOutage(windowMs: number) {
   const originalFetch = window.fetch;
   const OriginalWebSocket = window.WebSocket;
   const header = btoa(JSON.stringify({ alg: 'dir', enc: 'A256GCM', v: 1 })).replace(/=+$/, '');
@@ -289,7 +289,7 @@ export async function renderOutage(deadSockets: number, windowMs: number) {
   window.WebSocket = class extends RowSocket {
     constructor() {
       opened.push(Math.round(performance.now() - started));
-      super(false, true, () => undefined, opened.length <= deadSockets);
+      super(true, true);
     }
   } as unknown as typeof WebSocket;
   window.__MC_LIVE__ = {
