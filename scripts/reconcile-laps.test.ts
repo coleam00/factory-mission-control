@@ -431,6 +431,16 @@ test('a running lap whose attempt write lost a locked mc.lap_step_attempts gets 
   expect(await snapshot(db)).toEqual(projected);
 });
 
+test('a running lap with no recorded projection error is not replayed, even if its rows differ (#343)', async () => {
+  const { runId } = await runningLap();
+  await rows(`DELETE FROM mc.lap_steps WHERE run_id = $1 AND step_id = 'check-app'`, [runId]);
+  const before = await snapshot(db);
+
+  const { out } = await run([]);
+  expect(out).toEqual(['reconcile: 0 run(s) repaired']);
+  expect(await snapshot(db)).toEqual(before);
+});
+
 /** A paused run whose lap a dropped projection left `running`. */
 async function wrongPausedLap(): Promise<string> {
   const runId = await archonRun('running');
@@ -477,7 +487,8 @@ test.each([
   [
     'a missed step row',
     async () => {
-      const { runId } = await runningLap();
+      const { runId, checkStart } = await runningLap();
+      await recordLostStepWrite(runId, checkStart);
       await rows(`DELETE FROM mc.lap_steps WHERE run_id = $1 AND step_id = 'check-app'`, [runId]);
       return runId;
     },

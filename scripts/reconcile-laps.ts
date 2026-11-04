@@ -4,8 +4,8 @@
 // a finished, paused or failed run may get no more writes to project it again, and a run whose
 // insert lost a locked mc.laps (issue #269) gets no lap until its status changes, and a running
 // lap whose step or attempt write lost a locked table (issue #343) keeps a stale step and cost
-// until that step's next event. For each run Archon is not running, and each running run with no
-// lap, this replays the run's row and
+// until that step's next event. For each run Archon is not running, each running run with no
+// lap, and each running run with a lap that has a recorded projection error, this replays the run's row and
 // step-level events through the projection's own functions (0006, 0007's attempts and 0008's
 // versions), by way of temp tables that carry the same triggers, and keeps the result only when it
 // differs from the lap's rows. A running run with a lap has only its step events replayed, and
@@ -176,8 +176,8 @@ type Reconciled = {
 
 /**
  * Re-projects every Archon run that is not running whose lap rows differ from what its rows project
- * to, every running run that has no lap at all, and every running run's missed step and attempt
- * rows; counts the running runs whose lap shows another
+ * to, every running run that has no lap at all, and the step and attempt rows of every running run
+ * a live trigger recorded a projection error for; counts the running runs whose lap shows another
  * status, which it leaves to their live triggers.
  */
 export async function reconcileLaps(db: Db): Promise<Reconciled> {
@@ -192,8 +192,10 @@ export async function reconcileLaps(db: Db): Promise<Reconciled> {
   // table: with no lap its insert lost a locked mc.laps (#269), and no trigger projects it again
   // until its status changes; with a lap, a step write lost to a locked mc.lap_steps or
   // mc.lap_step_attempts (#343) is not projected again until that step's next event, and the lane
-  // shows a stale step and cost meanwhile. So its step and attempt rows are replayed and compared
-  // too; its lap's status is left to its live triggers. The read waits at most REPLAY_LOCK_TIMEOUT
+  // shows a stale step and cost meanwhile. Such a run is told by a projection error a live trigger
+  // recorded for it: the replay deletes and re-inserts its step rows, which would make Archon's
+  // next step write wait on a healthy run. Its step and attempt rows are then replayed and
+  // compared; its lap's status is left to its live triggers. The read waits at most REPLAY_LOCK_TIMEOUT
   // too: when mc.laps is locked (#221) every run, running or not, is busy.
   let running: Row[] = [];
   let live: Row | undefined;
@@ -203,7 +205,9 @@ export async function reconcileLaps(db: Db): Promise<Reconciled> {
       running = await tx.query(
         `SELECT r.id, l.run_id IS NULL AS unprojected FROM public.remote_agent_workflow_runs r
            LEFT JOIN mc.laps l ON l.run_id = r.id
-          WHERE r.status IN ${sqlList(LIVE)}
+          WHERE r.status IN ${sqlList(LIVE)} AND (l.run_id IS NULL OR EXISTS (
+            SELECT 1 FROM mc.projection_errors e
+             WHERE e.run_id = r.id AND e.source NOT IN ${REPLAY_SOURCES}))
           ORDER BY r.started_at, r.id`,
         [],
       );
