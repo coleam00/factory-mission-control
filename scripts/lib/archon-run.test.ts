@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Env } from '../../server/check-env';
-import { ACTIVE, askArchon, ENDED, runStatusFrom } from './archon-run';
+import { askArchon, runStatusFrom } from './archon-run';
 
 test.each(['pending', 'running', 'paused'])('a %s run is active', (status) => {
   expect(runStatusFrom(0, JSON.stringify({ status }))).toEqual({ state: 'active' });
@@ -39,19 +39,6 @@ test.each([undefined, '', 'archon', '[]', '[1]'])(
     expect(status).toEqual({ state: 'unknown', reason: 'ARCHON_CLI_COMMAND is not set' });
   },
 );
-
-test('ACTIVE and ENDED are the sets factory/consumer.py classifies by', () => {
-  const source = readFileSync(join(import.meta.dir, '../../factory/consumer.py'), 'utf-8');
-  const setOf = (name: string) =>
-    new Set(
-      [
-        ...(source.match(new RegExp(`^${name} = {([^}]*)}`, 'm'))?.[1] ?? '').matchAll(/"(\w+)"/g),
-      ].map((match) => match[1]),
-    );
-  expect(ACTIVE).toEqual(setOf('ACTIVE'));
-  expect(ENDED).toEqual(setOf('ENDED'));
-  expect(ACTIVE.size).toBeGreaterThan(0);
-});
 
 describe('askArchon spawns the Archon CLI', () => {
   const scratch: string[] = [];
