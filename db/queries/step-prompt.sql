@@ -15,9 +15,9 @@ step AS (
   JOIN version v ON v.archon_sha = s.archon_sha AND v.factory_sha = s.factory_sha
   WHERE s.workflow = $2 AND s.path = $3
 )
--- The command file the step runs, in parts the browser joins in order: Realtime never answers a
--- query with a value of 16 KiB or more (REALTIME.md). 4000 characters stay under that at four
--- bytes each, and 25 parts hold a file of 100,000.
+-- The command file the step runs, in parts the browser joins in order: each part stays
+-- under 16 KiB (REALTIME.md): 4000 characters are at most 16,000 bytes at four bytes each, and 25
+-- parts hold a file of 100,000.
 SELECT t.path, n.part, substr(t.text, n.part * 4000 + 1, 4000) AS chunk
 FROM mc.arch_texts t
 JOIN version v ON v.archon_sha = t.archon_sha AND v.factory_sha = t.factory_sha
