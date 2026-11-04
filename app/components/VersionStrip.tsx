@@ -290,7 +290,7 @@ function Entry({
   );
 }
 
-const shortDigest = (digest: string) => digest.slice(0, 'sha256:'.length + 12);
+export const shortDigest = (digest: string) => digest.slice(0, 'sha256:'.length + 12);
 
 /**
  * The select button's accessible name: its visible text, then the pin and short digest, since two

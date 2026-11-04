@@ -3,19 +3,12 @@ project:
   repo_host: github.com
   repo_path: coleam00/factory-mission-control
 
-# Nearly everything in this repo reaches a screen or a live query, so every pull request is checked.
+# Validation is Review's lenses and this app check. Nearly everything in this repo reaches a screen or a live query, so every pull request is checked.
 app_check:
   enabled: true
   trigger: always
   frontend_paths: []
   depth: auto
-
-# Private scenarios, outside the repository. A pull request runs only the ones it exercises.
-holdouts:
-  enabled: true
-  path: C:/Users/colem/.archon-mc/holdouts/factory-mission-control
-  max_per_check: 8
-  sweep_size: 10
 
 protected_paths:
   - MISSION.md
@@ -48,7 +41,7 @@ app:
   teardown: bash C:/Users/colem/OpenSource/mc-runtime/teardown.sh
 
 # One place for every model: `think` plans, routes, reviews the whole change, decides merges and
-# judges the running app; `build` writes code, runs the narrow review lenses and picks holdouts.
+# judges the running app; `build` writes code, runs the narrow review lenses.
 models:
   assistant: claude
   tiers:
@@ -69,7 +62,6 @@ models:
     '@factory-planner': *think
     '@factory-reviewer': *think
     '@factory-manager': *build
-    '@factory-holdout-selector': *build
     '@implementer': *build
     '@factory-deployer': *build
 
@@ -83,4 +75,3 @@ triggers:
   discoveries: { interval_seconds: 14400 }
   manager: { interval_seconds: 1800 }
   app_check: { interval_seconds: 300 }
-  holdout_sweep: { interval_seconds: 7200 }

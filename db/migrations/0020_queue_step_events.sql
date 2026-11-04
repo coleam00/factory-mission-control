@@ -13,6 +13,11 @@
 -- Runs finished before this file get no steps from it: `reconcile:laps` replays them through these
 -- functions. Run again, it changes nothing.
 --
+-- This file sorts after 0019_structured_output_string, which gave mc.record_step_attempt and
+-- mc.project_step_event their string-held-object parsing (issue #288); both bodies here keep it by
+-- calling mc.structured_output, so the live trigger and `reconcile:laps` read such an output as
+-- 0019 does.
+--
 -- The holdout workflows (`factory-holdouts`, `factory-app-check`, `factory-holdout-sweep`) take
 -- holdout scenarios as input, and mc.step_output only knows the old loop's `check-app` and
 -- `review` steps. Their steps keep status and timing but no output, no route, outcome or reason
@@ -47,10 +52,7 @@ BEGIN
     WHERE id = p_run_id AND NOT mc.projects_step_events(workflow_name)) THEN
     RETURN;
   END IF;
-  v_raw := p_data -> 'structured_output';
-  IF jsonb_typeof(v_raw) IS DISTINCT FROM 'object' THEN
-    v_raw := NULL;
-  END IF;
+  v_raw := mc.structured_output(p_data -> 'structured_output');
   v_output := mc.step_output(p_step, v_raw);
   IF NOT mc.keeps_step_output((SELECT workflow_name FROM public.remote_agent_workflow_runs
     WHERE id = p_run_id)) THEN
@@ -132,6 +134,8 @@ $$;
 CREATE OR REPLACE FUNCTION mc.project_step_event() RETURNS trigger LANGUAGE plpgsql
 SET lock_timeout = '100ms' AS $$
 DECLARE
+  v_raw jsonb;
+  v_parsed jsonb;
   v_output jsonb;
   v_started timestamptz;
   v_duration bigint;
@@ -141,15 +145,13 @@ BEGIN
     WHERE id = NEW.workflow_run_id AND NOT mc.projects_step_events(workflow_name)) THEN
     RETURN NULL;
   END IF;
-  v_output := NEW.data -> 'structured_output';
-  IF jsonb_typeof(v_output) NOT IN ('object', 'null') THEN
+  v_raw := NEW.data -> 'structured_output';
+  v_parsed := mc.structured_output(v_raw);
+  IF jsonb_typeof(v_raw) NOT IN ('object', 'null') AND v_parsed IS NULL THEN
     PERFORM mc.record_projection_error(TG_NAME, NEW.workflow_run_id, NEW.id, '22000',
-      format('structured_output is a jsonb %s, not an object', jsonb_typeof(v_output)));
+      format('structured_output is a jsonb %s, not an object', jsonb_typeof(v_raw)));
   END IF;
-  IF jsonb_typeof(v_output) IS DISTINCT FROM 'object' THEN
-    v_output := NULL;
-  END IF;
-  v_output := mc.step_output(NEW.step_name, v_output);
+  v_output := mc.step_output(NEW.step_name, v_parsed);
   IF NOT mc.keeps_step_output((SELECT workflow_name FROM public.remote_agent_workflow_runs
     WHERE id = NEW.workflow_run_id)) THEN
     v_output := NULL;
@@ -224,10 +226,10 @@ BEGIN
       PERFORM mc.record_projection_error(TG_NAME, NEW.workflow_run_id, NEW.id, SQLSTATE, SQLERRM);
     END;
     IF NEW.event_type = 'node_completed' AND NEW.step_name = 'check-app'
-      AND NEW.data -> 'structured_output' ? 'lines' THEN
+      AND v_parsed ? 'lines' THEN
       BEGIN
         PERFORM mc.project_app_check_lines(NEW.workflow_run_id,
-          NEW.data -> 'structured_output' -> 'lines');
+          v_parsed -> 'lines');
       EXCEPTION WHEN OTHERS THEN
         PERFORM mc.record_projection_error(TG_NAME, NEW.workflow_run_id, NEW.id, SQLSTATE, SQLERRM);
       END;

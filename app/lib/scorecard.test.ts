@@ -281,9 +281,9 @@ test('a difference is meaningful only when both sides rest on 10 laps or more', 
     value,
     laps: Array.from({ length: n }, (_, i) => `lap-${i}`),
   });
-  expect(meaningful(on(10, 1), on(10, 2))).toBe(true);
-  expect(meaningful(on(9, 1), on(10, 2))).toBe(false);
-  expect(meaningful(on(10, 1), on(9, 2))).toBe(false);
+  expect(meaningful(10, 10)).toBe(true);
+  expect(meaningful(9, 10)).toBe(false);
+  expect(meaningful(10, 9)).toBe(false);
   expect(difference(on(10, 0.2), on(10, 0.2857))).toBe(0.0857);
   expect(difference(on(10, 7.6), on(10, 4.5))).toBe(-3.1);
   expect(difference(on(10, null), on(10, 4.5))).toBeNull();
