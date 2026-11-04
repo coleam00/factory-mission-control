@@ -197,6 +197,18 @@ test('an expired seal is never handed on, and is asked for again only after a wa
   expect(sent.filter((at) => at < 30_000)).toHaveLength(5);
 });
 
+test('first seals on one key, each answered with a full lifetime, owe no wait', async () => {
+  const backoff = newSealBackoff();
+  const sent: number[] = [];
+  for (let i = 0; i < 6; i++) {
+    const request = onClock(sent, (at) => ({ expiresAt: at + 60_000 }), undefined, backoff);
+    clock = i * 5_000;
+    await request();
+  }
+  expect(sent).toEqual([0, 5_000, 10_000, 15_000, 20_000, 25_000]);
+  expect(backoff.delay).toBe(0);
+});
+
 test('a seal too close to expiry to wait before renewing is handed on, and the next waits', async () => {
   const { sent, outcomes } = await backOff(4, (at) => ({ expiresAt: at + 5_000 }));
   expect(outcomes).toEqual(Array(4).fill('sealed'));

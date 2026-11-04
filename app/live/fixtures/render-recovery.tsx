@@ -3,11 +3,14 @@ import { createRoot } from 'react-dom/client';
 import { LivePanel } from '../LivePanel';
 import { LiveProvider } from '../LiveProvider';
 
+/** Subscribes made on any socket of the page, which `failAfter` counts. */
+let subscribed = 0;
+
 /**
  * A Realtime socket that answers every subscribe with one row. With `failAfterRows`, it then
  * reports a backend protocol error, which ends the client's connection for good: the library never
- * reconnects that client, and rejects every renewal on it. With `flap`, every subscription fails
- * for good 300 ms after its rows.
+ * reconnects that client, and rejects every renewal on it. With `failAfter`, a subscription fails
+ * for good `failAfter` ms after its rows. A `dead` socket closes as soon as it is made.
  */
 class RowSocket implements WebSocketLike {
   readyState = 1;
@@ -17,8 +20,11 @@ class RowSocket implements WebSocketLike {
   constructor(
     private failAfterRows: boolean,
     private greet: boolean,
-    private flap = false,
-  ) {}
+    private failAfter: (subscribe: number) => number | undefined = () => undefined,
+    dead = false,
+  ) {
+    if (dead) queueMicrotask(() => this.close());
+  }
 
   addEventListener(type: string, listener: (event: { data: unknown }) => void) {
     this.listeners.set(type, [...(this.listeners.get(type) ?? []), listener]);
@@ -59,7 +65,8 @@ class RowSocket implements WebSocketLike {
         rows: [{ row_key: 'a'.repeat(64), values: ['the lap'] }],
       });
       this.receive({ type: 'baseline_sync_end', ...version, batch_count: 1 });
-      if (this.flap)
+      const failIn = this.failAfter(++subscribed);
+      if (failIn !== undefined)
         setTimeout(() => {
           this.receive({
             type: 'subscription_error',
@@ -67,7 +74,7 @@ class RowSocket implements WebSocketLike {
             code: 'baseline_sync_failed',
             message: 'the subscription failed',
           });
-        }, 300);
+        }, failIn);
       if (this.failAfterRows)
         setTimeout(() => {
           this.receive({
@@ -199,10 +206,12 @@ export async function renderRecovery(
 }
 
 /**
- * A panel whose every subscription is live for a moment and then fails for good, while sealing
- * answers every request. Resolves after `windowMs` with when each seal was asked for.
+ * A panel whose subscriptions fail for good `delays` ms after their rows (the last repeats), while
+ * sealing answers every request. Resolves after `windowMs` with when each seal was asked for.
  */
-export async function renderFlapping(windowMs: number) {
+export async function renderFlapping(windowMs: number, delays: number[] = [300]) {
+  subscribed = 0;
+  const failAfter = (subscribe: number) => delays[subscribe - 1] ?? delays.at(-1);
   const originalFetch = window.fetch;
   const OriginalWebSocket = window.WebSocket;
   const header = btoa(JSON.stringify({ alg: 'dir', enc: 'A256GCM', v: 1 })).replace(/=+$/, '');
@@ -222,7 +231,7 @@ export async function renderFlapping(windowMs: number) {
   );
   window.WebSocket = class extends RowSocket {
     constructor() {
-      super(false, true, true);
+      super(false, true, failAfter);
     }
   } as unknown as typeof WebSocket;
   window.__MC_LIVE__ = {
@@ -232,7 +241,7 @@ export async function renderFlapping(windowMs: number) {
     rewind: null,
     protocol: 'neon.realtime.v1',
     early: [JSON.stringify({ type: 'ready' })],
-    socket: new RowSocket(false, false, true) as unknown as WebSocket,
+    socket: new RowSocket(false, false, failAfter) as unknown as WebSocket,
   };
   const container = document.createElement('div');
   document.body.append(container);
@@ -247,6 +256,64 @@ export async function renderFlapping(windowMs: number) {
     );
     await new Promise((resolve) => setTimeout(resolve, windowMs));
     return { asked };
+  } finally {
+    root.unmount();
+    container.remove();
+    window.fetch = originalFetch;
+    window.WebSocket = OriginalWebSocket;
+    delete window.__MC_LIVE__;
+  }
+}
+
+/**
+ * A page whose boot connection ends for good while the first `deadSockets` connections a new
+ * client opens close as soon as they are made. Resolves after `windowMs` with when each socket
+ * after the boot one was opened (ms after the page rendered), and the panel's state.
+ */
+export async function renderOutage(deadSockets: number, windowMs: number) {
+  const originalFetch = window.fetch;
+  const OriginalWebSocket = window.WebSocket;
+  const header = btoa(JSON.stringify({ alg: 'dir', enc: 'A256GCM', v: 1 })).replace(/=+$/, '');
+  const started = performance.now();
+  const opened: number[] = [];
+  window.fetch = Object.assign(
+    async () =>
+      Response.json({
+        capability: `${header}..nonce.test.tag`,
+        queryFingerprint: 'a'.repeat(64),
+        expiresAt: Date.now() + 600_000,
+        rewind: null,
+      }),
+    { preconnect: originalFetch.preconnect },
+  );
+  window.WebSocket = class extends RowSocket {
+    constructor() {
+      opened.push(Math.round(performance.now() - started));
+      super(false, true, () => undefined, opened.length <= deadSockets);
+    }
+  } as unknown as typeof WebSocket;
+  window.__MC_LIVE__ = {
+    url: 'wss://test/',
+    home: 'wss://test/',
+    factories: ['factory-a'],
+    rewind: null,
+    protocol: 'neon.realtime.v1',
+    early: [JSON.stringify({ type: 'ready' })],
+    socket: new RowSocket(true, false) as unknown as WebSocket,
+  };
+  const container = document.createElement('div');
+  document.body.append(container);
+  const root = createRoot(container);
+  try {
+    root.render(
+      <LiveProvider>
+        <LivePanel<{ value: string }> query="one-lap" factory="factory-a">
+          {(rows, state) => <p>{state === 'ready' ? rows?.map((row) => row.value) : state}</p>}
+        </LivePanel>
+      </LiveProvider>,
+    );
+    await new Promise((resolve) => setTimeout(resolve, windowMs));
+    return { opened, state: panel()?.getAttribute('data-state') };
   } finally {
     root.unmount();
     container.remove();

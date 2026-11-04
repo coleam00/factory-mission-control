@@ -41,10 +41,7 @@ interface LiveConfig {
 const newSocket: WebSocketFactory = (url, protocols) => new WebSocket(url, protocols);
 
 /** What `@neon/realtime` reports when a client's connection has ended for good. */
-const CONNECTION_ENDED: ReadonlySet<RealtimeLogEvent> = new Set([
-  'connection_failed',
-  'connection_reconnect_exhausted',
-]);
+const CONNECTION_ENDED: ReadonlySet<RealtimeLogEvent> = new Set(['connection_failed']);
 
 /** The wait before replacing a client whose connection ended; it doubles to the ceiling. */
 export const REPLACE_FIRST_MS = 1_000;
@@ -71,7 +68,7 @@ function connect(url: string, transport: WebSocketFactory, ended: () => void): R
  * server put the configuration in the page, the client takes over the socket the page already
  * opened; otherwise it asks `GET /api/live`.
  *
- * A client whose connection ended for good (a protocol failure, or a reconnect it gave up on)
+ * A client whose connection ended for good (a protocol failure; the client is built without reconnect limits, so it never gives up reconnecting)
  * never connects again and rejects every renewal, so the panels on it would stay in `error` until
  * a reload. It is replaced by a new client on the same URL, after a wait that doubles from
  * `REPLACE_FIRST_MS` to `REPLACE_CEILING_MS` for as long as the page is open, and the panels

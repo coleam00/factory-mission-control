@@ -88,6 +88,8 @@ export const SEAL_RETRY_FIRST_MS = 1_000;
 export const SEAL_RETRY_CEILING_MS = 16_000;
 /** How long a panel must stay live for its seal backoff to reset: past the longest wait. */
 export const LIVE_STABLE_MS = SEAL_RETRY_CEILING_MS;
+/** The library renews a seal this long before it expires; one with less left than this is renewed at once. */
+const RENEW_EARLY_MS = 10_000;
 
 /**
  * Where one seal's requests stand: the wait the next one owes, counted from when the last was
@@ -152,9 +154,11 @@ export function failSealBackoff(backoff: SealBackoff, now = Date.now()): void {
 }
 
 /**
- * Wraps `request` so every seal after the first is asked for only once a wait, doubling from
+ * Wraps `request` so that once a seal fails, or is answered with too little life left to wait for
+ * its renewal, every seal after it is asked for only once a wait, doubling from
  * `SEAL_RETRY_FIRST_MS` to `SEAL_RETRY_CEILING_MS`, has passed since the last answer, until the
- * panel is live again (`resetSealBackoff`): never back to back, and never two at once, however
+ * panel is live again (`resetSealBackoff`). A panel's first seal owes no wait, so a panel that
+ * mounts again asks at once while sealing is healthy. Never back to back, and never two at once, however
  * often or by whom it is called. A live panel's renewals come a seal's lifetime apart, far more
  * than the ceiling, so they never wait. A renewal (`renewal` true), and every request while the
  * `tab`'s sealing is failing, also waits its turn in the tab (`tabSealing`). An expired seal is
@@ -200,8 +204,8 @@ export function backOffSeals<Row>(
       grow(tab);
       throw error;
     }
-    grow(backoff);
     const left = sealed.expiresAt - now();
+    if (backoff.delay > 0 || left <= RENEW_EARLY_MS) grow(backoff);
     if (left <= 0) {
       grow(tab);
       throw new Error(`the seal answered had expired ${-left} ms before`);

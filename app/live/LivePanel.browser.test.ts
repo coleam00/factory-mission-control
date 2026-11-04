@@ -127,3 +127,40 @@ test('a subscription that is live for a moment and then fails again and again do
     await page.close();
   }
 }, 40_000);
+
+async function inPage<T>(call: string): Promise<T> {
+  const bundle = await Bun.build({
+    entrypoints: [`${import.meta.dir}/fixtures/render-recovery.tsx`],
+    target: 'browser',
+    format: 'esm',
+    define: { 'process.env.NODE_ENV': '"production"' },
+  });
+  expect(bundle.success).toBe(true);
+  const source = Buffer.from(await bundle.outputs[0].text()).toString('base64');
+  const page = await openPage(process.env);
+  try {
+    return await page.evaluate<T>(
+      `import('data:text/javascript;base64,${source}').then(m => m.${call})`,
+      35_000,
+    );
+  } finally {
+    await page.close();
+  }
+}
+
+test('a client whose connection keeps ending is replaced after a doubling wait, not about once a second (#274)', async () => {
+  const { opened } = await inPage<{ opened: number[] }>('renderOutage(1000, 20000)');
+  // A constant 1 s wait opens about 19 sockets in 20 s; the doubling one about 6, each wait longer.
+  expect(opened.length).toBeGreaterThanOrEqual(4);
+  expect(opened.length).toBeLessThanOrEqual(9);
+  expect(opened[opened.length - 1] - opened[opened.length - 2]).toBeGreaterThanOrEqual(4_000);
+}, 40_000);
+
+test('a panel that stays live for the stable time owes no extra wait when it fails again (#274)', async () => {
+  const { asked } = await inPage<{ asked: number[] }>('renderFlapping(28000, [300, 300, 18000])');
+  // The first two subscriptions fail at once, so the wait has grown to 4 s. The third is live 18 s,
+  // longer than the 16 s the wait holds, and its failure starts the wait over at 1 s: its re-seal
+  // is asked about 19 s after the last. Unreset, the wait would be 16 s and no seal comes in time.
+  expect(asked.length).toBeGreaterThanOrEqual(4);
+  expect(asked[3] - asked[2]).toBeLessThan(21_000);
+}, 40_000);
