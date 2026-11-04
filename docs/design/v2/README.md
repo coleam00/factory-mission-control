@@ -1,6 +1,7 @@
 # Mission Control v2 design
 
-The owner's design for the dashboard's next version (2026-11-03). It is the design source of truth
+The owner's design for the dashboard's next version (2026-11-03, reworked 2026-11-04: work and work
+orders, Split off Intake, no holdouts). It is the design source of truth
 for every v2 issue, together with the console tokens in `../archon-console/`. Owner-maintained:
 laps read it, never edit it (`docs/design/**` is a protected path).
 
@@ -16,7 +17,7 @@ agent-browser open "file:///<absolute path to this folder>/mockup.html"
 Drag the map, scroll to zoom, click a card for its details strip, double-click a card with ⤢ to open
 its deeper view, Esc to go back up. The Board and Decisions tabs are live too. The page exposes
 `window.__mcView(['build','deliver'])`, `window.__mcSelect('<card id>')`, `window.__mcTab('map'|'board'|'you')`
-and `window.__mcTicket(<n>)` so a check can put it in any state and screenshot it. Compare your
+and `window.__mcTicket(<n>)` (it opens a work item) so a check can put it in any state and screenshot it. Compare your
 screen with it side by side, at 1440 x 900 and at 400 wide.
 
 `refs/` holds screenshots of every view at 1440 x 900 (and one at 400 wide), taken from the mockup:
@@ -26,9 +27,9 @@ screen with it side by side, at 1440 x 900 and at 400 wide.
 | `01-home-map.png` | Home: the factory map, nothing selected |
 | `02-home-build-selected.png` | Home with Build clicked: neighbours lit, details strip open |
 | `03-home-appcheck-selected.png` | Home with App check clicked |
-| `10-drill-plan.png` ... `18-drill-manager.png` | Each card's deeper view |
+| `10-drill-split.png` ... `19-drill-order.png` | Each card's deeper view |
 | `13-drill-build-deliver.png` | Two levels down: Build, then Deliver |
-| `20-board-ticket.png` | Board with one ticket's timeline open |
+| `20-board-work-item.png` | Board with its work orders, and one work item's timeline open |
 | `30-decisions.png` | Decisions |
 | `40-home-phone.png` | Home at 400 wide |
 
@@ -52,7 +53,7 @@ Binding (match it):
 
 Not binding:
 
-- The numbers, tickets and KPI values: they are example data. The app shows real data.
+- The numbers, work items, work orders and KPI values: they are example data. The app shows real data.
 - The light theme: the dashboard stays dark only.
 - The mockup's code. Build it in the app's stack (React, Tailwind tokens, the existing live queries),
   not by pasting the page in.
@@ -63,9 +64,9 @@ Color says who is acting, not how worried to be.
 
 | Role | Token | Used for |
 |---|---|---|
-| Source | `--role-source` sky | Where work comes from (product document, plan, new issue, found by the factory) and script steps |
-| Agent | `--role-agent` blue | Agents building: intake, build, review, merge |
-| Test | `--role-test` teal | Testing and shipping: holdouts, app check, staging, shipped |
+| Source | `--role-source` sky | Where work comes from (product document, new issue, found by the factory, work order) and script steps |
+| Agent | `--role-agent` blue | Agents building: intake, split, build, review, merge |
+| Test | `--role-test` teal | Testing and shipping: app check, staging, shipped |
 | Person | `--role-person` violet | The manager and the owner: decisions, waiting on a person |
 
 Red stays for real failures only. Amber is not used anywhere: a question for the owner is a normal

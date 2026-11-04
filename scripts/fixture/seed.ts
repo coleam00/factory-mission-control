@@ -127,7 +127,7 @@ type LapSpec = {
   error?: string;
   /** The merge gate's reason, for a gate-refused lap. */
   refusal?: string;
-  /** The build step's completion carries `structured_output` as a jsonb string. */
+  /** The build step's completion carries `structured_output` as a jsonb string that holds no JSON object. */
   strayOutput?: boolean;
 };
 
@@ -582,7 +582,7 @@ function runEvents(run: Run, loop: Loop, planned: string[], done: number, runnin
       ...(output === undefined
         ? {}
         : { structured_output: output, declared_fields: Object.keys(output) }),
-      ...(run.spec?.strayOutput && step === 'build' ? { structured_output: '{}' } : {}),
+      ...(run.spec?.strayOutput && step === 'build' ? { structured_output: 'Done.' } : {}),
     });
   }
   if (run.end === null) return;

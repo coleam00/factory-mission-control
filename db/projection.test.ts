@@ -157,7 +157,11 @@ test('an attempt failure is recorded without losing the source event or its step
     ]);
     expect(await tx.query('SELECT * FROM mc.lap_step_attempts')).toEqual([]);
     expect(await tx.query('SELECT source, event_id, sqlstate FROM mc.projection_errors')).toEqual([
-      { source: 'mc_project_step_event', event_id: event?.id, sqlstate: '23514' },
+      {
+        source: 'mc_project_step_event',
+        event_id: event?.id,
+        sqlstate: '23514',
+      },
     ]);
     throw new Error('rollback after attempt failure');
   });
@@ -198,7 +202,10 @@ test('0010 undoes the replay errors of non-laps but keeps missing parents of eli
         }
       }
     }
-    await runMigrations({ files: migrationFiles.filter((f) => f.name < '0010'), db: historical });
+    await runMigrations({
+      files: migrationFiles.filter((f) => f.name < '0010'),
+      db: historical,
+    });
     expect(
       await historical.query(
         `SELECT count(*)::int AS n FROM mc.projection_errors WHERE source = '0007_step_attempts'`,
@@ -245,7 +252,10 @@ test('0010 undoes the replay errors of non-laps but keeps missing parents of eli
 test('the eligibility upgrade keeps live history and installs the same functions as a fresh database', async () => {
   const upgraded = await archonDb();
   try {
-    await runMigrations({ files: migrationFiles.filter((f) => f.name < '0010'), db: upgraded });
+    await runMigrations({
+      files: migrationFiles.filter((f) => f.name < '0010'),
+      db: upgraded,
+    });
     for (const workflow of ['archon-loop', 'archon-manager']) {
       await upgraded.query(
         `WITH r AS (
@@ -264,7 +274,10 @@ test('the eligibility upgrade keeps live history and installs the same functions
     ]);
     const before = await snapshot(upgraded);
     expect(
-      await runMigrations({ files: migrationFiles.filter((f) => f.name < '0013'), db: upgraded }),
+      await runMigrations({
+        files: migrationFiles.filter((f) => f.name < '0013'),
+        db: upgraded,
+      }),
     ).toEqual([
       '0010_step_attempt_eligibility.sql',
       '0011_pin_full_archon_sha.sql',
@@ -279,6 +292,7 @@ test('the eligibility upgrade keeps live history and installs the same functions
       '0017_app_check_line_ids.sql',
       '0018_issue_label_time.sql',
       '0019_attention_items.sql',
+      '0019_structured_output_string.sql',
     ]);
     expect(await projectionDefinitions(upgraded)).toEqual(await projectionDefinitions(db));
     expect(await runMigrations({ files: migrationFiles, db: upgraded })).toEqual([]);
@@ -300,7 +314,10 @@ test('0011 rewrites a short pin to the one full sha it prefixes, and clears ambi
   const twin = (last: string) => `12345678${'0'.repeat(31)}${last}`;
   const pinShas = () => historical.query('SELECT sha, archon_sha FROM mc.pins ORDER BY sha');
   try {
-    await runMigrations({ files: migrationFiles.filter((f) => f.name < '0011'), db: historical });
+    await runMigrations({
+      files: migrationFiles.filter((f) => f.name < '0011'),
+      db: historical,
+    });
     await historical.query(
       `INSERT INTO mc.arch_versions (archon_sha, factory_sha, parsed_at)
         VALUES ($1, 'f1', $4), ($1, 'f2', $4), ($2, 'f1', $4), ($3, 'f1', $4)`,
@@ -328,6 +345,7 @@ test('0011 rewrites a short pin to the one full sha it prefixes, and clears ambi
       '0017_app_check_line_ids.sql',
       '0018_issue_label_time.sql',
       '0019_attention_items.sql',
+      '0019_structured_output_string.sql',
     ]);
     const migrated = [
       { sha: 'p1', archon_sha: full },
@@ -355,7 +373,10 @@ test('0012 rewrites CRLF to LF in stored architecture texts, and changes nothing
        ORDER BY kind, path`,
     );
   try {
-    await runMigrations({ files: migrationFiles.filter((f) => f.name < '0012'), db: historical });
+    await runMigrations({
+      files: migrationFiles.filter((f) => f.name < '0012'),
+      db: historical,
+    });
     const v = ['a1', 'f1'];
     await historical.query(
       `INSERT INTO mc.arch_versions (archon_sha, factory_sha, parsed_at) VALUES ($1, $2, $3)`,
@@ -393,6 +414,7 @@ test('0012 rewrites CRLF to LF in stored architecture texts, and changes nothing
       '0017_app_check_line_ids.sql',
       '0018_issue_label_time.sql',
       '0019_attention_items.sql',
+      '0019_structured_output_string.sql',
     ]);
     const migrated = [
       { kind: 'hook', path: '.factory/hooks/gate.sh', text: 'exit 0\n' },
@@ -414,7 +436,10 @@ test('0012 rewrites CRLF to LF in stored architecture texts, and changes nothing
 test('0013 gives back the runs of a step the old key merged, and changes nothing run again', async () => {
   const historical = await archonDb();
   try {
-    await runMigrations({ files: migrationFiles.filter((f) => f.name < '0013'), db: historical });
+    await runMigrations({
+      files: migrationFiles.filter((f) => f.name < '0013'),
+      db: historical,
+    });
     const [run] = await historical.query(
       `INSERT INTO public.remote_agent_workflow_runs (workflow_name, user_message)
        VALUES ('archon-loop', 'historical') RETURNING id`,
@@ -435,8 +460,14 @@ test('0013 gives back the runs of a step the old key merged, and changes nothing
         cost_usd: 1,
         structured_output: { outcome: 'sent-back' },
       }),
-      await finished('review', { ...timing, cost_usd: 2, structured_output: { outcome: 'merge' } }),
-      await finished('land', { structured_output: { outcome: 'refused', reason: 'red' } }),
+      await finished('review', {
+        ...timing,
+        cost_usd: 2,
+        structured_output: { outcome: 'merge' },
+      }),
+      await finished('land', {
+        structured_output: { outcome: 'refused', reason: 'red' },
+      }),
       await finished('land', { structured_output: { outcome: 'merged' } }),
     ];
     // An attempt only this constraint refuses: its step row stays and its error is recorded.
@@ -463,6 +494,7 @@ test('0013 gives back the runs of a step the old key merged, and changes nothing
       '0017_app_check_line_ids.sql',
       '0018_issue_label_time.sql',
       '0019_attention_items.sql',
+      '0019_structured_output_string.sql',
     ]);
     expect(await attempts()).toEqual([
       { step_id: 'land', outcome: 'merged', cost_usd: null },
@@ -506,7 +538,13 @@ test('a started then completed step is one completed row with the event’s timi
       tokens_cache_write: 8_333,
       cost_usd: String(completed.cost_usd),
       error: null,
-      output: { outcome: 'merge', pr: '#29', sha: REVIEWED.sha, delivers: 'all', dispositions: [] },
+      output: {
+        outcome: 'merge',
+        pr: '#29',
+        sha: REVIEWED.sha,
+        delivers: 'all',
+        dispositions: [],
+      },
     },
   ]);
   expect(await projectionErrors()).toEqual([]);
@@ -548,7 +586,10 @@ test('the model is the one the provider resolved when Archon reports it', async 
 
 test('a provider_event changes no dashboard row and never fires the trigger', async () => {
   const before = await dashboardCounts();
-  await insertEvent('provider_event', 'review', { type: 'assistant', text: 'thinking' });
+  await insertEvent('provider_event', 'review', {
+    type: 'assistant',
+    text: 'thinking',
+  });
   expect(await dashboardCounts()).toEqual(before);
 
   const [trigger] = await db.query(`SELECT pg_get_triggerdef(oid) AS def FROM pg_trigger
@@ -558,27 +599,92 @@ test('a provider_event changes no dashboard row and never fires the trigger', as
   expect(types.sort()).toEqual(['node_completed', 'node_failed', 'node_skipped', 'node_started']);
 });
 
-test('a structured_output that is a JSON string commits in Archon, is recorded and keeps its step', async () => {
+test('a structured_output that is a JSON string holding an object is projected as that object', async () => {
   const completed = eventData('pick', 'node_completed', NOW);
-  const data = { ...completed, structured_output: '{"route":"x"}' };
-  const [event] = await insertEvent('node_completed', 'pick', data);
+  await insertEvent('node_completed', 'pick', {
+    ...completed,
+    structured_output: '{"route":"x"}',
+  });
 
-  expect(
-    await db.query('SELECT count(*)::int AS n FROM public.remote_agent_workflow_events'),
-  ).toEqual([{ n: 1 }]);
-  expect(await projectionErrors()).toEqual([
+  expect(await projectionErrors()).toEqual([]);
+  expect(await db.query('SELECT step_id, status, cost_usd, output FROM mc.lap_steps')).toEqual([
     {
-      source: 'mc_project_step_event',
-      run_id: runId,
-      event_id: event?.id,
-      sqlstate: '22000',
-      message: 'structured_output is a jsonb string, not an object',
+      step_id: 'pick',
+      status: 'completed',
+      cost_usd: String(completed.cost_usd),
+      output: { route: 'x' },
     },
   ]);
-  // The step still ran and cost what it cost: only its unreadable output is dropped.
-  expect(await db.query('SELECT step_id, status, cost_usd, output FROM mc.lap_steps')).toEqual([
-    { step_id: 'pick', status: 'completed', cost_usd: String(completed.cost_usd), output: null },
-  ]);
+  expect(await db.query('SELECT route FROM mc.lap_step_attempts')).toEqual([{ route: 'x' }]);
+});
+
+test.each(['text', '[1]', '{', '"{}"'])(
+  'a structured_output string %p holding no object commits in Archon, is recorded and keeps its step',
+  async (text) => {
+    const completed = eventData('pick', 'node_completed', NOW);
+    const [event] = await insertEvent('node_completed', 'pick', {
+      ...completed,
+      structured_output: text,
+    });
+
+    expect(
+      await db.query('SELECT count(*)::int AS n FROM public.remote_agent_workflow_events'),
+    ).toEqual([{ n: 1 }]);
+    expect(await projectionErrors()).toEqual([
+      {
+        source: 'mc_project_step_event',
+        run_id: runId,
+        event_id: event?.id,
+        sqlstate: '22000',
+        message: 'structured_output is a jsonb string, not an object',
+      },
+    ]);
+    // The step still ran and cost what it cost: only its unreadable output is dropped.
+    expect(await db.query('SELECT step_id, status, cost_usd, output FROM mc.lap_steps')).toEqual([
+      {
+        step_id: 'pick',
+        status: 'completed',
+        cost_usd: String(completed.cost_usd),
+        output: null,
+      },
+    ]);
+  },
+);
+
+test('a check-app report stored as a JSON string projects the same lines as the object', async () => {
+  const data = eventData('check-app', 'node_completed', NOW);
+  const fixture = structuredOutputFor('check-app') as {
+    lines: Record<string, unknown>[];
+  };
+  const report = {
+    ...fixture,
+    lines: fixture.lines.map((line) =>
+      line.kind === 'holdout' ? { ...line, verdict: 'FAIL', pre_existing: '' } : line,
+    ),
+  };
+  const projected = async () => ({
+    lines: await db.query('SELECT * FROM mc.app_check_lines ORDER BY position'),
+    output: await db.query('SELECT output FROM mc.lap_steps'),
+  });
+  const catches = () =>
+    db.query('SELECT holdout_catches FROM mc.lap_step_attempts ORDER BY event_id');
+
+  await insertEvent('node_completed', 'check-app', {
+    ...data,
+    structured_output: JSON.stringify(report),
+  });
+  const fromString = await projected();
+  expect(await catches()).toEqual([{ holdout_catches: 1 }]);
+  await db.query('DELETE FROM mc.app_check_lines');
+  await insertEvent('node_completed', 'check-app', {
+    ...data,
+    structured_output: report,
+  });
+
+  expect(await projectionErrors()).toEqual([]);
+  expect(fromString.lines.length).toBeGreaterThan(0);
+  expect(fromString).toEqual(await projected());
+  expect(await catches()).toEqual([{ holdout_catches: 1 }, { holdout_catches: 1 }]);
 });
 
 test('an error the projection cannot even record still never fails Archon’s write', async () => {
@@ -616,6 +722,7 @@ test('every projection function stops a lock wait after 100 ms, and only inside 
       'record_attempt_usage',
       'record_projection_error',
       'record_step_attempt',
+      'structured_output',
     ].map((proname) => ({ proname, proconfig: ['lock_timeout=100ms'] })),
   ]);
 
@@ -626,7 +733,10 @@ test('every projection function stops a lock wait after 100 ms, and only inside 
 test('0014 keeps only a stored citation’s references, and changes nothing run again', async () => {
   const historical = await archonDb();
   try {
-    await runMigrations({ files: migrationFiles.filter((f) => f.name < '0014'), db: historical });
+    await runMigrations({
+      files: migrationFiles.filter((f) => f.name < '0014'),
+      db: historical,
+    });
     const [run] = await historical.query(
       `INSERT INTO public.remote_agent_workflow_runs (workflow_name, user_message)
        VALUES ('archon-loop', 'historical') RETURNING id`,
@@ -650,6 +760,7 @@ test('0014 keeps only a stored citation’s references, and changes nothing run 
       '0017_app_check_line_ids.sql',
       '0018_issue_label_time.sql',
       '0019_attention_items.sql',
+      '0019_structured_output_string.sql',
     ]);
     const lines = () =>
       historical.query(
@@ -658,7 +769,12 @@ test('0014 keeps only a stored citation’s references, and changes nothing run 
         [`%${MARKER}%`],
       );
     const converted = [
-      { position: 1, pre_existing: false, pre_existing_refs: [], marked: false },
+      {
+        position: 1,
+        pre_existing: false,
+        pre_existing_refs: [],
+        marked: false,
+      },
       { position: 2, pre_existing: true, pre_existing_refs: [], marked: false },
       {
         position: 3,
@@ -681,7 +797,10 @@ test('0014 keeps only a stored citation’s references, and changes nothing run 
 test('0016 lets a pin have no reason, keeps stored reasons, and changes nothing run again', async () => {
   const historical = await archonDb();
   try {
-    await runMigrations({ files: migrationFiles.filter((f) => f.name < '0016'), db: historical });
+    await runMigrations({
+      files: migrationFiles.filter((f) => f.name < '0016'),
+      db: historical,
+    });
     const pin = (sha: string, reason: string | null) =>
       historical.query(
         `INSERT INTO mc.pins (sha, archon_sha, reason, committed_at) VALUES ($1, NULL, $2, $3)`,
@@ -695,6 +814,7 @@ test('0016 lets a pin have no reason, keeps stored reasons, and changes nothing 
       '0017_app_check_line_ids.sql',
       '0018_issue_label_time.sql',
       '0019_attention_items.sql',
+      '0019_structured_output_string.sql',
     ]);
     await pin('b'.repeat(40), null);
     const reasons = () => historical.query('SELECT sha, reason FROM mc.pins ORDER BY sha');
@@ -714,7 +834,10 @@ test('0016 lets a pin have no reason, keeps stored reasons, and changes nothing 
 test('0017 keeps lines projected before it without an id, fills new reports’ ids, and changes nothing run again', async () => {
   const historical = await archonDb();
   try {
-    await runMigrations({ files: migrationFiles.filter((f) => f.name < '0017'), db: historical });
+    await runMigrations({
+      files: migrationFiles.filter((f) => f.name < '0017'),
+      db: historical,
+    });
     const run = async () => {
       const [row] = await historical.query(
         `INSERT INTO public.remote_agent_workflow_runs (workflow_name, user_message)
@@ -733,6 +856,7 @@ test('0017 keeps lines projected before it without an id, fills new reports’ i
       '0017_app_check_line_ids.sql',
       '0018_issue_label_time.sql',
       '0019_attention_items.sql',
+      '0019_structured_output_string.sql',
     ]);
     const after = await run();
     await historical.query('SELECT mc.project_app_check_lines($1, $2)', [
@@ -762,11 +886,16 @@ test('0017 keeps lines projected before it without an id, fills new reports’ i
 });
 
 test('a check-app line keeps only its report id’s leading letters and digits, as a disposition’s line id', async () => {
-  const report = structuredOutputFor('check-app') as { lines: Record<string, unknown>[] };
+  const report = structuredOutputFor('check-app') as {
+    lines: Record<string, unknown>[];
+  };
   const ids = ['C1', ' \th2\n', `H3 holdout FAIL H-07 ${MARKER}`, '2', '', MARKER];
   await insertEvent('node_completed', 'check-app', {
     ...eventData('check-app', 'node_completed', NOW),
-    structured_output: { ...report, lines: ids.map((id) => ({ ...report.lines[0], id })) },
+    structured_output: {
+      ...report,
+      lines: ids.map((id) => ({ ...report.lines[0], id })),
+    },
   });
 
   expect(await db.query('SELECT line_id FROM mc.app_check_lines ORDER BY position')).toEqual(
@@ -793,12 +922,21 @@ test('check-app lines keep kind, verdict, evidence count and only a holdout’s 
     report.lines[0],
     line('2', 'FAIL', `H-07 ${MARKER} the user sees the lap`, ['a.txt', 'b.txt']),
     line('3', '\tpass\n', `${MARKER} with no scenario id`, []),
-    { ...report.lines[2], kind: '\tprobe\r\n', pre_existing: '\nbaseline/health.txt\t' },
+    {
+      ...report.lines[2],
+      kind: '\tprobe\r\n',
+      pre_existing: '\nbaseline/health.txt\t',
+    },
   ];
   const data = eventData('check-app', 'node_completed', NOW);
   await insertEvent('node_completed', 'check-app', {
     ...data,
-    structured_output: { ...report, lines, summary: `H-07 fails: ${MARKER}`, noticed: [MARKER] },
+    structured_output: {
+      ...report,
+      lines,
+      summary: `H-07 fails: ${MARKER}`,
+      noticed: [MARKER],
+    },
   });
 
   expect(
@@ -845,14 +983,23 @@ test('check-app lines keep kind, verdict, evidence count and only a holdout’s 
     },
   ]);
   expect(await db.query('SELECT output FROM mc.lap_steps')).toEqual([
-    { output: { pr: '#29', head: report.head, merged_with: report.merged_with, overall: 'PASS' } },
+    {
+      output: {
+        pr: '#29',
+        head: report.head,
+        merged_with: report.merged_with,
+        overall: 'PASS',
+      },
+    },
   ]);
 
   expect(await markerCount()).toBe(0);
 });
 
 test('a line’s pre-existing citation keeps only the references it names, never its text', async () => {
-  const report = structuredOutputFor('check-app') as { lines: Record<string, unknown>[] };
+  const report = structuredOutputFor('check-app') as {
+    lines: Record<string, unknown>[];
+  };
   const holdout = (id: string, preExisting: string) => ({
     id,
     kind: 'holdout',
@@ -979,21 +1126,31 @@ test('a holdout line’s scenario id is the one parsers/metrics.ts holdoutId rea
     'x_H-07 and (H-08)',
     'no id at all',
   ];
-  const report = structuredOutputFor('check-app') as { lines: Record<string, unknown>[] };
+  const report = structuredOutputFor('check-app') as {
+    lines: Record<string, unknown>[];
+  };
   const holdout = report.lines[1];
   await insertEvent('node_completed', 'check-app', {
     ...eventData('check-app', 'node_completed', NOW),
-    structured_output: { ...report, lines: texts.map((text) => ({ ...holdout, text })) },
+    structured_output: {
+      ...report,
+      lines: texts.map((text) => ({ ...holdout, text })),
+    },
   });
   const rows = await db.query('SELECT scenario_id FROM mc.app_check_lines ORDER BY position');
   expect(rows.map((row) => row.scenario_id)).toEqual(texts.map(holdoutId));
 });
 
 test('a check-app line that cannot be stored is recorded and the step row stays', async () => {
-  const report = structuredOutputFor('check-app') as { lines: Record<string, unknown>[] };
+  const report = structuredOutputFor('check-app') as {
+    lines: Record<string, unknown>[];
+  };
   const [event] = await insertEvent('node_completed', 'check-app', {
     ...eventData('check-app', 'node_completed', NOW),
-    structured_output: { ...report, lines: [{ ...report.lines[0], kind: 'remark' }] },
+    structured_output: {
+      ...report,
+      lines: [{ ...report.lines[0], kind: 'remark' }],
+    },
   });
   expect(await db.query('SELECT step_id, status FROM mc.lap_steps')).toEqual([
     { step_id: 'check-app', status: 'completed' },
@@ -1038,8 +1195,15 @@ test('every finished attempt of a step is its own row, and goes with its step ro
       ...eventData('review', 'node_completed', at),
       structured_output: { ...REVIEWED, outcome },
     });
-  const report = structuredOutputFor('check-app') as { lines: Record<string, unknown>[] };
-  const holdout = { kind: 'holdout', verdict: 'FAIL', text: `H-07 ${MARKER}`, evidence: [] };
+  const report = structuredOutputFor('check-app') as {
+    lines: Record<string, unknown>[];
+  };
+  const holdout = {
+    kind: 'holdout',
+    verdict: 'FAIL',
+    text: `H-07 ${MARKER}`,
+    evidence: [],
+  };
   const checkApp = (lines: Record<string, unknown>[], at: Date) =>
     insertEvent('node_completed', 'check-app', {
       ...eventData('check-app', 'node_completed', at),
@@ -1059,8 +1223,20 @@ test('every finished attempt of a step is its own row, and goes with its step ro
   const cost = String(eventData('review', 'node_completed', NOW).cost_usd);
   const done = { status: 'completed', duration_ms: 184_250, cost_usd: cost };
   expect(await attempts()).toEqual([
-    { step_id: 'check-app', started_at: at(NOW), ...done, outcome: null, holdout_catches: 1 },
-    { step_id: 'check-app', started_at: at(later), ...done, outcome: null, holdout_catches: 2 },
+    {
+      step_id: 'check-app',
+      started_at: at(NOW),
+      ...done,
+      outcome: null,
+      holdout_catches: 1,
+    },
+    {
+      step_id: 'check-app',
+      started_at: at(later),
+      ...done,
+      outcome: null,
+      holdout_catches: 2,
+    },
     {
       step_id: 'land',
       // No start time on the event: the step's one unstarted attempt (`-infinity`).
@@ -1071,12 +1247,29 @@ test('every finished attempt of a step is its own row, and goes with its step ro
       outcome: null,
       holdout_catches: 0,
     },
-    { step_id: 'review', started_at: at(NOW), ...done, outcome: 'sent-back', holdout_catches: 0 },
-    { step_id: 'review', started_at: at(later), ...done, outcome: 'approved', holdout_catches: 0 },
+    {
+      step_id: 'review',
+      started_at: at(NOW),
+      ...done,
+      outcome: 'sent-back',
+      holdout_catches: 0,
+    },
+    {
+      step_id: 'review',
+      started_at: at(later),
+      ...done,
+      outcome: 'approved',
+      holdout_catches: 0,
+    },
   ]);
   expect(
     await db.query('SELECT step_id, output FROM mc.lap_steps WHERE step_id = $1', ['review']),
-  ).toEqual([{ step_id: 'review', output: expect.objectContaining({ outcome: 'approved' }) }]);
+  ).toEqual([
+    {
+      step_id: 'review',
+      output: expect.objectContaining({ outcome: 'approved' }),
+    },
+  ]);
   expect(await projectionErrors()).toEqual([]);
   expect(await markerCount()).toBe(0);
 
@@ -1094,7 +1287,10 @@ test('a replayed start never reopens a finished step, and a retry does', async (
   expect(await db.query('SELECT status FROM mc.lap_steps')).toEqual([{ status: 'completed' }]);
 
   const retry = new Date(NOW.getTime() + 60_000).toISOString();
-  await insertEvent('node_started', 'pick', { provider: 'claude', timing: { startedAt: retry } });
+  await insertEvent('node_started', 'pick', {
+    provider: 'claude',
+    timing: { startedAt: retry },
+  });
   expect(await db.query('SELECT status, cost_usd, output FROM mc.lap_steps')).toEqual([
     { status: 'running', cost_usd: null, output: null },
   ]);
@@ -1225,7 +1421,12 @@ test('a factory’s archon-loop run with a new digest is one version labelled by
   await runAt(codebase, minutes(-30), { digest: null });
 
   expect(await db.query('SELECT * FROM mc.versions')).toEqual([
-    { factory: 'mission-control', digest: DIGEST, first_run_at: NOW, pin_sha: 'before' },
+    {
+      factory: 'mission-control',
+      digest: DIGEST,
+      first_run_at: NOW,
+      pin_sha: 'before',
+    },
   ]);
   expect(await projectionErrors()).toEqual([]);
 });
@@ -1249,7 +1450,12 @@ test('an earlier run projected later moves its version’s first run and pin bac
   await runAt(codebase, minutes(-30));
 
   expect(await db.query('SELECT * FROM mc.versions')).toEqual([
-    { factory: 'mission-control', digest: DIGEST, first_run_at: minutes(-30), pin_sha: 'earlier' },
+    {
+      factory: 'mission-control',
+      digest: DIGEST,
+      first_run_at: minutes(-30),
+      pin_sha: 'earlier',
+    },
   ]);
 });
 
@@ -1476,12 +1682,13 @@ test('0019 projects the attention runs already paused, and changes nothing run a
     );
     expect(await runMigrations({ files: migrationFiles, db: historical })).toEqual([
       '0019_attention_items.sql',
+      '0019_structured_output_string.sql',
     ]);
     expect(await historical.query('SELECT node_id FROM mc.attention_items')).toEqual([
       { node_id: 'ask' },
     ]);
     const before = await historical.query('SELECT * FROM mc.attention_items');
-    const [attention] = migrationFiles.filter((f) => f.name.startsWith('0019'));
+    const [attention] = migrationFiles.filter((f) => f.name === '0019_attention_items.sql');
     await historical.query(attention?.sql ?? '');
     expect(await historical.query('SELECT * FROM mc.attention_items')).toEqual(before);
   } finally {

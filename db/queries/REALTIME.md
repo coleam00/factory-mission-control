@@ -12,7 +12,7 @@ and rejected when `bun run test:live` ran each probe query on a check branch; `t
 them again on every run and fails when a verdict or an error differs from this table.
 
 - `@neon/realtime`: 0.1.2
-- Run: check-816754c9, check-ff19c267 and check-bfb770e3, 2026-10-25; the now() error as worded on check-646f49ad, 2026-10-27
+- Run: check-816754c9, check-ff19c267 and check-bfb770e3, 2026-10-25; the now() error as worded on check-646f49ad, 2026-10-27; the value of 16 KiB or more as the app check of #336 saw it, 2026-11-04
 
 | Feature                 | Probe                                                                                                                                                                                             | Verdict  | Error                                                                                                      |
 | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- | ---------------------------------------------------------------------------------------------------------- |
@@ -24,7 +24,7 @@ them again on every run and fails when a verdict or an error differs from this t
 | now()                   | `SELECT run_id FROM mc.laps WHERE factory = $1 AND started_at < now()`                                                                                                                            | rejected | upstream_rejected: unsupported query: stable function is not approved for this operation: pg_catalog.now() |
 | VALUES list join        | `SELECT t.path, n.part FROM mc.arch_texts t JOIN (VALUES (0), (1)) AS n(part) ON n.part * 4000 < length(t.text)`                                                                                  | accepted |                                                                                                            |
 | set-returning function  | `SELECT t.path, n.part FROM mc.arch_texts t CROSS JOIN LATERAL generate_series(0, 1) AS n(part)`                                                                                                  | rejected | upstream_rejected: unsupported query: set-returning function source                                        |
-| value of 16 KiB or more | `SELECT w.name, w.yaml FROM mc.arch_workflows w WHERE w.name = 'archon-deliver-block'`                                                                                                            | rejected | no rows or error within 10s                                                                                |
+| value of 16 KiB or more | `SELECT w.name, w.yaml FROM mc.arch_workflows w WHERE w.name = 'archon-deliver-block'`                                                                                                            | accepted |                                                                                                            |
 | LEFT JOIN LATERAL       | `SELECT l.run_id, s.step_id FROM mc.laps l LEFT JOIN LATERAL (SELECT step_id FROM mc.lap_steps ls WHERE ls.run_id = l.run_id ORDER BY ls.started_at DESC LIMIT 1) s ON true WHERE l.factory = $1` | accepted |                                                                                                            |
 | UNION ALL               | `SELECT l.run_id::text AS id FROM mc.laps l WHERE l.factory = $1 UNION ALL SELECT p.sha FROM mc.pins p`                                                                                           | accepted |                                                                                                            |
 | NOT EXISTS              | `SELECT p.sha FROM mc.pins p WHERE NOT EXISTS (SELECT 1 FROM mc.laps l WHERE l.factory = $1 AND l.started_at > p.committed_at)`                                                                   | accepted |                                                                                                            |
@@ -32,10 +32,13 @@ them again on every run and fails when a verdict or an error differs from this t
 | EXISTS in CASE          | `SELECT i.number, CASE WHEN EXISTS (SELECT 1 FROM mc.issue_labels l WHERE l.issue_number = i.number) THEN 1 ELSE 0 END AS n FROM mc.issues i WHERE i.factory = $1`                                | accepted |                                                                                                            |
 
 A volatile function such as `now()` is rejected, so a query returns timestamps and the browser
-computes elapsed times. A query whose answer holds one value of about 16 KiB or more (the seed's
-`archon-deliver-block` YAML is 19,895 bytes) never answers: no rows and no error. A query that
-returns whole files therefore splits each into parts of 4000 characters, joining a `VALUES` list
-of part numbers because `generate_series` is refused, and the browser joins the parts.
+computes elapsed times. The probe for a value of 16 KiB or more was accepted on 2026-11-04: the
+subscription went live with defined data. The probe does not read the row or its length, so the
+size of the seeded `archon-deliver-block` YAML on that run (its source file was 19,895 bytes) and
+the largest value Realtime answers are not measured. Realtime did not answer such a query on
+2026-10-25 (no rows and no error). A query that returns whole files still splits each into parts of
+4000 characters, at most 16,000 bytes each, joining a `VALUES` list of part numbers because
+`generate_series` is refused, and the browser joins the parts.
 `test:live` seals the probes in debug mode to record why a query was rejected; the app seals in
 safe mode, where the browser sees only `upstream_rejected: upstream rejected` and no database
 structure.
