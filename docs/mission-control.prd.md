@@ -309,8 +309,11 @@ and the judgement quoted.
 
 ### 8.4 Fast
 
-On the seed data, every home-screen panel shows `data-state="ready"` within 2 seconds of opening,
-and no live query takes more than 500 ms to deliver its first snapshot.
+On the seed data, a live panel's speed is judged on the app's own work: its query's `EXPLAIN ANALYZE`
+execution takes under 100 ms, and its rows are on screen within 500 ms of the first snapshot arriving
+(decode and render). Everything between the subscribe and that first snapshot is Neon's (connection,
+first-subscribe warm-up, delivery): it is recorded but not judged, except that every home-screen panel
+shows `data-state="ready"` within 2000 ms of navigation.
 
 ### 8.5 What the checks cannot see, and who owns it
 
