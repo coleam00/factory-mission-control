@@ -83,7 +83,16 @@ function Entries({
               factory === current ? 'text-accent-bright' : 'text-text-secondary'
             }`}
           >
-            <span>{factory}</span>
+            <span className="flex items-center gap-2">
+              <span
+                aria-hidden="true"
+                data-chosen-mark={factory === current ? '' : undefined}
+                className={factory === current ? 'font-bold' : 'invisible'}
+              >
+                ✓
+              </span>
+              <span>{factory}</span>
+            </span>
             <span className="flex items-center gap-2">
               {running > 0 ? <LiveDot size={8} /> : null}
               <span className="tabular-nums">{running}</span>
