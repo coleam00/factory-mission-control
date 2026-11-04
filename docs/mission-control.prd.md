@@ -76,40 +76,58 @@ screens, `/steps/<workflow>/<step>`).
 
 **What the map shows** (left to right; see `refs/01-home-map.png`):
 
-- **Three ways in**, on the left: Product document -> **Plan** (splits the PRD into tickets and
-  writes the holdouts); **New issue** (a ticket the owner files); **Found by the factory**
-  (problems spotted in review, app check or staging). All three feed **Intake** on one line.
-- **Holdouts** directly above Intake. Plan points to it and to Intake; Holdouts points along the
-  top into App check.
-- **One line:** Intake -> Build -> Review -> App check -> Merge -> Staging -> Shipped, inside a dashed
-  box labelled "the manager watches everything on this line".
+- **Three ways in**, on the left: **Product document**, **New issue** (a work item the owner files)
+  and **Found by the factory** (problems spotted in review, app check or staging). All three feed
+  **Intake** on one line.
+- **Split** directly above Intake, two arrows between them: Intake sends a product document or a
+  bundle of tasks up, and Split files its pieces, which come back down through Intake like any other
+  work.
+- **One line:** Intake -> **Work order** -> Build -> Review -> App check -> Merge -> Staging ->
+  Shipped, inside a dashed box labelled "the manager watches everything on this line".
 - **The manager**, centred above the line: one card, the orchestrator the owner talks to. It keeps
-  the factory healthy and tickets moving and brings the owner the decisions it can't make. One
+  the factory healthy and work moving and brings the owner the decisions it can't make. One
   arrow comes down from it into the box.
 - **One loop back:** Review, App check and Staging each drop to a dashed line along the bottom that
-  runs back into Found by the factory, labelled "problems found become new tickets". It is the only
+  runs back into Found by the factory, labelled "problems found become new work". It is the only
   line that runs right to left.
 
-**What each card covers** (for laps running `archon-loop` at the current pin; a factory on another
-pack gets its own coverage entries in the same file when it joins):
+**The words (Cole and Rasmus, 2026-11-04).** **Work** is any single item the factory takes, one issue
+and one `work/<n>` state document. A **work order** is a group of work that goes through the factory
+together: pieces of a product document, pieces of another, a few bug fixes. It can also be one item.
+Where it lands is the owner's choice: main, dev, a release branch or a staging environment. A product
+document is one source of work, never the unit of work. Copy says "work item" and "work order", never
+"ticket"; "lap" stays only on the old-loop screens #321 retires.
+
+**Holdouts are gone (2026-11-04).** They doubled the time per pull request and found what the review
+lenses and CI already found. The validation is Review's lenses and the App check, which tests the
+running app against the work item's acceptance. No card, line, screen or number shows holdouts.
+
+**What each card covers** on the queue pack (`fixtures/pack/queue`); a factory on the old loop keeps
+its own entries in the same file:
 
 | Card | Covers |
 |---|---|
-| Plan | `archon-backlog` (every step) |
-| Holdouts | `archon-holdouts` (every step) |
-| Intake | `archon-loop` `pick`, `claim` |
-| Build | `archon-loop` `build`, `subject`, and `ship` with every step under it except the two below |
-| Review | `ship/deliver/rounds/review` and `ship/deliver/rounds/rereview`, with every step under them |
-| App check | `briefs`, `check-app`, `evidence`, `handoff` |
-| Merge | `review`, `land`, `release` |
-| Staging | `deploy` and every step under it |
-| Manager | `archon-manager` (every step) |
+| Split | `archon-split`, `factory-backlog` (every step) |
+| Intake | `archon-intake` (every step) |
+| Work order | nothing yet: the primitive is being built. Live counts come from labels (below) |
+| Build | `archon-build-queue` every step except the review below |
+| Review | under `archon-build-queue`: `ship/deliver/rounds/review` and `ship/deliver/rounds/rereview`, with every step under them |
+| App check | `factory-app-check` (every step) |
+| Merge | `archon-merge-queue` (every step) |
+| Staging | `factory-deploy` (every step) |
+| Manager | `factory-manager` (every step) |
+| Found by the factory | `archon-discoveries` (every step) |
 
-Product document, New issue, Found by the factory and Shipped cover no steps.
+Product document, New issue and Shipped cover no steps.
+
+**Work orders on the dashboard, until Archon has them.** An open issue labelled `work-order:<name>`
+belongs to that work order, and a label `lands-on:<target>` on any of its issues says where it lands.
+The dashboard reads those labels and writes nothing. When the primitive lands in the pack, this
+paragraph and that query change, nothing else.
 
 **Live:** a card shows the laps of the selected factory on any step it covers right now (a lap
-counts once, on its deepest running step's card) as "<n> here"; Build also shows issues waiting to
-start as "<n> queued"; App check shows open pull requests whose latest app check failed as
+counts once, on its deepest running step's card) as "<n> here"; Build also shows work waiting to
+start as "<n> queued"; Work order shows open work orders as "<n> open"; App check shows open pull requests whose latest app check failed as
 "<n> failing" in red; the Manager shows what waits on a person as "<n> waiting" in violet (open Archon attention items, plus open owner questions and `needs-owner` issues on a factory still on the old loop); Shipped
 shows merges today as "<n> merged". A card with laps on it carries `data-live-count` greater than 0
 and pulses its chip. Every number updates live (invariant 5).
@@ -117,12 +135,12 @@ and pulses its chip. Every number updates live (invariant 5).
 **Clicking a card** dims everything but the card and its direct neighbours and opens a details
 strip under the map with tabs: When it runs, What it does, How it works, Right now (the issues and
 laps on it), and Behind the scenes (the workflows and steps it covers, each linking to its step
-screen, its models, and its source paths). App check's Behind the scenes links `check-app`'s step
-screen, which explains the holdout verifier and the fence. A card shows ⤢ only once its deeper view exists (until then no ⤢, no Open button and no legend entry for it, whatever `refs/` shows); it opens it
+screen, its models, and its source paths). App check's Behind the scenes links its `check` step
+screen. A card shows ⤢ only once its deeper view exists (until then no ⤢, no Open button and no legend entry for it, whatever `refs/` shows); it opens it
 by double-click, Enter or the Open button; the deeper views are built by their own issues, each
 drawn as `docs/design/v2/refs/1x-*.png` shows.
 
-**Motion:** one dot travels Product document to Shipped every few seconds and each card it reaches
+**Motion:** one dot travels Product document, Intake, Work order and on down the line to Shipped every few seconds and each card it reaches
 pulses once; dashes flow along the forward lines. Both stop under `prefers-reduced-motion` and when
 the flow toggle is off.
 
@@ -148,7 +166,6 @@ the flow toggle is off.
 | lap-hours per merge | sum of lap durations in hours / merges |
 | app-check share | sum of `check-app` step `duration_ms` / sum of lap durations |
 | cost per merge | sum of `cost_usd` of every step of every lap / merges |
-| new holdout catch | an app-check line of kind `holdout` with verdict FAIL and empty `pre_existing` |
 
   Every number shows how many laps it rests on. Two versions can be compared side by side; a
   difference resting on fewer than 10 laps on either side is labelled "not yet meaningful".
@@ -216,14 +233,14 @@ internals to read them. v2 answers four questions, each on one screen, in the de
 
 | Screen | Answers | Replaces |
 |---|---|---|
-| **Factory** (home, `/f/<factory>`) | How does the factory work, and where is every ticket right now? The map of 4.1 and its deeper views | Map |
-| **Board** (`/f/<factory>/board`) | Where is each ticket? One column per stage of the map (Queued, Intake, Build, Review, App check, Merge, Your decision, Merged), PRD phase progress above it. A ticket opens its own page: every lap on it as a timeline of stages, its app-check results, review outcomes, pull request and console links | Issues, Laps, Testing |
+| **Factory** (home, `/f/<factory>`) | How does the factory work, and where is all the work right now? The map of 4.1 and its deeper views | Map |
+| **Board** (`/f/<factory>/board`) | Where is each work item? Work orders with their progress and landing target above, one column per stage of the map (Queued, Intake, Build, Review, App check, Merge, Your decision, Merged). A work item opens its own page: every run on it as a timeline of stages, its app-check results, review outcomes, pull request and console links | Issues, Laps, Testing |
 | **Decisions** (`/f/<factory>/decisions`) | What is waiting on me, and is the factory healthy? Archon attention items (paused runs waiting on a person) with their question, choices and recommendation, answered in the Archon console or Slack; on a factory still on the old loop, owner questions and `needs-owner` items, answered on GitHub; then health (stuck, pending and paused runs, failed laps by cause) | Owner, Health |
 | **Changes** (`/f/<factory>/changes`) | Did my last change to the factory help? Versions newest first with reason, hypothesis and verdict, two versions compared on the scorecard of 4.2, decisions from `DECISIONS.md` on the same timeline, the architecture diff one click away | Versions, Scorecard, Diff, Decisions |
 
 Above every screen: the factory switcher and one line of live numbers (merged today, in flight,
-waiting on you, cost per merge over 7 days, median hours from a ticket's first lap to its merge),
-each traceable (invariant 4). Rewind is retired. The one-lap page stays, opened from a ticket.
+waiting on you, cost per merge over 7 days, median hours from a work item's first run to its merge),
+each traceable (invariant 4). Rewind is retired. The one-lap page stays, opened from a work item.
 
 Sequencing: the Factory map ships first (4.1), then its deeper views, then the v2 colors on every
 screen, then the screens above, and the screens they replace are removed last, each in its own issue.
@@ -237,7 +254,6 @@ Until a screen's replacement merges, the old one stays and keeps working.
 - Anything that requires changing the Archon engine or Archon's database schema.
 - User accounts, sharing, or hosting the dashboard UI outside the owner's machine in v1. (The
   webhook receiver is a Neon Function, hosted by Neon, by decision.)
-- Copying any holdout scenario text into the dashboard's own tables or screens.
 
 ## 6. Hard invariants
 
@@ -247,8 +263,9 @@ Until a screen's replacement merges, the old one stays and keeps working.
    (section 11.4).
 2. **Read-only toward the factories.** Nothing the dashboard runs writes to GitHub, to a factory's
    repository, or to Archon's tables.
-3. **Holdouts stay hidden.** The dashboard's own tables and screens hold a holdout's scenario id and
-   verdict only, never a line's or a scenario's text. Archon's rows are read, never copied.
+3. **Past holdout text stays hidden.** The factory no longer uses holdouts (4.1), but Archon's old rows
+   still hold scenario text. The dashboard never copies or shows it, and shows no holdout at all on
+   the v2 screens.
 4. **Every number can be traced.** Each metric names the laps or rows it was computed from, and how
    many.
 5. **Live means live.** Every panel is a Neon Realtime live query or derived from one. No polling
@@ -265,8 +282,8 @@ Until a screen's replacement merges, the old one stays and keeps working.
 ## 7. The observable core journeys
 
 1. **See the factory.** Open the dashboard: the factory map (4.1) with live counts on its cards;
-   click App check, and from its Behind the scenes open check-app's step screen and read its
-   prompt, its holdout verifier and how the fence works.
+   click App check, and from its Behind the scenes open its `check` step screen and read its
+   prompt.
 2. **Watch a lap.** While a lap runs, its lane moves from step to step without a reload; when it
    merges, its issue turns merged and its phase bar fills.
 3. **Judge a change.** Pick two versions on the strip and compare their scorecards and the
