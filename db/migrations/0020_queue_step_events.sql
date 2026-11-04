@@ -7,8 +7,9 @@
 -- as 0010 meant.
 --
 -- 0013's mc.record_step_attempt, 0015's mc.record_attempt_usage and mc.project_step_event are
--- unchanged but for that one condition. The new function only compares a name, so like them it
--- cannot raise inside Archon's write (0006's invariant 1); the trigger's own handler is unchanged.
+-- unchanged but for that one condition, plus the mc.keeps_step_output redaction in
+-- record_step_attempt and project_step_event. The new functions only compare a name, so like them
+-- they cannot raise inside Archon's write (0006's invariant 1); the trigger's own handler is unchanged.
 -- Runs finished before this file get no steps from it: `reconcile:laps` replays them through these
 -- functions. Run again, it changes nothing.
 --
