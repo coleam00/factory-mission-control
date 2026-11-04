@@ -141,6 +141,9 @@ export function Behind({
     return <p className="text-text-secondary">This version has none of this card's steps.</p>;
   }
   const workflows = [...new Set(links.map((l) => l.workflow))];
+  const covered = card.covers
+    .filter((cover) => steps.some((s) => s.workflow === cover.workflow))
+    .reduce((n, cover) => n + cover.steps.length, 0);
   return (
     <>
       {workflows.map((workflow) => (
@@ -174,6 +177,11 @@ export function Behind({
       <p className={`${LABEL} mt-1.5`}>
         From the pinned code. The map check fails if any of these names disappear.
       </p>
+      {links.length < covered && (
+        <p data-steps-missing className={LABEL}>
+          Steps this card covers that are not listed are not in this version.
+        </p>
+      )}
     </>
   );
 }

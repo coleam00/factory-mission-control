@@ -95,7 +95,8 @@ Behind the scenes lists, per workflow, its YAML path in the pinned pack (from th
 architecture, and none when the version lacks it) and the steps the card covers that the version shown has, each
 opening its step screen beside the model its parsed architecture gives it (`step-detail`, the
 step screens' own query): only facts from the factory's pinned code, never a step or path the
-version lacks (owner, #307). App check's includes `check-app`, whose screen shows its prompt, the
+version lacks (owner, #307); when a covered step is left out for that, one line says those steps
+are not in this version. App check's includes `check-app`, whose screen shows its prompt, the
 holdout verifier and the fence (journey 1). Esc, the close button or a click on empty canvas
 deselects.
 
