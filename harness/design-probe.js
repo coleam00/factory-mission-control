@@ -365,21 +365,13 @@ async function pageChecks(tokenLayers, settle) {
     const hue = (Math.atan2(bb, a) * 180) / Math.PI;
     return { C: Math.hypot(a, bb), h: hue < 0 ? hue + 360 : hue };
   };
-  // #b45309 reads as hue 49, just under the range, so the three amber hexes are listed.
-  const AMBER_HEX = [
-    [180, 83, 9],
-    [245, 158, 11],
-    [217, 119, 6],
-  ];
-  const isAmber = (rgb, { C, h }) =>
-    (C > 0.08 && h >= 50 && h <= 95) ||
-    AMBER_HEX.some((hex) => hex.every((v, i) => Math.abs(v - [rgb.r, rgb.g, rgb.b][i]) <= 1));
+  const isAmber = ({ C, h }) => C > 0.08 && h >= 45 && h <= 95;
   const checkColor = (el, property, color) => {
     const shown = rgba(color);
     if (shown.a === 0) return;
     if (!inPalette(color)) fail('color', el, `${property} ${color} is not a token`);
     const hueChroma = oklchOf(shown);
-    if (isAmber(shown, hueChroma) && !el.closest('[data-v1-screen]'))
+    if (isAmber(hueChroma) && !el.closest('[data-v1-screen]'))
       fail(
         'amber',
         el,
