@@ -493,6 +493,23 @@ test('a lost write whose step a later event projected is not replayed (#343)', a
   expect(stepReplays()).toBe(0);
 });
 
+test('a lost restart the trigger would not apply is never replayed, nor does a bad startedAt throw (#343)', async () => {
+  const runId = await archonRun('running');
+  await archonEvent(runId, 1, 'pick', 'node_started');
+  await archonEvent(runId, 2, 'pick', 'node_completed');
+  const restart = await archonEvent(runId, 3, 'pick', 'node_started');
+  await recordLostStepWrite(runId, restart);
+  await rows(`UPDATE public.remote_agent_workflow_events SET data = $2 WHERE id = $1`, [
+    restart,
+    JSON.stringify({ ...eventData('pick', 'node_started', NOW), timing: { startedAt: 'soon' } }),
+  ]);
+
+  for (let pass = 0; pass < 2; pass++) {
+    expect((await run([])).out).toEqual(['reconcile: 0 run(s) repaired']);
+    expect(stepReplays()).toBe(0);
+  }
+});
+
 test('a lost step finish whose step shows another status is replayed (#343)', async () => {
   const { runId, pickDone } = await runningLap();
   await recordLostStepWrite(runId, pickDone);

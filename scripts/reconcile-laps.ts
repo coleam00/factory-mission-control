@@ -42,7 +42,8 @@ const eventKey = (alias: string) =>
   `${alias}.created_at, coalesce(${alias}.event_order, 0), ${alias}.id`;
 /**
  * Archon is writing a run in these, so its next write projects its lap again; one with no lap is
- * replayed in full, and one with a lap has its steps and attempts replayed. Every
+ * replayed in full, and one with a lap has its steps and attempts replayed only while a live
+ * trigger's lost step write still shows in them (LOST_STEP_WRITE). Every
  * other run is replayed: a paused or failed run can be resumed under the same id, which `reproject`
  * detects.
  */
@@ -173,7 +174,7 @@ async function reproject(tx: Tx, runId: string, scope: Scope): Promise<void> {
  * A step event whose live write lost a lock wait (0006 records it as 55P03) and that the lap still
  * does not show: its step row is missing, shows another status while this is the step's latest
  * event, or a finishing event has no attempt row. Once a replay or the step's next live event
- * projects it, nothing matches, though the append-only error row stays. Reads `r` and `l`.
+ * projects it, nothing matches, though the append-only error row stays. Reads `r`.
  */
 const LOST_STEP_WRITE = `
   SELECT 1 FROM mc.projection_errors e
@@ -186,7 +187,15 @@ const LOST_STEP_WRITE = `
              SELECT 1 FROM mc.lap_step_attempts a
               WHERE a.run_id = v.workflow_run_id AND a.step_id = v.step_name AND a.event_id = v.id))
        OR (s.status <> CASE WHEN v.event_type = 'node_started' THEN 'running'
-                            ELSE substring(v.event_type FROM 6) END AND NOT EXISTS (
+                            ELSE substring(v.event_type FROM 6) END
+           -- 0015:116 applies a restart only over a running step or one completed before it
+           -- started; a startedAt that is not a timestamp is never applied, and must not throw
+           -- here, where a failed cast aborts the whole candidate read.
+           AND (v.event_type <> 'node_started'
+             OR s.completed_at < CASE
+                  WHEN pg_input_is_valid(v.data -> 'timing' ->> 'startedAt', 'timestamptz')
+                  THEN (v.data -> 'timing' ->> 'startedAt')::timestamptz END)
+           AND NOT EXISTS (
              SELECT 1 FROM public.remote_agent_workflow_events n
               WHERE n.workflow_run_id = v.workflow_run_id AND n.step_name = v.step_name
                 AND n.event_type IN ${sqlList(STEP_EVENT_TYPES)}
