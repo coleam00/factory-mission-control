@@ -115,7 +115,10 @@ export function archRows(pack: PackVersion): ArchRows {
 
 /**
  * Replaces the version's rows with `pack`'s, in the caller's transaction. A version's sources never
- * change, so a re-run writes the same rows back, and `parsed_at` keeps the first run's time.
+ * change, so a re-run of the same parser writes the same rows back, and `parsed_at` keeps the first
+ * run's time. A change to what the parser records (such as `.shared` policy files in `arch_texts`)
+ * reaches a stored version only by re-running this job for it: until then a diff between it and a
+ * newer version lists every newly recorded file as added.
  */
 async function storeVersion(tx: Tx, version: Version, parsedAt: Date): Promise<void> {
   const key = [version.archonSha, version.factorySha];

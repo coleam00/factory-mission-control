@@ -87,7 +87,7 @@ export interface PackVersion {
   factoryCommit: string | null;
   workflows: Workflow[];
   commands: TextFile[];
-  /** Markdown under `.shared/` that commands tell agents to read, such as the policy defaults. */
+  /** Markdown under `.shared/` (and any under a workflow's `scripts/`) that commands tell agents to read, such as the policy defaults. */
   sharedDocs: TextFile[];
   scripts: TextFile[];
   hooks: Hook[];
