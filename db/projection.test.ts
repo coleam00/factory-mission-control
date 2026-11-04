@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, beforeEach, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { basename, join } from 'node:path';
+import rules from '../fixtures/archon-rules.json';
 import { FACTORY_MAP } from '../app/map/factory-map';
 import { holdoutId } from '../parsers/metrics';
 import { eventData, structuredOutputFor } from '../scripts/fixture/write';
@@ -1557,7 +1558,13 @@ test('a run status update commits and is recorded when the trigger cannot reach 
   await expect(rolledBack).rejects.toThrow('rollback after the run committed');
 });
 
-const WAIT = { kind: 'attention', owner: 'node', nodeId: 'ask', message: MARKER };
+const WAIT = {
+  kind: 'attention',
+  owner: 'node',
+  nodeId: 'ask',
+  message: MARKER,
+  waitingSince: '2026-10-31T00:00:00.000Z',
+};
 
 async function setMetadata(metadata: unknown, status?: string): Promise<void> {
   await db.query(
@@ -1590,10 +1597,46 @@ test('a lap waits on attention from its pause until the wait is answered or the 
   expect((await queueLap())?.attention_open).toBe(true);
   await setMetadata({ wait: WAIT }, 'running');
   expect((await queueLap())?.attention_open).toBe(false);
-  await setMetadata({ wait: { kind: 'quota' } }, 'paused');
+  await setMetadata(
+    {
+      wait: {
+        owner: 'node',
+        nodeId: 'build',
+        pauseId: 'p3',
+        kind: 'quota',
+        waitingSince: WAIT.waitingSince,
+        resumeAt: '2026-10-31T05:00:00.000Z',
+      },
+    },
+    'paused',
+  );
   expect((await queueLap())?.attention_open).toBe(false);
-  await setMetadata({ source_release: { nodeId: 'a' }, wait: WAIT }, 'paused');
+  await setMetadata(
+    { source_release: { nodeId: 'a', releasedAt: '2026-10-31T00:01:00.000Z' }, wait: WAIT },
+    'paused',
+  );
   expect((await queueLap())?.attention_open).toBe(false);
+});
+
+test('a lap’s attention agrees with Archon’s pausedAttention on the waits Archon writes, at the queue pack’s Archon commit', async () => {
+  const pin = readFileSync(
+    join(import.meta.dir, '..', 'fixtures', 'pack', 'queue', 'ARCHON_COMMIT'),
+    'utf8',
+  ).trim();
+  // A moved pin means re-deriving these cases from run-attention.ts, run-wait.ts and run-metadata.ts at the new commit.
+  expect(rules.attention.archonCommit).toBe(pin);
+  const got: { name: string; attention: boolean }[] = [];
+  for (const c of rules.attention.cases) {
+    const [run] = await db.query(
+      `INSERT INTO public.remote_agent_workflow_runs (workflow_name, status, user_message, metadata)
+       VALUES ('archon-build-queue', $1, 'case', $2) RETURNING id`,
+      [c.status, JSON.stringify(c.metadata)],
+    );
+    const [lap] = await db.query('SELECT attention_open FROM mc.laps WHERE run_id = $1', [run?.id]);
+    got.push({ name: c.name, attention: lap?.attention_open as boolean });
+  }
+  expect(got).toEqual(rules.attention.cases.map((c) => ({ name: c.name, attention: c.attention })));
+  expect(await projectionErrors()).toEqual([]);
 });
 
 test('metadata of an odd shape commits in Archon, with no issue and no wait, and records no error', async () => {

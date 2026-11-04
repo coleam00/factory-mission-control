@@ -213,6 +213,11 @@ function kindOf(node: Node): StepKind {
   throw new Error(`node ${String(node.id)} has no kind Archon runs`);
 }
 
+/** Archon's isInlineScript (packages/workflows/src/executor-shared.ts): a script name never holds these. Checked against fixtures/archon-rules.json at both packs' pins. */
+export function isInlineScript(script: string): boolean {
+  return script.includes('\n') || /[;(){}&|<>$`"' ]/.test(script);
+}
+
 export function parsePack(packDir: string, templateDir: string): PackVersion {
   const sources = readSources(packDir);
   const byName = new Map<string, Source>();
@@ -294,8 +299,7 @@ export function parsePack(packDir: string, templateDir: string): PackVersion {
         }
       }
       const script = str(node.script);
-      // Archon's isInlineScript (packages/workflows/src/executor-shared.ts): a name never holds these.
-      const inline = script !== null && (script.includes('\n') || /[;(){}&|<>$`"' ]/.test(script));
+      const inline = script !== null && isInlineScript(script);
       const resolvedScript = script && !inline ? scriptFile(packDir, source.dir, script) : null;
       if (script && !inline && !resolvedScript) {
         throw new Error(

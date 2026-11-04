@@ -1,0 +1,265 @@
+{
+  "attention": {
+    "archonCommit": "69ab40f57e1af07460c294d2464c788747c32994",
+    "rule": "pausedAttention in packages/workflows/src/schemas/run-attention.ts gives kind 'attention'; waits as workflowWaitContextSchema in run-wait.ts reads them, source_release as sourceReleaseSchema in run-metadata.ts",
+    "note": "Cases hold only shapes Archon writes. MC checks key presence where Archon parses a schema, so malformed data (a wait without waitingSince, a source_release without releasedAt) is outside them. Moving fixtures/pack/queue/ARCHON_COMMIT means re-reading those three files at the new commit and updating archonCommit and the cases.",
+    "cases": [
+      {
+        "name": "legacy open wait",
+        "status": "paused",
+        "metadata": {
+          "wait": {
+            "owner": "node",
+            "nodeId": "ask",
+            "kind": "attention",
+            "waitingSince": "2026-10-31T00:00:00.000Z",
+            "message": "Which branch?"
+          }
+        },
+        "attention": true
+      },
+      {
+        "name": "approval form",
+        "status": "paused",
+        "metadata": {
+          "wait": {
+            "owner": "node",
+            "nodeId": "ask",
+            "kind": "attention",
+            "waitingSince": "2026-10-31T00:00:00.000Z",
+            "message": "Ship it?",
+            "pauseId": "p1",
+            "form": "approval",
+            "revision": 1
+          }
+        },
+        "attention": true
+      },
+      {
+        "name": "select loop",
+        "status": "paused",
+        "metadata": {
+          "wait": {
+            "owner": "loop_group",
+            "nodeId": "rounds",
+            "bodyWaitId": "ask",
+            "iteration": 2,
+            "sessionId": null,
+            "sessionProvider": null,
+            "kind": "attention",
+            "waitingSince": "2026-10-31T00:00:00.000Z",
+            "message": "Pick",
+            "pauseId": "p2",
+            "form": "select",
+            "options": [
+              {
+                "id": "use-main",
+                "label": "Main"
+              }
+            ]
+          }
+        },
+        "attention": true
+      },
+      {
+        "name": "answered",
+        "status": "paused",
+        "metadata": {
+          "wait": {
+            "owner": "node",
+            "nodeId": "ask",
+            "kind": "attention",
+            "waitingSince": "2026-10-31T00:00:00.000Z",
+            "message": "Ship it?",
+            "pauseId": "p1",
+            "form": "approval",
+            "answer": {
+              "decision": "approve",
+              "text": ""
+            },
+            "answeredVia": "web",
+            "answeredAt": "2026-10-31T00:05:00.000Z"
+          }
+        },
+        "attention": false
+      },
+      {
+        "name": "released",
+        "status": "paused",
+        "metadata": {
+          "source_release": {
+            "nodeId": "ask",
+            "releasedAt": "2026-10-31T00:01:00.000Z"
+          },
+          "wait": {
+            "owner": "node",
+            "nodeId": "ask",
+            "kind": "attention",
+            "waitingSince": "2026-10-31T00:00:00.000Z",
+            "message": "q"
+          }
+        },
+        "attention": false
+      },
+      {
+        "name": "released container",
+        "status": "paused",
+        "metadata": {
+          "isolation": "container",
+          "source_release": {
+            "nodeId": "ask",
+            "releasedAt": "2026-10-31T00:01:00.000Z"
+          },
+          "wait": {
+            "owner": "node",
+            "nodeId": "ask",
+            "kind": "attention",
+            "waitingSince": "2026-10-31T00:00:00.000Z",
+            "message": "q"
+          }
+        },
+        "attention": false
+      },
+      {
+        "name": "quota",
+        "status": "paused",
+        "metadata": {
+          "wait": {
+            "owner": "node",
+            "nodeId": "build",
+            "pauseId": "p3",
+            "kind": "quota",
+            "waitingSince": "2026-10-31T00:00:00.000Z",
+            "resumeAt": "2026-10-31T05:00:00.000Z"
+          }
+        },
+        "attention": false
+      },
+      {
+        "name": "time",
+        "status": "paused",
+        "metadata": {
+          "wait": {
+            "owner": "node",
+            "nodeId": "sleep",
+            "kind": "time",
+            "waitingSince": "2026-10-31T00:00:00.000Z",
+            "resumeAt": "2026-10-31T05:00:00.000Z"
+          }
+        },
+        "attention": false
+      },
+      {
+        "name": "paused no wait",
+        "status": "paused",
+        "metadata": {},
+        "attention": false
+      },
+      {
+        "name": "running",
+        "status": "running",
+        "metadata": {},
+        "attention": false
+      },
+      {
+        "name": "failed with stale wait",
+        "status": "failed",
+        "metadata": {
+          "wait": {
+            "owner": "node",
+            "nodeId": "ask",
+            "kind": "attention",
+            "waitingSince": "2026-10-31T00:00:00.000Z",
+            "message": "q"
+          }
+        },
+        "attention": false
+      }
+    ]
+  },
+  "inlineScript": {
+    "archonCommits": [
+      "abd85896e7971c9ac5199ed7e87973f27130250f",
+      "69ab40f57e1af07460c294d2464c788747c32994"
+    ],
+    "rule": "isInlineScript in packages/workflows/src/executor-shared.ts",
+    "cases": [
+      {
+        "script": "facts",
+        "inline": false
+      },
+      {
+        "script": "land.ts",
+        "inline": false
+      },
+      {
+        "script": "merge-gate",
+        "inline": false
+      },
+      {
+        "script": "a;b",
+        "inline": true
+      },
+      {
+        "script": "f(x)",
+        "inline": true
+      },
+      {
+        "script": "f(x",
+        "inline": true
+      },
+      {
+        "script": "a)b",
+        "inline": true
+      },
+      {
+        "script": "a{b",
+        "inline": true
+      },
+      {
+        "script": "a}b",
+        "inline": true
+      },
+      {
+        "script": "a&b",
+        "inline": true
+      },
+      {
+        "script": "a|b",
+        "inline": true
+      },
+      {
+        "script": "a<b",
+        "inline": true
+      },
+      {
+        "script": "a>b",
+        "inline": true
+      },
+      {
+        "script": "$HOME",
+        "inline": true
+      },
+      {
+        "script": "`ls`",
+        "inline": true
+      },
+      {
+        "script": "say \"hi\"",
+        "inline": true
+      },
+      {
+        "script": "it's",
+        "inline": true
+      },
+      {
+        "script": "bun run x",
+        "inline": true
+      },
+      {
+        "script": "a\nb",
+        "inline": true
+      }
+    ]
+  }
+}

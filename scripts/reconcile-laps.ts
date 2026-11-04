@@ -48,8 +48,11 @@ const eventKey = (alias: string) =>
  * detects.
  */
 const LIVE = ['pending', 'running'];
-/** The run columns the projection reads (the mc_project_run_update WHEN in 0019_queue_laps.sql, which replaced 0006's), as text. */
-const PROJECTED_RUN = `SELECT jsonb_build_array(status, workflow_name, codebase_id, started_at,
+/**
+ * The run columns the projection reads (the mc_project_run_update WHEN in 0019_queue_laps.sql, which
+ * replaced 0006's), as text. reconcile-laps.test.ts holds it to the trigger and the lap functions.
+ */
+export const PROJECTED_RUN = `SELECT jsonb_build_array(status, workflow_name, codebase_id, started_at,
     completed_at, metadata -> 'workflow_source' ->> 'digest',
     mc.run_issue_number(metadata), mc.run_attention_open(status, metadata))::text AS run
   FROM public.remote_agent_workflow_runs WHERE id = $1`;

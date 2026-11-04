@@ -3,7 +3,8 @@ import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } f
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { archRows } from '../scripts/arch-parse';
-import { parsePack, type Step, type Workflow } from './pack';
+import rules from '../fixtures/archon-rules.json';
+import { isInlineScript, parsePack, type Step, type Workflow } from './pack';
 
 const repoRoot = resolve(import.meta.dir, '..');
 const packDir = join(repoRoot, 'fixtures', 'pack', 'sdlc');
@@ -247,5 +248,23 @@ One more rule.
     } finally {
       rmSync(copy, { recursive: true, force: true });
     }
+  });
+});
+
+describe("Archon's inline-script rule, at both packs' pins", () => {
+  test('the fixture names exactly the commits the packs pin', () => {
+    const pins = ['pack', 'pack/queue'].map((dir) =>
+      readFileSync(join(repoRoot, 'fixtures', dir, 'ARCHON_COMMIT'), 'utf8').trim(),
+    );
+    // A moved pin means re-reading isInlineScript at the new commit and updating fixtures/archon-rules.json.
+    expect([...rules.inlineScript.archonCommits].sort()).toEqual(pins.sort());
+  });
+
+  test('isInlineScript gives every fixture case its answer', () => {
+    const got = rules.inlineScript.cases.map((c) => ({
+      script: c.script,
+      inline: isInlineScript(c.script),
+    }));
+    expect(got).toEqual(rules.inlineScript.cases);
   });
 });
