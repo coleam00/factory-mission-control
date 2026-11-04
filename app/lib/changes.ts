@@ -126,6 +126,16 @@ function inTimelineOrder(
     .sort((x, y) => order.indexOf(y) - order.indexOf(x));
 }
 
+/** The digests the address names (`a`, `b`) that are not versions on the timeline. */
+export function unknownDigests(
+  items: readonly ChangeItem[],
+  a: string | null,
+  b: string | null,
+): string[] {
+  const known = new Set(digestsNewestFirst(items));
+  return [...new Set([a, b])].filter((d): d is string => d !== null && !known.has(d));
+}
+
 /** The digest of the version row just older than `digest`, or null for the oldest or an unknown one. */
 export function previousDigest(items: readonly ChangeItem[], digest: string): string | null {
   const order = digestsNewestFirst(items);

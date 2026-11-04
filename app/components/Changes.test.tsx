@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { createMemoryRouter, RouterProvider } from 'react-router';
-import { type ChangeItem, changeTimeline } from '../lib/changes';
+import { type ChangeItem, changeTimeline, unknownDigests } from '../lib/changes';
 import type { LedgerRow, TimelineRow } from '../lib/decisions-ledger';
 import type { VersionStripRow } from '../lib/version-strip';
 import { ChangeTimeline, Comparison } from './Changes';
@@ -124,6 +124,7 @@ test('the comparison links the diff of the pair and uses no amber', () => {
           state="ready"
           pair={{ a: V1, b: V2, isDefault: false }}
           selectable={2}
+          missing={[]}
         />
       ),
     },
@@ -150,6 +151,7 @@ test('with one selectable version the comparison says there is nothing to compar
                 state="ready"
                 pair={{ a: V1, isDefault: true }}
                 selectable={selectable}
+                missing={[]}
               />
             ),
           },
@@ -175,6 +177,7 @@ test('with zero selectable versions the comparison still renders and says there 
               state="ready"
               pair={{ isDefault: true }}
               selectable={0}
+              missing={[]}
             />
           ),
         },
@@ -189,4 +192,38 @@ test('every version row but the oldest offers comparing with its previous versio
   const html = render(items, {});
   expect(li(html, `data-digest="${V2}"`)).toContain(`data-compare-previous="${V1}"`);
   expect(li(html, `data-digest="${V1}"`)).not.toContain('data-compare-previous');
+});
+
+test('a version row shows its short digest so versions on one pin differ', () => {
+  const html = render(items, {});
+  expect(li(html, `data-digest="${V1}"`)).toContain(V1.slice(0, 19));
+  expect(li(html, `data-digest="${V2}"`)).toContain(V2.slice(0, 19));
+});
+
+test('a linked comparison naming a version the factory lacks says so', () => {
+  const ghost = `sha256:${'c3'.repeat(32)}`;
+  expect(unknownDigests(items, ghost, V1)).toEqual([ghost]);
+  expect(unknownDigests(items, V1, V2)).toEqual([]);
+  const html = renderToStaticMarkup(
+    <RouterProvider
+      router={createMemoryRouter([
+        {
+          path: '/',
+          element: (
+            <Comparison
+              factory="mission-control"
+              rows={[]}
+              state="ready"
+              pair={{ a: V1, isDefault: false }}
+              selectable={2}
+              missing={[ghost]}
+            />
+          ),
+        },
+      ])}
+    />,
+  );
+  expect(html).toContain(
+    `The linked comparison is unavailable: ${ghost.slice(0, 19)} is not a version of this factory.`,
+  );
 });

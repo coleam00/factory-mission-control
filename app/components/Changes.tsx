@@ -7,6 +7,7 @@ import {
   previousDigest,
   resolvePair,
   selectableVersions,
+  unknownDigests,
   testingChip,
   togglePair,
 } from '../lib/changes';
@@ -22,13 +23,12 @@ import { LivePanel, type PanelState } from '../live/LivePanel';
 import { EmptyState } from './EmptyState';
 import { Lift, type Lifted } from './OneLap';
 import { ScorecardView } from './Scorecard';
+import { shortDigest } from './VersionStrip';
 
 const LABEL = 'font-mono text-[10px] font-semibold uppercase tracking-[0.04em] text-text-secondary';
 const MONO = 'font-mono text-[12px] tabular-nums';
 
 const tint = (color: string) => `color-mix(in oklch, ${color}, transparent 85%)`;
-
-const short = (digest: string): string => digest.slice(0, 'sha256:'.length + 12);
 
 type Chip = 'helped' | 'hurt' | 'inconclusive' | 'testing';
 
@@ -152,6 +152,7 @@ export function Changes({
                 state={state}
                 pair={resolvePair(items, rows, a, b)}
                 selectable={selectableVersions(items)}
+                missing={unknownDigests(items, a, b)}
               />
             )}
           </>
@@ -311,6 +312,9 @@ function VersionRow({
     >
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
         <span className="min-w-0 break-words text-[14px] text-text-primary">{entry.reason}</span>
+        {digest === null ? null : (
+          <span className={`${MONO} text-text-secondary`}>{shortDigest(digest)}</span>
+        )}
         {verdict ? (
           <VerdictChip kind={verdict.verdict} text={verdict.verdict} />
         ) : testing ? (
@@ -336,7 +340,7 @@ function VersionRow({
                 className="accent-accent"
                 checked={checked}
                 onChange={() => onPick(togglePair(items, pair, digest))}
-                aria-label={`Compare ${entry.date}, pin ${pin8}, ${short(digest)}`}
+                aria-label={`Compare ${entry.date}, pin ${pin8}, ${shortDigest(digest)}`}
               />
               Compare
             </label>
@@ -408,6 +412,7 @@ export function Comparison({
   state,
   pair,
   selectable,
+  missing,
 }: {
   factory: string;
   rows: readonly ScorecardRow[] | undefined;
@@ -415,26 +420,40 @@ export function Comparison({
   pair: Pair & { isDefault: boolean };
   /** How many versions have run and so have a box to check. */
   selectable: number;
+  /** The digests the address names that are not versions of this factory. */
+  missing: readonly string[];
 }): ReactElement | null {
   if (state === 'error') {
     return <p className="text-sm text-text-secondary">Live data is unavailable.</p>;
   }
   if (rows === undefined)
     return <p className="text-sm text-text-secondary">Loading the scorecard.</p>;
+  const [firstMissing, secondMissing] = missing.map(shortDigest);
+  const notice =
+    firstMissing === undefined ? null : (
+      <p data-missing-version className="mb-3 text-sm text-text-secondary">
+        The linked comparison is unavailable:{' '}
+        {secondMissing === undefined
+          ? `${firstMissing} is not a version of this factory.`
+          : `${firstMissing} and ${secondMissing} are not versions of this factory.`}
+      </p>
+    );
   if (pair.a === undefined) {
     return (
       <>
         <h2 className={`${LABEL} mb-3`}>Comparison</h2>
+        {notice}
         <p className="text-sm text-text-secondary">
           No version has run yet, so there is nothing to compare.
         </p>
       </>
     );
   }
-  const pin = (digest: string) => versionPin(rows, digest).pin?.slice(0, 8) ?? short(digest);
+  const pin = (digest: string) => versionPin(rows, digest).pin?.slice(0, 8) ?? shortDigest(digest);
   return (
     <>
       <h2 className={`${LABEL} mb-3`}>Comparison</h2>
+      {notice}
       {pair.isDefault ? (
         <p data-default-pair className="mb-3 text-sm text-text-secondary">
           Showing the newest version with laps,{' '}
