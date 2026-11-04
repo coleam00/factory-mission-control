@@ -165,6 +165,7 @@ describe('decisions-timeline and improvements-ledger on the seed', () => {
             'north-star-digest', '2026-10-20T00:00:00Z'),
           ('00000000-0000-0000-0000-0000000000d2', 'north-star', 'archon-loop', 'completed',
             'north-star-digest', '2026-10-20T01:00:00Z')`);
+        await tx.query(`SELECT mc.project_version('north-star', 'north-star-digest')`);
         const [label] = await tx.query(
           'SELECT sha FROM mc.pins WHERE committed_at < $1 ORDER BY committed_at DESC LIMIT 1',
           ['2026-10-20T00:00:00Z'],
@@ -185,6 +186,49 @@ describe('decisions-timeline and improvements-ledger on the seed', () => {
           VALUES ('empty-check', 'o/empty', 'o/empty', 'http://localhost:3090')`);
         expect(await tx.query(named('decisions-timeline'), ['empty-check'])).toEqual([]);
         expect(await tx.query(named('improvements-ledger'), ['empty-check'])).toEqual([]);
+        throw rollback;
+      })
+      .catch((error) => {
+        if (error !== rollback) throw error;
+      });
+  });
+
+  test('the ledger credits a digest to the pin mc.versions gives it', async () => {
+    const rollback = new Error('rollback');
+    const sha = (c: string) => c.repeat(40);
+    await db
+      .transaction(async (tx) => {
+        // dX: first run by another workflow between pins A and B; its first archon-loop lap is after B.
+        // dY: two pins with equal committed_at; the higher sha is the pin.
+        await tx.query(`INSERT INTO mc.pins (sha, archon_sha, reason, committed_at) VALUES
+          ('${sha('a')}', '${sha('1')}', 'pin A', '2030-01-01T00:00:00Z'),
+          ('${sha('b')}', '${sha('2')}', 'pin B', '2030-01-02T00:00:00Z'),
+          ('${sha('c')}', '${sha('3')}', 'pin C', '2030-02-01T00:00:00Z'),
+          ('${sha('d')}', '${sha('4')}', 'pin D', '2030-02-01T00:00:00Z')`);
+        await tx.query(`INSERT INTO mc.laps (run_id, factory, workflow_name, status, digest, started_at) VALUES
+          ('00000000-0000-0000-0000-0000000000e1', 'mission-control', 'archon-manager', 'completed', 'dX', '2030-01-01T12:00:00Z'),
+          ('00000000-0000-0000-0000-0000000000e2', 'mission-control', 'archon-loop', 'completed', 'dX', '2030-01-02T12:00:00Z'),
+          ('00000000-0000-0000-0000-0000000000e3', 'mission-control', 'archon-loop', 'completed', 'dY', '2030-02-02T00:00:00Z')`);
+        await tx.query(`INSERT INTO mc.factories (name, repository, codebase, console)
+          VALUES ('north-star', 'coleam00/north-star', 'coleam00/north-star', 'http://localhost:3090')`);
+        await tx.query(`INSERT INTO mc.laps (run_id, factory, workflow_name, status, digest, started_at)
+          VALUES ('00000000-0000-0000-0000-0000000000e4', 'north-star', 'archon-loop', 'completed', 'dX', '2030-02-01T12:00:00Z')`);
+        await tx.query(`SELECT mc.project_version('north-star', 'dX')`);
+        await tx.query(`SELECT mc.project_version('mission-control', 'dX')`);
+        await tx.query(`SELECT mc.project_version('mission-control', 'dY')`);
+        const versions = await tx.query(
+          `SELECT digest, pin_sha FROM mc.versions
+           WHERE factory = 'mission-control' AND digest IN ('dX', 'dY') ORDER BY digest`,
+        );
+        expect(versions.map((v) => v.pin_sha)).toEqual([sha('b'), sha('d')]);
+        const ledger = await tx.query(named('improvements-ledger'), ['mission-control']);
+        const laps = (pin: string) => ledger.find((r) => r.pin_sha === pin)?.laps;
+        expect([laps(sha('a')), laps(sha('b')), laps(sha('c')), laps(sha('d'))]).toEqual([
+          0, 1, 0, 1,
+        ]);
+        const north = await tx.query(named('improvements-ledger'), ['north-star']);
+        expect(north.find((r) => r.pin_sha === sha('d'))?.laps).toBe(1);
+        expect(north.find((r) => r.pin_sha === sha('b'))?.laps).toBe(0);
         throw rollback;
       })
       .catch((error) => {
