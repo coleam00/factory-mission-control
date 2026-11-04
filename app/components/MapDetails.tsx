@@ -33,7 +33,10 @@ function Bullets({ lines }: { lines: readonly string[] }): ReactElement {
 function Item({ item, note }: { item: MapItem; note: string }): ReactElement {
   const name = (
     <>
-      <span className="font-mono tabular-nums">#{item.number}</span> {item.title}
+      {item.number === null ? null : (
+        <span className="font-mono tabular-nums">#{item.number} </span>
+      )}
+      {item.title}
     </>
   );
   return (
@@ -94,12 +97,12 @@ export function RightNow({
     )),
     ...(live?.waiting ?? []).map((item) => <Item key={item.key} item={item} note="waiting" />),
     ...(live?.merged ?? []).map((merge) => (
-      <li key={`merged-${merge.run}`} data-lap={merge.run}>
+      <li key={`merged-${merge.run}-${merge.number ?? 'lap'}`} data-lap={merge.run}>
         <Link to={lapHref(merge.run)} className={LINK}>
-          {merge.issue === null ? (
+          {merge.number === null ? (
             <span className="font-mono">lap {merge.run.slice(0, 8)}</span>
           ) : (
-            <span className="font-mono tabular-nums">#{merge.issue}</span>
+            <span className="font-mono tabular-nums">#{merge.number}</span>
           )}
         </Link>
         <span className={CHIP}>merged {time(merge.at)}</span>
