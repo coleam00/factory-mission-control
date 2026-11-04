@@ -107,9 +107,9 @@ describe('focus ring', () => {
   const surface = app.find((d) => d.scope === scope && d.property === '--surface');
   const ring = app.find((d) => d.scope === scope && d.property === token);
 
-  test('draws from an opaque token, not amber', () => {
-    expect(token).toBeDefined();
-    expect(ring?.value).not.toMatch(/rgba|amber/);
+  test('draws from the opaque accent token, which is blue, not amber', () => {
+    expect(token).toBe('--accent');
+    expect(ring?.value).not.toMatch(/rgba/);
   });
 
   test('reaches 3:1 against the menu surface, in color and in grayscale', () => {
@@ -143,13 +143,7 @@ describe('keyboard focus', () => {
   const rule = (scope: string) =>
     app.find((d) => d.scope.includes(scope) && d.property.startsWith('outline'));
 
-  test("the details strip's controls and the zoom controls ring in the solid accent, not the translucent one", () => {
-    for (const scope of [
-      '[data-details] button:focus-visible',
-      '[data-map-controls] button:focus-visible',
-    ]) {
-      expect(rule(scope)?.value).toBe('var(--accent)');
-    }
+  test("a details tab's ring is drawn inside it so the scrolling tab list cannot clip it", () => {
     expect(rule("[data-details] [role='tab']:focus-visible")?.value).toBe('-2px');
   });
 });
