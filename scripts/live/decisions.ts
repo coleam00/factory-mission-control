@@ -287,6 +287,7 @@ export function decisionsPhase(ctx: LiveContext): LivePhase {
       deps.out(
         `first label reached the decisions screen in ${timings.labelToScreen.ms ?? 'never'} ms`,
       );
+      ctx.failures.push(...(await removeLabels()));
     },
 
     async afterHold() {
@@ -296,7 +297,7 @@ export function decisionsPhase(ctx: LiveContext): LivePhase {
       timings.noReload = await page.evaluate<boolean>('window.__mcNoReload === true');
       await page.close();
       decisionsPage = undefined;
-      // Later phases label the highest-numbered issue without needs-owner: leave it where it was.
+      // The issues phase labels the highest-numbered issue without needs-owner: leave it waiting.
       ctx.failures.push(...(await removeLabels()));
     },
 

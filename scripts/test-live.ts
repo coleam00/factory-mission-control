@@ -244,7 +244,7 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
   // hold, and the switcher runs before the diff adds steps to the architecture the second
   // factory's map shows. The owner queue labels just before the issues screen does, so each of
   // the issues screen's labels lands on a waiting issue; the Decisions screen removes its own
-  // labels first. Rewind is last: making a rewind branch starts a new Neon compute on the
+  // labels as soon as it has timed them. Rewind is last: making a rewind branch starts a new Neon compute on the
   // project, so every other screen's first snapshots are timed before it.
   const phases: LivePhase[] = [
     homePhase(ctx),
