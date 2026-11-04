@@ -16,7 +16,7 @@ step AS (
   WHERE s.workflow = $2 AND s.path = $3
 )
 -- The command file the step runs, in parts the browser joins in order: each part stays
--- under 16 KiB (REALTIME.md): 4000 characters are at most 16,000 bytes at four bytes each, and 25
+-- under the 16 KiB the live probe tests (REALTIME.md): 4000 characters are at most 16,000 bytes at four bytes each, and 25
 -- parts hold a file of 100,000.
 SELECT t.path, n.part, substr(t.text, n.part * 4000 + 1, 4000) AS chunk
 FROM mc.arch_texts t

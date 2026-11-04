@@ -17,7 +17,7 @@ describe('against the migrated schema', () => {
 
   test('step queries read the newest pin with architecture rows, or the pin the address names, for a factory the dashboard shows', async () => {
     const sql = (name: string) => queries.find(([n]) => n === name)?.[1] as string;
-    // A long multi-byte file: each part must stay under 16 KiB (REALTIME.md).
+    // A long multi-byte file: each part must stay under the 16 KiB the live probe tests (REALTIME.md).
     const long = `${'é'.repeat(4500)}
 ${'x'.repeat(5000)}`;
     await db.query(`INSERT INTO mc.factories (name, repository, codebase, console)

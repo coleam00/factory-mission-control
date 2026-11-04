@@ -32,12 +32,13 @@ them again on every run and fails when a verdict or an error differs from this t
 | EXISTS in CASE          | `SELECT i.number, CASE WHEN EXISTS (SELECT 1 FROM mc.issue_labels l WHERE l.issue_number = i.number) THEN 1 ELSE 0 END AS n FROM mc.issues i WHERE i.factory = $1`                                | accepted |                                                                                                            |
 
 A volatile function such as `now()` is rejected, so a query returns timestamps and the browser
-computes elapsed times. A query whose answer holds one value of 16 KiB or more is answered now: the
-probe returns the seed's `archon-deliver-block` YAML (19,895 bytes) whole. Realtime did not answer
-such a query on 2026-10-25 (no rows and no error), and the largest value it answers is not
-measured. A query that returns whole files still splits each into parts of 4000 characters, so no
-single value is near any limit, joining a `VALUES` list of part numbers because `generate_series`
-is refused, and the browser joins the parts.
+computes elapsed times. The probe for a value of 16 KiB or more was accepted on 2026-11-04: the
+subscription went live with defined data. The probe does not read the row or its length, so the
+size of the seeded `archon-deliver-block` YAML on that run (its source file was 19,895 bytes) and
+the largest value Realtime answers are not measured. Realtime did not answer such a query on
+2026-10-25 (no rows and no error). A query that returns whole files still splits each into parts of
+4000 characters, at most 16,000 bytes each, joining a `VALUES` list of part numbers because
+`generate_series` is refused, and the browser joins the parts.
 `test:live` seals the probes in debug mode to record why a query was rejected; the app seals in
 safe mode, where the browser sees only `upstream_rejected: upstream rejected` and no database
 structure.
