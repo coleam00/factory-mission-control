@@ -62,6 +62,18 @@ describe('map:check', () => {
     ]);
   });
 
+  test('a step a lap marks that the pack lacks fails when two cards cover it', () => {
+    const pack = parsePack(PACK, TEMPLATE);
+    const twice = FACTORY_MAP.cards.map((card) =>
+      card.id === 'review'
+        ? { ...card, covers: [...card.covers, { workflow: 'archon-loop', steps: ['handoff'] }] }
+        : card,
+    );
+    expect(mapCheck(withCards(twice), pack)).toEqual([
+      'archon-loop handoff is covered by Review and App check',
+    ]);
+  });
+
   test('a step added to a copy of the pack fails naming the step', () => {
     const pack = editedPack((yaml) =>
       yaml.replace(

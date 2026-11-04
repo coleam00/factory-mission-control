@@ -98,9 +98,16 @@ export function mapCheck(map: FactoryMap, pack: PackVersion): string[] {
       }
     }
   }
+  // A lane step the pack has goes through the per-step check below; one it lacks needs its own.
+  const loopNodes = workflows.get('archon-loop');
   for (const step of LOOP_LANE_STEPS) {
-    if (coveringCards(map, 'archon-loop', step).length === 0) {
+    if (loopNodes?.has(step)) continue;
+    const cards = coveringCards(map, 'archon-loop', step);
+    if (cards.length === 0) {
       failures.push(`archon-loop ${step} is marked on a lap's row but covered by no card`);
+    }
+    if (cards.length > 1) {
+      failures.push(`archon-loop ${step} is covered by ${cards.map((c) => c.title).join(' and ')}`);
     }
   }
   for (const workflow of covered) {

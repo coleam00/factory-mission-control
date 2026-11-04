@@ -43,7 +43,11 @@ fits the whole map, at any width.
 offline, and fails, naming the step, when a step of a workflow a card covers is covered by no card
 or by two, when a card names a workflow or a step the pack lacks, when an entry's screen is not
 the step's own, when a role, chip, line style or legend role is outside the closed sets, or when a
-covered step's pack path holds a dot (the map reads a step's path by its dots). When the pack changes, update `covers` until the check passes.
+covered step's pack path holds a dot (the map reads a step's path by its dots). It also fails when a
+step a lap's row marks (`LANE_STEPS`) is covered by no card or by two. The loop's `handoff` step is
+missing from the pack's copy of the loop, so App check may cover it without the pack having it; it
+is the one step a card may name that the pack lacks, and it is held to exactly one card. When the
+pack changes, update `covers` until the check passes.
 
 ## Live counts
 
