@@ -278,6 +278,7 @@ test('the eligibility upgrade keeps live history and installs the same functions
       '0016_pin_reason_optional.sql',
       '0017_app_check_line_ids.sql',
       '0018_issue_label_time.sql',
+      '0019_queue_laps.sql',
     ]);
     expect(await projectionDefinitions(upgraded)).toEqual(await projectionDefinitions(db));
     expect(await runMigrations({ files: migrationFiles, db: upgraded })).toEqual([]);
@@ -326,6 +327,7 @@ test('0011 rewrites a short pin to the one full sha it prefixes, and clears ambi
       '0016_pin_reason_optional.sql',
       '0017_app_check_line_ids.sql',
       '0018_issue_label_time.sql',
+      '0019_queue_laps.sql',
     ]);
     const migrated = [
       { sha: 'p1', archon_sha: full },
@@ -390,6 +392,7 @@ test('0012 rewrites CRLF to LF in stored architecture texts, and changes nothing
       '0016_pin_reason_optional.sql',
       '0017_app_check_line_ids.sql',
       '0018_issue_label_time.sql',
+      '0019_queue_laps.sql',
     ]);
     const migrated = [
       { kind: 'hook', path: '.factory/hooks/gate.sh', text: 'exit 0\n' },
@@ -459,6 +462,7 @@ test('0013 gives back the runs of a step the old key merged, and changes nothing
       '0016_pin_reason_optional.sql',
       '0017_app_check_line_ids.sql',
       '0018_issue_label_time.sql',
+      '0019_queue_laps.sql',
     ]);
     expect(await attempts()).toEqual([
       { step_id: 'land', outcome: 'merged', cost_usd: null },
@@ -643,6 +647,7 @@ test('0014 keeps only a stored citation’s references, and changes nothing run 
       '0016_pin_reason_optional.sql',
       '0017_app_check_line_ids.sql',
       '0018_issue_label_time.sql',
+      '0019_queue_laps.sql',
     ]);
     const lines = () =>
       historical.query(
@@ -687,6 +692,7 @@ test('0016 lets a pin have no reason, keeps stored reasons, and changes nothing 
       '0016_pin_reason_optional.sql',
       '0017_app_check_line_ids.sql',
       '0018_issue_label_time.sql',
+      '0019_queue_laps.sql',
     ]);
     await pin('b'.repeat(40), null);
     const reasons = () => historical.query('SELECT sha, reason FROM mc.pins ORDER BY sha');
@@ -724,6 +730,7 @@ test('0017 keeps lines projected before it without an id, fills new reports’ i
     expect(await runMigrations({ files: migrationFiles, db: historical })).toEqual([
       '0017_app_check_line_ids.sql',
       '0018_issue_label_time.sql',
+      '0019_queue_laps.sql',
     ]);
     const after = await run();
     await historical.query('SELECT mc.project_app_check_lines($1, $2)', [
@@ -1332,4 +1339,74 @@ test('a run status update commits and is recorded when the trigger cannot reach 
     throw new Error('rollback after the run committed');
   });
   await expect(rolledBack).rejects.toThrow('rollback after the run committed');
+});
+
+const WAIT = { kind: 'attention', owner: 'node', nodeId: 'ask', message: MARKER };
+
+async function setMetadata(metadata: unknown, status?: string): Promise<void> {
+  await db.query(
+    `UPDATE public.remote_agent_workflow_runs SET metadata = $2, status = coalesce($3, status)
+     WHERE id = $1`,
+    [runId, JSON.stringify(metadata), status ?? null],
+  );
+}
+
+const queueLap = async () =>
+  (
+    await db.query('SELECT issue_number, attention_open FROM mc.laps WHERE run_id = $1', [runId])
+  )[0];
+
+test('a lap’s issue is its run’s number input, unless the run is for a pull request', async () => {
+  await setMetadata({ inputs: { number: '401' } });
+  expect(await queueLap()).toEqual({ issue_number: 401, attention_open: false });
+  await setMetadata({ inputs: { number: '401', kind: 'pull_request' } });
+  expect((await queueLap())?.issue_number).toBeNull();
+  await setMetadata({ inputs: { number: '' } });
+  expect((await queueLap())?.issue_number).toBeNull();
+});
+
+test('a lap waits on attention from its pause until the wait is answered or the run resumes', async () => {
+  await setMetadata({ wait: WAIT }, 'paused');
+  expect((await queueLap())?.attention_open).toBe(true);
+  await setMetadata({ wait: { ...WAIT, answer: { text: 'yes' } } });
+  expect((await queueLap())?.attention_open).toBe(false);
+  await setMetadata({ wait: WAIT }, 'paused');
+  expect((await queueLap())?.attention_open).toBe(true);
+  await setMetadata({ wait: WAIT }, 'running');
+  expect((await queueLap())?.attention_open).toBe(false);
+  await setMetadata({ wait: { kind: 'quota' } }, 'paused');
+  expect((await queueLap())?.attention_open).toBe(false);
+  await setMetadata({ source_release: { nodeId: 'a' }, wait: WAIT }, 'paused');
+  expect((await queueLap())?.attention_open).toBe(false);
+});
+
+test('metadata of an odd shape commits in Archon, with no issue and no wait, and records no error', async () => {
+  for (const odd of [[1, 2], 'text', 5, { inputs: 'x' }, { inputs: { number: '99999999999' } }]) {
+    await setMetadata(odd, 'paused');
+    expect(await queueLap()).toEqual({ issue_number: null, attention_open: false });
+  }
+  expect(await projectionErrors()).toEqual([]);
+});
+
+test('0019 fills a lap projected before it, and changes nothing run again', async () => {
+  const historical = await archonDb();
+  try {
+    await runMigrations({ files: migrationFiles.filter((f) => f.name < '0019'), db: historical });
+    await historical.query(
+      `INSERT INTO public.remote_agent_workflow_runs (workflow_name, status, user_message, metadata)
+       VALUES ('archon-build-queue', 'paused', 'historical', $1)`,
+      [JSON.stringify({ inputs: { number: '402' }, wait: WAIT })],
+    );
+    expect(await runMigrations({ files: migrationFiles, db: historical })).toEqual([
+      '0019_queue_laps.sql',
+    ]);
+    const lap = () => historical.query('SELECT issue_number, attention_open FROM mc.laps');
+    expect(await lap()).toEqual([{ issue_number: 402, attention_open: true }]);
+    const migrated = await snapshot(historical);
+    const [file] = migrationFiles.filter((f) => f.name.startsWith('0019'));
+    await historical.query(file?.sql ?? '');
+    expect(await snapshot(historical)).toEqual(migrated);
+  } finally {
+    await historical.close();
+  }
 });
