@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test';
+import { LANE_STEPS } from '../lib/lap-graph';
 import { FACTORY_MAP } from './factory-map';
 import { cardLive, deepestStep, type HomeMapRow, mergedToday, versionRecorded } from './live';
 
@@ -47,6 +48,13 @@ test('a lap counts once, on the card covering its deepest running step', () => {
     app: ['a'],
     deploy: ['d'],
   });
+});
+
+test("a lap running on any step a lane marks counts on a card, so the cards' laps sum to the header's", () => {
+  const rows = LANE_STEPS.flatMap((mark) => mark.split('/')).map((step) => lap(step, [step]));
+  const counted = Object.values(here(rows)).flat();
+  expect(counted.sort()).toEqual(rows.map((r) => r.run_id as string).sort());
+  expect(here([lap('a', ['handoff'])])).toEqual({ app: ['a'] });
 });
 
 test('a lap with no running step, on a step no card covers, or of another workflow is on no card', () => {

@@ -1,4 +1,5 @@
 import { join } from 'node:path';
+import { LANE_STEPS } from '../app/lib/lap-graph';
 import {
   CHIPS,
   coveringCards,
@@ -12,6 +13,12 @@ import { type PackVersion, parsePack, type Step } from '../parsers/pack';
 import { failing, type Main, noArguments, runCli } from './lib/cli';
 
 const USAGE = 'usage: bun run map:check';
+
+/** The loop steps a lap's row marks and its header counts; a running lap on one counts on a card. */
+const LOOP_LANE_STEPS = LANE_STEPS.flatMap((step) => step.split('/'));
+
+/** The one lane step the running loop has that the pack's copy of it lacks. */
+const STEP_THE_PACK_LACKS = 'handoff';
 
 /** Every node of a workflow's expanded tree, at every depth, by its path. */
 function nodesByPath(steps: readonly Step[], into = new Map<string, Step>()): Map<string, Step> {
@@ -60,7 +67,8 @@ function unknownValues(map: FactoryMap): string[] {
 /**
  * Where the map has drifted from the pack (PRD 4.1, invariant 6), one line each: a card naming a
  * workflow or a step the pack lacks, an entry whose screen is not the step's own, and a step of a
- * covered workflow that no card covers or that two do.
+ * covered workflow that no card covers or that two do, or a step a lap's row marks that no card
+ * covers.
  */
 export function mapCheck(map: FactoryMap, pack: PackVersion): string[] {
   const failures: string[] = unknownValues(map);
@@ -76,6 +84,7 @@ export function mapCheck(map: FactoryMap, pack: PackVersion): string[] {
       covered.add(cover.workflow);
       for (const step of cover.steps) {
         if (!nodes.has(step)) {
+          if (cover.workflow === 'archon-loop' && step === STEP_THE_PACK_LACKS) continue;
           failures.push(`${card.title} names ${cover.workflow} ${step}, which the pack lacks`);
           continue;
         }
@@ -87,6 +96,11 @@ export function mapCheck(map: FactoryMap, pack: PackVersion): string[] {
           );
         }
       }
+    }
+  }
+  for (const step of LOOP_LANE_STEPS) {
+    if (coveringCards(map, 'archon-loop', step).length === 0) {
+      failures.push(`archon-loop ${step} is marked on a lap's row but covered by no card`);
     }
   }
   for (const workflow of covered) {

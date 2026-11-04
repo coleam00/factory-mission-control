@@ -47,6 +47,21 @@ describe('map:check', () => {
     ]);
   });
 
+  test('a step a lap marks that the pack lacks passes only while a card covers it', () => {
+    const pack = parsePack(PACK, TEMPLATE);
+    const without = FACTORY_MAP.cards.map((card) =>
+      card.id === 'app'
+        ? {
+            ...card,
+            covers: [{ workflow: 'archon-loop', steps: ['briefs', 'check-app', 'evidence'] }],
+          }
+        : card,
+    );
+    expect(mapCheck(withCards(without), pack)).toEqual([
+      "archon-loop handoff is marked on a lap's row but covered by no card",
+    ]);
+  });
+
   test('a step added to a copy of the pack fails naming the step', () => {
     const pack = editedPack((yaml) =>
       yaml.replace(

@@ -98,6 +98,7 @@ test("App check's steps open their screens, check-app's among them; a nested one
     '/steps/archon-loop/briefs',
     '/steps/archon-loop/check-app',
     '/steps/archon-loop/evidence',
+    '/steps/archon-loop/handoff',
   ]);
   expect(stepLinks(card('review'), 'abc').map((l) => l.href)).toEqual([
     '/steps/archon-deliver-block/rounds%2Freview?at=abc',

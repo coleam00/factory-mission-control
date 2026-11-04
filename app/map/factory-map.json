@@ -236,7 +236,7 @@
       "covers": [
         {
           "workflow": "archon-loop",
-          "steps": ["briefs", "check-app", "evidence"]
+          "steps": ["briefs", "check-app", "evidence", "handoff"]
         }
       ],
       "details": {
