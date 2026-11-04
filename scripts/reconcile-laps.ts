@@ -2,11 +2,14 @@
 // projection trigger that loses a lock wait records the error, and when even that record fails the
 // error is dropped (0006_projection.sql), so a lap can stay `running` after Archon finished the run:
 // a finished, paused or failed run may get no more writes to project it again, and a run whose
-// insert lost a locked mc.laps (issue #269) gets no lap until its status changes. For each run
-// Archon is not running, and each running run with no lap, this replays the run's row and
+// insert lost a locked mc.laps (issue #269) gets no lap until its status changes, and a running
+// lap whose step or attempt write lost a locked table (issue #343) keeps a stale step and cost
+// until that step's next event. For each run Archon is not running, and each running run with no
+// lap, this replays the run's row and
 // step-level events through the projection's own functions (0006, 0007's attempts and 0008's
 // versions), by way of temp tables that carry the same triggers, and keeps the result only when it
-// differs from the lap's rows. A run
+// differs from the lap's rows. A running run with a lap has only its step events replayed, and
+// only its step and attempt rows compared. A run
 // projected before versions were (0008, issue #74) differs by its missing version, so this writes
 // that too, and a finish lost to a locked lap (issue #152) differs by its status. Archon's tables
 // are only read. It writes the check branch in .mc-check.env; `:main` writes `main`, and is the
@@ -35,8 +38,9 @@ class Busy extends Error {}
 export const STEP_EVENT_TYPES = ['node_started', 'node_completed', 'node_failed', 'node_skipped'];
 /**
  * Archon is writing a run in these, so its next write projects its lap again; one with no lap is
- * replayed. Every other run is replayed: a paused or failed run can be resumed under the same id,
- * which `reproject` detects.
+ * replayed in full, and one with a lap has its steps and attempts replayed. Every
+ * other run is replayed: a paused or failed run can be resumed under the same id, which `reproject`
+ * detects.
  */
 const LIVE = ['pending', 'running'];
 /** The run columns the projection reads (0006's mc_project_run_update WHEN), as text. */
@@ -49,21 +53,27 @@ const REPLAY_STEP_EVENT = 'mc_reconcile_step_event';
 const sqlList = (values: string[]) => `(${values.map((value) => `'${value}'`).join(', ')})`;
 const REPLAY_SOURCES = sqlList([REPLAY_RUN, REPLAY_STEP_EVENT]);
 
-/** Every row the projection writes for a run, its version's included, as text, in a fixed order. */
-async function lapRows(tx: Tx, runId: string): Promise<string> {
-  const rows = await tx.query(
-    `SELECT 'laps' AS t, to_jsonb(l)::text AS row FROM mc.laps l WHERE run_id = $1
-     UNION ALL SELECT 'lap_steps', to_jsonb(s)::text FROM mc.lap_steps s WHERE run_id = $1
-     UNION ALL SELECT 'lap_step_attempts', to_jsonb(a)::text FROM mc.lap_step_attempts a
+/** `run` replays and compares everything the projection writes for a run; `steps`, its step rows. */
+type Scope = 'run' | 'steps';
+
+/**
+ * The rows the projection writes for a run, as text, in a fixed order: in the `run` scope all of
+ * them, its version's included; in the `steps` scope only the step and attempt rows the lane reads.
+ */
+async function lapRows(tx: Tx, runId: string, scope: Scope): Promise<string> {
+  const stepRows = `SELECT 'lap_steps' AS t, to_jsonb(s)::text AS row FROM mc.lap_steps s
        WHERE run_id = $1
+     UNION ALL SELECT 'lap_step_attempts', to_jsonb(a)::text FROM mc.lap_step_attempts a
+       WHERE run_id = $1`;
+  const otherRows = `UNION ALL SELECT 'laps', to_jsonb(l)::text FROM mc.laps l WHERE run_id = $1
      UNION ALL SELECT 'lap_step_attempt_usage', to_jsonb(u)::text FROM mc.lap_step_attempt_usage u
        WHERE run_id = $1
      UNION ALL SELECT 'app_check_lines', to_jsonb(a)::text FROM mc.app_check_lines a WHERE run_id = $1
      UNION ALL SELECT 'versions', to_jsonb(v)::text FROM mc.versions v
-       JOIN mc.laps l ON l.factory = v.factory AND l.digest = v.digest WHERE l.run_id = $1
-     ORDER BY 1, 2`,
-    [runId],
-  );
+       JOIN mc.laps l ON l.factory = v.factory AND l.digest = v.digest WHERE l.run_id = $1`;
+  const rows = await tx.query(`${stepRows} ${scope === 'run' ? otherRows : ''} ORDER BY 1, 2`, [
+    runId,
+  ]);
   return JSON.stringify(rows);
 }
 
@@ -71,14 +81,16 @@ async function lapRows(tx: Tx, runId: string): Promise<string> {
  * Replaces the run's rows with what the projection writes from Archon's rows today. Throws `Agrees`
  * when that is what they already were, `Busy` when the replay could not take a lock or Archon wrote
  * the run while it ran, and an error naming the first projection error the replay hit that no live
- * trigger recorded for the run.
+ * trigger recorded for the run. In the `steps` scope, used for a run Archon is still running, only
+ * the step events are replayed and only the run's step and attempt rows are compared; its lap and
+ * version are left to the live triggers.
  */
-async function reproject(tx: Tx, runId: string): Promise<void> {
+async function reproject(tx: Tx, runId: string, scope: Scope): Promise<void> {
   // A lock another session holds, a table lock included, makes this replay busy within
   // REPLAY_LOCK_TIMEOUT rather than waiting without bound (#221). The projection functions set
   // their own lock_timeout, so this bounds only this transaction's own statements.
   await tx.query(`SET LOCAL lock_timeout = '${REPLAY_LOCK_TIMEOUT}'`, []);
-  const before = await lapRows(tx, runId);
+  const before = await lapRows(tx, runId, scope);
   const [copied] = await tx.query(PROJECTED_RUN, [runId]);
   const [lastError] = await tx.query(
     'SELECT coalesce(max(id), 0) AS id FROM mc.projection_errors',
@@ -103,13 +115,15 @@ async function reproject(tx: Tx, runId: string): Promise<void> {
        FOR EACH ROW EXECUTE FUNCTION mc.project_step_event()`,
     [],
   );
-  await tx.query('DELETE FROM mc.app_check_lines WHERE run_id = $1', [runId]);
   await tx.query('DELETE FROM mc.lap_steps WHERE run_id = $1', [runId]);
-  // The lap is overwritten in place, not deleted: the replay re-projects the version it moves off.
-  await tx.query(
-    'INSERT INTO mc_reconcile_runs SELECT * FROM public.remote_agent_workflow_runs WHERE id = $1',
-    [runId],
-  );
+  if (scope === 'run') {
+    await tx.query('DELETE FROM mc.app_check_lines WHERE run_id = $1', [runId]);
+    // The lap is overwritten in place, not deleted: the replay re-projects the version it moves off.
+    await tx.query(
+      'INSERT INTO mc_reconcile_runs SELECT * FROM public.remote_agent_workflow_runs WHERE id = $1',
+      [runId],
+    );
+  }
   // Archon's chronology: created_at, then event_order, as its own read queries order events. A
   // replayed start only reopens a step that is running or finished before it, so order matters.
   await tx.query(
@@ -134,7 +148,7 @@ async function reproject(tx: Tx, runId: string): Promise<void> {
     [runId, lastError?.id],
   );
   if (current?.run !== copied?.run || liveBusy.length > 0) throw new Busy();
-  if ((await lapRows(tx, runId)) === before) throw new Agrees();
+  if ((await lapRows(tx, runId, scope)) === before) throw new Agrees();
   // A replay error the live triggers recorded too is already evidence; one they did not (its
   // record dropped, or a cause that came later) rolls the repair back and is reported instead.
   const [unrecorded] = await tx.query(
@@ -162,7 +176,8 @@ type Reconciled = {
 
 /**
  * Re-projects every Archon run that is not running whose lap rows differ from what its rows project
- * to, and every running run that has no lap at all; counts the running runs whose lap shows another
+ * to, every running run that has no lap at all, and every running run's missed step and attempt
+ * rows; counts the running runs whose lap shows another
  * status, which it leaves to their live triggers.
  */
 export async function reconcileLaps(db: Db): Promise<Reconciled> {
@@ -173,19 +188,22 @@ export async function reconcileLaps(db: Db): Promise<Reconciled> {
   );
   const finished = runs.filter((run) => !run.live);
   // Only read, so no live trigger waits on it: a replay would lock the rows Archon's next write
-  // projects to. A running run with no lap is the exception: its insert lost a locked mc.laps
-  // (#269), and no trigger projects it again until its status changes. Steps are not compared
-  // here; the run's next write projects them again. The read waits at most REPLAY_LOCK_TIMEOUT
+  // projects to. A running run is the exception when its projection lost a write to a locked
+  // table: with no lap its insert lost a locked mc.laps (#269), and no trigger projects it again
+  // until its status changes; with a lap, a step write lost to a locked mc.lap_steps or
+  // mc.lap_step_attempts (#343) is not projected again until that step's next event, and the lane
+  // shows a stale step and cost meanwhile. So its step and attempt rows are replayed and compared
+  // too; its lap's status is left to its live triggers. The read waits at most REPLAY_LOCK_TIMEOUT
   // too: when mc.laps is locked (#221) every run, running or not, is busy.
-  let unprojected: Row[] = [];
+  let running: Row[] = [];
   let live: Row | undefined;
   try {
     await db.transaction(async (tx) => {
       await tx.query(`SET LOCAL lock_timeout = '${REPLAY_LOCK_TIMEOUT}'`, []);
-      unprojected = await tx.query(
-        `SELECT r.id FROM public.remote_agent_workflow_runs r
+      running = await tx.query(
+        `SELECT r.id, l.run_id IS NULL AS unprojected FROM public.remote_agent_workflow_runs r
+           LEFT JOIN mc.laps l ON l.run_id = r.id
           WHERE r.status IN ${sqlList(LIVE)}
-            AND NOT EXISTS (SELECT 1 FROM mc.laps l WHERE l.run_id = r.id)
           ORDER BY r.started_at, r.id`,
         [],
       );
@@ -201,10 +219,17 @@ export async function reconcileLaps(db: Db): Promise<Reconciled> {
     return { repaired: 0, busy: runs.length, live: 0, failed: [] };
   }
   const result: Reconciled = { repaired: 0, busy: 0, live: Number(live?.n ?? 0), failed: [] };
-  for (const { id } of [...finished, ...unprojected]) {
+  const work: { id: unknown; scope: Scope }[] = [
+    ...finished.map(({ id }) => ({ id, scope: 'run' as const })),
+    ...running.map(({ id, unprojected }) => ({
+      id,
+      scope: unprojected ? ('run' as const) : ('steps' as const),
+    })),
+  ];
+  for (const { id, scope } of work) {
     const runId = String(id);
     try {
-      await db.transaction((tx) => reproject(tx, runId));
+      await db.transaction((tx) => reproject(tx, runId, scope));
       result.repaired++;
     } catch (error) {
       if (error instanceof Busy || lostLockWait(error)) result.busy++;

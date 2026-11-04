@@ -327,6 +327,8 @@ test.each(['paused', 'failed'])(
   },
 );
 
+// The lap's status is what is left to live triggers; missed step and attempt rows are repaired by
+// the tests below.
 test.each(['running', 'pending'])(
   'a %s run whose lap differs is left to its live triggers and reported',
   async (status) => {
@@ -375,6 +377,60 @@ test.each(['running', 'pending'])(
   },
 );
 
+/** A running run with `pick` completed and `check-app` started. */
+async function runningLap(): Promise<{ runId: string; pickDone: string; checkStart: string }> {
+  const runId = await archonRun('running');
+  await archonEvent(runId, 1, 'pick', 'node_started');
+  const pickDone = await archonEvent(runId, 2, 'pick', 'node_completed');
+  const checkStart = await archonEvent(runId, 3, 'check-app', 'node_started');
+  return { runId, pickDone, checkStart };
+}
+
+/** What the live trigger records when its step write lost a lock wait. */
+const recordLostStepWrite = (runId: string, eventId: string) =>
+  rows(
+    `INSERT INTO mc.projection_errors (source, run_id, event_id, sqlstate, message)
+     VALUES ('mc_project_step_event', $1, $2, '55P03', 'canceling statement due to lock timeout')`,
+    [runId, eventId],
+  );
+
+test('a running lap whose step write lost a locked mc.lap_steps is repaired, once (#343)', async () => {
+  const { runId, checkStart } = await runningLap();
+  await recordLostStepWrite(runId, checkStart);
+  await rows(`UPDATE mc.laps SET status = 'paused' WHERE run_id = $1`, [runId]);
+  const projected = await snapshot(db);
+  await rows(`DELETE FROM mc.lap_steps WHERE run_id = $1 AND step_id = 'check-app'`, [runId]);
+
+  const first = await run([]);
+  expect(first.code).toBe(0);
+  expect(first.out).toEqual([
+    'reconcile: 1 run(s) repaired',
+    'reconcile: 1 run(s) differ but are still running, left to live triggers',
+  ]);
+  expect(await snapshot(db)).toEqual(projected);
+
+  const second = await run([]);
+  expect(second.out).toEqual(first.out.with(0, 'reconcile: 0 run(s) repaired'));
+  expect(await snapshot(db)).toEqual(projected);
+});
+
+test('a running lap whose attempt write lost a locked mc.lap_step_attempts gets its cost back (#343)', async () => {
+  const { runId, pickDone } = await runningLap();
+  await recordLostStepWrite(runId, pickDone);
+  const projected = await snapshot(db);
+  expect(projected.lap_step_attempts).toHaveLength(1);
+  expect(JSON.parse(projected.lap_step_attempts[0] ?? 'null').cost_usd).not.toBeNull();
+  await rows('DELETE FROM mc.lap_step_attempts WHERE run_id = $1', [runId]);
+
+  const first = await run([]);
+  expect(first.out).toEqual(['reconcile: 1 run(s) repaired']);
+  expect(await snapshot(db)).toEqual(projected);
+
+  const second = await run([]);
+  expect(second.out).toEqual(['reconcile: 0 run(s) repaired']);
+  expect(await snapshot(db)).toEqual(projected);
+});
+
 /** A paused run whose lap a dropped projection left `running`. */
 async function wrongPausedLap(): Promise<string> {
   const runId = await archonRun('running');
@@ -416,28 +472,41 @@ test('a resume that lands while the replay runs rolls the repair back as busy', 
   expect(await tuples(runId)).toEqual(before);
 });
 
-test('a live trigger that lost its lock wait on the run rolls the repair back as busy', async () => {
-  const runId = await wrongPausedLap();
-  const before = await tuples(runId);
+test.each([
+  ['a differing lap', wrongPausedLap],
+  [
+    'a missed step row',
+    async () => {
+      const { runId } = await runningLap();
+      await rows(`DELETE FROM mc.lap_steps WHERE run_id = $1 AND step_id = 'check-app'`, [runId]);
+      return runId;
+    },
+  ],
+])(
+  'a live trigger that lost its lock wait on the run rolls the repair back as busy: %s',
+  async (_name, setup) => {
+    const runId = await setup();
+    const before = await tuples(runId);
 
-  const { code, out } = await run(
-    [],
-    'check-abc',
-    midReplay(async (tx) => {
-      await tx.query(
-        `INSERT INTO mc.projection_errors (source, run_id, event_id, sqlstate, message)
+    const { code, out } = await run(
+      [],
+      'check-abc',
+      midReplay(async (tx) => {
+        await tx.query(
+          `INSERT INTO mc.projection_errors (source, run_id, event_id, sqlstate, message)
          VALUES ('mc_project_step_event', $1, NULL, '55P03', 'canceling statement due to lock timeout')`,
-        [runId],
-      );
-    }),
-  );
-  expect(code).toBe(0);
-  expect(out).toEqual([
-    'reconcile: 0 run(s) repaired',
-    'reconcile: 1 run(s) busy, left for the next run',
-  ]);
-  expect(await tuples(runId)).toEqual(before);
-});
+          [runId],
+        );
+      }),
+    );
+    expect(code).toBe(0);
+    expect(out).toEqual([
+      'reconcile: 0 run(s) repaired',
+      'reconcile: 1 run(s) busy, left for the next run',
+    ]);
+    expect(await tuples(runId)).toEqual(before);
+  },
+);
 
 test('a replay error no live trigger recorded fails that run alone and is reported', async () => {
   const unrecorded = await finishedRun('{"route":"x"}');
