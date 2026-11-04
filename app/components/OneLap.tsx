@@ -1,6 +1,6 @@
 import { type ReactElement, type ReactNode, useEffect, useMemo, useState } from 'react';
 import { formatCost, formatCount, formatElapsed, shortRunId } from '../lib/format';
-import { costOf, durationOf, OUTCOME_LABEL, OUTCOME_TOKEN, since, stepLabel } from '../lib/laps';
+import { costOf, durationOf, OUTCOME_LABEL, since, stepLabel } from '../lib/laps';
 import {
   actionText,
   attemptSeconds,
@@ -15,6 +15,7 @@ import {
   type OneLapRow,
   prNumber,
   pullUrl,
+  LAP_OUTCOME_TOKEN,
   REVIEW_TOKEN,
   STEP_STATUS_TOKEN,
   type StepAttemptRow,
@@ -127,7 +128,7 @@ export function LapHeaderBody({
     ? 'var(--running)'
     : outcome === null
       ? undefined
-      : `var(${OUTCOME_TOKEN[outcome]})`;
+      : `var(${LAP_OUTCOME_TOKEN[outcome]})`;
   // The console's grey is too dim for text on a surface; its dot keeps it.
   const text = outcome === 'nothing' ? undefined : color;
   const label = running ? 'Running' : outcome === null ? lap.status : OUTCOME_LABEL[outcome];

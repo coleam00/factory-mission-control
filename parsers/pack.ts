@@ -11,6 +11,7 @@ export type StepKind =
   | 'loop_group'
   | 'loop'
   | 'approval'
+  | 'wait'
   | 'command'
   | 'script'
   | 'bash'
@@ -204,6 +205,7 @@ function kindOf(node: Node): StepKind {
   if (node.loop_group !== undefined) return 'loop_group';
   if (node.loop !== undefined) return 'loop';
   if (node.approval !== undefined) return 'approval';
+  if (node.wait !== undefined) return 'wait';
   if (node.command !== undefined) return 'command';
   if (node.script !== undefined) return 'script';
   if (node.bash !== undefined) return 'bash';
@@ -292,7 +294,8 @@ export function parsePack(packDir: string, templateDir: string): PackVersion {
         }
       }
       const script = str(node.script);
-      const inline = script !== null && /\s/.test(script);
+      // Archon's isInlineScript (packages/workflows/src/executor-shared.ts): a name never holds these.
+      const inline = script !== null && (script.includes('\n') || /[;(){}&|<>$`"' ]/.test(script));
       const resolvedScript = script && !inline ? scriptFile(packDir, source.dir, script) : null;
       if (script && !inline && !resolvedScript) {
         throw new Error(

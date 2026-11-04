@@ -396,3 +396,17 @@ test('a block where no step ran is one box with its step count, its steps drawn 
   // Every attempt stays a row under the graph.
   expect(html.match(/data-step-attempt=/g)).toHaveLength(2);
 });
+
+test('a sent-back lap reads teal and a needs-owner lap violet, never amber', () => {
+  const quiet = { ...refused, gate_status: null, gate_outcome: null, gate_reason: null };
+  const sentBack = render(
+    <LapHeaderBody lap={{ ...quiet, review_outcome: 'sent-back' }} now={0} />,
+  );
+  expect(sentBack).toContain('<span style="color:var(--success)">sent-back</span>');
+  expect(sentBack).not.toContain('--warning');
+  const needsOwner = render(
+    <LapHeaderBody lap={{ ...quiet, review_outcome: 'needs-owner' }} now={0} />,
+  );
+  expect(needsOwner).toContain('<span style="color:var(--role-person)">needs-owner</span>');
+  expect(needsOwner).not.toContain('--warning');
+});

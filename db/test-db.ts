@@ -44,14 +44,20 @@ function txOn(client: PGlite | Transaction): Tx {
   };
 }
 
+export interface TestDb extends Db {
+  /** The names of the columns `sql` returns, in order, rows or not. */
+  columns(sql: string, params: unknown[]): Promise<string[]>;
+}
+
 /** An in-memory Postgres behind the scripts' `Db`, for tests that need real SQL and no network. */
-export function testDb(): Db {
+export function testDb(): TestDb {
   const pg = new PGlite();
   return {
     ...txOn(pg),
     async transaction(fn) {
       await pg.transaction((tx) => fn(txOn(tx)));
     },
+    columns: async (sql, params) => (await pg.query(sql, params)).fields.map((f) => f.name),
     close: () => pg.close(),
   };
 }
@@ -60,7 +66,7 @@ export function testDb(): Db {
  * A `testDb` holding Archon's tables and nothing else, as every database the migrations run on
  * does: the projection's triggers are created on them.
  */
-export async function archonDb(): Promise<Db> {
+export async function archonDb(): Promise<TestDb> {
   const db = testDb();
   await db.query(ARCHON_TABLES);
   return db;

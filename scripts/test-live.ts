@@ -7,7 +7,7 @@ import { parseArgs } from 'node:util';
 import { createRealtimeClient, type WebSocketLike } from '@neon/realtime/client';
 import { createRealtime, rawSql } from '@neon/realtime/server';
 import { loadLiveQueries, realtimeUrlFor } from '../server/live';
-import { SECOND_FACTORY } from './fixture/seed';
+import { QUEUE_FACTORY, SECOND_FACTORY } from './fixture/seed';
 import { type Deps, failing, guardedDatabaseUrl, type Main, runCli } from './lib/cli';
 import { machineLockPath, withMachineLock } from './lib/machine-lock';
 import { resolveBranchName } from './lib/target';
@@ -21,6 +21,7 @@ import { lapsPhase } from './live/laps';
 import { ledgerPhase } from './live/ledger';
 import { oneLapPhase } from './live/one-lap';
 import { ownerPhase } from './live/owner';
+import { queueMapPhase } from './live/queue-map';
 import { rewindPhase } from './live/rewind';
 import { scorecardPhase } from './live/scorecard';
 import {
@@ -48,7 +49,8 @@ const USAGE = [
   '  `bun run fixture:branch` first): serves the app on a free port in 8850-8864 (waiting up to 30',
   "  minutes while every one is taken), opens `/` in a headless browser, checks the map's cards and",
   '  their lap counts against the seed, times inserted laps to the factory strip',
-  '  and `fixture:write step` events to the map, holds the page open --hold seconds (default 180)',
+  '  and `fixture:write step` events to the map, times queue-run steps and `fixture:write attention`',
+  "  on the seed's queue factory's map, holds the page open --hold seconds (default 180)",
   "  across seal renewals, follows App check's Behind the scenes to check-app's step screen,",
   '  re-runs the probes in db/queries/REALTIME.md, and runs',
   '  the design probe. Writes realtime-timings.json, realtime-features.json, home-map-timings.json,',
@@ -194,11 +196,11 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
   const { factories } = JSON.parse(readFileSync(join(deps.repoRoot, 'factories.json'), 'utf-8'));
   const factory: string = factories[0].name;
   mkdirSync(outDir, { recursive: true });
-  // The seed's second factory is in mc.factories only; the app shows it once its file names it.
+  // The seed's second and queue factories are in mc.factories only; the app shows each once its file names it.
   const factoriesFile = join(outDir, 'factories.json');
   writeFileSync(
     factoriesFile,
-    `${JSON.stringify({ factories: [...factories, SECOND_FACTORY] }, null, 2)}
+    `${JSON.stringify({ factories: [...factories, SECOND_FACTORY, QUEUE_FACTORY] }, null, 2)}
 `,
   );
 
@@ -251,6 +253,7 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
   // project, so every other screen's first snapshots are timed before it.
   const phases: LivePhase[] = [
     homePhase(ctx),
+    queueMapPhase(ctx),
     lapsPhase(ctx),
     oneLapPhase(ctx),
     ledgerPhase(ctx),

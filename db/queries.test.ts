@@ -1,11 +1,328 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { readdirSync } from 'node:fs';
 import { join } from 'node:path';
-import type { Db } from '../scripts/lib/db';
+import type { StatusStripRow } from '../app/components/FactoryStrip';
+import type { FactorySwitcherRow } from '../app/components/FactorySwitcher';
+import type { ArchDiffRow } from '../app/lib/arch-diff';
+import type { AttentionRow } from '../app/lib/attention';
+import type { LedgerRow, TimelineRow } from '../app/lib/decisions-ledger';
+import type { HealthRunRow, HealthStepRow, HealthWorkableRow } from '../app/lib/health';
+import type { IssueGraphRow } from '../app/lib/issue-graph';
+import type { LapMapRow } from '../app/lib/lap-graph';
+import type { LaneRow, RecentLapRow } from '../app/lib/laps';
+import type { CheckLineRow, OneLapRow, StepAttemptRow } from '../app/lib/one-lap';
+import type { OwnerQueueRow } from '../app/lib/owner-queue';
+import type { RewindBranchRow } from '../app/lib/rewind';
+import type { ScorecardRow } from '../app/lib/scorecard';
+import type {
+  HookRow,
+  NestingRow,
+  PartRow,
+  StepRow,
+  StepVersionRow,
+  SubagentRow,
+  YamlPartRow,
+} from '../app/lib/step-detail';
+import type { CheckRow, DefaultHoldoutRow, RouteRow } from '../app/lib/testing';
+import type { VersionStripRow } from '../app/lib/version-strip';
+import type { HomeMapRow } from '../app/map/live';
 import { LIVE_QUERY_NAME, parameterCount } from '../server/live';
 import { migratedDb, paramsFor, queries } from './queries/test-seed';
+import type { TestDb } from './test-db';
 
 const dir = join(import.meta.dir, 'queries');
+
+/** Every key any member of a union row has. */
+type Keys<Row> = Row extends unknown ? keyof Row & string : never;
+/** The listed columns, when they are exactly the row's keys; otherwise a type that names the gap. */
+const columns =
+  <Row>() =>
+  <const C extends readonly Keys<Row>[]>(
+    list: C &
+      ([Exclude<Keys<Row>, C[number]>] extends [never]
+        ? unknown
+        : { missing: Exclude<Keys<Row>, C[number]> }),
+  ): string[] => [...list];
+
+/** Each live query's result columns, in order, bound to the row type its panel reads. */
+const ROW_COLUMNS: Record<string, string[]> = {
+  'arch-diff': columns<ArchDiffRow>()(['digest', 'kind', 'workflow', 'first_run_at', 'entries']),
+  'attention-items': columns<AttentionRow>()([
+    'run_id',
+    'workflow_name',
+    'node_id',
+    'waiting_since',
+    'form',
+    'options',
+    'labels',
+    'message',
+    'console',
+  ]),
+  'decisions-timeline': columns<TimelineRow>()([
+    'date',
+    'title',
+    'decision',
+    'why',
+    'replaces',
+    'version',
+    'pin_sha',
+    'ambiguous',
+    'digest',
+  ]),
+  'factory-switcher': columns<FactorySwitcherRow>()(['factory', 'running', 'is_default']),
+  'health-runs': columns<HealthRunRow>()([
+    'run_id',
+    'workflow_name',
+    'status',
+    'started_at',
+    'completed_at',
+    'failed_step',
+    'error',
+    'failed_at',
+  ]),
+  'health-steps': columns<HealthStepRow>()([
+    'kind',
+    'run_id',
+    'workflow_name',
+    'step_id',
+    'at',
+    'duration_ms',
+  ]),
+  'health-workable': columns<HealthWorkableRow>()([
+    'kind',
+    'issue_number',
+    'title',
+    'url',
+    'run_id',
+  ]),
+  'home-map': columns<HomeMapRow>()([
+    'kind',
+    'run_id',
+    'workflow',
+    'steps',
+    'number',
+    'title',
+    'url',
+    'at',
+    'prs',
+  ]),
+  'improvements-ledger': columns<LedgerRow>()([
+    'pin_sha',
+    'reason',
+    'measure',
+    'committed_at',
+    'laps',
+    'verdict',
+    'sentence',
+    'verdict_at',
+    'pin_matches',
+  ]),
+  'issue-graph': columns<IssueGraphRow>()([
+    'kind',
+    'number',
+    'title',
+    'phase',
+    'url',
+    'state',
+    'depends_on',
+  ]),
+  lanes: columns<LaneRow>()([
+    'run_id',
+    'started_at',
+    'issue_number',
+    'issue_title',
+    'issue_url',
+    'route',
+    'depth',
+    'step_id',
+    'step_started_at',
+    'cost_usd',
+    'steps',
+  ]),
+  'one-lap-checks': columns<CheckLineRow>()([
+    'position',
+    'line_id',
+    'kind',
+    'verdict',
+    'evidence_count',
+    'scenario_id',
+  ]),
+  'one-lap-map': columns<LapMapRow>()([
+    'pin',
+    'path',
+    'parent_path',
+    'position',
+    'step_id',
+    'kind',
+    'depends_on',
+    'when_condition',
+    'trigger_rule',
+    'detail_workflow',
+    'detail_path',
+  ]),
+  'one-lap-steps': columns<StepAttemptRow>()([
+    'step_id',
+    'status',
+    'started_at',
+    'duration_ms',
+    'model',
+    'tokens_input',
+    'tokens_output',
+    'tokens_cache_read',
+    'tokens_cache_write',
+    'cost_usd',
+    'outcome',
+    'error',
+    'position',
+  ]),
+  'one-lap': columns<OneLapRow>()([
+    'run_id',
+    'status',
+    'started_at',
+    'completed_at',
+    'repository',
+    'console',
+    'issue_number',
+    'issue_title',
+    'issue_url',
+    'route',
+    'depth',
+    'pr',
+    'review_status',
+    'review_outcome',
+    'review_delivers',
+    'dispositions',
+    'gate_status',
+    'gate_outcome',
+    'gate_reason',
+  ]),
+  'owner-queue': columns<OwnerQueueRow>()([
+    'kind',
+    'issue_number',
+    'question_number',
+    'title',
+    'url',
+    'options',
+    'recommendation',
+    'default_option',
+    'default_at',
+    'waiting_since',
+    'approximate',
+  ]),
+  'recent-laps': columns<RecentLapRow>()([
+    'run_id',
+    'status',
+    'started_at',
+    'completed_at',
+    'issue_number',
+    'outcome',
+    'cost_usd',
+  ]),
+  'rewind-branches': columns<RewindBranchRow>()(['name', 'parent', 'at', 'created_at']),
+  scorecard: columns<ScorecardRow>()([
+    'run_id',
+    'digest',
+    'workflow_name',
+    'status',
+    'started_at',
+    'completed_at',
+    'step_id',
+    'duration_ms',
+    'cost_usd',
+    'route',
+    'outcome',
+    'reason',
+    'holdout_catches',
+    'pin_sha',
+    'first_run_at',
+  ]),
+  'status-strip': columns<StatusStripRow>()(['running']),
+  'step-detail': columns<StepRow>()([
+    'workflow',
+    'path',
+    'parent_path',
+    'position',
+    'step_id',
+    'kind',
+    'description',
+    'model',
+    'when_condition',
+    'depends_on',
+    'trigger_rule',
+    'include',
+    'command_file',
+    'script',
+    'script_file',
+    'runtime',
+    'bash',
+    'prompt',
+    'defined_in',
+    'file',
+  ]),
+  'step-hooks': columns<HookRow>()([
+    'path',
+    'admitted_agents',
+    'workflow',
+    'step_path',
+    'agent',
+    'description',
+  ]),
+  'step-nesting': columns<NestingRow>()([
+    'relation',
+    'workflow',
+    'path',
+    'position',
+    'step_id',
+    'kind',
+    'open_workflow',
+    'open_path',
+  ]),
+  'step-prompt': columns<PartRow>()(['path', 'part', 'chunk']),
+  'step-scripts': columns<PartRow>()(['path', 'part', 'chunk']),
+  'step-subagents': columns<SubagentRow>()([
+    'workflow',
+    'step_path',
+    'name',
+    'description',
+    'prompt',
+    'instruction_file',
+    'part',
+    'chunk',
+  ]),
+  'step-versions': columns<StepVersionRow>()(['sha', 'reason', 'committed_at', 'is_current']),
+  'step-yaml': columns<YamlPartRow>()(['name', 'file', 'part', 'chunk']),
+  'testing-app-check': columns<CheckRow>()([
+    'run_id',
+    'position',
+    'kind',
+    'verdict',
+    'scenario_id',
+    'started_at',
+    'pr',
+  ]),
+  'testing-holdouts': columns<DefaultHoldoutRow>()([
+    'at',
+    'sha',
+    'report_issue',
+    'scenario_id',
+    'verdict',
+    'issue_number',
+    'issue_title',
+    'issue_state',
+    'issue_url',
+    'repository',
+  ]),
+  'testing-routes': columns<RouteRow>()(['run_id', 'status', 'started_at', 'route', 'depth']),
+  'version-strip': columns<VersionStripRow>()([
+    'digest',
+    'first_run_at',
+    'pin_sha',
+    'reason',
+    'hypothesis',
+    'measure',
+    'committed_at',
+  ]),
+};
 
 /** Functions whose value changes between evaluations; Realtime refuses them (REALTIME.md). */
 const VOLATILE =
@@ -15,6 +332,10 @@ test('every file in db/queries/ is a live query named for its panel', () => {
   const sqlFiles = readdirSync(dir).filter((f) => f.endsWith('.sql'));
   expect(sqlFiles.length).toBeGreaterThan(0);
   for (const file of sqlFiles) expect(file.slice(0, -4)).toMatch(LIVE_QUERY_NAME);
+});
+
+test('every live query has a row type bound to its columns', () => {
+  expect(Object.keys(ROW_COLUMNS).sort()).toEqual(queries.map(([name]) => name).sort());
 });
 
 describe.each(queries)('db/queries/%s.sql', (name, sql) => {
@@ -28,6 +349,11 @@ describe.each(queries)('db/queries/%s.sql', (name, sql) => {
     expect(sql).not.toMatch(VOLATILE);
   });
 
+  test('calls no function of the mc schema', () => {
+    // A user-defined STABLE function is not approved either; #357's mc.version_pin call was refused.
+    expect(sql).not.toMatch(/\bmc\.\w+\s*\(/i);
+  });
+
   test("reads the dashboard's own tables, never Archon's", () => {
     expect(sql).not.toMatch(/remote_agent_|provider_event/i);
   });
@@ -39,7 +365,7 @@ describe.each(queries)('db/queries/%s.sql', (name, sql) => {
 });
 
 describe('against the migrated schema', () => {
-  let db: Db;
+  let db: TestDb;
 
   beforeAll(async () => {
     db = await migratedDb();
@@ -49,5 +375,9 @@ describe('against the migrated schema', () => {
 
   test.each(queries)('%s runs with a factory name as $1', async (name, sql) => {
     await db.query(sql, paramsFor(name, 'mission-control'));
+  });
+
+  test.each(queries)('%s returns the columns its row type names', async (name, sql) => {
+    expect(await db.columns(sql, paramsFor(name, 'mission-control'))).toEqual(ROW_COLUMNS[name]);
   });
 });

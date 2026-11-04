@@ -20,7 +20,7 @@ describe('the attention-items query on the seed', () => {
       rows.map((r) => [r.run_id, r.workflow_name, r.node_id, r.form, r.labels, r.console]).sort(),
     ).toEqual([
       [
-        '5eed0005-0000-4000-8000-000000000001',
+        '5eed0006-0000-4000-8000-000000000001',
         'archon-build-queue',
         'ask',
         'select',
@@ -28,7 +28,7 @@ describe('the attention-items query on the seed', () => {
         'http://localhost:3090',
       ],
       [
-        '5eed0005-0000-4000-8000-000000000002',
+        '5eed0006-0000-4000-8000-000000000002',
         'archon-merge-queue',
         'ask',
         'select',

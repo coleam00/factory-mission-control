@@ -33,7 +33,13 @@
       "covers": [
         {
           "workflow": "archon-backlog",
-          "steps": ["read-prd", "slice", "check", "authorize", "publish"]
+          "steps": ["read-prd", "slice", "check", "authorize", "publish"],
+          "pack": "loop"
+        },
+        {
+          "workflow": "factory-backlog",
+          "steps": ["read", "slice", "check", "publish"],
+          "pack": "queue"
         }
       ],
       "details": {
@@ -62,7 +68,13 @@
       "covers": [
         {
           "workflow": "archon-holdouts",
-          "steps": ["briefs", "write"]
+          "steps": ["briefs", "write"],
+          "pack": "loop"
+        },
+        {
+          "workflow": "factory-holdouts",
+          "steps": ["config", "write"],
+          "pack": "queue"
         }
       ],
       "details": {
@@ -89,7 +101,13 @@
       "covers": [
         {
           "workflow": "archon-manager",
-          "steps": ["briefs", "manage"]
+          "steps": ["briefs", "manage"],
+          "pack": "loop"
+        },
+        {
+          "workflow": "factory-manager",
+          "steps": ["manage"],
+          "pack": "queue"
         }
       ],
       "details": {
@@ -132,7 +150,18 @@
       "text": "Problems spotted in review, app check or staging",
       "x": 260,
       "y": 802,
-      "covers": [],
+      "covers": [
+        {
+          "workflow": "archon-discoveries",
+          "steps": ["facts", "decide", "outcome", "ask", "answer"],
+          "pack": "queue"
+        },
+        {
+          "workflow": "factory-holdout-sweep",
+          "steps": ["config", "plan", "prepare", "check", "evidence", "record", "cleanup"],
+          "pack": "queue"
+        }
+      ],
       "details": {
         "when": ["After review, app check or staging notices something it was not asked to fix."],
         "what": [
@@ -154,7 +183,13 @@
       "covers": [
         {
           "workflow": "archon-loop",
-          "steps": ["pick", "claim"]
+          "steps": ["pick", "claim"],
+          "pack": "loop"
+        },
+        {
+          "workflow": "archon-intake",
+          "steps": ["facts", "triage", "outcome"],
+          "pack": "queue"
         }
       ],
       "details": {
@@ -177,7 +212,25 @@
       "covers": [
         {
           "workflow": "archon-loop",
-          "steps": ["build", "ship", "subject"]
+          "steps": ["build", "ship", "subject"],
+          "pack": "loop"
+        },
+        {
+          "workflow": "archon-build-queue",
+          "steps": [
+            "facts",
+            "route",
+            "checkout",
+            "ship",
+            "answer",
+            "apply",
+            "ask",
+            "ruling",
+            "blocked",
+            "revisit",
+            "retriage"
+          ],
+          "pack": "queue"
         }
       ],
       "details": {
@@ -212,6 +265,22 @@
               "workflow": "archon-deliver-block",
               "path": "rounds/rereview"
             }
+          },
+          "pack": "loop"
+        },
+        {
+          "workflow": "archon-build-queue",
+          "steps": ["ship/deliver/rounds/review", "ship/deliver/rounds/rereview"],
+          "pack": "queue",
+          "screens": {
+            "ship/deliver/rounds/review": {
+              "workflow": "archon-deliver-block",
+              "path": "rounds/review"
+            },
+            "ship/deliver/rounds/rereview": {
+              "workflow": "archon-deliver-block",
+              "path": "rounds/rereview"
+            }
           }
         }
       ],
@@ -236,7 +305,29 @@
       "covers": [
         {
           "workflow": "archon-loop",
-          "steps": ["briefs", "check-app", "evidence", "handoff"]
+          "steps": ["briefs", "check-app", "evidence", "handoff"],
+          "pack": "loop"
+        },
+        {
+          "workflow": "factory-app-check",
+          "steps": [
+            "config",
+            "select",
+            "pending",
+            "scope",
+            "policy",
+            "holdouts",
+            "choose",
+            "scoped",
+            "known",
+            "prepare",
+            "check",
+            "evidence",
+            "publish",
+            "finalize",
+            "cleanup"
+          ],
+          "pack": "queue"
         }
       ],
       "details": {
@@ -265,7 +356,13 @@
       "covers": [
         {
           "workflow": "archon-loop",
-          "steps": ["review", "land", "release"]
+          "steps": ["review", "land", "release"],
+          "pack": "loop"
+        },
+        {
+          "workflow": "archon-merge-queue",
+          "steps": ["facts", "sweep", "record", "retriage", "ask", "ruling"],
+          "pack": "queue"
         }
       ],
       "details": {
@@ -289,7 +386,13 @@
       "covers": [
         {
           "workflow": "archon-loop",
-          "steps": ["deploy"]
+          "steps": ["deploy"],
+          "pack": "loop"
+        },
+        {
+          "workflow": "factory-deploy",
+          "steps": ["preflight", "deploy", "verify"],
+          "pack": "queue"
         }
       ],
       "details": {

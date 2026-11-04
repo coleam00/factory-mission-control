@@ -56,6 +56,16 @@ const pages: Record<string, string> = {
     <div style="width: 2000px; height: 10px"></div>
   </body>
 </html>`,
+  '/amber.html': `<!doctype html>
+<html lang="en">
+  <body style="margin: 0; background: ${TOKENS.background}; color: ${TOKENS.foreground}">
+    <p style="color: oklch(0.8 0.14 85)">Warning token</p>
+    <div style="width: 10px; height: 10px; background: #b45309"></div>
+    <p style="color: #a78bfa">Violet</p>
+    <p style="color: oklch(0.72 0.17 40)">Orange</p>
+    <main data-v1-screen="owner"><p style="color: oklch(0.8 0.14 85)">Old screen</p></main>
+  </body>
+</html>`,
   '/settling.html': `<!doctype html>
 <html lang="en">
   <body style="background: ${TOKENS.background}">
@@ -141,6 +151,21 @@ test('a page with off-token colors and fonts, an unnamed raw button and a 2000 p
   expect(failures.every((f) => f.state === 'first-render')).toBe(true);
 }, 60_000);
 
+test('amber fails the probe wherever it renders, except on a screen marked data-v1-screen', async () => {
+  const { stdout, exitCode } = await runProbe('/amber.html');
+
+  expect(exitCode).toBe(1);
+  const { failures } = JSON.parse(stdout) as { failures: Failure[] };
+  const amber = failures.filter((f) => f.width === 1440 && f.check === 'amber');
+  expect(amber.some((f) => f.element.endsWith('p') && f.detail.startsWith('color '))).toBe(true);
+  expect(
+    amber.some((f) => f.element.endsWith('div') && f.detail.startsWith('background-color ')),
+  ).toBe(true);
+  expect(amber.some((f) => f.element.includes('main'))).toBe(false);
+  // Violet and the Scorecard's orange are clear of the amber range.
+  expect(amber).toHaveLength(2);
+}, 60_000);
+
 test('a page whose live panel is loading is judged as first rendered and again once it settles', async () => {
   const { stdout, stderr, exitCode } = await runProbe('/settling.html');
 
@@ -202,7 +227,8 @@ test('a browser whose DevToolsActivePort never appears still stops the probe aft
     throw fsError('ENOENT', path);
   };
 
-  await expect(launchBrowser(readPort)).rejects.toThrow(
+  // The default wait is longer for a cold CI start (#355); naming 20 s keeps this message and runtime.
+  await expect(launchBrowser(readPort, 20_000)).rejects.toThrow(
     'the browser opening its DevTools port did not happen within 20s',
   );
 }, 60_000);
