@@ -8,11 +8,11 @@ import {
   LIMITS,
   type LiveContext,
   type LivePhase,
-  lapsOnNodes,
+  lapsOnCards,
   lateWrite,
   MAP,
+  mapCards,
   mapMismatches,
-  mapNodes,
   PANEL,
   pageWait,
   READY_WAIT_MS,
@@ -178,7 +178,7 @@ async function checkSwitcher(ctx: LiveContext): Promise<void> {
       'the map was not ready',
       `document.querySelector('${MAP}[data-state="ready"]') !== null`,
     );
-    const map = mapMismatches(await mapNodes(page), await lapsOnNodes(db, second));
+    const map = mapMismatches(await mapCards(page), await lapsOnCards(db, second));
     check(`${second}'s map against its laps`, map, []);
 
     // On a factory's own map the nav links its screens at once; on / it waits for the factory.

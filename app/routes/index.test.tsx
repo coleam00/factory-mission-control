@@ -4,185 +4,186 @@ import { join } from 'node:path';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { MemoryRouter } from 'react-router';
 import { parsePack, type Step } from '../../parsers/pack';
-import type { HomeMapRow } from '../lib/home-map';
-import { HomeMapBody } from './index';
+import { Behind, RightNow } from '../components/MapDetails';
+import type { StepRow } from '../lib/step-detail';
+import { FACTORY_MAP, workflowFile } from '../map/factory-map';
+import type { HomeMapRow, MapSources } from '../map/live';
+import { HomeMapBody, msToLocalMidnight } from './index';
 
 const REPO = join(import.meta.dir, '..', '..');
 
-const OLDER = '8e3e1cefaf1e1b7955789d6a43a81b6c2dbd7082';
-
 const render = (
-  rows: HomeMapRow[] | undefined,
+  map: HomeMapRow[] | undefined,
   state: 'loading' | 'ready' | 'error',
-  at: string | null = null,
+  {
+    at = null,
+    configured,
+    ...more
+  }: { at?: string | null; configured?: boolean } & Omit<MapSources, 'map'> = {},
 ) =>
   renderToStaticMarkup(
     <MemoryRouter>
-      <HomeMapBody rows={rows} state={state} factories={['here', 'north-star']} at={at} />
+      <HomeMapBody
+        sources={{ map, ...more }}
+        state={state}
+        factory="here"
+        at={at}
+        configured={configured}
+        flow
+      />
     </MemoryRouter>,
   );
 
 const textOf = (html: string) => html.replace(/<[^>]+>/g, ' ').trim();
 
-test('an empty factory map shows the empty state without step links', () => {
-  const html = render([], 'ready');
-  expect(textOf(html)).toBe('No factory map is available yet.');
-  expect(html).not.toMatch(/<a\b/);
-});
-
-test('loading, error and an empty architecture are each one sentence and no button', () => {
-  for (const html of [
-    render(undefined, 'loading'),
-    render(undefined, 'error'),
-    render([], 'ready'),
-  ]) {
-    const text = textOf(html);
-    expect(text.match(/[.!?](\s|$)/g)?.length).toBe(1);
-    expect(text.endsWith('.')).toBe(true);
+test('loading, error, no factory and an unrecorded version are each one sentence and no button', () => {
+  for (const [html, text] of [
+    [render(undefined, 'loading'), 'Loading the factory map.'],
+    [render(undefined, 'error'), 'Live data is unavailable.'],
+    [render(undefined, 'ready', { configured: false }), 'No factory is configured.'],
+    [
+      render([], 'ready', { at: 'not-a-pin' }),
+      'No version not-a-pin is recorded for this factory.',
+    ],
+  ] as const) {
+    expect(textOf(html)).toBe(text);
     expect(html).not.toMatch(/<button\b/);
   }
 });
 
-const step = (
-  path: string,
-  position: number,
-  laps = 0,
-  lap_factory: string | null = laps > 0 ? 'here' : null,
-  is_current = lap_factory === 'here',
-): HomeMapRow => ({
-  role: 'step',
-  workflow: 'wf',
-  path,
-  parent_path: null,
-  position,
-  step_id: path,
-  kind: 'command',
-  depends_on: [],
-  detail_workflow: 'wf',
-  detail_path: path,
-  lap_factory,
-  laps,
-  is_current,
+const lap = (run: string, step: string): HomeMapRow => ({
+  kind: 'lap',
+  run_id: run,
+  workflow: 'archon-loop',
+  steps: [step],
+  number: null,
+  title: null,
+  url: null,
+  at: null,
 });
 
-test('a version the address names with no map is one sentence naming it, and no button', () => {
-  const html = render([], 'ready', 'not-a-pin');
-  expect(textOf(html)).toBe('No version not-a-pin is recorded for this factory.');
-  expect(html).not.toMatch(/<button\b/);
+const cardTag = (html: string, id: string) =>
+  html.match(new RegExp(`<div [^>]*data-card="${id}"[^>]*>`))?.[0] ?? '';
+
+test("the map draws every card's wording, the caption, the group and the legend, whatever the data", () => {
+  const html = render([], 'ready');
+  expect(html).toContain(FACTORY_MAP.caption.replaceAll("'", '&#x27;'));
+  for (const card of FACTORY_MAP.cards) {
+    const tag = cardTag(html, card.id);
+    expect(tag).toContain('role="button"');
+    expect(tag).toContain('tabindex="0"');
+    expect(tag).toContain('data-live-count="0"');
+    expect(html).toContain(`>${card.kind}<`);
+    expect(html).toContain(`>${card.title}<`);
+  }
+  expect(html).toContain('the manager watches everything on this line');
+  for (const entry of FACTORY_MAP.legend) expect(html).toContain(entry.label);
+  // No deeper view exists yet, so no card offers to open one.
+  expect(html).not.toContain('⤢');
+  expect(html).not.toContain('data-chip');
 });
 
-const stepLinks = (html: string) =>
-  [...html.matchAll(/href="(\/steps\/[^"]*)"/g)].map(([, href]) => href);
-
-test('at an older version every step opens its screen at that version; at the current one, none names one', () => {
-  const rows = [
-    step('first', 0, 1),
-    step('second', 1),
-    { ...step('briefs', 0), role: 'input', workflow: 'wf-in', detail_workflow: 'wf-in' },
-  ] satisfies HomeMapRow[];
-  const older = stepLinks(render(rows, 'ready', OLDER));
-  expect(older).toEqual([
-    `/steps/wf-in/briefs?at=${OLDER}`,
-    `/steps/wf/first?at=${OLDER}`,
-    `/steps/wf/second?at=${OLDER}`,
-  ]);
-  expect(stepLinks(render(rows, 'ready'))).toEqual([
-    '/steps/wf-in/briefs',
-    '/steps/wf/first',
-    '/steps/wf/second',
-  ]);
-});
-
-const linkIn = (html: string, href: string) =>
-  html.match(new RegExp(`<a [^>]*href="${href}"[^>]*>.*?</a>`))?.[0] ?? '';
-
-test('a step with laps on it carries its count and the running style; the rest show 0', () => {
-  const html = render([step('first', 0, 2), step('second', 1, 0)], 'ready');
-  const link = (href: string) => html.match(new RegExp(`<a [^>]*href="${href}"[^>]*>`))?.[0] ?? '';
-  expect(link('/steps/wf/first')).toContain('data-live-count="2"');
-  expect(link('/steps/wf/first')).toContain('var(--running)');
-  expect(link('/steps/wf/second')).toContain('data-live-count="0"');
-  expect(link('/steps/wf/second')).not.toContain('var(--running)');
-  expect(html).not.toContain('data-factory-counts');
-});
-
-test("another listed factory's laps show under its name, the address factory first, and only its count is live", () => {
-  const html = render(
-    [
-      step('both', 0, 3, 'north-star'),
-      step('both', 0, 2),
-      step('theirs', 1, 1, 'north-star'),
-      step('ours', 2, 1),
-      step('ours', 2, 4, 'unlisted'),
-    ],
-    'ready',
+test('a card with laps on it carries their count and a pulsing chip; a chip of 0 is not drawn', () => {
+  const html = render([lap('a', 'check-app'), lap('b', 'evidence'), lap('c', 'build')], 'ready', {
+    workable: [],
+  });
+  expect(cardTag(html, 'app')).toContain('data-live-count="2"');
+  expect(cardTag(html, 'app')).toContain(
+    'aria-label="App check. Tries the change in the running app. 2 here"',
   );
-  const counted = (href: string) =>
-    [...linkIn(html, href).matchAll(/data-factory-count="([^"]+)" data-laps="(\d+)"/g)].map(
+  expect(cardTag(html, 'build')).toContain('data-live-count="1"');
+  expect(cardTag(html, 'review')).toContain('data-live-count="0"');
+  expect(html.match(/data-chip="here"/g)).toHaveLength(2);
+  expect(html).not.toContain('data-chip="queued"');
+});
+
+test('queued, failing, waiting and merged chips sit on Build, App check, the Manager and Shipped', () => {
+  const now = new Date(2026, 10, 3, 12);
+  const html = renderToStaticMarkup(
+    <MemoryRouter>
+      <HomeMapBody
+        sources={{
+          map: [
+            {
+              kind: 'failing',
+              run_id: null,
+              workflow: null,
+              steps: null,
+              number: 4,
+              title: 't',
+              url: null,
+              at: null,
+            },
+            {
+              kind: 'merged',
+              run_id: 'm',
+              workflow: 'archon-loop',
+              steps: null,
+              number: 1,
+              title: null,
+              url: null,
+              at: new Date(2026, 10, 3, 9),
+            },
+          ],
+          workable: [{ kind: 'issue', issue_number: 2, title: 'w', url: null, run_id: null }],
+          owner: [
+            {
+              kind: 'issue',
+              issue_number: 8,
+              question_number: null,
+              title: 'o',
+              url: null,
+              options: null,
+              recommendation: null,
+              default_option: null,
+              default_at: null,
+              waiting_since: null,
+              approximate: true,
+            },
+          ],
+        }}
+        state="ready"
+        factory="here"
+        at={null}
+        flow
+        now={now}
+      />
+    </MemoryRouter>,
+  );
+  const chipOn = (id: string) => {
+    const start = html.indexOf(`data-card="${id}"`);
+    const end = html.indexOf('data-card=', start + 1);
+    return [...html.slice(start, end).matchAll(/data-chip="(\w+)"[^>]*>([^<]*)</g)].map(
       (m) => `${m[1]} ${m[2]}`,
     );
-  const both = linkIn(html, '/steps/wf/both');
-  expect(both).toContain('data-live-count="2"');
-  expect(both).toContain('var(--running)');
-  expect(counted('/steps/wf/both')).toEqual(['here 2', 'north-star 3']);
-  const theirs = linkIn(html, '/steps/wf/theirs');
-  expect(theirs).toContain('data-live-count="0"');
-  expect(theirs).not.toContain('var(--running)');
-  expect(counted('/steps/wf/theirs')).toEqual(['north-star 1']);
-  expect(linkIn(html, '/steps/wf/ours')).not.toContain('data-factory-counts');
-  expect(html).not.toContain('unlisted');
+  };
+  expect(chipOn('build')).toEqual(['queued 1 queued']);
+  expect(chipOn('app')).toEqual(['failing 1 failing']);
+  expect(chipOn('mgr')).toEqual(['waiting 1 waiting']);
+  expect(chipOn('out')).toEqual(['merged 1 merged']);
+  expect(html).not.toMatch(/warning|amber/);
 });
 
-test("an input workflow shows its own steps, each opening that workflow's step", () => {
-  const html = render(
-    [
-      step('first', 0),
-      { ...step('briefs', 0), role: 'input', workflow: 'wf-in', detail_workflow: 'wf-in' },
-      { ...step('verify', 1), role: 'input', workflow: 'wf-in', detail_workflow: 'wf-in' },
-    ],
-    'ready',
+test('with the flow off there is no travelling dot and no flowing dashes', () => {
+  const on = render([], 'ready');
+  expect(on).toContain('data-tour');
+  expect(on).toContain('<path data-flow="true"');
+  const off = renderToStaticMarkup(
+    <MemoryRouter>
+      <HomeMapBody sources={{ map: [] }} state="ready" factory="here" at={null} flow={false} />
+    </MemoryRouter>,
   );
-  for (const path of ['briefs', 'verify']) {
-    const link = linkIn(html, `/steps/wf-in/${path}`);
-    expect(link).toContain('data-workflow="wf-in"');
-    expect(link).toContain(`data-step="${path}"`);
-  }
-  expect(linkIn(html, '/steps/wf/first')).toContain('data-workflow="wf"');
+  expect(off).not.toContain('data-tour');
+  expect(off).not.toContain('<path data-flow="true"');
+  expect(off).toContain('data-flow="off"');
 });
 
-test('an input or manager workflow opens folded: one card with its step count, its steps hidden', () => {
-  const html = render(
-    [
-      step('first', 0),
-      { ...step('briefs', 0), role: 'input', workflow: 'wf-in', detail_workflow: 'wf-in' },
-      { ...step('verify', 1), role: 'input', workflow: 'wf-in', detail_workflow: 'wf-in' },
-      { ...step('manage', 0), role: 'manager', workflow: 'wf-mgr', detail_workflow: 'wf-mgr' },
-    ],
-    'ready',
-  );
-  for (const [card, steps] of [
-    ['wf-in', '2 steps'],
-    ['wf-mgr', '1 step'],
-  ]) {
-    expect(html).toMatch(
-      new RegExp(`data-workflow-card="${card}" data-folded="true" data-live-count="0"`),
-    );
-    expect(html).toContain(`aria-label="${card}: ${steps}, 0 running. Show its steps."`);
-  }
-  expect(html).toContain('aria-expanded="false"');
-  // The loop is never folded; a card's steps are in the page, inside a hidden block.
-  expect(html.split('<div hidden=""').length - 1).toBe(2);
-  expect(linkIn(html, '/steps/wf/first')).toContain('data-workflow="wf"');
-});
-
-/** Every step id in the pinned pack's archon-loop, at every depth. */
-function loopStepIds(): Set<string> {
+/** Every step id in the pinned pack, at every depth. */
+function stepIds(): Set<string> {
   const pack = parsePack(
     join(REPO, 'fixtures', 'pack', 'sdlc'),
     join(REPO, 'fixtures', 'factory-template'),
   );
-  const loop = pack.workflows.find((w) => w.name === 'archon-loop');
-  if (loop === undefined) throw new Error('the pack has no archon-loop');
   const ids = new Set<string>();
   const walk = (steps: Step[]) => {
     for (const s of steps) {
@@ -190,17 +191,19 @@ function loopStepIds(): Set<string> {
       walk(s.steps);
     }
   };
-  walk(loop.steps);
+  for (const workflow of pack.workflows) walk(workflow.steps);
   return ids;
 }
 
-test('the map names no step: every node comes from the architecture rows', () => {
-  const ids = loopStepIds();
+test('the map code names no step: what each card covers lives in factory-map.json alone', () => {
+  const ids = stepIds();
   expect(ids.has('check-app')).toBe(true);
   for (const file of [
     'app/routes/index.tsx',
-    'app/components/HomeMap.tsx',
-    'app/lib/home-map.ts',
+    'app/components/FactoryMap.tsx',
+    'app/components/MapDetails.tsx',
+    'app/map/factory-map.ts',
+    'app/map/live.ts',
   ]) {
     const source = readFileSync(join(REPO, file), 'utf8');
     const literals = [
@@ -210,4 +213,147 @@ test('the map names no step: every node comes from the architecture rows', () =>
     const named = literals.filter((literal) => ids.has(literal));
     expect({ file, named }).toEqual({ file, named: [] });
   }
+});
+
+test('a failed workable or owner source draws its chip as unavailable, never as zero', () => {
+  const html = renderToStaticMarkup(
+    <MemoryRouter>
+      <HomeMapBody
+        sources={{ map: [] }}
+        states={{ workable: 'error', owner: 'error', steps: 'error' }}
+        state="ready"
+        factory="here"
+        at={null}
+        flow={false}
+      />
+    </MemoryRouter>,
+  );
+  expect(html).toContain('? queued');
+  expect(html).toContain('? waiting');
+  expect(html).not.toContain('0 queued');
+});
+
+test.each([
+  [
+    'workable',
+    'queued',
+    { workable: [{ kind: 'issue', issue_number: 2, title: 'w', url: null, run_id: null }] },
+  ],
+  [
+    'owner',
+    'waiting',
+    {
+      owner: [
+        {
+          kind: 'issue',
+          issue_number: 2,
+          question_number: null,
+          title: 'o',
+          url: null,
+          options: null,
+          recommendation: null,
+          default_option: null,
+          default_at: null,
+        },
+      ],
+    },
+  ],
+] as const)(
+  'a %s source in error that still holds rows draws "?" and no count',
+  (source, chip, rows) => {
+    const html = renderToStaticMarkup(
+      <MemoryRouter>
+        <HomeMapBody
+          sources={{ map: [], ...(rows as object) }}
+          states={{ [source]: 'error' }}
+          state="ready"
+          factory="here"
+          at={null}
+          flow={false}
+        />
+      </MemoryRouter>,
+    );
+    expect(html).toContain(`? ${chip}`);
+    expect(html).not.toContain(`1 ${chip}`);
+    expect(html).not.toContain(`2 ${chip}`);
+  },
+);
+
+test('Behind the scenes says the steps are unavailable, not loading, once their query failed', () => {
+  const card = FACTORY_MAP.cards.find((c) => c.covers.length > 0) as (typeof FACTORY_MAP.cards)[0];
+  const html = (failed: boolean) =>
+    renderToStaticMarkup(
+      <MemoryRouter>
+        <Behind card={card} at={null} steps={undefined} failed={failed} />
+      </MemoryRouter>,
+    );
+  expect(html(true)).toContain('The pinned steps are unavailable.');
+  expect(html(true)).not.toContain('Loading');
+  expect(html(false)).toContain('Loading the pinned steps.');
+});
+
+test('Right now links a lap entry to its page and to its GitHub issue, and only its page without one', () => {
+  const lap = (
+    run: string,
+    issue: { number: number; title: string | null; url: string | null } | null,
+  ) => ({
+    run,
+    step: 'plan',
+    issue,
+  });
+  const html = renderToStaticMarkup(
+    <MemoryRouter>
+      <RightNow
+        live={{
+          here: [
+            lap('aaaaaaaa-1', { number: 7, title: 'T', url: 'https://github.com/o/r/issues/7' }),
+            lap('bbbbbbbb-2', null),
+          ],
+        }}
+        factory="here"
+      />
+    </MemoryRouter>,
+  );
+  expect(html).toContain('href="https://github.com/o/r/issues/7"');
+  expect(html).toContain('/f/here/laps/bbbbbbbb-2');
+  expect(html.match(/data-lap-issue/g)).toHaveLength(1);
+});
+
+test('Right now says a chip count is unavailable', () => {
+  const html = renderToStaticMarkup(
+    <MemoryRouter>
+      <RightNow live={{ here: [], unavailable: ['queued'] }} factory="here" />
+    </MemoryRouter>,
+  );
+  expect(html).toContain('The queued count is unavailable.');
+});
+
+test('Behind the scenes shows each workflow its own YAML path, and none for a workflow the version lacks', () => {
+  const row = (workflow: string, path: string, file: string) =>
+    ({ workflow, path, file, model: null }) as unknown as StepRow;
+  const steps = [row('wf-a', 'one', 'workflows/a.yaml'), row('wf-b', 'two', 'workflows/b.yaml')];
+  const card = {
+    ...FACTORY_MAP.cards[0],
+    covers: [
+      { workflow: 'wf-a', steps: ['one'] },
+      { workflow: 'wf-b', steps: ['two'] },
+    ],
+  } as (typeof FACTORY_MAP.cards)[0];
+  const html = renderToStaticMarkup(
+    <MemoryRouter>
+      <Behind card={card} at={null} steps={steps} failed={false} />
+    </MemoryRouter>,
+  );
+  const block = (workflow: string) =>
+    html.split('data-behind-workflow="').find((part) => part.startsWith(`${workflow}"`)) ?? '';
+  expect(block('wf-a')).toContain('workflows/a.yaml');
+  expect(block('wf-a')).not.toContain('workflows/b.yaml');
+  expect(block('wf-b')).toContain('workflows/b.yaml');
+  expect(workflowFile(steps, 'missing')).toBeUndefined();
+});
+
+test('the home clock turns over at the next local midnight', () => {
+  const lateEvening = new Date(2026, 10, 3, 23, 59, 30);
+  expect(msToLocalMidnight(lateEvening)).toBe(30_000);
+  expect(msToLocalMidnight(new Date(2026, 10, 4, 0, 0, 0))).toBeGreaterThan(23 * 3_600_000);
 });

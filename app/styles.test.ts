@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { join, relative, resolve } from 'node:path';
+import { TOKEN_SOURCES } from '../harness/design-probe';
 
 const repoRoot = resolve(import.meta.dir, '..');
 const read = (path: string) => readFileSync(join(repoRoot, path), 'utf-8');
@@ -45,11 +46,8 @@ function declarations(css: string): Declaration[] {
 
 const app = declarations(read('app/styles.css'));
 
-describe('console tokens', () => {
-  for (const source of [
-    'docs/design/archon-console/theme.css',
-    'docs/design/archon-console/index.css',
-  ]) {
+describe('console and v2 role tokens', () => {
+  for (const source of TOKEN_SOURCES.map((path) => relative(repoRoot, path))) {
     test(`every custom property in ${source} is declared identically in app/styles.css`, () => {
       const tokens = declarations(read(source)).filter((d) => d.property.startsWith('--'));
       expect(tokens.length).toBeGreaterThan(0);
@@ -77,5 +75,20 @@ describe('fonts', () => {
       .filter((path) => path !== 'tailwindcss');
     expect(fontImports.length).toBeGreaterThan(0);
     for (const path of fontImports) expect(path).toMatch(/^@fontsource\/geist(-mono)?\/\d+\.css$/);
+  });
+});
+
+describe('keyboard focus', () => {
+  const rule = (scope: string) =>
+    app.find((d) => d.scope.includes(scope) && d.property.startsWith('outline'));
+
+  test("the details strip's controls and the zoom controls ring in the solid accent, not the translucent one", () => {
+    for (const scope of [
+      '[data-details] button:focus-visible',
+      '[data-map-controls] button:focus-visible',
+    ]) {
+      expect(rule(scope)?.value).toBe('var(--accent)');
+    }
+    expect(rule("[data-details] [role='tab']:focus-visible")?.value).toBe('-2px');
   });
 });

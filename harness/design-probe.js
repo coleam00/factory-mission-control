@@ -1,9 +1,9 @@
 #!/usr/bin/env bun
 /**
  * The design probe (PRD 8.3). Loads a URL in a headless Chromium at 1440 px and 390 px and fails
- * on any computed color outside the tokens copied in docs/design/archon-console/, any text font
- * other than Geist or Geist Mono, a browser-default control, text contrast below 4.5:1,
- * horizontal overflow, and any interactive element without an accessible name. It checks the
+ * on any computed color outside the tokens copied in docs/design/archon-console/ and the v2 role
+ * colors in docs/design/v2/tokens.css, any text font other than Geist or Geist Mono, a
+ * browser-default control, text contrast below 4.5:1, horizontal overflow, and any interactive element without an accessible name. It checks the
  * page as first rendered and, when a live panel was still loading (`data-state="loading"`), again
  * once none is, or after 10 s; each failure names the state it was found in.
  *
@@ -24,9 +24,12 @@ const WIDTHS = [1440, 390];
 const HEIGHT = 900;
 /** How long one DevTools command, the page load or the in-page checks may take. */
 const STEP_TIMEOUT_MS = 20000;
-const TOKEN_SOURCES = ['index.css', 'theme.css'].map((f) =>
-  resolve(import.meta.dir, '..', 'docs', 'design', 'archon-console', f),
-);
+/** The console's tokens, then the v2 role colors laid over them (docs/design/v2/README.md). */
+export const TOKEN_SOURCES = [
+  ['archon-console', 'index.css'],
+  ['archon-console', 'theme.css'],
+  ['v2', 'tokens.css'],
+].map((path) => resolve(import.meta.dir, '..', 'docs', 'design', ...path));
 
 class ProbeError extends Error {}
 

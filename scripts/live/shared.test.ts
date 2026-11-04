@@ -1,11 +1,12 @@
 import { expect, test } from 'bun:test';
+import { FACTORY_MAP } from '../../app/map/factory-map';
 import {
   freePort,
   LIMITS,
   lateWrite,
   mapMismatches,
-  SEED_INCLUDE_STAGES,
-  type ShownNode,
+  mapTypeFailures,
+  type ShownCard,
 } from './shared';
 
 test('freePort waits while every port in 8850-8864 is taken and takes the first one freed', async () => {
@@ -56,48 +57,37 @@ test('a missing or late write names its reading and its value', () => {
   expect(lateWrite('a pin', 'the versions screen', limit)).toEqual([]);
 });
 
-/** The seed's loop as the map shows it: top-level steps, then each include's direct stages. */
-function seedMap(stages: Record<string, readonly string[]> = SEED_INCLUDE_STAGES): ShownNode[] {
-  const top = [
-    'pick',
-    'claim',
-    'build',
-    'ship',
-    'subject',
-    'check-app',
-    'evidence',
-    'review',
-    'land',
-    'deploy',
-    'release',
-    'tally',
-  ];
-  const node = (role: string, step: string): ShownNode => ({
-    role,
-    workflow: 'archon-loop',
-    step,
-    count: null,
-  });
-  return [
-    ...top.flatMap((t) => [
-      node('step', t),
-      ...(stages[t] ?? []).map((s) => node('stage', `${t}/${s}`)),
-    ]),
-    // A deeper stage is not a direct stage of its include.
-    node('stage', 'ship/deliver/forge'),
-  ];
-}
-const stageLines = (nodes: ShownNode[]) =>
-  mapMismatches(nodes, () => 0).filter((f) => /^\w+ shows (?!\d)/.test(f) && !f.startsWith('the '));
+/** The map's cards in document order, each counting the laps `counts` gives it. */
+const shown = (counts: Record<string, number> = {}): ShownCard[] =>
+  FACTORY_MAP.cards.map((c) => ({ card: c.id, count: String(counts[c.id] ?? 0) }));
 
-test("each include's own stages are compared with the seed's, not pooled under ship", () => {
-  expect(stageLines(seedMap())).toEqual([]);
-  // deploy's stages under deploy are right; one missing from ship is caught as ship's.
-  const { ship, deploy } = SEED_INCLUDE_STAGES;
-  expect(stageLines(seedMap({ ship: ship.slice(1), deploy }))).toEqual([
-    `ship shows ${ship.slice(1).join(', ')}`,
+test("the map is compared card for card with factory-map.json and each card's laps with the database", () => {
+  const counts = new Map([['app', 1]]);
+  expect(mapMismatches(shown({ app: 1 }), counts)).toEqual([]);
+  expect(mapMismatches(shown({ app: 1, build: 1 }), counts)).toEqual([
+    'build shows 1 laps, the database has 0',
   ]);
-  expect(stageLines(seedMap({ ship, deploy: [] }))).toEqual(['deploy shows no stages']);
-  // An include the seed does not expand must show none.
-  expect(stageLines(seedMap({ ship, deploy, review: ['scope'] }))).toEqual(['review shows scope']);
+  expect(mapMismatches(shown({ app: 1 }).slice(1), counts)[0]).toStartWith(
+    'the map shows cards plan, ',
+  );
+});
+
+test("the map's type passes at the owner's least sizes and fails, naming it, under any", () => {
+  const fitted = {
+    title: 14.3,
+    text: 11.5,
+    kind: 10.3,
+    label: 10.3,
+    frameWidth: 1392,
+    windowWidth: 1440,
+  };
+  expect(mapTypeFailures(fitted)).toEqual([]);
+  expect(mapTypeFailures({ ...fitted, title: 8, text: 5 })).toEqual([
+    "a map card's title renders 8.0px at 1440 fitted, under 14px",
+    "a map card's text renders 5.0px at 1440 fitted, under 11px",
+  ]);
+  expect(mapTypeFailures({ ...fitted, label: Number.NaN })).toHaveLength(1);
+  expect(mapTypeFailures({ ...fitted, frameWidth: 1104 })).toEqual([
+    "the map's frame is 1104px wide in a 1440px window: it should span the window inside the gutters",
+  ]);
 });

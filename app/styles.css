@@ -1,9 +1,10 @@
 /*
  * The app's token layer: every color is declared here, copied from docs/design/archon-console/
  * (index.css and theme.css) with identical values; styles.test.ts holds them to that, and
- * harness/design-probe.js fails any rendered color outside them. The palette is near-black
- * neutral surfaces with Dynamous Blue as the one accent (#240). Geist and Geist Mono are served
- * from the build rather than fetched from Google Fonts.
+ * harness/design-probe.js fails any rendered color outside them. The v2 role colors are copied the
+ * same way from docs/design/v2/tokens.css. The palette is near-black neutral surfaces with
+ * Dynamous Blue as the one accent (#240). Geist and Geist Mono are served from the build rather
+ * than fetched from Google Fonts.
  */
 @import 'tailwindcss';
 @import '@fontsource/geist/300.css';
@@ -50,6 +51,20 @@
   --destructive: oklch(0.6 0.2 25);
   --border: oklch(0.28 0.01 260);
   --ring: oklch(0.65 0.18 250);
+
+  /* v2 role colors, copied from docs/design/v2/tokens.css: who is acting on a map card. */
+  --role-source: #38bdf8;
+  --role-source-soft: rgba(56, 189, 248, 0.13);
+  --role-agent: #3b82f6;
+  --role-agent-soft: rgba(59, 130, 246, 0.14);
+  --role-test: #14b8a6;
+  --role-test-soft: rgba(20, 184, 166, 0.13);
+  --role-person: #a78bfa;
+  --role-person-soft: rgba(167, 139, 250, 0.15);
+
+  /* A map card's fill and border: its role color mixed into the panel surface. */
+  --card-tint: 9%;
+  --card-border-tint: 45%;
 }
 
 @theme inline {
@@ -96,6 +111,22 @@
   --radius-3xl: calc(var(--radius) + 12px);
   --radius-4xl: calc(var(--radius) + 16px);
   --animate-slide-up: slide-up 0.25s ease-out;
+  --animate-map-flow: map-flow 2.6s linear infinite;
+  --animate-map-hit: map-hit 0.7s ease-out;
+}
+
+/* The factory map's motion: dashes running along its forward lines, and a card the tour reaches. */
+@keyframes map-flow {
+  to {
+    stroke-dashoffset: -144;
+  }
+}
+
+@keyframes map-hit {
+  30% {
+    transform: scale(1.035);
+    box-shadow: 0 0 0 4px var(--accent-soft);
+  }
 }
 
 /* `.console-root` sits on <html>, which `:root` also matches at equal specificity: this block
@@ -207,6 +238,26 @@
   outline: 2px solid var(--accent-ring);
   outline-offset: 2px;
   border-radius: 6px;
+}
+
+/* The details strip's tabs and close control and the map's zoom controls take the solid accent: the
+   translucent generic ring is 2.3:1 on their surfaces, the accent 4.5:1 or more. A tab's ring sits
+   inside it, because the tab list scrolls and would clip a ring drawn outside. */
+.console-root [data-details] button:focus-visible,
+.console-root [data-map-controls] button:focus-visible {
+  outline-color: var(--accent);
+}
+
+.console-root [data-details] [role='tab']:focus-visible {
+  outline-offset: -2px;
+}
+
+/* A map card is drawn scaled down to fit the map, so its focus ring is drawn thicker and solid in
+   map units: at the fitted scale it stays about 3px of Dynamous Blue, above 3:1 on the frame. */
+.console-root [data-card]:focus-visible {
+  outline: 5px solid var(--accent);
+  outline-offset: 10px;
+  border-radius: 16px;
 }
 
 /* Scrollbar styling for dark theme */
