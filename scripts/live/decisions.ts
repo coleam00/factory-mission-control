@@ -193,6 +193,21 @@ export function decisionsPhase(ctx: LiveContext): LivePhase {
     limits: LIMITS,
   };
   const labelled: number[] = [];
+  const removeLabels = async (): Promise<string[]> => {
+    try {
+      if (labelled.length > 0) {
+        await db.query(
+          `DELETE FROM mc.issue_labels
+           WHERE factory = $1 AND label = 'needs-owner' AND issue_number = ANY($2::int[])`,
+          [factory, `{${labelled.join(',')}}`],
+        );
+        labelled.length = 0;
+      }
+      return [];
+    } catch (err) {
+      return [`removing the decisions screen's labels failed: ${(err as Error).message}`];
+    }
+  };
   let decisionsPage: Page | undefined;
   const url = () => `${ctx.base}/f/${encodeURIComponent(factory)}/decisions`;
 
@@ -281,6 +296,8 @@ export function decisionsPhase(ctx: LiveContext): LivePhase {
       timings.noReload = await page.evaluate<boolean>('window.__mcNoReload === true');
       await page.close();
       decisionsPage = undefined;
+      // Later phases label the highest-numbered issue without needs-owner: leave it where it was.
+      ctx.failures.push(...(await removeLabels()));
     },
 
     async probe(designProbe) {
@@ -296,20 +313,7 @@ export function decisionsPhase(ctx: LiveContext): LivePhase {
       await decisionsPage?.close().catch(() => undefined);
     },
 
-    async cleanup() {
-      try {
-        if (labelled.length > 0) {
-          await db.query(
-            `DELETE FROM mc.issue_labels
-             WHERE factory = $1 AND label = 'needs-owner' AND issue_number = ANY($2::int[])`,
-            [factory, `{${labelled.join(',')}}`],
-          );
-        }
-        return [];
-      } catch (err) {
-        return [`removing the decisions screen's labels failed: ${(err as Error).message}`];
-      }
-    },
+    cleanup: removeLabels,
 
     judge() {
       const failures: string[] = [];
