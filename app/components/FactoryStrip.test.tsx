@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { FactoryStripBody } from './FactoryStrip';
+import { FactoryStripBody, RewindIndicator } from './FactoryStrip';
 
 const FACTORY = 'coleam00/factory-mission-control';
 
@@ -41,4 +41,10 @@ test('an unknown key is marked unknown, without its name, a count or an outage',
   expect(html).not.toContain('Running laps');
   expect(html).not.toContain('data-count');
   expect(html).not.toContain('Live data is unavailable.');
+});
+
+test('the rewind indicator uses the accent, never amber', () => {
+  const html = renderToStaticMarkup(<RewindIndicator rewind="rewind-x" />);
+  expect(html).toContain('data-rewind-indicator="rewind-x"');
+  expect(html).not.toContain('warning');
 });

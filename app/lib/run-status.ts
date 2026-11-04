@@ -55,7 +55,7 @@ export function runStatusLabel(run: Run): string {
  *
  * Color discipline:
  *   running   → blue  (active; pulsing strip)
- *   paused    → amber (waiting for human; pulsing dot)
+ *   paused    → violet (waiting for a human; pulsing dot)
  *   failed    → red
  *   completed → green (execution reached completion; muted strip, no pulse)
  *   cancelled → grey  (muted, user-stopped)
@@ -69,7 +69,7 @@ export function runStatusLabel(run: Run): string {
 export const statusStripClass: Record<RunStatus, string> = {
   running:
     'bg-[color:var(--running)] shadow-[0_0_12px_color-mix(in_oklch,var(--running),transparent_60%)] animate-pulse',
-  paused: 'bg-warning',
+  paused: 'bg-[color:var(--role-person)]',
   failed: 'bg-error',
   completed: 'bg-success/40',
   cancelled: 'bg-text-tertiary/40',
@@ -77,7 +77,7 @@ export const statusStripClass: Record<RunStatus, string> = {
 
 export const statusTextClass: Record<RunStatus, string> = {
   running: 'text-[color:var(--running)]',
-  paused: 'text-warning',
+  paused: 'text-[color:var(--role-person)]',
   failed: 'text-error',
   completed: 'text-success/80',
   cancelled: 'text-text-tertiary',
@@ -85,7 +85,7 @@ export const statusTextClass: Record<RunStatus, string> = {
 
 export const statusDotClass: Record<RunStatus, string> = {
   running: 'bg-[color:var(--running)]',
-  paused: 'bg-warning animate-pulse',
+  paused: 'bg-[color:var(--role-person)] animate-pulse',
   failed: 'bg-error',
   completed: 'bg-success',
   cancelled: 'bg-text-tertiary/60',
