@@ -16,6 +16,10 @@ export type Chip = (typeof CHIPS)[number];
 export const LINE_STYLES = ['flow', 'ask', 'loop', 'holdout'] as const;
 export type LineStyle = (typeof LINE_STYLES)[number];
 
+/** The pack a cover entry is held to: the old loop's, or the queue workflows plus the factory package. */
+export const PACKS = ['loop', 'queue'] as const;
+export type Pack = (typeof PACKS)[number];
+
 /** A step's own screen: the workflow that declares it and its path there. */
 export interface Screen {
   workflow: string;
@@ -28,6 +32,8 @@ export interface Screen {
  * rounds inside it).
  */
 export interface Cover {
+  /** Which pack `bun run map:check` holds this entry to; a live row carries only the workflow name. */
+  pack: Pack;
   workflow: string;
   steps: string[];
   /** The screen of an entry an include expanded, which is not a step of `workflow` itself. */
@@ -260,19 +266,23 @@ export const workflowFile = (steps: readonly StepRow[], workflow: string): strin
  */
 export function pinnedStepLinks(card: Card, at: string | null, steps: readonly StepRow[]) {
   const pinned = new Map(steps.map((s) => [`${s.workflow} ${s.path}`, s]));
-  return card.covers.flatMap((cover) =>
-    cover.steps.flatMap((step) => {
-      const screen = screenOf(cover, step);
-      const row = pinned.get(`${screen.workflow} ${screen.path}`);
-      if (row === undefined) return [];
-      return [
-        {
-          workflow: cover.workflow,
-          step,
-          model: row.model,
-          href: stepHref(screen.workflow, screen.path, at),
-        },
-      ];
-    }),
-  );
+  // Both packs' screens can resolve to one step (archon-deliver-block rounds/review), so an entry
+  // counts only when the pinned version has its workflow.
+  return card.covers
+    .filter((cover) => steps.some((s) => s.workflow === cover.workflow))
+    .flatMap((cover) =>
+      cover.steps.flatMap((step) => {
+        const screen = screenOf(cover, step);
+        const row = pinned.get(`${screen.workflow} ${screen.path}`);
+        if (row === undefined) return [];
+        return [
+          {
+            workflow: cover.workflow,
+            step,
+            model: row.model,
+            href: stepHref(screen.workflow, screen.path, at),
+          },
+        ];
+      }),
+    );
 }

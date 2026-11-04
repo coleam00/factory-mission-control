@@ -8,6 +8,7 @@ import {
   MIN_FRAME,
   midpoint,
   neighbours,
+  pinnedStepLinks,
   stepLinks,
   tourPoints,
   worldSize,
@@ -94,15 +95,30 @@ test("the owner's tighter pitch: 52 between cards, 84 where App check's passed l
 });
 
 test("App check's steps open their screens, check-app's among them; a nested one opens under the workflow that declares it", () => {
-  expect(stepLinks(card('app'), null).map((l) => l.href)).toEqual([
+  const hrefs = (id: string, at: string | null) => stepLinks(card(id), at).map((l) => l.href);
+  expect(hrefs('app', null).slice(0, 4)).toEqual([
     '/steps/archon-loop/briefs',
     '/steps/archon-loop/check-app',
     '/steps/archon-loop/evidence',
     '/steps/archon-loop/handoff',
   ]);
-  expect(stepLinks(card('review'), 'abc').map((l) => l.href)).toEqual([
-    '/steps/archon-deliver-block/rounds%2Freview?at=abc',
-    '/steps/archon-deliver-block/rounds%2Frereview?at=abc',
+  expect(hrefs('app', null)).toContain('/steps/factory-app-check/check');
+  expect(hrefs('review', 'abc')).toContain('/steps/archon-deliver-block/rounds%2Freview?at=abc');
+  expect(hrefs('review', 'abc')).toContain('/steps/archon-deliver-block/rounds%2Frereview?at=abc');
+});
+
+test('a version with only the old loop lists each review round once, not once per pack', () => {
+  const row = (workflow: string, path: string) =>
+    ({ workflow, path, model: null }) as unknown as Parameters<typeof pinnedStepLinks>[2][number];
+  const old = [
+    row('archon-loop', 'ship'),
+    row('archon-deliver-block', 'rounds/review'),
+    row('archon-deliver-block', 'rounds/rereview'),
+  ];
+  const links = pinnedStepLinks(card('review'), 'abc', old);
+  expect(links.map((l) => `${l.workflow} ${l.step}`)).toEqual([
+    'archon-loop ship/deliver/rounds/review',
+    'archon-loop ship/deliver/rounds/rereview',
   ]);
 });
 
