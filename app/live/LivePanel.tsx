@@ -132,18 +132,6 @@ export function sealBackoff(key: string): SealBackoff {
 export const tabSealing: SealBackoff = newSealBackoff();
 
 /**
- * The panel has stayed live on what it was sealed for `LIVE_STABLE_MS`: the next seal it asks for
- * owes no wait. Only this resets the wait. A seal answered with a full lifetime is not enough: the
- * subscription it was for can still refuse it (a connection that failed for good rejects every
- * renewal at once), and the library asks again a second later. Nor is going live: a subscription
- * that is live for a moment and then fails for good, again and again, would reset the wait each
- * time and ask about once a second for good.
- */
-export function resetSealBackoff(backoff: SealBackoff): void {
-  backoff.delay = 0;
-}
-
-/**
  * The subscription the panel was sealed for failed for good: that counts as a failed answer, so
  * the seal it asks for to subscribe again waits, and a subscription that keeps failing as soon as
  * it is live is asked for again no more than once a `SEAL_RETRY_FIRST_MS`.
@@ -157,7 +145,7 @@ export function failSealBackoff(backoff: SealBackoff, now = Date.now()): void {
  * Wraps `request` so that once a seal fails, or is answered with too little life left to wait for
  * its renewal, every seal after it is asked for only once a wait, doubling from
  * `SEAL_RETRY_FIRST_MS` to `SEAL_RETRY_CEILING_MS`, has passed since the last answer, until the
- * panel is live again (`resetSealBackoff`). A panel's first seal owes no wait, so a panel that
+ * panel is live again (the stable-live timer). A panel's first seal owes no wait, so a panel that
  * mounts again asks at once while sealing is healthy. Never back to back, and never two at once, however
  * often or by whom it is called. A live panel's renewals come a seal's lifetime apart, far more
  * than the ceiling, so they never wait. A renewal (`renewal` true), and every request while the
@@ -424,7 +412,13 @@ function Subscribed<Row>({
 
   useEffect(() => {
     if (status === 'live') {
-      const stable = setTimeout(() => resetSealBackoff(backoff), LIVE_STABLE_MS);
+      // Only staying live resets the wait. A full seal alone is not enough: the subscription it was
+      // for can still refuse it (a connection that failed for good rejects every renewal), and
+      // merely going live would let a subscription that keeps failing right after reset it and
+      // ask about once a second for good.
+      const stable = setTimeout(() => {
+        backoff.delay = 0;
+      }, LIVE_STABLE_MS);
       return () => clearTimeout(stable);
     }
     if (status === 'error') {

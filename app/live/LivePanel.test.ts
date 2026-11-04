@@ -9,7 +9,6 @@ import {
   RENEW_EARLY_MS,
   recovering,
   renewSeal,
-  resetSealBackoff,
   SEAL_RETRY_CEILING_MS,
   SEAL_RETRY_FIRST_MS,
   SEAL_TIMEOUT_MS,
@@ -241,7 +240,7 @@ test('once the endpoint answers again, a full seal comes one wait later, and the
   // A full seal alone is not recovery: the subscription can still refuse it.
   expect(sent).toEqual([0, 1_000, 3_000, 7_000, 15_000, 31_000]);
   // Live on it: the next seal owes no wait.
-  resetSealBackoff(backoff);
+  backoff.delay = 0;
   await request();
   expect(sent.at(-1)).toBe(31_000);
 });
