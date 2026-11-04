@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, expect, test } from 'bun:test';
 import { rmSync } from 'node:fs';
-import rules from '../fixtures/archon-rules.json';
 import { archonDb, migrationFiles, snapshot } from '../db/test-db';
+import rules from '../fixtures/archon-rules.json';
 import { eventData } from './fixture/write';
 import type { Db, Row, Tx } from './lib/db';
 import { DATABASE_URL, NOW, recordingDeps, scratchRepo } from './lib/test-deps';

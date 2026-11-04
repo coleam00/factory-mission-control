@@ -1,8 +1,8 @@
 import { afterAll, beforeAll, beforeEach, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { basename, join } from 'node:path';
-import rules from '../fixtures/archon-rules.json';
 import { FACTORY_MAP } from '../app/map/factory-map';
+import rules from '../fixtures/archon-rules.json';
 import { holdoutId } from '../parsers/metrics';
 import { eventData, structuredOutputFor } from '../scripts/fixture/write';
 import type { Db, Row } from '../scripts/lib/db';

@@ -2,8 +2,8 @@ import { describe, expect, test } from 'bun:test';
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { archRows } from '../scripts/arch-parse';
 import rules from '../fixtures/archon-rules.json';
+import { archRows } from '../scripts/arch-parse';
 import { isInlineScript, parsePack, type Step, type Workflow } from './pack';
 
 const repoRoot = resolve(import.meta.dir, '..');
