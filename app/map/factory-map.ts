@@ -3,7 +3,7 @@
  * read here. Its coverage is held to the pinned pack by `bun run map:check` (invariant 6). Pure,
  * no React.
  */
-import { type StepRow, stepHref } from '../lib/step-detail';
+import { placeOf, type StepRow, stepHref } from '../lib/step-detail';
 import data from './factory-map.json';
 
 /** Who is acting on a card, which is its color (docs/design/v2/tokens.css). */
@@ -16,12 +16,6 @@ export type Chip = (typeof CHIPS)[number];
 export const LINE_STYLES = ['flow', 'ask', 'loop', 'holdout'] as const;
 export type LineStyle = (typeof LINE_STYLES)[number];
 
-/** A step's own screen: the workflow that declares it and its path there. */
-export interface Screen {
-  workflow: string;
-  path: string;
-}
-
 /**
  * The steps of one workflow a card covers. Each entry covers that step and every step under it;
  * a step under two entries belongs to the deeper one (Build covers the ship include, Review the review
@@ -30,8 +24,6 @@ export interface Screen {
 export interface Cover {
   workflow: string;
   steps: string[];
-  /** The screen of an entry an include expanded, which is not a step of `workflow` itself. */
-  screens?: Record<string, Screen>;
 }
 
 export interface Details {
@@ -237,17 +229,14 @@ export function coveringCards(map: FactoryMap, workflow: string, path: string): 
 export const cardForStep = (map: FactoryMap, workflow: string, path: string): Card | undefined =>
   coveringCards(map, workflow, path)[0];
 
-/** A cover entry's screen: its own, or the step itself in the covered workflow. */
-export const screenOf = (cover: Cover, step: string): Screen =>
-  cover.screens?.[step] ?? { workflow: cover.workflow, path: step };
-
-/** Each step a card covers, opening its step screen at the version pinned `at`. */
+/** Each step a card covers, opening its place in the covered workflow at the version pinned `at`. */
 export const stepLinks = (card: Card, at: string | null) =>
   card.covers.flatMap((cover) =>
-    cover.steps.map((step) => {
-      const screen = screenOf(cover, step);
-      return { workflow: cover.workflow, step, href: stepHref(screen.workflow, screen.path, at) };
-    }),
+    cover.steps.map((step) => ({
+      workflow: cover.workflow,
+      step,
+      href: stepHref(cover.workflow, step, at),
+    })),
   );
 
 /** A workflow's own YAML path in the pinned pack, from the parsed architecture; undefined when the version lacks it. */
@@ -259,18 +248,16 @@ export const workflowFile = (steps: readonly StepRow[], workflow: string): strin
  * its parsed architecture gives it (null for a step that names none).
  */
 export function pinnedStepLinks(card: Card, at: string | null, steps: readonly StepRow[]) {
-  const pinned = new Map(steps.map((s) => [`${s.workflow} ${s.path}`, s]));
   return card.covers.flatMap((cover) =>
     cover.steps.flatMap((step) => {
-      const screen = screenOf(cover, step);
-      const row = pinned.get(`${screen.workflow} ${screen.path}`);
+      const row = placeOf(steps, cover.workflow, step)?.step;
       if (row === undefined) return [];
       return [
         {
           workflow: cover.workflow,
           step,
           model: row.model,
-          href: stepHref(screen.workflow, screen.path, at),
+          href: stepHref(cover.workflow, step, at),
         },
       ];
     }),

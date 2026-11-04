@@ -84,7 +84,7 @@ describe('map:check', () => {
     expect(mapCheck(FACTORY_MAP, pack)).toEqual(['archon-loop tally is covered by no card']);
   });
 
-  test('a step two cards cover, a workflow the pack lacks and a wrong screen each fail', () => {
+  test('a step two cards cover, and a workflow the pack lacks each fail', () => {
     const pack = parsePack(PACK, TEMPLATE);
     const cards = FACTORY_MAP.cards.map((card) => {
       if (card.id === 'merge') {
@@ -95,15 +95,10 @@ describe('map:check', () => {
       }
       if (card.id === 'plan')
         return { ...card, covers: [{ workflow: 'archon-split', steps: ['slice'] }] };
-      if (card.id === 'review') {
-        return { ...card, covers: card.covers.map(({ screens: _, ...cover }) => cover) };
-      }
       return card;
     });
     expect(mapCheck(withCards(cards), pack)).toEqual([
       'Plan names workflow archon-split, which the pack lacks',
-      'Review opens archon-loop ship/deliver/rounds/review at archon-loop ship/deliver/rounds/review, not its own screen archon-deliver-block rounds/review',
-      'Review opens archon-loop ship/deliver/rounds/rereview at archon-loop ship/deliver/rounds/rereview, not its own screen archon-deliver-block rounds/rereview',
       'archon-loop deploy is covered by Merge and Staging',
       'archon-loop deploy/resolve is covered by Merge and Staging',
       'archon-loop deploy/deploy is covered by Merge and Staging',

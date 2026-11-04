@@ -1,7 +1,14 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { findStep, joinParts, type NestingRow, type StepRow } from '../../app/lib/step-detail';
+import {
+  isIncluded,
+  joinParts,
+  type NestingRow,
+  placeOf,
+  placesOf,
+  type StepRow,
+} from '../../app/lib/step-detail';
 import { REPO_ROOT } from '../../scripts/lib/cli';
 import type { Db } from '../../scripts/lib/db';
 import { CHECK_APP, migratedDb, onTheSeed, paramsFor, queries, STEP_PANELS } from './test-seed';
@@ -280,7 +287,7 @@ describe('the version the picker marks current', () => {
   });
 });
 
-describe('step screens of included blocks on the seed', () => {
+describe('step places of included blocks on the seed', () => {
   let db: Db;
   const sql = (name: string) => queries.find(([n]) => n === name)?.[1] as string;
   const nestingOf = async (workflow: string, path: string) =>
@@ -290,26 +297,33 @@ describe('step screens of included blocks on the seed', () => {
       path,
       '',
     ])) as unknown as NestingRow[];
-  const opens = (row: NestingRow) => `${row.open_workflow} / ${row.open_path}`;
+  const V1 = '8e3e1cefaf1e1b7955789d6a43a81b6c2dbd7082';
+  const stepsAt = async (version: string) =>
+    (await db.query(sql('step-detail'), ['mission-control', version])) as unknown as StepRow[];
 
   beforeAll(async () => {
     db = await onTheSeed();
   }, 60_000);
   afterAll(() => db.close());
 
-  test("the step that writes the code has its own screen and prompt, and no alias under deliver's block", async () => {
-    const steps = (await db.query(sql('step-detail'), [
-      'mission-control',
-      '',
-    ])) as unknown as StepRow[];
-    expect(findStep(steps, 'archon-implement', 'implement')?.command_file).toBe(
+  test('the step that writes the code is declared in implement, and its address opens its first place', async () => {
+    const steps = await stepsAt('');
+    expect(placeOf(steps, 'archon-implement', 'implement')?.step.command_file).toBe(
       'implement/commands/implement.md',
     );
-    expect(findStep(steps, 'archon-deliver-block', 'implement')).toBeUndefined();
+    expect(placeOf(steps, 'archon-deliver-block', 'implement')).toBeUndefined();
+    expect(isIncluded(steps, 'archon-implement')).toBe(true);
+    expect(placesOf(steps, 'archon-implement', 'implement')[0]).toEqual({
+      workflow: 'archon-loop',
+      path: 'ship/deliver/rounds/implement/implement',
+    });
+  });
+
+  test("a place's prompt is its definition's file, byte for byte", async () => {
     const parts = (await db.query(sql('step-prompt'), [
       'mission-control',
-      'archon-implement',
-      'implement',
+      'archon-loop',
+      'ship/deliver/rounds/implement/implement',
       '',
     ])) as { path: string; part: number; chunk: string }[];
     expect(joinParts(parts, (row) => row.path).get('implement/commands/implement.md')).toBe(
@@ -321,12 +335,9 @@ describe('step screens of included blocks on the seed', () => {
   });
 
   test('an older pin opens the step as it was: V1 has briefs and its own review prompt', async () => {
-    const V1 = '8e3e1cefaf1e1b7955789d6a43a81b6c2dbd7082';
     const V2 = '5ffd60c6c6e591487f2fbb5ec67ccc8fc55ca915';
-    const stepsAt = async (version: string) =>
-      (await db.query(sql('step-detail'), ['mission-control', version])) as unknown as StepRow[];
-    expect(findStep(await stepsAt(''), 'archon-loop', 'briefs')).toBeUndefined();
-    expect(findStep(await stepsAt(V1), 'archon-loop', 'briefs')).toBeDefined();
+    expect(placeOf(await stepsAt(''), 'archon-loop', 'briefs')).toBeUndefined();
+    expect(placeOf(await stepsAt(V1), 'archon-loop', 'briefs')).toBeDefined();
     const reviewPrompt = async (version: string) =>
       joinParts(
         (await db.query(sql('step-prompt'), [
@@ -344,40 +355,83 @@ describe('step screens of included blocks on the seed', () => {
     expect(await reviewPrompt(V1)).not.toBe(current);
   });
 
-  test("deliver's screen lists both occurrences of implement, each opening its own screen", async () => {
-    const inside = new Map(
-      (await nestingOf('archon-ship-block', 'deliver'))
-        .filter((row) => row.relation === 'inside')
-        .map((row) => [row.path, opens(row)]),
-    );
-    expect(inside.get('deliver/rounds/implement')).toBe('archon-deliver-block / rounds/implement');
-    expect(inside.get('deliver/rounds/implement/implement')).toBe('archon-implement / implement');
-    expect(inside.get('deliver/rounds/reshape/implement')).toBe('archon-implement / implement');
+  test('every declared step of an included workflow has places that open back to it, at every version', async () => {
+    for (const version of ['', V1]) {
+      const steps = await stepsAt(version);
+      const included = steps.filter((row) => isIncluded(steps, row.workflow));
+      expect(included.length).toBeGreaterThan(50);
+      for (const row of included) {
+        const places = placesOf(steps, row.workflow, row.path);
+        expect(places.length).toBeGreaterThan(0);
+        for (const place of places) {
+          expect(isIncluded(steps, place.workflow)).toBe(false);
+          expect(placeOf(steps, place.workflow, place.path)?.step).toBe(row);
+        }
+      }
+    }
   });
 
-  test('every step beneath ship opens a screen that exists', async () => {
-    const steps = (await db.query(sql('step-detail'), [
-      'mission-control',
-      '',
-    ])) as unknown as StepRow[];
-    const inside = (await nestingOf('archon-loop', 'ship')).filter((r) => r.relation === 'inside');
-    expect(inside.length).toBeGreaterThan(50);
-    const missing = inside.filter((row) => !findStep(steps, row.open_workflow, row.open_path));
-    expect(missing.map((row) => row.path)).toEqual([]);
+  test('every stored row of a top-level workflow is found from the declared rows alone', async () => {
+    for (const version of ['', V1]) {
+      const steps = await stepsAt(version);
+      const stored = (await db.query(
+        `WITH version AS (
+           SELECT a.archon_sha, a.factory_sha FROM mc.arch_versions a
+           JOIN mc.pins p ON p.archon_sha = a.archon_sha
+           WHERE $1 = '' OR p.sha = $1
+           ORDER BY p.committed_at DESC, a.parsed_at DESC LIMIT 1
+         )
+         SELECT s.workflow, s.path, s.defined_in, s.step_id, s.kind, s.model, s.when_condition,
+           s.depends_on, s.trigger_rule, s.include
+         FROM mc.arch_steps s JOIN version v
+           ON v.archon_sha = s.archon_sha AND v.factory_sha = s.factory_sha`,
+        [version],
+      )) as unknown as StepRow[];
+      const topLevel = stored.filter((row) => !isIncluded(steps, row.workflow));
+      expect(topLevel.length).toBeGreaterThan(100);
+      const wrong = topLevel.filter((row) => {
+        const found = placeOf(steps, row.workflow, row.path)?.step;
+        return (
+          found === undefined ||
+          found.workflow !== row.defined_in ||
+          found.step_id !== row.step_id ||
+          found.kind !== row.kind ||
+          found.model !== row.model ||
+          found.when_condition !== row.when_condition ||
+          found.trigger_rule !== row.trigger_rule ||
+          found.include !== row.include ||
+          found.depends_on.join() !== row.depends_on.join()
+        );
+      });
+      expect(wrong.map((row) => `${row.workflow} ${row.path}`)).toEqual([]);
+    }
   });
 
-  test("implement's screen lists every place an include puts it, opening the node it sits in", async () => {
-    const places = (await nestingOf('archon-implement', 'implement'))
-      .filter((row) => row.relation === 'included_at')
-      .map((row) => `${row.workflow} ${row.path} -> ${opens(row)}`)
-      .sort();
+  test('the review block runs at two places that differ in their routing', async () => {
+    const steps = await stepsAt('');
+    const places = placesOf(steps, 'archon-review-block', 'code');
     expect(places).toEqual([
-      'archon-deliver-block rounds/implement/implement -> archon-deliver-block / rounds/implement',
-      'archon-deliver-block rounds/reshape/implement -> archon-deliver-block / rounds/reshape',
-      'archon-loop ship/deliver/rounds/implement/implement -> archon-deliver-block / rounds/implement',
-      'archon-loop ship/deliver/rounds/reshape/implement -> archon-deliver-block / rounds/reshape',
-      'archon-ship-block deliver/rounds/implement/implement -> archon-deliver-block / rounds/implement',
-      'archon-ship-block deliver/rounds/reshape/implement -> archon-deliver-block / rounds/reshape',
+      { workflow: 'archon-loop', path: 'ship/deliver/rounds/review/code' },
+      { workflow: 'archon-loop', path: 'ship/deliver/rounds/rereview/code' },
     ]);
+    const inputs = places.map((place) => {
+      const around = placeOf(steps, place.workflow, place.path)?.around ?? [];
+      return around.at(-1)?.row.depends_on;
+    });
+    expect(inputs).toEqual([['pr'], ['reshape']]);
+  });
+
+  test("deliver's place lists both occurrences of implement, each opening its own place", async () => {
+    const inside = (await nestingOf('archon-loop', 'ship/deliver')).map((row) => row.path);
+    expect(inside).toContain('ship/deliver/rounds/implement/implement');
+    expect(inside).toContain('ship/deliver/rounds/reshape/implement');
+  });
+
+  test('every step beneath ship opens a place that exists', async () => {
+    const steps = await stepsAt('');
+    const inside = await nestingOf('archon-loop', 'ship');
+    expect(inside.length).toBeGreaterThan(50);
+    const missing = inside.filter((row) => !placeOf(steps, 'archon-loop', row.path));
+    expect(missing.map((row) => row.path)).toEqual([]);
   });
 });

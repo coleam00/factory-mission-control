@@ -93,7 +93,7 @@ class Socket implements WebSocketLike {
 }
 
 /** A step row of the workflow `archon-loop`, its prompt naming the version it was read at. */
-function stepRow(path: string, prompt: string): StepRow {
+function stepRow(path: string, prompt: string, fields: Partial<StepRow> = {}): StepRow {
   return {
     workflow: 'archon-loop',
     path,
@@ -115,6 +115,7 @@ function stepRow(path: string, prompt: string): StepRow {
     prompt,
     defined_in: 'archon-loop',
     file: 'archon-loop.yaml',
+    ...fields,
   };
 }
 
@@ -191,6 +192,7 @@ function mount(url: string, steps: Record<string, StepRow[]>) {
     container,
     asked,
     navigate: (to: string) => router.navigate(to),
+    location: () => `${router.state.location.pathname}${router.state.location.search}`,
     fail(query: string) {
       for (const capability of socket.live.keys())
         if (asked[Number(capability.split('.')[2])].query === query) socket.fail(capability);
@@ -256,7 +258,24 @@ const NEWER = '5ffd60c6c6e591487f2fbb5ec67ccc8fc55ca915';
 /** A pin at which `review` did not exist yet. */
 const BEFORE_REVIEW = '1b2a52a5d44d3a1b1d8f2d4d3c6c2e0f9a8b7c6d';
 
+/** A pin at which `archon-loop` includes the workflow `block` twice, `rereview` after `fix`. */
+const TWICE = 'ac1ace0000000000000000000000000000000000';
+
 const STEPS: Record<string, StepRow[]> = {
+  [TWICE]: [
+    stepRow('review', '', { kind: 'include', include: 'block', position: 1 }),
+    stepRow('rereview', '', {
+      kind: 'include',
+      include: 'block',
+      position: 2,
+      depends_on: ['fix'],
+    }),
+    stepRow('code', 'Write the code', {
+      workflow: 'block',
+      defined_in: 'block',
+      file: 'block.yaml',
+    }),
+  ],
   '': [stepRow('review', 'Review, current')],
   [OLDER]: [stepRow('review', `Review at ${OLDER}`)],
   [NEWER]: [stepRow('review', `Review at ${NEWER}`)],
@@ -348,6 +367,34 @@ export async function loseStep() {
       detail: detail(),
       sentence: shown(screen).sentence,
       headings: [...screen.container.querySelectorAll('h2')].map((h2) => h2.textContent),
+    };
+  } finally {
+    screen.unmount();
+  }
+}
+
+/**
+ * Opens `url` at the pin where `archon-loop` includes `block` twice: where the address ended up,
+ * the place it shows, the routing around it and every place of its definition.
+ */
+export async function openPlace(url: string) {
+  const screen = mount(url, STEPS);
+  try {
+    await until(() => settled(screen) && shown(screen).prompt !== null, 'the place');
+    const text = (selector: string) =>
+      [...screen.container.querySelectorAll(selector)].map((el) => el.textContent);
+    return {
+      location: screen.location(),
+      title: screen.container.querySelector('h1')?.textContent,
+      routes: [...screen.container.querySelectorAll('[data-route]')].map((el) => ({
+        path: el.getAttribute('data-route'),
+        inputs: el.querySelector('[data-route-inputs]')?.getAttribute('data-route-inputs'),
+      })),
+      includedAt: [...screen.container.querySelectorAll('[data-included-at]')].map((el) => ({
+        place: el.getAttribute('data-included-at'),
+        current: el.querySelector('a')?.getAttribute('aria-current') === 'page',
+      })),
+      prompt: text('[data-prompt]'),
     };
   } finally {
     screen.unmount();

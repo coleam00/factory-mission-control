@@ -93,7 +93,7 @@ test("the owner's tighter pitch: 52 between cards, 84 where App check's passed l
   expect(gaps).toEqual([52, 52, 52, 84, 52, 52]);
 });
 
-test("App check's steps open their screens, check-app's among them; a nested one opens under the workflow that declares it", () => {
+test("App check's steps open their screens, check-app's among them; Review's open their places", () => {
   expect(stepLinks(card('app'), null).map((l) => l.href)).toEqual([
     '/steps/archon-loop/briefs',
     '/steps/archon-loop/check-app',
@@ -101,8 +101,8 @@ test("App check's steps open their screens, check-app's among them; a nested one
     '/steps/archon-loop/handoff',
   ]);
   expect(stepLinks(card('review'), 'abc').map((l) => l.href)).toEqual([
-    '/steps/archon-deliver-block/rounds%2Freview?at=abc',
-    '/steps/archon-deliver-block/rounds%2Frereview?at=abc',
+    '/steps/archon-loop/ship%2Fdeliver%2Frounds%2Freview?at=abc',
+    '/steps/archon-loop/ship%2Fdeliver%2Frounds%2Frereview?at=abc',
   ]);
 });
 

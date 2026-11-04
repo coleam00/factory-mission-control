@@ -25,8 +25,6 @@ export interface LapMapRow {
   depends_on: string[] | null;
   when_condition?: string | null;
   trigger_rule?: string | null;
-  detail_workflow: string;
-  detail_path: string;
 }
 
 /** What happened to a step in this lap. */
@@ -110,8 +108,6 @@ export function lapGraph(map: readonly LapMapRow[], attempts: readonly StepAttem
     depends_on: r.depends_on,
     when_condition: r.when_condition ?? null,
     trigger_rule: r.trigger_rule ?? null,
-    detail_workflow: r.detail_workflow,
-    detail_path: r.detail_path,
   }));
   const known = new Set(map.map((r) => r.path));
   // Every step id at its pinned path, resolved before the steps the map lacks are added.
@@ -145,8 +141,6 @@ export function lapGraph(map: readonly LapMapRow[], attempts: readonly StepAttem
           step_id: name,
           kind: '',
           depends_on: previous === undefined || previous === name ? [] : [previous],
-          detail_workflow: 'archon-loop',
-          detail_path: path,
         });
         known.add(path);
         offMap.add(path);

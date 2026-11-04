@@ -7,7 +7,6 @@ import {
   type FactoryMap,
   LINE_STYLES,
   ROLES,
-  screenOf,
 } from '../app/map/factory-map';
 import { type PackVersion, parsePack, type Step } from '../parsers/pack';
 import { failing, type Main, noArguments, runCli } from './lib/cli';
@@ -27,23 +26,6 @@ function nodesByPath(steps: readonly Step[], into = new Map<string, Step>()): Ma
     nodesByPath(step.steps, into);
   }
   return into;
-}
-
-/**
- * Where a node's own screen is: under the workflow that declares it, at its path below the include
- * that expanded it there, as the home map's step links have always opened it.
- */
-function ownScreen(workflow: string, nodes: ReadonlyMap<string, Step>, path: string) {
-  const node = nodes.get(path) as Step;
-  if (node.definedIn === workflow) return { workflow, path };
-  const parts = path.split('/');
-  for (let depth = parts.length - 1; depth > 0; depth--) {
-    const include = parts.slice(0, depth).join('/');
-    if (nodes.get(include)?.include === node.definedIn) {
-      return { workflow: node.definedIn, path: parts.slice(depth).join('/') };
-    }
-  }
-  return { workflow: node.definedIn, path };
 }
 
 /** The values the owner's JSON holds outside the closed sets the drawing indexes by. */
@@ -86,14 +68,6 @@ export function mapCheck(map: FactoryMap, pack: PackVersion): string[] {
         if (!nodes.has(step)) {
           if (cover.workflow === 'archon-loop' && step === STEP_THE_PACK_LACKS) continue;
           failures.push(`${card.title} names ${cover.workflow} ${step}, which the pack lacks`);
-          continue;
-        }
-        const own = ownScreen(cover.workflow, nodes, step);
-        const named = screenOf(cover, step);
-        if (named.workflow !== own.workflow || named.path !== own.path) {
-          failures.push(
-            `${card.title} opens ${cover.workflow} ${step} at ${named.workflow} ${named.path}, not its own screen ${own.workflow} ${own.path}`,
-          );
         }
       }
     }

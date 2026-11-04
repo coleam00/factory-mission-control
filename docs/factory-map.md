@@ -14,8 +14,8 @@ Change what the map says there; the React components (`app/components/FactoryMap
 
 A card's `covers` lists, per workflow, the steps it covers. Each entry covers that step and every
 step under it; a step under two entries belongs to the deeper one, so Build covers `ship` and
-Review the two review rounds inside it. An entry an include expanded names its own screen
-(`screens`), under the workflow that declares it.
+Review the two review rounds inside it. Each entry's step link opens that step's place in the
+covered workflow.
 
 ## Size and readability (owner deviation from the mockup)
 

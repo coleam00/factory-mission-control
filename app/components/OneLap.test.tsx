@@ -122,15 +122,13 @@ const mapRow = (path: string, position: number, over: Partial<LapMapRow> = {}): 
     step_id: parts.at(-1) as string,
     kind: 'prompt',
     depends_on: [],
-    detail_workflow: 'archon-loop',
-    detail_path: path,
     ...over,
   };
 };
 const map: LapMapRow[] = [
   mapRow('pick', 1),
   mapRow('ship', 2, { kind: 'include', depends_on: ['pick'] }),
-  mapRow('ship/intel', 3, { detail_workflow: 'archon-ship-block', detail_path: 'intel' }),
+  mapRow('ship/intel', 3),
   mapRow('ship/outcome', 4, { depends_on: ['intel'] }),
   mapRow('review', 5, { depends_on: ['ship'] }),
 ];

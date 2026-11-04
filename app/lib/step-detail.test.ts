@@ -1,10 +1,12 @@
 import { expect, test } from 'bun:test';
 import {
   dependents,
-  findStep,
+  isIncluded,
   joinParts,
   type NestingRow,
   nesting,
+  placeOf,
+  placesOf,
   type StepRow,
   stepHref,
   stepVersions,
@@ -38,11 +40,65 @@ function step(path: string, fields: Partial<StepRow> = {}): StepRow {
   };
 }
 
-test('a step is found by its workflow and its path in that workflow', () => {
-  const rows = [step('a'), step('a', { workflow: 'other' }), step('ship/a')];
-  expect(findStep(rows, 'wf', 'a')).toBe(rows[0]);
-  expect(findStep(rows, 'wf', 'ship/a')).toBe(rows[2]);
-  expect(findStep(rows, 'wf', 'missing')).toBeUndefined();
+test('a place is found through the includes and loop groups on its path', () => {
+  const rows = [
+    step('a'),
+    step('a', { workflow: 'other' }),
+    step('ship', { workflow: 'top', include: 'mid', position: 1 }),
+    step('rounds', { workflow: 'mid', kind: 'loop_group', position: 2 }),
+    step('rounds/review', { workflow: 'mid', include: 'leaf', position: 3 }),
+    step('code', { workflow: 'leaf', position: 4 }),
+  ];
+  expect(placeOf(rows, 'wf', 'a')?.step).toBe(rows[0]);
+  expect(placeOf(rows, 'wf', 'a')?.around).toEqual([]);
+  const placed = placeOf(rows, 'top', 'ship/rounds/review/code');
+  expect(placed?.step).toBe(rows[5]);
+  expect(placed?.around.map((e) => [e.path, e.row])).toEqual([
+    ['ship', rows[2]],
+    ['ship/rounds', rows[3]],
+    ['ship/rounds/review', rows[4]],
+  ]);
+});
+
+test('a path with a missing segment, or one through a plain step, is no place', () => {
+  const rows = [step('a'), step('ship', { include: 'leaf' }), step('code', { workflow: 'leaf' })];
+  expect(placeOf(rows, 'wf', 'missing')).toBeUndefined();
+  expect(placeOf(rows, 'wf', 'ship/missing')).toBeUndefined();
+  expect(placeOf(rows, 'wf', 'a/code')).toBeUndefined();
+});
+
+test('places are by top-level workflow, then declaration order, not by step id', () => {
+  const rows = [
+    step('zeta', { workflow: 'top', include: 'block', position: 1 }),
+    step('alpha', { workflow: 'top', include: 'block', position: 2 }),
+    step('main', { workflow: 'app', include: 'block', position: 5 }),
+    step('code', { workflow: 'block' }),
+  ];
+  expect(isIncluded(rows, 'block')).toBe(true);
+  expect(isIncluded(rows, 'top')).toBe(false);
+  expect(placesOf(rows, 'block', 'code')).toEqual([
+    { workflow: 'app', path: 'main/code' },
+    { workflow: 'top', path: 'zeta/code' },
+    { workflow: 'top', path: 'alpha/code' },
+  ]);
+});
+
+test('a step in a workflow nothing includes is its own only place', () => {
+  expect(placesOf([step('a')], 'wf', 'a')).toEqual([{ workflow: 'wf', path: 'a' }]);
+});
+
+test('a place two includes deep is found through each intermediate block', () => {
+  const rows = [
+    step('ship', { workflow: 'top', include: 'mid', position: 1 }),
+    step('deliver', { workflow: 'mid', include: 'leaf', position: 2 }),
+    step('deliver', { workflow: 'mid2', include: 'leaf', position: 1 }),
+    step('regress', { workflow: 'top', include: 'mid2', position: 3 }),
+    step('code', { workflow: 'leaf' }),
+  ];
+  expect(placesOf(rows, 'leaf', 'code')).toEqual([
+    { workflow: 'top', path: 'ship/deliver/code' },
+    { workflow: 'top', path: 'regress/deliver/code' },
+  ]);
 });
 
 test('outputs are the steps of the same scope that depend on it, in declaration order', () => {
@@ -74,23 +130,8 @@ test('parts join in part order per file, and a missing part text joins as nothin
   );
 });
 
-function nested(
-  relation: NestingRow['relation'],
-  workflow: string,
-  path: string,
-  position: number,
-  open: [string, string],
-): NestingRow {
-  return {
-    relation,
-    workflow,
-    path,
-    position,
-    step_id: path.slice(path.lastIndexOf('/') + 1),
-    kind: 'command',
-    open_workflow: open[0],
-    open_path: open[1],
-  };
+function nested(path: string, position: number): NestingRow {
+  return { path, position, step_id: path.slice(path.lastIndexOf('/') + 1), kind: 'command' };
 }
 
 test("a nested path's slash is encoded in the step's link", () => {
@@ -107,22 +148,16 @@ test("a step's link keeps the version it is opened at, and has none for the curr
   expect(stepHref('archon-loop', 'review', '')).toBe('/steps/archon-loop/review');
 });
 
-test("nesting's links open each screen at the version the step is opened at", () => {
-  const { inside, includedAt } = nesting(
-    [
-      nested('inside', 'archon-ship-block', 'deliver/rounds/implement', 2, [
-        'archon-deliver-block',
-        'rounds/implement',
-      ]),
-      nested('included_at', 'archon-loop', 'ship/deliver', 4, ['archon-loop', 'ship']),
-    ],
-    step('deliver', { workflow: 'archon-ship-block' }),
+test("nesting's links open each node's place in the address's workflow at the version", () => {
+  const { inside } = nesting(
+    [nested('ship/deliver/rounds/implement', 2)],
+    'archon-loop',
+    'ship/deliver',
     'p1',
   );
   expect(inside.map((node) => node.href)).toEqual([
-    '/steps/archon-deliver-block/rounds%2Fimplement?at=p1',
+    '/steps/archon-loop/ship%2Fdeliver%2Frounds%2Fimplement?at=p1',
   ]);
-  expect(includedAt.map((place) => place.href)).toEqual(['/steps/archon-loop/ship?at=p1']);
 });
 
 test('the versions a step opens at are newest first, the current one marked, a bare pin not recorded', () => {
@@ -153,69 +188,26 @@ test('a sentence names the version the step is shown at', () => {
 });
 
 test('repeated occurrences beneath a step are two entries, by their path beneath it, in order', () => {
-  const deliver = step('deliver', { workflow: 'archon-ship-block' });
   const { inside } = nesting(
     [
-      nested('inside', 'archon-ship-block', 'deliver/rounds/reshape/implement', 7, [
-        'archon-implement',
-        'implement',
-      ]),
-      nested('inside', 'archon-ship-block', 'deliver/rounds/implement', 2, [
-        'archon-deliver-block',
-        'rounds/implement',
-      ]),
-      nested('inside', 'archon-ship-block', 'deliver/rounds/implement/implement', 3, [
-        'archon-implement',
-        'implement',
-      ]),
+      nested('deliver/rounds/reshape/implement', 7),
+      nested('deliver/rounds/implement', 2),
+      nested('deliver/rounds/implement/implement', 3),
     ],
-    deliver,
+    'archon-ship-block',
+    'deliver',
   );
-  expect(inside).toEqual([
-    {
-      label: 'rounds/implement',
-      depth: 1,
-      kind: 'command',
-      href: '/steps/archon-deliver-block/rounds%2Fimplement',
-    },
-    {
-      label: 'rounds/implement/implement',
-      depth: 2,
-      kind: 'command',
-      href: '/steps/archon-implement/implement',
-    },
-    {
-      label: 'rounds/reshape/implement',
-      depth: 2,
-      kind: 'command',
-      href: '/steps/archon-implement/implement',
-    },
-  ]);
-});
-
-test('the places an include puts a step are by workflow, then in declaration order', () => {
-  const implement = step('implement', { workflow: 'archon-implement' });
-  const { inside, includedAt } = nesting(
+  expect(inside.map((node) => [node.label, node.depth, node.href])).toEqual([
+    ['rounds/implement', 1, '/steps/archon-ship-block/deliver%2Frounds%2Fimplement'],
     [
-      nested('included_at', 'archon-ship-block', 'deliver/rounds/implement/implement', 5, [
-        'archon-deliver-block',
-        'rounds/implement',
-      ]),
-      nested('included_at', 'archon-deliver-block', 'rounds/reshape/implement', 9, [
-        'archon-deliver-block',
-        'rounds/reshape',
-      ]),
-      nested('included_at', 'archon-deliver-block', 'rounds/implement/implement', 3, [
-        'archon-deliver-block',
-        'rounds/implement',
-      ]),
+      'rounds/implement/implement',
+      2,
+      '/steps/archon-ship-block/deliver%2Frounds%2Fimplement%2Fimplement',
     ],
-    implement,
-  );
-  expect(inside).toEqual([]);
-  expect(includedAt.map((place) => `${place.workflow} ${place.path} ${place.href}`)).toEqual([
-    'archon-deliver-block rounds/implement/implement /steps/archon-deliver-block/rounds%2Fimplement',
-    'archon-deliver-block rounds/reshape/implement /steps/archon-deliver-block/rounds%2Freshape',
-    'archon-ship-block deliver/rounds/implement/implement /steps/archon-deliver-block/rounds%2Fimplement',
+    [
+      'rounds/reshape/implement',
+      2,
+      '/steps/archon-ship-block/deliver%2Frounds%2Freshape%2Fimplement',
+    ],
   ]);
 });

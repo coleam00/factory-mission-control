@@ -202,17 +202,7 @@
       "covers": [
         {
           "workflow": "archon-loop",
-          "steps": ["ship/deliver/rounds/review", "ship/deliver/rounds/rereview"],
-          "screens": {
-            "ship/deliver/rounds/review": {
-              "workflow": "archon-deliver-block",
-              "path": "rounds/review"
-            },
-            "ship/deliver/rounds/rereview": {
-              "workflow": "archon-deliver-block",
-              "path": "rounds/rereview"
-            }
-          }
+          "steps": ["ship/deliver/rounds/review", "ship/deliver/rounds/rereview"]
         }
       ],
       "details": {
