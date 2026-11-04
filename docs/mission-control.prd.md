@@ -312,7 +312,7 @@ and the judgement quoted.
 On the seed data, a live panel's speed is judged on the app's own work: its query's `EXPLAIN ANALYZE`
 execution takes under 100 ms, and its rows are on screen within 500 ms of the first snapshot arriving
 (decode and render). Everything between the subscribe and that first snapshot is Neon's (connection,
-first-subscribe warm-up, delivery): it is recorded but not judged, except that every home-screen panel
+first-subscribe warm-up, delivery): it is recorded but not judged, except that every live panel
 shows `data-state="ready"` within 2000 ms of navigation.
 
 ### 8.5 What the checks cannot see, and who owns it
