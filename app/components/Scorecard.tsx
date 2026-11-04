@@ -389,10 +389,10 @@ function Difference({
   const d = difference(a, b);
   const value = d === null ? 'n/a' : formatSigned(d, written(unit));
   const isMeaningful = meaningful(a, b);
-  // Better is green and worse red, whichever way the measure counts; no change, or a measure
-  // that is neither, stays neutral.
+  // Better is green and worse red, whichever way the measure counts; no change, a measure that is
+  // neither, or a difference not yet meaningful stays neutral (too few laps is not a failure).
   const verdict =
-    d === null || d === 0 || better === null
+    d === null || d === 0 || better === null || !isMeaningful
       ? null
       : d > 0 === (better === 'up')
         ? 'var(--success)'
@@ -420,7 +420,7 @@ function Difference({
         </span>
       </div>
       {isMeaningful ? null : (
-        <div className="mt-1 font-mono text-[11px] font-semibold uppercase tracking-[0.05em] text-warning">
+        <div className="mt-1 font-mono text-[11px] font-semibold uppercase tracking-[0.05em] text-text-secondary">
           not yet meaningful
         </div>
       )}

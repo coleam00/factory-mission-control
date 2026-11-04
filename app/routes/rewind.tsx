@@ -6,7 +6,7 @@ import { useLive } from '../live/LiveProvider';
 export default function Rewind(): ReactElement {
   const live = useLive();
   return (
-    <main className="mx-auto max-w-6xl px-6 py-6">
+    <main data-v1-screen="rewind" className="mx-auto max-w-6xl px-6 py-6">
       <RewindBranches factory={useFactory()} shown={live.status === 'ready' ? live.rewind : null} />
     </main>
   );

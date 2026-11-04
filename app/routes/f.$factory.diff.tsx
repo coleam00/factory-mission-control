@@ -5,7 +5,7 @@ import { ArchDiff } from '../components/ArchDiff';
 export default function Diff(): ReactElement {
   const [search] = useSearchParams();
   return (
-    <main className="mx-auto max-w-6xl px-6 py-6">
+    <main data-v1-screen="diff" className="mx-auto max-w-6xl px-6 py-6">
       <ArchDiff factory={useParams().factory} a={search.get('a')} b={search.get('b')} />
     </main>
   );

@@ -4,7 +4,7 @@ import { Testing } from '../components/Testing';
 
 export default function TestingScreen(): ReactElement {
   return (
-    <main className="mx-auto max-w-6xl px-6 py-6">
+    <main data-v1-screen="testing" className="mx-auto max-w-6xl px-6 py-6">
       <Testing factory={useParams().factory} />
     </main>
   );
