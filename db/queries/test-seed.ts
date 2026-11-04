@@ -5,7 +5,7 @@ import { REPO_ROOT } from '../../scripts/lib/cli';
 import type { Db } from '../../scripts/lib/db';
 import { runMigrations } from '../../scripts/migrate';
 import { loadLiveQueries } from '../../server/live';
-import { archonDb, migrationFiles } from '../test-db';
+import { archonDb, migrationFiles, type TestDb } from '../test-db';
 
 /** Every live query in db/queries/, by name. */
 export const queries = [...loadLiveQueries(import.meta.dir)];
@@ -42,7 +42,7 @@ export const SEED = readFileSync(join(REPO_ROOT, 'fixtures', 'seed.sql'), 'utf8'
 export const onTheSeed = (): Promise<Db> => seededDb(REPO_ROOT, SEED);
 
 /** A fresh database with every migration applied and no rows. */
-export async function migratedDb(): Promise<Db> {
+export async function migratedDb(): Promise<TestDb> {
   const db = await archonDb();
   await runMigrations({ files: migrationFiles, db });
   return db;
