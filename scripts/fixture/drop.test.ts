@@ -3,6 +3,7 @@ import { existsSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { CHECK_ENV_FILE } from '../../server/check-env';
 import { defaultLeaseDir, LEASE_MS, writeLease } from '../../server/check-lease';
+import type { RunStatus } from '../lib/archon-run';
 import { hoursAgo, NOW, recordingDeps, scratchRepo } from '../lib/test-deps';
 import { branchesToDrop, main } from './drop';
 
@@ -16,6 +17,10 @@ function repo(checkEnv?: Record<string, string>): string {
   scratch.push(dir);
   return dir;
 }
+
+const RUN = 'run-1f15f9a4';
+const ACTIVE: RunStatus = { state: 'active' };
+const ENDED: RunStatus = { state: 'ended' };
 
 const BRANCHES = [
   { id: 'br-main', name: 'main', created_at: hoursAgo(72) },
@@ -320,12 +325,13 @@ test('--dry-run --at refuses MC_CHECK_BRANCH=main before any Neon call', async (
 });
 
 /** Checkout A owns check-abc; another checkout on this machine owns check-old, 4 hours old. */
-function anotherCheckoutOwnsCheckOld() {
+function anotherCheckoutOwnsCheckOld(runStatus?: (run: string) => RunStatus) {
   const leaseDir = repo();
   const a = recordingDeps({
     repoRoot: repo({ MC_CHECK_BRANCH: 'check-abc' }),
     branches: BRANCHES,
     leaseDir,
+    runStatus,
   });
   return { leaseDir, a, lease: (branch: string) => join(leaseDir, `${branch}.lease`) };
 }
@@ -336,6 +342,24 @@ test("a running lap's old branch survives another checkout's fixture:drop", asyn
   expect(await main([], a.deps)).toBe(0);
   expect(a.mutatingCalls).toEqual(['deleteBranch check-abc']);
   expect(existsSync(lease('check-old'))).toBe(true);
+});
+
+test("a running lap's old branch survives however long it went without touching its database", async () => {
+  const { leaseDir, a, lease } = anotherCheckoutOwnsCheckOld(() => ACTIVE);
+  writeLease(leaseDir, 'check-old', new Date(hoursAgo(5)), RUN);
+  expect(await main([], a.deps)).toBe(0);
+  expect(a.mutatingCalls).toEqual(['deleteBranch check-abc']);
+  expect(a.runStatusCalls).toEqual([RUN]);
+  expect(existsSync(lease('check-old'))).toBe(true);
+
+  const dry = recordingDeps({
+    repoRoot: repo({ MC_CHECK_BRANCH: 'check-abc' }),
+    branches: BRANCHES,
+    leaseDir,
+    runStatus: () => ACTIVE,
+  });
+  expect(await main(['--dry-run', '--at', hoursAfter(100)], dry.deps)).toBe(0);
+  expect(dry.out).toEqual(['would delete check-new', 'would delete check-abc']);
 });
 
 test('a lease directory that cannot be listed stops drop before any Neon call', async () => {
@@ -357,6 +381,36 @@ test("an ended run's old branch is deleted, and its lease with it", async () => 
   expect(await main([], a.deps)).toBe(0);
   expect(a.mutatingCalls).toEqual(['deleteBranch check-old', 'deleteBranch check-abc']);
   expect(existsSync(lease('check-old'))).toBe(false);
+});
+
+test("an ended run's old branch is deleted, and its lease with it, when its lease names the run", async () => {
+  const { leaseDir, a, lease } = anotherCheckoutOwnsCheckOld(() => ENDED);
+  writeLease(leaseDir, 'check-old', new Date(hoursAgo(5)), RUN);
+  expect(await main([], a.deps)).toBe(0);
+  expect(a.mutatingCalls).toEqual(['deleteBranch check-old', 'deleteBranch check-abc']);
+  expect(a.runStatusCalls).toEqual([RUN]);
+  expect(existsSync(lease('check-old'))).toBe(false);
+});
+
+test('an old branch is kept, with a warning, when Archon cannot say its run ended', async () => {
+  const { leaseDir, a, lease } = anotherCheckoutOwnsCheckOld();
+  writeLease(leaseDir, 'check-old', new Date(hoursAgo(5)), RUN);
+  expect(await main([], a.deps)).toBe(0);
+  expect(a.mutatingCalls).toEqual(['deleteBranch check-abc']);
+  expect(existsSync(lease('check-old'))).toBe(true);
+  expect(a.err.join('\n')).toContain(
+    `kept check-old: cannot tell whether run ${RUN} that owns it is still running`,
+  );
+});
+
+test('Archon is not asked about a recently refreshed lease, a young branch or this checkout', async () => {
+  const { leaseDir, a } = anotherCheckoutOwnsCheckOld(() => ACTIVE);
+  writeLease(leaseDir, 'check-old', new Date(hoursAgo(1 / 6)), RUN);
+  writeLease(leaseDir, 'check-new', new Date(hoursAgo(5)), RUN);
+  writeLease(leaseDir, 'check-abc', new Date(hoursAgo(5)), RUN);
+  expect(await main([], a.deps)).toBe(0);
+  expect(a.runStatusCalls).toEqual([]);
+  expect(a.mutatingCalls).toEqual(['deleteBranch check-abc']);
 });
 
 test("this checkout's own branch is deleted whatever its lease says, and its lease with it", async () => {
@@ -408,17 +462,22 @@ test('a lease is live until exactly LEASE_MS after its last refresh, and only fo
   expect(branchesToDrop(old, undefined, NOW, refreshed(0))).toEqual([]);
   expect(branchesToDrop(old, undefined, NOW, refreshed(-1))).toEqual(old);
   expect(branchesToDrop(old, undefined, NOW, refreshed(0, 'check-new'))).toEqual(old);
+  const named = [{ ...refreshed(-1)[0], run: RUN }];
+  expect(branchesToDrop(old, undefined, NOW, named, NOW, new Set([RUN]))).toEqual([]);
+  expect(branchesToDrop(old, undefined, NOW, named, NOW, new Set())).toEqual(old);
 });
 
 test('--help states the lease rule', async () => {
   const run = recordingDeps({ repoRoot: repo() });
   expect(await main(['--help'], run.deps)).toBe(0);
   const usage = run.out.join('\n');
-  expect(usage).toContain('unless the checkout that owns it still uses it');
+  expect(usage).toContain('unless the run or checkout that owns it still uses it');
   expect(usage).toContain(`Ownership is a lease in ${defaultLeaseDir()}:`);
-  expect(usage).toContain('an old branch whose lease was refreshed less than an hour ago is kept');
+  expect(usage).toContain('naming the Archon run it runs in (WORKFLOW_ID) when there is one');
+  expect(usage).toContain('while the run its lease names is pending, running or paused');
+  expect(usage).toContain('drop asks Archon, read-only');
   expect(usage).toContain('`serve` while it runs refresh it');
-  expect(usage).toContain('only age is judged at <time>: a lease is judged now');
-  expect(usage).toContain('a branch whose lease is live now is not listed at any <time>');
+  expect(usage).toContain('only age is judged at <time>: a lease and its run are judged now');
+  expect(usage).toContain('or whose run is still running now, is not listed at any <time>');
   expect(usage).toContain('a young check-* branch it created that has no live lease');
 });

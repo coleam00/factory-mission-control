@@ -2,6 +2,7 @@ import { resolve } from 'node:path';
 import { createGitHub, type GetFetch, type GitHub } from '../../function/github';
 import { type Env, loadCheckEnv } from '../../server/check-env';
 import { defaultLeaseDir, refreshLease } from '../../server/check-lease';
+import { askArchon, type RunStatus } from './archon-run';
 import { type OpenDb, openDb } from './db';
 import { RefusedBranch, requireCheckBranch } from './guard';
 import { createNeonApi, type NeonApi, type Sleep } from './neon';
@@ -31,6 +32,8 @@ export type Deps = {
    * connection string's `&` to the Windows `.cmd` shim.
    */
   neonctl: (args: string[]) => Promise<NeonctlResult>;
+  /** Asks Archon, read-only, whether run `run` is still active (`fixture:drop`). */
+  runStatus: (run: string) => Promise<RunStatus>;
 };
 
 export type NeonctlResult = { code: number; stdout: string; stderr: string };
@@ -75,6 +78,7 @@ export function defaultDeps(): Deps {
     err: (line) => console.error(line),
     confirmOwner: confirmOwnerAtTerminal,
     neonctl: runNeonctl,
+    runStatus: (run) => askArchon(Bun.env, REPO_ROOT, run),
   };
 }
 
