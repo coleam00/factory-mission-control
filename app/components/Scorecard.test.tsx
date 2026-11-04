@@ -209,6 +209,12 @@ test('a worse difference not yet meaningful is neutral, not red; a meaningful on
   expect(full.some((d) => d.body.includes('text-error'))).toBe(true);
 });
 
+test('a better difference not yet meaningful stays green', () => {
+  const thin = differences(render([...laps(V1, 12, 1), ...laps(V2, 9, 6)], V1, V2));
+  expect(thin.every((d) => d.body.includes('not yet meaningful'))).toBe(true);
+  expect(thin.some((d) => d.body.includes('text-success'))).toBe(true);
+});
+
 test('with no version picked, it opens on the newest version with laps and says which', () => {
   const rows = [
     ...laps(V1, 2, 1),

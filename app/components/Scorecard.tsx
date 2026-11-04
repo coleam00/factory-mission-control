@@ -392,13 +392,16 @@ function Difference({
   const d = difference(a, b);
   const value = d === null ? 'n/a' : formatSigned(d, written(unit));
   // Better is green and worse red, whichever way the measure counts; no change, a measure that
-  // is neither, or a difference not yet meaningful stays neutral: red is for real failures.
+  // is neither stays neutral; a worse difference not yet meaningful is neutral too, since red
+  // is for real failures.
   const verdict =
-    d === null || d === 0 || better === null || !isMeaningful
+    d === null || d === 0 || better === null
       ? null
       : d > 0 === (better === 'up')
         ? 'var(--success)'
-        : 'var(--error)';
+        : isMeaningful
+          ? 'var(--error)'
+          : null;
   const color = verdict ?? 'var(--text-secondary)';
   return (
     <div
