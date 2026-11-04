@@ -8,6 +8,7 @@ import {
   selectableVersions,
   testingChip,
   togglePair,
+  unavailableDigests,
 } from './changes';
 import type { LedgerRow, TimelineRow } from './decisions-ledger';
 import type { ScorecardRow } from './scorecard';
@@ -195,6 +196,18 @@ test('a pair from the address is sorted, and unknown digests are dropped', () =>
   expect(resolvePair(items, [], 'sha256:nope', V2)).toEqual({ a: V2, isDefault: false });
   const rows = [...scorecardRows([V1]), withLaps(V1, 'r1')];
   expect(resolvePair(items, rows, 'x', 'y')).toEqual({ a: V1, isDefault: true });
+});
+
+test('an address digest is absent unless the scorecard owner accepts it, and then unplaced', () => {
+  const ghost = 'sha256:nope';
+  const lapOnly = 'sha256:laponly';
+  const rows = [...scorecardRows([V1]), withLaps(lapOnly, 'rl')];
+  expect(unavailableDigests(items, rows, ghost, lapOnly)).toEqual({
+    absent: [ghost],
+    unplaced: [lapOnly],
+  });
+  expect(unavailableDigests(items, rows, V1, V2)).toEqual({ absent: [], unplaced: [] });
+  expect(unavailableDigests(items, rows, null, null)).toEqual({ absent: [], unplaced: [] });
 });
 
 test('toggling unchecks one, adds a second, and replaces the older of two', () => {

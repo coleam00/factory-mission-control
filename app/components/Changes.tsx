@@ -7,9 +7,10 @@ import {
   previousDigest,
   resolvePair,
   selectableVersions,
-  unknownDigests,
   testingChip,
   togglePair,
+  type Unavailable,
+  unavailableDigests,
 } from '../lib/changes';
 import type { LedgerRow, TimelineRow, VerdictEntry } from '../lib/decisions-ledger';
 import { type ScorecardRow, versionPin } from '../lib/scorecard';
@@ -152,7 +153,7 @@ export function Changes({
                 state={state}
                 pair={resolvePair(items, rows, a, b)}
                 selectable={selectableVersions(items)}
-                missing={unknownDigests(items, a, b)}
+                unavailable={unavailableDigests(items, rows ?? [], a, b)}
               />
             )}
           </>
@@ -405,6 +406,13 @@ function DecisionBody({ decision, note }: { decision: TimelineRow; note?: string
   );
 }
 
+/** "<digest> <one>." for one digest, "<digest> and <digest> <many>." for two; nothing for none. */
+function sentence(digests: readonly string[], one: string, many: string): string[] {
+  const [first, second] = digests.map(shortDigest);
+  if (first === undefined) return [];
+  return [second === undefined ? `${first} ${one}.` : `${first} and ${second} ${many}.`];
+}
+
 /** The scorecard of the pair, under the timeline, with the way to the workflows that changed. */
 export function Comparison({
   factory,
@@ -412,7 +420,7 @@ export function Comparison({
   state,
   pair,
   selectable,
-  missing,
+  unavailable,
 }: {
   factory: string;
   rows: readonly ScorecardRow[] | undefined;
@@ -420,22 +428,26 @@ export function Comparison({
   pair: Pair & { isDefault: boolean };
   /** How many versions have run and so have a box to check. */
   selectable: number;
-  /** The digests the address names that are not versions of this factory. */
-  missing: readonly string[];
+  /** The digests the address names that the pair leaves out. */
+  unavailable: Unavailable;
 }): ReactElement | null {
   if (state === 'error') {
     return <p className="text-sm text-text-secondary">Live data is unavailable.</p>;
   }
   if (rows === undefined)
     return <p className="text-sm text-text-secondary">Loading the scorecard.</p>;
-  const [firstMissing, secondMissing] = missing.map(shortDigest);
+  const reasons = [
+    ...sentence(
+      unavailable.absent,
+      'is not a version of this factory',
+      'are not versions of this factory',
+    ),
+    ...sentence(unavailable.unplaced, 'is not on the timeline yet', 'are not on the timeline yet'),
+  ];
   const notice =
-    firstMissing === undefined ? null : (
+    reasons.length === 0 ? null : (
       <p data-missing-version className="mb-3 text-sm text-text-secondary">
-        The linked comparison is unavailable:{' '}
-        {secondMissing === undefined
-          ? `${firstMissing} is not a version of this factory.`
-          : `${firstMissing} and ${secondMissing} are not versions of this factory.`}
+        The linked comparison is unavailable: {reasons.join(' ')}
       </p>
     );
   if (pair.a === undefined) {

@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { createMemoryRouter, RouterProvider } from 'react-router';
-import { type ChangeItem, changeTimeline, unknownDigests } from '../lib/changes';
+import { type ChangeItem, changeTimeline } from '../lib/changes';
 import type { LedgerRow, TimelineRow } from '../lib/decisions-ledger';
 import type { VersionStripRow } from '../lib/version-strip';
 import { ChangeTimeline, Comparison } from './Changes';
@@ -124,7 +124,7 @@ test('the comparison links the diff of the pair and uses no amber', () => {
           state="ready"
           pair={{ a: V1, b: V2, isDefault: false }}
           selectable={2}
-          missing={[]}
+          unavailable={{ absent: [], unplaced: [] }}
         />
       ),
     },
@@ -151,7 +151,7 @@ test('with one selectable version the comparison says there is nothing to compar
                 state="ready"
                 pair={{ a: V1, isDefault: true }}
                 selectable={selectable}
-                missing={[]}
+                unavailable={{ absent: [], unplaced: [] }}
               />
             ),
           },
@@ -177,7 +177,7 @@ test('with zero selectable versions the comparison still renders and says there 
               state="ready"
               pair={{ isDefault: true }}
               selectable={0}
-              missing={[]}
+              unavailable={{ absent: [], unplaced: [] }}
             />
           ),
         },
@@ -200,11 +200,8 @@ test('a version row shows its short digest so versions on one pin differ', () =>
   expect(li(html, `data-digest="${V2}"`)).toContain(V2.slice(0, 19));
 });
 
-test('a linked comparison naming a version the factory lacks says so', () => {
-  const ghost = `sha256:${'c3'.repeat(32)}`;
-  expect(unknownDigests(items, ghost, V1)).toEqual([ghost]);
-  expect(unknownDigests(items, V1, V2)).toEqual([]);
-  const html = renderToStaticMarkup(
+const view = (unavailable: { absent: string[]; unplaced: string[] }) =>
+  renderToStaticMarkup(
     <RouterProvider
       router={createMemoryRouter([
         {
@@ -216,14 +213,26 @@ test('a linked comparison naming a version the factory lacks says so', () => {
               state="ready"
               pair={{ a: V1, isDefault: false }}
               selectable={2}
-              missing={[ghost]}
+              unavailable={unavailable}
             />
           ),
         },
       ])}
     />,
   );
-  expect(html).toContain(
+
+test('a linked comparison naming a version the factory lacks says so', () => {
+  const ghost = `sha256:${'c3'.repeat(32)}`;
+  expect(view({ absent: [ghost], unplaced: [] })).toContain(
     `The linked comparison is unavailable: ${ghost.slice(0, 19)} is not a version of this factory.`,
   );
+  expect(view({ absent: [], unplaced: [] })).not.toContain('data-missing-version');
+});
+
+test('both reasons are told, each with its own digests', () => {
+  const ghost = `sha256:${'c3'.repeat(32)}`;
+  const lapOnly = `sha256:${'d4'.repeat(32)}`;
+  const html = view({ absent: [ghost], unplaced: [lapOnly] });
+  expect(html).toContain(`${ghost.slice(0, 19)} is not a version of this factory.`);
+  expect(html).toContain(`${lapOnly.slice(0, 19)} is not on the timeline yet.`);
 });

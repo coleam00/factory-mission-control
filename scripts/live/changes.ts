@@ -210,6 +210,24 @@ export function changesPhase(ctx: LiveContext): LivePhase {
       if (href !== `/f/${factory}/diff?${pair}`) {
         failures.push(`the workflows link is ${href}, expected /f/${factory}/diff?${pair}`);
       }
+
+      const ghost = `sha256:${'0'.repeat(64)}`;
+      const ghostPage = await openReady(
+        deps,
+        base,
+        `${screen}?a=${encodeURIComponent(ghost)}&b=${encodeURIComponent(v2)}`,
+      );
+      const notice = await ghostPage.evaluate<string | null>(
+        `document.querySelector('[data-missing-version]')?.textContent ?? null`,
+      );
+      await ghostPage.close();
+      if (notice === null || !notice.includes('is not a version of this factory')) {
+        failures.push(
+          `an address naming an absent version shows no missing-version notice: ${notice}`,
+        );
+      } else if (notice.includes(v2.slice(0, 19))) {
+        failures.push(`the missing-version notice names a real version: ${notice}`);
+      }
     },
 
     async probe(designProbe) {

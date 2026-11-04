@@ -12,7 +12,7 @@ import {
   type TimelineRow,
   type VerdictEntry,
 } from './decisions-ledger';
-import { newestVersionWithLaps, type ScorecardRow } from './scorecard';
+import { isVersionOf, newestVersionWithLaps, type ScorecardRow } from './scorecard';
 import { NOT_RECORDED, type StripEntry, stripEntries, type VersionStripRow } from './version-strip';
 
 export type ChangeItem =
@@ -126,14 +126,26 @@ function inTimelineOrder(
     .sort((x, y) => order.indexOf(y) - order.indexOf(x));
 }
 
-/** The digests the address names (`a`, `b`) that are not versions on the timeline. */
-export function unknownDigests(
+/** The digests the address names (`a`, `b`) that the pair resolver drops, and why. */
+export interface Unavailable {
+  /** Not a version of this factory, by the owner the scorecard and diff screens use. */
+  absent: string[];
+  /** A version of this factory whose row is not on the timeline yet, so it cannot be paired. */
+  unplaced: string[];
+}
+
+export function unavailableDigests(
   items: readonly ChangeItem[],
+  rows: readonly ScorecardRow[],
   a: string | null,
   b: string | null,
-): string[] {
-  const known = new Set(digestsNewestFirst(items));
-  return [...new Set([a, b])].filter((d): d is string => d !== null && !known.has(d));
+): Unavailable {
+  const onTimeline = new Set(digestsNewestFirst(items));
+  const named = [...new Set([a, b])].filter((d): d is string => d !== null && !onTimeline.has(d));
+  return {
+    absent: named.filter((d) => !isVersionOf(rows, d)),
+    unplaced: named.filter((d) => isVersionOf(rows, d)),
+  };
 }
 
 /** The digest of the version row just older than `digest`, or null for the oldest or an unknown one. */
