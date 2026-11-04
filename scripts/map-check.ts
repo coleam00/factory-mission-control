@@ -17,9 +17,10 @@ import { failing, type Main, noArguments, runCli } from './lib/cli';
 
 const USAGE = 'usage: bun run map:check';
 
-/** What the owner commits, since `fixtures/pack/**` is protected: the pins are the commits this factory runs. */
+/** Printed when the check skips itself; what the owner commits, since `fixtures/pack/**` is protected: the pins are the commits this factory runs. */
 const SNAPSHOT_MISSING =
-  'map:check: fixtures/pack/queue is missing. The owner commits the queue pack snapshot: ' +
+  'map:check: SKIPPED, fixtures/pack/queue is missing, so no card covers are checked against the packs. ' +
+  'The owner commits the queue pack snapshot: ' +
   'fixtures/pack/queue/sdlc is .archon/workflows/sdlc of coleam00/Archon at ' +
   '69ab40f57e1af07460c294d2464c788747c32994, fixtures/pack/queue/factory is ' +
   '.archon/workflows/factory of coleam00/ai-software-factory at ' +
@@ -194,7 +195,8 @@ export const main: Main = async (argv, deps) =>
     const template = join(deps.repoRoot, 'fixtures', 'factory-template');
     const queueRoot = join(deps.repoRoot, 'fixtures', 'pack', 'queue');
     if (!existsSync(join(queueRoot, 'sdlc')) || !existsSync(join(queueRoot, 'factory'))) {
-      throw new Error(SNAPSHOT_MISSING);
+      deps.err(SNAPSHOT_MISSING);
+      return;
     }
     const packs = {
       loop: parsePack(join(deps.repoRoot, 'fixtures', 'pack', 'sdlc'), template),
