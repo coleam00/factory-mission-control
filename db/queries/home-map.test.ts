@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import type { HomeMapRow } from '../../app/map/live';
+import { QUEUE_RUNS } from '../../scripts/fixture/seed';
 import type { Db } from '../../scripts/lib/db';
 import { onTheSeed, queries } from './test-seed';
 
@@ -47,6 +48,72 @@ describe('home-map on the seed', () => {
     const row = (await rows()).find((r) => r.run_id === claimed?.run_id);
     expect(row).toMatchObject({ number: claimed?.issue_number, title: claimed?.title });
   });
+
+  test('a queue factory: its runs carry the issue of their number input, it is on the queues, one run waits, one merged two pulls', async () => {
+    const queue = await rows('queue-factory');
+    expect(await laps('queue-factory')).toEqual({
+      [QUEUE_RUNS.build]: 'archon-build-queue ',
+      [QUEUE_RUNS.review]: 'archon-build-queue ',
+      [QUEUE_RUNS.ask]: 'archon-build-queue ',
+    });
+    expect(
+      queue
+        .filter((r) => r.kind === 'lap')
+        .map((r) => [r.number, r.title])
+        .sort(),
+    ).toEqual([
+      [401, 'Queue issue 401'],
+      [402, 'Queue issue 402'],
+      [403, 'Queue issue 403'],
+    ]);
+    expect(queue.filter((r) => r.kind === 'queues')).toHaveLength(1);
+    expect(queue.filter((r) => r.kind === 'waiting')).toMatchObject([
+      { run_id: QUEUE_RUNS.waiting, workflow: 'archon-merge-queue', number: null },
+    ]);
+    expect(queue.filter((r) => r.kind === 'merged')).toMatchObject([
+      { run_id: QUEUE_RUNS.merged, prs: '[404, 405]' },
+    ]);
+  });
+
+  test('a factory on the old loop has no queues row, no waiting row and merges only through land', async () => {
+    for (const factory of ['mission-control', 'second-factory']) {
+      const kinds = new Set((await rows(factory)).map((r) => r.kind));
+      expect(kinds.has('queues')).toBe(false);
+      expect(kinds.has('waiting')).toBe(false);
+    }
+    expect((await rows()).filter((r) => r.kind === 'merged').every((r) => r.prs === null)).toBe(
+      true,
+    );
+  });
+
+  test('answering an attention wait takes the run off waiting', async () => {
+    await db.query(
+      `UPDATE remote_agent_workflow_runs
+         SET metadata = jsonb_set(metadata, '{wait,answer}', '{"text":"yes"}'::jsonb) WHERE id = $1`,
+      [QUEUE_RUNS.waiting],
+    );
+    try {
+      expect((await rows('queue-factory')).filter((r) => r.kind === 'waiting')).toEqual([]);
+    } finally {
+      await db.query(
+        `UPDATE remote_agent_workflow_runs SET metadata = metadata #- '{wait,answer}' WHERE id = $1`,
+        [QUEUE_RUNS.waiting],
+      );
+    }
+  });
+
+  test.each(['mission-control', 'queue-factory'])(
+    'runs in under 100 ms on the seed for %s',
+    async (factory) => {
+      const plan = await db.query(
+        `EXPLAIN ANALYZE ${sql}`.replace(/\$1/g, `'${factory}'`).replace(/\$2/g, "''"),
+      );
+      const time = plan
+        .map((r) => String(Object.values(r)[0]))
+        .find((line) => line.startsWith('Execution Time'));
+      expect(Number.parseFloat(time?.replace('Execution Time: ', '') ?? 'NaN')).toBeLessThan(100);
+    },
+  );
 
   test('failing: each open pull request whose latest app check is FAIL, as SQL over the seed says', async () => {
     const recount = await db.query(

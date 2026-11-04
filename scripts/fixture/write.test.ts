@@ -3,7 +3,7 @@ import { readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { REPO_ROOT } from '../lib/cli';
 import { DATABASE_URL, NOW, recordingDeps, scratchRepo } from '../lib/test-deps';
-import { eventData, main, structuredOutputFor } from './write';
+import { attentionWait, eventData, main, structuredOutputFor } from './write';
 
 const scratch: string[] = [];
 afterEach(() => {
@@ -211,4 +211,25 @@ test('a verdict judges the pin --pin names by prefix, and --pin is refused anywh
     expect(await main(argv, refused.deps)).toBe(2);
     expect(refused.opened).toEqual([]);
   }
+});
+
+describe('the attention kind', () => {
+  test('pauses the one running run it names on an open attention wait', async () => {
+    const run = recordingDeps({ repoRoot: repo(), rows: () => [{ id: 'run-1' }] });
+    expect(await main(['attention', '--run', 'run-1'], run.deps)).toBe(0);
+    expect(run.out).toEqual(['run run-1: running -> paused on attention']);
+    const at = run.sql.findIndex((sql) => sql.startsWith('UPDATE remote_agent_workflow_runs'));
+    expect(run.sql[at]).toContain("status = 'running'");
+    expect(run.params[at]?.[0]).toBe('run-1');
+    expect(run.params[at]?.[1]).toEqual(attentionWait(NOW.toISOString()));
+  });
+
+  test('refuses a run that is not running, and a missing --run', async () => {
+    const none = recordingDeps({ repoRoot: repo(), rows: () => [] });
+    expect(await main(['attention', '--run', 'run-1'], none.deps)).toBe(1);
+    expect(none.err.join('\n')).toContain('run run-1 is not a running run');
+    const bare = recordingDeps({ repoRoot: repo() });
+    expect(await main(['attention'], bare.deps)).toBe(2);
+    expect(bare.opened).toEqual([]);
+  });
 });

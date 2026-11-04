@@ -49,7 +49,7 @@ JOIN LATERAL (
 ) latest ON latest.overall = 'FAIL'
 WHERE pr.factory = $1 AND pr.state = 'open'
 UNION ALL
--- Each run of the factory waiting on a person, as it is now (the chip counts the factory, not a
+-- Each run of the factory waiting on a person (the chip counts the factory as it stands, not a
 -- version): a paused run whose attention wait has no answer. Only the issue's own title, never
 -- the wait's text.
 SELECT 'waiting', l.run_id, l.workflow_name, NULL, l.issue_number, i.title, i.url, NULL, NULL
@@ -58,7 +58,7 @@ LEFT JOIN mc.issues i ON i.factory = l.factory AND i.number = l.issue_number
 WHERE l.factory = $1 AND l.attention_open
 UNION ALL
 -- One row for a factory on the queues, which is one that has run a workflow only the queue pack
--- has; its attention items replace needs-owner.
+-- has, and its attention items replace needs-owner.
 SELECT 'queues', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL
 FROM mc.factories f
 WHERE f.name = $1
@@ -85,8 +85,9 @@ SELECT * FROM (
   LIMIT 200
 ) merged
 UNION ALL
--- Each merge-queue run of the factory whose record step read pull requests back as merged, the
--- newest 200, with that list as JSON text (Realtime refuses a set-returning function to expand it).
+-- Each run of the factory whose record step read pull requests back as merged (the queue's
+-- sweep is the only record step with that output), the newest 200, with that list as JSON text
+-- (Realtime refuses a set-returning function to expand it).
 SELECT * FROM (
   SELECT 'merged', l.run_id, l.workflow_name, NULL::text[], NULL::integer, NULL::text, NULL::text,
     coalesce(rec.completed_at, rec.started_at + rec.duration_ms * interval '1 millisecond'),
@@ -94,7 +95,7 @@ SELECT * FROM (
   FROM mc.laps l
   JOIN mc.lap_steps rec ON rec.run_id = l.run_id AND rec.step_id = 'record'
     AND rec.status = 'completed' AND rec.output -> 'merged' IS NOT NULL
-  WHERE l.factory = $1 AND l.workflow_name = 'archon-merge-queue'
+  WHERE l.factory = $1
   ORDER BY 8 DESC NULLS LAST, l.run_id
   LIMIT 200
 ) queue_merged
