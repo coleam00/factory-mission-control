@@ -202,7 +202,8 @@ test('a browser whose DevToolsActivePort never appears still stops the probe aft
     throw fsError('ENOENT', path);
   };
 
-  await expect(launchBrowser(readPort)).rejects.toThrow(
+  // The default wait is longer for a cold CI start (#355); naming 20 s keeps this message and runtime.
+  await expect(launchBrowser(readPort, 20_000)).rejects.toThrow(
     'the browser opening its DevTools port did not happen within 20s',
   );
 }, 60_000);
