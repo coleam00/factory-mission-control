@@ -41,6 +41,14 @@ test('a work order is listed while an issue of it is open, with its counts and w
     `INSERT INTO mc.pull_request_issues (factory, pr_number, issue_number) VALUES ('mission-control', 9001, $1)`,
     [done],
   );
+  await db.query(
+    `INSERT INTO mc.issues (factory, number, title, state, url, created_at, updated_at)
+     VALUES ('other-factory', $1, 't', 'open', 'u', now(), now())`,
+    [a],
+  );
+  await label(a, 'work-order:combat', 'other-factory');
+  await label(a, 'work-order:elsewhere', 'other-factory');
+  await label(a, 'lands-on:production', 'other-factory');
   expect(await orders()).toEqual([
     { name: 'combat', open_count: 2, merged_count: 1, lands_on: 'staging' },
   ]);
