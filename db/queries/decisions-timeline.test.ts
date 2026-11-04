@@ -192,6 +192,39 @@ describe('decisions-timeline and improvements-ledger on the seed', () => {
       });
   });
 
+  test('the ledger credits a digest to the pin mc.versions gives it', async () => {
+    const rollback = new Error('rollback');
+    const sha = (c: string) => c.repeat(40);
+    await db
+      .transaction(async (tx) => {
+        // dX: first run by another workflow between pins A and B; its first archon-loop lap is after B.
+        // dY: two pins with equal committed_at; the higher sha is the pin.
+        await tx.query(`INSERT INTO mc.pins (sha, archon_sha, reason, committed_at) VALUES
+          ('${sha('a')}', '${sha('1')}', 'pin A', '2030-01-01T00:00:00Z'),
+          ('${sha('b')}', '${sha('2')}', 'pin B', '2030-01-02T00:00:00Z'),
+          ('${sha('c')}', '${sha('3')}', 'pin C', '2030-02-01T00:00:00Z'),
+          ('${sha('d')}', '${sha('4')}', 'pin D', '2030-02-01T00:00:00Z')`);
+        await tx.query(`INSERT INTO mc.laps (run_id, factory, workflow_name, status, digest, started_at) VALUES
+          ('00000000-0000-0000-0000-0000000000e1', 'mission-control', 'archon-manager', 'completed', 'dX', '2030-01-01T12:00:00Z'),
+          ('00000000-0000-0000-0000-0000000000e2', 'mission-control', 'archon-loop', 'completed', 'dX', '2030-01-02T12:00:00Z'),
+          ('00000000-0000-0000-0000-0000000000e3', 'mission-control', 'archon-loop', 'completed', 'dY', '2030-02-02T00:00:00Z')`);
+        await tx.query(`SELECT mc.project_version('mission-control', 'dX')`);
+        await tx.query(`SELECT mc.project_version('mission-control', 'dY')`);
+        const versions = await tx.query(
+          `SELECT digest, pin_sha FROM mc.versions
+           WHERE factory = 'mission-control' AND digest IN ('dX', 'dY') ORDER BY digest`,
+        );
+        expect(versions.map((v) => v.pin_sha)).toEqual([sha('b'), sha('d')]);
+        const ledger = await tx.query(named('improvements-ledger'), ['mission-control']);
+        const laps = (pin: string) => ledger.find((r) => r.pin_sha === pin)?.laps;
+        expect([laps(sha('a')), laps(sha('b')), laps(sha('c')), laps(sha('d'))]).toEqual([0, 1, 0, 1]);
+        throw rollback;
+      })
+      .catch((error) => {
+        if (error !== rollback) throw error;
+      });
+  });
+
   test('a verdict on V2 by prefix gives V2 that verdict', async () => {
     await db.transaction(async (tx) => {
       await writeRow(tx, 'verdict', new Date('2026-10-25T12:00:00Z'), '5ffd60c6');

@@ -1,16 +1,12 @@
-WITH firsts AS (
-  SELECT DISTINCT ON (l.digest) l.digest, l.started_at AS first_run_at
+WITH labelled AS (
+  -- A digest's pin is mc.version_pin of its first archon-loop lap, the rule mc.project_version applies,
+  -- so the ledger and mc.versions cannot disagree. Unlike mc.versions this also covers a factory not
+  -- named in mc.factories.
+  SELECT l.digest, mc.version_pin(min(l.started_at)) AS pin_sha
   FROM mc.laps l
-  WHERE l.factory = $1 AND l.digest IS NOT NULL AND l.started_at IS NOT NULL
-  ORDER BY l.digest, l.started_at
-),
-labelled AS (
-  SELECT f.digest, p.sha AS pin_sha
-  FROM firsts f
-  CROSS JOIN LATERAL (
-    SELECT sha FROM mc.pins
-    WHERE committed_at < f.first_run_at ORDER BY committed_at DESC LIMIT 1
-  ) p
+  WHERE l.factory = $1 AND l.workflow_name = 'archon-loop'
+    AND l.digest IS NOT NULL AND l.started_at IS NOT NULL
+  GROUP BY l.digest
 )
 SELECT p.sha AS pin_sha, p.reason, p.measure, p.committed_at, n.laps,
   v.verdict, v.sentence, v.committed_at AS verdict_at, 1 AS pin_matches
