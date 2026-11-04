@@ -5,9 +5,9 @@ export type RunStatus =
   | { state: 'ended' }
   | { state: 'unknown'; reason: string };
 
-/** The same split as `factory/consumer.py`: `ACTIVE` and `ENDED`. */
-const ACTIVE = new Set(['pending', 'running', 'paused']);
-const ENDED = new Set(['completed', 'failed', 'cancelled']);
+/** The same split as `factory/consumer.py`: `ACTIVE` and `ENDED`; `archon-run.test.ts` keeps them equal. */
+export const ACTIVE = new Set(['pending', 'running', 'paused']);
+export const ENDED = new Set(['completed', 'failed', 'cancelled']);
 
 const ASK_TIMEOUT_MS = 30_000;
 

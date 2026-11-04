@@ -101,7 +101,16 @@ export function readLeases(dir: string): Lease[] {
       if (!isCheckBranch(branch)) continue;
       const lease = statSync(join(dir, name), { throwIfNoEntry: false });
       if (!lease?.isFile()) continue;
-      const run = readFileSync(join(dir, name), 'utf-8').trim();
+      let run: string;
+      try {
+        run = readFileSync(join(dir, name), 'utf-8').trim();
+      } catch (error) {
+        // Another checkout's drop removed it between the stat and the read (Windows: EPERM/EBUSY).
+        if (['ENOENT', 'EPERM', 'EBUSY'].includes((error as NodeJS.ErrnoException).code ?? '')) {
+          continue;
+        }
+        throw error;
+      }
       leases.push({ branch, refreshed_at: lease.mtime.toISOString(), ...(run && { run }) });
     }
     return leases;

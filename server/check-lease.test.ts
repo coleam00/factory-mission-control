@@ -68,6 +68,27 @@ test('a lease directory that cannot be listed throws rather than reading as no l
   expect(() => readLeases(file)).toThrow(`cannot read the leases in ${file}`);
 });
 
+test('a lease another checkout removes mid-read neither hides the others nor throws', async () => {
+  const dir = leaseDir();
+  writeLease(dir, 'check-stable', AT, RUN);
+  const churn = Bun.spawn(
+    [
+      process.execPath,
+      '-e',
+      `const fs = require('node:fs'); const f = process.argv[1] + '/check-churn.lease';
+       const end = Date.now() + 2000;
+       while (Date.now() < end) { fs.writeFileSync(f, 'x'); fs.rmSync(f, { force: true }); }`,
+      dir,
+    ],
+    { stdout: 'ignore', stderr: 'ignore' },
+  );
+  const end = Date.now() + 1500;
+  while (Date.now() < end) {
+    expect(readLeases(dir).some((lease) => lease.branch === 'check-stable')).toBe(true);
+  }
+  await churn.exited;
+});
+
 test('a refresh moves an existing lease and never creates one', () => {
   const dir = leaseDir();
   refreshLease(dir, 'check-abc', AT);
