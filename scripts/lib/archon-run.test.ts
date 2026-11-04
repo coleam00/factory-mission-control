@@ -78,7 +78,7 @@ test('the status split is the one factory/consumer.py owns', () => {
   const source = readFileSync(join(import.meta.dir, '../../factory/consumer.py'), 'utf8');
   const owner = (name: string) => {
     const set = source.match(new RegExp(`^${name} = [{]([^}]*)[}]`, 'm'));
-    return new Set((set?.[1] ?? '').match(/[a-z_]+/g));
+    return new Set([...(set?.[1] ?? '').matchAll(/"([^"]*)"|'([^']*)'/g)].map((m) => m[1] ?? m[2]));
   };
   expect(owner('ACTIVE').size).toBeGreaterThan(0);
   expect(ACTIVE).toEqual(owner('ACTIVE'));

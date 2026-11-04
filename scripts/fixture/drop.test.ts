@@ -5,7 +5,7 @@ import { CHECK_ENV_FILE } from '../../server/check-env';
 import { defaultLeaseDir, LEASE_MS, writeLease } from '../../server/check-lease';
 import type { RunStatus } from '../lib/archon-run';
 import { hoursAgo, NOW, recordingDeps, scratchRepo } from '../lib/test-deps';
-import { branchesToDrop, main, STALE_MS } from './drop';
+import { branchesToDrop, hoursPhrase, main, STALE_MS } from './drop';
 
 const scratch: string[] = [];
 afterEach(() => {
@@ -480,8 +480,8 @@ test('--help states the lease rule', async () => {
   expect(usage).toContain('only age is judged at <time>: a lease and its run are judged now');
   expect(usage).toContain('or whose run is still running now, is not listed at any <time>');
   expect(usage).toContain('a young check-* branch it created that has no live lease');
-  const lease = LEASE_MS === 3_600_000 ? 'an hour' : `${LEASE_MS / 3_600_000} hours`;
-  const stale = `${STALE_MS / 3_600_000} hours`;
+  const lease = hoursPhrase(LEASE_MS);
+  const stale = hoursPhrase(STALE_MS);
   expect(usage).toContain(`older than ${stale} unless`);
   expect(usage).toContain(`refreshed less than ${lease} ago`);
   expect(usage).toContain(`once it is over ${stale} old at <time>`);
