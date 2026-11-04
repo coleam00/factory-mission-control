@@ -11,7 +11,13 @@ import { useFactory } from '../live/FactoryProvider';
 import { LivePanel, type PanelState } from '../live/LivePanel';
 import { useLive } from '../live/LiveProvider';
 import { FACTORY_MAP } from '../map/factory-map';
-import { cardLive, type HomeMapRow, type MapSources, versionRecorded } from '../map/live';
+import {
+  cardLive,
+  type HomeMapRow,
+  type MapSources,
+  versionRecorded,
+  type WorkOrderRow,
+} from '../map/live';
 
 /**
  * The map once `home-map` has answered: the owner's drawing, always the same, with the chips the
@@ -63,7 +69,7 @@ export function HomeMapBody({
   /** The browser's clock, which decides what "today" is for the merges. */
   now?: Date;
 }): ReactElement {
-  const { map, workable, owner } = sources;
+  const { map, workable, owner, orders } = sources;
   const empty = (title: string) => (
     <div className={COLUMN}>
       <EmptyState title={title} />
@@ -74,7 +80,7 @@ export function HomeMapBody({
   if (map === undefined && configured === false) return empty('No factory is configured.');
   if (map === undefined) return empty('Loading the factory map.');
   if (!versionRecorded(map, at)) return empty(`No version ${at} is recorded for this factory.`);
-  const live = cardLive(FACTORY_MAP, { map, workable, owner, states }, now);
+  const live = cardLive(FACTORY_MAP, { map, workable, owner, orders, states }, now);
   return (
     <FactoryMap
       map={FACTORY_MAP}
@@ -140,6 +146,7 @@ export default function Home(): ReactElement {
   const reduced = useReducedMotion();
   const [workable, setWorkable] = useState<Source<HealthWorkableRow>>(AWAITED);
   const [owner, setOwner] = useState<Source<OwnerQueueRow>>(AWAITED);
+  const [orders, setOrders] = useState<Source<WorkOrderRow>>(AWAITED);
   const [steps, setSteps] = useState<Source<StepRow>>(AWAITED);
   const configured = live.status === 'ready' ? live.factories.length > 0 : undefined;
   return (
@@ -171,13 +178,19 @@ export default function Home(): ReactElement {
       </div>
       <Feed<HealthWorkableRow> query="health-workable" factory={factory} into={setWorkable} />
       <Feed<OwnerQueueRow> query="owner-queue" factory={factory} into={setOwner} />
+      <Feed<WorkOrderRow> query="work-orders" factory={factory} into={setOrders} />
       <Feed<StepRow> query="step-detail" factory={factory} args={[at ?? '']} into={setSteps} />
       <LivePanel<HomeMapRow> query="home-map" factory={factory} args={[at ?? '']}>
         {(map, state) => (
           <HomeMapBody
-            sources={{ map, workable: workable.rows, owner: owner.rows }}
+            sources={{ map, workable: workable.rows, owner: owner.rows, orders: orders.rows }}
             steps={steps.rows}
-            states={{ workable: workable.state, owner: owner.state, steps: steps.state }}
+            states={{
+              workable: workable.state,
+              owner: owner.state,
+              orders: orders.state,
+              steps: steps.state,
+            }}
             state={state}
             factory={factory ?? ''}
             at={at}

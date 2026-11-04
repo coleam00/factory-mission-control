@@ -37,24 +37,24 @@ test('every line, the tour and the legend name cards and roles the map has', () 
 });
 
 test("a line joins its cards' sides, turning halfway across when they are not level", () => {
-  expect(linePoints(FACTORY_MAP, line('prd', 'plan'))).toEqual([
-    [208, 106],
-    [260, 106],
+  expect(linePoints(FACTORY_MAP, line('prd', 'intake'))).toEqual([
+    [468, 388],
+    [494, 388],
+    [494, 648],
+    [520, 648],
   ]);
-  expect(linePoints(FACTORY_MAP, line('plan', 'hold'))).toEqual([
-    [468, 106],
-    [494, 106],
-    [494, 358],
-    [520, 358],
+  expect(linePoints(FACTORY_MAP, line('mgr', 'review'))).toEqual([
+    [1571, 212],
+    [1571, 492],
   ]);
-  expect(linePoints(FACTORY_MAP, line('mgr', 'merge'))).toEqual([
-    [1440, 212],
-    [1440, 492],
+  expect(linePoints(FACTORY_MAP, line('intake', 'split'))).toEqual([
+    [582, 542],
+    [582, 452],
   ]);
 });
 
 test("a label sits halfway along its line's length", () => {
-  expect(midpoint(linePoints(FACTORY_MAP, line('build', 'review')))).toEqual([1014, 648]);
+  expect(midpoint(linePoints(FACTORY_MAP, line('build', 'review')))).toEqual([1306, 648]);
   expect(
     midpoint([
       [0, 0],
@@ -66,8 +66,8 @@ test("a label sits halfway along its line's length", () => {
 
 test('the tour runs card centre to card centre along the line, Product document to Shipped', () => {
   const points = tourPoints(FACTORY_MAP);
-  expect(points[0]).toEqual([104, 106]);
-  expect(points.at(-1)).toEqual([2216, 648]);
+  expect(points[0]).toEqual([364, 388]);
+  expect(points.at(-1)).toEqual([2508, 648]);
   for (const [i, [x, y]] of points.slice(1).entries()) {
     const [px, py] = points[i] as [number, number];
     expect(x === px || y === py).toBe(true);
@@ -75,23 +75,30 @@ test('the tour runs card centre to card centre along the line, Product document 
 });
 
 test("a card's neighbours are the cards a line joins to it", () => {
-  expect([...neighbours(FACTORY_MAP, 'build')].sort()).toEqual(['intake', 'review']);
-  expect([...neighbours(FACTORY_MAP, 'app')].sort()).toEqual(['disc', 'hold', 'merge', 'review']);
+  expect([...neighbours(FACTORY_MAP, 'build')].sort()).toEqual(['order', 'review']);
+  expect([...neighbours(FACTORY_MAP, 'app')].sort()).toEqual(['disc', 'merge', 'review']);
+  expect([...neighbours(FACTORY_MAP, 'intake')].sort()).toEqual([
+    'disc',
+    'issue',
+    'order',
+    'prd',
+    'split',
+  ]);
   expect(neighbours(FACTORY_MAP, null).size).toBe(0);
 });
 
 test('the world holds every card, the group box and the routed lines, with margin', () => {
-  expect(worldSize(FACTORY_MAP)).toEqual({ width: 2362, height: 1084 });
+  expect(worldSize(FACTORY_MAP)).toEqual({ width: 2654, height: 1084 });
   expect(card('mgr').width).toBe(478);
 });
 
-test("the owner's tighter pitch: 52 between cards, 84 where App check's passed label sits", () => {
-  const line = ['intake', 'build', 'review', 'app', 'merge', 'deploy', 'out'].map(card);
+test("the owner's tighter pitch: 52 between cards, 84 where the ready and passed labels sit", () => {
+  const line = ['intake', 'order', 'build', 'review', 'app', 'merge', 'deploy', 'out'].map(card);
   const gaps = line.slice(1).map((c, i) => {
     const before = line[i] as (typeof line)[number];
     return c.x - before.x - FACTORY_MAP.cardSize.width;
   });
-  expect(gaps).toEqual([52, 52, 52, 84, 52, 52]);
+  expect(gaps).toEqual([84, 52, 52, 52, 84, 52, 52]);
 });
 
 test("App check's steps open their screens, check-app's among them; a nested one opens under the workflow that declares it", () => {
@@ -136,4 +143,14 @@ test('the hero frame is the map at the width-fitting scale plus padding, at leas
   expect(heroFrameHeight(world, 5000)).toBe(
     Math.ceil(world.height * 1.15 + FIT_PAD * 2 + FIT_FOOT),
   );
+});
+
+test('Split sits above Intake, the Work order on the line between Intake and Build, and the map says no ticket or holdout', () => {
+  const [intake, split, order, build] = ['intake', 'split', 'order', 'build'].map(card);
+  expect(split?.x).toBe(intake?.x);
+  expect(split?.y).toBeLessThan(FACTORY_MAP.group.y);
+  expect(order?.y).toBe(intake?.y);
+  expect(order?.x).toBeGreaterThan(intake?.x as number);
+  expect(order?.x).toBeLessThan(build?.x as number);
+  expect(JSON.stringify(FACTORY_MAP)).not.toMatch(/ticket|holdout/i);
 });

@@ -1,40 +1,28 @@
 {
-  "caption": "Tickets come from three places: a product document that Plan splits up, an issue you file, or a problem the factory found. Plan also writes the holdouts, hidden scenarios that only App check runs. Each ticket goes through Intake, then down the line: Build writes the code, Review checks it, App check tries it in the running app, Merge lands it, and Staging deploys it. The manager watches the whole line and brings you the decisions.",
+  "caption": "Work comes from three places: a product document, an issue you file, or a problem the factory found. Intake checks each item, and Split breaks a big document or bundle into smaller work items. A work order groups the items to build and ship together. Then one line: Build writes the code, Review checks it, App check tries it in the running app, Merge lands it, and Staging is where you try the whole work order. The manager watches the line and brings you the decisions.",
   "cardSize": {
     "width": 208,
     "height": 212
   },
   "cards": [
     {
-      "id": "prd",
-      "role": "source",
-      "kind": "input",
-      "title": "Product document",
-      "text": "What to build and why",
-      "x": 0,
-      "y": 0,
-      "covers": [],
-      "details": {
-        "what": [
-          "The intent: problem, users, what done looks like.",
-          "Lives as an issue or a file in the repo."
-        ],
-        "how": ["Plan reads it once per release. Nothing else in the factory edits it."]
-      }
-    },
-    {
-      "id": "plan",
-      "role": "source",
-      "kind": "plan",
-      "title": "Plan",
-      "text": "Splits the PRD into tickets and writes the holdouts",
-      "x": 260,
-      "y": 0,
+      "id": "split",
+      "role": "agent",
+      "kind": "split",
+      "title": "Split",
+      "text": "Breaks a document or a bundle into work items",
+      "x": 520,
+      "y": 240,
       "covers": [
         {
           "workflow": "archon-backlog",
           "steps": ["read-prd", "slice", "check", "authorize", "publish"],
           "pack": "loop"
+        },
+        {
+          "workflow": "archon-split",
+          "steps": ["facts", "slice", "publish"],
+          "pack": "queue"
         },
         {
           "workflow": "factory-backlog",
@@ -44,47 +32,37 @@
       ],
       "details": {
         "when": [
-          "You start it when there is a new product document or a new PRD section.",
-          "When Rasmus's split route (#5322) lands, a PRD filed as an issue goes here through Intake on its own."
+          "When Intake routes a product document or a bundle of tasks here.",
+          "You can also start it by hand on a document in the repo."
         ],
         "what": [
-          "Slices the PRD into tickets with Depends on links.",
-          "The first ticket always makes the product runnable end to end."
+          "Breaks the item into work items, each a contract of its own, with Depends on links.",
+          "Never files the same piece twice, even when it runs again."
         ],
         "how": [
-          "An agent slices, a script checks shape, order and duplicates, then the issues are filed.",
-          "Filing an issue is what starts Intake."
+          "One agent reads the item and lists the pieces. A script files each one and records it.",
+          "Filing an issue is what starts Intake, so the pieces come back like any other work."
         ]
       }
     },
     {
-      "id": "hold",
-      "role": "test",
-      "kind": "test",
-      "title": "Holdouts",
-      "text": "Hidden test scenarios only App check sees",
-      "x": 520,
-      "y": 252,
-      "covers": [
-        {
-          "workflow": "archon-holdouts",
-          "steps": ["briefs", "write"],
-          "pack": "loop"
-        },
-        {
-          "workflow": "factory-holdouts",
-          "steps": ["config", "write"],
-          "pack": "queue"
-        }
-      ],
+      "id": "prd",
+      "role": "source",
+      "kind": "input",
+      "title": "Product document",
+      "text": "What to build and why",
+      "x": 260,
+      "y": 282,
+      "covers": [],
       "details": {
-        "when": [
-          "You start it per release, or after a bug gets past the checks.",
-          "Kept up to date by the writer agent; escaped bug."
+        "when": ["When you have something bigger than one change to build."],
+        "what": [
+          "The intent: problem, users, what done looks like, and how you will know it worked.",
+          "Lives as an issue or a file in the repo."
         ],
-        "what": ["Writes test scenarios the builders never see."],
         "how": [
-          "Stored outside the repo. Only the holdout verifier inside App check may read them. The dashboard shows ids and verdicts, never text."
+          "Filed as an issue, it goes through Intake like anything else. Intake sends it to Split.",
+          "It stays open until its result is measured. Nothing else in the factory edits it."
         ]
       }
     },
@@ -93,8 +71,8 @@
       "role": "person",
       "kind": "manager",
       "title": "Manager",
-      "text": "Keeps the factory healthy and tickets moving. Brings you the decisions it can't make.",
-      "x": 992,
+      "text": "Keeps the factory healthy and work moving. Brings you the decisions it can't make.",
+      "x": 1332,
       "y": 0,
       "width": 478,
       "chips": ["waiting"],
@@ -128,17 +106,17 @@
       "role": "source",
       "kind": "input",
       "title": "New issue",
-      "text": "A ticket you file yourself",
+      "text": "A work item you file yourself",
       "x": 260,
       "y": 542,
       "covers": [],
       "details": {
         "when": ["Whenever you or a teammate files one."],
         "what": [
-          "A single ticket, written with the six elements: problem, why, why now, outcome, invariants, acceptance."
+          "A single work item, written with the six elements: problem, why, why now, outcome, invariants, acceptance."
         ],
         "how": [
-          "Intake checks it like any other ticket. A ticket missing the six elements comes to you as a question."
+          "Intake checks it like any other work item. A work item missing the six elements comes to you as a question."
         ]
       }
     },
@@ -155,20 +133,15 @@
           "workflow": "archon-discoveries",
           "steps": ["facts", "decide", "outcome", "ask", "answer"],
           "pack": "queue"
-        },
-        {
-          "workflow": "factory-holdout-sweep",
-          "steps": ["config", "plan", "prepare", "check", "evidence", "record", "cleanup"],
-          "pack": "queue"
         }
       ],
       "details": {
         "when": ["After review, app check or staging notices something it was not asked to fix."],
         "what": [
-          "Each problem becomes a new ticket, or is dropped if it is not real. Unsure ones come to you."
+          "Each problem becomes a new work item, or is dropped if it is not real. Unsure ones come to you."
         ],
         "how": [
-          "Small findings are batched into one cleanup ticket per area. New tickets go through Intake like any other."
+          "Small findings are batched into one cleanup work item per area. New work items go through Intake like any other."
         ]
       }
     },
@@ -177,7 +150,7 @@
       "role": "agent",
       "kind": "triage",
       "title": "Intake",
-      "text": "Checks each ticket is clear, picks its route and size",
+      "text": "Checks each work item is clear, picks its route and size",
       "x": 520,
       "y": 542,
       "covers": [
@@ -193,10 +166,35 @@
         }
       ],
       "details": {
-        "when": ["On every new, edited or relabelled ticket (GitHub event)."],
-        "what": ["Decides if the ticket is ready, and which route it takes."],
+        "when": ["On every new, edited or relabelled work item (GitHub event)."],
+        "what": [
+          "Decides if the work item is ready, and which route it takes: deliver, plan first, investigate, or Split when it is too big for one build."
+        ],
         "how": [
-          "Trust check against maintainers.json, then triage. Intake is the only step that closes tickets."
+          "Trust check against maintainers.json, then triage. Intake is the only step that closes work items."
+        ]
+      }
+    },
+    {
+      "id": "order",
+      "role": "source",
+      "kind": "work order",
+      "title": "Work order",
+      "text": "The next group of work to build and ship together",
+      "x": 812,
+      "y": 542,
+      "chips": ["orders"],
+      "covers": [],
+      "details": {
+        "when": ["Before the build queue starts on the next group of work."],
+        "what": [
+          "A group of work items that go through the factory together, for one release, one experiment or one branch.",
+          "It can hold pieces of a document, bug fixes, anything ready. It can also be one item."
+        ],
+        "how": [
+          "You, or the manager for you, choose what goes in, so the whole backlog does not start at once.",
+          "You choose where it lands: main, dev, a release branch or staging.",
+          "Being built now. Until it lands, the build queue takes the next ready item on its own."
         ]
       }
     },
@@ -206,7 +204,7 @@
       "kind": "build",
       "title": "Build",
       "text": "Writes the code and opens the PR",
-      "x": 780,
+      "x": 1072,
       "y": 542,
       "chips": ["queued"],
       "covers": [
@@ -234,13 +232,15 @@
         }
       ],
       "details": {
-        "when": ["Whenever a triaged ticket is ready, one ticket per run, most urgent first."],
+        "when": [
+          "Whenever a triaged work item is ready, one work item per run, most urgent first."
+        ],
         "what": [
-          "Takes a triaged ticket to a reviewed PR with green CI.",
-          "Up to 3 rounds per ticket. Each round can deliver up to 5 times."
+          "Takes a triaged work item to a reviewed PR with green CI.",
+          "Up to 2 rounds per work item. Each round can deliver up to 4 times."
         ],
         "how": [
-          "Brief, then plan or investigate if needed, then deliver, then an agent decides done, another round, or ask you."
+          "Brief, then plan or investigate if needed, then deliver, then an agent decides done, another round, or ask you. It asks early when a change has grown past its size or stopped converging."
         ]
       }
     },
@@ -249,8 +249,8 @@
       "role": "agent",
       "kind": "review",
       "title": "Review",
-      "text": "Five reviewers read the change",
-      "x": 1040,
+      "text": "Up to five reviewers read the change",
+      "x": 1332,
       "y": 542,
       "covers": [
         {
@@ -287,7 +287,7 @@
       "details": {
         "when": ["Every time Build pushes a change to the PR."],
         "what": [
-          "Five reviewers each read the change for one thing: how parts fit together, correctness, tests, error handling, docs.",
+          "A quick agent picks the reviewers this change earns. Up to five each read the change for one thing: how parts fit together, correctness, tests, error handling, docs.",
           "One agent combines what they found into a single comment: Ready, or a list of fixes."
         ],
         "how": ["Fixes go back to Build. Merge only trusts a Ready comment on the latest commit."]
@@ -299,7 +299,7 @@
       "kind": "test",
       "title": "App check",
       "text": "Tries the change in the running app",
-      "x": 1300,
+      "x": 1592,
       "y": 542,
       "chips": ["failing"],
       "covers": [
@@ -316,10 +316,6 @@
             "pending",
             "scope",
             "policy",
-            "holdouts",
-            "choose",
-            "scoped",
-            "known",
             "prepare",
             "check",
             "evidence",
@@ -332,8 +328,8 @@
       ],
       "details": {
         "when": [
-          "On every open PR that has no result yet for its current head and main.",
-          "Depth scales with the ticket's size and whether it touches the front end."
+          "On every open PR with no result yet at its current commit.",
+          "Depth scales with the work item's size and whether it touches the front end."
         ],
         "what": [
           "Uses the running app the way a person would and reports what it saw.",
@@ -341,7 +337,8 @@
         ],
         "how": [
           "Tests the PR merged with the latest main, not the branch alone.",
-          "Every claim must cite a file written during this check, sealed by a script."
+          "Every claim must cite a file written during this check, sealed by a script.",
+          "A result stands until the PR gets a new commit, so landing another PR does not undo it."
         ]
       }
     },
@@ -351,7 +348,7 @@
       "kind": "gate",
       "title": "Merge",
       "text": "Lands only what passed",
-      "x": 1592,
+      "x": 1884,
       "y": 542,
       "covers": [
         {
@@ -380,8 +377,8 @@
       "role": "test",
       "kind": "ship",
       "title": "Staging",
-      "text": "Deploys and checks it is really live",
-      "x": 1852,
+      "text": "Where the work order lands for you to try",
+      "x": 2144,
       "y": 542,
       "covers": [
         {
@@ -396,8 +393,11 @@
         }
       ],
       "details": {
-        "when": ["After a merge, on the new revision of main."],
-        "what": ["Puts the merged build on the staging environment."],
+        "when": ["After a work order's last merge, on the new revision of its target."],
+        "what": [
+          "Puts the merged build where you can try it.",
+          "You choose where a work order lands. Staging is the one we recommend."
+        ],
         "how": ["Health check plus revision read-back, so a stale deploy fails loudly."]
       }
     },
@@ -406,31 +406,26 @@
       "role": "test",
       "kind": "output",
       "title": "Shipped",
-      "text": "Merged PRs, closed tickets",
-      "x": 2112,
+      "text": "Merged PRs, closed work items",
+      "x": 2404,
       "y": 542,
       "chips": ["merged"],
       "covers": [],
       "details": {
-        "what": ["Merged PRs and the tickets Intake closed as delivered."]
+        "what": ["Merged PRs and the work items Intake closed as delivered."]
       }
     }
   ],
   "group": {
-    "x": 490,
+    "x": 500,
     "y": 492,
-    "width": 1860,
+    "width": 2142,
     "height": 316,
     "label": "the manager watches everything on this line"
   },
   "lines": [
     {
       "from": "prd",
-      "to": "plan",
-      "style": "flow"
-    },
-    {
-      "from": "plan",
       "to": "intake",
       "style": "flow"
     },
@@ -445,19 +440,26 @@
       "style": "flow"
     },
     {
-      "from": "plan",
-      "to": "hold",
-      "style": "holdout"
+      "from": "intake",
+      "to": "split",
+      "style": "flow",
+      "route": [[582, 542], [582, 452]]
     },
     {
-      "from": "hold",
-      "to": "app",
-      "style": "holdout",
-      "label": "only App check reads them",
-      "route": [[728, 358], [1404, 358], [1404, 542]]
+      "from": "split",
+      "to": "intake",
+      "style": "flow",
+      "label": "files the pieces",
+      "route": [[666, 452], [666, 542]]
     },
     {
       "from": "intake",
+      "to": "order",
+      "style": "flow",
+      "label": "ready"
+    },
+    {
+      "from": "order",
       "to": "build",
       "style": "flow"
     },
@@ -490,33 +492,33 @@
     },
     {
       "from": "mgr",
-      "to": "merge",
+      "to": "review",
       "style": "ask",
       "label": "keeps it moving",
-      "route": [[1440, 212], [1440, 492]]
+      "route": [[1571, 212], [1571, 492]]
     },
     {
       "from": "review",
       "to": "disc",
       "style": "loop",
-      "route": [[1144, 754], [1144, 1072], [364, 1072], [364, 1014]]
+      "route": [[1436, 754], [1436, 1072], [364, 1072], [364, 1014]]
     },
     {
       "from": "app",
       "to": "disc",
       "style": "loop",
       "arrow": false,
-      "route": [[1404, 754], [1404, 1072]]
+      "route": [[1696, 754], [1696, 1072]]
     },
     {
       "from": "deploy",
       "to": "disc",
       "style": "loop",
-      "label": "problems found become new tickets",
-      "route": [[1956, 754], [1956, 1072], [364, 1072], [364, 1014]]
+      "label": "problems found become new work",
+      "route": [[2248, 754], [2248, 1072], [364, 1072], [364, 1014]]
     }
   ],
-  "tour": ["prd", "plan", "intake", "build", "review", "app", "merge", "deploy", "out"],
+  "tour": ["prd", "intake", "order", "build", "review", "app", "merge", "deploy", "out"],
   "legend": [
     {
       "role": "source",

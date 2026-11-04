@@ -7,7 +7,7 @@ The home screen (`/f/<factory>`, and `/` for the selected factory) draws the fac
 
 `app/map/factory-map.json` holds the map: its caption, every card (id, role, kind label, title,
 one-line text, position, optional width, the chips it carries, the workflows and steps it covers,
-and its details text), every line (from, to, style `flow`, `ask`, `loop` or `holdout`, an optional
+and its details text), every line (from, to, style `flow`, `ask` or `loop`, an optional
 label and, for the routed lines, explicit points), the dashed group, the tour order and the legend.
 Change what the map says there; the React components (`app/components/FactoryMap.tsx`,
 `MapDetails.tsx`) only draw it.
@@ -61,11 +61,12 @@ the commits this factory runs, with `ARCHON_COMMIT` and `FACTORY_COMMIT` beside 
 
 ## Live counts
 
-The cards' chips come from three live queries: `home-map` (each running run of the factory with its
+The cards' chips come from four live queries: `home-map` (each running run of the factory with its
 running steps and issue, the runs waiting on attention, whether the factory is on the queues, the
 open pull requests whose latest app check failed, the merges with when they finished, and whether
 the version the address names is recorded),
-`health-workable` and `owner-queue`.
+`health-workable`, `owner-queue` and `work-orders` (the distinct `work-order:<name>` labels on the
+factory's open issues, from the mirrored label data; it writes nothing).
 
 - A run's issue is its claim comment's issue on the old loop, and on the queues its `number` input
   (a pull request's number, when the run's `kind` input says so, is no issue).
@@ -73,6 +74,8 @@ the version the address names is recorded),
   newest of those as deep). A loop group's iteration of a step (`rounds.review__policy`) counts as
   that step (`rounds/review/policy`). A card with runs on it carries `data-live-count` above 0.
 - "<n> queued" on Build: the workable issues, as Health counts them.
+- "<n> open" on Work order: the work orders with an open issue, nothing when there are none. Right now
+  lists each with its open and merged issue counts and its `lands-on:<target>` label when one exists.
 - "<n> failing" on App check: open pull requests whose latest app check came out FAIL.
 - "<n> waiting" on the Manager: open Archon attention items (paused runs waiting on a person).
   A factory not on the queues, one that has run neither `archon-intake` nor `archon-build-queue`,
@@ -83,7 +86,7 @@ the version the address names is recorded),
   `archon-merge-queue` run's `record` step read back as merged. The count moves on at local midnight.
 
 A chip of 0 is not drawn. A chip appears once its query has answered. A chip whose query failed
-shows as `? queued` or `? waiting`, never as a count; Right now says the count is unavailable, and
+shows as `? queued`, `? orders` or `? waiting`, never as a count; Right now says the count is unavailable, and
 Behind the scenes says the pinned steps are unavailable when `step-detail` failed.
 
 ## Clicking a card
@@ -107,7 +110,7 @@ No card has a deeper view yet: none shows ⤢ or an Open button until its view i
 The Version control above the map opens it at an older pin (`/?at=<pin>`). The drawing is the same;
 step links open their screens at that version, and the "here" counts include only the runs that
 ran it. A version that is not recorded for the factory reads “No version <pin> is recorded for this
-factory.” The queued, failing, waiting and merged chips count the factory as it is now.
+factory.” The queued, failing, waiting, merged and open chips count the factory as it is now.
 
 ## Motion
 

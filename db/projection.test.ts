@@ -297,6 +297,7 @@ test('the eligibility upgrade keeps live history and installs the same functions
       '0019_queue_laps.sql',
       '0019_structured_output_string.sql',
       '0020_queue_step_events.sql',
+      '0021_split_step_events.sql',
     ]);
     expect(await projectionDefinitions(upgraded)).toEqual(await projectionDefinitions(db));
     expect(await runMigrations({ files: migrationFiles, db: upgraded })).toEqual([]);
@@ -351,6 +352,7 @@ test('0011 rewrites a short pin to the one full sha it prefixes, and clears ambi
       '0019_queue_laps.sql',
       '0019_structured_output_string.sql',
       '0020_queue_step_events.sql',
+      '0021_split_step_events.sql',
     ]);
     const migrated = [
       { sha: 'p1', archon_sha: full },
@@ -421,6 +423,7 @@ test('0012 rewrites CRLF to LF in stored architecture texts, and changes nothing
       '0019_queue_laps.sql',
       '0019_structured_output_string.sql',
       '0020_queue_step_events.sql',
+      '0021_split_step_events.sql',
     ]);
     const migrated = [
       { kind: 'hook', path: '.factory/hooks/gate.sh', text: 'exit 0\n' },
@@ -502,6 +505,7 @@ test('0013 gives back the runs of a step the old key merged, and changes nothing
       '0019_queue_laps.sql',
       '0019_structured_output_string.sql',
       '0020_queue_step_events.sql',
+      '0021_split_step_events.sql',
     ]);
     expect(await attempts()).toEqual([
       { step_id: 'land', outcome: 'merged', cost_usd: null },
@@ -767,6 +771,7 @@ test('0014 keeps only a stored citation’s references, and changes nothing run 
       '0019_queue_laps.sql',
       '0019_structured_output_string.sql',
       '0020_queue_step_events.sql',
+      '0021_split_step_events.sql',
     ]);
     const lines = () =>
       historical.query(
@@ -822,6 +827,7 @@ test('0016 lets a pin have no reason, keeps stored reasons, and changes nothing 
       '0019_queue_laps.sql',
       '0019_structured_output_string.sql',
       '0020_queue_step_events.sql',
+      '0021_split_step_events.sql',
     ]);
     await pin('b'.repeat(40), null);
     const reasons = () => historical.query('SELECT sha, reason FROM mc.pins ORDER BY sha');
@@ -865,6 +871,7 @@ test('0017 keeps lines projected before it without an id, fills new reports’ i
       '0019_queue_laps.sql',
       '0019_structured_output_string.sql',
       '0020_queue_step_events.sql',
+      '0021_split_step_events.sql',
     ]);
     const after = await run();
     await historical.query('SELECT mc.project_app_check_lines($1, $2)', [
@@ -1617,6 +1624,7 @@ test('0019 fills a lap projected before it, and changes nothing run again', asyn
       '0019_queue_laps.sql',
       '0019_structured_output_string.sql',
       '0020_queue_step_events.sql',
+      '0021_split_step_events.sql',
     ]);
     const lap = () => historical.query('SELECT issue_number, attention_open FROM mc.laps');
     expect(await lap()).toEqual([{ issue_number: 402, attention_open: true }]);
@@ -1663,6 +1671,10 @@ test('a queue run’s step events project steps and attempts, as the old pack’
   expect(
     await db.query('SELECT step_id FROM mc.lap_step_attempt_usage WHERE run_id = $1', [merged]),
   ).toEqual([{ step_id: 'record' }]);
+  const split = await archonEvent('archon-split', 'node_started', 'slice', {});
+  expect(await projectedSteps(split)).toEqual([
+    { step_id: 'slice', status: 'running', output: null },
+  ]);
   const manager = await archonEvent('archon-manager', 'node_started', 'steer', {});
   expect(await projectedSteps(manager)).toEqual([]);
   expect(await projectionErrors()).toEqual([]);
@@ -1674,11 +1686,7 @@ test('the workflows projecting step events are the map’s queue covers and the 
     covers.filter((c) => c.pack === 'queue' || c.workflow === 'archon-loop').map((c) => c.workflow),
   );
   const notProjecting = new Set(covers.map((c) => c.workflow).filter((w) => !projecting.has(w)));
-  expect([...notProjecting].sort()).toEqual([
-    'archon-backlog',
-    'archon-holdouts',
-    'archon-manager',
-  ]);
+  expect([...notProjecting].sort()).toEqual(['archon-backlog', 'archon-manager']);
   for (const workflow of [...projecting, ...notProjecting]) {
     const [row] = await db.query('SELECT mc.projects_step_events($1) AS projects', [workflow]);
     expect({ workflow, projects: row?.projects }).toEqual({
