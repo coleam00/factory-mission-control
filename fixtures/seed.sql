@@ -8748,6 +8748,154 @@ server, a watcher), by its recorded process ID, and confirm it is gone: nothing 
 reaps it, and it outlives the run (seen live: an investigation left a windowed game
 open on the owner''s screen an hour after its run completed).
 ');
+INSERT INTO mc.arch_texts (archon_sha, factory_sha, path, text) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '85d479ad987dd63e441622ecb03db65233e8a803', '.shared/policy/build.md', '# Build queue policy
+
+This is the SDLC pack''s default policy for the build queue. A project adds to it with
+its own `.archon/sdlc/policy/build.md`: the queue reads this default first and the
+project''s file after it, and where the two conflict, the project''s line wins.
+
+The queue acts on its own when the case is clear, and asks a maintainer when it is not.
+
+## Clear: the queue acts
+
+- **Launch** a triaged item whose issue body states the problem, why, why now, the
+  outcome, the invariants and acceptance. The brief points the run at the body as the
+  contract; it does not restate or widen it.
+- **Prove a bug first.** Reproduce the symptom on the current base before launching, or
+  hold other concrete evidence of it, such as a failing test, a log or a recorded run.
+- **Continue** a run that stopped on something the contract already answers:
+  - a review finding the implementer can correct;
+  - CI red the change caused, or a conflict with the base;
+  - a stop whose question a dated scope section of the issue body, the project''s
+    steering documents or the rulings already answer;
+  - a stop that names as a blocker work a later step owns, such as a review, CI or a
+    maintainer''s merge (a false blocker).
+- **Push** commits a run left committed but unpushed on its pull request''s branch.
+- **Done** when the pull request''s latest review says Ready at its head commit and CI
+  marked it ready.
+
+## Unclear: the queue asks
+
+- A body missing one of the six elements that the issue''s own comments cannot supply.
+- A bug it cannot reproduce and has no other concrete evidence for.
+- A stop that asks to relax a constraint the maintainer stated, add scope the contract
+  does not name, or choose between designs the documents do not settle.
+- A check only a person can make, such as a live round trip with real credentials.
+- Several rounds in a row whose reviews each found new defects: ask the scope question
+  instead of running another round.
+- Anything that would change a public contract, a persisted schema, authentication or
+  the project''s direction without a ruling.
+');
+INSERT INTO mc.arch_texts (archon_sha, factory_sha, path, text) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '85d479ad987dd63e441622ecb03db65233e8a803', '.shared/policy/discoveries.md', '# Discoveries policy
+
+This is the SDLC pack''s default policy for deciding run discoveries. A project adds to
+it with its own `.archon/sdlc/policy/discoveries.md`: the decision reads this default
+first and the project''s file after it, and where the two conflict, the project''s line
+wins.
+
+- **File** a defect that is real at the base, worth an issue of its own, and covered
+  by no open issue or pull request. Write a full brief: problem, why, why now, outcome,
+  invariants and acceptance. Related discoveries one change would fix may share an
+  issue. Small consistency findings in one area, such as a stale comment, a small
+  duplication or naming drift, share one `Cleanup: <area>` issue that one change fixes,
+  with every item named in the brief with its evidence. A finding with a user- or
+  operator-visible effect never joins a batch: it gets its own issue.
+- **Track** a discovery an open issue already covers. Add evidence to that issue only
+  when the discovery shows something the issue does not already say; otherwise post
+  nothing.
+- **Drop**, with a one-line reason, a discovery that is:
+  - already fixed at the base;
+  - fixed by an open pull request;
+  - a decision about one run''s or one pull request''s own scope;
+  - too minor for an issue of its own, with no user- or operator-visible effect and
+    nothing in its area to batch it with;
+  - speculative, with no failure shown;
+  - impossible to verify by reading the code.
+- **A drop stays dropped** unless new evidence changes the reason it was dropped.
+- **Ask** a maintainer only when the project''s documents, rulings and earlier answers
+  cannot decide it, and say what you recommend. Judge scope against the project''s
+  direction document the way triage does.
+');
+INSERT INTO mc.arch_texts (archon_sha, factory_sha, path, text) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '85d479ad987dd63e441622ecb03db65233e8a803', '.shared/policy/merge.md', '# Merge queue policy
+
+This is the SDLC pack''s default policy for the merge queue. A project adds to it with
+its own `.archon/sdlc/policy/merge.md`: the queue reads this default first and the
+project''s file after it, and where the two conflict, the project''s line wins.
+
+The queue merges on its own when the case is clear, and asks a maintainer when it is
+not. The gate is not policy: no pull request merges unless its trusted review verdict
+says Ready for its head, CI is green there and the default branch''s CI is not red,
+whatever this document says. The queue never pushes, so a verdict for another commit
+means someone pushed after the review, and the pull request goes back to be reviewed.
+An open review thread holds the merge only when it raises a defect in what the pull
+request changes. A thread on code the pull request doesn''t change or make reachable,
+such as one that arrived with a merge of the default branch, doesn''t hold it.
+
+## Clear: the queue merges
+
+- A bug fix whose change stays inside the defect it fixes and the tests that prove it.
+- A small feature: one coherent behavior, a few files, with its tests and docs.
+- Tests, documentation and comments.
+- A pull request a maintainer approved for merge at its current head, or at an earlier
+  head when everything since is merges of the default branch and the resolution of
+  their conflicts, and the review is Ready at the current head. Anything else since the
+  approved head, or any doubt about it, voids the approval, and the queue asks again.
+
+## Unclear: the queue asks
+
+- A persisted schema, a migration, or any stored or wire format.
+- Authentication, credentials or permissions.
+- Large changes: many files or packages, or a rewrite of a subsystem.
+- Partial work: one part of a multi-part plan, or a pull request whose review lists
+  contract items as not yet met.
+- Anything a release or the project''s direction depends on without a ruling.
+
+## Before a merge
+
+- **Fix in the build queue.** A pull request that fails the gate for a reason the
+  build queue can correct, such as a review thread that raises a defect in the change,
+  a verdict that is not Ready or is for another commit, a conflict with the default
+  branch, or CI red that the change caused, goes back to the build queue with a brief,
+  whether it is clear or not.
+- **Ask an unclear pull request early.** Once its verdict is Ready at its head, an
+  unclear pull request is asked, even while its CI is pending or it conflicts, so the
+  decision runs alongside the rest. The approval is pinned to that head.
+- **Merge when the merge is clean.** A pull request whose verdict is Ready, whose CI is
+  green at its head, and which the forge reports merges into the default branch with
+  no conflict merges at that head, reshape or not, even when the default branch moved
+  since. The default branch''s CI on the merge judges the combined result.
+- **One rerun for red elsewhere.** CI red in code the pull request does not touch gets
+  one rerun of the failed jobs. Red again after it counts as the change''s.
+- **The default branch comes first.** Each sweep judges its CI before any pull
+  request, and while it is red nothing merges. Red in code no recent merge touched gets
+  one rerun; red after that, or red in code a recent merge touched, is raised to a
+  maintainer, naming the pull requests merged since it was last green, so one can be
+  reverted or fixed forward.
+');
+INSERT INTO mc.arch_texts (archon_sha, factory_sha, path, text) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '85d479ad987dd63e441622ecb03db65233e8a803', '.shared/policy/rulings.md', '# Rulings
+
+This is the SDLC pack''s default rulings document, and it records no rulings. A project
+records the answers its maintainers have already given to questions plan and review
+would otherwise stop on in its own `.archon/sdlc/policy/rulings.md`, which adds to
+this file: a node reads this default first and the project''s file after it. One entry
+per ruling: the question it settles, the answer, and the project document it rests on
+when there is one.
+');
+INSERT INTO mc.arch_texts (archon_sha, factory_sha, path, text) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '85d479ad987dd63e441622ecb03db65233e8a803', '.shared/policy/triage.md', '# Triage policy
+
+This is the SDLC pack''s default triage policy. A project adds to it with its own
+`.archon/sdlc/policy/triage.md`: triage reads this default first and the project''s file
+after it, and where the two conflict, the project''s line wins.
+
+- **Scope.** Judge whether an item is in scope against the project''s direction
+  document. When the project has none, say so rather than invent its scope.
+- **Closing without a person.** Only two kinds of item may be closed without a
+  maintainer: a duplicate of an issue that is still open, and an item whose outcome a
+  merged change already delivered. Name that open issue or that merged change.
+- **Everything else goes to a maintainer.** An item that looks closable for any other
+  reason (out of scope, obsolete, superseded, rejected by direction, or a duplicate of
+  a closed item) waits for a maintainer''s decision, with the reason it looks closable.
+');
 INSERT INTO mc.arch_scripts (archon_sha, factory_sha, path, text) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '85d479ad987dd63e441622ecb03db65233e8a803', '.shared/agent-json.ts', '/**
  * Reading JSON an agent wrote.
  *

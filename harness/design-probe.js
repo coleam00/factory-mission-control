@@ -24,6 +24,12 @@ const WIDTHS = [1440, 390];
 const HEIGHT = 900;
 /** How long one DevTools command, the page load or the in-page checks may take. */
 const STEP_TIMEOUT_MS = 20000;
+/**
+ * How long the browser may take to open its DevTools port. A cold first start on GitHub's Linux
+ * runner takes 7-23 s and has passed 20 s (#355); later starts take under 1 s. 45 s covers the
+ * cold start and leaves a 60 s test budget room for the page checks.
+ */
+const PORT_TIMEOUT_MS = 45000;
 /** The console's tokens, then the v2 role colors laid over them (docs/design/v2/README.md). */
 export const TOKEN_SOURCES = [
   ['archon-console', 'index.css'],
@@ -104,8 +110,8 @@ async function removeProfile(profile) {
   }
 }
 
-/** Starts the browser and connects to it. `readPort` reads DevToolsActivePort; tests replace it. */
-export async function launchBrowser(readPort = readPortFile) {
+/** Starts the browser and connects to it, waiting up to `portTimeoutMs` for its DevTools port. `readPort` reads DevToolsActivePort; tests replace both. */
+export async function launchBrowser(readPort = readPortFile, portTimeoutMs = PORT_TIMEOUT_MS) {
   const profile = mkdtempSync(join(tmpdir(), 'design-probe-'));
   const args = [
     '--headless=new',
@@ -129,7 +135,7 @@ export async function launchBrowser(readPort = readPortFile) {
   };
   try {
     const activePort = join(profile, 'DevToolsActivePort');
-    const [port, path] = await poll('the browser opening its DevTools port', 20000, () => {
+    const [port, path] = await poll('the browser opening its DevTools port', portTimeoutMs, () => {
       if (proc.exitCode !== null) throw new ProbeError(`the browser exited with ${proc.exitCode}`);
       let lines;
       try {

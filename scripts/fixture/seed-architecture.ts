@@ -10,6 +10,7 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { type PackVersion, parsePack, type Step } from '../../parsers/pack';
+import { archRows } from '../arch-parse';
 import { insert, lit, type SqlRow } from './sql';
 
 type Edit = { file: string } & ({ find: string; replace: string } | { append: string });
@@ -192,7 +193,10 @@ function tables(version: PackVersion): Table[] {
     {
       name: 'mc.arch_texts',
       key: ['path'],
-      rows: version.commands.map((c) => ({ path: c.path, text: c.text })),
+      rows: archRows(version).arch_texts.map((t) => ({
+        path: String(t.path),
+        text: String(t.text),
+      })),
     },
     {
       name: 'mc.arch_scripts',
