@@ -7,7 +7,7 @@ const EVENTS = ['node_started', 'node_completed', 'node_failed'] as const;
 type StepEvent = (typeof EVENTS)[number];
 
 const USAGE =
-  'usage: bun run fixture:write step [--run <id>] [--step <step id>] [--event node_started|node_completed|node_failed] [--error <text>] | label | comment | issue | pin | verdict [--pin <sha prefix>] | decision';
+  'usage: bun run fixture:write step [--run <id>] [--step <step id>] [--event node_started|node_completed|node_failed] [--error <text>] | attention --run <id> | label | comment | issue | pin | verdict [--pin <sha prefix>] | decision';
 
 export const WORKFLOW = 'archon-loop';
 export const FACTORY = 'mission-control';
@@ -312,6 +312,31 @@ async function writeEvent(tx: Tx, { step, event, run, error }: StepCli, at: Date
   return `events for run ${runId}: ${before} -> ${await eventCount(tx, runId)}`;
 }
 
+/** The wait Archon writes on a run paused at an attention node, as `metadata.wait`. */
+export function attentionWait(waitingSince: string): Record<string, unknown> {
+  return {
+    owner: 'node',
+    nodeId: 'ask',
+    kind: 'attention',
+    waitingSince,
+    message: 'Fixture question',
+    pauseId: '5eedaaaa-0000-4000-8000-000000000001',
+  };
+}
+
+/** Pauses one running run on an open attention wait, as Archon does; fails unless exactly one run changed. */
+async function pauseOnAttention(tx: Tx, runId: string, at: Date): Promise<string> {
+  const changed = await tx.query(
+    `UPDATE remote_agent_workflow_runs
+       SET status = 'paused', metadata = jsonb_set(coalesce(metadata, '{}'::jsonb), '{wait}', $2::jsonb)
+     WHERE id = $1 AND status = 'running' RETURNING id`,
+    [runId, attentionWait(at.toISOString())],
+  );
+  if (changed.length !== 1)
+    throw new Error(`run ${runId} is not a running run, so it cannot be paused`);
+  return `run ${runId}: running -> paused on attention`;
+}
+
 export const main: Main = async (argv, deps) => {
   let parsed: Cli;
   try {
@@ -325,10 +350,10 @@ export const main: Main = async (argv, deps) => {
     try {
       let report = '';
       await db.transaction(async (tx) => {
-        report =
-          parsed.kind === 'step'
-            ? await writeEvent(tx, parsed, deps.now())
-            : await writeRow(tx, parsed.kind, deps.now(), parsed.pin);
+        if (parsed.kind === 'step') report = await writeEvent(tx, parsed, deps.now());
+        else if (parsed.kind === 'attention')
+          report = await pauseOnAttention(tx, parsed.run, deps.now());
+        else report = await writeRow(tx, parsed.kind, deps.now(), parsed.pin);
       });
       deps.out(report);
     } finally {
@@ -338,7 +363,8 @@ export const main: Main = async (argv, deps) => {
 };
 
 type StepCli = { kind: 'step'; step: string; event: StepEvent; run?: string; error?: string };
-type Cli = StepCli | { kind: RowKindName; pin?: string };
+type AttentionCli = { kind: 'attention'; run: string };
+type Cli = StepCli | AttentionCli | { kind: RowKindName; pin?: string };
 
 function parseCli(argv: string[]): Cli {
   const { values, positionals } = parseArgs({
@@ -354,6 +380,12 @@ function parseCli(argv: string[]): Cli {
   });
   const [kind, ...extra] = positionals;
   if (kind === undefined || extra.length > 0) throw new Error('name exactly one kind');
+  if (kind === 'attention') {
+    const { run, ...others } = values;
+    if (run === undefined) throw new Error('attention needs --run <id>');
+    if (Object.keys(others).length > 0) throw new Error('attention takes only --run');
+    return { kind, run };
+  }
   if (isRowKind(kind)) {
     const { pin, ...stepOnly } = values;
     if (Object.keys(stepOnly).length > 0) {

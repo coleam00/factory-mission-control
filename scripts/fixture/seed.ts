@@ -22,7 +22,7 @@ import { migrationsDir, readMigrationFiles, runMigrations } from '../migrate';
 import { architectureSql, parseVersions, V2_EDITS } from './seed-architecture';
 import { MARKER, scorecard } from './seed-report';
 import { insert, json, type SqlRow } from './sql';
-import { FACTORY, nodeBlock, REPOSITORY, WORKFLOW } from './write';
+import { attentionWait, FACTORY, nodeBlock, REPOSITORY, WORKFLOW } from './write';
 
 // Builds fixtures/seed.sql: the rows every panel is built against (PRD 12 item 3). Archon's rows
 // are written first; the lap, step and app-check rows are then projected from them by SQL, so they
@@ -34,6 +34,7 @@ const USAGE =
 
 export const SEED_CODEBASE = '5eed0000-0000-4000-8000-000000000000';
 const SECOND_CODEBASE = '5eed0000-0000-4000-8000-000000000001';
+const QUEUE_CODEBASE = '5eed0000-0000-4000-8000-000000000002';
 const MINUTE = 60_000;
 
 const iso = (ms: number) => new Date(ms).toISOString();
@@ -1012,13 +1013,14 @@ function githubSql(runs: Run[]): string[] {
 
 // --- The projection (PRD 11.2, 11.4, 11.7), over the seed's codebases only ----------------------
 
-const PROJECTION = `INSERT INTO mc.laps (run_id, factory, workflow_name, status, digest, started_at, completed_at)
+const PROJECTION = `INSERT INTO mc.laps (run_id, factory, workflow_name, status, digest, started_at, completed_at,
+  issue_number, attention_open)
 SELECT r.id, f.name, r.workflow_name, r.status, r.metadata->'workflow_source'->>'digest',
-  r.started_at, r.completed_at
+  r.started_at, r.completed_at, mc.run_issue_number(r.metadata), mc.run_attention_open(r.status, r.metadata)
 FROM remote_agent_workflow_runs r
 JOIN remote_agent_codebases c ON c.id = r.codebase_id
 JOIN mc.factories f ON f.codebase = c.name
-WHERE r.codebase_id IN ('${SEED_CODEBASE}', '${SECOND_CODEBASE}')
+WHERE r.codebase_id IN ('${SEED_CODEBASE}', '${SECOND_CODEBASE}', '${QUEUE_CODEBASE}')
 ON CONFLICT DO NOTHING;
 
 -- A step's last event decides its status and carries its timing, model, tokens, cost and output.
@@ -1040,7 +1042,7 @@ SELECT DISTINCT ON (e.workflow_run_id, e.step_name)
     THEN (e.data->'structured_output') - 'lines' END
 FROM remote_agent_workflow_events e
 JOIN remote_agent_workflow_runs r ON r.id = e.workflow_run_id
-WHERE r.codebase_id IN ('${SEED_CODEBASE}', '${SECOND_CODEBASE}')
+WHERE r.codebase_id IN ('${SEED_CODEBASE}', '${SECOND_CODEBASE}', '${QUEUE_CODEBASE}')
   AND e.event_type IN ('node_started', 'node_completed', 'node_failed', 'node_skipped')
 ORDER BY e.workflow_run_id, e.step_name, e.created_at DESC, e.event_order DESC
 ON CONFLICT DO NOTHING;
@@ -1050,7 +1052,7 @@ ON CONFLICT DO NOTHING;
 SELECT mc.record_step_attempt(e.id, e.workflow_run_id, e.event_type, e.step_name, e.data)
 FROM remote_agent_workflow_events e
 JOIN remote_agent_workflow_runs r ON r.id = e.workflow_run_id
-WHERE r.codebase_id IN ('${SEED_CODEBASE}', '${SECOND_CODEBASE}')
+WHERE r.codebase_id IN ('${SEED_CODEBASE}', '${SECOND_CODEBASE}', '${QUEUE_CODEBASE}')
   AND e.event_type IN ('node_completed', 'node_failed', 'node_skipped')
 ORDER BY e.created_at, e.event_order;
 
@@ -1058,7 +1060,7 @@ ORDER BY e.created_at, e.event_order;
 SELECT mc.project_app_check_lines(e.workflow_run_id, e.data->'structured_output'->'lines')
 FROM remote_agent_workflow_events e
 JOIN remote_agent_workflow_runs r ON r.id = e.workflow_run_id
-WHERE r.codebase_id IN ('${SEED_CODEBASE}', '${SECOND_CODEBASE}')
+WHERE r.codebase_id IN ('${SEED_CODEBASE}', '${SECOND_CODEBASE}', '${QUEUE_CODEBASE}')
   AND e.event_type = 'node_completed' AND e.step_name = 'check-app'
   AND jsonb_typeof(e.data->'structured_output'->'lines') = 'array'
 ORDER BY e.created_at, e.event_order;
@@ -1244,6 +1246,120 @@ function secondFactorySql(loop: Loop): string[] {
   ];
 }
 
+/**
+ * A third factory, in the fixture only, on Archon's queue workflows (issue #333): no claim comment,
+ * so a run's issue is its `number` input. Two running archon-build-queue runs and a third that
+ * `fixture:write attention` can pause, none yet on a running step (the live check starts one); a
+ * paused archon-merge-queue run waiting on attention, and a completed one whose `record` step read
+ * pull requests 404 and 405 back as merged. One open needs-owner issue must not count.
+ */
+export const QUEUE_FACTORY: FactoryEntry = {
+  name: 'queue-factory',
+  repository: 'coleam00/queue-factory',
+  codebase: 'coleam00/queue-factory',
+  console: 'http://localhost:3090',
+};
+
+export const QUEUE_RUNS = {
+  build: '5eed0005-0000-4000-8000-000000000001',
+  review: '5eed0005-0000-4000-8000-000000000002',
+  ask: '5eed0005-0000-4000-8000-000000000003',
+  waiting: '5eed0005-0000-4000-8000-000000000004',
+  merged: '5eed0005-0000-4000-8000-000000000005',
+} as const;
+
+function queueFactorySql(): string[] {
+  const at = (minute: number) => `2026-10-24T09:${String(minute).padStart(2, '0')}:00.000Z`;
+  let event = 0;
+  const done = (run: string, step: string, minute: number, output?: Record<string, unknown>) =>
+    insert('remote_agent_workflow_events', {
+      id: `5eedeeee-0000-4000-8000-2${String(++event).padStart(11, '0')}`,
+      workflow_run_id: run,
+      event_type: 'node_completed',
+      step_name: step,
+      data: json({
+        ...nodeBlock(step, 'script', step),
+        timing: { startedAt: at(minute), durationMs: 1000 },
+        duration_ms: 1000,
+        ...(output ? { structured_output: output } : {}),
+      }),
+      created_at: at(minute),
+    });
+  const run = (
+    id: string,
+    workflow: string,
+    status: string,
+    metadata: Record<string, unknown>,
+    completed: boolean,
+  ) =>
+    insert('remote_agent_workflow_runs', {
+      id,
+      workflow_name: workflow,
+      codebase_id: QUEUE_CODEBASE,
+      status,
+      user_message: `Run ${workflow} on ${QUEUE_FACTORY.repository}`,
+      metadata: json(metadata),
+      started_at: at(0),
+      completed_at: completed ? at(9) : null,
+      last_activity_at: at(5),
+    });
+  const issue = (number: number, title: string) =>
+    insert('mc.issues', {
+      factory: QUEUE_FACTORY.name,
+      number,
+      title,
+      state: 'open',
+      phase: null,
+      url: `https://github.com/${QUEUE_FACTORY.repository}/issues/${number}`,
+      created_at: at(0),
+      updated_at: at(1),
+      closed_at: null,
+    });
+  const first = (id: string, number: number) => [
+    run(id, 'archon-build-queue', 'running', { inputs: { number: String(number) } }, false),
+    done(id, 'facts', 1),
+    done(id, 'route', 2),
+    done(id, 'checkout', 3),
+  ];
+  return [
+    '',
+    '-- A third factory, on the queue workflows: runs with a number input, one waiting on attention, one that merged.',
+    insert('mc.factories', QUEUE_FACTORY),
+    insert('remote_agent_codebases', {
+      id: QUEUE_CODEBASE,
+      name: QUEUE_FACTORY.codebase,
+      repository_url: `https://github.com/${QUEUE_FACTORY.repository}`,
+      default_cwd: 'C:/factory/queue-factory',
+    }),
+    ...first(QUEUE_RUNS.build, 401),
+    ...first(QUEUE_RUNS.review, 402),
+    ...first(QUEUE_RUNS.ask, 403),
+    done(QUEUE_RUNS.ask, 'apply', 4),
+    run(QUEUE_RUNS.waiting, 'archon-merge-queue', 'paused', { wait: attentionWait(at(6)) }, false),
+    run(QUEUE_RUNS.merged, 'archon-merge-queue', 'completed', {}, true),
+    done(QUEUE_RUNS.merged, 'record', 8, {
+      merged: [404, 405],
+      summary: 'Merged 404 and 405.',
+      attention: '',
+      options: [],
+      class: '',
+      asked: null,
+    }),
+    issue(401, 'Queue issue 401'),
+    issue(402, 'Queue issue 402'),
+    issue(403, 'Queue issue 403'),
+    issue(404, 'Queue issue 404'),
+    issue(405, 'Queue issue 405'),
+    issue(406, 'Needs the owner'),
+    insert('mc.issue_labels', {
+      factory: QUEUE_FACTORY.name,
+      issue_number: 406,
+      label: 'needs-owner',
+      labeled_at: at(2),
+    }),
+  ];
+}
+
 export function buildSeed(repoRoot: string): string {
   const { v1, v2 } = parseVersions(repoRoot);
   if (!v1.archonCommit || !v1.factoryCommit) throw new Error('the pack names no commits');
@@ -1276,6 +1392,7 @@ export function buildSeed(repoRoot: string): string {
     ...versionsSql(versions),
     ...archonSql(factory, runs),
     ...secondFactorySql(v2Loop),
+    ...queueFactorySql(),
     '',
     "-- Laps, steps, app-check lines and versions, projected from Archon's rows above.",
     PROJECTION,

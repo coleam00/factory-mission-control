@@ -630,14 +630,42 @@ INSERT INTO remote_agent_codebases (id, name, repository_url, default_cwd) VALUE
 INSERT INTO remote_agent_workflow_runs (id, workflow_name, codebase_id, status, user_message, metadata, started_at, completed_at, last_activity_at) VALUES ('5eed0004-0000-4000-8000-000000000000', 'archon-loop', '5eed0000-0000-4000-8000-000000000001', 'running', 'Run the loop on coleam00/second-factory', '{}'::jsonb, '2026-10-24T09:00:00.000Z', NULL, '2026-10-24T09:05:00.000Z');
 INSERT INTO remote_agent_workflow_events (id, workflow_run_id, event_type, step_name, data, created_at) VALUES ('5eedeeee-0000-4000-8000-100000000001', '5eed0004-0000-4000-8000-000000000000', 'node_started', 'claim', '{"node":{"id":"claim","kind":"script","source":{"kind":"project"}},"type":"script","command":null,"accounting":"node","timing":{"startedAt":"2026-10-24T09:05:00.000Z"}}'::jsonb, '2026-10-24T09:05:00.000Z');
 
+-- A third factory, on the queue workflows: runs with a number input, one waiting on attention, one that merged.
+INSERT INTO mc.factories (name, repository, codebase, console) VALUES ('queue-factory', 'coleam00/queue-factory', 'coleam00/queue-factory', 'http://localhost:3090');
+INSERT INTO remote_agent_codebases (id, name, repository_url, default_cwd) VALUES ('5eed0000-0000-4000-8000-000000000002', 'coleam00/queue-factory', 'https://github.com/coleam00/queue-factory', 'C:/factory/queue-factory');
+INSERT INTO remote_agent_workflow_runs (id, workflow_name, codebase_id, status, user_message, metadata, started_at, completed_at, last_activity_at) VALUES ('5eed0005-0000-4000-8000-000000000001', 'archon-build-queue', '5eed0000-0000-4000-8000-000000000002', 'running', 'Run archon-build-queue on coleam00/queue-factory', '{"inputs":{"number":"401"}}'::jsonb, '2026-10-24T09:00:00.000Z', NULL, '2026-10-24T09:05:00.000Z');
+INSERT INTO remote_agent_workflow_events (id, workflow_run_id, event_type, step_name, data, created_at) VALUES ('5eedeeee-0000-4000-8000-200000000001', '5eed0005-0000-4000-8000-000000000001', 'node_completed', 'facts', '{"node":{"id":"facts","kind":"script","source":{"kind":"project"}},"type":"script","command":null,"accounting":"node","timing":{"startedAt":"2026-10-24T09:01:00.000Z","durationMs":1000},"duration_ms":1000}'::jsonb, '2026-10-24T09:01:00.000Z');
+INSERT INTO remote_agent_workflow_events (id, workflow_run_id, event_type, step_name, data, created_at) VALUES ('5eedeeee-0000-4000-8000-200000000002', '5eed0005-0000-4000-8000-000000000001', 'node_completed', 'route', '{"node":{"id":"route","kind":"script","source":{"kind":"project"}},"type":"script","command":null,"accounting":"node","timing":{"startedAt":"2026-10-24T09:02:00.000Z","durationMs":1000},"duration_ms":1000}'::jsonb, '2026-10-24T09:02:00.000Z');
+INSERT INTO remote_agent_workflow_events (id, workflow_run_id, event_type, step_name, data, created_at) VALUES ('5eedeeee-0000-4000-8000-200000000003', '5eed0005-0000-4000-8000-000000000001', 'node_completed', 'checkout', '{"node":{"id":"checkout","kind":"script","source":{"kind":"project"}},"type":"script","command":null,"accounting":"node","timing":{"startedAt":"2026-10-24T09:03:00.000Z","durationMs":1000},"duration_ms":1000}'::jsonb, '2026-10-24T09:03:00.000Z');
+INSERT INTO remote_agent_workflow_runs (id, workflow_name, codebase_id, status, user_message, metadata, started_at, completed_at, last_activity_at) VALUES ('5eed0005-0000-4000-8000-000000000002', 'archon-build-queue', '5eed0000-0000-4000-8000-000000000002', 'running', 'Run archon-build-queue on coleam00/queue-factory', '{"inputs":{"number":"402"}}'::jsonb, '2026-10-24T09:00:00.000Z', NULL, '2026-10-24T09:05:00.000Z');
+INSERT INTO remote_agent_workflow_events (id, workflow_run_id, event_type, step_name, data, created_at) VALUES ('5eedeeee-0000-4000-8000-200000000004', '5eed0005-0000-4000-8000-000000000002', 'node_completed', 'facts', '{"node":{"id":"facts","kind":"script","source":{"kind":"project"}},"type":"script","command":null,"accounting":"node","timing":{"startedAt":"2026-10-24T09:01:00.000Z","durationMs":1000},"duration_ms":1000}'::jsonb, '2026-10-24T09:01:00.000Z');
+INSERT INTO remote_agent_workflow_events (id, workflow_run_id, event_type, step_name, data, created_at) VALUES ('5eedeeee-0000-4000-8000-200000000005', '5eed0005-0000-4000-8000-000000000002', 'node_completed', 'route', '{"node":{"id":"route","kind":"script","source":{"kind":"project"}},"type":"script","command":null,"accounting":"node","timing":{"startedAt":"2026-10-24T09:02:00.000Z","durationMs":1000},"duration_ms":1000}'::jsonb, '2026-10-24T09:02:00.000Z');
+INSERT INTO remote_agent_workflow_events (id, workflow_run_id, event_type, step_name, data, created_at) VALUES ('5eedeeee-0000-4000-8000-200000000006', '5eed0005-0000-4000-8000-000000000002', 'node_completed', 'checkout', '{"node":{"id":"checkout","kind":"script","source":{"kind":"project"}},"type":"script","command":null,"accounting":"node","timing":{"startedAt":"2026-10-24T09:03:00.000Z","durationMs":1000},"duration_ms":1000}'::jsonb, '2026-10-24T09:03:00.000Z');
+INSERT INTO remote_agent_workflow_runs (id, workflow_name, codebase_id, status, user_message, metadata, started_at, completed_at, last_activity_at) VALUES ('5eed0005-0000-4000-8000-000000000003', 'archon-build-queue', '5eed0000-0000-4000-8000-000000000002', 'running', 'Run archon-build-queue on coleam00/queue-factory', '{"inputs":{"number":"403"}}'::jsonb, '2026-10-24T09:00:00.000Z', NULL, '2026-10-24T09:05:00.000Z');
+INSERT INTO remote_agent_workflow_events (id, workflow_run_id, event_type, step_name, data, created_at) VALUES ('5eedeeee-0000-4000-8000-200000000007', '5eed0005-0000-4000-8000-000000000003', 'node_completed', 'facts', '{"node":{"id":"facts","kind":"script","source":{"kind":"project"}},"type":"script","command":null,"accounting":"node","timing":{"startedAt":"2026-10-24T09:01:00.000Z","durationMs":1000},"duration_ms":1000}'::jsonb, '2026-10-24T09:01:00.000Z');
+INSERT INTO remote_agent_workflow_events (id, workflow_run_id, event_type, step_name, data, created_at) VALUES ('5eedeeee-0000-4000-8000-200000000008', '5eed0005-0000-4000-8000-000000000003', 'node_completed', 'route', '{"node":{"id":"route","kind":"script","source":{"kind":"project"}},"type":"script","command":null,"accounting":"node","timing":{"startedAt":"2026-10-24T09:02:00.000Z","durationMs":1000},"duration_ms":1000}'::jsonb, '2026-10-24T09:02:00.000Z');
+INSERT INTO remote_agent_workflow_events (id, workflow_run_id, event_type, step_name, data, created_at) VALUES ('5eedeeee-0000-4000-8000-200000000009', '5eed0005-0000-4000-8000-000000000003', 'node_completed', 'checkout', '{"node":{"id":"checkout","kind":"script","source":{"kind":"project"}},"type":"script","command":null,"accounting":"node","timing":{"startedAt":"2026-10-24T09:03:00.000Z","durationMs":1000},"duration_ms":1000}'::jsonb, '2026-10-24T09:03:00.000Z');
+INSERT INTO remote_agent_workflow_events (id, workflow_run_id, event_type, step_name, data, created_at) VALUES ('5eedeeee-0000-4000-8000-200000000010', '5eed0005-0000-4000-8000-000000000003', 'node_completed', 'apply', '{"node":{"id":"apply","kind":"script","source":{"kind":"project"}},"type":"script","command":null,"accounting":"node","timing":{"startedAt":"2026-10-24T09:04:00.000Z","durationMs":1000},"duration_ms":1000}'::jsonb, '2026-10-24T09:04:00.000Z');
+INSERT INTO remote_agent_workflow_runs (id, workflow_name, codebase_id, status, user_message, metadata, started_at, completed_at, last_activity_at) VALUES ('5eed0005-0000-4000-8000-000000000004', 'archon-merge-queue', '5eed0000-0000-4000-8000-000000000002', 'paused', 'Run archon-merge-queue on coleam00/queue-factory', '{"wait":{"owner":"node","nodeId":"ask","kind":"attention","waitingSince":"2026-10-24T09:06:00.000Z","message":"Fixture question","pauseId":"5eedaaaa-0000-4000-8000-000000000001"}}'::jsonb, '2026-10-24T09:00:00.000Z', NULL, '2026-10-24T09:05:00.000Z');
+INSERT INTO remote_agent_workflow_runs (id, workflow_name, codebase_id, status, user_message, metadata, started_at, completed_at, last_activity_at) VALUES ('5eed0005-0000-4000-8000-000000000005', 'archon-merge-queue', '5eed0000-0000-4000-8000-000000000002', 'completed', 'Run archon-merge-queue on coleam00/queue-factory', '{}'::jsonb, '2026-10-24T09:00:00.000Z', '2026-10-24T09:09:00.000Z', '2026-10-24T09:05:00.000Z');
+INSERT INTO remote_agent_workflow_events (id, workflow_run_id, event_type, step_name, data, created_at) VALUES ('5eedeeee-0000-4000-8000-200000000011', '5eed0005-0000-4000-8000-000000000005', 'node_completed', 'record', '{"node":{"id":"record","kind":"script","source":{"kind":"project"}},"type":"script","command":null,"accounting":"node","timing":{"startedAt":"2026-10-24T09:08:00.000Z","durationMs":1000},"duration_ms":1000,"structured_output":{"merged":[404,405],"summary":"Merged 404 and 405.","attention":"","options":[],"class":"","asked":null}}'::jsonb, '2026-10-24T09:08:00.000Z');
+INSERT INTO mc.issues (factory, number, title, state, phase, url, created_at, updated_at, closed_at) VALUES ('queue-factory', 401, 'Queue issue 401', 'open', NULL, 'https://github.com/coleam00/queue-factory/issues/401', '2026-10-24T09:00:00.000Z', '2026-10-24T09:01:00.000Z', NULL);
+INSERT INTO mc.issues (factory, number, title, state, phase, url, created_at, updated_at, closed_at) VALUES ('queue-factory', 402, 'Queue issue 402', 'open', NULL, 'https://github.com/coleam00/queue-factory/issues/402', '2026-10-24T09:00:00.000Z', '2026-10-24T09:01:00.000Z', NULL);
+INSERT INTO mc.issues (factory, number, title, state, phase, url, created_at, updated_at, closed_at) VALUES ('queue-factory', 403, 'Queue issue 403', 'open', NULL, 'https://github.com/coleam00/queue-factory/issues/403', '2026-10-24T09:00:00.000Z', '2026-10-24T09:01:00.000Z', NULL);
+INSERT INTO mc.issues (factory, number, title, state, phase, url, created_at, updated_at, closed_at) VALUES ('queue-factory', 404, 'Queue issue 404', 'open', NULL, 'https://github.com/coleam00/queue-factory/issues/404', '2026-10-24T09:00:00.000Z', '2026-10-24T09:01:00.000Z', NULL);
+INSERT INTO mc.issues (factory, number, title, state, phase, url, created_at, updated_at, closed_at) VALUES ('queue-factory', 405, 'Queue issue 405', 'open', NULL, 'https://github.com/coleam00/queue-factory/issues/405', '2026-10-24T09:00:00.000Z', '2026-10-24T09:01:00.000Z', NULL);
+INSERT INTO mc.issues (factory, number, title, state, phase, url, created_at, updated_at, closed_at) VALUES ('queue-factory', 406, 'Needs the owner', 'open', NULL, 'https://github.com/coleam00/queue-factory/issues/406', '2026-10-24T09:00:00.000Z', '2026-10-24T09:01:00.000Z', NULL);
+INSERT INTO mc.issue_labels (factory, issue_number, label, labeled_at) VALUES ('queue-factory', 406, 'needs-owner', '2026-10-24T09:02:00.000Z');
+
 -- Laps, steps, app-check lines and versions, projected from Archon's rows above.
-INSERT INTO mc.laps (run_id, factory, workflow_name, status, digest, started_at, completed_at)
+INSERT INTO mc.laps (run_id, factory, workflow_name, status, digest, started_at, completed_at,
+  issue_number, attention_open)
 SELECT r.id, f.name, r.workflow_name, r.status, r.metadata->'workflow_source'->>'digest',
-  r.started_at, r.completed_at
+  r.started_at, r.completed_at, mc.run_issue_number(r.metadata), mc.run_attention_open(r.status, r.metadata)
 FROM remote_agent_workflow_runs r
 JOIN remote_agent_codebases c ON c.id = r.codebase_id
 JOIN mc.factories f ON f.codebase = c.name
-WHERE r.codebase_id IN ('5eed0000-0000-4000-8000-000000000000', '5eed0000-0000-4000-8000-000000000001')
+WHERE r.codebase_id IN ('5eed0000-0000-4000-8000-000000000000', '5eed0000-0000-4000-8000-000000000001', '5eed0000-0000-4000-8000-000000000002')
 ON CONFLICT DO NOTHING;
 
 -- A step's last event decides its status and carries its timing, model, tokens, cost and output.
@@ -659,7 +687,7 @@ SELECT DISTINCT ON (e.workflow_run_id, e.step_name)
     THEN (e.data->'structured_output') - 'lines' END
 FROM remote_agent_workflow_events e
 JOIN remote_agent_workflow_runs r ON r.id = e.workflow_run_id
-WHERE r.codebase_id IN ('5eed0000-0000-4000-8000-000000000000', '5eed0000-0000-4000-8000-000000000001')
+WHERE r.codebase_id IN ('5eed0000-0000-4000-8000-000000000000', '5eed0000-0000-4000-8000-000000000001', '5eed0000-0000-4000-8000-000000000002')
   AND e.event_type IN ('node_started', 'node_completed', 'node_failed', 'node_skipped')
 ORDER BY e.workflow_run_id, e.step_name, e.created_at DESC, e.event_order DESC
 ON CONFLICT DO NOTHING;
@@ -669,7 +697,7 @@ ON CONFLICT DO NOTHING;
 SELECT mc.record_step_attempt(e.id, e.workflow_run_id, e.event_type, e.step_name, e.data)
 FROM remote_agent_workflow_events e
 JOIN remote_agent_workflow_runs r ON r.id = e.workflow_run_id
-WHERE r.codebase_id IN ('5eed0000-0000-4000-8000-000000000000', '5eed0000-0000-4000-8000-000000000001')
+WHERE r.codebase_id IN ('5eed0000-0000-4000-8000-000000000000', '5eed0000-0000-4000-8000-000000000001', '5eed0000-0000-4000-8000-000000000002')
   AND e.event_type IN ('node_completed', 'node_failed', 'node_skipped')
 ORDER BY e.created_at, e.event_order;
 
@@ -677,7 +705,7 @@ ORDER BY e.created_at, e.event_order;
 SELECT mc.project_app_check_lines(e.workflow_run_id, e.data->'structured_output'->'lines')
 FROM remote_agent_workflow_events e
 JOIN remote_agent_workflow_runs r ON r.id = e.workflow_run_id
-WHERE r.codebase_id IN ('5eed0000-0000-4000-8000-000000000000', '5eed0000-0000-4000-8000-000000000001')
+WHERE r.codebase_id IN ('5eed0000-0000-4000-8000-000000000000', '5eed0000-0000-4000-8000-000000000001', '5eed0000-0000-4000-8000-000000000002')
   AND e.event_type = 'node_completed' AND e.step_name = 'check-app'
   AND jsonb_typeof(e.data->'structured_output'->'lines') = 'array'
 ORDER BY e.created_at, e.event_order;

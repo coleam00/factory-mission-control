@@ -60,6 +60,7 @@ const lap = (run: string, step: string): HomeMapRow => ({
   title: null,
   url: null,
   at: null,
+  prs: null,
 });
 
 const cardTag = (html: string, id: string) =>
@@ -113,6 +114,7 @@ test('queued, failing, waiting and merged chips sit on Build, App check, the Man
               title: 't',
               url: null,
               at: null,
+              prs: null,
             },
             {
               kind: 'merged',
@@ -123,6 +125,7 @@ test('queued, failing, waiting and merged chips sit on Build, App check, the Man
               title: null,
               url: null,
               at: new Date(2026, 10, 3, 9),
+              prs: null,
             },
           ],
           workable: [{ kind: 'issue', issue_number: 2, title: 'w', url: null, run_id: null }],
@@ -350,6 +353,21 @@ test('Behind the scenes shows each workflow its own YAML path, and none for a wo
   expect(block('wf-a')).not.toContain('workflows/b.yaml');
   expect(block('wf-b')).toContain('workflows/b.yaml');
   expect(workflowFile(steps, 'missing')).toBeUndefined();
+  expect(html).not.toContain('data-steps-missing');
+  const lacking = renderToStaticMarkup(
+    <MemoryRouter>
+      <Behind
+        card={{
+          ...card,
+          covers: [{ pack: 'loop' as const, workflow: 'wf-a', steps: ['one', 'gone'] }],
+        }}
+        at={null}
+        steps={steps}
+        failed={false}
+      />
+    </MemoryRouter>,
+  );
+  expect(lacking).toContain('are not in this version');
 });
 
 test('the home clock turns over at the next local midnight', () => {

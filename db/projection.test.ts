@@ -1,4 +1,7 @@
 import { afterAll, beforeAll, beforeEach, expect, test } from 'bun:test';
+import { readFileSync } from 'node:fs';
+import { basename, join } from 'node:path';
+import { FACTORY_MAP } from '../app/map/factory-map';
 import { holdoutId } from '../parsers/metrics';
 import { eventData, structuredOutputFor } from '../scripts/fixture/write';
 import type { Db, Row } from '../scripts/lib/db';
@@ -291,7 +294,9 @@ test('the eligibility upgrade keeps live history and installs the same functions
       '0016_pin_reason_optional.sql',
       '0017_app_check_line_ids.sql',
       '0018_issue_label_time.sql',
+      '0019_queue_laps.sql',
       '0019_structured_output_string.sql',
+      '0020_queue_step_events.sql',
     ]);
     expect(await projectionDefinitions(upgraded)).toEqual(await projectionDefinitions(db));
     expect(await runMigrations({ files: migrationFiles, db: upgraded })).toEqual([]);
@@ -343,7 +348,9 @@ test('0011 rewrites a short pin to the one full sha it prefixes, and clears ambi
       '0016_pin_reason_optional.sql',
       '0017_app_check_line_ids.sql',
       '0018_issue_label_time.sql',
+      '0019_queue_laps.sql',
       '0019_structured_output_string.sql',
+      '0020_queue_step_events.sql',
     ]);
     const migrated = [
       { sha: 'p1', archon_sha: full },
@@ -411,7 +418,9 @@ test('0012 rewrites CRLF to LF in stored architecture texts, and changes nothing
       '0016_pin_reason_optional.sql',
       '0017_app_check_line_ids.sql',
       '0018_issue_label_time.sql',
+      '0019_queue_laps.sql',
       '0019_structured_output_string.sql',
+      '0020_queue_step_events.sql',
     ]);
     const migrated = [
       { kind: 'hook', path: '.factory/hooks/gate.sh', text: 'exit 0\n' },
@@ -490,7 +499,9 @@ test('0013 gives back the runs of a step the old key merged, and changes nothing
       '0016_pin_reason_optional.sql',
       '0017_app_check_line_ids.sql',
       '0018_issue_label_time.sql',
+      '0019_queue_laps.sql',
       '0019_structured_output_string.sql',
+      '0020_queue_step_events.sql',
     ]);
     expect(await attempts()).toEqual([
       { step_id: 'land', outcome: 'merged', cost_usd: null },
@@ -753,7 +764,9 @@ test('0014 keeps only a stored citation’s references, and changes nothing run 
       '0016_pin_reason_optional.sql',
       '0017_app_check_line_ids.sql',
       '0018_issue_label_time.sql',
+      '0019_queue_laps.sql',
       '0019_structured_output_string.sql',
+      '0020_queue_step_events.sql',
     ]);
     const lines = () =>
       historical.query(
@@ -806,7 +819,9 @@ test('0016 lets a pin have no reason, keeps stored reasons, and changes nothing 
       '0016_pin_reason_optional.sql',
       '0017_app_check_line_ids.sql',
       '0018_issue_label_time.sql',
+      '0019_queue_laps.sql',
       '0019_structured_output_string.sql',
+      '0020_queue_step_events.sql',
     ]);
     await pin('b'.repeat(40), null);
     const reasons = () => historical.query('SELECT sha, reason FROM mc.pins ORDER BY sha');
@@ -847,7 +862,9 @@ test('0017 keeps lines projected before it without an id, fills new reports’ i
     expect(await runMigrations({ files: migrationFiles, db: historical })).toEqual([
       '0017_app_check_line_ids.sql',
       '0018_issue_label_time.sql',
+      '0019_queue_laps.sql',
       '0019_structured_output_string.sql',
+      '0020_queue_step_events.sql',
     ]);
     const after = await run();
     await historical.query('SELECT mc.project_app_check_lines($1, $2)', [
@@ -1538,4 +1555,182 @@ test('a run status update commits and is recorded when the trigger cannot reach 
     throw new Error('rollback after the run committed');
   });
   await expect(rolledBack).rejects.toThrow('rollback after the run committed');
+});
+
+const WAIT = { kind: 'attention', owner: 'node', nodeId: 'ask', message: MARKER };
+
+async function setMetadata(metadata: unknown, status?: string): Promise<void> {
+  await db.query(
+    `UPDATE public.remote_agent_workflow_runs SET metadata = $2, status = coalesce($3, status)
+     WHERE id = $1`,
+    [runId, JSON.stringify(metadata), status ?? null],
+  );
+}
+
+const queueLap = async () =>
+  (
+    await db.query('SELECT issue_number, attention_open FROM mc.laps WHERE run_id = $1', [runId])
+  )[0];
+
+test('a lap’s issue is its run’s number input, unless the run is for a pull request', async () => {
+  await setMetadata({ inputs: { number: '401' } });
+  expect(await queueLap()).toEqual({ issue_number: 401, attention_open: false });
+  await setMetadata({ inputs: { number: '401', kind: 'pull_request' } });
+  expect((await queueLap())?.issue_number).toBeNull();
+  await setMetadata({ inputs: { number: '' } });
+  expect((await queueLap())?.issue_number).toBeNull();
+});
+
+test('a lap waits on attention from its pause until the wait is answered or the run resumes', async () => {
+  await setMetadata({ wait: WAIT }, 'paused');
+  expect((await queueLap())?.attention_open).toBe(true);
+  await setMetadata({ wait: { ...WAIT, answer: { text: 'yes' } } });
+  expect((await queueLap())?.attention_open).toBe(false);
+  await setMetadata({ wait: WAIT }, 'paused');
+  expect((await queueLap())?.attention_open).toBe(true);
+  await setMetadata({ wait: WAIT }, 'running');
+  expect((await queueLap())?.attention_open).toBe(false);
+  await setMetadata({ wait: { kind: 'quota' } }, 'paused');
+  expect((await queueLap())?.attention_open).toBe(false);
+  await setMetadata({ source_release: { nodeId: 'a' }, wait: WAIT }, 'paused');
+  expect((await queueLap())?.attention_open).toBe(false);
+});
+
+test('metadata of an odd shape commits in Archon, with no issue and no wait, and records no error', async () => {
+  for (const odd of [[1, 2], 'text', 5, { inputs: 'x' }, { inputs: { number: '99999999999' } }]) {
+    await setMetadata(odd, 'paused');
+    expect(await queueLap()).toEqual({ issue_number: null, attention_open: false });
+  }
+  expect(await projectionErrors()).toEqual([]);
+});
+
+test('0019 fills a lap projected before it, and changes nothing run again', async () => {
+  const historical = await archonDb();
+  try {
+    await runMigrations({ files: migrationFiles.filter((f) => f.name < '0019'), db: historical });
+    await historical.query(
+      `INSERT INTO public.remote_agent_workflow_runs (workflow_name, status, user_message, metadata)
+       VALUES ('archon-build-queue', 'paused', 'historical', $1)`,
+      [JSON.stringify({ inputs: { number: '402' }, wait: WAIT })],
+    );
+    expect(await runMigrations({ files: migrationFiles, db: historical })).toEqual([
+      '0019_queue_laps.sql',
+      '0019_structured_output_string.sql',
+      '0020_queue_step_events.sql',
+    ]);
+    const lap = () => historical.query('SELECT issue_number, attention_open FROM mc.laps');
+    expect(await lap()).toEqual([{ issue_number: 402, attention_open: true }]);
+    const migrated = await snapshot(historical);
+    const [file] = migrationFiles.filter((f) => f.name.startsWith('0019'));
+    await historical.query(file?.sql ?? '');
+    expect(await snapshot(historical)).toEqual(migrated);
+  } finally {
+    await historical.close();
+  }
+});
+
+async function archonEvent(workflow: string, type: string, step: string, data: unknown) {
+  const [run] = await db.query(
+    `INSERT INTO public.remote_agent_workflow_runs (workflow_name, status, user_message)
+     VALUES ($1, 'running', 'queue') RETURNING id`,
+    [workflow],
+  );
+  await db.query(
+    `INSERT INTO public.remote_agent_workflow_events (workflow_run_id, event_type, step_name, data)
+     VALUES ($1, $2, $3, $4)`,
+    [run?.id, type, step, JSON.stringify(data)],
+  );
+  return run?.id;
+}
+
+const projectedSteps = (id: unknown) =>
+  db.query('SELECT step_id, status, output FROM mc.lap_steps WHERE run_id = $1', [id]);
+
+test('a queue run’s step events project steps and attempts, as the old pack’s other workflows still do not', async () => {
+  const started = await archonEvent('archon-build-queue', 'node_started', 'implement', {});
+  expect(await projectedSteps(started)).toEqual([
+    { step_id: 'implement', status: 'running', output: null },
+  ]);
+  const merged = await archonEvent('archon-merge-queue', 'node_completed', 'record', {
+    structured_output: { merged: [404, 405] },
+    duration_ms: 5,
+  });
+  const [record] = await projectedSteps(merged);
+  expect(record).toMatchObject({ step_id: 'record', status: 'completed' });
+  expect(
+    await db.query('SELECT step_id, status FROM mc.lap_step_attempts WHERE run_id = $1', [merged]),
+  ).toEqual([{ step_id: 'record', status: 'completed' }]);
+  expect(
+    await db.query('SELECT step_id FROM mc.lap_step_attempt_usage WHERE run_id = $1', [merged]),
+  ).toEqual([{ step_id: 'record' }]);
+  const manager = await archonEvent('archon-manager', 'node_started', 'steer', {});
+  expect(await projectedSteps(manager)).toEqual([]);
+  expect(await projectionErrors()).toEqual([]);
+});
+
+test('the workflows projecting step events are the map’s queue covers and the old loop, no other', async () => {
+  const covers = FACTORY_MAP.cards.flatMap((c) => c.covers ?? []);
+  const projecting = new Set(
+    covers.filter((c) => c.pack === 'queue' || c.workflow === 'archon-loop').map((c) => c.workflow),
+  );
+  const notProjecting = new Set(covers.map((c) => c.workflow).filter((w) => !projecting.has(w)));
+  expect([...notProjecting].sort()).toEqual([
+    'archon-backlog',
+    'archon-holdouts',
+    'archon-manager',
+  ]);
+  for (const workflow of [...projecting, ...notProjecting]) {
+    const [row] = await db.query('SELECT mc.projects_step_events($1) AS projects', [workflow]);
+    expect({ workflow, projects: row?.projects }).toEqual({
+      workflow,
+      projects: projecting.has(workflow),
+    });
+  }
+});
+
+test('mc.keeps_step_output drops output exactly for the queue workflows whose YAML reads holdouts', async () => {
+  const queue = join(import.meta.dir, '..', 'fixtures', 'pack', 'queue');
+  const yamls = new Map<string, string>();
+  for (const file of new Bun.Glob('**/*.yaml').scanSync(queue)) {
+    yamls.set(basename(file, '.yaml'), readFileSync(join(queue, file), 'utf8'));
+  }
+  const workflows = FACTORY_MAP.cards
+    .flatMap((c) => c.covers ?? [])
+    .filter((c) => c.pack === 'queue')
+    .map((c) => c.workflow);
+  expect(workflows.length).toBeGreaterThan(0);
+  for (const workflow of workflows) {
+    const yaml = yamls.get(workflow);
+    expect({ workflow, found: yaml !== undefined }).toEqual({ workflow, found: true });
+    const [row] = await db.query('SELECT mc.keeps_step_output($1) AS keeps', [workflow]);
+    expect({ workflow, keeps: row?.keeps }).toEqual({
+      workflow,
+      keeps: !/holdout/i.test(yaml ?? ''),
+    });
+  }
+});
+
+test('a holdout workflow’s steps keep status and timing but no output, route or reason', async () => {
+  const secret = 'H-07 SECRET report text';
+  const cases: [string, string, Record<string, unknown>][] = [
+    ['factory-app-check', 'evidence', { report: secret, overall: 'FAIL' }],
+    ['factory-app-check', 'choose', { route: 'fix', reason: secret }],
+    ['factory-holdouts', 'write', { summary: secret }],
+    ['factory-holdout-sweep', 'check', { summary: secret }],
+  ];
+  for (const [workflow, step, structured_output] of cases) {
+    const id = await archonEvent(workflow, 'node_completed', step, {
+      structured_output,
+      duration_ms: 5,
+    });
+    expect(await projectedSteps(id)).toEqual([
+      { step_id: step, status: 'completed', output: null },
+    ]);
+    expect(
+      await db.query('SELECT route, outcome, reason FROM mc.lap_step_attempts WHERE run_id = $1', [
+        id,
+      ]),
+    ).toEqual([{ route: null, outcome: null, reason: null }]);
+  }
+  expect(await projectionErrors()).toEqual([]);
 });
