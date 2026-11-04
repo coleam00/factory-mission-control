@@ -1,6 +1,8 @@
 import { describe, expect, test } from 'bun:test';
-import { readFileSync } from 'node:fs';
+import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
+import { archRows } from '../scripts/arch-parse';
 import { parsePack, type Step, type Workflow } from './pack';
 
 const repoRoot = resolve(import.meta.dir, '..');
@@ -180,5 +182,36 @@ describe('the pack', () => {
 
   test('parsing twice gives deep-equal output', () => {
     expect(parsePack(packDir, templateDir)).toEqual(parsed);
+  });
+});
+
+describe('the policy files under .shared', () => {
+  const policy = '.shared/policy/build.md';
+  const texts = (dir: string) => archRows(parsePack(dir, templateDir)).arch_texts;
+
+  test('are recorded as architecture texts, apart from command files', () => {
+    expect(texts(packDir).map((t) => t.path)).toContain(policy);
+    expect(parsed.commands.map((c) => c.path)).not.toContain(policy);
+    expect(parsed.scripts.map((s) => s.path)).not.toContain(policy);
+  });
+
+  test('a one-line edit changes the recorded texts, and an untouched copy does not', () => {
+    const copy = mkdtempSync(join(tmpdir(), 'pack-'));
+    try {
+      cpSync(packDir, join(copy, 'sdlc'), { recursive: true });
+      const dir = join(copy, 'sdlc');
+      expect(texts(dir)).toEqual(texts(packDir));
+      const file = join(dir, policy);
+      writeFileSync(
+        file,
+        `${readFileSync(file, 'utf8')}
+One more rule.
+`,
+      );
+      const changed = texts(dir).filter((t, i) => t.text !== texts(packDir)[i]?.text);
+      expect(changed.map((t) => t.path)).toEqual([policy]);
+    } finally {
+      rmSync(copy, { recursive: true, force: true });
+    }
   });
 });

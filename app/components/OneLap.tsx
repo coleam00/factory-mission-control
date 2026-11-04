@@ -314,13 +314,13 @@ function Gate({ lap }: { lap: OneLapRow }): ReactElement {
 }
 
 /** A panel's rows as it last delivered them. */
-interface Lifted<Row> {
+export interface Lifted<Row> {
   rows: readonly Row[] | undefined;
   state: PanelState;
 }
 
 /** Hands a panel's rows up to the screen that draws them with another panel's rows. */
-function Lift<Row>({
+export function Lift<Row>({
   rows,
   state,
   onChange,
