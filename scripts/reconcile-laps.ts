@@ -137,9 +137,11 @@ async function reproject(tx: Tx, runId: string): Promise<void> {
   if ((await lapRows(tx, runId)) === before) throw new Agrees();
   // A replay error the live triggers recorded too is already evidence; one they did not (its
   // record dropped, or a cause that came later) rolls the repair back and is reported instead.
+  // 22000 is the exception: a structured_output that is not an object (a step's plain text, an
+  // array) is Archon's data, not a fault, and projects as no output however many times it replays.
   const [unrecorded] = await tx.query(
     `SELECT r.sqlstate, r.message FROM mc.projection_errors r
-      WHERE r.source IN ${REPLAY_SOURCES} AND NOT EXISTS (
+      WHERE r.source IN ${REPLAY_SOURCES} AND r.sqlstate <> '22000' AND NOT EXISTS (
         SELECT 1 FROM mc.projection_errors l
          WHERE l.source NOT IN ${REPLAY_SOURCES} AND l.run_id = r.run_id
            AND l.event_id IS NOT DISTINCT FROM r.event_id
