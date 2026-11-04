@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
-import { readFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { parsePack, type Step, type Workflow } from './pack';
 
@@ -180,5 +181,39 @@ describe('the pack', () => {
 
   test('parsing twice gives deep-equal output', () => {
     expect(parsePack(packDir, templateDir)).toEqual(parsed);
+  });
+});
+
+describe('a queue-style pack', () => {
+  test('reads a wait node as kind wait, and tells an inline script from a named one', () => {
+    const root = mkdtempSync(join(tmpdir(), 'pack-wait-'));
+    try {
+      mkdirSync(join(root, 'q', 'scripts'), { recursive: true });
+      writeFileSync(join(root, 'q', 'scripts', 'facts.ts'), 'console.log(1);\n');
+      writeFileSync(
+        join(root, 'q', 'q.yaml'),
+        [
+          'name: q',
+          'nodes:',
+          '  - id: facts',
+          '    script: facts',
+          '    runtime: bun',
+          '  - id: outcome',
+          '    script: console.log(JSON.stringify(1))',
+          '    runtime: bun',
+          '  - id: ask',
+          '    wait: attention',
+          '',
+        ].join('\n'),
+      );
+      const [q] = parsePack(root, templateDir).workflows;
+      const [facts, outcome, ask] = q?.steps ?? [];
+      expect(facts?.scriptFile).toBe('q/scripts/facts.ts');
+      expect(outcome?.scriptFile).toBeNull();
+      expect(ask?.kind).toBe('wait');
+      expect(ask?.model).toBeNull();
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });
