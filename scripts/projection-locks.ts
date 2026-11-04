@@ -256,11 +256,11 @@ const finishRun = (tx: Tx, runId: string) =>
 
 /**
  * A finish Archon writes while another session holds the run's lap row, as problems: the write
- * commits and its projection gives up with one 55P03; `reconcile:laps` (issue #152) leaves the lap
- * while it is still locked, and once the lock is gone one run projects the finish, so the lane ends
- * finished.
+ * commits within `bound` ms and its projection gives up with one 55P03; `reconcile:laps` (issue
+ * #152) leaves the lap while it is still locked, and once the lock is gone one run projects the
+ * finish, so the lane ends finished.
  */
-async function finishProblems(archon: Db, holder: Db): Promise<string[]> {
+async function finishProblems(archon: Db, holder: Db, bound: number): Promise<string[]> {
   const [run] = await archon.query(
     `INSERT INTO remote_agent_workflow_runs (workflow_name, status, user_message, metadata)
      VALUES ($1, 'running', 'lock wait check', '{}'::jsonb) RETURNING id`,
@@ -275,6 +275,7 @@ async function finishProblems(archon: Db, holder: Db): Promise<string[]> {
   try {
     const result = await archonWrite(archon, runId, finishRun);
     if (result.error) problems.push(`Archon's write failed: ${result.error}`);
+    if (result.elapsed > bound) problems.push('over the bound');
     const added = (await errorStates(archon)).slice(before);
     if (added.length !== 1 || added[0] !== '55P03')
       problems.push('expected one 55P03 projection error');
@@ -290,6 +291,47 @@ async function finishProblems(archon: Db, holder: Db): Promise<string[]> {
   const finished = await lap();
   if (finished?.status !== 'completed' || finished?.completed_at === null)
     problems.push('expected one repair after the lock to leave the lane finished');
+  return problems;
+}
+
+/**
+ * A run Archon starts while another session holds mc.laps, as problems: the insert commits within
+ * `bound` ms and its projection gives up with one 55P03, leaving no lap; `reconcile:laps` (issue
+ * #269) leaves it while mc.laps is still locked, and once the lock is gone one run projects the
+ * lap, running.
+ */
+async function startProblems(archon: Db, holder: Db, bound: number): Promise<string[]> {
+  let runId = '';
+  const start = async (tx: Tx) => {
+    const [run] = await tx.query(
+      `INSERT INTO remote_agent_workflow_runs (workflow_name, status, user_message, metadata)
+       VALUES ($1, 'running', 'lock wait check', '{}'::jsonb) RETURNING id`,
+      [WORKFLOW],
+    );
+    runId = String(run?.id);
+  };
+  const lap = async () =>
+    (await archon.query('SELECT status FROM mc.laps WHERE run_id = $1', [runId]))[0];
+  const problems: string[] = [];
+  const before = (await errorStates(archon)).length;
+  const release = await holdLock(holder, exclusive('laps'), '');
+  try {
+    const result = await archonWrite(archon, '', start);
+    if (result.error) problems.push(`Archon's write failed: ${result.error}`);
+    if (result.elapsed > bound) problems.push('over the bound');
+    const added = (await errorStates(archon)).slice(before);
+    if (added.length !== 1 || added[0] !== '55P03')
+      problems.push('expected one 55P03 projection error');
+    await reconcileLaps(archon);
+  } finally {
+    await release();
+  }
+  if (await lap()) problems.push('expected no lap until the repair after the lock');
+  const { failed } = await reconcileLaps(archon);
+  for (const { message } of failed.filter((run) => run.runId === runId))
+    problems.push(`the repair failed: ${message}`);
+  if ((await lap())?.status !== 'running')
+    problems.push('expected one repair after the lock to give the run its lane, running');
   return problems;
 }
 
@@ -375,10 +417,14 @@ export const main: Main = async (argv, deps) => {
       );
       // After the version check: its repair projects the version cases' runs again too.
       const finishCheck = 'finish while the lap row is locked: repaired once the lock is gone';
-      const finish = await finishProblems(archon, holder);
+      const finish = await finishProblems(archon, holder, unlocked + BOUND_MS);
       if (finish.length > 0) failures.push(finishCheck);
       deps.out(`${finish.length === 0 ? 'PASS' : `FAIL (${finish.join('; ')})`} | ${finishCheck}`);
-      const checks = CASES.length + 2;
+      const startCheck = 'start while mc.laps is locked: its lap repaired once the lock is gone';
+      const started = await startProblems(archon, holder, unlocked + BOUND_MS);
+      if (started.length > 0) failures.push(startCheck);
+      deps.out(`${started.length === 0 ? 'PASS' : `FAIL (${started.join('; ')})`} | ${startCheck}`);
+      const checks = CASES.length + 3;
       if (failures.length > 0) throw new Error(`${failures.length} of ${checks} checks failed`);
       deps.out(`all ${checks} checks passed`);
     } finally {

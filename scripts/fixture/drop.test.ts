@@ -1,7 +1,8 @@
 import { afterEach, expect, test } from 'bun:test';
-import { existsSync, rmSync } from 'node:fs';
+import { existsSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { CHECK_ENV_FILE } from '../../server/check-env';
+import { defaultLeaseDir, LEASE_MS, writeLease } from '../../server/check-lease';
 import { hoursAgo, NOW, recordingDeps, scratchRepo } from '../lib/test-deps';
 import { branchesToDrop, main } from './drop';
 
@@ -104,7 +105,7 @@ const WITH_MARKERS = [
 ];
 
 test("selects only this checkout's branch, its stale marker and stale check branches", () => {
-  expect(branchesToDrop(WITH_MARKERS, 'check-abc', NOW).map((branch) => branch.name)).toEqual([
+  expect(branchesToDrop(WITH_MARKERS, 'check-abc', NOW, []).map((branch) => branch.name)).toEqual([
     'check-abc',
     'check-old',
     'check-abc-stale-1a2b3c4d',
@@ -112,10 +113,10 @@ test("selects only this checkout's branch, its stale marker and stale check bran
 });
 
 test('a stale marker is young to every checkout but its own', () => {
-  expect(branchesToDrop(WITH_MARKERS, undefined, NOW).map((branch) => branch.name)).toEqual([
+  expect(branchesToDrop(WITH_MARKERS, undefined, NOW, []).map((branch) => branch.name)).toEqual([
     'check-old',
   ]);
-  expect(branchesToDrop(WITH_MARKERS, 'check-new', NOW).map((branch) => branch.name)).toEqual([
+  expect(branchesToDrop(WITH_MARKERS, 'check-new', NOW, []).map((branch) => branch.name)).toEqual([
     'check-old',
     'check-new',
   ]);
@@ -156,7 +157,7 @@ test('--dry-run lists what a drop would delete and deletes nothing', async () =>
     'would delete check-old',
   ]);
   expect(run.out).toEqual(
-    branchesToDrop(SELECTION, 'check-abc', NOW).map((branch) => `would delete ${branch.name}`),
+    branchesToDrop(SELECTION, 'check-abc', NOW, []).map((branch) => `would delete ${branch.name}`),
   );
 });
 
@@ -243,7 +244,7 @@ test('--at goes before or after --dry-run', async () => {
 test('just under and just over 3 hours as of --at', () => {
   const at = new Date(hoursAfter(3));
   const names = (branches: typeof SELECTION) =>
-    branchesToDrop(branches, undefined, at).map((branch) => branch.name);
+    branchesToDrop(branches, undefined, at, []).map((branch) => branch.name);
   const created = (ms: number) => new Date(at.getTime() - 3 * 3_600_000 + ms).toISOString();
   expect(names([{ id: 'br-under', name: 'check-under', created_at: created(1) }])).toEqual([]);
   expect(names([{ id: 'br-at', name: 'check-at', created_at: created(0) }])).toEqual([]);
@@ -316,4 +317,108 @@ test('--dry-run --at refuses MC_CHECK_BRANCH=main before any Neon call', async (
   expect(await main(['--dry-run', '--at', hoursAfter(4)], run.deps)).not.toBe(0);
   expect(run.neonCalls).toEqual([]);
   expect(run.err.join('\n')).toContain("refusing branch 'main'");
+});
+
+/** Checkout A owns check-abc; another checkout on this machine owns check-old, 4 hours old. */
+function anotherCheckoutOwnsCheckOld() {
+  const leaseDir = repo();
+  const a = recordingDeps({
+    repoRoot: repo({ MC_CHECK_BRANCH: 'check-abc' }),
+    branches: BRANCHES,
+    leaseDir,
+  });
+  return { leaseDir, a, lease: (branch: string) => join(leaseDir, `${branch}.lease`) };
+}
+
+test("a running lap's old branch survives another checkout's fixture:drop", async () => {
+  const { leaseDir, a, lease } = anotherCheckoutOwnsCheckOld();
+  writeLease(leaseDir, 'check-old', new Date(hoursAgo(1 / 6)));
+  expect(await main([], a.deps)).toBe(0);
+  expect(a.mutatingCalls).toEqual(['deleteBranch check-abc']);
+  expect(existsSync(lease('check-old'))).toBe(true);
+});
+
+test('a lease directory that cannot be listed stops drop before any Neon call', async () => {
+  const leaseDir = join(repo(), 'not-a-dir');
+  writeFileSync(leaseDir, '');
+  const run = recordingDeps({
+    repoRoot: repo({ MC_CHECK_BRANCH: 'check-abc' }),
+    branches: BRANCHES,
+    leaseDir,
+  });
+  expect(await main([], run.deps)).toBe(1);
+  expect(run.neonCalls).toEqual([]);
+  expect(run.err.join('\n')).toContain(`cannot read the leases in ${leaseDir}`);
+});
+
+test("an ended run's old branch is deleted, and its lease with it", async () => {
+  const { leaseDir, a, lease } = anotherCheckoutOwnsCheckOld();
+  writeLease(leaseDir, 'check-old', new Date(hoursAgo(1 + 1 / 60)));
+  expect(await main([], a.deps)).toBe(0);
+  expect(a.mutatingCalls).toEqual(['deleteBranch check-old', 'deleteBranch check-abc']);
+  expect(existsSync(lease('check-old'))).toBe(false);
+});
+
+test("this checkout's own branch is deleted whatever its lease says, and its lease with it", async () => {
+  const { leaseDir, a, lease } = anotherCheckoutOwnsCheckOld();
+  writeLease(leaseDir, 'check-abc', NOW);
+  expect(await main([], a.deps)).toBe(0);
+  expect(a.mutatingCalls).toContain('deleteBranch check-abc');
+  expect(existsSync(lease('check-abc'))).toBe(false);
+});
+
+test('a branch that fails to delete keeps its lease', async () => {
+  const leaseDir = repo();
+  writeLease(leaseDir, 'check-abc', NOW);
+  const run = recordingDeps({
+    repoRoot: repo({ MC_CHECK_BRANCH: 'check-abc' }),
+    branches: BRANCHES,
+    leaseDir,
+    throwsOn: ['deleteBranch check-abc'],
+  });
+  expect(await main([], run.deps)).toBe(1);
+  expect(existsSync(join(leaseDir, 'check-abc.lease'))).toBe(true);
+});
+
+test('--dry-run --at judges a lease now and age at that time, and removes none', async () => {
+  const listedWith = async (lease: Date | undefined, at: number) => {
+    const leaseDir = repo();
+    if (lease !== undefined) writeLease(leaseDir, 'check-young', lease);
+    const run = recordingDeps({ repoRoot: repo(), branches: [YOUNG], leaseDir });
+    expect(await main(['--dry-run', '--at', hoursAfter(at)], run.deps)).toBe(0);
+    expect(run.mutatingCalls).toEqual([]);
+    if (lease !== undefined) expect(existsSync(join(leaseDir, 'check-young.lease'))).toBe(true);
+    return run.out;
+  };
+  for (const at of [1 + 1 / 60, 3 + 1 / 60, 100]) {
+    expect(await listedWith(NOW, at)).toEqual([]);
+  }
+  const stale = new Date(NOW.getTime() - LEASE_MS - 1);
+  for (const lease of [stale, undefined]) {
+    expect(await listedWith(lease, 3 - 1 / 60)).toEqual([]);
+    expect(await listedWith(lease, 3 + 1 / 60)).toEqual(['would delete check-young']);
+  }
+});
+
+test('a lease is live until exactly LEASE_MS after its last refresh, and only for its branch', () => {
+  const old = [{ id: 'br-old', name: 'check-old', created_at: hoursAgo(4) }];
+  const refreshed = (ms: number, branch = 'check-old') => [
+    { branch, refreshed_at: new Date(NOW.getTime() - LEASE_MS + ms).toISOString() },
+  ];
+  expect(branchesToDrop(old, undefined, NOW, refreshed(0))).toEqual([]);
+  expect(branchesToDrop(old, undefined, NOW, refreshed(-1))).toEqual(old);
+  expect(branchesToDrop(old, undefined, NOW, refreshed(0, 'check-new'))).toEqual(old);
+});
+
+test('--help states the lease rule', async () => {
+  const run = recordingDeps({ repoRoot: repo() });
+  expect(await main(['--help'], run.deps)).toBe(0);
+  const usage = run.out.join('\n');
+  expect(usage).toContain('unless the checkout that owns it still uses it');
+  expect(usage).toContain(`Ownership is a lease in ${defaultLeaseDir()}:`);
+  expect(usage).toContain('an old branch whose lease was refreshed less than an hour ago is kept');
+  expect(usage).toContain('`serve` while it runs refresh it');
+  expect(usage).toContain('only age is judged at <time>: a lease is judged now');
+  expect(usage).toContain('a branch whose lease is live now is not listed at any <time>');
+  expect(usage).toContain('a young check-* branch it created that has no live lease');
 });

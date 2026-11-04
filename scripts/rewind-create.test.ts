@@ -1,7 +1,8 @@
 import { afterEach, expect, test } from 'bun:test';
 import { rmSync } from 'node:fs';
+import { readLeases, writeLease } from '../server/check-lease';
 import type { Branch } from './lib/neon';
-import { DATABASE_URL, hoursAgo, recordingDeps, scratchRepo } from './lib/test-deps';
+import { DATABASE_URL, hoursAgo, NOW, recordingDeps, scratchRepo } from './lib/test-deps';
 import { main, rewindBranchName } from './rewind-create';
 
 const scratch: string[] = [];
@@ -69,6 +70,15 @@ test('on a check branch it makes the rewind branch, then writes exactly one row 
   const registering = r.out.findIndex((line) => line.startsWith(`registering ${NAME}`));
   expect(registering).toBeGreaterThanOrEqual(0);
   expect(r.out.indexOf(`created ${NAME}`)).toBeGreaterThan(registering);
+});
+
+test('it refreshes the lease on the check branch it lists the rewind on', async () => {
+  const r = run();
+  writeLease(r.deps.leaseDir, 'check-abc', new Date(hoursAgo(2)));
+  expect(await main(['2026-10-24T11:00:00Z'], r.deps)).toBe(0);
+  expect(readLeases(r.deps.leaseDir)).toEqual([
+    { branch: 'check-abc', refreshed_at: NOW.toISOString() },
+  ]);
 });
 
 test('the parent defaults to main', async () => {
