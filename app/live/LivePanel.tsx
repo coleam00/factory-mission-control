@@ -68,6 +68,7 @@ export async function seal<Row>(
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body,
+    signal: AbortSignal.timeout(SEAL_TIMEOUT_MS),
   });
   if (!res.ok) throw new Error(`sealing ${query} answered ${res.status}`);
   const { rewind, ...sealed } = (await res.json()) as SealedLiveQuery<Row> & {
@@ -80,11 +81,15 @@ export async function seal<Row>(
   return sealed;
 }
 
-/** `@neon/realtime` asks for the next seal this long before the current one expires. */
-const RENEW_EARLY_MS = 10_000;
+/** A seal request not answered by then has failed: the tab's other seals wait behind it. */
+export const SEAL_TIMEOUT_MS = 10_000;
 /** The wait before retrying a seal that failed or came back expired; it doubles to the ceiling. */
 export const SEAL_RETRY_FIRST_MS = 1_000;
 export const SEAL_RETRY_CEILING_MS = 16_000;
+/** How long a panel must stay live for its seal backoff to reset: past the longest wait. */
+export const LIVE_STABLE_MS = SEAL_RETRY_CEILING_MS;
+/** The library renews a seal this long before it expires; one with less left than this is renewed at once. */
+export const RENEW_EARLY_MS = 10_000;
 
 /**
  * Where one seal's requests stand: the wait the next one owes, counted from when the last was
@@ -117,55 +122,120 @@ export function sealBackoff(key: string): SealBackoff {
 }
 
 /**
- * Wraps `request` so a seal that fails, or comes back expired, is asked for again only once a
- * wait, doubling from `SEAL_RETRY_FIRST_MS` to `SEAL_RETRY_CEILING_MS`, has passed since the last
- * answer: never back to back, and never two at once, however often or by whom it is called.
- * An expired seal is thrown, not returned: the library would renew it at once, again and again.
- * A seal too close to expiry for the library to wait before renewing it is returned but backs off
- * too. A seal with a full lifetime resets the wait. Once `signal` aborts, no request is sent.
+ * The tab's sealing as a whole. A panel's first seal is asked for at once, beside every other
+ * panel's. Renewals, which start well before a seal expires, are asked for one at a time in the
+ * tab (each answers within `SEAL_TIMEOUT_MS`), so the panels renewing together when sealing fails
+ * do not all ask at once. Once a seal fails, every request in the tab waits its turn, each the
+ * tab's doubling wait after its last failed answer, so a page of many panels asks no more often
+ * than one would. The first seal answered again ends the wait.
+ */
+export const tabSealing: SealBackoff = newSealBackoff();
+
+/**
+ * The subscription the panel was sealed for failed for good: that counts as a failed answer, so
+ * the seal it asks for to subscribe again waits, and a subscription that keeps failing as soon as
+ * it is live is asked for again no more than once a `SEAL_RETRY_FIRST_MS`.
+ */
+export function failSealBackoff(backoff: SealBackoff, now = Date.now()): void {
+  backoff.answeredAt = now;
+  backoff.delay = Math.min(SEAL_RETRY_CEILING_MS, Math.max(SEAL_RETRY_FIRST_MS, backoff.delay * 2));
+}
+
+/**
+ * Wraps `request` so that once a seal fails, or is answered with too little life left to wait for
+ * its renewal, every seal after it is asked for only once a wait, doubling from
+ * `SEAL_RETRY_FIRST_MS` to `SEAL_RETRY_CEILING_MS`, has passed since the last answer, until the
+ * panel is live again (the stable-live timer). A panel's first seal owes no wait, so a panel that
+ * mounts again asks at once while sealing is healthy. Never back to back, and never two at once, however
+ * often or by whom it is called. A live panel's renewals come a seal's lifetime apart, far more
+ * than the ceiling, so they never wait. A renewal (`renewal` true), and every request while the
+ * `tab`'s sealing is failing, also waits its turn in the tab (`tabSealing`). An expired seal is
+ * thrown, not returned: the library would renew it at once, again and again. Once `signal`
+ * aborts, no request is sent.
  */
 export function backOffSeals<Row>(
   request: () => Promise<SealedLiveQuery<Row>>,
   signal: AbortSignal,
   {
     backoff = newSealBackoff(),
+    tab = newSealBackoff(),
     now = Date.now,
     wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)),
   }: {
     backoff?: SealBackoff;
+    tab?: SealBackoff;
     now?: () => number;
     wait?: (ms: number) => Promise<void>;
   } = {},
-): () => Promise<SealedLiveQuery<Row>> {
-  const answered = (fresh: boolean) => {
-    backoff.answeredAt = now();
-    backoff.delay = fresh
-      ? 0
-      : Math.min(SEAL_RETRY_CEILING_MS, Math.max(SEAL_RETRY_FIRST_MS, backoff.delay * 2));
+): (renewal?: boolean) => Promise<SealedLiveQuery<Row>> {
+  const grow = (on: SealBackoff) => failSealBackoff(on, now());
+  /** Waits out what `on` owes, or until the panel stops asking. */
+  const owe = async (on: SealBackoff) => {
+    const owed = on.answeredAt + on.delay - now();
+    if (on.delay > 0 && owed > 0 && !signal.aborted) {
+      await Promise.race([
+        wait(owed),
+        new Promise<void>((resolve) =>
+          signal.addEventListener('abort', () => resolve(), { once: true }),
+        ),
+      ]);
+    }
   };
   const stopped = () => new Error('the panel stopped asking for seals');
-  const ask = async (): Promise<SealedLiveQuery<Row>> => {
-    if (signal.aborted) throw stopped();
-    const owed = backoff.answeredAt + backoff.delay - now();
-    if (backoff.delay > 0 && owed > 0) await wait(owed);
+  const send = async (): Promise<SealedLiveQuery<Row>> => {
     if (signal.aborted) throw stopped();
     let sealed: SealedLiveQuery<Row>;
     try {
       sealed = await request();
     } catch (error) {
-      answered(false);
+      grow(backoff);
+      grow(tab);
       throw error;
     }
     const left = sealed.expiresAt - now();
-    answered(left > RENEW_EARLY_MS);
-    if (left <= 0) throw new Error(`the seal answered had expired ${-left} ms before`);
+    if (backoff.delay > 0 || left <= RENEW_EARLY_MS) grow(backoff);
+    if (left <= 0) {
+      grow(tab);
+      throw new Error(`the seal answered had expired ${-left} ms before`);
+    }
+    tab.delay = 0;
     return sealed;
   };
-  return () => {
-    const turn = backoff.turn.then(ask);
+  /** One request at a time in the tab, each once the tab's wait has passed. */
+  const inTurn = (): Promise<SealedLiveQuery<Row>> => {
+    const turn = tab.turn.then(async () => {
+      await owe(tab);
+      return send();
+    });
+    tab.turn = turn.catch(() => {});
+    return turn;
+  };
+  const ask = async (renewal: boolean): Promise<SealedLiveQuery<Row>> => {
+    if (signal.aborted) throw stopped();
+    await owe(backoff);
+    return renewal || tab.delay > 0 ? inTurn() : send();
+  };
+  return (renewal = false) => {
+    const turn = backoff.turn.then(() => ask(renewal));
     backoff.turn = turn.catch(() => {});
     return turn;
   };
+}
+
+/** How a panel asks for its seals: backed off on its own `backoff` and in the tab's sealing. */
+export function panelSealer<Row>(
+  request: () => Promise<SealedLiveQuery<Row>>,
+  signal: AbortSignal,
+  backoff: SealBackoff,
+): (renewal?: boolean) => Promise<SealedLiveQuery<Row>> {
+  return backOffSeals(request, signal, { backoff, tab: tabSealing });
+}
+
+/** A renewal is asked for in the tab's turn, one at a time, not beside the other panels'. */
+export function renewSeal<Row>(
+  requestSeal: (renewal?: boolean) => Promise<SealedLiveQuery<Row>>,
+): Promise<SealedLiveQuery<Row>> {
+  return requestSeal(true);
 }
 
 type Render<Row> = (rows: readonly Row[] | undefined, state: PanelState) => ReactNode;
@@ -229,22 +299,26 @@ export function LivePanel<Row>({
     asked: string;
     sealed: SealedLiveQuery<Row>;
     observation: QueryObservation;
-    requestSeal: () => Promise<SealedLiveQuery<Row>>;
+    requestSeal: (renewal?: boolean) => Promise<SealedLiveQuery<Row>>;
+    backoff: SealBackoff;
   }>();
   const [failed, setFailed] = useState(false);
+  // Counts the subscriptions that failed for good: each asks for a new seal and subscribes anew.
+  const [lost, setLost] = useState(0);
+  const resubscribe = useCallback(() => setLost((n) => n + 1), []);
 
   const body = JSON.stringify({ factory, ...(home && { branch: 'home' }), ...(args && { args }) });
   const ready = live.status === 'ready' && factory !== undefined;
   const branch = live.status === 'ready' && !home ? live.rewind : null;
   const asked = `${query} ${body} ${branch}`;
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `lost` only re-runs it, so a subscription that failed for good is replaced, not renewed
   useEffect(() => {
     if (!ready || factory === undefined) return;
     let cancelled = false;
     let observation: QueryObservation | undefined;
     const stopped = new AbortController();
-    const requestSeal = backOffSeals(() => seal<Row>(query, body, branch), stopped.signal, {
-      backoff: sealBackoff(asked),
-    });
+    const backoff = sealBackoff(asked);
+    const requestSeal = panelSealer(() => seal<Row>(query, body, branch), stopped.signal, backoff);
     markOnce(`live:${name}:requested`);
     const ask = (): void => {
       requestSeal().then(
@@ -262,7 +336,7 @@ export function LivePanel<Row>({
           });
           expectSubscribe(first.capability, observation);
           setFailed(false);
-          setAccepted({ asked, sealed: first, observation, requestSeal });
+          setAccepted({ asked, sealed: first, observation, requestSeal, backoff });
         },
         () => {
           if (cancelled) return;
@@ -277,7 +351,7 @@ export function LivePanel<Row>({
       stopped.abort();
       if (observation) discardObservation(observation);
     };
-  }, [ready, query, name, factory, body, home, branch, asked]);
+  }, [ready, query, name, factory, body, home, branch, asked, lost]);
 
   if (live.status !== 'ready' || accepted?.asked !== asked || failed) {
     const state = live.status === 'error' || failed ? 'error' : 'loading';
@@ -294,6 +368,8 @@ export function LivePanel<Row>({
         sealed={accepted.sealed}
         observation={accepted.observation}
         requestSeal={accepted.requestSeal}
+        backoff={accepted.backoff}
+        onFailed={resubscribe}
         className={className}
         render={children}
       />
@@ -301,23 +377,32 @@ export function LivePanel<Row>({
   );
 }
 
+/**
+ * A subscription that reports `error` has failed for good: `@neon/realtime` rejects every renewal
+ * of it, so the panel asks for a new seal and subscribes again (`onFailed`), a wait later
+ * (`failSealBackoff`), showing `error` until then. Staying `live` (`LIVE_STABLE_MS`) resets the wait.
+ */
 function Subscribed<Row>({
   query,
   sealed,
   observation,
   requestSeal,
+  backoff,
+  onFailed,
   className,
   render,
 }: {
   query: string;
   sealed: SealedLiveQuery<Row>;
   observation: QueryObservation;
-  requestSeal: () => Promise<SealedLiveQuery<Row>>;
+  requestSeal: (renewal?: boolean) => Promise<SealedLiveQuery<Row>>;
+  backoff: SealBackoff;
+  onFailed: () => void;
   className?: string;
   render: Render<Row>;
 }): ReactElement {
   const refreshQuery = useCallback(async () => {
-    const renewed = await requestSeal();
+    const renewed = await renewSeal(requestSeal);
     expectSubscribe(renewed.capability, observation);
     performance.mark(`live:${query}:renewed`);
     return renewed;
@@ -331,6 +416,23 @@ function Subscribed<Row>({
   useEffect(() => {
     if (state === 'ready') markRendered(observation);
   }, [state, observation]);
+
+  useEffect(() => {
+    if (status === 'live') {
+      // Only staying live resets the wait. A full seal alone is not enough: the subscription it was
+      // for can still refuse it (a connection that failed for good rejects every renewal), and
+      // merely going live would let a subscription that keeps failing right after reset it and
+      // ask about once a second for good.
+      const stable = setTimeout(() => {
+        backoff.delay = 0;
+      }, LIVE_STABLE_MS);
+      return () => clearTimeout(stable);
+    }
+    if (status === 'error') {
+      failSealBackoff(backoff);
+      onFailed();
+    }
+  }, [status, backoff, onFailed]);
 
   return (
     <Frame query={query} state={state} className={className}>
