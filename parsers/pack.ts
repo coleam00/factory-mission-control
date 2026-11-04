@@ -87,6 +87,8 @@ export interface PackVersion {
   factoryCommit: string | null;
   workflows: Workflow[];
   commands: TextFile[];
+  /** Markdown under `.shared/` that commands tell agents to read, such as the policy defaults. */
+  sharedDocs: TextFile[];
   scripts: TextFile[];
   hooks: Hook[];
 }
@@ -230,13 +232,14 @@ export function parsePack(packDir: string, templateDir: string): PackVersion {
   const commandText = new Map(commands.map((c) => [c.path, c.text]));
 
   const scripts: TextFile[] = [];
+  const sharedDocs: TextFile[] = [];
   for (const entry of list(packDir)) {
     const root = join(packDir, entry);
     if (!isDir(root)) continue;
     const files = entry === '.shared' ? filesUnder(root) : filesUnder(join(root, 'scripts'));
     for (const path of files) {
-      if (path.endsWith('.md')) continue;
-      scripts.push({ path: slash(relative(packDir, path)), text: readText(path) });
+      const file = { path: slash(relative(packDir, path)), text: readText(path) };
+      (path.endsWith('.md') ? sharedDocs : scripts).push(file);
     }
   }
 
@@ -366,6 +369,7 @@ export function parsePack(packDir: string, templateDir: string): PackVersion {
     factoryCommit: commit(join(templateDir, 'FACTORY_COMMIT')),
     workflows,
     commands,
+    sharedDocs,
     scripts,
     hooks,
   };

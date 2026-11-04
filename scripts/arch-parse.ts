@@ -102,7 +102,7 @@ export function archRows(pack: PackVersion): ArchRows {
     arch_edges: workflows.flatMap((w) =>
       w.edges.map((e) => ({ workflow: w.name, from_path: e.from, to_path: e.to })),
     ),
-    arch_texts: pack.commands.map((c) => ({ path: c.path, text: c.text })),
+    arch_texts: [...pack.commands, ...pack.sharedDocs].map((c) => ({ path: c.path, text: c.text })),
     arch_scripts: pack.scripts.map((s) => ({ path: s.path, text: s.text })),
     arch_subagents: workflows.flatMap((w) => subagentRows(w.name, w.steps)),
     arch_hooks: pack.hooks.map((h) => ({
