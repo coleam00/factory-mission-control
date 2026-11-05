@@ -163,7 +163,7 @@ test('historical absence asks to return live before deciding whether setup is ne
   expect(html).toContain('bun run migrate:main -- --configured-factories');
 });
 
-test("from a scorecard the entries keep its versions, and from a step's page they stay on it", () => {
+test("from a screen the entries go to that screen, and from a step's page they stay on it", () => {
   const rows = [
     { factory: 'mission-control', running: 0, is_default: true },
     { factory: 'second-factory', running: 0, is_default: false },
@@ -177,7 +177,7 @@ test("from a scorecard the entries keep its versions, and from a step's page the
             state="ready"
             current="mission-control"
             hrefFor={(factory) =>
-              factoryPath(pathname, factory, [{ path: 'scorecard', label: 'Scorecard' }], search)
+              factoryPath(pathname, factory, [{ path: 'board', label: 'Board' }], search)
             }
             open
             onToggle={() => {}}
@@ -185,9 +185,9 @@ test("from a scorecard the entries keep its versions, and from a step's page the
         </MemoryRouter>,
       ),
     ).map(({ href }) => href?.replaceAll('&amp;', '&'));
-  expect(hrefs('/f/mission-control/scorecard', '?a=sha256%3Aa1&b=sha256%3Ab2')).toEqual([
-    '/f/mission-control/scorecard?a=sha256%3Aa1&b=sha256%3Ab2',
-    '/f/second-factory/scorecard?a=sha256%3Aa1&b=sha256%3Ab2',
+  expect(hrefs('/f/mission-control/board', '?order=demo')).toEqual([
+    '/f/mission-control/board',
+    '/f/second-factory/board',
   ]);
   expect(hrefs('/steps/archon-loop/review', '?at=8e3e1cef')).toEqual([
     '/steps/archon-loop/review?at=8e3e1cef',

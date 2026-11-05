@@ -16,8 +16,8 @@ import {
   workable,
 } from '../lib/health';
 import { since, stepLabel } from '../lib/laps';
+import { hasLapPage } from '../lib/one-lap';
 import { waited } from '../lib/owner-queue';
-import { LAP_WORKFLOW } from '../lib/scorecard';
 import { LivePanel } from '../live/LivePanel';
 import { LABEL, MONO, NONE, PanelBody, useNow, utcMinute } from './Lanes';
 import { LiveDot } from './LiveDot';
@@ -47,7 +47,7 @@ function LapLink({ factory, runId }: { factory: string; runId: string }): ReactE
   );
 }
 
-/** A run's id: a link to its lap page when it has one, which only an `archon-loop` run does. */
+/** A run's id: a link to its lap page when it has one (`hasLapPage`). */
 function RunLink({
   factory,
   run,
@@ -55,7 +55,7 @@ function RunLink({
   factory: string;
   run: { run_id: string; workflow_name: string };
 }): ReactElement {
-  return run.workflow_name === LAP_WORKFLOW ? (
+  return hasLapPage(run.workflow_name) ? (
     <LapLink factory={factory} runId={run.run_id} />
   ) : (
     <span className={`${MONO} text-text-secondary`}>{shortRunId(run.run_id)}</span>
@@ -380,7 +380,7 @@ export function OverdueList({
                 <span className="font-mono text-[15px] font-semibold tabular-nums text-text-primary">
                   {Math.floor(ratios[index] ?? 0)}× p90
                 </span>
-                <LapLink factory={factory} runId={step.run_id} />
+                <RunLink factory={factory} run={step} />
               </div>
               <div className="mt-3">
                 <OverdueScale ratio={ratios[index] ?? 1} top={top} />

@@ -1,5 +1,5 @@
 {
-  "caption": "Work comes from three places: a product document, an issue you file, or a problem the factory found. Intake checks each item, and Split breaks a big document or bundle into smaller work items. A work order groups the items to build and ship together. Then one line: Build writes the code, Review checks it, App check tries it in the running app, Merge lands it, and Staging is where you try the whole work order. The manager watches the line and brings you the decisions.",
+  "caption": "Work comes from three places: a product document, an issue you file, or a problem the factory found. Intake checks each item, and Split breaks a big document or bundle into smaller work items. A work order groups the items to build and ship together. Then one line: Build writes the code, Review checks it, App check tries it in the running app, Merge lands it, and Staging is where you try the whole work order. Fixes to a change go back to Build; anything unrelated becomes new work. The manager watches the line and brings you the decisions.",
   "cardSize": {
     "width": 208,
     "height": 212
@@ -13,6 +13,8 @@
       "text": "Breaks a document or a bundle into work items",
       "x": 260,
       "y": 240,
+      "lists": ["documents"],
+      "opens": "split",
       "covers": [
         {
           "workflow": "archon-backlog",
@@ -136,7 +138,9 @@
         }
       ],
       "details": {
-        "when": ["After review, app check or staging notices something it was not asked to fix."],
+        "when": [
+          "After review or app check notices something unrelated to the change it is checking, or a deployment fails."
+        ],
         "what": [
           "Each problem becomes a new work item, or is dropped if it is not real. Unsure ones come to you."
         ],
@@ -153,6 +157,7 @@
       "text": "Checks each work item is clear, picks its route and size",
       "x": 260,
       "y": 542,
+      "opens": "intake",
       "covers": [
         {
           "workflow": "archon-loop",
@@ -207,6 +212,7 @@
       "x": 812,
       "y": 542,
       "chips": ["queued"],
+      "opens": "build",
       "covers": [
         {
           "workflow": "archon-loop",
@@ -237,7 +243,7 @@
         ],
         "what": [
           "Takes a triaged work item to a reviewed PR with green CI.",
-          "Up to 2 rounds per work item. Each round can deliver up to 4 times."
+          "Each build round can deliver up to 4 times. After 2 rounds, it also checks that the rounds are getting somewhere, and asks you if they aren't."
         ],
         "how": [
           "Brief, then plan or investigate if needed, then deliver, then an agent decides done, another round, or ask you. It asks early when a change has grown past its size or stopped converging."
@@ -270,7 +276,9 @@
           "A quick agent picks the reviewers this change earns. Up to five each read the change for one thing: how parts fit together, correctness, tests, error handling, docs.",
           "One agent combines what they found into a single comment: Ready, or a list of fixes."
         ],
-        "how": ["Fixes go back to Build. Merge only trusts a Ready comment on the latest commit."]
+        "how": [
+          "Fixes go back to Build, and anything unrelated becomes new work. Merge only trusts a Ready comment on the latest commit."
+        ]
       }
     },
     {
@@ -316,11 +324,13 @@
           "Its commit status must be green before Merge will land the PR."
         ],
         "how": [
+          "A problem with this change goes back to Build, and anything unrelated becomes new work.",
           "Tests the PR merged with the latest main, not the branch alone.",
           "Every claim must cite a file written during this check, sealed by a script.",
           "A result stands until the PR gets a new commit, so landing another PR does not undo it."
         ]
-      }
+      },
+      "opens": "app"
     },
     {
       "id": "merge",
@@ -350,7 +360,8 @@
         "how": [
           "The agent decides; a script merges, and only if the Ready verdict, every check and the default branch are green at the PR's head."
         ]
-      }
+      },
+      "opens": "merge"
     },
     {
       "id": "deploy",
@@ -378,8 +389,12 @@
           "Puts the merged build where you can try it.",
           "You choose where a work order lands. Staging is the one we recommend."
         ],
-        "how": ["Health check plus revision read-back, so a stale deploy fails loudly."]
-      }
+        "how": [
+          "Health check plus revision read-back, so a stale deploy fails loudly.",
+          "The PR has already merged, so a failed deploy becomes new work."
+        ]
+      },
+      "opens": "deploy"
     },
     {
       "id": "out",
@@ -479,6 +494,27 @@
     },
     {
       "from": "review",
+      "to": "build",
+      "style": "loop",
+      "label": "fixes",
+      "route": [[1176, 542], [1176, 517], [916, 517], [916, 542]]
+    },
+    {
+      "from": "app",
+      "to": "build",
+      "style": "loop",
+      "arrow": false,
+      "route": [[1436, 542], [1436, 517], [1176, 517]]
+    },
+    {
+      "from": "merge",
+      "to": "build",
+      "style": "loop",
+      "arrow": false,
+      "route": [[1728, 542], [1728, 517], [1176, 517]]
+    },
+    {
+      "from": "review",
       "to": "disc",
       "style": "loop",
       "route": [[1176, 754], [1176, 1072], [104, 1072], [104, 1014]]
@@ -494,7 +530,7 @@
       "from": "deploy",
       "to": "disc",
       "style": "loop",
-      "label": "problems found become new work",
+      "label": "unrelated problems become new work",
       "route": [[1988, 754], [1988, 1072], [104, 1072], [104, 1014]]
     }
   ],
@@ -516,5 +552,1297 @@
       "role": "person",
       "label": "You and the manager"
     }
-  ]
+  ],
+  "views": {
+    "build": {
+      "caption": "One build run takes one work item one round forward. A round writes a brief, plans or investigates if triage asked for it, then delivers: implement, open the PR, review, fix. After the round an agent decides: done, another round, or ask you. After 2 rounds it also checks that the rounds are converging. It also asks when a change has outgrown its size or stopped converging.",
+      "cardSize": {
+        "width": 260,
+        "height": 200
+      },
+      "cards": [
+        {
+          "id": "b-brief",
+          "role": "agent",
+          "kind": "agent · large",
+          "title": "Write the brief",
+          "text": "Checks the contract, reproduces the bug",
+          "x": 0,
+          "y": 306,
+          "covers": [
+            {
+              "pack": "queue",
+              "workflow": "archon-build-queue",
+              "steps": [
+                "facts",
+                "route",
+                "checkout",
+                "blocked",
+                "revisit",
+                "retriage",
+                "ship",
+                "ship/forge",
+                "ship/triage"
+              ]
+            },
+            {
+              "pack": "loop",
+              "workflow": "archon-loop",
+              "steps": ["ship", "ship/forge", "ship/triage"]
+            }
+          ],
+          "details": {
+            "what": ["Checks the contract, reproduces the bug"]
+          }
+        },
+        {
+          "id": "b-inv",
+          "role": "agent",
+          "kind": "agent · @investigator",
+          "title": "Investigate",
+          "text": "Prove the cause first",
+          "x": 400,
+          "y": 76,
+          "covers": [
+            {
+              "pack": "queue",
+              "workflow": "archon-build-queue",
+              "steps": ["ship/inv"]
+            },
+            {
+              "pack": "loop",
+              "workflow": "archon-loop",
+              "steps": ["ship/inv"]
+            }
+          ],
+          "details": {
+            "what": ["Prove the cause first"]
+          }
+        },
+        {
+          "id": "b-plan",
+          "role": "agent",
+          "kind": "agent · @planner",
+          "title": "Plan",
+          "text": "Settle the design first",
+          "x": 400,
+          "y": 536,
+          "covers": [
+            {
+              "pack": "queue",
+              "workflow": "archon-build-queue",
+              "steps": ["ship/intel", "ship/planned"]
+            },
+            {
+              "pack": "loop",
+              "workflow": "archon-loop",
+              "steps": ["ship/intel", "ship/planned"]
+            }
+          ],
+          "details": {
+            "what": ["Settle the design first"]
+          }
+        },
+        {
+          "id": "b-del",
+          "role": "agent",
+          "kind": "up to 4 rounds",
+          "title": "Deliver",
+          "text": "Implement, PR, review, CI",
+          "x": 744,
+          "y": 306,
+          "covers": [
+            {
+              "pack": "queue",
+              "workflow": "archon-build-queue",
+              "steps": ["ship/continues", "ship/deliver"]
+            },
+            {
+              "pack": "loop",
+              "workflow": "archon-loop",
+              "steps": ["build", "ship/continues", "ship/deliver"]
+            }
+          ],
+          "details": {
+            "what": ["Implement, PR, review, CI"]
+          },
+          "opens": "build/deliver"
+        },
+        {
+          "id": "b-dec",
+          "role": "agent",
+          "kind": "agent · large",
+          "title": "Decide",
+          "text": "Done, another round, or ask",
+          "x": 1088,
+          "y": 306,
+          "covers": [
+            {
+              "pack": "queue",
+              "workflow": "archon-build-queue",
+              "steps": ["answer", "ship/outcome", "ship/report"]
+            },
+            {
+              "pack": "loop",
+              "workflow": "archon-loop",
+              "steps": ["ship/outcome", "ship/report"]
+            }
+          ],
+          "details": {
+            "what": ["Done, another round, or ask"]
+          }
+        },
+        {
+          "id": "b-push",
+          "role": "source",
+          "kind": "script",
+          "title": "Record the round",
+          "text": "Push, release the work item",
+          "x": 1432,
+          "y": 306,
+          "covers": [
+            {
+              "pack": "queue",
+              "workflow": "archon-build-queue",
+              "steps": ["apply"]
+            },
+            {
+              "pack": "loop",
+              "workflow": "archon-loop",
+              "steps": ["subject"]
+            }
+          ],
+          "details": {
+            "what": ["Push, release the work item"]
+          }
+        },
+        {
+          "id": "b-ask",
+          "role": "person",
+          "kind": "waits",
+          "title": "Ask you",
+          "text": "Route, stop, or scope",
+          "x": 1088,
+          "y": 594,
+          "covers": [
+            {
+              "pack": "queue",
+              "workflow": "archon-build-queue",
+              "steps": ["ask", "ruling"]
+            }
+          ],
+          "details": {
+            "what": ["Route, stop, or scope"]
+          }
+        },
+        {
+          "id": "b-next",
+          "role": "source",
+          "kind": "next",
+          "title": "Merge queue",
+          "text": "When the PR is Ready and green",
+          "x": 1776,
+          "y": 306,
+          "upTo": "merge",
+          "covers": [],
+          "details": {
+            "what": ["When the PR is Ready and green"]
+          }
+        }
+      ],
+      "lines": [
+        {
+          "from": "b-brief",
+          "to": "b-del",
+          "style": "flow",
+          "label": "deliver"
+        },
+        {
+          "from": "b-brief",
+          "to": "b-inv",
+          "style": "flow",
+          "label": "investigate",
+          "route": [[260, 406], [330, 406], [330, 176], [400, 176]]
+        },
+        {
+          "from": "b-brief",
+          "to": "b-plan",
+          "style": "flow",
+          "label": "plan",
+          "route": [[260, 406], [330, 406], [330, 636], [400, 636]]
+        },
+        {
+          "from": "b-inv",
+          "to": "b-del",
+          "style": "flow",
+          "arrow": false
+        },
+        {
+          "from": "b-plan",
+          "to": "b-del",
+          "style": "flow",
+          "arrow": false
+        },
+        {
+          "from": "b-del",
+          "to": "b-dec",
+          "style": "flow"
+        },
+        {
+          "from": "b-dec",
+          "to": "b-push",
+          "style": "flow"
+        },
+        {
+          "from": "b-push",
+          "to": "b-next",
+          "style": "flow",
+          "label": "done"
+        },
+        {
+          "from": "b-dec",
+          "to": "b-ask",
+          "style": "ask",
+          "route": [[1218, 506], [1218, 594]]
+        },
+        {
+          "from": "b-dec",
+          "to": "b-brief",
+          "style": "loop",
+          "label": "another round",
+          "route": [[1218, 306], [1218, 40], [130, 40], [130, 306]]
+        }
+      ],
+      "tour": ["b-brief", "b-del", "b-dec", "b-push", "b-next"]
+    },
+    "build/deliver": {
+      "caption": "The inner loop. Each delivery round implements or fixes, publishes a draft PR, and runs the review. A Ready review gets one simplify pass and a light re-review, then CI. Findings send it back to Implement, up to 4 rounds in all.",
+      "cardSize": {
+        "width": 260,
+        "height": 200
+      },
+      "cards": [
+        {
+          "id": "d-impl",
+          "role": "agent",
+          "kind": "agent · @implementer",
+          "title": "Implement",
+          "text": "Build it, or fix findings",
+          "x": 0,
+          "y": 306,
+          "covers": [
+            {
+              "pack": "queue",
+              "workflow": "archon-build-queue",
+              "steps": [
+                "ship/continues",
+                "ship/deliver",
+                "ship/deliver/rounds",
+                "ship/deliver/rounds/implement",
+                "ship/deliver/rounds/reshape"
+              ]
+            },
+            {
+              "pack": "loop",
+              "workflow": "archon-loop",
+              "steps": [
+                "build",
+                "ship/continues",
+                "ship/deliver",
+                "ship/deliver/rounds",
+                "ship/deliver/rounds/implement",
+                "ship/deliver/rounds/reshape"
+              ]
+            }
+          ],
+          "details": {
+            "what": ["Build it, or fix findings"]
+          }
+        },
+        {
+          "id": "d-pr",
+          "role": "source",
+          "kind": "script + agent",
+          "title": "Draft PR",
+          "text": "Publish the description",
+          "x": 344,
+          "y": 306,
+          "covers": [
+            {
+              "pack": "queue",
+              "workflow": "archon-build-queue",
+              "steps": [
+                "ship/deliver/forge",
+                "ship/deliver/rounds/pr",
+                "ship/deliver/update-pr-body"
+              ]
+            },
+            {
+              "pack": "loop",
+              "workflow": "archon-loop",
+              "steps": [
+                "ship/deliver/forge",
+                "ship/deliver/rounds/pr",
+                "ship/deliver/update-pr-body"
+              ]
+            }
+          ],
+          "details": {
+            "what": ["Publish the description"]
+          }
+        },
+        {
+          "id": "d-rev",
+          "role": "agent",
+          "kind": "up to 5 lenses",
+          "title": "Review",
+          "text": "Ready, or findings",
+          "x": 688,
+          "y": 306,
+          "countsAs": "review",
+          "covers": [],
+          "details": {
+            "what": ["Ready, or findings"]
+          }
+        },
+        {
+          "id": "d-simp",
+          "role": "agent",
+          "kind": "agent",
+          "title": "Simplify",
+          "text": "Names a smaller shape",
+          "x": 1032,
+          "y": 306,
+          "covers": [
+            {
+              "pack": "queue",
+              "workflow": "archon-build-queue",
+              "steps": ["ship/deliver/rounds/simplify"]
+            },
+            {
+              "pack": "loop",
+              "workflow": "archon-loop",
+              "steps": ["ship/deliver/rounds/simplify"]
+            }
+          ],
+          "details": {
+            "what": ["Names a smaller shape"]
+          }
+        },
+        {
+          "id": "d-ci",
+          "role": "agent",
+          "kind": "agent · medium",
+          "title": "CI",
+          "text": "Waits for green, marks ready",
+          "x": 1376,
+          "y": 306,
+          "covers": [
+            {
+              "pack": "queue",
+              "workflow": "archon-build-queue",
+              "steps": [
+                "ship/deliver/rounds/settle-threads",
+                "ship/deliver/rounds/ci",
+                "ship/deliver/rounds/threads",
+                "ship/deliver/rounds/round",
+                "ship/deliver/outcome",
+                "ship/deliver/report"
+              ]
+            },
+            {
+              "pack": "loop",
+              "workflow": "archon-loop",
+              "steps": [
+                "ship/deliver/rounds/settle-threads",
+                "ship/deliver/rounds/ci",
+                "ship/deliver/rounds/threads",
+                "ship/deliver/rounds/round",
+                "ship/deliver/outcome",
+                "ship/deliver/report"
+              ]
+            }
+          ],
+          "details": {
+            "what": ["Waits for green, marks ready"]
+          }
+        },
+        {
+          "id": "d-out",
+          "role": "source",
+          "kind": "back to",
+          "title": "Decide",
+          "text": "In the Build view",
+          "x": 1720,
+          "y": 306,
+          "upTo": "b-dec",
+          "covers": [],
+          "details": {
+            "what": ["In the Build view"]
+          }
+        }
+      ],
+      "lines": [
+        {
+          "from": "d-impl",
+          "to": "d-pr",
+          "style": "flow"
+        },
+        {
+          "from": "d-pr",
+          "to": "d-rev",
+          "style": "flow"
+        },
+        {
+          "from": "d-rev",
+          "to": "d-simp",
+          "style": "flow",
+          "label": "Ready"
+        },
+        {
+          "from": "d-simp",
+          "to": "d-ci",
+          "style": "flow",
+          "label": "reshape + re-review"
+        },
+        {
+          "from": "d-ci",
+          "to": "d-out",
+          "style": "flow",
+          "label": "green"
+        },
+        {
+          "from": "d-rev",
+          "to": "d-impl",
+          "style": "loop",
+          "label": "findings (max 4 rounds)",
+          "route": [[818, 306], [818, 40], [130, 40], [130, 306]]
+        }
+      ],
+      "tour": ["d-impl", "d-pr", "d-rev", "d-simp", "d-ci", "d-out"]
+    },
+    "split": {
+      "caption": "A product document or a bundle of tasks reaches Intake as one item, too big to build at once. Split reads it and breaks it into work items, each a small contract of its own, and files each one once. They come back through Intake like any other work.",
+      "cardSize": {
+        "width": 260,
+        "height": 200
+      },
+      "cards": [
+        {
+          "id": "s-take",
+          "role": "source",
+          "kind": "script",
+          "title": "Take the item",
+          "text": "The next one Intake sent here",
+          "x": 0,
+          "y": 0,
+          "covers": [
+            {
+              "pack": "queue",
+              "workflow": "archon-split",
+              "steps": ["facts"]
+            },
+            {
+              "pack": "queue",
+              "workflow": "factory-backlog",
+              "steps": ["read"]
+            },
+            {
+              "pack": "loop",
+              "workflow": "archon-backlog",
+              "steps": ["read-prd"]
+            }
+          ],
+          "details": {
+            "what": ["The next one Intake sent here"]
+          }
+        },
+        {
+          "id": "s-slice",
+          "role": "agent",
+          "kind": "agent · large",
+          "title": "Break it up",
+          "text": "Work items, with what depends on what",
+          "x": 344,
+          "y": 0,
+          "covers": [
+            {
+              "pack": "queue",
+              "workflow": "archon-split",
+              "steps": ["slice"]
+            },
+            {
+              "pack": "queue",
+              "workflow": "factory-backlog",
+              "steps": ["slice", "check"]
+            },
+            {
+              "pack": "loop",
+              "workflow": "archon-backlog",
+              "steps": ["slice", "check"]
+            }
+          ],
+          "details": {
+            "what": ["Work items, with what depends on what"]
+          }
+        },
+        {
+          "id": "s-pub",
+          "role": "source",
+          "kind": "script",
+          "title": "File the issues",
+          "text": "Once each, with Depends on: #n",
+          "x": 688,
+          "y": 0,
+          "covers": [
+            {
+              "pack": "queue",
+              "workflow": "archon-split",
+              "steps": ["publish"]
+            },
+            {
+              "pack": "queue",
+              "workflow": "factory-backlog",
+              "steps": ["publish"]
+            },
+            {
+              "pack": "loop",
+              "workflow": "archon-backlog",
+              "steps": ["authorize", "publish"]
+            }
+          ],
+          "details": {
+            "what": ["Once each, with Depends on: #n"]
+          }
+        },
+        {
+          "id": "s-keep",
+          "role": "source",
+          "kind": "afterwards",
+          "title": "Keep the document",
+          "text": "Open until its result is measured. A bundle closes.",
+          "x": 688,
+          "y": 288,
+          "lists": ["documents"],
+          "covers": [],
+          "details": {
+            "what": ["Open until its result is measured. A bundle closes."]
+          }
+        },
+        {
+          "id": "s-next",
+          "role": "source",
+          "kind": "next",
+          "title": "Intake",
+          "text": "Each new issue is triaged",
+          "x": 1032,
+          "y": 0,
+          "upTo": "intake",
+          "covers": [],
+          "details": {
+            "what": ["Each new issue is triaged"]
+          }
+        }
+      ],
+      "lines": [
+        {
+          "from": "s-take",
+          "to": "s-slice",
+          "style": "flow"
+        },
+        {
+          "from": "s-slice",
+          "to": "s-pub",
+          "style": "flow"
+        },
+        {
+          "from": "s-pub",
+          "to": "s-next",
+          "style": "flow"
+        },
+        {
+          "from": "s-pub",
+          "to": "s-keep",
+          "style": "loop",
+          "route": [[818, 200], [818, 288]]
+        }
+      ],
+      "tour": ["s-take", "s-slice", "s-pub", "s-next"]
+    },
+    "intake": {
+      "caption": "Every new or edited work item passes through Intake. It checks who wrote it, then triage decides the route by how uncertain the work is, not how big it is. A product document or a bundle goes to Split.",
+      "cardSize": {
+        "width": 260,
+        "height": 200
+      },
+      "cards": [
+        {
+          "id": "i-trust",
+          "role": "source",
+          "kind": "script",
+          "title": "Who wrote it?",
+          "text": "Maintainers in, others wait",
+          "x": 0,
+          "y": 272,
+          "covers": [
+            {
+              "pack": "queue",
+              "workflow": "archon-intake",
+              "steps": ["facts"]
+            }
+          ],
+          "details": {
+            "what": ["Maintainers in, others wait"]
+          }
+        },
+        {
+          "id": "i-tri",
+          "role": "agent",
+          "kind": "agent · @triage",
+          "title": "Triage",
+          "text": "Route, size, importance",
+          "x": 344,
+          "y": 272,
+          "covers": [
+            {
+              "pack": "queue",
+              "workflow": "archon-intake",
+              "steps": ["triage", "outcome"]
+            },
+            {
+              "pack": "loop",
+              "workflow": "archon-loop",
+              "steps": ["pick", "claim"]
+            }
+          ],
+          "details": {
+            "what": ["Route, size, importance"]
+          }
+        },
+        {
+          "id": "i-del",
+          "role": "source",
+          "kind": "route",
+          "title": "Deliver",
+          "text": "Ready to implement",
+          "x": 744,
+          "y": 0,
+          "covers": [],
+          "details": {
+            "what": ["Ready to implement"]
+          }
+        },
+        {
+          "id": "i-plan",
+          "role": "source",
+          "kind": "route",
+          "title": "Plan first",
+          "text": "A design call is open",
+          "x": 744,
+          "y": 230,
+          "covers": [],
+          "details": {
+            "what": ["A design call is open"]
+          }
+        },
+        {
+          "id": "i-inv",
+          "role": "source",
+          "kind": "route",
+          "title": "Investigate",
+          "text": "The cause is unproven",
+          "x": 744,
+          "y": 460,
+          "covers": [],
+          "details": {
+            "what": ["The cause is unproven"]
+          }
+        },
+        {
+          "id": "i-spl",
+          "role": "source",
+          "kind": "route",
+          "title": "Split",
+          "text": "A document or a bundle of tasks",
+          "x": 744,
+          "y": 690,
+          "covers": [],
+          "details": {
+            "what": ["A document or a bundle of tasks"]
+          }
+        },
+        {
+          "id": "i-ask",
+          "role": "person",
+          "kind": "waits",
+          "title": "Needs a contract",
+          "text": "Missing problem, outcome or acceptance",
+          "x": 344,
+          "y": 648,
+          "covers": [],
+          "details": {
+            "what": ["Missing problem, outcome or acceptance"]
+          }
+        },
+        {
+          "id": "i-next",
+          "role": "source",
+          "kind": "next",
+          "title": "Work order",
+          "text": "Ready work waits to be picked",
+          "x": 1144,
+          "y": 230,
+          "upTo": "order",
+          "covers": [],
+          "details": {
+            "what": ["Ready work waits to be picked"]
+          }
+        },
+        {
+          "id": "i-up",
+          "role": "source",
+          "kind": "next",
+          "title": "Split",
+          "text": "Comes back as new work items",
+          "x": 1144,
+          "y": 690,
+          "upTo": "split",
+          "covers": [],
+          "details": {
+            "what": ["Comes back as new work items"]
+          }
+        }
+      ],
+      "lines": [
+        {
+          "from": "i-trust",
+          "to": "i-tri",
+          "style": "flow"
+        },
+        {
+          "from": "i-tri",
+          "to": "i-del",
+          "style": "flow",
+          "route": [[604, 372], [674, 372], [674, 100], [744, 100]]
+        },
+        {
+          "from": "i-tri",
+          "to": "i-plan",
+          "style": "flow",
+          "route": [[604, 372], [674, 372], [674, 330], [744, 330]]
+        },
+        {
+          "from": "i-tri",
+          "to": "i-inv",
+          "style": "flow",
+          "route": [[604, 372], [674, 372], [674, 560], [744, 560]]
+        },
+        {
+          "from": "i-tri",
+          "to": "i-spl",
+          "style": "flow",
+          "route": [[604, 372], [674, 372], [674, 790], [744, 790]]
+        },
+        {
+          "from": "i-plan",
+          "to": "i-next",
+          "style": "flow"
+        },
+        {
+          "from": "i-del",
+          "to": "i-next",
+          "style": "flow",
+          "arrow": false,
+          "route": [[1004, 100], [1074, 100], [1074, 330]]
+        },
+        {
+          "from": "i-inv",
+          "to": "i-next",
+          "style": "flow",
+          "arrow": false,
+          "route": [[1004, 560], [1074, 560], [1074, 330]]
+        },
+        {
+          "from": "i-spl",
+          "to": "i-up",
+          "style": "flow"
+        },
+        {
+          "from": "i-tri",
+          "to": "i-ask",
+          "style": "ask",
+          "route": [[474, 472], [474, 648]]
+        }
+      ],
+      "tour": ["i-trust", "i-tri", "i-plan", "i-next"]
+    },
+    "merge": {
+      "caption": "One sweep looks at all Ready PRs at once. An agent decides merge, send back, or ask; only a script can actually merge, and only when every condition holds at the PR's head.",
+      "cardSize": {
+        "width": 260,
+        "height": 200
+      },
+      "cards": [
+        {
+          "id": "m-snap",
+          "role": "source",
+          "kind": "script",
+          "title": "Snapshot",
+          "text": "Every Ready PR, one read",
+          "x": 0,
+          "y": 0,
+          "covers": [
+            {
+              "pack": "queue",
+              "workflow": "archon-merge-queue",
+              "steps": ["facts"]
+            }
+          ],
+          "details": {
+            "what": ["Every Ready PR, one read"]
+          }
+        },
+        {
+          "id": "m-sweep",
+          "role": "agent",
+          "kind": "agent · large",
+          "title": "Sweep",
+          "text": "Merge, send back, or ask",
+          "x": 344,
+          "y": 0,
+          "covers": [
+            {
+              "pack": "queue",
+              "workflow": "archon-merge-queue",
+              "steps": ["sweep"]
+            },
+            {
+              "pack": "loop",
+              "workflow": "archon-loop",
+              "steps": ["review"]
+            }
+          ],
+          "details": {
+            "what": ["Merge, send back, or ask"]
+          }
+        },
+        {
+          "id": "m-gate",
+          "role": "source",
+          "kind": "script · the gate",
+          "title": "Merge gate",
+          "text": "Ready at head, all checks green, main green",
+          "x": 688,
+          "y": 0,
+          "lists": ["outcomes"],
+          "covers": [
+            {
+              "pack": "loop",
+              "workflow": "archon-loop",
+              "steps": ["land"]
+            }
+          ],
+          "details": {
+            "what": ["Ready at head, all checks green, main green"],
+            "how": [
+              "It refuses a PR that is not open: already merged or closed.",
+              "It refuses a draft.",
+              "It refuses a PR that does not target the default branch.",
+              "It refuses when the PR's head is no longer the commit the sweep decided on.",
+              "It refuses a PR that is behind the default branch, unless the forge says it merges cleanly.",
+              "It refuses unless a maintainer's review verdict says Ready, for exactly the PR's head.",
+              "It refuses unless CI at the PR's head is green: a failing or unfinished check holds it.",
+              "It refuses while the default branch's CI is red.",
+              "A merge the forge accepts but that does not read back merged at that head fails the gate."
+            ]
+          }
+        },
+        {
+          "id": "m-rec",
+          "role": "source",
+          "kind": "script",
+          "title": "Read it back",
+          "text": "Close the work item via Intake",
+          "x": 1032,
+          "y": 0,
+          "covers": [
+            {
+              "pack": "queue",
+              "workflow": "archon-merge-queue",
+              "steps": ["record", "retriage"]
+            },
+            {
+              "pack": "loop",
+              "workflow": "archon-loop",
+              "steps": ["release"]
+            }
+          ],
+          "details": {
+            "what": ["Close the work item via Intake"]
+          }
+        },
+        {
+          "id": "m-back",
+          "role": "source",
+          "kind": "send back",
+          "title": "Build queue",
+          "text": "With a brief of what to fix",
+          "x": 344,
+          "y": 288,
+          "covers": [],
+          "details": {
+            "what": ["With a brief of what to fix"]
+          }
+        },
+        {
+          "id": "m-ask",
+          "role": "person",
+          "kind": "waits",
+          "title": "Ask you",
+          "text": "Borderline PR or red main",
+          "x": 688,
+          "y": 288,
+          "covers": [
+            {
+              "pack": "queue",
+              "workflow": "archon-merge-queue",
+              "steps": ["ask", "ruling"]
+            }
+          ],
+          "details": {
+            "what": ["Borderline PR or red main"]
+          }
+        }
+      ],
+      "lines": [
+        {
+          "from": "m-snap",
+          "to": "m-sweep",
+          "style": "flow"
+        },
+        {
+          "from": "m-sweep",
+          "to": "m-gate",
+          "style": "flow",
+          "label": "merge"
+        },
+        {
+          "from": "m-gate",
+          "to": "m-rec",
+          "style": "flow",
+          "label": "merged"
+        },
+        {
+          "from": "m-sweep",
+          "to": "m-back",
+          "style": "loop",
+          "route": [[474, 200], [474, 288]]
+        },
+        {
+          "from": "m-sweep",
+          "to": "m-ask",
+          "style": "ask",
+          "route": [[474, 200], [474, 388], [688, 388]]
+        }
+      ],
+      "tour": ["m-snap", "m-sweep", "m-gate", "m-rec"]
+    },
+    "deploy": {
+      "caption": "Where a finished work order lands for you to try. You choose the target: main, dev, a release branch or a staging environment. Staging is the one we recommend, because you can open it and try everything in the order at once. It runs only the commands in DEPLOY.md, then checks health and reads the running revision back, so a deploy that silently served the old build fails.",
+      "cardSize": {
+        "width": 260,
+        "height": 200
+      },
+      "cards": [
+        {
+          "id": "y-pre",
+          "role": "source",
+          "kind": "script",
+          "title": "Preflight",
+          "text": "Which revision, is main green",
+          "x": 0,
+          "y": 0,
+          "lists": ["deploys", "lands"],
+          "covers": [
+            {
+              "pack": "queue",
+              "workflow": "factory-deploy",
+              "steps": ["preflight"]
+            },
+            {
+              "pack": "loop",
+              "workflow": "archon-loop",
+              "steps": ["deploy/resolve"]
+            }
+          ],
+          "details": {
+            "what": ["Which revision, is main green"]
+          }
+        },
+        {
+          "id": "y-dep",
+          "role": "agent",
+          "kind": "agent · @factory-deployer",
+          "title": "Deploy",
+          "text": "Only DEPLOY.md commands",
+          "x": 344,
+          "y": 0,
+          "lists": ["deploys", "lands"],
+          "covers": [
+            {
+              "pack": "queue",
+              "workflow": "factory-deploy",
+              "steps": ["deploy"]
+            },
+            {
+              "pack": "loop",
+              "workflow": "archon-loop",
+              "steps": ["deploy", "deploy/deploy"]
+            }
+          ],
+          "details": {
+            "what": ["Only DEPLOY.md commands"]
+          }
+        },
+        {
+          "id": "y-ver",
+          "role": "source",
+          "kind": "script",
+          "title": "Verify",
+          "text": "Health + revision read back",
+          "x": 688,
+          "y": 0,
+          "lists": ["deploys", "lands"],
+          "covers": [
+            {
+              "pack": "queue",
+              "workflow": "factory-deploy",
+              "steps": ["verify"]
+            },
+            {
+              "pack": "loop",
+              "workflow": "archon-loop",
+              "steps": ["deploy/health", "deploy/verify"]
+            }
+          ],
+          "details": {
+            "what": ["Health + revision read back"]
+          }
+        }
+      ],
+      "lines": [
+        {
+          "from": "y-pre",
+          "to": "y-dep",
+          "style": "flow"
+        },
+        {
+          "from": "y-dep",
+          "to": "y-ver",
+          "style": "flow"
+        }
+      ],
+      "tour": ["y-pre", "y-dep", "y-ver"]
+    },
+    "app": {
+      "caption": "Every PR passes through App check before Merge. It picks a PR, merges it with the latest main in a scratch checkout, starts the app and uses it like a person, against what the work item asks for. Every claim must point at a file made during this check. The result is a commit status the merge gate requires, and it stands until the PR gets a new commit.",
+      "cardSize": {
+        "width": 260,
+        "height": 200
+      },
+      "cards": [
+        {
+          "id": "a-pick",
+          "role": "source",
+          "kind": "script",
+          "title": "Pick a PR",
+          "text": "Oldest with no result at its commit",
+          "x": 0,
+          "y": 40,
+          "covers": [
+            {
+              "pack": "loop",
+              "workflow": "archon-loop",
+              "steps": ["briefs"]
+            },
+            {
+              "pack": "queue",
+              "workflow": "factory-app-check",
+              "steps": ["config", "select", "pending"]
+            }
+          ],
+          "details": {
+            "what": ["Oldest with no result at its commit"]
+          }
+        },
+        {
+          "id": "a-scope",
+          "role": "source",
+          "kind": "script",
+          "title": "How deep?",
+          "text": "From size and front-end paths",
+          "x": 344,
+          "y": 40,
+          "covers": [
+            {
+              "pack": "queue",
+              "workflow": "factory-app-check",
+              "steps": ["scope"]
+            }
+          ],
+          "details": {
+            "what": ["From size and front-end paths"]
+          }
+        },
+        {
+          "id": "a-pol",
+          "role": "source",
+          "kind": "script",
+          "title": "Protected paths",
+          "text": "Posts factory/policy",
+          "x": 344,
+          "y": 328,
+          "covers": [
+            {
+              "pack": "queue",
+              "workflow": "factory-app-check",
+              "steps": ["policy"]
+            }
+          ],
+          "details": {
+            "what": ["Posts factory/policy"]
+          }
+        },
+        {
+          "id": "a-prep",
+          "role": "source",
+          "kind": "script",
+          "title": "PR + main, started",
+          "text": "The real merge result",
+          "x": 688,
+          "y": 40,
+          "covers": [
+            {
+              "pack": "queue",
+              "workflow": "factory-app-check",
+              "steps": ["prepare"]
+            }
+          ],
+          "details": {
+            "what": ["The real merge result"]
+          }
+        },
+        {
+          "id": "a-check",
+          "role": "agent",
+          "kind": "agent · @factory-reviewer",
+          "title": "Use the app",
+          "text": "Browser, like a user",
+          "x": 1032,
+          "y": 40,
+          "covers": [
+            {
+              "pack": "loop",
+              "workflow": "archon-loop",
+              "steps": ["check-app"]
+            },
+            {
+              "pack": "queue",
+              "workflow": "factory-app-check",
+              "steps": ["check"]
+            }
+          ],
+          "details": {
+            "what": ["Browser, like a user"]
+          }
+        },
+        {
+          "id": "a-seal",
+          "role": "source",
+          "kind": "script",
+          "title": "Seal the evidence",
+          "text": "Every claim cites a fresh file",
+          "x": 1376,
+          "y": 40,
+          "covers": [
+            {
+              "pack": "loop",
+              "workflow": "archon-loop",
+              "steps": ["evidence"]
+            },
+            {
+              "pack": "queue",
+              "workflow": "factory-app-check",
+              "steps": ["evidence"]
+            }
+          ],
+          "details": {
+            "what": ["Every claim cites a fresh file"]
+          }
+        },
+        {
+          "id": "a-pub",
+          "role": "test",
+          "kind": "commit status",
+          "title": "factory/app-check",
+          "text": "Pass or fail at this commit",
+          "x": 1720,
+          "y": 40,
+          "covers": [
+            {
+              "pack": "loop",
+              "workflow": "archon-loop",
+              "steps": ["handoff"]
+            },
+            {
+              "pack": "queue",
+              "workflow": "factory-app-check",
+              "steps": ["publish", "finalize", "cleanup"]
+            }
+          ],
+          "details": {
+            "what": ["Pass or fail at this commit"],
+            "how": [
+              "A result stands until the pull request gets a new commit, so landing another pull request does not undo it."
+            ]
+          }
+        }
+      ],
+      "lines": [
+        {
+          "from": "a-pick",
+          "to": "a-scope",
+          "style": "flow"
+        },
+        {
+          "from": "a-scope",
+          "to": "a-prep",
+          "style": "flow"
+        },
+        {
+          "from": "a-scope",
+          "to": "a-pol",
+          "style": "flow",
+          "route": [[474, 240], [474, 328]],
+          "arrow": true
+        },
+        {
+          "from": "a-prep",
+          "to": "a-check",
+          "style": "flow"
+        },
+        {
+          "from": "a-check",
+          "to": "a-seal",
+          "style": "flow"
+        },
+        {
+          "from": "a-seal",
+          "to": "a-pub",
+          "style": "flow"
+        }
+      ],
+      "tour": ["a-pick", "a-scope", "a-prep", "a-check", "a-seal", "a-pub"]
+    }
+  }
 }

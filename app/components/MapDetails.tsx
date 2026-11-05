@@ -1,8 +1,19 @@
 import { type ReactElement, type ReactNode, useState } from 'react';
 import { Link } from 'react-router';
+import type { AppCheckRow } from '../lib/app-check';
+import { relativeTime } from '../lib/format';
+import { hasLapPage } from '../lib/one-lap';
 import type { StepRow } from '../lib/step-detail';
+import { LivePanel } from '../live/LivePanel';
 import { type Card, pinnedStepLinks, workflowFile } from '../map/factory-map';
-import type { CardLive, MapItem, WorkOrderRow } from '../map/live';
+import type {
+  CardLive,
+  GateOutcome,
+  LatestDeploy,
+  MapItem,
+  ProductDocumentRow,
+  WorkOrderRow,
+} from '../map/live';
 
 type Tab = 'when' | 'what' | 'how' | 'live' | 'behind';
 
@@ -66,10 +77,100 @@ function Order({ order }: { order: WorkOrderRow }): ReactElement {
   );
 }
 
+const UNAVAILABLE = {
+  documents: 'The product documents are unavailable.',
+  outcomes: 'The recent gate decisions are unavailable.',
+  deploys: 'The latest deploy is unavailable.',
+  lands: 'Where the work orders land is unavailable.',
+} as const;
+
+/** One pull request in the gate's recent decisions: merged as read back, or the sweep's send-back or ask, with its reason. */
+function Gate({ outcome }: { outcome: GateOutcome }): ReactElement {
+  return (
+    <li data-gate-outcome={outcome.number}>
+      <a href={outcome.url} className={`${LINK} font-mono tabular-nums`}>
+        #{outcome.number}
+      </a>
+      <span className={CHIP}>{outcome.outcome}</span>
+      <span className="ml-1.5 text-text-secondary">{outcome.reason}</span>
+    </li>
+  );
+}
+
+function Deploy({ deploy }: { deploy: LatestDeploy | null }): ReactElement {
+  if (deploy === null) return <li data-latest-deploy>This factory has never deployed.</li>;
+  const revision = deploy.revision === null ? null : deploy.revision.slice(0, 7);
+  const name = <span className="font-mono">{revision ?? 'no revision'}</span>;
+  return (
+    <li data-latest-deploy>
+      {deploy.verified ? (
+        <>
+          {name} is deployed, healthy, and its revision{' '}
+          {deploy.readBack ? 'read back' : 'not read back'}
+        </>
+      ) : (
+        <>
+          {name}: the last deploy failed, health {deploy.health ?? 'not reported'}
+        </>
+      )}
+      {deploy.at === null ? null : (
+        <span className={CHIP}>{relativeTime(deploy.at.toISOString())}</span>
+      )}
+    </li>
+  );
+}
+
+/** A product document with the work items its split recorded, merged over total, drawn as a bar. */
+function ProductDocument({ document }: { document: ProductDocumentRow }): ReactElement {
+  const { number, title, url, total_count: total, merged_count: merged } = document;
+  const percent = total === 0 ? 0 : Math.round((merged / total) * 100);
+  return (
+    <li data-product-document={number} className="grid gap-1">
+      <span>
+        <a href={url} className={LINK}>
+          <span className="font-mono tabular-nums">#{number}</span> {title}
+        </a>
+        <span className={CHIP}>
+          {total === 0 ? 'no work items recorded' : `${merged}/${total} merged`}
+        </span>
+      </span>
+      <div
+        role="progressbar"
+        aria-label={`#${number}: ${merged} of ${total} merged`}
+        aria-valuemin={0}
+        aria-valuemax={total}
+        aria-valuenow={merged}
+        className="h-1.5 overflow-hidden rounded-full bg-surface-inset"
+      >
+        <div className="h-full rounded-full bg-success" style={{ width: `${percent}%` }} />
+      </div>
+    </li>
+  );
+}
+
 const time = (at: Date) =>
   at.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
 
-/** The issues and laps on the card now, each opening its page. */
+/** A run's name: a link to its lap page when it has one, otherwise the name plainly. */
+function RunName({
+  workflow,
+  href,
+  children,
+}: {
+  workflow: string | null;
+  href: string;
+  children: ReactNode;
+}): ReactElement {
+  return hasLapPage(workflow) ? (
+    <Link to={href} className={LINK}>
+      {children}
+    </Link>
+  ) : (
+    <span>{children}</span>
+  );
+}
+
+/** The issues and laps on the card now, each opening its lap page when it has one. */
 export function RightNow({
   live,
   factory,
@@ -81,7 +182,7 @@ export function RightNow({
   const rows: ReactNode[] = [
     ...(live?.here ?? []).map((lap) => (
       <li key={`lap-${lap.run}`} data-lap={lap.run}>
-        <Link to={lapHref(lap.run)} className={LINK}>
+        <RunName workflow={lap.workflow} href={lapHref(lap.run)}>
           {lap.issue ? (
             <>
               <span className="font-mono tabular-nums">#{lap.issue.number}</span>{' '}
@@ -90,7 +191,7 @@ export function RightNow({
           ) : (
             <span className="font-mono">lap {lap.run.slice(0, 8)}</span>
           )}
-        </Link>
+        </RunName>
         {lap.issue?.url ? (
           <a href={lap.issue.url} data-lap-issue className={`${LINK} ml-1.5 font-mono text-[12px]`}>
             GitHub #{lap.issue.number}
@@ -110,16 +211,48 @@ export function RightNow({
     )),
     ...(live?.waiting ?? []).map((item) => <Item key={item.key} item={item} note="waiting" />),
     ...(live?.orders ?? []).map((order) => <Order key={`order-${order.name}`} order={order} />),
+    ...(live?.documents ?? []).map((document) => (
+      <ProductDocument key={`document-${document.number}`} document={document} />
+    )),
+    ...(live?.documents?.length === 0
+      ? [
+          <li key="no-documents" className="text-text-secondary">
+            No product document is open.
+          </li>,
+        ]
+      : []),
     ...(live?.merged ?? []).map((merge) => (
       <li key={`merged-${merge.run}-${merge.number ?? 'lap'}`} data-lap={merge.run}>
-        <Link to={lapHref(merge.run)} className={LINK}>
+        <RunName workflow={merge.workflow} href={lapHref(merge.run)}>
           {merge.number === null ? (
             <span className="font-mono">lap {merge.run.slice(0, 8)}</span>
           ) : (
             <span className="font-mono tabular-nums">#{merge.number}</span>
           )}
-        </Link>
+        </RunName>
         <span className={CHIP}>merged {time(merge.at)}</span>
+      </li>
+    )),
+    ...(live?.listsUnavailable ?? []).map((list) => (
+      <li key={`unavailable-list-${list}`} className="text-text-secondary">
+        {UNAVAILABLE[list]}
+      </li>
+    )),
+    ...(live?.gate?.map((outcome) => (
+      <Gate key={`gate-${outcome.run}-${outcome.number}`} outcome={outcome} />
+    )) ?? []),
+    ...(live?.gate?.length === 0
+      ? [
+          <li key="gate-none" className="text-text-secondary">
+            No gate decision is recorded for this factory yet.
+          </li>,
+        ]
+      : []),
+    ...(live?.deploy === undefined ? [] : [<Deploy key="latest-deploy" deploy={live.deploy} />]),
+    ...(live?.lands ?? []).map((order) => (
+      <li key={`lands-${order.name}`} data-lands={order.name}>
+        <span className="font-mono">{order.name}</span>{' '}
+        {order.lands_on === null ? 'names no target yet' : `lands on ${order.lands_on}`}
       </li>
     )),
   ];
@@ -127,6 +260,54 @@ export function RightNow({
     <p className="text-text-secondary">Nothing on this step right now.</p>
   ) : (
     <ul className="grid gap-[5px]">{rows}</ul>
+  );
+}
+
+const count = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+
+/** The open pull requests the app check has looked at: its latest verdict, and its lines by kind. */
+export function AppCheckList({ rows }: { rows: readonly AppCheckRow[] }): ReactElement {
+  return rows.length === 0 ? (
+    <p className="text-text-secondary">No open pull request has been checked.</p>
+  ) : (
+    <ul className="grid gap-[5px]">
+      {rows.map((row) => (
+        <li key={row.number} data-app-check={row.number}>
+          <span className="font-mono tabular-nums">#{row.number} </span>
+          {row.url ? (
+            <a href={row.url} className={LINK}>
+              {row.title}
+            </a>
+          ) : (
+            row.title
+          )}
+          <span className={CHIP}>{row.overall ?? 'checking'}</span>
+          <span className={CHIP}>
+            {count(row.criteria, 'criterion', 'criteria')}, {count(row.probes, 'probe', 'probes')},{' '}
+            {count(row.assertions, 'assertion', 'assertions')}
+          </span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function AppChecks({ factory }: { factory: string }): ReactElement {
+  return (
+    <LivePanel<AppCheckRow> query="app-check" factory={factory} className="grid gap-[5px]">
+      {(rows, state) => (
+        <>
+          <p className={LABEL}>Pull requests under check</p>
+          {rows === undefined || state !== 'ready' ? (
+            <p className="text-text-secondary">
+              {state === 'error' ? 'The pull requests under check are unavailable.' : 'Loading.'}
+            </p>
+          ) : (
+            <AppCheckList rows={rows} />
+          )}
+        </>
+      )}
+    </LivePanel>
   );
 }
 
@@ -209,6 +390,7 @@ export function MapDetails({
   steps,
   stepsFailed = false,
   onClose,
+  open,
   className = '',
 }: {
   className?: string;
@@ -219,6 +401,8 @@ export function MapDetails({
   factory: string;
   at: string | null;
   onClose: () => void;
+  /** Present for a card that opens a deeper view. */
+  open?: { title: string; steps: number; onOpen: () => void };
 }): ReactElement {
   const { details } = card;
   const tabs = TABS.filter(
@@ -240,6 +424,16 @@ export function MapDetails({
             <h2 className="m-0 text-[17px] font-semibold text-text-primary">{card.title}</h2>
           </div>
           <span className="flex-1" />
+          {open ? (
+            <button
+              type="button"
+              data-open-view
+              onClick={open.onOpen}
+              className="cursor-pointer rounded-[7px] border border-border bg-surface-elevated px-3 py-1.5 text-[13px] font-semibold text-text-primary hover:bg-surface-hover"
+            >
+              ⤢ Open {open.title} · {open.steps} steps
+            </button>
+          ) : null}
           <button
             type="button"
             onClick={onClose}
@@ -273,7 +467,10 @@ export function MapDetails({
           className="grid max-w-[96ch] gap-2.5 px-4 pt-3.5 pb-[18px] text-sm text-text-primary"
         >
           {tab === 'live' ? (
-            <RightNow live={live} factory={factory} />
+            <>
+              <RightNow live={live} factory={factory} />
+              {card.id === 'a-check' ? <AppChecks factory={factory} /> : null}
+            </>
           ) : tab === 'behind' ? (
             <Behind card={card} at={at} steps={steps} failed={stepsFailed} />
           ) : (

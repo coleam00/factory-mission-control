@@ -4,7 +4,7 @@ import { MemoryRouter } from 'react-router';
 import type { AttentionRow } from '../lib/attention';
 import type { HealthRunRow, HealthStepRow } from '../lib/health';
 import type { OwnerQueueRow } from '../lib/owner-queue';
-import { CAPTION, FOOTER, HealthDrawn, WaitingItems } from './Decisions';
+import { CAPTION, FOOTER, HealthDrawn, sourceOf, WaitingItems } from './Decisions';
 
 const NOW = Date.parse('2026-10-24T12:00:00Z');
 const RUN = '5eed0005-0000-4000-8000-000000000001';
@@ -75,6 +75,16 @@ test('an old-loop issue shows its number, title, wait and thread link, and no op
   expect(item).toMatch(/data-waited="true"[^>]*>13d /);
   expect(item).toContain('href="https://github.com/coleam00/factory-mission-control/issues/13"');
   expect(item).not.toContain('data-option');
+  expect(item).not.toContain('px-4 py-3.5"></div>');
+  expect(item).not.toContain('grid gap-3');
+  expect(item).not.toContain('border-t border-border');
+});
+
+test('a card with options keeps its body under the header row', () => {
+  const card = waiting.match(/<li data-attention-item=.*?<\/li><\/ul>.*?<\/li>/s)?.[0] ?? '';
+  expect(card).toContain('data-choice');
+  expect(card).toContain('grid gap-3');
+  expect(card).toContain('border-t border-border');
 });
 
 test('nothing here is amber, and nothing here can answer', () => {
@@ -124,4 +134,30 @@ test('a paused run is drawn in the person color, not amber', () => {
   expect(html).not.toContain('The factory is healthy.');
   expect(html).toContain('var(--role-person)');
   expect(html).not.toContain('warning');
+});
+
+test('attention items in error leave the owner queue on screen with an unavailable notice', () => {
+  const html = render(
+    <WaitingItems
+      attention={sourceOf([attention], 'error')}
+      owner={sourceOf([needsOwner], 'ready')}
+      now={NOW}
+    />,
+  );
+  expect(html).toContain('Live data for what is waiting on you is unavailable.');
+  expect(html).toContain('data-owner-item');
+  expect(html).not.toContain('Nothing is waiting on you.');
+});
+
+test('an unavailable list never lets the screen claim nothing waits', () => {
+  const html = render(<WaitingItems attention={[]} owner="unavailable" now={NOW} />);
+  expect(html).toContain('Live data for the owner queue is unavailable.');
+  expect(html).not.toContain('Nothing is waiting on you.');
+});
+
+test('a panel in error is unavailable even when it kept rows; no rows means loading', () => {
+  expect(sourceOf([attention], 'error')).toBe('unavailable');
+  expect(sourceOf(undefined, 'loading')).toBe('loading');
+  const kept = [attention];
+  expect(sourceOf(kept, 'ready')).toBe(kept);
 });

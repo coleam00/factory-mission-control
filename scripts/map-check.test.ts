@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from 'bun:test';
 import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { FACTORY_MAP, type FactoryMap } from '../app/map/factory-map';
+import { type Card, FACTORY_MAP, type FactoryMap, type MapView } from '../app/map/factory-map';
 import { parsePack } from '../parsers/pack';
 import { REPO_ROOT } from './lib/cli';
 import { mapCheck, parseQueuePack } from './map-check';
@@ -34,7 +34,31 @@ const queue = () => parseQueuePack(QUEUE_ROOT, TEMPLATE);
 const loop = () => parsePack(PACK, TEMPLATE);
 const check = (map: FactoryMap, pack = loop()) => mapCheck(map, { loop: pack, queue: queue() });
 
-const withCards = (cards: FactoryMap['cards']): FactoryMap => ({ ...FACTORY_MAP, cards });
+/** The map with only the Build view and the Deliver view inside it, so the tests of the root cards and of Build's view are not also held to the other views. */
+const onlyBuild = (cards: FactoryMap['cards']): FactoryMap => ({
+  ...FACTORY_MAP,
+  cards: cards.map((c) => (c.opens === 'build' ? c : { ...c, opens: undefined })),
+  views: {
+    build: FACTORY_MAP.views?.build as MapView,
+    'build/deliver': FACTORY_MAP.views?.['build/deliver'] as MapView,
+  },
+});
+
+const withCards = (cards: FactoryMap['cards']): FactoryMap => onlyBuild(cards);
+
+/** The map with the Build view's cards rewritten by `edit`. */
+const withBuildView = (edit: (cards: FactoryMap['cards']) => FactoryMap['cards']): FactoryMap => ({
+  ...onlyBuild(FACTORY_MAP.cards),
+  views: {
+    ...onlyBuild(FACTORY_MAP.cards).views,
+    build: {
+      ...(FACTORY_MAP.views?.build as MapView),
+      cards: edit(FACTORY_MAP.views?.build?.cards ?? []),
+    },
+  },
+});
+const buildCard = (cards: FactoryMap['cards'], id: string, edit: (c: Card) => Card) =>
+  cards.map((c) => (c.id === id ? edit(c) : c));
 
 describe('map:check', () => {
   test('fixtures/pack and fixtures/pack/queue: every step of every covered workflow is covered by exactly one card', () => {
@@ -49,6 +73,7 @@ describe('map:check', () => {
     );
     expect(check(FACTORY_MAP, pack)).toEqual([
       'loop pack: App check names archon-loop briefs, which the pack lacks',
+      'loop pack: Pick a PR names archon-loop briefs, which the pack lacks',
     ]);
   });
 
@@ -57,6 +82,7 @@ describe('map:check', () => {
       card.id === 'app'
         ? {
             ...card,
+            opens: undefined,
             covers: [
               {
                 pack: 'loop' as const,
@@ -67,7 +93,14 @@ describe('map:check', () => {
           }
         : card,
     );
-    expect(check(withCards(without))).toEqual([
+    const map = {
+      ...withCards(without),
+      views: {
+        build: FACTORY_MAP.views?.build as MapView,
+        'build/deliver': FACTORY_MAP.views?.['build/deliver'] as MapView,
+      },
+    };
+    expect(check(map)).toEqual([
       "loop pack: archon-loop handoff is marked on a lap's row but covered by no card",
     ]);
   });
@@ -136,7 +169,9 @@ describe('map:check', () => {
     const map: FactoryMap = {
       ...FACTORY_MAP,
       cards: FACTORY_MAP.cards.map((card, i) =>
-        i === 0 ? { ...card, role: 'robot' as never, chips: ['lost' as never] } : card,
+        i === 0
+          ? { ...card, role: 'robot' as never, chips: ['lost' as never], lists: ['nope' as never] }
+          : card,
       ),
       lines: FACTORY_MAP.lines.map((line, i) =>
         i === 0 ? { ...line, style: 'flwo' as never } : line,
@@ -149,6 +184,7 @@ describe('map:check', () => {
     expect(check(map)).toEqual([
       `${first.title} role "robot" is not one of source, agent, test, person`,
       `${first.title} chip "lost" is not one of queued, failing, waiting, merged, orders`,
+      `${first.title} list "nope" is not one of documents, outcomes, deploys, lands`,
       `line ${line.from} to ${line.to} style "flwo" is not one of flow, ask, loop`,
       `legend ${entry.label} role "ghost" is not one of source, agent, test, person`,
     ]);
@@ -177,6 +213,7 @@ describe('map:check', () => {
     writeFileSync(file, `${lines.slice(0, at).join('\n')}\n`);
     expect(mapCheck(FACTORY_MAP, { loop: loop(), queue: parseQueuePack(dir, TEMPLATE) })).toEqual([
       'queue pack: Staging names factory-deploy verify, which the pack lacks',
+      'queue pack: Verify names factory-deploy verify, which the pack lacks',
     ]);
   });
 
@@ -209,6 +246,154 @@ describe('map:check', () => {
     );
     expect(check(withCards(cards))).toContain(
       'Staging cover archon-loop pack "both" is not one of loop, queue',
+    );
+  });
+
+  test('a Build-view card dropping a child step fails naming it', () => {
+    const map = withBuildView((cards) =>
+      buildCard(cards, 'b-push', (c) => ({
+        ...c,
+        covers: c.covers.map((cover) =>
+          cover.workflow === 'archon-build-queue' ? { ...cover, steps: [] } : cover,
+        ),
+      })),
+    );
+    expect(check(map)).toEqual([
+      'queue pack: Build view: archon-build-queue apply is covered by no card',
+    ]);
+  });
+
+  test('the Split and Intake views each cover the steps of their card once', () => {
+    const split = FACTORY_MAP.views?.split as MapView;
+    const map: FactoryMap = {
+      ...FACTORY_MAP,
+      views: {
+        ...FACTORY_MAP.views,
+        split: {
+          ...split,
+          cards: split.cards.map((c) =>
+            c.id === 's-slice'
+              ? {
+                  ...c,
+                  covers: c.covers.map((cover) =>
+                    cover.workflow === 'archon-split' ? { ...cover, steps: [] } : cover,
+                  ),
+                }
+              : c,
+          ),
+        },
+      },
+    };
+    expect(check(map)).toEqual([
+      'queue pack: Split view: archon-split slice is covered by no card',
+    ]);
+  });
+
+  test('a view card covering a step its parent does not fails', () => {
+    const map = withBuildView((cards) =>
+      buildCard(cards, 'b-del', (c) => ({
+        ...c,
+        covers: c.covers.map((cover) =>
+          cover.workflow === 'archon-build-queue'
+            ? {
+                ...cover,
+                steps: [...cover.steps, 'ship/deliver/rounds/review'],
+              }
+            : cover,
+        ),
+      })),
+    );
+    expect(check(map)).toEqual([
+      'queue pack: Build view: Deliver covers archon-build-queue ship/deliver/rounds/review, which Build does not',
+    ]);
+  });
+
+  test('a view card covering the step the pack lacks, which its opener does not name, fails', () => {
+    const map = withBuildView((cards) =>
+      buildCard(cards, 'b-del', (c) => ({
+        ...c,
+        covers: c.covers.map((cover) =>
+          cover.workflow === 'archon-loop'
+            ? { ...cover, steps: [...cover.steps, 'handoff'] }
+            : cover,
+        ),
+      })),
+    );
+    expect(check(map)).toEqual([
+      'loop pack: Build view: Deliver covers archon-loop handoff, which Build does not',
+      'loop pack: Deliver view: archon-loop handoff is covered by no card',
+    ]);
+  });
+
+  test('an opens naming no view, and a view no card opens, fail', () => {
+    const dead = {
+      ...FACTORY_MAP,
+      cards: FACTORY_MAP.cards.map((c) => (c.id === 'review' ? { ...c, opens: 'nowhere' } : c)),
+    };
+    expect(check(dead)).toEqual(['Review opens view nowhere, which the map lacks']);
+    const orphan = {
+      ...FACTORY_MAP,
+      cards: FACTORY_MAP.cards.map(({ opens: _, ...c }) => c),
+    };
+    expect(check(orphan)).toContain('view build is opened by no card');
+  });
+
+  test('a card id used twice fails naming it', () => {
+    const map = withBuildView((cards) =>
+      buildCard(cards, 'b-brief', (c) => ({ ...c, id: 'build' })),
+    );
+    expect(check(map)).toContain('card id build is used twice');
+  });
+
+  test('a card going up to a card its parent level lacks fails', () => {
+    const map = withBuildView((cards) =>
+      buildCard(cards, 'b-next', (c) => ({ ...c, upTo: 'nowhere' })),
+    );
+    expect(check(map)).toContain(
+      'Merge queue goes up to nowhere, which is no card of its parent level',
+    );
+  });
+
+  test('a card counting as a card the map lacks fails naming it', () => {
+    const deliver = FACTORY_MAP.views?.['build/deliver'] as MapView;
+    const map: FactoryMap = {
+      ...FACTORY_MAP,
+      views: {
+        ...FACTORY_MAP.views,
+        'build/deliver': {
+          ...deliver,
+          cards: deliver.cards.map((c) => (c.countsAs ? { ...c, countsAs: 'nowhere' } : c)),
+        },
+      },
+    };
+    expect(check(map)).toEqual(['Review counts as nowhere, which is no card']);
+  });
+
+  test('a view two cards open fails naming both', () => {
+    const map = {
+      ...FACTORY_MAP,
+      cards: FACTORY_MAP.cards.map((c) => (c.id === 'review' ? { ...c, opens: 'build' } : c)),
+    };
+    expect(check(map)).toContain('view build is opened by Build and Review');
+  });
+
+  test('a view opened only from inside itself fails as unreachable', () => {
+    const map = {
+      ...withBuildView((cards) => buildCard(cards, 'b-brief', (c) => ({ ...c, opens: 'build' }))),
+      cards: FACTORY_MAP.cards.map(({ opens: _, ...c }) => c),
+    };
+    expect(check(map)).toContain('view build cannot be reached from the root');
+  });
+
+  test('a view card naming a workflow its opener does not cover fails', () => {
+    const map = withBuildView((cards) =>
+      buildCard(cards, 'b-brief', (c) => ({
+        ...c,
+        covers: [...c.covers, { pack: 'queue', workflow: 'archon-merge-queue', steps: [] }],
+      })),
+    );
+    expect(check(map)).toContain(
+      'queue pack: Build view: Write the brief names workflow archon-merge-queue, which Build does not cover',
     );
   });
 });

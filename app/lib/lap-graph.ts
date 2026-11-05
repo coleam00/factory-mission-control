@@ -12,7 +12,7 @@ import {
   stepsCount,
   topBlocks,
 } from './home-map';
-import type { StepAttemptRow } from './one-lap';
+import { LAP_PAGE_WORKFLOW, type StepAttemptRow } from './one-lap';
 
 /** A row of `db/queries/one-lap-map.sql`: one node of the loop's expanded tree at the lap's pin. */
 export interface LapMapRow {
@@ -99,7 +99,7 @@ export interface LapGraph {
  */
 export function lapGraph(map: readonly LapMapRow[], attempts: readonly StepAttemptRow[]): LapGraph {
   const rows: StepTreeRow[] = map.map((r) => ({
-    workflow: 'archon-loop',
+    workflow: LAP_PAGE_WORKFLOW,
     path: r.path,
     parent_path: r.parent_path,
     position: r.position,
@@ -134,7 +134,7 @@ export function lapGraph(map: readonly LapMapRow[], attempts: readonly StepAttem
         const previous = lastStarted.get(parent);
         position += 1;
         rows.push({
-          workflow: 'archon-loop',
+          workflow: LAP_PAGE_WORKFLOW,
           path,
           parent_path: parent,
           position,
@@ -149,7 +149,7 @@ export function lapGraph(map: readonly LapMapRow[], attempts: readonly StepAttem
     }
   }
 
-  const graph = stepGraph(rows);
+  const graph = stepGraph(rows, map[0]?.pin ?? null);
   const children = graph.clusters;
   // Every iteration of a loop's step is an attempt of its one node, oldest first.
   const own = new Map<string, StepAttemptRow[]>();

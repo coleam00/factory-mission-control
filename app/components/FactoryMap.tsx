@@ -12,19 +12,23 @@ import {
   useSyncExternalStore,
 } from 'react';
 import {
+  allCards,
   type Card,
   cardWidth,
   FIT_FOOT,
   FIT_MAX,
   FIT_PAD,
   heroFrameHeight,
+  levelOf,
   MIN_FRAME,
   type FactoryMap as FactoryMapData,
   type Line,
   type LineStyle,
   linePoints,
+  type MapView,
   midpoint,
   neighbours,
+  openerOf,
   type Point,
   pathOf,
   type Role,
@@ -126,7 +130,7 @@ function along(points: readonly Point[]): {
  * straight to the DOM each frame, so the map does not re-render 60 times a second.
  */
 function useTour(
-  map: FactoryMapData,
+  map: MapView,
   running: boolean,
   dot: RefObject<SVGCircleElement | null>,
   cards: RefObject<Map<string, HTMLElement>>,
@@ -158,11 +162,7 @@ function useTour(
         if (i === last || Math.abs(fraction - stop.at) >= 0.012) continue;
         last = i;
         const card = cards.current.get(stop.id);
-        if (card) {
-          card.classList.remove('animate-map-hit');
-          void card.offsetWidth;
-          card.classList.add('animate-map-hit');
-        }
+        flash(card);
       }
       frame = requestAnimationFrame(step);
     };
@@ -175,10 +175,38 @@ function useTour(
  * Where the phone view centres (refs/40-home-phone.png): the middle of the line's box, high
  * enough that the card above the line shows too.
  */
-const phoneCentre = ({ group }: FactoryMapData): Point => [
-  group.x + group.width / 2,
-  (group.y + group.height) / 2,
-];
+const phoneCentre = (level: MapView, world: { width: number; height: number }): Point =>
+  level.group
+    ? [level.group.x + level.group.width / 2, (level.group.y + level.group.height) / 2]
+    : [world.width / 2, world.height / 2];
+
+/** Whether a key press came from somewhere the person is typing, where Backspace is theirs. */
+const typing = (target: EventTarget | null) =>
+  target instanceof HTMLElement &&
+  (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName));
+
+/** The stacked edge behind a card that opens a deeper view, in map units. */
+const STACK = '8px 8px 0 -2px var(--surface-elevated), 8px 8px 0 0 var(--border-bright)';
+
+/** Joins view ids into one key; ids may contain `/` (`build/deliver`), so not that. */
+const PATH_SEP = '\n';
+
+/** The camera zoom onto a card as it opens, and where it starts on the level it opens into. */
+const ZOOM_IN = 2.2;
+const ENTER_SCALE = 0.5;
+const LEAVE_SCALE = 1.6;
+/** The cross-fade: the old level is gone by SWAP_MS, the new one is fitted and settled by SETTLE_MS. */
+const SWAP_MS = 240;
+const FLASH_MS = 700;
+const SETTLE_MS = 450;
+const WORLD_MOTION = 'transform .42s cubic-bezier(.65,0,.35,1), opacity .16s';
+
+function flash(el: HTMLElement | undefined): void {
+  if (!el) return;
+  el.classList.remove('animate-map-hit');
+  void el.offsetWidth;
+  el.classList.add('animate-map-hit');
+}
 
 function chipsOf(live: CardLive | undefined) {
   if (live === undefined) return [];
@@ -224,13 +252,18 @@ function MapCard({
   live,
   state,
   onSelect,
+  onOpen,
+  onUp,
   register,
 }: {
-  map: FactoryMapData;
+  map: MapView;
   card: Card;
   live: CardLive | undefined;
   state: 'selected' | 'near' | 'dim' | 'plain';
   onSelect: (id: string) => void;
+  onOpen: (view: string) => void;
+  /** Goes up to the card of the parent level that `card.upTo` names. */
+  onUp: (target: string) => void;
   register: (id: string, el: HTMLElement | null) => void;
 }): ReactElement {
   const color = ROLE_COLOR[card.role];
@@ -239,7 +272,10 @@ function MapCard({
   const onKey = (event: KeyboardEvent) => {
     if (event.key !== 'Enter' && event.key !== ' ') return;
     event.preventDefault();
-    onSelect(card.id);
+    if (card.upTo !== undefined) onUp(card.upTo);
+    else if (event.key === 'Enter' && state === 'selected' && card.opens !== undefined) {
+      onOpen(card.opens);
+    } else onSelect(card.id);
   };
   return (
     // biome-ignore lint/a11y/useSemanticElements: a card holds blocks, which a <button> may not
@@ -248,14 +284,19 @@ function MapCard({
       role="button"
       tabIndex={0}
       aria-pressed={state === 'selected'}
-      aria-label={`${card.title}. ${card.text}${counts ? `. ${counts}` : ''}`}
+      aria-label={`${card.title}. ${card.text}${counts ? `. ${counts}` : ''}${
+        card.opens === undefined ? '' : '. Opens a deeper view'
+      }`}
       data-card={card.id}
+      data-opens={card.opens}
       data-role={card.role}
       data-live-count={live?.here.length ?? 0}
       onClick={(event) => {
         event.stopPropagation();
-        onSelect(card.id);
+        if (card.upTo !== undefined) onUp(card.upTo);
+        else onSelect(card.id);
       }}
+      onDoubleClick={() => card.opens !== undefined && onOpen(card.opens)}
       onPointerDown={(event) => event.stopPropagation()}
       onKeyDown={onKey}
       data-selected={state === 'selected' || undefined}
@@ -273,8 +314,20 @@ function MapCard({
         height: map.cardSize.height,
         borderColor:
           state === 'selected' ? 'var(--surface)' : over(color, 'var(--card-border-tint)'),
+        ...(card.opens === undefined
+          ? {}
+          : { boxShadow: state === 'selected' ? `0 0 0 7px var(--accent), ${STACK}` : STACK }),
       }}
     >
+      {card.opens === undefined ? null : (
+        <span
+          aria-hidden="true"
+          className="absolute top-2.5 right-3 font-mono text-text-secondary"
+          style={{ fontSize: MAP_TYPE.chip }}
+        >
+          ⤢
+        </span>
+      )}
       <span
         aria-hidden="true"
         className="pointer-events-none absolute inset-0 rounded-[14px]"
@@ -408,9 +461,11 @@ const CONTROL =
   'cursor-pointer rounded-md px-[9px] py-1 font-mono text-[12px] text-text-secondary hover:bg-surface-elevated hover:text-text-primary disabled:cursor-default disabled:hover:bg-transparent disabled:hover:text-text-secondary';
 
 /**
- * The factory map's root view (PRD 4.1): the owner's drawing with live chips on its cards, a camera
- * that pans, zooms around the cursor and fits the stage, and a details strip for the card clicked.
- * `flow` off, or `prefers-reduced-motion`, stops the travelling dot and the flowing dashes.
+ * The factory map (PRD 4.1): the owner's drawing with live chips on its cards, a camera that pans,
+ * zooms around the cursor and fits the stage, and a details strip for the card clicked. A card with
+ * `opens` zooms into its view; `path` names the view shown (the address), and the one component
+ * draws every level. `flow` off, or `prefers-reduced-motion`, stops the travelling dot and the
+ * flowing dashes.
  */
 export function FactoryMap({
   map,
@@ -418,6 +473,8 @@ export function FactoryMap({
   factory,
   at,
   flow,
+  path,
+  onPath,
   onDrawn,
   steps,
   stepsFailed,
@@ -427,6 +484,10 @@ export function FactoryMap({
   factory: string;
   at: string | null;
   flow: boolean;
+  /** The view ids from the root down to the level to show; `[]` is the home map. */
+  path: readonly string[];
+  /** Asks for another level, as an address change; the map follows once `path` changes. */
+  onPath: (path: readonly string[]) => void;
   /** Told true once the map is on the page and false when it leaves, for the flow toggle. */
   onDrawn?: (drawn: boolean) => void;
   /** The pinned version's steps, for Behind the scenes; undefined until they arrive. */
@@ -434,7 +495,14 @@ export function FactoryMap({
   /** True when `step-detail` failed, so Behind the scenes says so instead of loading forever. */
   stepsFailed?: boolean;
 }): ReactElement {
-  const world = useMemo(() => worldSize(map), [map]);
+  const [shown, setShown] = useState(path);
+  const level = levelOf(map, shown);
+  const world = useMemo(() => worldSize(level), [level]);
+  const rootWorld = useMemo(() => worldSize(map), [map]);
+  // Read by the camera's callbacks, which must not change with the level (the frame observer
+  // would refit mid-transition).
+  const levelRef = useRef({ level, world });
+  levelRef.current = { level, world };
   const stage = useRef<HTMLElement>(null);
   const dot = useRef<SVGCircleElement>(null);
   const cardEls = useRef(new Map<string, HTMLElement>());
@@ -442,10 +510,14 @@ export function FactoryMap({
   /** Whether the camera has been placed for the frame yet (read by `bun run test:live`). */
   const [placed, setPlaced] = useState(false);
   const [selected, setSelected] = useState<string | null>(null);
+  /** The world's fade and zoom while a level opens or closes. */
+  const [motion, setMotion] = useState({ moving: false, hidden: false });
+  /** The card to select, and flash, on the level above once an `upTo` card has gone up. */
+  const arriving = useRef<string | null>(null);
   const drag = useRef<{ x: number; y: number; cam: Camera; moved: boolean } | null>(null);
   const reduced = useReducedMotion();
   const moving = flow && !reduced;
-  useTour(map, moving, dot, cardEls);
+  useTour(level, moving, dot, cardEls);
   useEffect(() => {
     onDrawn?.(true);
     return () => onDrawn?.(false);
@@ -455,6 +527,7 @@ export function FactoryMap({
   const fit = useCallback(() => {
     const el = stage.current;
     if (!el) return;
+    const { world } = levelRef.current;
     const { clientWidth: width, clientHeight: height } = el;
     const k = Math.min(
       (width - FIT_PAD * 2) / world.width,
@@ -467,7 +540,7 @@ export function FactoryMap({
       y: Math.max(FIT_PAD, (height - FIT_FOOT - world.height * k) / 2),
     });
     setPlaced(true);
-  }, [world]);
+  }, []);
 
   /**
    * The frame's height for its width: the map's height at the scale that fits its width, so a fit
@@ -479,21 +552,22 @@ export function FactoryMap({
     if (!el) return;
     const width = el.clientWidth;
     if (width >= PHONE) {
-      const height = heroFrameHeight(world, width);
+      const height = heroFrameHeight(rootWorld, width);
       setFrameHeight(height);
       if (el.offsetHeight === height) fit();
       return;
     }
     setFrameHeight(PHONE_FRAME);
     if (el.offsetHeight !== PHONE_FRAME) return;
-    const at = phoneCentre(map);
+    const { level, world } = levelRef.current;
+    const at = phoneCentre(level, world);
     setCam({
       k: PHONE_SCALE,
       x: width / 2 - at[0] * PHONE_SCALE,
       y: (PHONE_FRAME - FIT_FOOT) / 2 - at[1] * PHONE_SCALE,
     });
     setPlaced(true);
-  }, [map, world, fit]);
+  }, [rootWorld, fit]);
 
   useEffect(() => {
     const el = stage.current;
@@ -504,12 +578,21 @@ export function FactoryMap({
     return () => observer.disconnect();
   }, [opened]);
 
-  const zoomAround = useCallback((factor: number, mx: number, my: number) => {
-    setCam((was) => {
-      const k = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, was.k * factor));
-      return { k, x: mx - (mx - was.x) * (k / was.k), y: my - (my - was.y) * (k / was.k) };
-    });
-  }, []);
+  const settle = useCallback(
+    () => setMotion((was) => (was.moving ? { ...was, moving: false } : was)),
+    [],
+  );
+
+  const zoomAround = useCallback(
+    (factor: number, mx: number, my: number) => {
+      settle();
+      setCam((was) => {
+        const k = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, was.k * factor));
+        return { k, x: mx - (mx - was.x) * (k / was.k), y: my - (my - was.y) * (k / was.k) };
+      });
+    },
+    [settle],
+  );
 
   // A wheel listener React would attach passive, and a passive one cannot keep the page still.
   useEffect(() => {
@@ -524,6 +607,7 @@ export function FactoryMap({
         (Math.abs(event.deltaX) > Math.abs(event.deltaY) ||
           (event.deltaMode === 0 && Math.abs(event.deltaY) < 40 && event.deltaY % 1 !== 0));
       if (swipe) {
+        settle();
         setCam((was) => ({ ...was, x: was.x - event.deltaX, y: was.y - event.deltaY }));
         return;
       }
@@ -535,16 +619,92 @@ export function FactoryMap({
     };
     el.addEventListener('wheel', onWheel, { passive: false });
     return () => el.removeEventListener('wheel', onWheel);
-  }, [zoomAround]);
+  }, [zoomAround, settle]);
 
+  // Esc, and Backspace outside a field: deselect first, else go up a level.
   useEffect(() => {
-    if (selected === null) return;
     const onKey = (event: globalThis.KeyboardEvent) => {
-      if (event.key === 'Escape') setSelected(null);
+      if (event.key !== 'Escape' && !(event.key === 'Backspace' && !typing(event.target))) return;
+      if (selected !== null) setSelected(null);
+      else if (path.length > 0) onPath(path.slice(0, -1));
+      else return;
+      event.preventDefault();
     };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
-  }, [selected]);
+  }, [selected, path, onPath]);
+
+  // The address changed: zoom into the card that opens the new level, or fade back up, then swap.
+  const key = path.join(PATH_SEP);
+  const shownKey = useRef(shown.join(PATH_SEP));
+  shownKey.current = shown.join(PATH_SEP);
+  useEffect(() => {
+    const from = shownKey.current;
+    if (from === key) {
+      setMotion((was) => (was.hidden || was.moving ? { moving: false, hidden: false } : was));
+      opened();
+      return;
+    }
+    const leaving = from === '' ? [] : from.split(PATH_SEP);
+    const going = key === '' ? [] : key.split(PATH_SEP);
+    const into = going.length > leaving.length;
+    const next = levelOf(map, going);
+    const nextWorld = worldSize(next);
+    const el = stage.current;
+    const arrive = () => {
+      const target = arriving.current ?? openerOf(map, leaving.at(-1) ?? '')?.id;
+      arriving.current = null;
+      if (!into) flash(target === undefined ? undefined : cardEls.current.get(target));
+    };
+    const swap = () => {
+      setSelected(arriving.current);
+      levelRef.current = { level: next, world: nextWorld };
+      setShown(going);
+    };
+    const timers: number[] = [];
+    const later = (ms: number, run: () => void) => timers.push(window.setTimeout(run, ms));
+    if (reduced || !el) {
+      swap();
+      later(0, () => {
+        opened();
+        arrive();
+      });
+    } else {
+      const opener = openerOf(map, going.at(-1) ?? '');
+      const card = into ? levelRef.current.level.cards.find((c) => c.id === opener?.id) : undefined;
+      setMotion({ moving: true, hidden: true });
+      if (card) {
+        const cx = card.x + cardWidth(levelRef.current.level, card) / 2;
+        const cy = card.y + levelRef.current.level.cardSize.height / 2;
+        setCam({
+          k: ZOOM_IN,
+          x: el.clientWidth / 2 - cx * ZOOM_IN,
+          y: (el.clientHeight - FIT_FOOT) / 2 - cy * ZOOM_IN,
+        });
+      }
+      later(SWAP_MS, () => {
+        swap();
+        const k = into ? ENTER_SCALE : LEAVE_SCALE;
+        setMotion({ moving: false, hidden: true });
+        setCam({
+          k,
+          x: (el.clientWidth - nextWorld.width * k) / 2,
+          y: (el.clientHeight - FIT_FOOT - nextWorld.height * k) / 2,
+        });
+        requestAnimationFrame(() =>
+          requestAnimationFrame(() => {
+            setMotion({ moving: true, hidden: false });
+            opened();
+          }),
+        );
+      });
+      later(FLASH_MS, arrive);
+      later(SWAP_MS + SETTLE_MS, settle);
+    }
+    return () => {
+      for (const timer of timers) window.clearTimeout(timer);
+    };
+  }, [key, map, reduced, opened, settle]);
 
   const zoomCentre = (factor: number) => {
     const box = stage.current?.getBoundingClientRect();
@@ -552,6 +712,7 @@ export function FactoryMap({
   };
 
   const onPointerDown = (event: PointerEvent<HTMLElement>) => {
+    settle();
     drag.current = { x: event.clientX, y: event.clientY, cam, moved: false };
     event.currentTarget.setPointerCapture(event.pointerId);
   };
@@ -568,32 +729,72 @@ export function FactoryMap({
     drag.current = null;
   };
 
-  const near = useMemo(() => neighbours(map, selected), [map, selected]);
+  const near = useMemo(() => neighbours(level, selected), [level, selected]);
   const lines = useMemo(
-    () => map.lines.map((line) => ({ line, points: linePoints(map, line) })),
-    [map],
+    () => level.lines.map((line) => ({ line, points: linePoints(level, line) })),
+    [level],
   );
+  const goUp = useCallback(
+    (target: string) => {
+      arriving.current = target;
+      onPath(path.slice(0, -1));
+    },
+    [path, onPath],
+  );
+  const anyOpens = allCards(map).some((c) => c.opens !== undefined);
+  const crumbs = [
+    { id: null, title: factory },
+    ...path.map((id) => ({ id, title: openerOf(map, id)?.title ?? id })),
+  ];
   const register = useCallback((id: string, el: HTMLElement | null) => {
     if (el) cardEls.current.set(id, el);
     else cardEls.current.delete(id);
   }, []);
-  const selectedCard = map.cards.find((c) => c.id === selected);
+  const selectedCard = level.cards.find((c) => c.id === selected);
   const worldStyle: CSSProperties = {
     width: world.width,
     height: world.height,
     transform: `translate(${cam.x}px, ${cam.y}px) scale(${cam.k})`,
     transformOrigin: '0 0',
+    opacity: motion.hidden ? 0 : 1,
+    transition: motion.moving ? WORLD_MOTION : undefined,
   };
 
   return (
     <div className="flex flex-col">
+      <nav
+        aria-label="Map level"
+        data-map-crumbs
+        className={`${COLUMN} mb-2 flex flex-wrap items-center gap-1 font-mono text-[13px]`}
+      >
+        {crumbs.map((crumb, i) => (
+          <span key={crumb.id ?? 'root'} className="flex items-center gap-1">
+            {i > 0 ? <span className="text-text-secondary">›</span> : null}
+            <button
+              type="button"
+              data-crumb={crumb.id ?? 'root'}
+              aria-current={i === path.length ? 'page' : undefined}
+              disabled={i === path.length}
+              onClick={() => onPath(path.slice(0, i))}
+              className={`rounded-md px-2 py-0.5 ${
+                i === path.length
+                  ? 'bg-surface-elevated text-text-primary'
+                  : 'cursor-pointer text-text-secondary hover:bg-surface-elevated hover:text-text-primary'
+              }`}
+            >
+              {crumb.title}
+            </button>
+          </span>
+        ))}
+      </nav>
       <p data-map-caption className={`${COLUMN} mb-3 text-sm text-text-secondary`}>
-        {map.caption}
+        {level.caption}
       </p>
       <section
         ref={stage}
         aria-label="Factory map. Drag to move, scroll to zoom, click a step for details."
         data-map-stage
+        data-view={shown.at(-1) ?? 'root'}
         data-flow={moving ? 'on' : 'off'}
         data-placed={placed || undefined}
         onPointerDown={onPointerDown}
@@ -668,28 +869,30 @@ export function FactoryMap({
               />
             ) : null}
           </svg>
-          <div
-            data-map-group
-            className="pointer-events-none absolute rounded-[14px] border border-dashed border-[color:var(--border-bright)]"
-            style={{
-              left: map.group.x,
-              top: map.group.y,
-              width: map.group.width,
-              height: map.group.height,
-            }}
-          >
-            <span
-              data-group-label
-              className="absolute right-5 bg-surface px-2 font-mono uppercase leading-none tracking-[0.06em] text-text-secondary"
-              style={{ fontSize: MAP_TYPE.label, top: -MAP_TYPE.label / 2 - 1 }}
+          {level.group ? (
+            <div
+              data-map-group
+              className="pointer-events-none absolute rounded-[14px] border border-dashed border-[color:var(--border-bright)]"
+              style={{
+                left: level.group.x,
+                top: level.group.y,
+                width: level.group.width,
+                height: level.group.height,
+              }}
             >
-              {map.group.label}
-            </span>
-          </div>
-          {map.cards.map((card) => (
+              <span
+                data-group-label
+                className="absolute right-5 bg-surface px-2 font-mono uppercase leading-none tracking-[0.06em] text-text-secondary"
+                style={{ fontSize: MAP_TYPE.label, top: -MAP_TYPE.label / 2 - 1 }}
+              >
+                {level.group.label}
+              </span>
+            </div>
+          ) : null}
+          {level.cards.map((card) => (
             <MapCard
               key={card.id}
-              map={map}
+              map={level}
               card={card}
               live={live.get(card.id)}
               state={
@@ -702,12 +905,14 @@ export function FactoryMap({
                       : 'dim'
               }
               onSelect={setSelected}
+              onOpen={(view) => onPath([...path, view])}
+              onUp={goUp}
               register={register}
             />
           ))}
         </div>
         <div className="pointer-events-none absolute bottom-3 left-3 hidden rounded-lg border border-border bg-surface px-[9px] py-[5px] font-mono text-[11px] text-text-secondary min-[701px]:block">
-          drag = move · scroll = zoom · click = details · Esc = deselect
+          drag = move · scroll = zoom · click = details · double-click ⤢ = open · Esc = up
         </div>
         <div
           data-map-controls
@@ -716,7 +921,9 @@ export function FactoryMap({
         >
           <button
             type="button"
-            disabled
+            data-map-up
+            disabled={path.length === 0}
+            onClick={() => onPath(path.slice(0, -1))}
             aria-label="Up a level"
             title="Up a level"
             className={CONTROL}
@@ -760,6 +967,14 @@ export function FactoryMap({
             {entry.label}
           </li>
         ))}
+        {anyOpens ? (
+          <li className="flex items-center">
+            <span aria-hidden="true" className="mr-1.5 font-mono">
+              ⤢
+            </span>
+            opens a deeper view
+          </li>
+        ) : null}
       </ul>
       {selectedCard ? (
         <MapDetails
@@ -771,6 +986,15 @@ export function FactoryMap({
           steps={steps}
           stepsFailed={stepsFailed}
           onClose={() => setSelected(null)}
+          open={
+            selectedCard.opens === undefined
+              ? undefined
+              : {
+                  title: selectedCard.title,
+                  steps: map.views?.[selectedCard.opens]?.cards.length ?? 0,
+                  onOpen: () => onPath([...path, selectedCard.opens as string]),
+                }
+          }
         />
       ) : null}
     </div>

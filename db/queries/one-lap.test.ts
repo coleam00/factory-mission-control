@@ -1,5 +1,10 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { attemptsInOrder, type StepAttemptRow, shownDispositions } from '../../app/lib/one-lap';
+import {
+  attemptsInOrder,
+  hasLapPage,
+  type StepAttemptRow,
+  shownDispositions,
+} from '../../app/lib/one-lap';
 import { seedLaps } from '../../scripts/fixture/seed-laps';
 import { eventData } from '../../scripts/fixture/write';
 import type { Db, Row } from '../../scripts/lib/db';
@@ -301,5 +306,26 @@ describe('one-lap on the seed', () => {
       [null, null, null, null, 0],
     ]);
     expect(await errors()).toEqual(before);
+  });
+
+  test('a run has a lap page exactly when the owner says so: every running and merged run on the map', async () => {
+    const seen: boolean[] = [];
+    for (const factory of ['mission-control', 'second-factory', 'queue-factory']) {
+      const map = await db.query(queries.find(([n]) => n === 'home-map')?.[1] as string, [
+        factory,
+        '',
+      ]);
+      for (const row of map.filter((r) => r.kind === 'lap' || r.kind === 'merged')) {
+        if (row.run_id === null) continue;
+        const drawn = (await lap('one-lap', String(row.run_id), factory)).length === 1;
+        expect([row.run_id, hasLapPage(row.workflow as string | null)]).toEqual([
+          row.run_id,
+          drawn,
+        ]);
+        seen.push(drawn);
+      }
+    }
+    expect(seen).toContain(true);
+    expect(seen).toContain(false);
   });
 });

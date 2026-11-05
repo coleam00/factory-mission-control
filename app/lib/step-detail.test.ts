@@ -3,6 +3,7 @@ import {
   dependents,
   isIncluded,
   joinParts,
+  kindLabel,
   type NestingRow,
   nesting,
   placeOf,
@@ -28,6 +29,7 @@ function step(path: string, fields: Partial<StepRow> = {}): StepRow {
     depends_on: [],
     trigger_rule: null,
     include: null,
+    child_workflow: null,
     command_file: null,
     script: null,
     script_file: null,
@@ -210,4 +212,13 @@ test('repeated occurrences beneath a step are two entries, by their path beneath
       '/steps/archon-ship-block/deliver%2Frounds%2Freshape%2Fimplement',
     ],
   ]);
+});
+
+test('the Kind fact names the child workflow a workflow: node runs', () => {
+  const node = step('judge', {
+    kind: 'workflow',
+    child_workflow: 'archon-metrics-test-value-judge',
+  });
+  expect(kindLabel(node)).toBe('workflow archon-metrics-test-value-judge');
+  expect(kindLabel(step('c', { kind: 'command' }))).toBe('command');
 });

@@ -56,8 +56,8 @@ function links(html: string): { href: string; name: string; current: boolean }[]
 test('the nav links the home map and every factory screen, and marks the current one', () => {
   const { html } = navAt(registeredRoutes(), '/');
   const found = links(html());
-  expect(found[0]).toEqual({ href: '/', name: 'Map', current: true });
-  expect(found.map((l) => l.href)).toContain(`/f/${FACTORY}/versions`);
+  expect(found[0]).toEqual({ href: '/', name: 'Factory', current: true });
+  expect(found.map((l) => l.href)).toContain(`/f/${FACTORY}/laps`);
   for (const link of found) expect(link.name).not.toBe('');
   expect(found.filter((l) => l.current)).toHaveLength(1);
   expect(html()).toContain('<nav aria-label="Screens"');
@@ -75,8 +75,7 @@ test('every factory route file has a link; screens needing another parameter hav
       .replaceAll('.', '/');
     expect(found).toContain(`/f/${FACTORY}/${rest}`);
   }
-  expect(found).toHaveLength(screens.length + 2);
-  expect(found.at(-1)).toBe('/rewind');
+  expect(found).toHaveLength(screens.length + 1);
   expect(found.some((href) => href.startsWith('/steps'))).toBe(false);
 });
 
@@ -88,11 +87,13 @@ test('a badge follows its screen’s label and no other', () => {
   expect(html).toMatch(/Decisions<b data-badge="true">3<\/b>/);
 });
 
-test('the rewind link shows on every screen and is current on /rewind', () => {
-  for (const path of ['/', `/f/${FACTORY}/issues`, '/rewind']) {
-    const rewind = links(navAt(registeredRoutes(), path).html()).find((l) => l.href === '/rewind');
-    expect(rewind).toEqual({ href: '/rewind', name: 'Rewind', current: path === '/rewind' });
-  }
+test('the tabs are Factory, Board, Decisions and Laps, in that order', () => {
+  expect(links(navAt(registeredRoutes(), '/').html()).map((l) => l.name)).toEqual([
+    'Factory',
+    'Board',
+    'Decisions',
+    'Laps',
+  ]);
 });
 
 test('adding a factory route file adds its link with no edit to the shell', () => {
@@ -105,22 +106,22 @@ test('adding a factory route file adds its link with no edit to the shell', () =
   expect(after.some((l) => l.href.includes(':item') || l.href.includes('/probe/'))).toBe(false);
 });
 
-test('from / the versions link reaches the strip and the Map link returns to that factory’s map', async () => {
+test('from / the laps link reaches the strip and the Factory link returns to that factory’s map', async () => {
   const { router, html } = navAt(registeredRoutes(), '/');
-  const versions = links(html()).find((l) => l.name === 'Versions');
-  expect(versions?.href).toBe(`/f/${FACTORY}/versions`);
+  const laps = links(html()).find((l) => l.name === 'Laps');
+  expect(laps?.href).toBe(`/f/${FACTORY}/laps`);
 
-  await router.navigate(versions?.href ?? '');
-  expect(router.state.location.pathname).toBe(`/f/${FACTORY}/versions`);
-  expect(router.state.matches.at(-1)?.route.path).toBe('/f/:factory/versions');
+  await router.navigate(laps?.href ?? '');
+  expect(router.state.location.pathname).toBe(`/f/${FACTORY}/laps`);
+  expect(router.state.matches.at(-1)?.route.path).toBe('/f/:factory/laps');
   const there = links(html());
-  expect(there.find((l) => l.current)?.name).toBe('Versions');
+  expect(there.find((l) => l.current)?.name).toBe('Laps');
 
-  const home = there.find((l) => l.name === 'Map');
+  const home = there.find((l) => l.name === 'Factory');
   await router.navigate(home?.href ?? '');
   expect(router.state.location.pathname).toBe(`/f/${FACTORY}`);
   expect(router.state.matches.at(-1)?.route.path).toBe('/f/:factory');
-  expect(links(html()).find((l) => l.current)?.name).toBe('Map');
+  expect(links(html()).find((l) => l.current)?.name).toBe('Factory');
 });
 
 test('until the factory is known only the home link shows', () => {
@@ -130,33 +131,30 @@ test('until the factory is known only the home link shows', () => {
         {
           path: '/',
           element: (
-            <ScreenNavBody
-              screens={[{ path: 'versions', label: 'Versions' }]}
-              factory={undefined}
-            />
+            <ScreenNavBody screens={[{ path: 'laps', label: 'Laps' }]} factory={undefined} />
           ),
         },
       ])}
     />,
   );
-  expect(links(html)).toEqual([{ href: '/', name: 'Map', current: true }]);
+  expect(links(html)).toEqual([{ href: '/', name: 'Factory', current: true }]);
 });
 
-test("a lap's page marks Laps as current, and a step's page marks the Map, one link only", () => {
+test("a lap's page marks Laps as current, and a step's page marks Factory, one link only", () => {
   const lap = links(
     navAt(registeredRoutes(), `/f/${FACTORY}/laps/5eed0001-0000-4000-8000-000000000003`).html(),
   );
   expect(lap.filter((l) => l.current).map((l) => l.href)).toEqual([`/f/${FACTORY}/laps`]);
   for (const step of ['/steps/archon-loop/build', '/steps/archon-ship-block/intel']) {
     const found = links(navAt(registeredRoutes(), step).html());
-    expect(found.filter((l) => l.current).map((l) => l.name)).toEqual(['Map']);
+    expect(found.filter((l) => l.current).map((l) => l.name)).toEqual(['Factory']);
   }
   // Every screen still marks itself alone.
-  for (const screen of ['laps', 'scorecard', 'issues', 'testing']) {
+  for (const screen of ['laps', 'board', 'decisions']) {
     const found = links(navAt(registeredRoutes(), `/f/${FACTORY}/${screen}`).html());
     expect(found.filter((l) => l.current).map((l) => l.href)).toEqual([`/f/${FACTORY}/${screen}`]);
   }
   expect(links(navAt(registeredRoutes(), `/f/${FACTORY}`).html()).filter((l) => l.current)).toEqual(
-    [{ href: `/f/${FACTORY}`, name: 'Map', current: true }],
+    [{ href: `/f/${FACTORY}`, name: 'Factory', current: true }],
   );
 });

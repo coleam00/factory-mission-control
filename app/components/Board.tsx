@@ -97,14 +97,16 @@ function OrderPanel({
       data-work-order={order.name}
       aria-pressed={selected}
       onClick={onToggle}
-      className={`cursor-pointer rounded-[10px] border bg-surface px-3 py-2.5 text-left hover:border-border-bright ${
+      className={`min-w-0 flex-[1_1_280px] cursor-pointer rounded-[10px] border bg-surface px-3 py-2.5 text-left hover:border-border-bright ${
         selected ? 'border-border-bright' : 'border-border'
       }`}
     >
-      <span className="block text-[13px] font-semibold text-text-primary">{order.name}</span>
-      <span className="mt-0.5 block font-mono text-[11px] text-text-secondary">
-        {order.merged} of {order.total} merged
-        {order.landsOn === null ? '' : ` · lands on ${order.landsOn}`}
+      <span className="flex items-baseline justify-between gap-2">
+        <span className="min-w-0 text-[13px] font-semibold text-text-primary">{order.name}</span>
+        <span className="font-mono text-[11px] text-text-secondary">
+          {order.merged} of {order.total} merged
+          {order.landsOn === null ? '' : ` · lands on ${order.landsOn}`}
+        </span>
       </span>
       <span className="mt-2 block h-1.5 overflow-hidden rounded-full bg-surface-hover">
         <span
@@ -134,7 +136,7 @@ export function BoardBody({
         are the work item's state in Archon, so this board never disagrees with the factory.
       </p>
       {view.orders.length > 0 ? (
-        <div className="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-2">
+        <div className="flex flex-wrap gap-2.5">
           {view.orders.map((o) => (
             <OrderPanel
               key={o.name}

@@ -46,7 +46,10 @@ describe('home-map on the seed', () => {
         WHERE c.factory = 'mission-control' LIMIT 1`,
     );
     const row = (await rows()).find((r) => r.run_id === claimed?.run_id);
-    expect(row).toMatchObject({ number: claimed?.issue_number, title: claimed?.title });
+    expect(row).toMatchObject({
+      number: claimed?.issue_number,
+      title: claimed?.title,
+    });
   });
 
   test('a queue factory: its runs carry the issue of their number input, it is on the queues, one run waits, one merged two pulls', async () => {
@@ -56,6 +59,8 @@ describe('home-map on the seed', () => {
       [QUEUE_RUNS.review]: 'archon-build-queue ',
       [QUEUE_RUNS.ask]: 'archon-build-queue ',
       [QUEUE_RUNS.intake]: 'archon-intake triage',
+      [QUEUE_RUNS.splitting]: 'archon-split ',
+      [QUEUE_RUNS.triaging]: 'archon-intake ',
     });
     expect(
       queue
@@ -65,16 +70,37 @@ describe('home-map on the seed', () => {
     ).toEqual([
       [401, 'Queue issue 401'],
       [401, 'Queue issue 401'],
+      [401, 'Queue issue 401'],
       [402, 'Queue issue 402'],
       [403, 'Queue issue 403'],
+      [410, 'Queue product document'],
     ]);
     expect(queue.filter((r) => r.kind === 'queues')).toHaveLength(1);
     expect(queue.filter((r) => r.kind === 'waiting')).toMatchObject([
-      { run_id: QUEUE_RUNS.waiting, workflow: 'archon-merge-queue', number: null },
+      {
+        run_id: QUEUE_RUNS.waiting,
+        workflow: 'archon-merge-queue',
+        number: null,
+      },
     ]);
     expect(queue.filter((r) => r.kind === 'merged')).toMatchObject([
       { run_id: QUEUE_RUNS.merged, prs: '[404, 405]' },
     ]);
+  });
+
+  test('at a pin, the queue factory shows the queue runs that ran it', async () => {
+    expect(await versions('queue-factory', V2)).toBe(1);
+    expect(Object.keys(await laps('queue-factory', V2)).sort()).toEqual(
+      [
+        QUEUE_RUNS.build,
+        QUEUE_RUNS.review,
+        QUEUE_RUNS.ask,
+        QUEUE_RUNS.intake,
+        QUEUE_RUNS.splitting,
+        QUEUE_RUNS.triaging,
+      ].sort(),
+    );
+    expect(await laps('queue-factory', V1)).toEqual({});
   });
 
   test('a factory on the old loop has no queues row, no waiting row and merges only through land', async () => {
@@ -142,6 +168,33 @@ describe('home-map on the seed', () => {
     expect((await rows()).filter((r) => r.kind === 'failing')).toEqual([]);
   });
 
+  test("a queue factory's check step counts for failing, and a queue run's check step is not an old loop's", async () => {
+    await db.query('BEGIN');
+    try {
+      const [lap] = await db.query(
+        `SELECT run_id FROM mc.laps WHERE factory = 'mission-control' AND status = 'completed' LIMIT 1`,
+      );
+      const check = (workflow: string) =>
+        db.query(`UPDATE mc.laps SET workflow_name = $2 WHERE run_id = $1`, [
+          lap?.run_id,
+          workflow,
+        ]);
+      await db.query(
+        `INSERT INTO mc.lap_steps (run_id, step_id, status, started_at, output)
+          VALUES ($1, 'check', 'completed', '2026-11-01T00:00:00Z', '{"pr":109,"overall":"FAIL"}')`,
+        [lap?.run_id],
+      );
+      const failing = async () =>
+        (await rows()).filter((r) => r.kind === 'failing').map((r) => r.number);
+      await check('archon-build-queue');
+      expect(await failing()).toEqual([]);
+      await check('factory-app-check');
+      expect(await failing()).toEqual([109]);
+    } finally {
+      await db.query('ROLLBACK');
+    }
+  });
+
   test('merged: each lap whose land step merged, timed when the land step finished, running laps too', async () => {
     const recount = await db.query(
       `SELECT l.run_id, s.completed_at FROM mc.laps l JOIN mc.lap_steps s USING (run_id)
@@ -195,7 +248,9 @@ describe('home-map on the seed', () => {
       `INSERT INTO mc.lap_steps (run_id, step_id, status) VALUES ($1, 'check-app', 'running')`,
       [run],
     );
-    expect(await laps('mission-control', V1)).toEqual({ [run]: 'archon-loop check-app' });
+    expect(await laps('mission-control', V1)).toEqual({
+      [run]: 'archon-loop check-app',
+    });
     expect(await laps('mission-control', V2)).toEqual({});
     expect(Object.keys(await laps())).toContain(run);
   });

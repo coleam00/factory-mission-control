@@ -1,8 +1,9 @@
 WITH firsts AS (
-  -- A version is a digest this factory's archon-loop laps ran (mc.versions), no other workflow's.
+  -- A version is a digest this factory's archon-loop or archon-build-queue runs ran (mc.versions), no
+  -- other workflow's.
   SELECT DISTINCT ON (l.digest) l.digest, l.started_at AS first_run_at
   FROM mc.laps l
-  WHERE l.factory = $1 AND l.workflow_name = 'archon-loop' AND l.digest IS NOT NULL
+  WHERE l.factory = $1 AND l.workflow_name IN ('archon-loop', 'archon-build-queue') AND l.digest IS NOT NULL
     AND l.started_at IS NOT NULL
   ORDER BY l.digest, l.started_at
 ),
@@ -29,6 +30,7 @@ SELECT v.digest, 'step', s.workflow, NULL,
   array_agg(s.path || E'\t' || left(md5(s.kind || E'\n' || coalesce(s.description, '') || E'\n'
     || coalesce(s.model, '') || E'\n' || coalesce(s.when_condition, '') || E'\n'
     || coalesce(s.trigger_rule, '') || E'\n' || coalesce(s.include, '') || E'\n'
+    || coalesce(s.child_workflow, '') || E'\n'
     || coalesce(s.command, '') || E'\n' || coalesce(s.command_file, '') || E'\n'
     || coalesce(s.script, '') || E'\n' || coalesce(s.script_file, '') || E'\n'
     || coalesce(s.runtime, '') || E'\n' || coalesce(s.bash, '') || E'\n'
@@ -55,13 +57,13 @@ JOIN mc.arch_subagents g ON g.archon_sha = v.archon_sha AND g.factory_sha = v.fa
 GROUP BY v.digest, g.workflow
 UNION ALL
 -- This factory's versions, as the scorecard reads them: its mc.versions rows, and the digest of
--- any archon-loop lap whose version `reconcile:laps` has not written yet. Each carries its first
--- run, so the screen can open on the newest two when none is named.
+-- any archon-loop or archon-build-queue run whose version `reconcile:laps` has not written yet.
+-- Each carries its first run, so the screen can open on the newest two when none is named.
 SELECT v.digest, 'version', NULL, min(v.first_run_at), ARRAY[]::text[]
 FROM (
   SELECT digest, first_run_at FROM mc.versions WHERE factory = $1
   UNION
   SELECT digest, started_at FROM mc.laps
-  WHERE factory = $1 AND workflow_name = 'archon-loop' AND digest IS NOT NULL
+  WHERE factory = $1 AND workflow_name IN ('archon-loop', 'archon-build-queue') AND digest IS NOT NULL
 ) v
 GROUP BY v.digest

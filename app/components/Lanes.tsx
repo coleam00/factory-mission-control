@@ -8,11 +8,14 @@ import {
   lanes,
   OUTCOME_LABEL,
   OUTCOME_TOKEN,
+  queueStepLabel,
   type RecentLapRow,
   recentLaps,
   since,
   stepLabel,
+  workflowLabel,
 } from '../lib/laps';
+import { consoleUrl } from '../lib/one-lap';
 import { LivePanel, type PanelState } from '../live/LivePanel';
 import { laneMarks } from '../lib/lap-graph';
 import { LaneMarks } from './LapGraph';
@@ -60,17 +63,17 @@ export const utcMinute = (at: Date) => `${at.toISOString().slice(0, 16).replace(
 
 const costText = (value: number | string | null) => formatCost(costOf(value) ?? 0);
 
-/** One lane per running lap: its issue, route and depth, the step it is on and since when. */
+/** One lane per running run: what it is, its work item, the step it is on and since when. */
 export function Lanes({ factory }: { factory: string | undefined }): ReactElement {
   return (
     <LivePanel<LaneRow> query="lanes" factory={factory}>
       {(rows, state) => (
         <>
-          <h1 className={`${LABEL} mb-3`}>Lanes</h1>
+          <h1 className={`${LABEL} mb-3`}>Running now</h1>
           <PanelBody rows={rows} state={state} factory={factory} what="lanes">
             {(loaded, name) =>
               loaded.length === 0 ? (
-                <p className="text-sm text-text-secondary">No lap is running.</p>
+                <p className="text-sm text-text-secondary">Nothing is running.</p>
               ) : (
                 <LaneList rows={loaded} factory={name} />
               )
@@ -99,6 +102,7 @@ export function LaneList({
     <ol className="grid gap-3">
       {sorted.map((lane) => {
         const onStep = since(lane.step_started_at, now);
+        const loop = lane.workflow_name === 'archon-loop';
         return (
           <li
             key={lane.run_id}
@@ -126,8 +130,13 @@ export function LaneList({
                 </span>
               </span>
               <span className="flex min-w-0 flex-1 items-baseline gap-2.5">
+                <span className={`${MONO} shrink-0 font-semibold text-text-primary`} data-workflow>
+                  {workflowLabel(lane.workflow_name)}
+                </span>
                 {lane.issue_number === null ? (
-                  <span className={`${MONO} text-text-secondary`}>No issue claimed yet</span>
+                  <span className={`${MONO} text-text-secondary`}>
+                    {loop ? 'No issue claimed yet' : ''}
+                  </span>
                 ) : lane.issue_url === null ? (
                   <span className={`${MONO} font-bold text-text-primary`}>
                     #{lane.issue_number}
@@ -146,20 +155,36 @@ export function LaneList({
                   </span>
                 )}
               </span>
-              <Link
-                to={`/f/${encodeURIComponent(factory)}/laps/${lane.run_id}`}
-                data-lap-link
-                className={`${MONO} text-text-secondary underline decoration-border-bright underline-offset-2 hover:decoration-text-primary`}
-              >
-                {shortRunId(lane.run_id)}
-              </Link>
+              {loop ? (
+                <Link
+                  to={`/f/${encodeURIComponent(factory)}/laps/${lane.run_id}`}
+                  data-lap-link
+                  className={`${MONO} text-text-secondary underline decoration-border-bright underline-offset-2 hover:decoration-text-primary`}
+                >
+                  {shortRunId(lane.run_id)}
+                </Link>
+              ) : lane.console === null ? (
+                <span className={`${MONO} text-text-secondary`}>{shortRunId(lane.run_id)}</span>
+              ) : (
+                <a
+                  href={consoleUrl(lane.console, lane.run_id)}
+                  data-console
+                  className={`${MONO} text-text-secondary underline decoration-border-bright underline-offset-2`}
+                >
+                  {shortRunId(lane.run_id)}
+                </a>
+              )}
             </div>
             <dl className="mt-3 grid grid-cols-2 gap-x-[18px] gap-y-2 sm:grid-cols-5">
-              <Field label="Route">{lane.route ?? NONE}</Field>
-              <Field label="Depth">{lane.depth ?? NONE}</Field>
+              {loop ? <Field label="Route">{lane.route ?? NONE}</Field> : null}
+              {loop ? <Field label="Depth">{lane.depth ?? NONE}</Field> : null}
               <Field label="Step">
                 <span className="text-[color:var(--running)]">
-                  {lane.step_id === null ? 'not started' : stepLabel(lane.step_id)}
+                  {lane.step_id === null
+                    ? 'not started'
+                    : loop
+                      ? stepLabel(lane.step_id)
+                      : queueStepLabel(lane.step_id)}
                 </span>
               </Field>
               <Field label="On step for">
@@ -167,9 +192,11 @@ export function LaneList({
               </Field>
               <Field label="Cost so far">{costText(lane.cost_usd)}</Field>
             </dl>
-            <div className="mt-3 border-t border-border/60 pt-3">
-              <LaneMarks marks={laneMarks(lane.steps)} />
-            </div>
+            {loop ? (
+              <div className="mt-3 border-t border-border/60 pt-3">
+                <LaneMarks marks={laneMarks(lane.steps)} />
+              </div>
+            ) : null}
           </li>
         );
       })}

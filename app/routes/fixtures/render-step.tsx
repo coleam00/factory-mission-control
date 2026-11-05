@@ -107,6 +107,7 @@ function stepRow(path: string, prompt: string, fields: Partial<StepRow> = {}): S
     depends_on: [],
     trigger_rule: null,
     include: null,
+    child_workflow: null,
     command_file: null,
     script: null,
     script_file: null,

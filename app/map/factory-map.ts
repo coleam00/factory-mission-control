@@ -13,6 +13,10 @@ export type Role = (typeof ROLES)[number];
 export const CHIPS = ['queued', 'failing', 'waiting', 'merged', 'orders'] as const;
 export type Chip = (typeof CHIPS)[number];
 
+/** What a card's Right now lists besides its chips' items: product documents, recent gate outcomes, the latest deploy, where work orders land. */
+export const LISTS = ['documents', 'outcomes', 'deploys', 'lands'] as const;
+export type List = (typeof LISTS)[number];
+
 export const LINE_STYLES = ['flow', 'ask', 'loop'] as const;
 export type LineStyle = (typeof LINE_STYLES)[number];
 
@@ -50,8 +54,16 @@ export interface Card {
   width?: number;
   /** The counts the card shows besides the laps on it (PRD 4.1 "Live"). */
   chips?: Chip[];
+  /** What Right now lists for this card besides the items its chips count. */
+  lists?: List[];
   covers: Cover[];
   details: Details;
+  /** The view this card opens (a key of `views`); only a card whose view exists shows ⤢. */
+  opens?: string;
+  /** A card of the parent level: clicking this card goes up to it (a view's "next" card). */
+  upTo?: string;
+  /** A card whose laps this card shows as its own: the card is the same step seen from a deeper level. */
+  countsAs?: string;
 }
 
 export type Point = readonly [number, number];
@@ -67,38 +79,46 @@ export interface Line {
   arrow?: boolean;
 }
 
-export interface FactoryMap {
+/** One level of the map: the root, or the deeper view a card opens. */
+export interface MapView {
   caption: string;
   cardSize: { width: number; height: number };
   cards: Card[];
-  group: { x: number; y: number; width: number; height: number; label: string };
+  /** The dashed box; the root has one, a view may not. */
+  group?: { x: number; y: number; width: number; height: number; label: string };
   lines: Line[];
   tour: string[];
+}
+
+export interface FactoryMap extends MapView {
+  group: NonNullable<MapView['group']>;
   legend: { role: Role; label: string }[];
+  /** The deeper views by id; a card's `opens` names one. Card ids are unique across every level. */
+  views?: Record<string, MapView>;
 }
 
 export const FACTORY_MAP = data as FactoryMap;
 
-export const cardWidth = (map: FactoryMap, card: Card) => card.width ?? map.cardSize.width;
+export const cardWidth = (map: MapView, card: Card) => card.width ?? map.cardSize.width;
 
 /** Past the drawing's right and bottom edges: room for the loop line and its arrowheads. */
 const WORLD_MARGIN = 12;
 
 /** The world the map is drawn in: every card, the group box and every routed line, with margin. */
-export function worldSize(map: FactoryMap): { width: number; height: number } {
+export function worldSize(map: MapView): { width: number; height: number } {
   const { height } = map.cardSize;
   const routed = map.lines.flatMap((l) => l.route ?? []);
   return {
     width:
       Math.max(
         ...map.cards.map((c) => c.x + cardWidth(map, c)),
-        map.group.x + map.group.width,
+        ...(map.group ? [map.group.x + map.group.width] : []),
         ...routed.map(([x]) => x),
       ) + WORLD_MARGIN,
     height:
       Math.max(
         ...map.cards.map((c) => c.y + height),
-        map.group.y + map.group.height,
+        ...(map.group ? [map.group.y + map.group.height] : []),
         ...routed.map(([, y]) => y),
       ) + WORLD_MARGIN,
   };
@@ -122,7 +142,7 @@ export function heroFrameHeight(world: { width: number; height: number }, width:
   return Math.max(MIN_FRAME, Math.ceil(world.height * k + FIT_PAD * 2 + FIT_FOOT));
 }
 
-const cardById = (map: FactoryMap, id: string): Card => {
+const cardById = (map: MapView, id: string): Card => {
   const card = map.cards.find((c) => c.id === id);
   if (card === undefined) throw new Error(`the factory map has no card ${id}`);
   return card;
@@ -132,7 +152,7 @@ const cardById = (map: FactoryMap, id: string): Card => {
  * A line's points: its route, or from the right side of its first card to the left side of its
  * second, turning halfway across when they are not level.
  */
-export function linePoints(map: FactoryMap, line: Line): Point[] {
+export function linePoints(map: MapView, line: Line): Point[] {
   if (line.route) return line.route;
   const a = cardById(map, line.from);
   const b = cardById(map, line.to);
@@ -167,7 +187,7 @@ export function midpoint(points: readonly Point[]): Point {
 }
 
 /** The tour the dot travels: card centre to card centre, level first, then across. */
-export function tourPoints(map: FactoryMap): Point[] {
+export function tourPoints(map: MapView): Point[] {
   const centres = map.tour.map((id): Point => {
     const card = cardById(map, id);
     return [card.x + cardWidth(map, card) / 2, card.y + map.cardSize.height / 2];
@@ -185,7 +205,7 @@ export function tourPoints(map: FactoryMap): Point[] {
 }
 
 /** The cards a line joins directly to `id`; none for no selection. */
-export function neighbours(map: FactoryMap, id: string | null): Set<string> {
+export function neighbours(map: MapView, id: string | null): Set<string> {
   const near = new Set<string>();
   if (id === null) return near;
   for (const line of map.lines) {
@@ -210,7 +230,7 @@ const under = (path: string, entry: string) => path === entry || path.startsWith
  * Every card whose deepest covering entry for `workflow`'s step at `path` is the deepest of all:
  * one card for a covered step, none for an uncovered one, two or more when cards share an entry.
  */
-export function coveringCards(map: FactoryMap, workflow: string, path: string): Card[] {
+export function coveringCards(map: MapView, workflow: string, path: string): Card[] {
   let depth = -1;
   let cards: Card[] = [];
   for (const card of map.cards) {
@@ -232,10 +252,84 @@ export function coveringCards(map: FactoryMap, workflow: string, path: string): 
 }
 
 /** The card a running step counts on, or undefined for a step no card covers. */
-export const cardForStep = (map: FactoryMap, workflow: string, path: string): Card | undefined =>
+export const cardForStep = (map: MapView, workflow: string, path: string): Card | undefined =>
   coveringCards(map, workflow, path)[0];
 
+/** The level a path of view ids names: the root for `[]`, and for an id the map lacks. */
+export const levelOf = (map: FactoryMap, path: readonly string[]): MapView =>
+  map.views?.[path.at(-1) ?? ''] ?? map;
+
+/** The root, then every deeper view. */
+export const levelsOf = (map: FactoryMap): MapView[] => [map, ...Object.values(map.views ?? {})];
+
+/** Every card of the map, at every level. */
+export const allCards = (map: FactoryMap): Card[] => levelsOf(map).flatMap((level) => level.cards);
+
+/** The card, at any level, whose `opens` names `viewId`. */
+export const openerOf = (map: FactoryMap, viewId: string): Card | undefined =>
+  allCards(map).find((card) => card.opens === viewId);
+
+/**
+ * The view ids from the root down to the view `id` names, through the card that opens each; the
+ * root's `[]` for no id, an unknown one, or a chain that never reaches the root.
+ */
+export function viewPath(map: FactoryMap, id: string | null): string[] {
+  const path: string[] = [];
+  let at = id;
+  for (let hops = 0; at && hops <= Object.keys(map.views ?? {}).length; hops++) {
+    if (map.views?.[at] === undefined) return [];
+    path.unshift(at);
+    const opener = openerOf(map, at);
+    if (opener === undefined) return [];
+    const parent = Object.entries(map.views).find(([, v]) => v.cards.includes(opener))?.[0];
+    if (parent === undefined) return path;
+    at = parent;
+  }
+  return [];
+}
+
+/** The address parameter that names the open view. */
+export const VIEW_PARAM = 'view';
+
+/** `prev` with `view` set to the deepest view of `path`, or removed for the root. */
+export function viewSearch(prev: URLSearchParams, path: readonly string[]): URLSearchParams {
+  const next = new URLSearchParams(prev);
+  const view = path.at(-1);
+  if (view === undefined) next.delete(VIEW_PARAM);
+  else next.set(VIEW_PARAM, view);
+  return next;
+}
+
+/**
+ * The cards a step counts on, one per level: its card at the root, then its card in that card's
+ * view, and so on. A view's card covers a step only inside the card that opens the view.
+ */
+export function cardChain(map: FactoryMap, workflow: string, path: string): Card[] {
+  const chain: Card[] = [];
+  let level: MapView = map;
+  for (;;) {
+    const card = cardForStep(level, workflow, path);
+    if (card === undefined) return chain;
+    chain.push(card);
+    const next = card.opens === undefined ? undefined : map.views?.[card.opens];
+    if (next === undefined) return chain;
+    level = next;
+  }
+}
+
+/**
+ * Every card a step's laps show on: its `cardChain`, plus each card that counts as one of those.
+ * Coverage uses `cardChain` alone, since an alias covers nothing.
+ */
+export function cardsCounting(map: FactoryMap, workflow: string, path: string): Card[] {
+  const chain = cardChain(map, workflow, path);
+  const ids = new Set(chain.map((card) => card.id));
+  const aliases = allCards(map).filter((card) => card.countsAs && ids.has(card.countsAs));
+  return [...chain, ...aliases];
+}
+
 /** Each step a card covers, opening its place in the covered workflow at the version pinned `at`. */
+
 export const stepLinks = (card: Card, at: string | null) =>
   card.covers.flatMap((cover) =>
     cover.steps.map((step) => ({

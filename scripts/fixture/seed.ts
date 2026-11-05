@@ -168,7 +168,12 @@ const LAPS: Record<VersionName, LapSpec[]> = {
     },
     { outcome: 'needs-owner', route: 'simple', issue: 4 },
     { outcome: 'nothing', route: 'none' },
-    { outcome: 'failed', route: 'simple', issue: 3, error: '429 usage limit reached' },
+    {
+      outcome: 'failed',
+      route: 'simple',
+      issue: 3,
+      error: '429 usage limit reached',
+    },
     {
       outcome: 'gate-refused',
       route: 'continue',
@@ -201,7 +206,12 @@ const LAPS: Record<VersionName, LapSpec[]> = {
       lines: [failingHoldout(`H-04 ${MARKER} the scorecard names no laps under a number`)],
     },
     { outcome: 'merged', route: 'continue', issue: 7 },
-    { outcome: 'failed', route: 'simple', issue: 8, error: 'fetch failed: ECONNRESET' },
+    {
+      outcome: 'failed',
+      route: 'simple',
+      issue: 8,
+      error: 'fetch failed: ECONNRESET',
+    },
     {
       outcome: 'gate-refused',
       route: 'simple',
@@ -214,10 +224,20 @@ const LAPS: Record<VersionName, LapSpec[]> = {
       issue: 13,
       lines: [failingHoldout(`H-06 ${MARKER} the diff shows a removed step as changed`)],
     },
-    { outcome: 'failed', route: 'simple', issue: 8, error: 'build exited 1: 3 type errors remain' },
+    {
+      outcome: 'failed',
+      route: 'simple',
+      issue: 8,
+      error: 'build exited 1: 3 type errors remain',
+    },
     { outcome: 'nothing', route: 'none' },
     { outcome: 'merged', route: 'complex', issue: 8 },
-    { outcome: 'failed', route: 'simple', issue: 9, error: 'usage limit reached (429)' },
+    {
+      outcome: 'failed',
+      route: 'simple',
+      issue: 9,
+      error: 'usage limit reached (429)',
+    },
   ],
   V3: [
     { outcome: 'merged', route: 'simple', issue: 10 },
@@ -234,7 +254,12 @@ const LAPS: Record<VersionName, LapSpec[]> = {
         },
       ],
     },
-    { outcome: 'failed', route: 'continue', issue: 9, error: '401 unauthorized' },
+    {
+      outcome: 'failed',
+      route: 'continue',
+      issue: 9,
+      error: '401 unauthorized',
+    },
   ],
 };
 
@@ -265,7 +290,13 @@ const V3_UNFINISHED: UnfinishedSpec[] = [
     start: '2026-10-23T15:00:00Z',
     done: 2,
   },
-  { label: 'Q', status: 'pending', route: 'none', start: '2026-10-24T11:55:00Z', done: 0 },
+  {
+    label: 'Q',
+    status: 'pending',
+    route: 'none',
+    start: '2026-10-24T11:55:00Z',
+    done: 0,
+  },
 ];
 
 /** Lap k's start in each version: V2's first two laps run side by side. */
@@ -303,9 +334,20 @@ const STEP_TIMES: Record<string, { minutes: number; cost?: number }> = {
 /** A failed lap's build step fails after this long. */
 const FAILING_MINUTES = 10;
 
-const TOKENS = { input: 48_210, output: 6_904, cacheRead: 39_877, cacheWrite: 8_333 };
+const TOKENS = {
+  input: 48_210,
+  output: 6_904,
+  cacheRead: 39_877,
+  cacheWrite: 8_333,
+};
 
-type Event = { id: string; type: string; step: string; at: number; data: Record<string, unknown> };
+type Event = {
+  id: string;
+  type: string;
+  step: string;
+  at: number;
+  data: Record<string, unknown>;
+};
 
 type Run = {
   id: string;
@@ -324,7 +366,11 @@ type Run = {
   events: Event[];
 };
 
-type Schema = { required?: string[]; properties?: Record<string, Schema>; items?: Schema };
+type Schema = {
+  required?: string[];
+  properties?: Record<string, Schema>;
+  items?: Schema;
+};
 
 /** The loop as one version's pack declares it: its top-level node ids and every node by name. */
 type Loop = {
@@ -404,9 +450,21 @@ const LINE_PREFIX: Record<Line['kind'], string> = {
 
 function checkLines(run: Run): Record<string, unknown>[] {
   const lines: Line[] = [
-    { kind: 'criterion', verdict: 'PASS', text: `#${run.issue}: every acceptance criterion holds` },
-    { kind: 'probe', verdict: 'OK', text: 'GET /api/health returns 200 on port 8851' },
-    { kind: 'holdout', verdict: 'PASS', text: `H-01 ${MARKER} the user sees the home screen` },
+    {
+      kind: 'criterion',
+      verdict: 'PASS',
+      text: `#${run.issue}: every acceptance criterion holds`,
+    },
+    {
+      kind: 'probe',
+      verdict: 'OK',
+      text: 'GET /api/health returns 200 on port 8851',
+    },
+    {
+      kind: 'holdout',
+      verdict: 'PASS',
+      text: `H-01 ${MARKER} the user sees the home screen`,
+    },
     ...(run.spec?.lines ?? []),
   ];
   // Each kind numbers its own lines, as the pack's check-app reports them (`C1`, `P1`, `H1`, `D1`).
@@ -454,7 +512,13 @@ function reviewOutput(run: Run, pr: string, lines: Record<string, unknown>[]) {
     })),
     judge_changes:
       outcome === 'needs-owner'
-        ? [{ file: 'harness/harness.config.json', change: 'raises a judge timeout', approval: '' }]
+        ? [
+            {
+              file: 'harness/harness.config.json',
+              change: 'raises a judge timeout',
+              approval: '',
+            },
+          ]
         : [],
     reason: reasons[outcome],
   };
@@ -487,9 +551,19 @@ function outputFor(step: string, run: Run, at: number): Record<string, unknown> 
             reason: `#${run.issue} is the oldest workable item.`,
           };
     case 'claim':
-      return { held: 'true', holder: run.id, reason: `run ${run.id} holds #${run.issue}` };
+      return {
+        held: 'true',
+        holder: run.id,
+        reason: `run ${run.id} holds #${run.issue}`,
+      };
     case 'subject':
-      return { pr, head: run.head, base: run.base, files: areaOf(run.issue), started: iso(at) };
+      return {
+        pr,
+        head: run.head,
+        base: run.base,
+        files: areaOf(run.issue),
+        started: iso(at),
+      };
     case 'check-app':
       return {
         pr,
@@ -509,7 +583,10 @@ function outputFor(step: string, run: Run, at: number): Record<string, unknown> 
       return reviewOutput(run, pr, lines);
     case 'land':
       return run.outcome === 'merged'
-        ? { outcome: 'merged', reason: `Merged ${run.head.slice(0, 7)} into main.` }
+        ? {
+            outcome: 'merged',
+            reason: `Merged ${run.head.slice(0, 7)} into main.`,
+          }
         : { outcome: 'refused', reason: run.spec?.refusal ?? '' };
     default:
       return undefined;
@@ -577,7 +654,11 @@ function runEvents(run: Run, loop: Loop, planned: string[], done: number, runnin
       timing,
       duration_ms: durationMs,
       ...(node.type === 'command'
-        ? { tokens: TOKENS, cost_usd: STEP_TIMES[step]?.cost ?? 0, num_turns: 14 }
+        ? {
+            tokens: TOKENS,
+            cost_usd: STEP_TIMES[step]?.cost ?? 0,
+            num_turns: 14,
+          }
         : {}),
       node_output: output === undefined ? 'Done.' : JSON.stringify(output),
       ...(output === undefined
@@ -675,24 +756,94 @@ function buildRuns(versions: VersionSpec[], loops: Record<VersionName, Loop>): R
 
 // --- GitHub: issues, pull requests and the loop's comments (PRD 4.3, 4.4, appendix) -------------
 
-type IssueSpec = { number: number; title: string; phase: string | null; dependsOn: number[] };
+type IssueSpec = {
+  number: number;
+  title: string;
+  phase: string | null;
+  dependsOn: number[];
+};
 
 const ISSUES: IssueSpec[] = [
-  { number: 1, title: 'Serve the app with health and build id', phase: 'Skeleton', dependsOn: [] },
-  { number: 2, title: 'Check branches and fixture:write', phase: 'Skeleton', dependsOn: [1] },
-  { number: 3, title: 'A migrations runner that refuses main', phase: 'Skeleton', dependsOn: [1] },
+  {
+    number: 1,
+    title: 'Serve the app with health and build id',
+    phase: 'Skeleton',
+    dependsOn: [],
+  },
+  {
+    number: 2,
+    title: 'Check branches and fixture:write',
+    phase: 'Skeleton',
+    dependsOn: [1],
+  },
+  {
+    number: 3,
+    title: 'A migrations runner that refuses main',
+    phase: 'Skeleton',
+    dependsOn: [1],
+  },
   { number: 4, title: 'The design probe', phase: 'Skeleton', dependsOn: [2] },
-  { number: 5, title: 'Every dashboard table', phase: 'Schema and seed', dependsOn: [3] },
-  { number: 6, title: 'The comment and commit parsers', phase: 'Schema and seed', dependsOn: [5] },
-  { number: 7, title: 'The seed and expected scorecard', phase: 'Schema and seed', dependsOn: [5] },
-  { number: 8, title: 'The architecture parser', phase: 'Schema and seed', dependsOn: [6] },
-  { number: 9, title: 'The Archon projection triggers', phase: 'Schema and seed', dependsOn: [8] },
+  {
+    number: 5,
+    title: 'Every dashboard table',
+    phase: 'Schema and seed',
+    dependsOn: [3],
+  },
+  {
+    number: 6,
+    title: 'The comment and commit parsers',
+    phase: 'Schema and seed',
+    dependsOn: [5],
+  },
+  {
+    number: 7,
+    title: 'The seed and expected scorecard',
+    phase: 'Schema and seed',
+    dependsOn: [5],
+  },
+  {
+    number: 8,
+    title: 'The architecture parser',
+    phase: 'Schema and seed',
+    dependsOn: [6],
+  },
+  {
+    number: 9,
+    title: 'The Archon projection triggers',
+    phase: 'Schema and seed',
+    dependsOn: [8],
+  },
   { number: 10, title: 'The version strip', phase: 'Screens', dependsOn: [8] },
-  { number: 11, title: 'The scorecard and comparison', phase: 'Screens', dependsOn: [10] },
-  { number: 12, title: 'The decisions timeline', phase: 'Screens', dependsOn: [10] },
-  { number: 13, title: 'The architecture diff', phase: 'Screens', dependsOn: [9] },
-  { number: 14, title: 'Phases and the issue graph', phase: 'Screens', dependsOn: [13] },
-  { number: 15, title: 'Lanes and recent laps', phase: 'Screens', dependsOn: [14] },
+  {
+    number: 11,
+    title: 'The scorecard and comparison',
+    phase: 'Screens',
+    dependsOn: [10],
+  },
+  {
+    number: 12,
+    title: 'The decisions timeline',
+    phase: 'Screens',
+    dependsOn: [10],
+  },
+  {
+    number: 13,
+    title: 'The architecture diff',
+    phase: 'Screens',
+    dependsOn: [9],
+  },
+  {
+    number: 14,
+    title: 'Phases and the issue graph',
+    phase: 'Screens',
+    dependsOn: [13],
+  },
+  {
+    number: 15,
+    title: 'Lanes and recent laps',
+    phase: 'Screens',
+    dependsOn: [14],
+  },
   { number: 16, title: 'The owner queue', phase: 'Screens', dependsOn: [] },
 ];
 
@@ -735,7 +886,12 @@ const METRICS_BODY = `2026-10-12T09:00Z | merged since last pass: 4 (simple 1, c
 2026-10-24T09:00Z | holdouts at 3e4f5a6b: H-01 PASS, H-02 FAIL #14, H-04 PASS
 `;
 
-type Comment = { id: number; number: number; on: 'issues' | 'pull'; at: number };
+type Comment = {
+  id: number;
+  number: number;
+  on: 'issues' | 'pull';
+  at: number;
+};
 type PullRequest = {
   issue: number;
   created: number;
@@ -1018,7 +1174,12 @@ function githubSql(runs: Run[]): string[] {
     }
     const holdouts = must(parseHoldoutsLine(line), 'a Loop metrics line');
     const at = line.split(' | ')[0] ?? '';
-    const report = { factory: FACTORY, at, issue_number: METRICS_ISSUE, sha: holdouts.sha };
+    const report = {
+      factory: FACTORY,
+      at,
+      issue_number: METRICS_ISSUE,
+      sha: holdouts.sha,
+    };
     out.push(insert('mc.holdout_reports', report));
     for (const h of holdouts.holdouts) {
       out.push(
@@ -1083,15 +1244,10 @@ WHERE r.codebase_id IN ('${SEED_CODEBASE}', '${SECOND_CODEBASE}', '${QUEUE_CODEB
   AND jsonb_typeof(e.data->'structured_output'->'lines') = 'array'
 ORDER BY e.created_at, e.event_order;
 
--- A version is a digest the factory's laps ran, labelled with the last pin before its first run.
-INSERT INTO mc.versions (factory, digest, first_run_at, pin_sha)
-SELECT l.factory, l.digest, min(l.started_at),
-  (SELECT p.sha FROM mc.pins p WHERE p.committed_at < min(l.started_at)
-    ORDER BY p.committed_at DESC LIMIT 1)
-FROM mc.laps l
-WHERE l.digest IS NOT NULL
-GROUP BY l.factory, l.digest
-ON CONFLICT DO NOTHING;`;
+-- A version is a digest a factory's archon-loop or archon-build-queue runs ran, labelled with the
+-- last pin before its first run: the rule mc.project_version applies as the runs are written.
+SELECT mc.project_version(d.factory, d.digest)
+FROM (SELECT DISTINCT l.factory, l.digest FROM mc.laps l WHERE l.digest IS NOT NULL) d;`;
 
 // --- The seed -----------------------------------------------------------------------------------
 
@@ -1132,7 +1288,9 @@ function versionsSql(versions: VersionSpec[]): string[] {
   ];
   for (const version of versions) {
     const pin = must(parsePin(version.pinMessage), `${version.name}'s pin`);
-    const pack = JSON.stringify({ integration_revision_required: version.archonSha });
+    const pack = JSON.stringify({
+      integration_revision_required: version.archonSha,
+    });
     out.push(
       insert('mc.pins', {
         sha: version.pinSha,
@@ -1353,7 +1511,13 @@ function secondFactorySql(loop: Loop): string[] {
  * so a run's issue is its `number` input. Two running archon-build-queue runs and a third that
  * `fixture:write attention` can pause, none yet on a running step (the live check starts one); a
  * paused archon-merge-queue run waiting on attention, and a completed one whose `record` step read
- * pull requests 404 and 405 back as merged. One open needs-owner issue must not count.
+ * pull requests 404 and 405 back as merged. Two versions built them: the first opened 404 and, on
+ * a second digest, a later round continued it while another opened 405 (#393), so each version
+ * holds one merge. One open needs-owner issue must not count. One open
+ * product document (410, label `archon-prd`) whose completed `archon-split` run recorded issues
+ * 411, 412 and 413 and adopted 405; 411 and 412 are closed by merged pull requests, so the document
+ * is 2 merged of 4. A running `archon-intake` run (on 401) and a running `archon-split` run (on
+ * 410) have no step yet, for the live check to put on Triage and Break it up.
  */
 export const QUEUE_FACTORY: FactoryEntry = {
   name: 'queue-factory',
@@ -1368,13 +1532,35 @@ export const QUEUE_RUNS = {
   ask: '5eed0005-0000-4000-8000-000000000003',
   waiting: '5eed0005-0000-4000-8000-000000000004',
   merged: '5eed0005-0000-4000-8000-000000000005',
+  built: '5eed0005-0000-4000-8000-000000000007',
+  continued: '5eed0005-0000-4000-8000-000000000008',
+  opened: '5eed0005-0000-4000-8000-000000000009',
   intake: '5eed0005-0000-4000-8000-000000000006',
+  split: '5eed0005-0000-4000-8000-00000000000b',
+  splitting: '5eed0005-0000-4000-8000-00000000000c',
+  triaging: '5eed0005-0000-4000-8000-00000000000a',
 } as const;
+
+/** The source digest of the queue factory's runs: every workflow run from one source shares it. */
+export const QUEUE_DIGEST = `sha256:${'d4'.repeat(32)}`;
+
+/** The queue factory's second version: its runs of 22 October. */
+export const QUEUE_DIGEST_2 = `sha256:${'a7'.repeat(32)}`;
 
 function queueFactorySql(): string[] {
   const at = (minute: number) => `2026-10-24T09:${String(minute).padStart(2, '0')}:00.000Z`;
+  // The same nine-minute shape, stretched to an hour on 12 October: before the first run above.
+  const earlier = (minute: number) =>
+    new Date(Date.parse('2026-10-12T09:00:00.000Z') + minute * 400_000).toISOString();
   let event = 0;
-  const done = (run: string, step: string, minute: number, output?: Record<string, unknown>) =>
+  const done = (
+    run: string,
+    step: string,
+    minute: number,
+    output?: Record<string, unknown>,
+    time = at,
+    cost_usd?: number,
+  ) =>
     insert('remote_agent_workflow_events', {
       id: `5eedeeee-0000-4000-8000-2${String(++event).padStart(11, '0')}`,
       workflow_run_id: run,
@@ -1382,11 +1568,12 @@ function queueFactorySql(): string[] {
       step_name: step,
       data: json({
         ...nodeBlock(step, 'script', step),
-        timing: { startedAt: at(minute), durationMs: 1000 },
+        timing: { startedAt: time(minute), durationMs: 1000 },
         duration_ms: 1000,
+        ...(cost_usd === undefined ? {} : { cost_usd }),
         ...(output ? { structured_output: output } : {}),
       }),
-      created_at: at(minute),
+      created_at: time(minute),
     });
   const run = (
     id: string,
@@ -1394,6 +1581,8 @@ function queueFactorySql(): string[] {
     status: string,
     metadata: Record<string, unknown>,
     completed: boolean,
+    time = at,
+    digest = QUEUE_DIGEST,
   ) =>
     insert('remote_agent_workflow_runs', {
       id,
@@ -1401,32 +1590,80 @@ function queueFactorySql(): string[] {
       codebase_id: QUEUE_CODEBASE,
       status,
       user_message: `Run ${workflow} on ${QUEUE_FACTORY.repository}`,
-      metadata: json(metadata),
-      started_at: at(0),
-      completed_at: completed ? at(9) : null,
-      last_activity_at: at(5),
+      metadata: json({
+        ...metadata,
+        workflow_source: { digest },
+      }),
+      started_at: time(0),
+      completed_at: completed ? time(9) : null,
+      last_activity_at: time(5),
     });
-  const issue = (number: number, title: string) =>
+  const issue = (number: number, title: string, state: 'open' | 'closed' = 'open') =>
     insert('mc.issues', {
       factory: QUEUE_FACTORY.name,
       number,
       title,
-      state: 'open',
+      state,
       phase: null,
       url: `https://github.com/${QUEUE_FACTORY.repository}/issues/${number}`,
       created_at: at(0),
       updated_at: at(1),
-      closed_at: null,
+      closed_at: state === 'closed' ? at(7) : null,
     });
+  const merged = (pr: number, number: number) => [
+    insert('mc.pull_requests', {
+      factory: QUEUE_FACTORY.name,
+      number: pr,
+      title: `Queue issue ${number}`,
+      state: 'closed',
+      merged_at: at(8),
+      head_sha: `${'c'.repeat(39)}${number % 10}`,
+      url: `https://github.com/${QUEUE_FACTORY.repository}/pull/${pr}`,
+      created_at: at(2),
+      updated_at: at(8),
+      closed_at: at(8),
+    }),
+    insert('mc.pull_request_issues', {
+      factory: QUEUE_FACTORY.name,
+      pr_number: pr,
+      issue_number: number,
+    }),
+  ];
+  const filed = (number: number) => ({
+    key: `piece-${number}`,
+    number,
+    url: `https://github.com/${QUEUE_FACTORY.repository}/issues/${number}`,
+  });
+  const claimed = (number: number) => ({
+    path: 'route',
+    item: {
+      repo: { host: 'github.com', path: QUEUE_FACTORY.repository },
+      number,
+    },
+  });
+  const second = (minute: number) => `2026-10-22T09:${String(minute).padStart(2, '0')}:00.000Z`;
+  const pullRequest = (number: number) => ({
+    repo: { host: 'github.com', path: QUEUE_FACTORY.repository },
+    number,
+    state: 'open',
+  });
+  const mergeItem = (number: number) => ({
+    item: claimed(number).item,
+    pr: { repo: claimed(number).item.repo, number },
+    url: `https://github.com/${QUEUE_FACTORY.repository}/pull/${number}`,
+    facts: {},
+    record: null,
+    own_pr: false,
+  });
   const first = (id: string, number: number) => [
     run(id, 'archon-build-queue', 'running', { inputs: { number: String(number) } }, false),
-    done(id, 'facts', 1),
+    done(id, 'facts', 1, claimed(number)),
     done(id, 'route', 2),
     done(id, 'checkout', 3),
   ];
   return [
     '',
-    '-- A third factory, on the queue workflows: runs with a number input, one waiting on attention, one that merged.',
+    '-- A third factory, on the queue workflows: runs with a number input, one waiting on attention, one that merged, and finished build-queue runs on two versions.',
     insert('mc.factories', QUEUE_FACTORY),
     insert('remote_agent_codebases', {
       id: QUEUE_CODEBASE,
@@ -1445,11 +1682,55 @@ function queueFactorySql(): string[] {
       workflow_run_id: QUEUE_RUNS.intake,
       event_type: 'node_started',
       step_name: 'triage',
-      data: json({ ...nodeBlock('triage', 'script', 'triage'), timing: { startedAt: at(4) } }),
+      data: json({
+        ...nodeBlock('triage', 'script', 'triage'),
+        timing: { startedAt: at(4) },
+      }),
       created_at: at(4),
     }),
+    run(QUEUE_RUNS.triaging, 'archon-intake', 'running', { inputs: { number: '401' } }, false),
+    run(QUEUE_RUNS.splitting, 'archon-split', 'running', { inputs: { number: '410' } }, false),
+    run(QUEUE_RUNS.split, 'archon-split', 'completed', { inputs: { number: '410' } }, true),
+    done(QUEUE_RUNS.split, 'publish', 7, {
+      path: 'slice',
+      item: 410,
+      kind: 'prd',
+      issues: [filed(411), filed(412), filed(413)],
+      adopted: [
+        {
+          number: 405,
+          url: `https://github.com/${QUEUE_FACTORY.repository}/issues/405`,
+          why: 'Already covers the merge queue piece.',
+        },
+      ],
+      summary: 'Filed 411, 412 and 413; adopted 405.',
+    }),
+    run(QUEUE_RUNS.built, 'archon-build-queue', 'completed', {}, true, earlier),
+    done(QUEUE_RUNS.built, 'facts', 1, claimed(404), earlier, 1.2),
+    // A later round on pull request 404, which the run above opened, and a run that opens 405.
+    run(QUEUE_RUNS.continued, 'archon-build-queue', 'completed', {}, true, second, QUEUE_DIGEST_2),
+    done(
+      QUEUE_RUNS.continued,
+      'facts',
+      1,
+      { ...claimed(404), pull_request: pullRequest(404) },
+      second,
+    ),
+    done(QUEUE_RUNS.continued, 'route', 2, undefined, second, 0.75),
+    run(QUEUE_RUNS.opened, 'archon-build-queue', 'completed', {}, true, second, QUEUE_DIGEST_2),
+    done(QUEUE_RUNS.opened, 'facts', 1, { ...claimed(405), pull_request: null }, second),
+    done(QUEUE_RUNS.opened, 'route', 2, undefined, second, 2.25),
     run(QUEUE_RUNS.waiting, 'archon-merge-queue', 'paused', { wait: attentionWait(at(6)) }, false),
     run(QUEUE_RUNS.merged, 'archon-merge-queue', 'completed', {}, true),
+    done(QUEUE_RUNS.merged, 'facts', 1, {
+      path: 'sweep',
+      items: [mergeItem(404), mergeItem(405)],
+      settled: [],
+      base: null,
+      base_error: '',
+      gate: '',
+      policy_defaults: '',
+    }),
     done(QUEUE_RUNS.merged, 'record', 8, {
       merged: [404, 405],
       summary: 'Merged 404 and 405.',
@@ -1464,6 +1745,18 @@ function queueFactorySql(): string[] {
     issue(404, 'Queue issue 404'),
     issue(405, 'Queue issue 405'),
     issue(406, 'Needs the owner'),
+    issue(410, 'Queue product document'),
+    issue(411, 'Queue piece 411', 'closed'),
+    issue(412, 'Queue piece 412', 'closed'),
+    issue(413, 'Queue piece 413'),
+    ...merged(421, 411),
+    ...merged(422, 412),
+    insert('mc.issue_labels', {
+      factory: QUEUE_FACTORY.name,
+      issue_number: 410,
+      label: 'archon-prd',
+      labeled_at: at(2),
+    }),
     insert('mc.issue_labels', {
       factory: QUEUE_FACTORY.name,
       issue_number: 406,
@@ -1475,7 +1768,7 @@ function queueFactorySql(): string[] {
 
 export function buildSeed(repoRoot: string): string {
   const { v1, v2 } = parseVersions(repoRoot);
-  if (!v1.archonCommit || !v1.factoryCommit) throw new Error('the pack names no commits');
+  if (!v1.archonCommit || !v1.packageCommit) throw new Error('the pack names no commits');
   const versions = versionSpecs(v1.archonCommit);
   // V3's pack keeps V2's loop: no architecture rows are seeded for it.
   const v2Loop = loopOf(v2);
@@ -1487,7 +1780,7 @@ export function buildSeed(repoRoot: string): string {
   if (!factory) throw new Error(`factories.json has no ${FACTORY}`);
   const archKey = (archonSha: string, parsedAt: string) => ({
     archon_sha: archonSha,
-    factory_sha: v1.factoryCommit ?? '',
+    factory_sha: v1.packageCommit ?? '',
     parsed_at: parsedAt,
   });
   const edits = V2_EDITS.flatMap((edit) => [
@@ -1512,7 +1805,7 @@ export function buildSeed(repoRoot: string): string {
     PROJECTION,
     ...githubSql(runs),
     '',
-    '-- Architecture: V1 is parsers/pack.ts on fixtures/pack/ and fixtures/factory-template/; V2 is',
+    '-- Architecture: V1 is parsers/pack.ts on fixtures/pack/, fixtures/pack/queue/factory/ and fixtures/factory-template/; V2 is',
     '-- the same with one step removed, one added, one prompt and one subagent changed:',
     ...edits,
     ...architectureSql(
@@ -1535,7 +1828,10 @@ export function buildSeed(repoRoot: string): string {
 export async function seededDb(repoRoot: string, seed: string): Promise<Db> {
   const db = pgliteDb(new PGlite());
   await db.query(readFileSync(join(repoRoot, 'fixtures', 'archon-schema.sql'), 'utf8'));
-  await runMigrations({ files: readMigrationFiles(migrationsDir(repoRoot)), db });
+  await runMigrations({
+    files: readMigrationFiles(migrationsDir(repoRoot)),
+    db,
+  });
   await db.transaction((tx) => tx.query(seed).then(() => undefined));
   return db;
 }

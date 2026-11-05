@@ -1,4 +1,4 @@
-import { cardForStep, FACTORY_MAP, stepPath } from '../../app/map/factory-map';
+import { type Card, cardsCounting, FACTORY_MAP, stepPath } from '../../app/map/factory-map';
 import { SERVE_PORTS } from '../../server/ports';
 import type { Page } from '../lib/cdp';
 import type { Deps } from '../lib/cli';
@@ -76,7 +76,7 @@ export async function freePort(
 }
 
 export async function waitForHealth(base: string, exited: () => boolean): Promise<void> {
-  const deadline = Date.now() + 15_000;
+  const deadline = Date.now() + 60_000;
   while (Date.now() < deadline) {
     if (exited()) throw new Error('the server exited before answering /api/health');
     const ok = await fetch(`${base}/api/health`).then(
@@ -86,7 +86,16 @@ export async function waitForHealth(base: string, exited: () => boolean): Promis
     if (ok) return;
     await Bun.sleep(200);
   }
-  throw new Error('the server did not answer /api/health within 15s');
+  throw new Error('the server did not answer /api/health within 60s');
+}
+
+/** Clicks `selector` on the page once it is there; false when it never shows. */
+export async function click(page: Page, selector: string): Promise<boolean> {
+  const shown = await page.evaluate<boolean>(
+    pageWait(`document.querySelector('${selector}') !== null`, 2000),
+  );
+  if (shown) await page.evaluate(`document.querySelector('${selector}').click()`);
+  return shown;
 }
 
 /** An in-page promise: true once `condition` holds, false after `ms`; it watches, never polls. */
@@ -143,8 +152,9 @@ export async function lapsOnCards(db: Db, factory: string): Promise<Map<string, 
   }
   const counts = new Map<string, number>();
   for (const { workflow, step } of deepest.values()) {
-    const card = cardForStep(FACTORY_MAP, workflow, stepPath(step));
-    if (card) counts.set(card.id, (counts.get(card.id) ?? 0) + 1);
+    for (const card of cardsCounting(FACTORY_MAP, workflow, stepPath(step))) {
+      counts.set(card.id, (counts.get(card.id) ?? 0) + 1);
+    }
   }
   return counts;
 }
@@ -204,15 +214,19 @@ export function mapTypeFailures(type: MapType): string[] {
 }
 
 /** Where the map, in document order, differs from factory-map.json and from `counts`: one line each. */
-export function mapMismatches(cards: ShownCard[], counts: ReadonlyMap<string, number>): string[] {
+export function mapMismatches(
+  cards: ShownCard[],
+  counts: ReadonlyMap<string, number>,
+  expected: readonly Card[] = FACTORY_MAP.cards,
+): string[] {
   const failures: string[] = [];
   const shown = cards.map((c) => c.card).join(', ');
-  const drawn = FACTORY_MAP.cards.map((c) => c.id).join(', ');
+  const drawn = expected.map((c) => c.id).join(', ');
   if (shown !== drawn) failures.push(`the map shows cards ${shown}, not ${drawn}`);
   for (const { card, count } of cards) {
-    const expected = counts.get(card) ?? 0;
-    if (Number(count) !== expected) {
-      failures.push(`${card} shows ${count} laps, the database has ${expected}`);
+    const want = counts.get(card) ?? 0;
+    if (Number(count) !== want) {
+      failures.push(`${card} shows ${count} laps, the database has ${want}`);
     }
   }
   return failures;

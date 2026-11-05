@@ -6,7 +6,8 @@ The home screen (`/f/<factory>`, and `/` for the selected factory) draws the fac
 ## The drawing is data
 
 `app/map/factory-map.json` holds the map: its caption, every card (id, role, kind label, title,
-one-line text, position, optional width, the chips it carries, the workflows and steps it covers,
+one-line text, position, optional width, the chips it carries, the `lists` Right now shows for it
+(`documents`, the open product documents), the workflows and steps it covers,
 and its details text), every line (from, to, style `flow`, `ask` or `loop`, an optional
 label and, for the routed lines, explicit points), the dashed group, the tour order and the legend.
 Change what the map says there; the React components (`app/components/FactoryMap.tsx`,
@@ -19,6 +20,13 @@ covered workflow. Each entry names its `pack`: `loop` for the old `archon-loop` 
 (`fixtures/pack/sdlc`), `queue` for Archon's queue workflows and the factory package
 (`fixtures/pack/queue`). A live row carries only a workflow name, so counting ignores `pack`; the
 map check is what keeps the two sets apart.
+
+A card that opens a deeper view names it in `opens`; the view sits under `views.<id>` and has the
+root's shape (caption, `cardSize`, cards, lines, tour) without the legend, `views` or a required
+group. Card ids are unique across every level. A view's `next` card may name `upTo`, a card of
+the level above: clicking it goes up and selects that card. A card may name `countsAs`, a card whose laps it shows as its own, as the Deliver view's Review card does for Review. The view's crumb and Open button use
+the title of the card that opens it. One component draws every level, so selection, the details
+strip, chips, flow and the tour work the same in a view.
 
 ## Size and readability (owner deviation from the mockup)
 
@@ -44,27 +52,38 @@ fits the whole map, at any width.
 
 `bun run map:check` (part of `bun run check`) parses both packs with the architecture parser,
 offline, and fails, naming the step, when a step of a workflow a card covers is covered by no card
-or by two, when a card names a workflow or a step its pack lacks, when a role, chip, line style, legend role or pack is outside the closed sets, or
+or by two, when a card names a workflow or a step its pack lacks, when a role, chip, list, line style, legend role or pack is outside the closed sets, or
 when a covered step's pack path holds a dot (the map reads a step's path by its dots). A failure
 that names a pack's step starts `loop pack: ` or `queue pack: `. A step of one pack that counts on a
 card only through the other pack's entry (the packs share workflow names such as
 `archon-merge-queue`) also fails, since a live row cannot tell them apart. It also fails when a
 step a lap's row marks (`LANE_STEPS`) is covered by no card or by two. The loop's `handoff` step is
 missing from the pack's copy of the loop, so App check may cover it without the pack having it; it
-is the one step a card may name that the pack lacks, and it is held to exactly one card. When a
+is the one step a card may name that the pack lacks, and it is held to exactly one card. The loop
+pack's steps on the Split and Intake cards sit on the view card of their role (`read-prd` on Take
+the item, `authorize` with `publish` on File the issues, `pick` and `claim` on Triage). When a
 pack changes, update `covers` until the check passes.
+
+Every view is held to its opening card: each step the card covers is covered by exactly one card
+of the view, and no card of the view covers a step, or a workflow, the opening card does not. A
+view covers only the steps its opening card has (Deliver's view never sees the review rounds,
+which Review has at the root), so an entry such as `ship/deliver` still counts the steps under
+it that belong to the opener. The check also fails on an `opens` naming no view, a view opened by
+no card or by two, a card id used twice, an `upTo` naming no card of the level above, and a `countsAs` naming no card.
 
 The queue pack is the snapshot `fixtures/pack/queue/`: `sdlc/` is `.archon/workflows/sdlc` of
 coleam00/Archon and `factory/` is `.archon/workflows/factory` of coleam00/ai-software-factory, at
-the commits this factory runs, with `ARCHON_COMMIT` and `FACTORY_COMMIT` beside them.
+the commits this factory runs, with `ARCHON_COMMIT` and `FACTORY_COMMIT` beside them. The
+architecture job and the seed store `factory/` too, under `.archon/workflows/factory/` paths, so
+its steps have screens beside the pack's.
 
 ## Live counts
 
-The cards' chips come from four live queries: `home-map` (each running run of the factory with its
+The cards' chips come from these live queries (`map-right-now` also feeds the Merge and Staging views' lists, below): `home-map` (each running run of the factory with its
 running steps and issue, the runs waiting on attention, whether the factory is on the queues, the
 open pull requests whose latest app check failed, the merges with when they finished, and whether
 the version the address names is recorded),
-`health-workable`, `owner-queue` and `work-orders` (the distinct `work-order:<name>` labels on the
+`health-workable`, `owner-queue`, `product-documents` (below) and `work-orders` (the distinct `work-order:<name>` labels on the
 factory's issues with their counts, from the mirrored label data; it writes nothing). The chip counts only the orders with an open issue.
 
 - A run's issue is its claim comment's issue on the old loop, and on the queues its `number` input
@@ -84,9 +103,59 @@ factory's issues with their counts, from the mirrored label data; it writes noth
   from the moment that step finished, not when the run ends, and each pull request an
   `archon-merge-queue` run's `record` step read back as merged. The count moves on at local midnight.
 
+- Product documents on Split and Keep the document: Right now lists each open issue labelled
+  `archon-prd` as a bar of its work items merged over total, from `product-documents`. A document's
+  work items are the issues and adopted issues in the record of the newest completed `archon-split`
+  `publish` step for it (`mc.lap_steps` keeps that output whole), not `Depends on` links, which only
+  join the filed issues to each other. Merged means closed with a merged pull request. A document
+  with no recorded split is 0 of 0. A failed query says the product documents are unavailable.
+
 A chip of 0 is not drawn. A chip appears once its query has answered. A chip whose query failed
 shows as `? queued`, `? orders` or `? waiting`, never as a count; Right now says the count is unavailable, and
 Behind the scenes says the pinned steps are unavailable when `step-detail` failed.
+
+## Live counts in a view
+
+A lap counts once per level: on the card that covers its deepest running step at the root, and
+then on the card of that card's view that covers it, so one run on `ship/deliver/rounds/implement`
+is on Build at the home map, on Deliver in the Build view, and on Implement in the Deliver view. A step that Review covers at the
+root counts on no card of the Build view, and also shows on the Deliver view's Review card.
+
+## Right now in the Merge and Staging views
+
+A card's `lists` (a closed set, held by the map check) name what its Right now shows beside its
+chips' items: `outcomes` (Merge gate), `deploys` and `lands` (each Staging card). They come from
+`map-right-now` (the newest 10 `archon-merge-queue` runs that swept and then recorded, and the
+factory's latest finished deploy, from `factory-deploy` or from the old loop's `deploy` include)
+and from `work-orders`; nothing is written and nothing polls. Like the chips, they describe the
+factory as it is now, at whatever version the address names.
+
+- Gate outcomes, newest run first: a pull request the run's `record` step read back as merged is
+  merged, whatever the sweep said; else a `return` decision is listed as sent back; an `ask` is
+  listed only when the record step raised it. Sent back and asked are the sweep's decision, which
+  the record step may still park, wait on or skip. Only a number's first decision counts, and a
+  number the run's `facts` step did not list is not shown. A `wait` decision, or an ask not raised, is not listed. Each shows the decision's reason and links the
+  pull request.
+- The latest deploy shows the revision (seven characters) and whether the deploy verified, or its
+  failure and the health it reported. A factory with no finished deploy says it has never deployed.
+- Where each work order lands lists the orders with an open issue and the `lands-on:<target>`
+  label their issues carry, or that they name no target yet.
+- A list whose source failed says it is unavailable and the other lists stay.
+
+## The App check view
+
+`?view=app` is drawn from the mockup's `V.app`. On a factory on the queues, Pick a PR covers
+`config`, `select` and `pending`, How deep? `scope`, Protected paths `policy`, PR + main, started
+`prepare`, Use the app `check`, Seal the evidence `evidence` and `factory/app-check` `publish`,
+`finalize` and `cleanup`; the old loop's `briefs`, `check-app`, `evidence` and `handoff` sit on the
+same cards in the same order. Use the app's Right now also lists the open pull requests the app
+check has looked at (the `app-check` query): each one's latest verdict and its lines by kind.
+
+The home map's failing chip and the Board's verdict chip read the old `check-app` step or, on the
+queues, the `check` step of `factory-app-check` (migration 0024). That step keeps only its overall
+verdict and the pull request and head its `select` step kept, and its lines are stored by id, kind
+and verdict without their text. A run whose report names a holdout keeps no output and no lines.
+Showing those lines on the work item page's timeline waits on that page (#317).
 
 ## Clicking a card
 
@@ -102,7 +171,14 @@ are not in this version. App check's includes `check-app`, whose screen shows it
 holdout verifier and the fence (journey 1). Esc, the close button or a click on empty canvas
 deselects.
 
-No card has a deeper view yet: none shows ⤢ or an Open button until its view is built.
+A card with a view shows ⤢ and a stacked edge, and its strip has an Open button naming the number
+of cards in the view. A card shows ⤢ only once its view exists; today Build's, Split's, Intake's, App check's, Merge's and Staging's do (`?view=build`, `?view=split`, `?view=intake`, `?view=app`, `?view=merge`, `?view=deploy`), and so does Deliver inside Build (`?view=build/deliver`; Review shows none until its view exists).
+Double-click, Enter on the selected card or the Open button zooms into the view. Breadcrumbs above
+the caption (the factory, then each opened view), the up control, a crumb, Esc (with nothing
+selected) and Backspace go up, and the card that opened the view flashes. The address is
+`/f/<factory>?view=<id>`: opening and going up each push a history entry, so the browser's back
+button goes up, and a link or reload opens straight into the view. An unknown `view` shows the
+home map.
 
 ## Versions
 
@@ -116,4 +192,5 @@ factory.” The queued, failing, waiting, merged and open chips count the factor
 One dot travels Product document to Shipped and each card it reaches pulses once; dashes flow along
 the forward lines. The flow button beside the screen's title, or `prefers-reduced-motion`, stops
 both; the button shows once the map is drawn, and under reduced motion it reads off and is
-disabled.
+disabled. Opening a view zooms the camera onto the card while the map fades, swaps the level, and
+fits the new one; under reduced motion the swap is instant.

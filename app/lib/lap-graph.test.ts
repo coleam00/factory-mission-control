@@ -257,3 +257,14 @@ test("a lap opens each top-level block it ran, ship's own steps on the fork's li
   expect(simple.steps.get('ship')?.state).toBe('skipped');
   expect(foldGraph(simple, new Set(ranBlocks(simple))).folded.get('ship')).toBe(3);
 });
+
+test("step links open each step at the lap's pin, and at the current version when there is none", () => {
+  const attempts = [attempt('pick', 0), attempt('extra', 1)];
+  const pinned = lapGraph([row('pick', 1, { pin: 'old1234' })], attempts);
+  expect(pinned.graph.steps.map((s) => s.href)).toEqual([
+    '/steps/archon-loop/pick?at=old1234',
+    '/steps/archon-loop/extra?at=old1234',
+  ]);
+  const unpinned = lapGraph([], attempts);
+  expect(unpinned.graph.steps.every((s) => !s.href?.includes('?at='))).toBe(true);
+});

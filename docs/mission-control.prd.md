@@ -154,8 +154,8 @@ the flow toggle is off.
 
 | Measure | Definition |
 |---|---|
-| lap | an `archon-loop` run |
-| merge | a lap whose `land` step output has `outcome = merged` |
+| lap | an `archon-loop` run, or an `archon-build-queue` run on a work item: one whose `facts` step names an item (owner ruling 2026-11-04, #378). A build-queue run that finds nothing to build is not a lap |
+| merge | a lap whose `land` step output has `outcome = merged`; on the queues, a build-queue lap credited with a pull request the merge queue merged (below) |
 | empty lap | a lap whose `pick` output has `route = none` |
 | failed lap | a lap whose run `status = failed` |
 | send-back | a lap whose `review` output has `outcome = sent-back` |
@@ -166,6 +166,21 @@ the flow toggle is off.
 | lap-hours per merge | sum of lap durations in hours / merges |
 | app-check share | sum of `check-app` step `duration_ms` / sum of lap durations |
 | cost per merge | sum of `cost_usd` of every step of every lap / merges |
+
+  The other measures keep their definitions. A build-queue lap has no `pick`, `review`, `land` or
+  `check-app` step, so it counts toward laps, failed laps, lap duration, active hours and cost, and
+  toward no empty lap, send-back, gate refusal or app-check time. It merges nothing itself: the
+  merge queue's later run does (owner request, #393). For each pull request an `archon-merge-queue`
+  run's `record` step read back as merged (its `merged` list; a pull request counts once, at its
+  first such run), the issue is the one that run's `facts` items name for it (a maintainer's own
+  pull request has none and counts nowhere). Among the factory's build-queue laps on that issue that
+  started no later than the merge, the pull request is credited to the lap that opened it: the last
+  lap that started before the first lap whose `facts` named that pull request as its pull request;
+  when no lap named it, the last lap; when every lap named it (the queue continued a pull request
+  it did not open), the first lap. A pull request with no such lap is credited to no version. A
+  version's merges are its laps that merged by `land` or were credited a pull request. A merge
+  whose build laps span two versions therefore counts on the version that opened it, not the one
+  that last pushed it.
 
   Every number shows how many laps it rests on. Two versions can be compared side by side; a
   difference resting on fewer than 10 laps on either side is labelled "not yet meaningful".
@@ -226,6 +241,8 @@ the failing step's error text (`usage limit|429` = usage limit, `401|unauthor` =
 no `needs-owner`, every `Depends on` closed, no live claim) against running laps.
 
 ### 4.9 Where v2 is going: fewer screens, one story (owner decision 2026-11-03)
+
+**Owner decision 2026-11-05, which overrides the table below:** four tabs: **Factory**, **Board**, **Decisions** (only what is waiting) and **Laps** (every run running right now). Changes, Scorecard, Versions, Diff, Ledger, Health, Testing, Owner, Issues and Rewind are gone, and each old address redirects. Health, history and whether a change helped are questions for the owner's agent, not screens; the data stays so the agent can answer them.
 
 v1 was a proof of concept: eleven tabs, most of them tables, and the owner had to know the factory's
 internals to read them. v2 answers four questions, each on one screen, in the design of
@@ -382,11 +399,11 @@ measures are the right ones, are owner calls (product direction).
 | Fact | Source | Path into the database |
 |---|---|---|
 | Laps, steps, timings, cost, model, route, depth, app-check lines, review outcome, merge-gate outcome | Archon's `remote_agent_workflow_runs` and `remote_agent_workflow_events` (`node_completed` rows carry the step's `structured_output`, `cost_usd`, `tokens`, `duration_ms`, `provider`, `model`; the step id is `step_name`) | Archon writes them (its `DATABASE_URL` is this project's `main`); triggers project step-level rows into the dashboard's tables |
-| Which version a lap ran | the run's `metadata.workflow_source.digest` (a hash of the exact workflow pack it ran) | as above; versions are keyed by (factory, digest) and labelled with the most recent pin committed before the first run with that digest |
+| Which version a lap ran | the run's `metadata.workflow_source.digest` (a hash of the exact workflow pack it ran) | as above; versions are keyed by (factory, digest), dated by the first `archon-loop` or `archon-build-queue` run with that digest (any build-queue run, item or not), and labelled with the most recent pin committed before it. No other workflow's run dates a version (#160, amended by #378). A digest covers every workflow run from one source, so a version also names that source's intake and merge-queue runs |
 | Issues, labels, `Depends on`, PRD phase, claims, reviews, owner decisions, `Loop metrics` and `holdouts at` lines, pull requests | GitHub | webhook into the Neon Function; nightly reconcile; backfill |
 | Versions, reasons, `Hypothesis`, `Measure`, verdicts | commits on `coleam00/ai-software-factory` | push webhook (section 11.5) |
 | Key decisions | `DECISIONS.md` in `coleam00/ai-software-factory` | push webhook |
-| Architecture | the pack at the pinned Archon commit (`.archon/workflows/sdlc/` in `coleam00/Archon`) and the factory template (`template/` in ai-software-factory) | the architecture job (11.4) |
+| Architecture | the pack at the pinned Archon commit (`.archon/workflows/sdlc/` in `coleam00/Archon`) and the factory template (`template/` in ai-software-factory) and the factory package (`.archon/workflows/factory/`) | the architecture job (11.4) |
 
 Archon's `provider_event` rows (about 30 per step) are never read by a live query.
 
@@ -424,8 +441,9 @@ Archon's `provider_event` rows (about 30 per step) are never read by a live quer
 ### 11.4 The architecture job and the Archon projection
 
 - **Architecture job** (`bun run arch:parse <archon-sha> <factory-sha>`): reads the pack at that
-  Archon commit and the factory template at that factory commit (from GitHub, or from a local
-  path), and stores, per version: workflows, steps (id, kind, description, model tier, `when`,
+  Archon commit, and the factory package and the template hooks at that factory commit (each factory
+  part optional, not both missing), from GitHub or a local path (`--package-path` for a local
+  package), and stores, per version: workflows, steps (id, kind, description, model tier, `when`,
   `depends_on`, `trigger_rule`, includes, inline subagents), edges, the workflow YAML, command and
   instruction text, and scripts. Includes are expanded the way Archon expands them. Its tests run
   on the committed pack snapshot in `fixtures/pack/` (no network).

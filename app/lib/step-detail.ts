@@ -14,6 +14,7 @@ export interface StepRow {
   depends_on: string[];
   trigger_rule: string | null;
   include: string | null;
+  child_workflow: string | null;
   command_file: string | null;
   script: string | null;
   script_file: string | null;
@@ -50,6 +51,13 @@ export interface YamlPartRow {
   file: string;
   part: number;
   chunk: string;
+}
+
+/** What the step screen's Kind fact says: the include or child workflow a node names, else its kind. */
+export function kindLabel(step: StepRow): string {
+  if (step.include !== null) return `include ${step.include}`;
+  if (step.child_workflow !== null) return `workflow ${step.child_workflow}`;
+  return step.kind;
 }
 
 /** A node a place passes through on its way down: where it sits in the place, and its row. */

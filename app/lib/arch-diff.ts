@@ -13,8 +13,8 @@ export type Kind = (typeof KINDS)[number];
  * An `edge` entry is a step dependency, `from_path` then `to_path`. The query aggregates and
  * hashes because the first snapshot is timed: one row per architecture row, in full, took
  * hundreds of milliseconds longer to arrive. A `version` row, with no entries, names one of this
- * factory's versions (its mc.versions rows and its archon-loop lap digests, as the scorecard reads
- * them), architecture or not.
+ * factory's versions (its mc.versions rows and the digests of its archon-loop and archon-build-queue
+ * runs, the workflows mc.dates_version names), architecture or not.
  */
 export interface ArchDiffRow {
   digest: string;

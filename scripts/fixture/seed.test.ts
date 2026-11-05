@@ -164,7 +164,7 @@ test("the seed holds a second factory with one running lap, kept out of mission-
   expect(await db.query(strip, ['mission-control'])).toEqual([own]);
 });
 
-test('the seed holds a queue factory: three running build-queue laps and an intake lap by number input, one waiting, one merged', async () => {
+test('the seed holds a queue factory: three running build-queue laps, two intake laps and two split laps by number input, three finished build-queue laps, one waiting, one merged', async () => {
   expect(await db.query('SELECT name FROM mc.factories ORDER BY name')).toEqual([
     { name: 'mission-control' },
     { name: QUEUE_FACTORY.name },
@@ -177,6 +177,24 @@ test('the seed holds a queue factory: three running build-queue laps and an inta
       [QUEUE_FACTORY.name],
     ),
   ).toEqual([
+    {
+      workflow_name: 'archon-build-queue',
+      status: 'completed',
+      issue_number: null,
+      attention_open: false,
+    },
+    {
+      workflow_name: 'archon-build-queue',
+      status: 'completed',
+      issue_number: null,
+      attention_open: false,
+    },
+    {
+      workflow_name: 'archon-build-queue',
+      status: 'completed',
+      issue_number: null,
+      attention_open: false,
+    },
     {
       workflow_name: 'archon-build-queue',
       status: 'running',
@@ -202,6 +220,12 @@ test('the seed holds a queue factory: three running build-queue laps and an inta
       attention_open: false,
     },
     {
+      workflow_name: 'archon-intake',
+      status: 'running',
+      issue_number: 401,
+      attention_open: false,
+    },
+    {
       workflow_name: 'archon-merge-queue',
       status: 'completed',
       issue_number: null,
@@ -212,6 +236,18 @@ test('the seed holds a queue factory: three running build-queue laps and an inta
       status: 'paused',
       issue_number: null,
       attention_open: true,
+    },
+    {
+      workflow_name: 'archon-split',
+      status: 'completed',
+      issue_number: 410,
+      attention_open: false,
+    },
+    {
+      workflow_name: 'archon-split',
+      status: 'running',
+      issue_number: 410,
+      attention_open: false,
     },
   ]);
   expect(
