@@ -64,6 +64,8 @@ export interface Card {
   opens?: string;
   /** A card of the parent level: clicking this card goes up to it (a view's "next" card). */
   upTo?: string;
+  /** A card whose laps this card shows as its own: the card is the same step seen from a deeper level. */
+  countsAs?: string;
 }
 
 export type Point = readonly [number, number];

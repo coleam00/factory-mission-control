@@ -1048,6 +1048,7 @@
           "text": "Ready, or findings",
           "x": 688,
           "y": 306,
+          "countsAs": "review",
           "covers": [],
           "details": {
             "what": ["Ready, or findings"]

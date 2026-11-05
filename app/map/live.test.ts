@@ -32,6 +32,7 @@ const hereOn = (rows: HomeMapRow[], cards: readonly { id: string }[]) => {
 /** The home map's cards only; `BUILD_VIEW` has the Build view's. */
 const here = (rows: HomeMapRow[]) => hereOn(rows, FACTORY_MAP.cards);
 const BUILD_VIEW = FACTORY_MAP.views?.build?.cards ?? [];
+const DELIVER_VIEW = FACTORY_MAP.views?.['build/deliver']?.cards ?? [];
 
 test('a lap counts once, on the card covering its deepest running step', () => {
   expect(
@@ -306,4 +307,17 @@ test('a run of the old loop on build counts on Build and Deliver', () => {
   const rows = [lap('old', ['build'], 'archon-loop')];
   expect(here(rows)).toEqual({ build: ['old'] });
   expect(hereOn(rows, BUILD_VIEW)).toEqual({ 'b-del': ['old'] });
+});
+
+test('a step counts on its own card in the Deliver view, and review on the Review card as well', () => {
+  const rows = [
+    lap('impl', ['ship__deliver__rounds.implement__implement', 'ship'], 'archon-build-queue'),
+    lap('ci', ['ship__deliver__rounds__ci', 'ship'], 'archon-build-queue'),
+    lap('rev', ['ship__deliver__rounds.review__policy', 'ship'], 'archon-build-queue'),
+  ];
+  expect(hereOn(rows, DELIVER_VIEW)).toEqual({
+    'd-impl': ['impl'],
+    'd-ci': ['ci'],
+    'd-rev': ['rev'],
+  });
 });

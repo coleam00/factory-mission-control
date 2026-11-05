@@ -100,6 +100,9 @@ function viewFailures(map: FactoryMap): string[] {
     if (card.opens !== undefined && !views.includes(card.opens)) {
       failures.push(`${card.title} opens view ${card.opens}, which the map lacks`);
     }
+    if (card.countsAs !== undefined && !cards.some((c) => c.id === card.countsAs)) {
+      failures.push(`${card.title} counts as ${card.countsAs}, which is no card`);
+    }
     if (card.upTo === undefined) continue;
     if (!parentLevel(map, card)?.cards.some((c) => c.id === card.upTo)) {
       failures.push(`${card.title} goes up to ${card.upTo}, which is no card of its parent level`);
