@@ -72,7 +72,8 @@ no card or by two, a card id used twice, and an `upTo` naming no card of the lev
 A question card's `asks` is checked against the queue pack: it is `{"rest": true}` (on one card
 per level at most) or a `label` that some wait of the pack declares, with an optional `value` that
 the pack sets for that label. The check fails on an `asks` with an unknown key, no label, a
-label no wait declares, a value that is not a string, or a value the pack never sets for the label.
+label no wait declares, a value that is not a string, or, for a label the pack sets values for, a value it never sets.
+Labels fed from workflow output, such as `build` and `merge`, take any value unchecked.
 
 The queue pack is the snapshot `fixtures/pack/queue/`: `sdlc/` is `.archon/workflows/sdlc` of
 coleam00/Archon and `factory/` is `.archon/workflows/factory` of coleam00/ai-software-factory, at
