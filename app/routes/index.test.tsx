@@ -135,14 +135,14 @@ test('Right now lists the gate outcomes, the latest deploy or that there is none
       {
         run: 'r',
         number: 9,
-        outcome: 'sent back',
+        outcome: 'sweep: sent back',
         reason: 'conflicts with main',
         url: 'https://github.com/o/r/pull/9',
         at: null,
       },
     ],
   });
-  expect(gate).toContain('#9 sent back conflicts with main');
+  expect(gate).toContain('#9 sweep: sent back conflicts with main');
   expect(rightNow({ here: [], gate: [] })).toContain(
     'No gate decision is recorded for this factory yet.',
   );
@@ -160,12 +160,31 @@ test('Right now lists the gate outcomes, the latest deploy or that there is none
   expect(staged).toContain('combat names no target yet');
   const deployed = rightNow({
     here: [],
-    deploy: { run: 'd', revision: 'abcdef0123', health: 'healthy', verified: true, at: null },
+    deploy: {
+      run: 'd',
+      revision: 'abcdef0123',
+      health: 'healthy',
+      verified: true,
+      readBack: true,
+      at: null,
+    },
   });
   expect(deployed).toContain('abcdef0 is deployed, healthy, and its revision read back');
+  const unread = rightNow({
+    here: [],
+    deploy: {
+      run: 'd',
+      revision: 'abcdef0123',
+      health: 'healthy',
+      verified: true,
+      readBack: false,
+      at: null,
+    },
+  });
+  expect(unread).toContain('abcdef0 is deployed, healthy, and its revision not read back');
   const failed = rightNow({
     here: [],
-    deploy: { run: 'd', revision: null, health: null, verified: false, at: null },
+    deploy: { run: 'd', revision: null, health: null, verified: false, readBack: false, at: null },
   });
   expect(failed).toContain('no revision : the last deploy failed, health not reported');
   expect(rightNow({ here: [], listsUnavailable: ['outcomes', 'deploys', 'lands'] })).toContain(

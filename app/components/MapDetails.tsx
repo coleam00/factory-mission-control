@@ -93,7 +93,10 @@ function Deploy({ deploy }: { deploy: LatestDeploy | null }): ReactElement {
   return (
     <li data-latest-deploy>
       {deploy.verified ? (
-        <>{name} is deployed, healthy, and its revision read back</>
+        <>
+          {name} is deployed, healthy, and its revision{' '}
+          {deploy.readBack ? 'read back' : 'not read back'}
+        </>
       ) : (
         <>
           {name}: the last deploy failed, health {deploy.health ?? 'not reported'}

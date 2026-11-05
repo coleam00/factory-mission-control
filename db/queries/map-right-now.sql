@@ -45,19 +45,24 @@ SELECT * FROM (
   LIMIT 1
 ) staged
 UNION ALL
--- The newest old-loop lap whose deploy include finished: its verify step's revision, and health's ok.
+-- The newest old-loop lap whose deploy include finished: its verify step's revision, and health's ok
+-- (not reported when the deploy step failed). 'verified' needs a revision read back, 'deployed' had none.
 SELECT * FROM (
   SELECT 'deploys', l.run_id, coalesce(ver.completed_at, ver.started_at),
     NULL::text, NULL::text, NULL::text, NULL::text,
     ver.output ->> 'revision',
-    CASE hl.output ->> 'ok' WHEN 'true' THEN 'healthy' WHEN 'false' THEN 'unhealthy' END,
-    CASE WHEN ver.output ->> 'deployed' = 'true' THEN 'verified' ELSE 'failed' END,
+    CASE WHEN dp.output ->> 'ok' = 'false' THEN NULL
+      ELSE CASE hl.output ->> 'ok' WHEN 'true' THEN 'healthy' WHEN 'false' THEN 'unhealthy' END END,
+    CASE WHEN ver.output ->> 'deployed' <> 'true' OR ver.output ->> 'deployed' IS NULL THEN 'failed'
+      WHEN coalesce(ver.output ->> 'observed', '') = '' THEN 'deployed'
+      ELSE 'verified' END,
     f.repository
   FROM mc.laps l
   JOIN mc.factories f ON f.name = l.factory
   JOIN mc.lap_steps ver ON ver.run_id = l.run_id AND ver.step_id = 'deploy__verify'
     AND ver.status IN ('completed', 'failed')
   LEFT JOIN mc.lap_steps hl ON hl.run_id = l.run_id AND hl.step_id = 'deploy__health'
+  LEFT JOIN mc.lap_steps dp ON dp.run_id = l.run_id AND dp.step_id = 'deploy__deploy'
   WHERE l.factory = $1 AND l.workflow_name = 'archon-loop'
   ORDER BY 3 DESC NULLS LAST, l.run_id
   LIMIT 1

@@ -90,7 +90,7 @@ export interface MapRightNowRow {
   claimed: string | null;
   revision: string | null;
   health: string | null;
-  status: 'verified' | 'failed' | null;
+  status: 'verified' | 'deployed' | 'failed' | null;
   repository: string;
 }
 
@@ -101,7 +101,7 @@ export interface MapRightNowRow {
 export interface GateOutcome {
   run: string;
   number: number;
-  outcome: 'merged' | 'sent back' | 'asked';
+  outcome: 'merged' | 'sweep: sent back' | 'sweep: asked';
   reason: string;
   url: string;
   at: Date | null;
@@ -111,7 +111,10 @@ export interface LatestDeploy {
   run: string;
   revision: string | null;
   health: string | null;
+  /** Deployed and healthy. */
   verified: boolean;
+  /** The service reported the revision it serves; false for a deploy with no identity command. */
+  readBack: boolean;
   at: Date | null;
 }
 
@@ -233,9 +236,9 @@ export function gateOutcomes(rows: readonly MapRightNowRow[]): GateOutcome[] {
         const outcome = merged.has(n)
           ? 'merged'
           : action === 'return'
-            ? 'sent back'
+            ? 'sweep: sent back'
             : action === 'ask' && asked === n
-              ? 'asked'
+              ? 'sweep: asked'
               : null;
         return outcome === null
           ? []
@@ -262,7 +265,8 @@ export function latestDeploy(rows: readonly MapRightNowRow[]): LatestDeploy | nu
         run: latest.run_id,
         revision: latest.revision,
         health: latest.health,
-        verified: latest.status === 'verified',
+        verified: latest.status === 'verified' || latest.status === 'deployed',
+        readBack: latest.status === 'verified',
         at: latest.at,
       };
 }

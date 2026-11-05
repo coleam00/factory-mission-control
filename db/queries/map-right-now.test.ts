@@ -108,3 +108,27 @@ test('an old-loop lap whose deploy did not read back is a failed deploy', async 
   expect(deploys).toHaveLength(1);
   expect(deploys[0]).toMatchObject({ status: 'failed', health: 'unhealthy' });
 });
+
+test('an old-loop deploy with no revision read back is deployed, and a failed deploy reports no health', async () => {
+  const lap = (
+    (await db.query(
+      `SELECT run_id FROM mc.laps WHERE factory = 'mission-control' AND workflow_name = 'archon-loop' LIMIT 1`,
+    )) as { run_id: string }[]
+  )[0]?.run_id as string;
+  await completed(lap, 'deploy__deploy', { ok: true }, '2026-10-28T09:00:00Z');
+  await completed(lap, 'deploy__health', { ok: true }, '2026-10-28T09:01:00Z');
+  await completed(
+    lap,
+    'deploy__verify',
+    { deployed: true, revision: 'd'.repeat(40), observed: '' },
+    '2026-10-28T09:02:00Z',
+  );
+  const noReadBack = (await rows('mission-control')).filter((r) => r.kind === 'deploys');
+  expect(noReadBack[0]).toMatchObject({ status: 'deployed', health: 'healthy' });
+
+  await completed(lap, 'deploy__deploy', { ok: false }, '2026-10-28T09:00:00Z');
+  await completed(lap, 'deploy__health', { ok: false }, '2026-10-28T09:01:00Z');
+  await completed(lap, 'deploy__verify', { deployed: false, observed: '' }, '2026-10-28T09:02:00Z');
+  const failed = (await rows('mission-control')).filter((r) => r.kind === 'deploys');
+  expect(failed[0]).toMatchObject({ status: 'failed', health: null });
+});

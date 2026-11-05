@@ -349,11 +349,11 @@ test("the gate lists merged as read back, the sweep's send-backs, an ask only wh
   });
   expect(gateOutcomes([run]).map((o) => [o.number, o.outcome, o.reason])).toEqual([
     [1, 'merged', 'why 1'],
-    [3, 'asked', 'why 3'],
+    [3, 'sweep: asked', 'why 3'],
   ]);
   const returned = right({ decisions: JSON.stringify([decision(8, 'return')]) });
   expect(gateOutcomes([returned])[0]).toMatchObject({
-    outcome: 'sent back',
+    outcome: 'sweep: sent back',
     url: 'https://github.com/o/r/pull/8',
   });
   const stray = right({
