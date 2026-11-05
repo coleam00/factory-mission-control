@@ -242,6 +242,8 @@ no `needs-owner`, every `Depends on` closed, no live claim) against running laps
 
 ### 4.9 Where v2 is going: fewer screens, one story (owner decision 2026-11-03)
 
+**Owner decision 2026-11-05, which overrides the table below:** four tabs: **Factory**, **Board**, **Decisions** (only what is waiting) and **Laps** (every run running right now). Changes, Scorecard, Versions, Diff, Ledger, Health, Testing, Owner, Issues and Rewind are gone, and each old address redirects. Health, history and whether a change helped are questions for the owner's agent, not screens; the data stays so the agent can answer them.
+
 v1 was a proof of concept: eleven tabs, most of them tables, and the owner had to know the factory's
 internals to read them. v2 answers four questions, each on one screen, in the design of
 `docs/design/v2/`:

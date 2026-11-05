@@ -1,8 +1,10 @@
 import { type ReactElement, type ReactNode, useState } from 'react';
 import { Link } from 'react-router';
+import type { AppCheckRow } from '../lib/app-check';
 import { relativeTime } from '../lib/format';
 import { hasLapPage } from '../lib/one-lap';
 import type { StepRow } from '../lib/step-detail';
+import { LivePanel } from '../live/LivePanel';
 import { type Card, pinnedStepLinks, workflowFile } from '../map/factory-map';
 import type {
   CardLive,
@@ -261,6 +263,54 @@ export function RightNow({
   );
 }
 
+const count = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+
+/** The open pull requests the app check has looked at: its latest verdict, and its lines by kind. */
+export function AppCheckList({ rows }: { rows: readonly AppCheckRow[] }): ReactElement {
+  return rows.length === 0 ? (
+    <p className="text-text-secondary">No open pull request has been checked.</p>
+  ) : (
+    <ul className="grid gap-[5px]">
+      {rows.map((row) => (
+        <li key={row.number} data-app-check={row.number}>
+          <span className="font-mono tabular-nums">#{row.number} </span>
+          {row.url ? (
+            <a href={row.url} className={LINK}>
+              {row.title}
+            </a>
+          ) : (
+            row.title
+          )}
+          <span className={CHIP}>{row.overall ?? 'checking'}</span>
+          <span className={CHIP}>
+            {count(row.criteria, 'criterion', 'criteria')}, {count(row.probes, 'probe', 'probes')},{' '}
+            {count(row.assertions, 'assertion', 'assertions')}
+          </span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function AppChecks({ factory }: { factory: string }): ReactElement {
+  return (
+    <LivePanel<AppCheckRow> query="app-check" factory={factory} className="grid gap-[5px]">
+      {(rows, state) => (
+        <>
+          <p className={LABEL}>Pull requests under check</p>
+          {rows === undefined || state !== 'ready' ? (
+            <p className="text-text-secondary">
+              {state === 'error' ? 'The pull requests under check are unavailable.' : 'Loading.'}
+            </p>
+          ) : (
+            <AppCheckList rows={rows} />
+          )}
+        </>
+      )}
+    </LivePanel>
+  );
+}
+
 /**
  * The steps the card covers that the pinned version has, each opening its step screen with the
  * model the parsed architecture gives it (owner, #307): never a step or a path the version lacks.
@@ -417,7 +467,10 @@ export function MapDetails({
           className="grid max-w-[96ch] gap-2.5 px-4 pt-3.5 pb-[18px] text-sm text-text-primary"
         >
           {tab === 'live' ? (
-            <RightNow live={live} factory={factory} />
+            <>
+              <RightNow live={live} factory={factory} />
+              {card.id === 'a-check' ? <AppChecks factory={factory} /> : null}
+            </>
           ) : tab === 'behind' ? (
             <Behind card={card} at={at} steps={steps} failed={stepsFailed} />
           ) : (

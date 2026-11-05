@@ -82,7 +82,7 @@ export function FactoryStripBody({
         <p className="text-sm text-text-secondary">Live data is unavailable.</p>
       ) : (
         <span className="flex items-center gap-2">
-          <span className={LABEL}>Running laps</span>
+          <span className={LABEL}>Running now</span>
           <span
             data-count={running}
             className={`font-mono text-sm font-semibold tabular-nums ${

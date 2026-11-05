@@ -193,13 +193,6 @@ export const LAP_OUTCOME_TOKEN: Record<Outcome, `--${string}`> = {
   'needs-owner': '--role-person',
 };
 
-/** The review's outcomes: a merge or a send-back is done, teal; a question waits on the owner, violet. */
-export const REVIEW_TOKEN: Record<string, `--${string}`> = {
-  merge: '--success',
-  'sent-back': '--success',
-  'needs-owner': '--role-person',
-};
-
 export const GATE_TOKEN: Record<string, `--${string}`> = {
   merged: '--success',
   refused: '--error',

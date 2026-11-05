@@ -1,6 +1,5 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { OUTCOME_TOKEN, OUTCOMES } from '../../app/lib/laps';
 import { seedLaps } from '../fixture/seed-laps';
 import { openPage, type Page } from '../lib/cdp';
 import type { Db } from '../lib/db';
@@ -27,8 +26,7 @@ import {
   readyFailures,
 } from './timings';
 
-const LAPS_QUERIES = ['lanes', 'recent-laps'] as const;
-const RECENT_LAP = '[data-live="recent-laps"] [data-recent-lap]';
+const LAPS_QUERIES = ['lanes'] as const;
 /** The lane names the step, and its row of loop steps pulses that step's top-level mark. */
 const laneOn = (runId: string, step: string) => {
   const lane = `[data-live="lanes"] [data-lane="${runId}"]`;
@@ -62,25 +60,9 @@ interface LapsOnScreen {
     /** The marks of the lane's row of loop steps that pulse. */
     runningMarks: string[];
   }[];
-  recent: {
-    run: string;
-    outcome: string | null;
-    cost: number;
-    dot: string;
-    token: string | null;
-  }[];
 }
 
 const lapsOnScreen = `(() => {
-  const tokens = ${JSON.stringify(OUTCOME_TOKEN)};
-  const token = (name) => {
-    if (name === undefined) return null;
-    const probe = document.body.appendChild(document.createElement('span'));
-    probe.style.backgroundColor = 'var(' + name + ')';
-    const color = getComputedStyle(probe).backgroundColor;
-    probe.remove();
-    return color;
-  };
   const num = (el, name) => (el.hasAttribute(name) ? Number(el.getAttribute(name)) : null);
   return {
     lanes: [...document.querySelectorAll('${LANE}')].map((li) => ({
@@ -93,13 +75,6 @@ const lapsOnScreen = `(() => {
       runningMarks: [...li.querySelectorAll('[data-loop-mark][data-step-state="running"]')].map(
         (m) => m.getAttribute('data-loop-mark'),
       ),
-    })),
-    recent: [...document.querySelectorAll('${RECENT_LAP}')].map((li) => ({
-      run: li.getAttribute('data-recent-lap'),
-      outcome: li.getAttribute('data-outcome'),
-      cost: Number(li.getAttribute('data-cost')),
-      dot: getComputedStyle(li.querySelector('[data-outcome-dot]')).backgroundColor,
-      token: token(tokens[li.getAttribute('data-outcome')]),
     })),
   };
 })()`;
@@ -130,7 +105,7 @@ async function seedLapsMismatches(
        (SELECT coalesce(sum(s.cost_usd), 0)::float8 FROM mc.lap_steps s WHERE s.run_id = l.run_id) AS cost
      FROM mc.laps l
      LEFT JOIN mc.lap_steps pick ON pick.run_id = l.run_id AND pick.step_id = 'pick'
-     WHERE l.factory = $1 AND l.workflow_name = 'archon-loop' AND l.status = 'running'
+     WHERE l.factory = $1 AND l.status = 'running'
      ORDER BY 1`,
     [factory],
   );
@@ -160,59 +135,20 @@ async function seedLapsMismatches(
     byRun(seedRunning),
   );
 
-  const finished = await db.query(
-    `SELECT l.run_id::text AS run,
-       (SELECT coalesce(sum(s.cost_usd), 0)::float8 FROM mc.lap_steps s WHERE s.run_id = l.run_id) AS cost
-     FROM mc.laps l
-     WHERE l.factory = $1 AND l.workflow_name = 'archon-loop'
-       AND l.status IN ('completed', 'failed', 'cancelled')
-     ORDER BY 1`,
-    [factory],
-  );
-  const finishedSql = finished.map((r) => ({ run: String(r.run), cost: Number(r.cost) }));
-  same(
-    'finished laps and their cost',
-    byRun(shown.recent.map((l) => ({ run: l.run, cost: l.cost }))),
-    finishedSql,
-  );
-  const seedFinished = laps.filter((l) => !['running', 'paused', 'pending'].includes(l.what));
-  same(
-    'outcomes against the seed',
-    byRun(shown.recent.map((l) => ({ run: l.run, outcome: l.outcome }))),
-    byRun(seedFinished.map((l) => ({ run: l.runId, outcome: l.what }))),
-  );
-  for (const outcome of OUTCOMES) {
-    if (!shown.recent.some((l) => l.outcome === outcome)) {
-      mismatches.push(`no finished lap shows ${outcome}`);
-    }
-  }
-  for (const lap of shown.recent) {
-    if (lap.token === null || lap.dot !== lap.token) {
-      mismatches.push(`${lap.run} ${lap.outcome} is colored ${lap.dot}, its token is ${lap.token}`);
-    }
-  }
-
-  const tally = Object.fromEntries(
-    OUTCOMES.map((o) => [o, shown.recent.filter((l) => l.outcome === o).length]),
-  );
   const report = [
     'screen:',
     `  lanes ${JSON.stringify(byRun(shown.lanes))}`,
-    `  recent ${JSON.stringify(byRun(shown.recent))}`,
     'SQL (mc.laps, mc.claims, mc.lap_steps; not the queries in db/queries/):',
     `  lanes ${JSON.stringify(lanesSql)}`,
-    `  finished ${JSON.stringify(finishedSql)}`,
     'seed (fixtures/seed.sql, the comment above each run):',
     `  running ${JSON.stringify(byRun(seedRunning))}`,
-    `  finished ${JSON.stringify(seedFinished.map((l) => ({ run: l.runId, label: l.label, outcome: l.what })))}`,
-    `outcomes on screen: ${JSON.stringify(tally)}`,
     ...mismatches,
     `mismatches: ${mismatches.length}`,
   ].join('\n');
   return { mismatches, report };
 }
 
-/** The laps screen: the seed's lanes and finished laps, and the lap step events to their lanes. */
+/** The laps screen: the seed's lanes, and the lap step events to their lanes. */
 export function lapsPhase(ctx: LiveContext): LivePhase {
   const { deps, db, factory, outDir, holdSeconds, branch, measure } = ctx;
   const lapsTimings: LapsTimings = {
@@ -221,7 +157,7 @@ export function lapsPhase(ctx: LiveContext): LivePhase {
     ...emptyGroupTimings(LAPS_QUERIES),
     stepToLane: null,
     holdSeconds,
-    renewals: { lanes: null, 'recent-laps': null },
+    renewals: { lanes: null },
     afterHoldStepToLane: null,
     noReload: null,
     limits: LIMITS,

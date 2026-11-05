@@ -49,8 +49,7 @@ function ScreenLink({
 }
 
 /**
- * The shell's links: the home map, then each factory screen for `factory`, then the rewind
- * screen. On a factory's pages
+ * The shell's links: the home map, then each factory screen for `factory`. On a factory's pages
  * the home map is that factory's own (`/f/:factory`). The current screen's link is
  * `aria-current="page"`.
  */
@@ -68,10 +67,10 @@ export function ScreenNavBody({
   const home = inUrl === undefined ? '/' : `/f/${encodeURIComponent(inUrl)}`;
   return (
     <nav aria-label="Screens" className="mx-auto flex max-w-6xl flex-wrap gap-x-5 px-6">
-      <ScreenLink to={home} label="Map" kind="map" />
-      {factory === undefined ? null : (
-        <>
-          {screens.map((screen) => (
+      <ScreenLink to={home} label="Factory" kind="map" />
+      {factory === undefined
+        ? null
+        : screens.map((screen) => (
             <ScreenLink
               key={screen.path}
               to={`/f/${encodeURIComponent(factory)}/${screen.path}`}
@@ -80,9 +79,6 @@ export function ScreenNavBody({
               {badge?.(screen.path)}
             </ScreenLink>
           ))}
-          <ScreenLink to="/rewind" label="Rewind" />
-        </>
-      )}
     </nav>
   );
 }

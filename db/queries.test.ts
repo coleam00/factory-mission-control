@@ -3,6 +3,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { StatusStripRow } from '../app/components/FactoryStrip';
 import type { FactorySwitcherRow } from '../app/components/FactorySwitcher';
+import type { AppCheckRow } from '../app/lib/app-check';
 import type { ArchDiffRow } from '../app/lib/arch-diff';
 import type { AttentionRow } from '../app/lib/attention';
 import type { BoardRow } from '../app/lib/board';
@@ -48,6 +49,16 @@ const columns =
 
 /** Each live query's result columns, in order, bound to the row type its panel reads. */
 const ROW_COLUMNS: Record<string, string[]> = {
+  'app-check': columns<AppCheckRow>()([
+    'number',
+    'title',
+    'url',
+    'run_id',
+    'overall',
+    'criteria',
+    'probes',
+    'assertions',
+  ]),
   'arch-diff': columns<ArchDiffRow>()(['digest', 'kind', 'workflow', 'first_run_at', 'entries']),
   'attention-items': columns<AttentionRow>()([
     'run_id',
@@ -187,6 +198,8 @@ const ROW_COLUMNS: Record<string, string[]> = {
   ]),
   lanes: columns<LaneRow>()([
     'run_id',
+    'workflow_name',
+    'console',
     'started_at',
     'issue_number',
     'issue_title',
@@ -502,14 +515,8 @@ describe('the rules the live queries restate, which they may not call a function
       // Exception: the lap rule narrowed to one item ($2) rather than any item, and the route join that
       // reads a build-queue run's own routing step.
       'work-item': [0, 0, 2],
-      'live changes oracle': [0, 1, 0],
-      'live ledger oracle': [0, 1, 0],
     };
-    const copies = [
-      ...queries,
-      ['live changes oracle', read('scripts', 'live', 'changes.ts')],
-      ['live ledger oracle', read('scripts', 'live', 'ledger.ts')],
-    ];
+    const copies = [...queries];
     for (const [name, sql] of copies) {
       const [datesVersion, lap, exception] = expected[name] ?? [0, 0, 0];
       expect([name, count(sql, DATES_VERSION), count(sql, LAP)]).toEqual([name, datesVersion, lap]);
