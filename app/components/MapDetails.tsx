@@ -1,9 +1,17 @@
 import { type ReactElement, type ReactNode, useState } from 'react';
 import { Link } from 'react-router';
+import { relativeTime } from '../lib/format';
 import { hasLapPage } from '../lib/one-lap';
 import type { StepRow } from '../lib/step-detail';
 import { type Card, pinnedStepLinks, workflowFile } from '../map/factory-map';
-import type { CardLive, MapItem, ProductDocumentRow, WorkOrderRow } from '../map/live';
+import type {
+  CardLive,
+  GateOutcome,
+  LatestDeploy,
+  MapItem,
+  ProductDocumentRow,
+  WorkOrderRow,
+} from '../map/live';
 
 type Tab = 'when' | 'what' | 'how' | 'live' | 'behind';
 
@@ -63,6 +71,49 @@ function Order({ order }: { order: WorkOrderRow }): ReactElement {
       <span className={CHIP}>
         {order.open_count} open, {order.merged_count} merged{lands}
       </span>
+    </li>
+  );
+}
+
+const UNAVAILABLE = {
+  documents: 'The product documents are unavailable.',
+  outcomes: 'The recent gate decisions are unavailable.',
+  deploys: 'The latest deploy is unavailable.',
+  lands: 'Where the work orders land is unavailable.',
+} as const;
+
+/** One pull request in the gate's recent decisions: merged as read back, or the sweep's send-back or ask, with its reason. */
+function Gate({ outcome }: { outcome: GateOutcome }): ReactElement {
+  return (
+    <li data-gate-outcome={outcome.number}>
+      <a href={outcome.url} className={`${LINK} font-mono tabular-nums`}>
+        #{outcome.number}
+      </a>
+      <span className={CHIP}>{outcome.outcome}</span>
+      <span className="ml-1.5 text-text-secondary">{outcome.reason}</span>
+    </li>
+  );
+}
+
+function Deploy({ deploy }: { deploy: LatestDeploy | null }): ReactElement {
+  if (deploy === null) return <li data-latest-deploy>This factory has never deployed.</li>;
+  const revision = deploy.revision === null ? null : deploy.revision.slice(0, 7);
+  const name = <span className="font-mono">{revision ?? 'no revision'}</span>;
+  return (
+    <li data-latest-deploy>
+      {deploy.verified ? (
+        <>
+          {name} is deployed, healthy, and its revision{' '}
+          {deploy.readBack ? 'read back' : 'not read back'}
+        </>
+      ) : (
+        <>
+          {name}: the last deploy failed, health {deploy.health ?? 'not reported'}
+        </>
+      )}
+      {deploy.at === null ? null : (
+        <span className={CHIP}>{relativeTime(deploy.at.toISOString())}</span>
+      )}
     </li>
   );
 }
@@ -168,11 +219,6 @@ export function RightNow({
           </li>,
         ]
       : []),
-    ...(live?.listsUnavailable ?? []).map((list) => (
-      <li key={`unavailable-${list}`} className="text-text-secondary">
-        The product documents are unavailable.
-      </li>
-    )),
     ...(live?.merged ?? []).map((merge) => (
       <li key={`merged-${merge.run}-${merge.number ?? 'lap'}`} data-lap={merge.run}>
         <RunName workflow={merge.workflow} href={lapHref(merge.run)}>
@@ -183,6 +229,28 @@ export function RightNow({
           )}
         </RunName>
         <span className={CHIP}>merged {time(merge.at)}</span>
+      </li>
+    )),
+    ...(live?.listsUnavailable ?? []).map((list) => (
+      <li key={`unavailable-list-${list}`} className="text-text-secondary">
+        {UNAVAILABLE[list]}
+      </li>
+    )),
+    ...(live?.gate?.map((outcome) => (
+      <Gate key={`gate-${outcome.run}-${outcome.number}`} outcome={outcome} />
+    )) ?? []),
+    ...(live?.gate?.length === 0
+      ? [
+          <li key="gate-none" className="text-text-secondary">
+            No gate decision is recorded for this factory yet.
+          </li>,
+        ]
+      : []),
+    ...(live?.deploy === undefined ? [] : [<Deploy key="latest-deploy" deploy={live.deploy} />]),
+    ...(live?.lands ?? []).map((order) => (
+      <li key={`lands-${order.name}`} data-lands={order.name}>
+        <span className="font-mono">{order.name}</span>{' '}
+        {order.lands_on === null ? 'names no target yet' : `lands on ${order.lands_on}`}
       </li>
     )),
   ];

@@ -26,7 +26,7 @@ import type {
 } from '../app/lib/step-detail';
 import type { CheckRow, DefaultHoldoutRow, RouteRow } from '../app/lib/testing';
 import type { VersionStripRow } from '../app/lib/version-strip';
-import type { HomeMapRow, ProductDocumentRow, WorkOrderRow } from '../app/map/live';
+import type { HomeMapRow, MapRightNowRow, ProductDocumentRow, WorkOrderRow } from '../app/map/live';
 import { LIVE_QUERY_NAME, parameterCount } from '../server/live';
 import { migratedDb, paramsFor, queries } from './queries/test-seed';
 import type { TestDb } from './test-db';
@@ -328,6 +328,19 @@ const ROW_COLUMNS: Record<string, string[]> = {
     'repository',
   ]),
   'testing-routes': columns<RouteRow>()(['run_id', 'status', 'started_at', 'route', 'depth']),
+  'map-right-now': columns<MapRightNowRow>()([
+    'kind',
+    'run_id',
+    'at',
+    'decisions',
+    'merged',
+    'asked',
+    'claimed',
+    'revision',
+    'health',
+    'status',
+    'repository',
+  ]),
   'product-documents': columns<ProductDocumentRow>()([
     'number',
     'title',
