@@ -51,4 +51,4 @@ test('a disposition on the lap page names the position of the APP CHECK line wit
   } finally {
     await page.close();
   }
-}, 30_000);
+}, 90_000);

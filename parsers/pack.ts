@@ -1,10 +1,11 @@
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { basename, dirname, join, relative } from 'node:path';
 
-// Parses one version of the factory: the pinned Archon workflow pack and the factory template's
-// hooks. Every value comes from a file under the two input directories (PRD invariant 6); nothing
-// here touches the network, and the template is read only under `.factory/hooks/`, so a holdout
-// scenario file is never opened.
+// Parses one version of the factory: the pinned Archon workflow pack, the factory package
+// (ai-software-factory's `.archon/workflows/factory/`) when the version has one, and the factory
+// template's hooks. Every value comes from a file under the input directories (PRD invariant 6);
+// nothing here touches the network, and the template is read only under its hooks directory, so a
+// holdout scenario file is never opened.
 
 export type StepKind =
   | 'include'
@@ -41,6 +42,8 @@ export interface Step {
   triggerRule: string | null;
   /** The workflow this node includes, by name. */
   include: string | null;
+  /** The workflow a `workflow:` node runs, by name as written; Archon resolves it at execution. */
+  childWorkflow: string | null;
   command: string | null;
   commandFile: string | null;
   commandText: string | null;
@@ -87,6 +90,8 @@ export interface Hook extends TextFile {
 export interface PackVersion {
   archonCommit: string | null;
   factoryCommit: string | null;
+  /** The commit the factory package's `FACTORY_COMMIT` records; null without a package. */
+  packageCommit: string | null;
   workflows: Workflow[];
   commands: TextFile[];
   /** Markdown under `.shared/` (and any under a workflow's `scripts/`) that commands tell agents to read, such as the policy defaults. */
@@ -111,6 +116,12 @@ const AGENT_KINDS = new Set<StepKind>(['command', 'loop', 'prompt']);
 /** The only directory of the factory template the parser reads. */
 export const HOOKS_DIR = '.factory/hooks';
 
+/**
+ * The factory package's directory in ai-software-factory, and the prefix its stored paths carry,
+ * so they never collide with the pack's (a pack path never starts with `.archon/`).
+ */
+export const FACTORY_PACKAGE_DIR = '.archon/workflows/factory';
+
 function slash(path: string): string {
   return path.replaceAll('\\', '/');
 }
@@ -125,6 +136,11 @@ function isDir(path: string): boolean {
 
 function str(value: unknown): string | null {
   return typeof value === 'string' ? value : null;
+}
+
+/** A model: a plain string, or an array form (an alias, a size, and so on) joined into one label. */
+function modelOf(value: unknown): string | null {
+  return Array.isArray(value) ? strings(value).join(' ') || null : str(value);
 }
 
 function strings(value: unknown): string[] {
@@ -148,7 +164,7 @@ function filesUnder(dir: string): string[] {
   });
 }
 
-function readSources(packDir: string): Source[] {
+function readSources(packDir: string, prefix: string): Source[] {
   const sources: Source[] = [];
   for (const entry of list(packDir)) {
     const dir = join(packDir, entry);
@@ -162,7 +178,7 @@ function readSources(packDir: string): Source[] {
       if (!name) throw new Error(`${slash(relative(packDir, path))} has no workflow name`);
       sources.push({
         name,
-        file: slash(relative(packDir, path)),
+        file: `${prefix}${slash(relative(packDir, path))}`,
         dir: entry,
         yaml,
         lines: yaml.split('\n'),
@@ -194,11 +210,11 @@ function commentAbove(source: Source, id: string, cursor: { line: number }): str
   return null;
 }
 
-function scriptFile(packDir: string, dir: string, name: string): string | null {
+function scriptFile(packDir: string, dir: string, name: string, prefix: string): string | null {
   const scripts = join(packDir, dir, 'scripts');
   const match = list(scripts).filter((file) => file.replace(/\.[^.]+$/, '') === name);
   if (match.length > 1) throw new Error(`${dir}/scripts has more than one script named ${name}`);
-  return match[0] ? slash(relative(packDir, join(scripts, match[0]))) : null;
+  return match[0] ? `${prefix}${slash(relative(packDir, join(scripts, match[0])))}` : null;
 }
 
 function kindOf(node: Node): StepKind {
@@ -215,8 +231,9 @@ function kindOf(node: Node): StepKind {
   throw new Error(`node ${String(node.id)} has no kind Archon runs`);
 }
 
-export function parsePack(packDir: string, templateDir: string): PackVersion {
-  const sources = readSources(packDir);
+/** `pathPrefix` is put before every path the parse stores; hook paths stay template-relative. */
+export function parsePack(packDir: string, templateDir: string, pathPrefix = ''): PackVersion {
+  const sources = readSources(packDir, pathPrefix);
   const byName = new Map<string, Source>();
   for (const source of sources) {
     if (byName.has(source.name)) throw new Error(`two workflows are named ${source.name}`);
@@ -230,7 +247,10 @@ export function parsePack(packDir: string, templateDir: string): PackVersion {
     for (const file of list(dir)) {
       if (!file.endsWith('.md')) continue;
       const path = join(dir, file);
-      commands.push({ path: slash(relative(packDir, path)), text: readText(path) });
+      commands.push({
+        path: `${pathPrefix}${slash(relative(packDir, path))}`,
+        text: readText(path),
+      });
     }
   }
   const commandText = new Map(commands.map((c) => [c.path, c.text]));
@@ -242,7 +262,7 @@ export function parsePack(packDir: string, templateDir: string): PackVersion {
     if (!isDir(root)) continue;
     const files = entry === '.shared' ? filesUnder(root) : filesUnder(join(root, 'scripts'));
     for (const path of files) {
-      const file = { path: slash(relative(packDir, path)), text: readText(path) };
+      const file = { path: `${pathPrefix}${slash(relative(packDir, path))}`, text: readText(path) };
       (path.endsWith('.md') ? sharedDocs : scripts).push(file);
     }
   }
@@ -290,7 +310,7 @@ export function parsePack(packDir: string, templateDir: string): PackVersion {
       const command = str(node.command) ?? (loop ? str(loop.command) : null);
       let commandFile: string | null = null;
       if (command) {
-        commandFile = `${source.dir}/commands/${command}.md`;
+        commandFile = `${pathPrefix}${source.dir}/commands/${command}.md`;
         if (!commandText.has(commandFile)) {
           throw new Error(`${source.file}: ${id} runs command ${command}, missing ${commandFile}`);
         }
@@ -298,7 +318,8 @@ export function parsePack(packDir: string, templateDir: string): PackVersion {
       const script = str(node.script);
       // Archon's isInlineScript (packages/workflows/src/executor-shared.ts): a name never holds these.
       const inline = script !== null && (script.includes('\n') || /[;(){}&|<>$`"' ]/.test(script));
-      const resolvedScript = script && !inline ? scriptFile(packDir, source.dir, script) : null;
+      const resolvedScript =
+        script && !inline ? scriptFile(packDir, source.dir, script, pathPrefix) : null;
       if (script && !inline && !resolvedScript) {
         throw new Error(
           `${source.file}: ${id} runs script ${script}, not in ${source.dir}/scripts`,
@@ -328,11 +349,12 @@ export function parsePack(packDir: string, templateDir: string): PackVersion {
         path,
         kind,
         description,
-        model: AGENT_KINDS.has(kind) ? (str(node.model) ?? str(source.doc.model)) : null,
+        model: AGENT_KINDS.has(kind) ? (modelOf(node.model) ?? modelOf(source.doc.model)) : null,
         when: str(node.when),
         dependsOn,
         triggerRule: str(node.trigger_rule),
         include,
+        childWorkflow: str(node.workflow),
         command,
         commandFile,
         commandText: commandFile ? (commandText.get(commandFile) ?? null) : null,
@@ -356,7 +378,7 @@ export function parsePack(packDir: string, templateDir: string): PackVersion {
     return {
       name: source.name,
       description: str(source.doc.description),
-      model: str(source.doc.model),
+      model: modelOf(source.doc.model),
       file: source.file,
       yaml: source.yaml,
       steps,
@@ -372,6 +394,7 @@ export function parsePack(packDir: string, templateDir: string): PackVersion {
   return {
     archonCommit: commit(join(packDir, 'ARCHON_COMMIT'), join(dirname(packDir), 'ARCHON_COMMIT')),
     factoryCommit: commit(join(templateDir, 'FACTORY_COMMIT')),
+    packageCommit: null,
     workflows,
     commands,
     sharedDocs,
@@ -389,4 +412,33 @@ function admitted(text: string): string[] {
     }
   }
   return names;
+}
+
+/**
+ * One version: the pack, plus the factory package when the version has one. The package's files
+ * are stored under `FACTORY_PACKAGE_DIR`, and a workflow name both define is refused.
+ */
+export function parseVersion(
+  packDir: string,
+  packageDir: string | null,
+  templateDir: string,
+): PackVersion {
+  const pack = parsePack(packDir, templateDir);
+  if (!packageDir) return pack;
+  const factory = parsePack(packageDir, templateDir, `${FACTORY_PACKAGE_DIR}/`);
+  const names = new Set(pack.workflows.map((w) => w.name));
+  for (const { name } of factory.workflows) {
+    if (names.has(name)) throw new Error(`two workflows are named ${name}`);
+  }
+  return {
+    ...pack,
+    packageCommit: commit(
+      join(packageDir, 'FACTORY_COMMIT'),
+      join(dirname(packageDir), 'FACTORY_COMMIT'),
+    ),
+    workflows: [...pack.workflows, ...factory.workflows],
+    commands: [...pack.commands, ...factory.commands],
+    sharedDocs: [...pack.sharedDocs, ...factory.sharedDocs],
+    scripts: [...pack.scripts, ...factory.scripts],
+  };
 }

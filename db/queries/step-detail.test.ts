@@ -316,6 +316,25 @@ describe('step screens of included blocks on the seed', () => {
     );
   });
 
+  test("the queue factory's current version opens factory-app-check check with its prompt", async () => {
+    const steps = (await db.query(sql('step-detail'), [
+      'queue-factory',
+      '',
+    ])) as unknown as StepRow[];
+    const check = findStep(steps, 'factory-app-check', 'check');
+    expect(check?.command_file).toBe('.archon/workflows/factory/app-check/commands/check.md');
+    const parts = (await db.query(sql('step-prompt'), [
+      'queue-factory',
+      'factory-app-check',
+      'check',
+      '',
+    ])) as { path: string; part: number; chunk: string }[];
+    const fixture = join(REPO_ROOT, 'fixtures/pack/queue/factory/app-check/commands/check.md');
+    expect(joinParts(parts, (row) => row.path).get(check?.command_file ?? '')).toBe(
+      readFileSync(fixture, 'utf8').replaceAll('\r\n', '\n'),
+    );
+  });
+
   test('an older pin opens the step as it was: V1 has briefs and its own review prompt', async () => {
     const V1 = '8e3e1cefaf1e1b7955789d6a43a81b6c2dbd7082';
     const V2 = '5ffd60c6c6e591487f2fbb5ec67ccc8fc55ca915';

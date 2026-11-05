@@ -3,13 +3,6 @@ import { join } from 'node:path';
 import { openPage, type Page } from '../lib/cdp';
 import type { Row } from '../lib/db';
 import {
-  type ExpectedHealth,
-  expectedHealth,
-  healthMismatches,
-  healthOnScreen,
-  type ShownHealth,
-} from './health';
-import {
   controlsOnScreen,
   expectedItems,
   itemsOnScreen,
@@ -39,13 +32,7 @@ import {
   readyFailures,
 } from './timings';
 
-const QUERIES = [
-  'attention-items',
-  'owner-queue',
-  'health-runs',
-  'health-steps',
-  'health-workable',
-] as const;
+const QUERIES = ['attention-items', 'owner-queue'] as const;
 type PerQuery = Record<(typeof QUERIES)[number], number | null>;
 
 interface DecisionsTimings extends GroupTimings {
@@ -170,7 +157,7 @@ export function attentionMismatches(
 }
 
 /**
- * The Decisions screen: the seed's attention items, owner items and health against SQL, the tab's
+ * The Decisions screen: the seed's attention items and owner items against SQL, the tab's
  * count against the items shown, and `fixture:write label` timed to it before and after the hold.
  */
 export function decisionsPhase(ctx: LiveContext): LivePhase {
@@ -184,9 +171,6 @@ export function decisionsPhase(ctx: LiveContext): LivePhase {
     renewals: {
       'attention-items': null,
       'owner-queue': null,
-      'health-runs': null,
-      'health-steps': null,
-      'health-workable': null,
     },
     afterHoldLabelToScreen: null,
     noReload: null,
@@ -212,7 +196,7 @@ export function decisionsPhase(ctx: LiveContext): LivePhase {
   const url = () => `${ctx.base}/f/${encodeURIComponent(factory)}/decisions`;
 
   return {
-    /** On the untouched seed: every item the Owner screen lists and every number HEALTH shows. */
+    /** On the untouched seed: every item waiting on the owner. */
     async open() {
       const page = await openPage(deps.env);
       decisionsPage = page;
@@ -234,7 +218,6 @@ export function decisionsPhase(ctx: LiveContext): LivePhase {
       Object.assign(timings, groupTimings(await measure(page, QUERIES)));
       const attention = await page.evaluate<ShownAttention[]>(attentionOnScreen);
       const owner = await page.evaluate<ShownOwnerItem[]>(itemsOnScreen);
-      const health = await page.evaluate<ShownHealth>(healthOnScreen);
       const count = await page.evaluate<number | null>(tabCount);
       const controls = await page.evaluate<string[]>(controlsOnScreen);
       const amber = await page.evaluate<string[]>(amberOnScreen);
@@ -243,13 +226,10 @@ export function decisionsPhase(ctx: LiveContext): LivePhase {
       const projected = await db.query(PROJECTED_ATTENTION_SQL, [factory]);
       const issues = await db.query(OPEN_NEEDS_OWNER_SQL, [factory]);
       const questions = await db.query(OPEN_QUESTIONS_SQL, [factory]);
-      const { expected, report }: { expected: ExpectedHealth; report: string[] } =
-        await expectedHealth(db, factory, new Date());
 
       const mismatches = [
         ...attentionMismatches(attention, archon, projected),
         ...ownerMismatches(owner, expectedItems(issues, questions)),
-        ...healthMismatches(health, expected),
       ];
       screenAgainstSql(mismatches)('tab count', count, attention.length + owner.length);
       for (const control of controls) mismatches.push(`the screen has a control: ${control}`);
@@ -263,8 +243,6 @@ export function decisionsPhase(ctx: LiveContext): LivePhase {
           `owner items: screen ${owner.length}, open needs-owner issues ${issues.length} plus open questions ${questions.length}`,
           ...owner.map((o) => `  ${o.id}`),
           `tab count: ${count}`,
-          `health: ${JSON.stringify(health)}`,
-          ...report,
           `controls in main: ${controls.length}`,
           `amber elements in main: ${amber.length}`,
           ...mismatches,

@@ -9,7 +9,7 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { type PackVersion, parsePack, type Step } from '../../parsers/pack';
+import { type PackVersion, parseVersion, type Step } from '../../parsers/pack';
 import { archRows } from '../arch-parse';
 import { insert, lit, type SqlRow } from './sql';
 
@@ -88,7 +88,10 @@ function applyEdit(sdlc: string, edit: Edit): void {
   );
 }
 
-/** V1, parsed from `fixtures/pack/` and `fixtures/factory-template/`, and V2, V1 with V2_EDITS. */
+/**
+ * V1, parsed from `fixtures/pack/sdlc`, the factory package `fixtures/pack/queue/factory` and
+ * `fixtures/factory-template/`, and V2, V1 with V2_EDITS. Both are keyed by the package's commit.
+ */
 export function parseVersions(repoRoot: string): { v1: PackVersion; v2: PackVersion } {
   const scratch = mkdtempSync(join(tmpdir(), 'mc-seed-'));
   try {
@@ -98,7 +101,11 @@ export function parseVersions(repoRoot: string): { v1: PackVersion; v2: PackVers
       copyLf(join(repoRoot, 'fixtures', 'factory-template'), join(dir, 'factory-template'));
       const sdlc = join(dir, 'pack', 'sdlc');
       if (edit) for (const change of V2_EDITS) applyEdit(sdlc, change);
-      return parsePack(sdlc, join(dir, 'factory-template'));
+      return parseVersion(
+        sdlc,
+        join(dir, 'pack', 'queue', 'factory'),
+        join(dir, 'factory-template'),
+      );
     };
     return { v1: parse('v1', false), v2: parse('v2', true) };
   } finally {
@@ -124,6 +131,7 @@ function steps(workflow: string, all: Step[], parent: string | null, out: SqlRow
       depends_on: step.dependsOn,
       trigger_rule: step.triggerRule,
       include: step.include,
+      child_workflow: step.childWorkflow,
       command: step.command,
       command_file: step.commandFile,
       script: step.script,
