@@ -29,8 +29,15 @@ export interface Browser {
 /** Reads DevToolsActivePort; throws as readFileSync does while the file is not written yet. */
 export type ReadPort = (path: string) => string;
 
+/** Deletes the browser's temporary profile; a failure that outlasts the retries is only a warning. */
+export type RemoveProfile = (path: string, options: { recursive: true; force: true }) => void;
+
 /** `portTimeoutMs` is how long to wait for the DevTools port (45 s by default). */
-export function launchBrowser(readPort?: ReadPort, portTimeoutMs?: number): Promise<Browser>;
-export function probe(url: string, readPort?: ReadPort): Promise<Report>;
+export function launchBrowser(
+  readPort?: ReadPort,
+  portTimeoutMs?: number,
+  remove?: RemoveProfile,
+): Promise<Browser>;
+export function probe(url: string, readPort?: ReadPort, remove?: RemoveProfile): Promise<Report>;
 
 export const PORT_FILE_NOT_WRITTEN_YET: ReadonlySet<string>;
