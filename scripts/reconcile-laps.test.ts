@@ -901,11 +901,18 @@ test('the run trigger and PROJECTED_RUN follow every metadata key the lap functi
       before: { ...open },
       after: { ...open, source_release: { nodeId: 'ask', releasedAt: '2026-10-31T00:01:00.000Z' } },
     },
+    workflow_source: {
+      status: 'running',
+      before: { workflow_source: { digest: 'sha256:a' } },
+      after: { workflow_source: { digest: 'sha256:b' } },
+    },
   };
-  expect(Object.keys(mutations).sort()).toEqual(read.filter((key) => key !== 'workflow_source'));
+  expect(Object.keys(mutations).sort()).toEqual(read);
   const projected = async (id: unknown) => ({
     lap: (
-      await db.query('SELECT issue_number, attention_open FROM mc.laps WHERE run_id = $1', [id])
+      await db.query('SELECT digest, issue_number, attention_open FROM mc.laps WHERE run_id = $1', [
+        id,
+      ])
     )[0],
     run: (await db.query(PROJECTED_RUN, [id]))[0]?.run,
   });
