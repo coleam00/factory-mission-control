@@ -1,29 +1,23 @@
-import { afterAll, beforeAll, expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
-import { migrationFiles, testDb } from "../../db/test-db";
-import { REPO_ROOT } from "../lib/cli";
-import type { Db } from "../lib/db";
-import { runMigrations } from "../migrate";
-import {
-  buildSeed,
-  QUEUE_FACTORY,
-  SECOND_FACTORY,
-  SEED_CODEBASE,
-} from "./seed";
-import { markerHits, minimums, scorecard, tableCounts } from "./seed-report";
-import { writeRow } from "./write";
+import { afterAll, beforeAll, expect, test } from 'bun:test';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { migrationFiles, testDb } from '../../db/test-db';
+import { REPO_ROOT } from '../lib/cli';
+import type { Db } from '../lib/db';
+import { runMigrations } from '../migrate';
+import { buildSeed, QUEUE_FACTORY, SECOND_FACTORY, SEED_CODEBASE } from './seed';
+import { markerHits, minimums, scorecard, tableCounts } from './seed-report';
+import { writeRow } from './write';
 
-const fixture = (name: string) =>
-  readFileSync(join(REPO_ROOT, "fixtures", name), "utf8");
+const fixture = (name: string) => readFileSync(join(REPO_ROOT, 'fixtures', name), 'utf8');
 
-let seed = "";
+let seed = '';
 let db: Db;
 
 beforeAll(async () => {
   seed = buildSeed(REPO_ROOT);
   db = testDb();
-  await db.query(fixture("archon-schema.sql"));
+  await db.query(fixture('archon-schema.sql'));
   await db.query(`WITH r AS (
     INSERT INTO public.remote_agent_workflow_runs (workflow_name, user_message)
     VALUES ('fence-proof', 'inherited non-lap') RETURNING id)
@@ -31,29 +25,25 @@ beforeAll(async () => {
     SELECT r.id, 'node_completed', step, '{}'::jsonb FROM r CROSS JOIN
       (VALUES ('builder'), ('verify')) AS steps(step)`);
   await runMigrations({ files: migrationFiles, db });
-  await db.transaction((tx) =>
-    tx.query(fixture("seed.sql")).then(() => undefined),
-  );
+  await db.transaction((tx) => tx.query(fixture('seed.sql')).then(() => undefined));
 }, 60_000);
 afterAll(() => db.close());
 
-test("fixtures/seed.sql is what `bun run fixture:seed` writes", () => {
+test('fixtures/seed.sql is what `bun run fixture:seed` writes', () => {
   // A mismatch means the generator, the pack or a parser changed: run `bun run fixture:seed`.
-  expect(seed === fixture("seed.sql")).toBe(true);
+  expect(seed === fixture('seed.sql')).toBe(true);
 });
 
-test("the scorecard SQL on the seed is exactly fixtures/expected-scorecard.json", async () => {
-  expect(await scorecard(db, REPO_ROOT)).toEqual(
-    JSON.parse(fixture("expected-scorecard.json")),
-  );
+test('the scorecard SQL on the seed is exactly fixtures/expected-scorecard.json', async () => {
+  expect(await scorecard(db, REPO_ROOT)).toEqual(JSON.parse(fixture('expected-scorecard.json')));
 });
 
-test("the seed meets every minimum of the outcome list", async () => {
+test('the seed meets every minimum of the outcome list', async () => {
   const short = (await minimums(db)).filter((m) => m.value < m.min);
   expect(short).toEqual([]);
 });
 
-test("every dashboard table has a row", async () => {
+test('every dashboard table has a row', async () => {
   const empty = (await tableCounts(db)).filter((t) => t.rows < 1);
   expect(empty).toEqual([]);
 });
@@ -64,14 +54,14 @@ test("holdout text is in Archon's events and in no dashboard row", async () => {
   expect(hits.archonEvents).toBeGreaterThan(0);
 });
 
-const ROLLED_BACK = new Error("rolled back");
+const ROLLED_BACK = new Error('rolled back');
 
-test.each(["label", "comment", "issue", "pin", "verdict", "decision"] as const)(
-  "fixture:write %s adds one row to a seeded branch",
+test.each(['label', 'comment', 'issue', 'pin', 'verdict', 'decision'] as const)(
+  'fixture:write %s adds one row to a seeded branch',
   async (kind) => {
     // writeRow throws unless its table gained exactly one row; the rollback keeps the seed as loaded.
     const written = db.transaction(async (tx) => {
-      await writeRow(tx, kind, new Date("2026-10-25T08:00:00Z"));
+      await writeRow(tx, kind, new Date('2026-10-25T08:00:00Z'));
       throw ROLLED_BACK;
     });
     await expect(written).rejects.toBe(ROLLED_BACK);
@@ -80,7 +70,7 @@ test.each(["label", "comment", "issue", "pin", "verdict", "decision"] as const)(
 
 // The shapes the timeline, architecture-diff and stuck-step panels need, which no count implies.
 
-test("V1 pins every trailer, V2 only a measure, V3 none", async () => {
+test('V1 pins every trailer, V2 only a measure, V3 none', async () => {
   const pins = await db.query(
     `SELECT p.hypothesis IS NOT NULL AS hypothesis, p.measure IS NOT NULL AS measure,
        EXISTS (SELECT 1 FROM mc.verdicts v WHERE v.pin = left(p.sha, 8)) AS verdict
@@ -120,27 +110,27 @@ test("V2's architecture is V1's with one step added, one removed, one prompt and
      ORDER BY 1, 2`,
   );
   expect(diff).toEqual([
-    { change: "added", name: "tally" },
-    { change: "prompt", name: "loop/commands/loop-review.md" },
-    { change: "removed", name: "briefs" },
-    { change: "subagent", name: "holdout-writer" },
+    { change: 'added', name: 'tally' },
+    { change: 'prompt', name: 'loop/commands/loop-review.md' },
+    { change: 'removed', name: 'briefs' },
+    { change: 'subagent', name: 'holdout-writer' },
   ]);
 });
 
-test("the projection trigger records the string structured_output once, and the seed adds no copy", async () => {
+test('the projection trigger records the string structured_output once, and the seed adds no copy', async () => {
   const errors = await db.query(
-    "SELECT event_id, sqlstate, message FROM mc.projection_errors ORDER BY id",
+    'SELECT event_id, sqlstate, message FROM mc.projection_errors ORDER BY id',
   );
   expect(errors).toEqual([
     {
-      event_id: "5eedeeee-0000-4000-8000-000000000267",
-      sqlstate: "22000",
-      message: "structured_output is a jsonb string, not an object",
+      event_id: '5eedeeee-0000-4000-8000-000000000267',
+      sqlstate: '22000',
+      message: 'structured_output is a jsonb string, not an object',
     },
   ]);
 });
 
-test("one running lap has been on its step for over a day", async () => {
+test('one running lap has been on its step for over a day', async () => {
   const [row] = await db.query(
     `SELECT count(*)::int AS n FROM mc.laps l
      JOIN mc.lap_steps s ON s.run_id = l.run_id AND s.status = 'running'
@@ -151,44 +141,35 @@ test("one running lap has been on its step for over a day", async () => {
 });
 
 test("the seed holds a second factory with one running lap, kept out of mission-control's numbers", async () => {
-  const strip = readFileSync(
-    join(REPO_ROOT, "db", "queries", "status-strip.sql"),
-    "utf8",
-  );
-  expect(await db.query("SELECT name FROM mc.factories ORDER BY name")).toEqual(
-    [
-      { name: "mission-control" },
-      { name: QUEUE_FACTORY.name },
-      { name: SECOND_FACTORY.name },
-    ],
-  );
+  const strip = readFileSync(join(REPO_ROOT, 'db', 'queries', 'status-strip.sql'), 'utf8');
+  expect(await db.query('SELECT name FROM mc.factories ORDER BY name')).toEqual([
+    { name: 'mission-control' },
+    { name: QUEUE_FACTORY.name },
+    { name: SECOND_FACTORY.name },
+  ]);
   expect(
     await db.query(
       `SELECT s.step_id, s.status FROM mc.laps l JOIN mc.lap_steps s USING (run_id)
         WHERE l.factory = $1 AND l.workflow_name = 'archon-loop' AND l.status = 'running'`,
       [SECOND_FACTORY.name],
     ),
-  ).toEqual([{ step_id: "claim", status: "running" }]);
-  expect(await db.query(strip, [SECOND_FACTORY.name])).toEqual([
-    { running: 1 },
-  ]);
+  ).toEqual([{ step_id: 'claim', status: 'running' }]);
+  expect(await db.query(strip, [SECOND_FACTORY.name])).toEqual([{ running: 1 }]);
   const [own] = await db.query(
     `SELECT count(*)::int AS running FROM mc.laps l
       JOIN remote_agent_workflow_runs r ON r.id = l.run_id
      WHERE r.codebase_id = $1 AND l.workflow_name = 'archon-loop' AND l.status = 'running'`,
     [SEED_CODEBASE],
   );
-  expect(await db.query(strip, ["mission-control"])).toEqual([own]);
+  expect(await db.query(strip, ['mission-control'])).toEqual([own]);
 });
 
-test("the seed holds a queue factory: three running build-queue laps and an intake lap by number input, one finished scheduled build-queue lap, one waiting, one merged", async () => {
-  expect(await db.query("SELECT name FROM mc.factories ORDER BY name")).toEqual(
-    [
-      { name: "mission-control" },
-      { name: QUEUE_FACTORY.name },
-      { name: SECOND_FACTORY.name },
-    ],
-  );
+test('the seed holds a queue factory: three running build-queue laps and an intake lap by number input, one finished scheduled build-queue lap, one waiting, one merged', async () => {
+  expect(await db.query('SELECT name FROM mc.factories ORDER BY name')).toEqual([
+    { name: 'mission-control' },
+    { name: QUEUE_FACTORY.name },
+    { name: SECOND_FACTORY.name },
+  ]);
   expect(
     await db.query(
       `SELECT workflow_name, status, issue_number, attention_open FROM mc.laps
@@ -197,44 +178,44 @@ test("the seed holds a queue factory: three running build-queue laps and an inta
     ),
   ).toEqual([
     {
-      workflow_name: "archon-build-queue",
-      status: "completed",
+      workflow_name: 'archon-build-queue',
+      status: 'completed',
       issue_number: null,
       attention_open: false,
     },
     {
-      workflow_name: "archon-build-queue",
-      status: "running",
+      workflow_name: 'archon-build-queue',
+      status: 'running',
       issue_number: 401,
       attention_open: false,
     },
     {
-      workflow_name: "archon-build-queue",
-      status: "running",
+      workflow_name: 'archon-build-queue',
+      status: 'running',
       issue_number: 402,
       attention_open: false,
     },
     {
-      workflow_name: "archon-build-queue",
-      status: "running",
+      workflow_name: 'archon-build-queue',
+      status: 'running',
       issue_number: 403,
       attention_open: false,
     },
     {
-      workflow_name: "archon-intake",
-      status: "running",
+      workflow_name: 'archon-intake',
+      status: 'running',
       issue_number: 401,
       attention_open: false,
     },
     {
-      workflow_name: "archon-merge-queue",
-      status: "completed",
+      workflow_name: 'archon-merge-queue',
+      status: 'completed',
       issue_number: null,
       attention_open: false,
     },
     {
-      workflow_name: "archon-merge-queue",
-      status: "paused",
+      workflow_name: 'archon-merge-queue',
+      status: 'paused',
       issue_number: null,
       attention_open: true,
     },
