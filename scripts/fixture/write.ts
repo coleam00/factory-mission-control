@@ -186,9 +186,10 @@ type RowKind = {
   needs?: string;
 };
 
-/** The issue `label` labels next: the factory's highest-numbered open one without needs-owner. */
+/** The issue `label` labels next: the factory's highest-numbered open work item without needs-owner. */
 export const NEXT_TO_LABEL = `SELECT i.factory, i.number FROM mc.issues i
-  WHERE i.factory = $1::text AND i.state = 'open' AND NOT EXISTS (SELECT 1 FROM mc.issue_labels l
+  WHERE i.factory = $1::text AND i.state = 'open'
+    AND i.title NOT IN ('Owner decisions needed', 'Loop metrics') AND NOT EXISTS (SELECT 1 FROM mc.issue_labels l
     WHERE l.factory = i.factory AND l.issue_number = i.number AND l.label = 'needs-owner')
   ORDER BY i.number DESC LIMIT 1`;
 

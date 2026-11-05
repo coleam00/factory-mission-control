@@ -16,7 +16,9 @@ SELECT
 FROM mc.issue_labels wo
 JOIN mc.issues i ON i.factory = wo.factory AND i.number = wo.issue_number
 WHERE wo.factory = $1 AND wo.label LIKE 'work-order:%' AND length(wo.label) > 11
--- One row per work order: the distinct `work-order:<name>` labels on this factory's issues.
+  AND i.title NOT IN ('Owner decisions needed', 'Loop metrics')
+-- One row per work order: the distinct `work-order:<name>` labels on this factory's issues, but
+-- the manager's two tracking issues, which board.sql leaves off the board too.
 -- total_count is the order's issues, merged_count those a merged pull request closed, and
 -- lands_on the `lands-on:<target>` label its issues carry, the first by name when they differ.
 -- last_closed_at is when its latest issue closed, which is when a finished order drops off.

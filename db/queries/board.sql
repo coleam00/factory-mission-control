@@ -30,7 +30,7 @@ SELECT 'item' AS kind, i.number, i.title, i.url, i.state, i.closed_at,
   NULL::text AS repository, NULL::text AS console, NULL::integer AS merged_total
 FROM items i
 LEFT JOIN LATERAL (
-  SELECT coalesce(array_agg(substring(lb.label FROM 12) ORDER BY 1), '{}'::text[]) AS names FROM mc.issue_labels lb
+  SELECT coalesce(array_agg(substring(lb.label FROM 12) ORDER BY lb.label), '{}'::text[]) AS names FROM mc.issue_labels lb
   WHERE lb.factory = i.factory AND lb.issue_number = i.number
     AND lb.label LIKE 'work-order:%' AND length(lb.label) > 11
 ) wo ON true

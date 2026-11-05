@@ -172,6 +172,24 @@ test('the order filter narrows the columns, not the panels or the count outside 
   expect(v.notInOrder).toBe(1);
 });
 
+test('an item in two work orders shows under each, with a chip for each', () => {
+  const v = view(
+    {
+      board: [item(1, { work_orders: ['screens', 'other'] })],
+      workable: [workable(1)],
+      orders: [ORDER(), ORDER({ name: 'other' })],
+    },
+    'other',
+  );
+  const [one] = column(v, 'queued') ? (v.columns.find((c) => c.id === 'queued')?.items ?? []) : [];
+  expect(one?.number).toBe(1);
+  expect(one?.chips.filter((c) => c.kind === 'order').map((c) => c.text)).toEqual([
+    'screens',
+    'other',
+  ]);
+  expect(v.notInOrder).toBe(0);
+});
+
 test('a work order drops off 7 days after its last issue closes', () => {
   const finished = (days: number) =>
     ORDER({ open_count: 0, merged_count: 4, last_closed_at: daysAgo(days) });

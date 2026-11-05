@@ -25,7 +25,7 @@ interface Shown {
   columns: [id: string, count: number, numbers: number[]][];
   orders: [name: string, text: string][];
   notInOrder: string;
-  cardOrders: string[];
+  cardOrders: string[][];
 }
 
 const SHOWN = `(() => {
@@ -42,7 +42,7 @@ const SHOWN = `(() => {
     ]),
     notInOrder: text(document.querySelector('[data-not-in-order]')),
     cardOrders: [...document.querySelectorAll('[data-work-item]')].map((a) =>
-      text(a.querySelector('[data-chip="order"]')),
+      [...a.querySelectorAll('[data-chip="order"]')].map(text),
     ),
   };
 })()`;
@@ -141,9 +141,11 @@ export function boardPhase(ctx: LiveContext): LivePhase {
           failures.push(`board ?order=${DEMO}: the panel's aria-pressed is ${pressed}`);
         }
         failures.push(...(await mismatches(page, FACTORY, DEMO)));
-        for (const text of (await page.evaluate<Shown>(SHOWN)).cardOrders) {
-          if (text !== DEMO)
-            failures.push(`board ?order=${DEMO} shows a card of work order "${text}"`);
+        const { cardOrders } = await page.evaluate<Shown>(SHOWN);
+        if (cardOrders.length === 0) failures.push(`board ?order=${DEMO} shows no card`);
+        for (const names of cardOrders) {
+          if (!names.includes(DEMO))
+            failures.push(`board ?order=${DEMO} shows a card of work orders "${names.join(', ')}"`);
         }
         await page.evaluate(`document.querySelector('[data-work-order="${DEMO}"]').click()`);
         const cleared = await page.evaluate<boolean>(

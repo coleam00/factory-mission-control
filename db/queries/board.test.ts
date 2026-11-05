@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, expect, test } from 'bun:test';
+import { join } from 'node:path';
 import { type BoardRow, boardView } from '../../app/lib/board';
 import type { HealthWorkableRow } from '../../app/lib/health';
 import type { OwnerQueueRow } from '../../app/lib/owner-queue';
@@ -108,6 +109,43 @@ test('each work order panel counts the board rows that name it', async () => {
   expect(orders.length).toBeGreaterThan(0);
   for (const o of orders)
     expect(rows.filter((r) => r.work_orders?.includes(o.name)).length).toBe(o.total_count);
+});
+
+test('an item in two work orders lists both by name, and the manager tracking issues are in neither query', async () => {
+  await db.query(
+    `INSERT INTO mc.issue_labels (factory, issue_number, label, labeled_at)
+     VALUES ('mission-control', 11, 'work-order:zz', now()), ('mission-control', 11, 'work-order:aa', now())`,
+  );
+  // A computed path keeps tsc out of the pack, whose `.ts` import extensions this config refuses.
+  const { MANAGER_TITLES } = await import(
+    join(import.meta.dir, '..', '..', 'fixtures', 'pack', 'sdlc', '.shared', 'workable.ts')
+  );
+  const titles: string[] = [...MANAGER_TITLES];
+  for (const [n, title] of titles.entries()) {
+    await db.query(
+      `INSERT INTO mc.issues (factory, number, title, state, url, created_at, updated_at)
+       VALUES ('mission-control', ${900 + n}, $1, 'open', 'u', now(), now())`,
+      [title],
+    );
+    await db.query(
+      `INSERT INTO mc.issue_labels (factory, issue_number, label, labeled_at)
+       VALUES ('mission-control', ${900 + n}, 'work-order:aa', now())`,
+    );
+  }
+  try {
+    const rows = await run<BoardRow>('board', 'mission-control');
+    expect(rows.find((r) => r.number === 11)?.work_orders).toEqual(['aa', 'screens', 'zz']);
+    expect(rows.filter((r) => (r.number ?? 0) >= 900)).toEqual([]);
+    const orders = await run<WorkOrderRow>('work-orders', 'mission-control');
+    expect(orders.find((o) => o.name === 'aa')?.total_count).toBe(1);
+    for (const o of orders)
+      expect(rows.filter((r) => r.work_orders?.includes(o.name)).length).toBe(o.total_count);
+  } finally {
+    await db.query(
+      `DELETE FROM mc.issue_labels WHERE factory = 'mission-control' AND (label IN ('work-order:zz', 'work-order:aa'))`,
+    );
+    await db.query(`DELETE FROM mc.issues WHERE factory = 'mission-control' AND number >= 900`);
+  }
 });
 
 test('the factory row counts only the work items a merged pull request closed', async () => {
