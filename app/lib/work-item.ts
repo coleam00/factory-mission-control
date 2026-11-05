@@ -40,6 +40,9 @@ export interface WorkItemRow {
   /** The old loop's review outcome, or the build queue's latest review action. */
   review: string | null;
   review_at: Date | null;
+  /** A build-queue round's re-review action: the stored review result is its first verdict. */
+  rereview: string | null;
+  rereview_at: Date | null;
   check_overall: string | null;
   check_at: Date | null;
   /** The old loop's land outcome, or the build queue's apply decision. */
@@ -57,6 +60,8 @@ export interface WorkItemRow {
   decisions: SweepDecision[] | null;
   landed: number[] | null;
   asked_pr: string | null;
+  /** The sweep's record step (the read-back of merges): null until it starts. */
+  record_status: string | null;
   /** The item row. */
   number: number | null;
   title: string | null;
@@ -125,6 +130,8 @@ const QUEUE_ENDING: Record<string, { text: string; tone: Tone }> = {
 
 const LOOP_REVIEW: Record<string, { text: string; tone: Tone }> = {
   merge: { text: 'ready to merge', tone: 'done' },
+  approved: { text: 'approved', tone: 'done' },
+  nothing: { text: 'nothing to do', tone: 'plain' },
   'sent-back': { text: 'sent back', tone: 'done' },
   'needs-owner': { text: 'needs you', tone: 'owner' },
 };
@@ -261,7 +268,10 @@ function roundEvent(row: WorkItemRow, n: number, at: Date, base: Base): Timeline
     .flat()
     .filter(Boolean);
   if (row.workflow === 'archon-loop') {
-    const nothing = row.route === null && row.review === null && row.decision === null;
+    const nothing =
+      row.route === null &&
+      (row.review === null || row.review === 'nothing') &&
+      row.decision === null;
     return {
       ...base,
       at,
@@ -325,9 +335,12 @@ function sweepDecision(row: WorkItemRow, base: Base): TimelineEvent[] {
   const reason = entry.reason?.trim() ? entry.reason : null;
   switch (entry.action) {
     case 'merged':
-      return (row.landed ?? []).includes(row.pr)
-        ? [{ ...base, at, tone: 'done', text: 'Merged', detail: reason }]
-        : [{ ...base, at, tone: 'failed', text: `The merge did not land. ${NO_REASON}` }];
+      if ((row.landed ?? []).includes(row.pr))
+        return [{ ...base, at, tone: 'done', text: 'Merged', detail: reason }];
+      // The read-back has not finished, so the merge may still land.
+      if (row.record_status !== 'completed' && row.record_status !== 'failed')
+        return [{ ...base, at, tone: 'running', text: 'Merging', detail: reason }];
+      return [{ ...base, at, tone: 'failed', text: `The merge did not land. ${NO_REASON}` }];
     case 'return':
       return [
         {
@@ -404,14 +417,19 @@ export function workItemTimeline(rows: readonly WorkItemRow[], factory: string):
     if (row.workflow === 'archon-loop') {
       events.push(...checkEvent(row, lines, base('check')), ...loopDecision(row, base('decision')));
     }
-    if (row.review !== null && row.review_at !== null) {
-      const verdict = (row.workflow === 'archon-loop' ? LOOP_REVIEW : QUEUE_REVIEW)[row.review];
-      if (verdict)
+    const verdicts = row.workflow === 'archon-loop' ? LOOP_REVIEW : QUEUE_REVIEW;
+    for (const [name, outcome, reviewedAt] of [
+      ['Review', row.review, row.review_at],
+      ['Re-review', row.rereview, row.rereview_at],
+    ] as const) {
+      const verdict = outcome === null ? undefined : verdicts[outcome];
+      if (verdict && reviewedAt !== null)
         events.push({
           ...base('review'),
-          at: row.review_at,
+          key: `${base('review').key}-${name}`,
+          at: reviewedAt,
           tone: verdict.tone,
-          text: `Review: ${verdict.text}`,
+          text: `${name}: ${verdict.text}`,
         });
     }
     events.push(...answerEvent(row, base('answer')));

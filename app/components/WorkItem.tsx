@@ -148,6 +148,14 @@ export function WorkItemBody({
           <Row key={event.key} event={event} before={events[i - 1]?.at ?? null} />
         ))}
       </ol>
+      <p
+        data-timeline-gap
+        className="border-t border-border px-4 py-2 text-[12px] text-text-secondary"
+      >
+        This timeline does not hold app check lines for build-queue rounds, review verdicts past
+        each round's review and re-review, or owner answers on old-loop runs yet. A gap here does
+        not mean nothing happened.
+      </p>
     </div>
   );
 }

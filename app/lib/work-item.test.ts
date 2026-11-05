@@ -23,6 +23,8 @@ const row = (over: Partial<WorkItemRow>): WorkItemRow => ({
   deliveries: null,
   review: null,
   review_at: null,
+  rereview: null,
+  rereview_at: null,
   check_overall: null,
   check_at: null,
   decision: null,
@@ -37,6 +39,7 @@ const row = (over: Partial<WorkItemRow>): WorkItemRow => ({
   decisions: null,
   landed: null,
   asked_pr: null,
+  record_status: null,
   number: null,
   title: null,
   url: null,
@@ -104,12 +107,65 @@ test('a sweep that decided on another pull request adds nothing', () => {
   expect(texts(rows)).toEqual(['Filed']);
 });
 
-test('a merged decision the record step did not read back reads as not landed', () => {
+test('a merged decision reads as landed, merging, or not landed by the record step', () => {
   const decisions = [{ number: 410, action: 'merged', reason: 'ok' }];
-  expect(texts([item, sweep({ decisions, landed: [410] })])).toContain('Merged');
-  expect(texts([item, sweep({ decisions, landed: [] })])).toContain(
-    `The merge did not land. ${NO_REASON}`,
+  expect(texts([item, sweep({ decisions, landed: [410], record_status: 'completed' })])).toContain(
+    'Merged',
   );
+  for (const record_status of [null, 'running'])
+    expect(texts([item, sweep({ decisions, landed: null, record_status })])).toContain('Merging');
+  for (const record_status of ['completed', 'failed'])
+    expect(texts([item, sweep({ decisions, landed: [], record_status })])).toContain(
+      `The merge did not land. ${NO_REASON}`,
+    );
+});
+
+test('an old-loop review of approved or nothing reads, and nothing is a round with nothing to do', () => {
+  const loop = (review: string) =>
+    row({ workflow: 'archon-loop', review, review_at: at('09:05'), started_at: at('09:00') });
+  expect(texts([item, loop('approved')])).toContain('Review: approved');
+  expect(texts([item, loop('nothing')])).toEqual([
+    'Filed',
+    'Round 1: nothing to do',
+    'Review: nothing to do',
+  ]);
+});
+
+test('a build-queue round shows its review and its re-review verdicts', () => {
+  const rows = [
+    item,
+    row({ review: 'correct', review_at: at('09:03'), rereview: 'none', rereview_at: at('09:06') }),
+  ];
+  expect(texts(rows).slice(2)).toEqual(['Review: fixes requested', 'Re-review: Ready']);
+});
+
+test('a failed round names its card and error', () => {
+  const failed = row({
+    status: 'failed',
+    failed_step: 'ship__deliver__rounds.review__policy',
+    error: 'boom',
+  });
+  expect(texts([item, failed])).toContain('Round 1 failed in Review: boom');
+});
+
+test('the app check reads its tally by kind and verdict, with a tone from the overall', () => {
+  const lines = ['a', 'b'].map(() =>
+    row({ kind: 'line', line_kind: 'spec', line_verdict: 'PASS', workflow: null }),
+  );
+  const loop = (check_overall: string) =>
+    row({ workflow: 'archon-loop', check_overall, check_at: at('09:05') });
+  const events = (overall: string) =>
+    workItemTimeline([item, loop(overall), ...lines], 'f').filter((e) => e.kind === 'check');
+  expect(events('PASS')[0]).toMatchObject({ tone: 'done', text: 'App check PASS: 2 spec PASS' });
+  expect(events('FAIL')[0]).toMatchObject({ tone: 'failed', text: 'App check FAIL: 2 spec PASS' });
+});
+
+test('an owner answer shows on the pull request it was asked about only', () => {
+  const answered = { answer: 'merge it', answer_summary: 'ok', answer_at: at('12:00') };
+  const mine = sweep({ decisions: [], asked_pr: '410', ...answered });
+  const other = sweep({ decisions: [], asked_pr: '999', ...answered });
+  expect(texts([item, mine])).toContain('You answered: merge it');
+  expect(texts([item, other])).toEqual(['Filed']);
 });
 
 test('old-loop rounds link to their lap page, every other run to the console', () => {

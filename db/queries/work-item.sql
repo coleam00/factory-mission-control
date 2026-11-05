@@ -29,12 +29,13 @@ SELECT 'item' AS kind, NULL::uuid AS run_id, NULL::text AS workflow, i.state AS 
   NULL::boolean AS waiting, NULL::float8 AS cost, NULL::text[] AS steps,
   NULL::text AS failed_step, NULL::text AS error, NULL::text AS route, NULL::text AS depth,
   NULL::jsonb AS labels, NULL::text AS deliveries, NULL::text AS review,
-  NULL::timestamptz AS review_at, NULL::text AS check_overall, NULL::timestamptz AS check_at,
+  NULL::timestamptz AS review_at, NULL::text AS rereview, NULL::timestamptz AS rereview_at,
+  NULL::text AS check_overall, NULL::timestamptz AS check_at,
   NULL::text AS decision, NULL::text AS reason, NULL::timestamptz AS decision_at,
   NULL::text AS answer, NULL::text AS answer_summary, NULL::timestamptz AS answer_at,
   NULL::text AS line_kind, NULL::text AS line_verdict,
   NULL::integer AS pr, NULL::jsonb AS decisions, NULL::jsonb AS landed, NULL::text AS asked_pr,
-  i.number, i.title, i.url, f.console
+  NULL::text AS record_status, i.number, i.title, i.url, f.console
 FROM mc.issues i
 JOIN mc.factories f ON f.name = i.factory
 WHERE i.factory = $1 AND i.number::text = $2
@@ -46,13 +47,13 @@ SELECT 'run', r.run_id, r.workflow_name, r.status, r.started_at, r.completed_at,
   pick.output ->> 'route', pick.output ->> 'depth', outcome.output -> 'labels',
   rnd.output ->> 'round',
   coalesce(rv.output ->> 'outcome', vr.output ->> 'action'),
-  coalesce(rv.completed_at, vr.completed_at),
+  coalesce(rv.completed_at, vr.completed_at), rr.output ->> 'action', rr.completed_at,
   chk.output ->> 'overall', chk.completed_at,
   coalesce(land.output ->> 'outcome', apply.output ->> 'decision'),
   coalesce(land.output ->> 'reason', answer.output ->> 'reason', route.output ->> 'reason'),
   coalesce(land.completed_at, apply.completed_at),
   ruling.output ->> 'decision', ruling.output ->> 'summary', ruling.completed_at,
-  NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL
+  NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL
 FROM runs r
 LEFT JOIN LATERAL (
   SELECT array_agg(ls.step_id ORDER BY ls.started_at DESC NULLS LAST, ls.step_id) AS steps
@@ -70,12 +71,10 @@ LEFT JOIN mc.lap_steps land ON land.run_id = r.run_id AND land.step_id = 'land'
 LEFT JOIN mc.lap_steps outcome ON outcome.run_id = r.run_id AND outcome.step_id = 'outcome'
   AND r.workflow_name = 'archon-intake'
 LEFT JOIN mc.lap_steps rnd ON rnd.run_id = r.run_id AND rnd.step_id = 'ship__deliver__rounds.round'
-LEFT JOIN LATERAL (
-  SELECT ls.output, ls.completed_at FROM mc.lap_steps ls
-  WHERE ls.run_id = r.run_id AND ls.status = 'completed'
-    AND ls.step_id IN ('ship__deliver__rounds.review__result', 'ship__deliver__rounds.rereview__result')
-  ORDER BY ls.completed_at DESC NULLS LAST, ls.step_id LIMIT 1
-) vr ON true
+LEFT JOIN mc.lap_steps vr ON vr.run_id = r.run_id AND vr.status = 'completed'
+  AND vr.step_id = 'ship__deliver__rounds.review__result'
+LEFT JOIN mc.lap_steps rr ON rr.run_id = r.run_id AND rr.status = 'completed'
+  AND rr.step_id = 'ship__deliver__rounds.rereview__result'
 LEFT JOIN mc.lap_steps route ON route.run_id = r.run_id AND route.step_id = 'route'
   AND r.workflow_name = 'archon-build-queue'
 LEFT JOIN mc.lap_steps answer ON answer.run_id = r.run_id AND answer.step_id = 'answer'
@@ -86,7 +85,7 @@ UNION ALL
 -- line's text, and never a holdout line (MISSION rule 3).
 SELECT 'line', a.run_id, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
   NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
-  a.kind, a.verdict, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL
+  NULL, NULL, a.kind, a.verdict, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL
 FROM runs r
 JOIN mc.app_check_lines a ON a.run_id = r.run_id
 WHERE a.kind <> 'holdout'
@@ -96,9 +95,9 @@ UNION ALL
 -- decision whose number is this pull request's, and drops a sweep that has none.
 SELECT 'sweep', l.run_id, l.workflow_name, l.status, l.started_at, l.completed_at, NULL,
   l.attention_open, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
-  NULL, sw.completed_at, ruling.output ->> 'decision', ruling.output ->> 'summary',
+  NULL, NULL, NULL, sw.completed_at, ruling.output ->> 'decision', ruling.output ->> 'summary',
   ruling.completed_at, NULL, NULL, p.pr_number, sw.output -> 'decisions',
-  rec.output -> 'merged', rec.output -> 'asked' -> 'pr' ->> 'number', NULL, NULL, NULL, NULL
+  rec.output -> 'merged', rec.output -> 'asked' -> 'pr' ->> 'number', rec.status, NULL, NULL, NULL, NULL
 FROM mc.pull_request_issues p
 JOIN mc.pull_requests pr ON pr.factory = p.factory AND pr.number = p.pr_number
 JOIN mc.laps l ON l.factory = p.factory
