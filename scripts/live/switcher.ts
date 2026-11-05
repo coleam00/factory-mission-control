@@ -44,7 +44,7 @@ const stripNames = (factory: string) =>
 const switcherNames = (factory: string) =>
   `document.querySelector('${SWITCHER} summary span:last-child')?.firstChild?.textContent === ${JSON.stringify(factory)}`;
 const RUNNING_SQL = `SELECT f.name, (SELECT count(*)::int FROM mc.laps l
-    WHERE l.factory = f.name AND l.workflow_name = 'archon-loop' AND l.status = 'running') AS running
+    WHERE l.factory = f.name AND l.status = 'running') AS running
   FROM mc.factories f ORDER BY f.name`;
 
 async function waitFor(page: Page, what: string, condition: string): Promise<void> {
@@ -206,7 +206,7 @@ async function checkSwitcher(ctx: LiveContext): Promise<void> {
       );
       const running = await db.query(
         `SELECT run_id::text AS run FROM mc.laps
-          WHERE factory = $1 AND workflow_name = 'archon-loop' AND status = 'running' ORDER BY 1`,
+          WHERE factory = $1 AND status = 'running' ORDER BY 1`,
         [second],
       );
       check(`${second}'s lanes`, lanes, running.map((r) => String(r.run)).sort());

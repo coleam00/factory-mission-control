@@ -5,7 +5,15 @@ import { join } from 'node:path';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { createMemoryRouter, RouterProvider, useParams } from 'react-router';
-import { appRoutes, factoryPath, type RouteModule, routePath, routesFromModules } from './routing';
+import {
+  appRoutes,
+  factoryPath,
+  factoryScreens,
+  REMOVED_SCREENS,
+  type RouteModule,
+  routePath,
+  routesFromModules,
+} from './routing';
 
 const scratch = mkdtempSync(join(tmpdir(), 'mc-routes-'));
 afterAll(() => rmSync(scratch, { recursive: true, force: true }));
@@ -56,7 +64,9 @@ test('a parameter route renders at its path and receives the parameter', () => {
     './routes/index.tsx': { default: () => null },
     './routes/f.$factory.probe.tsx': { default: Probe },
   });
-  expect(routes[0]?.children?.map((r) => r.path)).toEqual(['/', '/f/:factory/probe', '*']);
+  const paths = routes[0]?.children?.map((r) => r.path) ?? [];
+  expect(paths.slice(0, 2)).toEqual(['/', '/f/:factory/probe']);
+  expect(paths.at(-1)).toBe('*');
 
   const router = createMemoryRouter(routes, { initialEntries: ['/f/mission-control/probe'] });
   const html = renderToStaticMarkup(createElement(RouterProvider, { router }));
@@ -99,27 +109,24 @@ test("choosing a factory from a step's page stays on that step's page, at the sa
   );
 });
 
-test("choosing a factory from a scorecard keeps its versions; other screens drop the old factory's search", () => {
-  const screens = [
-    { path: 'diff', label: 'Diff' },
-    { path: 'scorecard', label: 'Scorecard' },
-    { path: 'versions', label: 'Versions' },
-  ];
-  const A = `sha256:${'a1'.repeat(32)}`;
-  const B = `sha256:${'b2'.repeat(32)}`;
-  const search = `?a=${encodeURIComponent(A)}&b=${encodeURIComponent(B)}`;
-  expect(factoryPath('/f/mission-control/scorecard', 'second-factory', screens, search)).toBe(
-    `/f/second-factory/scorecard${search}`,
+test("choosing a factory drops the old factory's search", () => {
+  const screens = [{ path: 'board', label: 'Board' }];
+  expect(factoryPath('/f/mission-control/board', 'second-factory', screens, '?order=demo')).toBe(
+    '/f/second-factory/board',
   );
-  expect(
-    factoryPath('/f/mission-control/scorecard', 'second-factory', screens, `?a=${A}&x=1&b=`),
-  ).toBe(`/f/second-factory/scorecard?a=${encodeURIComponent(A)}`);
-  expect(factoryPath('/f/mission-control/scorecard', 'second-factory', screens)).toBe(
-    '/f/second-factory/scorecard',
-  );
-  for (const screen of ['diff', 'versions']) {
-    expect(factoryPath(`/f/mission-control/${screen}`, 'second-factory', screens, search)).toBe(
-      `/f/second-factory/${screen}`,
-    );
+});
+
+test("a removed screen's address goes to the screen that replaced it, under the same factory", () => {
+  expect(REMOVED_SCREENS.owner).toBe('decisions');
+  expect(REMOVED_SCREENS.issues).toBe('board');
+  expect(REMOVED_SCREENS.scorecard).toBe('');
+  for (const [from, to] of Object.entries(REMOVED_SCREENS)) {
+    const routes = appRoutes({ './routes/index.tsx': { default: () => null } })[0]?.children ?? [];
+    expect(routes.some((r) => r.path === `/f/:factory/${from}`)).toBe(true);
+    expect(['', 'board', 'decisions']).toContain(to);
   }
+  const screens = factoryScreens(
+    routesFromModules({ './routes/f.$factory.board.tsx': { default: () => null } }),
+  );
+  expect(screens).toEqual([{ path: 'board', label: 'Board' }]);
 });

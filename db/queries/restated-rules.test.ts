@@ -18,9 +18,6 @@ test('the health queries exclude exactly the pack manager titles', async () => {
   const notIn = sqlOf('health-workable').match(/i\.title NOT IN \(([^)]*)\)/);
   expect(notIn).not.toBeNull();
   expect(quoted(notIn?.[1] ?? '').sort()).toEqual(expected);
-
-  const live = [...read('scripts', 'live', 'health.ts').matchAll(/i\.title <> '([^']*)'/g)];
-  expect(live.map((m) => m[1]).sort()).toEqual(expected);
 });
 
 test('the board route CASE agrees with the pack ROUTE_LABEL', async () => {

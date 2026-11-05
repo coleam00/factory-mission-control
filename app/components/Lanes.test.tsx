@@ -13,6 +13,8 @@ const RUN = '5eed0003-0000-4000-8000-00000000000a';
 
 const lane = (over: Partial<LaneRow>): LaneRow => ({
   run_id: RUN,
+  workflow_name: 'archon-loop',
+  console: 'https://console.example',
   started_at: new Date('2026-10-21T09:00:00Z'),
   issue_number: 11,
   issue_title: 'Show the scorecard',
@@ -134,4 +136,28 @@ test("a lane's row of loop steps checks what is done, pulses what runs, dims the
   expect(mark('build/ship')).toBe('running');
   expect(mark('subject')).toBe('not-reached');
   expect(mark('release')).toBe('not-reached');
+});
+
+test('a queue run says what it is and where it is, and links its console, not a lap page', () => {
+  const html = render(
+    <LaneList
+      rows={[
+        lane({
+          workflow_name: 'archon-build-queue',
+          route: null,
+          depth: null,
+          step_id: 'ship__deliver__rounds.review__seams',
+        }),
+      ]}
+      factory="alpha"
+      now={Date.parse('2026-10-21T09:05:00Z')}
+    />,
+  );
+  expect(html).toContain('Build');
+  expect(html).toContain('review · seams');
+  expect(html).toContain('#11');
+  expect(html).toContain(`https://console.example/console/r/${RUN}`);
+  expect(html).not.toContain(`/f/alpha/laps/${RUN}`);
+  expect(html).not.toContain('Route');
+  expect(html).not.toContain('data-loop-mark');
 });

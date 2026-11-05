@@ -11,7 +11,7 @@ describe('against the migrated schema', () => {
 
   afterAll(() => db.close());
 
-  test('factory-switcher lists every factory with its own running laps, $1 as the default', async () => {
+  test('factory-switcher lists every factory with its own running runs, $1 as the default', async () => {
     await db.query(`INSERT INTO mc.factories (name, repository, codebase, console) VALUES
       ('switch-a', 'o/a', 'o/a', 'http://localhost:3090'),
       ('switch-b', 'o/b', 'o/b', 'http://localhost:3090'),
@@ -25,7 +25,7 @@ describe('against the migrated schema', () => {
     const sql = queries.find(([name]) => name === 'factory-switcher')?.[1] as string;
     const rows = await db.query(`SELECT * FROM (${sql}) s ORDER BY factory`, ['switch-a']);
     expect(rows).toEqual([
-      { factory: 'switch-a', running: 1, is_default: true },
+      { factory: 'switch-a', running: 2, is_default: true },
       { factory: 'switch-b', running: 2, is_default: false },
       { factory: 'switch-c', running: 0, is_default: false },
     ]);
