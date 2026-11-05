@@ -40,3 +40,30 @@ export function mergeItems(items: string | null): { pr: number; issue: number }[
     return [];
   }
 }
+
+/**
+ * The sweep's actions, as the pinned merge queue declares them (`SWEEP_ACTIONS` in
+ * `fixtures/pack/queue/sdlc/.shared/merge.ts`); `app/map/restated-rules.test.ts` holds the copy
+ * to the pin.
+ */
+export const SWEEP_ACTIONS = ['merged', 'return', 'ask', 'wait'] as const;
+
+/**
+ * The pull requests a merge-queue run's `facts` output (`items`) claims, a maintainer's own pull
+ * request included; anything unparsable gives none.
+ */
+export function claimedPulls(items: string | null): number[] {
+  if (items === null) return [];
+  try {
+    const parsed: unknown = JSON.parse(items);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.flatMap((entry: unknown) => {
+      if (typeof entry !== 'object' || entry === null) return [];
+      const prNumber = ((entry as Record<string, unknown>).pr as { number?: unknown } | null)
+        ?.number;
+      return isPositiveInteger(prNumber) ? [prNumber] : [];
+    });
+  } catch {
+    return [];
+  }
+}

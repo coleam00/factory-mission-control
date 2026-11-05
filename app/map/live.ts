@@ -6,7 +6,7 @@
  * which the details strip's Right now lists (invariant 4). Pure, no React.
  */
 import type { HealthWorkableRow } from '../lib/health';
-import { mergedPulls } from '../lib/merge-queue';
+import { claimedPulls, mergedPulls, SWEEP_ACTIONS } from '../lib/merge-queue';
 import { pullUrl } from '../lib/one-lap';
 import type { OwnerQueueRow } from '../lib/owner-queue';
 import type { PanelState } from '../live/LivePanel';
@@ -225,7 +225,8 @@ const newestFirst = (a: MapRightNowRow, b: MapRightNowRow) =>
  * decision is listed as sent back, and an ask only when the record step raised it. Those two are
  * the sweep's decision: the record step may still park, wait on or skip the pull request. Only the
  * first decision per number counts, and a number the run's facts did not list is dropped, as the
- * record step's `decide()` does (`merge-queue/scripts/record.ts`). A waiting decision, or an ask
+ * record step's `decide()` does (`merge-queue/scripts/record.ts`; `app/map/restated-rules.test.ts`
+ * runs it against this, and holds `SWEEP_ACTIONS` to the pin). A waiting decision, or an ask
  * not raised, is not listed.
  */
 export function gateOutcomes(rows: readonly MapRightNowRow[]): GateOutcome[] {
@@ -235,11 +236,7 @@ export function gateOutcomes(rows: readonly MapRightNowRow[]): GateOutcome[] {
     .flatMap((row) => {
       const merged = new Set(mergedPulls(row.merged ?? '[]'));
       const asked = row.asked === null ? null : Number(row.asked);
-      const claimed = new Set(
-        jsonArray(row.claimed).map(
-          (item) => (item as { pr?: { number?: unknown } } | null)?.pr?.number,
-        ),
-      );
+      const claimed = new Set(claimedPulls(row.claimed));
       const seen = new Set<number>();
       return jsonArray(row.decisions).flatMap((decision): GateOutcome[] => {
         if (typeof decision !== 'object' || decision === null) return [];
@@ -248,13 +245,14 @@ export function gateOutcomes(rows: readonly MapRightNowRow[]): GateOutcome[] {
           return [];
         }
         const n = number as number;
+        const swept = SWEEP_ACTIONS.find((a) => a === action);
         if (seen.has(n) || !claimed.has(n)) return [];
         seen.add(n);
         const outcome = merged.has(n)
           ? 'merged'
-          : action === 'return'
+          : swept === 'return'
             ? 'sweep: sent back'
-            : action === 'ask' && asked === n
+            : swept === 'ask' && asked === n
               ? 'sweep: asked'
               : null;
         return outcome === null
