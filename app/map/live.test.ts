@@ -277,7 +277,7 @@ test('a merge-queue lap merges each pull request its record read back; a malform
     ['q', 405],
   ]);
   expect(mergedToday([{ ...queued('old', '[]'), prs: null, number: 12 }], now)).toEqual([
-    { run: 'old', number: 12, at },
+    { run: 'old', workflow: 'archon-merge-queue', number: 12, at },
   ]);
 });
 
