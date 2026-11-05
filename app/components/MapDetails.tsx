@@ -3,7 +3,14 @@ import { Link } from 'react-router';
 import { relativeTime } from '../lib/format';
 import type { StepRow } from '../lib/step-detail';
 import { type Card, pinnedStepLinks, workflowFile } from '../map/factory-map';
-import type { CardLive, GateOutcome, LatestDeploy, MapItem, WorkOrderRow } from '../map/live';
+import type {
+  CardLive,
+  GateOutcome,
+  LatestDeploy,
+  MapItem,
+  ProductDocumentRow,
+  WorkOrderRow,
+} from '../map/live';
 
 type Tab = 'when' | 'what' | 'how' | 'live' | 'behind';
 
@@ -68,6 +75,7 @@ function Order({ order }: { order: WorkOrderRow }): ReactElement {
 }
 
 const UNAVAILABLE = {
+  documents: 'The product documents are unavailable.',
   outcomes: 'The recent gate decisions are unavailable.',
   deploys: 'The latest deploy is unavailable.',
   lands: 'Where the work orders land is unavailable.',
@@ -105,6 +113,34 @@ function Deploy({ deploy }: { deploy: LatestDeploy | null }): ReactElement {
       {deploy.at === null ? null : (
         <span className={CHIP}>{relativeTime(deploy.at.toISOString())}</span>
       )}
+    </li>
+  );
+}
+
+/** A product document with the work items its split recorded, merged over total, drawn as a bar. */
+function ProductDocument({ document }: { document: ProductDocumentRow }): ReactElement {
+  const { number, title, url, total_count: total, merged_count: merged } = document;
+  const percent = total === 0 ? 0 : Math.round((merged / total) * 100);
+  return (
+    <li data-product-document={number} className="grid gap-1">
+      <span>
+        <a href={url} className={LINK}>
+          <span className="font-mono tabular-nums">#{number}</span> {title}
+        </a>
+        <span className={CHIP}>
+          {total === 0 ? 'no work items recorded' : `${merged}/${total} merged`}
+        </span>
+      </span>
+      <div
+        role="progressbar"
+        aria-label={`#${number}: ${merged} of ${total} merged`}
+        aria-valuemin={0}
+        aria-valuemax={total}
+        aria-valuenow={merged}
+        className="h-1.5 overflow-hidden rounded-full bg-surface-inset"
+      >
+        <div className="h-full rounded-full bg-success" style={{ width: `${percent}%` }} />
+      </div>
     </li>
   );
 }
@@ -153,6 +189,16 @@ export function RightNow({
     )),
     ...(live?.waiting ?? []).map((item) => <Item key={item.key} item={item} note="waiting" />),
     ...(live?.orders ?? []).map((order) => <Order key={`order-${order.name}`} order={order} />),
+    ...(live?.documents ?? []).map((document) => (
+      <ProductDocument key={`document-${document.number}`} document={document} />
+    )),
+    ...(live?.documents?.length === 0
+      ? [
+          <li key="no-documents" className="text-text-secondary">
+            No product document is open.
+          </li>,
+        ]
+      : []),
     ...(live?.merged ?? []).map((merge) => (
       <li key={`merged-${merge.run}-${merge.number ?? 'lap'}`} data-lap={merge.run}>
         <Link to={lapHref(merge.run)} className={LINK}>

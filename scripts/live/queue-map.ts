@@ -28,7 +28,11 @@ const REVIEW_STEP = 'ship__deliver__rounds.review__policy';
 const WRITTEN_STEPS = [BUILD_STEP, REVIEW_STEP];
 const WAITING = `${MAP} [data-card="mgr"] [data-chip="waiting"]`;
 
-const viewOf = (id: string) => `[data-map-stage][data-view="${id}"][data-placed]`;
+const viewStage = (id: string) => `[data-map-stage][data-view="${id}"][data-placed]`;
+
+/** The steps the check writes to put a running Intake run on Triage and a Split run on Break it up. */
+const TRIAGE_STEP = 'triage';
+const SLICE_STEP = 'slice';
 
 const liveCountOf = (card: string) =>
   `document.querySelector('${MAP} [data-card="${card}"]')?.getAttribute('data-live-count')`;
@@ -46,6 +50,10 @@ export function queueMapPhase(ctx: LiveContext): LivePhase {
     waiting: null as number | null,
     merge: null as number | null,
     sweep: null as number | null,
+    intake: null as number | null,
+    triage: null as number | null,
+    split: null as number | null,
+    slice: null as number | null,
   };
 
   async function restore(): Promise<void> {
@@ -66,6 +74,16 @@ export function queueMapPhase(ctx: LiveContext): LivePhase {
     await db.query('DELETE FROM mc.lap_steps WHERE run_id = ANY($1::uuid[])', [sweepRun]);
     await db.query('DELETE FROM mc.laps WHERE run_id = ANY($1::uuid[])', [sweepRun]);
     await db.query('DELETE FROM remote_agent_workflow_runs WHERE id = ANY($1::uuid[])', [sweepRun]);
+    const started = `{${QUEUE_RUNS.triaging},${QUEUE_RUNS.splitting}}`;
+    const steps = `{${TRIAGE_STEP},${SLICE_STEP}}`;
+    await db.query(
+      'DELETE FROM remote_agent_workflow_events WHERE workflow_run_id = ANY($1::uuid[]) AND step_name = ANY($2::text[])',
+      [started, steps],
+    );
+    await db.query(
+      'DELETE FROM mc.lap_steps WHERE run_id = ANY($1::uuid[]) AND step_id = ANY($2::text[])',
+      [started, steps],
+    );
     await db.query(
       `UPDATE remote_agent_workflow_runs SET status = 'running', metadata = metadata - 'wait'
         WHERE id = $1`,
@@ -79,6 +97,8 @@ export function queueMapPhase(ctx: LiveContext): LivePhase {
       const page = await openPage(deps.env);
       const view = await openPage(deps.env);
       const drill = await openPage(deps.env);
+      const split = await openPage(deps.env);
+      const intake = await openPage(deps.env);
       try {
         await page.setViewport(MAP_READABLE.width);
         await page.goto(`${base}/f/${name}`);
@@ -88,18 +108,15 @@ export function queueMapPhase(ctx: LiveContext): LivePhase {
         failures.push(...mapMismatches(await mapCards(page), await lapsOnCards(db, name)));
         writeFileSync(join(outDir, 'queue-map.png'), await page.screenshot(1440));
 
-        await view.setViewport(MAP_READABLE.width);
-        const open = async (target: Page, id: string) => {
+        const open = async (target: Page, id: string, file?: string) => {
+          await target.setViewport(MAP_READABLE.width);
           await target.goto(`${base}/f/${name}?view=${id}`);
           await target.evaluate<boolean>(
             pageWait(
-              `document.querySelector('${MAP}[data-state="ready"] ${viewOf(id)}') !== null`,
+              `document.querySelector('${MAP}[data-state="ready"] ${viewStage(id)}') !== null`,
               READY_WAIT_MS,
             ),
           );
-        };
-        const shoot = async (target: Page, id: string, file: string) => {
-          await open(target, id);
           failures.push(
             ...mapMismatches(
               await mapCards(target),
@@ -107,12 +124,13 @@ export function queueMapPhase(ctx: LiveContext): LivePhase {
               FACTORY_MAP.views?.[id]?.cards,
             ),
           );
-          writeFileSync(join(outDir, file), await target.screenshot(1440));
+          if (file !== undefined) writeFileSync(join(outDir, file), await target.screenshot(1440));
         };
-        await shoot(view, 'build', 'build-view.png');
-        await drill.setViewport(MAP_READABLE.width);
-        await shoot(drill, 'merge', 'merge-view.png');
-        await shoot(drill, 'deploy', 'staging-view.png');
+        await open(view, 'build', 'build-view.png');
+        await open(split, 'split', 'split-view.png');
+        await open(intake, 'intake', 'intake-view.png');
+        await open(drill, 'merge', 'merge-view.png');
+        await open(drill, 'deploy', 'staging-view.png');
         await open(drill, 'merge');
 
         const timed = async (card: string, run: string, step: string) => {
@@ -167,6 +185,47 @@ export function queueMapPhase(ctx: LiveContext): LivePhase {
         ]);
         ms.review = await timed('review', QUEUE_RUNS.review, REVIEW_STEP);
 
+        const onBoth = async (
+          run: string,
+          step: string,
+          home: [Page, string],
+          deeper: [Page, string],
+        ) => {
+          const targets = await Promise.all(
+            [home, deeper].map(async ([target, card]) => ({
+              target,
+              card,
+              count: Number(await target.evaluate<string>(liveCountOf(card))) + 1,
+            })),
+          );
+          await fixtureWrite(deps, [
+            'step',
+            '--run',
+            run,
+            '--step',
+            step,
+            '--event',
+            'node_started',
+          ]);
+          return Promise.all(
+            targets.map(({ target, card, count }) =>
+              untilShown(target, `${liveCountOf(card)} === '${count}'`),
+            ),
+          );
+        };
+        [ms.intake, ms.triage] = await onBoth(
+          QUEUE_RUNS.triaging,
+          TRIAGE_STEP,
+          [page, 'intake'],
+          [intake, 'i-tri'],
+        );
+        [ms.split, ms.slice] = await onBoth(
+          QUEUE_RUNS.splitting,
+          SLICE_STEP,
+          [page, 'split'],
+          [split, 's-slice'],
+        );
+
         const waiting = (await waitingCount(page)) + 1;
         await writeToScreen(page, deps, ['attention', '--run', QUEUE_RUNS.ask], 'true');
         ms.waiting = await untilShown(
@@ -176,6 +235,8 @@ export function queueMapPhase(ctx: LiveContext): LivePhase {
         failures.push(...mapMismatches(await mapCards(page), await lapsOnCards(db, name)));
       } finally {
         await drill.close().catch(() => undefined);
+        await intake.close().catch(() => undefined);
+        await split.close().catch(() => undefined);
         await view.close().catch(() => undefined);
         await page.close().catch(() => undefined);
         await restore();
@@ -197,13 +258,23 @@ export function queueMapPhase(ctx: LiveContext): LivePhase {
       ...lateWrite('a build-queue run on review', `${name}'s Review`, ms.review),
       ...lateWrite('a merge-queue run on sweep', `${name}'s Merge`, ms.merge),
       ...lateWrite('a merge-queue run on sweep', `${name}'s Merge view Sweep`, ms.sweep),
+      ...lateWrite('an intake run on triage', `${name}'s Intake`, ms.intake),
+      ...lateWrite('an intake run on triage', `${name}'s Intake view Triage`, ms.triage),
+      ...lateWrite('a split run on slice', `${name}'s Split`, ms.split),
+      ...lateWrite('a split run on slice', `${name}'s Split view Break it up`, ms.slice),
       ...lateWrite('a paused attention wait', `${name}'s Manager waiting chip`, ms.waiting),
     ],
 
     async probe(designProbe) {
-      designProbe(`${ctx.base}/f/${name}?view=build`, 'build-view-design-probe.json');
-      designProbe(`${ctx.base}/f/${name}?view=merge`, 'merge-view-design-probe.json');
-      designProbe(`${ctx.base}/f/${name}?view=deploy`, 'staging-view-design-probe.json');
+      for (const [id, file] of [
+        ['build', 'build'],
+        ['split', 'split'],
+        ['intake', 'intake'],
+        ['merge', 'merge'],
+        ['deploy', 'staging'],
+      ]) {
+        designProbe(`${ctx.base}/f/${name}?view=${id}`, `${file}-view-design-probe.json`);
+      }
     },
 
     summary: () => [`queue map: ${JSON.stringify({ ...ms, limit: LIMITS.insertToScreenMs })}`],

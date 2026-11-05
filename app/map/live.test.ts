@@ -301,6 +301,35 @@ test('the work orders with an open issue are the chip of the Work order card: ab
   });
 });
 
+test('a split lap counts on Break it up, an intake triage lap on Triage, a backlog authorize lap on File the issues', () => {
+  const SPLIT_VIEW = FACTORY_MAP.views?.split?.cards ?? [];
+  const INTAKE_VIEW = FACTORY_MAP.views?.intake?.cards ?? [];
+  const rows = [
+    lap('split', ['slice'], 'archon-split'),
+    lap('tri', ['triage__triage'], 'archon-intake'),
+    lap('auth', ['authorize'], 'archon-backlog'),
+  ];
+  expect(here(rows)).toEqual({ split: ['auth', 'split'], intake: ['tri'] });
+  expect(hereOn(rows, SPLIT_VIEW)).toEqual({ 's-slice': ['split'], 's-pub': ['auth'] });
+  expect(hereOn(rows, INTAKE_VIEW)).toEqual({ 'i-tri': ['tri'] });
+});
+
+test('the open product documents are listed on Split and Keep the document alone: unavailable on error, never empty', () => {
+  const document = { number: 410, title: 'T', url: 'u', total_count: 4, merged_count: 2 };
+  const of = (sources: Partial<Parameters<typeof cardLive>[1]>) =>
+    cardLive(FACTORY_MAP, { map: [], ...sources }, new Date());
+  const listed = [...of({ documents: [document] })]
+    .filter(([, live]) => live.documents !== undefined)
+    .map(([id]) => id);
+  expect(listed.sort()).toEqual(['s-keep', 'split']);
+  for (const id of ['split', 's-keep']) {
+    expect(of({ documents: [document], states: { documents: 'error' } }).get(id)).toEqual({
+      here: [],
+      listsUnavailable: ['documents'],
+    });
+  }
+});
+
 test('a run counts once per level: implement on Build and Deliver, review on Review and no Build-view card, ship alone on Write the brief', () => {
   const rows = [
     lap('impl', ['ship__deliver__rounds.implement__implement', 'ship'], 'archon-build-queue'),

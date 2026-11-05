@@ -34,10 +34,10 @@ const queue = () => parseQueuePack(QUEUE_ROOT, TEMPLATE);
 const loop = () => parsePack(PACK, TEMPLATE);
 const check = (map: FactoryMap, pack = loop()) => mapCheck(map, { loop: pack, queue: queue() });
 
-/** The map with only the Build view, which the tests of the root cards and of Build's view edit. */
+/** The map with only the Build view, so the tests of the root cards and of Build's view are not also held to the other views. */
 const onlyBuild = (cards: FactoryMap['cards']): FactoryMap => ({
   ...FACTORY_MAP,
-  cards: cards.map(({ opens, ...card }) => (opens === 'build' ? { ...card, opens } : card)),
+  cards: cards.map((c) => (c.opens === 'build' ? c : { ...c, opens: undefined })),
   views: { build: FACTORY_MAP.views?.build as MapView },
 });
 
@@ -178,7 +178,7 @@ describe('map:check', () => {
     expect(check(map)).toEqual([
       `${first.title} role "robot" is not one of source, agent, test, person`,
       `${first.title} chip "lost" is not one of queued, failing, waiting, merged, orders`,
-      `${first.title} list "nope" is not one of outcomes, deploys, lands`,
+      `${first.title} list "nope" is not one of documents, outcomes, deploys, lands`,
       `line ${line.from} to ${line.to} style "flwo" is not one of flow, ask, loop`,
       `legend ${entry.label} role "ghost" is not one of source, agent, test, person`,
     ]);
@@ -254,6 +254,32 @@ describe('map:check', () => {
     );
     expect(check(map)).toEqual([
       'queue pack: Build view: archon-build-queue apply is covered by no card',
+    ]);
+  });
+
+  test('the Split and Intake views each cover the steps of their card once', () => {
+    const split = FACTORY_MAP.views?.split as MapView;
+    const map: FactoryMap = {
+      ...FACTORY_MAP,
+      views: {
+        ...FACTORY_MAP.views,
+        split: {
+          ...split,
+          cards: split.cards.map((c) =>
+            c.id === 's-slice'
+              ? {
+                  ...c,
+                  covers: c.covers.map((cover) =>
+                    cover.workflow === 'archon-split' ? { ...cover, steps: [] } : cover,
+                  ),
+                }
+              : c,
+          ),
+        },
+      },
+    };
+    expect(check(map)).toEqual([
+      'queue pack: Split view: archon-split slice is covered by no card',
     ]);
   });
 

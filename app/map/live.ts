@@ -1,7 +1,8 @@
 /**
  * What the factory map's chips count (PRD 4.1 "Live"), from the live rows: the laps on each card
  * and today's merges from `home-map`, Build's workable issues from `health-workable`, the
- * owner's open items from `owner-queue` and the work orders with open issues from `work-orders`. Every chip keeps the items it counted,
+ * owner's open items from `owner-queue`, the work orders with open issues from `work-orders` and the
+ * open product documents from `product-documents`. Every chip keeps the items it counted,
  * which the details strip's Right now lists (invariant 4). Pure, no React.
  */
 import type { HealthWorkableRow } from '../lib/health';
@@ -118,6 +119,15 @@ export interface LatestDeploy {
   at: Date | null;
 }
 
+/** One row of `db/queries/product-documents.sql`: an open product document and its split's work items. */
+export interface ProductDocumentRow {
+  number: number;
+  title: string;
+  url: string;
+  total_count: number;
+  merged_count: number;
+}
+
 export interface CardLive {
   here: MapLap[];
   queued?: MapItem[];
@@ -125,6 +135,9 @@ export interface CardLive {
   waiting?: MapItem[];
   merged?: MapMerge[];
   orders?: WorkOrderRow[];
+  documents?: ProductDocumentRow[];
+  /** Lists whose source failed: unknown, never empty. */
+  listsUnavailable?: List[];
   /** Chips whose source failed: not zero, unknown, so drawn as such. */
   unavailable?: Chip[];
   gate?: GateOutcome[];
@@ -132,8 +145,6 @@ export interface CardLive {
   deploy?: LatestDeploy | null;
   /** The work orders with open issues, each with where it lands. */
   lands?: WorkOrderRow[];
-  /** Lists whose source failed. */
-  listsUnavailable?: List[];
 }
 
 export interface MapSources {
@@ -142,12 +153,14 @@ export interface MapSources {
   owner?: readonly OwnerQueueRow[];
   orders?: readonly WorkOrderRow[];
   rightNow?: readonly MapRightNowRow[];
+  documents?: readonly ProductDocumentRow[];
   /** A source in `error` keeps its rows, but its chip is unavailable, never a count. */
   states?: {
     workable?: PanelState;
     owner?: PanelState;
     orders?: PanelState;
     rightNow?: PanelState;
+    documents?: PanelState;
   };
 }
 
@@ -374,10 +387,17 @@ function chipItems(
 }
 
 /** What one list of a card shows: unavailable when its source failed, nothing until it is delivered. */
-function listInto(entry: CardLive, list: List, { orders, rightNow, states = {} }: MapSources) {
-  const source = list === 'lands' ? states.orders : states.rightNow;
+function listInto(
+  entry: CardLive,
+  list: List,
+  { orders, rightNow, documents, states = {} }: MapSources,
+) {
+  const source =
+    list === 'documents' ? states.documents : list === 'lands' ? states.orders : states.rightNow;
   if (source === 'error') {
     entry.listsUnavailable = [...(entry.listsUnavailable ?? []), list];
+  } else if (list === 'documents') {
+    if (documents) entry.documents = [...documents];
   } else if (list === 'lands') {
     if (orders) entry.lands = orders.filter((o) => o.open_count > 0);
   } else if (rightNow) {

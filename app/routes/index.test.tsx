@@ -81,8 +81,8 @@ test("the map draws every card's wording, the caption, the group and the legend,
   }
   expect(html).toContain('the manager watches everything on this line');
   for (const entry of FACTORY_MAP.legend) expect(html).toContain(entry.label);
-  // Build, Merge and Staging have a deeper view, so only they offer to open one.
-  const opens = ['build', 'merge', 'deploy'];
+  // Only Build, Split, Intake, Merge and Staging have a deeper view, so only they offer to open one.
+  const opens = ['build', 'split', 'intake', 'merge', 'deploy'];
   for (const id of opens) expect(cardTag(html, id)).toContain(`data-opens="${id}"`);
   expect(html).toContain('opens a deeper view');
   for (const card of FACTORY_MAP.cards.filter((c) => !opens.includes(c.id))) {
@@ -533,4 +533,54 @@ test('the Work order card counts its open work orders and says nothing with none
   );
   expect(right).toContain('combat');
   expect(right).toContain('2 open, 1 merged, lands on staging');
+});
+
+test.each(['split', 'intake'])(
+  "with path ['%s'] the map draws that view's cards and caption",
+  (id) => {
+    const view = FACTORY_MAP.views?.[id];
+    if (view === undefined) throw new Error(`the map has no ${id} view`);
+    const html = render([], 'ready', { path: [id] });
+    for (const card of view.cards) expect(cardTag(html, card.id)).toContain('data-card');
+    expect(html).toContain(view.caption.replaceAll("'", '&#x27;'));
+    expect(html).toContain(`data-view="${id}"`);
+  },
+);
+
+test('Right now draws each product document as a bar with its link and counts, and says when none is open or the query failed', () => {
+  const right = (live: Parameters<typeof RightNow>[0]['live']) =>
+    renderToStaticMarkup(
+      <MemoryRouter>
+        <RightNow live={live} factory="here" />
+      </MemoryRouter>,
+    );
+  const html = right({
+    here: [],
+    documents: [
+      {
+        number: 410,
+        title: 'Queue',
+        url: 'https://github.com/o/r/issues/410',
+        total_count: 4,
+        merged_count: 2,
+      },
+      {
+        number: 420,
+        title: 'Empty',
+        url: 'https://github.com/o/r/issues/420',
+        total_count: 0,
+        merged_count: 0,
+      },
+    ],
+  });
+  expect(html).toContain('href="https://github.com/o/r/issues/410"');
+  expect(html).toContain('role="progressbar"');
+  expect(html).toContain('aria-valuenow="2"');
+  expect(html).toContain('aria-valuemax="4"');
+  expect(textOf(html)).toContain('2/4 merged');
+  expect(textOf(html)).toContain('no work items recorded');
+  expect(textOf(right({ here: [], documents: [] }))).toContain('No product document is open.');
+  expect(textOf(right({ here: [], listsUnavailable: ['documents'] }))).toContain(
+    'The product documents are unavailable.',
+  );
 });
