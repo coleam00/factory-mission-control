@@ -7,13 +7,7 @@
 import type { HealthWorkableRow } from '../lib/health';
 import type { OwnerQueueRow } from '../lib/owner-queue';
 import type { PanelState } from '../live/LivePanel';
-import {
-  allCards,
-  type Chip,
-  cardChain,
-  type FactoryMap,
-  stepPath,
-} from './factory-map';
+import { allCards, type Chip, cardChain, type FactoryMap, stepPath } from './factory-map';
 
 /** One row of `db/queries/home-map.sql`. */
 export interface HomeMapRow {
