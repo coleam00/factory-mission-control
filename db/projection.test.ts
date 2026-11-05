@@ -1,6 +1,4 @@
 import { afterAll, beforeAll, beforeEach, expect, test } from 'bun:test';
-import { readFileSync } from 'node:fs';
-import { basename, join } from 'node:path';
 import { FACTORY_MAP } from '../app/map/factory-map';
 import { holdoutId } from '../parsers/metrics';
 import { eventData, structuredOutputFor } from '../scripts/fixture/write';
@@ -1696,24 +1694,14 @@ test('the workflows projecting step events are the map’s queue covers and the 
   }
 });
 
-test('mc.keeps_step_output drops output exactly for the queue workflows whose YAML reads holdouts', async () => {
-  const queue = join(import.meta.dir, '..', 'fixtures', 'pack', 'queue');
-  const yamls = new Map<string, string>();
-  for (const file of new Bun.Glob('**/*.yaml').scanSync(queue)) {
-    yamls.set(basename(file, '.yaml'), readFileSync(join(queue, file), 'utf8'));
-  }
-  const workflows = FACTORY_MAP.cards
-    .flatMap((c) => c.covers ?? [])
-    .filter((c) => c.pack === 'queue')
-    .map((c) => c.workflow);
-  expect(workflows.length).toBeGreaterThan(0);
-  for (const workflow of workflows) {
-    const yaml = yamls.get(workflow);
-    expect({ workflow, found: yaml !== undefined }).toEqual({ workflow, found: true });
+test('mc.keeps_step_output drops output for the workflows that once read holdouts, kept for old rows', async () => {
+  const redacted = ['factory-app-check', 'factory-holdout-sweep', 'factory-holdouts'];
+  const kept = ['archon-build-queue', 'archon-intake', 'archon-split', 'factory-manager'];
+  for (const workflow of [...redacted, ...kept]) {
     const [row] = await db.query('SELECT mc.keeps_step_output($1) AS keeps', [workflow]);
     expect({ workflow, keeps: row?.keeps }).toEqual({
       workflow,
-      keeps: !/holdout/i.test(yaml ?? ''),
+      keeps: !redacted.includes(workflow),
     });
   }
 });

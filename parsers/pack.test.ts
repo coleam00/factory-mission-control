@@ -249,3 +249,13 @@ One more rule.
     }
   });
 });
+
+describe('sub-workflow nodes', () => {
+  test('a workflow: node parses as kind workflow and runs no agent model', () => {
+    const queue = parsePack(join(repoRoot, 'fixtures', 'pack', 'queue', 'sdlc'), templateDir);
+    const metrics = queue.workflows.find((w) => w.name === 'archon-metrics-test-value');
+    const judge = step(metrics?.steps ?? [], 'judge');
+    expect(judge.kind).toBe('workflow');
+    expect(judge.model).toBeNull();
+  });
+});
