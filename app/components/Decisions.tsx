@@ -68,9 +68,7 @@ function Panel({
 }): ReactElement {
   return (
     <li {...data} className="overflow-hidden rounded-[12px] border border-border bg-surface">
-      <div
-        className={`flex flex-wrap items-center gap-x-4 gap-y-2.5 px-4 py-3.5${children === null ? '' : ' border-b border-border'}`}
-      >
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2.5 px-4 py-3.5">
         <div className="min-w-0 flex-1">
           <div className={LABEL}>{label}</div>
           <h3
@@ -82,7 +80,9 @@ function Panel({
         </div>
         {link}
       </div>
-      {children === null ? null : <div className="grid gap-3 px-4 py-3.5">{children}</div>}
+      {children === null ? null : (
+        <div className="grid gap-3 border-t border-border px-4 py-3.5">{children}</div>
+      )}
     </li>
   );
 }
