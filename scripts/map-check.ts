@@ -140,6 +140,7 @@ function viewPartition(map: FactoryMap, trees: Trees): string[] {
           (node) => cardChain(map, cover.workflow, node)[depth]?.id === opener.id,
         ),
       );
+      for (const step of cover.steps) if (!nodes.has(step)) mine.add(step);
       inOpener.set(`${cover.pack} ${cover.workflow}`, mine);
       for (const node of mine) {
         const covering = coveringCards(view, cover.workflow, node);
@@ -161,7 +162,9 @@ function viewPartition(map: FactoryMap, trees: Trees): string[] {
           continue;
         }
         for (const step of cover.steps) {
-          if (trees[cover.pack].get(cover.workflow)?.has(step) && !mine.has(step)) {
+          const known =
+            trees[cover.pack].get(cover.workflow)?.has(step) || step === STEP_THE_PACK_LACKS;
+          if (known && !mine.has(step)) {
             failures.push(`${at} covers ${cover.workflow} ${step}, which ${opener.title} does not`);
           }
         }

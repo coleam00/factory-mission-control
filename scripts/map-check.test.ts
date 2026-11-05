@@ -272,6 +272,22 @@ describe('map:check', () => {
     ]);
   });
 
+  test('a view card covering the step the pack lacks, which its opener does not name, fails', () => {
+    const map = withBuildView((cards) =>
+      buildCard(cards, 'b-del', (c) => ({
+        ...c,
+        covers: c.covers.map((cover) =>
+          cover.workflow === 'archon-loop'
+            ? { ...cover, steps: [...cover.steps, 'handoff'] }
+            : cover,
+        ),
+      })),
+    );
+    expect(check(map)).toEqual([
+      'loop pack: Build view: Deliver covers archon-loop handoff, which Build does not',
+    ]);
+  });
+
   test('an opens naming no view, and a view no card opens, fail', () => {
     const dead = {
       ...FACTORY_MAP,
