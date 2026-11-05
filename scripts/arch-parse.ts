@@ -11,7 +11,7 @@ import {
 } from '../parsers/pack';
 import { type Deps, failing, guardedDatabaseUrl, type Main, runCli } from './lib/cli';
 import type { Row, Tx } from './lib/db';
-import { readDirectoryAt } from './lib/github';
+import { type RemoteDirectory, readDirectoryAt } from './lib/github';
 
 // The architecture job (PRD 11.4): one version's pack, factory package and factory template hooks
 // (whichever the factory commit has), parsed and stored as that version's architecture rows. A version is keyed by full commit shas, whichever form the
@@ -180,14 +180,14 @@ async function fetchInto(
   repository: string,
   ref: string,
   dir: string,
-): Promise<{ sha: string; found: boolean }> {
+): Promise<RemoteDirectory> {
   const remote = await readDirectoryAt(deps.fetch, repository, ref, dir);
   for (const file of remote.files ?? []) {
     const path = join(root, dir, file.path);
     mkdirSync(dirname(path), { recursive: true });
     writeFileSync(path, file.bytes);
   }
-  return { sha: remote.sha, found: remote.files !== null };
+  return remote;
 }
 
 /** Reads and parses the version from the local paths given, else from GitHub at the two shas. */
@@ -208,7 +208,7 @@ async function readVersion(
       archon = { dir: join(resolve(deps.repoRoot, args.archonPath), 'sdlc'), sha: null };
     } else {
       const fetched = await fetchInto(deps, scratch, ARCHON_REPOSITORY, args.archonSha, PACK_DIR);
-      if (!fetched.found) {
+      if (fetched.files === null) {
         throw new Error(`${ARCHON_REPOSITORY} has no ${PACK_DIR}/ at ${fetched.sha}`);
       }
       archon = { dir: join(scratch, PACK_DIR), sha: fetched.sha };
@@ -218,11 +218,11 @@ async function readVersion(
     // factory's current commit has only the package), but not both missing.
     const localFactory = args.factoryPath !== undefined || args.packagePath !== undefined;
     let templateDir = join(scratch, TEMPLATE_DIR);
-    let packageDir: string | null = null;
+    const localPackageDir = args.packagePath ? resolve(deps.repoRoot, args.packagePath) : null;
+    let packageDir = localPackageDir;
     let fetchedSha: string | null = null;
     if (localFactory) {
       if (args.factoryPath) templateDir = resolve(deps.repoRoot, args.factoryPath);
-      if (args.packagePath) packageDir = resolve(deps.repoRoot, args.packagePath);
     } else {
       const hooks = await fetchInto(
         deps,
@@ -238,13 +238,13 @@ async function readVersion(
         args.factorySha,
         FACTORY_PACKAGE_DIR,
       );
-      if (!hooks.found && !factoryPackage.found) {
+      if (hooks.files === null && factoryPackage.files === null) {
         throw new Error(
           `${FACTORY_REPOSITORY} has neither ${FACTORY_HOOKS_DIR}/ nor ${FACTORY_PACKAGE_DIR}/ at ${hooks.sha}`,
         );
       }
       fetchedSha = hooks.sha;
-      if (factoryPackage.found) packageDir = join(scratch, FACTORY_PACKAGE_DIR);
+      if (factoryPackage.files !== null) packageDir = join(scratch, FACTORY_PACKAGE_DIR);
     }
     // The parser reads a missing directory as an empty one, which would replace the version's rows
     // with nothing. GitHub reads report a missing directory; local paths are checked here.
@@ -252,14 +252,14 @@ async function readVersion(
     if (args.factoryPath && !existsSync(join(templateDir, HOOKS_DIR))) {
       throw new Error(`no ${HOOKS_DIR} under ${templateDir}`);
     }
-    if (packageDir && args.packagePath && !existsSync(packageDir)) {
-      throw new Error(`no factory package at ${packageDir}`);
+    if (localPackageDir && !existsSync(localPackageDir)) {
+      throw new Error(`no factory package at ${localPackageDir}`);
     }
     const pack = parseVersion(archon.dir, packageDir, templateDir);
     const local: string[] = [];
     if (args.factoryPath) local.push(localSha(args.factorySha, pack.factoryCommit, templateDir));
-    if (packageDir && args.packagePath) {
-      local.push(localSha(args.factorySha, pack.packageCommit, packageDir));
+    if (localPackageDir) {
+      local.push(localSha(args.factorySha, pack.packageCommit, localPackageDir));
     }
     const [first, second] = local;
     if (second !== undefined && first !== second) {
