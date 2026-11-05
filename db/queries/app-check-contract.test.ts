@@ -19,8 +19,9 @@ const CODEBASE = '5eed0000-0000-4000-8000-000000000000';
 // Newer than any seeded step, so the readers' ORDER BY started_at DESC picks this test's row.
 const LATER = '2040-01-01T00:00:00Z';
 // The step whose completion the writer (`mc.project_queue_app_check`, 0025) takes the verdict from;
-// it stores that verdict on the run's `check` row, which is where the readers look.
+// it stores that verdict on the run's VERDICT_ROW row, which is where the readers look.
 const VERDICT_STEP = 'evidence';
+const VERDICT_ROW = 'check';
 
 let db: Db;
 beforeAll(async () => {
@@ -65,11 +66,9 @@ test('the readers count the (workflow, step) pairs the writer keeps a verdict fo
     (await db.query('SELECT mc.keeps_step_output($1) AS keeps', [workflow]))[0]?.keeps === true;
   const owners = allCards(FACTORY_MAP).filter((card) => card.lists?.includes('checks'));
   expect(owners).toHaveLength(1);
-  // A cover names the step the verdict is stored on; the probe names the step that completes.
+  // A cover names the step the verdict is stored on, so it is compared with the stored row below.
   const covers = (owners[0]?.covers ?? []).flatMap((c) =>
-    c.steps.map(
-      (step) => `${c.workflow}/${c.workflow === 'factory-app-check' ? VERDICT_STEP : step}`,
-    ),
+    c.steps.map((step) => `${c.workflow}/${step}`),
   );
 
   const workflows = ['archon-loop', 'archon-build-queue', 'factory-app-check', 'factory-holdouts'];
@@ -82,7 +81,10 @@ test('the readers count the (workflow, step) pairs the writer keeps a verdict fo
   };
   for (const workflow of workflows) {
     for (const step of steps) {
-      const key = `${workflow}/${step}`;
+      const key =
+        workflow === 'factory-app-check' && step === VERDICT_STEP
+          ? `${workflow}/${VERDICT_ROW}`
+          : `${workflow}/${step}`;
       const stored =
         workflow === 'factory-app-check'
           ? step === VERDICT_STEP
