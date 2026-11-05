@@ -388,7 +388,8 @@ test('the latest deploy is the newest of the queue and the old loop, and null wh
 });
 
 test('a deploy counts as read back only when its status is verified', () => {
-  const deploy = (status: string) => right({ kind: 'deploys', run_id: 'l', revision: 'b', status });
+  const deploy = (status: 'deployed' | 'verified') =>
+    right({ kind: 'deploys', run_id: 'l', revision: 'b', status });
   expect(latestDeploy([deploy('deployed')])).toMatchObject({ verified: true, readBack: false });
   expect(latestDeploy([deploy('verified')])).toMatchObject({ verified: true, readBack: true });
 });
