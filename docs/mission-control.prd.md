@@ -87,9 +87,10 @@ screens, `/steps/<workflow>/<step>`).
 - **The manager**, centred above the line: one card, the orchestrator the owner talks to. It keeps
   the factory healthy and work moving and brings the owner the decisions it can't make. One
   arrow comes down from it into the box.
-- **One loop back:** Review, App check and Staging each drop to a dashed line along the bottom that
-  runs back into Found by the factory, labelled "problems found become new work". It is the only
-  line that runs right to left.
+- **Two loops back:** Review, App check and Merge each rise to a dashed line along the top that
+  runs back to Build, labelled "fixes". Review, App check and Staging each drop to a dashed line along
+  the bottom that runs back into Found by the factory, labelled "unrelated problems become new work".
+  These are the only lines that run right to left.
 
 **The words (Cole and Rasmus, 2026-11-04).** **Work** is any single item the factory takes, one issue
 and one `work/<n>` state document. A **work order** is a group of work that goes through the factory

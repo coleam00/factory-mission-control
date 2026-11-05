@@ -106,8 +106,8 @@ test('the tour runs card centre to card centre along the line, Product document 
 });
 
 test("a card's neighbours are the cards a line joins to it", () => {
-  expect([...neighbours(FACTORY_MAP, 'build')].sort()).toEqual(['order', 'review']);
-  expect([...neighbours(FACTORY_MAP, 'app')].sort()).toEqual(['disc', 'merge', 'review']);
+  expect([...neighbours(FACTORY_MAP, 'build')].sort()).toEqual(['app', 'merge', 'order', 'review']);
+  expect([...neighbours(FACTORY_MAP, 'app')].sort()).toEqual(['build', 'disc', 'merge', 'review']);
   expect([...neighbours(FACTORY_MAP, 'intake')].sort()).toEqual([
     'disc',
     'issue',

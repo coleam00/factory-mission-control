@@ -1,5 +1,5 @@
 {
-  "caption": "Work comes from three places: a product document, an issue you file, or a problem the factory found. Intake checks each item, and Split breaks a big document or bundle into smaller work items. A work order groups the items to build and ship together. Then one line: Build writes the code, Review checks it, App check tries it in the running app, Merge lands it, and Staging is where you try the whole work order. The manager watches the line and brings you the decisions.",
+  "caption": "Work comes from three places: a product document, an issue you file, or a problem the factory found. Intake checks each item, and Split breaks a big document or bundle into smaller work items. A work order groups the items to build and ship together. Then one line: Build writes the code, Review checks it, App check tries it in the running app, Merge lands it, and Staging is where you try the whole work order. Fixes to a change go back to Build; anything unrelated becomes new work. The manager watches the line and brings you the decisions.",
   "cardSize": {
     "width": 208,
     "height": 212
@@ -138,7 +138,9 @@
         }
       ],
       "details": {
-        "when": ["After review, app check or staging notices something it was not asked to fix."],
+        "when": [
+          "After review or app check notices something unrelated to the change it is checking, or a deployment fails."
+        ],
         "what": [
           "Each problem becomes a new work item, or is dropped if it is not real. Unsure ones come to you."
         ],
@@ -294,7 +296,9 @@
           "A quick agent picks the reviewers this change earns. Up to five each read the change for one thing: how parts fit together, correctness, tests, error handling, docs.",
           "One agent combines what they found into a single comment: Ready, or a list of fixes."
         ],
-        "how": ["Fixes go back to Build. Merge only trusts a Ready comment on the latest commit."]
+        "how": [
+          "Fixes go back to Build, and anything unrelated becomes new work. Merge only trusts a Ready comment on the latest commit."
+        ]
       }
     },
     {
@@ -340,6 +344,7 @@
           "Its commit status must be green before Merge will land the PR."
         ],
         "how": [
+          "A problem with this change goes back to Build, and anything unrelated becomes new work.",
           "Tests the PR merged with the latest main, not the branch alone.",
           "Every claim must cite a file written during this check, sealed by a script.",
           "A result stands until the PR gets a new commit, so landing another PR does not undo it."
@@ -403,7 +408,10 @@
           "Puts the merged build where you can try it.",
           "You choose where a work order lands. Staging is the one we recommend."
         ],
-        "how": ["Health check plus revision read-back, so a stale deploy fails loudly."]
+        "how": [
+          "Health check plus revision read-back, so a stale deploy fails loudly.",
+          "The PR has already merged, so a failed deploy becomes new work."
+        ]
       },
       "opens": "deploy"
     },
@@ -505,6 +513,27 @@
     },
     {
       "from": "review",
+      "to": "build",
+      "style": "loop",
+      "label": "fixes",
+      "route": [[1176, 542], [1176, 517], [916, 517], [916, 542]]
+    },
+    {
+      "from": "app",
+      "to": "build",
+      "style": "loop",
+      "arrow": false,
+      "route": [[1436, 542], [1436, 517], [1176, 517]]
+    },
+    {
+      "from": "merge",
+      "to": "build",
+      "style": "loop",
+      "arrow": false,
+      "route": [[1728, 542], [1728, 517], [1176, 517]]
+    },
+    {
+      "from": "review",
       "to": "disc",
       "style": "loop",
       "route": [[1176, 754], [1176, 1072], [104, 1072], [104, 1014]]
@@ -520,7 +549,7 @@
       "from": "deploy",
       "to": "disc",
       "style": "loop",
-      "label": "problems found become new work",
+      "label": "unrelated problems become new work",
       "route": [[1988, 754], [1988, 1072], [104, 1072], [104, 1014]]
     }
   ],
