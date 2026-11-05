@@ -17,6 +17,9 @@ export interface Page {
 }
 
 const STEP_TIMEOUT_MS = 20_000;
+// A cold CI browser start has taken over 20 s to write its DevTools port (#355, #368), so the
+// wait for it is longer than any single CDP step.
+const DEVTOOLS_PORT_WAIT_MS = 45_000;
 
 function findBrowser(env: Record<string, string | undefined>): string {
   if (env.MC_BROWSER) return env.MC_BROWSER;
@@ -62,14 +65,14 @@ export function readDevToolsUrl(
 
 async function devToolsUrl(profile: string, exited: () => boolean): Promise<string> {
   const activePort = join(profile, 'DevToolsActivePort');
-  const deadline = Date.now() + STEP_TIMEOUT_MS;
+  const deadline = Date.now() + DEVTOOLS_PORT_WAIT_MS;
   while (Date.now() < deadline) {
     if (exited()) throw new Error('the browser exited before opening its DevTools port');
     const url = readDevToolsUrl(activePort);
     if (url) return url;
     await Bun.sleep(100);
   }
-  throw new Error('the browser did not open its DevTools port within 20s');
+  throw new Error('the browser did not open its DevTools port within 45s');
 }
 
 type Message = { id?: number; method?: string; sessionId?: string; result?: unknown } & {
