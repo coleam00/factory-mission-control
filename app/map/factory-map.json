@@ -13,6 +13,8 @@
       "text": "Breaks a document or a bundle into work items",
       "x": 260,
       "y": 240,
+      "lists": ["documents"],
+      "opens": "split",
       "covers": [
         {
           "workflow": "archon-backlog",
@@ -153,6 +155,7 @@
       "text": "Checks each work item is clear, picks its route and size",
       "x": 260,
       "y": 542,
+      "opens": "intake",
       "covers": [
         {
           "workflow": "archon-loop",
@@ -891,6 +894,361 @@
         }
       ],
       "tour": ["b-brief", "b-del", "b-dec", "b-push", "b-next"]
+    },
+    "split": {
+      "caption": "A product document or a bundle of tasks reaches Intake as one item, too big to build at once. Split reads it and breaks it into work items, each a small contract of its own, and files each one once. They come back through Intake like any other work.",
+      "cardSize": {
+        "width": 260,
+        "height": 200
+      },
+      "cards": [
+        {
+          "id": "s-take",
+          "role": "source",
+          "kind": "script",
+          "title": "Take the item",
+          "text": "The next one Intake sent here",
+          "x": 0,
+          "y": 0,
+          "covers": [
+            {
+              "pack": "queue",
+              "workflow": "archon-split",
+              "steps": ["facts"]
+            },
+            {
+              "pack": "queue",
+              "workflow": "factory-backlog",
+              "steps": ["read"]
+            },
+            {
+              "pack": "loop",
+              "workflow": "archon-backlog",
+              "steps": ["read-prd"]
+            }
+          ],
+          "details": {
+            "what": ["The next one Intake sent here"]
+          }
+        },
+        {
+          "id": "s-slice",
+          "role": "agent",
+          "kind": "agent · large",
+          "title": "Break it up",
+          "text": "Work items, with what depends on what",
+          "x": 344,
+          "y": 0,
+          "covers": [
+            {
+              "pack": "queue",
+              "workflow": "archon-split",
+              "steps": ["slice"]
+            },
+            {
+              "pack": "queue",
+              "workflow": "factory-backlog",
+              "steps": ["slice", "check"]
+            },
+            {
+              "pack": "loop",
+              "workflow": "archon-backlog",
+              "steps": ["slice", "check"]
+            }
+          ],
+          "details": {
+            "what": ["Work items, with what depends on what"]
+          }
+        },
+        {
+          "id": "s-pub",
+          "role": "source",
+          "kind": "script",
+          "title": "File the issues",
+          "text": "Once each, with Depends on: #n",
+          "x": 688,
+          "y": 0,
+          "covers": [
+            {
+              "pack": "queue",
+              "workflow": "archon-split",
+              "steps": ["publish"]
+            },
+            {
+              "pack": "queue",
+              "workflow": "factory-backlog",
+              "steps": ["publish"]
+            },
+            {
+              "pack": "loop",
+              "workflow": "archon-backlog",
+              "steps": ["authorize", "publish"]
+            }
+          ],
+          "details": {
+            "what": ["Once each, with Depends on: #n"]
+          }
+        },
+        {
+          "id": "s-keep",
+          "role": "source",
+          "kind": "afterwards",
+          "title": "Keep the document",
+          "text": "Open until its result is measured. A bundle closes.",
+          "x": 688,
+          "y": 288,
+          "lists": ["documents"],
+          "covers": [],
+          "details": {
+            "what": ["Open until its result is measured. A bundle closes."]
+          }
+        },
+        {
+          "id": "s-next",
+          "role": "source",
+          "kind": "next",
+          "title": "Intake",
+          "text": "Each new issue is triaged",
+          "x": 1032,
+          "y": 0,
+          "upTo": "intake",
+          "covers": [],
+          "details": {
+            "what": ["Each new issue is triaged"]
+          }
+        }
+      ],
+      "lines": [
+        {
+          "from": "s-take",
+          "to": "s-slice",
+          "style": "flow"
+        },
+        {
+          "from": "s-slice",
+          "to": "s-pub",
+          "style": "flow"
+        },
+        {
+          "from": "s-pub",
+          "to": "s-next",
+          "style": "flow"
+        },
+        {
+          "from": "s-pub",
+          "to": "s-keep",
+          "style": "loop",
+          "route": [[818, 200], [818, 288]]
+        }
+      ],
+      "tour": ["s-take", "s-slice", "s-pub", "s-next"]
+    },
+    "intake": {
+      "caption": "Every new or edited work item passes through Intake. It checks who wrote it, then triage decides the route by how uncertain the work is, not how big it is. A product document or a bundle goes to Split.",
+      "cardSize": {
+        "width": 260,
+        "height": 200
+      },
+      "cards": [
+        {
+          "id": "i-trust",
+          "role": "source",
+          "kind": "script",
+          "title": "Who wrote it?",
+          "text": "Maintainers in, others wait",
+          "x": 0,
+          "y": 272,
+          "covers": [
+            {
+              "pack": "queue",
+              "workflow": "archon-intake",
+              "steps": ["facts"]
+            }
+          ],
+          "details": {
+            "what": ["Maintainers in, others wait"]
+          }
+        },
+        {
+          "id": "i-tri",
+          "role": "agent",
+          "kind": "agent · @triage",
+          "title": "Triage",
+          "text": "Route, size, importance",
+          "x": 344,
+          "y": 272,
+          "covers": [
+            {
+              "pack": "queue",
+              "workflow": "archon-intake",
+              "steps": ["triage", "outcome"]
+            },
+            {
+              "pack": "loop",
+              "workflow": "archon-loop",
+              "steps": ["pick", "claim"]
+            }
+          ],
+          "details": {
+            "what": ["Route, size, importance"]
+          }
+        },
+        {
+          "id": "i-del",
+          "role": "source",
+          "kind": "route",
+          "title": "Deliver",
+          "text": "Ready to implement",
+          "x": 744,
+          "y": 0,
+          "covers": [],
+          "details": {
+            "what": ["Ready to implement"]
+          }
+        },
+        {
+          "id": "i-plan",
+          "role": "source",
+          "kind": "route",
+          "title": "Plan first",
+          "text": "A design call is open",
+          "x": 744,
+          "y": 230,
+          "covers": [],
+          "details": {
+            "what": ["A design call is open"]
+          }
+        },
+        {
+          "id": "i-inv",
+          "role": "source",
+          "kind": "route",
+          "title": "Investigate",
+          "text": "The cause is unproven",
+          "x": 744,
+          "y": 460,
+          "covers": [],
+          "details": {
+            "what": ["The cause is unproven"]
+          }
+        },
+        {
+          "id": "i-spl",
+          "role": "source",
+          "kind": "route",
+          "title": "Split",
+          "text": "A document or a bundle of tasks",
+          "x": 744,
+          "y": 690,
+          "covers": [],
+          "details": {
+            "what": ["A document or a bundle of tasks"]
+          }
+        },
+        {
+          "id": "i-ask",
+          "role": "person",
+          "kind": "waits",
+          "title": "Needs a contract",
+          "text": "Missing problem, outcome or acceptance",
+          "x": 344,
+          "y": 648,
+          "covers": [],
+          "details": {
+            "what": ["Missing problem, outcome or acceptance"]
+          }
+        },
+        {
+          "id": "i-next",
+          "role": "source",
+          "kind": "next",
+          "title": "Work order",
+          "text": "Ready work waits to be picked",
+          "x": 1144,
+          "y": 230,
+          "upTo": "order",
+          "covers": [],
+          "details": {
+            "what": ["Ready work waits to be picked"]
+          }
+        },
+        {
+          "id": "i-up",
+          "role": "source",
+          "kind": "next",
+          "title": "Split",
+          "text": "Comes back as new work items",
+          "x": 1144,
+          "y": 690,
+          "upTo": "split",
+          "covers": [],
+          "details": {
+            "what": ["Comes back as new work items"]
+          }
+        }
+      ],
+      "lines": [
+        {
+          "from": "i-trust",
+          "to": "i-tri",
+          "style": "flow"
+        },
+        {
+          "from": "i-tri",
+          "to": "i-del",
+          "style": "flow",
+          "route": [[604, 372], [674, 372], [674, 100], [744, 100]]
+        },
+        {
+          "from": "i-tri",
+          "to": "i-plan",
+          "style": "flow",
+          "route": [[604, 372], [674, 372], [674, 330], [744, 330]]
+        },
+        {
+          "from": "i-tri",
+          "to": "i-inv",
+          "style": "flow",
+          "route": [[604, 372], [674, 372], [674, 560], [744, 560]]
+        },
+        {
+          "from": "i-tri",
+          "to": "i-spl",
+          "style": "flow",
+          "route": [[604, 372], [674, 372], [674, 790], [744, 790]]
+        },
+        {
+          "from": "i-plan",
+          "to": "i-next",
+          "style": "flow"
+        },
+        {
+          "from": "i-del",
+          "to": "i-next",
+          "style": "flow",
+          "arrow": false,
+          "route": [[1004, 100], [1074, 100], [1074, 330]]
+        },
+        {
+          "from": "i-inv",
+          "to": "i-next",
+          "style": "flow",
+          "arrow": false,
+          "route": [[1004, 560], [1074, 560], [1074, 330]]
+        },
+        {
+          "from": "i-spl",
+          "to": "i-up",
+          "style": "flow"
+        },
+        {
+          "from": "i-tri",
+          "to": "i-ask",
+          "style": "ask",
+          "route": [[474, 472], [474, 648]]
+        }
+      ],
+      "tour": ["i-trust", "i-tri", "i-plan", "i-next"]
     },
     "app": {
       "caption": "Every PR passes through App check before Merge. It picks a PR, merges it with the latest main in a scratch checkout, starts the app and uses it like a person, against what the work item asks for. Every claim must point at a file made during this check. The result is a commit status the merge gate requires, and it stands until the PR gets a new commit.",
