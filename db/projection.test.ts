@@ -2149,7 +2149,21 @@ test('a queue app check line’s id, kind and verdict follow the factory’s LIN
     'C1 PASS Single spaces.',
     'C  PASS  No number.',
   ];
+  // Every character where JS `\s` and `.` differ from Postgres' regex classes.
+  const jsOnlySpace = [
+    ' ',
+    ' ',
+    ...Array.from({ length: 11 }, (_, i) => String.fromCharCode(0x2000 + i)),
+    ' ',
+    ' ',
+    ' ',
+    ' ',
+    '　',
+    '﻿',
+  ];
   const texts = [
+    ...jsOnlySpace.map((c) => `C1${c}${c}PASS${c}${c}ok.${c}${c}evidence:${c}a.png`),
+    ...['\r', ' ', ' '].map((c) => `C1  PASS  in${c}side.  evidence: a.png`),
     ...base.map((text) => `${text}  evidence: a.png`),
     ...base,
     'C4  PASS  Empty tail.  evidence:',
