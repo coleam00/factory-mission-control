@@ -366,6 +366,7 @@ function sweepDecision(row: WorkItemRow, base: Base): TimelineEvent[] {
         },
       ];
     case 'ask':
+      if (row.asked_pr !== String(row.pr)) return [];
       return [{ ...base, at, tone: 'owner', text: `Asked you: ${reason ?? NO_REASON}` }];
     case 'wait':
       return [{ ...base, at, tone: 'plain', text: `Waiting: ${reason ?? NO_REASON}` }];

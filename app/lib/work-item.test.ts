@@ -192,6 +192,16 @@ test('an owner answer shows on the pull request it was asked about only', () => 
   expect(texts([item, other])).toEqual(['Filed']);
 });
 
+test('a sweep ask shows as asked only on the pull request the record step raised', () => {
+  const decisions = [
+    { number: 410, action: 'ask', reason: 'which one?' },
+    { number: 411, action: 'ask', reason: 'which one?' },
+  ];
+  const asked = (pr: number) => sweep({ pr, decisions, asked_pr: '410' });
+  expect(texts([item, asked(410)])).toContain('Asked you: which one?');
+  expect(texts([item, asked(411)])).toEqual(['Filed']);
+});
+
 test('old-loop rounds link to their lap page, every other run to the console', () => {
   const loop = row({ workflow: 'archon-loop', run_id: RUN });
   const queue = row({ run_id: '5eed0005-0000-4000-8000-00000000000b' });
