@@ -64,19 +64,20 @@ test('the seed recount: each column and each work order bar equal the definition
 
   // queue-factory: 401 is in triage and built (the build run is between steps), so Intake; 402 and
   // 403 only have runs between steps, so no column; 404 and 405 are workable with no run (Queued);
-  // 406 is needs-owner, which a queue factory does not read, and is not workable.
+  // 406 is needs-owner, which a queue factory does not read, and is not workable. 410 is a product
+  // document, 411 and 412 are its merged pieces and 413 its open one (Queued).
   const queue = await view('queue-factory');
   expect(columns(queue)).toEqual({
-    queued: [404, 405],
+    queued: [404, 405, 413],
     intake: [401],
     build: [],
     review: [],
     app: [],
     merge: [],
     decision: [],
-    merged: [],
+    merged: [411, 412],
   });
-  expect(queue.notInOrder).toBe(3);
+  expect(queue.notInOrder).toBe(6);
 });
 
 test('a work item carries its pull request, rounds, route and app verdict from the seed laps', async () => {

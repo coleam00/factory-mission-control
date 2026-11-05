@@ -1513,7 +1513,11 @@ function secondFactorySql(loop: Loop): string[] {
  * paused archon-merge-queue run waiting on attention, and a completed one whose `record` step read
  * pull requests 404 and 405 back as merged. Two versions built them: the first opened 404 and, on
  * a second digest, a later round continued it while another opened 405 (#393), so each version
- * holds one merge. One open needs-owner issue must not count.
+ * holds one merge. One open needs-owner issue must not count. One open
+ * product document (410, label `archon-prd`) whose completed `archon-split` run recorded issues
+ * 411, 412 and 413 and adopted 405; 411 and 412 are closed by merged pull requests, so the document
+ * is 2 merged of 4. A running `archon-intake` run (on 401) and a running `archon-split` run (on
+ * 410) have no step yet, for the live check to put on Triage and Break it up.
  */
 export const QUEUE_FACTORY: FactoryEntry = {
   name: 'queue-factory',
@@ -1532,6 +1536,9 @@ export const QUEUE_RUNS = {
   continued: '5eed0005-0000-4000-8000-000000000008',
   opened: '5eed0005-0000-4000-8000-000000000009',
   intake: '5eed0005-0000-4000-8000-000000000006',
+  split: '5eed0005-0000-4000-8000-00000000000b',
+  splitting: '5eed0005-0000-4000-8000-00000000000c',
+  triaging: '5eed0005-0000-4000-8000-00000000000a',
 } as const;
 
 /**
@@ -1542,11 +1549,11 @@ export const QUEUE_RUNS = {
 export const QUEUE_RETURNED = {
   issue: 407,
   pr: 410,
-  intake: '5eed0005-0000-4000-8000-00000000000a',
-  first: '5eed0005-0000-4000-8000-00000000000b',
-  returned: '5eed0005-0000-4000-8000-00000000000c',
-  second: '5eed0005-0000-4000-8000-00000000000d',
-  landed: '5eed0005-0000-4000-8000-00000000000e',
+  intake: '5eed0005-0000-4000-8000-000000000010',
+  first: '5eed0005-0000-4000-8000-000000000011',
+  returned: '5eed0005-0000-4000-8000-000000000012',
+  second: '5eed0005-0000-4000-8000-000000000013',
+  landed: '5eed0005-0000-4000-8000-000000000014',
   reason: 'It conflicts with main in app/routes/board.tsx.',
   brief: 'Merge main into the branch, keep both column rules, and run the board tests again.',
 } as const;
@@ -1624,6 +1631,30 @@ function queueFactorySql(): string[] {
       updated_at: when.closed ?? at(1),
       closed_at: when.closed,
     });
+  const merged = (pr: number, number: number) => [
+    insert('mc.pull_requests', {
+      factory: QUEUE_FACTORY.name,
+      number: pr,
+      title: `Queue issue ${number}`,
+      state: 'closed',
+      merged_at: at(8),
+      head_sha: `${'c'.repeat(39)}${number % 10}`,
+      url: `https://github.com/${QUEUE_FACTORY.repository}/pull/${pr}`,
+      created_at: at(2),
+      updated_at: at(8),
+      closed_at: at(8),
+    }),
+    insert('mc.pull_request_issues', {
+      factory: QUEUE_FACTORY.name,
+      pr_number: pr,
+      issue_number: number,
+    }),
+  ];
+  const filed = (number: number) => ({
+    key: `piece-${number}`,
+    number,
+    url: `https://github.com/${QUEUE_FACTORY.repository}/issues/${number}`,
+  });
   const claimed = (number: number) => ({
     path: 'route',
     item: {
@@ -1678,6 +1709,23 @@ function queueFactorySql(): string[] {
       }),
       created_at: at(4),
     }),
+    run(QUEUE_RUNS.triaging, 'archon-intake', 'running', { inputs: { number: '401' } }, false),
+    run(QUEUE_RUNS.splitting, 'archon-split', 'running', { inputs: { number: '410' } }, false),
+    run(QUEUE_RUNS.split, 'archon-split', 'completed', { inputs: { number: '410' } }, true),
+    done(QUEUE_RUNS.split, 'publish', 7, {
+      path: 'slice',
+      item: 410,
+      kind: 'prd',
+      issues: [filed(411), filed(412), filed(413)],
+      adopted: [
+        {
+          number: 405,
+          url: `https://github.com/${QUEUE_FACTORY.repository}/issues/405`,
+          why: 'Already covers the merge queue piece.',
+        },
+      ],
+      summary: 'Filed 411, 412 and 413; adopted 405.',
+    }),
     run(QUEUE_RUNS.built, 'archon-build-queue', 'completed', {}, true, earlier),
     done(QUEUE_RUNS.built, 'facts', 1, claimed(404), earlier, { cost_usd: 1.2 }),
     // A later round on pull request 404, which the run above opened, and a run that opens 405.
@@ -1718,6 +1766,18 @@ function queueFactorySql(): string[] {
     issue(404, 'Queue issue 404'),
     issue(405, 'Queue issue 405'),
     issue(406, 'Needs the owner'),
+    issue(410, 'Queue product document'),
+    issue(411, 'Queue piece 411', { created: at(0), closed: at(7) }),
+    issue(412, 'Queue piece 412', { created: at(0), closed: at(7) }),
+    issue(413, 'Queue piece 413'),
+    ...merged(421, 411),
+    ...merged(422, 412),
+    insert('mc.issue_labels', {
+      factory: QUEUE_FACTORY.name,
+      issue_number: 410,
+      label: 'archon-prd',
+      labeled_at: at(2),
+    }),
     insert('mc.issue_labels', {
       factory: QUEUE_FACTORY.name,
       issue_number: 406,

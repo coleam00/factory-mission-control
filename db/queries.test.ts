@@ -26,7 +26,7 @@ import type {
 import type { CheckRow, DefaultHoldoutRow, RouteRow } from '../app/lib/testing';
 import type { VersionStripRow } from '../app/lib/version-strip';
 import type { WorkItemRow } from '../app/lib/work-item';
-import type { HomeMapRow, WorkOrderRow } from '../app/map/live';
+import type { HomeMapRow, ProductDocumentRow, WorkOrderRow } from '../app/map/live';
 import { LIVE_QUERY_NAME, parameterCount } from '../server/live';
 import { migratedDb, paramsFor, queries } from './queries/test-seed';
 import type { TestDb } from './test-db';
@@ -366,6 +366,13 @@ const ROW_COLUMNS: Record<string, string[]> = {
     'repository',
   ]),
   'testing-routes': columns<RouteRow>()(['run_id', 'status', 'started_at', 'route', 'depth']),
+  'product-documents': columns<ProductDocumentRow>()([
+    'number',
+    'title',
+    'url',
+    'total_count',
+    'merged_count',
+  ]),
   'work-orders': columns<WorkOrderRow>()([
     'name',
     'total_count',
