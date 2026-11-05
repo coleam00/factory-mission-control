@@ -13,6 +13,7 @@ JOIN LATERAL (
   LEFT JOIN mc.lap_steps sel ON sel.run_id = s.run_id AND sel.step_id = 'select'
     AND l.workflow_name = 'factory-app-check'
   WHERE l.factory = pr.factory
+    AND (s.status = 'running' OR s.output ? 'overall')
     AND (s.step_id = 'check-app' OR (s.step_id = 'check' AND l.workflow_name = 'factory-app-check'))
     AND substring(coalesce(s.output ->> 'pr', sel.output ->> 'pr') FROM '([0-9]+)/?$')::integer
       = pr.number

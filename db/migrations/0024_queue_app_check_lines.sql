@@ -32,15 +32,14 @@ RETURNS boolean LANGUAGE sql IMMUTABLE AS $$
         OR (l.line #>> '{}') ~ '(?<![A-Za-z0-9_])H-[0-9]{2,}(?![A-Za-z0-9_])')), false)
 $$;
 
--- A check report's string lines as the objects mc.project_app_check_lines reads. A line that is
--- not `<id> <VERDICT> ...` is left out.
+-- A check report's string lines as the objects mc.project_app_check_lines reads. The id and verdict
+-- are the ones the factory's evidence.ts LINE accepts; any other line is left out.
 CREATE OR REPLACE FUNCTION mc.queue_app_check_lines(p_lines jsonb)
 RETURNS jsonb LANGUAGE sql IMMUTABLE AS $$
   SELECT coalesce(jsonb_agg(jsonb_build_object(
       'id', m.parts[1],
-      'kind', CASE upper(left(m.parts[1], 1))
-        WHEN 'C' THEN 'criterion' WHEN 'P' THEN 'probe' WHEN 'A' THEN 'assertion'
-        ELSE 'defect' END,
+      'kind', CASE left(m.parts[1], 1)
+        WHEN 'C' THEN 'criterion' WHEN 'P' THEN 'probe' ELSE 'assertion' END,
       'verdict', m.parts[2],
       'evidence', CASE WHEN l.line #>> '{}' ~ 'evidence:\s*\S'
         THEN jsonb_build_array('evidence') ELSE '[]'::jsonb END)
@@ -48,7 +47,7 @@ RETURNS jsonb LANGUAGE sql IMMUTABLE AS $$
   FROM jsonb_array_elements(CASE WHEN jsonb_typeof(p_lines) = 'array' THEN p_lines ELSE '[]' END)
     WITH ORDINALITY AS l(line, position)
   CROSS JOIN LATERAL (
-    SELECT regexp_match(mc.gate_trim(l.line #>> '{}'), '^([A-Za-z]+[0-9]+)\s+([A-Za-z]{2,16})(?:\s|$)') AS parts
+    SELECT regexp_match(mc.gate_trim(l.line #>> '{}'), '^([CPA][0-9]+)\s{2}(PASS|FAIL|INCOMPLETE)\s{2}') AS parts
   ) m
   WHERE jsonb_typeof(l.line) = 'string' AND m.parts IS NOT NULL
 $$;

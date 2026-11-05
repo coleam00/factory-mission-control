@@ -164,7 +164,10 @@ describe('home-map on the seed', () => {
         `SELECT run_id FROM mc.laps WHERE factory = 'mission-control' AND status = 'completed' LIMIT 1`,
       );
       const check = (workflow: string) =>
-        db.query(`UPDATE mc.laps SET workflow_name = $2 WHERE run_id = $1`, [lap?.run_id, workflow]);
+        db.query(`UPDATE mc.laps SET workflow_name = $2 WHERE run_id = $1`, [
+          lap?.run_id,
+          workflow,
+        ]);
       await db.query(
         `INSERT INTO mc.lap_steps (run_id, step_id, status, started_at, output)
           VALUES ($1, 'check', 'completed', '2026-11-01T00:00:00Z', '{"pr":109,"overall":"FAIL"}')`,

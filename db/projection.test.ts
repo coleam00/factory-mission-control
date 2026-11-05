@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, beforeEach, expect, test } from 'bun:test';
+import { join } from 'node:path';
 import { FACTORY_MAP } from '../app/map/factory-map';
 import { holdoutId } from '../parsers/metrics';
 import { eventData, structuredOutputFor } from '../scripts/fixture/write';
@@ -2026,9 +2027,17 @@ async function appCheckRun(steps: [string, Record<string, unknown>][]) {
 }
 
 const appCheckSteps = (id: unknown) =>
-  db.query('SELECT step_id, status, output FROM mc.lap_steps WHERE run_id = $1 ORDER BY step_id', [id]);
+  db.query('SELECT step_id, status, output FROM mc.lap_steps WHERE run_id = $1 ORDER BY step_id', [
+    id,
+  ]);
 
-const select = { found: true, pr: 7, head: 'abc1234', files: ['SECRET-PATH'], issue_body: 'SECRET' };
+const select = {
+  found: true,
+  pr: 7,
+  head: 'abc1234',
+  files: ['SECRET-PATH'],
+  issue_body: 'SECRET',
+};
 
 test('a queue app check keeps its pull request and verdict, and its lines by kind without their text', async () => {
   const id = await appCheckRun([
@@ -2067,7 +2076,10 @@ test('a queue app check keeps its pull request and verdict, and its lines by kin
 test('a queue app check that names a holdout keeps no output and no lines', async () => {
   const id = await appCheckRun([
     ['select', select],
-    ['check', { overall: 'FAIL', lines: ['C1  PASS  Fine.  evidence: a.png', 'H-07  FAIL  SECRET'] }],
+    [
+      'check',
+      { overall: 'FAIL', lines: ['C1  PASS  Fine.  evidence: a.png', 'H-07  FAIL  SECRET'] },
+    ],
   ]);
   expect(await appCheckSteps(id)).toEqual([
     { step_id: 'check', status: 'completed', output: null },
@@ -2075,4 +2087,130 @@ test('a queue app check that names a holdout keeps no output and no lines', asyn
   ]);
   expect(await db.query('SELECT 1 FROM mc.app_check_lines WHERE run_id = $1', [id])).toEqual([]);
   expect(await projectionErrors()).toEqual([]);
+});
+
+test('the lines a queue app check projects are the ones the factory’s own LINE accepts, by its kinds', async () => {
+  // A variable path keeps the factory package's own `.ts` imports out of this project's type-check.
+  const { LINE } = (await import(
+    join(import.meta.dir, '../fixtures/pack/queue/factory/app-check/scripts/evidence.ts')
+  )) as { LINE: RegExp };
+  const evidence = '  evidence: a.png';
+  const texts = [
+    'C1  PASS  A criterion.',
+    'P12  FAIL  A probe.',
+    'A3  INCOMPLETE  An assertion.',
+    'X9  PASS  Unknown prefix.',
+    'c1  PASS  Lower case id.',
+    'C1  MAYBE  Unknown verdict.',
+    'C1 PASS Single spaces.',
+    'C  PASS  No number.',
+  ].map((text) => text + evidence);
+  const id = await appCheckRun([
+    ['select', select],
+    ['check', { overall: 'PASS', lines: texts }],
+  ]);
+  const projected = await db.query(
+    'SELECT line_id, kind FROM mc.app_check_lines WHERE run_id = $1 ORDER BY position',
+    [id],
+  );
+  const accepted = texts.filter((t) => LINE.test(t));
+  expect(accepted.length).toBe(3);
+  expect(projected).toEqual(
+    accepted.map((t) => ({
+      line_id: t.split(' ')[0],
+      kind: { C: 'criterion', P: 'probe', A: 'assertion' }[t[0] as 'C' | 'P' | 'A'],
+    })),
+  );
+});
+
+test('the queue holdout fence names every id holdoutId reads', async () => {
+  const texts = ['PH-12 then H-07 seen', 'see H-123, then H-04', 'x_H-07 and (H-08)', 'no id'];
+  for (const text of texts) {
+    const [row] = await db.query('SELECT mc.queue_app_check_has_holdout($1::jsonb) AS held', [
+      JSON.stringify([`C1  PASS  ${text}  evidence: a.png`]),
+    ]);
+    expect({ text, held: row?.held }).toEqual({ text, held: holdoutId(text) !== 'unidentified' });
+  }
+});
+
+test('0024 re-projects stored queue app checks: lines for a clean run, nothing for a holdout run, and nothing changes run again', async () => {
+  const historical = await archonDb();
+  const check = (lines: string[]) => ({ overall: 'FAIL', summary: 'SECRET', lines });
+  const run = async (hold: boolean) => {
+    const [r] = await historical.query(
+      `INSERT INTO public.remote_agent_workflow_runs (workflow_name, status, user_message)
+       VALUES ('factory-app-check', 'running', 'queue') RETURNING id`,
+    );
+    const outputs: [string, unknown][] = [
+      ['select', select],
+      [
+        'check',
+        check([
+          'C1  PASS  Fine.  evidence: a.png',
+          hold ? 'H-07  FAIL  SECRET  evidence: b.png' : 'P1  FAIL  Probe.  evidence: b.png',
+        ]),
+      ],
+    ];
+    for (const [step, structured_output] of outputs) {
+      await historical.query(
+        `INSERT INTO public.remote_agent_workflow_events (workflow_run_id, event_type, step_name, data)
+         VALUES ($1, 'node_completed', $2, $3)`,
+        [r?.id, step, JSON.stringify({ structured_output, duration_ms: 5 })],
+      );
+    }
+    return r?.id;
+  };
+  const stored = (id: unknown) =>
+    Promise.all([
+      historical.query(
+        'SELECT step_id, output FROM mc.lap_steps WHERE run_id = $1 ORDER BY step_id',
+        [id],
+      ),
+      historical.query(
+        'SELECT line_id, kind, verdict FROM mc.app_check_lines WHERE run_id = $1 ORDER BY position',
+        [id],
+      ),
+    ]);
+  try {
+    await runMigrations({
+      files: migrationFiles.filter((f) => f.name < '0024'),
+      db: historical,
+    });
+    const clean = await run(false);
+    const held = await run(true);
+    expect(await stored(clean)).toEqual([
+      [
+        { step_id: 'check', output: null },
+        { step_id: 'select', output: null },
+      ],
+      [],
+    ]);
+
+    await runMigrations({ files: migrationFiles, db: historical });
+    const migrated = [await stored(clean), await stored(held)];
+    expect(migrated).toEqual([
+      [
+        [
+          { step_id: 'check', output: { pr: 7, head: 'abc1234', overall: 'FAIL' } },
+          { step_id: 'select', output: { pr: 7, head: 'abc1234' } },
+        ],
+        [
+          { line_id: 'C1', kind: 'criterion', verdict: 'PASS' },
+          { line_id: 'P1', kind: 'probe', verdict: 'FAIL' },
+        ],
+      ],
+      [
+        [
+          { step_id: 'check', output: null },
+          { step_id: 'select', output: null },
+        ],
+        [],
+      ],
+    ]);
+    const [file] = migrationFiles.filter((f) => f.name.startsWith('0024'));
+    await historical.query(file?.sql ?? '');
+    expect([await stored(clean), await stored(held)]).toEqual(migrated);
+  } finally {
+    await historical.close();
+  }
 });
