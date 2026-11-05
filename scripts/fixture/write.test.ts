@@ -233,3 +233,24 @@ describe('the attention kind', () => {
     expect(bare.opened).toEqual([]);
   });
 });
+
+test('label writes needs-owner unless --label names another, and --label is refused anywhere else', async () => {
+  const insertedLabel = async (argv: string[]) => {
+    const run = recordingDeps({ repoRoot: repo(), rows: counting(1, 2) });
+    expect(await main(argv, run.deps)).toBe(0);
+    return run.params[run.sql.findIndex((sql) => sql.startsWith('INSERT'))]?.[2];
+  };
+  expect(await insertedLabel(['label'])).toBe('needs-owner');
+  expect(await insertedLabel(['label', '--label', 'work-order:demo'])).toBe('work-order:demo');
+
+  for (const argv of [
+    ['issue', '--label', 'work-order:demo'],
+    ['step', '--label', 'work-order:demo'],
+    ['label', '--label', ''],
+    ['label', '--label', ' demo'],
+  ]) {
+    const refused = recordingDeps({ repoRoot: repo() });
+    expect(await main(argv, refused.deps)).toBe(2);
+    expect(refused.opened).toEqual([]);
+  }
+});
