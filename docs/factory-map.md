@@ -110,6 +110,21 @@ then on the card of that card's view that covers it, so one run on `ship/deliver
 is on Build at the home map and on Deliver in the Build view. A step that Review covers at the
 root counts on no card of the Build view.
 
+## The App check view
+
+`?view=app` is drawn from the mockup's `V.app`. On a factory on the queues, Pick a PR covers
+`config`, `select` and `pending`, How deep? `scope`, Protected paths `policy`, PR + main, started
+`prepare`, Use the app `check`, Seal the evidence `evidence` and `factory/app-check` `publish`,
+`finalize` and `cleanup`; the old loop's `briefs`, `check-app`, `evidence` and `handoff` sit on the
+same cards in the same order. Use the app's Right now also lists the open pull requests the app
+check has looked at (the `app-check` query): each one's latest verdict and its lines by kind.
+
+The home map's failing chip and the Board's verdict chip read the old `check-app` step or, on the
+queues, the `check` step of `factory-app-check` (migration 0024). That step keeps only its overall
+verdict and the pull request and head its `select` step kept, and its lines are stored by id, kind
+and verdict without their text. A run whose report names a holdout keeps no output and no lines.
+Showing those lines on the work item page's timeline waits on that page (#317).
+
 ## Clicking a card
 
 A card keeps itself and the cards a line joins to it lit and dims the rest; its details strip opens

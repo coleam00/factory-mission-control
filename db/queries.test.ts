@@ -23,6 +23,7 @@ import type {
   SubagentRow,
   YamlPartRow,
 } from '../app/lib/step-detail';
+import type { AppCheckRow } from '../app/lib/app-check';
 import type { CheckRow, DefaultHoldoutRow, RouteRow } from '../app/lib/testing';
 import type { VersionStripRow } from '../app/lib/version-strip';
 import type { HomeMapRow, WorkOrderRow } from '../app/map/live';
@@ -46,6 +47,16 @@ const columns =
 
 /** Each live query's result columns, in order, bound to the row type its panel reads. */
 const ROW_COLUMNS: Record<string, string[]> = {
+  'app-check': columns<AppCheckRow>()([
+    'number',
+    'title',
+    'url',
+    'run_id',
+    'overall',
+    'criteria',
+    'probes',
+    'assertions',
+  ]),
   'arch-diff': columns<ArchDiffRow>()(['digest', 'kind', 'workflow', 'first_run_at', 'entries']),
   'attention-items': columns<AttentionRow>()([
     'run_id',

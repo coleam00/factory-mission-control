@@ -81,7 +81,7 @@ export interface DefaultBranch {
   failing: readonly DefaultHoldoutRow[];
 }
 
-const KIND_ORDER = ['criterion', 'holdout', 'probe', 'defect'];
+const KIND_ORDER = ['criterion', 'holdout', 'probe', 'assertion', 'defect'];
 
 const newestFirst = (
   a: { started_at: Date | null; run_id: string },
