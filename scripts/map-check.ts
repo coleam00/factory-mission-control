@@ -101,7 +101,9 @@ function askFailures(map: FactoryMap, labels: ReadonlySet<string>): string[] {
     const rests = asks.filter((card) => 'rest' in (card.asks as object));
     return [
       ...asks.flatMap((card) => {
-        const ask = card.asks as Record<string, unknown>;
+        const ask = card.asks as Partial<
+          Record<keyof typeof LABEL_ASK_KEYS | keyof typeof REST_ASK_KEYS, unknown>
+        >;
         const at = `${card.title} asks`;
         if ('rest' in ask) {
           return ask.rest === true &&

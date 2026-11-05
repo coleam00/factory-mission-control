@@ -50,14 +50,16 @@ export interface Details {
  * The open Archon attention items a question card counts: those carrying the label `label` (with
  * `value` when it names one), or, for `rest`, those no sibling question card counts.
  */
-export type Asks = { label: string; value?: string } | { rest: true };
+export type LabelAsk = { label: string; value?: string };
+export type RestAsk = { rest: true };
+export type Asks = LabelAsk | RestAsk;
 
 /** Every key of each `Asks` arm; the compiler fails here when `Asks` and these drift apart. */
-export const LABEL_ASK_KEYS: Record<keyof Extract<Asks, { label: string }>, true> = {
+export const LABEL_ASK_KEYS: Record<keyof LabelAsk, true> = {
   label: true,
   value: true,
 };
-export const REST_ASK_KEYS: Record<keyof Extract<Asks, { rest: true }>, true> = { rest: true };
+export const REST_ASK_KEYS: Record<keyof RestAsk, true> = { rest: true };
 
 export interface Card {
   id: string;
