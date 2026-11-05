@@ -343,6 +343,7 @@ test('Right now links a lap entry to its page and to its GitHub issue, and only 
   ) => ({
     run,
     step: 'plan',
+    workflow: 'archon-loop',
     issue,
   });
   const html = renderToStaticMarkup(
@@ -361,6 +362,35 @@ test('Right now links a lap entry to its page and to its GitHub issue, and only 
   expect(html).toContain('href="https://github.com/o/r/issues/7"');
   expect(html).toContain('/f/here/laps/bbbbbbbb-2');
   expect(html.match(/data-lap-issue/g)).toHaveLength(1);
+});
+
+test('Right now links only a run with a lap page; a queue run and a merge-queue merge show plainly', () => {
+  const issue = { number: 9, title: 'Queued', url: 'https://github.com/o/r/issues/9' };
+  const at = new Date();
+  const html = renderToStaticMarkup(
+    <MemoryRouter>
+      <RightNow
+        live={{
+          here: [
+            { run: 'loop-run', step: 'plan', workflow: 'archon-loop', issue: null },
+            { run: 'queue-run', step: 'plan', workflow: 'archon-build-queue', issue },
+          ],
+          merged: [
+            { run: 'loop-merge', workflow: 'archon-loop', number: 4, at },
+            { run: 'queue-merge', workflow: 'archon-merge-queue', number: 5, at },
+          ],
+        }}
+        factory="here"
+      />
+    </MemoryRouter>,
+  );
+  expect(html).toContain('/f/here/laps/loop-run');
+  expect(html).toContain('/f/here/laps/loop-merge');
+  expect(html).not.toContain('/laps/queue-run');
+  expect(html).not.toContain('/laps/queue-merge');
+  expect(html).toContain('Queued');
+  expect(html).toContain('href="https://github.com/o/r/issues/9"');
+  expect(html).toContain('#5');
 });
 
 test('Right now says a chip count is unavailable', () => {

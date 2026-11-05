@@ -44,6 +44,8 @@ export interface MapLap {
   run: string;
   /** The deepest running step's path. */
   step: string;
+  /** The run's workflow, which decides whether it has a lap page. */
+  workflow: string;
   issue: { number: number; title: string | null; url: string | null } | null;
 }
 
@@ -59,6 +61,8 @@ export interface MapItem {
 /** A merge a chip counts: the lap that landed it, and the issue or pull request it merged. */
 export interface MapMerge {
   run: string;
+  /** The run's workflow, which decides whether it has a lap page. */
+  workflow: string | null;
   number: number | null;
   at: Date;
 }
@@ -139,8 +143,8 @@ export function mergedToday(rows: readonly HomeMapRow[], now: Date): MapMerge[] 
       if (row.kind !== 'merged' || row.run_id === null || row.at === null) return [];
       if (!sameLocalDay(row.at, now)) return [];
       const { run_id: run, at } = row;
-      if (row.prs === null) return [{ run, number: row.number, at }];
-      return mergedPulls(row.prs).map((number) => ({ run, number, at }));
+      if (row.prs === null) return [{ run, workflow: row.workflow, number: row.number, at }];
+      return mergedPulls(row.prs).map((number) => ({ run, workflow: row.workflow, number, at }));
     })
     .sort(
       (a, b) =>
@@ -270,6 +274,7 @@ export function cardLive(
     const lap: MapLap = {
       run: placed.run,
       step: placed.step,
+      workflow: placed.workflow,
       issue: row.number === null ? null : { number: row.number, title: row.title, url: row.url },
     };
     for (const card of cardChain(factoryMap, placed.workflow, placed.step)) {

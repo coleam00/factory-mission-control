@@ -15,6 +15,12 @@ export interface Disposition {
 export const shownDispositions = (lap: Pick<OneLapRow, 'dispositions' | 'hidden_lines'>) =>
   (lap.dispositions ?? []).filter((d) => d.line === null || !lap.hidden_lines.includes(d.line));
 
+/** The one workflow whose runs have a lap page: `db/queries/one-lap*.sql` filter on it (#395). */
+export const LAP_PAGE_WORKFLOW = 'archon-loop';
+
+/** Whether a run of `workflow` has a lap page to open. */
+export const hasLapPage = (workflow: string | null): boolean => workflow === LAP_PAGE_WORKFLOW;
+
 /** The lap itself: its claim, route and depth, its review and its merge gate. */
 export interface OneLapRow {
   run_id: string;
