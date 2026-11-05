@@ -29,11 +29,13 @@ export const LAP_RUN = '5eed0001-0000-4000-8000-000000000003';
 export const paramsFor = (name: string, factory: string) =>
   name === 'step-detail' || name === 'home-map'
     ? [factory, '']
-    : STEP_PANELS.includes(name)
-      ? [factory, ...CHECK_APP, '']
-      : LAP_PANELS.includes(name)
-        ? [factory, LAP_RUN]
-        : [factory];
+    : name === 'work-item'
+      ? [factory, '3']
+      : STEP_PANELS.includes(name)
+        ? [factory, ...CHECK_APP, '']
+        : LAP_PANELS.includes(name)
+          ? [factory, LAP_RUN]
+          : [factory];
 
 export const SEED = readFileSync(join(REPO_ROOT, 'fixtures', 'seed.sql'), 'utf8');
 

@@ -43,14 +43,10 @@ function Card({ item }: { item: WorkItem }): ReactElement {
       ) : null}
     </>
   );
-  return item.link.kind === 'lap' ? (
-    <Link to={item.link.to} data-work-item={item.number} className={CARD}>
+  return (
+    <Link to={item.to} data-work-item={item.number} className={CARD}>
       {body}
     </Link>
-  ) : (
-    <a href={item.link.href} data-work-item={item.number} className={CARD}>
-      {body}
-    </a>
   );
 }
 
@@ -133,7 +129,8 @@ export function BoardBody({
     <div className="min-w-0 space-y-4">
       <p className="max-w-3xl text-[13px] text-text-secondary">
         Every work item, by who holds it right now, under the work order it belongs to. The columns
-        are the work item's state in Archon, so this board never disagrees with the factory.
+        are the work item's state in Archon, so this board never disagrees with the factory. Click
+        one to see its rounds.
       </p>
       {view.orders.length > 0 ? (
         <div className="flex flex-wrap gap-2.5">
