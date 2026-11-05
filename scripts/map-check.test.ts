@@ -93,7 +93,13 @@ describe('map:check', () => {
           }
         : card,
     );
-    const map = { ...withCards(without), views: { build: FACTORY_MAP.views?.build as MapView } };
+    const map = {
+      ...withCards(without),
+      views: {
+        build: FACTORY_MAP.views?.build as MapView,
+        'build/deliver': FACTORY_MAP.views?.['build/deliver'] as MapView,
+      },
+    };
     expect(check(map)).toEqual([
       "loop pack: archon-loop handoff is marked on a lap's row but covered by no card",
     ]);
