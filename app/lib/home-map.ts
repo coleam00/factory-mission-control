@@ -179,9 +179,19 @@ export function stepGraph(rows: readonly StepTreeRow[], at: string | null = null
   };
 }
 
-/** The home map's address at a version's pin, or at the current version for none. */
-export function homeHref(at?: string | null): string {
-  return at ? `/?at=${encodeURIComponent(at)}` : '/';
+/**
+ * The home map's address at a version's pin, or at the current version for none. The rest of
+ * `search`, such as the open view, is kept.
+ */
+export function homeHref(
+  at?: string | null,
+  search: URLSearchParams = new URLSearchParams(),
+): string {
+  const next = new URLSearchParams(search);
+  if (at) next.set('at', at);
+  else next.delete('at');
+  const query = next.toString();
+  return query === '' ? '/' : `/?${query}`;
 }
 
 export interface FoldedSteps {

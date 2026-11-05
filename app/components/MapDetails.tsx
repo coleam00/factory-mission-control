@@ -209,6 +209,7 @@ export function MapDetails({
   steps,
   stepsFailed = false,
   onClose,
+  open,
   className = '',
 }: {
   className?: string;
@@ -219,6 +220,8 @@ export function MapDetails({
   factory: string;
   at: string | null;
   onClose: () => void;
+  /** Present for a card that opens a deeper view. */
+  open?: { title: string; steps: number; onOpen: () => void };
 }): ReactElement {
   const { details } = card;
   const tabs = TABS.filter(
@@ -240,6 +243,16 @@ export function MapDetails({
             <h2 className="m-0 text-[17px] font-semibold text-text-primary">{card.title}</h2>
           </div>
           <span className="flex-1" />
+          {open ? (
+            <button
+              type="button"
+              data-open-view
+              onClick={open.onOpen}
+              className="cursor-pointer rounded-[7px] border border-border bg-surface-elevated px-3 py-1.5 text-[13px] font-semibold text-text-primary hover:bg-surface-hover"
+            >
+              ⤢ Open {open.title} · {open.steps} steps
+            </button>
+          ) : null}
           <button
             type="button"
             onClick={onClose}

@@ -1,8 +1,10 @@
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { FACTORY_MAP } from '../../app/map/factory-map';
 import { QUEUE_FACTORY, QUEUE_RUNS } from '../fixture/seed';
 import { openPage, type Page } from '../lib/cdp';
 import {
+  fixtureWrite,
   LIMITS,
   type LiveContext,
   type LivePhase,
@@ -24,6 +26,8 @@ const REVIEW_STEP = 'ship__deliver__rounds.review__policy';
 const WRITTEN_STEPS = [BUILD_STEP, REVIEW_STEP];
 const WAITING = `${MAP} [data-card="mgr"] [data-chip="waiting"]`;
 
+const VIEW = '[data-map-stage][data-view="build"][data-placed]';
+
 const liveCountOf = (card: string) =>
   `document.querySelector('${MAP} [data-card="${card}"]')?.getAttribute('data-live-count')`;
 const waitingCount = (page: Page) =>
@@ -35,6 +39,7 @@ export function queueMapPhase(ctx: LiveContext): LivePhase {
   const name = QUEUE_FACTORY.name;
   const ms = {
     build: null as number | null,
+    deliver: null as number | null,
     review: null as number | null,
     waiting: null as number | null,
   };
@@ -60,6 +65,7 @@ export function queueMapPhase(ctx: LiveContext): LivePhase {
     async write() {
       const { base, failures } = ctx;
       const page = await openPage(deps.env);
+      const view = await openPage(deps.env);
       try {
         await page.setViewport(MAP_READABLE.width);
         await page.goto(`${base}/f/${name}`);
@@ -68,6 +74,23 @@ export function queueMapPhase(ctx: LiveContext): LivePhase {
         );
         failures.push(...mapMismatches(await mapCards(page), await lapsOnCards(db, name)));
         writeFileSync(join(outDir, 'queue-map.png'), await page.screenshot(1440));
+
+        await view.setViewport(MAP_READABLE.width);
+        await view.goto(`${base}/f/${name}?view=build`);
+        await view.evaluate<boolean>(
+          pageWait(
+            `document.querySelector('${MAP}[data-state="ready"] ${VIEW}') !== null`,
+            READY_WAIT_MS,
+          ),
+        );
+        failures.push(
+          ...mapMismatches(
+            await mapCards(view),
+            await lapsOnCards(db, name),
+            FACTORY_MAP.views?.build?.cards,
+          ),
+        );
+        writeFileSync(join(outDir, 'build-view.png'), await view.screenshot(1440));
 
         const timed = async (card: string, run: string, step: string) => {
           const target = Number(await page.evaluate<string>(liveCountOf(card))) + 1;
@@ -78,7 +101,21 @@ export function queueMapPhase(ctx: LiveContext): LivePhase {
             `${liveCountOf(card)} === '${target}'`,
           );
         };
-        ms.build = await timed('build', QUEUE_RUNS.build, BUILD_STEP);
+        const buildTarget = Number(await page.evaluate<string>(liveCountOf('build'))) + 1;
+        const deliverTarget = Number(await view.evaluate<string>(liveCountOf('b-del'))) + 1;
+        await fixtureWrite(deps, [
+          'step',
+          '--run',
+          QUEUE_RUNS.build,
+          '--step',
+          BUILD_STEP,
+          '--event',
+          'node_started',
+        ]);
+        [ms.build, ms.deliver] = await Promise.all([
+          untilShown(page, `${liveCountOf('build')} === '${buildTarget}'`),
+          untilShown(view, `${liveCountOf('b-del')} === '${deliverTarget}'`),
+        ]);
         ms.review = await timed('review', QUEUE_RUNS.review, REVIEW_STEP);
 
         const waiting = (await waitingCount(page)) + 1;
@@ -89,6 +126,7 @@ export function queueMapPhase(ctx: LiveContext): LivePhase {
         );
         failures.push(...mapMismatches(await mapCards(page), await lapsOnCards(db, name)));
       } finally {
+        await view.close().catch(() => undefined);
         await page.close().catch(() => undefined);
         await restore();
       }
@@ -105,9 +143,14 @@ export function queueMapPhase(ctx: LiveContext): LivePhase {
 
     judge: () => [
       ...lateWrite('a build-queue run on implement', `${name}'s Build`, ms.build),
+      ...lateWrite('a build-queue run on implement', `${name}'s Build view Deliver`, ms.deliver),
       ...lateWrite('a build-queue run on review', `${name}'s Review`, ms.review),
       ...lateWrite('a paused attention wait', `${name}'s Manager waiting chip`, ms.waiting),
     ],
+
+    async probe(designProbe) {
+      designProbe(`${ctx.base}/f/${name}?view=build`, 'build-view-design-probe.json');
+    },
 
     summary: () => [`queue map: ${JSON.stringify({ ...ms, limit: LIMITS.insertToScreenMs })}`],
   };

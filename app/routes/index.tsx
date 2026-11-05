@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router';
 import { EmptyState } from '../components/EmptyState';
 import { FactoryMap, useReducedMotion } from '../components/FactoryMap';
 import { StepVersionPicker } from '../components/StepVersionPicker';
+import { useMapPath } from '../components/useMapPath';
 import type { HealthWorkableRow } from '../lib/health';
 import { homeHref } from '../lib/home-map';
 import type { OwnerQueueRow } from '../lib/owner-queue';
@@ -52,6 +53,8 @@ export function HomeMapBody({
   steps,
   states = {},
   now = new Date(),
+  path = [],
+  onPath = () => {},
 }: {
   /** `map` is undefined until `home-map` has answered. */
   sources: Omit<MapSources, 'map'> & { map: readonly HomeMapRow[] | undefined };
@@ -69,6 +72,9 @@ export function HomeMapBody({
   states?: NonNullable<MapSources['states']> & { steps?: PanelState };
   /** The browser's clock, which decides what "today" is for the merges. */
   now?: Date;
+  /** The view ids the address names, root first; none is the home map. */
+  path?: readonly string[];
+  onPath?: (path: readonly string[]) => void;
 }): ReactElement {
   const { map, workable, owner, orders } = sources;
   const empty = (title: string) => (
@@ -89,6 +95,8 @@ export function HomeMapBody({
       factory={factory}
       at={at}
       flow={flow}
+      path={path}
+      onPath={onPath}
       onDrawn={onDrawn}
       steps={steps}
       stepsFailed={states.steps === 'error'}
@@ -103,6 +111,7 @@ export function HomeMapBody({
 export default function Home(): ReactElement {
   const [search] = useSearchParams();
   const at = search.get('at') || null;
+  const [path, onPath] = useMapPath(FACTORY_MAP);
   const factory = useFactory();
   const live = useLive();
   const [flow, setFlow] = useState(true);
@@ -140,7 +149,7 @@ export default function Home(): ReactElement {
         ) : null}
       </div>
       <div className={COLUMN}>
-        <StepVersionPicker factory={factory} at={at} href={homeHref} />
+        <StepVersionPicker factory={factory} at={at} href={(pin) => homeHref(pin, search)} />
       </div>
       <Feed<HealthWorkableRow> query="health-workable" factory={factory} into={setWorkable} />
       <Feed<OwnerQueueRow> query="owner-queue" factory={factory} into={setOwner} />
@@ -164,6 +173,8 @@ export default function Home(): ReactElement {
             flow={flow}
             onDrawn={setDrawn}
             now={now}
+            path={path}
+            onPath={onPath}
           />
         )}
       </LivePanel>
