@@ -125,3 +125,16 @@ test('a paused run is drawn in the person color, not amber', () => {
   expect(html).toContain('var(--role-person)');
   expect(html).not.toContain('warning');
 });
+
+test('attention items in error leave the owner queue on screen with an unavailable notice', () => {
+  const html = render(<WaitingItems attention="unavailable" owner={[needsOwner]} now={NOW} />);
+  expect(html).toContain('Live data for what is waiting on you is unavailable.');
+  expect(html).toContain('data-owner-item');
+  expect(html).not.toContain('Nothing is waiting on you.');
+});
+
+test('an unavailable list never lets the screen claim nothing waits', () => {
+  const html = render(<WaitingItems attention={[]} owner="unavailable" now={NOW} />);
+  expect(html).toContain('Live data for the owner queue is unavailable.');
+  expect(html).not.toContain('Nothing is waiting on you.');
+});
