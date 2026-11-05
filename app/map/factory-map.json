@@ -243,7 +243,7 @@
         ],
         "what": [
           "Takes a triaged work item to a reviewed PR with green CI.",
-          "Up to 2 rounds per work item. Each round can deliver up to 4 times."
+          "Each build round can deliver up to 4 times. After 2 rounds, it also checks that the rounds are getting somewhere, and asks you if they aren't."
         ],
         "how": [
           "Brief, then plan or investigate if needed, then deliver, then an agent decides done, another round, or ask you. It asks early when a change has grown past its size or stopped converging."
@@ -575,7 +575,7 @@
   ],
   "views": {
     "build": {
-      "caption": "One build run takes one work item one round forward. A round writes a brief, plans or investigates if triage asked for it, then delivers: implement, open the PR, review, fix. After the round an agent decides: done, another round (up to 2), or ask you. It also asks when a change has outgrown its size or stopped converging.",
+      "caption": "One build run takes one work item one round forward. A round writes a brief, plans or investigates if triage asked for it, then delivers: implement, open the PR, review, fix. After the round an agent decides: done, another round, or ask you. After 2 rounds it also checks that the rounds are converging. It also asks when a change has outgrown its size or stopped converging.",
       "cardSize": {
         "width": 260,
         "height": 200
@@ -921,7 +921,7 @@
           "from": "b-dec",
           "to": "b-brief",
           "style": "loop",
-          "label": "another round (max 2)",
+          "label": "another round",
           "route": [[1218, 306], [1218, 40], [130, 40], [130, 306]]
         }
       ],
