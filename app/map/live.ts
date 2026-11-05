@@ -111,8 +111,10 @@ export interface CardLive {
   waiting?: MapItem[];
   /** Every open question, which the Manager's Right now lists in place of its `waiting` ones. */
   questions?: MapItem[];
-  /** Runs pending or paused, steps far past their usual time, failed runs by cause. */
+  /** Runs pending or paused and failed runs by cause. */
   health?: MapHealth[];
+  /** The step rows whose overdue ones the view works out against its own ticking clock. */
+  steps?: readonly HealthStepRow[];
   /** The health queries failed: not healthy, unknown. */
   healthUnavailable?: boolean;
   merged?: MapMerge[];
@@ -328,7 +330,7 @@ export function cardLive(
       else if (counted !== undefined) Object.assign(entry, { [chip]: counted });
     }
   }
-  countQuestions(factoryMap, live, sources, now);
+  countQuestions(factoryMap, live, sources);
   return live;
 }
 
@@ -361,7 +363,6 @@ function countQuestions(
   factoryMap: FactoryMap,
   live: Map<string, CardLive>,
   sources: MapSources,
-  now: Date,
 ): void {
   const { attention, healthRuns, healthSteps, states = {} } = sources;
   const items = parseAttention(attention ?? []);
@@ -375,10 +376,11 @@ function countQuestions(
         if (states.healthRuns === 'error' || states.healthSteps === 'error') {
           entry.healthUnavailable = true;
         } else if (healthRuns !== undefined && healthSteps !== undefined) {
-          entry.health = healthItems(sources, now);
+          entry.health = healthItems(sources);
+          entry.steps = healthSteps;
         }
       }
-      if (attention === undefined) continue;
+      if (attention === undefined || states.attention === 'error') continue;
       const own = items.filter((item) =>
         'rest' in ask
           ? !asking.some((other) => other.asks && asked(other.asks, item))
@@ -390,28 +392,33 @@ function countQuestions(
   }
 }
 
+const runLink = (console: string | null, run: string) =>
+  console === null ? null : consoleUrl(console, run);
+
 /** The health the Manager's Right now lists, by the screen's own definitions (lib/health). */
-function healthItems({ healthRuns, healthSteps }: MapSources, now: Date): MapHealth[] {
-  const link = (console: string | null, run: string) =>
-    console === null ? null : consoleUrl(console, run);
+function healthItems({ healthRuns }: MapSources): MapHealth[] {
   return [
     ...waitingRuns(healthRuns ?? []).map((run) => ({
       key: `health-${run.status}-${run.run_id}`,
       note: `${run.status}: ${run.workflow_name}`,
       run: run.run_id,
-      url: link(run.console, run.run_id),
-    })),
-    ...overdueSteps(healthSteps ?? [], now.getTime()).map((step) => ({
-      key: `health-overdue-${step.run_id}-${step.step_id}`,
-      note: `${step.step_id} has run ${formatElapsed(step.running_ms / 1000)}, usually ${formatElapsed(step.p90_ms / 1000)}`,
-      run: step.run_id,
-      url: link(step.console, step.run_id),
+      url: runLink(run.console, run.run_id),
     })),
     ...failedLaps(healthRuns ?? []).map((lap) => ({
       key: `health-failed-${lap.run_id}`,
       note: `failed: ${CAUSE_LABEL[lap.cause]}`,
       run: lap.run_id,
-      url: link(lap.console, lap.run_id),
+      url: runLink(lap.console, lap.run_id),
     })),
   ];
+}
+
+/** The steps running far past normal at `now` (ms), by the Health screen's definition. */
+export function overdueHealth(steps: readonly HealthStepRow[], now: number): MapHealth[] {
+  return overdueSteps(steps, now).map((step) => ({
+    key: `health-overdue-${step.run_id}-${step.step_id}`,
+    note: `${step.step_id} has run ${formatElapsed(step.running_ms / 1000)}, usually ${formatElapsed(step.p90_ms / 1000)}`,
+    run: step.run_id,
+    url: runLink(step.console, step.run_id),
+  }));
 }

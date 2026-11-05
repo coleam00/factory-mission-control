@@ -2,7 +2,8 @@ import { type ReactElement, type ReactNode, useState } from 'react';
 import { Link } from 'react-router';
 import type { StepRow } from '../lib/step-detail';
 import { type Card, pinnedStepLinks, workflowFile } from '../map/factory-map';
-import type { CardLive, MapItem, WorkOrderRow } from '../map/live';
+import { type CardLive, type MapItem, overdueHealth, type WorkOrderRow } from '../map/live';
+import { useNow } from './Lanes';
 
 type Tab = 'when' | 'what' | 'how' | 'live' | 'behind';
 
@@ -77,6 +78,7 @@ export function RightNow({
   live: CardLive | undefined;
   factory: string;
 }): ReactElement {
+  const ticking = useNow();
   const lapHref = (run: string) => `/f/${encodeURIComponent(factory)}/laps/${run}`;
   const rows: ReactNode[] = [
     ...(live?.here ?? []).map((lap) => (
@@ -118,7 +120,7 @@ export function RightNow({
           </li>,
         ]
       : []),
-    ...(live?.health ?? []).map((item) => (
+    ...[...(live?.health ?? []), ...overdueHealth(live?.steps ?? [], ticking)].map((item) => (
       <li key={item.key} data-health={item.key}>
         {item.url ? (
           <a href={item.url} className={`${LINK} font-mono`}>

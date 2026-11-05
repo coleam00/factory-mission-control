@@ -50,7 +50,7 @@ export interface Details {
  * The open Archon attention items a question card counts: those carrying the label `label` (with
  * `value` when it names one), or, for `rest`, those no sibling question card counts.
  */
-export type Asks = { label: string; value?: string } | { rest: boolean };
+export type Asks = { label: string; value?: string } | { rest: true };
 
 export interface Card {
   id: string;

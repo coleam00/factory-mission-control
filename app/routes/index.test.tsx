@@ -7,7 +7,7 @@ import { parsePack, type Step } from '../../parsers/pack';
 import { Behind, MapDetails, RightNow } from '../components/MapDetails';
 import type { StepRow } from '../lib/step-detail';
 import { FACTORY_MAP, workflowFile } from '../map/factory-map';
-import type { HomeMapRow, MapSources } from '../map/live';
+import type { CardLive, HomeMapRow, MapSources } from '../map/live';
 import { HomeMapBody, msToLocalMidnight } from './index';
 
 const REPO = join(import.meta.dir, '..', '..');
@@ -367,6 +367,67 @@ test('Right now says a chip count is unavailable', () => {
     </MemoryRouter>,
   );
   expect(html).toContain('The queued count is unavailable.');
+});
+
+test("the Manager's Right now lists every question with its recommendation, the health with console links, and says when health is unavailable", () => {
+  const item = (key: string, title: string) => ({
+    key,
+    number: null,
+    title,
+    url: `http://archon.test/console/r/${key}`,
+  });
+  const html = (live: CardLive) =>
+    renderToStaticMarkup(
+      <MemoryRouter>
+        <RightNow live={live} factory="here" />
+      </MemoryRouter>,
+    );
+  const shown = html({
+    here: [],
+    waiting: [item('rest-only', 'Rest only')],
+    questions: [
+      { ...item('q1', 'First'), note: 'recommends Ship it' },
+      { ...item('q2', 'Second'), note: 'recommends Stop' },
+    ],
+    health: [
+      {
+        key: 'health-paused-p1',
+        note: 'paused: archon-build-queue',
+        run: 'p1aaaaaaaa',
+        url: 'http://archon.test/console/r/p1aaaaaaaa',
+      },
+    ],
+    steps: [
+      {
+        kind: 'completion',
+        run_id: 'c',
+        workflow_name: 'w',
+        step_id: 's',
+        at: new Date(1),
+        duration_ms: 1000,
+        console: null,
+      },
+      {
+        kind: 'running',
+        run_id: 'slow00000',
+        workflow_name: 'w',
+        step_id: 's',
+        at: new Date(2),
+        duration_ms: null,
+        console: 'http://archon.test',
+      },
+    ],
+  });
+  expect(shown).toContain('First');
+  expect(shown).toContain('recommends Ship it');
+  expect(shown).toContain('recommends Stop');
+  expect(shown).not.toContain('Rest only');
+  expect(shown).toContain('href="http://archon.test/console/r/p1aaaaaaaa"');
+  expect(shown).toContain('data-health="health-overdue-slow00000-s"');
+  expect(shown).toContain('href="http://archon.test/console/r/slow00000"');
+  expect(html({ here: [], healthUnavailable: true })).toContain(
+    'The factory&#x27;s health is unavailable.',
+  );
 });
 
 test('Behind the scenes shows each workflow its own YAML path, and none for a workflow the version lacks', () => {

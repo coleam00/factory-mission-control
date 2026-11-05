@@ -55,6 +55,23 @@ describe('map:check', () => {
     expect(check(FACTORY_MAP)).toEqual([]);
   });
 
+  test('a question card asking for a label no queue wait declares fails', () => {
+    const view = FACTORY_MAP.views?.manager as MapView;
+    const map: FactoryMap = {
+      ...FACTORY_MAP,
+      views: {
+        ...FACTORY_MAP.views,
+        manager: {
+          ...view,
+          cards: view.cards.map((c) => (c.id === 'u-b' ? { ...c, asks: { label: 'bild' } } : c)),
+        },
+      },
+    };
+    expect(check(map)).toEqual([
+      'Build is stuck on a choice asks label "bild", which no wait of the queue pack declares',
+    ]);
+  });
+
   test('a covered step removed from a copy of the pack fails naming the step', () => {
     const pack = editedPack((yaml) =>
       yaml

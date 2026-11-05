@@ -78,6 +78,51 @@ function unknownValues(map: FactoryMap): string[] {
   ];
 }
 
+/** The attention labels the pack's waits declare, which a question card's `asks` may name. */
+function attentionLabels(pack: PackVersion): Set<string> {
+  const keys = new Set<string>();
+  for (const workflow of pack.workflows) {
+    const doc = Bun.YAML.parse(workflow.yaml) as {
+      nodes?: { wait?: { labels?: Record<string, unknown> } }[];
+    };
+    for (const node of doc.nodes ?? []) {
+      for (const key of Object.keys(node.wait?.labels ?? {})) keys.add(key);
+    }
+  }
+  return keys;
+}
+
+/** A question card's `asks` is a label of the queue pack (with an optional value), or `rest`, once a level. */
+function askFailures(map: FactoryMap, labels: ReadonlySet<string>): string[] {
+  return levelsOf(map).flatMap((level) => {
+    const asks = level.cards.flatMap((card) => (card.asks === undefined ? [] : [card]));
+    const rests = asks.filter((card) => 'rest' in (card.asks as object));
+    return [
+      ...asks.flatMap((card) => {
+        const ask = card.asks as Record<string, unknown>;
+        const at = `${card.title} asks`;
+        if ('rest' in ask) {
+          return ask.rest === true && Object.keys(ask).length === 1
+            ? []
+            : [`${at} ${JSON.stringify(ask)}, not exactly {"rest": true}`];
+        }
+        if (typeof ask.label !== 'string' || ask.label === '') {
+          return [`${at} ${JSON.stringify(ask)}, which names no label`];
+        }
+        if (ask.value !== undefined && typeof ask.value !== 'string') {
+          return [`${at} label ${ask.label} with a value that is not a string`];
+        }
+        return labels.has(ask.label)
+          ? []
+          : [`${at} label ${JSON.stringify(ask.label)}, which no wait of the queue pack declares`];
+      }),
+      ...(rests.length > 1
+        ? [`${rests.map((card) => card.title).join(' and ')} all ask for the rest`]
+        : []),
+    ];
+  });
+}
+
 type Trees = Record<Pack, Map<string, Map<string, Step>>>;
 
 /** The level above the view `card` sits in; undefined for a root card. */
@@ -183,7 +228,11 @@ function viewPartition(map: FactoryMap, trees: Trees): string[] {
  * a pack's step starts with that pack.
  */
 export function mapCheck(map: FactoryMap, packs: Record<Pack, PackVersion>): string[] {
-  const failures: string[] = [...unknownValues(map), ...viewFailures(map)];
+  const failures: string[] = [
+    ...unknownValues(map),
+    ...askFailures(map, attentionLabels(packs.queue)),
+    ...viewFailures(map),
+  ];
   const trees = Object.fromEntries(
     PACKS.map((pack) => [
       pack,
