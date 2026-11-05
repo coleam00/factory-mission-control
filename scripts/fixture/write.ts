@@ -143,11 +143,11 @@ export function eventData(
 }
 
 /**
- * Archon's rows hold jsonb objects. Bun encodes a string parameter bound to `::jsonb` as a jsonb
- * string, so the insert passes the object and reads back what Postgres stored; a wrong one rolls
- * back.
+ * Archon's rows hold jsonb objects: an insert passes the object (how a jsonb parameter binds is on
+ * `Tx.query` in ../lib/db) and returns `jsonb_typeof` of what Postgres stored as `stored`; this
+ * throws unless it is an object, so a write in a transaction rolls back.
  */
-function requireObject(what: string, row: Row | undefined): void {
+export function requireObject(what: string, row: Row | undefined): void {
   if (row?.stored !== 'object') {
     throw new Error(`${what} was stored as a jsonb ${row?.stored ?? 'nothing'}, not an object`);
   }

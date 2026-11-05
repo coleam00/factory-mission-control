@@ -3,6 +3,12 @@ import { SQL } from 'bun';
 export type Row = Record<string, unknown>;
 
 export interface Tx {
+  /**
+   * A parameter cast to `::jsonb` binds by its JS shape on Bun's client (`openDb`): an object as a
+   * jsonb object, an array as a jsonb array, a string as a jsonb string. Pass the value itself,
+   * never `JSON.stringify` it. `pgliteDb` parses a string as JSON text instead, so a stringified
+   * value passes a PGlite test and stores a string on Bun; `db.test.ts` proves the Bun side.
+   */
   query(sql: string, params?: unknown[]): Promise<Row[]>;
 }
 
