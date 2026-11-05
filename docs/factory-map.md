@@ -44,8 +44,7 @@ fits the whole map, at any width.
 
 `bun run map:check` (part of `bun run check`) parses both packs with the architecture parser,
 offline, and fails, naming the step, when a step of a workflow a card covers is covered by no card
-or by two, when a card names a workflow or a step its pack lacks, when an entry's screen is not
-the step's own, when a role, chip, line style, legend role or pack is outside the closed sets, or
+or by two, when a card names a workflow or a step its pack lacks, when a role, chip, line style, legend role or pack is outside the closed sets, or
 when a covered step's pack path holds a dot (the map reads a step's path by its dots). A failure
 that names a pack's step starts `loop pack: ` or `queue pack: `. A step of one pack that counts on a
 card only through the other pack's entry (the packs share workflow names such as
