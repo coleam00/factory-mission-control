@@ -11,8 +11,8 @@ const RUN_FACTORIES = `SELECT r.id, c.name AS codebase, mc.factory_of_codebase(c
  * before its factory existed (factory '' or its codebase's name) the factory the projection would
  * now choose, and does the same for each open attention item (mc.attention_items), then projects the versions (mc.project_version) of every digest those laps moved to
  * and from, so a factory registered after its runs lists them on the version strip. Returns how
- * many factory and lap rows changed. `entries` is bound as the array itself: Bun
- * encodes a string bound to `::jsonb` as a jsonb string, which jsonb_to_recordset rejects.
+ * many factory and lap rows changed. `entries` is bound as the array itself, never
+ * stringified (see `Tx.query` in ./db).
  */
 export async function loadFactories({
   entries,

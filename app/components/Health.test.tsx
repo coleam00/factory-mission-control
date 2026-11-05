@@ -17,6 +17,7 @@ const run = (overrides: Partial<HealthRunRow>): HealthRunRow => ({
   failed_step: null,
   error: null,
   failed_at: null,
+  console: 'http://archon.test',
   ...overrides,
 });
 
@@ -93,6 +94,7 @@ test('an overdue step shows how long it has run against its p90', () => {
     step_id: 'build',
     at: new Date(NOW - i * 60 * MINUTE),
     duration_ms: 20 * MINUTE,
+    console: null,
   });
   const html = render(
     <OverdueList
@@ -106,6 +108,7 @@ test('an overdue step shows how long it has run against its p90', () => {
           step_id: 'build',
           at: new Date(NOW - 41 * MINUTE),
           duration_ms: null,
+          console: null,
         },
       ]}
       factory="mission-control"
@@ -125,6 +128,7 @@ test('an overdue step of another workflow has no lap page to open', () => {
     step_id: 'build',
     at,
     duration_ms: kind === 'completion' ? 20 * MINUTE : null,
+    console: null,
   });
   const html = render(
     <OverdueList

@@ -1563,6 +1563,23 @@ export const QUEUE_RUNS = {
   triaging: '5eed0005-0000-4000-8000-00000000000a',
 } as const;
 
+/**
+ * The queue factory's work item 407: an issue built, returned by a merge-queue sweep with a
+ * reason and a brief, built again and then merged, all on 13 October (after the queue version's
+ * first run, so that version's date does not move).
+ */
+export const QUEUE_RETURNED = {
+  issue: 407,
+  pr: 410,
+  intake: '5eed0005-0000-4000-8000-000000000010',
+  first: '5eed0005-0000-4000-8000-000000000011',
+  returned: '5eed0005-0000-4000-8000-000000000012',
+  second: '5eed0005-0000-4000-8000-000000000013',
+  landed: '5eed0005-0000-4000-8000-000000000014',
+  reason: 'It conflicts with main in app/routes/board.tsx.',
+  brief: 'Merge main into the branch, keep both column rules, and run the board tests again.',
+} as const;
+
 /** The source digest of the queue factory's runs: every workflow run from one source shares it. */
 export const QUEUE_DIGEST = `sha256:${'d4'.repeat(32)}`;
 
@@ -1581,7 +1598,7 @@ function queueFactorySql(): string[] {
     minute: number,
     output?: Record<string, unknown>,
     time = at,
-    cost_usd?: number,
+    extra: Record<string, unknown> = {},
   ) =>
     insert('remote_agent_workflow_events', {
       id: `5eedeeee-0000-4000-8000-2${String(++event).padStart(11, '0')}`,
@@ -1592,7 +1609,7 @@ function queueFactorySql(): string[] {
         ...nodeBlock(step, 'script', step),
         timing: { startedAt: time(minute), durationMs: 1000 },
         duration_ms: 1000,
-        ...(cost_usd === undefined ? {} : { cost_usd }),
+        ...extra,
         ...(output ? { structured_output: output } : {}),
       }),
       created_at: time(minute),
@@ -1620,18 +1637,22 @@ function queueFactorySql(): string[] {
       completed_at: completed ? time(9) : null,
       last_activity_at: time(5),
     });
-  const issue = (number: number, title: string, state: 'open' | 'closed' = 'open') =>
+  const issue = (
+    number: number,
+    title: string,
+    when: { created: string; closed: string | null } = { created: at(0), closed: null },
+  ) =>
     insert('mc.issues', {
       factory: QUEUE_FACTORY.name,
       number,
       title,
-      state,
+      state: when.closed === null ? 'open' : 'closed',
       phase: null,
       url: `https://github.com/${QUEUE_FACTORY.repository}/issues/${number}`,
-      created_at: at(0),
-      updated_at: at(1),
-      closed_at: state === 'closed' ? at(7) : null,
-      close_reason: state === 'closed' ? 'completed' : null,
+      created_at: when.created,
+      updated_at: when.closed ?? at(1),
+      closed_at: when.closed,
+      close_reason: when.closed === null ? null : 'completed',
     });
   const merged = (pr: number, number: number) => [
     insert('mc.pull_requests', {
@@ -1729,7 +1750,7 @@ function queueFactorySql(): string[] {
       summary: 'Filed 411, 412 and 413; adopted 405.',
     }),
     run(QUEUE_RUNS.built, 'archon-build-queue', 'completed', {}, true, earlier),
-    done(QUEUE_RUNS.built, 'facts', 1, claimed(404), earlier, 1.2),
+    done(QUEUE_RUNS.built, 'facts', 1, claimed(404), earlier, { cost_usd: 1.2 }),
     // A later round on pull request 404, which the run above opened, and a run that opens 405.
     run(QUEUE_RUNS.continued, 'archon-build-queue', 'completed', {}, true, second, QUEUE_DIGEST_2),
     done(
@@ -1739,10 +1760,10 @@ function queueFactorySql(): string[] {
       { ...claimed(404), pull_request: pullRequest(404) },
       second,
     ),
-    done(QUEUE_RUNS.continued, 'route', 2, undefined, second, 0.75),
+    done(QUEUE_RUNS.continued, 'route', 2, undefined, second, { cost_usd: 0.75 }),
     run(QUEUE_RUNS.opened, 'archon-build-queue', 'completed', {}, true, second, QUEUE_DIGEST_2),
     done(QUEUE_RUNS.opened, 'facts', 1, { ...claimed(405), pull_request: null }, second),
-    done(QUEUE_RUNS.opened, 'route', 2, undefined, second, 2.25),
+    done(QUEUE_RUNS.opened, 'route', 2, undefined, second, { cost_usd: 2.25 }),
     run(QUEUE_RUNS.waiting, 'archon-merge-queue', 'paused', { wait: attentionWait(at(6)) }, false),
     run(QUEUE_RUNS.merged, 'archon-merge-queue', 'completed', {}, true),
     done(QUEUE_RUNS.merged, 'facts', 1, {
@@ -1769,8 +1790,8 @@ function queueFactorySql(): string[] {
     issue(405, 'Queue issue 405'),
     issue(406, 'Needs the owner'),
     issue(410, 'Queue product document'),
-    issue(411, 'Queue piece 411', 'closed'),
-    issue(412, 'Queue piece 412', 'closed'),
+    issue(411, 'Queue piece 411', { created: at(0), closed: at(7) }),
+    issue(412, 'Queue piece 412', { created: at(0), closed: at(7) }),
     issue(413, 'Queue piece 413'),
     ...merged(421, 411),
     ...merged(422, 412),
@@ -1786,6 +1807,233 @@ function queueFactorySql(): string[] {
       label: 'needs-owner',
       labeled_at: at(2),
     }),
+    ...queueReturnedSql({ run, done, issue }),
+  ];
+}
+
+type Clock = (minute: number) => string;
+
+/** The story of QUEUE_RETURNED, appended after every other queue row so no earlier event id moves. */
+function queueReturnedSql(h: {
+  run: (
+    id: string,
+    workflow: string,
+    status: string,
+    metadata: Record<string, unknown>,
+    completed: boolean,
+    time: Clock,
+  ) => string;
+  done: (
+    run: string,
+    step: string,
+    minute: number,
+    output: Record<string, unknown>,
+    time: Clock,
+    extra?: Record<string, unknown>,
+  ) => string;
+  issue: (
+    number: number,
+    title: string,
+    when: { created: string; closed: string | null },
+  ) => string;
+}): string[] {
+  const q = QUEUE_RETURNED;
+  const day =
+    (clock: string): Clock =>
+    (minute) =>
+      new Date(Date.parse(`2026-10-13T${clock}:00.000Z`) + minute * 60_000).toISOString();
+  const filedAt = day('08:00');
+  const intakeAt = day('08:05');
+  const firstAt = day('09:00');
+  const returnedAt = day('11:00');
+  const secondAt = day('12:00');
+  const landedAt = day('13:55');
+  const prUrl = `https://github.com/${QUEUE_FACTORY.repository}/pull/${q.pr}`;
+  const head = 'c4'.repeat(20);
+  const item = { repo: { host: 'github.com', path: QUEUE_FACTORY.repository }, number: q.issue };
+  const built = (id: string, base: Clock, round: number, why: string) => [
+    h.run(
+      id,
+      'archon-build-queue',
+      'completed',
+      { inputs: { number: String(q.issue) } },
+      true,
+      base,
+    ),
+    h.done(id, 'facts', 1, { path: 'route', item }, base),
+    h.done(
+      id,
+      'route',
+      2,
+      {
+        decision: 'launch',
+        continues: null,
+        ready_head: null,
+        brief: `Build issue ${q.issue}.`,
+        reason: why,
+        attention: null,
+      },
+      base,
+      { cost_usd: 0.4 },
+    ),
+    h.done(
+      id,
+      'ship__deliver__rounds.review__result',
+      4,
+      {
+        ready: true,
+        action: 'none',
+        findings_summary: 'No findings.',
+        report: null,
+        discoveries: [],
+        contract_left: [],
+      },
+      base,
+    ),
+    h.done(
+      id,
+      'ship__deliver__rounds.round',
+      5,
+      {
+        round,
+        done: true,
+        ready: true,
+        reason: 'delivered',
+        pr_url: prUrl,
+        prior_report: '',
+        light_review: false,
+        contract_left: [],
+        summary: `Ready on delivery ${round}.`,
+      },
+      base,
+      { cost_usd: 1.5 },
+    ),
+    h.done(
+      id,
+      'answer',
+      6,
+      {
+        decision: 'done',
+        brief: '',
+        push: null,
+        reason: 'The review is Ready at the head and CI is green.',
+        ask_class: 'stop',
+        attention: null,
+      },
+      base,
+      { cost_usd: 0.3 },
+    ),
+    h.done(
+      id,
+      'apply',
+      7,
+      {
+        decision: 'ready',
+        summary: `Issue ${q.issue}: ready.`,
+        attention: '',
+        options: [],
+        class: '',
+        asked: null,
+      },
+      base,
+    ),
+  ];
+  const sweep = (
+    id: string,
+    base: Clock,
+    minute: number,
+    decision: Record<string, unknown>,
+    merged: number[],
+  ) => [
+    h.run(id, 'archon-merge-queue', 'completed', {}, true, base),
+    h.done(
+      id,
+      'sweep',
+      minute,
+      {
+        decisions: [
+          { number: q.pr, class: 'clear', head, reran: false, attention: null, ...decision },
+        ],
+        base: { summary: 'main is green', reran: false, attention: null },
+        summary: `Handled ${q.pr}.`,
+      },
+      base,
+    ),
+    h.done(
+      id,
+      'record',
+      minute + 2,
+      {
+        merged,
+        summary: merged.length
+          ? `Merged ${merged.join(', ')}.`
+          : `Returned ${q.pr} to the build queue.`,
+        attention: '',
+        options: [],
+        class: '',
+        asked: null,
+      },
+      base,
+    ),
+  ];
+  return [
+    '',
+    `-- Queue work item ${q.issue}: built, returned by a merge-queue sweep with a brief, built again, then merged.`,
+    h.run(
+      q.intake,
+      'archon-intake',
+      'completed',
+      { inputs: { number: String(q.issue) } },
+      true,
+      intakeAt,
+    ),
+    h.done(
+      q.intake,
+      'outcome',
+      4,
+      {
+        path: 'triage',
+        item: q.issue,
+        stage: 'ready',
+        trust: 'maintainer',
+        promoted: false,
+        labels: ['archon-ready', 'archon-size-m'],
+        summary: 'Ready to deliver.',
+      },
+      intakeAt,
+    ),
+    ...built(q.first, firstAt, 2, 'The contract is clear.'),
+    insert('mc.pull_requests', {
+      factory: QUEUE_FACTORY.name,
+      number: q.pr,
+      title: `Queue issue ${q.issue}`,
+      state: 'closed',
+      merged_at: landedAt(8),
+      head_sha: head,
+      url: prUrl,
+      created_at: firstAt(5),
+      updated_at: landedAt(8),
+      closed_at: landedAt(8),
+    }),
+    insert('mc.pull_request_issues', {
+      factory: QUEUE_FACTORY.name,
+      pr_number: q.pr,
+      issue_number: q.issue,
+    }),
+    ...sweep(q.returned, returnedAt, 5, { action: 'return', reason: q.reason, brief: q.brief }, []),
+    ...built(q.second, secondAt, 1, 'The brief from the returned pull request applies.'),
+    ...sweep(
+      q.landed,
+      landedAt,
+      6,
+      {
+        action: 'merged',
+        reason: 'Ready at the head, CI green, and it lands on main cleanly.',
+        brief: '',
+      },
+      [q.pr],
+    ),
+    h.issue(q.issue, `Queue issue ${q.issue}`, { created: filedAt(0), closed: landedAt(8) }),
   ];
 }
 

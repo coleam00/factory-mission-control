@@ -6,14 +6,16 @@ import { hasLapPage } from '../lib/one-lap';
 import type { StepRow } from '../lib/step-detail';
 import { LivePanel } from '../live/LivePanel';
 import { type Card, pinnedStepLinks, workflowFile } from '../map/factory-map';
-import type {
-  CardLive,
-  GateOutcome,
-  LatestDeploy,
-  MapItem,
-  ProductDocumentRow,
-  WorkOrderRow,
+import {
+  type CardLive,
+  type GateOutcome,
+  type LatestDeploy,
+  type MapItem,
+  overdueHealth,
+  type ProductDocumentRow,
+  type WorkOrderRow,
 } from '../map/live';
+import { useNow } from './Lanes';
 
 type Tab = 'when' | 'what' | 'how' | 'live' | 'behind';
 
@@ -178,6 +180,7 @@ export function RightNow({
   live: CardLive | undefined;
   factory: string;
 }): ReactElement {
+  const ticking = useNow();
   const lapHref = (run: string) => `/f/${encodeURIComponent(factory)}/laps/${run}`;
   const rows: ReactNode[] = [
     ...(live?.here ?? []).map((lap) => (
@@ -219,7 +222,28 @@ export function RightNow({
     ...(live?.failing ?? []).map((item) => (
       <Item key={item.key} item={item} note="app check failed" />
     )),
-    ...(live?.waiting ?? []).map((item) => <Item key={item.key} item={item} note="waiting" />),
+    ...(live?.questions ?? live?.waiting ?? []).map((item) => (
+      <Item key={item.key} item={item} note={item.note ?? 'waiting'} />
+    )),
+    ...(live?.healthUnavailable
+      ? [
+          <li key="health-unavailable" className="text-text-secondary">
+            The factory's health is unavailable.
+          </li>,
+        ]
+      : []),
+    ...[...(live?.health ?? []), ...overdueHealth(live?.steps ?? [], ticking)].map((item) => (
+      <li key={item.key} data-health={item.key}>
+        {item.url ? (
+          <a href={item.url} className={`${LINK} font-mono`}>
+            run {item.run.slice(0, 8)}
+          </a>
+        ) : (
+          <span className="font-mono">run {item.run.slice(0, 8)}</span>
+        )}
+        <span className={CHIP}>{item.note}</span>
+      </li>
+    )),
     ...(live?.orders ?? []).map((order) => <Order key={`order-${order.name}`} order={order} />),
     ...(live?.documents ?? []).map((document) => (
       <ProductDocument key={`document-${document.number}`} document={document} />

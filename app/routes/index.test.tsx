@@ -8,7 +8,7 @@ import { AppCheckList, Behind, MapDetails, RightNow } from '../components/MapDet
 import type { AppCheckRow } from '../lib/app-check';
 import type { StepRow } from '../lib/step-detail';
 import { FACTORY_MAP, workflowFile } from '../map/factory-map';
-import type { HomeMapRow, MapSources } from '../map/live';
+import type { CardLive, HomeMapRow, MapSources } from '../map/live';
 import { HomeMapBody, msToLocalMidnight } from './index';
 
 const REPO = join(import.meta.dir, '..', '..');
@@ -82,11 +82,12 @@ test("the map draws every card's wording, the caption, the group and the legend,
   }
   expect(html).toContain('the manager watches everything on this line');
   for (const entry of FACTORY_MAP.legend) expect(html).toContain(entry.label);
-  // Only Build, Review, Split, Intake, App check, Merge and Staging have a deeper view, so only they offer to open one.
+  // Only Build, Review, Split, Intake, the Manager, App check, Merge and Staging have a deeper view, so only they offer to open one.
   const opens = ['build', 'review', 'split', 'intake', 'app', 'merge', 'deploy'];
   for (const id of opens) expect(cardTag(html, id)).toContain(`data-opens="${id}"`);
+  expect(cardTag(html, 'mgr')).toContain('data-opens="manager"');
   expect(html).toContain('opens a deeper view');
-  for (const card of FACTORY_MAP.cards.filter((c) => !opens.includes(c.id))) {
+  for (const card of FACTORY_MAP.cards.filter((c) => !opens.includes(c.id) && c.id !== 'mgr')) {
     expect(cardTag(html, card.id)).not.toContain('data-opens');
   }
   expect(html).not.toContain('data-chip');
@@ -513,6 +514,67 @@ test('Right now says a chip count is unavailable', () => {
   expect(html).toContain('The queued count is unavailable.');
 });
 
+test("the Manager's Right now lists every question with its recommendation, the health with console links, and says when health is unavailable", () => {
+  const item = (key: string, title: string) => ({
+    key,
+    number: null,
+    title,
+    url: `http://archon.test/console/r/${key}`,
+  });
+  const html = (live: CardLive) =>
+    renderToStaticMarkup(
+      <MemoryRouter>
+        <RightNow live={live} factory="here" />
+      </MemoryRouter>,
+    );
+  const shown = html({
+    here: [],
+    waiting: [item('rest-only', 'Rest only')],
+    questions: [
+      { ...item('q1', 'First'), note: 'recommends Ship it' },
+      { ...item('q2', 'Second'), note: 'recommends Stop' },
+    ],
+    health: [
+      {
+        key: 'health-paused-p1',
+        note: 'paused: archon-build-queue',
+        run: 'p1aaaaaaaa',
+        url: 'http://archon.test/console/r/p1aaaaaaaa',
+      },
+    ],
+    steps: [
+      {
+        kind: 'completion',
+        run_id: 'c',
+        workflow_name: 'w',
+        step_id: 's',
+        at: new Date(1),
+        duration_ms: 1000,
+        console: null,
+      },
+      {
+        kind: 'running',
+        run_id: 'slow00000',
+        workflow_name: 'w',
+        step_id: 's',
+        at: new Date(2),
+        duration_ms: null,
+        console: 'http://archon.test',
+      },
+    ],
+  });
+  expect(shown).toContain('First');
+  expect(shown).toContain('recommends Ship it');
+  expect(shown).toContain('recommends Stop');
+  expect(shown).not.toContain('Rest only');
+  expect(shown).toContain('href="http://archon.test/console/r/p1aaaaaaaa"');
+  expect(shown).toContain('data-health="health-overdue-slow00000-s"');
+  expect(shown).toContain('href="http://archon.test/console/r/slow00000"');
+  expect(html({ here: [], healthUnavailable: true })).toContain(
+    'The factory&#x27;s health is unavailable.',
+  );
+});
+
 test('Use the app lists each pull request under check with its verdict and its lines by kind', () => {
   const row = (number: number, overall: string | null, over: Partial<AppCheckRow> = {}) => ({
     number,
@@ -611,6 +673,26 @@ test('the Work order card counts its open work orders and says nothing with none
   );
   expect(right).toContain('combat');
   expect(right).toContain('2 open, 1 merged, lands on staging');
+});
+
+test('the Manager view draws the open attention items the route is fed as a count on their card', () => {
+  const html = render([], 'ready', {
+    path: ['manager'],
+    attention: [
+      {
+        run_id: 'r1',
+        workflow_name: 'archon-build-queue',
+        node_id: 'ask',
+        waiting_since: new Date('2026-11-05T10:00:00Z'),
+        form: 'select',
+        options: '[]',
+        labels: JSON.stringify({ build: 'scope' }),
+        message: '**A question**',
+        console: 'http://archon.test',
+      },
+    ],
+  });
+  expect(html).toMatch(/data-card="u-b"[\s\S]*?data-chip="waiting"[^>]*>1 waiting</);
 });
 
 test.each(['split', 'intake'])(

@@ -12,6 +12,7 @@ import {
 import {
   QUEUE_DIGEST,
   QUEUE_DIGEST_2,
+  QUEUE_RETURNED,
   QUEUE_RUNS,
   SEED_CODEBASE,
 } from '../../scripts/fixture/seed';
@@ -118,7 +119,16 @@ describe('scorecard on the seed', () => {
       versionLaps(rows, QUEUE_DIGEST)
         .map((lap) => lap.id)
         .sort(),
-    ).toEqual([QUEUE_RUNS.built, QUEUE_RUNS.build, QUEUE_RUNS.review, QUEUE_RUNS.ask].sort());
+    ).toEqual(
+      [
+        QUEUE_RUNS.built,
+        QUEUE_RUNS.build,
+        QUEUE_RUNS.review,
+        QUEUE_RUNS.ask,
+        QUEUE_RETURNED.first,
+        QUEUE_RETURNED.second,
+      ].sort(),
+    );
     expect(versionPin(rows, QUEUE_DIGEST)?.pin).toBe(pin_sha);
 
     const rollback = new Error('rollback');
@@ -140,7 +150,7 @@ describe('scorecard on the seed', () => {
         );
         const ids = versionLaps(await rowsOf(tx), QUEUE_DIGEST).map((lap) => lap.id);
         expect(ids).not.toContain(id);
-        expect(ids).toHaveLength(4);
+        expect(ids).toHaveLength(6);
         throw rollback;
       })
       .catch((error) => {
@@ -162,10 +172,10 @@ describe('scorecard on the seed', () => {
     };
     const rows = await rowsOf(db);
     expect(shown(rows, QUEUE_DIGEST)).toEqual({
-      laps: 4,
+      laps: 6,
       merges: 1,
       counted: [QUEUE_RUNS.built],
-      cost: 1.2,
+      cost: 5.6,
     });
     expect(shown(rows, QUEUE_DIGEST_2)).toEqual({
       laps: 2,

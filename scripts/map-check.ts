@@ -11,6 +11,7 @@ import {
   type Details,
   FACTORY_MAP,
   type FactoryMap,
+  LABEL_ASK_KEYS,
   LINE_STYLES,
   LISTS,
   type Line,
@@ -21,9 +22,8 @@ import {
   PACKS,
   type Pack,
   type Point,
+  REST_ASK_KEYS,
   ROLES,
-  type Screen,
-  screenOf,
   viewPath,
 } from '../app/map/factory-map';
 import { type PackVersion, parsePack, parseVersion, type Step } from '../parsers/pack';
@@ -44,23 +44,6 @@ function nodesByPath(steps: readonly Step[], into = new Map<string, Step>()): Ma
     nodesByPath(step.steps, into);
   }
   return into;
-}
-
-/**
- * Where a node's own screen is: under the workflow that declares it, at its path below the include
- * that expanded it there, as the home map's step links have always opened it.
- */
-function ownScreen(workflow: string, nodes: ReadonlyMap<string, Step>, path: string) {
-  const node = nodes.get(path) as Step;
-  if (node.definedIn === workflow) return { workflow, path };
-  const parts = path.split('/');
-  for (let depth = parts.length - 1; depth > 0; depth--) {
-    const include = parts.slice(0, depth).join('/');
-    if (nodes.get(include)?.include === node.definedIn) {
-      return { workflow: node.definedIn, path: parts.slice(depth).join('/') };
-    }
-  }
-  return { workflow: node.definedIn, path };
 }
 
 /** The values the owner's JSON holds outside the closed sets the drawing indexes by. */
@@ -85,6 +68,105 @@ function unknownValues(map: FactoryMap): string[] {
       ),
     ),
   ];
+}
+
+/** Every object nested anywhere in a parsed workflow document. */
+function objectsIn(value: unknown): Record<string, unknown>[] {
+  if (typeof value !== 'object' || value === null) return [];
+  const children = Object.values(value).flatMap(objectsIn);
+  return Array.isArray(value) ? children : [value as Record<string, unknown>, ...children];
+}
+
+/**
+ * The attention labels the pack's waits declare, which a question card's `asks` may name, each with
+ * the values it can take: the literal a wait sets, the literals every include of its workflow passes
+ * for an `$INPUTS` label, or `undefined` when a run's output feeds it and any value may appear.
+ */
+function attentionLabels(pack: PackVersion): Map<string, Set<string> | undefined> {
+  const docs = pack.workflows.map((workflow) => ({
+    name: workflow.name,
+    doc: Bun.YAML.parse(workflow.yaml) as {
+      nodes?: { wait?: { labels?: Record<string, unknown> } }[];
+    },
+  }));
+  const labels = new Map<string, Set<string> | undefined>();
+  for (const { name, doc } of docs) {
+    for (const node of doc.nodes ?? []) {
+      for (const [key, source] of Object.entries(node.wait?.labels ?? {})) {
+        const known = labels.has(key) ? labels.get(key) : new Set<string>();
+        const input =
+          typeof source === 'string' ? /^\$INPUTS\.(\w+)$/.exec(source)?.[1] : undefined;
+        if (known === undefined) continue;
+        if (typeof source !== 'string' || (input === undefined && source.includes('$'))) {
+          labels.set(key, undefined);
+          continue;
+        }
+        if (input === undefined) known.add(source);
+        else {
+          const passed = docs
+            .flatMap((other) => objectsIn(other.doc))
+            .filter((object) => object.include === name)
+            .map((object) => (object.with as Record<string, unknown> | undefined)?.[input]);
+          if (passed.some((value) => typeof value !== 'string' || value.includes('$'))) {
+            labels.set(key, undefined);
+            continue;
+          }
+          for (const value of passed) known.add(value as string);
+        }
+        labels.set(key, known);
+      }
+    }
+  }
+  return labels;
+}
+
+/** A question card's `asks` is a label of the queue pack (with an optional value), or `rest`, once a level. */
+function askFailures(
+  map: FactoryMap,
+  labels: ReadonlyMap<string, ReadonlySet<string> | undefined>,
+): string[] {
+  return levelsOf(map).flatMap((level) => {
+    const asks = level.cards.flatMap((card) => (card.asks === undefined ? [] : [card]));
+    const rests = asks.filter((card) => 'rest' in (card.asks as object));
+    return [
+      ...asks.flatMap((card) => {
+        const ask = card.asks as Partial<
+          Record<keyof typeof LABEL_ASK_KEYS | keyof typeof REST_ASK_KEYS, unknown>
+        >;
+        const at = `${card.title} asks`;
+        if ('rest' in ask) {
+          return ask.rest === true &&
+            Object.keys(ask).every((key) => Object.hasOwn(REST_ASK_KEYS, key))
+            ? []
+            : [`${at} ${JSON.stringify(ask)}, not exactly {"rest": true}`];
+        }
+        if (typeof ask.label !== 'string' || ask.label === '') {
+          return [`${at} ${JSON.stringify(ask)}, which names no label`];
+        }
+        const unknown = Object.keys(ask).filter((key) => !Object.hasOwn(LABEL_ASK_KEYS, key));
+        if (unknown.length > 0) {
+          return [`${at} ${JSON.stringify(ask)}, with unknown key ${unknown.join(', ')}`];
+        }
+        if (ask.value !== undefined && typeof ask.value !== 'string') {
+          return [`${at} label ${ask.label} with a value that is not a string`];
+        }
+        if (!labels.has(ask.label)) {
+          return [
+            `${at} label ${JSON.stringify(ask.label)}, which no wait of the queue pack declares`,
+          ];
+        }
+        const values = labels.get(ask.label);
+        return ask.value === undefined || values === undefined || values.has(ask.value)
+          ? []
+          : [
+              `${at} label ${ask.label} with value ${JSON.stringify(ask.value)}, which the queue pack never sets (${[...values].join(', ')})`,
+            ];
+      }),
+      ...(rests.length > 1
+        ? [`${rests.map((card) => card.title).join(' and ')} all ask for the rest`]
+        : []),
+    ];
+  });
 }
 
 /**
@@ -134,14 +216,13 @@ const CARD_KEYS: Record<keyof Card, true> = {
   opens: true,
   upTo: true,
   countsAs: true,
+  asks: true,
 };
 const COVER_KEYS: Record<keyof Cover, true> = {
   pack: true,
   workflow: true,
   steps: true,
-  screens: true,
 };
-const SCREEN_KEYS: Record<keyof Screen, true> = { workflow: true, path: true };
 const DETAILS_KEYS: Record<keyof Details, true> = { when: true, what: true, how: true };
 const LINE_KEYS: Record<keyof Line, true> = {
   from: true,
@@ -174,12 +255,9 @@ function unknownKeys(map: FactoryMap): string[] {
       ...level.cards.flatMap((card) => [
         ...extra(card.title, card, CARD_KEYS),
         ...extra(`${card.title} details`, card.details, DETAILS_KEYS),
-        ...card.covers.flatMap((cover) => [
-          ...extra(`${card.title} cover ${cover.workflow}`, cover, COVER_KEYS),
-          ...Object.entries(cover.screens ?? {}).flatMap(([step, screen]) =>
-            extra(`${card.title} cover ${cover.workflow} screen ${step}`, screen, SCREEN_KEYS),
-          ),
-        ]),
+        ...card.covers.flatMap((cover) =>
+          extra(`${card.title} cover ${cover.workflow}`, cover, COVER_KEYS),
+        ),
       ]),
     ]),
   ];
@@ -374,7 +452,7 @@ function viewPartition(map: FactoryMap, trees: Trees): string[] {
 
 /**
  * Where the map has drifted from the packs (PRD 4.1, invariant 6), one line each: a card naming a
- * workflow or a step its pack lacks, an entry whose screen is not the step's own, a step of a
+ * workflow or a step its pack lacks, a step of a
  * covered workflow that no card covers or that two do, a step a lap's row marks that no card
  * covers, and a step of a pack that counts on a card only through another pack's entry (a live row
  * carries only the workflow name, so the pack cannot tell them apart at runtime). Also a key the
@@ -385,6 +463,7 @@ export function mapCheck(map: FactoryMap, packs: Record<Pack, PackVersion>): str
   const failures: string[] = [
     ...unknownKeys(map),
     ...unknownValues(map),
+    ...askFailures(map, attentionLabels(packs.queue)),
     ...viewFailures(map),
     ...routeFailures(map),
   ];
@@ -415,14 +494,6 @@ export function mapCheck(map: FactoryMap, packs: Record<Pack, PackVersion>): str
             continue;
           }
           failures.push(`${at} names ${cover.workflow} ${step}, which the pack lacks`);
-          continue;
-        }
-        const own = ownScreen(cover.workflow, nodes, step);
-        const named = screenOf(cover, step);
-        if (named.workflow !== own.workflow || named.path !== own.path) {
-          failures.push(
-            `${at} opens ${cover.workflow} ${step} at ${named.workflow} ${named.path}, not its own screen ${own.workflow} ${own.path}`,
-          );
         }
       }
     }

@@ -163,7 +163,7 @@ describe('decisions-timeline and improvements-ledger on the seed', () => {
       const rows = await tx.query(named('improvements-ledger'), ['queue-factory']);
       return rows.find((r) => r.pin_sha === pin_sha)?.laps;
     };
-    expect(await queueLaps(db)).toBe(4);
+    expect(await queueLaps(db)).toBe(6);
 
     const rollback = new Error('rollback');
     await db
@@ -182,7 +182,7 @@ describe('decisions-timeline and improvements-ledger on the seed', () => {
            VALUES ($1, 'node_completed', 'facts', $2)`,
           [id, JSON.stringify({ structured_output: { path: 'idle', item: null } })],
         );
-        expect(await queueLaps(tx)).toBe(4);
+        expect(await queueLaps(tx)).toBe(6);
         throw rollback;
       })
       .catch((error) => {

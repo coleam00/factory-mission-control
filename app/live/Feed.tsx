@@ -1,6 +1,12 @@
 import { type ReactElement, useEffect } from 'react';
 import { LivePanel, type PanelState } from './LivePanel';
 
+/** A screen's state over its sources: any error is an error, ready once every source is. */
+export function overall(states: readonly PanelState[]): PanelState {
+  if (states.includes('error')) return 'error';
+  return states.every((s) => s === 'ready') ? 'ready' : 'loading';
+}
+
 /** A live query's rows and state, handed up from the panel that reads them. */
 export interface Source<Row> {
   rows: readonly Row[] | undefined;

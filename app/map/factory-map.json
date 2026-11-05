@@ -101,7 +101,8 @@
           "Your rules are plain text files (triage, build, merge) in the repo.",
           "It never cancels a run and never decides what the product should be."
         ]
-      }
+      },
+      "opens": "manager"
     },
     {
       "id": "issue",
@@ -262,32 +263,12 @@
         {
           "workflow": "archon-loop",
           "steps": ["ship/deliver/rounds/review", "ship/deliver/rounds/rereview"],
-          "screens": {
-            "ship/deliver/rounds/review": {
-              "workflow": "archon-deliver-block",
-              "path": "rounds/review"
-            },
-            "ship/deliver/rounds/rereview": {
-              "workflow": "archon-deliver-block",
-              "path": "rounds/rereview"
-            }
-          },
           "pack": "loop"
         },
         {
           "workflow": "archon-build-queue",
           "steps": ["ship/deliver/rounds/review", "ship/deliver/rounds/rereview"],
-          "pack": "queue",
-          "screens": {
-            "ship/deliver/rounds/review": {
-              "workflow": "archon-deliver-block",
-              "path": "rounds/review"
-            },
-            "ship/deliver/rounds/rereview": {
-              "workflow": "archon-deliver-block",
-              "path": "rounds/rereview"
-            }
-          }
+          "pack": "queue"
         }
       ],
       "details": {
@@ -604,32 +585,12 @@
                 "ship",
                 "ship/forge",
                 "ship/triage"
-              ],
-              "screens": {
-                "ship/forge": {
-                  "workflow": "archon-ship-block",
-                  "path": "forge"
-                },
-                "ship/triage": {
-                  "workflow": "archon-ship-block",
-                  "path": "triage"
-                }
-              }
+              ]
             },
             {
               "pack": "loop",
               "workflow": "archon-loop",
-              "steps": ["ship", "ship/forge", "ship/triage"],
-              "screens": {
-                "ship/forge": {
-                  "workflow": "archon-ship-block",
-                  "path": "forge"
-                },
-                "ship/triage": {
-                  "workflow": "archon-ship-block",
-                  "path": "triage"
-                }
-              }
+              "steps": ["ship", "ship/forge", "ship/triage"]
             }
           ],
           "details": {
@@ -648,24 +609,12 @@
             {
               "pack": "queue",
               "workflow": "archon-build-queue",
-              "steps": ["ship/inv"],
-              "screens": {
-                "ship/inv": {
-                  "workflow": "archon-ship-block",
-                  "path": "inv"
-                }
-              }
+              "steps": ["ship/inv"]
             },
             {
               "pack": "loop",
               "workflow": "archon-loop",
-              "steps": ["ship/inv"],
-              "screens": {
-                "ship/inv": {
-                  "workflow": "archon-ship-block",
-                  "path": "inv"
-                }
-              }
+              "steps": ["ship/inv"]
             }
           ],
           "details": {
@@ -684,32 +633,12 @@
             {
               "pack": "queue",
               "workflow": "archon-build-queue",
-              "steps": ["ship/intel", "ship/planned"],
-              "screens": {
-                "ship/intel": {
-                  "workflow": "archon-ship-block",
-                  "path": "intel"
-                },
-                "ship/planned": {
-                  "workflow": "archon-ship-block",
-                  "path": "planned"
-                }
-              }
+              "steps": ["ship/intel", "ship/planned"]
             },
             {
               "pack": "loop",
               "workflow": "archon-loop",
-              "steps": ["ship/intel", "ship/planned"],
-              "screens": {
-                "ship/intel": {
-                  "workflow": "archon-ship-block",
-                  "path": "intel"
-                },
-                "ship/planned": {
-                  "workflow": "archon-ship-block",
-                  "path": "planned"
-                }
-              }
+              "steps": ["ship/intel", "ship/planned"]
             }
           ],
           "details": {
@@ -728,32 +657,12 @@
             {
               "pack": "queue",
               "workflow": "archon-build-queue",
-              "steps": ["ship/continues", "ship/deliver"],
-              "screens": {
-                "ship/continues": {
-                  "workflow": "archon-ship-block",
-                  "path": "continues"
-                },
-                "ship/deliver": {
-                  "workflow": "archon-ship-block",
-                  "path": "deliver"
-                }
-              }
+              "steps": ["ship/continues", "ship/deliver"]
             },
             {
               "pack": "loop",
               "workflow": "archon-loop",
-              "steps": ["build", "ship/continues", "ship/deliver"],
-              "screens": {
-                "ship/continues": {
-                  "workflow": "archon-ship-block",
-                  "path": "continues"
-                },
-                "ship/deliver": {
-                  "workflow": "archon-ship-block",
-                  "path": "deliver"
-                }
-              }
+              "steps": ["build", "ship/continues", "ship/deliver"]
             }
           ],
           "details": {
@@ -773,32 +682,12 @@
             {
               "pack": "queue",
               "workflow": "archon-build-queue",
-              "steps": ["answer", "ship/outcome", "ship/report"],
-              "screens": {
-                "ship/outcome": {
-                  "workflow": "archon-ship-block",
-                  "path": "outcome"
-                },
-                "ship/report": {
-                  "workflow": "archon-ship-block",
-                  "path": "report"
-                }
-              }
+              "steps": ["answer", "ship/outcome", "ship/report"]
             },
             {
               "pack": "loop",
               "workflow": "archon-loop",
-              "steps": ["ship/outcome", "ship/report"],
-              "screens": {
-                "ship/outcome": {
-                  "workflow": "archon-ship-block",
-                  "path": "outcome"
-                },
-                "ship/report": {
-                  "workflow": "archon-ship-block",
-                  "path": "report"
-                }
-              }
+              "steps": ["ship/outcome", "ship/report"]
             }
           ],
           "details": {
@@ -953,29 +842,7 @@
                 "ship/deliver/rounds",
                 "ship/deliver/rounds/implement",
                 "ship/deliver/rounds/reshape"
-              ],
-              "screens": {
-                "ship/continues": {
-                  "workflow": "archon-ship-block",
-                  "path": "continues"
-                },
-                "ship/deliver": {
-                  "workflow": "archon-ship-block",
-                  "path": "deliver"
-                },
-                "ship/deliver/rounds": {
-                  "workflow": "archon-deliver-block",
-                  "path": "rounds"
-                },
-                "ship/deliver/rounds/implement": {
-                  "workflow": "archon-deliver-block",
-                  "path": "rounds/implement"
-                },
-                "ship/deliver/rounds/reshape": {
-                  "workflow": "archon-deliver-block",
-                  "path": "rounds/reshape"
-                }
-              }
+              ]
             },
             {
               "pack": "loop",
@@ -987,29 +854,7 @@
                 "ship/deliver/rounds",
                 "ship/deliver/rounds/implement",
                 "ship/deliver/rounds/reshape"
-              ],
-              "screens": {
-                "ship/continues": {
-                  "workflow": "archon-ship-block",
-                  "path": "continues"
-                },
-                "ship/deliver": {
-                  "workflow": "archon-ship-block",
-                  "path": "deliver"
-                },
-                "ship/deliver/rounds": {
-                  "workflow": "archon-deliver-block",
-                  "path": "rounds"
-                },
-                "ship/deliver/rounds/implement": {
-                  "workflow": "archon-deliver-block",
-                  "path": "rounds/implement"
-                },
-                "ship/deliver/rounds/reshape": {
-                  "workflow": "archon-deliver-block",
-                  "path": "rounds/reshape"
-                }
-              }
+              ]
             }
           ],
           "details": {
@@ -1032,21 +877,7 @@
                 "ship/deliver/forge",
                 "ship/deliver/rounds/pr",
                 "ship/deliver/update-pr-body"
-              ],
-              "screens": {
-                "ship/deliver/forge": {
-                  "workflow": "archon-deliver-block",
-                  "path": "forge"
-                },
-                "ship/deliver/rounds/pr": {
-                  "workflow": "archon-deliver-block",
-                  "path": "rounds/pr"
-                },
-                "ship/deliver/update-pr-body": {
-                  "workflow": "archon-deliver-block",
-                  "path": "update-pr-body"
-                }
-              }
+              ]
             },
             {
               "pack": "loop",
@@ -1055,21 +886,7 @@
                 "ship/deliver/forge",
                 "ship/deliver/rounds/pr",
                 "ship/deliver/update-pr-body"
-              ],
-              "screens": {
-                "ship/deliver/forge": {
-                  "workflow": "archon-deliver-block",
-                  "path": "forge"
-                },
-                "ship/deliver/rounds/pr": {
-                  "workflow": "archon-deliver-block",
-                  "path": "rounds/pr"
-                },
-                "ship/deliver/update-pr-body": {
-                  "workflow": "archon-deliver-block",
-                  "path": "update-pr-body"
-                }
-              }
+              ]
             }
           ],
           "details": {
@@ -1103,24 +920,12 @@
             {
               "pack": "queue",
               "workflow": "archon-build-queue",
-              "steps": ["ship/deliver/rounds/simplify"],
-              "screens": {
-                "ship/deliver/rounds/simplify": {
-                  "workflow": "archon-deliver-block",
-                  "path": "rounds/simplify"
-                }
-              }
+              "steps": ["ship/deliver/rounds/simplify"]
             },
             {
               "pack": "loop",
               "workflow": "archon-loop",
-              "steps": ["ship/deliver/rounds/simplify"],
-              "screens": {
-                "ship/deliver/rounds/simplify": {
-                  "workflow": "archon-deliver-block",
-                  "path": "rounds/simplify"
-                }
-              }
+              "steps": ["ship/deliver/rounds/simplify"]
             }
           ],
           "details": {
@@ -1146,33 +951,7 @@
                 "ship/deliver/rounds/round",
                 "ship/deliver/outcome",
                 "ship/deliver/report"
-              ],
-              "screens": {
-                "ship/deliver/rounds/settle-threads": {
-                  "workflow": "archon-deliver-block",
-                  "path": "rounds/settle-threads"
-                },
-                "ship/deliver/rounds/ci": {
-                  "workflow": "archon-deliver-block",
-                  "path": "rounds/ci"
-                },
-                "ship/deliver/rounds/threads": {
-                  "workflow": "archon-deliver-block",
-                  "path": "rounds/threads"
-                },
-                "ship/deliver/rounds/round": {
-                  "workflow": "archon-deliver-block",
-                  "path": "rounds/round"
-                },
-                "ship/deliver/outcome": {
-                  "workflow": "archon-deliver-block",
-                  "path": "outcome"
-                },
-                "ship/deliver/report": {
-                  "workflow": "archon-deliver-block",
-                  "path": "report"
-                }
-              }
+              ]
             },
             {
               "pack": "loop",
@@ -1184,33 +963,7 @@
                 "ship/deliver/rounds/round",
                 "ship/deliver/outcome",
                 "ship/deliver/report"
-              ],
-              "screens": {
-                "ship/deliver/rounds/settle-threads": {
-                  "workflow": "archon-deliver-block",
-                  "path": "rounds/settle-threads"
-                },
-                "ship/deliver/rounds/ci": {
-                  "workflow": "archon-deliver-block",
-                  "path": "rounds/ci"
-                },
-                "ship/deliver/rounds/threads": {
-                  "workflow": "archon-deliver-block",
-                  "path": "rounds/threads"
-                },
-                "ship/deliver/rounds/round": {
-                  "workflow": "archon-deliver-block",
-                  "path": "rounds/round"
-                },
-                "ship/deliver/outcome": {
-                  "workflow": "archon-deliver-block",
-                  "path": "outcome"
-                },
-                "ship/deliver/report": {
-                  "workflow": "archon-deliver-block",
-                  "path": "report"
-                }
-              }
+              ]
             }
           ],
           "details": {
@@ -1301,49 +1054,7 @@
                 "ship/deliver/rounds/rereview/mode",
                 "ship/deliver/rounds/rereview/review-dir",
                 "ship/deliver/rounds/rereview/scope"
-              ],
-              "screens": {
-                "ship/deliver/rounds/review": {
-                  "workflow": "archon-deliver-block",
-                  "path": "rounds/review"
-                },
-                "ship/deliver/rounds/review/policy": {
-                  "workflow": "archon-review-block",
-                  "path": "policy"
-                },
-                "ship/deliver/rounds/review/mode": {
-                  "workflow": "archon-review-block",
-                  "path": "mode"
-                },
-                "ship/deliver/rounds/review/review-dir": {
-                  "workflow": "archon-review-block",
-                  "path": "review-dir"
-                },
-                "ship/deliver/rounds/review/scope": {
-                  "workflow": "archon-review-block",
-                  "path": "scope"
-                },
-                "ship/deliver/rounds/rereview": {
-                  "workflow": "archon-deliver-block",
-                  "path": "rounds/rereview"
-                },
-                "ship/deliver/rounds/rereview/policy": {
-                  "workflow": "archon-review-block",
-                  "path": "policy"
-                },
-                "ship/deliver/rounds/rereview/mode": {
-                  "workflow": "archon-review-block",
-                  "path": "mode"
-                },
-                "ship/deliver/rounds/rereview/review-dir": {
-                  "workflow": "archon-review-block",
-                  "path": "review-dir"
-                },
-                "ship/deliver/rounds/rereview/scope": {
-                  "workflow": "archon-review-block",
-                  "path": "scope"
-                }
-              }
+              ]
             },
             {
               "pack": "queue",
@@ -1359,49 +1070,7 @@
                 "ship/deliver/rounds/rereview/mode",
                 "ship/deliver/rounds/rereview/review-dir",
                 "ship/deliver/rounds/rereview/scope"
-              ],
-              "screens": {
-                "ship/deliver/rounds/review": {
-                  "workflow": "archon-deliver-block",
-                  "path": "rounds/review"
-                },
-                "ship/deliver/rounds/review/policy": {
-                  "workflow": "archon-review-block",
-                  "path": "policy"
-                },
-                "ship/deliver/rounds/review/mode": {
-                  "workflow": "archon-review-block",
-                  "path": "mode"
-                },
-                "ship/deliver/rounds/review/review-dir": {
-                  "workflow": "archon-review-block",
-                  "path": "review-dir"
-                },
-                "ship/deliver/rounds/review/scope": {
-                  "workflow": "archon-review-block",
-                  "path": "scope"
-                },
-                "ship/deliver/rounds/rereview": {
-                  "workflow": "archon-deliver-block",
-                  "path": "rounds/rereview"
-                },
-                "ship/deliver/rounds/rereview/policy": {
-                  "workflow": "archon-review-block",
-                  "path": "policy"
-                },
-                "ship/deliver/rounds/rereview/mode": {
-                  "workflow": "archon-review-block",
-                  "path": "mode"
-                },
-                "ship/deliver/rounds/rereview/review-dir": {
-                  "workflow": "archon-review-block",
-                  "path": "review-dir"
-                },
-                "ship/deliver/rounds/rereview/scope": {
-                  "workflow": "archon-review-block",
-                  "path": "scope"
-                }
-              }
+              ]
             }
           ],
           "details": {
@@ -1420,32 +1089,12 @@
             {
               "pack": "loop",
               "workflow": "archon-loop",
-              "steps": ["ship/deliver/rounds/review/route", "ship/deliver/rounds/rereview/route"],
-              "screens": {
-                "ship/deliver/rounds/review/route": {
-                  "workflow": "archon-review-block",
-                  "path": "route"
-                },
-                "ship/deliver/rounds/rereview/route": {
-                  "workflow": "archon-review-block",
-                  "path": "route"
-                }
-              }
+              "steps": ["ship/deliver/rounds/review/route", "ship/deliver/rounds/rereview/route"]
             },
             {
               "pack": "queue",
               "workflow": "archon-build-queue",
-              "steps": ["ship/deliver/rounds/review/route", "ship/deliver/rounds/rereview/route"],
-              "screens": {
-                "ship/deliver/rounds/review/route": {
-                  "workflow": "archon-review-block",
-                  "path": "route"
-                },
-                "ship/deliver/rounds/rereview/route": {
-                  "workflow": "archon-review-block",
-                  "path": "route"
-                }
-              }
+              "steps": ["ship/deliver/rounds/review/route", "ship/deliver/rounds/rereview/route"]
             }
           ],
           "details": {
@@ -1464,32 +1113,12 @@
             {
               "pack": "loop",
               "workflow": "archon-loop",
-              "steps": ["ship/deliver/rounds/review/seams", "ship/deliver/rounds/rereview/seams"],
-              "screens": {
-                "ship/deliver/rounds/review/seams": {
-                  "workflow": "archon-review-block",
-                  "path": "seams"
-                },
-                "ship/deliver/rounds/rereview/seams": {
-                  "workflow": "archon-review-block",
-                  "path": "seams"
-                }
-              }
+              "steps": ["ship/deliver/rounds/review/seams", "ship/deliver/rounds/rereview/seams"]
             },
             {
               "pack": "queue",
               "workflow": "archon-build-queue",
-              "steps": ["ship/deliver/rounds/review/seams", "ship/deliver/rounds/rereview/seams"],
-              "screens": {
-                "ship/deliver/rounds/review/seams": {
-                  "workflow": "archon-review-block",
-                  "path": "seams"
-                },
-                "ship/deliver/rounds/rereview/seams": {
-                  "workflow": "archon-review-block",
-                  "path": "seams"
-                }
-              }
+              "steps": ["ship/deliver/rounds/review/seams", "ship/deliver/rounds/rereview/seams"]
             }
           ],
           "details": {
@@ -1508,32 +1137,12 @@
             {
               "pack": "loop",
               "workflow": "archon-loop",
-              "steps": ["ship/deliver/rounds/review/code", "ship/deliver/rounds/rereview/code"],
-              "screens": {
-                "ship/deliver/rounds/review/code": {
-                  "workflow": "archon-review-block",
-                  "path": "code"
-                },
-                "ship/deliver/rounds/rereview/code": {
-                  "workflow": "archon-review-block",
-                  "path": "code"
-                }
-              }
+              "steps": ["ship/deliver/rounds/review/code", "ship/deliver/rounds/rereview/code"]
             },
             {
               "pack": "queue",
               "workflow": "archon-build-queue",
-              "steps": ["ship/deliver/rounds/review/code", "ship/deliver/rounds/rereview/code"],
-              "screens": {
-                "ship/deliver/rounds/review/code": {
-                  "workflow": "archon-review-block",
-                  "path": "code"
-                },
-                "ship/deliver/rounds/rereview/code": {
-                  "workflow": "archon-review-block",
-                  "path": "code"
-                }
-              }
+              "steps": ["ship/deliver/rounds/review/code", "ship/deliver/rounds/rereview/code"]
             }
           ],
           "details": {
@@ -1552,32 +1161,12 @@
             {
               "pack": "loop",
               "workflow": "archon-loop",
-              "steps": ["ship/deliver/rounds/review/tests", "ship/deliver/rounds/rereview/tests"],
-              "screens": {
-                "ship/deliver/rounds/review/tests": {
-                  "workflow": "archon-review-block",
-                  "path": "tests"
-                },
-                "ship/deliver/rounds/rereview/tests": {
-                  "workflow": "archon-review-block",
-                  "path": "tests"
-                }
-              }
+              "steps": ["ship/deliver/rounds/review/tests", "ship/deliver/rounds/rereview/tests"]
             },
             {
               "pack": "queue",
               "workflow": "archon-build-queue",
-              "steps": ["ship/deliver/rounds/review/tests", "ship/deliver/rounds/rereview/tests"],
-              "screens": {
-                "ship/deliver/rounds/review/tests": {
-                  "workflow": "archon-review-block",
-                  "path": "tests"
-                },
-                "ship/deliver/rounds/rereview/tests": {
-                  "workflow": "archon-review-block",
-                  "path": "tests"
-                }
-              }
+              "steps": ["ship/deliver/rounds/review/tests", "ship/deliver/rounds/rereview/tests"]
             }
           ],
           "details": {
@@ -1596,32 +1185,12 @@
             {
               "pack": "loop",
               "workflow": "archon-loop",
-              "steps": ["ship/deliver/rounds/review/errors", "ship/deliver/rounds/rereview/errors"],
-              "screens": {
-                "ship/deliver/rounds/review/errors": {
-                  "workflow": "archon-review-block",
-                  "path": "errors"
-                },
-                "ship/deliver/rounds/rereview/errors": {
-                  "workflow": "archon-review-block",
-                  "path": "errors"
-                }
-              }
+              "steps": ["ship/deliver/rounds/review/errors", "ship/deliver/rounds/rereview/errors"]
             },
             {
               "pack": "queue",
               "workflow": "archon-build-queue",
-              "steps": ["ship/deliver/rounds/review/errors", "ship/deliver/rounds/rereview/errors"],
-              "screens": {
-                "ship/deliver/rounds/review/errors": {
-                  "workflow": "archon-review-block",
-                  "path": "errors"
-                },
-                "ship/deliver/rounds/rereview/errors": {
-                  "workflow": "archon-review-block",
-                  "path": "errors"
-                }
-              }
+              "steps": ["ship/deliver/rounds/review/errors", "ship/deliver/rounds/rereview/errors"]
             }
           ],
           "details": {
@@ -1640,32 +1209,12 @@
             {
               "pack": "loop",
               "workflow": "archon-loop",
-              "steps": ["ship/deliver/rounds/review/docs", "ship/deliver/rounds/rereview/docs"],
-              "screens": {
-                "ship/deliver/rounds/review/docs": {
-                  "workflow": "archon-review-block",
-                  "path": "docs"
-                },
-                "ship/deliver/rounds/rereview/docs": {
-                  "workflow": "archon-review-block",
-                  "path": "docs"
-                }
-              }
+              "steps": ["ship/deliver/rounds/review/docs", "ship/deliver/rounds/rereview/docs"]
             },
             {
               "pack": "queue",
               "workflow": "archon-build-queue",
-              "steps": ["ship/deliver/rounds/review/docs", "ship/deliver/rounds/rereview/docs"],
-              "screens": {
-                "ship/deliver/rounds/review/docs": {
-                  "workflow": "archon-review-block",
-                  "path": "docs"
-                },
-                "ship/deliver/rounds/rereview/docs": {
-                  "workflow": "archon-review-block",
-                  "path": "docs"
-                }
-              }
+              "steps": ["ship/deliver/rounds/review/docs", "ship/deliver/rounds/rereview/docs"]
             }
           ],
           "details": {
@@ -1689,25 +1238,7 @@
                 "ship/deliver/rounds/review/synthesize",
                 "ship/deliver/rounds/rereview/review-complete",
                 "ship/deliver/rounds/rereview/synthesize"
-              ],
-              "screens": {
-                "ship/deliver/rounds/review/review-complete": {
-                  "workflow": "archon-review-block",
-                  "path": "review-complete"
-                },
-                "ship/deliver/rounds/review/synthesize": {
-                  "workflow": "archon-review-block",
-                  "path": "synthesize"
-                },
-                "ship/deliver/rounds/rereview/review-complete": {
-                  "workflow": "archon-review-block",
-                  "path": "review-complete"
-                },
-                "ship/deliver/rounds/rereview/synthesize": {
-                  "workflow": "archon-review-block",
-                  "path": "synthesize"
-                }
-              }
+              ]
             },
             {
               "pack": "queue",
@@ -1717,25 +1248,7 @@
                 "ship/deliver/rounds/review/synthesize",
                 "ship/deliver/rounds/rereview/review-complete",
                 "ship/deliver/rounds/rereview/synthesize"
-              ],
-              "screens": {
-                "ship/deliver/rounds/review/review-complete": {
-                  "workflow": "archon-review-block",
-                  "path": "review-complete"
-                },
-                "ship/deliver/rounds/review/synthesize": {
-                  "workflow": "archon-review-block",
-                  "path": "synthesize"
-                },
-                "ship/deliver/rounds/rereview/review-complete": {
-                  "workflow": "archon-review-block",
-                  "path": "review-complete"
-                },
-                "ship/deliver/rounds/rereview/synthesize": {
-                  "workflow": "archon-review-block",
-                  "path": "synthesize"
-                }
-              }
+              ]
             }
           ],
           "details": {
@@ -1761,33 +1274,7 @@
                 "ship/deliver/rounds/rereview/publish",
                 "ship/deliver/rounds/rereview/result",
                 "ship/deliver/rounds/rereview/prune-scratch"
-              ],
-              "screens": {
-                "ship/deliver/rounds/review/publish": {
-                  "workflow": "archon-review-block",
-                  "path": "publish"
-                },
-                "ship/deliver/rounds/review/result": {
-                  "workflow": "archon-review-block",
-                  "path": "result"
-                },
-                "ship/deliver/rounds/review/prune-scratch": {
-                  "workflow": "archon-review-block",
-                  "path": "prune-scratch"
-                },
-                "ship/deliver/rounds/rereview/publish": {
-                  "workflow": "archon-review-block",
-                  "path": "publish"
-                },
-                "ship/deliver/rounds/rereview/result": {
-                  "workflow": "archon-review-block",
-                  "path": "result"
-                },
-                "ship/deliver/rounds/rereview/prune-scratch": {
-                  "workflow": "archon-review-block",
-                  "path": "prune-scratch"
-                }
-              }
+              ]
             },
             {
               "pack": "queue",
@@ -1799,33 +1286,7 @@
                 "ship/deliver/rounds/rereview/publish",
                 "ship/deliver/rounds/rereview/result",
                 "ship/deliver/rounds/rereview/prune-scratch"
-              ],
-              "screens": {
-                "ship/deliver/rounds/review/publish": {
-                  "workflow": "archon-review-block",
-                  "path": "publish"
-                },
-                "ship/deliver/rounds/review/result": {
-                  "workflow": "archon-review-block",
-                  "path": "result"
-                },
-                "ship/deliver/rounds/review/prune-scratch": {
-                  "workflow": "archon-review-block",
-                  "path": "prune-scratch"
-                },
-                "ship/deliver/rounds/rereview/publish": {
-                  "workflow": "archon-review-block",
-                  "path": "publish"
-                },
-                "ship/deliver/rounds/rereview/result": {
-                  "workflow": "archon-review-block",
-                  "path": "result"
-                },
-                "ship/deliver/rounds/rereview/prune-scratch": {
-                  "workflow": "archon-review-block",
-                  "path": "prune-scratch"
-                }
-              }
+              ]
             }
           ],
           "details": {
@@ -2458,13 +1919,7 @@
             {
               "pack": "loop",
               "workflow": "archon-loop",
-              "steps": ["deploy/resolve"],
-              "screens": {
-                "deploy/resolve": {
-                  "workflow": "archon-deploy",
-                  "path": "resolve"
-                }
-              }
+              "steps": ["deploy/resolve"]
             }
           ],
           "details": {
@@ -2489,13 +1944,7 @@
             {
               "pack": "loop",
               "workflow": "archon-loop",
-              "steps": ["deploy", "deploy/deploy"],
-              "screens": {
-                "deploy/deploy": {
-                  "workflow": "archon-deploy",
-                  "path": "deploy"
-                }
-              }
+              "steps": ["deploy", "deploy/deploy"]
             }
           ],
           "details": {
@@ -2520,17 +1969,7 @@
             {
               "pack": "loop",
               "workflow": "archon-loop",
-              "steps": ["deploy/health", "deploy/verify"],
-              "screens": {
-                "deploy/health": {
-                  "workflow": "archon-deploy",
-                  "path": "health"
-                },
-                "deploy/verify": {
-                  "workflow": "archon-deploy",
-                  "path": "verify"
-                }
-              }
+              "steps": ["deploy/health", "deploy/verify"]
             }
           ],
           "details": {
@@ -2751,6 +2190,180 @@
         }
       ],
       "tour": ["a-pick", "a-scope", "a-prep", "a-check", "a-seal", "a-pub"]
+    },
+    "manager": {
+      "caption": "The manager keeps work items moving and brings you the decisions it should not make itself. It answers on its own when one of your written rules covers the question, like “always ask before merging a database change”. If you keep giving the same answer, add it as a rule.",
+      "cardSize": {
+        "width": 260,
+        "height": 250
+      },
+      "cards": [
+        {
+          "id": "u-c",
+          "role": "person",
+          "kind": "from intake",
+          "title": "Work item is unclear",
+          "text": "What should it do, and how do we know it works?",
+          "x": 0,
+          "y": 0,
+          "asks": {
+            "label": "stage",
+            "value": "archon-triage"
+          },
+          "covers": [],
+          "details": {
+            "when": ["Whenever the factory reaches a decision it should not make alone."],
+            "what": [
+              "Examples: a work item too vague to build, a merge that changes the database, a build that keeps growing in scope, a problem that may or may not deserve a work item.",
+              "Each question shows the recommended answer and the other options, and you can always write your own."
+            ],
+            "how": [
+              "Answering resumes the paused run. The answer is written back into the work item as a dated ruling."
+            ]
+          }
+        },
+        {
+          "id": "u-b",
+          "role": "person",
+          "kind": "from build",
+          "title": "Build is stuck on a choice",
+          "text": "Keep going, stop, or change what is in scope?",
+          "x": 300,
+          "y": 0,
+          "asks": {
+            "label": "build"
+          },
+          "covers": [],
+          "details": {
+            "when": ["Whenever the factory reaches a decision it should not make alone."],
+            "what": [
+              "Examples: a work item too vague to build, a merge that changes the database, a build that keeps growing in scope, a problem that may or may not deserve a work item.",
+              "Each question shows the recommended answer and the other options, and you can always write your own."
+            ],
+            "how": [
+              "Answering resumes the paused run. The answer is written back into the work item as a dated ruling."
+            ]
+          }
+        },
+        {
+          "id": "u-m",
+          "role": "person",
+          "kind": "from merge",
+          "title": "Risky merge",
+          "text": "Touches the database or login, or is very large",
+          "x": 600,
+          "y": 0,
+          "asks": {
+            "label": "merge"
+          },
+          "covers": [],
+          "details": {
+            "when": ["Whenever the factory reaches a decision it should not make alone."],
+            "what": [
+              "Examples: a work item too vague to build, a merge that changes the database, a build that keeps growing in scope, a problem that may or may not deserve a work item.",
+              "Each question shows the recommended answer and the other options, and you can always write your own."
+            ],
+            "how": [
+              "Answering resumes the paused run. The answer is written back into the work item as a dated ruling."
+            ]
+          }
+        },
+        {
+          "id": "u-d",
+          "role": "person",
+          "kind": "from findings",
+          "title": "Is this a real problem?",
+          "text": "Make it a work item, or drop it?",
+          "x": 900,
+          "y": 0,
+          "asks": {
+            "label": "discoveries"
+          },
+          "covers": [],
+          "details": {
+            "when": ["Whenever the factory reaches a decision it should not make alone."],
+            "what": [
+              "Examples: a work item too vague to build, a merge that changes the database, a build that keeps growing in scope, a problem that may or may not deserve a work item.",
+              "Each question shows the recommended answer and the other options, and you can always write your own."
+            ],
+            "how": [
+              "Answering resumes the paused run. The answer is written back into the work item as a dated ruling."
+            ]
+          }
+        },
+        {
+          "id": "u-mgr",
+          "role": "person",
+          "kind": "manager",
+          "title": "Manager",
+          "text": "Answers when your rules cover it",
+          "x": 450,
+          "y": 350,
+          "asks": {
+            "rest": true
+          },
+          "covers": [
+            {
+              "workflow": "archon-manager",
+              "steps": ["briefs", "manage"],
+              "pack": "loop"
+            },
+            {
+              "workflow": "factory-manager",
+              "steps": ["manage"],
+              "pack": "queue"
+            }
+          ],
+          "details": {
+            "when": ["All the time, while the factory runs. You can also talk to it directly."],
+            "what": [
+              "Health: finds runs that are stuck, silent or failing and reports them.",
+              "Questions: answers the ones your written rules already cover, for example “dependency updates can merge without asking”.",
+              "Everything else it passes to you with a recommendation."
+            ],
+            "how": [
+              "Your rules are plain text files (triage, build, merge) in the repo.",
+              "It never cancels a run and never decides what the product should be."
+            ]
+          }
+        },
+        {
+          "id": "u-pol",
+          "role": "source",
+          "kind": "your rules",
+          "title": "Written rules",
+          "text": "When to ask, when to just go",
+          "x": 790,
+          "y": 350,
+          "covers": [],
+          "details": {
+            "what": ["When to ask, when to just go."],
+            "how": ["Your rules are plain text files (triage, build, merge) in the repo."]
+          }
+        }
+      ],
+      "lines": [
+        {
+          "from": "u-mgr",
+          "to": "u-b",
+          "style": "ask",
+          "route": [[520, 350], [520, 300], [430, 300], [430, 250]]
+        },
+        {
+          "from": "u-mgr",
+          "to": "u-m",
+          "style": "ask",
+          "route": [[640, 350], [640, 300], [730, 300], [730, 250]]
+        },
+        {
+          "from": "u-pol",
+          "to": "u-mgr",
+          "style": "loop",
+          "label": "reads",
+          "route": [[790, 475], [750, 475], [710, 475]]
+        }
+      ],
+      "tour": []
     }
   }
 }

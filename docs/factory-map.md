@@ -15,11 +15,11 @@ Change what the map says there; the React components (`app/components/FactoryMap
 
 A card's `covers` lists, per workflow, the steps it covers. Each entry covers that step and every
 step under it; a step under two entries belongs to the deeper one, so Build covers `ship` and
-Review the two review rounds inside it. An entry an include expanded names its own screen
-(`screens`), under the workflow that declares it. Each entry names its `pack`: `loop` for the old
-`archon-loop` pack (`fixtures/pack/sdlc`), `queue` for Archon's queue workflows and the factory
-package (`fixtures/pack/queue`). A live row carries only a workflow name, so counting ignores
-`pack`; the map check is what keeps the two sets apart.
+Review the two review rounds inside it. Each entry's step link opens that step's place in the
+covered workflow. Each entry names its `pack`: `loop` for the old `archon-loop` pack
+(`fixtures/pack/sdlc`), `queue` for Archon's queue workflows and the factory package
+(`fixtures/pack/queue`). A live row carries only a workflow name, so counting ignores `pack`; the
+map check is what keeps the two sets apart.
 
 A card that opens a deeper view names it in `opens`; the view sits under `views.<id>` and has the
 root's shape (caption, `cardSize`, cards, lines, tour) without the legend, `views` or a required
@@ -52,8 +52,7 @@ fits the whole map, at any width.
 
 `bun run map:check` (part of `bun run check`) parses both packs with the architecture parser,
 offline, and fails, naming the step, when a step of a workflow a card covers is covered by no card
-or by two, when a card names a workflow or a step its pack lacks, when an entry's screen is not
-the step's own, when a role, chip, list, line style, legend role or pack is outside the closed sets, or
+or by two, when a card names a workflow or a step its pack lacks, when a role, chip, list, line style, legend role or pack is outside the closed sets, or
 when a covered step's pack path holds a dot (the map reads a step's path by its dots). A failure
 that names a pack's step starts `loop pack: ` or `queue pack: `. A step of one pack that counts on a
 card only through the other pack's entry (the packs share workflow names such as
@@ -81,6 +80,12 @@ point must lie on an edge of its `from` card and its last on an edge of its `to`
 group's edge when that card sits inside the group, or, for a line with `"arrow": false`, on another
 line into the same card. Moving a card or changing `cardSize` without moving the routes fails.
 
+A question card's `asks` is checked against the queue pack: it is `{"rest": true}` (on one card
+per level at most) or a `label` that some wait of the pack declares, with an optional `value` that
+the pack sets for that label. The check fails on an `asks` with an unknown key, no label, a
+label no wait declares, a value that is not a string, or, for a label the pack sets values for, a value it never sets.
+Labels fed from workflow output, such as `build` and `merge`, take any value unchecked.
+
 The queue pack is the snapshot `fixtures/pack/queue/`: `sdlc/` is `.archon/workflows/sdlc` of
 coleam00/Archon and `factory/` is `.archon/workflows/factory` of coleam00/ai-software-factory, at
 the commits this factory runs, with `ARCHON_COMMIT` and `FACTORY_COMMIT` beside them. The
@@ -89,7 +94,7 @@ its steps have screens beside the pack's.
 
 ## Live counts
 
-The cards' chips come from these live queries (`map-right-now` also feeds the Merge and Staging views' lists, below): `home-map` (each running run of the factory with its
+The cards' chips come from these live queries (`map-right-now` also feeds the Merge and Staging views' lists, and the Manager view adds three, below): `home-map` (each running run of the factory with its
 running steps and issue, the runs waiting on attention, whether the factory is on the queues, the
 open pull requests whose latest app check failed, the merges with when they finished, and whether
 the version the address names is recorded),
@@ -169,9 +174,12 @@ same cards in the same order. Use the app's Right now also lists the open pull r
 check has looked at (the `app-check` query): each one's latest verdict and its lines by kind.
 
 The home map's failing chip and the Board's verdict chip read the old `check-app` step or, on the
-queues, the `check` step of `factory-app-check` (migration 0024). That step keeps only its overall
-verdict and the pull request and head its `select` step kept, and its lines are stored by id, kind
-and verdict without their text. A run whose report names a holdout keeps no output and no lines.
+queues, the `check` step of `factory-app-check` (migrations 0024 and 0025). On the queues that step
+keeps a verdict only once the run's `evidence` step sealed the result: `evidence`'s overall with the
+pull request and head the `select` step kept. Its lines are the sealed ones that match the factory's
+`LINE` in full, stored by id, kind and verdict without their text. A run whose `evidence` did not
+complete shows no verdict and no lines, and a run whose report names a holdout keeps no output and
+no lines.
 Showing those lines on the work item page's timeline waits on that page (#317).
 
 ## Clicking a card
@@ -189,13 +197,31 @@ holdout verifier and the fence (journey 1). Esc, the close button or a click on 
 deselects.
 
 A card with a view shows ⤢ and a stacked edge, and its strip has an Open button naming the number
-of cards in the view. A card shows ⤢ only once its view exists; today Build's, Review's, Split's, Intake's, App check's, Merge's and Staging's do (`?view=build`, `?view=review`, `?view=split`, `?view=intake`, `?view=app`, `?view=merge`, `?view=deploy`), and so does Deliver inside Build (`?view=build/deliver`). Deliver's Review card opens the same Review view (`?view=review`); opened from there the address also carries `from=build/deliver`, so the breadcrumbs keep the Build and Deliver path and going up returns to Deliver (a link to `?view=review` alone opens it from the home map).
+of cards in the view. A card shows ⤢ only once its view exists; today Build's, Review's, Split's, Intake's, the Manager's, App check's, Merge's and Staging's do (`?view=build`, `?view=review`, `?view=split`, `?view=intake`, `?view=manager`, `?view=app`, `?view=merge`, `?view=deploy`), and so does Deliver inside Build (`?view=build/deliver`). Deliver's Review card opens the same Review view (`?view=review`); opened from there the address also carries `from=build/deliver`, so the breadcrumbs keep the Build and Deliver path and going up returns to Deliver (a link to `?view=review` alone opens it from the home map).
 Double-click, Enter on the selected card or the Open button zooms into the view. Breadcrumbs above
 the caption (the factory, then each opened view), the up control, a crumb, Esc (with nothing
 selected) and Backspace go up, and the card that opened the view flashes. The address is
 `/f/<factory>?view=<id>`: opening and going up each push a history entry, so the browser's back
 button goes up, and a link or reload opens straight into the view. An unknown `view` shows the
 home map.
+
+## The Manager view
+
+`?view=manager` draws `refs/18-drill-manager.png`: four violet question cards (Work item is unclear,
+Build is stuck on a choice, Risky merge, Is this a real problem?), the Manager and the Written rules
+under them. Its cards are 250 high, taller than the other views' cards, because a question card's kind,
+two-line title, three-line text and chip need that to keep the chip inside the border at the map's
+type scale. It adds three live queries to the home map's: `attention-items`, and the Health screen's
+`health-runs` and `health-steps`; each is a live query, none polls.
+
+- A question card counts the open Archon attention items its `asks` names, by their labels:
+  `stage: archon-triage` (a stopped triage) to Work item is unclear, `build:` to
+  Build is stuck, `merge:` to Risky merge, `discoveries:` to Is this a real problem?. An item no
+  card names counts on the Manager card. A failed query shows `? waiting`, never a count.
+- The Manager's Right now lists every open question with its recommended choice, then the
+  factory's health by the Health screen's own definitions (`app/lib/health.ts`): runs pending or
+  paused, steps running past twice their usual time, failed runs by cause. Each links to its run in
+  the factory's Archon console. A failed health query says the health is unavailable.
 
 ## Versions
 

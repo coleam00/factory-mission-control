@@ -169,7 +169,7 @@ test("the owner's tighter pitch: 52 between cards, 84 where the ready and passed
   expect(gaps).toEqual([84, 52, 52, 52, 84, 52, 52]);
 });
 
-test("App check's steps open their screens, check-app's among them; a nested one opens under the workflow that declares it", () => {
+test("App check's steps open their screens, check-app's among them; Review's open their places", () => {
   const hrefs = (id: string, at: string | null) => stepLinks(card(id), at).map((l) => l.href);
   expect(hrefs('app', null).slice(0, 4)).toEqual([
     '/steps/archon-loop/briefs',
@@ -178,17 +178,25 @@ test("App check's steps open their screens, check-app's among them; a nested one
     '/steps/archon-loop/handoff',
   ]);
   expect(hrefs('app', null)).toContain('/steps/factory-app-check/check');
-  expect(hrefs('review', 'abc')).toContain('/steps/archon-deliver-block/rounds%2Freview?at=abc');
-  expect(hrefs('review', 'abc')).toContain('/steps/archon-deliver-block/rounds%2Frereview?at=abc');
+  expect(hrefs('review', 'abc')).toContain(
+    '/steps/archon-loop/ship%2Fdeliver%2Frounds%2Freview?at=abc',
+  );
+  expect(hrefs('review', 'abc')).toContain(
+    '/steps/archon-build-queue/ship%2Fdeliver%2Frounds%2Frereview?at=abc',
+  );
 });
 
 test('a version with only the old loop lists each review round once, not once per pack', () => {
-  const row = (workflow: string, path: string) =>
-    ({ workflow, path, model: null }) as unknown as Parameters<typeof pinnedStepLinks>[2][number];
+  const row = (workflow: string, path: string, kind: string, include: string | null = null) =>
+    ({ workflow, path, kind, include, model: null }) as unknown as Parameters<
+      typeof pinnedStepLinks
+    >[2][number];
   const old = [
-    row('archon-loop', 'ship'),
-    row('archon-deliver-block', 'rounds/review'),
-    row('archon-deliver-block', 'rounds/rereview'),
+    row('archon-loop', 'ship', 'include', 'a'),
+    row('a', 'deliver', 'include', 'b'),
+    row('b', 'rounds', 'loop_group'),
+    row('b', 'rounds/review', 'agent'),
+    row('b', 'rounds/rereview', 'agent'),
   ];
   const links = pinnedStepLinks(card('review'), 'abc', old);
   expect(links.map((l) => `${l.workflow} ${l.step}`)).toEqual([
