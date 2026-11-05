@@ -1,7 +1,8 @@
 import { expect, test } from 'bun:test';
 import { LANE_STEPS } from '../lib/lap-graph';
-import { FACTORY_MAP } from './factory-map';
+import { allCards, FACTORY_MAP, LISTS, type List } from './factory-map';
 import {
+  type CardLive,
   cardLive,
   deepestStep,
   gateOutcomes,
@@ -444,4 +445,22 @@ test('Merge gate lists the gate, the Staging cards the deploy and open work orde
   expect(failed.get('m-gate')).toEqual({ here: [], listsUnavailable: ['outcomes'] });
   expect(failed.get('y-ver')?.listsUnavailable).toEqual(['deploys']);
   expect(failed.get('y-ver')?.lands).toEqual([order]);
+});
+
+// Typed over List: a list added to LISTS fails tsc here until it is named, and fails below until live.ts routes it.
+const LIST_FIELD: Record<List, keyof CardLive> = {
+  documents: 'documents',
+  outcomes: 'gate',
+  deploys: 'deploy',
+  lands: 'lands',
+};
+
+test.each(LISTS)('a card listing %s is filled in its own field', (list) => {
+  const sources = { map: [], documents: [], orders: [], rightNow: [right({})] };
+  const live = cardLive(FACTORY_MAP, sources, new Date());
+  const cards = allCards(FACTORY_MAP).filter((card) => card.lists?.includes(list));
+  expect(cards.length).toBeGreaterThan(0);
+  for (const card of cards) {
+    expect(live.get(card.id)?.[LIST_FIELD[list]]).not.toBeUndefined();
+  }
 });
