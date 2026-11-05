@@ -39,7 +39,8 @@ test('the seed recount: each column and each work order bar equal the definition
   // mission-control at NOW. Open, by the rules in order: 9 has an open pull request and no run (Build,
   // waiting for a run); 11 runs `build` (Build); 12 runs `check-app` (App check). 13 to 16 have no
   // run and no open pull request and are not workable, so no column. 10 closed on 2026-10-20, inside
-  // 7 days (Merged); the other seven merged-closed items (1, 2, 3, 5, 6, 7, 8) are older.
+  // 7 days (Merged); the other merged-closed items (1, 2, 3, 5, 6, 7, 8) and 4, closed as completed
+  // after #103 named it with `Refs`, are older.
   const mission = await view('mission-control');
   expect(columns(mission)).toEqual({
     queued: [],
@@ -51,7 +52,7 @@ test('the seed recount: each column and each work order bar equal the definition
     decision: [],
     merged: [10],
   });
-  expect(mission.older).toBe(7);
+  expect(mission.older).toBe(8);
   // foundations holds 5, 6, 7 (merged) and 9 (open); screens holds 10 (merged), 11, 12 and 14.
   expect(mission.orders).toEqual([
     { name: 'foundations', merged: 3, total: 4, landsOn: 'main' },
@@ -175,12 +176,57 @@ test('an item in two work orders lists both by name, and the manager tracking is
   }
 });
 
-test('the factory row counts only the work items a merged pull request closed', async () => {
+test('the factory row counts the work items a merged pull request closed or named with Refs', async () => {
   const [factory] = (await run<BoardRow>('board', 'mission-control')).filter(
     (r) => r.kind === 'factory',
   );
   expect(factory).toMatchObject({
     repository: 'coleam00/factory-mission-control',
-    merged_total: 8,
+    merged_total: 9,
   });
+});
+
+test('a Refs-delivered item is merged unless closed as not planned or a duplicate, and an open Refs pull request is not its pull request', async () => {
+  const board = async () =>
+    (await run<BoardRow>('board', 'mission-control')).filter((r) => r.kind === 'item');
+  const mergedTotal = async () =>
+    (await run<BoardRow>('board', 'mission-control')).find((r) => r.kind === 'factory')
+      ?.merged_total;
+  const setReason = (number: number, reason: string | null) =>
+    db.query(
+      `UPDATE mc.issues SET close_reason = $2 WHERE factory = 'mission-control' AND number = $1`,
+      [number, reason],
+    );
+  expect((await board()).find((r) => r.number === 4)).toMatchObject({ state: 'closed', pr: null });
+  try {
+    await db.query(
+      `INSERT INTO mc.pull_requests (factory, number, title, state, merged_at, head_sha, url, created_at, updated_at)
+       VALUES ('mission-control', 9101, 't', 'open', NULL, 'h', 'u', now(), now())`,
+    );
+    await db.query(
+      `INSERT INTO mc.pull_request_references (factory, pr_number, issue_number) VALUES ('mission-control', 9101, 13)`,
+    );
+    expect((await board()).find((r) => r.number === 13)).toMatchObject({ pr: null, pr_open: null });
+    const columns = (await view('mission-control')).columns;
+    expect(columns.some((c) => c.items.some((i) => i.number === 13))).toBe(false);
+
+    for (const reason of ['not_planned', 'duplicate']) {
+      await setReason(4, reason);
+      expect((await board()).some((r) => r.number === 4)).toBe(false);
+      expect(await mergedTotal()).toBe(8);
+    }
+    await setReason(4, null);
+    expect((await board()).some((r) => r.number === 4)).toBe(true);
+    expect(await mergedTotal()).toBe(9);
+
+    await setReason(10, 'not_planned');
+    expect((await board()).some((r) => r.number === 10)).toBe(false);
+  } finally {
+    await setReason(10, 'completed');
+    await setReason(4, 'completed');
+    await db.query(`DELETE FROM mc.pull_request_references WHERE pr_number = 9101`);
+    await db.query(
+      `DELETE FROM mc.pull_requests WHERE factory = 'mission-control' AND number = 9101`,
+    );
+  }
 });

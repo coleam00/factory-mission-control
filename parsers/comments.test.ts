@@ -6,6 +6,7 @@ import {
   parseDependsOn,
   parseOwnerQuestions,
   parsePhase,
+  parseReferencedIssues,
   parseReview,
 } from './comments';
 
@@ -130,6 +131,13 @@ describe('issue body lines', () => {
       parseClosingIssues('Closes #10\nAlso fixes: #12, resolved #10 and Fixed #3. See #99.'),
     ).toEqual([10, 12, 3]);
     expect(parseClosingIssues('Refs #10; prefixes #11')).toEqual([]);
+  });
+
+  test('references', () => {
+    expect(parseReferencedIssues('Refs #10\nrefs: #12, Refs #10. Closes #3, prefixes #11')).toEqual(
+      [10, 12],
+    );
+    expect(parseReferencedIssues('Closes #10')).toEqual([]);
   });
 
   test('Phase', () => {

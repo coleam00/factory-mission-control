@@ -68,7 +68,7 @@ const USAGE = [
   '  `fixture:write decision` to that screen before and after the hold, writing ledger-check.txt,',
   '  decisions-ledger-timings.json, decisions-ledger.png and decisions-ledger-design-probe.json.',
   '  It checks the board against a recount of the seed, times `fixture:write label --label',
-  "  work-order:demo --issue <a card on the board>` to its panel and a build step on the queue factory's work item 401 to its",
+  "  work-order:demo --issue <a card on the board>` to its panel, the same label on #4 (delivered by a merged pull request that says Refs) to that panel's merged count and a build step on the queue factory's work item 401 to its",
   '  Build column, and checks `?order=demo`, writing board.png and board-design-probe.json.',
   "  It checks the owner queue against the seed's open needs-owner issues and open owner questions,",
   '  and times `fixture:write label` to it before and after the hold, writing owner-queue-check.txt,',

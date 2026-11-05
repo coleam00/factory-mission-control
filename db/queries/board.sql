@@ -1,6 +1,7 @@
 WITH items AS (
   -- The board's work items (PRD 4.1): the open issues, but the manager's two tracking issues, and
-  -- the newest 200 closed by a pull request that was merged. Which column each sits in is the
+  -- the newest 200 closed, but not as not planned or a duplicate, that a merged pull request closed or
+  -- named with `Refs`. Which column each sits in is the
   -- browser's, from the map's own rules.
   SELECT i.* FROM mc.issues i
   WHERE i.factory = $1 AND i.state = 'open'
@@ -8,11 +9,15 @@ WITH items AS (
   UNION ALL
   SELECT * FROM (
     SELECT i.* FROM mc.issues i
-    WHERE i.factory = $1 AND i.state = 'closed' AND EXISTS (
+    WHERE i.factory = $1 AND i.state = 'closed' AND coalesce(i.close_reason, 'completed') NOT IN ('not_planned', 'duplicate') AND (EXISTS (
       SELECT 1 FROM mc.pull_request_issues pi
       JOIN mc.pull_requests p ON p.factory = pi.factory AND p.number = pi.pr_number
       WHERE pi.factory = i.factory AND pi.issue_number = i.number AND p.merged_at IS NOT NULL
-    )
+    ) OR EXISTS (
+      SELECT 1 FROM mc.pull_request_references rf
+      JOIN mc.pull_requests p ON p.factory = rf.factory AND p.number = rf.pr_number
+      WHERE rf.factory = i.factory AND rf.issue_number = i.number AND p.merged_at IS NOT NULL
+    ))
     ORDER BY i.closed_at DESC NULLS LAST, i.number DESC
     LIMIT 200
   ) closed
@@ -89,13 +94,18 @@ LEFT JOIN LATERAL (
 ) lr ON true
 UNION ALL
 -- One row for the factory: where "N older" and the card fallbacks point, and how many work items a
--- merged pull request closed in all, of which only the newest 200 are above.
+-- merged pull request closed or named with `Refs` in all, of which only the newest 200 are above.
 SELECT 'factory', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
   f.repository, f.console,
   (SELECT count(*)::int FROM mc.issues i
-   WHERE i.factory = f.name AND i.state = 'closed' AND EXISTS (
+   WHERE i.factory = f.name AND i.state = 'closed' AND coalesce(i.close_reason, 'completed') NOT IN ('not_planned', 'duplicate') AND (EXISTS (
      SELECT 1 FROM mc.pull_request_issues pi
      JOIN mc.pull_requests p ON p.factory = pi.factory AND p.number = pi.pr_number
-     WHERE pi.factory = i.factory AND pi.issue_number = i.number AND p.merged_at IS NOT NULL))
+     WHERE pi.factory = i.factory AND pi.issue_number = i.number AND p.merged_at IS NOT NULL
+   ) OR EXISTS (
+     SELECT 1 FROM mc.pull_request_references rf
+     JOIN mc.pull_requests p ON p.factory = rf.factory AND p.number = rf.pr_number
+     WHERE rf.factory = i.factory AND rf.issue_number = i.number AND p.merged_at IS NOT NULL
+   )))
 FROM mc.factories f
 WHERE f.name = $1

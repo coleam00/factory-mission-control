@@ -95,6 +95,14 @@ test('backfill on a check branch stores every recorded issue, comment, label, pu
   expect(await rows('SELECT pr_number, issue_number FROM mc.pull_request_issues')).toEqual([
     { pr_number: 34, issue_number: 10 },
   ]);
+  expect(await rows('SELECT pr_number, issue_number FROM mc.pull_request_references')).toEqual([
+    { pr_number: 34, issue_number: 11 },
+  ]);
+  expect(await rows('SELECT number, close_reason FROM mc.issues ORDER BY number')).toEqual([
+    { number: 10, close_reason: null },
+    { number: 11, close_reason: 'completed' },
+    { number: 45, close_reason: null },
+  ]);
   expect(await rows('SELECT count(*)::int AS n FROM mc.metrics_lines')).toEqual([{ n: 1 }]);
   expect(await rows('SELECT archon_sha FROM mc.pins')).toEqual([
     { archon_sha: 'abd85896e7971c9ac5199ed7e87973f27130250f' },

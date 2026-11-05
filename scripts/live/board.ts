@@ -4,7 +4,7 @@ import { type BoardRow, boardView } from '../../app/lib/board';
 import type { HealthWorkableRow } from '../../app/lib/health';
 import type { OwnerQueueRow } from '../../app/lib/owner-queue';
 import type { HomeMapRow, WorkOrderRow } from '../../app/map/live';
-import { QUEUE_FACTORY, QUEUE_RUNS } from '../fixture/seed';
+import { QUEUE_FACTORY, QUEUE_RUNS, REFS_DELIVERED } from '../fixture/seed';
 import { FACTORY } from '../fixture/write';
 import { openPage, type Page } from '../lib/cdp';
 import { BUILD_STEP } from './queue-map';
@@ -25,6 +25,7 @@ interface Shown {
   columns: [id: string, count: number, numbers: number[]][];
   orders: [name: string, text: string][];
   notInOrder: string;
+  older: number;
   cardOrders: string[][];
 }
 
@@ -41,6 +42,7 @@ const SHOWN = `(() => {
       text(b.querySelector('span:nth-of-type(2)')),
     ]),
     notInOrder: text(document.querySelector('[data-not-in-order]')),
+    older: Number(text(document.querySelector('[data-older]')).match(/\\d+/)?.[0] ?? 0),
     cardOrders: [...document.querySelectorAll('[data-work-item]')].map((a) =>
       [...a.querySelectorAll('[data-chip="order"]')].map(text),
     ),
@@ -50,7 +52,11 @@ const SHOWN = `(() => {
 /** The Board (#316): its columns and work order panels equal a recount, and it moves without a reload. */
 export function boardPhase(ctx: LiveContext): LivePhase {
   const { deps, db, outDir, queries } = ctx;
-  const ms = { demoPanel: null as number | null, intakeToBuild: null as number | null };
+  const ms = {
+    demoPanel: null as number | null,
+    refsMerged: null as number | null,
+    intakeToBuild: null as number | null,
+  };
 
   const run = async <Row>(name: string, factory: string, ...args: string[]) =>
     (await db.query(queries.get(name) as string, [factory, ...args])) as unknown as Row[];
@@ -76,6 +82,7 @@ export function boardPhase(ctx: LiveContext): LivePhase {
         `${o.merged} of ${o.total} merged${o.landsOn === null ? '' : ` · lands on ${o.landsOn}`}`,
       ]),
       notInOrder: `${view.notInOrder} not in a work order`,
+      older: view.older,
     };
   }
 
@@ -83,7 +90,7 @@ export function boardPhase(ctx: LiveContext): LivePhase {
     const screen = await page.evaluate<Shown>(SHOWN);
     const sql = await recount(factory, order);
     const where = `board ${factory}${order ? ` ?order=${order}` : ''}`;
-    return (['columns', 'orders', 'notInOrder'] as const).flatMap((what) =>
+    return (['columns', 'orders', 'notInOrder', 'older'] as const).flatMap((what) =>
       JSON.stringify(screen[what]) === JSON.stringify(sql[what])
         ? []
         : [
@@ -124,6 +131,11 @@ export function boardPhase(ctx: LiveContext): LivePhase {
         await open(page, path);
         writeFileSync(join(outDir, 'board.png'), await page.screenshot(1440));
         failures.push(...(await mismatches(page, FACTORY, null)));
+        const merged = await run<BoardRow>('board', FACTORY);
+        if (!merged.some((r) => r.number === REFS_DELIVERED && r.state === 'closed'))
+          failures.push(
+            `board: #${REFS_DELIVERED}, delivered by a Refs pull request, is not among the merged rows`,
+          );
 
         const [shownCard] = (await page.evaluate<Shown>(SHOWN)).columns.flatMap(
           ([, , numbers]) => numbers,
@@ -134,6 +146,20 @@ export function boardPhase(ctx: LiveContext): LivePhase {
           deps,
           ['label', '--label', `work-order:${DEMO}`, '--issue', String(shownCard)],
           `document.querySelector('[data-work-order="${DEMO}"]') !== null`,
+        );
+        failures.push(...(await mismatches(page, FACTORY, null)));
+
+        const panel = await page.evaluate<string>(
+          `(document.querySelector('[data-work-order="${DEMO}"] span:nth-of-type(2)')?.textContent ?? '')`,
+        );
+        const counts = panel.match(/(\d+) of (\d+) merged/);
+        if (counts === null) throw new Error(`the ${DEMO} panel reads "${panel}"`);
+        const after = `${Number(counts[1]) + 1} of ${Number(counts[2]) + 1} merged`;
+        ms.refsMerged = await writeToScreen(
+          page,
+          deps,
+          ['label', '--label', `work-order:${DEMO}`, '--issue', String(REFS_DELIVERED)],
+          `(document.querySelector('[data-work-order="${DEMO}"] span:nth-of-type(2)')?.textContent ?? '').trim().startsWith('${after}')`,
         );
         failures.push(...(await mismatches(page, FACTORY, null)));
 
@@ -191,6 +217,11 @@ export function boardPhase(ctx: LiveContext): LivePhase {
 
     judge: () => [
       ...lateWrite('a work-order:demo label', `the board's ${DEMO} panel`, ms.demoPanel),
+      ...lateWrite(
+        `a work-order:${DEMO} label on #${REFS_DELIVERED}, which a merged pull request names with Refs`,
+        `the board's ${DEMO} panel`,
+        ms.refsMerged,
+      ),
       ...lateWrite('a build step on 401', `${QUEUE_FACTORY.name}'s Build column`, ms.intakeToBuild),
     ],
 

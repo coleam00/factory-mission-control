@@ -9,6 +9,7 @@ import {
   parseDependsOn,
   parseOwnerQuestions,
   parsePhase,
+  parseReferencedIssues,
   parseReview,
 } from '../parsers/comments';
 import { parsePin, parseVerdict } from '../parsers/commits';
@@ -53,6 +54,7 @@ export interface Issue {
   created_at: string;
   updated_at: string;
   closed_at: string | null;
+  state_reason?: string | null;
   labels: { name: string }[];
   pull_request?: unknown;
 }
@@ -342,18 +344,20 @@ async function replaceSet(
  * Upserts the issue and every fact its body carries. A delivery older than the stored issue
  * (GitHub does not promise order) writes nothing. A closed issue keeps the phase it already has,
  * so closing it counts it among that phase's issues whatever `Phase:` line the closing delivery
- * carries (#182); reopening it takes its body's phase again.
+ * carries (#182); reopening it takes its body's phase again. GitHub's close reason is kept while
+ * the issue is closed, and cleared when it is open.
  */
 export async function writeIssue(tx: Tx, factory: string, issue: Issue): Promise<void> {
   const body = issue.body ?? '';
   const [current] = await tx.query(
-    `INSERT INTO mc.issues (factory, number, title, state, phase, url, created_at, updated_at, closed_at)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+    `INSERT INTO mc.issues (factory, number, title, state, phase, url, created_at, updated_at, closed_at, close_reason)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
       ON CONFLICT (factory, number) DO UPDATE SET title = EXCLUDED.title, state = EXCLUDED.state,
         phase = CASE WHEN EXCLUDED.state = 'closed' THEN coalesce(mc.issues.phase, EXCLUDED.phase)
           ELSE EXCLUDED.phase END,
         url = EXCLUDED.url, created_at = EXCLUDED.created_at,
-        updated_at = EXCLUDED.updated_at, closed_at = EXCLUDED.closed_at
+        updated_at = EXCLUDED.updated_at, closed_at = EXCLUDED.closed_at,
+        close_reason = EXCLUDED.close_reason
       WHERE mc.issues.updated_at <= EXCLUDED.updated_at
       RETURNING number`,
     [
@@ -366,6 +370,7 @@ export async function writeIssue(tx: Tx, factory: string, issue: Issue): Promise
       issue.created_at,
       issue.updated_at,
       issue.closed_at,
+      issue.state === 'closed' ? (issue.state_reason ?? null) : null,
     ],
   );
   if (!current) return;
@@ -699,6 +704,14 @@ export async function writePullRequest(tx: Tx, factory: string, pr: PullRequest)
     'issue_number',
     'integer',
     parseClosingIssues(pr.body ?? ''),
+  );
+  await replaceSet(
+    tx,
+    'mc.pull_request_references',
+    { factory, pr_number: pr.number },
+    'issue_number',
+    'integer',
+    parseReferencedIssues(pr.body ?? ''),
   );
 }
 
