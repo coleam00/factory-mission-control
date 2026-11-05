@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test';
+import { MAP_TYPE } from '../components/FactoryMap';
 import {
   FACTORY_MAP,
   FIT_FOOT,
@@ -143,6 +144,13 @@ test('the hero frame is the map at the width-fitting scale plus padding, at leas
   expect(heroFrameHeight(world, 5000)).toBe(
     Math.ceil(world.height * 1.15 + FIT_PAD * 2 + FIT_FOOT),
   );
+});
+
+test('at the 1440 hero width the fitted scale keeps the card type at or above its floors', () => {
+  const k = (1384 - FIT_PAD * 2) / worldSize(FACTORY_MAP).width;
+  expect(k * MAP_TYPE.title).toBeGreaterThanOrEqual(14);
+  expect(k * MAP_TYPE.text).toBeGreaterThanOrEqual(11);
+  expect(k * MAP_TYPE.label).toBeGreaterThanOrEqual(10);
 });
 
 test('Split sits above Intake, the Work order on the line between Intake and Build, and the map says no ticket or holdout', () => {
