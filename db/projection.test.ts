@@ -1707,6 +1707,7 @@ test('0019 projects the attention runs already paused, and changes nothing run a
       '0019_queue_laps.sql',
       '0019_structured_output_string.sql',
       '0020_queue_step_events.sql',
+      '0021_split_step_events.sql',
     ]);
     expect(await historical.query('SELECT node_id FROM mc.attention_items')).toEqual([
       { node_id: 'ask' },
