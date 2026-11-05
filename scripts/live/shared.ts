@@ -1,4 +1,4 @@
-import { type Card, cardChain, FACTORY_MAP, stepPath } from '../../app/map/factory-map';
+import { type Card, cardsCounting, FACTORY_MAP, stepPath } from '../../app/map/factory-map';
 import { SERVE_PORTS } from '../../server/ports';
 import type { Page } from '../lib/cdp';
 import type { Deps } from '../lib/cli';
@@ -152,7 +152,7 @@ export async function lapsOnCards(db: Db, factory: string): Promise<Map<string, 
   }
   const counts = new Map<string, number>();
   for (const { workflow, step } of deepest.values()) {
-    for (const card of cardChain(FACTORY_MAP, workflow, stepPath(step))) {
+    for (const card of cardsCounting(FACTORY_MAP, workflow, stepPath(step))) {
       counts.set(card.id, (counts.get(card.id) ?? 0) + 1);
     }
   }

@@ -14,8 +14,8 @@ import {
   allCards,
   type Card,
   type Chip,
-  cardChain,
   cardForStep,
+  cardsCounting,
   type FactoryMap,
   type List,
   stepPath,
@@ -428,7 +428,7 @@ export function cardLive(
       workflow: placed.workflow,
       issue: row.number === null ? null : { number: row.number, title: row.title, url: row.url },
     };
-    for (const card of cardChain(factoryMap, placed.workflow, placed.step)) {
+    for (const card of cardsCounting(factoryMap, placed.workflow, placed.step)) {
       live.get(card.id)?.here.push(lap);
     }
   }

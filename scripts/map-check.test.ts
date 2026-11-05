@@ -34,11 +34,14 @@ const queue = () => parseQueuePack(QUEUE_ROOT, TEMPLATE);
 const loop = () => parsePack(PACK, TEMPLATE);
 const check = (map: FactoryMap, pack = loop()) => mapCheck(map, { loop: pack, queue: queue() });
 
-/** The map with only the Build view, so the tests of the root cards and of Build's view are not also held to the other views. */
+/** The map with only the Build view and the Deliver view inside it, so the tests of the root cards and of Build's view are not also held to the other views. */
 const onlyBuild = (cards: FactoryMap['cards']): FactoryMap => ({
   ...FACTORY_MAP,
   cards: cards.map((c) => (c.opens === 'build' ? c : { ...c, opens: undefined })),
-  views: { build: FACTORY_MAP.views?.build as MapView },
+  views: {
+    build: FACTORY_MAP.views?.build as MapView,
+    'build/deliver': FACTORY_MAP.views?.['build/deliver'] as MapView,
+  },
 });
 
 const withCards = (cards: FactoryMap['cards']): FactoryMap => onlyBuild(cards);
@@ -47,6 +50,7 @@ const withCards = (cards: FactoryMap['cards']): FactoryMap => onlyBuild(cards);
 const withBuildView = (edit: (cards: FactoryMap['cards']) => FactoryMap['cards']): FactoryMap => ({
   ...onlyBuild(FACTORY_MAP.cards),
   views: {
+    ...onlyBuild(FACTORY_MAP.cards).views,
     build: {
       ...(FACTORY_MAP.views?.build as MapView),
       cards: edit(FACTORY_MAP.views?.build?.cards ?? []),
@@ -89,7 +93,13 @@ describe('map:check', () => {
           }
         : card,
     );
-    const map = { ...withCards(without), views: { build: FACTORY_MAP.views?.build as MapView } };
+    const map = {
+      ...withCards(without),
+      views: {
+        build: FACTORY_MAP.views?.build as MapView,
+        'build/deliver': FACTORY_MAP.views?.['build/deliver'] as MapView,
+      },
+    };
     expect(check(map)).toEqual([
       "loop pack: archon-loop handoff is marked on a lap's row but covered by no card",
     ]);
@@ -325,6 +335,7 @@ describe('map:check', () => {
     );
     expect(check(map)).toEqual([
       'loop pack: Build view: Deliver covers archon-loop handoff, which Build does not',
+      'loop pack: Deliver view: archon-loop handoff is covered by no card',
     ]);
   });
 
@@ -355,6 +366,21 @@ describe('map:check', () => {
     expect(check(map)).toContain(
       'Merge queue goes up to nowhere, which is no card of its parent level',
     );
+  });
+
+  test('a card counting as a card the map lacks fails naming it', () => {
+    const deliver = FACTORY_MAP.views?.['build/deliver'] as MapView;
+    const map: FactoryMap = {
+      ...FACTORY_MAP,
+      views: {
+        ...FACTORY_MAP.views,
+        'build/deliver': {
+          ...deliver,
+          cards: deliver.cards.map((c) => (c.countsAs ? { ...c, countsAs: 'nowhere' } : c)),
+        },
+      },
+    };
+    expect(check(map)).toEqual(['Review counts as nowhere, which is no card']);
   });
 
   test('a view two cards open fails naming both', () => {

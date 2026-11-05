@@ -70,6 +70,8 @@ export interface Card {
   opens?: string;
   /** A card of the parent level: clicking this card goes up to it (a view's "next" card). */
   upTo?: string;
+  /** A card whose laps this card shows as its own: the card is the same step seen from a deeper level. */
+  countsAs?: string;
 }
 
 export type Point = readonly [number, number];
@@ -321,6 +323,17 @@ export function cardChain(map: FactoryMap, workflow: string, path: string): Card
     if (next === undefined) return chain;
     level = next;
   }
+}
+
+/**
+ * Every card a step's laps show on: its `cardChain`, plus each card that counts as one of those.
+ * Coverage uses `cardChain` alone, since an alias covers nothing.
+ */
+export function cardsCounting(map: FactoryMap, workflow: string, path: string): Card[] {
+  const chain = cardChain(map, workflow, path);
+  const ids = new Set(chain.map((card) => card.id));
+  const aliases = allCards(map).filter((card) => card.countsAs && ids.has(card.countsAs));
+  return [...chain, ...aliases];
 }
 
 /** A cover entry's screen: its own, or the step itself in the covered workflow. */
