@@ -1,7 +1,7 @@
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { FACTORY_MAP } from '../../app/map/factory-map';
-import { QUEUE_FACTORY, QUEUE_RUNS } from '../fixture/seed';
+import { QUEUE_DIGEST, QUEUE_FACTORY, QUEUE_RUNS } from '../fixture/seed';
 import { openPage, type Page } from '../lib/cdp';
 import {
   fixtureWrite,
@@ -22,6 +22,8 @@ import {
 
 /** Where the queue runs step: Build's implement round, and Review's policy round. */
 export const BUILD_STEP = 'ship__deliver__rounds.implement__implement';
+/** A running merge-queue run the phase adds: a sweep on it counts on Merge and its view's Sweep. */
+export const MERGE_SWEEP_RUN = '5eed0005-0000-4000-8000-0000000000a1';
 const REVIEW_STEP = 'ship__deliver__rounds.review__policy';
 const WRITTEN_STEPS = [BUILD_STEP, REVIEW_STEP];
 const WAITING = `${MAP} [data-card="mgr"] [data-chip="waiting"]`;
@@ -46,6 +48,8 @@ export function queueMapPhase(ctx: LiveContext): LivePhase {
     deliver: null as number | null,
     review: null as number | null,
     waiting: null as number | null,
+    merge: null as number | null,
+    sweep: null as number | null,
     intake: null as number | null,
     triage: null as number | null,
     split: null as number | null,
@@ -62,6 +66,14 @@ export function queueMapPhase(ctx: LiveContext): LivePhase {
       'DELETE FROM mc.lap_steps WHERE run_id = ANY($1::uuid[]) AND step_id = ANY($2::text[])',
       [runs, `{${WRITTEN_STEPS.join(',')}}`],
     );
+    const sweepRun = `{${MERGE_SWEEP_RUN}}`;
+    await db.query(
+      'DELETE FROM remote_agent_workflow_events WHERE workflow_run_id = ANY($1::uuid[])',
+      [sweepRun],
+    );
+    await db.query('DELETE FROM mc.lap_steps WHERE run_id = ANY($1::uuid[])', [sweepRun]);
+    await db.query('DELETE FROM mc.laps WHERE run_id = ANY($1::uuid[])', [sweepRun]);
+    await db.query('DELETE FROM remote_agent_workflow_runs WHERE id = ANY($1::uuid[])', [sweepRun]);
     const started = `{${QUEUE_RUNS.triaging},${QUEUE_RUNS.splitting}}`;
     const steps = `{${TRIAGE_STEP},${SLICE_STEP}}`;
     await db.query(
@@ -84,6 +96,7 @@ export function queueMapPhase(ctx: LiveContext): LivePhase {
       const { base, failures } = ctx;
       const page = await openPage(deps.env);
       const view = await openPage(deps.env);
+      const drill = await openPage(deps.env);
       const split = await openPage(deps.env);
       const intake = await openPage(deps.env);
       try {
@@ -95,7 +108,7 @@ export function queueMapPhase(ctx: LiveContext): LivePhase {
         failures.push(...mapMismatches(await mapCards(page), await lapsOnCards(db, name)));
         writeFileSync(join(outDir, 'queue-map.png'), await page.screenshot(1440));
 
-        const open = async (target: Page, id: string, file: string) => {
+        const open = async (target: Page, id: string, file?: string) => {
           await target.setViewport(MAP_READABLE.width);
           await target.goto(`${base}/f/${name}?view=${id}`);
           await target.evaluate<boolean>(
@@ -111,11 +124,14 @@ export function queueMapPhase(ctx: LiveContext): LivePhase {
               FACTORY_MAP.views?.[id]?.cards,
             ),
           );
-          writeFileSync(join(outDir, file), await target.screenshot(1440));
+          if (file !== undefined) writeFileSync(join(outDir, file), await target.screenshot(1440));
         };
         await open(view, 'build', 'build-view.png');
         await open(split, 'split', 'split-view.png');
         await open(intake, 'intake', 'intake-view.png');
+        await open(drill, 'merge', 'merge-view.png');
+        await open(drill, 'deploy', 'staging-view.png');
+        await open(drill, 'merge');
 
         const timed = async (card: string, run: string, step: string) => {
           const target = Number(await page.evaluate<string>(liveCountOf(card))) + 1;
@@ -140,6 +156,32 @@ export function queueMapPhase(ctx: LiveContext): LivePhase {
         [ms.build, ms.deliver] = await Promise.all([
           untilShown(page, `${liveCountOf('build')} === '${buildTarget}'`),
           untilShown(view, `${liveCountOf('b-del')} === '${deliverTarget}'`),
+        ]);
+        await db.query(
+          `INSERT INTO remote_agent_workflow_runs (id, workflow_name, codebase_id, status, user_message, metadata, started_at)
+           SELECT $1, 'archon-merge-queue', codebase_id, 'running', $2, $3::jsonb, now()
+           FROM remote_agent_workflow_runs WHERE id = $4`,
+          [
+            MERGE_SWEEP_RUN,
+            `Run archon-merge-queue on ${QUEUE_FACTORY.repository}`,
+            JSON.stringify({ workflow_source: { digest: QUEUE_DIGEST } }),
+            QUEUE_RUNS.merged,
+          ],
+        );
+        const mergeTarget = Number(await page.evaluate<string>(liveCountOf('merge'))) + 1;
+        const sweepTarget = Number(await drill.evaluate<string>(liveCountOf('m-sweep'))) + 1;
+        await fixtureWrite(deps, [
+          'step',
+          '--run',
+          MERGE_SWEEP_RUN,
+          '--step',
+          'sweep',
+          '--event',
+          'node_started',
+        ]);
+        [ms.merge, ms.sweep] = await Promise.all([
+          untilShown(page, `${liveCountOf('merge')} === '${mergeTarget}'`),
+          untilShown(drill, `${liveCountOf('m-sweep')} === '${sweepTarget}'`),
         ]);
         ms.review = await timed('review', QUEUE_RUNS.review, REVIEW_STEP);
 
@@ -192,6 +234,7 @@ export function queueMapPhase(ctx: LiveContext): LivePhase {
         );
         failures.push(...mapMismatches(await mapCards(page), await lapsOnCards(db, name)));
       } finally {
+        await drill.close().catch(() => undefined);
         await intake.close().catch(() => undefined);
         await split.close().catch(() => undefined);
         await view.close().catch(() => undefined);
@@ -213,6 +256,8 @@ export function queueMapPhase(ctx: LiveContext): LivePhase {
       ...lateWrite('a build-queue run on implement', `${name}'s Build`, ms.build),
       ...lateWrite('a build-queue run on implement', `${name}'s Build view Deliver`, ms.deliver),
       ...lateWrite('a build-queue run on review', `${name}'s Review`, ms.review),
+      ...lateWrite('a merge-queue run on sweep', `${name}'s Merge`, ms.merge),
+      ...lateWrite('a merge-queue run on sweep', `${name}'s Merge view Sweep`, ms.sweep),
       ...lateWrite('an intake run on triage', `${name}'s Intake`, ms.intake),
       ...lateWrite('an intake run on triage', `${name}'s Intake view Triage`, ms.triage),
       ...lateWrite('a split run on slice', `${name}'s Split`, ms.split),
@@ -221,8 +266,14 @@ export function queueMapPhase(ctx: LiveContext): LivePhase {
     ],
 
     async probe(designProbe) {
-      for (const id of ['build', 'split', 'intake']) {
-        designProbe(`${ctx.base}/f/${name}?view=${id}`, `${id}-view-design-probe.json`);
+      for (const [id, file] of [
+        ['build', 'build'],
+        ['split', 'split'],
+        ['intake', 'intake'],
+        ['merge', 'merge'],
+        ['deploy', 'staging'],
+      ]) {
+        designProbe(`${ctx.base}/f/${name}?view=${id}`, `${file}-view-design-probe.json`);
       }
     },
 
