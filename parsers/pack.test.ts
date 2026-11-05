@@ -259,4 +259,12 @@ describe('sub-workflow nodes', () => {
     expect(judge.model).toBeNull();
     expect(judge.childWorkflow).toBe('archon-metrics-test-value-judge');
   });
+
+  test('the stored step row carries the target', () => {
+    const queue = parsePack(join(repoRoot, 'fixtures', 'pack', 'queue', 'sdlc'), templateDir);
+    const row = archRows(queue).arch_steps.find(
+      (r) => r.workflow === 'archon-metrics-test-value' && r.path === 'judge',
+    );
+    expect(row?.child_workflow).toBe('archon-metrics-test-value-judge');
+  });
 });

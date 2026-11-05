@@ -223,7 +223,10 @@ test('the places an include puts a step are by workflow, then in declaration ord
 });
 
 test('the Kind fact names the child workflow a workflow: node runs', () => {
-  const node = step('judge', { kind: 'workflow', child_workflow: 'archon-metrics-test-value-judge' });
+  const node = step('judge', {
+    kind: 'workflow',
+    child_workflow: 'archon-metrics-test-value-judge',
+  });
   expect(kindLabel(node)).toBe('workflow archon-metrics-test-value-judge');
   expect(kindLabel(step('c', { kind: 'command' }))).toBe('command');
 });
