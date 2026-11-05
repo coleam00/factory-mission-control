@@ -26,5 +26,5 @@ ORDER BY d.number
 -- One row per open product document: an open issue labelled `archon-prd`. Its work items are the
 -- filed and adopted issues in the record of the newest completed `archon-split` `publish` step for
 -- that issue, from the output `mc.lap_steps` keeps whole. A document with no such record counts
--- 0 of 0. Merged follows `work-orders.sql`: closed, with a merged pull request. The `@>` literal is
+-- 0 of 0. Merged is an issue that is closed with a merged pull request that closes it. The `@>` literal is
 -- built with `||` and `::jsonb` because `jsonb_build_object` is stable and Realtime refuses it.

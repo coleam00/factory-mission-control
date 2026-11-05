@@ -198,6 +198,9 @@ test('a Refs-delivered item is merged unless closed as not planned or a duplicat
       [number, reason],
     );
   expect((await board()).find((r) => r.number === 4)).toMatchObject({ state: 'closed', pr: null });
+  const [{ merged_at: mergedAt }] = (await db.query(
+    `SELECT merged_at FROM mc.pull_requests WHERE factory = 'mission-control' AND number = 103`,
+  )) as unknown as { merged_at: string }[];
   try {
     await db.query(
       `INSERT INTO mc.pull_requests (factory, number, title, state, merged_at, head_sha, url, created_at, updated_at)
@@ -221,7 +224,17 @@ test('a Refs-delivered item is merged unless closed as not planned or a duplicat
 
     await setReason(10, 'not_planned');
     expect((await board()).some((r) => r.number === 10)).toBe(false);
+
+    await db.query(
+      `UPDATE mc.pull_requests SET merged_at = NULL WHERE factory = 'mission-control' AND number = 103`,
+    );
+    expect((await board()).some((r) => r.number === 4)).toBe(false);
+    expect(await mergedTotal()).toBe(6);
   } finally {
+    await db.query(
+      `UPDATE mc.pull_requests SET merged_at = $1 WHERE factory = 'mission-control' AND number = 103`,
+      [mergedAt],
+    );
     await setReason(10, 'completed');
     await setReason(4, 'completed');
     await db.query(`DELETE FROM mc.pull_request_references WHERE pr_number = 9101`);

@@ -861,7 +861,7 @@ const CLOSED_BY_OWNER: Record<string, Record<number, string>> = {
 const PR_REFERENCES: Record<number, string> = { 103: 'Refs #4' };
 
 /** The issue #103's `Refs` delivers, which the Board's Merged column and its order's bar count. */
-export const REFS_DELIVERED = 4;
+export const REFS_DELIVERED = parseReferencedIssues(PR_REFERENCES[103] ?? '')[0];
 
 const OWNER_ISSUE = 17;
 const METRICS_ISSUE = 18;

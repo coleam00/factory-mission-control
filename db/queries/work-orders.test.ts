@@ -92,6 +92,9 @@ test('a work order counts an issue a merged pull request names with Refs, never 
       `UPDATE mc.issues SET close_reason = $1 WHERE factory = 'mission-control' AND number = 4`,
       [reason],
     );
+  const [{ merged_at: mergedAt }] = (await db.query(
+    `SELECT merged_at FROM mc.pull_requests WHERE factory = 'mission-control' AND number = 103`,
+  )) as unknown as { merged_at: string }[];
   await label(4, 'work-order:refs');
   try {
     expect(await refs()).toMatchObject({ total_count: 1, merged_count: 1 });
@@ -101,9 +104,18 @@ test('a work order counts an issue a merged pull request names with Refs, never 
     }
     await setReason(null);
     expect(await refs()).toMatchObject({ total_count: 1, merged_count: 1 });
+
+    await db.query(
+      `UPDATE mc.pull_requests SET merged_at = NULL WHERE factory = 'mission-control' AND number = 103`,
+    );
+    expect(await refs()).toMatchObject({ total_count: 1, merged_count: 0 });
   } finally {
     await db.query(
       `DELETE FROM mc.issue_labels WHERE factory = 'mission-control' AND label = 'work-order:refs'`,
+    );
+    await db.query(
+      `UPDATE mc.pull_requests SET merged_at = $1 WHERE factory = 'mission-control' AND number = 103`,
+      [mergedAt],
     );
     await setReason('completed');
   }
