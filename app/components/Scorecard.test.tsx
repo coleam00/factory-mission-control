@@ -23,7 +23,6 @@ function laps(digest: string, n: number, merged: number): ScorecardRow[] {
         step_id: null,
         pin_sha: null,
         issue: null,
-        pull_request: null,
       },
       {
         run_id,

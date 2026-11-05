@@ -254,7 +254,6 @@ const ROW_COLUMNS: Record<string, string[]> = {
     'pin_sha',
     'first_run_at',
     'issue',
-    'pull_request',
     'merged',
     'items',
   ]),

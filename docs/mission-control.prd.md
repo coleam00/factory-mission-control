@@ -173,14 +173,11 @@ the flow toggle is off.
   merge queue's later run does (owner request, #393). For each pull request an `archon-merge-queue`
   run's `record` step read back as merged (its `merged` list; a pull request counts once, at its
   first such run), the issue is the one that run's `facts` items name for it (a maintainer's own
-  pull request has none and counts nowhere). Among the factory's build-queue laps on that issue that
-  started no later than the merge, the pull request is credited to the lap that opened it: the last
-  lap that started before the first lap whose `facts` named that pull request as its pull request;
-  when no lap named it, the last lap; when every lap named it (the queue continued a pull request
-  it did not open), the first lap. A pull request with no such lap is credited to no version. A
-  version's merges are its laps that merged by `land` or were credited a pull request. A merge
-  whose build laps span two versions therefore counts on the version that opened it, not the one
-  that last pushed it.
+  pull request has none and counts nowhere). The pull request is credited to the last of the factory's
+  build-queue laps on that issue that started no later than the merge; with no such lap it is
+  credited to no version. A version's merges are its laps that merged by `land` or were credited a
+  pull request. A merge whose build laps span two versions therefore counts on the version of the
+  last of them.
 
   Every number shows how many laps it rests on. Two versions can be compared side by side; a
   difference resting on fewer than 10 laps on either side is labelled "not yet meaningful".
