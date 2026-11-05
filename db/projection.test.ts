@@ -300,6 +300,7 @@ test('the eligibility upgrade keeps live history and installs the same functions
       '0021_split_step_events.sql',
       '0022_queue_versions.sql',
       '0024_queue_app_check_lines.sql',
+      '0025_queue_app_check_sealed.sql',
     ]);
     expect(await projectionDefinitions(upgraded)).toEqual(await projectionDefinitions(db));
     expect(await runMigrations({ files: migrationFiles, db: upgraded })).toEqual([]);
@@ -358,6 +359,7 @@ test('0011 rewrites a short pin to the one full sha it prefixes, and clears ambi
       '0021_split_step_events.sql',
       '0022_queue_versions.sql',
       '0024_queue_app_check_lines.sql',
+      '0025_queue_app_check_sealed.sql',
     ]);
     const migrated = [
       { sha: 'p1', archon_sha: full },
@@ -432,6 +434,7 @@ test('0012 rewrites CRLF to LF in stored architecture texts, and changes nothing
       '0021_split_step_events.sql',
       '0022_queue_versions.sql',
       '0024_queue_app_check_lines.sql',
+      '0025_queue_app_check_sealed.sql',
     ]);
     const migrated = [
       { kind: 'hook', path: '.factory/hooks/gate.sh', text: 'exit 0\n' },
@@ -517,6 +520,7 @@ test('0013 gives back the runs of a step the old key merged, and changes nothing
       '0021_split_step_events.sql',
       '0022_queue_versions.sql',
       '0024_queue_app_check_lines.sql',
+      '0025_queue_app_check_sealed.sql',
     ]);
     expect(await attempts()).toEqual([
       { step_id: 'land', outcome: 'merged', cost_usd: null },
@@ -738,6 +742,7 @@ test('every projection function stops a lock wait after 100 ms, and only inside 
       'project_app_check_lines',
       'project_attention',
       'project_attention_item',
+      'project_queue_app_check',
       'project_run',
       'project_step_event',
       'project_version',
@@ -788,6 +793,7 @@ test('0014 keeps only a stored citation’s references, and changes nothing run 
       '0021_split_step_events.sql',
       '0022_queue_versions.sql',
       '0024_queue_app_check_lines.sql',
+      '0025_queue_app_check_sealed.sql',
     ]);
     const lines = () =>
       historical.query(
@@ -847,6 +853,7 @@ test('0016 lets a pin have no reason, keeps stored reasons, and changes nothing 
       '0021_split_step_events.sql',
       '0022_queue_versions.sql',
       '0024_queue_app_check_lines.sql',
+      '0025_queue_app_check_sealed.sql',
     ]);
     await pin('b'.repeat(40), null);
     const reasons = () => historical.query('SELECT sha, reason FROM mc.pins ORDER BY sha');
@@ -894,6 +901,7 @@ test('0017 keeps lines projected before it without an id, fills new reports’ i
       '0021_split_step_events.sql',
       '0022_queue_versions.sql',
       '0024_queue_app_check_lines.sql',
+      '0025_queue_app_check_sealed.sql',
     ]);
     const after = await run();
     await historical.query('SELECT mc.project_app_check_lines($1, $2)', [
@@ -1767,6 +1775,7 @@ test('0019 projects the attention runs already paused, and changes nothing run a
       '0021_split_step_events.sql',
       '0022_queue_versions.sql',
       '0024_queue_app_check_lines.sql',
+      '0025_queue_app_check_sealed.sql',
     ]);
     expect(await historical.query('SELECT node_id FROM mc.attention_items')).toEqual([
       { node_id: 'ask' },
@@ -1858,6 +1867,7 @@ test('0019 fills a lap projected before it, and changes nothing run again', asyn
       '0021_split_step_events.sql',
       '0022_queue_versions.sql',
       '0024_queue_app_check_lines.sql',
+      '0025_queue_app_check_sealed.sql',
     ]);
     const lap = () => historical.query('SELECT issue_number, attention_open FROM mc.laps');
     expect(await lap()).toEqual([{ issue_number: 402, attention_open: true }]);
@@ -1899,6 +1909,7 @@ test('0022 writes the versions build-queue runs already have, and changes nothin
     expect(await runMigrations({ files: migrationFiles, db: historical })).toEqual([
       '0022_queue_versions.sql',
       '0024_queue_app_check_lines.sql',
+      '0025_queue_app_check_sealed.sql',
     ]);
     expect(
       (await versions()).sort((a, b) => String(a.digest).localeCompare(String(b.digest))),
@@ -2011,16 +2022,18 @@ test('a holdout workflow’s steps keep status and timing but no output, route o
   expect(await projectionErrors()).toEqual([]);
 });
 
-async function appCheckRun(steps: [string, Record<string, unknown>][]) {
+async function appCheckRun(
+  steps: [string, Record<string, unknown>, ('node_completed' | 'node_failed')?][],
+) {
   const [run] = await db.query(
     `INSERT INTO public.remote_agent_workflow_runs (workflow_name, status, user_message)
      VALUES ('factory-app-check', 'running', 'queue') RETURNING id`,
   );
-  for (const [step, structured_output] of steps) {
+  for (const [step, structured_output, eventType = 'node_completed'] of steps) {
     await db.query(
       `INSERT INTO public.remote_agent_workflow_events (workflow_run_id, event_type, step_name, data)
-       VALUES ($1, 'node_completed', $2, $3)`,
-      [run?.id, step, JSON.stringify({ structured_output, duration_ms: 5 })],
+       VALUES ($1, $2, $3, $4)`,
+      [run?.id, eventType, step, JSON.stringify({ structured_output, duration_ms: 5 })],
     );
   }
   return run?.id;
@@ -2039,18 +2052,20 @@ const select = {
   issue_body: 'SECRET',
 };
 
-test('a queue app check keeps its pull request and verdict, and its lines by kind without their text', async () => {
+test('a queue app check keeps the verdict and lines evidence sealed, by kind without their text', async () => {
   const id = await appCheckRun([
     ['select', select],
+    ['check', { overall: 'PASS', summary: 'SECRET summary', lines: ['C9  PASS  Self-reported.'] }],
     [
-      'check',
+      'evidence',
       {
         overall: 'FAIL',
-        summary: 'SECRET summary',
+        report: 'SECRET report',
         lines: [
           'C1  PASS  SECRET sentence.  evidence: a.png',
           'P1  FAIL  The probe failed.  evidence: b.png',
-          'A1  PASS  An assertion held.  evidence:',
+          'A1  PASS  An assertion held.  evidence: c.png',
+          'C2  PASS  No tail.',
           'not a line',
         ],
       },
@@ -2058,6 +2073,7 @@ test('a queue app check keeps its pull request and verdict, and its lines by kin
   ]);
   expect(await appCheckSteps(id)).toEqual([
     { step_id: 'check', status: 'completed', output: { pr: 7, head: 'abc1234', overall: 'FAIL' } },
+    { step_id: 'evidence', status: 'completed', output: null },
     { step_id: 'select', status: 'completed', output: { pr: 7, head: 'abc1234' } },
   ]);
   expect(
@@ -2068,24 +2084,52 @@ test('a queue app check keeps its pull request and verdict, and its lines by kin
   ).toEqual([
     { position: 1, line_id: 'C1', kind: 'criterion', verdict: 'PASS', evidence_count: 1 },
     { position: 2, line_id: 'P1', kind: 'probe', verdict: 'FAIL', evidence_count: 1 },
-    { position: 3, line_id: 'A1', kind: 'assertion', verdict: 'PASS', evidence_count: 0 },
+    { position: 3, line_id: 'A1', kind: 'assertion', verdict: 'PASS', evidence_count: 1 },
   ]);
   expect(await projectionErrors()).toEqual([]);
 });
 
-test('a queue app check that names a holdout keeps no output and no lines', async () => {
-  const id = await appCheckRun([
+test('a queue app check shows no verdict and no lines until evidence completes, or when it fails', async () => {
+  const check = [
+    'check',
+    { overall: 'PASS', lines: ['C1  PASS  Fine.  evidence: a.png'] },
+  ] as const;
+  const checked = await appCheckRun([['select', select], [...check]]);
+  const refused = await appCheckRun([
     ['select', select],
-    [
-      'check',
-      { overall: 'FAIL', lines: ['C1  PASS  Fine.  evidence: a.png', 'H-07  FAIL  SECRET'] },
-    ],
+    [...check],
+    ['evidence', {}, 'node_failed'],
   ]);
-  expect(await appCheckSteps(id)).toEqual([
-    { step_id: 'check', status: 'completed', output: null },
-    { step_id: 'select', status: 'completed', output: null },
-  ]);
-  expect(await db.query('SELECT 1 FROM mc.app_check_lines WHERE run_id = $1', [id])).toEqual([]);
+  for (const id of [checked, refused]) {
+    expect(await appCheckSteps(id)).toMatchObject([
+      { step_id: 'check', status: 'completed', output: null },
+      ...(id === refused ? [{ step_id: 'evidence', status: 'failed', output: null }] : []),
+      { step_id: 'select', output: { pr: 7, head: 'abc1234' } },
+    ]);
+    expect(await db.query('SELECT 1 FROM mc.app_check_lines WHERE run_id = $1', [id])).toEqual([]);
+  }
+  expect(await projectionErrors()).toEqual([]);
+});
+
+test('a queue app check that names a holdout, at check or at evidence, keeps no output and no lines', async () => {
+  const clean = ['C1  PASS  Fine.  evidence: a.png'];
+  const held = ['C1  PASS  Fine.  evidence: a.png', 'H-07  FAIL  SECRET  evidence: b.png'];
+  for (const [checkLines, evidenceLines] of [
+    [held, clean],
+    [clean, held],
+  ]) {
+    const id = await appCheckRun([
+      ['select', select],
+      ['check', { overall: 'FAIL', lines: checkLines }],
+      ['evidence', { overall: 'FAIL', lines: evidenceLines }],
+    ]);
+    expect(await appCheckSteps(id)).toEqual([
+      { step_id: 'check', status: 'completed', output: null },
+      { step_id: 'evidence', status: 'completed', output: null },
+      { step_id: 'select', status: 'completed', output: null },
+    ]);
+    expect(await db.query('SELECT 1 FROM mc.app_check_lines WHERE run_id = $1', [id])).toEqual([]);
+  }
   expect(await projectionErrors()).toEqual([]);
 });
 
@@ -2094,8 +2138,7 @@ test('a queue app check line’s id, kind and verdict follow the factory’s LIN
   const { LINE } = (await import(
     join(import.meta.dir, '../fixtures/pack/queue/factory/app-check/scripts/evidence.ts')
   )) as { LINE: RegExp };
-  const evidence = '  evidence: a.png';
-  const texts = [
+  const base = [
     'C1  PASS  A criterion.',
     'P12  FAIL  A probe.',
     'A3  INCOMPLETE  An assertion.',
@@ -2104,49 +2147,57 @@ test('a queue app check line’s id, kind and verdict follow the factory’s LIN
     'C1  MAYBE  Unknown verdict.',
     'C1 PASS Single spaces.',
     'C  PASS  No number.',
-  ].map((text) => text + evidence);
+  ];
+  const texts = [
+    ...base.map((text) => `${text}  evidence: a.png`),
+    ...base,
+    'C4  PASS  Empty tail.  evidence:',
+    'C5  PASS  One blank.  evidence: ',
+    ' C6  PASS  Leading space.  evidence: a.png',
+    'C7\tPASS\tTab separators.  evidence: a.png',
+    'C8  PASS  Two\nlines.  evidence: a.png',
+    'C9  PASS  Newline after.  evidence:\na.png',
+  ];
   const id = await appCheckRun([
     ['select', select],
-    ['check', { overall: 'PASS', lines: texts }],
+    ['check', { overall: 'PASS', lines: [] }],
+    ['evidence', { overall: 'PASS', lines: texts }],
   ]);
   const projected = await db.query(
     'SELECT line_id, kind FROM mc.app_check_lines WHERE run_id = $1 ORDER BY position',
     [id],
   );
   const accepted = texts.filter((t) => LINE.test(t));
-  expect(accepted.length).toBe(3);
+  expect(accepted.length).toBeGreaterThan(3);
+  expect(accepted.length).toBeLessThan(texts.length);
   expect(projected).toEqual(
     accepted.map((t) => ({
-      line_id: t.split(' ')[0],
+      line_id: t.split(/\s/)[0],
       kind: { C: 'criterion', P: 'probe', A: 'assertion' }[t[0] as 'C' | 'P' | 'A'],
     })),
   );
 });
 
-test('0024 deliberately keeps a line with no evidence, empty evidence, or leading whitespace, which LINE rejects', async () => {
+test('a queue app check stores no line LINE rejects: no evidence tail, empty tail, leading space', async () => {
   const { LINE } = (await import(
     join(import.meta.dir, '../fixtures/pack/queue/factory/app-check/scripts/evidence.ts')
   )) as { LINE: RegExp };
-  const texts = [
-    'C1  PASS  No evidence.',
+  const rejected = [
+    'C7  PASS  No evidence tail.',
     'C2  PASS  Empty evidence.  evidence:',
     '  C3  PASS  Leading space.  evidence: a.png',
   ];
-  expect(texts.filter((t) => LINE.test(t))).toEqual([]);
+  expect(rejected.filter((t) => LINE.test(t))).toEqual([]);
   const id = await appCheckRun([
     ['select', select],
-    ['check', { overall: 'PASS', lines: texts }],
+    ['check', { overall: 'PASS', lines: rejected }],
+    ['evidence', { overall: 'PASS', lines: [...rejected, 'C1  PASS  Kept.  evidence: a.png'] }],
   ]);
   expect(
-    await db.query(
-      'SELECT line_id, evidence_count FROM mc.app_check_lines WHERE run_id = $1 ORDER BY position',
-      [id],
-    ),
-  ).toEqual([
-    { line_id: 'C1', evidence_count: 0 },
-    { line_id: 'C2', evidence_count: 0 },
-    { line_id: 'C3', evidence_count: 1 },
-  ]);
+    await db.query('SELECT line_id FROM mc.app_check_lines WHERE run_id = $1 ORDER BY position', [
+      id,
+    ]),
+  ).toEqual([{ line_id: 'C1' }]);
 });
 
 test('the queue holdout fence names every id holdoutId reads', async () => {
@@ -2212,7 +2263,10 @@ test('0024 re-projects stored queue app checks: lines for a clean run, nothing f
       [],
     ]);
 
-    await runMigrations({ files: migrationFiles, db: historical });
+    await runMigrations({
+      files: migrationFiles.filter((f) => f.name < '0025'),
+      db: historical,
+    });
     const migrated = [await stored(clean), await stored(held)];
     expect(migrated).toEqual([
       [
@@ -2236,6 +2290,88 @@ test('0024 re-projects stored queue app checks: lines for a clean run, nothing f
     const [file] = migrationFiles.filter((f) => f.name.startsWith('0024'));
     await historical.query(file?.sql ?? '');
     expect([await stored(clean), await stored(held)]).toEqual(migrated);
+  } finally {
+    await historical.close();
+  }
+});
+
+test('0025 re-projects stored queue app checks from the sealed evidence, leaves the old loop alone, and nothing changes run again', async () => {
+  const historical = await archonDb();
+  const lines = ['C1  PASS  Fine.  evidence: a.png', 'C2  PASS  No tail.'];
+  const run = async (workflow: string, events: [string, string, unknown][]) => {
+    const [r] = await historical.query(
+      `INSERT INTO public.remote_agent_workflow_runs (workflow_name, status, user_message)
+       VALUES ($1, 'running', 'queue') RETURNING id`,
+      [workflow],
+    );
+    for (const [type, step, structured_output] of events) {
+      await historical.query(
+        `INSERT INTO public.remote_agent_workflow_events (workflow_run_id, event_type, step_name, data)
+         VALUES ($1, $2, $3, $4)`,
+        [r?.id, type, step, JSON.stringify({ structured_output, duration_ms: 5 })],
+      );
+    }
+    return r?.id;
+  };
+  const stored = (id: unknown) =>
+    Promise.all([
+      historical.query(
+        'SELECT step_id, output FROM mc.lap_steps WHERE run_id = $1 ORDER BY step_id',
+        [id],
+      ),
+      historical.query(
+        'SELECT line_id FROM mc.app_check_lines WHERE run_id = $1 ORDER BY position',
+        [id],
+      ),
+    ]);
+  const check = ['node_completed', 'check', { overall: 'PASS', lines }] as [
+    string,
+    string,
+    unknown,
+  ];
+  const sel = ['node_completed', 'select', select] as [string, string, unknown];
+  try {
+    await runMigrations({
+      files: migrationFiles.filter((f) => f.name < '0025'),
+      db: historical,
+    });
+    const refused = await run('factory-app-check', [sel, check, ['node_failed', 'evidence', {}]]);
+    const sealed = await run('factory-app-check', [
+      sel,
+      check,
+      ['node_completed', 'evidence', { overall: 'FAIL', lines }],
+    ]);
+    const oldLoop = await run('archon-loop', [['node_completed', 'check-app', { lines: [] }]]);
+    const oldLoopBefore = await stored(oldLoop);
+    expect(await stored(refused)).toMatchObject([
+      [{ step_id: 'check', output: { overall: 'PASS' } }, {}, {}],
+      [{ line_id: 'C1' }, { line_id: 'C2' }],
+    ]);
+
+    await runMigrations({ files: migrationFiles, db: historical });
+    const migrated = [await stored(refused), await stored(sealed)];
+    expect(migrated).toEqual([
+      [
+        [
+          { step_id: 'check', output: null },
+          { step_id: 'evidence', output: null },
+          { step_id: 'select', output: { pr: 7, head: 'abc1234' } },
+        ],
+        [],
+      ],
+      [
+        [
+          { step_id: 'check', output: { pr: 7, head: 'abc1234', overall: 'FAIL' } },
+          { step_id: 'evidence', output: null },
+          { step_id: 'select', output: { pr: 7, head: 'abc1234' } },
+        ],
+        [{ line_id: 'C1' }],
+      ],
+    ]);
+    expect(await stored(oldLoop)).toEqual(oldLoopBefore);
+    const [file] = migrationFiles.filter((f) => f.name.startsWith('0025'));
+    await historical.query(file?.sql ?? '');
+    expect([await stored(refused), await stored(sealed)]).toEqual(migrated);
   } finally {
     await historical.close();
   }
