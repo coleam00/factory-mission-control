@@ -75,6 +75,14 @@ test('an old-loop issue shows its number, title, wait and thread link, and no op
   expect(item).toMatch(/data-waited="true"[^>]*>13d /);
   expect(item).toContain('href="https://github.com/coleam00/factory-mission-control/issues/13"');
   expect(item).not.toContain('data-option');
+  expect(item).not.toContain('px-4 py-3.5"></div>');
+  expect(item).not.toContain('grid gap-3');
+});
+
+test('a card with options keeps its body under the header row', () => {
+  const card = waiting.match(/<li data-attention-item=.*?<\/li><\/ul>.*?<\/li>/s)?.[0] ?? '';
+  expect(card).toContain('data-choice');
+  expect(card).toContain('grid gap-3');
 });
 
 test('nothing here is amber, and nothing here can answer', () => {
