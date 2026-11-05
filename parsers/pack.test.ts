@@ -285,4 +285,23 @@ describe('a version holds the loop pack and the factory package', () => {
     expect(recorded).toHaveLength(40);
     expect(version.packageCommit).toBe(recorded);
   });
+
+  test('refuses a package workflow that reuses a loop pack workflow name', () => {
+    const copy = mkdtempSync(join(tmpdir(), 'pack-dup-'));
+    try {
+      const packageDir = join(copy, 'factory');
+      cpSync(join(queueDir, 'factory'), packageDir, { recursive: true });
+      const file = join(packageDir, 'backlog', 'factory-backlog.yaml');
+      const reused = version.workflows[0]?.name ?? '';
+      writeFileSync(
+        file,
+        readFileSync(file, 'utf8').replace('name: factory-backlog', `name: ${reused}`),
+      );
+      expect(() => parseVersion(packDir, packageDir, templateDir)).toThrow(
+        `two workflows are named ${reused}`,
+      );
+    } finally {
+      rmSync(copy, { recursive: true, force: true });
+    }
+  });
 });
