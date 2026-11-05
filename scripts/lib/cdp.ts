@@ -72,7 +72,7 @@ async function devToolsUrl(profile: string, exited: () => boolean): Promise<stri
     if (url) return url;
     await Bun.sleep(100);
   }
-  throw new Error('the browser did not open its DevTools port within 45s');
+  throw new Error(`the browser did not open its DevTools port within ${DEVTOOLS_PORT_WAIT_MS / 1000}s`);
 }
 
 type Message = { id?: number; method?: string; sessionId?: string; result?: unknown } & {
