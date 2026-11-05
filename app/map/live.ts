@@ -22,8 +22,8 @@ import {
   overdueSteps,
   waitingRuns,
 } from '../lib/health';
-import { consoleUrl } from '../lib/one-lap';
 import { mergedPulls } from '../lib/merge-queue';
+import { consoleUrl } from '../lib/one-lap';
 import type { OwnerQueueRow } from '../lib/owner-queue';
 import type { PanelState } from '../live/LivePanel';
 import {
