@@ -233,3 +233,32 @@ describe('the attention kind', () => {
     expect(bare.opened).toEqual([]);
   });
 });
+
+test('label writes needs-owner unless --label names another, and --issue names the issue; both are refused where they do not apply', async () => {
+  const insertedLabel = async (argv: string[]) => {
+    const run = recordingDeps({ repoRoot: repo(), rows: counting(1, 2) });
+    expect(await main(argv, run.deps)).toBe(0);
+    return run.params[run.sql.findIndex((sql) => sql.startsWith('INSERT'))]?.[2];
+  };
+  expect(await insertedLabel(['label'])).toBe('needs-owner');
+  expect(await insertedLabel(['label', '--label', 'work-order:demo'])).toBe('work-order:demo');
+  const named = recordingDeps({ repoRoot: repo(), rows: counting(1, 2) });
+  expect(await main(['label', '--issue', '9'], named.deps)).toBe(0);
+  const at = named.sql.findIndex((sql) => sql.startsWith('INSERT'));
+  expect(named.params[at]?.[3]).toBe(9);
+
+  for (const argv of [
+    ['issue', '--label', 'work-order:demo'],
+    ['step', '--label', 'work-order:demo'],
+    ['label', '--label', ''],
+    ['label', '--label', ' demo'],
+    ['pin', '--issue', '9'],
+    ['step', '--issue', '9'],
+    ['label', '--issue', 'nine'],
+    ['label', '--issue', '0'],
+  ]) {
+    const refused = recordingDeps({ repoRoot: repo() });
+    expect(await main(argv, refused.deps)).toBe(2);
+    expect(refused.opened).toEqual([]);
+  }
+});

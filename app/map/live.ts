@@ -7,7 +7,15 @@
 import type { HealthWorkableRow } from '../lib/health';
 import type { OwnerQueueRow } from '../lib/owner-queue';
 import type { PanelState } from '../live/LivePanel';
-import { allCards, type Chip, cardChain, type FactoryMap, stepPath } from './factory-map';
+import {
+  allCards,
+  type Card,
+  type Chip,
+  cardChain,
+  cardForStep,
+  type FactoryMap,
+  stepPath,
+} from './factory-map';
 
 /** One row of `db/queries/home-map.sql`. */
 export interface HomeMapRow {
@@ -52,13 +60,16 @@ export interface MapMerge {
   at: Date;
 }
 
-/** One row of `db/queries/work-orders.sql`: a work order with an open issue. */
+/** One row of `db/queries/work-orders.sql`: a work order, the issues carrying one `work-order:` label. */
 export interface WorkOrderRow {
   name: string;
+  total_count: number;
   open_count: number;
   merged_count: number;
   /** The `lands-on:<target>` label its issues carry, when one does. */
   lands_on: string | null;
+  /** When its latest issue closed; null while none has. */
+  last_closed_at: Date | null;
 }
 
 export interface CardLive {
@@ -134,6 +145,26 @@ const byNumber = (a: MapItem, b: MapItem) =>
   (a.number ?? Number.POSITIVE_INFINITY) - (b.number ?? Number.POSITIVE_INFINITY) ||
   a.key.localeCompare(b.key);
 
+/** Whether the factory is on the queues: it has run an intake or build queue. */
+export const onQueues = (map: readonly HomeMapRow[]): boolean =>
+  map.some((r) => r.kind === 'queues');
+
+/**
+ * The map's "here" rule: the card covering a running lap's deepest running step, with that step's
+ * path. Undefined for a row that is not a lap with a run, one with no running step, or one whose
+ * step no card covers.
+ */
+export function lapCard(
+  factoryMap: FactoryMap,
+  row: HomeMapRow,
+): { card: Card; step: string } | undefined {
+  if (row.kind !== 'lap' || row.run_id === null || row.workflow === null) return undefined;
+  const step = deepestStep(row.steps);
+  if (step === undefined) return undefined;
+  const card = cardForStep(factoryMap, row.workflow, stepPath(step));
+  return card === undefined ? undefined : { card, step: stepPath(step) };
+}
+
 /** Open Archon attention items: paused runs waiting on a person, named by their issue when they have one. */
 function attentionItems(map: readonly HomeMapRow[]): MapItem[] {
   return map
@@ -157,7 +188,7 @@ function waitingItems({
   states = {},
 }: MapSources): MapItem[] | 'unavailable' | undefined {
   const attention = attentionItems(map);
-  if (map.some((r) => r.kind === 'queues')) return attention;
+  if (onQueues(map)) return attention;
   if (states.owner === 'error') return 'unavailable';
   if (!owner) return undefined;
   return [
@@ -206,7 +237,7 @@ function chipItems(
     waiting: waitingItems(sources),
     merged: mergedToday(map, now),
     ...(states.orders === 'error' && { orders: 'unavailable' as const }),
-    ...(orders && states.orders !== 'error' && { orders: [...orders] }),
+    ...(orders && states.orders !== 'error' && { orders: orders.filter((o) => o.open_count > 0) }),
   };
 }
 

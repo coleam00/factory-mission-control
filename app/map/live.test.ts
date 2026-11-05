@@ -272,11 +272,19 @@ test('a merge-queue lap merges each pull request its record read back; a malform
 });
 
 test('the work orders with an open issue are the chip of the Work order card: absent until answered, unavailable on error', () => {
-  const order = { name: 'combat', open_count: 2, merged_count: 1, lands_on: 'staging' };
+  const order = {
+    name: 'combat',
+    total_count: 3,
+    open_count: 2,
+    merged_count: 1,
+    lands_on: 'staging',
+    last_closed_at: null,
+  };
   const ordersOf = (sources: Partial<Parameters<typeof cardLive>[1]>) =>
     cardLive(FACTORY_MAP, { map: [], ...sources }, new Date()).get('order');
   expect(ordersOf({ orders: [order] })?.orders).toEqual([order]);
   expect(ordersOf({ orders: [] })?.orders).toEqual([]);
+  expect(ordersOf({ orders: [{ ...order, open_count: 0 }] })?.orders).toEqual([]);
   expect(ordersOf({})?.orders).toBeUndefined();
   expect(ordersOf({ orders: [order], states: { orders: 'error' } })).toEqual({
     here: [],

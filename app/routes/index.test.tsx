@@ -414,7 +414,16 @@ test('the home clock turns over at the next local midnight', () => {
 });
 
 test('the Work order card counts its open work orders and says nothing with none; Right now lists each', () => {
-  const orders = [{ name: 'combat', open_count: 2, merged_count: 1, lands_on: 'staging' }];
+  const orders = [
+    {
+      name: 'combat',
+      total_count: 3,
+      open_count: 2,
+      merged_count: 1,
+      lands_on: 'staging',
+      last_closed_at: null,
+    },
+  ];
   const chips = (html: string) => {
     const start = html.indexOf('data-card="order"');
     const end = html.indexOf('data-card=', start + 1);
