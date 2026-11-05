@@ -35,11 +35,21 @@ const queue = () => parseQueuePack(QUEUE_ROOT, TEMPLATE);
 const loop = () => parsePack(PACK, TEMPLATE);
 const check = (map: FactoryMap, pack = loop()) => mapCheck(map, { loop: pack, queue: queue() });
 
-/** The map with only the Build view, so the tests of the root cards and of Build's view are not also held to the other views. */
+const deliverWithoutReview: MapView = {
+  ...(FACTORY_MAP.views?.['build/deliver'] as MapView),
+  cards: (FACTORY_MAP.views?.['build/deliver']?.cards ?? []).map((c) =>
+    c.opens === undefined ? c : { ...c, opens: undefined },
+  ),
+};
+
+/** The map with only the Build view and the Deliver view inside it, so the tests of the root cards and of Build's view are not also held to the other views. */
 const onlyBuild = (cards: FactoryMap['cards']): FactoryMap => ({
   ...FACTORY_MAP,
   cards: cards.map((c) => (c.opens === 'build' ? c : { ...c, opens: undefined })),
-  views: { build: FACTORY_MAP.views?.build as MapView },
+  views: {
+    build: FACTORY_MAP.views?.build as MapView,
+    'build/deliver': deliverWithoutReview,
+  },
 });
 
 const withCards = (cards: FactoryMap['cards']): FactoryMap => onlyBuild(cards);
@@ -48,6 +58,7 @@ const withCards = (cards: FactoryMap['cards']): FactoryMap => onlyBuild(cards);
 const withBuildView = (edit: (cards: FactoryMap['cards']) => FactoryMap['cards']): FactoryMap => ({
   ...onlyBuild(FACTORY_MAP.cards),
   views: {
+    ...onlyBuild(FACTORY_MAP.cards).views,
     build: {
       ...(FACTORY_MAP.views?.build as MapView),
       cards: edit(FACTORY_MAP.views?.build?.cards ?? []),
@@ -70,6 +81,7 @@ describe('map:check', () => {
     );
     expect(check(FACTORY_MAP, pack)).toEqual([
       'loop pack: App check names archon-loop briefs, which the pack lacks',
+      'loop pack: Pick a PR names archon-loop briefs, which the pack lacks',
     ]);
   });
 
@@ -78,6 +90,7 @@ describe('map:check', () => {
       card.id === 'app'
         ? {
             ...card,
+            opens: undefined,
             covers: [
               {
                 pack: 'loop' as const,
@@ -88,7 +101,14 @@ describe('map:check', () => {
           }
         : card,
     );
-    expect(check(withCards(without))).toEqual([
+    const map = {
+      ...withCards(without),
+      views: {
+        build: FACTORY_MAP.views?.build as MapView,
+        'build/deliver': deliverWithoutReview,
+      },
+    };
+    expect(check(map)).toEqual([
       "loop pack: archon-loop handoff is marked on a lap's row but covered by no card",
     ]);
   });
@@ -323,6 +343,7 @@ describe('map:check', () => {
     );
     expect(check(map)).toEqual([
       'loop pack: Build view: Deliver covers archon-loop handoff, which Build does not',
+      'loop pack: Deliver view: archon-loop handoff is covered by no card',
     ]);
   });
 
@@ -331,13 +352,16 @@ describe('map:check', () => {
       ...FACTORY_MAP,
       cards: FACTORY_MAP.cards.map((c) => (c.id === 'app' ? { ...c, opens: 'nowhere' } : c)),
     };
-    expect(check(dead)).toEqual(['App check opens view nowhere, which the map lacks']);
+    expect(check(dead)).toEqual([
+      'App check opens view nowhere, which the map lacks',
+      'view app is opened by no card',
+    ]);
     const orphan = {
       ...FACTORY_MAP,
       cards: FACTORY_MAP.cards.map(({ opens: _, ...c }) => c),
     };
     expect(check(orphan)).toContain('view build is opened by no card');
-    expect(check(orphan)).toContain('view review is opened by no card');
+    expect(check(orphan)).toContain('view review cannot be reached from the root');
   });
 
   test('a card id used twice fails naming it', () => {
@@ -356,12 +380,42 @@ describe('map:check', () => {
     );
   });
 
+  test('a card counting as a card the map lacks fails naming it', () => {
+    const deliver = FACTORY_MAP.views?.['build/deliver'] as MapView;
+    const map: FactoryMap = {
+      ...FACTORY_MAP,
+      views: {
+        ...FACTORY_MAP.views,
+        'build/deliver': {
+          ...deliver,
+          cards: deliver.cards.map((c) => (c.countsAs ? { ...c, countsAs: 'nowhere' } : c)),
+        },
+      },
+    };
+    expect(check(map)).toEqual(['Review counts as nowhere, which is no card']);
+  });
+
   test('a view two cards open fails naming both', () => {
     const map = {
       ...FACTORY_MAP,
       cards: FACTORY_MAP.cards.map((c) => (c.id === 'review' ? { ...c, opens: 'build' } : c)),
     };
     expect(check(map)).toContain('view build is opened by Build and Review');
+  });
+
+  test('a view two cards of one level open fails, though another level may open it too', () => {
+    const deliver = FACTORY_MAP.views?.['build/deliver'] as MapView;
+    const map: FactoryMap = {
+      ...FACTORY_MAP,
+      views: {
+        ...FACTORY_MAP.views,
+        'build/deliver': {
+          ...deliver,
+          cards: deliver.cards.map((c) => (c.id === 'd-pr' ? { ...c, opens: 'review' } : c)),
+        },
+      },
+    };
+    expect(check(map)).toEqual([expect.stringMatching(/^view review is opened by .+ and .+$/)]);
   });
 
   test('a view opened only from inside itself fails as unreachable', () => {

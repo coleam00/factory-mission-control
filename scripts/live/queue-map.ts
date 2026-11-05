@@ -1,9 +1,11 @@
-import { writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { FACTORY_MAP } from '../../app/map/factory-map';
 import { QUEUE_DIGEST, QUEUE_FACTORY, QUEUE_RUNS } from '../fixture/seed';
 import { openPage, type Page } from '../lib/cdp';
+import { REPO_ROOT } from '../lib/cli';
 import {
+  click,
   fixtureWrite,
   LIMITS,
   type LiveContext,
@@ -40,6 +42,34 @@ const liveCountOf = (card: string) =>
   `document.querySelector('${MAP} [data-card="${card}"]')?.getAttribute('data-live-count')`;
 const waitingCount = (page: Page) =>
   page.evaluate<number>(`parseInt(document.querySelector('${WAITING}')?.textContent ?? '0', 10)`);
+
+const CHECK_SCREEN = '/steps/factory-app-check/check';
+const CHECK_PROMPT = 'fixtures/pack/queue/factory/app-check/commands/check.md';
+
+/** Map, App check, Behind the scenes, `check`: the factory package's step opens with its prompt. */
+async function appCheckPromptMismatches(page: Page, base: string): Promise<string[]> {
+  const opened =
+    (await click(page, `${MAP} [data-card="app"]`)) &&
+    (await click(page, '[data-details="app"] [data-tab="behind"]')) &&
+    (await click(page, '[data-step-link="factory-app-check check"]'));
+  if (opened) {
+    await page.evaluate<boolean>(pageWait(`location.pathname === '${CHECK_SCREEN}'`, 2000));
+  }
+  const at = await page.evaluate<string>('location.pathname');
+  if (at !== CHECK_SCREEN)
+    return [`App check's Behind the scenes check opened ${at}, not ${CHECK_SCREEN}`];
+  await page.evaluate<boolean>(
+    pageWait(
+      `document.querySelector('[data-live="step-prompt"]')?.getAttribute('data-state') === 'ready'`,
+      READY_WAIT_MS,
+    ),
+  );
+  const prompt = await page.evaluate<string | null>(
+    `document.querySelector('[data-live="step-prompt"] [data-prompt]')?.textContent ?? null`,
+  );
+  const expected = readFileSync(join(REPO_ROOT, CHECK_PROMPT), 'utf8').replaceAll('\r\n', '\n');
+  return prompt === expected ? [] : [`${base}${CHECK_SCREEN} does not show ${CHECK_PROMPT}`];
+}
 
 /** The queue factory's map: queue runs count on their cards, and an attention pause raises "waiting". */
 export function queueMapPhase(ctx: LiveContext): LivePhase {
@@ -113,6 +143,11 @@ export function queueMapPhase(ctx: LiveContext): LivePhase {
         );
         failures.push(...mapMismatches(await mapCards(page), await lapsOnCards(db, name)));
         writeFileSync(join(outDir, 'queue-map.png'), await page.screenshot(1440));
+        failures.push(...(await appCheckPromptMismatches(page, base)));
+        await page.goto(`${base}/f/${name}`);
+        await page.evaluate<boolean>(
+          pageWait(`document.querySelector('${MAP}[data-state="ready"]') !== null`, READY_WAIT_MS),
+        );
 
         const open = async (target: Page, id: string, file?: string) => {
           await target.setViewport(MAP_READABLE.width);
@@ -301,6 +336,14 @@ export function queueMapPhase(ctx: LiveContext): LivePhase {
         const file = id === 'deploy' ? 'staging' : id;
         designProbe(`${ctx.base}/f/${name}?view=${id}`, `${file}-view-design-probe.json`);
       }
+      designProbe(
+        `${ctx.base}/steps/factory-app-check/check`,
+        'factory-step-check-design-probe.json',
+      );
+      designProbe(
+        `${ctx.base}/steps/factory-app-check/config`,
+        'factory-step-config-design-probe.json',
+      );
     },
 
     summary: () => [`queue map: ${JSON.stringify({ ...ms, limit: LIMITS.insertToScreenMs })}`],

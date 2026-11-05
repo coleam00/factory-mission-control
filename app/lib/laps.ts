@@ -41,6 +41,9 @@ export const OUTCOME_TOKEN: Record<Outcome, `--${string}`> = {
 /** One running lap. Timestamps are the database's; the browser computes elapsed times. */
 export interface LaneRow {
   run_id: string;
+  workflow_name: string;
+  /** The factory's Archon console, where a queue run's detail lives. */
+  console: string | null;
   started_at: Date | null;
   issue_number: number | null;
   issue_title: string | null;
@@ -114,4 +117,28 @@ export function since(at: Date | null, now: number): number | null {
 export function durationOf(lap: Pick<RecentLapRow, 'started_at' | 'completed_at'>): number | null {
   const seconds = (timeOf(lap.completed_at) - timeOf(lap.started_at)) / 1000;
   return Number.isFinite(seconds) ? seconds : null;
+}
+
+/** What a running workflow is, in the map's words; an unknown one shows its own name. */
+const WORKFLOW_LABEL: Readonly<Record<string, string>> = {
+  'archon-loop': 'Lap',
+  'archon-build-queue': 'Build',
+  'archon-merge-queue': 'Merge',
+  'archon-intake': 'Intake',
+  'archon-split': 'Split',
+  'archon-discoveries': 'Found by the factory',
+  'factory-app-check': 'App check',
+  'factory-deploy': 'Staging',
+  'factory-manager': 'Manager',
+  'factory-backlog': 'Split',
+};
+export const workflowLabel = (workflow: string): string => WORKFLOW_LABEL[workflow] ?? workflow;
+
+/** A queue step's address as the part that says where it is: `ship__deliver__rounds.review__seams` is `review · seams`. */
+export function queueStepLabel(step: string): string {
+  const parts = (step.split('.').pop() ?? step)
+    .split('__')
+    .filter((part) => !['ship', 'deliver', 'rounds'].includes(part))
+    .filter((part, index, all) => part !== all[index - 1]);
+  return parts.length === 0 ? step : parts.join(' · ');
 }

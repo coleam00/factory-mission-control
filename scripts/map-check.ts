@@ -19,7 +19,7 @@ import {
   screenOf,
   viewPath,
 } from '../app/map/factory-map';
-import { type PackVersion, parsePack, type Step } from '../parsers/pack';
+import { type PackVersion, parsePack, parseVersion, type Step } from '../parsers/pack';
 import { failing, type Main, noArguments, runCli } from './lib/cli';
 
 const USAGE = 'usage: bun run map:check';
@@ -90,7 +90,7 @@ function parentLevel(map: FactoryMap, card: Card): MapView | undefined {
   return opener && levelsOf(map).find((level) => level.cards.includes(opener));
 }
 
-/** The shape of the views: every `opens` and `upTo` leads somewhere, and every view hangs off the root once. */
+/** The shape of the views: every `opens` and `upTo` leads somewhere, and every view hangs off the root once (a card deeper in the map may open it again, one per level). */
 function viewFailures(map: FactoryMap): string[] {
   const failures: string[] = [];
   const views = Object.keys(map.views ?? {});
@@ -102,6 +102,9 @@ function viewFailures(map: FactoryMap): string[] {
     if (card.opens !== undefined && !views.includes(card.opens)) {
       failures.push(`${card.title} opens view ${card.opens}, which the map lacks`);
     }
+    if (card.countsAs !== undefined && !cards.some((c) => c.id === card.countsAs)) {
+      failures.push(`${card.title} counts as ${card.countsAs}, which is no card`);
+    }
     if (card.upTo === undefined) continue;
     if (!parentLevel(map, card)?.cards.some((c) => c.id === card.upTo)) {
       failures.push(`${card.title} goes up to ${card.upTo}, which is no card of its parent level`);
@@ -110,10 +113,13 @@ function viewFailures(map: FactoryMap): string[] {
   for (const id of views) {
     const openers = cards.filter((c) => c.opens === id);
     if (openers.length === 0) failures.push(`view ${id} is opened by no card`);
-    if (openers.length > 1) {
-      failures.push(`view ${id} is opened by ${openers.map((c) => c.title).join(' and ')}`);
+    const sameLevel = levelsOf(map)
+      .map((level) => openers.filter((c) => level.cards.includes(c)))
+      .find((inLevel) => inLevel.length > 1);
+    if (sameLevel !== undefined) {
+      failures.push(`view ${id} is opened by ${sameLevel.map((c) => c.title).join(' and ')}`);
     }
-    if (openers.length === 1 && viewPath(map, id).length === 0) {
+    if (openers.length > 0 && viewPath(map, id).length === 0) {
       failures.push(`view ${id} cannot be reached from the root`);
     }
   }
@@ -271,17 +277,7 @@ export function mapCheck(map: FactoryMap, packs: Record<Pack, PackVersion>): str
 
 /** The queue pack and the factory package, as one pack: Archon's `sdlc` workflows and the factory's own. */
 export function parseQueuePack(root: string, templateDir: string): PackVersion {
-  const sdlc = parsePack(join(root, 'sdlc'), templateDir);
-  const factory = parsePack(join(root, 'factory'), templateDir);
-  const names = new Set(sdlc.workflows.map((w) => w.name));
-  const twice = factory.workflows.find((w) => names.has(w.name));
-  if (twice) throw new Error(`two workflows are named ${twice.name}`);
-  return {
-    ...sdlc,
-    workflows: [...sdlc.workflows, ...factory.workflows],
-    commands: [...sdlc.commands, ...factory.commands],
-    scripts: [...sdlc.scripts, ...factory.scripts],
-  };
+  return parseVersion(join(root, 'sdlc'), join(root, 'factory'), templateDir);
 }
 
 export const main: Main = async (argv, deps) =>

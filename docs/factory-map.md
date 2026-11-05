@@ -24,7 +24,7 @@ package (`fixtures/pack/queue`). A live row carries only a workflow name, so cou
 A card that opens a deeper view names it in `opens`; the view sits under `views.<id>` and has the
 root's shape (caption, `cardSize`, cards, lines, tour) without the legend, `views` or a required
 group. Card ids are unique across every level. A view's `next` card may name `upTo`, a card of
-the level above: clicking it goes up and selects that card. The view's crumb and Open button use
+the level above: clicking it goes up and selects that card. A card may name `countsAs`, a card whose laps it shows as its own, as the Deliver view's Review card does for Review. The view's crumb and Open button use
 the title of the card that opens it. One component draws every level, so selection, the details
 strip, chips, flow and the tour work the same in a view.
 
@@ -70,11 +70,13 @@ of the view, and no card of the view covers a step, or a workflow, the opening c
 view covers only the steps its opening card has (Deliver's view never sees the review rounds,
 which Review has at the root), so an entry such as `ship/deliver` still counts the steps under
 it that belong to the opener. The check also fails on an `opens` naming no view, a view opened by
-no card or by two, a card id used twice, and an `upTo` naming no card of the level above.
+no card or by two, a card id used twice, an `upTo` naming no card of the level above, and a `countsAs` naming no card.
 
 The queue pack is the snapshot `fixtures/pack/queue/`: `sdlc/` is `.archon/workflows/sdlc` of
 coleam00/Archon and `factory/` is `.archon/workflows/factory` of coleam00/ai-software-factory, at
-the commits this factory runs, with `ARCHON_COMMIT` and `FACTORY_COMMIT` beside them.
+the commits this factory runs, with `ARCHON_COMMIT` and `FACTORY_COMMIT` beside them. The
+architecture job and the seed store `factory/` too, under `.archon/workflows/factory/` paths, so
+its steps have screens beside the pack's.
 
 ## Live counts
 
@@ -117,8 +119,8 @@ Behind the scenes says the pinned steps are unavailable when `step-detail` faile
 
 A lap counts once per level: on the card that covers its deepest running step at the root, and
 then on the card of that card's view that covers it, so one run on `ship/deliver/rounds/implement`
-is on Build at the home map and on Deliver in the Build view. A step that Review covers at the
-root counts on no card of the Build view.
+is on Build at the home map, on Deliver in the Build view, and on Implement in the Deliver view. A step that Review covers at the
+root counts on no card of the Build view, and also shows on the Deliver view's Review card.
 
 In the Review view a lens the router skipped for the round a run is in has no count for it, and the
 lens card's Right now says that run's change did not earn the reviewer. It reads the skipped lens
@@ -148,6 +150,21 @@ factory as it is now, at whatever version the address names.
   label their issues carry, or that they name no target yet.
 - A list whose source failed says it is unavailable and the other lists stay.
 
+## The App check view
+
+`?view=app` is drawn from the mockup's `V.app`. On a factory on the queues, Pick a PR covers
+`config`, `select` and `pending`, How deep? `scope`, Protected paths `policy`, PR + main, started
+`prepare`, Use the app `check`, Seal the evidence `evidence` and `factory/app-check` `publish`,
+`finalize` and `cleanup`; the old loop's `briefs`, `check-app`, `evidence` and `handoff` sit on the
+same cards in the same order. Use the app's Right now also lists the open pull requests the app
+check has looked at (the `app-check` query): each one's latest verdict and its lines by kind.
+
+The home map's failing chip and the Board's verdict chip read the old `check-app` step or, on the
+queues, the `check` step of `factory-app-check` (migration 0024). That step keeps only its overall
+verdict and the pull request and head its `select` step kept, and its lines are stored by id, kind
+and verdict without their text. A run whose report names a holdout keeps no output and no lines.
+Showing those lines on the work item page's timeline waits on that page (#317).
+
 ## Clicking a card
 
 A card keeps itself and the cards a line joins to it lit and dims the rest; its details strip opens
@@ -163,7 +180,7 @@ holdout verifier and the fence (journey 1). Esc, the close button or a click on 
 deselects.
 
 A card with a view shows ⤢ and a stacked edge, and its strip has an Open button naming the number
-of cards in the view. A card shows ⤢ only once its view exists; today Build's, Review's, Split's, Intake's, Merge's and Staging's do (`?view=build`, `?view=review`, `?view=split`, `?view=intake`, `?view=merge`, `?view=deploy`).
+of cards in the view. A card shows ⤢ only once its view exists; today Build's, Review's, Split's, Intake's, App check's, Merge's and Staging's do (`?view=build`, `?view=review`, `?view=split`, `?view=intake`, `?view=app`, `?view=merge`, `?view=deploy`), and so does Deliver inside Build (`?view=build/deliver`). Deliver's Review card opens the same Review view (`?view=review`); opened from there the address also carries `from=build/deliver`, so the breadcrumbs keep the Build and Deliver path and going up returns to Deliver (a link to `?view=review` alone opens it from the home map).
 Double-click, Enter on the selected card or the Open button zooms into the view. Breadcrumbs above
 the caption (the factory, then each opened view), the up control, a crumb, Esc (with nothing
 selected) and Backspace go up, and the card that opened the view flashes. The address is

@@ -1768,7 +1768,7 @@ function queueFactorySql(): string[] {
 
 export function buildSeed(repoRoot: string): string {
   const { v1, v2 } = parseVersions(repoRoot);
-  if (!v1.archonCommit || !v1.factoryCommit) throw new Error('the pack names no commits');
+  if (!v1.archonCommit || !v1.packageCommit) throw new Error('the pack names no commits');
   const versions = versionSpecs(v1.archonCommit);
   // V3's pack keeps V2's loop: no architecture rows are seeded for it.
   const v2Loop = loopOf(v2);
@@ -1780,7 +1780,7 @@ export function buildSeed(repoRoot: string): string {
   if (!factory) throw new Error(`factories.json has no ${FACTORY}`);
   const archKey = (archonSha: string, parsedAt: string) => ({
     archon_sha: archonSha,
-    factory_sha: v1.factoryCommit ?? '',
+    factory_sha: v1.packageCommit ?? '',
     parsed_at: parsedAt,
   });
   const edits = V2_EDITS.flatMap((edit) => [
@@ -1805,7 +1805,7 @@ export function buildSeed(repoRoot: string): string {
     PROJECTION,
     ...githubSql(runs),
     '',
-    '-- Architecture: V1 is parsers/pack.ts on fixtures/pack/ and fixtures/factory-template/; V2 is',
+    '-- Architecture: V1 is parsers/pack.ts on fixtures/pack/, fixtures/pack/queue/factory/ and fixtures/factory-template/; V2 is',
     '-- the same with one step removed, one added, one prompt and one subagent changed:',
     ...edits,
     ...architectureSql(

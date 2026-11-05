@@ -1,5 +1,5 @@
 {
-  "caption": "Work comes from three places: a product document, an issue you file, or a problem the factory found. Intake checks each item, and Split breaks a big document or bundle into smaller work items. A work order groups the items to build and ship together. Then one line: Build writes the code, Review checks it, App check tries it in the running app, Merge lands it, and Staging is where you try the whole work order. The manager watches the line and brings you the decisions.",
+  "caption": "Work comes from three places: a product document, an issue you file, or a problem the factory found. Intake checks each item, and Split breaks a big document or bundle into smaller work items. A work order groups the items to build and ship together. Then one line: Build writes the code, Review checks it, App check tries it in the running app, Merge lands it, and Staging is where you try the whole work order. Fixes to a change go back to Build; anything unrelated becomes new work. The manager watches the line and brings you the decisions.",
   "cardSize": {
     "width": 208,
     "height": 212
@@ -138,7 +138,9 @@
         }
       ],
       "details": {
-        "when": ["After review, app check or staging notices something it was not asked to fix."],
+        "when": [
+          "After review or app check notices something unrelated to the change it is checking, or a deployment fails."
+        ],
         "what": [
           "Each problem becomes a new work item, or is dropped if it is not real. Unsure ones come to you."
         ],
@@ -241,7 +243,7 @@
         ],
         "what": [
           "Takes a triaged work item to a reviewed PR with green CI.",
-          "Up to 2 rounds per work item. Each round can deliver up to 4 times."
+          "Each build round can deliver up to 4 times. After 2 rounds, it also checks that the rounds are getting somewhere, and asks you if they aren't."
         ],
         "how": [
           "Brief, then plan or investigate if needed, then deliver, then an agent decides done, another round, or ask you. It asks early when a change has grown past its size or stopped converging."
@@ -294,7 +296,9 @@
           "A quick agent picks the reviewers this change earns. Up to five each read the change for one thing: how parts fit together, correctness, tests, error handling, docs.",
           "One agent combines what they found into a single comment: Ready, or a list of fixes."
         ],
-        "how": ["Fixes go back to Build. Merge only trusts a Ready comment on the latest commit."]
+        "how": [
+          "Fixes go back to Build, and anything unrelated becomes new work. Merge only trusts a Ready comment on the latest commit."
+        ]
       },
       "opens": "review"
     },
@@ -341,11 +345,13 @@
           "Its commit status must be green before Merge will land the PR."
         ],
         "how": [
+          "A problem with this change goes back to Build, and anything unrelated becomes new work.",
           "Tests the PR merged with the latest main, not the branch alone.",
           "Every claim must cite a file written during this check, sealed by a script.",
           "A result stands until the PR gets a new commit, so landing another PR does not undo it."
         ]
-      }
+      },
+      "opens": "app"
     },
     {
       "id": "merge",
@@ -404,7 +410,10 @@
           "Puts the merged build where you can try it.",
           "You choose where a work order lands. Staging is the one we recommend."
         ],
-        "how": ["Health check plus revision read-back, so a stale deploy fails loudly."]
+        "how": [
+          "Health check plus revision read-back, so a stale deploy fails loudly.",
+          "The PR has already merged, so a failed deploy becomes new work."
+        ]
       },
       "opens": "deploy"
     },
@@ -506,6 +515,27 @@
     },
     {
       "from": "review",
+      "to": "build",
+      "style": "loop",
+      "label": "fixes",
+      "route": [[1176, 542], [1176, 517], [916, 517], [916, 542]]
+    },
+    {
+      "from": "app",
+      "to": "build",
+      "style": "loop",
+      "arrow": false,
+      "route": [[1436, 542], [1436, 517], [1176, 517]]
+    },
+    {
+      "from": "merge",
+      "to": "build",
+      "style": "loop",
+      "arrow": false,
+      "route": [[1728, 542], [1728, 517], [1176, 517]]
+    },
+    {
+      "from": "review",
       "to": "disc",
       "style": "loop",
       "route": [[1176, 754], [1176, 1072], [104, 1072], [104, 1014]]
@@ -521,7 +551,7 @@
       "from": "deploy",
       "to": "disc",
       "style": "loop",
-      "label": "problems found become new work",
+      "label": "unrelated problems become new work",
       "route": [[1988, 754], [1988, 1072], [104, 1072], [104, 1014]]
     }
   ],
@@ -546,7 +576,7 @@
   ],
   "views": {
     "build": {
-      "caption": "One build run takes one work item one round forward. A round writes a brief, plans or investigates if triage asked for it, then delivers: implement, open the PR, review, fix. After the round an agent decides: done, another round (up to 2), or ask you. It also asks when a change has outgrown its size or stopped converging.",
+      "caption": "One build run takes one work item one round forward. A round writes a brief, plans or investigates if triage asked for it, then delivers: implement, open the PR, review, fix. After the round an agent decides: done, another round, or ask you. After 2 rounds it also checks that the rounds are converging. It also asks when a change has outgrown its size or stopped converging.",
       "cardSize": {
         "width": 260,
         "height": 200
@@ -728,7 +758,8 @@
           ],
           "details": {
             "what": ["Implement, PR, review, CI"]
-          }
+          },
+          "opens": "build/deliver"
         },
         {
           "id": "b-dec",
@@ -891,11 +922,354 @@
           "from": "b-dec",
           "to": "b-brief",
           "style": "loop",
-          "label": "another round (max 2)",
+          "label": "another round",
           "route": [[1218, 306], [1218, 40], [130, 40], [130, 306]]
         }
       ],
       "tour": ["b-brief", "b-del", "b-dec", "b-push", "b-next"]
+    },
+    "build/deliver": {
+      "caption": "The inner loop. Each delivery round implements or fixes, publishes a draft PR, and runs the review. A Ready review gets one simplify pass and a light re-review, then CI. Findings send it back to Implement, up to 4 rounds in all.",
+      "cardSize": {
+        "width": 260,
+        "height": 200
+      },
+      "cards": [
+        {
+          "id": "d-impl",
+          "role": "agent",
+          "kind": "agent · @implementer",
+          "title": "Implement",
+          "text": "Build it, or fix findings",
+          "x": 0,
+          "y": 306,
+          "covers": [
+            {
+              "pack": "queue",
+              "workflow": "archon-build-queue",
+              "steps": [
+                "ship/continues",
+                "ship/deliver",
+                "ship/deliver/rounds",
+                "ship/deliver/rounds/implement",
+                "ship/deliver/rounds/reshape"
+              ],
+              "screens": {
+                "ship/continues": {
+                  "workflow": "archon-ship-block",
+                  "path": "continues"
+                },
+                "ship/deliver": {
+                  "workflow": "archon-ship-block",
+                  "path": "deliver"
+                },
+                "ship/deliver/rounds": {
+                  "workflow": "archon-deliver-block",
+                  "path": "rounds"
+                },
+                "ship/deliver/rounds/implement": {
+                  "workflow": "archon-deliver-block",
+                  "path": "rounds/implement"
+                },
+                "ship/deliver/rounds/reshape": {
+                  "workflow": "archon-deliver-block",
+                  "path": "rounds/reshape"
+                }
+              }
+            },
+            {
+              "pack": "loop",
+              "workflow": "archon-loop",
+              "steps": [
+                "build",
+                "ship/continues",
+                "ship/deliver",
+                "ship/deliver/rounds",
+                "ship/deliver/rounds/implement",
+                "ship/deliver/rounds/reshape"
+              ],
+              "screens": {
+                "ship/continues": {
+                  "workflow": "archon-ship-block",
+                  "path": "continues"
+                },
+                "ship/deliver": {
+                  "workflow": "archon-ship-block",
+                  "path": "deliver"
+                },
+                "ship/deliver/rounds": {
+                  "workflow": "archon-deliver-block",
+                  "path": "rounds"
+                },
+                "ship/deliver/rounds/implement": {
+                  "workflow": "archon-deliver-block",
+                  "path": "rounds/implement"
+                },
+                "ship/deliver/rounds/reshape": {
+                  "workflow": "archon-deliver-block",
+                  "path": "rounds/reshape"
+                }
+              }
+            }
+          ],
+          "details": {
+            "what": ["Build it, or fix findings"]
+          }
+        },
+        {
+          "id": "d-pr",
+          "role": "source",
+          "kind": "script + agent",
+          "title": "Draft PR",
+          "text": "Publish the description",
+          "x": 344,
+          "y": 306,
+          "covers": [
+            {
+              "pack": "queue",
+              "workflow": "archon-build-queue",
+              "steps": [
+                "ship/deliver/forge",
+                "ship/deliver/rounds/pr",
+                "ship/deliver/update-pr-body"
+              ],
+              "screens": {
+                "ship/deliver/forge": {
+                  "workflow": "archon-deliver-block",
+                  "path": "forge"
+                },
+                "ship/deliver/rounds/pr": {
+                  "workflow": "archon-deliver-block",
+                  "path": "rounds/pr"
+                },
+                "ship/deliver/update-pr-body": {
+                  "workflow": "archon-deliver-block",
+                  "path": "update-pr-body"
+                }
+              }
+            },
+            {
+              "pack": "loop",
+              "workflow": "archon-loop",
+              "steps": [
+                "ship/deliver/forge",
+                "ship/deliver/rounds/pr",
+                "ship/deliver/update-pr-body"
+              ],
+              "screens": {
+                "ship/deliver/forge": {
+                  "workflow": "archon-deliver-block",
+                  "path": "forge"
+                },
+                "ship/deliver/rounds/pr": {
+                  "workflow": "archon-deliver-block",
+                  "path": "rounds/pr"
+                },
+                "ship/deliver/update-pr-body": {
+                  "workflow": "archon-deliver-block",
+                  "path": "update-pr-body"
+                }
+              }
+            }
+          ],
+          "details": {
+            "what": ["Publish the description"]
+          }
+        },
+        {
+          "id": "d-rev",
+          "role": "agent",
+          "kind": "up to 5 lenses",
+          "title": "Review",
+          "text": "Ready, or findings",
+          "x": 688,
+          "y": 306,
+          "countsAs": "review",
+          "opens": "review",
+          "covers": [],
+          "details": {
+            "what": ["Ready, or findings"]
+          }
+        },
+        {
+          "id": "d-simp",
+          "role": "agent",
+          "kind": "agent",
+          "title": "Simplify",
+          "text": "Names a smaller shape",
+          "x": 1032,
+          "y": 306,
+          "covers": [
+            {
+              "pack": "queue",
+              "workflow": "archon-build-queue",
+              "steps": ["ship/deliver/rounds/simplify"],
+              "screens": {
+                "ship/deliver/rounds/simplify": {
+                  "workflow": "archon-deliver-block",
+                  "path": "rounds/simplify"
+                }
+              }
+            },
+            {
+              "pack": "loop",
+              "workflow": "archon-loop",
+              "steps": ["ship/deliver/rounds/simplify"],
+              "screens": {
+                "ship/deliver/rounds/simplify": {
+                  "workflow": "archon-deliver-block",
+                  "path": "rounds/simplify"
+                }
+              }
+            }
+          ],
+          "details": {
+            "what": ["Names a smaller shape"]
+          }
+        },
+        {
+          "id": "d-ci",
+          "role": "agent",
+          "kind": "agent · medium",
+          "title": "CI",
+          "text": "Waits for green, marks ready",
+          "x": 1376,
+          "y": 306,
+          "covers": [
+            {
+              "pack": "queue",
+              "workflow": "archon-build-queue",
+              "steps": [
+                "ship/deliver/rounds/settle-threads",
+                "ship/deliver/rounds/ci",
+                "ship/deliver/rounds/threads",
+                "ship/deliver/rounds/round",
+                "ship/deliver/outcome",
+                "ship/deliver/report"
+              ],
+              "screens": {
+                "ship/deliver/rounds/settle-threads": {
+                  "workflow": "archon-deliver-block",
+                  "path": "rounds/settle-threads"
+                },
+                "ship/deliver/rounds/ci": {
+                  "workflow": "archon-deliver-block",
+                  "path": "rounds/ci"
+                },
+                "ship/deliver/rounds/threads": {
+                  "workflow": "archon-deliver-block",
+                  "path": "rounds/threads"
+                },
+                "ship/deliver/rounds/round": {
+                  "workflow": "archon-deliver-block",
+                  "path": "rounds/round"
+                },
+                "ship/deliver/outcome": {
+                  "workflow": "archon-deliver-block",
+                  "path": "outcome"
+                },
+                "ship/deliver/report": {
+                  "workflow": "archon-deliver-block",
+                  "path": "report"
+                }
+              }
+            },
+            {
+              "pack": "loop",
+              "workflow": "archon-loop",
+              "steps": [
+                "ship/deliver/rounds/settle-threads",
+                "ship/deliver/rounds/ci",
+                "ship/deliver/rounds/threads",
+                "ship/deliver/rounds/round",
+                "ship/deliver/outcome",
+                "ship/deliver/report"
+              ],
+              "screens": {
+                "ship/deliver/rounds/settle-threads": {
+                  "workflow": "archon-deliver-block",
+                  "path": "rounds/settle-threads"
+                },
+                "ship/deliver/rounds/ci": {
+                  "workflow": "archon-deliver-block",
+                  "path": "rounds/ci"
+                },
+                "ship/deliver/rounds/threads": {
+                  "workflow": "archon-deliver-block",
+                  "path": "rounds/threads"
+                },
+                "ship/deliver/rounds/round": {
+                  "workflow": "archon-deliver-block",
+                  "path": "rounds/round"
+                },
+                "ship/deliver/outcome": {
+                  "workflow": "archon-deliver-block",
+                  "path": "outcome"
+                },
+                "ship/deliver/report": {
+                  "workflow": "archon-deliver-block",
+                  "path": "report"
+                }
+              }
+            }
+          ],
+          "details": {
+            "what": ["Waits for green, marks ready"]
+          }
+        },
+        {
+          "id": "d-out",
+          "role": "source",
+          "kind": "back to",
+          "title": "Decide",
+          "text": "In the Build view",
+          "x": 1720,
+          "y": 306,
+          "upTo": "b-dec",
+          "covers": [],
+          "details": {
+            "what": ["In the Build view"]
+          }
+        }
+      ],
+      "lines": [
+        {
+          "from": "d-impl",
+          "to": "d-pr",
+          "style": "flow"
+        },
+        {
+          "from": "d-pr",
+          "to": "d-rev",
+          "style": "flow"
+        },
+        {
+          "from": "d-rev",
+          "to": "d-simp",
+          "style": "flow",
+          "label": "Ready"
+        },
+        {
+          "from": "d-simp",
+          "to": "d-ci",
+          "style": "flow",
+          "label": "reshape + re-review"
+        },
+        {
+          "from": "d-ci",
+          "to": "d-out",
+          "style": "flow",
+          "label": "green"
+        },
+        {
+          "from": "d-rev",
+          "to": "d-impl",
+          "style": "loop",
+          "label": "findings (max 4 rounds)",
+          "route": [[818, 306], [818, 40], [130, 40], [130, 306]]
+        }
+      ],
+      "tour": ["d-impl", "d-pr", "d-rev", "d-simp", "d-ci", "d-out"]
     },
     "review": {
       "caption": "A quick agent picks the reviewers this change earns, up to five, each reading through one lens, side by side. A synthesis agent merges what they found into one PR comment. That comment's Ready verdict at the PR's head is what the merge gate trusts.",
@@ -2177,6 +2551,206 @@
         }
       ],
       "tour": ["y-pre", "y-dep", "y-ver"]
+    },
+    "app": {
+      "caption": "Every PR passes through App check before Merge. It picks a PR, merges it with the latest main in a scratch checkout, starts the app and uses it like a person, against what the work item asks for. Every claim must point at a file made during this check. The result is a commit status the merge gate requires, and it stands until the PR gets a new commit.",
+      "cardSize": {
+        "width": 260,
+        "height": 200
+      },
+      "cards": [
+        {
+          "id": "a-pick",
+          "role": "source",
+          "kind": "script",
+          "title": "Pick a PR",
+          "text": "Oldest with no result at its commit",
+          "x": 0,
+          "y": 40,
+          "covers": [
+            {
+              "pack": "loop",
+              "workflow": "archon-loop",
+              "steps": ["briefs"]
+            },
+            {
+              "pack": "queue",
+              "workflow": "factory-app-check",
+              "steps": ["config", "select", "pending"]
+            }
+          ],
+          "details": {
+            "what": ["Oldest with no result at its commit"]
+          }
+        },
+        {
+          "id": "a-scope",
+          "role": "source",
+          "kind": "script",
+          "title": "How deep?",
+          "text": "From size and front-end paths",
+          "x": 344,
+          "y": 40,
+          "covers": [
+            {
+              "pack": "queue",
+              "workflow": "factory-app-check",
+              "steps": ["scope"]
+            }
+          ],
+          "details": {
+            "what": ["From size and front-end paths"]
+          }
+        },
+        {
+          "id": "a-pol",
+          "role": "source",
+          "kind": "script",
+          "title": "Protected paths",
+          "text": "Posts factory/policy",
+          "x": 344,
+          "y": 328,
+          "covers": [
+            {
+              "pack": "queue",
+              "workflow": "factory-app-check",
+              "steps": ["policy"]
+            }
+          ],
+          "details": {
+            "what": ["Posts factory/policy"]
+          }
+        },
+        {
+          "id": "a-prep",
+          "role": "source",
+          "kind": "script",
+          "title": "PR + main, started",
+          "text": "The real merge result",
+          "x": 688,
+          "y": 40,
+          "covers": [
+            {
+              "pack": "queue",
+              "workflow": "factory-app-check",
+              "steps": ["prepare"]
+            }
+          ],
+          "details": {
+            "what": ["The real merge result"]
+          }
+        },
+        {
+          "id": "a-check",
+          "role": "agent",
+          "kind": "agent · @factory-reviewer",
+          "title": "Use the app",
+          "text": "Browser, like a user",
+          "x": 1032,
+          "y": 40,
+          "covers": [
+            {
+              "pack": "loop",
+              "workflow": "archon-loop",
+              "steps": ["check-app"]
+            },
+            {
+              "pack": "queue",
+              "workflow": "factory-app-check",
+              "steps": ["check"]
+            }
+          ],
+          "details": {
+            "what": ["Browser, like a user"]
+          }
+        },
+        {
+          "id": "a-seal",
+          "role": "source",
+          "kind": "script",
+          "title": "Seal the evidence",
+          "text": "Every claim cites a fresh file",
+          "x": 1376,
+          "y": 40,
+          "covers": [
+            {
+              "pack": "loop",
+              "workflow": "archon-loop",
+              "steps": ["evidence"]
+            },
+            {
+              "pack": "queue",
+              "workflow": "factory-app-check",
+              "steps": ["evidence"]
+            }
+          ],
+          "details": {
+            "what": ["Every claim cites a fresh file"]
+          }
+        },
+        {
+          "id": "a-pub",
+          "role": "test",
+          "kind": "commit status",
+          "title": "factory/app-check",
+          "text": "Pass or fail at this commit",
+          "x": 1720,
+          "y": 40,
+          "covers": [
+            {
+              "pack": "loop",
+              "workflow": "archon-loop",
+              "steps": ["handoff"]
+            },
+            {
+              "pack": "queue",
+              "workflow": "factory-app-check",
+              "steps": ["publish", "finalize", "cleanup"]
+            }
+          ],
+          "details": {
+            "what": ["Pass or fail at this commit"],
+            "how": [
+              "A result stands until the pull request gets a new commit, so landing another pull request does not undo it."
+            ]
+          }
+        }
+      ],
+      "lines": [
+        {
+          "from": "a-pick",
+          "to": "a-scope",
+          "style": "flow"
+        },
+        {
+          "from": "a-scope",
+          "to": "a-prep",
+          "style": "flow"
+        },
+        {
+          "from": "a-scope",
+          "to": "a-pol",
+          "style": "flow",
+          "route": [[474, 240], [474, 328]],
+          "arrow": true
+        },
+        {
+          "from": "a-prep",
+          "to": "a-check",
+          "style": "flow"
+        },
+        {
+          "from": "a-check",
+          "to": "a-seal",
+          "style": "flow"
+        },
+        {
+          "from": "a-seal",
+          "to": "a-pub",
+          "style": "flow"
+        }
+      ],
+      "tour": ["a-pick", "a-scope", "a-prep", "a-check", "a-seal", "a-pub"]
     }
   }
 }

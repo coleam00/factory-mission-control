@@ -70,6 +70,8 @@ export interface Card {
   opens?: string;
   /** A card of the parent level: clicking this card goes up to it (a view's "next" card). */
   upTo?: string;
+  /** A card whose laps this card shows as its own: the card is the same step seen from a deeper level. */
+  countsAs?: string;
 }
 
 export type Point = readonly [number, number];
@@ -271,22 +273,28 @@ export const levelsOf = (map: FactoryMap): MapView[] => [map, ...Object.values(m
 /** Every card of the map, at every level. */
 export const allCards = (map: FactoryMap): Card[] => levelsOf(map).flatMap((level) => level.cards);
 
-/** The card, at any level, whose `opens` names `viewId`. */
-export const openerOf = (map: FactoryMap, viewId: string): Card | undefined =>
-  allCards(map).find((card) => card.opens === viewId);
+/**
+ * The card whose `opens` names `viewId`: the first in document order, which is the one the view
+ * hangs off. A view may also be opened from a card deeper in the map (the Deliver view's Review
+ * card opens the Review view); `inLevel` picks that card.
+ */
+export const openerOf = (map: FactoryMap, viewId: string, inLevel?: MapView): Card | undefined =>
+  (inLevel?.cards ?? allCards(map)).find((card) => card.opens === viewId);
 
 /**
  * The view ids from the root down to the view `id` names, through the card that opens each; the
- * root's `[]` for no id, an unknown one, or a chain that never reaches the root.
+ * root's `[]` for no id, an unknown one, or a chain that never reaches the root. `from` names the
+ * view the viewer opened `id` from when a card there opens it too: the path then runs through it.
  */
-export function viewPath(map: FactoryMap, id: string | null): string[] {
+export function viewPath(map: FactoryMap, id: string | null, from?: string | null): string[] {
   const path: string[] = [];
   let at = id;
   for (let hops = 0; at && hops <= Object.keys(map.views ?? {}).length; hops++) {
     if (map.views?.[at] === undefined) return [];
     path.unshift(at);
-    const opener = openerOf(map, at);
-    if (opener === undefined) return [];
+    const via = hops === 0 && from ? map.views[from] : undefined;
+    const opener = openerOf(map, at, via);
+    if (opener === undefined) return hops === 0 && via !== undefined ? viewPath(map, id) : [];
     const parent = Object.entries(map.views).find(([, v]) => v.cards.includes(opener))?.[0];
     if (parent === undefined) return path;
     at = parent;
@@ -297,12 +305,28 @@ export function viewPath(map: FactoryMap, id: string | null): string[] {
 /** The address parameter that names the open view. */
 export const VIEW_PARAM = 'view';
 
-/** `prev` with `view` set to the deepest view of `path`, or removed for the root. */
-export function viewSearch(prev: URLSearchParams, path: readonly string[]): URLSearchParams {
+/** The address parameter naming the view a shared view was opened from. */
+export const FROM_PARAM = 'from';
+
+/**
+ * `prev` with `view` set to the deepest view of `path`, or removed for the root. A view reached
+ * other than through its first opener also records the view above it in `from`.
+ */
+export function viewSearch(
+  map: FactoryMap,
+  prev: URLSearchParams,
+  path: readonly string[],
+): URLSearchParams {
   const next = new URLSearchParams(prev);
+  next.delete(FROM_PARAM);
   const view = path.at(-1);
-  if (view === undefined) next.delete(VIEW_PARAM);
-  else next.set(VIEW_PARAM, view);
+  if (view === undefined) {
+    next.delete(VIEW_PARAM);
+    return next;
+  }
+  next.set(VIEW_PARAM, view);
+  const above = path.at(-2);
+  if (above !== undefined && viewPath(map, view).at(-2) !== above) next.set(FROM_PARAM, above);
   return next;
 }
 
@@ -321,6 +345,17 @@ export function cardChain(map: FactoryMap, workflow: string, path: string): Card
     if (next === undefined) return chain;
     level = next;
   }
+}
+
+/**
+ * Every card a step's laps show on: its `cardChain`, plus each card that counts as one of those.
+ * Coverage uses `cardChain` alone, since an alias covers nothing.
+ */
+export function cardsCounting(map: FactoryMap, workflow: string, path: string): Card[] {
+  const chain = cardChain(map, workflow, path);
+  const ids = new Set(chain.map((card) => card.id));
+  const aliases = allCards(map).filter((card) => card.countsAs && ids.has(card.countsAs));
+  return [...chain, ...aliases];
 }
 
 /** A cover entry's screen: its own, or the step itself in the covered workflow. */

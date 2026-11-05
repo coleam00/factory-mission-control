@@ -3,7 +3,8 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { createMemoryRouter, RouterProvider } from 'react-router';
 import type { CheckLineRow, OneLapRow, StepAttemptRow } from '../lib/one-lap';
 import Lap from '../routes/f.$factory.laps.$runId';
-import type { LapMapRow } from '../lib/lap-graph';
+import { type LapMapRow, lapGraph } from '../lib/lap-graph';
+import { StepPanel } from './LapGraph';
 import { CheckList, isRunId, LapFound, LapHeaderBody, LapStepsBody, StepList } from './OneLap';
 
 function render(element: React.ReactElement): string {
@@ -425,4 +426,20 @@ test('a sent-back lap reads teal and a needs-owner lap violet, never amber', () 
   );
   expect(needsOwner).toContain('<span style="color:var(--role-person)">needs-owner</span>');
   expect(needsOwner).not.toContain('--warning');
+});
+
+test("a step the lap's pin lacks has no definition link, at any pin; a step on the map links at the pin", () => {
+  const lap = lapGraph(
+    [{ ...map[0], pin: 'v-oldest' }],
+    [
+      step({ step_id: map[0].step_id, started_at: new Date('2026-10-25T12:00:00Z') }),
+      step({ step_id: 'newstep', started_at: new Date('2026-10-25T12:01:00Z') }),
+    ],
+  );
+  const panel = (path: string) =>
+    render(<StepPanel lap={lap} path={path} now={0} onClose={() => {}} />);
+  const off = panel('newstep');
+  expect(off).toContain('not on the map');
+  expect(off).not.toContain('href=');
+  expect(panel(map[0].step_id)).toContain('?at=v-oldest');
 });

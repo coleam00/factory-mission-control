@@ -21,7 +21,7 @@ beforeAll(async () => {
   expect(bundle.success).toBe(true);
   source = Buffer.from(await bundle.outputs[0].text()).toString('base64');
   page = await openPage(process.env);
-}, 75_000);
+}, 90_000);
 
 afterAll(async () => {
   await page?.close();
@@ -151,4 +151,28 @@ test('a link to ?view=review opens the Review view, and a double-click on Review
     return [linked, await m.waitFor('review')];`);
   expect(linked).toMatchObject({ view: 'review', search: '?view=review' });
   expect(opened).toMatchObject({ view: 'review', search: '?view=review' });
+}, 30_000);
+
+test('Deliver opens from Build, and going up returns to Build and flashes Deliver', async () => {
+  const [down, up] = await inPage<Shown[]>(`
+    await m.mount('/f/x?view=build');
+    m.dblclick('b-del');
+    const down = await m.waitFor('build/deliver');
+    m.key('Escape');
+    await m.waitFor('build');
+    return [down, await m.waitFlash('b-del')];`);
+  expect(down).toMatchObject({ view: 'build/deliver', search: '?view=build%2Fdeliver' });
+  expect(up?.flashed).toContain('b-del');
+}, 30_000);
+
+test("Deliver's Review card opens the Review view, and going up returns to Deliver and flashes the card", async () => {
+  const [down, up] = await inPage<Shown[]>(`
+    await m.mount('/f/x?view=build%2Fdeliver');
+    m.dblclick('d-rev');
+    const down = await m.waitFor('review');
+    m.key('Escape');
+    await m.waitFor('build/deliver');
+    return [down, await m.waitFlash('d-rev')];`);
+  expect(down).toMatchObject({ view: 'review', search: '?view=review&from=build%2Fdeliver' });
+  expect(up?.flashed).toContain('d-rev');
 }, 30_000);

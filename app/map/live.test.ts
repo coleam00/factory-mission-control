@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test';
 import { LANE_STEPS } from '../lib/lap-graph';
-import { allCards, FACTORY_MAP, LISTS, type List } from './factory-map';
+import { allCards, cardsCounting, FACTORY_MAP, LISTS, type List, stepPath } from './factory-map';
 import {
   type CardLive,
   cardLive,
@@ -42,6 +42,7 @@ const hereOn = (rows: HomeMapRow[], cards: readonly { id: string }[]) => {
 /** The home map's cards only; `BUILD_VIEW` has the Build view's. */
 const here = (rows: HomeMapRow[]) => hereOn(rows, FACTORY_MAP.cards);
 const BUILD_VIEW = FACTORY_MAP.views?.build?.cards ?? [];
+const DELIVER_VIEW = FACTORY_MAP.views?.['build/deliver']?.cards ?? [];
 
 test('a lap counts once, on the card covering its deepest running step', () => {
   expect(
@@ -371,6 +372,28 @@ test('a lens the engine skipped shows the run on its card, not a count; a lens o
   expect(cardLive(FACTORY_MAP, { map: [rereviewing] }, new Date()).get('r-l3')?.here).toHaveLength(
     1,
   );
+});
+
+test('a step counts on its own card in the Deliver view, and review on the Review card as well', () => {
+  const rows = [
+    lap('impl', ['ship__deliver__rounds.implement__implement', 'ship'], 'archon-build-queue'),
+    lap('ci', ['ship__deliver__rounds__ci', 'ship'], 'archon-build-queue'),
+    lap('rev', ['ship__deliver__rounds.review__policy', 'ship'], 'archon-build-queue'),
+  ];
+  expect(hereOn(rows, DELIVER_VIEW)).toEqual({
+    'd-impl': ['impl'],
+    'd-ci': ['ci'],
+    'd-rev': ['rev'],
+  });
+});
+
+test('the shared counting rule puts a review lap on the Deliver Review card, for the live oracle too', () => {
+  const ids = cardsCounting(
+    FACTORY_MAP,
+    'archon-build-queue',
+    stepPath('ship__deliver__rounds.review__policy'),
+  ).map((card) => card.id);
+  expect(ids).toContain('d-rev');
 });
 
 const right = (over: Partial<MapRightNowRow>): MapRightNowRow => ({

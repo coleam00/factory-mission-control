@@ -188,6 +188,9 @@ const typing = (target: EventTarget | null) =>
 /** The stacked edge behind a card that opens a deeper view, in map units. */
 const STACK = '8px 8px 0 -2px var(--surface-elevated), 8px 8px 0 0 var(--border-bright)';
 
+/** Joins view ids into one key; ids may contain `/` (`build/deliver`), so not that. */
+const PATH_SEP = '\n';
+
 /** The camera zoom onto a card as it opens, and where it starts on the level it opens into. */
 const ZOOM_IN = 2.2;
 const ENTER_SCALE = 0.5;
@@ -632,9 +635,9 @@ export function FactoryMap({
   }, [selected, path, onPath]);
 
   // The address changed: zoom into the card that opens the new level, or fade back up, then swap.
-  const key = path.join('/');
-  const shownKey = useRef(shown.join('/'));
-  shownKey.current = shown.join('/');
+  const key = path.join(PATH_SEP);
+  const shownKey = useRef(shown.join(PATH_SEP));
+  shownKey.current = shown.join(PATH_SEP);
   useEffect(() => {
     const from = shownKey.current;
     if (from === key) {
@@ -642,14 +645,14 @@ export function FactoryMap({
       opened();
       return;
     }
-    const leaving = from === '' ? [] : from.split('/');
-    const going = key === '' ? [] : key.split('/');
+    const leaving = from === '' ? [] : from.split(PATH_SEP);
+    const going = key === '' ? [] : key.split(PATH_SEP);
     const into = going.length > leaving.length;
     const next = levelOf(map, going);
     const nextWorld = worldSize(next);
     const el = stage.current;
     const arrive = () => {
-      const target = arriving.current ?? openerOf(map, leaving.at(-1) ?? '')?.id;
+      const target = arriving.current ?? openerOf(map, leaving.at(-1) ?? '', next)?.id;
       arriving.current = null;
       if (!into) flash(target === undefined ? undefined : cardEls.current.get(target));
     };
@@ -667,8 +670,7 @@ export function FactoryMap({
         arrive();
       });
     } else {
-      const opener = openerOf(map, going.at(-1) ?? '');
-      const card = into ? levelRef.current.level.cards.find((c) => c.id === opener?.id) : undefined;
+      const card = into ? openerOf(map, going.at(-1) ?? '', levelRef.current.level) : undefined;
       setMotion({ moving: true, hidden: true });
       if (card) {
         const cx = card.x + cardWidth(levelRef.current.level, card) / 2;

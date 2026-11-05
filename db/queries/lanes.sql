@@ -1,14 +1,20 @@
-SELECT l.run_id, l.started_at, c.issue_number, i.title AS issue_title, i.url AS issue_url,
+SELECT l.run_id, l.workflow_name, f.console, l.started_at,
+  coalesce(c.issue_number, (facts.output -> 'item' ->> 'number')::int) AS issue_number,
+  i.title AS issue_title, i.url AS issue_url,
   -- The pick step's route, or else the one the lap's claim comment records (often first).
   coalesce(p.output ->> 'route', c.route) AS route, p.output ->> 'depth' AS depth,
   s.step_id, s.started_at AS step_started_at, k.cost_usd, t.steps
 FROM mc.laps l
+LEFT JOIN mc.factories f ON f.name = l.factory
 LEFT JOIN LATERAL (
   SELECT c.issue_number, c.route FROM mc.claims c
   WHERE c.factory = l.factory AND c.run_id = l.run_id
   ORDER BY c.claimed_at DESC NULLS LAST, c.issue_number LIMIT 1
 ) c ON true
-LEFT JOIN mc.issues i ON i.factory = l.factory AND i.number = c.issue_number
+-- A queue run names its work item in its facts step, the old loop's claims it.
+LEFT JOIN mc.lap_steps facts ON facts.run_id = l.run_id AND facts.step_id = 'facts'
+LEFT JOIN mc.issues i ON i.factory = l.factory
+  AND i.number = coalesce(c.issue_number, (facts.output -> 'item' ->> 'number')::int)
 LEFT JOIN mc.lap_steps p ON p.run_id = l.run_id AND p.step_id = 'pick'
 -- The step a lap is on: its newest running step, or else the last one it started.
 LEFT JOIN LATERAL (
@@ -28,4 +34,4 @@ LEFT JOIN LATERAL (
     AS steps
   FROM mc.lap_steps ls WHERE ls.run_id = l.run_id
 ) t ON true
-WHERE l.factory = $1 AND l.workflow_name = 'archon-loop' AND l.status = 'running'
+WHERE l.factory = $1 AND l.status = 'running'

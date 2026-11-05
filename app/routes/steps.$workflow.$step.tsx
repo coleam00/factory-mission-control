@@ -6,6 +6,7 @@ import {
   dependents,
   findStep,
   joinParts,
+  kindLabel,
   type NestingRow,
   nesting,
   type PartRow,
@@ -325,7 +326,7 @@ function Step({ step, steps }: { step: StepRow; steps: readonly StepRow[] }): Re
         </p>
       </header>
       <dl className={`${CARD} grid gap-x-6 gap-y-2 sm:grid-cols-[10rem_1fr]`}>
-        <Fact label="Kind">{step.include !== null ? `include ${step.include}` : step.kind}</Fact>
+        <Fact label="Kind">{kindLabel(step)}</Fact>
         <Fact label="Model">{step.model ?? '-'}</Fact>
         <Fact label="When">
           <span data-when="">{step.when_condition ?? '-'}</span>
