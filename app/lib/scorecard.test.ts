@@ -54,6 +54,7 @@ const lap = (
     step_id: null,
     pin_sha: null,
     issue: null,
+    pull_request: null,
     ...over,
   },
   ...steps.map((r) => ({ ...r, run_id: run })),
@@ -357,14 +358,30 @@ describe('queue merges (#393)', () => {
     expect(cost_per_merge.value).toBe(1.5);
   });
 
-  test('a merge whose build laps span two versions counts on the version of the last lap', () => {
+  test('a merge whose build laps span two versions counts on the version that opened the pull request', () => {
     const rows = [
+      ...build('a', '2026-10-01T00:00:00Z', 7),
+      ...build('b', '2026-10-02T00:00:00Z', 7, { digest: W, pull_request: '70' }),
+      mergeRun('m', [70], [item(7, 70)]),
+    ];
+    expect(card(rows, V).merges.value).toBe(1);
+    expect(card(rows, W).merges.value).toBe(0);
+  });
+
+  test('a pull request no lap named is credited to the last lap; one every lap named, to the first', () => {
+    const none = [
       ...build('a', '2026-10-01T00:00:00Z', 7),
       ...build('b', '2026-10-02T00:00:00Z', 7, { digest: W }),
       mergeRun('m', [70], [item(7, 70)]),
     ];
-    expect(card(rows, V).merges.value).toBe(0);
-    expect(card(rows, W).merges.counted).toEqual(['b']);
+    expect(card(none, W).merges.counted).toEqual(['b']);
+    const all = [
+      ...build('a', '2026-10-01T00:00:00Z', 7, { pull_request: '70' }),
+      ...build('b', '2026-10-02T00:00:00Z', 7, { digest: W, pull_request: '70' }),
+      mergeRun('m', [70], [item(7, 70)]),
+    ];
+    expect(card(all, V).merges.counted).toEqual(['a']);
+    expect(card(all, W).merges.value).toBe(0);
   });
 
   test('a pull request with no item, an own pull request, or no lap before the merge counts nowhere', () => {

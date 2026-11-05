@@ -24,6 +24,8 @@ export interface LapRow {
   pin_sha: null;
   /** A build-queue lap's work item (its facts step's issue number), as text; null for a loop lap. */
   issue: string | null;
+  /** The pull request that item had when the lap started, as text; null when it had none. */
+  pull_request: string | null;
 }
 
 /**
@@ -94,7 +96,7 @@ export interface Lap {
   /** The summed `duration_ms` of its check-app attempts; null when none reported one. */
   checkAppMs: number | null;
   cost: number;
-  /** The pull requests the merge queue merged that this build-queue lap is credited with; empty for a loop lap. */
+  /** The pull requests the merge queue merged that this build-queue lap opened; empty for a loop lap. */
   queueMerges: readonly number[];
 }
 
@@ -111,9 +113,12 @@ const positive = (text: string | null): number | null => {
 };
 
 /**
- * Each pull request the merge queue merged, credited to the last build-queue lap on its issue that
- * started no later than the merge (lap run id to pull request numbers). A pull request counts once,
- * at its first merge; its issue is the one its merge run's facts item names. No such lap, no credit.
+ * Each pull request the merge queue merged, credited to the build-queue lap that opened it (lap
+ * run id to pull request numbers). A pull request counts once, at its first merge; its issue is
+ * the one its merge run's facts item names. Of the issue's build laps that started no later than
+ * the merge, the opener is the last lap that started before the first lap whose facts named the
+ * pull request; when none named it, the last lap; when every one named it (the queue continued a
+ * pull request it did not open), the first. No such lap, no credit.
  */
 function queueMergeCredits(rows: readonly ScorecardRow[]): Map<string, number[]> {
   const merges = new Map<number, { issue: number; at: Date | null }>();
@@ -137,16 +142,18 @@ function queueMergeCredits(rows: readonly ScorecardRow[]): Map<string, number[]>
       const issue = positive(row.issue);
       return issue === null || row.started_at === null
         ? []
-        : [{ id: row.run_id, issue, startedAt: row.started_at }];
+        : [{ id: row.run_id, issue, startedAt: row.started_at, pr: positive(row.pull_request) }];
     })
     .sort((a, b) => a.startedAt.getTime() - b.startedAt.getTime() || a.id.localeCompare(b.id));
 
   const credits = new Map<string, number[]>();
   for (const [pr, { issue, at }] of merges) {
-    const last = builds.findLast(
+    const candidates = builds.filter(
       (lap) => lap.issue === issue && (at === null || lap.startedAt <= at),
     );
-    if (last !== undefined) credits.set(last.id, [...(credits.get(last.id) ?? []), pr]);
+    const firstNamed = candidates.findIndex((lap) => lap.pr === pr);
+    const opener = candidates.at(firstNamed === -1 ? -1 : Math.max(firstNamed - 1, 0));
+    if (opener !== undefined) credits.set(opener.id, [...(credits.get(opener.id) ?? []), pr]);
   }
   return credits;
 }

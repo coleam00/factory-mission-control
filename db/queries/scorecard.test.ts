@@ -148,7 +148,7 @@ describe('scorecard on the seed', () => {
       });
   });
 
-  test('queue merges count on the version of the last build-queue lap before the merge, equal to a recount', async () => {
+  test('queue merges count on the version of the build-queue lap that opened the pull request, equal to a recount', async () => {
     const rowsOf = async (tx: Pick<Db, 'query'>) =>
       (await tx.query(sql, ['queue-factory'])) as unknown as ScorecardRow[];
     const shown = (rows: ScorecardRow[], digest: string) => {
@@ -168,14 +168,14 @@ describe('scorecard on the seed', () => {
       cost: 1.2,
     });
     expect(shown(rows, QUEUE_DIGEST_2)).toEqual({
-      laps: 1,
+      laps: 2,
       merges: 1,
       counted: [QUEUE_RUNS.opened],
       cost: 3,
     });
 
-    // The recount, independent of the TypeScript: for each merged pull request, the last build lap on its
-    // issue that started no later than the merge, by version.
+    // The recount, independent of the TypeScript: for each merged pull request, the build lap on its
+    // issue before the first lap that named it (else the last lap before the merge), by version.
     const recount = `
       WITH merged AS (
         SELECT DISTINCT ON (pr) pr, issue, at FROM (
@@ -195,11 +195,17 @@ describe('scorecard on the seed', () => {
         FROM mc.laps l JOIN mc.lap_steps f ON f.run_id = l.run_id AND f.step_id = 'facts'
         WHERE l.factory = 'queue-factory' AND l.workflow_name = 'archon-build-queue'
       ), candidates AS (
-        SELECT DISTINCT ON (m.pr) m.pr, b.digest
+        SELECT m.pr AS merged_pr, b.*, row_number() OVER w AS n
         FROM merged m JOIN builds b ON b.issue = m.issue AND b.started_at <= m.at
-        ORDER BY m.pr, b.started_at DESC, b.run_id DESC
+        WINDOW w AS (PARTITION BY m.pr ORDER BY b.started_at, b.run_id)
+      ), named AS (
+        SELECT merged_pr, min(n) FILTER (WHERE pr = merged_pr) AS first_named, max(n) AS last_n
+        FROM candidates GROUP BY merged_pr
       )
-      SELECT digest, count(*)::int AS merges FROM candidates GROUP BY digest ORDER BY digest`;
+      SELECT c.digest, count(*)::int AS merges
+      FROM candidates c JOIN named n ON n.merged_pr = c.merged_pr
+      WHERE c.n = CASE WHEN n.first_named IS NULL THEN n.last_n ELSE greatest(n.first_named - 1, 1) END
+      GROUP BY c.digest ORDER BY c.digest`;
     expect(await db.query(recount)).toEqual(
       [QUEUE_DIGEST, QUEUE_DIGEST_2].sort().map((digest) => ({ digest, merges: 1 })),
     );
@@ -227,10 +233,10 @@ describe('scorecard on the seed', () => {
             [id, step, JSON.stringify({ structured_output, duration_ms: 1 })],
           );
         }
+        // No lap named 904, so the last lap on issue 404 before the merge, version 2's, opened it.
         const after = await rowsOf(tx);
-        // A second pull request on issue 404 credits the same lap, which is still one merged lap.
         expect(shown(after, QUEUE_DIGEST).merges).toBe(1);
-        expect(shown(after, QUEUE_DIGEST_2).merges).toBe(1);
+        expect(shown(after, QUEUE_DIGEST_2).merges).toBe(2);
         throw rollback;
       })
       .catch((error) => {

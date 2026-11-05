@@ -1511,8 +1511,9 @@ function secondFactorySql(loop: Loop): string[] {
  * so a run's issue is its `number` input. Two running archon-build-queue runs and a third that
  * `fixture:write attention` can pause, none yet on a running step (the live check starts one); a
  * paused archon-merge-queue run waiting on attention, and a completed one whose `record` step read
- * pull requests 404 and 405 back as merged. Two versions built them: the first built 404 and a
- * second digest built 405 (#393), so each version holds one merge. One open needs-owner issue must not count.
+ * pull requests 404 and 405 back as merged. Two versions built them: the first opened 404 and, on
+ * a second digest, a later round continued it while another opened 405 (#393), so each version
+ * holds one merge. One open needs-owner issue must not count.
  */
 export const QUEUE_FACTORY: FactoryEntry = {
   name: 'queue-factory',
@@ -1528,6 +1529,7 @@ export const QUEUE_RUNS = {
   waiting: '5eed0005-0000-4000-8000-000000000004',
   merged: '5eed0005-0000-4000-8000-000000000005',
   built: '5eed0005-0000-4000-8000-000000000007',
+  continued: '5eed0005-0000-4000-8000-000000000008',
   opened: '5eed0005-0000-4000-8000-000000000009',
   intake: '5eed0005-0000-4000-8000-000000000006',
 } as const;
@@ -1609,6 +1611,11 @@ function queueFactorySql(): string[] {
     },
   });
   const second = (minute: number) => `2026-10-22T09:${String(minute).padStart(2, '0')}:00.000Z`;
+  const pullRequest = (number: number) => ({
+    repo: { host: 'github.com', path: QUEUE_FACTORY.repository },
+    number,
+    state: 'open',
+  });
   const mergeItem = (number: number) => ({
     item: claimed(number).item,
     pr: { repo: claimed(number).item.repo, number },
@@ -1652,10 +1659,19 @@ function queueFactorySql(): string[] {
     }),
     run(QUEUE_RUNS.built, 'archon-build-queue', 'completed', {}, true, earlier),
     done(QUEUE_RUNS.built, 'facts', 1, claimed(404), earlier, 1.2),
-    // A run on the second version that builds 405.
+    // A later round on pull request 404, which the run above opened, and a run that opens 405.
+    run(QUEUE_RUNS.continued, 'archon-build-queue', 'completed', {}, true, second, QUEUE_DIGEST_2),
+    done(
+      QUEUE_RUNS.continued,
+      'facts',
+      1,
+      { ...claimed(404), pull_request: pullRequest(404) },
+      second,
+    ),
+    done(QUEUE_RUNS.continued, 'route', 2, undefined, second, 0.75),
     run(QUEUE_RUNS.opened, 'archon-build-queue', 'completed', {}, true, second, QUEUE_DIGEST_2),
-    done(QUEUE_RUNS.opened, 'facts', 1, claimed(405), second),
-    done(QUEUE_RUNS.opened, 'route', 2, undefined, second, 3),
+    done(QUEUE_RUNS.opened, 'facts', 1, { ...claimed(405), pull_request: null }, second),
+    done(QUEUE_RUNS.opened, 'route', 2, undefined, second, 2.25),
     run(QUEUE_RUNS.waiting, 'archon-merge-queue', 'paused', { wait: attentionWait(at(6)) }, false),
     run(QUEUE_RUNS.merged, 'archon-merge-queue', 'completed', {}, true),
     done(QUEUE_RUNS.merged, 'facts', 1, {
