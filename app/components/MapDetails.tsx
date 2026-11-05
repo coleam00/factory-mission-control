@@ -99,7 +99,9 @@ function Deploy({ deploy }: { deploy: LatestDeploy | null }): ReactElement {
           {name}: the last deploy failed, health {deploy.health ?? 'not reported'}
         </>
       )}
-      {deploy.at === null ? null : <span className={CHIP}>{relativeTime(deploy.at.toISOString())}</span>}
+      {deploy.at === null ? null : (
+        <span className={CHIP}>{relativeTime(deploy.at.toISOString())}</span>
+      )}
     </li>
   );
 }
