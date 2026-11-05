@@ -11,8 +11,8 @@ version AS (
   JOIN mc.factories f ON f.name = $1
   CROSS JOIN queues q
   LEFT JOIN mc.pins p ON p.archon_sha = a.archon_sha
-  WHERE CASE WHEN '' = '' THEN q.on_queues OR p.sha IS NOT NULL ELSE p.sha = '' END
-  ORDER BY CASE WHEN '' = '' AND q.on_queues THEN a.parsed_at END DESC NULLS LAST,
+  WHERE q.on_queues OR p.sha IS NOT NULL
+  ORDER BY CASE WHEN q.on_queues THEN a.parsed_at END DESC NULLS LAST,
     p.committed_at DESC NULLS LAST, a.parsed_at DESC
   LIMIT 1
 )
