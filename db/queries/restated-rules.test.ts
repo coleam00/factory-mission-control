@@ -69,12 +69,7 @@ test('map-right-now reads only paths the pinned merge queue declares', () => {
 
   const yaml = Bun.YAML.parse(
     read('fixtures', 'pack', 'queue', 'sdlc', 'merge-queue', 'archon-merge-queue.yaml'),
-  ) as {
-    nodes: {
-      id: string;
-      output_format?: { properties?: Record<string, unknown> };
-    }[];
-  };
+  ) as { nodes: { id: string; output_format?: { properties?: Record<string, unknown> } }[] };
   const mergeTs = read('fixtures', 'pack', 'queue', 'sdlc', '.shared', 'merge.ts');
   const forgeTs = read('fixtures', 'pack', 'queue', 'sdlc', '.shared', 'forge.ts');
 
