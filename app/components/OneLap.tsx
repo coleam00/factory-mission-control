@@ -17,12 +17,12 @@ import {
   pullUrl,
   shownDispositions,
   LAP_OUTCOME_TOKEN,
-  REVIEW_TOKEN,
   STEP_STATUS_TOKEN,
   type StepAttemptRow,
   VERDICT_TOKEN,
 } from '../lib/one-lap';
 import { type LapMapRow, lapGraph } from '../lib/lap-graph';
+import { reviewToken } from '../lib/review-outcome';
 import { LivePanel, type PanelState } from '../live/LivePanel';
 import { LapGraphView, StepPanel } from './LapGraph';
 import { Field, LABEL, MONO, NONE, PanelBody, useNow, utcMinute } from './Lanes';
@@ -244,7 +244,7 @@ function Review({
               {outcome === null ? (
                 <None>{lap.review_status}</None>
               ) : (
-                <span style={tokenColor(REVIEW_TOKEN[outcome])}>{outcome}</span>
+                <span style={tokenColor(reviewToken(outcome))}>{outcome}</span>
               )}
             </Field>
             <Field label="Delivers">{lap.review_delivers ?? <None />}</Field>
