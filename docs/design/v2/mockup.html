@@ -371,7 +371,7 @@ build:{title:"Build",caption:"One build run takes one work item one round forwar
   {id:"b-plan",x:270,y:260,k:"agent",kl:"agent · @planner",t:"Plan",s:"Settle the design first"},
   {id:"b-del",x:540,y:150,k:"stage",kl:"up to 4 rounds",t:"Deliver",s:"Implement, PR, review, CI",open:"deliver",live:function(){return count(function(x){return x.st==="build"})}},
   {id:"b-dec",x:810,y:150,k:"agent",kl:"agent · large",t:"Decide",s:"Done, another round, or ask"},
-  {id:"b-push",x:1080,y:150,k:"script",kl:"script",t:"Record the round",s:"Push, release the ticket"},
+  {id:"b-push",x:1080,y:150,k:"script",kl:"script",t:"Record the round",s:"Push, release the work item"},
   {id:"b-ask",x:810,y:330,k:"wait",kl:"waits",t:"Ask you",s:"Route, stop, or scope"},
   {id:"b-next",x:1350,y:150,k:"input",kl:"next",t:"Merge queue",s:"When the PR is Ready and green"}
  ],
@@ -444,7 +444,7 @@ deploy:{title:"Staging",caption:"Where a finished work order lands for you to tr
 },
 you:{title:"Manager",caption:"The manager keeps work items moving and brings you the decisions it should not make itself. It answers on its own when one of your written rules covers the question, like “always ask before merging a database change”. If you keep giving the same answer, add it as a rule.",
  nodes:[
-  {id:"u-c",x:0,y:40,k:"wait",kl:"from intake",t:"Ticket is unclear",s:"What should it do, and how do we know it works?"},
+  {id:"u-c",x:0,y:40,k:"wait",kl:"from intake",t:"Work item is unclear",s:"What should it do, and how do we know it works?"},
   {id:"u-b",x:270,y:40,k:"wait",kl:"from build",t:"Build is stuck on a choice",s:"Keep going, stop, or change what is in scope?"},
   {id:"u-m",x:540,y:40,k:"wait",kl:"from merge",t:"Risky merge",s:"Touches the database or login, or is very large"},
   {id:"u-d",x:810,y:40,k:"wait",kl:"from findings",t:"Is this a real problem?",s:"Make it a work item, or drop it?"},
@@ -619,7 +619,7 @@ function showTicket(x){var tl=[["Tue 09:12","Filed by Split","ok"],["09:14","Int
 
 /* needs you */
 function renderAsks(){var A=document.getElementById("asks");var asks=[
- {n:8,kind:"build: scope",q:"Shop screen: the PRD lists 6 items but no prices. Ship with placeholder prices, or wait for a pricing work item?",opts:["Ship with placeholders, file a pricing ticket","Wait for pricing","Other"],rec:0,age:"1 h 40 m"},
+ {n:8,kind:"build: scope",q:"Shop screen: the PRD lists 6 items but no prices. Ship with placeholder prices, or wait for a pricing work item?",opts:["Ship with placeholders, file a pricing work item","Wait for pricing","Other"],rec:0,age:"1 h 40 m"},
  {n:11,kind:"merge: pr",q:"PR #44 changes the save file format. merge.md says ask on schema changes. Merge?",opts:["Merge","Send back with a migration","Other"],rec:1,age:"25 m"}];
  A.innerHTML=asks.map(function(a){return '<div class="panel" style="margin-top:0"><div class="panel-head"><div><div class="label">'+a.kind+' · work item #'+a.n+' · waiting '+a.age+'</div><h3 style="font-size:15px;font-weight:600;max-width:80ch">'+esc(a.q)+'</h3></div></div><div class="pbody"><ul>'+a.opts.map(function(o,i){return '<li>'+(i===a.rec?'<span class="chip you">recommended</span> ':'')+esc(o)+'</li>'}).join("")+'</ul><p style="color:var(--fg-3);font-size:12.5px">Answer in the Archon console or Slack. If the same call comes up again, it should become a line in the policy files.</p></div></div>'}).join("")}
 

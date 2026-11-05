@@ -120,8 +120,8 @@ its own entries in the same file:
 
 Product document, New issue and Shipped cover no steps.
 
-**Work orders on the dashboard, until Archon has them.** An open issue labelled `work-order:<name>`
-belongs to that work order, and a label `lands-on:<target>` on any of its issues says where it lands.
+**Work orders on the dashboard, until Archon has them.** An issue labelled `work-order:<name>`, open or
+closed, belongs to that work order (a finished order drops off the Board after 7 days), and a label `lands-on:<target>` on any of its issues says where it lands.
 The dashboard reads those labels and writes nothing. When the primitive lands in the pack, this
 paragraph and that query change, nothing else.
 

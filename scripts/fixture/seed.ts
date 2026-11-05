@@ -893,6 +893,24 @@ function githubSql(runs: Run[]): string[] {
   }
   issue(OWNER_ISSUE, 'Owner decisions needed', OWNER_BODY, ms('2026-09-30T09:00:00Z'));
   issue(METRICS_ISSUE, 'Loop metrics', METRICS_BODY, ms('2026-09-30T09:00:00Z'));
+  // Two work orders (PRD 4.9): the issues carrying a `work-order:` label, one of them a `lands-on:`.
+  for (const [order, lands, numbers] of [
+    ['screens', 'staging', [10, 11, 12, 14]],
+    ['foundations', 'main', [5, 6, 7, 9]],
+  ] as const) {
+    for (const [index, number] of numbers.entries()) {
+      for (const label of [`work-order:${order}`, ...(index === 0 ? [`lands-on:${lands}`] : [])]) {
+        out.push(
+          insert('mc.issue_labels', {
+            factory: FACTORY,
+            issue_number: number,
+            label,
+            labeled_at: iso(ms('2026-10-01T09:00:00Z')),
+          }),
+        );
+      }
+    }
+  }
   // Labelled between its two loop comments, so its wait is not its last update.
   out.push(
     insert('mc.issue_labels', {
@@ -1350,6 +1368,7 @@ export const QUEUE_RUNS = {
   ask: '5eed0005-0000-4000-8000-000000000003',
   waiting: '5eed0005-0000-4000-8000-000000000004',
   merged: '5eed0005-0000-4000-8000-000000000005',
+  intake: '5eed0005-0000-4000-8000-000000000006',
 } as const;
 
 function queueFactorySql(): string[] {
@@ -1419,6 +1438,16 @@ function queueFactorySql(): string[] {
     ...first(QUEUE_RUNS.review, 402),
     ...first(QUEUE_RUNS.ask, 403),
     done(QUEUE_RUNS.ask, 'apply', 4),
+    // Issue 401 is being triaged as well as built, so the board has a work item in Intake.
+    run(QUEUE_RUNS.intake, 'archon-intake', 'running', { inputs: { number: '401' } }, false),
+    insert('remote_agent_workflow_events', {
+      id: `5eedeeee-0000-4000-8000-2${String(++event).padStart(11, '0')}`,
+      workflow_run_id: QUEUE_RUNS.intake,
+      event_type: 'node_started',
+      step_name: 'triage',
+      data: json({ ...nodeBlock('triage', 'script', 'triage'), timing: { startedAt: at(4) } }),
+      created_at: at(4),
+    }),
     run(QUEUE_RUNS.waiting, 'archon-merge-queue', 'paused', { wait: attentionWait(at(6)) }, false),
     run(QUEUE_RUNS.merged, 'archon-merge-queue', 'completed', {}, true),
     done(QUEUE_RUNS.merged, 'record', 8, {
