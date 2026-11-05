@@ -304,6 +304,9 @@ export function difference(a: Measured, b: Measured): number | null {
  */
 export const MEANINGFUL_LAPS = 10;
 
+/** The label a difference carries until it is meaningful. */
+export const NOT_YET_MEANINGFUL = 'not yet meaningful';
+
 export function meaningful(aLaps: number, bLaps: number): boolean {
   return aLaps >= MEANINGFUL_LAPS && bLaps >= MEANINGFUL_LAPS;
 }
