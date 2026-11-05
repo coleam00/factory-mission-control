@@ -155,7 +155,7 @@ the flow toggle is off.
 | Measure | Definition |
 |---|---|
 | lap | an `archon-loop` run, or an `archon-build-queue` run on a work item: one whose `facts` step names an item (owner ruling 2026-11-04, #378). A build-queue run that finds nothing to build is not a lap |
-| merge | a lap whose `land` step output has `outcome = merged` |
+| merge | a lap whose `land` step output has `outcome = merged`; on the queues, a build-queue lap credited with a pull request the merge queue merged (below) |
 | empty lap | a lap whose `pick` output has `route = none` |
 | failed lap | a lap whose run `status = failed` |
 | send-back | a lap whose `review` output has `outcome = sent-back` |
@@ -169,7 +169,18 @@ the flow toggle is off.
 
   The other measures keep their definitions. A build-queue lap has no `pick`, `review`, `land` or
   `check-app` step, so it counts toward laps, failed laps, lap duration, active hours and cost, and
-  toward no merge, empty lap, send-back, gate refusal or app-check time.
+  toward no empty lap, send-back, gate refusal or app-check time. It merges nothing itself: the
+  merge queue's later run does (owner request, #393). For each pull request an `archon-merge-queue`
+  run's `record` step read back as merged (its `merged` list; a pull request counts once, at its
+  first such run), the issue is the one that run's `facts` items name for it (a maintainer's own
+  pull request has none and counts nowhere). Among the factory's build-queue laps on that issue that
+  started no later than the merge, the pull request is credited to the lap that opened it: the last
+  lap that started before the first lap whose `facts` named that pull request as its pull request;
+  when no lap named it, the last lap; when every lap named it (the queue continued a pull request
+  it did not open), the first lap. A pull request with no such lap is credited to no version. A
+  version's merges are its laps that merged by `land` or were credited a pull request. A merge
+  whose build laps span two versions therefore counts on the version that opened it, not the one
+  that last pushed it.
 
   Every number shows how many laps it rests on. Two versions can be compared side by side; a
   difference resting on fewer than 10 laps on either side is labelled "not yet meaningful".

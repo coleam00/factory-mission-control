@@ -5,6 +5,7 @@
  * which the details strip's Right now lists (invariant 4). Pure, no React.
  */
 import type { HealthWorkableRow } from '../lib/health';
+import { mergedPulls } from '../lib/merge-queue';
 import { pullUrl } from '../lib/one-lap';
 import type { OwnerQueueRow } from '../lib/owner-queue';
 import type { PanelState } from '../live/LivePanel';
@@ -162,18 +163,6 @@ const sameLocalDay = (a: Date, b: Date) =>
   a.getFullYear() === b.getFullYear() &&
   a.getMonth() === b.getMonth() &&
   a.getDate() === b.getDate();
-
-/** The pull requests of a merge-queue lap's list; anything but an array of positive integers gives none. */
-function mergedPulls(prs: string): number[] {
-  try {
-    const parsed: unknown = JSON.parse(prs);
-    return Array.isArray(parsed)
-      ? parsed.filter((n): n is number => Number.isInteger(n) && n > 0)
-      : [];
-  } catch {
-    return [];
-  }
-}
 
 /**
  * The merges of `now`'s local day, newest first: a loop lap whose land step merged is one, a

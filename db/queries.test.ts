@@ -253,6 +253,10 @@ const ROW_COLUMNS: Record<string, string[]> = {
     'reason',
     'pin_sha',
     'first_run_at',
+    'issue',
+    'pull_request',
+    'merged',
+    'items',
   ]),
   'status-strip': columns<StatusStripRow>()(['running']),
   'step-detail': columns<StepRow>()([
