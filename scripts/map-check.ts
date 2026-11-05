@@ -299,8 +299,9 @@ function parentLevel(map: FactoryMap, card: Card): MapView | undefined {
 
 /**
  * The shape of the views: every `opens` and `upTo` leads somewhere, and every view hangs off the
- * root once. A `countsAs` names a card that counts as nothing else, and its card covers no step of
- * its own, so `cardsCounting` counts each lap once.
+ * root once (a card deeper in the map may open it again, one per level). A `countsAs` names a card
+ * that counts as nothing else, and its card covers no step of its own, so `cardsCounting` counts
+ * each lap once.
  */
 function viewFailures(map: FactoryMap): string[] {
   const failures: string[] = [];
@@ -336,10 +337,13 @@ function viewFailures(map: FactoryMap): string[] {
   for (const id of views) {
     const openers = cards.filter((c) => c.opens === id);
     if (openers.length === 0) failures.push(`view ${id} is opened by no card`);
-    if (openers.length > 1) {
-      failures.push(`view ${id} is opened by ${openers.map((c) => c.title).join(' and ')}`);
+    const sameLevel = levelsOf(map)
+      .map((level) => openers.filter((c) => level.cards.includes(c)))
+      .find((inLevel) => inLevel.length > 1);
+    if (sameLevel !== undefined) {
+      failures.push(`view ${id} is opened by ${sameLevel.map((c) => c.title).join(' and ')}`);
     }
-    if (openers.length === 1 && viewPath(map, id).length === 0) {
+    if (openers.length > 0 && viewPath(map, id).length === 0) {
       failures.push(`view ${id} cannot be reached from the root`);
     }
   }

@@ -137,6 +137,13 @@ then on the card of that card's view that covers it, so one run on `ship/deliver
 is on Build at the home map, on Deliver in the Build view, and on Implement in the Deliver view. A step that Review covers at the
 root counts on no card of the Build view, and also shows on the Deliver view's Review card.
 
+In the Review view a lens the router skipped for the round a run is in has no count for it, and the
+lens card's Right now says that run's change did not earn the reviewer. It reads the skipped lens
+steps of a round whose `route` step completed with `false` for that lens (the `home-map` query's
+`picks` rows, which keep only steps that finished since the round's `policy` step last started) and
+says nothing for a lens that ran, a round not yet at its lenses, or a round the router never ran (a
+light round, a rereview, a refused round).
+
 ## Right now in the Merge and Staging views
 
 A card's `lists` (a closed set, held by the map check) name what its Right now shows beside its
@@ -188,7 +195,7 @@ holdout verifier and the fence (journey 1). Esc, the close button or a click on 
 deselects.
 
 A card with a view shows ⤢ and a stacked edge, and its strip has an Open button naming the number
-of cards in the view. A card shows ⤢ only once its view exists; today Build's, Split's, Intake's, the Manager's, App check's, Merge's and Staging's do (`?view=build`, `?view=split`, `?view=intake`, `?view=manager`, `?view=app`, `?view=merge`, `?view=deploy`), and so does Deliver inside Build (`?view=build/deliver`; Review shows none until its view exists).
+of cards in the view. A card shows ⤢ only once its view exists; today Build's, Review's, Split's, Intake's, the Manager's, App check's, Merge's and Staging's do (`?view=build`, `?view=review`, `?view=split`, `?view=intake`, `?view=manager`, `?view=app`, `?view=merge`, `?view=deploy`), and so does Deliver inside Build (`?view=build/deliver`). Deliver's Review card opens the same Review view (`?view=review`); opened from there the address also carries `from=build/deliver`, so the breadcrumbs keep the Build and Deliver path and going up returns to Deliver (a link to `?view=review` alone opens it from the home map).
 Double-click, Enter on the selected card or the Open button zooms into the view. Breadcrumbs above
 the caption (the factory, then each opened view), the up control, a crumb, Esc (with nothing
 selected) and Backspace go up, and the card that opened the view flashes. The address is

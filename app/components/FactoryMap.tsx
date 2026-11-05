@@ -652,7 +652,7 @@ export function FactoryMap({
     const nextWorld = worldSize(next);
     const el = stage.current;
     const arrive = () => {
-      const target = arriving.current ?? openerOf(map, leaving.at(-1) ?? '')?.id;
+      const target = arriving.current ?? openerOf(map, leaving.at(-1) ?? '', next)?.id;
       arriving.current = null;
       if (!into) flash(target === undefined ? undefined : cardEls.current.get(target));
     };
@@ -670,8 +670,7 @@ export function FactoryMap({
         arrive();
       });
     } else {
-      const opener = openerOf(map, going.at(-1) ?? '');
-      const card = into ? levelRef.current.level.cards.find((c) => c.id === opener?.id) : undefined;
+      const card = into ? openerOf(map, going.at(-1) ?? '', levelRef.current.level) : undefined;
       setMotion({ moving: true, hidden: true });
       if (card) {
         const cx = card.x + cardWidth(levelRef.current.level, card) / 2;

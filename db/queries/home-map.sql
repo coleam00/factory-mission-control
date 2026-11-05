@@ -100,3 +100,22 @@ SELECT * FROM (
   ORDER BY 8 DESC NULLS LAST, l.run_id
   LIMIT 200
 ) queue_merged
+UNION ALL
+-- The lens steps of the review block the engine skipped, for each running run, as `picks` rows of
+-- one step each. Step ids repeat across the loop's rounds, so a skipped row counts only when it
+-- finished at or after its round's policy step (the round's first) last started. Only a round whose
+-- route step completed since then counts, and only for a lens its output says false: a light round,
+-- a rereview or a refused round skips lenses without the router having run, and a skip the router
+-- did not decide is not a decline.
+SELECT 'picks', l.run_id, l.workflow_name, ARRAY[s.step_id], NULL, NULL, NULL, NULL, NULL
+FROM mc.laps l
+JOIN mc.lap_steps s ON s.run_id = l.run_id AND s.status = 'skipped'
+  AND s.step_id ~ 'review__(seams|code|tests|errors|docs)$'
+JOIN mc.lap_steps p ON p.run_id = l.run_id
+  AND p.step_id = regexp_replace(s.step_id, '__[a-z]+$', '__policy')
+  AND s.completed_at >= p.started_at
+JOIN mc.lap_steps rt ON rt.run_id = l.run_id
+  AND rt.step_id = regexp_replace(s.step_id, '__[a-z]+$', '__route')
+  AND rt.status = 'completed' AND rt.completed_at >= p.started_at
+  AND rt.output ->> substring(s.step_id from '__([a-z]+)$') = 'false'
+WHERE l.factory = $1 AND l.status = 'running'
