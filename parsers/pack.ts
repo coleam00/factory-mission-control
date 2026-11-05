@@ -136,6 +136,11 @@ function str(value: unknown): string | null {
   return typeof value === 'string' ? value : null;
 }
 
+/** A node's model: a plain string, or the `[alias, size]` form joined into one label. */
+function modelOf(value: unknown): string | null {
+  return Array.isArray(value) ? strings(value).join(' ') || null : str(value);
+}
+
 function strings(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string') : [];
 }
@@ -342,7 +347,7 @@ export function parsePack(packDir: string, templateDir: string, pathPrefix = '')
         path,
         kind,
         description,
-        model: AGENT_KINDS.has(kind) ? (str(node.model) ?? str(source.doc.model)) : null,
+        model: AGENT_KINDS.has(kind) ? (modelOf(node.model) ?? modelOf(source.doc.model)) : null,
         when: str(node.when),
         dependsOn,
         triggerRule: str(node.trigger_rule),

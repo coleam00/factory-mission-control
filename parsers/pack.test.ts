@@ -280,6 +280,11 @@ describe('a version holds the loop pack and the factory package', () => {
     expect(new Set(paths).size).toBe(paths.length);
   });
 
+  test('reads a model written as an alias and a size', () => {
+    const workflow = version.workflows.find((w) => w.name === 'factory-app-check');
+    expect(step(workflow?.steps ?? [], 'check').model).toBe('@factory-reviewer large');
+  });
+
   test('records the full commit the package names', () => {
     const recorded = readFileSync(join(queueDir, 'FACTORY_COMMIT'), 'utf8').trim();
     expect(recorded).toHaveLength(40);
