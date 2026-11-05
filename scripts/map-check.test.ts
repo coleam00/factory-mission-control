@@ -284,4 +284,48 @@ describe('map:check', () => {
     };
     expect(check(orphan)).toContain('view build is opened by no card');
   });
+
+  test('a card id used twice fails naming it', () => {
+    const map = withBuildView((cards) =>
+      buildCard(cards, 'b-brief', (c) => ({ ...c, id: 'build' })),
+    );
+    expect(check(map)).toContain('card id build is used twice');
+  });
+
+  test('a card going up to a card its parent level lacks fails', () => {
+    const map = withBuildView((cards) =>
+      buildCard(cards, 'b-next', (c) => ({ ...c, upTo: 'nowhere' })),
+    );
+    expect(check(map)).toContain(
+      'Merge queue goes up to nowhere, which is no card of its parent level',
+    );
+  });
+
+  test('a view two cards open fails naming both', () => {
+    const map = {
+      ...FACTORY_MAP,
+      cards: FACTORY_MAP.cards.map((c) => (c.id === 'review' ? { ...c, opens: 'build' } : c)),
+    };
+    expect(check(map)).toContain('view build is opened by Build and Review');
+  });
+
+  test('a view opened only from inside itself fails as unreachable', () => {
+    const map = {
+      ...withBuildView((cards) => buildCard(cards, 'b-brief', (c) => ({ ...c, opens: 'build' }))),
+      cards: FACTORY_MAP.cards.map(({ opens: _, ...c }) => c),
+    };
+    expect(check(map)).toContain('view build cannot be reached from the root');
+  });
+
+  test('a view card naming a workflow its opener does not cover fails', () => {
+    const map = withBuildView((cards) =>
+      buildCard(cards, 'b-brief', (c) => ({
+        ...c,
+        covers: [...c.covers, { pack: 'queue', workflow: 'archon-merge-queue', steps: [] }],
+      })),
+    );
+    expect(check(map)).toContain(
+      'queue pack: Build view: Write the brief names workflow archon-merge-queue, which Build does not cover',
+    );
+  });
 });

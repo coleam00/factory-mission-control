@@ -98,6 +98,23 @@ test('Esc and Backspace deselect a selected card first, and go up only when noth
   }
 }, 30_000);
 
+test('going up within the swap window refits the home map', async () => {
+  const [interrupted, mounted] = await inPage<string[]>(`
+    const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+    const camera = () => document.querySelector('[data-map-world]').style.transform;
+    await m.mount('/f/x');
+    m.dblclick('build');
+    await sleep(100);
+    m.click('[data-map-up]');
+    await m.waitFor('root');
+    await sleep(1500);
+    const interrupted = camera();
+    await m.mount('/f/x');
+    await sleep(300);
+    return [interrupted, camera()];`);
+  expect(interrupted).toBe(mounted);
+}, 30_000);
+
 test('on a phone, a level change lands on the same camera as mounting that level', async () => {
   await page.setViewport(390);
   try {

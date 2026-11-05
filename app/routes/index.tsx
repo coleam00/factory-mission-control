@@ -183,7 +183,7 @@ export default function Home(): ReactElement {
         ) : null}
       </div>
       <div className={COLUMN}>
-        <StepVersionPicker factory={factory} at={at} href={homeHref} />
+        <StepVersionPicker factory={factory} at={at} href={(pin) => homeHref(pin, search)} />
       </div>
       <Feed<HealthWorkableRow> query="health-workable" factory={factory} into={setWorkable} />
       <Feed<OwnerQueueRow> query="owner-queue" factory={factory} into={setOwner} />

@@ -12,6 +12,7 @@ import {
   useSyncExternalStore,
 } from 'react';
 import {
+  allCards,
   type Card,
   cardWidth,
   FIT_FOOT,
@@ -638,6 +639,7 @@ export function FactoryMap({
     const from = shownKey.current;
     if (from === key) {
       setMotion((was) => (was.hidden || was.moving ? { moving: false, hidden: false } : was));
+      opened();
       return;
     }
     const leaving = from === '' ? [] : from.split('/');
@@ -736,9 +738,7 @@ export function FactoryMap({
     },
     [path, onPath],
   );
-  const anyOpens = [map, ...Object.values(map.views ?? {})].some((v) =>
-    v.cards.some((c) => c.opens !== undefined),
-  );
+  const anyOpens = allCards(map).some((c) => c.opens !== undefined);
   const crumbs = [
     { id: null, title: factory },
     ...path.map((id) => ({ id, title: openerOf(map, id)?.title ?? id })),
