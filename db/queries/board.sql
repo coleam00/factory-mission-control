@@ -26,8 +26,7 @@ SELECT 'item' AS kind, i.number, i.title, i.url, i.state, i.closed_at,
   coalesce(rd.rounds, 0) AS rounds,
   ac.overall AS app_check,
   pr.number AS pr, pr.open AS pr_open,
-  lr.run_id, lr.workflow_name AS run_workflow,
-  NULL::text AS repository, NULL::text AS console, NULL::integer AS merged_total
+  NULL::text AS repository, NULL::integer AS merged_total
 FROM items i
 LEFT JOIN LATERAL (
   SELECT coalesce(array_agg(substring(lb.label FROM 12) ORDER BY lb.label), '{}'::text[]) AS names FROM mc.issue_labels lb
@@ -79,19 +78,11 @@ LEFT JOIN LATERAL (
     AND substring(s.output ->> 'pr' FROM '([0-9]+)/?$')::integer = pr.number
   ORDER BY s.started_at DESC NULLS LAST, s.run_id LIMIT 1
 ) ac ON true
-LEFT JOIN LATERAL (
-  -- The item's latest run, by claim or by number input: where its card opens until it has a page.
-  SELECT l.run_id, l.workflow_name FROM mc.laps l
-  WHERE l.factory = i.factory AND (l.issue_number = i.number OR EXISTS (
-    SELECT 1 FROM mc.claims c
-    WHERE c.factory = l.factory AND c.run_id = l.run_id AND c.issue_number = i.number))
-  ORDER BY l.started_at DESC NULLS LAST, l.run_id LIMIT 1
-) lr ON true
 UNION ALL
--- One row for the factory: where "N older" and the card fallbacks point, and how many work items a
--- merged pull request closed in all, of which only the newest 200 are above.
-SELECT 'factory', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
-  f.repository, f.console,
+-- One row for the factory: where "N older" points, and how many work items a merged pull
+-- request closed in all, of which only the newest 200 are above.
+SELECT 'factory', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+  f.repository,
   (SELECT count(*)::int FROM mc.issues i
    WHERE i.factory = f.name AND i.state = 'closed' AND EXISTS (
      SELECT 1 FROM mc.pull_request_issues pi

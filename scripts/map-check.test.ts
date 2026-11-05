@@ -78,6 +78,63 @@ describe('map:check', () => {
     expect(check(FACTORY_MAP)).toEqual([]);
   });
 
+  test('a question card asking for a label no queue wait declares fails', () => {
+    const view = FACTORY_MAP.views?.manager as MapView;
+    const map: FactoryMap = {
+      ...FACTORY_MAP,
+      views: {
+        ...FACTORY_MAP.views,
+        manager: {
+          ...view,
+          cards: view.cards.map((c) => (c.id === 'u-b' ? { ...c, asks: { label: 'bild' } } : c)),
+        },
+      },
+    };
+    expect(check(map)).toEqual([
+      'Build is stuck on a choice asks label "bild", which no wait of the queue pack declares',
+    ]);
+  });
+
+  test('a question card asking for a value its label never takes fails', () => {
+    const view = FACTORY_MAP.views?.manager as MapView;
+    const map: FactoryMap = {
+      ...FACTORY_MAP,
+      views: {
+        ...FACTORY_MAP.views,
+        manager: {
+          ...view,
+          cards: view.cards.map((c) =>
+            c.id === 'u-c' ? { ...c, asks: { label: 'stage', value: 'archon-triag' } } : c,
+          ),
+        },
+      },
+    };
+    expect(check(map)).toEqual([
+      expect.stringContaining(
+        'asks label stage with value "archon-triag", which the queue pack never sets',
+      ),
+    ]);
+  });
+
+  test('a question card asking with a misspelled key fails instead of widening to every question', () => {
+    const view = FACTORY_MAP.views?.manager as MapView;
+    const map: FactoryMap = {
+      ...FACTORY_MAP,
+      views: {
+        ...FACTORY_MAP.views,
+        manager: {
+          ...view,
+          cards: view.cards.map((c) =>
+            c.id === 'u-b' ? { ...c, asks: { label: 'build', valu: 'x' } as never } : c,
+          ),
+        },
+      },
+    };
+    expect(check(map)).toEqual([
+      'Build is stuck on a choice asks {"label":"build","valu":"x"}, with unknown key valu',
+    ]);
+  });
+
   test('a covered step removed from a copy of the pack fails naming the step', () => {
     const pack = editedPack((yaml) =>
       yaml
@@ -147,7 +204,7 @@ describe('map:check', () => {
     ]);
   });
 
-  test('a step two cards cover, a workflow the pack lacks and a wrong screen each fail', () => {
+  test('a step two cards cover, and a workflow the pack lacks each fail', () => {
     const cards = FACTORY_MAP.cards.map((card) => {
       if (card.id === 'merge') {
         return {
@@ -166,17 +223,10 @@ describe('map:check', () => {
           ...card,
           covers: [{ pack: 'loop' as const, workflow: 'archon-nothing', steps: ['slice'] }],
         };
-      if (card.id === 'review') {
-        return { ...card, covers: card.covers.map(({ screens: _, ...cover }) => cover) };
-      }
       return card;
     });
     expect(check(withCards(cards))).toEqual([
       'loop pack: Split names workflow archon-nothing, which the pack lacks',
-      'loop pack: Review opens archon-loop ship/deliver/rounds/review at archon-loop ship/deliver/rounds/review, not its own screen archon-deliver-block rounds/review',
-      'loop pack: Review opens archon-loop ship/deliver/rounds/rereview at archon-loop ship/deliver/rounds/rereview, not its own screen archon-deliver-block rounds/rereview',
-      'queue pack: Review opens archon-build-queue ship/deliver/rounds/review at archon-build-queue ship/deliver/rounds/review, not its own screen archon-deliver-block rounds/review',
-      'queue pack: Review opens archon-build-queue ship/deliver/rounds/rereview at archon-build-queue ship/deliver/rounds/rereview, not its own screen archon-deliver-block rounds/rereview',
       'loop pack: archon-loop deploy is covered by Merge and Staging',
       'loop pack: archon-loop deploy/resolve is covered by Merge and Staging',
       'loop pack: archon-loop deploy/deploy is covered by Merge and Staging',
@@ -318,13 +368,6 @@ describe('map:check', () => {
             ? {
                 ...cover,
                 steps: [...cover.steps, 'ship/deliver/rounds/review'],
-                screens: {
-                  ...cover.screens,
-                  'ship/deliver/rounds/review': {
-                    workflow: 'archon-deliver-block',
-                    path: 'rounds/review',
-                  },
-                },
               }
             : cover,
         ),

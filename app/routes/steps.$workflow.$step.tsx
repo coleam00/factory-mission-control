@@ -1,15 +1,18 @@
 import { type ReactElement, type ReactNode, useLayoutEffect, useState } from 'react';
-import { Link, useParams, useSearchParams } from 'react-router';
+import { Link, Navigate, useParams, useSearchParams } from 'react-router';
 import { EmptyState } from '../components/EmptyState';
 import { StepVersionPicker } from '../components/StepVersionPicker';
 import {
   dependents,
-  findStep,
+  isIncluded,
   joinParts,
   kindLabel,
   type NestingRow,
   nesting,
   type PartRow,
+  type Placed,
+  placeOf,
+  placesOf,
   type StepRow,
   type SubagentRow,
   stepHref,
@@ -115,7 +118,7 @@ function StepList({ steps, ...data }: { steps: readonly string[]; [a: `data-${st
   );
 }
 
-/** Where includes put this step, and every node beneath it: on an include, the steps it runs. */
+/** Every node beneath this step, each opening its place: on an include, the steps it runs. */
 function Nesting({ step, workflow, path, factory, at }: PanelProps): ReactElement {
   return (
     <LivePanel<NestingRow>
@@ -133,46 +136,24 @@ function Nesting({ step, workflow, path, factory, at }: PanelProps): ReactElemen
             </div>
           );
         if (rows === undefined || rows.length === 0) return null;
-        const { inside, includedAt } = nesting(rows, step, at);
+        const inside = nesting(rows, workflow, path, at);
         return (
           <div className={CARD}>
-            {includedAt.length > 0 ? (
-              <>
-                <h2 className={LABEL}>Included at</h2>
-                <ul className="flex flex-col gap-1">
-                  {includedAt.map((place) => (
-                    <li
-                      key={`${place.workflow} ${place.path}`}
-                      data-included-at={`${place.workflow} ${place.path}`}
-                    >
-                      <Link to={place.href} className="flex flex-wrap gap-x-3">
-                        <span className={NOTE}>{place.workflow}</span>
-                        <span className={MONO}>{place.path}</span>
-                      </Link>
-                    </li>
-                  ))}
-                </ul>
-              </>
-            ) : null}
-            {inside.length > 0 ? (
-              <>
-                <h2 className={LABEL}>Steps inside</h2>
-                <ul className="flex flex-col gap-1">
-                  {inside.map((node) => (
-                    <li
-                      key={node.label}
-                      data-inside={node.label}
-                      style={{ paddingLeft: node.depth * 16 }}
-                    >
-                      <Link to={node.href} className="flex flex-wrap gap-x-3">
-                        <span className={MONO}>{node.label}</span>
-                        <span className={NOTE}>{node.kind}</span>
-                      </Link>
-                    </li>
-                  ))}
-                </ul>
-              </>
-            ) : null}
+            <h2 className={LABEL}>Steps inside</h2>
+            <ul className="flex flex-col gap-1">
+              {inside.map((node) => (
+                <li
+                  key={node.label}
+                  data-inside={node.label}
+                  style={{ paddingLeft: node.depth * 16 }}
+                >
+                  <Link to={node.href} className="flex flex-wrap gap-x-3">
+                    <span className={MONO}>{node.label}</span>
+                    <span className={NOTE}>{node.kind}</span>
+                  </Link>
+                </li>
+              ))}
+            </ul>
           </div>
         );
       }}
@@ -313,13 +294,103 @@ function Yaml({ step, workflow, path, factory, at }: PanelProps): ReactElement {
   );
 }
 
-function Step({ step, steps }: { step: StepRow; steps: readonly StepRow[] }): ReactElement {
+/** The routing a place gives its step: each enclosing node, from the outermost in. */
+function WhereItRuns({
+  around,
+  workflow,
+  at,
+}: {
+  around: Placed['around'];
+  workflow: string;
+  at: string | null;
+}): ReactElement {
+  return (
+    <div className={CARD}>
+      <h2 className={LABEL}>Where it runs</h2>
+      <ul className="flex flex-col gap-3">
+        {around.map(({ path, row }) => (
+          <li key={path} data-route={path} className="flex flex-col gap-1">
+            <Link to={stepHref(workflow, path, at)} className="flex flex-wrap gap-x-3">
+              <span className={MONO}>{path}</span>
+              <span className={NOTE}>
+                {row.include !== null ? `include ${row.include}` : row.kind}
+              </span>
+            </Link>
+            <dl className="grid gap-x-6 gap-y-1 sm:grid-cols-[10rem_1fr]">
+              <Fact label="When">{row.when_condition ?? '-'}</Fact>
+              <Fact label="Trigger rule">{row.trigger_rule ?? '-'}</Fact>
+              <Fact label="Inputs">
+                <StepList steps={row.depends_on} data-route-inputs={row.depends_on.join(' ')} />
+              </Fact>
+            </dl>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+/** Every place the step's definition runs at, the one shown marked. */
+function IncludedAt({
+  steps,
+  placed,
+  workflow,
+  path,
+  at,
+}: {
+  steps: readonly StepRow[];
+  placed: Placed;
+  workflow: string;
+  path: string;
+  at: string | null;
+}): ReactElement {
+  return (
+    <div className={CARD}>
+      <h2 className={LABEL}>Included at</h2>
+      <ul className="flex flex-col gap-1">
+        {placesOf(steps, placed.step.workflow, placed.step.path).map((place) => {
+          const here = place.workflow === workflow && place.path === path;
+          return (
+            <li
+              key={`${place.workflow} ${place.path}`}
+              data-included-at={`${place.workflow} ${place.path}`}
+            >
+              <Link
+                to={stepHref(place.workflow, place.path, at)}
+                aria-current={here ? 'page' : undefined}
+                className="flex flex-wrap gap-x-3"
+              >
+                <span className={NOTE}>{place.workflow}</span>
+                <span className={MONO}>{place.path}</span>
+              </Link>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
+
+function Step({
+  placed,
+  steps,
+  workflow,
+  path,
+  at,
+}: {
+  placed: Placed;
+  steps: readonly StepRow[];
+  workflow: string;
+  path: string;
+  at: string | null;
+}): ReactElement {
+  const { step, around } = placed;
   return (
     <div className="flex flex-col gap-6">
       <header className="flex flex-col gap-2">
-        <p className={LABEL}>{step.workflow}</p>
+        <p className={LABEL}>{workflow}</p>
         <h1 className="font-mono text-2xl font-semibold text-text-primary [overflow-wrap:anywhere]">
-          {step.path}
+          {path}
         </h1>
         <p data-description="" className={`whitespace-pre-line ${NOTE}`}>
           {step.description ?? 'The pack gives this step no description.'}
@@ -340,6 +411,10 @@ function Step({ step, steps }: { step: StepRow; steps: readonly StepRow[] }): Re
         </Fact>
         <Fact label="Defined in">{step.file}</Fact>
       </dl>
+      {around.length > 0 ? <WhereItRuns around={around} workflow={workflow} at={at} /> : null}
+      {isIncluded(steps, step.workflow) ? (
+        <IncludedAt steps={steps} placed={placed} workflow={workflow} path={path} at={at} />
+      ) : null}
     </div>
   );
 }
@@ -401,14 +476,22 @@ export default function StepDetail(): ReactElement {
             if (at !== null && rows.length === 0) {
               return <EmptyState title={`No version ${at} is recorded for this factory.`} />;
             }
-            const found = findStep(rows, workflow, step);
-            if (found === undefined) {
+            const placed = placeOf(rows, workflow, step);
+            if (placed === undefined) {
               return <EmptyState title={`No step ${step} in ${workflow} at ${versionName(at)}.`} />;
+            }
+            // A workflow something includes never runs on its own: its address is the shared
+            // one, and opens the first place instead.
+            const first = isIncluded(rows, workflow)
+              ? placesOf(rows, workflow, step)[0]
+              : undefined;
+            if (first !== undefined) {
+              return <Navigate replace to={stepHref(first.workflow, first.path, at)} />;
             }
             return (
               <>
-                <Step step={found} steps={rows} />
-                <FoundStep asked={asked} step={found} onFound={setKnown} />
+                <Step placed={placed} steps={rows} workflow={workflow} path={step} at={at} />
+                <FoundStep asked={asked} step={placed.step} onFound={setKnown} />
               </>
             );
           }}

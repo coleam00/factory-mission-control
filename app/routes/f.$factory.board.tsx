@@ -6,8 +6,7 @@ import { type BoardRow, type BoardSources, boardView, nextChange } from '../lib/
 import type { HealthWorkableRow } from '../lib/health';
 import type { OwnerQueueRow } from '../lib/owner-queue';
 import { useFactory } from '../live/FactoryProvider';
-import { AWAITED, Feed, type Source } from '../live/Feed';
-import type { PanelState } from '../live/LivePanel';
+import { AWAITED, Feed, overall, type Source } from '../live/Feed';
 import type { HomeMapRow, WorkOrderRow } from '../map/live';
 
 /** The browser's clock, moved on to each moment a merged work item or a finished order drops off. */
@@ -20,11 +19,6 @@ function useClock(next: Date | null): Date {
     return () => clearTimeout(timer);
   }, [at]);
   return now;
-}
-
-function overall(states: readonly PanelState[]): PanelState {
-  if (states.includes('error')) return 'error';
-  return states.every((s) => s === 'ready') ? 'ready' : 'loading';
 }
 
 /** All the work, by the map's stages, under its work orders (PRD 4.1, 4.9). */

@@ -31,8 +31,14 @@ const STEP_QUERIES = [
   'step-versions',
 ];
 const STEP_PATH = '/steps/archon-loop/check-app';
-/** The step deliver's block includes to write the code, and the prompt the seed pins for it. */
+/**
+ * The step deliver's block includes to write the code, and the prompt the seed pins for it. Its
+ * declaring address redirects to the first place deliver runs it at.
+ */
 const IMPLEMENT_PATH = '/steps/archon-implement/implement';
+const DELIVER_PLACE = '/steps/archon-loop/ship%2Fdeliver';
+const IMPLEMENT_PLACE = `${DELIVER_PLACE}%2Frounds%2Fimplement%2Fimplement`;
+const RESHAPE_PLACE = `${DELIVER_PLACE}%2Frounds%2Freshape%2Fimplement`;
 const IMPLEMENT_PROMPT = 'fixtures/pack/sdlc/implement/commands/implement.md';
 /** A step whose prompt the seed changes between its two versions with architecture. */
 const REVIEW_PATH = '/steps/archon-loop/review';
@@ -100,9 +106,13 @@ async function checkAppMismatches(page: Page, repoRoot: string): Promise<string[
   return failures;
 }
 
+/** Ready once the browser is at `path` (the address a redirect ends at) and every panel answered. */
+const readyAt = (path: string) => `location.pathname === '${path}' && ${stepPanelsReady}`;
+
 /**
  * Where the way from deliver's screen to the step that writes the code differs from the seed:
- * both places deliver includes it open its own screen, which shows its pinned prompt.
+ * deliver's shared address opens its first place, both places deliver runs the step at open their
+ * own screen, and the step's declaring address opens the first of them, showing its pinned prompt.
  */
 async function includedImplementMismatches(
   page: Page,
@@ -110,15 +120,18 @@ async function includedImplementMismatches(
   repoRoot: string,
 ): Promise<string[]> {
   const failures: string[] = [];
-  await openStep(page, base, '/steps/archon-ship-block/deliver', stepPanelsReady);
-  for (const label of ['rounds/implement/implement', 'rounds/reshape/implement']) {
+  await openStep(page, base, '/steps/archon-ship-block/deliver', readyAt(DELIVER_PLACE));
+  const places: [string, string][] = [
+    ['rounds/implement/implement', IMPLEMENT_PLACE],
+    ['rounds/reshape/implement', RESHAPE_PLACE],
+  ];
+  for (const [label, place] of places) {
     const href = await page.evaluate<string | null>(
       `document.querySelector('[data-live="step-nesting"] [data-inside="${label}"] a')?.getAttribute('href') ?? null`,
     );
-    if (href !== IMPLEMENT_PATH)
-      failures.push(`deliver's ${label} opens ${href}, not ${IMPLEMENT_PATH}`);
+    if (href !== place) failures.push(`deliver's ${label} opens ${href}, not ${place}`);
   }
-  await openStep(page, base, IMPLEMENT_PATH, stepPanelsReady);
+  await openStep(page, base, IMPLEMENT_PATH, readyAt(IMPLEMENT_PLACE));
   const prompt = await page.evaluate<string | null>(
     `document.querySelector('[data-live="step-prompt"] [data-prompt]')?.textContent ?? null`,
   );

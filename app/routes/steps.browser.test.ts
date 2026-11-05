@@ -112,3 +112,33 @@ test('once step-detail no longer shows the step, no panel beside it shows that s
     await inPage<{ detail: string; sentence: string; headings: string[] }>('loseStep()'),
   ).toEqual({ detail: 'error', sentence: 'Live data is unavailable.', headings: [] });
 }, 30_000);
+
+const TWICE = 'ac1ace0000000000000000000000000000000000';
+
+interface Placed {
+  location: string;
+  title: string;
+  routes: { path: string; inputs: string | null }[];
+  includedAt: { place: string; current: boolean }[];
+  prompt: string[];
+}
+
+const openPlace = (url: string) => inPage<Placed>(`openPlace(${JSON.stringify(url)})`);
+
+test("an included block's shared address opens its first place, keeping the version", async () => {
+  const placed = await openPlace(`/steps/block/code?at=${TWICE}`);
+  expect(placed.location).toBe(`/steps/archon-loop/review%2Fcode?at=${TWICE}`);
+  expect(placed.prompt).toEqual(['Write the code']);
+}, 30_000);
+
+test('a place shows the definition, its own path, the routing around it and every place', async () => {
+  const placed = await openPlace(`/steps/archon-loop/rereview%2Fcode?at=${TWICE}`);
+  expect(placed.location).toBe(`/steps/archon-loop/rereview%2Fcode?at=${TWICE}`);
+  expect(placed.title).toBe('rereview/code');
+  expect(placed.prompt).toEqual(['Write the code']);
+  expect(placed.routes).toEqual([{ path: 'rereview', inputs: 'fix' }]);
+  expect(placed.includedAt).toEqual([
+    { place: 'archon-loop review/code', current: false },
+    { place: 'archon-loop rereview/code', current: true },
+  ]);
+}, 30_000);

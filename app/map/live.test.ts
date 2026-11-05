@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test';
+import type { HealthStepRow } from '../lib/health';
 import { LANE_STEPS } from '../lib/lap-graph';
 import { allCards, cardsCounting, FACTORY_MAP, LISTS, stepPath } from './factory-map';
 import {
@@ -10,6 +11,7 @@ import {
   latestDeploy,
   type MapRightNowRow,
   mergedToday,
+  overdueHealth,
   type RoutedList,
   versionRecorded,
 } from './live';
@@ -357,6 +359,145 @@ test('a run of the old loop on build counts on Build and Deliver', () => {
   const rows = [lap('old', ['build'], 'archon-loop')];
   expect(here(rows)).toEqual({ build: ['old'] });
   expect(hereOn(rows, BUILD_VIEW)).toEqual({ 'b-del': ['old'] });
+});
+
+const MANAGER_VIEW = FACTORY_MAP.views?.manager?.cards ?? [];
+const OTHER = new Date('2026-11-05T12:00:00Z');
+
+const asking = (run: string, labels: Record<string, string>, message = '**A question**') => ({
+  run_id: run,
+  workflow_name: 'archon-build-queue',
+  node_id: 'ask',
+  waiting_since: new Date('2026-11-05T10:00:00Z'),
+  form: 'select',
+  options: '[{"id":"ship","label":"Ship it"},{"id":"stop","label":"Stop"}]',
+  labels: JSON.stringify(labels),
+  message,
+  console: 'http://archon.test',
+});
+
+test("the Manager view's question cards each count the open items their label names, the Manager the rest", () => {
+  const live = cardLive(
+    FACTORY_MAP,
+    {
+      map: [],
+      attention: [
+        asking('r1', { build: 'scope' }),
+        asking('r2', { build: 'size' }),
+        asking('r3', { merge: 'risky' }),
+        asking('r4', { discoveries: 'question' }),
+        asking('r5', { stage: 'archon-triage' }),
+        asking('r6', { stage: 'archon-review' }),
+        asking('r7', {}, '**Other**\n\n**Recommendation: `stop`**'),
+      ],
+    },
+    OTHER,
+  );
+  const counts = Object.fromEntries(
+    MANAGER_VIEW.map((card) => [card.id, live.get(card.id)?.waiting?.map((i) => i.key)]),
+  );
+  expect(counts).toEqual({
+    'u-c': ['attention-r5'],
+    'u-b': ['attention-r1', 'attention-r2'],
+    'u-m': ['attention-r3'],
+    'u-d': ['attention-r4'],
+    'u-mgr': ['attention-r6', 'attention-r7'],
+    'u-pol': undefined,
+  });
+  const questions = live.get('u-mgr')?.questions ?? [];
+  expect(questions).toHaveLength(7);
+  expect(questions.at(-1)).toMatchObject({
+    title: 'Other',
+    url: 'http://archon.test/console/r/r7',
+    note: 'recommends Stop',
+  });
+});
+
+test('a failed attention query makes the question cards unavailable, not zero', () => {
+  const live = cardLive(FACTORY_MAP, { map: [], states: { attention: 'error' } }, OTHER);
+  expect(live.get('u-b')?.unavailable).toEqual(['waiting']);
+  expect(live.get('u-b')?.waiting).toBeUndefined();
+});
+
+test('a failed attention query keeps no stale counts or questions', () => {
+  const live = cardLive(
+    FACTORY_MAP,
+    { map: [], attention: [asking('r1', { build: 'scope' })], states: { attention: 'error' } },
+    OTHER,
+  );
+  expect(live.get('u-b')).toMatchObject({ unavailable: ['waiting'] });
+  expect(live.get('u-b')?.waiting).toBeUndefined();
+  expect(live.get('u-mgr')?.questions).toBeUndefined();
+});
+
+test('a running step past twice its usual time is an overdue item linking its run', () => {
+  const at = (ms: number) => new Date(OTHER.getTime() - ms);
+  const step = (run: string, kind: 'running' | 'completion', ms: number, started: number) => ({
+    run_id: run,
+    workflow_name: 'archon-build-queue',
+    step_id: 'build',
+    kind,
+    at: at(started),
+    duration_ms: ms,
+    console: kind === 'running' ? 'http://archon.test' : null,
+  });
+  const rows = [
+    ...['c1', 'c2', 'c3'].map((run) => step(run, 'completion', 60_000, 3_600_000)),
+    step('slow', 'running', 0, 3_600_000),
+    step('fresh', 'running', 0, 30_000),
+  ] satisfies HealthStepRow[];
+  expect(overdueHealth(rows, OTHER.getTime())).toMatchObject([
+    { key: 'health-overdue-slow-build', run: 'slow', url: 'http://archon.test/console/r/slow' },
+  ]);
+});
+
+test("the Manager's Right now lists the factory's health by the Health screen's definitions, with console links", () => {
+  const run = (id: string, status: string, error: string | null = null) => ({
+    run_id: id,
+    workflow_name: 'archon-build-queue',
+    status,
+    started_at: null,
+    completed_at: null,
+    failed_step: error === null ? null : 'build',
+    error,
+    failed_at: null,
+    console: 'http://archon.test',
+  });
+  const live = cardLive(
+    FACTORY_MAP,
+    {
+      map: [],
+      healthRuns: [run('p1', 'paused'), run('f1', 'failed', 'HTTP 429')],
+      healthSteps: [],
+    },
+    OTHER,
+  );
+  expect(live.get('u-mgr')?.health).toEqual([
+    {
+      key: 'health-paused-p1',
+      note: 'paused: archon-build-queue',
+      run: 'p1',
+      url: 'http://archon.test/console/r/p1',
+    },
+    {
+      key: 'health-failed-f1',
+      note: 'failed: Usage limit',
+      run: 'f1',
+      url: 'http://archon.test/console/r/f1',
+    },
+  ]);
+  const failed = cardLive(FACTORY_MAP, { map: [], states: { healthRuns: 'error' } }, OTHER);
+  expect(failed.get('u-mgr')?.healthUnavailable).toBe(true);
+});
+
+test('a health-steps outage reads as unavailable, never as no overdue steps', () => {
+  const failed = cardLive(
+    FACTORY_MAP,
+    { map: [], healthRuns: [], healthSteps: [], states: { healthSteps: 'error' } },
+    OTHER,
+  );
+  expect(failed.get('u-mgr')?.healthUnavailable).toBe(true);
+  expect(failed.get('u-mgr')?.health).toBeUndefined();
 });
 
 test('a lens the engine skipped shows the run on its card, not a count; a lens of another round or run says nothing', () => {

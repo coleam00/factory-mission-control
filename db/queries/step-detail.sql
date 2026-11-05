@@ -18,8 +18,8 @@ version AS (
     p.committed_at DESC NULLS LAST, a.parsed_at DESC
   LIMIT 1
 )
--- Each node in the workflow that declares it: a step an include expands is the same definition
--- again, and its screen is the one under its own workflow.
+-- Each node in the workflow that declares it. A step an include expands is the same definition
+-- again, so the browser finds the step at any place from these rows (`placeOf`, step-detail.ts).
 SELECT
   s.workflow,
   s.path,

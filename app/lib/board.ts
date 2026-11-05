@@ -6,7 +6,7 @@
 import { FACTORY_MAP, type Role } from '../map/factory-map';
 import { type HomeMapRow, lapCard, onQueues, type WorkOrderRow } from '../map/live';
 import type { HealthWorkableRow } from './health';
-import { consoleUrl, hasLapPage } from './one-lap';
+import { pullUrl } from './one-lap';
 import type { OwnerQueueRow } from './owner-queue';
 
 /** One row of `db/queries/board.sql`: a work item, or the one row for the factory. */
@@ -27,12 +27,8 @@ export interface BoardRow {
   /** The open pull request that closes it, else the merged one. */
   pr: number | null;
   pr_open: boolean | null;
-  /** Its latest run. */
-  run_id: string | null;
-  run_workflow: string | null;
-  /** The factory row: its repository, its Archon console and its work items a pull request merged. */
+  /** The factory row: its repository and its work items a pull request merged. */
   repository: string | null;
-  console: string | null;
   merged_total: number | null;
 }
 
@@ -82,14 +78,12 @@ export interface BoardChip {
   pulse?: boolean;
 }
 
-/** Where a card opens: the in-app lap page, or a page outside the app. */
-export type BoardLink = { kind: 'lap'; to: string } | { kind: 'external'; href: string };
-
 export interface WorkItem {
   number: number;
   title: string;
   chips: BoardChip[];
-  link: BoardLink;
+  /** The work item's own page. */
+  to: string;
 }
 
 export interface OrderPanel {
@@ -162,15 +156,6 @@ function chipsOf(item: BoardRow, column: ColumnId, running: boolean): BoardChip[
   return chips;
 }
 
-/** Until the work item has its own page, its card opens its latest run, else the issue. */
-function linkOf(item: BoardRow, factory: string, consoleBase: string | null): BoardLink {
-  if (item.run_id !== null && hasLapPage(item.run_workflow))
-    return { kind: 'lap', to: `/f/${factory}/laps/${item.run_id}` };
-  if (item.run_id !== null && consoleBase !== null)
-    return { kind: 'external', href: consoleUrl(consoleBase, item.run_id) };
-  return { kind: 'external', href: item.url ?? '' };
-}
-
 interface Facts {
   attention: ReadonlySet<number>;
   needsOwner: ReadonlySet<number>;
@@ -188,11 +173,12 @@ function columnOf(number: number, prOpen: boolean, facts: Facts): ColumnId | nul
   return facts.workable.has(number) ? 'queued' : null;
 }
 
-export function boardView(sources: BoardSources, now: Date, order: string | null): BoardView {
-  const { factory, board, map, workable, owner, orders } = sources;
-  const factoryRow = board.find((r) => r.kind === 'factory');
-  const running = runningRuns(map);
-  const facts: Facts = {
+function factsOf(
+  map: readonly HomeMapRow[],
+  workable: readonly HealthWorkableRow[],
+  owner: readonly OwnerQueueRow[],
+): Facts {
+  return {
     attention: new Set(
       map.flatMap((r) => (r.kind === 'waiting' && r.number !== null ? [r.number] : [])),
     ),
@@ -200,13 +186,52 @@ export function boardView(sources: BoardSources, now: Date, order: string | null
     needsOwner: new Set(
       onQueues(map) ? [] : owner.filter((r) => r.kind === 'issue').map((r) => r.issue_number),
     ),
-    running,
+    running: runningRuns(map),
     workable: new Set(
       workable.flatMap((r) =>
         r.kind === 'issue' && r.issue_number !== null ? [r.issue_number] : [],
       ),
     ),
   };
+}
+
+/** Where a work item stands on the board, whatever the board's display window. */
+export interface ItemOnBoard {
+  column: ColumnSpec | null;
+  pr: number | null;
+  prUrl: string | null;
+  workOrders: string[];
+}
+
+/** One work item as the board holds it, or null when the board's query returns no row for it. */
+export function itemOnBoard(
+  sources: Pick<BoardSources, 'board' | 'map' | 'workable' | 'owner'>,
+  number: number,
+): ItemOnBoard | null {
+  const row = sources.board.find((r) => r.kind === 'item' && r.number === number);
+  if (row === undefined) return null;
+  const repository = sources.board.find((r) => r.kind === 'factory')?.repository ?? null;
+  const id =
+    row.state === 'closed'
+      ? 'merged'
+      : columnOf(
+          number,
+          row.pr_open === true,
+          factsOf(sources.map, sources.workable, sources.owner),
+        );
+  return {
+    column: COLUMNS.find((c) => c.id === id) ?? null,
+    pr: row.pr,
+    prUrl: row.pr === null || repository === null ? null : pullUrl(repository, row.pr),
+    workOrders: row.work_orders ?? [],
+  };
+}
+
+export function boardView(sources: BoardSources, now: Date, order: string | null): BoardView {
+  const { factory, board, map, workable, owner, orders } = sources;
+  const factoryRow = board.find((r) => r.kind === 'factory');
+  const facts = factsOf(map, workable, owner);
+  const { running } = facts;
 
   const columns = new Map<ColumnId, WorkItem[]>(COLUMNS.map((c) => [c.id, []]));
   const merged: { item: WorkItem; closedAt: Date }[] = [];
@@ -229,7 +254,7 @@ export function boardView(sources: BoardSources, now: Date, order: string | null
       number,
       title: row.title ?? '',
       chips: chipsOf(row, column, row.state === 'open' && running.has(number)),
-      link: linkOf(row, factory, factoryRow?.console ?? null),
+      to: `/f/${encodeURIComponent(factory)}/work/${number}`,
     };
     if (column === 'merged' && row.closed_at !== null)
       merged.push({ item, closedAt: row.closed_at });

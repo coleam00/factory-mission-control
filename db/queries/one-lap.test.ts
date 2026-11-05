@@ -233,7 +233,7 @@ describe('one-lap on the seed', () => {
     expect(shown.reduce((sum, r) => sum + Number(r.cost_usd), 0)).toBeCloseTo(0.8426);
     expect(await errors()).toEqual(before);
   });
-  test("one-lap-map: the loop at the lap's own pin, every node, each with its own screen", async () => {
+  test("one-lap-map: the loop at the lap's own pin, every node", async () => {
     const pinOf = async (runId: string) => {
       const rows = await lap('one-lap-map', runId);
       return { rows, pins: [...new Set(rows.map((r) => r.pin))] };
@@ -247,8 +247,7 @@ describe('one-lap on the seed', () => {
     );
     expect(first.rows).toHaveLength(n as number);
     const intel = first.rows.find((r) => r.path === 'ship/intel');
-    expect(intel).toMatchObject({ parent_path: 'ship', detail_path: 'intel' });
-    expect(intel?.detail_workflow).not.toBe('archon-loop');
+    expect(intel).toMatchObject({ parent_path: 'ship' });
     // The running lap's pin of 10-19 has no architecture stored: the newest one before it is used.
     expect((await pinOf(running)).pins).toEqual(['5ffd60c6c6e591487f2fbb5ec67ccc8fc55ca915']);
     // No lap, no rows; another factory's lap is not this factory's.

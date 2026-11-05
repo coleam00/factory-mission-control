@@ -6,21 +6,21 @@ import { hasLapPage } from '../lib/one-lap';
 import type { StepRow } from '../lib/step-detail';
 import { LivePanel } from '../live/LivePanel';
 import { type Card, pinnedStepLinks, workflowFile } from '../map/factory-map';
-import type {
-  CardLive,
-  GateOutcome,
-  LatestDeploy,
-  MapItem,
-  ProductDocumentRow,
-  WorkOrderRow,
+import {
+  type CardLive,
+  type GateOutcome,
+  type LatestDeploy,
+  type MapItem,
+  overdueHealth,
+  type ProductDocumentRow,
+  type WorkOrderRow,
 } from '../map/live';
+import { useNow } from './Lanes';
 
-type Tab = 'when' | 'what' | 'how' | 'live' | 'behind';
+type Tab = 'about' | 'live' | 'behind';
 
 const TABS: { tab: Tab; label: string }[] = [
-  { tab: 'when', label: 'When it runs' },
-  { tab: 'what', label: 'What it does' },
-  { tab: 'how', label: 'How it works' },
+  { tab: 'about', label: 'About' },
   { tab: 'live', label: 'Right now' },
   { tab: 'behind', label: 'Behind the scenes' },
 ];
@@ -29,6 +29,26 @@ const LABEL = 'font-mono text-[11px] uppercase tracking-[0.08em] text-text-secon
 const LINK = 'text-[color:var(--accent-bright)] hover:underline';
 const CHIP =
   'ml-1.5 whitespace-nowrap rounded-[5px] bg-surface-elevated px-1.5 py-px font-mono text-[10.5px] text-text-secondary';
+
+/** The card's own words, in one tab: when it runs, what it does, how it works. */
+const ABOUT: { key: 'when' | 'what' | 'how'; label: string }[] = [
+  { key: 'when', label: 'When it runs' },
+  { key: 'what', label: 'What it does' },
+  { key: 'how', label: 'How it works' },
+];
+
+function About({ details }: { details: Card['details'] }): ReactElement {
+  return (
+    <div className="grid gap-3.5">
+      {ABOUT.filter(({ key }) => details[key] !== undefined).map(({ key, label }) => (
+        <div key={key} data-about={key} className="grid gap-1.5">
+          <div className={LABEL}>{label}</div>
+          <Bullets lines={details[key] ?? []} />
+        </div>
+      ))}
+    </div>
+  );
+}
 
 function Bullets({ lines }: { lines: readonly string[] }): ReactElement {
   return (
@@ -178,6 +198,7 @@ export function RightNow({
   live: CardLive | undefined;
   factory: string;
 }): ReactElement {
+  const ticking = useNow();
   const lapHref = (run: string) => `/f/${encodeURIComponent(factory)}/laps/${run}`;
   const rows: ReactNode[] = [
     ...(live?.here ?? []).map((lap) => (
@@ -219,7 +240,28 @@ export function RightNow({
     ...(live?.failing ?? []).map((item) => (
       <Item key={item.key} item={item} note="app check failed" />
     )),
-    ...(live?.waiting ?? []).map((item) => <Item key={item.key} item={item} note="waiting" />),
+    ...(live?.questions ?? live?.waiting ?? []).map((item) => (
+      <Item key={item.key} item={item} note={item.note ?? 'waiting'} />
+    )),
+    ...(live?.healthUnavailable
+      ? [
+          <li key="health-unavailable" className="text-text-secondary">
+            The factory's health is unavailable.
+          </li>,
+        ]
+      : []),
+    ...[...(live?.health ?? []), ...overdueHealth(live?.steps ?? [], ticking)].map((item) => (
+      <li key={item.key} data-health={item.key}>
+        {item.url ? (
+          <a href={item.url} className={`${LINK} font-mono`}>
+            run {item.run.slice(0, 8)}
+          </a>
+        ) : (
+          <span className="font-mono">run {item.run.slice(0, 8)}</span>
+        )}
+        <span className={CHIP}>{item.note}</span>
+      </li>
+    )),
     ...(live?.orders ?? []).map((order) => <Order key={`order-${order.name}`} order={order} />),
     ...(live?.documents ?? []).map((document) => (
       <ProductDocument key={`document-${document.number}`} document={document} />
@@ -417,9 +459,12 @@ export function MapDetails({
   const { details } = card;
   const tabs = TABS.filter(
     ({ tab }) =>
-      tab === 'live' || (tab === 'behind' ? card.covers.length > 0 : details[tab] !== undefined),
+      tab === 'live' ||
+      (tab === 'behind'
+        ? card.covers.length > 0
+        : ABOUT.some(({ key }) => details[key] !== undefined)),
   );
-  const [chosen, setChosen] = useState<Tab>('when');
+  const [chosen, setChosen] = useState<Tab>('about');
   const tab = tabs.some((t) => t.tab === chosen) ? chosen : (tabs[0]?.tab ?? 'live');
   return (
     <section
@@ -484,7 +529,7 @@ export function MapDetails({
           ) : tab === 'behind' ? (
             <Behind card={card} at={at} steps={steps} failed={stepsFailed} />
           ) : (
-            <Bullets lines={details[tab] ?? []} />
+            <About details={details} />
           )}
         </div>
       </div>

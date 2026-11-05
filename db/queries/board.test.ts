@@ -100,7 +100,6 @@ test('a work item carries its pull request, rounds, route and app verdict from t
     app_check: 'PASS',
   });
   expect(of(12)).toMatchObject({ pr: 112, route: 'simple', rounds: 0, app_check: null });
-  expect(of(11)?.run_workflow).toBe('archon-loop');
   expect(of(13)?.work_orders).toEqual([]);
 });
 

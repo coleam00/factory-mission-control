@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import type { HomeMapRow } from '../../app/map/live';
-import { QUEUE_RUNS } from '../../scripts/fixture/seed';
+import { QUEUE_RETURNED, QUEUE_RUNS } from '../../scripts/fixture/seed';
 import type { Db } from '../../scripts/lib/db';
 import { onTheSeed, queries } from './test-seed';
 
@@ -85,6 +85,8 @@ describe('home-map on the seed', () => {
     ]);
     expect(queue.filter((r) => r.kind === 'merged')).toMatchObject([
       { run_id: QUEUE_RUNS.merged, prs: '[404, 405]' },
+      { run_id: QUEUE_RETURNED.landed, prs: '[410]' },
+      { run_id: QUEUE_RETURNED.returned, prs: '[]' },
     ]);
   });
 

@@ -3,7 +3,7 @@
  * read here. Its coverage is held to the pinned pack by `bun run map:check` (invariant 6). Pure,
  * no React.
  */
-import { type StepRow, stepHref } from '../lib/step-detail';
+import { placeOf, type StepRow, stepHref } from '../lib/step-detail';
 import data from './factory-map.json';
 
 /** Who is acting on a card, which is its color (docs/design/v2/tokens.css). */
@@ -24,12 +24,6 @@ export type LineStyle = (typeof LINE_STYLES)[number];
 export const PACKS = ['loop', 'queue'] as const;
 export type Pack = (typeof PACKS)[number];
 
-/** A step's own screen: the workflow that declares it and its path there. */
-export interface Screen {
-  workflow: string;
-  path: string;
-}
-
 /**
  * The steps of one workflow a card covers. Each entry covers that step and every step under it;
  * a step under two entries belongs to the deeper one (Build covers the ship include, Review the review
@@ -40,8 +34,6 @@ export interface Cover {
   pack: Pack;
   workflow: string;
   steps: string[];
-  /** The screen of an entry an include expanded, which is not a step of `workflow` itself. */
-  screens?: Record<string, Screen>;
 }
 
 export interface Details {
@@ -49,6 +41,21 @@ export interface Details {
   what?: string[];
   how?: string[];
 }
+
+/**
+ * The open Archon attention items a question card counts: those carrying the label `label` (with
+ * `value` when it names one), or, for `rest`, those no sibling question card counts.
+ */
+export type LabelAsk = { label: string; value?: string };
+export type RestAsk = { rest: true };
+export type Asks = LabelAsk | RestAsk;
+
+/** Every key of each `Asks` arm; the compiler fails here when `Asks` and these drift apart. */
+export const LABEL_ASK_KEYS: Record<keyof LabelAsk, true> = {
+  label: true,
+  value: true,
+};
+export const REST_ASK_KEYS: Record<keyof RestAsk, true> = { rest: true };
 
 export interface Card {
   id: string;
@@ -66,6 +73,8 @@ export interface Card {
   lists?: List[];
   covers: Cover[];
   details: Details;
+  /** The attention items this card of a question view counts; its `waiting` chip is theirs. */
+  asks?: Asks;
   /** The view this card opens (a key of `views`); only a card whose view exists shows ⤢. */
   opens?: string;
   /** A card of the parent level: clicking this card goes up to it (a view's "next" card). */
@@ -105,7 +114,8 @@ export interface FactoryMap extends MapView {
   views?: Record<string, MapView>;
 }
 
-export const FACTORY_MAP = data as FactoryMap;
+// JSON infers a route as `number[][]`, which TypeScript will not compare to a `Point[]` when every line of a view routes.
+export const FACTORY_MAP = data as unknown as FactoryMap;
 
 export const cardWidth = (map: MapView, card: Card) => card.width ?? map.cardSize.width;
 
@@ -358,17 +368,15 @@ export function cardsCounting(map: FactoryMap, workflow: string, path: string): 
   return [...chain, ...aliases];
 }
 
-/** A cover entry's screen: its own, or the step itself in the covered workflow. */
-export const screenOf = (cover: Cover, step: string): Screen =>
-  cover.screens?.[step] ?? { workflow: cover.workflow, path: step };
+/** Each step a card covers, opening its place in the covered workflow at the version pinned `at`. */
 
-/** Each step a card covers, opening its step screen at the version pinned `at`. */
 export const stepLinks = (card: Card, at: string | null) =>
   card.covers.flatMap((cover) =>
-    cover.steps.map((step) => {
-      const screen = screenOf(cover, step);
-      return { workflow: cover.workflow, step, href: stepHref(screen.workflow, screen.path, at) };
-    }),
+    cover.steps.map((step) => ({
+      workflow: cover.workflow,
+      step,
+      href: stepHref(cover.workflow, step, at),
+    })),
   );
 
 /** A workflow's own YAML path in the pinned pack, from the parsed architecture; undefined when the version lacks it. */
@@ -380,22 +388,20 @@ export const workflowFile = (steps: readonly StepRow[], workflow: string): strin
  * its parsed architecture gives it (null for a step that names none).
  */
 export function pinnedStepLinks(card: Card, at: string | null, steps: readonly StepRow[]) {
-  const pinned = new Map(steps.map((s) => [`${s.workflow} ${s.path}`, s]));
-  // Both packs' screens can resolve to one step (archon-deliver-block rounds/review), so an entry
+  // Both packs' places can resolve to one step (archon-deliver-block rounds/review), so an entry
   // counts only when the pinned version has its workflow.
   return card.covers
     .filter((cover) => steps.some((s) => s.workflow === cover.workflow))
     .flatMap((cover) =>
       cover.steps.flatMap((step) => {
-        const screen = screenOf(cover, step);
-        const row = pinned.get(`${screen.workflow} ${screen.path}`);
+        const row = placeOf(steps, cover.workflow, step)?.step;
         if (row === undefined) return [];
         return [
           {
             workflow: cover.workflow,
             step,
             model: row.model,
-            href: stepHref(screen.workflow, screen.path, at),
+            href: stepHref(cover.workflow, step, at),
           },
         ];
       }),

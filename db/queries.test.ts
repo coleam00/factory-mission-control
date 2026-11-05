@@ -7,9 +7,7 @@ import type { AppCheckRow } from '../app/lib/app-check';
 import type { ArchDiffRow } from '../app/lib/arch-diff';
 import type { AttentionRow } from '../app/lib/attention';
 import type { BoardRow } from '../app/lib/board';
-import type { LedgerRow, TimelineRow } from '../app/lib/decisions-ledger';
 import type { HealthRunRow, HealthStepRow, HealthWorkableRow } from '../app/lib/health';
-import type { IssueGraphRow } from '../app/lib/issue-graph';
 import type { LapMapRow } from '../app/lib/lap-graph';
 import type { LaneRow, RecentLapRow } from '../app/lib/laps';
 import type { CheckLineRow, OneLapRow, StepAttemptRow } from '../app/lib/one-lap';
@@ -25,8 +23,8 @@ import type {
   SubagentRow,
   YamlPartRow,
 } from '../app/lib/step-detail';
-import type { CheckRow, DefaultHoldoutRow, RouteRow } from '../app/lib/testing';
 import type { VersionStripRow } from '../app/lib/version-strip';
+import type { WorkItemRow } from '../app/lib/work-item';
 import type { HomeMapRow, MapRightNowRow, ProductDocumentRow, WorkOrderRow } from '../app/map/live';
 import { LIVE_QUERY_NAME, parameterCount } from '../server/live';
 import { migratedDb, paramsFor, queries } from './queries/test-seed';
@@ -70,17 +68,6 @@ const ROW_COLUMNS: Record<string, string[]> = {
     'message',
     'console',
   ]),
-  'decisions-timeline': columns<TimelineRow>()([
-    'date',
-    'title',
-    'decision',
-    'why',
-    'replaces',
-    'version',
-    'pin_sha',
-    'ambiguous',
-    'digest',
-  ]),
   'factory-switcher': columns<FactorySwitcherRow>()(['factory', 'running', 'is_default']),
   'health-runs': columns<HealthRunRow>()([
     'run_id',
@@ -91,6 +78,7 @@ const ROW_COLUMNS: Record<string, string[]> = {
     'failed_step',
     'error',
     'failed_at',
+    'console',
   ]),
   'health-steps': columns<HealthStepRow>()([
     'kind',
@@ -99,6 +87,7 @@ const ROW_COLUMNS: Record<string, string[]> = {
     'step_id',
     'at',
     'duration_ms',
+    'console',
   ]),
   'health-workable': columns<HealthWorkableRow>()([
     'kind',
@@ -106,6 +95,47 @@ const ROW_COLUMNS: Record<string, string[]> = {
     'title',
     'url',
     'run_id',
+  ]),
+  'work-item': columns<WorkItemRow>()([
+    'kind',
+    'run_id',
+    'workflow',
+    'status',
+    'started_at',
+    'completed_at',
+    'lap',
+    'waiting',
+    'cost',
+    'steps',
+    'failed_step',
+    'error',
+    'route',
+    'depth',
+    'labels',
+    'deliveries',
+    'review',
+    'review_at',
+    'rereview',
+    'rereview_at',
+    'check_overall',
+    'check_at',
+    'decision',
+    'reason',
+    'decision_at',
+    'answer',
+    'answer_summary',
+    'answer_at',
+    'line_kind',
+    'line_verdict',
+    'pr',
+    'decisions',
+    'landed',
+    'asked_pr',
+    'record_status',
+    'number',
+    'title',
+    'url',
+    'console',
   ]),
   board: columns<BoardRow>()([
     'kind',
@@ -120,10 +150,7 @@ const ROW_COLUMNS: Record<string, string[]> = {
     'app_check',
     'pr',
     'pr_open',
-    'run_id',
-    'run_workflow',
     'repository',
-    'console',
     'merged_total',
   ]),
   'home-map': columns<HomeMapRow>()([
@@ -136,26 +163,6 @@ const ROW_COLUMNS: Record<string, string[]> = {
     'url',
     'at',
     'prs',
-  ]),
-  'improvements-ledger': columns<LedgerRow>()([
-    'pin_sha',
-    'reason',
-    'measure',
-    'committed_at',
-    'laps',
-    'verdict',
-    'sentence',
-    'verdict_at',
-    'pin_matches',
-  ]),
-  'issue-graph': columns<IssueGraphRow>()([
-    'kind',
-    'number',
-    'title',
-    'phase',
-    'url',
-    'state',
-    'depends_on',
   ]),
   lanes: columns<LaneRow>()([
     'run_id',
@@ -189,8 +196,6 @@ const ROW_COLUMNS: Record<string, string[]> = {
     'depends_on',
     'when_condition',
     'trigger_rule',
-    'detail_workflow',
-    'detail_path',
   ]),
   'one-lap-steps': columns<StepAttemptRow>()([
     'step_id',
@@ -296,16 +301,7 @@ const ROW_COLUMNS: Record<string, string[]> = {
     'defined_in',
     'file',
   ]),
-  'step-nesting': columns<NestingRow>()([
-    'relation',
-    'workflow',
-    'path',
-    'position',
-    'step_id',
-    'kind',
-    'open_workflow',
-    'open_path',
-  ]),
+  'step-nesting': columns<NestingRow>()(['path', 'position', 'step_id', 'kind']),
   'step-prompt': columns<PartRow>()(['path', 'part', 'chunk']),
   'step-scripts': columns<PartRow>()(['path', 'part', 'chunk']),
   'step-subagents': columns<SubagentRow>()([
@@ -320,28 +316,6 @@ const ROW_COLUMNS: Record<string, string[]> = {
   ]),
   'step-versions': columns<StepVersionRow>()(['sha', 'reason', 'committed_at', 'is_current']),
   'step-yaml': columns<YamlPartRow>()(['name', 'file', 'part', 'chunk']),
-  'testing-app-check': columns<CheckRow>()([
-    'run_id',
-    'position',
-    'kind',
-    'verdict',
-    'scenario_id',
-    'started_at',
-    'pr',
-  ]),
-  'testing-holdouts': columns<DefaultHoldoutRow>()([
-    'at',
-    'sha',
-    'report_issue',
-    'scenario_id',
-    'verdict',
-    'issue_number',
-    'issue_title',
-    'issue_state',
-    'issue_url',
-    'repository',
-  ]),
-  'testing-routes': columns<RouteRow>()(['run_id', 'status', 'started_at', 'route', 'depth']),
   'map-right-now': columns<MapRightNowRow>()([
     'kind',
     'run_id',
@@ -460,29 +434,25 @@ describe('the rules the live queries restate, which they may not call a function
 
   test('what dates a version is the one list mc.dates_version holds', () => {
     expect(read('db/migrations', '0022_queue_versions.sql')).toContain(DATES_VERSION);
-    for (const name of [
-      'version-strip',
-      'decisions-timeline',
-      'arch-diff',
-      'improvements-ledger',
-    ]) {
+    for (const name of ['version-strip', 'arch-diff']) {
       expect(query(name)).toContain(DATES_VERSION);
     }
   });
 
   test('every mention of build-queue in a live query is one of the three rules, none a stray copy', () => {
-    // [mc.dates_version copies, lap-rule copies, queues-rule copies] per name; a live query
+    // [mc.dates_version copies, lap-rule copies, queues-rule copies, other mentions] per name; a live query
     // not listed here may mention none of them.
-    const expected: Record<string, [number, number, number]> = {
+    const expected: Record<string, [number, number, number, number?]> = {
       'version-strip': [1, 0, 0],
-      'decisions-timeline': [2, 0, 0],
       'arch-diff': [2, 0, 0],
-      'improvements-ledger': [2, 1, 0],
       scorecard: [0, 2, 0],
       // The same list as mc.dates_version: the lap a work order's row names is one that ran a version.
       board: [1, 0, 0],
       // The queues rule asks which intake or build-queue runs exist, not what dates a version.
       'home-map': [0, 0, 1],
+      // Exception: the lap rule narrowed to one item ($2) rather than any item, and the route join that
+      // reads a build-queue run's own routing step.
+      'work-item': [0, 0, 0, 2],
       'step-detail': [0, 0, 1],
       'step-nesting': [0, 0, 1],
       'step-prompt': [0, 0, 1],
@@ -493,12 +463,12 @@ describe('the rules the live queries restate, which they may not call a function
     };
     const copies = [...queries];
     for (const [name, sql] of copies) {
-      const [datesVersion, lap, queues] = expected[name] ?? [0, 0, 0];
+      const [datesVersion, lap, queues, other = 0] = expected[name] ?? [0, 0, 0];
       expect([name, count(sql, DATES_VERSION), count(sql, LAP)]).toEqual([name, datesVersion, lap]);
       expect([name, count(sql, ON_THE_QUEUES)]).toEqual([name, queues]);
       expect([name, count(sql, "'archon-build-queue'")]).toEqual([
         name,
-        datesVersion + lap + queues,
+        datesVersion + lap + queues + other,
       ]);
     }
   });
@@ -506,7 +476,7 @@ describe('the rules the live queries restate, which they may not call a function
   test('a build-queue lap is a run whose facts step names an item, in every copy of the rule', () => {
     for (const sql of [
       query('scorecard'),
-      query('improvements-ledger'),
+      query('work-item'),
       read('fixtures', 'expected-scorecard.sql'),
     ]) {
       expect(sql).toContain("f.step_id = 'facts'");
