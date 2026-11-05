@@ -136,7 +136,7 @@ function str(value: unknown): string | null {
   return typeof value === 'string' ? value : null;
 }
 
-/** A node's model: a plain string, or the `[alias, size]` form joined into one label. */
+/** A model: a plain string, or an array form (an alias, a size, and so on) joined into one label. */
 function modelOf(value: unknown): string | null {
   return Array.isArray(value) ? strings(value).join(' ') || null : str(value);
 }
@@ -375,7 +375,7 @@ export function parsePack(packDir: string, templateDir: string, pathPrefix = '')
     return {
       name: source.name,
       description: str(source.doc.description),
-      model: str(source.doc.model),
+      model: modelOf(source.doc.model),
       file: source.file,
       yaml: source.yaml,
       steps,

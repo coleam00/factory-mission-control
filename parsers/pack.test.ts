@@ -283,7 +283,10 @@ describe('a version holds the loop pack and the factory package', () => {
   test('reads a model written as an alias and a size', () => {
     const workflow = version.workflows.find((w) => w.name === 'factory-app-check');
     expect(step(workflow?.steps ?? [], 'check').model).toBe('@factory-reviewer large');
-  });
+    const queue = parsePack(join(queueDir, 'sdlc'), templateDir);
+    const implement = queue.workflows.find((w) => w.name === 'archon-implement');
+    expect(implement?.model).toBe('@implementer large');
+  }, 20_000);
 
   test('records the full commit the package names', () => {
     const recorded = readFileSync(join(queueDir, 'FACTORY_COMMIT'), 'utf8').trim();
