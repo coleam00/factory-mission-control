@@ -3,7 +3,7 @@ export type ReviewTone = 'done' | 'owner' | 'plain';
 
 /**
  * The old loop's review outcomes, keyed by the `outcome` enum in the pack's archon-loop.yaml, with
- * the tone each reads in. The lap page and the work item timeline both read this table.
+ * the tone each reads in. The lap page reads this table.
  */
 export const REVIEW_TONE = {
   merge: 'done',

@@ -8,6 +8,7 @@ test('the table lists exactly the outcomes the pack loop review can return', () 
   const packEnum = list
     .split(',')
     .map((s) => s.trim())
+    .filter(Boolean)
     .sort();
   expect(packEnum.length).toBeGreaterThan(0);
   expect(Object.keys(REVIEW_TONE).sort()).toEqual(packEnum);
