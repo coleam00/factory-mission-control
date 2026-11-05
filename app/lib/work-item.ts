@@ -331,10 +331,11 @@ function sweepDecision(row: WorkItemRow, base: Base): TimelineEvent[] {
   if (entry === undefined || row.decision_at === null || row.pr === null) return [];
   const at = row.decision_at;
   const reason = entry.reason?.trim() ? entry.reason : null;
+  // The record step records a pull request it read back as merged whatever the sweep declared.
+  if ((row.landed ?? []).includes(row.pr))
+    return [{ ...base, at, tone: 'done', text: 'Merged', detail: reason }];
   switch (entry.action) {
     case 'merged':
-      if ((row.landed ?? []).includes(row.pr))
-        return [{ ...base, at, tone: 'done', text: 'Merged', detail: reason }];
       // Only a finished read-back can say the merge did not land: the sweep decides
       // `merged` after the gate merged, so an unfinished read-back proves nothing.
       if (row.record_status === 'completed')

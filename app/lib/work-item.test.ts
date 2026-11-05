@@ -107,6 +107,13 @@ test('a sweep that decided on another pull request adds nothing', () => {
   expect(texts(rows)).toEqual(['Filed']);
 });
 
+test('a pull request the record step read back as merged shows Merged whatever the sweep decided', () => {
+  const decisions = [{ number: 410, action: 'return', reason: 'x', brief: 'y' }];
+  const shown = texts([item, sweep({ decisions, landed: [410], record_status: 'completed' })]);
+  expect(shown).toContain('Merged');
+  expect(shown.some((t) => t.startsWith('Returned to Build'))).toBe(false);
+});
+
 test('a merged decision reads as landed, merging, or not landed by the record step', () => {
   const decisions = [{ number: 410, action: 'merged', reason: 'ok' }];
   expect(texts([item, sweep({ decisions, landed: [410], record_status: 'completed' })])).toContain(
