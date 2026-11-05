@@ -1,6 +1,13 @@
 import { expect, test } from 'bun:test';
 import type { HomeMapRow, WorkOrderRow } from '../map/live';
-import { type BoardRow, type BoardSources, boardView, KEEP_MS, nextChange } from './board';
+import {
+  type BoardRow,
+  type BoardSources,
+  boardView,
+  itemOnBoard,
+  KEEP_MS,
+  nextChange,
+} from './board';
 import type { OwnerQueueRow } from './owner-queue';
 
 const NOW = new Date('2026-11-04T12:00:00Z');
@@ -228,8 +235,28 @@ test('chips: the route, the pulse of a run on it, the app verdict and where the 
     { kind: 'pr', text: 'PR #7' },
     { kind: 'order', text: 'screens' },
   ]);
-  expect(one?.link).toEqual({ kind: 'external', href: 'http://localhost:3090/console/r/r1' });
+  expect(one?.to).toBe('/f/f/work/1');
   const [two] = v.columns.find((c) => c.id === 'queued')?.items ?? [];
   expect(two?.chips.map((c) => c.text)).toEqual(['round 1', 'app pass']);
-  expect(two?.link).toEqual({ kind: 'lap', to: '/f/f/laps/r2' });
+  expect(two?.to).toBe('/f/f/work/2');
+});
+
+test('itemOnBoard: a closed item is Merged however old, an open one is in the column the board puts it in', () => {
+  const sources = {
+    board: [
+      item(1, { state: 'closed', closed_at: new Date(NOW.getTime() - 30 * 86_400_000), pr: 7 }),
+      item(2, { pr: 8, pr_open: true, work_orders: ['screens'] }),
+      factoryRow(),
+    ],
+    map: [],
+    workable: [],
+    owner: [],
+  };
+  expect(itemOnBoard(sources, 1)?.column?.id).toBe('merged');
+  const open = itemOnBoard(sources, 2);
+  expect(open?.column?.id).toBe(
+    view({ ...sources, orders: [] }).columns.find((c) => c.items.some((i) => i.number === 2))?.id,
+  );
+  expect(open).toMatchObject({ pr: 8, workOrders: ['screens'] });
+  expect(itemOnBoard(sources, 3)).toBeNull();
 });
