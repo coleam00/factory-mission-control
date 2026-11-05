@@ -2102,10 +2102,12 @@ test('a queue app check that names a holdout, at check or at evidence, keeps no 
       ['select', select],
       ['check', { overall: 'FAIL', lines: checkLines }],
       ['evidence', { overall: 'FAIL', lines: evidenceLines }],
+      ['publish', { state: 'success', comment: 'created' }],
     ]);
     expect(await appCheckSteps(id)).toEqual([
       { step_id: 'check', status: 'completed', output: null },
       { step_id: 'evidence', status: 'completed', output: null },
+      { step_id: 'publish', status: 'completed', output: null },
       { step_id: 'select', status: 'completed', output: null },
     ]);
     expect(await db.query('SELECT 1 FROM mc.app_check_lines WHERE run_id = $1', [id])).toEqual([]);
