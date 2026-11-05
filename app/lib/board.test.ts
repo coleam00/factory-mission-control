@@ -13,7 +13,7 @@ const item = (number: number, over: Partial<BoardRow> = {}): BoardRow => ({
   url: `https://github.com/o/r/issues/${number}`,
   state: 'open',
   closed_at: null,
-  work_order: null,
+  work_orders: null,
   route: null,
   rounds: 0,
   app_check: null,
@@ -154,7 +154,11 @@ test('Merged keeps the last 7 days, newest first, and counts the rest as older',
 });
 
 test('the order filter narrows the columns, not the panels or the count outside orders', () => {
-  const board = [item(1, { work_order: 'screens' }), item(2), item(3, { work_order: 'other' })];
+  const board = [
+    item(1, { work_orders: ['screens'] }),
+    item(2),
+    item(3, { work_orders: ['other'] }),
+  ];
   const v = view(
     {
       board,
@@ -188,7 +192,7 @@ test('chips: the route, the pulse of a run on it, the app verdict and where the 
         app_check: 'FAIL',
         pr: 7,
         pr_open: true,
-        work_order: 'screens',
+        work_orders: ['screens'],
         run_id: 'r1',
         run_workflow: 'archon-build-queue',
       }),

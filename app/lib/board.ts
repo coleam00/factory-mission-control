@@ -17,8 +17,8 @@ export interface BoardRow {
   url: string | null;
   state: 'open' | 'closed' | null;
   closed_at: Date | null;
-  /** The first `work-order:<name>` label by name. */
-  work_order: string | null;
+  /** Every `work-order:<name>` label, by name; null on the factory row. */
+  work_orders: string[] | null;
   /** deliver, plan, investigate or split: the queue's state label, else the loop's claim. */
   route: string | null;
   rounds: number | null;
@@ -88,7 +88,7 @@ export type BoardLink = { kind: 'lap'; to: string } | { kind: 'external'; href: 
 export interface WorkItem {
   number: number;
   title: string;
-  workOrder: string | null;
+  workOrders: string[];
   chips: BoardChip[];
   link: BoardLink;
 }
@@ -158,7 +158,7 @@ function chipsOf(item: BoardRow, column: ColumnId, running: boolean): BoardChip[
   if (item.app_check === 'PASS') chips.push({ kind: 'app', text: 'app pass', tone: 'pass' });
   if (item.app_check === 'FAIL') chips.push({ kind: 'app', text: 'app fail', tone: 'fail' });
   if (item.pr !== null) chips.push({ kind: 'pr', text: `PR #${item.pr}` });
-  if (item.work_order !== null) chips.push({ kind: 'order', text: item.work_order });
+  for (const name of item.work_orders ?? []) chips.push({ kind: 'order', text: name });
   if (column === 'build' && !running) chips.push({ kind: 'waiting', text: 'waiting for a run' });
   return chips;
 }
@@ -223,12 +223,13 @@ export function boardView(sources: BoardSources, now: Date, order: string | null
       column = 'merged';
     } else column = columnOf(number, row.pr_open === true, facts);
     if (column === null) continue;
-    if (row.work_order === null) notInOrder++;
-    if (order !== null && row.work_order !== order) continue;
+    const names = row.work_orders ?? [];
+    if (names.length === 0) notInOrder++;
+    if (order !== null && !names.includes(order)) continue;
     const item: WorkItem = {
       number,
       title: row.title ?? '',
-      workOrder: row.work_order,
+      workOrders: names,
       chips: chipsOf(row, column, row.state === 'open' && running.has(number)),
       link: linkOf(row, factory, factoryRow?.console ?? null),
     };

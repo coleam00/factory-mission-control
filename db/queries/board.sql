@@ -18,8 +18,8 @@ WITH items AS (
   ) closed
 )
 SELECT 'item' AS kind, i.number, i.title, i.url, i.state, i.closed_at,
-  -- The work order: its first `work-order:<name>` label by name, as work-orders.sql names orders.
-  wo.name AS work_order,
+  -- Every work order it carries, by name, as work-orders.sql counts an issue in each of them.
+  wo.names AS work_orders,
   -- The route: the queue's state label (intake writes one, and a ready item's names its route),
   -- else the route the loop's latest claim took (the pick step's, else the claim's own).
   coalesce(rt.route, lp.route) AS route,
@@ -30,7 +30,7 @@ SELECT 'item' AS kind, i.number, i.title, i.url, i.state, i.closed_at,
   NULL::text AS repository, NULL::text AS console, NULL::integer AS merged_total
 FROM items i
 LEFT JOIN LATERAL (
-  SELECT min(substring(lb.label FROM 12)) AS name FROM mc.issue_labels lb
+  SELECT coalesce(array_agg(substring(lb.label FROM 12) ORDER BY 1), '{}'::text[]) AS names FROM mc.issue_labels lb
   WHERE lb.factory = i.factory AND lb.issue_number = i.number
     AND lb.label LIKE 'work-order:%' AND length(lb.label) > 11
 ) wo ON true

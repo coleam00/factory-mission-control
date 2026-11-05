@@ -103,7 +103,7 @@ const ROW_COLUMNS: Record<string, string[]> = {
     'url',
     'state',
     'closed_at',
-    'work_order',
+    'work_orders',
     'route',
     'rounds',
     'app_check',

@@ -81,10 +81,33 @@ test('the seed recount: each column and each work order bar equal the definition
 test('a work item carries its pull request, rounds, route and app verdict from the seed laps', async () => {
   const rows = await run<BoardRow>('board', 'mission-control');
   const of = (n: number) => rows.find((r) => r.number === n);
-  expect(of(9)).toMatchObject({ pr: 109, pr_open: true, work_order: 'foundations' });
-  expect(of(10)).toMatchObject({ pr: 110, pr_open: false, state: 'closed' });
-  expect(of(12)?.pr).toBe(112);
+  expect(of(9)).toMatchObject({
+    pr: 109,
+    pr_open: true,
+    work_orders: ['foundations'],
+    route: 'continue',
+    rounds: 3,
+    app_check: 'FAIL',
+  });
+  expect(of(10)).toMatchObject({
+    pr: 110,
+    pr_open: false,
+    state: 'closed',
+    route: 'simple',
+    rounds: 1,
+    app_check: 'PASS',
+  });
+  expect(of(12)).toMatchObject({ pr: 112, route: 'simple', rounds: 0, app_check: null });
   expect(of(11)?.run_workflow).toBe('archon-loop');
+  expect(of(13)?.work_orders).toEqual([]);
+});
+
+test('each work order panel counts the board rows that name it', async () => {
+  const rows = await run<BoardRow>('board', 'mission-control');
+  const orders = await run<WorkOrderRow>('work-orders', 'mission-control');
+  expect(orders.length).toBeGreaterThan(0);
+  for (const o of orders)
+    expect(rows.filter((r) => r.work_orders?.includes(o.name)).length).toBe(o.total_count);
 });
 
 test('the factory row counts only the work items a merged pull request closed', async () => {

@@ -175,10 +175,10 @@ async function eventCount(db: Tx, runId: string): Promise<number> {
   return Number(row.n);
 }
 
-/** A dashboard row a kind inserts, its values taken from the moment it runs so writes never collide. */
 /** What a row kind can be told besides the time: the pin a verdict judges, the label `label` writes. */
 type RowOptions = { pin?: string; label?: string };
 
+/** A dashboard row a kind inserts, its values taken from the moment it runs so writes never collide. */
 type RowKind = {
   table: string;
   insert: (at: Date, options: RowOptions) => { sql: string; params: unknown[] };
