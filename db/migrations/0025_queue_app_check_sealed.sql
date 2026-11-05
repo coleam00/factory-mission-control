@@ -63,7 +63,6 @@ DECLARE
   v_verdict jsonb;
 BEGIN
   IF p_step = 'check' THEN
-    UPDATE mc.lap_steps SET output = NULL WHERE run_id = p_run_id AND step_id = 'check';
     PERFORM mc.project_app_check_lines(p_run_id, '[]'::jsonb);
     IF mc.queue_app_check_has_holdout(p_output -> 'lines') THEN
       UPDATE mc.lap_steps SET output = NULL WHERE run_id = p_run_id AND step_id = 'select';
