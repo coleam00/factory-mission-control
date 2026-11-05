@@ -1013,7 +1013,8 @@ function githubSql(runs: Run[]): string[] {
 
 // --- The projection (PRD 11.2, 11.4, 11.7), over the seed's codebases only ----------------------
 
-const PROJECTION = `INSERT INTO mc.laps (run_id, factory, workflow_name, status, digest, started_at, completed_at,
+/** The laps statement, which the seed test holds to what the run triggers write. */
+export const LAP_PROJECTION = `INSERT INTO mc.laps (run_id, factory, workflow_name, status, digest, started_at, completed_at,
   issue_number, attention_open)
 SELECT r.id, f.name, r.workflow_name, r.status, r.metadata->'workflow_source'->>'digest',
   r.started_at, r.completed_at, mc.run_issue_number(r.metadata), mc.run_attention_open(r.status, r.metadata)
@@ -1021,7 +1022,9 @@ FROM remote_agent_workflow_runs r
 JOIN remote_agent_codebases c ON c.id = r.codebase_id
 JOIN mc.factories f ON f.codebase = c.name
 WHERE r.codebase_id IN ('${SEED_CODEBASE}', '${SECOND_CODEBASE}', '${QUEUE_CODEBASE}')
-ON CONFLICT DO NOTHING;
+ON CONFLICT DO NOTHING;`;
+
+const PROJECTION = `${LAP_PROJECTION}
 
 -- A step's last event decides its status and carries its timing, model, tokens, cost and output.
 INSERT INTO mc.lap_steps (run_id, step_id, status, started_at, completed_at, duration_ms, provider,

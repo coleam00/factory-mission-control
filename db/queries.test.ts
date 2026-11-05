@@ -92,6 +92,7 @@ const ROW_COLUMNS: Record<string, string[]> = {
     'title',
     'url',
     'at',
+    'prs',
   ]),
   'improvements-ledger': columns<LedgerRow>()([
     'pin_sha',

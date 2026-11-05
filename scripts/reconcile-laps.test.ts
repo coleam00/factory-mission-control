@@ -1,11 +1,12 @@
 import { afterEach, beforeEach, expect, test } from 'bun:test';
 import { rmSync } from 'node:fs';
 import { archonDb, migrationFiles, snapshot } from '../db/test-db';
+import rules from '../fixtures/archon-rules.json';
 import { eventData } from './fixture/write';
 import type { Db, Row, Tx } from './lib/db';
 import { DATABASE_URL, NOW, recordingDeps, scratchRepo } from './lib/test-deps';
 import { runMigrations } from './migrate';
-import { main, REPLAY_LOCK_TIMEOUT, STEP_EVENT_TYPES } from './reconcile-laps';
+import { main, PROJECTED_RUN, REPLAY_LOCK_TIMEOUT, STEP_EVENT_TYPES } from './reconcile-laps';
 
 let db: Db;
 let sql: string[];
@@ -856,4 +857,78 @@ test('when mc.laps itself is locked, a running run with no lap is reported busy,
     'reconcile: 1 run(s) busy, left for the next run',
   ]);
   expect(await rows('SELECT 1 FROM mc.laps WHERE run_id = $1', [runId])).toEqual([]);
+});
+
+const matches = (text: string, pattern: RegExp) =>
+  [...text.matchAll(pattern)].map((m) => m[1] as string);
+const sorted = (values: string[]) => [...new Set(values)].sort();
+
+test('the run trigger and PROJECTED_RUN follow every metadata key the lap functions read', async () => {
+  const [trigger] = await db.query(
+    "SELECT pg_get_triggerdef(oid) AS def FROM pg_trigger WHERE tgname = 'mc_project_run_update'",
+  );
+  const source = async (where: string) =>
+    String(
+      (
+        await db.query(`SELECT prosrc FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+      WHERE n.nspname = 'mc' AND ${where}`)
+      )[0]?.prosrc,
+    );
+  const projectRun = await source("proname = 'project_run'");
+  const called = sorted(matches(projectRun, /mc\.(\w+)\([^)]*NEW\.metadata/g));
+  expect(called).toEqual(['run_attention_open', 'run_issue_number']);
+  const functions = await Promise.all(called.map((name) => source(`proname = '${name}'`)));
+  const keyed = functions.flatMap((fn) => matches(fn, /p_metadata\s*(?:->>?|\?)\s*'(\w+)'/g));
+  const accesses = functions.join('').match(/p_metadata/g)?.length ?? 0;
+  const typeChecks = functions.join('').match(/jsonb_typeof\(p_metadata\)/g)?.length ?? 0;
+  // An access form the pattern does not read would be a key this test cannot see.
+  expect(accesses).toBe(keyed.length + typeChecks);
+  const read = sorted([...keyed, ...matches(projectRun, /NEW\.metadata\s*->>?\s*'(\w+)'/g)]);
+  const def = String(trigger?.def);
+  const watched = sorted(matches(def, /new\.metadata -> '(\w+)'/g));
+  expect(watched).toEqual(read);
+  for (const name of called) expect(PROJECTED_RUN).toContain(`mc.${name}(`);
+  const columns = matches(def, /old\.(\w+)\)?(?:::\w+)? IS DISTINCT FROM/g);
+  expect(columns.length).toBeGreaterThan(0);
+  for (const column of columns) expect(PROJECTED_RUN).toContain(column);
+
+  const open = rules.attention.cases[0]?.metadata;
+  const mutations: Record<string, { status: string; before: object; after: object }> = {
+    inputs: { status: 'running', before: {}, after: { inputs: { number: '7' } } },
+    wait: { status: 'paused', before: {}, after: { ...open } },
+    source_release: {
+      status: 'paused',
+      before: { ...open },
+      after: { ...open, source_release: { nodeId: 'ask', releasedAt: '2026-10-31T00:01:00.000Z' } },
+    },
+    workflow_source: {
+      status: 'running',
+      before: { workflow_source: { digest: 'sha256:a' } },
+      after: { workflow_source: { digest: 'sha256:b' } },
+    },
+  };
+  expect(Object.keys(mutations).sort()).toEqual(read);
+  const projected = async (id: unknown) => ({
+    lap: (
+      await db.query('SELECT digest, issue_number, attention_open FROM mc.laps WHERE run_id = $1', [
+        id,
+      ])
+    )[0],
+    run: (await db.query(PROJECTED_RUN, [id]))[0]?.run,
+  });
+  for (const [key, { status, before, after }] of Object.entries(mutations)) {
+    const [row] = await db.query(
+      `INSERT INTO public.remote_agent_workflow_runs (workflow_name, status, user_message, metadata)
+       VALUES ('archon-build-queue', $1, 'mutate', $2) RETURNING id`,
+      [status, JSON.stringify(before)],
+    );
+    const was = await projected(row?.id);
+    await db.query('UPDATE public.remote_agent_workflow_runs SET metadata = $2 WHERE id = $1', [
+      row?.id,
+      JSON.stringify(after),
+    ]);
+    const now = await projected(row?.id);
+    expect(now.lap, key).not.toEqual(was.lap);
+    expect(now.run, key).not.toEqual(was.run);
+  }
 });

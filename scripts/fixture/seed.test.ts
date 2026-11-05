@@ -5,7 +5,7 @@ import { migrationFiles, testDb } from '../../db/test-db';
 import { REPO_ROOT } from '../lib/cli';
 import type { Db } from '../lib/db';
 import { runMigrations } from '../migrate';
-import { buildSeed, QUEUE_FACTORY, SECOND_FACTORY, SEED_CODEBASE } from './seed';
+import { buildSeed, LAP_PROJECTION, QUEUE_FACTORY, SECOND_FACTORY, SEED_CODEBASE } from './seed';
 import { markerHits, minimums, scorecard, tableCounts } from './seed-report';
 import { writeRow } from './write';
 
@@ -67,6 +67,20 @@ test.each(['label', 'comment', 'issue', 'pin', 'verdict', 'decision'] as const)(
     await expect(written).rejects.toBe(ROLLED_BACK);
   },
 );
+
+test("the seed's lap projection writes the laps the triggers write", async () => {
+  const lapRows = (tx: Pick<Db, 'query'>) =>
+    tx.query('SELECT to_jsonb(l)::text AS lap FROM mc.laps l ORDER BY 1');
+  const compared = db.transaction(async (tx) => {
+    const before = await lapRows(tx);
+    expect(new Set(before.map((r) => JSON.parse(String(r.lap)).factory)).size).toBe(3);
+    await tx.query('DELETE FROM mc.laps WHERE factory IN (SELECT name FROM mc.factories)');
+    await tx.query(LAP_PROJECTION);
+    expect(await lapRows(tx)).toEqual(before);
+    throw ROLLED_BACK;
+  });
+  await expect(compared).rejects.toBe(ROLLED_BACK);
+});
 
 // The shapes the timeline, architecture-diff and stuck-step panels need, which no count implies.
 
