@@ -130,6 +130,13 @@ test('a merged decision reads as landed, merging, or not landed by the record st
   );
 });
 
+test('a cancelled intake run reads as cancelled, neither finished nor running', () => {
+  for (const completed_at of [null, at('08:05')]) {
+    const cancelled = row({ workflow: 'archon-intake', status: 'cancelled', completed_at });
+    expect(texts([item, cancelled])).toEqual(['Filed', 'Intake cancelled']);
+  }
+});
+
 test('an old-loop review of approved or nothing reads, and nothing is a round with nothing to do', () => {
   const loop = (review: string) =>
     row({

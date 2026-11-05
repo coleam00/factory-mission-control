@@ -206,6 +206,7 @@ function stageOf(row: WorkItemRow): { id: string; title: string } | null {
 function intakeEvent(row: WorkItemRow, at: Date, base: Base): TimelineEvent {
   if (row.status === 'failed')
     return { ...base, at, tone: 'failed', text: `Intake failed: ${row.error ?? NO_REASON}` };
+  if (row.status === 'cancelled') return { ...base, at, tone: 'plain', text: 'Intake cancelled' };
   if (row.completed_at === null)
     return {
       ...base,
