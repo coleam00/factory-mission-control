@@ -16,6 +16,7 @@ import { FACTORY_MAP } from '../map/factory-map';
 import {
   cardLive,
   type HomeMapRow,
+  type MapRightNowRow,
   type MapSources,
   versionRecorded,
   type WorkOrderRow,
@@ -76,7 +77,7 @@ export function HomeMapBody({
   path?: readonly string[];
   onPath?: (path: readonly string[]) => void;
 }): ReactElement {
-  const { map, workable, owner, orders } = sources;
+  const { map, workable, owner, orders, rightNow } = sources;
   const empty = (title: string) => (
     <div className={COLUMN}>
       <EmptyState title={title} />
@@ -87,7 +88,7 @@ export function HomeMapBody({
   if (map === undefined && configured === false) return empty('No factory is configured.');
   if (map === undefined) return empty('Loading the factory map.');
   if (!versionRecorded(map, at)) return empty(`No version ${at} is recorded for this factory.`);
-  const live = cardLive(FACTORY_MAP, { map, workable, owner, orders, states }, now);
+  const live = cardLive(FACTORY_MAP, { map, workable, owner, orders, rightNow, states }, now);
   return (
     <FactoryMap
       map={FACTORY_MAP}
@@ -122,6 +123,7 @@ export default function Home(): ReactElement {
   const [workable, setWorkable] = useState<Source<HealthWorkableRow>>(AWAITED);
   const [owner, setOwner] = useState<Source<OwnerQueueRow>>(AWAITED);
   const [orders, setOrders] = useState<Source<WorkOrderRow>>(AWAITED);
+  const [rightNow, setRightNow] = useState<Source<MapRightNowRow>>(AWAITED);
   const [steps, setSteps] = useState<Source<StepRow>>(AWAITED);
   const configured = live.status === 'ready' ? live.factories.length > 0 : undefined;
   return (
@@ -154,16 +156,24 @@ export default function Home(): ReactElement {
       <Feed<HealthWorkableRow> query="health-workable" factory={factory} into={setWorkable} />
       <Feed<OwnerQueueRow> query="owner-queue" factory={factory} into={setOwner} />
       <Feed<WorkOrderRow> query="work-orders" factory={factory} into={setOrders} />
+      <Feed<MapRightNowRow> query="map-right-now" factory={factory} into={setRightNow} />
       <Feed<StepRow> query="step-detail" factory={factory} args={[at ?? '']} into={setSteps} />
       <LivePanel<HomeMapRow> query="home-map" factory={factory} args={[at ?? '']}>
         {(map, state) => (
           <HomeMapBody
-            sources={{ map, workable: workable.rows, owner: owner.rows, orders: orders.rows }}
+            sources={{
+              map,
+              workable: workable.rows,
+              owner: owner.rows,
+              orders: orders.rows,
+              rightNow: rightNow.rows,
+            }}
             steps={steps.rows}
             states={{
               workable: workable.state,
               owner: owner.state,
               orders: orders.state,
+              rightNow: rightNow.state,
               steps: steps.state,
             }}
             state={state}

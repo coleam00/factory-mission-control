@@ -1,7 +1,16 @@
 import { expect, test } from 'bun:test';
 import { LANE_STEPS } from '../lib/lap-graph';
 import { FACTORY_MAP } from './factory-map';
-import { cardLive, deepestStep, type HomeMapRow, mergedToday, versionRecorded } from './live';
+import {
+  cardLive,
+  deepestStep,
+  gateOutcomes,
+  type HomeMapRow,
+  latestDeploy,
+  type MapRightNowRow,
+  mergedToday,
+  versionRecorded,
+} from './live';
 
 const lap = (
   run: string,
@@ -306,4 +315,90 @@ test('a run of the old loop on build counts on Build and Deliver', () => {
   const rows = [lap('old', ['build'], 'archon-loop')];
   expect(here(rows)).toEqual({ build: ['old'] });
   expect(hereOn(rows, BUILD_VIEW)).toEqual({ 'b-del': ['old'] });
+});
+
+const right = (over: Partial<MapRightNowRow>): MapRightNowRow => ({
+  kind: 'outcomes',
+  run_id: 'r1',
+  at: new Date('2026-10-24T09:00:00Z'),
+  decisions: null,
+  merged: '[]',
+  asked: null,
+  revision: null,
+  health: null,
+  status: null,
+  repository: 'o/r',
+  ...over,
+});
+const decision = (number: number, action: string) => ({ number, action, reason: `why ${number}` });
+
+test('the gate lists what the record step settled: merged as read back, returned, and an ask only when raised', () => {
+  const run = right({
+    decisions: JSON.stringify([
+      decision(1, 'return'),
+      decision(2, 'merged'),
+      decision(3, 'ask'),
+      decision(4, 'ask'),
+      decision(5, 'wait'),
+      { number: 6, action: 'merged' },
+    ]),
+    merged: '[1, 7]',
+    asked: '3',
+  });
+  expect(gateOutcomes([run]).map((o) => [o.number, o.outcome, o.reason])).toEqual([
+    [1, 'merged', 'why 1'],
+    [3, 'asked', 'why 3'],
+  ]);
+  const returned = right({ decisions: JSON.stringify([decision(8, 'return')]) });
+  expect(gateOutcomes([returned])[0]).toMatchObject({
+    outcome: 'returned',
+    url: 'https://github.com/o/r/pull/8',
+  });
+  expect(gateOutcomes([right({ decisions: 'not json' }), right({ decisions: '{}' })])).toEqual([]);
+});
+
+test('the gate lists the newest run first', () => {
+  const old = right({ run_id: 'old', decisions: JSON.stringify([decision(1, 'return')]) });
+  const newer = right({
+    run_id: 'new',
+    at: new Date('2026-10-25T09:00:00Z'),
+    decisions: JSON.stringify([decision(2, 'return')]),
+  });
+  expect(gateOutcomes([old, newer]).map((o) => o.run)).toEqual(['new', 'old']);
+});
+
+test('the latest deploy is the newest of the queue and the old loop, and null when there is none', () => {
+  expect(latestDeploy([right({})])).toBeNull();
+  const queue = right({ kind: 'deploys', run_id: 'q', revision: 'a', status: 'verified' });
+  const loop = right({
+    kind: 'deploys',
+    run_id: 'l',
+    at: new Date('2026-10-26T09:00:00Z'),
+    revision: 'b',
+    status: 'failed',
+  });
+  expect(latestDeploy([queue, loop])).toMatchObject({ run: 'l', revision: 'b', verified: false });
+});
+
+test('Merge gate lists the gate, the Staging cards the deploy and open work orders, and an error is unavailable', () => {
+  const order = {
+    name: 'combat',
+    total_count: 3,
+    open_count: 2,
+    merged_count: 1,
+    lands_on: 'staging',
+    last_closed_at: null,
+  };
+  const closed = { ...order, name: 'done', open_count: 0 };
+  const sources = { map: [], orders: [order, closed], rightNow: [right({})] };
+  const live = cardLive(FACTORY_MAP, sources, new Date());
+  expect(live.get('m-gate')?.gate).toEqual([]);
+  expect(live.get('y-ver')?.deploy).toBeNull();
+  expect(live.get('y-ver')?.lands).toEqual([order]);
+  expect(live.get('y-dep')?.orders).toBeUndefined();
+
+  const failed = cardLive(FACTORY_MAP, { ...sources, states: { rightNow: 'error' } }, new Date());
+  expect(failed.get('m-gate')).toEqual({ here: [], listsUnavailable: ['outcomes'] });
+  expect(failed.get('y-ver')?.listsUnavailable).toEqual(['deploys']);
+  expect(failed.get('y-ver')?.lands).toEqual([order]);
 });

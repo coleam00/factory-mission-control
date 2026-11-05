@@ -2,7 +2,7 @@ import { type ReactElement, type ReactNode, useState } from 'react';
 import { Link } from 'react-router';
 import type { StepRow } from '../lib/step-detail';
 import { type Card, pinnedStepLinks, workflowFile } from '../map/factory-map';
-import type { CardLive, MapItem, WorkOrderRow } from '../map/live';
+import type { CardLive, GateOutcome, LatestDeploy, MapItem, WorkOrderRow } from '../map/live';
 
 type Tab = 'when' | 'what' | 'how' | 'live' | 'behind';
 
@@ -66,6 +66,43 @@ function Order({ order }: { order: WorkOrderRow }): ReactElement {
   );
 }
 
+const UNAVAILABLE = {
+  outcomes: 'The recent gate decisions are unavailable.',
+  deploys: 'The latest deploy is unavailable.',
+  lands: 'Where the work orders land is unavailable.',
+} as const;
+
+/** One pull request the gate settled, with the reason the sweep gave. */
+function Gate({ outcome }: { outcome: GateOutcome }): ReactElement {
+  return (
+    <li data-gate-outcome={outcome.number}>
+      <a href={outcome.url} className={`${LINK} font-mono tabular-nums`}>
+        #{outcome.number}
+      </a>
+      <span className={CHIP}>{outcome.outcome}</span>
+      <span className="ml-1.5 text-text-secondary">{outcome.reason}</span>
+    </li>
+  );
+}
+
+function Deploy({ deploy }: { deploy: LatestDeploy | null }): ReactElement {
+  if (deploy === null) return <li data-latest-deploy>This factory has never deployed.</li>;
+  const revision = deploy.revision === null ? null : deploy.revision.slice(0, 7);
+  const name = <span className="font-mono">{revision ?? 'no revision'}</span>;
+  return (
+    <li data-latest-deploy>
+      {deploy.verified ? (
+        <>{name} is deployed, healthy, and its revision read back</>
+      ) : (
+        <>
+          {name}: the last deploy failed, health {deploy.health ?? 'not reported'}
+        </>
+      )}
+      {deploy.at === null ? null : <span className={CHIP}>{deploy.at.toLocaleString()}</span>}
+    </li>
+  );
+}
+
 const time = (at: Date) =>
   at.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
 
@@ -120,6 +157,28 @@ export function RightNow({
           )}
         </Link>
         <span className={CHIP}>merged {time(merge.at)}</span>
+      </li>
+    )),
+    ...(live?.listsUnavailable ?? []).map((list) => (
+      <li key={`unavailable-list-${list}`} className="text-text-secondary">
+        {UNAVAILABLE[list]}
+      </li>
+    )),
+    ...(live?.gate?.map((outcome) => (
+      <Gate key={`gate-${outcome.run}-${outcome.number}`} outcome={outcome} />
+    )) ?? []),
+    ...(live?.gate?.length === 0
+      ? [
+          <li key="gate-none" className="text-text-secondary">
+            No gate decision is recorded for this factory yet.
+          </li>,
+        ]
+      : []),
+    ...(live?.deploy === undefined ? [] : [<Deploy key="latest-deploy" deploy={live.deploy} />]),
+    ...(live?.lands ?? []).map((order) => (
+      <li key={`lands-${order.name}`} data-lands={order.name}>
+        <span className="font-mono">{order.name}</span>{' '}
+        {order.lands_on === null ? 'names no target yet' : `lands on ${order.lands_on}`}
       </li>
     )),
   ];
