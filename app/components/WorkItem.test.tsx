@@ -83,3 +83,9 @@ test('an address that is not a work item number names none, and asks no query', 
   const html = renderToStaticMarkup(<RouterProvider router={router} />);
   expect(html).toContain('No work item #4x in this factory.');
 });
+
+test('the timeline says what it does not hold yet, even with no events', () => {
+  const html = render(<WorkItemBody header={header} events={[]} board={null} />);
+  expect(html).toContain('data-timeline-gap');
+  expect(html).toContain('A gap here does not mean nothing happened');
+});

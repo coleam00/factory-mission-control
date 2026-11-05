@@ -268,10 +268,7 @@ function roundEvent(row: WorkItemRow, n: number, at: Date, base: Base): Timeline
     .flat()
     .filter(Boolean);
   if (row.workflow === 'archon-loop') {
-    const nothing =
-      row.route === null &&
-      (row.review === null || row.review === 'nothing') &&
-      row.decision === null;
+    const nothing = row.review === 'nothing' || row.route === 'none';
     return {
       ...base,
       at,
@@ -338,7 +335,13 @@ function sweepDecision(row: WorkItemRow, base: Base): TimelineEvent[] {
       if ((row.landed ?? []).includes(row.pr))
         return [{ ...base, at, tone: 'done', text: 'Merged', detail: reason }];
       // The read-back has not finished, so the merge may still land.
-      if (row.record_status !== 'completed' && row.record_status !== 'failed')
+      if (
+        row.completed_at === null &&
+        row.status !== 'failed' &&
+        row.status !== 'cancelled' &&
+        row.record_status !== 'completed' &&
+        row.record_status !== 'failed'
+      )
         return [{ ...base, at, tone: 'running', text: 'Merging', detail: reason }];
       return [{ ...base, at, tone: 'failed', text: `The merge did not land. ${NO_REASON}` }];
     case 'return':

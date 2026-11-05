@@ -113,7 +113,16 @@ test('a merged decision reads as landed, merging, or not landed by the record st
     'Merged',
   );
   for (const record_status of [null, 'running'])
-    expect(texts([item, sweep({ decisions, landed: null, record_status })])).toContain('Merging');
+    expect(
+      texts([
+        item,
+        sweep({ decisions, landed: null, record_status, status: 'running', completed_at: null }),
+      ]),
+    ).toContain('Merging');
+  for (const status of ['failed', 'cancelled'])
+    expect(texts([item, sweep({ decisions, status, record_status: null })])).toContain(
+      `The merge did not land. ${NO_REASON}`,
+    );
   for (const record_status of ['completed', 'failed'])
     expect(texts([item, sweep({ decisions, landed: [], record_status })])).toContain(
       `The merge did not land. ${NO_REASON}`,
@@ -122,7 +131,14 @@ test('a merged decision reads as landed, merging, or not landed by the record st
 
 test('an old-loop review of approved or nothing reads, and nothing is a round with nothing to do', () => {
   const loop = (review: string) =>
-    row({ workflow: 'archon-loop', review, review_at: at('09:05'), started_at: at('09:00') });
+    row({
+      workflow: 'archon-loop',
+      route: 'simple',
+      depth: 'normal',
+      review,
+      review_at: at('09:05'),
+      started_at: at('09:00'),
+    });
   expect(texts([item, loop('approved')])).toContain('Review: approved');
   expect(texts([item, loop('nothing')])).toEqual([
     'Filed',
