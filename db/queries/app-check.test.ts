@@ -66,3 +66,44 @@ test('the latest check of an open pull request is listed with its verdict, and n
     await db.query('ROLLBACK');
   }
 });
+
+test("a pull request lists the lines of its latest check by kind, and not another run's", async () => {
+  const run = (n: number) => `00000000-0000-4000-8000-0000000000d${n}`;
+  await db.query('BEGIN');
+  try {
+    const [open] = await db.query(
+      `SELECT number FROM mc.pull_requests WHERE factory = 'mission-control' AND state = 'open' LIMIT 1`,
+    );
+    const pr = Number(open?.number);
+    for (const n of [1, 2]) {
+      await db.query(
+        `INSERT INTO mc.laps (run_id, factory, workflow_name, status, started_at)
+         VALUES ($1, 'mission-control', 'factory-app-check', 'completed', $2)`,
+        [run(n), `2031-01-0${n}T00:00:00Z`],
+      );
+    }
+    await db.query(
+      `INSERT INTO mc.lap_steps (run_id, step_id, status, started_at, output)
+       VALUES ($1, 'check', 'completed', '2031-01-01T00:00:00Z', $2)`,
+      [run(1), JSON.stringify({ pr, overall: 'PASS' })],
+    );
+    const line = (id: string, position: number, kind: string) =>
+      db.query(
+        `INSERT INTO mc.app_check_lines (run_id, position, kind, verdict, evidence_count)
+         VALUES ($1, $2, $3, 'PASS', 1)`,
+        [id, position, kind],
+      );
+    const kinds = ['criterion', 'criterion', 'probe', 'assertion', 'assertion', 'assertion'];
+    for (const [position, kind] of kinds.entries()) await line(run(1), position, kind);
+    await line(run(2), 0, 'criterion');
+
+    expect(await verdict(pr)).toMatchObject({
+      run_id: run(1),
+      criteria: 2,
+      probes: 1,
+      assertions: 3,
+    });
+  } finally {
+    await db.query('ROLLBACK');
+  }
+});
