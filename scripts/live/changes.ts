@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync } from 'node:fs';
+import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { ChangeItem } from '../../app/lib/changes';
 import { notVersionSentence, shortDigest } from '../../app/lib/version-strip';
@@ -7,7 +7,7 @@ import type { Deps } from '../lib/cli';
 import {
   cellsOnScreen,
   compareScorecard,
-  type ExpectedScorecard,
+  readExpectedScorecard,
   type ShownCell,
 } from './scorecard';
 import { type LiveContext, type LivePhase, pageWait, READY_WAIT_MS } from './shared';
@@ -139,9 +139,7 @@ export function changesPhase(ctx: LiveContext): LivePhase {
     const digests = (await page.evaluate<(string | null)[]>(comparedVersions)).filter(
       (d): d is string => d !== null,
     );
-    const expected: ExpectedScorecard = JSON.parse(
-      readFileSync(join(deps.repoRoot, 'fixtures', 'expected-scorecard.json'), 'utf-8'),
-    );
+    const expected = readExpectedScorecard(deps.repoRoot);
     expected.versions = expected.versions.filter((v) => digests.includes(v.digest));
     const compared = compareScorecard(await page.evaluate<ShownCell[]>(cellsOnScreen), expected);
     if (expected.versions.length !== digests.length) {

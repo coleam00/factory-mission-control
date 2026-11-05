@@ -1,6 +1,6 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { meaningful, NOT_YET_MEANINGFUL } from '../../app/lib/scorecard';
+import { MEASURES, type MeasureKey, meaningful, NOT_YET_MEANINGFUL } from '../../app/lib/scorecard';
 import { openPage, type Page } from '../lib/cdp';
 import type { Deps } from '../lib/cli';
 import type { Row } from '../lib/db';
@@ -56,7 +56,27 @@ export const cellsOnScreen = `[...document.querySelectorAll('${SCORECARD} [data-
 }))`;
 
 export interface ExpectedScorecard {
-  versions: { digest: string; measures: Record<string, { value: number | null; laps: number }> }[];
+  versions: {
+    digest: string;
+    measures: Partial<Record<MeasureKey, { value: number | null; laps: number }>>;
+  }[];
+}
+
+/** `fixtures/expected-scorecard.json`, refusing a measure key `MEASURES` does not have. */
+export function readExpectedScorecard(repoRoot: string): ExpectedScorecard {
+  const expected: ExpectedScorecard = JSON.parse(
+    readFileSync(join(repoRoot, 'fixtures', 'expected-scorecard.json'), 'utf-8'),
+  );
+  const known = new Set<string>(MEASURES.map((m) => m.key));
+  for (const { digest, measures } of expected.versions) {
+    const unknown = Object.keys(measures).filter((key) => !known.has(key));
+    if (unknown.length > 0) {
+      throw new Error(
+        `expected-scorecard.json version ${digest} has measures MEASURES does not: ${unknown.join(', ')}`,
+      );
+    }
+  }
+  return expected;
 }
 
 interface ScorecardComparison {
@@ -195,9 +215,7 @@ export function scorecardPhase(ctx: LiveContext): LivePhase {
     async write() {
       const { base } = ctx;
       const [v1, v2, v3] = await versionDigests(db, factory);
-      const expected: ExpectedScorecard = JSON.parse(
-        readFileSync(join(deps.repoRoot, 'fixtures', 'expected-scorecard.json'), 'utf-8'),
-      );
+      const expected = readExpectedScorecard(deps.repoRoot);
       pair = [v1, v2];
       const page = await openScorecard(deps, base, factory, v1, v2);
       scorePage = page;

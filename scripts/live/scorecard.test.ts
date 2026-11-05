@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test';
-import { compareScorecard, type ShownCell } from './scorecard';
+import { compareScorecard, readExpectedScorecard, type ShownCell } from './scorecard';
 
 test('the scorecard comparison counts a number missing from the screen as a mismatch', () => {
   const cell = (measure: string, value: string, over: Partial<ShownCell> = {}): ShownCell => ({
@@ -42,4 +42,8 @@ test('the scorecard comparison counts a number missing from the screen as a mism
   expect(mismatches).toBe(2);
   expect(lapListFailures).toHaveLength(1);
   expect(lapListFailures[0]).toContain('laps: data-laps 12, lists 11');
+});
+
+test('the expected scorecard on disk keys its measures by MEASURES', () => {
+  expect(readExpectedScorecard(process.cwd()).versions.length).toBeGreaterThan(0);
 });

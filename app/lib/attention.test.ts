@@ -1,3 +1,4 @@
+import { renderAttention } from '../../fixtures/pack/queue/sdlc/.shared/queue';
 import { expect, test } from 'bun:test';
 import {
   type AttentionRow,
@@ -65,4 +66,27 @@ test('items wait longest first, and unreadable choices or labels are none', () =
   expect(items.map((i) => i.run_id)).toEqual(['early', 'late']);
   expect(items[0]).toMatchObject({ options: [], labels: {} });
   expect(items[1]?.options).toEqual(CHOICES);
+});
+
+test('a message the pack writes with renderAttention is read back by the console', () => {
+  const message = renderAttention('Merge queue, pull request 16: ready to merge', {
+    what: 'Pull request 16 is green.',
+    why: 'It is the last change.',
+    recommendation: {
+      choice: 'merge',
+      why: 'Nothing waits on it.',
+      evidence: 'Every check is green.',
+      confidence: 'medium',
+      would_change: 'A new finding.',
+    },
+    choices: [
+      { id: 'merge', label: 'Merge it', does: 'Merges.', effect: 'merge', ruling: '' },
+      { id: 'hold', label: 'Hold it', does: 'Holds.', effect: 'hold', ruling: '' },
+    ],
+    if_unanswered: 'It stays open.',
+    links: ['https://example.com/pull/16'],
+  });
+  expect(attentionTitle(message)).toBe('Merge queue, pull request 16: ready to merge');
+  expect(attentionQuestion(message)).toBe('Pull request 16 is green.');
+  expect(recommendedChoice(message, [{ id: 'merge', label: 'Merge it' }])).toBe('merge');
 });

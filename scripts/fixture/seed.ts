@@ -1,6 +1,7 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { PGlite } from '@electric-sql/pglite';
+import { renderAttention } from '../../fixtures/pack/queue/sdlc/.shared/queue';
 import { pinnedArchonSha } from '../../function/ingest';
 import {
   parseClaim,
@@ -1217,15 +1218,24 @@ function attentionSql(): string[] {
         { id: 'build', label: 'Build it as written' },
         { id: 'other', label: 'Something else' },
       ],
-      message: [
-        '**Build queue, issue 15: scope decision**',
-        '**What it is.** Issue 15 asks for the lanes panel and the one-lap page in one change, and the two touch different screens.',
-        '**Why it matters.** A change that spans both screens is hard to review and holds the queue behind it.',
-        '**Recommendation: `split`** (high confidence). Two small changes land sooner than one large one.',
-        '**Choices.**\n- `split`: Split the issue in two\n- `build`: Build it as written\n- `other`: Something else',
-        '**If nobody answers.** The queue stays on this issue and takes the next ready one.',
-        '**Evidence.** https://github.com/coleam00/factory-mission-control/issues/15',
-      ].join('\n\n'),
+      message: renderAttention('Build queue, issue 15: scope decision', {
+        what: 'Issue 15 asks for the lanes panel and the one-lap page in one change, and the two touch different screens.',
+        why: 'A change that spans both screens is hard to review and holds the queue behind it.',
+        recommendation: {
+          choice: 'split',
+          why: 'Two small changes land sooner than one large one.',
+          evidence: 'The issue names two screens that share no code.',
+          confidence: 'high',
+          would_change: 'A shared component that both screens need first.',
+        },
+        choices: [
+          { id: 'split', label: 'Split the issue in two', does: 'Files one issue per screen.' },
+          { id: 'build', label: 'Build it as written', does: 'Builds both screens in one change.' },
+          { id: 'other', label: 'Something else', does: 'Waits for the answer text.' },
+        ].map((choice) => ({ ...choice, effect: choice.id, ruling: '' })),
+        if_unanswered: 'The queue stays on this issue and takes the next ready one.',
+        links: ['https://github.com/coleam00/factory-mission-control/issues/15'],
+      }),
     },
     {
       id: '5eed0006-0000-4000-8000-000000000002',
@@ -1238,15 +1248,28 @@ function attentionSql(): string[] {
         { id: 'hold', label: 'Hold it for the next lap' },
         { id: 'other', label: 'Something else' },
       ],
-      message: [
-        '**Merge queue, pull request 16: ready to merge**',
-        '**What it is.** Pull request 16 has every check green and no open review finding.',
-        '**Why it matters.** It is the last change before the version is pinned.',
-        '**Recommendation: `merge`** (medium confidence). Nothing in it waits on another change.',
-        '**Choices.**\n- `merge`: Merge it now\n- `hold`: Hold it for the next lap\n- `other`: Something else',
-        '**If nobody answers.** The queue leaves it open and moves to the next pull request.',
-        '**Evidence.** https://github.com/coleam00/factory-mission-control/pull/16',
-      ].join('\n\n'),
+      message: renderAttention('Merge queue, pull request 16: ready to merge', {
+        what: 'Pull request 16 has every check green and no open review finding.',
+        why: 'It is the last change before the version is pinned.',
+        recommendation: {
+          choice: 'merge',
+          why: 'Nothing in it waits on another change.',
+          evidence: 'Every check on the pull request is green.',
+          confidence: 'medium',
+          would_change: 'A new review finding on the pull request.',
+        },
+        choices: [
+          { id: 'merge', label: 'Merge it now', does: 'Merges the pull request.' },
+          {
+            id: 'hold',
+            label: 'Hold it for the next lap',
+            does: 'Leaves it open until the next lap.',
+          },
+          { id: 'other', label: 'Something else', does: 'Waits for the answer text.' },
+        ].map((choice) => ({ ...choice, effect: choice.id, ruling: '' })),
+        if_unanswered: 'The queue leaves it open and moves to the next pull request.',
+        links: ['https://github.com/coleam00/factory-mission-control/pull/16'],
+      }),
     },
   ];
   return [
