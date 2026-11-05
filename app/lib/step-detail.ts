@@ -161,7 +161,7 @@ export interface StepVersion {
   sha: string;
   /** The pin's (or the unpinned current version's Archon commit's) first 8 characters and its date. */
   label: string;
-  /** The pin's reason, or `not recorded` for a bare pin. */
+  /** The pin's reason, or `not recorded` for a bare pin or for the current version no pin names. */
   reason: string;
   current: boolean;
 }
