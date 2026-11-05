@@ -109,6 +109,10 @@ function askFailures(map: FactoryMap, labels: ReadonlySet<string>): string[] {
         if (typeof ask.label !== 'string' || ask.label === '') {
           return [`${at} ${JSON.stringify(ask)}, which names no label`];
         }
+        const unknown = Object.keys(ask).filter((key) => key !== 'label' && key !== 'value');
+        if (unknown.length > 0) {
+          return [`${at} ${JSON.stringify(ask)}, with unknown key ${unknown.join(', ')}`];
+        }
         if (ask.value !== undefined && typeof ask.value !== 'string') {
           return [`${at} label ${ask.label} with a value that is not a string`];
         }

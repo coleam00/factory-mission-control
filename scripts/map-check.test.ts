@@ -72,6 +72,25 @@ describe('map:check', () => {
     ]);
   });
 
+  test('a question card asking with a misspelled key fails instead of widening to every question', () => {
+    const view = FACTORY_MAP.views?.manager as MapView;
+    const map: FactoryMap = {
+      ...FACTORY_MAP,
+      views: {
+        ...FACTORY_MAP.views,
+        manager: {
+          ...view,
+          cards: view.cards.map((c) =>
+            c.id === 'u-b' ? { ...c, asks: { label: 'build', valu: 'x' } as never } : c,
+          ),
+        },
+      },
+    };
+    expect(check(map)).toEqual([
+      'Build is stuck on a choice asks {"label":"build","valu":"x"}, with unknown key valu',
+    ]);
+  });
+
   test('a covered step removed from a copy of the pack fails naming the step', () => {
     const pack = editedPack((yaml) =>
       yaml
