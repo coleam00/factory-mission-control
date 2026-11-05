@@ -378,6 +378,11 @@ describe('the rules the live queries restate, which they may not call a function
   const query = (name: string) => queries.find(([n]) => n === name)?.[1] as string;
   const DATES_VERSION = "IN ('archon-loop', 'archon-build-queue')";
 
+  const LAP =
+    /workflow_name = 'archon-build-queue' AND EXISTS \(\s*SELECT 1 FROM mc\.lap_steps f WHERE f\.run_id = l\.run_id AND f\.step_id = 'facts'\s*AND f\.output -> 'item' ->> 'number' IS NOT NULL\)/g;
+  const count = (sql: string, part: string | RegExp) =>
+    typeof part === 'string' ? sql.split(part).length - 1 : (sql.match(part) ?? []).length;
+
   test('what dates a version is the one list mc.dates_version holds', () => {
     expect(read('db/migrations', '0022_queue_versions.sql')).toContain(DATES_VERSION);
     for (const name of [
@@ -388,6 +393,26 @@ describe('the rules the live queries restate, which they may not call a function
     ]) {
       expect(query(name)).toContain(DATES_VERSION);
     }
+  });
+
+  test('every mention of build-queue in a live query is one of the two rules, none a stray copy', () => {
+    const sources = [
+      ...[
+        'version-strip',
+        'decisions-timeline',
+        'arch-diff',
+        'improvements-ledger',
+        'scorecard',
+      ].map((name) => query(name)),
+      read('scripts', 'live', 'changes.ts'),
+      read('scripts', 'live', 'ledger.ts'),
+    ];
+    for (const sql of sources) {
+      const mentions = count(sql, "'archon-build-queue'");
+      expect(mentions).toBe(count(sql, DATES_VERSION) + count(sql, LAP));
+    }
+    expect(count(query('scorecard'), LAP)).toBe(2);
+    expect(count(query('improvements-ledger'), LAP)).toBe(1);
   });
 
   test('a build-queue lap is a run whose facts step names an item, in every copy of the rule', () => {

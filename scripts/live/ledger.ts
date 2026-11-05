@@ -350,7 +350,10 @@ const V2_WAITING_SQL = `SELECT p.sha, substring(p.measure from 'at least ([0-9]+
 FROM mc.pins p, (
   SELECT count(*)::int AS laps FROM mc.laps l
   JOIN mc.versions v ON v.factory = l.factory AND v.digest = l.digest
-  WHERE l.factory = $1 AND l.workflow_name = 'archon-loop' AND v.pin_sha = $2
+  WHERE l.factory = $1 AND v.pin_sha = $2
+    AND (l.workflow_name = 'archon-loop' OR l.workflow_name = 'archon-build-queue' AND EXISTS (
+      SELECT 1 FROM mc.lap_steps f WHERE f.run_id = l.run_id AND f.step_id = 'facts'
+        AND f.output -> 'item' ->> 'number' IS NOT NULL))
 ) n
 WHERE p.sha = $2`;
 
