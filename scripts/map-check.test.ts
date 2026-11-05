@@ -34,7 +34,7 @@ const queue = () => parseQueuePack(QUEUE_ROOT, TEMPLATE);
 const loop = () => parsePack(PACK, TEMPLATE);
 const check = (map: FactoryMap, pack = loop()) => mapCheck(map, { loop: pack, queue: queue() });
 
-/** The map with only the Build view, so a test that edits root covers is not also held to the Split and Intake views. */
+/** The map with only the Build view, so the tests of the root cards and of Build's view are not also held to the other views. */
 const onlyBuild = (cards: FactoryMap['cards']): FactoryMap => ({
   ...FACTORY_MAP,
   cards: cards.map((c) => (c.opens === 'build' ? c : { ...c, opens: undefined })),
@@ -178,7 +178,7 @@ describe('map:check', () => {
     expect(check(map)).toEqual([
       `${first.title} role "robot" is not one of source, agent, test, person`,
       `${first.title} chip "lost" is not one of queued, failing, waiting, merged, orders`,
-      `${first.title} list "nope" is not one of documents`,
+      `${first.title} list "nope" is not one of documents, outcomes, deploys, lands`,
       `line ${line.from} to ${line.to} style "flwo" is not one of flow, ask, loop`,
       `legend ${entry.label} role "ghost" is not one of source, agent, test, person`,
     ]);
@@ -207,6 +207,7 @@ describe('map:check', () => {
     writeFileSync(file, `${lines.slice(0, at).join('\n')}\n`);
     expect(mapCheck(FACTORY_MAP, { loop: loop(), queue: parseQueuePack(dir, TEMPLATE) })).toEqual([
       'queue pack: Staging names factory-deploy verify, which the pack lacks',
+      'queue pack: Verify names factory-deploy verify, which the pack lacks',
     ]);
   });
 
