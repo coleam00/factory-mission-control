@@ -1511,7 +1511,9 @@ function secondFactorySql(loop: Loop): string[] {
  * so a run's issue is its `number` input. Two running archon-build-queue runs and a third that
  * `fixture:write attention` can pause, none yet on a running step (the live check starts one); a
  * paused archon-merge-queue run waiting on attention, and a completed one whose `record` step read
- * pull requests 404 and 405 back as merged. One open needs-owner issue must not count.
+ * pull requests 404 and 405 back as merged. Two versions built them: the first opened 404 and, on
+ * a second digest, a later round continued it while another opened 405 (#393), so each version
+ * holds one merge. One open needs-owner issue must not count.
  */
 export const QUEUE_FACTORY: FactoryEntry = {
   name: 'queue-factory',
@@ -1527,11 +1529,16 @@ export const QUEUE_RUNS = {
   waiting: '5eed0005-0000-4000-8000-000000000004',
   merged: '5eed0005-0000-4000-8000-000000000005',
   built: '5eed0005-0000-4000-8000-000000000007',
+  continued: '5eed0005-0000-4000-8000-000000000008',
+  opened: '5eed0005-0000-4000-8000-000000000009',
   intake: '5eed0005-0000-4000-8000-000000000006',
 } as const;
 
 /** The source digest of the queue factory's runs: every workflow run from one source shares it. */
 export const QUEUE_DIGEST = `sha256:${'d4'.repeat(32)}`;
+
+/** The queue factory's second version: its runs of 22 October. */
+export const QUEUE_DIGEST_2 = `sha256:${'e5'.repeat(32)}`;
 
 function queueFactorySql(): string[] {
   const at = (minute: number) => `2026-10-24T09:${String(minute).padStart(2, '0')}:00.000Z`;
@@ -1545,6 +1552,7 @@ function queueFactorySql(): string[] {
     minute: number,
     output?: Record<string, unknown>,
     time = at,
+    cost_usd?: number,
   ) =>
     insert('remote_agent_workflow_events', {
       id: `5eedeeee-0000-4000-8000-2${String(++event).padStart(11, '0')}`,
@@ -1555,6 +1563,7 @@ function queueFactorySql(): string[] {
         ...nodeBlock(step, 'script', step),
         timing: { startedAt: time(minute), durationMs: 1000 },
         duration_ms: 1000,
+        ...(cost_usd === undefined ? {} : { cost_usd }),
         ...(output ? { structured_output: output } : {}),
       }),
       created_at: time(minute),
@@ -1566,6 +1575,7 @@ function queueFactorySql(): string[] {
     metadata: Record<string, unknown>,
     completed: boolean,
     time = at,
+    digest = QUEUE_DIGEST,
   ) =>
     insert('remote_agent_workflow_runs', {
       id,
@@ -1575,7 +1585,7 @@ function queueFactorySql(): string[] {
       user_message: `Run ${workflow} on ${QUEUE_FACTORY.repository}`,
       metadata: json({
         ...metadata,
-        workflow_source: { digest: QUEUE_DIGEST },
+        workflow_source: { digest },
       }),
       started_at: time(0),
       completed_at: completed ? time(9) : null,
@@ -1600,6 +1610,20 @@ function queueFactorySql(): string[] {
       number,
     },
   });
+  const second = (minute: number) => `2026-10-22T09:${String(minute).padStart(2, '0')}:00.000Z`;
+  const pullRequest = (number: number) => ({
+    repo: { host: 'github.com', path: QUEUE_FACTORY.repository },
+    number,
+    state: 'open',
+  });
+  const mergeItem = (number: number) => ({
+    item: claimed(number).item,
+    pr: { repo: claimed(number).item.repo, number },
+    url: `https://github.com/${QUEUE_FACTORY.repository}/pull/${number}`,
+    facts: {},
+    record: null,
+    own_pr: false,
+  });
   const first = (id: string, number: number) => [
     run(id, 'archon-build-queue', 'running', { inputs: { number: String(number) } }, false),
     done(id, 'facts', 1, claimed(number)),
@@ -1608,7 +1632,7 @@ function queueFactorySql(): string[] {
   ];
   return [
     '',
-    '-- A third factory, on the queue workflows: runs with a number input, one waiting on attention, one that merged, and one finished build-queue run earlier than the rest.',
+    '-- A third factory, on the queue workflows: runs with a number input, one waiting on attention, one that merged, and finished build-queue runs on two versions.',
     insert('mc.factories', QUEUE_FACTORY),
     insert('remote_agent_codebases', {
       id: QUEUE_CODEBASE,
@@ -1634,9 +1658,31 @@ function queueFactorySql(): string[] {
       created_at: at(4),
     }),
     run(QUEUE_RUNS.built, 'archon-build-queue', 'completed', {}, true, earlier),
-    done(QUEUE_RUNS.built, 'facts', 1, claimed(404), earlier),
+    done(QUEUE_RUNS.built, 'facts', 1, claimed(404), earlier, 1.2),
+    // A later round on pull request 404, which the run above opened, and a run that opens 405.
+    run(QUEUE_RUNS.continued, 'archon-build-queue', 'completed', {}, true, second, QUEUE_DIGEST_2),
+    done(
+      QUEUE_RUNS.continued,
+      'facts',
+      1,
+      { ...claimed(404), pull_request: pullRequest(404) },
+      second,
+    ),
+    done(QUEUE_RUNS.continued, 'route', 2, undefined, second, 0.75),
+    run(QUEUE_RUNS.opened, 'archon-build-queue', 'completed', {}, true, second, QUEUE_DIGEST_2),
+    done(QUEUE_RUNS.opened, 'facts', 1, { ...claimed(405), pull_request: null }, second),
+    done(QUEUE_RUNS.opened, 'route', 2, undefined, second, 2.25),
     run(QUEUE_RUNS.waiting, 'archon-merge-queue', 'paused', { wait: attentionWait(at(6)) }, false),
     run(QUEUE_RUNS.merged, 'archon-merge-queue', 'completed', {}, true),
+    done(QUEUE_RUNS.merged, 'facts', 1, {
+      path: 'sweep',
+      items: [mergeItem(404), mergeItem(405)],
+      settled: [],
+      base: null,
+      base_error: '',
+      gate: '',
+      policy_defaults: '',
+    }),
     done(QUEUE_RUNS.merged, 'record', 8, {
       merged: [404, 405],
       summary: 'Merged 404 and 405.',
