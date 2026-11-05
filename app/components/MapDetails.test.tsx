@@ -5,6 +5,12 @@ import { createMemoryRouter, RouterProvider } from 'react-router';
 import { allCards, type Card, FACTORY_MAP } from '../map/factory-map';
 import { MapDetails } from './MapDetails';
 
+const card = (id: string) => {
+  const found = allCards(FACTORY_MAP).find((c) => c.id === id);
+  if (found === undefined) throw new Error(`no card ${id}`);
+  return found;
+};
+
 // Server rendering cannot click a tab, so the card's first tab state is the Right now tab.
 const realState: (initial: unknown) => unknown = React.useState;
 beforeEach(() => {
@@ -19,7 +25,7 @@ afterEach(() => {
   (React.useState as unknown as { mockRestore?: () => void }).mockRestore?.();
 });
 
-const rightNow = (card: Card) =>
+const rightNow = (shown: Card) =>
   renderToStaticMarkup(
     <RouterProvider
       router={createMemoryRouter([
@@ -27,7 +33,7 @@ const rightNow = (card: Card) =>
           path: '/',
           element: (
             <MapDetails
-              card={card}
+              card={shown}
               live={undefined}
               factory="mission-control"
               at={null}
@@ -52,7 +58,7 @@ test('the card listing checks shows the pull requests under check on its Right n
 
 test('a card has three tabs: About holds when it runs, what it does and how it works', () => {
   (React.useState as unknown as { mockRestore?: () => void }).mockRestore?.();
-  const html = rightNow('a-check');
+  const html = rightNow(card('a-check'));
   expect(html.match(/role="tab"/g)).toHaveLength(3);
   expect(html).toContain('data-tab="about"');
   expect(html).toContain('data-tab="live"');
