@@ -1,5 +1,6 @@
 import type { ReactElement } from 'react';
 import { LivePanel } from '../live/LivePanel';
+import { type Source, sourceOf } from './Decisions';
 
 const MARK = 'ml-1.5 rounded-full px-1.5 font-mono text-[11px] tabular-nums';
 const VIOLET = { color: 'var(--role-person)', backgroundColor: 'var(--role-person-soft)' };
@@ -14,8 +15,8 @@ export function CountMark({
   attention,
   owner,
 }: {
-  attention: readonly object[] | 'unavailable' | undefined;
-  owner: readonly object[] | 'unavailable' | undefined;
+  attention: Source<object>;
+  owner: Source<object>;
 }): ReactElement | null {
   if (attention === 'unavailable' || owner === 'unavailable') {
     return (
@@ -31,7 +32,7 @@ export function CountMark({
     );
   }
   const count =
-    attention === undefined || owner === undefined ? 0 : attention.length + owner.length;
+    attention === 'loading' || owner === 'loading' ? 0 : attention.length + owner.length;
   return count === 0 ? null : (
     <span
       data-decisions-count={count}
@@ -67,8 +68,8 @@ export function DecisionsCount({ factory }: { factory: string }): ReactElement {
         >
           {(owner, ownerState) => (
             <CountMark
-              attention={attentionState === 'error' ? 'unavailable' : attention}
-              owner={ownerState === 'error' ? 'unavailable' : owner}
+              attention={sourceOf(attention, attentionState)}
+              owner={sourceOf(owner, ownerState)}
             />
           )}
         </LivePanel>

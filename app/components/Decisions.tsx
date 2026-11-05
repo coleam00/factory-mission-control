@@ -212,7 +212,8 @@ function OwnerQuestionDetail({ item }: { item: OwnerItem }): ReactElement {
 /** A list's rows, or why it has none: its query failed, or has not answered yet. */
 export type Source<Row> = readonly Row[] | 'unavailable' | 'loading';
 
-const sourceOf = <Row,>(rows: readonly Row[] | undefined, state: PanelState): Source<Row> =>
+/** Rows kept through an outage are from before it, so an errored panel is unavailable whatever rows it holds. */
+export const sourceOf = <Row,>(rows: readonly Row[] | undefined, state: PanelState): Source<Row> =>
   state === 'error' ? 'unavailable' : rows === undefined ? 'loading' : rows;
 
 const rowsOf = <Row,>(source: Source<Row>): readonly Row[] =>
