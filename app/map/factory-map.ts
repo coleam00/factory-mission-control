@@ -13,6 +13,10 @@ export type Role = (typeof ROLES)[number];
 export const CHIPS = ['queued', 'failing', 'waiting', 'merged', 'orders'] as const;
 export type Chip = (typeof CHIPS)[number];
 
+/** What Right now lists for a card besides the items its chips count. */
+export const LISTS = ['documents'] as const;
+export type List = (typeof LISTS)[number];
+
 export const LINE_STYLES = ['flow', 'ask', 'loop'] as const;
 export type LineStyle = (typeof LINE_STYLES)[number];
 
@@ -58,6 +62,8 @@ export interface Card {
   width?: number;
   /** The counts the card shows besides the laps on it (PRD 4.1 "Live"). */
   chips?: Chip[];
+  /** What Right now lists for this card besides the items its chips count. */
+  lists?: List[];
   covers: Cover[];
   details: Details;
   /** The view this card opens (a key of `views`); only a card whose view exists shows ⤢. */

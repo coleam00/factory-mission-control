@@ -6,7 +6,8 @@ The home screen (`/f/<factory>`, and `/` for the selected factory) draws the fac
 ## The drawing is data
 
 `app/map/factory-map.json` holds the map: its caption, every card (id, role, kind label, title,
-one-line text, position, optional width, the chips it carries, the workflows and steps it covers,
+one-line text, position, optional width, the chips it carries, the `lists` Right now shows for it
+(`documents`, the open product documents), the workflows and steps it covers,
 and its details text), every line (from, to, style `flow`, `ask` or `loop`, an optional
 label and, for the routed lines, explicit points), the dashed group, the tour order and the legend.
 Change what the map says there; the React components (`app/components/FactoryMap.tsx`,
@@ -59,7 +60,9 @@ card only through the other pack's entry (the packs share workflow names such as
 `archon-merge-queue`) also fails, since a live row cannot tell them apart. It also fails when a
 step a lap's row marks (`LANE_STEPS`) is covered by no card or by two. The loop's `handoff` step is
 missing from the pack's copy of the loop, so App check may cover it without the pack having it; it
-is the one step a card may name that the pack lacks, and it is held to exactly one card. When a
+is the one step a card may name that the pack lacks, and it is held to exactly one card. The loop
+pack's steps on the Split and Intake cards sit on the view card of their role (`read-prd` on Take
+the item, `authorize` with `publish` on File the issues, `pick` and `claim` on Triage). When a
 pack changes, update `covers` until the check passes.
 
 Every view is held to its opening card: each step the card covers is covered by exactly one card
@@ -75,11 +78,11 @@ the commits this factory runs, with `ARCHON_COMMIT` and `FACTORY_COMMIT` beside 
 
 ## Live counts
 
-The cards' chips come from four live queries: `home-map` (each running run of the factory with its
+The cards' chips come from these live queries: `home-map` (each running run of the factory with its
 running steps and issue, the runs waiting on attention, whether the factory is on the queues, the
 open pull requests whose latest app check failed, the merges with when they finished, and whether
 the version the address names is recorded),
-`health-workable`, `owner-queue` and `work-orders` (the distinct `work-order:<name>` labels on the
+`health-workable`, `owner-queue`, `product-documents` (below) and `work-orders` (the distinct `work-order:<name>` labels on the
 factory's issues with their counts, from the mirrored label data; it writes nothing). The chip counts only the orders with an open issue.
 
 - A run's issue is its claim comment's issue on the old loop, and on the queues its `number` input
@@ -98,6 +101,13 @@ factory's issues with their counts, from the mirrored label data; it writes noth
 - "<n> merged" on Shipped: laps whose land step merged today, the browser's local day, counted
   from the moment that step finished, not when the run ends, and each pull request an
   `archon-merge-queue` run's `record` step read back as merged. The count moves on at local midnight.
+
+- Product documents on Split and Keep the document: Right now lists each open issue labelled
+  `archon-prd` as a bar of its work items merged over total, from `product-documents`. A document's
+  work items are the issues and adopted issues in the record of the newest completed `archon-split`
+  `publish` step for it (`mc.lap_steps` keeps that output whole), not `Depends on` links, which only
+  join the filed issues to each other. Merged means closed with a merged pull request. A document
+  with no recorded split is 0 of 0. A failed query says the product documents are unavailable.
 
 A chip of 0 is not drawn. A chip appears once its query has answered. A chip whose query failed
 shows as `? queued`, `? orders` or `? waiting`, never as a count; Right now says the count is unavailable, and
@@ -125,7 +135,7 @@ holdout verifier and the fence (journey 1). Esc, the close button or a click on 
 deselects.
 
 A card with a view shows ⤢ and a stacked edge, and its strip has an Open button naming the number
-of cards in the view. A card shows ⤢ only once its view exists; today Build's does (`?view=build`), and so does Deliver inside it (`?view=build/deliver`; Review shows none until its view exists).
+of cards in the view. A card shows ⤢ only once its view exists; today Build's, Split's and Intake's do (`?view=build`, `?view=split`, `?view=intake`), and so does Deliver inside Build (`?view=build/deliver`; Review shows none until its view exists).
 Double-click, Enter on the selected card or the Open button zooms into the view. Breadcrumbs above
 the caption (the factory, then each opened view), the up control, a crumb, Esc (with nothing
 selected) and Backspace go up, and the card that opened the view flashes. The address is
