@@ -1538,7 +1538,7 @@ export const QUEUE_RUNS = {
 export const QUEUE_DIGEST = `sha256:${'d4'.repeat(32)}`;
 
 /** The queue factory's second version: its runs of 22 October. */
-export const QUEUE_DIGEST_2 = `sha256:${'e5'.repeat(32)}`;
+export const QUEUE_DIGEST_2 = `sha256:${'a7'.repeat(32)}`;
 
 function queueFactorySql(): string[] {
   const at = (minute: number) => `2026-10-24T09:${String(minute).padStart(2, '0')}:00.000Z`;

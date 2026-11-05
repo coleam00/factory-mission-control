@@ -24,7 +24,8 @@ SELECT NULL, v.digest, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NUL
 FROM mc.versions v
 WHERE v.factory = $1
 UNION ALL
--- Each run of the merge queue whose record step read pull requests back as merged, with that list
+-- Each run whose record step read pull requests back as merged (the queue's sweep is the only record
+-- step with that output, as in home-map), with that list
 -- and the run's facts items (each pull request's issue) as JSON text: Realtime refuses a
 -- set-returning function to expand them, so the browser credits each pull request to the build lap.
 SELECT l.run_id, NULL, l.workflow_name, NULL, NULL,
@@ -36,4 +37,4 @@ JOIN mc.lap_steps rec ON rec.run_id = l.run_id AND rec.step_id = 'record'
   AND rec.status = 'completed' AND rec.output -> 'merged' IS NOT NULL
   AND rec.output -> 'merged' <> '[]'::jsonb
 LEFT JOIN mc.lap_steps fm ON fm.run_id = l.run_id AND fm.step_id = 'facts'
-WHERE l.factory = $1 AND l.workflow_name = 'archon-merge-queue'
+WHERE l.factory = $1
