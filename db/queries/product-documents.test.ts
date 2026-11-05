@@ -1,5 +1,8 @@
 import { afterAll, beforeAll, expect, test } from 'bun:test';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import type { ProductDocumentRow } from '../../app/map/live';
+import { REPO_ROOT } from '../../scripts/lib/cli';
 import type { Db } from '../../scripts/lib/db';
 import { onTheSeed, queries } from './test-seed';
 
@@ -56,6 +59,45 @@ test('the seeded document counts the issues its split recorded and adopted, merg
       merged_count: 2,
     },
   ]);
+});
+
+type Schema = { required?: string[]; properties?: Record<string, Schema>; items?: Schema };
+
+test("the seeded split record has exactly the keys the queue pack's publish step requires", async () => {
+  const pack = Bun.YAML.parse(
+    readFileSync(
+      join(REPO_ROOT, 'fixtures', 'pack', 'queue', 'sdlc', 'split', 'archon-split.yaml'),
+      'utf-8',
+    ),
+  ) as { nodes: { id: string; output_format?: Schema }[] };
+  const schema = pack.nodes.find((node) => node.id === 'publish')?.output_format;
+  const [row] = (await db.query(
+    `SELECT s.output FROM mc.lap_steps s JOIN mc.laps l ON l.run_id = s.run_id
+     WHERE l.workflow_name = 'archon-split' AND s.step_id = 'publish'`,
+  )) as { output: Record<string, unknown> }[];
+  const keys = (value: object) => Object.keys(value).sort();
+  expect(keys(row?.output ?? {})).toEqual([...(schema?.required ?? [])].sort());
+  for (const list of ['issues', 'adopted'] as const) {
+    const required = schema?.properties?.[list]?.items?.required;
+    expect(required).toBeDefined();
+    for (const item of (row?.output[list] as object[] | undefined) ?? []) {
+      expect(keys(item)).toEqual([...(required ?? [])].sort());
+    }
+  }
+});
+
+test('only a closed item with a merged pull request counts as merged, filed or adopted', async () => {
+  await db.query(
+    `UPDATE mc.issues SET state = 'closed', closed_at = now() WHERE factory = 'queue-factory' AND number IN (405, 413)`,
+  );
+  await db.query(
+    `INSERT INTO mc.pull_requests (factory, number, title, state, merged_at, head_sha, url, created_at, updated_at)
+     VALUES ('queue-factory', 423, 'p', 'closed', now(), 'x', 'u', now(), now())`,
+  );
+  await db.query(
+    `INSERT INTO mc.pull_request_issues (factory, pr_number, issue_number) VALUES ('queue-factory', 423, 405)`,
+  );
+  expect(await documents()).toMatchObject([{ number: 410, total_count: 4, merged_count: 3 }]);
 });
 
 test('the newest split record wins, a closed document is not listed, and one with no record is 0 of 0', async () => {
