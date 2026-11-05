@@ -10,8 +10,9 @@ JOIN LATERAL (
   SELECT s.run_id, s.output ->> 'overall' AS overall
   FROM mc.lap_steps s
   JOIN mc.laps l ON l.run_id = s.run_id
-  LEFT JOIN mc.lap_steps sel ON sel.run_id = s.run_id AND sel.step_id = 'select'
-    AND l.workflow_name = 'factory-app-check'
+  LEFT JOIN mc.lap_steps sel ON sel.run_id = s.run_id
+    AND ((l.workflow_name = 'factory-app-check' AND sel.step_id = 'select')
+      OR (l.workflow_name = 'archon-loop' AND sel.step_id = 'subject'))
   WHERE l.factory = pr.factory
     AND (s.status = 'running' OR s.output ? 'overall')
     AND (s.step_id = 'check-app' OR (s.step_id = 'check' AND l.workflow_name = 'factory-app-check'))

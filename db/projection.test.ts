@@ -2123,6 +2123,32 @@ test('the lines a queue app check projects are the ones the factory’s own LINE
   );
 });
 
+test('0024 deliberately keeps a line with no evidence, empty evidence, or leading whitespace, which LINE rejects', async () => {
+  const { LINE } = (await import(
+    join(import.meta.dir, '../fixtures/pack/queue/factory/app-check/scripts/evidence.ts')
+  )) as { LINE: RegExp };
+  const texts = [
+    'C1  PASS  No evidence.',
+    'C2  PASS  Empty evidence.  evidence:   ',
+    '  C3  PASS  Leading space.  evidence: a.png',
+  ];
+  expect(texts.filter((t) => LINE.test(t))).toEqual([]);
+  const id = await appCheckRun([
+    ['select', select],
+    ['check', { overall: 'PASS', lines: texts }],
+  ]);
+  expect(
+    await db.query(
+      'SELECT line_id, evidence_count FROM mc.app_check_lines WHERE run_id = $1 ORDER BY position',
+      [id],
+    ),
+  ).toEqual([
+    { line_id: 'C1', evidence_count: 0 },
+    { line_id: 'C2', evidence_count: 0 },
+    { line_id: 'C3', evidence_count: 1 },
+  ]);
+});
+
 test('the queue holdout fence names every id holdoutId reads', async () => {
   const texts = ['PH-12 then H-07 seen', 'see H-123, then H-04', 'x_H-07 and (H-08)', 'no id'];
   for (const text of texts) {

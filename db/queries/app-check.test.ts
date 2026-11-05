@@ -107,3 +107,86 @@ test("a pull request lists the lines of its latest check by kind, and not anothe
     await db.query('ROLLBACK');
   }
 });
+
+const insertLap = (id: string, workflow: string, status: string, started: string) =>
+  db.query(
+    `INSERT INTO mc.laps (run_id, factory, workflow_name, status, started_at)
+     VALUES ($1, 'mission-control', $2, $3, $4)`,
+    [id, workflow, status, started],
+  );
+const insertStep = (id: string, step: string, status: string, started: string, output: unknown) =>
+  db.query(
+    `INSERT INTO mc.lap_steps (run_id, step_id, status, started_at, output)
+     VALUES ($1, $2, $3, $4, $5)`,
+    [id, step, status, started, output === null ? null : JSON.stringify(output)],
+  );
+// A new open pull request, so no seeded check can answer for it. Call inside a transaction.
+const unCheckedPr = async () => {
+  const pr = 990_001;
+  await db.query(
+    `INSERT INTO mc.pull_requests (factory, number, title, state, head_sha, url, created_at, updated_at)
+     VALUES ('mission-control', $1, 'p', 'open', 'x', 'u', now(), now())`,
+    [pr],
+  );
+  return pr;
+};
+
+test("a running archon-loop check-app finds its pull request through the lap's subject step, once", async () => {
+  const run = (n: number) => `00000000-0000-4000-8000-0000000000e${n}`;
+  await db.query('BEGIN');
+  try {
+    const pr = await unCheckedPr();
+    await insertLap(run(1), 'archon-loop', 'completed', '2032-01-01T00:00:00Z');
+    await insertStep(run(1), 'check-app', 'completed', '2032-01-01T00:00:00Z', {
+      pr: `#${pr}`,
+      overall: 'PASS',
+    });
+    expect(await verdict(pr)).toMatchObject({ run_id: run(1), overall: 'PASS' });
+
+    await insertLap(run(2), 'archon-loop', 'running', '2032-01-02T00:00:00Z');
+    await insertStep(run(2), 'subject', 'completed', '2032-01-02T00:00:00Z', {
+      pr: `https://github.com/o/r/pull/${pr}`,
+    });
+    await insertStep(run(2), 'check-app', 'running', '2032-01-02T00:00:00Z', null);
+    expect((await rows()).filter((r) => r.number === pr)).toMatchObject([
+      { run_id: run(2), overall: null },
+    ]);
+  } finally {
+    await db.query('ROLLBACK');
+  }
+});
+
+test('a pull request on its first archon-loop check is listed', async () => {
+  const run = '00000000-0000-4000-8000-0000000000e9';
+  await db.query('BEGIN');
+  try {
+    const pr = await unCheckedPr();
+    expect(await verdict(pr)).toBeUndefined();
+    await insertLap(run, 'archon-loop', 'running', '2032-02-01T00:00:00Z');
+    await insertStep(run, 'subject', 'completed', '2032-02-01T00:00:00Z', { pr: String(pr) });
+    await insertStep(run, 'check-app', 'running', '2032-02-01T00:00:00Z', null);
+    expect(await verdict(pr)).toMatchObject({ run_id: run, overall: null });
+  } finally {
+    await db.query('ROLLBACK');
+  }
+});
+
+test("a queue lap's check step gives no verdict, and an archon-loop lap's completed check-app does", async () => {
+  const run = (n: number) => `00000000-0000-4000-8000-0000000000f${n}`;
+  await db.query('BEGIN');
+  try {
+    const pr = await unCheckedPr();
+    await insertLap(run(1), 'archon-build-queue', 'completed', '2033-01-01T00:00:00Z');
+    await insertStep(run(1), 'check', 'completed', '2033-01-01T00:00:00Z', { pr, overall: 'FAIL' });
+    expect(await verdict(pr)).toBeUndefined();
+
+    await insertLap(run(2), 'archon-loop', 'completed', '2033-01-02T00:00:00Z');
+    await insertStep(run(2), 'check-app', 'completed', '2033-01-02T00:00:00Z', {
+      pr: `#${pr}`,
+      overall: 'PASS',
+    });
+    expect(await verdict(pr)).toMatchObject({ run_id: run(2), overall: 'PASS' });
+  } finally {
+    await db.query('ROLLBACK');
+  }
+});
