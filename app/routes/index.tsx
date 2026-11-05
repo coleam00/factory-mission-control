@@ -17,6 +17,7 @@ import { FACTORY_MAP } from '../map/factory-map';
 import {
   cardLive,
   type HomeMapRow,
+  type MapRightNowRow,
   type MapSources,
   type ProductDocumentRow,
   versionRecorded,
@@ -127,6 +128,7 @@ export default function Home(): ReactElement {
   const [attention, setAttention] = useState<Source<AttentionRow>>(AWAITED);
   const [healthRuns, setHealthRuns] = useState<Source<HealthRunRow>>(AWAITED);
   const [healthSteps, setHealthSteps] = useState<Source<HealthStepRow>>(AWAITED);
+  const [rightNow, setRightNow] = useState<Source<MapRightNowRow>>(AWAITED);
   const [documents, setDocuments] = useState<Source<ProductDocumentRow>>(AWAITED);
   const [steps, setSteps] = useState<Source<StepRow>>(AWAITED);
   const configured = live.status === 'ready' ? live.factories.length > 0 : undefined;
@@ -163,6 +165,7 @@ export default function Home(): ReactElement {
       <Feed<AttentionRow> query="attention-items" factory={factory} into={setAttention} />
       <Feed<HealthRunRow> query="health-runs" factory={factory} into={setHealthRuns} />
       <Feed<HealthStepRow> query="health-steps" factory={factory} into={setHealthSteps} />
+      <Feed<MapRightNowRow> query="map-right-now" factory={factory} into={setRightNow} />
       <Feed<ProductDocumentRow> query="product-documents" factory={factory} into={setDocuments} />
       <Feed<StepRow> query="step-detail" factory={factory} args={[at ?? '']} into={setSteps} />
       <LivePanel<HomeMapRow> query="home-map" factory={factory} args={[at ?? '']}>
@@ -176,6 +179,7 @@ export default function Home(): ReactElement {
               attention: attention.rows,
               healthRuns: healthRuns.rows,
               healthSteps: healthSteps.rows,
+              rightNow: rightNow.rows,
               documents: documents.rows,
             }}
             steps={steps.rows}
@@ -186,6 +190,7 @@ export default function Home(): ReactElement {
               attention: attention.state,
               healthRuns: healthRuns.state,
               healthSteps: healthSteps.state,
+              rightNow: rightNow.state,
               documents: documents.state,
               steps: steps.state,
             }}

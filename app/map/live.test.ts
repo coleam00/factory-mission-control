@@ -1,11 +1,15 @@
 import { expect, test } from 'bun:test';
 import type { HealthStepRow } from '../lib/health';
 import { LANE_STEPS } from '../lib/lap-graph';
-import { FACTORY_MAP } from './factory-map';
+import { allCards, cardsCounting, FACTORY_MAP, LISTS, type List, stepPath } from './factory-map';
 import {
+  type CardLive,
   cardLive,
   deepestStep,
+  gateOutcomes,
   type HomeMapRow,
+  latestDeploy,
+  type MapRightNowRow,
   mergedToday,
   overdueHealth,
   versionRecorded,
@@ -40,6 +44,7 @@ const hereOn = (rows: HomeMapRow[], cards: readonly { id: string }[]) => {
 /** The home map's cards only; `BUILD_VIEW` has the Build view's. */
 const here = (rows: HomeMapRow[]) => hereOn(rows, FACTORY_MAP.cards);
 const BUILD_VIEW = FACTORY_MAP.views?.build?.cards ?? [];
+const DELIVER_VIEW = FACTORY_MAP.views?.['build/deliver']?.cards ?? [];
 
 test('a lap counts once, on the card covering its deepest running step', () => {
   expect(
@@ -275,7 +280,7 @@ test('a merge-queue lap merges each pull request its record read back; a malform
     ['q', 405],
   ]);
   expect(mergedToday([{ ...queued('old', '[]'), prs: null, number: 12 }], now)).toEqual([
-    { run: 'old', number: 12, at },
+    { run: 'old', workflow: 'archon-merge-queue', number: 12, at },
   ]);
 });
 
@@ -482,4 +487,144 @@ test('a health-steps outage reads as unavailable, never as no overdue steps', ()
   );
   expect(failed.get('u-mgr')?.healthUnavailable).toBe(true);
   expect(failed.get('u-mgr')?.health).toBeUndefined();
+});
+
+test('a step counts on its own card in the Deliver view, and review on the Review card as well', () => {
+  const rows = [
+    lap('impl', ['ship__deliver__rounds.implement__implement', 'ship'], 'archon-build-queue'),
+    lap('ci', ['ship__deliver__rounds__ci', 'ship'], 'archon-build-queue'),
+    lap('rev', ['ship__deliver__rounds.review__policy', 'ship'], 'archon-build-queue'),
+  ];
+  expect(hereOn(rows, DELIVER_VIEW)).toEqual({
+    'd-impl': ['impl'],
+    'd-ci': ['ci'],
+    'd-rev': ['rev'],
+  });
+});
+
+test('the shared counting rule puts a review lap on the Deliver Review card, for the live oracle too', () => {
+  const ids = cardsCounting(
+    FACTORY_MAP,
+    'archon-build-queue',
+    stepPath('ship__deliver__rounds.review__policy'),
+  ).map((card) => card.id);
+  expect(ids).toContain('d-rev');
+});
+
+const right = (over: Partial<MapRightNowRow>): MapRightNowRow => ({
+  kind: 'outcomes',
+  run_id: 'r1',
+  at: new Date('2026-10-24T09:00:00Z'),
+  decisions: null,
+  merged: '[]',
+  asked: null,
+  claimed: JSON.stringify([1, 2, 3, 4, 5, 6, 7, 8].map((number) => ({ pr: { number } }))),
+  revision: null,
+  health: null,
+  status: null,
+  repository: 'o/r',
+  ...over,
+});
+const decision = (number: number, action: string) => ({ number, action, reason: `why ${number}` });
+
+test("the gate lists merged as read back, the sweep's send-backs, an ask only when raised, and a number once", () => {
+  const run = right({
+    decisions: JSON.stringify([
+      decision(1, 'return'),
+      decision(2, 'merged'),
+      decision(3, 'ask'),
+      decision(4, 'ask'),
+      decision(5, 'wait'),
+      { number: 6, action: 'merged' },
+      { number: 3, action: 'return', reason: 'again' },
+    ]),
+    merged: '[1, 7]',
+    asked: '3',
+  });
+  expect(gateOutcomes([run]).map((o) => [o.number, o.outcome, o.reason])).toEqual([
+    [1, 'merged', 'why 1'],
+    [3, 'sweep: asked', 'why 3'],
+  ]);
+  const returned = right({ decisions: JSON.stringify([decision(8, 'return')]) });
+  expect(gateOutcomes([returned])[0]).toMatchObject({
+    outcome: 'sweep: sent back',
+    url: 'https://github.com/o/r/pull/8',
+  });
+  const stray = right({
+    decisions: JSON.stringify([decision(9, 'return')]),
+    claimed: JSON.stringify([{ pr: { number: 8 } }]),
+  });
+  expect(gateOutcomes([stray])).toEqual([]);
+  expect(gateOutcomes([right({ decisions: 'not json' }), right({ decisions: '{}' })])).toEqual([]);
+});
+
+test('the gate lists the newest run first', () => {
+  const old = right({ run_id: 'old', decisions: JSON.stringify([decision(1, 'return')]) });
+  const newer = right({
+    run_id: 'new',
+    at: new Date('2026-10-25T09:00:00Z'),
+    decisions: JSON.stringify([decision(2, 'return')]),
+  });
+  expect(gateOutcomes([old, newer]).map((o) => o.run)).toEqual(['new', 'old']);
+});
+
+test('the latest deploy is the newest of the queue and the old loop, and null when there is none', () => {
+  expect(latestDeploy([right({})])).toBeNull();
+  const queue = right({ kind: 'deploys', run_id: 'q', revision: 'a', status: 'verified' });
+  const loop = right({
+    kind: 'deploys',
+    run_id: 'l',
+    at: new Date('2026-10-26T09:00:00Z'),
+    revision: 'b',
+    status: 'failed',
+  });
+  expect(latestDeploy([queue, loop])).toMatchObject({ run: 'l', revision: 'b', verified: false });
+});
+
+test('a deploy counts as read back only when its status is verified', () => {
+  const deploy = (status: 'deployed' | 'verified') =>
+    right({ kind: 'deploys', run_id: 'l', revision: 'b', status });
+  expect(latestDeploy([deploy('deployed')])).toMatchObject({ verified: true, readBack: false });
+  expect(latestDeploy([deploy('verified')])).toMatchObject({ verified: true, readBack: true });
+});
+
+test('Merge gate lists the gate, the Staging cards the deploy and open work orders, and an error is unavailable', () => {
+  const order = {
+    name: 'combat',
+    total_count: 3,
+    open_count: 2,
+    merged_count: 1,
+    lands_on: 'staging',
+    last_closed_at: null,
+  };
+  const closed = { ...order, name: 'done', open_count: 0 };
+  const sources = { map: [], orders: [order, closed], rightNow: [right({})] };
+  const live = cardLive(FACTORY_MAP, sources, new Date());
+  expect(live.get('m-gate')?.gate).toEqual([]);
+  expect(live.get('y-ver')?.deploy).toBeNull();
+  expect(live.get('y-ver')?.lands).toEqual([order]);
+  expect(live.get('y-dep')?.orders).toBeUndefined();
+
+  const failed = cardLive(FACTORY_MAP, { ...sources, states: { rightNow: 'error' } }, new Date());
+  expect(failed.get('m-gate')).toEqual({ here: [], listsUnavailable: ['outcomes'] });
+  expect(failed.get('y-ver')?.listsUnavailable).toEqual(['deploys']);
+  expect(failed.get('y-ver')?.lands).toEqual([order]);
+});
+
+// Typed over List: a list added to LISTS fails tsc here until it is named, and fails below until live.ts routes it.
+const LIST_FIELD: Record<List, keyof CardLive> = {
+  documents: 'documents',
+  outcomes: 'gate',
+  deploys: 'deploy',
+  lands: 'lands',
+};
+
+test.each(LISTS)('a card listing %s is filled in its own field', (list) => {
+  const sources = { map: [], documents: [], orders: [], rightNow: [right({})] };
+  const live = cardLive(FACTORY_MAP, sources, new Date());
+  const cards = allCards(FACTORY_MAP).filter((card) => card.lists?.includes(list));
+  expect(cards.length).toBeGreaterThan(0);
+  for (const card of cards) {
+    expect(live.get(card.id)?.[LIST_FIELD[list]]).not.toBeUndefined();
+  }
 });

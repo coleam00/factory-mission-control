@@ -24,7 +24,7 @@ package (`fixtures/pack/queue`). A live row carries only a workflow name, so cou
 A card that opens a deeper view names it in `opens`; the view sits under `views.<id>` and has the
 root's shape (caption, `cardSize`, cards, lines, tour) without the legend, `views` or a required
 group. Card ids are unique across every level. A view's `next` card may name `upTo`, a card of
-the level above: clicking it goes up and selects that card. The view's crumb and Open button use
+the level above: clicking it goes up and selects that card. A card may name `countsAs`, a card whose laps it shows as its own, as the Deliver view's Review card does for Review. The view's crumb and Open button use
 the title of the card that opens it. One component draws every level, so selection, the details
 strip, chips, flow and the tour work the same in a view.
 
@@ -53,7 +53,7 @@ fits the whole map, at any width.
 `bun run map:check` (part of `bun run check`) parses both packs with the architecture parser,
 offline, and fails, naming the step, when a step of a workflow a card covers is covered by no card
 or by two, when a card names a workflow or a step its pack lacks, when an entry's screen is not
-the step's own, when a role, chip, line style, legend role or pack is outside the closed sets, or
+the step's own, when a role, chip, list, line style, legend role or pack is outside the closed sets, or
 when a covered step's pack path holds a dot (the map reads a step's path by its dots). A failure
 that names a pack's step starts `loop pack: ` or `queue pack: `. A step of one pack that counts on a
 card only through the other pack's entry (the packs share workflow names such as
@@ -70,7 +70,7 @@ of the view, and no card of the view covers a step, or a workflow, the opening c
 view covers only the steps its opening card has (Deliver's view never sees the review rounds,
 which Review has at the root), so an entry such as `ship/deliver` still counts the steps under
 it that belong to the opener. The check also fails on an `opens` naming no view, a view opened by
-no card or by two, a card id used twice, and an `upTo` naming no card of the level above.
+no card or by two, a card id used twice, an `upTo` naming no card of the level above, and a `countsAs` naming no card.
 
 A question card's `asks` is checked against the queue pack: it is `{"rest": true}` (on one card
 per level at most) or a `label` that some wait of the pack declares, with an optional `value` that
@@ -80,11 +80,13 @@ Labels fed from workflow output, such as `build` and `merge`, take any value unc
 
 The queue pack is the snapshot `fixtures/pack/queue/`: `sdlc/` is `.archon/workflows/sdlc` of
 coleam00/Archon and `factory/` is `.archon/workflows/factory` of coleam00/ai-software-factory, at
-the commits this factory runs, with `ARCHON_COMMIT` and `FACTORY_COMMIT` beside them.
+the commits this factory runs, with `ARCHON_COMMIT` and `FACTORY_COMMIT` beside them. The
+architecture job and the seed store `factory/` too, under `.archon/workflows/factory/` paths, so
+its steps have screens beside the pack's.
 
 ## Live counts
 
-The cards' chips come from these live queries (the Manager view adds three, below): `home-map` (each running run of the factory with its
+The cards' chips come from these live queries (`map-right-now` also feeds the Merge and Staging views' lists, and the Manager view adds three, below): `home-map` (each running run of the factory with its
 running steps and issue, the runs waiting on attention, whether the factory is on the queues, the
 open pull requests whose latest app check failed, the merges with when they finished, and whether
 the version the address names is recorded),
@@ -123,8 +125,44 @@ Behind the scenes says the pinned steps are unavailable when `step-detail` faile
 
 A lap counts once per level: on the card that covers its deepest running step at the root, and
 then on the card of that card's view that covers it, so one run on `ship/deliver/rounds/implement`
-is on Build at the home map and on Deliver in the Build view. A step that Review covers at the
-root counts on no card of the Build view.
+is on Build at the home map, on Deliver in the Build view, and on Implement in the Deliver view. A step that Review covers at the
+root counts on no card of the Build view, and also shows on the Deliver view's Review card.
+
+## Right now in the Merge and Staging views
+
+A card's `lists` (a closed set, held by the map check) name what its Right now shows beside its
+chips' items: `outcomes` (Merge gate), `deploys` and `lands` (each Staging card). They come from
+`map-right-now` (the newest 10 `archon-merge-queue` runs that swept and then recorded, and the
+factory's latest finished deploy, from `factory-deploy` or from the old loop's `deploy` include)
+and from `work-orders`; nothing is written and nothing polls. Like the chips, they describe the
+factory as it is now, at whatever version the address names.
+
+- Gate outcomes, newest run first: a pull request the run's `record` step read back as merged is
+  merged, whatever the sweep said; else a `return` decision is listed as sent back; an `ask` is
+  listed only when the record step raised it. Sent back and asked are the sweep's decision, which
+  the record step may still park, wait on or skip. Only a number's first decision counts, and a
+  number the run's `facts` step did not list is not shown. A `wait` decision, or an ask not raised, is not listed. Each shows the decision's reason and links the
+  pull request.
+- The latest deploy shows the revision (seven characters) and whether the deploy verified, or its
+  failure and the health it reported. A factory with no finished deploy says it has never deployed.
+- Where each work order lands lists the orders with an open issue and the `lands-on:<target>`
+  label their issues carry, or that they name no target yet.
+- A list whose source failed says it is unavailable and the other lists stay.
+
+## The App check view
+
+`?view=app` is drawn from the mockup's `V.app`. On a factory on the queues, Pick a PR covers
+`config`, `select` and `pending`, How deep? `scope`, Protected paths `policy`, PR + main, started
+`prepare`, Use the app `check`, Seal the evidence `evidence` and `factory/app-check` `publish`,
+`finalize` and `cleanup`; the old loop's `briefs`, `check-app`, `evidence` and `handoff` sit on the
+same cards in the same order. Use the app's Right now also lists the open pull requests the app
+check has looked at (the `app-check` query): each one's latest verdict and its lines by kind.
+
+The home map's failing chip and the Board's verdict chip read the old `check-app` step or, on the
+queues, the `check` step of `factory-app-check` (migration 0024). That step keeps only its overall
+verdict and the pull request and head its `select` step kept, and its lines are stored by id, kind
+and verdict without their text. A run whose report names a holdout keeps no output and no lines.
+Showing those lines on the work item page's timeline waits on that page (#317).
 
 ## Clicking a card
 
@@ -141,7 +179,7 @@ holdout verifier and the fence (journey 1). Esc, the close button or a click on 
 deselects.
 
 A card with a view shows ⤢ and a stacked edge, and its strip has an Open button naming the number
-of cards in the view. A card shows ⤢ only once its view exists; today Build's, Split's, Intake's and the Manager's do (`?view=build`, `?view=split`, `?view=intake`, `?view=manager`).
+of cards in the view. A card shows ⤢ only once its view exists; today Build's, Split's, Intake's, the Manager's, App check's, Merge's and Staging's do (`?view=build`, `?view=split`, `?view=intake`, `?view=manager`, `?view=app`, `?view=merge`, `?view=deploy`), and so does Deliver inside Build (`?view=build/deliver`; Review shows none until its view exists).
 Double-click, Enter on the selected card or the Open button zooms into the view. Breadcrumbs above
 the caption (the factory, then each opened view), the up control, a crumb, Esc (with nothing
 selected) and Backspace go up, and the card that opened the view flashes. The address is
@@ -153,7 +191,9 @@ home map.
 
 `?view=manager` draws `refs/18-drill-manager.png`: four violet question cards (Work item is unclear,
 Build is stuck on a choice, Risky merge, Is this a real problem?), the Manager and the Written rules
-under them. It adds three live queries to the home map's: `attention-items`, and the Health screen's
+under them. Its cards are 250 high, not the 200 of the other views, because a question card's kind,
+two-line title, three-line text and chip need that to keep the chip inside the border at the map's
+type scale. It adds three live queries to the home map's: `attention-items`, and the Health screen's
 `health-runs` and `health-steps`; each is a live query, none polls.
 
 - A question card counts the open Archon attention items its `asks` names, by their labels:

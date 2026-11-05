@@ -17,6 +17,10 @@ export interface Page {
 }
 
 const STEP_TIMEOUT_MS = 20_000;
+// A cold first browser start on CI can stall past 45 s before it writes its DevTools port, while
+// a fresh process opens it in about 20 s (#355, #368, #386, #423). So each launch waits 30 s and a
+// miss relaunches once.
+const DEVTOOLS_PORT_WAIT_MS = 30_000;
 
 function findBrowser(env: Record<string, string | undefined>): string {
   if (env.MC_BROWSER) return env.MC_BROWSER;
@@ -60,16 +64,53 @@ export function readDevToolsUrl(
   return undefined;
 }
 
-async function devToolsUrl(profile: string, exited: () => boolean): Promise<string> {
+class DevToolsPortTimeout extends Error {}
+
+async function devToolsUrl(
+  profile: string,
+  exited: () => boolean,
+  waitMs: number,
+): Promise<string> {
   const activePort = join(profile, 'DevToolsActivePort');
-  const deadline = Date.now() + STEP_TIMEOUT_MS;
+  const deadline = Date.now() + waitMs;
   while (Date.now() < deadline) {
     if (exited()) throw new Error('the browser exited before opening its DevTools port');
     const url = readDevToolsUrl(activePort);
     if (url) return url;
     await Bun.sleep(100);
   }
-  throw new Error('the browser did not open its DevTools port within 20s');
+  throw new DevToolsPortTimeout(
+    `the browser did not open its DevTools port within ${waitMs / 1000}s`,
+  );
+}
+
+interface Launch {
+  profile: string;
+  exited(): boolean;
+  stop(): Promise<void>;
+}
+
+/**
+ * Launches a browser and waits for its DevTools port. A launch that misses the wait is stopped and
+ * replaced; a browser that exits, or never opens its port, still fails with the same errors.
+ */
+export async function startBrowser(
+  launch: () => Launch,
+  waitMs = DEVTOOLS_PORT_WAIT_MS,
+): Promise<{ url: string; stop: () => Promise<void> }> {
+  for (let attempt = 1; ; attempt++) {
+    const browser = launch();
+    try {
+      return {
+        url: await devToolsUrl(browser.profile, browser.exited, waitMs),
+        stop: browser.stop,
+      };
+    } catch (error) {
+      await browser.stop();
+      if (!(error instanceof DevToolsPortTimeout) || attempt >= 2) throw error;
+      console.warn(`${error.message}; launching it once more`);
+    }
+  }
 }
 
 type Message = { id?: number; method?: string; sessionId?: string; result?: unknown } & {
@@ -130,7 +171,7 @@ function connect(url: string) {
   );
 }
 
-export async function openPage(env: Record<string, string | undefined>): Promise<Page> {
+function launchBrowser(env: Record<string, string | undefined>): Launch {
   const profile = mkdtempSync(join(tmpdir(), 'mc-test-live-'));
   const args = [
     '--headless=new',
@@ -154,8 +195,13 @@ export async function openPage(env: Record<string, string | undefined>): Promise
       rmSync(profile, { recursive: true, force: true, maxRetries: 10, retryDelay: 300 });
     } catch {}
   };
+  return { profile, exited: () => proc.exitCode !== null, stop };
+}
+
+export async function openPage(env: Record<string, string | undefined>): Promise<Page> {
+  const { url, stop } = await startBrowser(() => launchBrowser(env));
   try {
-    const cdp = await connect(await devToolsUrl(profile, () => proc.exitCode !== null));
+    const cdp = await connect(url);
     const { targetId } = await cdp.send<{ targetId: string }>('Target.createTarget', {
       url: 'about:blank',
     });

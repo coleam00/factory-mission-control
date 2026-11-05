@@ -3,6 +3,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { StatusStripRow } from '../app/components/FactoryStrip';
 import type { FactorySwitcherRow } from '../app/components/FactorySwitcher';
+import type { AppCheckRow } from '../app/lib/app-check';
 import type { ArchDiffRow } from '../app/lib/arch-diff';
 import type { AttentionRow } from '../app/lib/attention';
 import type { BoardRow } from '../app/lib/board';
@@ -12,6 +13,7 @@ import type { IssueGraphRow } from '../app/lib/issue-graph';
 import type { LapMapRow } from '../app/lib/lap-graph';
 import type { LaneRow, RecentLapRow } from '../app/lib/laps';
 import type { CheckLineRow, OneLapRow, StepAttemptRow } from '../app/lib/one-lap';
+import { LAP_PAGE_WORKFLOW } from '../app/lib/one-lap';
 import type { OwnerQueueRow } from '../app/lib/owner-queue';
 import type { RewindBranchRow } from '../app/lib/rewind';
 import type { ScorecardRow } from '../app/lib/scorecard';
@@ -25,7 +27,7 @@ import type {
 } from '../app/lib/step-detail';
 import type { CheckRow, DefaultHoldoutRow, RouteRow } from '../app/lib/testing';
 import type { VersionStripRow } from '../app/lib/version-strip';
-import type { HomeMapRow, ProductDocumentRow, WorkOrderRow } from '../app/map/live';
+import type { HomeMapRow, MapRightNowRow, ProductDocumentRow, WorkOrderRow } from '../app/map/live';
 import { LIVE_QUERY_NAME, parameterCount } from '../server/live';
 import { migratedDb, paramsFor, queries } from './queries/test-seed';
 import type { TestDb } from './test-db';
@@ -46,6 +48,16 @@ const columns =
 
 /** Each live query's result columns, in order, bound to the row type its panel reads. */
 const ROW_COLUMNS: Record<string, string[]> = {
+  'app-check': columns<AppCheckRow>()([
+    'number',
+    'title',
+    'url',
+    'run_id',
+    'overall',
+    'criteria',
+    'probes',
+    'assertions',
+  ]),
   'arch-diff': columns<ArchDiffRow>()(['digest', 'kind', 'workflow', 'first_run_at', 'entries']),
   'attention-items': columns<AttentionRow>()([
     'run_id',
@@ -149,6 +161,8 @@ const ROW_COLUMNS: Record<string, string[]> = {
   ]),
   lanes: columns<LaneRow>()([
     'run_id',
+    'workflow_name',
+    'console',
     'started_at',
     'issue_number',
     'issue_title',
@@ -274,6 +288,7 @@ const ROW_COLUMNS: Record<string, string[]> = {
     'depends_on',
     'trigger_rule',
     'include',
+    'child_workflow',
     'command_file',
     'script',
     'script_file',
@@ -329,6 +344,19 @@ const ROW_COLUMNS: Record<string, string[]> = {
     'repository',
   ]),
   'testing-routes': columns<RouteRow>()(['run_id', 'status', 'started_at', 'route', 'depth']),
+  'map-right-now': columns<MapRightNowRow>()([
+    'kind',
+    'run_id',
+    'at',
+    'decisions',
+    'merged',
+    'asked',
+    'claimed',
+    'revision',
+    'health',
+    'status',
+    'repository',
+  ]),
   'product-documents': columns<ProductDocumentRow>()([
     'number',
     'title',
@@ -359,6 +387,10 @@ const ROW_COLUMNS: Record<string, string[]> = {
 const VOLATILE =
   /\b(now|random|clock_timestamp|statement_timestamp|transaction_timestamp|timeofday|gen_random_uuid|nextval|current_timestamp|current_date|current_time|localtime|localtimestamp)\b/i;
 
+/** Set-returning functions; Realtime refuses them as a query source (REALTIME.md). */
+const SET_RETURNING =
+  /\b(generate_series|generate_subscripts|unnest|jsonb?_array_elements(_text)?|jsonb?_each(_text)?|jsonb?_object_keys|jsonb?_to_recordset|jsonb?_populate_recordset|jsonb?_path_query(_array)?|regexp_matches|regexp_split_to_table|string_to_table|json_table|pg_ls_dir|pg_stat_get_activity|pg_show_all_settings)\s*\(/i;
+
 test('every file in db/queries/ is a live query named for its panel', () => {
   const sqlFiles = readdirSync(dir).filter((f) => f.endsWith('.sql'));
   expect(sqlFiles.length).toBeGreaterThan(0);
@@ -378,6 +410,10 @@ describe.each(queries)('db/queries/%s.sql', (name, sql) => {
 
   test('uses no volatile function', () => {
     expect(sql).not.toMatch(VOLATILE);
+  });
+
+  test('calls no set-returning function', () => {
+    expect(sql).not.toMatch(SET_RETURNING);
   });
 
   test('calls no function of the mc schema', () => {
@@ -436,18 +472,27 @@ describe('the rules the live queries restate, which they may not call a function
   });
 
   test('every mention of build-queue in a live query is one of the two rules, none a stray copy', () => {
-    const copies: [string, string, number, number][] = [
-      ['version-strip', query('version-strip'), 1, 0],
-      ['decisions-timeline', query('decisions-timeline'), 2, 0],
-      ['arch-diff', query('arch-diff'), 2, 0],
-      ['improvements-ledger', query('improvements-ledger'), 2, 1],
-      ['scorecard', query('scorecard'), 0, 2],
-      ['live changes oracle', read('scripts', 'live', 'changes.ts'), 0, 1],
-      ['live ledger oracle', read('scripts', 'live', 'ledger.ts'), 0, 1],
-    ];
-    for (const [name, sql, datesVersion, lap] of copies) {
+    // [mc.dates_version copies, lap-rule copies, named-exception mentions] per name; a live query
+    // not listed here may mention none of them.
+    const expected: Record<string, [number, number, number]> = {
+      'version-strip': [1, 0, 0],
+      'decisions-timeline': [2, 0, 0],
+      'arch-diff': [2, 0, 0],
+      'improvements-ledger': [2, 1, 0],
+      scorecard: [0, 2, 0],
+      // The same list as mc.dates_version: the lap a work order's row names is one that ran a version.
+      board: [1, 0, 0],
+      // Exception: the queues row asks which intake or build-queue runs exist, not what dates a version.
+      'home-map': [0, 0, 1],
+    };
+    const copies = [...queries];
+    for (const [name, sql] of copies) {
+      const [datesVersion, lap, exception] = expected[name] ?? [0, 0, 0];
       expect([name, count(sql, DATES_VERSION), count(sql, LAP)]).toEqual([name, datesVersion, lap]);
-      expect([name, count(sql, "'archon-build-queue'")]).toEqual([name, datesVersion + lap]);
+      expect([name, count(sql, "'archon-build-queue'")]).toEqual([
+        name,
+        datesVersion + lap + exception,
+      ]);
     }
   });
 
@@ -459,6 +504,31 @@ describe('the rules the live queries restate, which they may not call a function
     ]) {
       expect(sql).toContain("f.step_id = 'facts'");
       expect(sql).toContain("-> 'item' ->> 'number'");
+    }
+  });
+
+  test("the lap page's workflow is the one LAP_PAGE_WORKFLOW names, in every one-lap query", () => {
+    const names = queries.map(([n]) => n).filter((n) => n.startsWith('one-lap'));
+    expect(names.sort()).toEqual(['one-lap', 'one-lap-checks', 'one-lap-map', 'one-lap-steps']);
+    const expected: [string, number, number][] = [
+      ['one-lap', 1, 0],
+      ['one-lap-checks', 1, 0],
+      ['one-lap-map', 1, 1],
+      ['one-lap-steps', 3, 1],
+    ];
+    for (const [name, runFilters, stepFilters] of expected) {
+      const sql = query(name);
+      const run = [...sql.matchAll(/workflow_name = '([^']*)'/g)].map((m) => m[1]);
+      const step = [...sql.matchAll(/\bs\.workflow = '([^']*)'/g)].map((m) => m[1]);
+      expect([name, run, step]).toEqual([
+        name,
+        Array(runFilters).fill(LAP_PAGE_WORKFLOW),
+        Array(stepFilters).fill(LAP_PAGE_WORKFLOW),
+      ]);
+      expect([name, [...sql.matchAll(/'archon-[a-z-]+'/g)].map((m) => m[0])]).toEqual([
+        name,
+        Array(runFilters + stepFilters).fill(`'${LAP_PAGE_WORKFLOW}'`),
+      ]);
     }
   });
 });

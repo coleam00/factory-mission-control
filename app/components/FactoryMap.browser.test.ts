@@ -21,7 +21,7 @@ beforeAll(async () => {
   expect(bundle.success).toBe(true);
   source = Buffer.from(await bundle.outputs[0].text()).toString('base64');
   page = await openPage(process.env);
-}, 30_000);
+}, 90_000);
 
 afterAll(async () => {
   await page?.close();
@@ -141,4 +141,16 @@ test('on a phone, a level change lands on the same camera as mounting that level
   } finally {
     await page.setViewport(1440);
   }
+}, 30_000);
+
+test('Deliver opens from Build, and going up returns to Build and flashes Deliver', async () => {
+  const [down, up] = await inPage<Shown[]>(`
+    await m.mount('/f/x?view=build');
+    m.dblclick('b-del');
+    const down = await m.waitFor('build/deliver');
+    m.key('Escape');
+    await m.waitFor('build');
+    return [down, await m.waitFlash('b-del')];`);
+  expect(down).toMatchObject({ view: 'build/deliver', search: '?view=build%2Fdeliver' });
+  expect(up?.flashed).toContain('b-del');
 }, 30_000);

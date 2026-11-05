@@ -120,6 +120,31 @@ test('an overdue step shows how long it has run against its p90', () => {
   expect(html).toContain('data-p90="true">0:20:00<');
 });
 
+test('an overdue step of another workflow has no lap page to open', () => {
+  const step = (kind: 'completion' | 'running', run_id: string, at: Date): HealthStepRow => ({
+    kind,
+    run_id,
+    workflow_name: 'archon-build-queue',
+    step_id: 'build',
+    at,
+    duration_ms: kind === 'completion' ? 20 * MINUTE : null,
+    console: null,
+  });
+  const html = render(
+    <OverdueList
+      rows={[
+        step('completion', 'r1', new Date(NOW - 60 * MINUTE)),
+        step('completion', 'r2', new Date(NOW - 120 * MINUTE)),
+        step('running', 'live', new Date(NOW - 41 * MINUTE)),
+      ]}
+      factory="mission-control"
+      now={NOW}
+    />,
+  );
+  expect(html).toContain('data-overdue-step="build" data-run="live"');
+  expect(html).not.toContain('data-lap-link');
+});
+
 test('workable issues are counted against running laps, each linking to GitHub', () => {
   const rows: HealthWorkableRow[] = [
     {
