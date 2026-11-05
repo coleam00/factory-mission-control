@@ -5,7 +5,10 @@ CROSS JOIN LATERAL (
   SELECT count(*)::int AS laps
   FROM mc.laps l JOIN mc.versions b ON b.factory = l.factory AND b.digest = l.digest
   -- The pin is the one mc.versions gives the lap's digest, so the ledger and the version strip agree.
-  WHERE l.factory = $1 AND l.workflow_name = 'archon-loop' AND b.pin_sha = p.sha
+  WHERE l.factory = $1 AND b.pin_sha = p.sha
+    AND (l.workflow_name = 'archon-loop' OR l.workflow_name = 'archon-build-queue' AND EXISTS (
+    SELECT 1 FROM mc.lap_steps f WHERE f.run_id = l.run_id AND f.step_id = 'facts'
+      AND f.output -> 'item' ->> 'number' IS NOT NULL))
 ) n
 -- A verdict names its pin like a decision's `Version:` does, and counts only for the one pin its
 -- prefix matches. A prefix of several pins, or of none, is listed below by itself.
@@ -18,8 +21,9 @@ LEFT JOIN LATERAL (
     )
   ORDER BY committed_at DESC LIMIT 1
 ) v ON true
--- Pins are shared, but their lap counts are this factory's own. A factory with no laps lists none.
-WHERE EXISTS (SELECT 1 FROM mc.laps l WHERE l.factory = $1 AND l.workflow_name = 'archon-loop')
+-- Pins are shared, but their lap counts are this factory's own. A factory with no runs that date a
+-- version lists none.
+WHERE EXISTS (SELECT 1 FROM mc.laps l WHERE l.factory = $1 AND l.workflow_name IN ('archon-loop', 'archon-build-queue'))
 UNION ALL
 -- A verdict whose prefix names no pin, or several, is listed by that prefix with how many pins it
 -- names, so the ledger says ambiguous or no pin instead of dropping it. The latest per prefix.
@@ -35,4 +39,4 @@ WHERE o.pin <> '' AND m.matches <> 1
     WHERE later.pin = o.pin
       AND (later.committed_at > o.committed_at OR later.committed_at = o.committed_at AND later.sha > o.sha)
   )
-  AND EXISTS (SELECT 1 FROM mc.laps l WHERE l.factory = $1 AND l.workflow_name = 'archon-loop')
+  AND EXISTS (SELECT 1 FROM mc.laps l WHERE l.factory = $1 AND l.workflow_name IN ('archon-loop', 'archon-build-queue'))

@@ -22,6 +22,8 @@ function laps(digest: string, n: number, merged: number): ScorecardRow[] {
         completed_at: new Date(start.getTime() + 30 * 60_000),
         step_id: null,
         pin_sha: null,
+        issue: null,
+        pull_request: null,
       },
       {
         run_id,

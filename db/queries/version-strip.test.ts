@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { SEED_CODEBASE } from '../../scripts/fixture/seed';
+import { QUEUE_DIGEST, SEED_CODEBASE } from '../../scripts/fixture/seed';
 import { writeRow } from '../../scripts/fixture/write';
 import type { Db, Tx } from '../../scripts/lib/db';
 import { onTheSeed, queries } from './test-seed';
@@ -31,6 +31,13 @@ describe('version-strip on the seed', () => {
     expect(rows.map((r) => r.pin_sha)).toEqual(pins.map((p) => p.sha));
     // V3 is a bare `Pin Archon <sha>`: listed, with nothing recorded but the sha (#178).
     expect(rows[2]).toMatchObject({ reason: null, hypothesis: null, measure: null });
+  });
+
+  test('a version only build-queue runs ran is on the strip, labelled by the pin before its first run', async () => {
+    const queued = (await db.query(sql, ['queue-factory'])).filter(
+      (r) => r.digest === QUEUE_DIGEST,
+    );
+    expect(queued.map((r) => r.pin_sha)).toEqual(['5ffd60c6c6e591487f2fbb5ec67ccc8fc55ca915']);
   });
 
   test('each pin no version is labelled by adds one entry that has not run yet', async () => {

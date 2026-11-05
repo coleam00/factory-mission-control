@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { MemoryRouter } from 'react-router';
 import { parsePack, type Step } from '../../parsers/pack';
-import { Behind, RightNow } from '../components/MapDetails';
+import { Behind, MapDetails, RightNow } from '../components/MapDetails';
 import type { StepRow } from '../lib/step-detail';
 import { FACTORY_MAP, workflowFile } from '../map/factory-map';
 import type { HomeMapRow, MapSources } from '../map/live';
@@ -18,8 +18,9 @@ const render = (
   {
     at = null,
     configured,
+    path,
     ...more
-  }: { at?: string | null; configured?: boolean } & Omit<MapSources, 'map'> = {},
+  }: { at?: string | null; configured?: boolean; path?: string[] } & Omit<MapSources, 'map'> = {},
 ) =>
   renderToStaticMarkup(
     <MemoryRouter>
@@ -29,6 +30,7 @@ const render = (
         factory="here"
         at={at}
         configured={configured}
+        path={path}
         flow
       />
     </MemoryRouter>,
@@ -79,9 +81,44 @@ test("the map draws every card's wording, the caption, the group and the legend,
   }
   expect(html).toContain('the manager watches everything on this line');
   for (const entry of FACTORY_MAP.legend) expect(html).toContain(entry.label);
-  // No deeper view exists yet, so no card offers to open one.
-  expect(html).not.toContain('⤢');
+  // Only Build has a deeper view, so only it offers to open one.
+  expect(cardTag(html, 'build')).toContain('data-opens="build"');
+  expect(html).toContain('opens a deeper view');
+  for (const card of FACTORY_MAP.cards.filter((c) => c.id !== 'build')) {
+    expect(cardTag(html, card.id)).not.toContain('data-opens');
+  }
   expect(html).not.toContain('data-chip');
+});
+
+test("with path ['build'] the map draws the Build view's cards, caption and crumbs", () => {
+  const view = FACTORY_MAP.views?.build;
+  if (view === undefined) throw new Error('the map has no build view');
+  const html = render([lap('a', 'build')], 'ready', { path: ['build'] });
+  for (const card of view.cards) expect(cardTag(html, card.id)).toContain('data-card');
+  expect(html).toContain(view.caption.replaceAll("'", '&#x27;'));
+  expect(html).toContain('data-view="build"');
+  expect(textOf(html).replace(/\s+/g, ' ')).toContain('here › Build');
+  expect(cardTag(html, 'b-del')).toContain('data-live-count="1"');
+  expect(cardTag(html, 'build')).toBe('');
+});
+
+test('a card that opens a view offers ⤢ Open Build · 8 steps', () => {
+  const build = FACTORY_MAP.cards.find((c) => c.id === 'build');
+  if (build === undefined) throw new Error('no build card');
+  const html = renderToStaticMarkup(
+    <MemoryRouter>
+      <MapDetails
+        card={build}
+        live={undefined}
+        factory="here"
+        at={null}
+        steps={undefined}
+        onClose={() => {}}
+        open={{ title: 'Build', steps: 8, onOpen: () => {} }}
+      />
+    </MemoryRouter>,
+  );
+  expect(textOf(html)).toContain('⤢ Open Build · 8 steps');
 });
 
 test('a card with laps on it carries their count and a pulsing chip; a chip of 0 is not drawn', () => {

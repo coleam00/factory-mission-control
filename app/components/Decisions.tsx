@@ -19,7 +19,7 @@ import {
 import { since } from '../lib/laps';
 import { consoleUrl } from '../lib/one-lap';
 import { type OwnerItem, type OwnerQueueRow, ownerQueue, waited } from '../lib/owner-queue';
-import { LivePanel } from '../live/LivePanel';
+import { LivePanel, type PanelState } from '../live/LivePanel';
 import { EmptyState } from './EmptyState';
 import { Failures, OverdueList, WaitingList, Workable } from './Health';
 import { LABEL, MONO, NONE, PanelBody, useNow, utcMinute } from './Lanes';
@@ -209,34 +209,63 @@ function OwnerQuestionDetail({ item }: { item: OwnerItem }): ReactElement {
   );
 }
 
+/** A list's rows, or why it has none: its query failed, or has not answered yet. */
+export type Source<Row> = readonly Row[] | 'unavailable' | 'loading';
+
+/** Rows kept through an outage are from before it, so an errored panel is unavailable whatever rows it holds. */
+export const sourceOf = <Row,>(rows: readonly Row[] | undefined, state: PanelState): Source<Row> =>
+  state === 'error' ? 'unavailable' : rows === undefined ? 'loading' : rows;
+
+const rowsOf = <Row,>(source: Source<Row>): readonly Row[] =>
+  typeof source === 'string' ? [] : source;
+
 /** Attention items first, then the old loop's owner items, each longest-waiting first. */
 export function WaitingItems({
   attention,
   owner,
   now: fixed,
 }: {
-  attention: readonly AttentionRow[];
-  owner: readonly OwnerQueueRow[];
+  attention: Source<AttentionRow>;
+  owner: Source<OwnerQueueRow>;
   /** A fixed clock, for tests; the screen uses the browser's. */
   now?: number;
 }): ReactElement {
   const ticking = useNow();
   const now = fixed ?? ticking;
-  const attentionSorted = useMemo(() => attentionItems(attention), [attention]);
-  const ownerSorted = useMemo(() => ownerQueue(owner), [owner]);
-  if (attentionSorted.length === 0 && ownerSorted.length === 0) {
+  const attentionRows = rowsOf(attention);
+  const ownerRows = rowsOf(owner);
+  const attentionSorted = useMemo(() => attentionItems(attentionRows), [attentionRows]);
+  const ownerSorted = useMemo(() => ownerQueue(ownerRows), [ownerRows]);
+  const notices = [
+    notice(attention, 'what is waiting on you'),
+    notice(owner, 'the owner queue'),
+  ].filter((n) => n !== null);
+  if (attentionSorted.length === 0 && ownerSorted.length === 0 && notices.length === 0) {
     return <EmptyState title="Nothing is waiting on you." />;
   }
   return (
-    <ol className="grid gap-3">
-      {attentionSorted.map((item) => (
-        <AttentionPanel key={item.run_id} item={item} now={now} />
+    <>
+      {notices.map((n) => (
+        <p key={n} className="text-sm text-text-secondary">
+          {n}
+        </p>
       ))}
-      {ownerSorted.map((item) => (
-        <OwnerItemPanel key={item.id} item={item} now={now} />
-      ))}
-    </ol>
+      <ol className="grid gap-3">
+        {attentionSorted.map((item) => (
+          <AttentionPanel key={item.run_id} item={item} now={now} />
+        ))}
+        {ownerSorted.map((item) => (
+          <OwnerItemPanel key={item.id} item={item} now={now} />
+        ))}
+      </ol>
+    </>
   );
+}
+
+function notice(source: Source<unknown>, what: string): string | null {
+  if (source === 'unavailable') return `Live data for ${what} is unavailable.`;
+  if (source === 'loading') return `Loading ${what}.`;
+  return null;
 }
 
 /**
@@ -252,25 +281,10 @@ export function WaitingOnYou({ factory }: { factory: string | undefined }): Reac
         {(attention, attentionState) => (
           <LivePanel<OwnerQueueRow> query="owner-queue" factory={factory}>
             {(owner, ownerState) => (
-              <PanelBody
-                rows={attention}
-                state={attentionState}
-                factory={factory}
-                what="what is waiting on you"
-              >
-                {(loadedAttention) => (
-                  <PanelBody
-                    rows={owner}
-                    state={ownerState}
-                    factory={factory}
-                    what="the owner queue"
-                  >
-                    {(loadedOwner) => (
-                      <WaitingItems attention={loadedAttention} owner={loadedOwner} />
-                    )}
-                  </PanelBody>
-                )}
-              </PanelBody>
+              <WaitingItems
+                attention={sourceOf(attention, attentionState)}
+                owner={sourceOf(owner, ownerState)}
+              />
             )}
           </LivePanel>
         )}

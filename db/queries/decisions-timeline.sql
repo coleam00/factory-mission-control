@@ -1,8 +1,9 @@
 WITH firsts AS (
-  -- A version is a digest this factory's archon-loop laps ran (mc.versions), no other workflow's.
+  -- A version is a digest this factory's archon-loop or archon-build-queue runs ran (mc.versions), no
+  -- other workflow's.
   SELECT DISTINCT ON (l.digest) l.digest, l.started_at AS first_run_at
   FROM mc.laps l
-  WHERE l.factory = $1 AND l.workflow_name = 'archon-loop' AND l.digest IS NOT NULL
+  WHERE l.factory = $1 AND l.workflow_name IN ('archon-loop', 'archon-build-queue') AND l.digest IS NOT NULL
     AND l.started_at IS NOT NULL
   ORDER BY l.digest, l.started_at
 )
@@ -26,5 +27,5 @@ LEFT JOIN LATERAL (
   ORDER BY f.first_run_at LIMIT 1
 ) v ON true
 -- Decisions are the shared factory process's (PRD 11.5), listed only on a factory with a lap, so a
--- factory with no laps shows its empty state. A lap is an archon-loop run.
-WHERE EXISTS (SELECT 1 FROM mc.laps l WHERE l.factory = $1 AND l.workflow_name = 'archon-loop')
+-- factory with no loop or build-queue runs shows its empty state.
+WHERE EXISTS (SELECT 1 FROM mc.laps l WHERE l.factory = $1 AND l.workflow_name IN ('archon-loop', 'archon-build-queue'))

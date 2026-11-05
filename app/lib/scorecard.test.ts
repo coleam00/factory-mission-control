@@ -1,4 +1,4 @@
-import { expect, test } from 'bun:test';
+import { describe, expect, test } from 'bun:test';
 import {
   dataValue,
   difference,
@@ -53,6 +53,8 @@ const lap = (
     completed_at: end === null ? null : new Date(end),
     step_id: null,
     pin_sha: null,
+    issue: null,
+    pull_request: null,
     ...over,
   },
   ...steps.map((r) => ({ ...r, run_id: run })),
@@ -237,6 +239,15 @@ test('a run of another workflow is not a lap', () => {
   expect(s.laps.laps).toEqual(['loop']);
 });
 
+test('a build-queue run is a lap', () => {
+  const s = card(
+    lap('queue', '2026-10-01T08:00:00Z', '2026-10-01T09:00:00Z', [], {
+      workflow_name: 'archon-build-queue',
+    }),
+  );
+  expect(s.laps.laps).toEqual(['queue']);
+});
+
 test('a version is labelled by its version row, and a digest with no row is not a version', () => {
   const laps: ScorecardRow[] = [
     ...lap('loop', '2026-10-05T08:00:00Z', '2026-10-05T09:00:00Z'),
@@ -300,4 +311,115 @@ test('a switch keeps the versions this factory has, in order, and drops the othe
   expect(keptVersions(rows, undefined, undefined)).toEqual({ a: undefined, b: undefined });
   expect(keptVersions(rows, '', W)).toEqual({ a: W, b: undefined });
   expect(keptVersions(rows, V, V)).toEqual({ a: V, b: undefined });
+});
+
+describe('queue merges (#393)', () => {
+  const W = 'sha256:b2';
+  const build = (
+    run: string,
+    start: string,
+    issue: number,
+    over: Partial<LapRow> = {},
+    cost = 0,
+  ): ScorecardRow[] =>
+    lap(run, start, null, cost === 0 ? [] : [step(run, 'route', { cost_usd: cost })], {
+      workflow_name: 'archon-build-queue',
+      issue: String(issue),
+      ...over,
+    });
+  const mergeRun = (
+    run: string,
+    merged: unknown,
+    items: unknown,
+    at = '2026-10-10T00:00:00Z',
+  ): ScorecardRow => ({
+    run_id: run,
+    step_id: null,
+    pin_sha: null,
+    workflow_name: 'archon-merge-queue',
+    completed_at: new Date(at),
+    merged: typeof merged === 'string' ? merged : JSON.stringify(merged),
+    items: typeof items === 'string' || items === null ? items : JSON.stringify(items),
+  });
+  const item = (issue: number, pr: number, own_pr = false) => ({
+    item: { number: issue },
+    pr: { number: pr },
+    own_pr,
+  });
+  const card = (rows: ScorecardRow[], digest = V) => scorecard(versionLaps(rows, digest));
+
+  test('a merged pull request counts a merge on the build lap of its issue, with its cost', () => {
+    const rows = [
+      ...build('a', '2026-10-01T00:00:00Z', 7, {}, 1.5),
+      mergeRun('m', [70], [item(7, 70)]),
+    ];
+    const { merges, cost_per_merge } = card(rows);
+    expect(merges).toMatchObject({ value: 1, counted: ['a'] });
+    expect(cost_per_merge.value).toBe(1.5);
+  });
+
+  test('a merge whose build laps span two versions counts on the version that opened the pull request', () => {
+    const rows = [
+      ...build('a', '2026-10-01T00:00:00Z', 7),
+      ...build('b', '2026-10-02T00:00:00Z', 7, { digest: W, pull_request: '70' }),
+      mergeRun('m', [70], [item(7, 70)]),
+    ];
+    expect(card(rows, V).merges.value).toBe(1);
+    expect(card(rows, W).merges.value).toBe(0);
+  });
+
+  test('a pull request no lap named is credited to the last lap; one every lap named, to the first', () => {
+    const none = [
+      ...build('a', '2026-10-01T00:00:00Z', 7),
+      ...build('b', '2026-10-02T00:00:00Z', 7, { digest: W }),
+      mergeRun('m', [70], [item(7, 70)]),
+    ];
+    expect(card(none, W).merges.counted).toEqual(['b']);
+    const all = [
+      ...build('a', '2026-10-01T00:00:00Z', 7, { pull_request: '70' }),
+      ...build('b', '2026-10-02T00:00:00Z', 7, { digest: W, pull_request: '70' }),
+      mergeRun('m', [70], [item(7, 70)]),
+    ];
+    expect(card(all, V).merges.counted).toEqual(['a']);
+    expect(card(all, W).merges.value).toBe(0);
+  });
+
+  test('a pull request with no item, an own pull request, or no lap before the merge counts nowhere', () => {
+    const rows = [
+      ...build('a', '2026-10-01T00:00:00Z', 7),
+      ...build('late', '2026-10-20T00:00:00Z', 8),
+      mergeRun('m', [70, 71, 80], [item(7, 71, true), item(8, 80)]),
+    ];
+    expect(card(rows).merges.value).toBe(0);
+  });
+
+  test('a pull request in two merge runs counts once', () => {
+    const rows = [
+      ...build('a', '2026-10-01T00:00:00Z', 7),
+      mergeRun('m1', [70], [item(7, 70)], '2026-10-10T00:00:00Z'),
+      mergeRun('m2', [70], [item(7, 70)], '2026-10-11T00:00:00Z'),
+    ];
+    expect(card(rows).merges.value).toBe(1);
+  });
+
+  test('a loop lap on the same issue is not credited, and its land merge still counts', () => {
+    const rows = [
+      ...lap('loop', '2026-10-01T00:00:00Z', '2026-10-01T01:00:00Z', [
+        step('loop', 'land', { outcome: 'merged' }),
+      ]),
+      ...lap('loop2', '2026-10-02T00:00:00Z', '2026-10-02T01:00:00Z', [], { issue: '7' }),
+      mergeRun('m', [70], [item(7, 70)]),
+    ];
+    expect(card(rows).merges).toMatchObject({ value: 1, counted: ['loop'] });
+  });
+
+  test.each([
+    ['merged', 'not json', [item(7, 70)]],
+    ['items', [70], 'not json'],
+    ['items', [70], '{"a":1}'],
+    ['items', [70], null],
+  ])('malformed %s credits nothing and does not throw', (_, merged, items) => {
+    const rows = [...build('a', '2026-10-01T00:00:00Z', 7), mergeRun('m', merged, items)];
+    expect(card(rows).merges.value).toBe(0);
+  });
 });
