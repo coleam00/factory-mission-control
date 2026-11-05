@@ -21,7 +21,9 @@
 -- it under the same rule, and `reconcile:laps` replays the rest. Run again, it changes nothing.
 
 
--- Mirrors the factory's evidence.ts LINE, untrimmed; the p flag makes . stop at a newline as it does there.
+-- Mirrors the factory's evidence.ts LINE, untrimmed. JS \s and . are wider than Postgres's (NBSP and
+-- other Unicode spaces are whitespace there; . stops at a line break, CR, U+2028 and U+2029), so both
+-- are spelled out.
 CREATE OR REPLACE FUNCTION mc.queue_app_check_lines(p_lines jsonb)
 RETURNS jsonb LANGUAGE sql IMMUTABLE AS $$
   SELECT coalesce(jsonb_agg(jsonb_build_object(
@@ -29,14 +31,14 @@ RETURNS jsonb LANGUAGE sql IMMUTABLE AS $$
       'kind', CASE left(m.parts[1], 1)
         WHEN 'C' THEN 'criterion' WHEN 'P' THEN 'probe' ELSE 'assertion' END,
       'verdict', m.parts[2],
-      'evidence', CASE WHEN l.line #>> '{}' ~ 'evidence:\s*\S'
+      'evidence', CASE WHEN l.line #>> '{}' ~ 'evidence:[\s\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000\ufeff]*\S'
         THEN jsonb_build_array('evidence') ELSE '[]'::jsonb END)
     ORDER BY l.position), '[]'::jsonb)
   FROM jsonb_array_elements(CASE WHEN jsonb_typeof(p_lines) = 'array' THEN p_lines ELSE '[]' END)
     WITH ORDINALITY AS l(line, position)
   CROSS JOIN LATERAL (
     SELECT regexp_match(l.line #>> '{}',
-      '^([CPA][0-9]+)\s{2}(PASS|FAIL|INCOMPLETE)\s{2}(.+?)\s{2}evidence:\s+(.+)$', 'p') AS parts
+      '^([CPA][0-9]+)[\s\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000\ufeff]{2}(PASS|FAIL|INCOMPLETE)[\s\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000\ufeff]{2}([^\n\r\u2028\u2029]+?)[\s\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000\ufeff]{2}evidence:[\s\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000\ufeff]+([^\n\r\u2028\u2029]+)$') AS parts
   ) m
   WHERE jsonb_typeof(l.line) = 'string' AND m.parts IS NOT NULL
 $$;

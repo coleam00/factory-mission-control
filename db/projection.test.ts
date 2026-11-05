@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, beforeEach, expect, test } from 'bun:test';
+import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { FACTORY_MAP } from '../app/map/factory-map';
 import { holdoutId } from '../parsers/metrics';
@@ -2375,4 +2376,31 @@ test('0025 re-projects stored queue app checks from the sealed evidence, leaves 
   } finally {
     await historical.close();
   }
+});
+
+test('the queue app check projection reads the node ids and output keys the pack declares', () => {
+  type Node = {
+    id: string;
+    with?: Record<string, string>;
+    output_format?: { required?: string[]; properties?: Record<string, { enum?: string[] }> };
+  };
+  const pack = Bun.YAML.parse(
+    readFileSync(
+      join(import.meta.dir, '../fixtures/pack/queue/factory/app-check/factory-app-check.yaml'),
+      'utf-8',
+    ),
+  ) as { nodes: Node[] };
+  const node = (id: string) => pack.nodes.find((n) => n.id === id);
+  expect(node('check')).toBeDefined();
+  expect(node('select')).toBeDefined();
+  expect(node('evidence')?.output_format?.required).toEqual(
+    expect.arrayContaining(['overall', 'lines']),
+  );
+  expect(node('evidence')?.output_format?.properties?.overall?.enum).toEqual(['PASS', 'FAIL']);
+  expect(node('publish')?.with).toMatchObject({
+    overall: '$evidence.output.overall',
+    lines: '$evidence.output.lines',
+    pr: '$select.output.pr',
+    head: '$select.output.head',
+  });
 });
