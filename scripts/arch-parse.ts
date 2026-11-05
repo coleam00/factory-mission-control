@@ -59,6 +59,7 @@ function stepRows(workflow: string, steps: Step[], parent: string | null, into: 
       depends_on: step.dependsOn,
       trigger_rule: step.triggerRule,
       include: step.include,
+      child_workflow: step.childWorkflow,
       command: step.command,
       command_file: step.commandFile,
       script: step.script,

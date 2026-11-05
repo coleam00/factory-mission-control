@@ -3,6 +3,7 @@ import {
   dependents,
   findStep,
   joinParts,
+  kindLabel,
   type NestingRow,
   nesting,
   type StepRow,
@@ -26,6 +27,7 @@ function step(path: string, fields: Partial<StepRow> = {}): StepRow {
     depends_on: [],
     trigger_rule: null,
     include: null,
+    child_workflow: null,
     command_file: null,
     script: null,
     script_file: null,
@@ -218,4 +220,10 @@ test('the places an include puts a step are by workflow, then in declaration ord
     'archon-deliver-block rounds/reshape/implement /steps/archon-deliver-block/rounds%2Freshape',
     'archon-ship-block deliver/rounds/implement/implement /steps/archon-deliver-block/rounds%2Fimplement',
   ]);
+});
+
+test('the Kind fact names the child workflow a workflow: node runs', () => {
+  const node = step('judge', { kind: 'workflow', child_workflow: 'archon-metrics-test-value-judge' });
+  expect(kindLabel(node)).toBe('workflow archon-metrics-test-value-judge');
+  expect(kindLabel(step('c', { kind: 'command' }))).toBe('command');
 });

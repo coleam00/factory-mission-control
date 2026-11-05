@@ -124,6 +124,7 @@ function steps(workflow: string, all: Step[], parent: string | null, out: SqlRow
       depends_on: step.dependsOn,
       trigger_rule: step.triggerRule,
       include: step.include,
+      child_workflow: step.childWorkflow,
       command: step.command,
       command_file: step.commandFile,
       script: step.script,

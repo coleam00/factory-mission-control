@@ -41,6 +41,8 @@ export interface Step {
   triggerRule: string | null;
   /** The workflow this node includes, by name. */
   include: string | null;
+  /** The workflow a `workflow:` node runs, by name as written; Archon resolves it at execution. */
+  childWorkflow: string | null;
   command: string | null;
   commandFile: string | null;
   commandText: string | null;
@@ -333,6 +335,7 @@ export function parsePack(packDir: string, templateDir: string): PackVersion {
         dependsOn,
         triggerRule: str(node.trigger_rule),
         include,
+        childWorkflow: str(node.workflow),
         command,
         commandFile,
         commandText: commandFile ? (commandText.get(commandFile) ?? null) : null,

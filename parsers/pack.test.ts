@@ -257,5 +257,6 @@ describe('sub-workflow nodes', () => {
     const judge = step(metrics?.steps ?? [], 'judge');
     expect(judge.kind).toBe('workflow');
     expect(judge.model).toBeNull();
+    expect(judge.childWorkflow).toBe('archon-metrics-test-value-judge');
   });
 });
