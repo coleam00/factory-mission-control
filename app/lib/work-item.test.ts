@@ -250,8 +250,27 @@ test('the header links the issue and the newest run in the console', () => {
 
 test('the header opens a merge-queue run that is newer than every build run', () => {
   const SWEEP = '5eed0005-0000-4000-8000-000000000014';
-  const merge = row({ kind: 'sweep', run_id: SWEEP, started_at: at('13:55') });
+  const merge = sweep({
+    run_id: SWEEP,
+    started_at: at('13:55'),
+    decisions: [{ number: 410, action: 'wait', reason: 'checks pending', brief: '' }],
+  });
   expect(workItemHeader([item, row({}), merge])?.latestRunHref).toBe(
     `http://localhost:3090/console/r/${SWEEP}`,
+  );
+});
+
+test('the header skips a newer sweep the timeline does not show for this item', () => {
+  const other = sweep({
+    started_at: at('13:55'),
+    decisions: [{ number: 999, action: 'return', reason: 'x', brief: 'y' }],
+  });
+  const unraised = sweep({
+    started_at: at('13:56'),
+    decisions: [{ number: 410, action: 'ask', reason: 'which?', brief: '' }],
+    asked_pr: null,
+  });
+  expect(workItemHeader([item, row({}), other, unraised])?.latestRunHref).toBe(
+    `http://localhost:3090/console/r/${RUN}`,
   );
 });

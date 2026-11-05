@@ -156,10 +156,14 @@ function header(rows: readonly WorkItemRow[]): WorkItemRow | undefined {
   return rows.find((r) => r.kind === 'item');
 }
 
-/** The run the header's "Runs in console" opens: the newest run or merge-queue sweep. */
+/** The run the header's "Runs in console" opens: the newest run, or merge-queue sweep that shows on the timeline. */
 function newestRun(rows: readonly WorkItemRow[]): WorkItemRow | undefined {
   return rows
-    .filter((r) => (r.kind === 'run' || r.kind === 'sweep') && r.run_id !== null)
+    .filter(
+      (r) =>
+        r.run_id !== null &&
+        (r.kind === 'run' || (r.kind === 'sweep' && sweepEvents(r, NO_BASE).length > 0)),
+    )
     .sort((a, b) => (b.started_at?.getTime() ?? 0) - (a.started_at?.getTime() ?? 0))[0];
 }
 
@@ -228,6 +232,14 @@ function intakeEvent(row: WorkItemRow, at: Date, base: Base): TimelineEvent {
 }
 
 type Base = Pick<TimelineEvent, 'key' | 'kind' | 'detail' | 'run' | 'stage'>;
+
+const NO_BASE = (kind: TimelineEvent['kind']): Base => ({
+  key: '',
+  kind,
+  detail: null,
+  run: null,
+  stage: null,
+});
 
 function roundEvent(row: WorkItemRow, n: number, at: Date, base: Base): TimelineEvent {
   const label = `Round ${n}`;
@@ -376,6 +388,14 @@ function sweepDecision(row: WorkItemRow, base: Base): TimelineEvent[] {
   }
 }
 
+/** What a sweep row shows on this work item: its decision on this pull request, and the answer to an ask raised on it. */
+function sweepEvents(
+  row: WorkItemRow,
+  base: (kind: TimelineEvent['kind']) => Base,
+): TimelineEvent[] {
+  return [...sweepDecision(row, base('decision')), ...answerEvent(row, base('answer'))];
+}
+
 function answerEvent(row: WorkItemRow, base: Base): TimelineEvent[] {
   if (row.answer === null || row.answer_at === null) return [];
   if (row.kind === 'sweep' && row.asked_pr !== String(row.pr)) return [];
@@ -418,7 +438,7 @@ export function workItemTimeline(rows: readonly WorkItemRow[], factory: string):
       stage: null,
     });
     if (row.kind === 'sweep') {
-      events.push(...sweepDecision(row, base('decision')), ...answerEvent(row, base('answer')));
+      events.push(...sweepEvents(row, base));
       continue;
     }
     if (row.workflow === 'archon-intake') {
