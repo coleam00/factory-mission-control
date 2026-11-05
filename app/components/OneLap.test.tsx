@@ -74,6 +74,25 @@ test('the header links the console run, the pull request and the issue, and says
   expect(html).toContain('1:00:00');
 });
 
+test('a disposition naming a hidden line does not render in the header', () => {
+  const html = render(
+    <LapHeaderBody
+      lap={{
+        ...refused,
+        dispositions: [
+          { line: 'B1', action: 'fixed' },
+          { line: 'H1', action: 'fixed' },
+        ],
+        hidden_lines: ['H1'],
+      }}
+      now={0}
+    />,
+  );
+  expect(html.match(/data-disposition/g)).toHaveLength(1);
+  expect(html).toContain('data-line="B1"');
+  expect(html).not.toContain('H1');
+});
+
 test('the pull request a step names by URL links as its number', () => {
   const html = render(
     <LapHeaderBody
