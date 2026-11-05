@@ -74,7 +74,9 @@ no card or by two, a card id used twice, and an `upTo` naming no card of the lev
 
 The queue pack is the snapshot `fixtures/pack/queue/`: `sdlc/` is `.archon/workflows/sdlc` of
 coleam00/Archon and `factory/` is `.archon/workflows/factory` of coleam00/ai-software-factory, at
-the commits this factory runs, with `ARCHON_COMMIT` and `FACTORY_COMMIT` beside them.
+the commits this factory runs, with `ARCHON_COMMIT` and `FACTORY_COMMIT` beside them. The
+architecture job and the seed store `factory/` too, under `.archon/workflows/factory/` paths, so
+its steps have screens beside the pack's.
 
 ## Live counts
 

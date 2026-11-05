@@ -89,6 +89,15 @@ export async function waitForHealth(base: string, exited: () => boolean): Promis
   throw new Error('the server did not answer /api/health within 60s');
 }
 
+/** Clicks `selector` on the page once it is there; false when it never shows. */
+export async function click(page: Page, selector: string): Promise<boolean> {
+  const shown = await page.evaluate<boolean>(
+    pageWait(`document.querySelector('${selector}') !== null`, 2000),
+  );
+  if (shown) await page.evaluate(`document.querySelector('${selector}').click()`);
+  return shown;
+}
+
 /** An in-page promise: true once `condition` holds, false after `ms`; it watches, never polls. */
 export function pageWait(condition: string, ms: number): string {
   return `new Promise((done) => {

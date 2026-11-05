@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { cardForStep, FACTORY_MAP } from '../../app/map/factory-map';
 import { openPage, type Page } from '../lib/cdp';
 import {
+  click,
   insertToScreen,
   LIMITS,
   LIVE_STEP,
@@ -84,15 +85,6 @@ interface Timings extends PanelTimings {
 
 const liveCountOf = (card: string) =>
   `document.querySelector('${MAP} [data-card="${card}"]')?.getAttribute('data-live-count')`;
-
-/** Clicks `selector` on the page once it is there; false when it never shows. */
-async function click(page: Page, selector: string): Promise<boolean> {
-  const shown = await page.evaluate<boolean>(
-    pageWait(`document.querySelector('${selector}') !== null`, 2000),
-  );
-  if (shown) await page.evaluate(`document.querySelector('${selector}').click()`);
-  return shown;
-}
 
 /** The home screen: the factory strip's inserted laps and the map's lap step events. */
 export function homePhase(ctx: LiveContext): LivePhase {

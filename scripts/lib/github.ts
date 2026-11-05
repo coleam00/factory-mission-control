@@ -28,7 +28,8 @@ export interface RemoteFile {
 export interface RemoteDirectory {
   /** The full commit sha `ref` resolved to. */
   sha: string;
-  files: RemoteFile[];
+  /** Null when the commit has no such directory; every other failure throws. */
+  files: RemoteFile[] | null;
 }
 
 const encodePath = (path: string) => path.split('/').map(encodeURIComponent).join('/');
@@ -54,7 +55,7 @@ export async function readDirectoryAt(
   for (const name of dir.split('/')) {
     const { tree } = await api<{ tree: TreeEntry[] }>(`/git/trees/${treeSha}`);
     const entry = tree.find((e) => e.path === name && e.type === 'tree');
-    if (!entry) throw new Error(`${repository} has no ${dir}/ at ${commit.sha}`);
+    if (!entry) return { sha: commit.sha, files: null };
     treeSha = entry.sha;
   }
   const listing = await api<{ tree: TreeEntry[]; truncated: boolean }>(

@@ -3,7 +3,7 @@ import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } f
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { archRows } from '../scripts/arch-parse';
-import { parsePack, type Step, type Workflow } from './pack';
+import { parsePack, parseVersion, type Step, type Workflow } from './pack';
 
 const repoRoot = resolve(import.meta.dir, '..');
 const packDir = join(repoRoot, 'fixtures', 'pack', 'sdlc');
@@ -257,5 +257,59 @@ describe('sub-workflow nodes', () => {
     const judge = step(metrics?.steps ?? [], 'judge');
     expect(judge.kind).toBe('workflow');
     expect(judge.model).toBeNull();
+  });
+});
+
+describe('a version holds the loop pack and the factory package', () => {
+  const queueDir = join(repoRoot, 'fixtures', 'pack', 'queue');
+  const version = parseVersion(packDir, join(queueDir, 'factory'), templateDir);
+  const commandOf = (name: string, id: string) =>
+    step(version.workflows.find((w) => w.name === name)?.steps ?? [], id).commandFile;
+
+  test('each manager keeps its own prompt, and no stored path is shared', () => {
+    expect(commandOf('archon-manager', 'manage')).toBe('manager/commands/manage.md');
+    expect(commandOf('factory-manager', 'manage')).toBe(
+      '.archon/workflows/factory/manager/commands/manage.md',
+    );
+    expect(commandOf('factory-app-check', 'check')).toBe(
+      '.archon/workflows/factory/app-check/commands/check.md',
+    );
+    const paths = [...version.commands, ...version.sharedDocs, ...version.scripts].map(
+      (f) => f.path,
+    );
+    expect(new Set(paths).size).toBe(paths.length);
+  });
+
+  test('reads a model written as an alias and a size', () => {
+    const workflow = version.workflows.find((w) => w.name === 'factory-app-check');
+    expect(step(workflow?.steps ?? [], 'check').model).toBe('@factory-reviewer large');
+    const queue = parsePack(join(queueDir, 'sdlc'), templateDir);
+    const implement = queue.workflows.find((w) => w.name === 'archon-implement');
+    expect(implement?.model).toBe('@implementer large');
+  }, 20_000);
+
+  test('records the full commit the package names', () => {
+    const recorded = readFileSync(join(queueDir, 'FACTORY_COMMIT'), 'utf8').trim();
+    expect(recorded).toHaveLength(40);
+    expect(version.packageCommit).toBe(recorded);
+  });
+
+  test('refuses a package workflow that reuses a loop pack workflow name', () => {
+    const copy = mkdtempSync(join(tmpdir(), 'pack-dup-'));
+    try {
+      const packageDir = join(copy, 'factory');
+      cpSync(join(queueDir, 'factory'), packageDir, { recursive: true });
+      const file = join(packageDir, 'backlog', 'factory-backlog.yaml');
+      const reused = version.workflows[0]?.name ?? '';
+      writeFileSync(
+        file,
+        readFileSync(file, 'utf8').replace('name: factory-backlog', `name: ${reused}`),
+      );
+      expect(() => parseVersion(packDir, packageDir, templateDir)).toThrow(
+        `two workflows are named ${reused}`,
+      );
+    } finally {
+      rmSync(copy, { recursive: true, force: true });
+    }
   });
 });
