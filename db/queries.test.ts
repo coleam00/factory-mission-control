@@ -371,6 +371,10 @@ const ROW_COLUMNS: Record<string, string[]> = {
 const VOLATILE =
   /\b(now|random|clock_timestamp|statement_timestamp|transaction_timestamp|timeofday|gen_random_uuid|nextval|current_timestamp|current_date|current_time|localtime|localtimestamp)\b/i;
 
+/** Set-returning functions; Realtime refuses them as a query source (REALTIME.md). */
+const SET_RETURNING =
+  /\b(generate_series|generate_subscripts|unnest|jsonb?_array_elements(_text)?|jsonb?_each(_text)?|jsonb?_object_keys|jsonb?_to_recordset|jsonb?_populate_recordset|jsonb?_path_query(_array)?|regexp_matches|regexp_split_to_table|string_to_table|json_table|pg_ls_dir|pg_stat_get_activity|pg_show_all_settings)\s*\(/i;
+
 test('every file in db/queries/ is a live query named for its panel', () => {
   const sqlFiles = readdirSync(dir).filter((f) => f.endsWith('.sql'));
   expect(sqlFiles.length).toBeGreaterThan(0);
@@ -390,6 +394,10 @@ describe.each(queries)('db/queries/%s.sql', (name, sql) => {
 
   test('uses no volatile function', () => {
     expect(sql).not.toMatch(VOLATILE);
+  });
+
+  test('calls no set-returning function', () => {
+    expect(sql).not.toMatch(SET_RETURNING);
   });
 
   test('calls no function of the mc schema', () => {
