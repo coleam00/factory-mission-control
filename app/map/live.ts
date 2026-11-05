@@ -1,7 +1,8 @@
 /**
  * What the factory map's chips count (PRD 4.1 "Live"), from the live rows: the laps on each card
  * and today's merges from `home-map`, Build's workable issues from `health-workable`, the
- * owner's open items from `owner-queue` and the work orders with open issues from `work-orders`. Every chip keeps the items it counted,
+ * owner's open items from `owner-queue`, the work orders with open issues from `work-orders` and the
+ * open product documents from `product-documents`. Every chip keeps the items it counted,
  * which the details strip's Right now lists (invariant 4). Pure, no React.
  */
 import {
@@ -35,6 +36,7 @@ import {
   cardForStep,
   type FactoryMap,
   levelsOf,
+  type List,
   stepPath,
 } from './factory-map';
 
@@ -105,6 +107,15 @@ export interface WorkOrderRow {
   last_closed_at: Date | null;
 }
 
+/** One row of `db/queries/product-documents.sql`: an open product document and its split's work items. */
+export interface ProductDocumentRow {
+  number: number;
+  title: string;
+  url: string;
+  total_count: number;
+  merged_count: number;
+}
+
 export interface CardLive {
   here: MapLap[];
   queued?: MapItem[];
@@ -120,6 +131,9 @@ export interface CardLive {
   healthUnavailable?: boolean;
   merged?: MapMerge[];
   orders?: WorkOrderRow[];
+  documents?: ProductDocumentRow[];
+  /** Lists whose source failed: unknown, never empty. */
+  listsUnavailable?: List[];
   /** Chips whose source failed: not zero, unknown, so drawn as such. */
   unavailable?: Chip[];
 }
@@ -133,6 +147,7 @@ export interface MapSources {
   attention?: readonly AttentionRow[];
   healthRuns?: readonly HealthRunRow[];
   healthSteps?: readonly HealthStepRow[];
+  documents?: readonly ProductDocumentRow[];
   /** A source in `error` keeps its rows, but its chip is unavailable, never a count. */
   states?: Partial<Record<Exclude<keyof MapSources, 'map' | 'states'>, PanelState>>;
 }
@@ -310,6 +325,10 @@ export function cardLive(
       const counted = items[chip];
       if (counted === 'unavailable') entry.unavailable = [...(entry.unavailable ?? []), chip];
       else if (counted !== undefined) Object.assign(entry, { [chip]: counted });
+    }
+    if (card.lists?.includes('documents')) {
+      if (sources.states?.documents === 'error') entry.listsUnavailable = ['documents'];
+      else if (sources.documents) entry.documents = [...sources.documents];
     }
   }
   countQuestions(factoryMap, live, sources);

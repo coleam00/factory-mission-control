@@ -18,6 +18,7 @@ import {
   cardLive,
   type HomeMapRow,
   type MapSources,
+  type ProductDocumentRow,
   versionRecorded,
   type WorkOrderRow,
 } from '../map/live';
@@ -126,6 +127,7 @@ export default function Home(): ReactElement {
   const [attention, setAttention] = useState<Source<AttentionRow>>(AWAITED);
   const [healthRuns, setHealthRuns] = useState<Source<HealthRunRow>>(AWAITED);
   const [healthSteps, setHealthSteps] = useState<Source<HealthStepRow>>(AWAITED);
+  const [documents, setDocuments] = useState<Source<ProductDocumentRow>>(AWAITED);
   const [steps, setSteps] = useState<Source<StepRow>>(AWAITED);
   const configured = live.status === 'ready' ? live.factories.length > 0 : undefined;
   return (
@@ -161,6 +163,7 @@ export default function Home(): ReactElement {
       <Feed<AttentionRow> query="attention-items" factory={factory} into={setAttention} />
       <Feed<HealthRunRow> query="health-runs" factory={factory} into={setHealthRuns} />
       <Feed<HealthStepRow> query="health-steps" factory={factory} into={setHealthSteps} />
+      <Feed<ProductDocumentRow> query="product-documents" factory={factory} into={setDocuments} />
       <Feed<StepRow> query="step-detail" factory={factory} args={[at ?? '']} into={setSteps} />
       <LivePanel<HomeMapRow> query="home-map" factory={factory} args={[at ?? '']}>
         {(map, state) => (
@@ -173,6 +176,7 @@ export default function Home(): ReactElement {
               attention: attention.rows,
               healthRuns: healthRuns.rows,
               healthSteps: healthSteps.rows,
+              documents: documents.rows,
             }}
             steps={steps.rows}
             states={{
@@ -182,6 +186,7 @@ export default function Home(): ReactElement {
               attention: attention.state,
               healthRuns: healthRuns.state,
               healthSteps: healthSteps.state,
+              documents: documents.state,
               steps: steps.state,
             }}
             state={state}

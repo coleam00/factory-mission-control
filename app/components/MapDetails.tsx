@@ -2,7 +2,13 @@ import { type ReactElement, type ReactNode, useState } from 'react';
 import { Link } from 'react-router';
 import type { StepRow } from '../lib/step-detail';
 import { type Card, pinnedStepLinks, workflowFile } from '../map/factory-map';
-import { type CardLive, type MapItem, overdueHealth, type WorkOrderRow } from '../map/live';
+import {
+  type CardLive,
+  type MapItem,
+  overdueHealth,
+  type ProductDocumentRow,
+  type WorkOrderRow,
+} from '../map/live';
 import { useNow } from './Lanes';
 
 type Tab = 'when' | 'what' | 'how' | 'live' | 'behind';
@@ -63,6 +69,34 @@ function Order({ order }: { order: WorkOrderRow }): ReactElement {
       <span className={CHIP}>
         {order.open_count} open, {order.merged_count} merged{lands}
       </span>
+    </li>
+  );
+}
+
+/** A product document with the work items its split recorded, merged over total, drawn as a bar. */
+function ProductDocument({ document }: { document: ProductDocumentRow }): ReactElement {
+  const { number, title, url, total_count: total, merged_count: merged } = document;
+  const percent = total === 0 ? 0 : Math.round((merged / total) * 100);
+  return (
+    <li data-product-document={number} className="grid gap-1">
+      <span>
+        <a href={url} className={LINK}>
+          <span className="font-mono tabular-nums">#{number}</span> {title}
+        </a>
+        <span className={CHIP}>
+          {total === 0 ? 'no work items recorded' : `${merged}/${total} merged`}
+        </span>
+      </span>
+      <div
+        role="progressbar"
+        aria-label={`#${number}: ${merged} of ${total} merged`}
+        aria-valuemin={0}
+        aria-valuemax={total}
+        aria-valuenow={merged}
+        className="h-1.5 overflow-hidden rounded-full bg-surface-inset"
+      >
+        <div className="h-full rounded-full bg-success" style={{ width: `${percent}%` }} />
+      </div>
     </li>
   );
 }
@@ -133,6 +167,21 @@ export function RightNow({
       </li>
     )),
     ...(live?.orders ?? []).map((order) => <Order key={`order-${order.name}`} order={order} />),
+    ...(live?.documents ?? []).map((document) => (
+      <ProductDocument key={`document-${document.number}`} document={document} />
+    )),
+    ...(live?.documents?.length === 0
+      ? [
+          <li key="no-documents" className="text-text-secondary">
+            No product document is open.
+          </li>,
+        ]
+      : []),
+    ...(live?.listsUnavailable ?? []).map((list) => (
+      <li key={`unavailable-${list}`} className="text-text-secondary">
+        The product documents are unavailable.
+      </li>
+    )),
     ...(live?.merged ?? []).map((merge) => (
       <li key={`merged-${merge.run}-${merge.number ?? 'lap'}`} data-lap={merge.run}>
         <Link to={lapHref(merge.run)} className={LINK}>

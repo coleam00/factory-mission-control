@@ -10,6 +10,7 @@ import {
   type FactoryMap,
   LABEL_ASK_KEYS,
   LINE_STYLES,
+  LISTS,
   levelsOf,
   type MapView,
   openerOf,
@@ -67,6 +68,7 @@ function unknownValues(map: FactoryMap): string[] {
     ...allCards(map).flatMap((card) => [
       ...outside(`${card.title} role`, card.role, ROLES),
       ...(card.chips ?? []).flatMap((chip) => outside(`${card.title} chip`, chip, CHIPS)),
+      ...(card.lists ?? []).flatMap((list) => outside(`${card.title} list`, list, LISTS)),
     ]),
     ...levelsOf(map)
       .flatMap((level) => level.lines)
