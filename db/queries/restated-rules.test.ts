@@ -19,9 +19,8 @@ test('the health queries exclude exactly the pack manager titles', async () => {
   expect(notIn).not.toBeNull();
   expect(quoted(notIn?.[1] ?? '').sort()).toEqual(expected);
 
-  const live = read('scripts', 'live', 'health.ts').match(/AND i\.title <> '[^\n]*/);
-  expect(live).not.toBeNull();
-  expect(quoted(live?.[0] ?? '').sort()).toEqual(expected);
+  const live = [...read('scripts', 'live', 'health.ts').matchAll(/i\.title <> '([^']*)'/g)];
+  expect(live.map((m) => m[1]).sort()).toEqual(expected);
 });
 
 test('the board route CASE agrees with the pack ROUTE_LABEL', async () => {
@@ -31,9 +30,7 @@ test('the board route CASE agrees with the pack ROUTE_LABEL', async () => {
   const pairs = [...(block?.[1] ?? '').matchAll(/WHEN '([^']*)' THEN '([^']*)'/g)].map(
     (m) => [m[1], m[2]] as const,
   );
-  // `continue` shares archon-ready with `deliver`, and the Board shows that label as deliver.
-  const labels = Object.entries(ROUTE_LABEL).filter(([route]) => route !== 'continue');
-  expect(pairs.length).toBe(labels.length);
+  expect(new Set(pairs.map(([label]) => label))).toEqual(new Set(Object.values(ROUTE_LABEL)));
   for (const [label, route] of pairs) expect(ROUTE_LABEL[route as string]).toBe(label);
 });
 
