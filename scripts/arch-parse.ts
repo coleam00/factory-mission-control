@@ -295,6 +295,9 @@ function parseCli(argv: string[]) {
   for (const sha of [archonSha, factorySha]) {
     if (!SHA.test(sha)) throw new Error(`${sha} is not a commit sha`);
   }
+  for (const flag of ['archon-path', 'factory-path', 'package-path'] as const) {
+    if (values[flag] === '') throw new Error(`--${flag} needs a path`);
+  }
   return {
     target: values.main ? ('main' as const) : ('check' as const),
     archonSha,

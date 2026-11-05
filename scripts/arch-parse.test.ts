@@ -397,3 +397,13 @@ test('refuses a template and a package that record different commits', async () 
     expect(job.opened).toEqual([]);
   }
 });
+
+test.each(['--factory-path=', '--package-path='])(
+  'refuses an empty %s and stores no version',
+  async (flag) => {
+    const job = await run([ARCHON_SHA, FACTORY_SHA, '--archon-path', PACK, flag]);
+    expect(job.exit).toBe(2);
+    expect(job.err.join('\n')).toContain('needs a path');
+    expect(await pg.query('SELECT 1 FROM mc.arch_versions')).toEqual([]);
+  },
+);
