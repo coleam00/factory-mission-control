@@ -13,8 +13,8 @@ export type Role = (typeof ROLES)[number];
 export const CHIPS = ['queued', 'failing', 'waiting', 'merged', 'orders'] as const;
 export type Chip = (typeof CHIPS)[number];
 
-/** What Right now lists for a card besides the items its chips count. */
-export const LISTS = ['documents'] as const;
+/** What a card's Right now lists besides its chips' items: product documents, recent gate outcomes, the latest deploy, where work orders land. */
+export const LISTS = ['documents', 'outcomes', 'deploys', 'lands'] as const;
 export type List = (typeof LISTS)[number];
 
 export const LINE_STYLES = ['flow', 'ask', 'loop'] as const;

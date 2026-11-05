@@ -53,7 +53,7 @@ fits the whole map, at any width.
 `bun run map:check` (part of `bun run check`) parses both packs with the architecture parser,
 offline, and fails, naming the step, when a step of a workflow a card covers is covered by no card
 or by two, when a card names a workflow or a step its pack lacks, when an entry's screen is not
-the step's own, when a role, chip, line style, legend role or pack is outside the closed sets, or
+the step's own, when a role, chip, list, line style, legend role or pack is outside the closed sets, or
 when a covered step's pack path holds a dot (the map reads a step's path by its dots). A failure
 that names a pack's step starts `loop pack: ` or `queue pack: `. A step of one pack that counts on a
 card only through the other pack's entry (the packs share workflow names such as
@@ -78,7 +78,7 @@ the commits this factory runs, with `ARCHON_COMMIT` and `FACTORY_COMMIT` beside 
 
 ## Live counts
 
-The cards' chips come from these live queries: `home-map` (each running run of the factory with its
+The cards' chips come from these live queries (`map-right-now` also feeds the Merge and Staging views' lists, below): `home-map` (each running run of the factory with its
 running steps and issue, the runs waiting on attention, whether the factory is on the queues, the
 open pull requests whose latest app check failed, the merges with when they finished, and whether
 the version the address names is recorded),
@@ -120,6 +120,27 @@ then on the card of that card's view that covers it, so one run on `ship/deliver
 is on Build at the home map and on Deliver in the Build view. A step that Review covers at the
 root counts on no card of the Build view.
 
+## Right now in the Merge and Staging views
+
+A card's `lists` (a closed set, held by the map check) name what its Right now shows beside its
+chips' items: `outcomes` (Merge gate), `deploys` and `lands` (each Staging card). They come from
+`map-right-now` (the newest 10 `archon-merge-queue` runs that swept and then recorded, and the
+factory's latest finished deploy, from `factory-deploy` or from the old loop's `deploy` include)
+and from `work-orders`; nothing is written and nothing polls. Like the chips, they describe the
+factory as it is now, at whatever version the address names.
+
+- Gate outcomes, newest run first: a pull request the run's `record` step read back as merged is
+  merged, whatever the sweep said; else a `return` decision is listed as sent back; an `ask` is
+  listed only when the record step raised it. Sent back and asked are the sweep's decision, which
+  the record step may still park, wait on or skip. Only a number's first decision counts, and a
+  number the run's `facts` step did not list is not shown. A `wait` decision, or an ask not raised, is not listed. Each shows the decision's reason and links the
+  pull request.
+- The latest deploy shows the revision (seven characters) and whether the deploy verified, or its
+  failure and the health it reported. A factory with no finished deploy says it has never deployed.
+- Where each work order lands lists the orders with an open issue and the `lands-on:<target>`
+  label their issues carry, or that they name no target yet.
+- A list whose source failed says it is unavailable and the other lists stay.
+
 ## The App check view
 
 `?view=app` is drawn from the mockup's `V.app`. On a factory on the queues, Pick a PR covers
@@ -150,7 +171,7 @@ holdout verifier and the fence (journey 1). Esc, the close button or a click on 
 deselects.
 
 A card with a view shows ⤢ and a stacked edge, and its strip has an Open button naming the number
-of cards in the view. A card shows ⤢ only once its view exists; today Build's, Split's, Intake's and App check's do (`?view=build`, `?view=split`, `?view=intake`, `?view=app`).
+of cards in the view. A card shows ⤢ only once its view exists; today Build's, Split's, Intake's, App check's, Merge's and Staging's do (`?view=build`, `?view=split`, `?view=intake`, `?view=app`, `?view=merge`, `?view=deploy`).
 Double-click, Enter on the selected card or the Open button zooms into the view. Breadcrumbs above
 the caption (the factory, then each opened view), the up control, a crumb, Esc (with nothing
 selected) and Backspace go up, and the card that opened the view flashes. The address is
