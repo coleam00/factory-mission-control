@@ -1,4 +1,4 @@
-import { type ReactElement, useEffect, useState } from 'react';
+import { type ReactElement, useCallback, useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router';
 import { EmptyState } from '../components/EmptyState';
 import { FactoryMap, useReducedMotion } from '../components/FactoryMap';
@@ -10,7 +10,7 @@ import type { StepRow } from '../lib/step-detail';
 import { useFactory } from '../live/FactoryProvider';
 import { LivePanel, type PanelState } from '../live/LivePanel';
 import { useLive } from '../live/LiveProvider';
-import { FACTORY_MAP } from '../map/factory-map';
+import { FACTORY_MAP, viewPath, viewSearch } from '../map/factory-map';
 import {
   cardLive,
   type HomeMapRow,
@@ -51,6 +51,8 @@ export function HomeMapBody({
   steps,
   states = {},
   now = new Date(),
+  path = [],
+  onPath = () => {},
 }: {
   /** `map` is undefined until `home-map` has answered. */
   sources: Omit<MapSources, 'map'> & { map: readonly HomeMapRow[] | undefined };
@@ -68,6 +70,9 @@ export function HomeMapBody({
   states?: NonNullable<MapSources['states']> & { steps?: PanelState };
   /** The browser's clock, which decides what "today" is for the merges. */
   now?: Date;
+  /** The view ids the address names, root first; none is the home map. */
+  path?: readonly string[];
+  onPath?: (path: readonly string[]) => void;
 }): ReactElement {
   const { map, workable, owner, orders } = sources;
   const empty = (title: string) => (
@@ -88,6 +93,8 @@ export function HomeMapBody({
       factory={factory}
       at={at}
       flow={flow}
+      path={path}
+      onPath={onPath}
       onDrawn={onDrawn}
       steps={steps}
       stepsFailed={states.steps === 'error'}
@@ -135,8 +142,13 @@ function Feed<Row>({
  * with live counts on its cards.
  */
 export default function Home(): ReactElement {
-  const [search] = useSearchParams();
+  const [search, setSearch] = useSearchParams();
   const at = search.get('at') || null;
+  const path = viewPath(FACTORY_MAP, search.get('view'));
+  const onPath = useCallback(
+    (to: readonly string[]) => setSearch((prev) => viewSearch(prev, to)),
+    [setSearch],
+  );
   const factory = useFactory();
   const live = useLive();
   const [flow, setFlow] = useState(true);
@@ -198,6 +210,8 @@ export default function Home(): ReactElement {
             flow={flow}
             onDrawn={setDrawn}
             now={now}
+            path={path}
+            onPath={onPath}
           />
         )}
       </LivePanel>

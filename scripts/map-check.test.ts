@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from 'bun:test';
 import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { FACTORY_MAP, type FactoryMap } from '../app/map/factory-map';
+import { type Card, FACTORY_MAP, type FactoryMap, type MapView } from '../app/map/factory-map';
 import { parsePack } from '../parsers/pack';
 import { REPO_ROOT } from './lib/cli';
 import { mapCheck, parseQueuePack } from './map-check';
@@ -35,6 +35,19 @@ const loop = () => parsePack(PACK, TEMPLATE);
 const check = (map: FactoryMap, pack = loop()) => mapCheck(map, { loop: pack, queue: queue() });
 
 const withCards = (cards: FactoryMap['cards']): FactoryMap => ({ ...FACTORY_MAP, cards });
+
+/** The map with the Build view's cards rewritten by `edit`. */
+const withBuildView = (edit: (cards: FactoryMap['cards']) => FactoryMap['cards']): FactoryMap => ({
+  ...FACTORY_MAP,
+  views: {
+    build: {
+      ...(FACTORY_MAP.views?.build as MapView),
+      cards: edit(FACTORY_MAP.views?.build?.cards ?? []),
+    },
+  },
+});
+const buildCard = (cards: FactoryMap['cards'], id: string, edit: (c: Card) => Card) =>
+  cards.map((c) => (c.id === id ? edit(c) : c));
 
 describe('map:check', () => {
   test('fixtures/pack and fixtures/pack/queue: every step of every covered workflow is covered by exactly one card', () => {
@@ -217,5 +230,58 @@ describe('map:check', () => {
     expect(check(withCards(cards))).toContain(
       'Staging cover archon-loop pack "both" is not one of loop, queue',
     );
+  });
+
+  test('a Build-view card dropping a child step fails naming it', () => {
+    const map = withBuildView((cards) =>
+      buildCard(cards, 'b-push', (c) => ({
+        ...c,
+        covers: c.covers.map((cover) =>
+          cover.workflow === 'archon-build-queue' ? { ...cover, steps: [] } : cover,
+        ),
+      })),
+    );
+    expect(check(map)).toEqual([
+      'queue pack: Build view: archon-build-queue apply is covered by no card',
+    ]);
+  });
+
+  test('a view card covering a step its parent does not fails', () => {
+    const map = withBuildView((cards) =>
+      buildCard(cards, 'b-del', (c) => ({
+        ...c,
+        covers: c.covers.map((cover) =>
+          cover.workflow === 'archon-build-queue'
+            ? {
+                ...cover,
+                steps: [...cover.steps, 'ship/deliver/rounds/review'],
+                screens: {
+                  ...cover.screens,
+                  'ship/deliver/rounds/review': {
+                    workflow: 'archon-deliver-block',
+                    path: 'rounds/review',
+                  },
+                },
+              }
+            : cover,
+        ),
+      })),
+    );
+    expect(check(map)).toEqual([
+      'queue pack: Build view: Deliver covers archon-build-queue ship/deliver/rounds/review, which Build does not',
+    ]);
+  });
+
+  test('an opens naming no view, and a view no card opens, fail', () => {
+    const dead = {
+      ...FACTORY_MAP,
+      cards: FACTORY_MAP.cards.map((c) => (c.id === 'review' ? { ...c, opens: 'nowhere' } : c)),
+    };
+    expect(check(dead)).toEqual(['Review opens view nowhere, which the map lacks']);
+    const orphan = {
+      ...FACTORY_MAP,
+      cards: FACTORY_MAP.cards.map(({ opens: _, ...c }) => c),
+    };
+    expect(check(orphan)).toContain('view build is opened by no card');
   });
 });
