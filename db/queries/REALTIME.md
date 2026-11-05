@@ -38,7 +38,8 @@ size of the seeded `archon-deliver-block` YAML on that run (its source file was 
 the largest value Realtime answers are not measured. Realtime did not answer such a query on
 2026-10-25 (no rows and no error). A query that returns whole files still splits each into parts of
 4000 characters, at most 16,000 bytes each, joining a `VALUES` list of part numbers because
-`generate_series` is refused, and the browser joins the parts.
+`generate_series` is refused (`db/queries.test.ts` lists the banned set-returning functions in
+`SET_RETURNING` and fails a live query that calls one), and the browser joins the parts.
 `test:live` seals the probes in debug mode to record why a query was rejected; the app seals in
 safe mode, where the browser sees only `upstream_rejected: upstream rejected` and no database
 structure.

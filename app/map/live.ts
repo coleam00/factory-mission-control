@@ -1,10 +1,13 @@
 /**
  * What the factory map's chips count (PRD 4.1 "Live"), from the live rows: the laps on each card
  * and today's merges from `home-map`, Build's workable issues from `health-workable`, the
- * owner's open items from `owner-queue` and the work orders with open issues from `work-orders`. Every chip keeps the items it counted,
+ * owner's open items from `owner-queue`, the work orders with open issues from `work-orders` and the
+ * open product documents from `product-documents`. Every chip keeps the items it counted,
  * which the details strip's Right now lists (invariant 4). Pure, no React.
  */
 import type { HealthWorkableRow } from '../lib/health';
+import { claimedPulls, mergedPulls } from '../lib/merge-queue';
+import { pullUrl } from '../lib/one-lap';
 import type { OwnerQueueRow } from '../lib/owner-queue';
 import type { PanelState } from '../live/LivePanel';
 import {
@@ -14,6 +17,7 @@ import {
   cardChain,
   cardForStep,
   type FactoryMap,
+  type List,
   stepPath,
 } from './factory-map';
 
@@ -41,6 +45,8 @@ export interface MapLap {
   run: string;
   /** The deepest running step's path. */
   step: string;
+  /** The run's workflow, which decides whether it has a lap page. */
+  workflow: string;
   issue: { number: number; title: string | null; url: string | null } | null;
 }
 
@@ -56,6 +62,8 @@ export interface MapItem {
 /** A merge a chip counts: the lap that landed it, and the issue or pull request it merged. */
 export interface MapMerge {
   run: string;
+  /** The run's workflow, which decides whether it has a lap page. */
+  workflow: string | null;
   number: number | null;
   at: Date;
 }
@@ -72,6 +80,58 @@ export interface WorkOrderRow {
   last_closed_at: Date | null;
 }
 
+/** One row of `db/queries/map-right-now.sql`: a run's gate decisions, or a finished deploy. */
+export interface MapRightNowRow {
+  kind: 'outcomes' | 'deploys';
+  run_id: string;
+  at: Date | null;
+  /** A gate row's sweep decisions, as the JSON text of an array. */
+  decisions: string | null;
+  /** A gate row's pull requests the record step read back as merged, as the JSON text of an array of numbers. */
+  merged: string | null;
+  /** The number of the pull request the record step asked about, when it did. */
+  asked: string | null;
+  /** A gate row's `facts` items, the pull requests the run listed, as the JSON text of an array. */
+  claimed: string | null;
+  revision: string | null;
+  health: string | null;
+  status: 'verified' | 'deployed' | 'failed' | null;
+  repository: string;
+}
+
+/**
+ * What the gate did with a pull request in a run. `merged` is read back by the record step;
+ * `sent back` and `asked` are the sweep's decision, which the record step may still park or skip.
+ */
+export interface GateOutcome {
+  run: string;
+  number: number;
+  outcome: 'merged' | 'sweep: sent back' | 'sweep: asked';
+  reason: string;
+  url: string;
+  at: Date | null;
+}
+
+export interface LatestDeploy {
+  run: string;
+  revision: string | null;
+  health: string | null;
+  /** Deployed and healthy. */
+  verified: boolean;
+  /** The service reported the revision it serves; false for a deploy with no identity command. */
+  readBack: boolean;
+  at: Date | null;
+}
+
+/** One row of `db/queries/product-documents.sql`: an open product document and its split's work items. */
+export interface ProductDocumentRow {
+  number: number;
+  title: string;
+  url: string;
+  total_count: number;
+  merged_count: number;
+}
+
 export interface CardLive {
   here: MapLap[];
   queued?: MapItem[];
@@ -79,8 +139,16 @@ export interface CardLive {
   waiting?: MapItem[];
   merged?: MapMerge[];
   orders?: WorkOrderRow[];
+  documents?: ProductDocumentRow[];
+  /** Lists whose source failed: unknown, never empty. */
+  listsUnavailable?: List[];
   /** Chips whose source failed: not zero, unknown, so drawn as such. */
   unavailable?: Chip[];
+  gate?: GateOutcome[];
+  /** The latest deploy; null when the factory never deployed. */
+  deploy?: LatestDeploy | null;
+  /** The work orders with open issues, each with where it lands. */
+  lands?: WorkOrderRow[];
 }
 
 export interface MapSources {
@@ -88,8 +156,16 @@ export interface MapSources {
   workable?: readonly HealthWorkableRow[];
   owner?: readonly OwnerQueueRow[];
   orders?: readonly WorkOrderRow[];
+  rightNow?: readonly MapRightNowRow[];
+  documents?: readonly ProductDocumentRow[];
   /** A source in `error` keeps its rows, but its chip is unavailable, never a count. */
-  states?: { workable?: PanelState; owner?: PanelState; orders?: PanelState };
+  states?: {
+    workable?: PanelState;
+    owner?: PanelState;
+    orders?: PanelState;
+    rightNow?: PanelState;
+    documents?: PanelState;
+  };
 }
 
 const depth = (step: string) => stepPath(step).split('/').length;
@@ -108,18 +184,6 @@ const sameLocalDay = (a: Date, b: Date) =>
   a.getMonth() === b.getMonth() &&
   a.getDate() === b.getDate();
 
-/** The pull requests of a merge-queue lap's list; anything but an array of positive integers gives none. */
-function mergedPulls(prs: string): number[] {
-  try {
-    const parsed: unknown = JSON.parse(prs);
-    return Array.isArray(parsed)
-      ? parsed.filter((n): n is number => Number.isInteger(n) && n > 0)
-      : [];
-  } catch {
-    return [];
-  }
-}
-
 /**
  * The merges of `now`'s local day, newest first: a loop lap whose land step merged is one, a
  * merge-queue lap is one per pull request its record step read back as merged.
@@ -130,8 +194,8 @@ export function mergedToday(rows: readonly HomeMapRow[], now: Date): MapMerge[] 
       if (row.kind !== 'merged' || row.run_id === null || row.at === null) return [];
       if (!sameLocalDay(row.at, now)) return [];
       const { run_id: run, at } = row;
-      if (row.prs === null) return [{ run, number: row.number, at }];
-      return mergedPulls(row.prs).map((number) => ({ run, number, at }));
+      if (row.prs === null) return [{ run, workflow: row.workflow, number: row.number, at }];
+      return mergedPulls(row.prs).map((number) => ({ run, workflow: row.workflow, number, at }));
     })
     .sort(
       (a, b) =>
@@ -139,6 +203,86 @@ export function mergedToday(rows: readonly HomeMapRow[], now: Date): MapMerge[] 
         a.run.localeCompare(b.run) ||
         (a.number ?? 0) - (b.number ?? 0),
     );
+}
+
+function jsonArray(text: string | null): unknown[] {
+  if (text === null) return [];
+  try {
+    const parsed: unknown = JSON.parse(text);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+const newestFirst = (a: MapRightNowRow, b: MapRightNowRow) =>
+  (b.at?.getTime() ?? Number.NEGATIVE_INFINITY) - (a.at?.getTime() ?? Number.NEGATIVE_INFINITY) ||
+  a.run_id.localeCompare(b.run_id);
+
+/**
+ * The gate's recent outcomes, newest run first and in the sweep's order within a run. A pull
+ * request the record step read back as merged is merged whatever the sweep said; else a `return`
+ * decision is listed as sent back, and an ask only when the record step raised it. Those two are
+ * the sweep's decision: the record step may still park, wait on or skip the pull request. Only the
+ * first decision per number counts, and a number the run's facts did not list is dropped, as the
+ * record step's `decide()` does (`merge-queue/scripts/record.ts`; `app/map/restated-rules.test.ts`
+ * runs it against this, and holds the action names to the pin). A waiting decision, or an ask
+ * not raised, is not listed.
+ */
+export function gateOutcomes(rows: readonly MapRightNowRow[]): GateOutcome[] {
+  return rows
+    .filter((row) => row.kind === 'outcomes')
+    .sort(newestFirst)
+    .flatMap((row) => {
+      const merged = new Set(mergedPulls(row.merged ?? '[]'));
+      const asked = row.asked === null ? null : Number(row.asked);
+      const claimed = new Set(claimedPulls(row.claimed));
+      const seen = new Set<number>();
+      return jsonArray(row.decisions).flatMap((decision): GateOutcome[] => {
+        if (typeof decision !== 'object' || decision === null) return [];
+        const { number, action, reason } = decision as Record<string, unknown>;
+        if (!Number.isInteger(number) || (number as number) < 1 || typeof reason !== 'string') {
+          return [];
+        }
+        const n = number as number;
+        if (seen.has(n) || !claimed.has(n)) return [];
+        seen.add(n);
+        const outcome = merged.has(n)
+          ? 'merged'
+          : action === 'return'
+            ? 'sweep: sent back'
+            : action === 'ask' && asked === n
+              ? 'sweep: asked'
+              : null;
+        return outcome === null
+          ? []
+          : [
+              {
+                run: row.run_id,
+                number: n,
+                outcome,
+                reason,
+                url: pullUrl(row.repository, n),
+                at: row.at,
+              },
+            ];
+      });
+    });
+}
+
+/** The newest finished deploy, from the queue's factory-deploy or the old loop's deploy include; null when none. */
+export function latestDeploy(rows: readonly MapRightNowRow[]): LatestDeploy | null {
+  const [latest] = rows.filter((row) => row.kind === 'deploys').sort(newestFirst);
+  return latest === undefined
+    ? null
+    : {
+        run: latest.run_id,
+        revision: latest.revision,
+        health: latest.health,
+        verified: latest.status === 'verified' || latest.status === 'deployed',
+        readBack: latest.status === 'verified',
+        at: latest.at,
+      };
 }
 
 const byNumber = (a: MapItem, b: MapItem) =>
@@ -243,6 +387,26 @@ function chipItems(
   };
 }
 
+/** What one list of a card shows: unavailable when its source failed, nothing until it is delivered. */
+function listInto(
+  entry: CardLive,
+  list: List,
+  { orders, rightNow, documents, states = {} }: MapSources,
+) {
+  const source =
+    list === 'documents' ? states.documents : list === 'lands' ? states.orders : states.rightNow;
+  if (source === 'error') {
+    entry.listsUnavailable = [...(entry.listsUnavailable ?? []), list];
+  } else if (list === 'documents') {
+    if (documents) entry.documents = [...documents];
+  } else if (list === 'lands') {
+    if (orders) entry.lands = orders.filter((o) => o.open_count > 0);
+  } else if (rightNow) {
+    if (list === 'outcomes') entry.gate = gateOutcomes(rightNow);
+    else entry.deploy = latestDeploy(rightNow);
+  }
+}
+
 /**
  * Each card's live state: the laps of the factory on a step it covers, each counted once per level
  * on the card covering its deepest running step there (Build at the root, Deliver in its view),
@@ -261,6 +425,7 @@ export function cardLive(
     const lap: MapLap = {
       run: placed.run,
       step: placed.step,
+      workflow: placed.workflow,
       issue: row.number === null ? null : { number: row.number, title: row.title, url: row.url },
     };
     for (const card of cardChain(factoryMap, placed.workflow, placed.step)) {
@@ -278,6 +443,7 @@ export function cardLive(
       if (counted === 'unavailable') entry.unavailable = [...(entry.unavailable ?? []), chip];
       else if (counted !== undefined) Object.assign(entry, { [chip]: counted });
     }
+    for (const list of card.lists ?? []) listInto(entry, list, sources);
   }
   return live;
 }

@@ -1,4 +1,4 @@
-import { expect, test } from 'bun:test';
+import { expect, setSystemTime, test } from 'bun:test';
 import { FACTORY_MAP } from '../../app/map/factory-map';
 import {
   freePort,
@@ -7,6 +7,7 @@ import {
   mapMismatches,
   mapTypeFailures,
   type ShownCard,
+  waitForHealth,
 } from './shared';
 
 test('freePort waits while every port in 8850-8864 is taken and takes the first one freed', async () => {
@@ -90,4 +91,34 @@ test("the map's type passes at the owner's least sizes and fails, naming it, und
   expect(mapTypeFailures({ ...fitted, frameWidth: 1104 })).toEqual([
     "the map's frame is 1104px wide in a 1440px window: it should span the window inside the gutters",
   ]);
+});
+
+test('waitForHealth throws at once when the server has exited', async () => {
+  const started = Date.now();
+  await expect(waitForHealth('http://127.0.0.1:1', () => true)).rejects.toThrow(
+    'the server exited before answering /api/health',
+  );
+  expect(Date.now() - started).toBeLessThan(1000);
+});
+
+test('waitForHealth accepts a server that answers only after 20 seconds', async () => {
+  const realFetch = globalThis.fetch;
+  const realSleep = Bun.sleep;
+  const start = Date.now();
+  let clock = start;
+  setSystemTime(new Date(clock));
+  Bun.sleep = (async (ms: number) => {
+    clock += ms;
+    setSystemTime(new Date(clock));
+  }) as typeof Bun.sleep;
+  globalThis.fetch = (async () =>
+    new Response('', { status: clock - start >= 20_000 ? 200 : 503 })) as unknown as typeof fetch;
+  try {
+    await waitForHealth('http://127.0.0.1:1', () => false);
+    expect(clock - start).toBeGreaterThanOrEqual(20_000);
+  } finally {
+    globalThis.fetch = realFetch;
+    Bun.sleep = realSleep;
+    setSystemTime();
+  }
 });

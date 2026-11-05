@@ -6,7 +6,7 @@
 import { FACTORY_MAP, type Role } from '../map/factory-map';
 import { type HomeMapRow, lapCard, onQueues, type WorkOrderRow } from '../map/live';
 import type { HealthWorkableRow } from './health';
-import { consoleUrl } from './one-lap';
+import { consoleUrl, hasLapPage } from './one-lap';
 import type { OwnerQueueRow } from './owner-queue';
 
 /** One row of `db/queries/board.sql`: a work item, or the one row for the factory. */
@@ -164,7 +164,7 @@ function chipsOf(item: BoardRow, column: ColumnId, running: boolean): BoardChip[
 
 /** Until the work item has its own page, its card opens its latest run, else the issue. */
 function linkOf(item: BoardRow, factory: string, consoleBase: string | null): BoardLink {
-  if (item.run_id !== null && item.run_workflow === 'archon-loop')
+  if (item.run_id !== null && hasLapPage(item.run_workflow))
     return { kind: 'lap', to: `/f/${factory}/laps/${item.run_id}` };
   if (item.run_id !== null && consoleBase !== null)
     return { kind: 'external', href: consoleUrl(consoleBase, item.run_id) };

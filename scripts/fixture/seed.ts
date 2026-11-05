@@ -1511,7 +1511,13 @@ function secondFactorySql(loop: Loop): string[] {
  * so a run's issue is its `number` input. Two running archon-build-queue runs and a third that
  * `fixture:write attention` can pause, none yet on a running step (the live check starts one); a
  * paused archon-merge-queue run waiting on attention, and a completed one whose `record` step read
- * pull requests 404 and 405 back as merged. One open needs-owner issue must not count.
+ * pull requests 404 and 405 back as merged. Two versions built them: the first opened 404 and, on
+ * a second digest, a later round continued it while another opened 405 (#393), so each version
+ * holds one merge. One open needs-owner issue must not count. One open
+ * product document (410, label `archon-prd`) whose completed `archon-split` run recorded issues
+ * 411, 412 and 413 and adopted 405; 411 and 412 are closed by merged pull requests, so the document
+ * is 2 merged of 4. A running `archon-intake` run (on 401) and a running `archon-split` run (on
+ * 410) have no step yet, for the live check to put on Triage and Break it up.
  */
 export const QUEUE_FACTORY: FactoryEntry = {
   name: 'queue-factory',
@@ -1527,11 +1533,19 @@ export const QUEUE_RUNS = {
   waiting: '5eed0005-0000-4000-8000-000000000004',
   merged: '5eed0005-0000-4000-8000-000000000005',
   built: '5eed0005-0000-4000-8000-000000000007',
+  continued: '5eed0005-0000-4000-8000-000000000008',
+  opened: '5eed0005-0000-4000-8000-000000000009',
   intake: '5eed0005-0000-4000-8000-000000000006',
+  split: '5eed0005-0000-4000-8000-00000000000b',
+  splitting: '5eed0005-0000-4000-8000-00000000000c',
+  triaging: '5eed0005-0000-4000-8000-00000000000a',
 } as const;
 
 /** The source digest of the queue factory's runs: every workflow run from one source shares it. */
 export const QUEUE_DIGEST = `sha256:${'d4'.repeat(32)}`;
+
+/** The queue factory's second version: its runs of 22 October. */
+export const QUEUE_DIGEST_2 = `sha256:${'a7'.repeat(32)}`;
 
 function queueFactorySql(): string[] {
   const at = (minute: number) => `2026-10-24T09:${String(minute).padStart(2, '0')}:00.000Z`;
@@ -1545,6 +1559,7 @@ function queueFactorySql(): string[] {
     minute: number,
     output?: Record<string, unknown>,
     time = at,
+    cost_usd?: number,
   ) =>
     insert('remote_agent_workflow_events', {
       id: `5eedeeee-0000-4000-8000-2${String(++event).padStart(11, '0')}`,
@@ -1555,6 +1570,7 @@ function queueFactorySql(): string[] {
         ...nodeBlock(step, 'script', step),
         timing: { startedAt: time(minute), durationMs: 1000 },
         duration_ms: 1000,
+        ...(cost_usd === undefined ? {} : { cost_usd }),
         ...(output ? { structured_output: output } : {}),
       }),
       created_at: time(minute),
@@ -1566,6 +1582,7 @@ function queueFactorySql(): string[] {
     metadata: Record<string, unknown>,
     completed: boolean,
     time = at,
+    digest = QUEUE_DIGEST,
   ) =>
     insert('remote_agent_workflow_runs', {
       id,
@@ -1575,30 +1592,68 @@ function queueFactorySql(): string[] {
       user_message: `Run ${workflow} on ${QUEUE_FACTORY.repository}`,
       metadata: json({
         ...metadata,
-        workflow_source: { digest: QUEUE_DIGEST },
+        workflow_source: { digest },
       }),
       started_at: time(0),
       completed_at: completed ? time(9) : null,
       last_activity_at: time(5),
     });
-  const issue = (number: number, title: string) =>
+  const issue = (number: number, title: string, state: 'open' | 'closed' = 'open') =>
     insert('mc.issues', {
       factory: QUEUE_FACTORY.name,
       number,
       title,
-      state: 'open',
+      state,
       phase: null,
       url: `https://github.com/${QUEUE_FACTORY.repository}/issues/${number}`,
       created_at: at(0),
       updated_at: at(1),
-      closed_at: null,
+      closed_at: state === 'closed' ? at(7) : null,
     });
+  const merged = (pr: number, number: number) => [
+    insert('mc.pull_requests', {
+      factory: QUEUE_FACTORY.name,
+      number: pr,
+      title: `Queue issue ${number}`,
+      state: 'closed',
+      merged_at: at(8),
+      head_sha: `${'c'.repeat(39)}${number % 10}`,
+      url: `https://github.com/${QUEUE_FACTORY.repository}/pull/${pr}`,
+      created_at: at(2),
+      updated_at: at(8),
+      closed_at: at(8),
+    }),
+    insert('mc.pull_request_issues', {
+      factory: QUEUE_FACTORY.name,
+      pr_number: pr,
+      issue_number: number,
+    }),
+  ];
+  const filed = (number: number) => ({
+    key: `piece-${number}`,
+    number,
+    url: `https://github.com/${QUEUE_FACTORY.repository}/issues/${number}`,
+  });
   const claimed = (number: number) => ({
     path: 'route',
     item: {
       repo: { host: 'github.com', path: QUEUE_FACTORY.repository },
       number,
     },
+  });
+  const second = (minute: number) => `2026-10-22T09:${String(minute).padStart(2, '0')}:00.000Z`;
+  const pullRequest = (number: number) => ({
+    repo: { host: 'github.com', path: QUEUE_FACTORY.repository },
+    number,
+    state: 'open',
+  });
+  const mergeItem = (number: number) => ({
+    item: claimed(number).item,
+    pr: { repo: claimed(number).item.repo, number },
+    url: `https://github.com/${QUEUE_FACTORY.repository}/pull/${number}`,
+    facts: {},
+    record: null,
+    own_pr: false,
   });
   const first = (id: string, number: number) => [
     run(id, 'archon-build-queue', 'running', { inputs: { number: String(number) } }, false),
@@ -1608,7 +1663,7 @@ function queueFactorySql(): string[] {
   ];
   return [
     '',
-    '-- A third factory, on the queue workflows: runs with a number input, one waiting on attention, one that merged, and one finished build-queue run earlier than the rest.',
+    '-- A third factory, on the queue workflows: runs with a number input, one waiting on attention, one that merged, and finished build-queue runs on two versions.',
     insert('mc.factories', QUEUE_FACTORY),
     insert('remote_agent_codebases', {
       id: QUEUE_CODEBASE,
@@ -1633,10 +1688,49 @@ function queueFactorySql(): string[] {
       }),
       created_at: at(4),
     }),
+    run(QUEUE_RUNS.triaging, 'archon-intake', 'running', { inputs: { number: '401' } }, false),
+    run(QUEUE_RUNS.splitting, 'archon-split', 'running', { inputs: { number: '410' } }, false),
+    run(QUEUE_RUNS.split, 'archon-split', 'completed', { inputs: { number: '410' } }, true),
+    done(QUEUE_RUNS.split, 'publish', 7, {
+      path: 'slice',
+      item: 410,
+      kind: 'prd',
+      issues: [filed(411), filed(412), filed(413)],
+      adopted: [
+        {
+          number: 405,
+          url: `https://github.com/${QUEUE_FACTORY.repository}/issues/405`,
+          why: 'Already covers the merge queue piece.',
+        },
+      ],
+      summary: 'Filed 411, 412 and 413; adopted 405.',
+    }),
     run(QUEUE_RUNS.built, 'archon-build-queue', 'completed', {}, true, earlier),
-    done(QUEUE_RUNS.built, 'facts', 1, claimed(404), earlier),
+    done(QUEUE_RUNS.built, 'facts', 1, claimed(404), earlier, 1.2),
+    // A later round on pull request 404, which the run above opened, and a run that opens 405.
+    run(QUEUE_RUNS.continued, 'archon-build-queue', 'completed', {}, true, second, QUEUE_DIGEST_2),
+    done(
+      QUEUE_RUNS.continued,
+      'facts',
+      1,
+      { ...claimed(404), pull_request: pullRequest(404) },
+      second,
+    ),
+    done(QUEUE_RUNS.continued, 'route', 2, undefined, second, 0.75),
+    run(QUEUE_RUNS.opened, 'archon-build-queue', 'completed', {}, true, second, QUEUE_DIGEST_2),
+    done(QUEUE_RUNS.opened, 'facts', 1, { ...claimed(405), pull_request: null }, second),
+    done(QUEUE_RUNS.opened, 'route', 2, undefined, second, 2.25),
     run(QUEUE_RUNS.waiting, 'archon-merge-queue', 'paused', { wait: attentionWait(at(6)) }, false),
     run(QUEUE_RUNS.merged, 'archon-merge-queue', 'completed', {}, true),
+    done(QUEUE_RUNS.merged, 'facts', 1, {
+      path: 'sweep',
+      items: [mergeItem(404), mergeItem(405)],
+      settled: [],
+      base: null,
+      base_error: '',
+      gate: '',
+      policy_defaults: '',
+    }),
     done(QUEUE_RUNS.merged, 'record', 8, {
       merged: [404, 405],
       summary: 'Merged 404 and 405.',
@@ -1651,6 +1745,18 @@ function queueFactorySql(): string[] {
     issue(404, 'Queue issue 404'),
     issue(405, 'Queue issue 405'),
     issue(406, 'Needs the owner'),
+    issue(410, 'Queue product document'),
+    issue(411, 'Queue piece 411', 'closed'),
+    issue(412, 'Queue piece 412', 'closed'),
+    issue(413, 'Queue piece 413'),
+    ...merged(421, 411),
+    ...merged(422, 412),
+    insert('mc.issue_labels', {
+      factory: QUEUE_FACTORY.name,
+      issue_number: 410,
+      label: 'archon-prd',
+      labeled_at: at(2),
+    }),
     insert('mc.issue_labels', {
       factory: QUEUE_FACTORY.name,
       issue_number: 406,
@@ -1662,7 +1768,7 @@ function queueFactorySql(): string[] {
 
 export function buildSeed(repoRoot: string): string {
   const { v1, v2 } = parseVersions(repoRoot);
-  if (!v1.archonCommit || !v1.factoryCommit) throw new Error('the pack names no commits');
+  if (!v1.archonCommit || !v1.packageCommit) throw new Error('the pack names no commits');
   const versions = versionSpecs(v1.archonCommit);
   // V3's pack keeps V2's loop: no architecture rows are seeded for it.
   const v2Loop = loopOf(v2);
@@ -1674,7 +1780,7 @@ export function buildSeed(repoRoot: string): string {
   if (!factory) throw new Error(`factories.json has no ${FACTORY}`);
   const archKey = (archonSha: string, parsedAt: string) => ({
     archon_sha: archonSha,
-    factory_sha: v1.factoryCommit ?? '',
+    factory_sha: v1.packageCommit ?? '',
     parsed_at: parsedAt,
   });
   const edits = V2_EDITS.flatMap((edit) => [
@@ -1699,7 +1805,7 @@ export function buildSeed(repoRoot: string): string {
     PROJECTION,
     ...githubSql(runs),
     '',
-    '-- Architecture: V1 is parsers/pack.ts on fixtures/pack/ and fixtures/factory-template/; V2 is',
+    '-- Architecture: V1 is parsers/pack.ts on fixtures/pack/, fixtures/pack/queue/factory/ and fixtures/factory-template/; V2 is',
     '-- the same with one step removed, one added, one prompt and one subagent changed:',
     ...edits,
     ...architectureSql(

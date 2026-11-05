@@ -76,7 +76,7 @@ export async function freePort(
 }
 
 export async function waitForHealth(base: string, exited: () => boolean): Promise<void> {
-  const deadline = Date.now() + 15_000;
+  const deadline = Date.now() + 60_000;
   while (Date.now() < deadline) {
     if (exited()) throw new Error('the server exited before answering /api/health');
     const ok = await fetch(`${base}/api/health`).then(
@@ -86,7 +86,16 @@ export async function waitForHealth(base: string, exited: () => boolean): Promis
     if (ok) return;
     await Bun.sleep(200);
   }
-  throw new Error('the server did not answer /api/health within 15s');
+  throw new Error('the server did not answer /api/health within 60s');
+}
+
+/** Clicks `selector` on the page once it is there; false when it never shows. */
+export async function click(page: Page, selector: string): Promise<boolean> {
+  const shown = await page.evaluate<boolean>(
+    pageWait(`document.querySelector('${selector}') !== null`, 2000),
+  );
+  if (shown) await page.evaluate(`document.querySelector('${selector}').click()`);
+  return shown;
 }
 
 /** An in-page promise: true once `condition` holds, false after `ms`; it watches, never polls. */

@@ -34,11 +34,18 @@ const queue = () => parseQueuePack(QUEUE_ROOT, TEMPLATE);
 const loop = () => parsePack(PACK, TEMPLATE);
 const check = (map: FactoryMap, pack = loop()) => mapCheck(map, { loop: pack, queue: queue() });
 
-const withCards = (cards: FactoryMap['cards']): FactoryMap => ({ ...FACTORY_MAP, cards });
+/** The map with only the Build view, so the tests of the root cards and of Build's view are not also held to the other views. */
+const onlyBuild = (cards: FactoryMap['cards']): FactoryMap => ({
+  ...FACTORY_MAP,
+  cards: cards.map((c) => (c.opens === 'build' ? c : { ...c, opens: undefined })),
+  views: { build: FACTORY_MAP.views?.build as MapView },
+});
+
+const withCards = (cards: FactoryMap['cards']): FactoryMap => onlyBuild(cards);
 
 /** The map with the Build view's cards rewritten by `edit`. */
 const withBuildView = (edit: (cards: FactoryMap['cards']) => FactoryMap['cards']): FactoryMap => ({
-  ...FACTORY_MAP,
+  ...onlyBuild(FACTORY_MAP.cards),
   views: {
     build: {
       ...(FACTORY_MAP.views?.build as MapView),
@@ -62,6 +69,7 @@ describe('map:check', () => {
     );
     expect(check(FACTORY_MAP, pack)).toEqual([
       'loop pack: App check names archon-loop briefs, which the pack lacks',
+      'loop pack: Pick a PR names archon-loop briefs, which the pack lacks',
     ]);
   });
 
@@ -70,6 +78,7 @@ describe('map:check', () => {
       card.id === 'app'
         ? {
             ...card,
+            opens: undefined,
             covers: [
               {
                 pack: 'loop' as const,
@@ -80,7 +89,8 @@ describe('map:check', () => {
           }
         : card,
     );
-    expect(check(withCards(without))).toEqual([
+    const map = { ...withCards(without), views: { build: FACTORY_MAP.views?.build as MapView } };
+    expect(check(map)).toEqual([
       "loop pack: archon-loop handoff is marked on a lap's row but covered by no card",
     ]);
   });
@@ -156,7 +166,9 @@ describe('map:check', () => {
     const map: FactoryMap = {
       ...FACTORY_MAP,
       cards: FACTORY_MAP.cards.map((card, i) =>
-        i === 0 ? { ...card, role: 'robot' as never, chips: ['lost' as never] } : card,
+        i === 0
+          ? { ...card, role: 'robot' as never, chips: ['lost' as never], lists: ['nope' as never] }
+          : card,
       ),
       lines: FACTORY_MAP.lines.map((line, i) =>
         i === 0 ? { ...line, style: 'flwo' as never } : line,
@@ -169,6 +181,7 @@ describe('map:check', () => {
     expect(check(map)).toEqual([
       `${first.title} role "robot" is not one of source, agent, test, person`,
       `${first.title} chip "lost" is not one of queued, failing, waiting, merged, orders`,
+      `${first.title} list "nope" is not one of documents, outcomes, deploys, lands`,
       `line ${line.from} to ${line.to} style "flwo" is not one of flow, ask, loop`,
       `legend ${entry.label} role "ghost" is not one of source, agent, test, person`,
     ]);
@@ -197,6 +210,7 @@ describe('map:check', () => {
     writeFileSync(file, `${lines.slice(0, at).join('\n')}\n`);
     expect(mapCheck(FACTORY_MAP, { loop: loop(), queue: parseQueuePack(dir, TEMPLATE) })).toEqual([
       'queue pack: Staging names factory-deploy verify, which the pack lacks',
+      'queue pack: Verify names factory-deploy verify, which the pack lacks',
     ]);
   });
 
@@ -243,6 +257,32 @@ describe('map:check', () => {
     );
     expect(check(map)).toEqual([
       'queue pack: Build view: archon-build-queue apply is covered by no card',
+    ]);
+  });
+
+  test('the Split and Intake views each cover the steps of their card once', () => {
+    const split = FACTORY_MAP.views?.split as MapView;
+    const map: FactoryMap = {
+      ...FACTORY_MAP,
+      views: {
+        ...FACTORY_MAP.views,
+        split: {
+          ...split,
+          cards: split.cards.map((c) =>
+            c.id === 's-slice'
+              ? {
+                  ...c,
+                  covers: c.covers.map((cover) =>
+                    cover.workflow === 'archon-split' ? { ...cover, steps: [] } : cover,
+                  ),
+                }
+              : c,
+          ),
+        },
+      },
+    };
+    expect(check(map)).toEqual([
+      'queue pack: Split view: archon-split slice is covered by no card',
     ]);
   });
 

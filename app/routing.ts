@@ -1,5 +1,5 @@
 import { type ComponentType, createElement } from 'react';
-import type { RouteObject } from 'react-router';
+import { Navigate, type RouteObject, useParams } from 'react-router';
 import { NotFound, RouteError } from './errors';
 import { Shell } from './Shell';
 
@@ -64,15 +64,11 @@ export function factoryScreens(routes: readonly RouteObject[]): FactoryScreen[] 
   return screens.sort((a, b) => a.path.localeCompare(b.path));
 }
 
-/** The search a factory's scorecard keeps across a switch: the versions it compares. */
-const KEPT_SEARCH: Readonly<Record<string, readonly string[]>> = { scorecard: ['a', 'b'] };
-
 /**
  * Where choosing `factory` goes from `pathname` and its `search`: the same screen for it when
  * `pathname` is one of `screens`, a step's page as it is (a step's page names no factory: the
  * switcher remembers the chosen one), otherwise its home map (`/f/:factory`). A screen's search
- * names the old factory's versions, so only the scorecard keeps its `a` and `b`, which the
- * scorecard then checks against the new factory's versions (`keptVersions`).
+ * names the old factory's items, so it is not kept.
  */
 export function factoryPath(
   pathname: string,
@@ -84,15 +80,37 @@ export function factoryPath(
   const home = `/f/${encodeURIComponent(factory)}`;
   const rest = pathname.match(/^\/f\/[^/]+\/(.+)$/)?.[1];
   if (rest === undefined || !screens.some((screen) => screen.path === rest)) return home;
-  const from = new URLSearchParams(search);
-  const kept = new URLSearchParams();
-  for (const name of KEPT_SEARCH[rest] ?? []) {
-    const value = from.get(name);
-    if (value) kept.set(name, value);
-  }
-  const query = kept.toString();
-  return `${home}/${rest}${query === '' ? '' : `?${query}`}`;
+  return `${home}/${rest}`;
 }
+
+/** Where each removed screen's address goes now, under the same factory. '' is the factory's map. */
+export const REMOVED_SCREENS: Readonly<Record<string, string>> = {
+  changes: '',
+  diff: '',
+  health: 'decisions',
+  issues: 'board',
+  ledger: 'decisions',
+  owner: 'decisions',
+  scorecard: '',
+  testing: 'board',
+  versions: '',
+};
+
+function RemovedScreen({ to }: { to: string }): ReturnType<typeof createElement> {
+  const factory = encodeURIComponent(useParams().factory ?? '');
+  return createElement(Navigate, {
+    to: `/f/${factory}${to === '' ? '' : `/${to}`}`,
+    replace: true,
+  });
+}
+
+const removedRoutes = (): RouteObject[] => [
+  ...Object.entries(REMOVED_SCREENS).map(([from, to]) => ({
+    path: `/f/:factory/${from}`,
+    element: createElement(RemovedScreen, { to }),
+  })),
+  { path: '/rewind', element: createElement(Navigate, { to: '/', replace: true }) },
+];
 
 /**
  * The router's whole tree: the shell, linking every factory screen, around the directory's routes,
@@ -104,7 +122,7 @@ export function appRoutes(modules: Record<string, RouteModule>): RouteObject[] {
     {
       element: createElement(Shell, { screens: factoryScreens(routes) }),
       ErrorBoundary: RouteError,
-      children: [...routes, { path: '*', Component: NotFound }],
+      children: [...routes, ...removedRoutes(), { path: '*', Component: NotFound }],
     },
   ];
 }

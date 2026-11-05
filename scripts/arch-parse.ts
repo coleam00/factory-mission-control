@@ -2,20 +2,26 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
-import { HOOKS_DIR, type PackVersion, parsePack, type Step } from '../parsers/pack';
+import {
+  FACTORY_PACKAGE_DIR,
+  HOOKS_DIR,
+  type PackVersion,
+  parseVersion,
+  type Step,
+} from '../parsers/pack';
 import { type Deps, failing, guardedDatabaseUrl, type Main, runCli } from './lib/cli';
 import type { Row, Tx } from './lib/db';
-import { readDirectoryAt } from './lib/github';
+import { type RemoteDirectory, readDirectoryAt } from './lib/github';
 
-// The architecture job (PRD 11.4): one version's pack and factory template, parsed and stored as
-// that version's architecture rows. A version is keyed by full commit shas, whichever form the
+// The architecture job (PRD 11.4): one version's pack, factory package and factory template hooks
+// (whichever the factory commit has), parsed and stored as that version's architecture rows. A version is keyed by full commit shas, whichever form the
 // command was given.
 
 export const ARCHON_REPOSITORY = 'coleam00/Archon';
 export const PACK_DIR = '.archon/workflows/sdlc';
 export const FACTORY_REPOSITORY = 'coleam00/ai-software-factory';
 const TEMPLATE_DIR = 'template';
-/** Only the part of the template the parser reads, so no holdout scenario file is ever fetched. */
+/** Only the parts of the factory repository the parser reads, so no holdout scenario file is ever fetched. */
 export const FACTORY_HOOKS_DIR = `${TEMPLATE_DIR}/${HOOKS_DIR}`;
 
 /** Every table a version owns rows in, besides `mc.arch_versions`. */
@@ -31,7 +37,7 @@ export const ARCH_TABLES = [
 type ArchTable = (typeof ARCH_TABLES)[number];
 
 const USAGE =
-  'usage: bun run arch:parse <archon-sha> <factory-sha> [--archon-path <dir holding sdlc/>] [--factory-path <template dir>] | bun run arch:parse:main ... (the owner, at a terminal)';
+  'usage: bun run arch:parse <archon-sha> <factory-sha> [--archon-path <dir holding sdlc/>] [--factory-path <template dir>] [--package-path <factory package dir>] | bun run arch:parse:main ... (the owner, at a terminal)';
 
 const SHA = /^[0-9a-f]{7,40}$/;
 
@@ -175,51 +181,94 @@ async function fetchInto(
   repository: string,
   ref: string,
   dir: string,
-): Promise<string> {
+): Promise<RemoteDirectory> {
   const remote = await readDirectoryAt(deps.fetch, repository, ref, dir);
-  for (const file of remote.files) {
+  for (const file of remote.files ?? []) {
     const path = join(root, dir, file.path);
     mkdirSync(dirname(path), { recursive: true });
     writeFileSync(path, file.bytes);
   }
-  return remote.sha;
+  return remote;
 }
 
 /** Reads and parses the version from the local paths given, else from GitHub at the two shas. */
 async function readVersion(
   deps: Deps,
-  args: { archonSha: string; factorySha: string; archonPath?: string; factoryPath?: string },
+  args: {
+    archonSha: string;
+    factorySha: string;
+    archonPath?: string;
+    factoryPath?: string;
+    packagePath?: string;
+  },
 ): Promise<Version> {
   const scratch = mkdtempSync(join(tmpdir(), 'mc-arch-'));
   try {
-    const archon = args.archonPath
-      ? { dir: join(resolve(deps.repoRoot, args.archonPath), 'sdlc'), sha: null }
-      : {
-          dir: join(scratch, PACK_DIR),
-          sha: await fetchInto(deps, scratch, ARCHON_REPOSITORY, args.archonSha, PACK_DIR),
-        };
-    const factory = args.factoryPath
-      ? { dir: resolve(deps.repoRoot, args.factoryPath), sha: null }
-      : {
-          dir: join(scratch, TEMPLATE_DIR),
-          sha: await fetchInto(
-            deps,
-            scratch,
-            FACTORY_REPOSITORY,
-            args.factorySha,
-            FACTORY_HOOKS_DIR,
-          ),
-        };
-    // The parser reads a missing directory as an empty one, which would replace the version's rows
-    // with nothing. GitHub reads already refuse a missing directory; local paths are checked here.
-    if (!existsSync(archon.dir)) throw new Error(`no pack at ${archon.dir}`);
-    if (!existsSync(join(factory.dir, HOOKS_DIR))) {
-      throw new Error(`no ${HOOKS_DIR} under ${factory.dir}`);
+    let archon: { dir: string; sha: string | null };
+    if (args.archonPath) {
+      archon = { dir: join(resolve(deps.repoRoot, args.archonPath), 'sdlc'), sha: null };
+    } else {
+      const fetched = await fetchInto(deps, scratch, ARCHON_REPOSITORY, args.archonSha, PACK_DIR);
+      if (fetched.files === null) {
+        throw new Error(`${ARCHON_REPOSITORY} has no ${PACK_DIR}/ at ${fetched.sha}`);
+      }
+      archon = { dir: join(scratch, PACK_DIR), sha: fetched.sha };
     }
-    const pack = parsePack(archon.dir, factory.dir);
+
+    // The factory side is the template's hooks and the factory package, each optional (the
+    // factory's current commit has only the package), but not both missing.
+    const localFactory = args.factoryPath !== undefined || args.packagePath !== undefined;
+    let templateDir = join(scratch, TEMPLATE_DIR);
+    const localPackageDir = args.packagePath ? resolve(deps.repoRoot, args.packagePath) : null;
+    let packageDir = localPackageDir;
+    let fetchedSha: string | null = null;
+    if (localFactory) {
+      if (args.factoryPath) templateDir = resolve(deps.repoRoot, args.factoryPath);
+    } else {
+      const hooks = await fetchInto(
+        deps,
+        scratch,
+        FACTORY_REPOSITORY,
+        args.factorySha,
+        FACTORY_HOOKS_DIR,
+      );
+      const factoryPackage = await fetchInto(
+        deps,
+        scratch,
+        FACTORY_REPOSITORY,
+        args.factorySha,
+        FACTORY_PACKAGE_DIR,
+      );
+      if (hooks.files === null && factoryPackage.files === null) {
+        throw new Error(
+          `${FACTORY_REPOSITORY} has neither ${FACTORY_HOOKS_DIR}/ nor ${FACTORY_PACKAGE_DIR}/ at ${hooks.sha}`,
+        );
+      }
+      fetchedSha = hooks.sha;
+      if (factoryPackage.files !== null) packageDir = join(scratch, FACTORY_PACKAGE_DIR);
+    }
+    // The parser reads a missing directory as an empty one, which would replace the version's rows
+    // with nothing. GitHub reads report a missing directory; local paths are checked here.
+    if (!existsSync(archon.dir)) throw new Error(`no pack at ${archon.dir}`);
+    if (args.factoryPath && !existsSync(join(templateDir, HOOKS_DIR))) {
+      throw new Error(`no ${HOOKS_DIR} under ${templateDir}`);
+    }
+    if (localPackageDir && !existsSync(localPackageDir)) {
+      throw new Error(`no factory package at ${localPackageDir}`);
+    }
+    const pack = parseVersion(archon.dir, packageDir, templateDir);
+    const local: string[] = [];
+    if (args.factoryPath) local.push(localSha(args.factorySha, pack.factoryCommit, templateDir));
+    if (localPackageDir) {
+      local.push(localSha(args.factorySha, pack.packageCommit, localPackageDir));
+    }
+    const [first, second] = local;
+    if (second !== undefined && first !== second) {
+      throw new Error(`the template is at ${first} and the factory package at ${second}`);
+    }
     return {
       archonSha: archon.sha ?? localSha(args.archonSha, pack.archonCommit, archon.dir),
-      factorySha: factory.sha ?? localSha(args.factorySha, pack.factoryCommit, factory.dir),
+      factorySha: fetchedSha ?? first ?? args.factorySha,
       pack,
     };
   } finally {
@@ -236,6 +285,7 @@ function parseCli(argv: string[]) {
       help: { type: 'boolean', short: 'h' },
       'archon-path': { type: 'string' },
       'factory-path': { type: 'string' },
+      'package-path': { type: 'string' },
     },
   });
   if (values.help) return { help: true as const };
@@ -246,12 +296,16 @@ function parseCli(argv: string[]) {
   for (const sha of [archonSha, factorySha]) {
     if (!SHA.test(sha)) throw new Error(`${sha} is not a commit sha`);
   }
+  for (const flag of ['archon-path', 'factory-path', 'package-path'] as const) {
+    if (values[flag] === '') throw new Error(`--${flag} needs a path`);
+  }
   return {
     target: values.main ? ('main' as const) : ('check' as const),
     archonSha,
     factorySha,
     archonPath: values['archon-path'],
     factoryPath: values['factory-path'],
+    packagePath: values['package-path'],
   };
 }
 

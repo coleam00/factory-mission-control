@@ -58,7 +58,7 @@ const main = (html: string) => text(html.match(/<main[\s\S]*<\/main>/)?.[0] ?? '
 /** Nothing above or in the page reads as a real factory's identity or count (#119). */
 function expectNoFactoryIdentity(html: string): void {
   expect(header(html)).not.toContain('mission-control');
-  expect(html).not.toContain('Running laps');
+  expect(html).not.toContain('Running now');
   expect(html).not.toContain('data-count');
   expect(html).not.toContain('Live data is unavailable.');
   expect(main(html)).not.toContain('Nothing is at this address.');
@@ -115,7 +115,7 @@ test("a factory removed from the server's file reads as unknown on its old addre
 test("a real factory's not-found address keeps its identity; one outside /f/ is plain not-found", () => {
   const real = render('/f/mission-control/nothing-here');
   expect(header(real)).toContain('mission-control');
-  expect(real).toContain('Running laps');
+  expect(real).toContain('Running now');
   expect(real).not.toContain('Unknown factory');
   expect(main(real)).toBe('Nothing is at this address. Go to home');
 
@@ -127,6 +127,6 @@ test("a real factory's not-found address keeps its identity; one outside /f/ is 
 test('a real factory screen renders its strip, not the unknown page', () => {
   const html = render('/f/second-factory/versions');
   expect(header(html)).toContain('second-factory');
-  expect(html).toContain('Running laps');
+  expect(html).toContain('Running now');
   expect(html).not.toContain('data-unknown-factory');
 });

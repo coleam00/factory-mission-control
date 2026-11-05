@@ -12,19 +12,11 @@ import { type Deps, failing, guardedDatabaseUrl, type Main, runCli } from './lib
 import { machineLockPath, withMachineLock } from './lib/machine-lock';
 import { resolveBranchName } from './lib/target';
 import { boardPhase } from './live/board';
-import { changesPhase } from './live/changes';
 import { decisionsPhase } from './live/decisions';
-import { diffPhase } from './live/diff';
-import { healthPhase } from './live/health';
 import { homePhase } from './live/home';
-import { issuesPhase } from './live/issues';
 import { lapsPhase } from './live/laps';
-import { ledgerPhase } from './live/ledger';
 import { oneLapPhase } from './live/one-lap';
-import { ownerPhase } from './live/owner';
 import { queueMapPhase } from './live/queue-map';
-import { rewindPhase } from './live/rewind';
-import { scorecardPhase } from './live/scorecard';
 import {
   type DesignProbe,
   fixtureWrite,
@@ -37,9 +29,7 @@ import {
 } from './live/shared';
 import { stepDetailPhase } from './live/step-detail';
 import { switcherPhase } from './live/switcher';
-import { testingPhase } from './live/testing';
 import { measurePanels } from './live/timings';
-import { versionsPhase } from './live/versions';
 
 const USAGE = [
   'usage: bun run test:live [--out <dir>] [--hold <seconds>]',
@@ -56,8 +46,9 @@ const USAGE = [
   '  re-runs the probes in db/queries/REALTIME.md, and runs',
   '  the design probe. Writes realtime-timings.json, realtime-features.json, home-map-timings.json,',
   '  home-map.png and home-map-design-probe.json to --out (default harness/.results/live). The queue',
-  "  factory's map also writes queue-map.png, plus build-view.png and build-view-design-probe.json",
-  '  for its Build view (`?view=build`).',
+  "  factory's map also writes queue-map.png, plus a screenshot and a design probe file for each of",
+  '  its Build, Split, Intake, Merge and Staging views (`?view=build`, `split`, `intake`, `merge`, `deploy`):',
+  '  build-view.png, build-view-design-probe.json, and the same for split, intake, merge and staging.',
   '  On the same run it checks the versions screen against the seed, picks two versions, and times',
   '  `fixture:write pin` to that screen before and after the hold, writing version-strip-check.txt,',
   '  version-strip-timings.json, version-strip.png and version-strip-design-probe.json.',
@@ -107,6 +98,9 @@ const USAGE = [
   '  it across the same hold, and checks land, the way from deliver to the implement step it',
   "  includes and that step's prompt, and an unknown step, writing",
   '  step-detail-timings.json, step-detail.png and step-detail-design-probe.json.',
+  "  The queue factory's map also opens App check's Behind the scenes check step, which must show the",
+  '  factory package prompt, and writes factory-step-check-design-probe.json and',
+  '  factory-step-config-design-probe.json for the two package steps.',
   '  It opens /rewind on a second server, which must refuse a switch to an unlisted rewind-* name,',
   '  makes a rewind branch of the check branch with `bun run rewind:create` before the hold and',
   '  another after it, switches to the first and back, and a second page left open on / must',
@@ -248,34 +242,18 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
     failures: [],
   };
   const { failures } = ctx;
-  const rewind = rewindPhase(ctx);
   // The order is the order of every write against every read that judges it: the laps screen
-  // and the lap open before the strip's first insert, the ledger screen writes before the
-  // step, versions and scorecard screens open and judges the versions screen's pin after the
-  // hold, and the switcher runs before the diff adds steps to the architecture the second
-  // factory's map shows. The owner queue labels just before the issues screen does, so each of
-  // the issues screen's labels lands on a waiting issue; the Decisions screen removes its own
-  // labels as soon as it has timed them. Rewind is last: making a rewind branch starts a new Neon compute on the
-  // project, so every other screen's first snapshots are timed before it.
+  // and the lap open before the strip's first insert. The Decisions screen removes its own labels
+  // as soon as it has timed them.
   const phases: LivePhase[] = [
     homePhase(ctx),
     queueMapPhase(ctx),
     boardPhase(ctx),
     lapsPhase(ctx),
     oneLapPhase(ctx),
-    ledgerPhase(ctx),
     stepDetailPhase(ctx),
-    versionsPhase(ctx),
-    scorecardPhase(ctx),
-    changesPhase(ctx),
-    testingPhase(ctx),
-    ownerPhase(ctx),
     decisionsPhase(ctx),
-    issuesPhase(ctx),
-    healthPhase(ctx),
     switcherPhase(ctx),
-    diffPhase(ctx),
-    { ...rewind, summary: () => [`rewind: ${JSON.stringify(rewind.timings)}`] },
   ];
   const designProbe: DesignProbe = (url, file, on) => {
     const probe = Bun.spawnSync(

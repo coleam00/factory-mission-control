@@ -4,7 +4,8 @@ import { join } from 'node:path';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { MemoryRouter } from 'react-router';
 import { parsePack, type Step } from '../../parsers/pack';
-import { Behind, MapDetails, RightNow } from '../components/MapDetails';
+import { AppCheckList, Behind, MapDetails, RightNow } from '../components/MapDetails';
+import type { AppCheckRow } from '../lib/app-check';
 import type { StepRow } from '../lib/step-detail';
 import { FACTORY_MAP, workflowFile } from '../map/factory-map';
 import type { HomeMapRow, MapSources } from '../map/live';
@@ -81,10 +82,11 @@ test("the map draws every card's wording, the caption, the group and the legend,
   }
   expect(html).toContain('the manager watches everything on this line');
   for (const entry of FACTORY_MAP.legend) expect(html).toContain(entry.label);
-  // Only Build has a deeper view, so only it offers to open one.
-  expect(cardTag(html, 'build')).toContain('data-opens="build"');
+  // Only Build, Split, Intake, App check, Merge and Staging have a deeper view, so only they offer to open one.
+  const opens = ['build', 'split', 'intake', 'app', 'merge', 'deploy'];
+  for (const id of opens) expect(cardTag(html, id)).toContain(`data-opens="${id}"`);
   expect(html).toContain('opens a deeper view');
-  for (const card of FACTORY_MAP.cards.filter((c) => c.id !== 'build')) {
+  for (const card of FACTORY_MAP.cards.filter((c) => !opens.includes(c.id))) {
     expect(cardTag(html, card.id)).not.toContain('data-opens');
   }
   expect(html).not.toContain('data-chip');
@@ -100,6 +102,95 @@ test("with path ['build'] the map draws the Build view's cards, caption and crum
   expect(textOf(html).replace(/\s+/g, ' ')).toContain('here › Build');
   expect(cardTag(html, 'b-del')).toContain('data-live-count="1"');
   expect(cardTag(html, 'build')).toBe('');
+});
+
+test.each([
+  ['merge', 6, 'm-sweep', 'archon-merge-queue', 'sweep'],
+  ['deploy', 3, 'y-ver', 'factory-deploy', 'verify'],
+])(
+  "with path ['%s'] the map draws that view's cards and a running step counts on its card",
+  (id, cards, here, workflow, step) => {
+    const view = FACTORY_MAP.views?.[id];
+    if (view === undefined) throw new Error(`the map has no ${id} view`);
+    const html = render([{ ...lap('a', step), workflow }], 'ready', { path: [id] });
+    expect(view.cards).toHaveLength(cards);
+    for (const card of view.cards) expect(cardTag(html, card.id)).toContain('data-card');
+    expect(html).toContain(view.caption.replaceAll("'", '&#x27;'));
+    expect(html).toContain(`data-view="${id}"`);
+    expect(cardTag(html, here)).toContain('data-live-count="1"');
+  },
+);
+
+test('Right now lists the gate outcomes, the latest deploy or that there is none, and where each work order lands', () => {
+  const rightNow = (live: Parameters<typeof RightNow>[0]['live']) =>
+    textOf(
+      renderToStaticMarkup(
+        <MemoryRouter>
+          <RightNow live={live} factory="here" />
+        </MemoryRouter>,
+      ),
+    ).replace(/\s+/g, ' ');
+  const gate = rightNow({
+    here: [],
+    gate: [
+      {
+        run: 'r',
+        number: 9,
+        outcome: 'sweep: sent back',
+        reason: 'conflicts with main',
+        url: 'https://github.com/o/r/pull/9',
+        at: null,
+      },
+    ],
+  });
+  expect(gate).toContain('#9 sweep: sent back conflicts with main');
+  expect(rightNow({ here: [], gate: [] })).toContain(
+    'No gate decision is recorded for this factory yet.',
+  );
+  const order = (lands_on: string | null) => ({
+    name: 'combat',
+    total_count: 1,
+    open_count: 1,
+    merged_count: 0,
+    lands_on,
+    last_closed_at: null,
+  });
+  const staged = rightNow({ here: [], deploy: null, lands: [order('staging'), order(null)] });
+  expect(staged).toContain('This factory has never deployed.');
+  expect(staged).toContain('combat lands on staging');
+  expect(staged).toContain('combat names no target yet');
+  const deployed = rightNow({
+    here: [],
+    deploy: {
+      run: 'd',
+      revision: 'abcdef0123',
+      health: 'healthy',
+      verified: true,
+      readBack: true,
+      at: null,
+    },
+  });
+  expect(deployed).toContain('abcdef0 is deployed, healthy, and its revision read back');
+  const unread = rightNow({
+    here: [],
+    deploy: {
+      run: 'd',
+      revision: 'abcdef0123',
+      health: 'healthy',
+      verified: true,
+      readBack: false,
+      at: null,
+    },
+  });
+  expect(unread).toContain('abcdef0 is deployed, healthy, and its revision not read back');
+  const failed = rightNow({
+    here: [],
+    deploy: { run: 'd', revision: null, health: null, verified: false, readBack: false, at: null },
+  });
+  expect(failed).toContain('no revision : the last deploy failed, health not reported');
+  expect(rightNow({ here: [], listsUnavailable: ['outcomes', 'deploys', 'lands'] })).toContain(
+    'The latest deploy is unavailable.',
+  );
 });
 
 test('a card that opens a view offers ⤢ Open Build · 8 steps', () => {
@@ -127,7 +218,7 @@ test('a card with laps on it carries their count and a pulsing chip; a chip of 0
   });
   expect(cardTag(html, 'app')).toContain('data-live-count="2"');
   expect(cardTag(html, 'app')).toContain(
-    'aria-label="App check. Tries the change in the running app. 2 here"',
+    'aria-label="App check. Tries the change in the running app. 2 here. Opens a deeper view"',
   );
   expect(cardTag(html, 'build')).toContain('data-live-count="1"');
   expect(cardTag(html, 'review')).toContain('data-live-count="0"');
@@ -339,6 +430,7 @@ test('Right now links a lap entry to its page and to its GitHub issue, and only 
   ) => ({
     run,
     step: 'plan',
+    workflow: 'archon-loop',
     issue,
   });
   const html = renderToStaticMarkup(
@@ -359,6 +451,35 @@ test('Right now links a lap entry to its page and to its GitHub issue, and only 
   expect(html.match(/data-lap-issue/g)).toHaveLength(1);
 });
 
+test('Right now links only a run with a lap page; a queue run and a merge-queue merge show plainly', () => {
+  const issue = { number: 9, title: 'Queued', url: 'https://github.com/o/r/issues/9' };
+  const at = new Date();
+  const html = renderToStaticMarkup(
+    <MemoryRouter>
+      <RightNow
+        live={{
+          here: [
+            { run: 'loop-run', step: 'plan', workflow: 'archon-loop', issue: null },
+            { run: 'queue-run', step: 'plan', workflow: 'archon-build-queue', issue },
+          ],
+          merged: [
+            { run: 'loop-merge', workflow: 'archon-loop', number: 4, at },
+            { run: 'queue-merge', workflow: 'archon-merge-queue', number: 5, at },
+          ],
+        }}
+        factory="here"
+      />
+    </MemoryRouter>,
+  );
+  expect(html).toContain('/f/here/laps/loop-run');
+  expect(html).toContain('/f/here/laps/loop-merge');
+  expect(html).not.toContain('/laps/queue-run');
+  expect(html).not.toContain('/laps/queue-merge');
+  expect(html).toContain('Queued');
+  expect(html).toContain('href="https://github.com/o/r/issues/9"');
+  expect(html).toContain('#5');
+});
+
 test('Right now says a chip count is unavailable', () => {
   const html = renderToStaticMarkup(
     <MemoryRouter>
@@ -366,6 +487,29 @@ test('Right now says a chip count is unavailable', () => {
     </MemoryRouter>,
   );
   expect(html).toContain('The queued count is unavailable.');
+});
+
+test('Use the app lists each pull request under check with its verdict and its lines by kind', () => {
+  const row = (number: number, overall: string | null, over: Partial<AppCheckRow> = {}) => ({
+    number,
+    title: `PR ${number}`,
+    url: `https://github.com/o/r/pull/${number}`,
+    run_id: `run-${number}`,
+    overall,
+    criteria: 1,
+    probes: 0,
+    assertions: 2,
+    ...over,
+  });
+  const html = renderToStaticMarkup(
+    <AppCheckList rows={[row(7, 'FAIL', { criteria: 3, probes: 1 }), row(8, null)]} />,
+  );
+  expect(html).toContain('href="https://github.com/o/r/pull/7"');
+  expect(textOf(html)).toContain('FAIL  3 criteria, 1 probe, 2 assertions');
+  expect(textOf(html)).toContain('checking  1 criterion, 0 probes, 2 assertions');
+  expect(textOf(renderToStaticMarkup(<AppCheckList rows={[]} />))).toBe(
+    'No open pull request has been checked.',
+  );
 });
 
 test('Behind the scenes shows each workflow its own YAML path, and none for a workflow the version lacks', () => {
@@ -443,4 +587,54 @@ test('the Work order card counts its open work orders and says nothing with none
   );
   expect(right).toContain('combat');
   expect(right).toContain('2 open, 1 merged, lands on staging');
+});
+
+test.each(['split', 'intake'])(
+  "with path ['%s'] the map draws that view's cards and caption",
+  (id) => {
+    const view = FACTORY_MAP.views?.[id];
+    if (view === undefined) throw new Error(`the map has no ${id} view`);
+    const html = render([], 'ready', { path: [id] });
+    for (const card of view.cards) expect(cardTag(html, card.id)).toContain('data-card');
+    expect(html).toContain(view.caption.replaceAll("'", '&#x27;'));
+    expect(html).toContain(`data-view="${id}"`);
+  },
+);
+
+test('Right now draws each product document as a bar with its link and counts, and says when none is open or the query failed', () => {
+  const right = (live: Parameters<typeof RightNow>[0]['live']) =>
+    renderToStaticMarkup(
+      <MemoryRouter>
+        <RightNow live={live} factory="here" />
+      </MemoryRouter>,
+    );
+  const html = right({
+    here: [],
+    documents: [
+      {
+        number: 410,
+        title: 'Queue',
+        url: 'https://github.com/o/r/issues/410',
+        total_count: 4,
+        merged_count: 2,
+      },
+      {
+        number: 420,
+        title: 'Empty',
+        url: 'https://github.com/o/r/issues/420',
+        total_count: 0,
+        merged_count: 0,
+      },
+    ],
+  });
+  expect(html).toContain('href="https://github.com/o/r/issues/410"');
+  expect(html).toContain('role="progressbar"');
+  expect(html).toContain('aria-valuenow="2"');
+  expect(html).toContain('aria-valuemax="4"');
+  expect(textOf(html)).toContain('2/4 merged');
+  expect(textOf(html)).toContain('no work items recorded');
+  expect(textOf(right({ here: [], documents: [] }))).toContain('No product document is open.');
+  expect(textOf(right({ here: [], listsUnavailable: ['documents'] }))).toContain(
+    'The product documents are unavailable.',
+  );
 });
