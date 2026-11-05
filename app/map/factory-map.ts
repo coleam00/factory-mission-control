@@ -52,6 +52,13 @@ export interface Details {
  */
 export type Asks = { label: string; value?: string } | { rest: true };
 
+/** Every key of each `Asks` arm; the compiler fails here when `Asks` and these drift apart. */
+export const LABEL_ASK_KEYS: Record<keyof Extract<Asks, { label: string }>, true> = {
+  label: true,
+  value: true,
+};
+export const REST_ASK_KEYS: Record<keyof Extract<Asks, { rest: true }>, true> = { rest: true };
+
 export interface Card {
   id: string;
   role: Role;

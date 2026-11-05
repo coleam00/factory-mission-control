@@ -8,12 +8,14 @@ import {
   coveringCards,
   FACTORY_MAP,
   type FactoryMap,
+  LABEL_ASK_KEYS,
   LINE_STYLES,
   levelsOf,
   type MapView,
   openerOf,
   PACKS,
   type Pack,
+  REST_ASK_KEYS,
   ROLES,
   screenOf,
   viewPath,
@@ -102,14 +104,15 @@ function askFailures(map: FactoryMap, labels: ReadonlySet<string>): string[] {
         const ask = card.asks as Record<string, unknown>;
         const at = `${card.title} asks`;
         if ('rest' in ask) {
-          return ask.rest === true && Object.keys(ask).length === 1
+          return ask.rest === true &&
+            Object.keys(ask).every((key) => Object.hasOwn(REST_ASK_KEYS, key))
             ? []
             : [`${at} ${JSON.stringify(ask)}, not exactly {"rest": true}`];
         }
         if (typeof ask.label !== 'string' || ask.label === '') {
           return [`${at} ${JSON.stringify(ask)}, which names no label`];
         }
-        const unknown = Object.keys(ask).filter((key) => key !== 'label' && key !== 'value');
+        const unknown = Object.keys(ask).filter((key) => !Object.hasOwn(LABEL_ASK_KEYS, key));
         if (unknown.length > 0) {
           return [`${at} ${JSON.stringify(ask)}, with unknown key ${unknown.join(', ')}`];
         }
