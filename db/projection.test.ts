@@ -4,6 +4,7 @@ import { holdoutId } from '../parsers/metrics';
 import { eventData, structuredOutputFor } from '../scripts/fixture/write';
 import type { Db, Row } from '../scripts/lib/db';
 import { runMigrations } from '../scripts/migrate';
+import { queries } from './queries/test-seed';
 import { archonDb, migrationFiles, snapshot } from './test-db';
 
 const NOW = new Date('2026-10-25T12:00:00Z');
@@ -2008,4 +2009,52 @@ test('a holdout workflow’s steps keep status and timing but no output, route o
     ).toEqual([{ route: null, outcome: null, reason: null }]);
   }
   expect(await projectionErrors()).toEqual([]);
+});
+
+test('the architecture diff reports a step whose only change is the workflow it runs', async () => {
+  const diff = queries.find(([name]) => name === 'arch-diff')?.[1] as string;
+  const before = new Date('2026-10-01T00:00:00Z');
+  const after = new Date('2026-10-10T00:00:00Z');
+  const versions = [
+    { digest: 'sha256:aaaa', archon: 'a1', pinnedAt: before, child: 'c3c3' },
+    { digest: 'sha256:bbbb', archon: 'a2', pinnedAt: after, child: '9a9a' },
+  ];
+  await db.query('TRUNCATE mc.arch_versions, mc.arch_steps');
+  for (const v of versions) {
+    const ranAt = new Date(v.pinnedAt.getTime() + 3_600_000);
+    await db.query(
+      `INSERT INTO mc.pins (sha, archon_sha, reason, committed_at) VALUES ($1, $1, 'r', $2)`,
+      [v.archon, v.pinnedAt],
+    );
+    await db.query(
+      `INSERT INTO mc.arch_versions (archon_sha, factory_sha, parsed_at) VALUES ($1, 'f1', $2)`,
+      [v.archon, v.pinnedAt],
+    );
+    await db.query(
+      `INSERT INTO mc.laps (run_id, factory, workflow_name, status, digest, started_at)
+       VALUES (gen_random_uuid(), 'mission-control', 'archon-loop', 'completed', $1, $2)`,
+      [v.digest, ranAt],
+    );
+    for (const [path, child] of [
+      ['judge', v.child],
+      ['other', 'same'],
+    ]) {
+      await db.query(
+        `INSERT INTO mc.arch_steps (archon_sha, factory_sha, workflow, path, position, step_id, kind, child_workflow, defined_in, file)
+         VALUES ($1, 'f1', 'calibrate', $2, 0, $2, 'workflow', $3, 'calibrate', 'calibrate.yaml')`,
+        [v.archon, path, child],
+      );
+    }
+  }
+
+  const rows = await db.query(diff, ['mission-control']);
+  const entries = (digest: string) =>
+    new Map(
+      ((rows.find((r) => r.digest === digest && r.kind === 'step')?.entries ?? []) as string[]).map(
+        (e) => e.split('\t'),
+      ) as [string, string][],
+    );
+  const [old, next] = [entries('sha256:aaaa'), entries('sha256:bbbb')];
+  expect(next.get('judge')).not.toBe(old.get('judge'));
+  expect(next.get('other')).toBe(old.get('other'));
 });
