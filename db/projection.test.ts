@@ -2089,7 +2089,7 @@ test('a queue app check that names a holdout keeps no output and no lines', asyn
   expect(await projectionErrors()).toEqual([]);
 });
 
-test('the lines a queue app check projects are the ones the factory’s own LINE accepts, by its kinds', async () => {
+test('a queue app check line’s id, kind and verdict follow the factory’s LINE', async () => {
   // A variable path keeps the factory package's own `.ts` imports out of this project's type-check.
   const { LINE } = (await import(
     join(import.meta.dir, '../fixtures/pack/queue/factory/app-check/scripts/evidence.ts')
