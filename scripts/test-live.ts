@@ -11,6 +11,7 @@ import { QUEUE_FACTORY, SECOND_FACTORY } from './fixture/seed';
 import { type Deps, failing, guardedDatabaseUrl, type Main, runCli } from './lib/cli';
 import { machineLockPath, withMachineLock } from './lib/machine-lock';
 import { resolveBranchName } from './lib/target';
+import { boardPhase } from './live/board';
 import { changesPhase } from './live/changes';
 import { decisionsPhase } from './live/decisions';
 import { diffPhase } from './live/diff';
@@ -73,6 +74,9 @@ const USAGE = [
   '  It checks the ledger screen against the seed, times `fixture:write verdict --pin <V2>` and',
   '  `fixture:write decision` to that screen before and after the hold, writing ledger-check.txt,',
   '  decisions-ledger-timings.json, decisions-ledger.png and decisions-ledger-design-probe.json.',
+  '  It checks the board against a recount of the seed, times `fixture:write label --label',
+  "  work-order:demo` to its panel and a build step on the queue factory's work item 401 to its",
+  '  Build column, and checks `?order=demo`, writing board.png and board-design-probe.json.',
   "  It checks the owner queue against the seed's open needs-owner issues and open owner questions,",
   '  and times `fixture:write label` to it before and after the hold, writing owner-queue-check.txt,',
   '  owner-queue-timings.json, owner-queue.png and owner-queue-design-probe.json.',
@@ -254,6 +258,7 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
   const phases: LivePhase[] = [
     homePhase(ctx),
     queueMapPhase(ctx),
+    boardPhase(ctx),
     lapsPhase(ctx),
     oneLapPhase(ctx),
     ledgerPhase(ctx),
