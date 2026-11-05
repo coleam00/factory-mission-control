@@ -444,3 +444,13 @@ test("the Manager's Right now lists the factory's health by the Health screen's 
   const failed = cardLive(FACTORY_MAP, { map: [], states: { healthRuns: 'error' } }, OTHER);
   expect(failed.get('u-mgr')?.healthUnavailable).toBe(true);
 });
+
+test('a health-steps outage reads as unavailable, never as no overdue steps', () => {
+  const failed = cardLive(
+    FACTORY_MAP,
+    { map: [], healthRuns: [], healthSteps: [], states: { healthSteps: 'error' } },
+    OTHER,
+  );
+  expect(failed.get('u-mgr')?.healthUnavailable).toBe(true);
+  expect(failed.get('u-mgr')?.health).toBeUndefined();
+});

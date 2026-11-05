@@ -80,22 +80,61 @@ function unknownValues(map: FactoryMap): string[] {
   ];
 }
 
-/** The attention labels the pack's waits declare, which a question card's `asks` may name. */
-function attentionLabels(pack: PackVersion): Set<string> {
-  const keys = new Set<string>();
-  for (const workflow of pack.workflows) {
-    const doc = Bun.YAML.parse(workflow.yaml) as {
+/** Every object nested anywhere in a parsed workflow document. */
+function objectsIn(value: unknown): Record<string, unknown>[] {
+  if (typeof value !== 'object' || value === null) return [];
+  const children = Object.values(value).flatMap(objectsIn);
+  return Array.isArray(value) ? children : [value as Record<string, unknown>, ...children];
+}
+
+/**
+ * The attention labels the pack's waits declare, which a question card's `asks` may name, each with
+ * the values it can take: the literal a wait sets, the literals every include of its workflow passes
+ * for an `$INPUTS` label, or `undefined` when a run's output feeds it and any value may appear.
+ */
+function attentionLabels(pack: PackVersion): Map<string, Set<string> | undefined> {
+  const docs = pack.workflows.map((workflow) => ({
+    name: workflow.name,
+    doc: Bun.YAML.parse(workflow.yaml) as {
       nodes?: { wait?: { labels?: Record<string, unknown> } }[];
-    };
+    },
+  }));
+  const labels = new Map<string, Set<string> | undefined>();
+  for (const { name, doc } of docs) {
     for (const node of doc.nodes ?? []) {
-      for (const key of Object.keys(node.wait?.labels ?? {})) keys.add(key);
+      for (const [key, source] of Object.entries(node.wait?.labels ?? {})) {
+        const known = labels.has(key) ? labels.get(key) : new Set<string>();
+        const input =
+          typeof source === 'string' ? /^\$INPUTS\.(\w+)$/.exec(source)?.[1] : undefined;
+        if (known === undefined) continue;
+        if (typeof source !== 'string' || (input === undefined && source.includes('$'))) {
+          labels.set(key, undefined);
+          continue;
+        }
+        if (input === undefined) known.add(source);
+        else {
+          const passed = docs
+            .flatMap((other) => objectsIn(other.doc))
+            .filter((object) => object.include === name)
+            .map((object) => (object.with as Record<string, unknown> | undefined)?.[input]);
+          if (passed.some((value) => typeof value !== 'string' || value.includes('$'))) {
+            labels.set(key, undefined);
+            continue;
+          }
+          for (const value of passed) known.add(value as string);
+        }
+        labels.set(key, known);
+      }
     }
   }
-  return keys;
+  return labels;
 }
 
 /** A question card's `asks` is a label of the queue pack (with an optional value), or `rest`, once a level. */
-function askFailures(map: FactoryMap, labels: ReadonlySet<string>): string[] {
+function askFailures(
+  map: FactoryMap,
+  labels: ReadonlyMap<string, ReadonlySet<string> | undefined>,
+): string[] {
   return levelsOf(map).flatMap((level) => {
     const asks = level.cards.flatMap((card) => (card.asks === undefined ? [] : [card]));
     const rests = asks.filter((card) => 'rest' in (card.asks as object));
@@ -121,9 +160,17 @@ function askFailures(map: FactoryMap, labels: ReadonlySet<string>): string[] {
         if (ask.value !== undefined && typeof ask.value !== 'string') {
           return [`${at} label ${ask.label} with a value that is not a string`];
         }
-        return labels.has(ask.label)
+        if (!labels.has(ask.label)) {
+          return [
+            `${at} label ${JSON.stringify(ask.label)}, which no wait of the queue pack declares`,
+          ];
+        }
+        const values = labels.get(ask.label);
+        return ask.value === undefined || values === undefined || values.has(ask.value)
           ? []
-          : [`${at} label ${JSON.stringify(ask.label)}, which no wait of the queue pack declares`];
+          : [
+              `${at} label ${ask.label} with value ${JSON.stringify(ask.value)}, which the queue pack never sets (${[...values].join(', ')})`,
+            ];
       }),
       ...(rests.length > 1
         ? [`${rests.map((card) => card.title).join(' and ')} all ask for the rest`]
