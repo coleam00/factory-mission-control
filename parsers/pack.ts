@@ -8,6 +8,7 @@ import { basename, dirname, join, relative } from 'node:path';
 
 export type StepKind =
   | 'include'
+  | 'workflow'
   | 'loop_group'
   | 'loop'
   | 'approval'
@@ -202,6 +203,7 @@ function scriptFile(packDir: string, dir: string, name: string): string | null {
 
 function kindOf(node: Node): StepKind {
   if (node.include !== undefined) return 'include';
+  if (node.workflow !== undefined) return 'workflow';
   if (node.loop_group !== undefined) return 'loop_group';
   if (node.loop !== undefined) return 'loop';
   if (node.approval !== undefined) return 'approval';

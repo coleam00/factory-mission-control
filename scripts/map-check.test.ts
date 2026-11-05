@@ -115,10 +115,10 @@ describe('map:check', () => {
           ],
         };
       }
-      if (card.id === 'plan')
+      if (card.id === 'split')
         return {
           ...card,
-          covers: [{ pack: 'loop' as const, workflow: 'archon-split', steps: ['slice'] }],
+          covers: [{ pack: 'loop' as const, workflow: 'archon-nothing', steps: ['slice'] }],
         };
       if (card.id === 'review') {
         return { ...card, covers: card.covers.map(({ screens: _, ...cover }) => cover) };
@@ -126,7 +126,7 @@ describe('map:check', () => {
       return card;
     });
     expect(check(withCards(cards))).toEqual([
-      'loop pack: Plan names workflow archon-split, which the pack lacks',
+      'loop pack: Split names workflow archon-nothing, which the pack lacks',
       'loop pack: Review opens archon-loop ship/deliver/rounds/review at archon-loop ship/deliver/rounds/review, not its own screen archon-deliver-block rounds/review',
       'loop pack: Review opens archon-loop ship/deliver/rounds/rereview at archon-loop ship/deliver/rounds/rereview, not its own screen archon-deliver-block rounds/rereview',
       'queue pack: Review opens archon-build-queue ship/deliver/rounds/review at archon-build-queue ship/deliver/rounds/review, not its own screen archon-deliver-block rounds/review',
@@ -155,8 +155,8 @@ describe('map:check', () => {
     const entry = FACTORY_MAP.legend[0] as FactoryMap['legend'][number];
     expect(check(map)).toEqual([
       `${first.title} role "robot" is not one of source, agent, test, person`,
-      `${first.title} chip "lost" is not one of queued, failing, waiting, merged`,
-      `line ${line.from} to ${line.to} style "flwo" is not one of flow, ask, loop, holdout`,
+      `${first.title} chip "lost" is not one of queued, failing, waiting, merged, orders`,
+      `line ${line.from} to ${line.to} style "flwo" is not one of flow, ask, loop`,
       `legend ${entry.label} role "ghost" is not one of source, agent, test, person`,
     ]);
   });

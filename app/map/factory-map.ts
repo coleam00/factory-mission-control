@@ -10,10 +10,10 @@ import data from './factory-map.json';
 export const ROLES = ['source', 'agent', 'test', 'person'] as const;
 export type Role = (typeof ROLES)[number];
 
-export const CHIPS = ['queued', 'failing', 'waiting', 'merged'] as const;
+export const CHIPS = ['queued', 'failing', 'waiting', 'merged', 'orders'] as const;
 export type Chip = (typeof CHIPS)[number];
 
-export const LINE_STYLES = ['flow', 'ask', 'loop', 'holdout'] as const;
+export const LINE_STYLES = ['flow', 'ask', 'loop'] as const;
 export type LineStyle = (typeof LINE_STYLES)[number];
 
 /** The pack a cover entry is held to: the old loop's, or the queue workflows plus the factory package. */

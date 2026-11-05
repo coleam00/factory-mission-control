@@ -375,3 +375,26 @@ test('the home clock turns over at the next local midnight', () => {
   expect(msToLocalMidnight(lateEvening)).toBe(30_000);
   expect(msToLocalMidnight(new Date(2026, 10, 4, 0, 0, 0))).toBeGreaterThan(23 * 3_600_000);
 });
+
+test('the Work order card counts its open work orders and says nothing with none; Right now lists each', () => {
+  const orders = [{ name: 'combat', open_count: 2, merged_count: 1, lands_on: 'staging' }];
+  const chips = (html: string) => {
+    const start = html.indexOf('data-card="order"');
+    const end = html.indexOf('data-card=', start + 1);
+    return [...html.slice(start, end).matchAll(/data-chip="(\w+)"[^>]*>([^<]*)</g)].map(
+      (m) => `${m[1]} ${m[2]}`,
+    );
+  };
+  expect(chips(render([], 'ready', { orders }))).toEqual(['orders 1 open']);
+  expect(render([], 'ready', { orders: [] })).not.toContain('data-chip="orders"');
+
+  const right = textOf(
+    renderToStaticMarkup(
+      <MemoryRouter>
+        <RightNow live={{ here: [], orders }} factory="here" />
+      </MemoryRouter>,
+    ),
+  );
+  expect(right).toContain('combat');
+  expect(right).toContain('2 open, 1 merged, lands on staging');
+});
