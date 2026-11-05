@@ -5,7 +5,7 @@ SELECT * FROM (
   -- Decisions, merged pull requests and the facts items come as JSON text, which the browser expands,
   -- as home-map's prs.
   -- A run that swept and then recorded: the sweep's decisions, the pull requests the record step
-  -- read back as landed, the one it asked about, and the numbers the run claimed (facts). Only these
+  -- read back as landed, the one it asked about, and the facts step's items, which carry the numbers the run claimed. Only these
   -- steps exist in that queue, so they identify the run, and its workflow name is never read.
   SELECT 'outcomes' AS kind, l.run_id,
     coalesce(rec.completed_at, rec.started_at + rec.duration_ms * interval '1 millisecond') AS at,
