@@ -81,14 +81,11 @@ test("the map draws every card's wording, the caption, the group and the legend,
   }
   expect(html).toContain('the manager watches everything on this line');
   for (const entry of FACTORY_MAP.legend) expect(html).toContain(entry.label);
-  // Only Build, Review, Split and Intake have a deeper view, so only they offer to open one.
-  for (const id of ['build', 'review', 'split', 'intake']) {
-    expect(cardTag(html, id)).toContain(`data-opens="${id}"`);
-  }
+  // Only Build, Review, Split, Intake, Merge and Staging have a deeper view, so only they offer to open one.
+  const opens = ['build', 'review', 'split', 'intake', 'merge', 'deploy'];
+  for (const id of opens) expect(cardTag(html, id)).toContain(`data-opens="${id}"`);
   expect(html).toContain('opens a deeper view');
-  for (const card of FACTORY_MAP.cards.filter(
-    (c) => !['build', 'review', 'split', 'intake'].includes(c.id),
-  )) {
+  for (const card of FACTORY_MAP.cards.filter((c) => !opens.includes(c.id))) {
     expect(cardTag(html, card.id)).not.toContain('data-opens');
   }
   expect(html).not.toContain('data-chip');
@@ -104,6 +101,95 @@ test("with path ['build'] the map draws the Build view's cards, caption and crum
   expect(textOf(html).replace(/\s+/g, ' ')).toContain('here › Build');
   expect(cardTag(html, 'b-del')).toContain('data-live-count="1"');
   expect(cardTag(html, 'build')).toBe('');
+});
+
+test.each([
+  ['merge', 6, 'm-sweep', 'archon-merge-queue', 'sweep'],
+  ['deploy', 3, 'y-ver', 'factory-deploy', 'verify'],
+])(
+  "with path ['%s'] the map draws that view's cards and a running step counts on its card",
+  (id, cards, here, workflow, step) => {
+    const view = FACTORY_MAP.views?.[id];
+    if (view === undefined) throw new Error(`the map has no ${id} view`);
+    const html = render([{ ...lap('a', step), workflow }], 'ready', { path: [id] });
+    expect(view.cards).toHaveLength(cards);
+    for (const card of view.cards) expect(cardTag(html, card.id)).toContain('data-card');
+    expect(html).toContain(view.caption.replaceAll("'", '&#x27;'));
+    expect(html).toContain(`data-view="${id}"`);
+    expect(cardTag(html, here)).toContain('data-live-count="1"');
+  },
+);
+
+test('Right now lists the gate outcomes, the latest deploy or that there is none, and where each work order lands', () => {
+  const rightNow = (live: Parameters<typeof RightNow>[0]['live']) =>
+    textOf(
+      renderToStaticMarkup(
+        <MemoryRouter>
+          <RightNow live={live} factory="here" />
+        </MemoryRouter>,
+      ),
+    ).replace(/\s+/g, ' ');
+  const gate = rightNow({
+    here: [],
+    gate: [
+      {
+        run: 'r',
+        number: 9,
+        outcome: 'sweep: sent back',
+        reason: 'conflicts with main',
+        url: 'https://github.com/o/r/pull/9',
+        at: null,
+      },
+    ],
+  });
+  expect(gate).toContain('#9 sweep: sent back conflicts with main');
+  expect(rightNow({ here: [], gate: [] })).toContain(
+    'No gate decision is recorded for this factory yet.',
+  );
+  const order = (lands_on: string | null) => ({
+    name: 'combat',
+    total_count: 1,
+    open_count: 1,
+    merged_count: 0,
+    lands_on,
+    last_closed_at: null,
+  });
+  const staged = rightNow({ here: [], deploy: null, lands: [order('staging'), order(null)] });
+  expect(staged).toContain('This factory has never deployed.');
+  expect(staged).toContain('combat lands on staging');
+  expect(staged).toContain('combat names no target yet');
+  const deployed = rightNow({
+    here: [],
+    deploy: {
+      run: 'd',
+      revision: 'abcdef0123',
+      health: 'healthy',
+      verified: true,
+      readBack: true,
+      at: null,
+    },
+  });
+  expect(deployed).toContain('abcdef0 is deployed, healthy, and its revision read back');
+  const unread = rightNow({
+    here: [],
+    deploy: {
+      run: 'd',
+      revision: 'abcdef0123',
+      health: 'healthy',
+      verified: true,
+      readBack: false,
+      at: null,
+    },
+  });
+  expect(unread).toContain('abcdef0 is deployed, healthy, and its revision not read back');
+  const failed = rightNow({
+    here: [],
+    deploy: { run: 'd', revision: null, health: null, verified: false, readBack: false, at: null },
+  });
+  expect(failed).toContain('no revision : the last deploy failed, health not reported');
+  expect(rightNow({ here: [], listsUnavailable: ['outcomes', 'deploys', 'lands'] })).toContain(
+    'The latest deploy is unavailable.',
+  );
 });
 
 test('a card that opens a view offers ⤢ Open Build · 8 steps', () => {
