@@ -380,7 +380,7 @@ export function OverdueList({
                 <span className="font-mono text-[15px] font-semibold tabular-nums text-text-primary">
                   {Math.floor(ratios[index] ?? 0)}× p90
                 </span>
-                <LapLink factory={factory} runId={step.run_id} />
+                <RunLink factory={factory} run={step} />
               </div>
               <div className="mt-3">
                 <OverdueScale ratio={ratios[index] ?? 1} top={top} />
