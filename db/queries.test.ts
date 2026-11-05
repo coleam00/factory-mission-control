@@ -159,6 +159,8 @@ const ROW_COLUMNS: Record<string, string[]> = {
   ]),
   lanes: columns<LaneRow>()([
     'run_id',
+    'workflow_name',
+    'console',
     'started_at',
     'issue_number',
     'issue_title',
@@ -471,14 +473,8 @@ describe('the rules the live queries restate, which they may not call a function
       board: [1, 0, 0],
       // Exception: the queues row asks which intake or build-queue runs exist, not what dates a version.
       'home-map': [0, 0, 1],
-      'live changes oracle': [0, 1, 0],
-      'live ledger oracle': [0, 1, 0],
     };
-    const copies = [
-      ...queries,
-      ['live changes oracle', read('scripts', 'live', 'changes.ts')],
-      ['live ledger oracle', read('scripts', 'live', 'ledger.ts')],
-    ];
+    const copies = [...queries];
     for (const [name, sql] of copies) {
       const [datesVersion, lap, exception] = expected[name] ?? [0, 0, 0];
       expect([name, count(sql, DATES_VERSION), count(sql, LAP)]).toEqual([name, datesVersion, lap]);

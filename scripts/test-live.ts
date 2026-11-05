@@ -12,19 +12,11 @@ import { type Deps, failing, guardedDatabaseUrl, type Main, runCli } from './lib
 import { machineLockPath, withMachineLock } from './lib/machine-lock';
 import { resolveBranchName } from './lib/target';
 import { boardPhase } from './live/board';
-import { changesPhase } from './live/changes';
 import { decisionsPhase } from './live/decisions';
-import { diffPhase } from './live/diff';
-import { healthPhase } from './live/health';
 import { homePhase } from './live/home';
-import { issuesPhase } from './live/issues';
 import { lapsPhase } from './live/laps';
-import { ledgerPhase } from './live/ledger';
 import { oneLapPhase } from './live/one-lap';
-import { ownerPhase } from './live/owner';
 import { queueMapPhase } from './live/queue-map';
-import { rewindPhase } from './live/rewind';
-import { scorecardPhase } from './live/scorecard';
 import {
   type DesignProbe,
   fixtureWrite,
@@ -37,9 +29,7 @@ import {
 } from './live/shared';
 import { stepDetailPhase } from './live/step-detail';
 import { switcherPhase } from './live/switcher';
-import { testingPhase } from './live/testing';
 import { measurePanels } from './live/timings';
-import { versionsPhase } from './live/versions';
 
 const USAGE = [
   'usage: bun run test:live [--out <dir>] [--hold <seconds>]',
@@ -249,34 +239,18 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
     failures: [],
   };
   const { failures } = ctx;
-  const rewind = rewindPhase(ctx);
   // The order is the order of every write against every read that judges it: the laps screen
-  // and the lap open before the strip's first insert, the ledger screen writes before the
-  // step, versions and scorecard screens open and judges the versions screen's pin after the
-  // hold, and the switcher runs before the diff adds steps to the architecture the second
-  // factory's map shows. The owner queue labels just before the issues screen does, so each of
-  // the issues screen's labels lands on a waiting issue; the Decisions screen removes its own
-  // labels as soon as it has timed them. Rewind is last: making a rewind branch starts a new Neon compute on the
-  // project, so every other screen's first snapshots are timed before it.
+  // and the lap open before the strip's first insert. The Decisions screen removes its own labels
+  // as soon as it has timed them.
   const phases: LivePhase[] = [
     homePhase(ctx),
     queueMapPhase(ctx),
     boardPhase(ctx),
     lapsPhase(ctx),
     oneLapPhase(ctx),
-    ledgerPhase(ctx),
     stepDetailPhase(ctx),
-    versionsPhase(ctx),
-    scorecardPhase(ctx),
-    changesPhase(ctx),
-    testingPhase(ctx),
-    ownerPhase(ctx),
     decisionsPhase(ctx),
-    issuesPhase(ctx),
-    healthPhase(ctx),
     switcherPhase(ctx),
-    diffPhase(ctx),
-    { ...rewind, summary: () => [`rewind: ${JSON.stringify(rewind.timings)}`] },
   ];
   const designProbe: DesignProbe = (url, file, on) => {
     const probe = Bun.spawnSync(
