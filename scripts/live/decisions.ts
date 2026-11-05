@@ -1,6 +1,5 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { unmatchedText } from '../../app/components/DecisionsLedger';
 import { shortDigest } from '../../app/lib/version-strip';
 import { SECOND_FACTORY } from '../fixture/seed';
 import { openPage, type Page } from '../lib/cdp';
@@ -113,7 +112,9 @@ export function compareDecision(
       mismatches.push(`${key}: screen ${shown?.[key]}, seed ${expected[key]}`);
     }
   }
-  const unlinked = unmatchedText(seed.ambiguous ? 'ambiguous' : 'none');
+  const unlinked = seed.ambiguous
+    ? 'ambiguous: several pins by that prefix'
+    : 'no pin by that prefix';
   if (seed.pin_sha === null && !shown?.text.includes(`${seed.version}, ${unlinked}`)) {
     mismatches.push('unmatched decision is missing its non-link explanation');
   }
