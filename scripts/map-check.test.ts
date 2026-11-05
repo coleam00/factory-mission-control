@@ -40,6 +40,7 @@ const withCards = (cards: FactoryMap['cards']): FactoryMap => ({ ...FACTORY_MAP,
 const withBuildView = (edit: (cards: FactoryMap['cards']) => FactoryMap['cards']): FactoryMap => ({
   ...FACTORY_MAP,
   views: {
+    ...FACTORY_MAP.views,
     build: {
       ...(FACTORY_MAP.views?.build as MapView),
       cards: edit(FACTORY_MAP.views?.build?.cards ?? []),
@@ -285,6 +286,7 @@ describe('map:check', () => {
     );
     expect(check(map)).toEqual([
       'loop pack: Build view: Deliver covers archon-loop handoff, which Build does not',
+      'loop pack: Deliver view: archon-loop handoff is covered by no card',
     ]);
   });
 

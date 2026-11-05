@@ -107,7 +107,7 @@ Behind the scenes says the pinned steps are unavailable when `step-detail` faile
 
 A lap counts once per level: on the card that covers its deepest running step at the root, and
 then on the card of that card's view that covers it, so one run on `ship/deliver/rounds/implement`
-is on Build at the home map and on Deliver in the Build view. A step that Review covers at the
+is on Build at the home map, on Deliver in the Build view, and on Implement in the Deliver view. A step that Review covers at the
 root counts on no card of the Build view.
 
 ## Clicking a card
@@ -125,7 +125,7 @@ holdout verifier and the fence (journey 1). Esc, the close button or a click on 
 deselects.
 
 A card with a view shows ⤢ and a stacked edge, and its strip has an Open button naming the number
-of cards in the view. A card shows ⤢ only once its view exists; today Build's does (`?view=build`).
+of cards in the view. A card shows ⤢ only once its view exists; today Build's does (`?view=build`), and so does Deliver inside it (`?view=build/deliver`; Review shows none until its view exists).
 Double-click, Enter on the selected card or the Open button zooms into the view. Breadcrumbs above
 the caption (the factory, then each opened view), the up control, a crumb, Esc (with nothing
 selected) and Backspace go up, and the card that opened the view flashes. The address is

@@ -722,7 +722,8 @@
           ],
           "details": {
             "what": ["Implement, PR, review, CI"]
-          }
+          },
+          "opens": "build/deliver"
         },
         {
           "id": "b-dec",
@@ -890,6 +891,347 @@
         }
       ],
       "tour": ["b-brief", "b-del", "b-dec", "b-push", "b-next"]
+    },
+    "build/deliver": {
+      "caption": "The inner loop. Each delivery round implements or fixes, publishes a draft PR, and runs the review. A Ready review gets one simplify pass and a light re-review, then CI. Findings send it back to Implement, up to 4 rounds in all.",
+      "cardSize": {
+        "width": 260,
+        "height": 200
+      },
+      "cards": [
+        {
+          "id": "d-impl",
+          "role": "agent",
+          "kind": "agent · @implementer",
+          "title": "Implement",
+          "text": "Build it, or fix findings",
+          "x": 0,
+          "y": 306,
+          "covers": [
+            {
+              "pack": "queue",
+              "workflow": "archon-build-queue",
+              "steps": [
+                "ship/continues",
+                "ship/deliver",
+                "ship/deliver/rounds",
+                "ship/deliver/rounds/implement",
+                "ship/deliver/rounds/reshape"
+              ],
+              "screens": {
+                "ship/continues": {
+                  "workflow": "archon-ship-block",
+                  "path": "continues"
+                },
+                "ship/deliver": {
+                  "workflow": "archon-ship-block",
+                  "path": "deliver"
+                },
+                "ship/deliver/rounds": {
+                  "workflow": "archon-deliver-block",
+                  "path": "rounds"
+                },
+                "ship/deliver/rounds/implement": {
+                  "workflow": "archon-deliver-block",
+                  "path": "rounds/implement"
+                },
+                "ship/deliver/rounds/reshape": {
+                  "workflow": "archon-deliver-block",
+                  "path": "rounds/reshape"
+                }
+              }
+            },
+            {
+              "pack": "loop",
+              "workflow": "archon-loop",
+              "steps": [
+                "build",
+                "ship/continues",
+                "ship/deliver",
+                "ship/deliver/rounds",
+                "ship/deliver/rounds/implement",
+                "ship/deliver/rounds/reshape"
+              ],
+              "screens": {
+                "ship/continues": {
+                  "workflow": "archon-ship-block",
+                  "path": "continues"
+                },
+                "ship/deliver": {
+                  "workflow": "archon-ship-block",
+                  "path": "deliver"
+                },
+                "ship/deliver/rounds": {
+                  "workflow": "archon-deliver-block",
+                  "path": "rounds"
+                },
+                "ship/deliver/rounds/implement": {
+                  "workflow": "archon-deliver-block",
+                  "path": "rounds/implement"
+                },
+                "ship/deliver/rounds/reshape": {
+                  "workflow": "archon-deliver-block",
+                  "path": "rounds/reshape"
+                }
+              }
+            }
+          ],
+          "details": {
+            "what": ["Build it, or fix findings"]
+          }
+        },
+        {
+          "id": "d-pr",
+          "role": "source",
+          "kind": "script + agent",
+          "title": "Draft PR",
+          "text": "Publish the description",
+          "x": 344,
+          "y": 306,
+          "covers": [
+            {
+              "pack": "queue",
+              "workflow": "archon-build-queue",
+              "steps": [
+                "ship/deliver/forge",
+                "ship/deliver/rounds/pr",
+                "ship/deliver/update-pr-body"
+              ],
+              "screens": {
+                "ship/deliver/forge": {
+                  "workflow": "archon-deliver-block",
+                  "path": "forge"
+                },
+                "ship/deliver/rounds/pr": {
+                  "workflow": "archon-deliver-block",
+                  "path": "rounds/pr"
+                },
+                "ship/deliver/update-pr-body": {
+                  "workflow": "archon-deliver-block",
+                  "path": "update-pr-body"
+                }
+              }
+            },
+            {
+              "pack": "loop",
+              "workflow": "archon-loop",
+              "steps": [
+                "ship/deliver/forge",
+                "ship/deliver/rounds/pr",
+                "ship/deliver/update-pr-body"
+              ],
+              "screens": {
+                "ship/deliver/forge": {
+                  "workflow": "archon-deliver-block",
+                  "path": "forge"
+                },
+                "ship/deliver/rounds/pr": {
+                  "workflow": "archon-deliver-block",
+                  "path": "rounds/pr"
+                },
+                "ship/deliver/update-pr-body": {
+                  "workflow": "archon-deliver-block",
+                  "path": "update-pr-body"
+                }
+              }
+            }
+          ],
+          "details": {
+            "what": ["Publish the description"]
+          }
+        },
+        {
+          "id": "d-rev",
+          "role": "agent",
+          "kind": "up to 5 lenses",
+          "title": "Review",
+          "text": "Ready, or findings",
+          "x": 688,
+          "y": 306,
+          "covers": [],
+          "details": {
+            "what": ["Ready, or findings"]
+          }
+        },
+        {
+          "id": "d-simp",
+          "role": "agent",
+          "kind": "agent",
+          "title": "Simplify",
+          "text": "Names a smaller shape",
+          "x": 1032,
+          "y": 306,
+          "covers": [
+            {
+              "pack": "queue",
+              "workflow": "archon-build-queue",
+              "steps": ["ship/deliver/rounds/simplify"],
+              "screens": {
+                "ship/deliver/rounds/simplify": {
+                  "workflow": "archon-deliver-block",
+                  "path": "rounds/simplify"
+                }
+              }
+            },
+            {
+              "pack": "loop",
+              "workflow": "archon-loop",
+              "steps": ["ship/deliver/rounds/simplify"],
+              "screens": {
+                "ship/deliver/rounds/simplify": {
+                  "workflow": "archon-deliver-block",
+                  "path": "rounds/simplify"
+                }
+              }
+            }
+          ],
+          "details": {
+            "what": ["Names a smaller shape"]
+          }
+        },
+        {
+          "id": "d-ci",
+          "role": "agent",
+          "kind": "agent · medium",
+          "title": "CI",
+          "text": "Waits for green, marks ready",
+          "x": 1376,
+          "y": 306,
+          "covers": [
+            {
+              "pack": "queue",
+              "workflow": "archon-build-queue",
+              "steps": [
+                "ship/deliver/rounds/settle-threads",
+                "ship/deliver/rounds/ci",
+                "ship/deliver/rounds/threads",
+                "ship/deliver/rounds/round",
+                "ship/deliver/outcome",
+                "ship/deliver/report"
+              ],
+              "screens": {
+                "ship/deliver/rounds/settle-threads": {
+                  "workflow": "archon-deliver-block",
+                  "path": "rounds/settle-threads"
+                },
+                "ship/deliver/rounds/ci": {
+                  "workflow": "archon-deliver-block",
+                  "path": "rounds/ci"
+                },
+                "ship/deliver/rounds/threads": {
+                  "workflow": "archon-deliver-block",
+                  "path": "rounds/threads"
+                },
+                "ship/deliver/rounds/round": {
+                  "workflow": "archon-deliver-block",
+                  "path": "rounds/round"
+                },
+                "ship/deliver/outcome": {
+                  "workflow": "archon-deliver-block",
+                  "path": "outcome"
+                },
+                "ship/deliver/report": {
+                  "workflow": "archon-deliver-block",
+                  "path": "report"
+                }
+              }
+            },
+            {
+              "pack": "loop",
+              "workflow": "archon-loop",
+              "steps": [
+                "ship/deliver/rounds/settle-threads",
+                "ship/deliver/rounds/ci",
+                "ship/deliver/rounds/threads",
+                "ship/deliver/rounds/round",
+                "ship/deliver/outcome",
+                "ship/deliver/report"
+              ],
+              "screens": {
+                "ship/deliver/rounds/settle-threads": {
+                  "workflow": "archon-deliver-block",
+                  "path": "rounds/settle-threads"
+                },
+                "ship/deliver/rounds/ci": {
+                  "workflow": "archon-deliver-block",
+                  "path": "rounds/ci"
+                },
+                "ship/deliver/rounds/threads": {
+                  "workflow": "archon-deliver-block",
+                  "path": "rounds/threads"
+                },
+                "ship/deliver/rounds/round": {
+                  "workflow": "archon-deliver-block",
+                  "path": "rounds/round"
+                },
+                "ship/deliver/outcome": {
+                  "workflow": "archon-deliver-block",
+                  "path": "outcome"
+                },
+                "ship/deliver/report": {
+                  "workflow": "archon-deliver-block",
+                  "path": "report"
+                }
+              }
+            }
+          ],
+          "details": {
+            "what": ["Waits for green, marks ready"]
+          }
+        },
+        {
+          "id": "d-out",
+          "role": "source",
+          "kind": "back to",
+          "title": "Decide",
+          "text": "In the Build view",
+          "x": 1720,
+          "y": 306,
+          "upTo": "b-dec",
+          "covers": [],
+          "details": {
+            "what": ["In the Build view"]
+          }
+        }
+      ],
+      "lines": [
+        {
+          "from": "d-impl",
+          "to": "d-pr",
+          "style": "flow"
+        },
+        {
+          "from": "d-pr",
+          "to": "d-rev",
+          "style": "flow"
+        },
+        {
+          "from": "d-rev",
+          "to": "d-simp",
+          "style": "flow",
+          "label": "Ready"
+        },
+        {
+          "from": "d-simp",
+          "to": "d-ci",
+          "style": "flow",
+          "label": "reshape + re-review"
+        },
+        {
+          "from": "d-ci",
+          "to": "d-out",
+          "style": "flow",
+          "label": "green"
+        },
+        {
+          "from": "d-rev",
+          "to": "d-impl",
+          "style": "loop",
+          "label": "findings (max 4 rounds)",
+          "route": [[818, 306], [818, 40], [130, 40], [130, 306]]
+        }
+      ],
+      "tour": ["d-impl", "d-pr", "d-rev", "d-simp", "d-ci", "d-out"]
     }
   }
 }
