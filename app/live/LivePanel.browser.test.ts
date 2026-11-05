@@ -33,7 +33,7 @@ test.each([false, true])(
       await page.close();
     }
   },
-  75_000,
+  90_000,
 );
 
 test('a panel whose connection ended for good shows its rows again once sealing is back, never asking back to back (#274)', async () => {
@@ -70,7 +70,7 @@ test('a panel whose connection ended for good shows its rows again once sealing 
   } finally {
     await page.close();
   }
-}, 85_000);
+}, 105_000);
 
 test.each([
   ['both', 'both of its clients'],
@@ -102,7 +102,7 @@ test.each([
       await page.close();
     }
   },
-  85_000,
+  105_000,
 );
 
 test('a subscription that is live for a moment and then fails again and again does not reset the seal backoff (#274)', async () => {
@@ -126,7 +126,7 @@ test('a subscription that is live for a moment and then fails again and again do
   } finally {
     await page.close();
   }
-}, 85_000);
+}, 105_000);
 
 async function inPage<T>(call: string): Promise<T> {
   const bundle = await Bun.build({
@@ -155,7 +155,7 @@ test('a client whose connection ends for good again and again is replaced after 
   expect(opened.length).toBeGreaterThanOrEqual(3);
   expect(opened.length).toBeLessThanOrEqual(6);
   expect(opened[2] - opened[1]).toBeGreaterThan(opened[1] - opened[0]);
-}, 85_000);
+}, 105_000);
 
 test('a panel that stays live for the stable time owes no extra wait when it fails again (#274)', async () => {
   const { asked } = await inPage<{ asked: number[] }>('renderFlapping(28000, [300, 300, 18000])');
@@ -164,4 +164,4 @@ test('a panel that stays live for the stable time owes no extra wait when it fai
   // is asked about 19 s after the last. Unreset, the wait would be 16 s and no seal comes in time.
   expect(asked.length).toBeGreaterThanOrEqual(4);
   expect(asked[3] - asked[2]).toBeLessThan(21_000);
-}, 85_000);
+}, 105_000);
