@@ -6,6 +6,7 @@ import {
   difference,
   type Lap,
   type Measure,
+  type MeasureKey,
   type Measured,
   MEASURES,
   meaningful,
@@ -41,7 +42,7 @@ const SIDE_COLOR: Record<Side, string> = {
  * rate says better or worse: a count grows with the laps a version ran, so its change is not
  * colored.
  */
-const GROUP: Record<string, { color: string; better: 'up' | 'down' | null }> = {
+const GROUP: Record<MeasureKey, { color: string; better: 'up' | 'down' | null }> = {
   laps: { color: 'var(--accent-bright)', better: null },
   active_hours: { color: 'var(--accent-bright)', better: null },
   merges: { color: 'var(--node-loop)', better: null },
@@ -54,7 +55,6 @@ const GROUP: Record<string, { color: string; better: 'up' | 'down' | null }> = {
   app_check_share: { color: 'var(--node-prompt)', better: 'down' },
   cost_per_merge: { color: 'var(--node-prompt)', better: 'down' },
 };
-const groupOf = (key: string) => GROUP[key] ?? { color: 'var(--accent-bright)', better: null };
 const tint = (color: string, transparent: number) =>
   `color-mix(in oklch, ${color}, transparent ${transparent}%)`;
 
@@ -262,7 +262,7 @@ function MeasureRow({
   versions: readonly Version[];
 }): ReactElement {
   const [a, b] = versions;
-  const group = groupOf(measure.key);
+  const group = GROUP[measure.key];
   return (
     <li
       data-measure-row={measure.key}

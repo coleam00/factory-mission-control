@@ -6,7 +6,15 @@ SELECT l.run_id, l.status, l.started_at, l.completed_at, f.repository, f.console
   -- The review's outcome and dispositions (PRD 4.6), and the gate's: a refusal is the land step's
   -- output with outcome refused, its reason the reason text (PRD 4.2).
   review.status AS review_status, review.output ->> 'outcome' AS review_outcome,
-  review.output ->> 'delivers' AS review_delivers, review.output -> 'dispositions' AS dispositions,
+  review.output ->> 'delivers' AS review_delivers, 
+  -- Without those that answer an old holdout line: the checks panel never shows those lines.
+  (SELECT coalesce(jsonb_agg(d ORDER BY n), '[]'::jsonb)
+   FROM jsonb_array_elements(CASE WHEN jsonb_typeof(review.output -> 'dispositions') = 'array'
+     THEN review.output -> 'dispositions' ELSE '[]'::jsonb END) WITH ORDINALITY AS e(d, n)
+   WHERE NOT EXISTS (
+     SELECT 1 FROM mc.app_check_lines a
+     WHERE a.run_id = l.run_id AND a.kind = 'holdout' AND a.line_id = e.d ->> 'line'
+   )) AS dispositions,
   land.status AS gate_status, land.output ->> 'outcome' AS gate_outcome,
   land.output ->> 'reason' AS gate_reason
 FROM mc.laps l

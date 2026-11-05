@@ -43,7 +43,7 @@ const REVIEW_PROMPT = 'loop/commands/loop-review.md';
  */
 const SEED_CHECK_APP = {
   prompt: 'fixtures/pack/sdlc/loop/commands/loop-check-app.md',
-  subagent: 'holdout-verifier',
+  hiddenSubagent: 'holdout-verifier',
   dependsOn: 'subject',
 };
 
@@ -84,14 +84,15 @@ async function checkAppMismatches(page: Page, repoRoot: string): Promise<string[
     dependsOn: string | null;
   }>(`({
     prompt: document.querySelector('[data-live="step-prompt"] [data-prompt]')?.textContent ?? null,
-    subagent: document.querySelector('[data-live="step-subagents"] [data-subagent="${SEED_CHECK_APP.subagent}"]') !== null,
+    subagent: document.querySelector('[data-live="step-subagents"] [data-subagent="${SEED_CHECK_APP.hiddenSubagent}"]') !== null,
     dependsOn: document.querySelector('[data-depends-on]')?.getAttribute('data-depends-on') ?? null,
   })`);
   const failures: string[] = [];
   if (shown.prompt !== readFileSync(join(repoRoot, SEED_CHECK_APP.prompt), 'utf-8')) {
     failures.push(`check-app's prompt is not ${SEED_CHECK_APP.prompt} byte for byte`);
   }
-  if (!shown.subagent) failures.push(`check-app shows no subagent ${SEED_CHECK_APP.subagent}`);
+  if (shown.subagent)
+    failures.push(`check-app lists the subagent ${SEED_CHECK_APP.hiddenSubagent}`);
   if (shown.dependsOn !== SEED_CHECK_APP.dependsOn) {
     failures.push(`check-app depends on "${shown.dependsOn}", not "${SEED_CHECK_APP.dependsOn}"`);
   }

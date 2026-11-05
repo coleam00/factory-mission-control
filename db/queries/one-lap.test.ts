@@ -159,10 +159,25 @@ describe('one-lap on the seed', () => {
     for (const line of lines) expect(line).not.toHaveProperty('pre_existing');
   });
 
-  test("a sent-back lap's review names the line each disposition answers", async () => {
+  test("a sent-back lap's review shows no disposition for the old holdout line it blocks on", async () => {
     const [sentBack] = await lap('one-lap', '5eed0001-0000-4000-8000-000000000001');
     expect(sentBack.review_outcome).toBe('sent-back');
-    expect(sentBack.dispositions).toEqual([{ line: 'H2', action: 'blocks' }]);
+    expect(sentBack.dispositions).toEqual([]);
+  });
+
+  test("every seed lap's shown review disposition names exactly one shown app-check line", async () => {
+    for (const { runId } of seedLaps(seed)) {
+      const [header] = await lap('one-lap', runId);
+      const lines = await lap('one-lap-checks', runId);
+      for (const { line } of (header?.dispositions ?? []) as { line: string | null }[]) {
+        if (line === null) continue;
+        expect([runId, line, lines.filter((l) => l.line_id === line).length]).toEqual([
+          runId,
+          line,
+          1,
+        ]);
+      }
+    }
   });
 
   test("the old holdout line a sent-back lap's review blocks on is not shown", async () => {
