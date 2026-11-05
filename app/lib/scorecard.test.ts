@@ -237,6 +237,15 @@ test('a run of another workflow is not a lap', () => {
   expect(s.laps.laps).toEqual(['loop']);
 });
 
+test('a build-queue run is a lap', () => {
+  const s = card(
+    lap('queue', '2026-10-01T08:00:00Z', '2026-10-01T09:00:00Z', [], {
+      workflow_name: 'archon-build-queue',
+    }),
+  );
+  expect(s.laps.laps).toEqual(['queue']);
+});
+
 test('a version is labelled by its version row, and a digest with no row is not a version', () => {
   const laps: ScorecardRow[] = [
     ...lap('loop', '2026-10-05T08:00:00Z', '2026-10-05T09:00:00Z'),

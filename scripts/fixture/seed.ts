@@ -1065,15 +1065,10 @@ WHERE r.codebase_id IN ('${SEED_CODEBASE}', '${SECOND_CODEBASE}', '${QUEUE_CODEB
   AND jsonb_typeof(e.data->'structured_output'->'lines') = 'array'
 ORDER BY e.created_at, e.event_order;
 
--- A version is a digest the factory's laps ran, labelled with the last pin before its first run.
-INSERT INTO mc.versions (factory, digest, first_run_at, pin_sha)
-SELECT l.factory, l.digest, min(l.started_at),
-  (SELECT p.sha FROM mc.pins p WHERE p.committed_at < min(l.started_at)
-    ORDER BY p.committed_at DESC LIMIT 1)
-FROM mc.laps l
-WHERE l.digest IS NOT NULL
-GROUP BY l.factory, l.digest
-ON CONFLICT DO NOTHING;`;
+-- A version is a digest a factory's archon-loop or archon-build-queue runs ran, labelled with the
+-- last pin before its first run: the rule mc.project_version applies as the runs are written.
+SELECT mc.project_version(d.factory, d.digest)
+FROM (SELECT DISTINCT l.factory, l.digest FROM mc.laps l WHERE l.digest IS NOT NULL) d;`;
 
 // --- The seed -----------------------------------------------------------------------------------
 
@@ -1350,12 +1345,25 @@ export const QUEUE_RUNS = {
   ask: '5eed0005-0000-4000-8000-000000000003',
   waiting: '5eed0005-0000-4000-8000-000000000004',
   merged: '5eed0005-0000-4000-8000-000000000005',
+  built: '5eed0005-0000-4000-8000-000000000006',
 } as const;
+
+/** The source digest of the queue factory's runs: every workflow run from one source shares it. */
+export const QUEUE_DIGEST = `sha256:${'d4'.repeat(32)}`;
 
 function queueFactorySql(): string[] {
   const at = (minute: number) => `2026-10-24T09:${String(minute).padStart(2, '0')}:00.000Z`;
+  // The same nine-minute shape, stretched to an hour on 12 October: before the first run above.
+  const earlier = (minute: number) =>
+    new Date(Date.parse('2026-10-12T09:00:00.000Z') + minute * 400_000).toISOString();
   let event = 0;
-  const done = (run: string, step: string, minute: number, output?: Record<string, unknown>) =>
+  const done = (
+    run: string,
+    step: string,
+    minute: number,
+    output?: Record<string, unknown>,
+    time = at,
+  ) =>
     insert('remote_agent_workflow_events', {
       id: `5eedeeee-0000-4000-8000-2${String(++event).padStart(11, '0')}`,
       workflow_run_id: run,
@@ -1363,11 +1371,11 @@ function queueFactorySql(): string[] {
       step_name: step,
       data: json({
         ...nodeBlock(step, 'script', step),
-        timing: { startedAt: at(minute), durationMs: 1000 },
+        timing: { startedAt: time(minute), durationMs: 1000 },
         duration_ms: 1000,
         ...(output ? { structured_output: output } : {}),
       }),
-      created_at: at(minute),
+      created_at: time(minute),
     });
   const run = (
     id: string,
@@ -1375,6 +1383,7 @@ function queueFactorySql(): string[] {
     status: string,
     metadata: Record<string, unknown>,
     completed: boolean,
+    time = at,
   ) =>
     insert('remote_agent_workflow_runs', {
       id,
@@ -1382,10 +1391,10 @@ function queueFactorySql(): string[] {
       codebase_id: QUEUE_CODEBASE,
       status,
       user_message: `Run ${workflow} on ${QUEUE_FACTORY.repository}`,
-      metadata: json(metadata),
-      started_at: at(0),
-      completed_at: completed ? at(9) : null,
-      last_activity_at: at(5),
+      metadata: json({ ...metadata, workflow_source: { digest: QUEUE_DIGEST } }),
+      started_at: time(0),
+      completed_at: completed ? time(9) : null,
+      last_activity_at: time(5),
     });
   const issue = (number: number, title: string) =>
     insert('mc.issues', {
@@ -1399,15 +1408,19 @@ function queueFactorySql(): string[] {
       updated_at: at(1),
       closed_at: null,
     });
+  const claimed = (number: number) => ({
+    path: 'route',
+    item: { repo: { host: 'github.com', path: QUEUE_FACTORY.repository }, number },
+  });
   const first = (id: string, number: number) => [
     run(id, 'archon-build-queue', 'running', { inputs: { number: String(number) } }, false),
-    done(id, 'facts', 1),
+    done(id, 'facts', 1, claimed(number)),
     done(id, 'route', 2),
     done(id, 'checkout', 3),
   ];
   return [
     '',
-    '-- A third factory, on the queue workflows: runs with a number input, one waiting on attention, one that merged.',
+    '-- A third factory, on the queue workflows: runs with a number input, one waiting on attention, one that merged, and one finished build-queue run earlier than the rest.',
     insert('mc.factories', QUEUE_FACTORY),
     insert('remote_agent_codebases', {
       id: QUEUE_CODEBASE,
@@ -1419,6 +1432,8 @@ function queueFactorySql(): string[] {
     ...first(QUEUE_RUNS.review, 402),
     ...first(QUEUE_RUNS.ask, 403),
     done(QUEUE_RUNS.ask, 'apply', 4),
+    run(QUEUE_RUNS.built, 'archon-build-queue', 'completed', {}, true, earlier),
+    done(QUEUE_RUNS.built, 'facts', 1, claimed(404), earlier),
     run(QUEUE_RUNS.waiting, 'archon-merge-queue', 'paused', { wait: attentionWait(at(6)) }, false),
     run(QUEUE_RUNS.merged, 'archon-merge-queue', 'completed', {}, true),
     done(QUEUE_RUNS.merged, 'record', 8, {

@@ -19,7 +19,10 @@ WITH lap AS (
       WHERE s.run_id = l.run_id AND s.step_id = 'check-app')::numeric / 3600000 AS check_app_hours,
     (SELECT coalesce(sum(s.cost_usd), 0) FROM mc.lap_steps s WHERE s.run_id = l.run_id) AS cost
   FROM mc.laps l
-  WHERE l.factory = 'mission-control' AND l.workflow_name = 'archon-loop'
+  WHERE l.factory = 'mission-control'
+    AND (l.workflow_name = 'archon-loop' OR l.workflow_name = 'archon-build-queue' AND EXISTS (
+      SELECT 1 FROM mc.lap_steps f WHERE f.run_id = l.run_id AND f.step_id = 'facts'
+        AND f.output -> 'item' ->> 'number' IS NOT NULL))
 ),
 -- A UTC clock hour h is active when some finished lap ran in [h, h + 1 hour).
 active AS (

@@ -154,7 +154,7 @@ the flow toggle is off.
 
 | Measure | Definition |
 |---|---|
-| lap | an `archon-loop` run |
+| lap | an `archon-loop` run, or an `archon-build-queue` run on a work item: one whose `facts` step names an item (owner ruling 2026-11-04, #378). A build-queue run that finds nothing to build is not a lap |
 | merge | a lap whose `land` step output has `outcome = merged` |
 | empty lap | a lap whose `pick` output has `route = none` |
 | failed lap | a lap whose run `status = failed` |
@@ -166,6 +166,10 @@ the flow toggle is off.
 | lap-hours per merge | sum of lap durations in hours / merges |
 | app-check share | sum of `check-app` step `duration_ms` / sum of lap durations |
 | cost per merge | sum of `cost_usd` of every step of every lap / merges |
+
+  The other measures keep their definitions. A build-queue lap has no `pick`, `review`, `land` or
+  `check-app` step, so it counts toward laps, failed laps, lap duration, active hours and cost, and
+  toward no merge, empty lap, send-back, gate refusal or app-check time.
 
   Every number shows how many laps it rests on. Two versions can be compared side by side; a
   difference resting on fewer than 10 laps on either side is labelled "not yet meaningful".
@@ -382,7 +386,7 @@ measures are the right ones, are owner calls (product direction).
 | Fact | Source | Path into the database |
 |---|---|---|
 | Laps, steps, timings, cost, model, route, depth, app-check lines, review outcome, merge-gate outcome | Archon's `remote_agent_workflow_runs` and `remote_agent_workflow_events` (`node_completed` rows carry the step's `structured_output`, `cost_usd`, `tokens`, `duration_ms`, `provider`, `model`; the step id is `step_name`) | Archon writes them (its `DATABASE_URL` is this project's `main`); triggers project step-level rows into the dashboard's tables |
-| Which version a lap ran | the run's `metadata.workflow_source.digest` (a hash of the exact workflow pack it ran) | as above; versions are keyed by (factory, digest) and labelled with the most recent pin committed before the first run with that digest |
+| Which version a lap ran | the run's `metadata.workflow_source.digest` (a hash of the exact workflow pack it ran) | as above; versions are keyed by (factory, digest), dated by the first `archon-loop` or `archon-build-queue` run with that digest (any build-queue run, item or not), and labelled with the most recent pin committed before it. No other workflow's run dates a version (#160, amended by #378). A digest covers every workflow run from one source, so a version also names that source's intake and merge-queue runs |
 | Issues, labels, `Depends on`, PRD phase, claims, reviews, owner decisions, `Loop metrics` and `holdouts at` lines, pull requests | GitHub | webhook into the Neon Function; nightly reconcile; backfill |
 | Versions, reasons, `Hypothesis`, `Measure`, verdicts | commits on `coleam00/ai-software-factory` | push webhook (section 11.5) |
 | Key decisions | `DECISIONS.md` in `coleam00/ai-software-factory` | push webhook |

@@ -140,7 +140,10 @@ describe('decisions-timeline and improvements-ledger on the seed', () => {
     const counted = await db.query(
       `SELECT v.pin_sha, count(*)::int AS laps FROM mc.laps l
        JOIN mc.versions v ON v.factory = l.factory AND v.digest = l.digest
-       WHERE l.factory = $1 AND l.workflow_name = 'archon-loop' GROUP BY v.pin_sha`,
+       WHERE l.factory = $1 AND (l.workflow_name = 'archon-loop' OR l.workflow_name = 'archon-build-queue'
+         AND EXISTS (SELECT 1 FROM mc.lap_steps f WHERE f.run_id = l.run_id AND f.step_id = 'facts'
+           AND f.output -> 'item' ->> 'number' IS NOT NULL))
+       GROUP BY v.pin_sha`,
       ['mission-control'],
     );
     const rows = await ledgerRows();

@@ -8,7 +8,7 @@ import {
   type Kind,
 } from '../../app/lib/arch-diff';
 import { isVersionOf, type ScorecardRow } from '../../app/lib/scorecard';
-import { SEED_CODEBASE } from '../../scripts/fixture/seed';
+import { QUEUE_DIGEST, SEED_CODEBASE } from '../../scripts/fixture/seed';
 import type { Db } from '../../scripts/lib/db';
 import { onTheSeed, queries } from './test-seed';
 
@@ -43,6 +43,13 @@ describe('arch-diff on the seed', () => {
   }, 60_000);
 
   afterAll(() => db.close());
+
+  test('a digest a build-queue run dated is a version on the diff screen, with its pin’s architecture', async () => {
+    const queue = (await db.query(sql, ['queue-factory'])) as unknown as ArchDiffRow[];
+    const mine = queue.filter((r) => r.digest === QUEUE_DIGEST);
+    expect(mine.map((r) => r.kind)).toContain('version');
+    expect(mine.length).toBeGreaterThan(1);
+  });
 
   test('V1 to V2 is exactly the scripted change: a step added and removed, a prompt and a subagent changed', () => {
     const [v1, v2] = digests;

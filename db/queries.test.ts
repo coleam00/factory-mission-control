@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { readdirSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { StatusStripRow } from '../app/components/FactoryStrip';
 import type { FactorySwitcherRow } from '../app/components/FactorySwitcher';
@@ -370,5 +370,34 @@ describe('against the migrated schema', () => {
 
   test.each(queries)('%s returns the columns its row type names', async (name, sql) => {
     expect(await db.columns(sql, paramsFor(name, 'mission-control'))).toEqual(ROW_COLUMNS[name]);
+  });
+});
+
+describe('the rules the live queries restate, which they may not call a function for', () => {
+  const read = (...path: string[]) => readFileSync(join(import.meta.dir, '..', ...path), 'utf8');
+  const query = (name: string) => queries.find(([n]) => n === name)?.[1] as string;
+  const DATES_VERSION = "IN ('archon-loop', 'archon-build-queue')";
+
+  test('what dates a version is the one list mc.dates_version holds', () => {
+    expect(read('db/migrations', '0022_queue_versions.sql')).toContain(DATES_VERSION);
+    for (const name of [
+      'version-strip',
+      'decisions-timeline',
+      'arch-diff',
+      'improvements-ledger',
+    ]) {
+      expect(query(name)).toContain(DATES_VERSION);
+    }
+  });
+
+  test('a build-queue lap is a run whose facts step names an item, in every copy of the rule', () => {
+    for (const sql of [
+      query('scorecard'),
+      query('improvements-ledger'),
+      read('fixtures', 'expected-scorecard.sql'),
+    ]) {
+      expect(sql).toContain("f.step_id = 'facts'");
+      expect(sql).toContain("-> 'item' ->> 'number'");
+    }
   });
 });

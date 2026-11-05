@@ -3,13 +3,17 @@ SELECT l.run_id, l.digest, l.workflow_name, l.status, l.started_at, l.completed_
   NULL::text AS outcome, NULL::text AS reason, NULL::text AS pin_sha,
   NULL::timestamptz AS first_run_at
 FROM mc.laps l
-WHERE l.factory = $1 AND l.workflow_name = 'archon-loop' AND l.digest IS NOT NULL
+WHERE l.factory = $1 AND (l.workflow_name = 'archon-loop' OR l.workflow_name = 'archon-build-queue' AND EXISTS (
+    SELECT 1 FROM mc.lap_steps f WHERE f.run_id = l.run_id AND f.step_id = 'facts'
+      AND f.output -> 'item' ->> 'number' IS NOT NULL)) AND l.digest IS NOT NULL
 UNION ALL
 SELECT a.run_id, NULL, NULL, NULL, NULL, NULL, a.step_id, a.duration_ms::float8, a.cost_usd::float8,
   a.route, a.outcome, a.reason, NULL, NULL
 FROM mc.lap_step_attempts a
 JOIN mc.laps l ON l.run_id = a.run_id
-WHERE l.factory = $1 AND l.workflow_name = 'archon-loop' AND l.digest IS NOT NULL
+WHERE l.factory = $1 AND (l.workflow_name = 'archon-loop' OR l.workflow_name = 'archon-build-queue' AND EXISTS (
+    SELECT 1 FROM mc.lap_steps f WHERE f.run_id = l.run_id AND f.step_id = 'facts'
+      AND f.output -> 'item' ->> 'number' IS NOT NULL)) AND l.digest IS NOT NULL
   AND (a.cost_usd IS NOT NULL OR a.step_id IN ('pick', 'review', 'land', 'check-app'))
 UNION ALL
 SELECT NULL, v.digest, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, v.pin_sha,

@@ -75,6 +75,14 @@ describe('home-map on the seed', () => {
     ]);
   });
 
+  test('at a pin, the queue factory shows the queue runs that ran it', async () => {
+    expect(await versions('queue-factory', V2)).toBe(1);
+    expect(Object.keys(await laps('queue-factory', V2)).sort()).toEqual(
+      [QUEUE_RUNS.build, QUEUE_RUNS.review, QUEUE_RUNS.ask].sort(),
+    );
+    expect(await laps('queue-factory', V1)).toEqual({});
+  });
+
   test('a factory on the old loop has no queues row, no waiting row and merges only through land', async () => {
     const kinds = new Set((await rows('second-factory')).map((r) => r.kind));
     expect(kinds.has('queues')).toBe(false);
