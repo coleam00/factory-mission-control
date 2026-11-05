@@ -5,6 +5,7 @@ import {
   NOT_RECORDED,
   SHARED_PROCESS,
   type StripEntry,
+  shortDigest,
   scorecardLink,
   stripEntries,
   type VersionStripRow,
@@ -289,8 +290,6 @@ function Entry({
     </li>
   );
 }
-
-export const shortDigest = (digest: string) => digest.slice(0, 'sha256:'.length + 12);
 
 /**
  * The select button's accessible name: its visible text, then the pin and short digest, since two

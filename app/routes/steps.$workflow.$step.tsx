@@ -5,7 +5,6 @@ import { StepVersionPicker } from '../components/StepVersionPicker';
 import {
   dependents,
   findStep,
-  type HookRow,
   joinParts,
   type NestingRow,
   nesting,
@@ -290,52 +289,6 @@ function Scripts({ step, workflow, path, factory, at }: PanelProps): ReactElemen
   );
 }
 
-/** The hooks that let this step's subagents through: for a holdout step, the fence. */
-function Hooks({ step, workflow, path, factory, at }: PanelProps): ReactElement {
-  return (
-    <LivePanel<HookRow>
-      query="step-hooks"
-      factory={factory}
-      args={[workflow, path, at ?? '']}
-      className={step === undefined ? 'hidden' : CARD}
-    >
-      {(rows = [], state) => (
-        <Section title="Hooks" step={step} state={state}>
-          {() => {
-            if (rows.length === 0) return <p className={NOTE}>No hook applies to this step.</p>;
-            const hooks = [...new Map(rows.map((row) => [row.path, row])).values()];
-            return hooks.map((hook) => (
-              <dl
-                key={hook.path}
-                data-hook={hook.path}
-                className="grid gap-x-6 gap-y-2 sm:grid-cols-[10rem_1fr]"
-              >
-                <Fact label="Fence hook">{hook.path}</Fact>
-                <Fact label="May read holdouts">
-                  <span className="flex flex-wrap gap-x-3 gap-y-1">
-                    {hook.admitted_agents.map((name) => (
-                      <span key={name} data-admitted-agent={name}>
-                        {name}
-                      </span>
-                    ))}
-                  </span>
-                </Fact>
-                {rows
-                  .filter((row) => row.path === hook.path && row.description !== null)
-                  .map((row) => (
-                    <Fact key={row.agent} label={`${row.agent} returns`} className={NOTE}>
-                      <span data-verdict={row.agent}>{row.description}</span>
-                    </Fact>
-                  ))}
-              </dl>
-            ));
-          }}
-        </Section>
-      )}
-    </LivePanel>
-  );
-}
-
 function Yaml({ step, workflow, path, factory, at }: PanelProps): ReactElement {
   return (
     <LivePanel<YamlPartRow>
@@ -463,7 +416,6 @@ export default function StepDetail(): ReactElement {
         <Prompt {...panel} />
         <Subagents {...panel} />
         <Scripts {...panel} />
-        <Hooks {...panel} />
         <Yaml {...panel} />
       </div>
     </main>

@@ -72,7 +72,6 @@ interface OneLapOnScreen {
     kind: string | null;
     verdict: string | null;
     evidence: number | null;
-    scenario: string | null;
   }[];
   /** Every node of the step graph: its path, what happened to it, and its own attempts. */
   graph: {
@@ -122,7 +121,6 @@ const oneLapOnScreen = `(() => {
       kind: attr(li, 'data-kind'),
       verdict: attr(li, 'data-verdict'),
       evidence: num(li, 'data-evidence'),
-      scenario: attr(li, 'data-scenario'),
     })),
     graph: [...document.querySelectorAll('[data-live="one-lap-steps"] [data-graph-step]')].map((b) => ({
       path: attr(b, 'data-graph-step'),
@@ -155,7 +153,8 @@ async function openOneLap(page: Page, base: string, factory: string, runId: stri
 /**
  * A finished lap's screen against SQL over the seed's tables, not the screen's queries: each
  * step's single attempt, the lap's cost, its review, merge gate and app-check lines, its links,
- * and no holdout text anywhere on the page.
+ * and no holdout line or text anywhere on the page. The seed lap has holdout lines, so equal
+ * lines prove the page leaves them out.
  */
 async function seedOneLapMismatches(
   page: Page,
@@ -245,8 +244,8 @@ async function seedOneLapMismatches(
   }
 
   const lines = await db.query(
-    `SELECT position, line_id, kind, verdict, evidence_count, scenario_id
-     FROM mc.app_check_lines WHERE run_id = $1 ORDER BY position`,
+    `SELECT position, line_id, kind, verdict, evidence_count
+     FROM mc.app_check_lines WHERE run_id = $1 AND kind <> 'holdout' ORDER BY position`,
     [runId],
   );
   const checksSql = lines.map((r) => ({
@@ -255,16 +254,12 @@ async function seedOneLapMismatches(
     kind: r.kind,
     verdict: r.verdict,
     evidence: Number(r.evidence_count),
-    scenario: r.scenario_id,
   }));
   same(
     'the app-check lines',
     [...shown.checks].sort((a, b) => Number(a.position) - Number(b.position)),
     checksSql,
   );
-  if (!checksSql.some((l) => l.kind === 'holdout')) {
-    mismatches.push(`${runId} has no holdout app-check line to show by its scenario id`);
-  }
   if (shown.markers !== 0) mismatches.push(`${MARKER} occurs ${shown.markers} times on the page`);
 
   // The graph: every step the lap ran is a node at its path, with its own attempts and a mark
@@ -381,7 +376,9 @@ export function oneLapPhase(ctx: LiveContext): LivePhase {
         [factory],
       );
       if (refused === undefined) {
-        throw new Error('the check branch has no gate-refused lap with a holdout line');
+        throw new Error(
+          'the check branch has no gate-refused lap with an old holdout line to leave out',
+        );
       }
       refusedRun = String(refused.run);
       oneLapTimings.refusedRun = refusedRun;

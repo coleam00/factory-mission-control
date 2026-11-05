@@ -8,7 +8,7 @@ import {
   timelineEntries,
   type VerdictEntry,
 } from '../lib/decisions-ledger';
-import { NOT_RECORDED, SHARED_PROCESS } from '../lib/version-strip';
+import { NOT_RECORDED, SHARED_PROCESS, shortDigest } from '../lib/version-strip';
 import { LivePanel, type PanelState } from '../live/LivePanel';
 import { EmptyState } from './EmptyState';
 
@@ -128,9 +128,7 @@ export function Timeline({
                 className={`${MONO} min-w-0 break-all text-accent-bright`}
               >
                 {entry.pin_sha.slice(0, 8)}
-                {entry.digest === null
-                  ? ', not yet run'
-                  : ` ${entry.digest.slice(0, 'sha256:'.length + 12)}`}
+                {entry.digest === null ? ', not yet run' : ` ${shortDigest(entry.digest)}`}
               </Link>
             )}
           </div>

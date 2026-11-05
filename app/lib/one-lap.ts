@@ -11,6 +11,10 @@ export interface Disposition {
   action: unknown;
 }
 
+/** The review's dispositions without those that answer a line the screen hides. */
+export const shownDispositions = (lap: Pick<OneLapRow, 'dispositions' | 'hidden_lines'>) =>
+  (lap.dispositions ?? []).filter((d) => d.line === null || !lap.hidden_lines.includes(d.line));
+
 /** The lap itself: its claim, route and depth, its review and its merge gate. */
 export interface OneLapRow {
   run_id: string;
@@ -29,6 +33,8 @@ export interface OneLapRow {
   review_outcome: string | null;
   review_delivers: string | null;
   dispositions: Disposition[] | null;
+  /** Line ids of the lap's old holdout lines, which no screen shows. */
+  hidden_lines: string[];
   gate_status: string | null;
   gate_outcome: string | null;
   gate_reason: string | null;
@@ -55,7 +61,7 @@ export interface StepAttemptRow {
   position: number | null;
 }
 
-/** One app-check line: never its text, and a holdout only by its scenario id. */
+/** One app-check line: never its text. */
 export interface CheckLineRow {
   position: number;
   /** The report's line id, as a disposition names it; null for a line projected before #184. */
@@ -63,7 +69,6 @@ export interface CheckLineRow {
   kind: string;
   verdict: string;
   evidence_count: number;
-  scenario_id: string | null;
 }
 
 const timeOf = (at: Date | null) => (at === null ? Number.NaN : at.getTime());
