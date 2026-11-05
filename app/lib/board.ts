@@ -88,7 +88,6 @@ export type BoardLink = { kind: 'lap'; to: string } | { kind: 'external'; href: 
 export interface WorkItem {
   number: number;
   title: string;
-  workOrders: string[];
   chips: BoardChip[];
   link: BoardLink;
 }
@@ -229,7 +228,6 @@ export function boardView(sources: BoardSources, now: Date, order: string | null
     const item: WorkItem = {
       number,
       title: row.title ?? '',
-      workOrders: names,
       chips: chipsOf(row, column, row.state === 'open' && running.has(number)),
       link: linkOf(row, factory, factoryRow?.console ?? null),
     };
