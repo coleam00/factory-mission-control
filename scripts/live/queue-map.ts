@@ -66,7 +66,7 @@ export function queueMapPhase(ctx: LiveContext): LivePhase {
       'DELETE FROM mc.lap_steps WHERE run_id = ANY($1::uuid[]) AND step_id = ANY($2::text[])',
       [runs, `{${WRITTEN_STEPS.join(',')}}`],
     );
-    const sweepRun = [MERGE_SWEEP_RUN];
+    const sweepRun = `{${MERGE_SWEEP_RUN}}`;
     await db.query(
       'DELETE FROM remote_agent_workflow_events WHERE workflow_run_id = ANY($1::uuid[])',
       [sweepRun],
