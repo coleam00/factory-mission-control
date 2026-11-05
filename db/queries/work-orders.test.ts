@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, expect, test } from 'bun:test';
+import type { WorkOrderRow } from '../../app/map/live';
 import type { Db } from '../../scripts/lib/db';
 import { onTheSeed, queries } from './test-seed';
 
@@ -16,9 +17,12 @@ const label = (issue: number, name: string, factory = 'mission-control') =>
     issue,
     name,
   ]);
-const orders = () => db.query(sql, ['mission-control']);
+const orders = async () =>
+  ((await db.query(sql, ['mission-control'])) as unknown as WorkOrderRow[]).filter((o) =>
+    ['combat', 'polish'].includes(o.name),
+  );
 
-test('a work order is listed while an issue of it is open, with its counts and where it lands', async () => {
+test('a work order is listed with its counts and where it lands, and stays after its last issue closes', async () => {
   expect(await orders()).toEqual([]);
   const open = (await db.query(
     `SELECT number FROM mc.issues WHERE factory = 'mission-control' AND state = 'open' ORDER BY number LIMIT 2`,
@@ -50,8 +54,30 @@ test('a work order is listed while an issue of it is open, with its counts and w
   await label(a, 'work-order:elsewhere', 'other-factory');
   await label(a, 'lands-on:production', 'other-factory');
   expect(await orders()).toEqual([
-    { name: 'combat', open_count: 2, merged_count: 1, lands_on: 'staging' },
+    {
+      name: 'combat',
+      total_count: 3,
+      open_count: 2,
+      merged_count: 1,
+      lands_on: 'staging',
+      last_closed_at: expect.anything(),
+    },
+    {
+      name: 'polish',
+      total_count: 1,
+      open_count: 0,
+      merged_count: 1,
+      lands_on: null,
+      last_closed_at: expect.anything(),
+    },
   ]);
-  await db.query(`UPDATE mc.issues SET state = 'closed' WHERE factory = 'mission-control'`);
-  expect(await orders()).toEqual([]);
+  await db.query(
+    `UPDATE mc.issues SET state = 'closed', closed_at = '2026-11-01T00:00:00Z'
+      WHERE factory = 'mission-control' AND number IN ($1, $2)`,
+    [a, b],
+  );
+  expect(await orders()).toMatchObject([
+    { name: 'combat', open_count: 0, last_closed_at: new Date('2026-11-01T00:00:00Z') },
+    { name: 'polish', open_count: 0 },
+  ]);
 });

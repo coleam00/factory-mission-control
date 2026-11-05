@@ -5,6 +5,7 @@ import type { StatusStripRow } from '../app/components/FactoryStrip';
 import type { FactorySwitcherRow } from '../app/components/FactorySwitcher';
 import type { ArchDiffRow } from '../app/lib/arch-diff';
 import type { AttentionRow } from '../app/lib/attention';
+import type { BoardRow } from '../app/lib/board';
 import type { LedgerRow, TimelineRow } from '../app/lib/decisions-ledger';
 import type { HealthRunRow, HealthStepRow, HealthWorkableRow } from '../app/lib/health';
 import type { IssueGraphRow } from '../app/lib/issue-graph';
@@ -94,6 +95,25 @@ const ROW_COLUMNS: Record<string, string[]> = {
     'title',
     'url',
     'run_id',
+  ]),
+  board: columns<BoardRow>()([
+    'kind',
+    'number',
+    'title',
+    'url',
+    'state',
+    'closed_at',
+    'work_order',
+    'route',
+    'rounds',
+    'app_check',
+    'pr',
+    'pr_open',
+    'run_id',
+    'run_workflow',
+    'repository',
+    'console',
+    'merged_total',
   ]),
   'home-map': columns<HomeMapRow>()([
     'kind',
@@ -313,7 +333,14 @@ const ROW_COLUMNS: Record<string, string[]> = {
     'repository',
   ]),
   'testing-routes': columns<RouteRow>()(['run_id', 'status', 'started_at', 'route', 'depth']),
-  'work-orders': columns<WorkOrderRow>()(['name', 'open_count', 'merged_count', 'lands_on']),
+  'work-orders': columns<WorkOrderRow>()([
+    'name',
+    'total_count',
+    'open_count',
+    'merged_count',
+    'lands_on',
+    'last_closed_at',
+  ]),
   'version-strip': columns<VersionStripRow>()([
     'digest',
     'first_run_at',
