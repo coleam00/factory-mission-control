@@ -661,7 +661,7 @@ export function FactoryMap({
     if (reduced || !el) {
       swap();
       later(0, () => {
-        fit();
+        opened();
         arrive();
       });
     } else {
@@ -689,7 +689,7 @@ export function FactoryMap({
         requestAnimationFrame(() =>
           requestAnimationFrame(() => {
             setMotion({ moving: true, hidden: false });
-            fit();
+            opened();
           }),
         );
       });
@@ -699,7 +699,7 @@ export function FactoryMap({
     return () => {
       for (const timer of timers) window.clearTimeout(timer);
     };
-  }, [key, map, reduced, fit, settle]);
+  }, [key, map, reduced, opened, settle]);
 
   const zoomCentre = (factor: number) => {
     const box = stage.current?.getBoundingClientRect();

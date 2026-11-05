@@ -284,12 +284,15 @@ export function viewPath(map: FactoryMap, id: string | null): string[] {
   return [];
 }
 
+/** The address parameter that names the open view. */
+export const VIEW_PARAM = 'view';
+
 /** `prev` with `view` set to the deepest view of `path`, or removed for the root. */
 export function viewSearch(prev: URLSearchParams, path: readonly string[]): URLSearchParams {
   const next = new URLSearchParams(prev);
   const view = path.at(-1);
-  if (view === undefined) next.delete('view');
-  else next.set('view', view);
+  if (view === undefined) next.delete(VIEW_PARAM);
+  else next.set(VIEW_PARAM, view);
   return next;
 }
 

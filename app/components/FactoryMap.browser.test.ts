@@ -81,3 +81,19 @@ test('a link to ?view=build opens the view; Merge queue goes up and selects Merg
   expect(linked).toMatchObject({ view: 'build', search: '?view=build' });
   expect(up).toMatchObject({ view: 'root', selected: 'merge' });
 }, 30_000);
+
+test('Esc and Backspace deselect a selected card first, and go up only when nothing is selected', async () => {
+  for (const name of ['Escape', 'Backspace']) {
+    const [first, second] = await inPage<Shown[]>(`
+      await m.mount('/f/x?view=build');
+      m.click('[data-card="b-del"]');
+      await new Promise((r) => setTimeout(r, 50));
+      m.key('${name}');
+      await new Promise((r) => setTimeout(r, 50));
+      const first = m.state();
+      m.key('${name}');
+      return [first, await m.waitFor('root')];`);
+    expect(first).toMatchObject({ view: 'build', selected: null });
+    expect(second).toMatchObject({ view: 'root' });
+  }
+}, 30_000);

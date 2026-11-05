@@ -1,17 +1,12 @@
-import { useCallback } from 'react';
 import { createRoot } from 'react-dom/client';
-import { createMemoryRouter, RouterProvider, useSearchParams } from 'react-router';
-import { FACTORY_MAP, viewPath, viewSearch } from '../../map/factory-map';
+import { createMemoryRouter, RouterProvider } from 'react-router';
+import { FACTORY_MAP } from '../../map/factory-map';
 import { FactoryMap } from '../FactoryMap';
+import { useMapPath } from '../useMapPath';
 
 /** The map as `Home` mounts it: the address names the view, and a level change is a navigation. */
 function Screen() {
-  const [search, setSearch] = useSearchParams();
-  const path = viewPath(FACTORY_MAP, search.get('view'));
-  const onPath = useCallback(
-    (to: readonly string[]) => setSearch((prev) => viewSearch(prev, to)),
-    [setSearch],
-  );
+  const [path, onPath] = useMapPath(FACTORY_MAP);
   return (
     <FactoryMap
       map={FACTORY_MAP}

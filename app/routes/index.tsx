@@ -1,8 +1,9 @@
-import { type ReactElement, useCallback, useEffect, useState } from 'react';
+import { type ReactElement, useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router';
 import { EmptyState } from '../components/EmptyState';
 import { FactoryMap, useReducedMotion } from '../components/FactoryMap';
 import { StepVersionPicker } from '../components/StepVersionPicker';
+import { useMapPath } from '../components/useMapPath';
 import type { HealthWorkableRow } from '../lib/health';
 import { homeHref } from '../lib/home-map';
 import type { OwnerQueueRow } from '../lib/owner-queue';
@@ -10,7 +11,7 @@ import type { StepRow } from '../lib/step-detail';
 import { useFactory } from '../live/FactoryProvider';
 import { LivePanel, type PanelState } from '../live/LivePanel';
 import { useLive } from '../live/LiveProvider';
-import { FACTORY_MAP, viewPath, viewSearch } from '../map/factory-map';
+import { FACTORY_MAP } from '../map/factory-map';
 import {
   cardLive,
   type HomeMapRow,
@@ -142,13 +143,9 @@ function Feed<Row>({
  * with live counts on its cards.
  */
 export default function Home(): ReactElement {
-  const [search, setSearch] = useSearchParams();
+  const [search] = useSearchParams();
   const at = search.get('at') || null;
-  const path = viewPath(FACTORY_MAP, search.get('view'));
-  const onPath = useCallback(
-    (to: readonly string[]) => setSearch((prev) => viewSearch(prev, to)),
-    [setSearch],
-  );
+  const [path, onPath] = useMapPath(FACTORY_MAP);
   const factory = useFactory();
   const live = useLive();
   const [flow, setFlow] = useState(true);
