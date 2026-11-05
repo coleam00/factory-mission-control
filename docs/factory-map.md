@@ -65,7 +65,7 @@ running steps and issue, the runs waiting on attention, whether the factory is o
 open pull requests whose latest app check failed, the merges with when they finished, and whether
 the version the address names is recorded),
 `health-workable`, `owner-queue` and `work-orders` (the distinct `work-order:<name>` labels on the
-factory's open issues, from the mirrored label data; it writes nothing).
+factory's issues with their counts, from the mirrored label data; it writes nothing). The chip counts only the orders with an open issue.
 
 - A run's issue is its claim comment's issue on the old loop, and on the queues its `number` input
   (a pull request's number, when the run's `kind` input says so, is no issue).
