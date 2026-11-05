@@ -254,15 +254,14 @@ export function cardLive(
   const cards = allCards(factoryMap);
   const live = new Map(cards.map((card): [string, CardLive] => [card.id, { here: [] }]));
   for (const row of sources.map) {
-    if (row.kind !== 'lap' || row.run_id === null || row.workflow === null) continue;
-    const step = deepestStep(row.steps);
-    if (step === undefined) continue;
+    const placed = lapCard(factoryMap, row);
+    if (placed === undefined || row.run_id === null || row.workflow === null) continue;
     const lap: MapLap = {
       run: row.run_id,
-      step: stepPath(step),
+      step: placed.step,
       issue: row.number === null ? null : { number: row.number, title: row.title, url: row.url },
     };
-    for (const card of cardChain(factoryMap, row.workflow, stepPath(step))) {
+    for (const card of cardChain(factoryMap, row.workflow, placed.step)) {
       live.get(card.id)?.here.push(lap);
     }
   }
