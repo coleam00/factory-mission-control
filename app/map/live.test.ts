@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test';
 import { LANE_STEPS } from '../lib/lap-graph';
-import { allCards, cardsCounting, FACTORY_MAP, LISTS, type List, stepPath } from './factory-map';
+import { allCards, cardsCounting, FACTORY_MAP, LISTS, stepPath } from './factory-map';
 import {
   type CardLive,
   cardLive,
@@ -10,6 +10,7 @@ import {
   latestDeploy,
   type MapRightNowRow,
   mergedToday,
+  type RoutedList,
   versionRecorded,
 } from './live';
 
@@ -496,20 +497,35 @@ test('Merge gate lists the gate, the Staging cards the deploy and open work orde
   expect(failed.get('y-ver')?.lands).toEqual([order]);
 });
 
-// Typed over List: a list added to LISTS fails tsc here until it is named, and fails below until live.ts routes it.
-const LIST_FIELD: Record<List, keyof CardLive> = {
+// Typed over RoutedList: a list added to LISTS fails tsc here until it is named or excluded, and fails below until live.ts routes it.
+const LIST_FIELD: Record<RoutedList, keyof CardLive> = {
   documents: 'documents',
   outcomes: 'gate',
   deploys: 'deploy',
   lands: 'lands',
 };
 
-test.each(LISTS)('a card listing %s is filled in its own field', (list) => {
-  const sources = { map: [], documents: [], orders: [], rightNow: [right({})] };
+test.each(LISTS.filter((l): l is RoutedList => l !== 'checks'))(
+  'a card listing %s is filled in its own field',
+  (list) => {
+    const sources = { map: [], documents: [], orders: [], rightNow: [right({})] };
+    const live = cardLive(FACTORY_MAP, sources, new Date());
+    const cards = allCards(FACTORY_MAP).filter((card) => card.lists?.includes(list));
+    expect(cards.length).toBeGreaterThan(0);
+    for (const card of cards) {
+      expect(live.get(card.id)?.[LIST_FIELD[list]]).not.toBeUndefined();
+    }
+  },
+);
+
+test('a card listing checks gets nothing from cardLive, even when map-right-now failed', () => {
+  const sources = { map: [], rightNow: [], states: { rightNow: 'error' as const } };
   const live = cardLive(FACTORY_MAP, sources, new Date());
-  const cards = allCards(FACTORY_MAP).filter((card) => card.lists?.includes(list));
+  const cards = allCards(FACTORY_MAP).filter((card) => card.lists?.includes('checks'));
   expect(cards.length).toBeGreaterThan(0);
   for (const card of cards) {
-    expect(live.get(card.id)?.[LIST_FIELD[list]]).not.toBeUndefined();
+    expect(live.get(card.id)?.listsUnavailable).toBeUndefined();
+    for (const field of Object.values(LIST_FIELD))
+      expect(live.get(card.id)?.[field]).toBeUndefined();
   }
 });

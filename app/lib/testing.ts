@@ -4,6 +4,7 @@
  * queries return rows; the counts are made here, each with the laps or lines it was made from
  * (PRD invariant 4). Holdouts are scenario ids and verdicts only. Pure, no React.
  */
+import { APP_CHECK_KINDS } from './app-check';
 import { prNumber } from './one-lap';
 
 /** A row of `db/queries/testing-routes.sql`: one per lap. */
@@ -81,8 +82,6 @@ export interface DefaultBranch {
   failing: readonly DefaultHoldoutRow[];
 }
 
-const KIND_ORDER = ['criterion', 'holdout', 'probe', 'assertion', 'defect'];
-
 const newestFirst = (
   a: { started_at: Date | null; run_id: string },
   b: { started_at: Date | null; run_id: string },
@@ -97,8 +96,8 @@ const scenarioOrder = (a: string, b: string) => {
 };
 
 const kindOrder = (kind: string) => {
-  const i = KIND_ORDER.indexOf(kind);
-  return i === -1 ? KIND_ORDER.length : i;
+  const i = (APP_CHECK_KINDS as readonly string[]).indexOf(kind);
+  return i === -1 ? APP_CHECK_KINDS.length : i;
 };
 
 function groupBy<Row, Key extends string>(rows: readonly Row[], key: (row: Row) => Key) {

@@ -2648,6 +2648,7 @@
           "text": "Browser, like a user",
           "x": 1032,
           "y": 40,
+          "lists": ["checks"],
           "covers": [
             {
               "pack": "loop",

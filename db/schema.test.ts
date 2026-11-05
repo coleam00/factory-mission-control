@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, expect, test } from 'bun:test';
+import { APP_CHECK_KINDS } from '../app/lib/app-check';
 import type { CheckLine } from '../fixtures/pack/sdlc/.shared/merge-gate';
 import { REVIEW_OUTCOMES, type Review } from '../parsers/comments';
 import { VERDICT_OUTCOMES } from '../parsers/commits';
@@ -191,7 +192,6 @@ test("adds only the projection's triggers to Archon's schema", async () => {
 /** Compiles only when A and B are the same set of literals. */
 type Same<A, B> = [A, B] extends [B, A] ? true : false;
 // The queue's check reports assertions, which the old loop's merge gate has no kind for.
-const APP_CHECK_KINDS = ['criterion', 'holdout', 'probe', 'defect', 'assertion'] as const;
 const parserUnionsBound: [
   Same<(typeof REVIEW_OUTCOMES)[number], Review['outcome']>,
   Same<(typeof APP_CHECK_KINDS)[number], CheckLine['kind'] | 'assertion'>,
