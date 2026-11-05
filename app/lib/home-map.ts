@@ -17,10 +17,6 @@ export interface StepTreeRow {
   when_condition?: string | null;
   /** The step's `trigger_rule`; null or absent for Archon's default (all succeeded). */
   trigger_rule?: string | null;
-  /** The workflow that declares the step: an include's steps are steps of the workflow it includes. */
-  detail_workflow: string;
-  /** The step's path in `detail_workflow`. */
-  detail_path: string | null;
 }
 
 export interface StepNode {
@@ -169,7 +165,7 @@ export function stepGraph(rows: readonly StepTreeRow[], at: string | null = null
       role: row.parent_path === null ? 'step' : 'stage',
       label: row.step_id,
       kind: row.kind ?? '',
-      href: stepHref(row.detail_workflow, row.detail_path ?? row.path, at),
+      href: stepHref(row.workflow, row.path, at),
     })),
     edges: reduceEdges(edges).map((edge) => {
       const label = labels.get(edge.to);

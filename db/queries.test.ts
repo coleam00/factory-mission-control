@@ -189,8 +189,6 @@ const ROW_COLUMNS: Record<string, string[]> = {
     'depends_on',
     'when_condition',
     'trigger_rule',
-    'detail_workflow',
-    'detail_path',
   ]),
   'one-lap-steps': columns<StepAttemptRow>()([
     'step_id',
@@ -296,16 +294,7 @@ const ROW_COLUMNS: Record<string, string[]> = {
     'defined_in',
     'file',
   ]),
-  'step-nesting': columns<NestingRow>()([
-    'relation',
-    'workflow',
-    'path',
-    'position',
-    'step_id',
-    'kind',
-    'open_workflow',
-    'open_path',
-  ]),
+  'step-nesting': columns<NestingRow>()(['path', 'position', 'step_id', 'kind']),
   'step-prompt': columns<PartRow>()(['path', 'part', 'chunk']),
   'step-scripts': columns<PartRow>()(['path', 'part', 'chunk']),
   'step-subagents': columns<SubagentRow>()([

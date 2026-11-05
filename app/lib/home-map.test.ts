@@ -30,8 +30,6 @@ const step = (
     step_id: path.slice(path.lastIndexOf('/') + 1),
     kind: 'script',
     depends_on: dependsOn,
-    detail_workflow: parent === null ? 'wf-loop' : 'wf-block',
-    detail_path: parent === null ? path : path.slice(path.indexOf('/') + 1),
     ...extra,
   };
 };
@@ -76,11 +74,11 @@ test('an edge another path already implies is not drawn', () => {
   expect(loop.edges).not.toContainEqual({ from: 'a', to: 'd' });
 });
 
-test('a step links to its own workflow, a stage to the workflow its step includes', () => {
+test('every step opens its place in the loop workflow', () => {
   const loop = stepGraph(rows);
   const href = (id: string) => loop.steps.find((n) => n.id === id)?.href;
   expect(href('a')).toBe('/steps/wf-loop/a');
-  expect(href('b/two')).toBe('/steps/wf-block/two');
+  expect(href('b/two')).toBe('/steps/wf-loop/b%2Ftwo');
 });
 
 test("at a version, every step opens its screen at that version; the current map's name none", () => {
@@ -114,12 +112,9 @@ const apart = (a: Box, b: Box) =>
 const twoLevels: StepTreeRow[] = [
   step('a', 0, []),
   step('b', 1, ['a'], { kind: 'include' }),
-  step('b/x', 2, [], { kind: 'include', detail_workflow: 'wf-outer', detail_path: 'x' }),
-  step('b/x/y', 3, [], {
-    detail_workflow: 'wf-inner',
-    detail_path: 'y',
-  }),
-  step('b/x/z', 4, ['y'], { detail_workflow: 'wf-inner', detail_path: 'z' }),
+  step('b/x', 2, [], { kind: 'include' }),
+  step('b/x/y', 3, []),
+  step('b/x/z', 4, ['y']),
   step('c', 5, ['b']),
 ];
 
@@ -147,11 +142,11 @@ test('an include inside an include expands too, every step inside each box aroun
   expect(spine).toEqual([...spine].sort((p, q) => p - q));
 });
 
-test('a nested step opens under the workflow that declares it', () => {
+test('a nested step opens its place in its own workflow', () => {
   const loop = stepGraph(twoLevels);
   const node = (id: string) => loop.steps.find((n) => n.id === id);
-  expect(node('b/x/y')?.href).toBe('/steps/wf-inner/y');
-  expect(node('b/x')?.href).toBe('/steps/wf-outer/x');
+  expect(node('b/x/y')?.href).toBe('/steps/wf-loop/b%2Fx%2Fy');
+  expect(node('b/x')?.href).toBe('/steps/wf-loop/b%2Fx');
 });
 
 test('the narrow layout keeps the spine in one column, each box beside it moving with what it holds', () => {

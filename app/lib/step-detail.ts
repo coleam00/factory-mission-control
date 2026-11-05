@@ -60,13 +60,84 @@ export function kindLabel(step: StepRow): string {
   return step.kind;
 }
 
-/** The step a URL names: its path within the workflow, as react-router decoded it. */
-export function findStep(
+/** A node a place passes through on its way down: where it sits in the place, and its row. */
+export interface Enclosing {
+  path: string;
+  row: StepRow;
+}
+
+/** The step at one place, and the include and loop nodes enclosing it, outermost first. */
+export interface Placed {
+  step: StepRow;
+  around: Enclosing[];
+}
+
+/**
+ * The step a place names: `path` is Archon's step id with `__` read as `/`, so it runs through
+ * includes into the declared rows of the workflow each one includes. A copy repeats its
+ * definition, which is why the declared rows alone answer for every place.
+ */
+export function placeOf(
   rows: readonly StepRow[],
   workflow: string,
   path: string,
-): StepRow | undefined {
-  return rows.find((row) => row.workflow === workflow && row.path === path);
+): Placed | undefined {
+  const segments = path.split('/');
+  const around: Enclosing[] = [];
+  let declaring = workflow;
+  let within = '';
+  for (const [i, segment] of segments.entries()) {
+    within = within === '' ? segment : `${within}/${segment}`;
+    const row = rows.find((r) => r.workflow === declaring && r.path === within);
+    if (row === undefined) return undefined;
+    if (i === segments.length - 1) return { step: row, around };
+    if (row.include !== null) {
+      declaring = row.include;
+      within = '';
+    } else if (row.kind !== 'loop_group') {
+      return undefined;
+    }
+    around.push({ path: segments.slice(0, i + 1).join('/'), row });
+  }
+  return undefined;
+}
+
+/** Whether some node of these rows includes `workflow`, so nothing runs it on its own. */
+export function isIncluded(rows: readonly StepRow[], workflow: string): boolean {
+  return rows.some((row) => row.include === workflow);
+}
+
+/** One place a step runs at: a step of a workflow nothing includes. */
+export interface Place {
+  workflow: string;
+  path: string;
+}
+
+/**
+ * Every place the step declared at `workflow` and `path` runs at, by top-level workflow and then
+ * in declaration order. A workflow nothing includes is its own only place.
+ */
+export function placesOf(rows: readonly StepRow[], workflow: string, path: string): Place[] {
+  const includers = rows.filter((row) => row.include === workflow);
+  if (includers.length === 0) return [{ workflow, path }];
+  const places = includers.flatMap((row) => placesOf(rows, row.workflow, `${row.path}/${path}`));
+  const key = (place: Place): number[] => {
+    const placed = placeOf(rows, place.workflow, place.path);
+    return placed === undefined
+      ? []
+      : [...placed.around.map((a) => a.row.position), placed.step.position];
+  };
+  return places
+    .map((place) => ({ place, key: key(place) }))
+    .sort((a, b) => a.place.workflow.localeCompare(b.place.workflow) || compare(a.key, b.key))
+    .map((entry) => entry.place);
+}
+
+function compare(a: readonly number[], b: readonly number[]): number {
+  for (let i = 0; i < Math.min(a.length, b.length); i++) {
+    if (a[i] !== b[i]) return (a[i] ?? 0) - (b[i] ?? 0);
+  }
+  return a.length - b.length;
 }
 
 /** The steps in the same scope that depend on `step`, in declaration order. */
@@ -99,17 +170,12 @@ export function joinParts<Row extends { part: number; chunk: string | null }>(
   );
 }
 
-/** One row of `db/queries/step-nesting.sql`: a node beneath the step, or a place an include puts it. */
+/** One row of `db/queries/step-nesting.sql`: a node beneath the step. */
 export interface NestingRow {
-  relation: 'inside' | 'included_at';
-  workflow: string;
   path: string;
   position: number;
   step_id: string;
   kind: string;
-  /** The screen the row opens: a node's own screen, a place's the node it sits in. */
-  open_workflow: string;
-  open_path: string;
 }
 
 /**
@@ -121,36 +187,24 @@ export function stepHref(workflow: string, path: string, at?: string | null): st
   return at ? `${href}?at=${encodeURIComponent(at)}` : href;
 }
 
-export interface Nesting {
-  /** Every node beneath the step, by its path beneath it, in declaration order. */
-  inside: { label: string; depth: number; kind: string; href: string }[];
-  /** Every place an include puts the step, by workflow and path there. */
-  includedAt: { workflow: string; path: string; href: string }[];
-}
-
-/** The step's nesting, each link opening its screen at the version pinned `at`. */
-export function nesting(rows: readonly NestingRow[], step: StepRow, at?: string | null): Nesting {
-  const of = (relation: NestingRow['relation']) => rows.filter((row) => row.relation === relation);
-  return {
-    inside: of('inside')
-      .sort((a, b) => a.position - b.position)
-      .map((row) => {
-        const label = row.path.slice(step.path.length + 1);
-        return {
-          label,
-          depth: label.split('/').length - 1,
-          kind: row.kind,
-          href: stepHref(row.open_workflow, row.open_path, at),
-        };
-      }),
-    includedAt: of('included_at')
-      .sort((a, b) => a.workflow.localeCompare(b.workflow) || a.position - b.position)
-      .map((row) => ({
-        workflow: row.workflow,
-        path: row.path,
-        href: stepHref(row.open_workflow, row.open_path, at),
-      })),
-  };
+/** The nodes beneath `path`, each opening its place in `workflow` at the version pinned `at`. */
+export function nesting(
+  rows: readonly NestingRow[],
+  workflow: string,
+  path: string,
+  at?: string | null,
+): { label: string; depth: number; kind: string; href: string }[] {
+  return [...rows]
+    .sort((x, y) => x.position - y.position)
+    .map((row) => {
+      const label = row.path.slice(path.length + 1);
+      return {
+        label,
+        depth: label.split('/').length - 1,
+        kind: row.kind,
+        href: stepHref(workflow, row.path, at),
+      };
+    });
 }
 
 /**

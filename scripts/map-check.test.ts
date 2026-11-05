@@ -147,7 +147,7 @@ describe('map:check', () => {
     ]);
   });
 
-  test('a step two cards cover, a workflow the pack lacks and a wrong screen each fail', () => {
+  test('a step two cards cover, and a workflow the pack lacks each fail', () => {
     const cards = FACTORY_MAP.cards.map((card) => {
       if (card.id === 'merge') {
         return {
@@ -166,17 +166,10 @@ describe('map:check', () => {
           ...card,
           covers: [{ pack: 'loop' as const, workflow: 'archon-nothing', steps: ['slice'] }],
         };
-      if (card.id === 'review') {
-        return { ...card, covers: card.covers.map(({ screens: _, ...cover }) => cover) };
-      }
       return card;
     });
     expect(check(withCards(cards))).toEqual([
       'loop pack: Split names workflow archon-nothing, which the pack lacks',
-      'loop pack: Review opens archon-loop ship/deliver/rounds/review at archon-loop ship/deliver/rounds/review, not its own screen archon-deliver-block rounds/review',
-      'loop pack: Review opens archon-loop ship/deliver/rounds/rereview at archon-loop ship/deliver/rounds/rereview, not its own screen archon-deliver-block rounds/rereview',
-      'queue pack: Review opens archon-build-queue ship/deliver/rounds/review at archon-build-queue ship/deliver/rounds/review, not its own screen archon-deliver-block rounds/review',
-      'queue pack: Review opens archon-build-queue ship/deliver/rounds/rereview at archon-build-queue ship/deliver/rounds/rereview, not its own screen archon-deliver-block rounds/rereview',
       'loop pack: archon-loop deploy is covered by Merge and Staging',
       'loop pack: archon-loop deploy/resolve is covered by Merge and Staging',
       'loop pack: archon-loop deploy/deploy is covered by Merge and Staging',
@@ -318,13 +311,6 @@ describe('map:check', () => {
             ? {
                 ...cover,
                 steps: [...cover.steps, 'ship/deliver/rounds/review'],
-                screens: {
-                  ...cover.screens,
-                  'ship/deliver/rounds/review': {
-                    workflow: 'archon-deliver-block',
-                    path: 'rounds/review',
-                  },
-                },
               }
             : cover,
         ),

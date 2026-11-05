@@ -15,11 +15,11 @@ Change what the map says there; the React components (`app/components/FactoryMap
 
 A card's `covers` lists, per workflow, the steps it covers. Each entry covers that step and every
 step under it; a step under two entries belongs to the deeper one, so Build covers `ship` and
-Review the two review rounds inside it. An entry an include expanded names its own screen
-(`screens`), under the workflow that declares it. Each entry names its `pack`: `loop` for the old
-`archon-loop` pack (`fixtures/pack/sdlc`), `queue` for Archon's queue workflows and the factory
-package (`fixtures/pack/queue`). A live row carries only a workflow name, so counting ignores
-`pack`; the map check is what keeps the two sets apart.
+Review the two review rounds inside it. Each entry's step link opens that step's place in the
+covered workflow. Each entry names its `pack`: `loop` for the old `archon-loop` pack
+(`fixtures/pack/sdlc`), `queue` for Archon's queue workflows and the factory package
+(`fixtures/pack/queue`). A live row carries only a workflow name, so counting ignores `pack`; the
+map check is what keeps the two sets apart.
 
 A card that opens a deeper view names it in `opens`; the view sits under `views.<id>` and has the
 root's shape (caption, `cardSize`, cards, lines, tour) without the legend, `views` or a required
@@ -52,8 +52,7 @@ fits the whole map, at any width.
 
 `bun run map:check` (part of `bun run check`) parses both packs with the architecture parser,
 offline, and fails, naming the step, when a step of a workflow a card covers is covered by no card
-or by two, when a card names a workflow or a step its pack lacks, when an entry's screen is not
-the step's own, when a role, chip, list, line style, legend role or pack is outside the closed sets, or
+or by two, when a card names a workflow or a step its pack lacks, when a role, chip, list, line style, legend role or pack is outside the closed sets, or
 when a covered step's pack path holds a dot (the map reads a step's path by its dots). A failure
 that names a pack's step starts `loop pack: ` or `queue pack: `. A step of one pack that counts on a
 card only through the other pack's entry (the packs share workflow names such as

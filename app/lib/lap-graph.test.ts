@@ -20,8 +20,6 @@ const row = (path: string, position: number, over: Partial<LapMapRow> = {}): Lap
     step_id: parts.at(-1) as string,
     kind: 'prompt',
     depends_on: [],
-    detail_workflow: 'archon-loop',
-    detail_path: path,
     ...over,
   };
 };

@@ -22,8 +22,6 @@ import {
   type Pack,
   type Point,
   ROLES,
-  type Screen,
-  screenOf,
   viewPath,
 } from '../app/map/factory-map';
 import { type PackVersion, parsePack, parseVersion, type Step } from '../parsers/pack';
@@ -44,23 +42,6 @@ function nodesByPath(steps: readonly Step[], into = new Map<string, Step>()): Ma
     nodesByPath(step.steps, into);
   }
   return into;
-}
-
-/**
- * Where a node's own screen is: under the workflow that declares it, at its path below the include
- * that expanded it there, as the home map's step links have always opened it.
- */
-function ownScreen(workflow: string, nodes: ReadonlyMap<string, Step>, path: string) {
-  const node = nodes.get(path) as Step;
-  if (node.definedIn === workflow) return { workflow, path };
-  const parts = path.split('/');
-  for (let depth = parts.length - 1; depth > 0; depth--) {
-    const include = parts.slice(0, depth).join('/');
-    if (nodes.get(include)?.include === node.definedIn) {
-      return { workflow: node.definedIn, path: parts.slice(depth).join('/') };
-    }
-  }
-  return { workflow: node.definedIn, path };
 }
 
 /** The values the owner's JSON holds outside the closed sets the drawing indexes by. */
@@ -139,9 +120,7 @@ const COVER_KEYS: Record<keyof Cover, true> = {
   pack: true,
   workflow: true,
   steps: true,
-  screens: true,
 };
-const SCREEN_KEYS: Record<keyof Screen, true> = { workflow: true, path: true };
 const DETAILS_KEYS: Record<keyof Details, true> = { when: true, what: true, how: true };
 const LINE_KEYS: Record<keyof Line, true> = {
   from: true,
@@ -174,12 +153,9 @@ function unknownKeys(map: FactoryMap): string[] {
       ...level.cards.flatMap((card) => [
         ...extra(card.title, card, CARD_KEYS),
         ...extra(`${card.title} details`, card.details, DETAILS_KEYS),
-        ...card.covers.flatMap((cover) => [
-          ...extra(`${card.title} cover ${cover.workflow}`, cover, COVER_KEYS),
-          ...Object.entries(cover.screens ?? {}).flatMap(([step, screen]) =>
-            extra(`${card.title} cover ${cover.workflow} screen ${step}`, screen, SCREEN_KEYS),
-          ),
-        ]),
+        ...card.covers.flatMap((cover) =>
+          extra(`${card.title} cover ${cover.workflow}`, cover, COVER_KEYS),
+        ),
       ]),
     ]),
   ];
@@ -374,7 +350,7 @@ function viewPartition(map: FactoryMap, trees: Trees): string[] {
 
 /**
  * Where the map has drifted from the packs (PRD 4.1, invariant 6), one line each: a card naming a
- * workflow or a step its pack lacks, an entry whose screen is not the step's own, a step of a
+ * workflow or a step its pack lacks, a step of a
  * covered workflow that no card covers or that two do, a step a lap's row marks that no card
  * covers, and a step of a pack that counts on a card only through another pack's entry (a live row
  * carries only the workflow name, so the pack cannot tell them apart at runtime). Also a key the
@@ -415,14 +391,6 @@ export function mapCheck(map: FactoryMap, packs: Record<Pack, PackVersion>): str
             continue;
           }
           failures.push(`${at} names ${cover.workflow} ${step}, which the pack lacks`);
-          continue;
-        }
-        const own = ownScreen(cover.workflow, nodes, step);
-        const named = screenOf(cover, step);
-        if (named.workflow !== own.workflow || named.path !== own.path) {
-          failures.push(
-            `${at} opens ${cover.workflow} ${step} at ${named.workflow} ${named.path}, not its own screen ${own.workflow} ${own.path}`,
-          );
         }
       }
     }

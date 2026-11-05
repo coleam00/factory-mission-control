@@ -262,32 +262,12 @@
         {
           "workflow": "archon-loop",
           "steps": ["ship/deliver/rounds/review", "ship/deliver/rounds/rereview"],
-          "screens": {
-            "ship/deliver/rounds/review": {
-              "workflow": "archon-deliver-block",
-              "path": "rounds/review"
-            },
-            "ship/deliver/rounds/rereview": {
-              "workflow": "archon-deliver-block",
-              "path": "rounds/rereview"
-            }
-          },
           "pack": "loop"
         },
         {
           "workflow": "archon-build-queue",
           "steps": ["ship/deliver/rounds/review", "ship/deliver/rounds/rereview"],
-          "pack": "queue",
-          "screens": {
-            "ship/deliver/rounds/review": {
-              "workflow": "archon-deliver-block",
-              "path": "rounds/review"
-            },
-            "ship/deliver/rounds/rereview": {
-              "workflow": "archon-deliver-block",
-              "path": "rounds/rereview"
-            }
-          }
+          "pack": "queue"
         }
       ],
       "details": {
@@ -604,32 +584,12 @@
                 "ship",
                 "ship/forge",
                 "ship/triage"
-              ],
-              "screens": {
-                "ship/forge": {
-                  "workflow": "archon-ship-block",
-                  "path": "forge"
-                },
-                "ship/triage": {
-                  "workflow": "archon-ship-block",
-                  "path": "triage"
-                }
-              }
+              ]
             },
             {
               "pack": "loop",
               "workflow": "archon-loop",
-              "steps": ["ship", "ship/forge", "ship/triage"],
-              "screens": {
-                "ship/forge": {
-                  "workflow": "archon-ship-block",
-                  "path": "forge"
-                },
-                "ship/triage": {
-                  "workflow": "archon-ship-block",
-                  "path": "triage"
-                }
-              }
+              "steps": ["ship", "ship/forge", "ship/triage"]
             }
           ],
           "details": {
@@ -648,24 +608,12 @@
             {
               "pack": "queue",
               "workflow": "archon-build-queue",
-              "steps": ["ship/inv"],
-              "screens": {
-                "ship/inv": {
-                  "workflow": "archon-ship-block",
-                  "path": "inv"
-                }
-              }
+              "steps": ["ship/inv"]
             },
             {
               "pack": "loop",
               "workflow": "archon-loop",
-              "steps": ["ship/inv"],
-              "screens": {
-                "ship/inv": {
-                  "workflow": "archon-ship-block",
-                  "path": "inv"
-                }
-              }
+              "steps": ["ship/inv"]
             }
           ],
           "details": {
@@ -684,32 +632,12 @@
             {
               "pack": "queue",
               "workflow": "archon-build-queue",
-              "steps": ["ship/intel", "ship/planned"],
-              "screens": {
-                "ship/intel": {
-                  "workflow": "archon-ship-block",
-                  "path": "intel"
-                },
-                "ship/planned": {
-                  "workflow": "archon-ship-block",
-                  "path": "planned"
-                }
-              }
+              "steps": ["ship/intel", "ship/planned"]
             },
             {
               "pack": "loop",
               "workflow": "archon-loop",
-              "steps": ["ship/intel", "ship/planned"],
-              "screens": {
-                "ship/intel": {
-                  "workflow": "archon-ship-block",
-                  "path": "intel"
-                },
-                "ship/planned": {
-                  "workflow": "archon-ship-block",
-                  "path": "planned"
-                }
-              }
+              "steps": ["ship/intel", "ship/planned"]
             }
           ],
           "details": {
@@ -728,32 +656,12 @@
             {
               "pack": "queue",
               "workflow": "archon-build-queue",
-              "steps": ["ship/continues", "ship/deliver"],
-              "screens": {
-                "ship/continues": {
-                  "workflow": "archon-ship-block",
-                  "path": "continues"
-                },
-                "ship/deliver": {
-                  "workflow": "archon-ship-block",
-                  "path": "deliver"
-                }
-              }
+              "steps": ["ship/continues", "ship/deliver"]
             },
             {
               "pack": "loop",
               "workflow": "archon-loop",
-              "steps": ["build", "ship/continues", "ship/deliver"],
-              "screens": {
-                "ship/continues": {
-                  "workflow": "archon-ship-block",
-                  "path": "continues"
-                },
-                "ship/deliver": {
-                  "workflow": "archon-ship-block",
-                  "path": "deliver"
-                }
-              }
+              "steps": ["build", "ship/continues", "ship/deliver"]
             }
           ],
           "details": {
@@ -773,32 +681,12 @@
             {
               "pack": "queue",
               "workflow": "archon-build-queue",
-              "steps": ["answer", "ship/outcome", "ship/report"],
-              "screens": {
-                "ship/outcome": {
-                  "workflow": "archon-ship-block",
-                  "path": "outcome"
-                },
-                "ship/report": {
-                  "workflow": "archon-ship-block",
-                  "path": "report"
-                }
-              }
+              "steps": ["answer", "ship/outcome", "ship/report"]
             },
             {
               "pack": "loop",
               "workflow": "archon-loop",
-              "steps": ["ship/outcome", "ship/report"],
-              "screens": {
-                "ship/outcome": {
-                  "workflow": "archon-ship-block",
-                  "path": "outcome"
-                },
-                "ship/report": {
-                  "workflow": "archon-ship-block",
-                  "path": "report"
-                }
-              }
+              "steps": ["ship/outcome", "ship/report"]
             }
           ],
           "details": {
@@ -953,29 +841,7 @@
                 "ship/deliver/rounds",
                 "ship/deliver/rounds/implement",
                 "ship/deliver/rounds/reshape"
-              ],
-              "screens": {
-                "ship/continues": {
-                  "workflow": "archon-ship-block",
-                  "path": "continues"
-                },
-                "ship/deliver": {
-                  "workflow": "archon-ship-block",
-                  "path": "deliver"
-                },
-                "ship/deliver/rounds": {
-                  "workflow": "archon-deliver-block",
-                  "path": "rounds"
-                },
-                "ship/deliver/rounds/implement": {
-                  "workflow": "archon-deliver-block",
-                  "path": "rounds/implement"
-                },
-                "ship/deliver/rounds/reshape": {
-                  "workflow": "archon-deliver-block",
-                  "path": "rounds/reshape"
-                }
-              }
+              ]
             },
             {
               "pack": "loop",
@@ -987,29 +853,7 @@
                 "ship/deliver/rounds",
                 "ship/deliver/rounds/implement",
                 "ship/deliver/rounds/reshape"
-              ],
-              "screens": {
-                "ship/continues": {
-                  "workflow": "archon-ship-block",
-                  "path": "continues"
-                },
-                "ship/deliver": {
-                  "workflow": "archon-ship-block",
-                  "path": "deliver"
-                },
-                "ship/deliver/rounds": {
-                  "workflow": "archon-deliver-block",
-                  "path": "rounds"
-                },
-                "ship/deliver/rounds/implement": {
-                  "workflow": "archon-deliver-block",
-                  "path": "rounds/implement"
-                },
-                "ship/deliver/rounds/reshape": {
-                  "workflow": "archon-deliver-block",
-                  "path": "rounds/reshape"
-                }
-              }
+              ]
             }
           ],
           "details": {
@@ -1032,21 +876,7 @@
                 "ship/deliver/forge",
                 "ship/deliver/rounds/pr",
                 "ship/deliver/update-pr-body"
-              ],
-              "screens": {
-                "ship/deliver/forge": {
-                  "workflow": "archon-deliver-block",
-                  "path": "forge"
-                },
-                "ship/deliver/rounds/pr": {
-                  "workflow": "archon-deliver-block",
-                  "path": "rounds/pr"
-                },
-                "ship/deliver/update-pr-body": {
-                  "workflow": "archon-deliver-block",
-                  "path": "update-pr-body"
-                }
-              }
+              ]
             },
             {
               "pack": "loop",
@@ -1055,21 +885,7 @@
                 "ship/deliver/forge",
                 "ship/deliver/rounds/pr",
                 "ship/deliver/update-pr-body"
-              ],
-              "screens": {
-                "ship/deliver/forge": {
-                  "workflow": "archon-deliver-block",
-                  "path": "forge"
-                },
-                "ship/deliver/rounds/pr": {
-                  "workflow": "archon-deliver-block",
-                  "path": "rounds/pr"
-                },
-                "ship/deliver/update-pr-body": {
-                  "workflow": "archon-deliver-block",
-                  "path": "update-pr-body"
-                }
-              }
+              ]
             }
           ],
           "details": {
@@ -1103,24 +919,12 @@
             {
               "pack": "queue",
               "workflow": "archon-build-queue",
-              "steps": ["ship/deliver/rounds/simplify"],
-              "screens": {
-                "ship/deliver/rounds/simplify": {
-                  "workflow": "archon-deliver-block",
-                  "path": "rounds/simplify"
-                }
-              }
+              "steps": ["ship/deliver/rounds/simplify"]
             },
             {
               "pack": "loop",
               "workflow": "archon-loop",
-              "steps": ["ship/deliver/rounds/simplify"],
-              "screens": {
-                "ship/deliver/rounds/simplify": {
-                  "workflow": "archon-deliver-block",
-                  "path": "rounds/simplify"
-                }
-              }
+              "steps": ["ship/deliver/rounds/simplify"]
             }
           ],
           "details": {
@@ -1146,33 +950,7 @@
                 "ship/deliver/rounds/round",
                 "ship/deliver/outcome",
                 "ship/deliver/report"
-              ],
-              "screens": {
-                "ship/deliver/rounds/settle-threads": {
-                  "workflow": "archon-deliver-block",
-                  "path": "rounds/settle-threads"
-                },
-                "ship/deliver/rounds/ci": {
-                  "workflow": "archon-deliver-block",
-                  "path": "rounds/ci"
-                },
-                "ship/deliver/rounds/threads": {
-                  "workflow": "archon-deliver-block",
-                  "path": "rounds/threads"
-                },
-                "ship/deliver/rounds/round": {
-                  "workflow": "archon-deliver-block",
-                  "path": "rounds/round"
-                },
-                "ship/deliver/outcome": {
-                  "workflow": "archon-deliver-block",
-                  "path": "outcome"
-                },
-                "ship/deliver/report": {
-                  "workflow": "archon-deliver-block",
-                  "path": "report"
-                }
-              }
+              ]
             },
             {
               "pack": "loop",
@@ -1184,33 +962,7 @@
                 "ship/deliver/rounds/round",
                 "ship/deliver/outcome",
                 "ship/deliver/report"
-              ],
-              "screens": {
-                "ship/deliver/rounds/settle-threads": {
-                  "workflow": "archon-deliver-block",
-                  "path": "rounds/settle-threads"
-                },
-                "ship/deliver/rounds/ci": {
-                  "workflow": "archon-deliver-block",
-                  "path": "rounds/ci"
-                },
-                "ship/deliver/rounds/threads": {
-                  "workflow": "archon-deliver-block",
-                  "path": "rounds/threads"
-                },
-                "ship/deliver/rounds/round": {
-                  "workflow": "archon-deliver-block",
-                  "path": "rounds/round"
-                },
-                "ship/deliver/outcome": {
-                  "workflow": "archon-deliver-block",
-                  "path": "outcome"
-                },
-                "ship/deliver/report": {
-                  "workflow": "archon-deliver-block",
-                  "path": "report"
-                }
-              }
+              ]
             }
           ],
           "details": {
@@ -2458,13 +2210,7 @@
             {
               "pack": "loop",
               "workflow": "archon-loop",
-              "steps": ["deploy/resolve"],
-              "screens": {
-                "deploy/resolve": {
-                  "workflow": "archon-deploy",
-                  "path": "resolve"
-                }
-              }
+              "steps": ["deploy/resolve"]
             }
           ],
           "details": {
@@ -2489,13 +2235,7 @@
             {
               "pack": "loop",
               "workflow": "archon-loop",
-              "steps": ["deploy", "deploy/deploy"],
-              "screens": {
-                "deploy/deploy": {
-                  "workflow": "archon-deploy",
-                  "path": "deploy"
-                }
-              }
+              "steps": ["deploy", "deploy/deploy"]
             }
           ],
           "details": {
@@ -2520,17 +2260,7 @@
             {
               "pack": "loop",
               "workflow": "archon-loop",
-              "steps": ["deploy/health", "deploy/verify"],
-              "screens": {
-                "deploy/health": {
-                  "workflow": "archon-deploy",
-                  "path": "health"
-                },
-                "deploy/verify": {
-                  "workflow": "archon-deploy",
-                  "path": "verify"
-                }
-              }
+              "steps": ["deploy/health", "deploy/verify"]
             }
           ],
           "details": {
