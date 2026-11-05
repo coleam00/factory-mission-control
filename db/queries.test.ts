@@ -510,9 +510,9 @@ describe('the rules the live queries restate, which they may not call a function
   });
 
   test('every mention of build-queue in a live query is one of the three rules, none a stray copy', () => {
-    // [mc.dates_version copies, lap-rule copies, queues-rule copies] per name; a live query
+    // [mc.dates_version copies, lap-rule copies, queues-rule copies, other mentions] per name; a live query
     // not listed here may mention none of them.
-    const expected: Record<string, [number, number, number]> = {
+    const expected: Record<string, [number, number, number, number?]> = {
       'version-strip': [1, 0, 0],
       'decisions-timeline': [2, 0, 0],
       'arch-diff': [2, 0, 0],
@@ -524,7 +524,7 @@ describe('the rules the live queries restate, which they may not call a function
       'home-map': [0, 0, 1],
       // Exception: the lap rule narrowed to one item ($2) rather than any item, and the route join that
       // reads a build-queue run's own routing step.
-      'work-item': [0, 0, 2],
+      'work-item': [0, 0, 0, 2],
       'step-detail': [0, 0, 1],
       'step-nesting': [0, 0, 1],
       'step-prompt': [0, 0, 1],
@@ -535,12 +535,12 @@ describe('the rules the live queries restate, which they may not call a function
     };
     const copies = [...queries];
     for (const [name, sql] of copies) {
-      const [datesVersion, lap, queues] = expected[name] ?? [0, 0, 0];
+      const [datesVersion, lap, queues, other = 0] = expected[name] ?? [0, 0, 0];
       expect([name, count(sql, DATES_VERSION), count(sql, LAP)]).toEqual([name, datesVersion, lap]);
       expect([name, count(sql, ON_THE_QUEUES)]).toEqual([name, queues]);
       expect([name, count(sql, "'archon-build-queue'")]).toEqual([
         name,
-        datesVersion + lap + queues,
+        datesVersion + lap + queues + other,
       ]);
     }
   });
