@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import type { StatusStripRow } from '../app/components/FactoryStrip';
 import type { FactorySwitcherRow } from '../app/components/FactorySwitcher';
 import type { ArchDiffRow } from '../app/lib/arch-diff';
+import type { AttentionRow } from '../app/lib/attention';
 import type { LedgerRow, TimelineRow } from '../app/lib/decisions-ledger';
 import type { HealthRunRow, HealthStepRow, HealthWorkableRow } from '../app/lib/health';
 import type { IssueGraphRow } from '../app/lib/issue-graph';
@@ -46,6 +47,17 @@ const columns =
 /** Each live query's result columns, in order, bound to the row type its panel reads. */
 const ROW_COLUMNS: Record<string, string[]> = {
   'arch-diff': columns<ArchDiffRow>()(['digest', 'kind', 'workflow', 'first_run_at', 'entries']),
+  'attention-items': columns<AttentionRow>()([
+    'run_id',
+    'workflow_name',
+    'node_id',
+    'waiting_since',
+    'form',
+    'options',
+    'labels',
+    'message',
+    'console',
+  ]),
   'decisions-timeline': columns<TimelineRow>()([
     'date',
     'title',
@@ -92,6 +104,7 @@ const ROW_COLUMNS: Record<string, string[]> = {
     'title',
     'url',
     'at',
+    'prs',
   ]),
   'improvements-ledger': columns<LedgerRow>()([
     'pin_sha',

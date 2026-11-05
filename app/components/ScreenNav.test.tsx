@@ -19,7 +19,11 @@ function registeredRoutes(extra: string[] = []): Record<string, RouteModule> {
 }
 
 /** The nav over the given route files, in a router at `path`. */
-function navAt(modules: Record<string, RouteModule>, path: string) {
+function navAt(
+  modules: Record<string, RouteModule>,
+  path: string,
+  badge?: (path: string) => React.ReactNode,
+) {
   const routes = routesFromModules(modules);
   const screens = factoryScreens(routes);
   const router = createMemoryRouter(
@@ -27,7 +31,7 @@ function navAt(modules: Record<string, RouteModule>, path: string) {
       {
         element: (
           <>
-            <ScreenNavBody screens={screens} factory={FACTORY} />
+            <ScreenNavBody screens={screens} factory={FACTORY} badge={badge} />
             <Outlet />
           </>
         ),
@@ -74,6 +78,14 @@ test('every factory route file has a link; screens needing another parameter hav
   expect(found).toHaveLength(screens.length + 2);
   expect(found.at(-1)).toBe('/rewind');
   expect(found.some((href) => href.startsWith('/steps'))).toBe(false);
+});
+
+test('a badge follows its screen’s label and no other', () => {
+  const html = navAt(registeredRoutes(), '/', (path) =>
+    path === 'decisions' ? <b data-badge>3</b> : null,
+  ).html();
+  expect(html.match(/data-badge/g)).toHaveLength(1);
+  expect(html).toMatch(/Decisions<b data-badge="true">3<\/b>/);
 });
 
 test('the rewind link shows on every screen and is current on /rewind', () => {

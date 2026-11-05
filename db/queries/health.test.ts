@@ -46,9 +46,9 @@ describe('the health queries on the seed', () => {
 
   afterAll(() => db.close());
 
-  test('one run is pending and one paused', async () => {
+  test('one run is pending and three paused', async () => {
     const waiting = waitingRuns(await rows<HealthRunRow>('health-runs'));
-    expect(waiting.map((run) => run.status)).toEqual(['pending', 'paused']);
+    expect(waiting.map((run) => run.status)).toEqual(['pending', 'paused', 'paused', 'paused']);
   });
 
   test('the six failed laps split across all four causes', async () => {

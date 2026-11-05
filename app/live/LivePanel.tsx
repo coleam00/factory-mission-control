@@ -243,6 +243,12 @@ type Render<Row> = (rows: readonly Row[] | undefined, state: PanelState) => Reac
 interface LivePanelProps<Row> {
   /** A file name in `db/queries/`, without `.sql`. */
   query: string;
+  /**
+   * Names this panel apart from the screen's own panel of the same query: it is the panel's
+   * `data-live` and the `live:<name>:*` marks, so a second reader of a query (the nav's badge)
+   * is never taken for the first by anything that finds a panel by name.
+   */
+  name?: string;
   factory: string | undefined;
   /**
    * Reads the branch the server was started on even while its sealing is switched to a rewind
@@ -280,6 +286,7 @@ function Frame({
  */
 export function LivePanel<Row>({
   query,
+  name = query,
   factory,
   home = false,
   args,
@@ -312,15 +319,15 @@ export function LivePanel<Row>({
     const stopped = new AbortController();
     const backoff = sealBackoff(asked);
     const requestSeal = panelSealer(() => seal<Row>(query, body, branch), stopped.signal, backoff);
-    markOnce(`live:${query}:requested`);
+    markOnce(`live:${name}:requested`);
     const ask = (): void => {
       requestSeal().then(
         (first) => {
           if (cancelled) return;
-          markOnce(`live:${query}:sealed`);
+          markOnce(`live:${name}:sealed`);
           const parameters: { args?: string[] } = JSON.parse(body);
           observation = observeQuery({
-            query,
+            query: name,
             factory,
             args: parameters.args ?? [],
             home,
@@ -344,12 +351,12 @@ export function LivePanel<Row>({
       stopped.abort();
       if (observation) discardObservation(observation);
     };
-  }, [ready, query, factory, body, home, branch, asked, lost]);
+  }, [ready, query, name, factory, body, home, branch, asked, lost]);
 
   if (live.status !== 'ready' || accepted?.asked !== asked || failed) {
     const state = live.status === 'error' || failed ? 'error' : 'loading';
     return (
-      <Frame query={query} state={state} className={className}>
+      <Frame query={name} state={state} className={className}>
         {children(undefined, state)}
       </Frame>
     );

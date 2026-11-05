@@ -18,6 +18,7 @@ import { healthPhase } from './live/health';
 import { homePhase } from './live/home';
 import { issuesPhase } from './live/issues';
 import { lapsPhase } from './live/laps';
+import { ledgerPhase } from './live/ledger';
 import { oneLapPhase } from './live/one-lap';
 import { ownerPhase } from './live/owner';
 import { queueMapPhase } from './live/queue-map';
@@ -69,12 +70,16 @@ const USAGE = [
   '  kind and verdict counts before the hold and on a second such lap after it, writing',
   '  testing-check.txt, testing-panel-timings.json, testing-panel.png and',
   "  testing-panel-design-probe.json; it removes those laps' app checks afterwards.",
-  '  It checks the decisions screen against the seed, times `fixture:write verdict --pin <V2>` and',
+  '  It checks the ledger screen against the seed, times `fixture:write verdict --pin <V2>` and',
   '  `fixture:write decision` to that screen before and after the hold, writing ledger-check.txt,',
   '  decisions-ledger-timings.json, decisions-ledger.png and decisions-ledger-design-probe.json.',
   "  It checks the owner queue against the seed's open needs-owner issues and open owner questions,",
   '  and times `fixture:write label` to it before and after the hold, writing owner-queue-check.txt,',
   '  owner-queue-timings.json, owner-queue.png and owner-queue-design-probe.json.',
+  "  It checks the decisions screen against the seed's attention items, open owner items and health,",
+  '  and the tab count against the items shown, and times `fixture:write label` to it before and',
+  '  after the hold, writing decisions-check.txt, decisions-timings.json, decisions.png and',
+  '  decisions-design-probe.json.',
   '  It checks the issues screen against the seed and times `fixture:write label` to it before and',
   '  after the hold, writing issue-graph-check.txt, phases-issue-graph-timings.json,',
   '  phases-issue-graph.png and phases-issue-graph-design-probe.json.',
@@ -239,24 +244,26 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
   const { failures } = ctx;
   const rewind = rewindPhase(ctx);
   // The order is the order of every write against every read that judges it: the laps screen
-  // and the lap open before the strip's first insert, the decisions screen writes before the
+  // and the lap open before the strip's first insert, the ledger screen writes before the
   // step, versions and scorecard screens open and judges the versions screen's pin after the
   // hold, and the switcher runs before the diff adds steps to the architecture the second
-  // factory's map shows. The owner queue labels just before the issues screen does, so each of the
-  // issues screen's labels lands on a waiting issue. Rewind is last: making a rewind branch starts a new Neon compute on the
+  // factory's map shows. The owner queue labels just before the issues screen does, so each of
+  // the issues screen's labels lands on a waiting issue; the Decisions screen removes its own
+  // labels as soon as it has timed them. Rewind is last: making a rewind branch starts a new Neon compute on the
   // project, so every other screen's first snapshots are timed before it.
   const phases: LivePhase[] = [
     homePhase(ctx),
     queueMapPhase(ctx),
     lapsPhase(ctx),
     oneLapPhase(ctx),
-    decisionsPhase(ctx),
+    ledgerPhase(ctx),
     stepDetailPhase(ctx),
     versionsPhase(ctx),
     scorecardPhase(ctx),
     changesPhase(ctx),
     testingPhase(ctx),
     ownerPhase(ctx),
+    decisionsPhase(ctx),
     issuesPhase(ctx),
     healthPhase(ctx),
     switcherPhase(ctx),
