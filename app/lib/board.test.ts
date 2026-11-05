@@ -48,7 +48,6 @@ const lap = (number: number, workflow: string, steps: string[] | null): HomeMapR
   url: null,
   at: null,
   prs: null,
-  output: null,
 });
 const row = (kind: HomeMapRow['kind'], number: number | null = null): HomeMapRow => ({
   ...lap(number ?? 0, 'archon-build-queue', null),

@@ -101,6 +101,37 @@ describe('home-map on the seed', () => {
     );
   });
 
+  test("picks: the skipped lens steps of a running run's current round, not an older iteration's, a lens that ran, or a round without a policy step", async () => {
+    const round = (r: string) => `ship__deliver__rounds.${r}__`;
+    const steps = [
+      [round('review') + 'policy', 'running', '-1 minute', null],
+      [round('review') + 'tests', 'skipped', '-30 seconds', '-30 seconds'],
+      [round('review') + 'seams', 'skipped', '-5 minutes', '-5 minutes'],
+      [round('review') + 'code', 'completed', '-30 seconds', '-20 seconds'],
+      [round('review') + 'route', 'skipped', '-30 seconds', '-30 seconds'],
+      [round('rereview') + 'tests', 'skipped', '-30 seconds', '-30 seconds'],
+    ] as const;
+    const ids = steps.map(([id]) => id);
+    for (const [id, status, started, completed] of steps) {
+      await db.query(
+        `INSERT INTO mc.lap_steps (run_id, step_id, status, started_at, completed_at)
+         VALUES ($1, $2, $3, now() + $4::interval, now() + $5::interval)`,
+        [QUEUE_RUNS.review, id, status, started, completed],
+      );
+    }
+    try {
+      const picks = (await rows('queue-factory')).filter((r) => r.kind === 'picks');
+      expect(picks.map((r) => [r.run_id, r.steps])).toEqual([
+        [QUEUE_RUNS.review, [round('review') + 'tests']],
+      ]);
+    } finally {
+      await db.query('DELETE FROM mc.lap_steps WHERE run_id = $1 AND step_id = ANY($2::text[])', [
+        QUEUE_RUNS.review,
+        ids,
+      ]);
+    }
+  });
+
   test('answering an attention wait takes the run off waiting', async () => {
     await db.query(
       `UPDATE remote_agent_workflow_runs

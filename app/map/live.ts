@@ -35,8 +35,6 @@ export interface HomeMapRow {
   at: Date | null;
   /** A merge-queue lap's merged pull requests, as the JSON text of an array of numbers. */
   prs: string | null;
-  /** A picks row's step output, the reviewers its round's router picked, as JSON text. */
-  output: string | null;
 }
 
 /** A lap on the map: its run, its claimed issue, and the step it counts on. */
@@ -82,7 +80,7 @@ export interface CardLive {
   waiting?: MapItem[];
   merged?: MapMerge[];
   orders?: WorkOrderRow[];
-  /** Laps in a review round whose router did not pick this card's reviewer. */
+  /** Laps in a review round whose reviewer for this card the engine skipped. */
   skipped?: MapLap[];
   /** Chips whose source failed: not zero, unknown, so drawn as such. */
   unavailable?: Chip[];
@@ -162,32 +160,17 @@ export function lapCard(
 
 const REVIEW_ROUND = /^(.*\/(?:re)?review)\//;
 
-/** The reviewers a router's output declines, by lens name; none for output that is not an object. */
-function declinedLenses(output: string | null): string[] {
-  let route: unknown;
-  try {
-    route = JSON.parse(output ?? '');
-  } catch {
-    return [];
-  }
-  if (typeof route !== 'object' || route === null) return [];
-  return Object.entries(route).flatMap(([lens, picked]) => (picked === false ? [lens] : []));
-}
-
 /**
- * The lens steps the router skipped in the review round `lap` is in, read from that round's route
- * step output when the run has one: paths below the round, like `<round>/tests`.
+ * The lens steps the engine skipped in the review round `lap` is in, from the run's `picks` rows:
+ * paths below the round, like `<round>/tests`.
  */
 function skippedLensSteps(rows: readonly HomeMapRow[], row: HomeMapRow, lap: MapLap): string[] {
   const round = REVIEW_ROUND.exec(lap.step)?.[1];
   if (round === undefined) return [];
-  const picks = rows.find(
-    (r) =>
-      r.kind === 'picks' &&
-      r.run_id === row.run_id &&
-      stepPath(r.steps?.[0] ?? '').startsWith(`${round}/`),
-  );
-  return declinedLenses(picks?.output ?? null).map((lens) => `${round}/${lens}`);
+  return rows
+    .filter((r) => r.kind === 'picks' && r.run_id === row.run_id)
+    .map((r) => stepPath(r.steps?.[0] ?? ''))
+    .filter((step) => step.startsWith(`${round}/`));
 }
 
 /** Open Archon attention items: paused runs waiting on a person, named by their issue when they have one. */

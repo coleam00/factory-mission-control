@@ -23,7 +23,9 @@ import {
 /** Where the queue runs step: Build's implement round, and Review's policy round. */
 export const BUILD_STEP = 'ship__deliver__rounds.implement__implement';
 const REVIEW_STEP = 'ship__deliver__rounds.review__policy';
-const WRITTEN_STEPS = [BUILD_STEP, REVIEW_STEP];
+const REVIEW_CODE_STEP = 'ship__deliver__rounds.review__code';
+const REREVIEW_TESTS_STEP = 'ship__deliver__rounds.rereview__tests';
+const WRITTEN_STEPS = [BUILD_STEP, REVIEW_STEP, REVIEW_CODE_STEP, REREVIEW_TESTS_STEP];
 const WAITING = `${MAP} [data-card="mgr"] [data-chip="waiting"]`;
 
 const viewStage = (id: string) => `[data-map-stage][data-view="${id}"][data-placed]`;
@@ -42,6 +44,8 @@ export function queueMapPhase(ctx: LiveContext): LivePhase {
     deliver: null as number | null,
     review: null as number | null,
     scope: null as number | null,
+    code: null as number | null,
+    tests: null as number | null,
     waiting: null as number | null,
   };
 
@@ -138,6 +142,19 @@ export function queueMapPhase(ctx: LiveContext): LivePhase {
         ms.review = await timed('review', QUEUE_RUNS.review, REVIEW_STEP);
 
         ms.scope = await untilShown(reviewView, `${liveCountOf('r-scope')} === '1'`);
+        const startStep = (step: string) => ['step', '--run', QUEUE_RUNS.review, '--step', step];
+        ms.code = await writeToScreen(
+          reviewView,
+          deps,
+          [...startStep(REVIEW_CODE_STEP), '--event', 'node_started'],
+          `${liveCountOf('r-l2')} === '1'`,
+        );
+        ms.tests = await writeToScreen(
+          reviewView,
+          deps,
+          [...startStep(REREVIEW_TESTS_STEP), '--event', 'node_started'],
+          `${liveCountOf('r-l3')} === '1'`,
+        );
 
         const waiting = (await waitingCount(page)) + 1;
         await writeToScreen(page, deps, ['attention', '--run', QUEUE_RUNS.ask], 'true');
@@ -172,6 +189,8 @@ export function queueMapPhase(ctx: LiveContext): LivePhase {
         `${name}'s Review view Scope the change`,
         ms.scope,
       ),
+      ...lateWrite('a build-queue run on review/code', `${name}'s Review view Code`, ms.code),
+      ...lateWrite('a build-queue run on rereview/tests', `${name}'s Review view Tests`, ms.tests),
       ...lateWrite('a paused attention wait', `${name}'s Manager waiting chip`, ms.waiting),
     ],
 

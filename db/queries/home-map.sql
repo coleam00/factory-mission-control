@@ -5,7 +5,7 @@ SELECT
   -- architecture, for a factory with a lap (an empty factory does not borrow the shared pin history).
   'version' AS kind, NULL::uuid AS run_id, NULL::text AS workflow, NULL::text[] AS steps,
   NULL::integer AS number, NULL::text AS title, NULL::text AS url, NULL::timestamptz AS at,
-  NULL::text AS prs, NULL::text AS output
+  NULL::text AS prs
 FROM mc.factories f
 WHERE f.name = $1
   AND EXISTS (SELECT 1 FROM mc.laps l WHERE l.factory = f.name)
@@ -20,7 +20,7 @@ UNION ALL
 -- steps, newest first, and the issue it claimed, or for a queue run (which claims nothing) the
 -- issue in its number input. The browser counts it on the card covering its deepest running step.
 SELECT 'lap', l.run_id, l.workflow_name, s.steps, coalesce(c.issue_number, l.issue_number),
-  i.title, i.url, NULL, NULL, NULL
+  i.title, i.url, NULL, NULL
 FROM mc.laps l
 LEFT JOIN LATERAL (
   SELECT array_agg(ls.step_id ORDER BY ls.started_at DESC NULLS LAST, ls.step_id) AS steps
@@ -37,7 +37,7 @@ WHERE l.factory = $1 AND l.status = 'running'
     WHERE vr.factory = l.factory AND vr.digest = l.digest AND vr.pin_sha = $2))
 UNION ALL
 -- Each open pull request whose latest app check came out FAIL overall.
-SELECT 'failing', NULL, NULL, NULL, pr.number, pr.title, pr.url, NULL, NULL, NULL
+SELECT 'failing', NULL, NULL, NULL, pr.number, pr.title, pr.url, NULL, NULL
 FROM mc.pull_requests pr
 JOIN LATERAL (
   SELECT s.output ->> 'overall' AS overall
@@ -52,14 +52,14 @@ UNION ALL
 -- Each run of the factory waiting on a person (the chip counts the factory as it stands, not a
 -- version): a paused run whose attention wait has no answer. Only the issue's own title, never
 -- the wait's text.
-SELECT 'waiting', l.run_id, l.workflow_name, NULL, l.issue_number, i.title, i.url, NULL, NULL, NULL
+SELECT 'waiting', l.run_id, l.workflow_name, NULL, l.issue_number, i.title, i.url, NULL, NULL
 FROM mc.laps l
 LEFT JOIN mc.issues i ON i.factory = l.factory AND i.number = l.issue_number
 WHERE l.factory = $1 AND l.attention_open
 UNION ALL
 -- One row for a factory on the queues, which is one that has run a workflow only the queue pack
 -- has, and its attention items replace needs-owner.
-SELECT 'queues', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL
+SELECT 'queues', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL
 FROM mc.factories f
 WHERE f.name = $1
   AND EXISTS (SELECT 1 FROM mc.laps l
@@ -70,7 +70,7 @@ UNION ALL
 SELECT * FROM (
   SELECT 'merged', l.run_id, l.workflow_name, NULL::text[], c.issue_number, i.title, i.url,
     coalesce(land.completed_at, land.started_at + land.duration_ms * interval '1 millisecond'),
-    NULL::text, NULL::text
+    NULL::text
   FROM mc.laps l
   JOIN mc.lap_steps land ON land.run_id = l.run_id AND land.step_id = 'land'
     AND land.status = 'completed' AND land.output ->> 'outcome' = 'merged'
@@ -91,7 +91,7 @@ UNION ALL
 SELECT * FROM (
   SELECT 'merged', l.run_id, l.workflow_name, NULL::text[], NULL::integer, NULL::text, NULL::text,
     coalesce(rec.completed_at, rec.started_at + rec.duration_ms * interval '1 millisecond'),
-    (rec.output -> 'merged')::text, NULL::text
+    (rec.output -> 'merged')::text
   FROM mc.laps l
   JOIN mc.lap_steps rec ON rec.run_id = l.run_id AND rec.step_id = 'record'
     AND rec.status = 'completed' AND rec.output -> 'merged' IS NOT NULL
@@ -100,12 +100,14 @@ SELECT * FROM (
   LIMIT 200
 ) queue_merged
 UNION ALL
--- The reviewers each running run's router picked: the output of every completed route step of the
--- review block, as JSON text. The browser reads the one of the review round the run is in. A
--- light round, which skips the route step, has none.
-SELECT 'picks', l.run_id, l.workflow_name, ARRAY[s.step_id], NULL, NULL, NULL, NULL, NULL,
-  s.output::text
+-- The lens steps of the review block the engine skipped, for each running run, as `picks` rows of
+-- one step each. Step ids repeat across the loop's rounds, so a skipped row counts only when it
+-- finished at or after its round's policy step (the round's first) last started.
+SELECT 'picks', l.run_id, l.workflow_name, ARRAY[s.step_id], NULL, NULL, NULL, NULL, NULL
 FROM mc.laps l
-JOIN mc.lap_steps s ON s.run_id = l.run_id AND s.status = 'completed'
-  AND s.step_id ~ 'review__route$' AND s.output IS NOT NULL
+JOIN mc.lap_steps s ON s.run_id = l.run_id AND s.status = 'skipped'
+  AND s.step_id ~ 'review__(seams|code|tests|errors|docs)$'
+JOIN mc.lap_steps p ON p.run_id = l.run_id
+  AND p.step_id = regexp_replace(s.step_id, '__[a-z]+$', '__policy')
+  AND s.completed_at >= p.started_at
 WHERE l.factory = $1 AND l.status = 'running'

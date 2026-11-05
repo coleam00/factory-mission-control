@@ -18,7 +18,6 @@ const lap = (
   url: null,
   at: null,
   prs: null,
-  output: null,
 });
 
 const hereOn = (rows: HomeMapRow[], cards: readonly { id: string }[]) => {
@@ -122,7 +121,6 @@ test('each chip sits on the card that carries it, and a source not delivered yet
     url: 'https://github.com/o/r/pull/109',
     at: null,
     prs: null,
-    output: null,
   };
   const live = cardLive(
     FACTORY_MAP,
@@ -310,33 +308,28 @@ test('a run of the old loop on build counts on Build and Deliver', () => {
   expect(hereOn(rows, BUILD_VIEW)).toEqual({ 'b-del': ['old'] });
 });
 
-test('a lens the router skipped shows the run on its card, not a count; the other lenses and a missing route say nothing', () => {
-  const picks = (run: string, round: string, output: string | null): HomeMapRow => ({
-    ...lap(run, [`ship__deliver__rounds.${round}__route`]),
+test('a lens the engine skipped shows the run on its card, not a count; a lens of another round or run says nothing', () => {
+  const picks = (run: string, step: string): HomeMapRow => ({
+    ...lap(run, [step]),
     kind: 'picks',
-    output,
   });
   const reviewing = lap('a', ['ship__deliver__rounds.review__code'], 'archon-build-queue', 7);
-  const picked = JSON.stringify({
-    seams: false,
-    code: true,
-    tests: false,
-    errors: true,
-    docs: true,
-    reason: 'a small change',
-  });
   const skippedBy = (rows: HomeMapRow[]) =>
     Object.fromEntries(
       [...cardLive(FACTORY_MAP, { map: rows }, new Date()).entries()]
         .filter(([, live]) => live.skipped !== undefined)
         .map(([id, live]) => [id, live.skipped?.map((l) => l.run)]),
     );
-  expect(skippedBy([reviewing, picks('a', 'review', picked)])).toEqual({
-    'r-l1': ['a'],
-    'r-l3': ['a'],
-  });
-  expect(skippedBy([reviewing, picks('a', 'rereview', picked)])).toEqual({});
-  expect(skippedBy([reviewing, picks('other', 'review', picked)])).toEqual({});
-  expect(skippedBy([reviewing, picks('a', 'review', 'oops')])).toEqual({});
+  const skip = (run: string, round: string, lens: string) =>
+    picks(run, `ship__deliver__rounds.${round}__${lens}`);
+  expect(
+    skippedBy([reviewing, skip('a', 'review', 'seams'), skip('a', 'review', 'tests')]),
+  ).toEqual({ 'r-l1': ['a'], 'r-l3': ['a'] });
+  expect(skippedBy([reviewing, skip('a', 'rereview', 'tests')])).toEqual({});
+  expect(skippedBy([reviewing, skip('other', 'review', 'tests')])).toEqual({});
   expect(skippedBy([reviewing])).toEqual({});
+  const rereviewing = lap('a', ['ship__deliver__rounds.rereview__tests'], 'archon-build-queue');
+  expect(cardLive(FACTORY_MAP, { map: [rereviewing] }, new Date()).get('r-l3')?.here).toHaveLength(
+    1,
+  );
 });
