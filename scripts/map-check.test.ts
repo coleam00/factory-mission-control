@@ -73,6 +73,7 @@ describe('map:check', () => {
     );
     expect(check(FACTORY_MAP, pack)).toEqual([
       'loop pack: App check names archon-loop briefs, which the pack lacks',
+      'loop pack: Pick a PR names archon-loop briefs, which the pack lacks',
     ]);
   });
 
@@ -81,6 +82,7 @@ describe('map:check', () => {
       card.id === 'app'
         ? {
             ...card,
+            opens: undefined,
             covers: [
               {
                 pack: 'loop' as const,
@@ -91,7 +93,8 @@ describe('map:check', () => {
           }
         : card,
     );
-    expect(check(withCards(without))).toEqual([
+    const map = { ...withCards(without), views: { build: FACTORY_MAP.views?.build as MapView } };
+    expect(check(map)).toEqual([
       "loop pack: archon-loop handoff is marked on a lap's row but covered by no card",
     ]);
   });

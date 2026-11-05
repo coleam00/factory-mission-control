@@ -4,7 +4,8 @@ import { join } from 'node:path';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { MemoryRouter } from 'react-router';
 import { parsePack, type Step } from '../../parsers/pack';
-import { Behind, MapDetails, RightNow } from '../components/MapDetails';
+import { AppCheckList, Behind, MapDetails, RightNow } from '../components/MapDetails';
+import type { AppCheckRow } from '../lib/app-check';
 import type { StepRow } from '../lib/step-detail';
 import { FACTORY_MAP, workflowFile } from '../map/factory-map';
 import type { HomeMapRow, MapSources } from '../map/live';
@@ -81,8 +82,8 @@ test("the map draws every card's wording, the caption, the group and the legend,
   }
   expect(html).toContain('the manager watches everything on this line');
   for (const entry of FACTORY_MAP.legend) expect(html).toContain(entry.label);
-  // Only Build, Split, Intake, Merge and Staging have a deeper view, so only they offer to open one.
-  const opens = ['build', 'split', 'intake', 'merge', 'deploy'];
+  // Only Build, Split, Intake, App check, Merge and Staging have a deeper view, so only they offer to open one.
+  const opens = ['build', 'split', 'intake', 'app', 'merge', 'deploy'];
   for (const id of opens) expect(cardTag(html, id)).toContain(`data-opens="${id}"`);
   expect(html).toContain('opens a deeper view');
   for (const card of FACTORY_MAP.cards.filter((c) => !opens.includes(c.id))) {
@@ -217,7 +218,7 @@ test('a card with laps on it carries their count and a pulsing chip; a chip of 0
   });
   expect(cardTag(html, 'app')).toContain('data-live-count="2"');
   expect(cardTag(html, 'app')).toContain(
-    'aria-label="App check. Tries the change in the running app. 2 here"',
+    'aria-label="App check. Tries the change in the running app. 2 here. Opens a deeper view"',
   );
   expect(cardTag(html, 'build')).toContain('data-live-count="1"');
   expect(cardTag(html, 'review')).toContain('data-live-count="0"');
@@ -429,6 +430,7 @@ test('Right now links a lap entry to its page and to its GitHub issue, and only 
   ) => ({
     run,
     step: 'plan',
+    workflow: 'archon-loop',
     issue,
   });
   const html = renderToStaticMarkup(
@@ -449,6 +451,35 @@ test('Right now links a lap entry to its page and to its GitHub issue, and only 
   expect(html.match(/data-lap-issue/g)).toHaveLength(1);
 });
 
+test('Right now links only a run with a lap page; a queue run and a merge-queue merge show plainly', () => {
+  const issue = { number: 9, title: 'Queued', url: 'https://github.com/o/r/issues/9' };
+  const at = new Date();
+  const html = renderToStaticMarkup(
+    <MemoryRouter>
+      <RightNow
+        live={{
+          here: [
+            { run: 'loop-run', step: 'plan', workflow: 'archon-loop', issue: null },
+            { run: 'queue-run', step: 'plan', workflow: 'archon-build-queue', issue },
+          ],
+          merged: [
+            { run: 'loop-merge', workflow: 'archon-loop', number: 4, at },
+            { run: 'queue-merge', workflow: 'archon-merge-queue', number: 5, at },
+          ],
+        }}
+        factory="here"
+      />
+    </MemoryRouter>,
+  );
+  expect(html).toContain('/f/here/laps/loop-run');
+  expect(html).toContain('/f/here/laps/loop-merge');
+  expect(html).not.toContain('/laps/queue-run');
+  expect(html).not.toContain('/laps/queue-merge');
+  expect(html).toContain('Queued');
+  expect(html).toContain('href="https://github.com/o/r/issues/9"');
+  expect(html).toContain('#5');
+});
+
 test('Right now says a chip count is unavailable', () => {
   const html = renderToStaticMarkup(
     <MemoryRouter>
@@ -456,6 +487,29 @@ test('Right now says a chip count is unavailable', () => {
     </MemoryRouter>,
   );
   expect(html).toContain('The queued count is unavailable.');
+});
+
+test('Use the app lists each pull request under check with its verdict and its lines by kind', () => {
+  const row = (number: number, overall: string | null, over: Partial<AppCheckRow> = {}) => ({
+    number,
+    title: `PR ${number}`,
+    url: `https://github.com/o/r/pull/${number}`,
+    run_id: `run-${number}`,
+    overall,
+    criteria: 1,
+    probes: 0,
+    assertions: 2,
+    ...over,
+  });
+  const html = renderToStaticMarkup(
+    <AppCheckList rows={[row(7, 'FAIL', { criteria: 3, probes: 1 }), row(8, null)]} />,
+  );
+  expect(html).toContain('href="https://github.com/o/r/pull/7"');
+  expect(textOf(html)).toContain('FAIL  3 criteria, 1 probe, 2 assertions');
+  expect(textOf(html)).toContain('checking  1 criterion, 0 probes, 2 assertions');
+  expect(textOf(renderToStaticMarkup(<AppCheckList rows={[]} />))).toBe(
+    'No open pull request has been checked.',
+  );
 });
 
 test('Behind the scenes shows each workflow its own YAML path, and none for a workflow the version lacks', () => {

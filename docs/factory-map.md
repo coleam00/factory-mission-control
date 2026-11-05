@@ -141,6 +141,21 @@ factory as it is now, at whatever version the address names.
   label their issues carry, or that they name no target yet.
 - A list whose source failed says it is unavailable and the other lists stay.
 
+## The App check view
+
+`?view=app` is drawn from the mockup's `V.app`. On a factory on the queues, Pick a PR covers
+`config`, `select` and `pending`, How deep? `scope`, Protected paths `policy`, PR + main, started
+`prepare`, Use the app `check`, Seal the evidence `evidence` and `factory/app-check` `publish`,
+`finalize` and `cleanup`; the old loop's `briefs`, `check-app`, `evidence` and `handoff` sit on the
+same cards in the same order. Use the app's Right now also lists the open pull requests the app
+check has looked at (the `app-check` query): each one's latest verdict and its lines by kind.
+
+The home map's failing chip and the Board's verdict chip read the old `check-app` step or, on the
+queues, the `check` step of `factory-app-check` (migration 0024). That step keeps only its overall
+verdict and the pull request and head its `select` step kept, and its lines are stored by id, kind
+and verdict without their text. A run whose report names a holdout keeps no output and no lines.
+Showing those lines on the work item page's timeline waits on that page (#317).
+
 ## Clicking a card
 
 A card keeps itself and the cards a line joins to it lit and dims the rest; its details strip opens
@@ -156,7 +171,7 @@ holdout verifier and the fence (journey 1). Esc, the close button or a click on 
 deselects.
 
 A card with a view shows ⤢ and a stacked edge, and its strip has an Open button naming the number
-of cards in the view. A card shows ⤢ only once its view exists; today Build's, Split's, Intake's, Merge's and Staging's do (`?view=build`, `?view=split`, `?view=intake`, `?view=merge`, `?view=deploy`), and so does Deliver inside Build (`?view=build/deliver`; Review shows none until its view exists).
+of cards in the view. A card shows ⤢ only once its view exists; today Build's, Split's, Intake's, App check's, Merge's and Staging's do (`?view=build`, `?view=split`, `?view=intake`, `?view=app`, `?view=merge`, `?view=deploy`), and so does Deliver inside Build (`?view=build/deliver`; Review shows none until its view exists).
 Double-click, Enter on the selected card or the Open button zooms into the view. Breadcrumbs above
 the caption (the factory, then each opened view), the up control, a crumb, Esc (with nothing
 selected) and Backspace go up, and the card that opened the view flashes. The address is

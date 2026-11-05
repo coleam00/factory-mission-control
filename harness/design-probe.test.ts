@@ -1,5 +1,5 @@
 import { afterAll, expect, test } from 'bun:test';
-import { readFileSync } from 'node:fs';
+import { readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { launchBrowser, probe } from './design-probe.js';
 
@@ -231,4 +231,23 @@ test('a browser whose DevToolsActivePort never appears still stops the probe aft
   await expect(launchBrowser(readPort, 20_000)).rejects.toThrow(
     'the browser opening its DevTools port did not happen within 20s',
   );
+}, 60_000);
+
+test('a profile that stays locked after the browser exits is a warning on stderr, and the probe still reports its result', async () => {
+  const profiles: string[] = [];
+  const locked = (path: string) => {
+    profiles.push(path);
+    throw fsError('EBUSY', path);
+  };
+  const warnings: string[] = [];
+  const realError = console.error;
+  console.error = (line: string) => warnings.push(line);
+  try {
+    const report = await probe(new URL('/clean.html', server.url).href, undefined, locked);
+    expect(report.failureCount).toBe(0);
+  } finally {
+    console.error = realError;
+    for (const path of profiles) rmSync(path, { recursive: true, force: true });
+  }
+  expect(warnings.some((line) => line.includes('could not remove'))).toBe(true);
 }, 60_000);

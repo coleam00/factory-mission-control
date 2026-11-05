@@ -344,7 +344,8 @@
           "Every claim must cite a file written during this check, sealed by a script.",
           "A result stands until the PR gets a new commit, so landing another PR does not undo it."
         ]
-      }
+      },
+      "opens": "app"
     },
     {
       "id": "merge",
@@ -1883,6 +1884,206 @@
         }
       ],
       "tour": ["y-pre", "y-dep", "y-ver"]
+    },
+    "app": {
+      "caption": "Every PR passes through App check before Merge. It picks a PR, merges it with the latest main in a scratch checkout, starts the app and uses it like a person, against what the work item asks for. Every claim must point at a file made during this check. The result is a commit status the merge gate requires, and it stands until the PR gets a new commit.",
+      "cardSize": {
+        "width": 260,
+        "height": 200
+      },
+      "cards": [
+        {
+          "id": "a-pick",
+          "role": "source",
+          "kind": "script",
+          "title": "Pick a PR",
+          "text": "Oldest with no result at its commit",
+          "x": 0,
+          "y": 40,
+          "covers": [
+            {
+              "pack": "loop",
+              "workflow": "archon-loop",
+              "steps": ["briefs"]
+            },
+            {
+              "pack": "queue",
+              "workflow": "factory-app-check",
+              "steps": ["config", "select", "pending"]
+            }
+          ],
+          "details": {
+            "what": ["Oldest with no result at its commit"]
+          }
+        },
+        {
+          "id": "a-scope",
+          "role": "source",
+          "kind": "script",
+          "title": "How deep?",
+          "text": "From size and front-end paths",
+          "x": 344,
+          "y": 40,
+          "covers": [
+            {
+              "pack": "queue",
+              "workflow": "factory-app-check",
+              "steps": ["scope"]
+            }
+          ],
+          "details": {
+            "what": ["From size and front-end paths"]
+          }
+        },
+        {
+          "id": "a-pol",
+          "role": "source",
+          "kind": "script",
+          "title": "Protected paths",
+          "text": "Posts factory/policy",
+          "x": 344,
+          "y": 328,
+          "covers": [
+            {
+              "pack": "queue",
+              "workflow": "factory-app-check",
+              "steps": ["policy"]
+            }
+          ],
+          "details": {
+            "what": ["Posts factory/policy"]
+          }
+        },
+        {
+          "id": "a-prep",
+          "role": "source",
+          "kind": "script",
+          "title": "PR + main, started",
+          "text": "The real merge result",
+          "x": 688,
+          "y": 40,
+          "covers": [
+            {
+              "pack": "queue",
+              "workflow": "factory-app-check",
+              "steps": ["prepare"]
+            }
+          ],
+          "details": {
+            "what": ["The real merge result"]
+          }
+        },
+        {
+          "id": "a-check",
+          "role": "agent",
+          "kind": "agent · @factory-reviewer",
+          "title": "Use the app",
+          "text": "Browser, like a user",
+          "x": 1032,
+          "y": 40,
+          "covers": [
+            {
+              "pack": "loop",
+              "workflow": "archon-loop",
+              "steps": ["check-app"]
+            },
+            {
+              "pack": "queue",
+              "workflow": "factory-app-check",
+              "steps": ["check"]
+            }
+          ],
+          "details": {
+            "what": ["Browser, like a user"]
+          }
+        },
+        {
+          "id": "a-seal",
+          "role": "source",
+          "kind": "script",
+          "title": "Seal the evidence",
+          "text": "Every claim cites a fresh file",
+          "x": 1376,
+          "y": 40,
+          "covers": [
+            {
+              "pack": "loop",
+              "workflow": "archon-loop",
+              "steps": ["evidence"]
+            },
+            {
+              "pack": "queue",
+              "workflow": "factory-app-check",
+              "steps": ["evidence"]
+            }
+          ],
+          "details": {
+            "what": ["Every claim cites a fresh file"]
+          }
+        },
+        {
+          "id": "a-pub",
+          "role": "test",
+          "kind": "commit status",
+          "title": "factory/app-check",
+          "text": "Pass or fail at this commit",
+          "x": 1720,
+          "y": 40,
+          "covers": [
+            {
+              "pack": "loop",
+              "workflow": "archon-loop",
+              "steps": ["handoff"]
+            },
+            {
+              "pack": "queue",
+              "workflow": "factory-app-check",
+              "steps": ["publish", "finalize", "cleanup"]
+            }
+          ],
+          "details": {
+            "what": ["Pass or fail at this commit"],
+            "how": [
+              "A result stands until the pull request gets a new commit, so landing another pull request does not undo it."
+            ]
+          }
+        }
+      ],
+      "lines": [
+        {
+          "from": "a-pick",
+          "to": "a-scope",
+          "style": "flow"
+        },
+        {
+          "from": "a-scope",
+          "to": "a-prep",
+          "style": "flow"
+        },
+        {
+          "from": "a-scope",
+          "to": "a-pol",
+          "style": "flow",
+          "route": [[474, 240], [474, 328]],
+          "arrow": true
+        },
+        {
+          "from": "a-prep",
+          "to": "a-check",
+          "style": "flow"
+        },
+        {
+          "from": "a-check",
+          "to": "a-seal",
+          "style": "flow"
+        },
+        {
+          "from": "a-seal",
+          "to": "a-pub",
+          "style": "flow"
+        }
+      ],
+      "tour": ["a-pick", "a-scope", "a-prep", "a-check", "a-seal", "a-pub"]
     }
   }
 }
