@@ -78,11 +78,7 @@ the commits this factory runs, with `ARCHON_COMMIT` and `FACTORY_COMMIT` beside 
 
 ## Live counts
 
-<<<<<<< HEAD
-The cards' chips come from four live queries (a fifth, `map-right-now`, feeds the Merge and Staging views' lists, below): `home-map` (each running run of the factory with its
-=======
-The cards' chips come from these live queries: `home-map` (each running run of the factory with its
->>>>>>> origin/main
+The cards' chips come from these live queries (`map-right-now` also feeds the Merge and Staging views' lists, below): `home-map` (each running run of the factory with its
 running steps and issue, the runs waiting on attention, whether the factory is on the queues, the
 open pull requests whose latest app check failed, the merges with when they finished, and whether
 the version the address names is recorded),
@@ -160,11 +156,7 @@ holdout verifier and the fence (journey 1). Esc, the close button or a click on 
 deselects.
 
 A card with a view shows ⤢ and a stacked edge, and its strip has an Open button naming the number
-<<<<<<< HEAD
-of cards in the view. A card shows ⤢ only once its view exists; today Build's (`?view=build`), Merge's (`?view=merge`) and Staging's (`?view=deploy`) do.
-=======
-of cards in the view. A card shows ⤢ only once its view exists; today Build's, Split's and Intake's do (`?view=build`, `?view=split`, `?view=intake`).
->>>>>>> origin/main
+of cards in the view. A card shows ⤢ only once its view exists; today Build's, Split's, Intake's, Merge's and Staging's do (`?view=build`, `?view=split`, `?view=intake`, `?view=merge`, `?view=deploy`).
 Double-click, Enter on the selected card or the Open button zooms into the view. Breadcrumbs above
 the caption (the factory, then each opened view), the up control, a crumb, Esc (with nothing
 selected) and Backspace go up, and the card that opened the view flashes. The address is
