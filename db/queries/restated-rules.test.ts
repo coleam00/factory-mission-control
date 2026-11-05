@@ -105,14 +105,17 @@ test('map-right-now reads only paths the pinned merge queue declares', () => {
 });
 
 test('the queries behind a link to the lap page filter on LAP_PAGE_WORKFLOW', () => {
-  for (const name of ['recent-laps', 'testing-app-check', 'testing-routes']) {
+  const testing = queries.map(([n]) => n).filter((n) => n.startsWith('testing-'));
+  expect([...testing].sort()).toEqual(['testing-app-check', 'testing-holdouts', 'testing-routes']);
+  const archonLiterals = (name: string) =>
+    [...sqlOf(name).matchAll(/'(archon-[a-z-]+)'/g)].map((m) => m[1]);
+
+  expect(archonLiterals('testing-holdouts')).toEqual([]);
+  for (const name of ['recent-laps', ...testing.filter((n) => n !== 'testing-holdouts')]) {
     expect([
       name,
       [...sqlOf(name).matchAll(/workflow_name = '([^']*)'/g)].map((m) => m[1]),
     ]).toEqual([name, [LAP_PAGE_WORKFLOW]]);
-    expect([name, [...sqlOf(name).matchAll(/'(archon-[a-z-]+)'/g)].map((m) => m[1])]).toEqual([
-      name,
-      [LAP_PAGE_WORKFLOW],
-    ]);
+    expect([name, archonLiterals(name)]).toEqual([name, [LAP_PAGE_WORKFLOW]]);
   }
 });

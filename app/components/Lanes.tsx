@@ -13,9 +13,8 @@ import {
   recentLaps,
   since,
   stepLabel,
-  workflowLabel,
 } from '../lib/laps';
-import { consoleUrl, hasLapPage } from '../lib/one-lap';
+import { consoleUrl, hasLapPage, workflowLabel } from '../lib/one-lap';
 import { LivePanel, type PanelState } from '../live/LivePanel';
 import { laneMarks } from '../lib/lap-graph';
 import { LaneMarks } from './LapGraph';

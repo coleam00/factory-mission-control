@@ -119,21 +119,6 @@ export function durationOf(lap: Pick<RecentLapRow, 'started_at' | 'completed_at'
   return Number.isFinite(seconds) ? seconds : null;
 }
 
-/** What a running workflow is, in the map's words; an unknown one shows its own name. */
-const WORKFLOW_LABEL: Readonly<Record<string, string>> = {
-  'archon-loop': 'Lap',
-  'archon-build-queue': 'Build',
-  'archon-merge-queue': 'Merge',
-  'archon-intake': 'Intake',
-  'archon-split': 'Split',
-  'archon-discoveries': 'Found by the factory',
-  'factory-app-check': 'App check',
-  'factory-deploy': 'Staging',
-  'factory-manager': 'Manager',
-  'factory-backlog': 'Split',
-};
-export const workflowLabel = (workflow: string): string => WORKFLOW_LABEL[workflow] ?? workflow;
-
 /** A queue step's address as the part that says where it is: `ship__deliver__rounds.review__seams` is `review · seams`. */
 export function queueStepLabel(step: string): string {
   const parts = (step.split('.').pop() ?? step)
