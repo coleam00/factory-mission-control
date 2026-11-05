@@ -1,6 +1,7 @@
 import { type ReactElement, type ReactNode, useState } from 'react';
 import { Link } from 'react-router';
 import { relativeTime } from '../lib/format';
+import { hasLapPage } from '../lib/one-lap';
 import type { StepRow } from '../lib/step-detail';
 import { type Card, pinnedStepLinks, workflowFile } from '../map/factory-map';
 import type {
@@ -148,7 +149,26 @@ function ProductDocument({ document }: { document: ProductDocumentRow }): ReactE
 const time = (at: Date) =>
   at.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
 
-/** The issues and laps on the card now, each opening its page. */
+/** A run's name: a link to its lap page when it has one, otherwise the name plainly. */
+function RunName({
+  workflow,
+  href,
+  children,
+}: {
+  workflow: string | null;
+  href: string;
+  children: ReactNode;
+}): ReactElement {
+  return hasLapPage(workflow) ? (
+    <Link to={href} className={LINK}>
+      {children}
+    </Link>
+  ) : (
+    <span>{children}</span>
+  );
+}
+
+/** The issues and laps on the card now, each opening its lap page when it has one. */
 export function RightNow({
   live,
   factory,
@@ -160,7 +180,7 @@ export function RightNow({
   const rows: ReactNode[] = [
     ...(live?.here ?? []).map((lap) => (
       <li key={`lap-${lap.run}`} data-lap={lap.run}>
-        <Link to={lapHref(lap.run)} className={LINK}>
+        <RunName workflow={lap.workflow} href={lapHref(lap.run)}>
           {lap.issue ? (
             <>
               <span className="font-mono tabular-nums">#{lap.issue.number}</span>{' '}
@@ -169,7 +189,7 @@ export function RightNow({
           ) : (
             <span className="font-mono">lap {lap.run.slice(0, 8)}</span>
           )}
-        </Link>
+        </RunName>
         {lap.issue?.url ? (
           <a href={lap.issue.url} data-lap-issue className={`${LINK} ml-1.5 font-mono text-[12px]`}>
             GitHub #{lap.issue.number}
@@ -201,13 +221,13 @@ export function RightNow({
       : []),
     ...(live?.merged ?? []).map((merge) => (
       <li key={`merged-${merge.run}-${merge.number ?? 'lap'}`} data-lap={merge.run}>
-        <Link to={lapHref(merge.run)} className={LINK}>
+        <RunName workflow={merge.workflow} href={lapHref(merge.run)}>
           {merge.number === null ? (
             <span className="font-mono">lap {merge.run.slice(0, 8)}</span>
           ) : (
             <span className="font-mono tabular-nums">#{merge.number}</span>
           )}
-        </Link>
+        </RunName>
         <span className={CHIP}>merged {time(merge.at)}</span>
       </li>
     )),
