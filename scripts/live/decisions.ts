@@ -1,6 +1,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { unmatchedText } from '../../app/components/DecisionsLedger';
+import { shortDigest } from '../../app/lib/version-strip';
 import { SECOND_FACTORY } from '../fixture/seed';
 import { openPage, type Page } from '../lib/cdp';
 import type { Db, Row } from '../lib/db';
@@ -157,7 +158,7 @@ export function compareDecisionDestination(
   if (seed.digest === null) {
     if (target?.kind !== 'pending' || !target.text.includes('Not yet run'))
       mismatches.push('unused pin is not shown as NOT YET RUN');
-  } else if (!target?.text.includes(String(seed.digest).slice(0, 19))) {
+  } else if (!target?.text.includes(shortDigest(String(seed.digest)))) {
     mismatches.push('named digest is not displayed');
   }
   if (shown.selected !== 0) mismatches.push('decision navigation changed comparison selection');

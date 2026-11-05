@@ -1,7 +1,7 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { ChangeItem } from '../../app/lib/changes';
-import { shortDigest } from '../../app/lib/version-strip';
+import { notVersionSentence, shortDigest } from '../../app/lib/version-strip';
 import { openPage, type Page } from '../lib/cdp';
 import type { Deps } from '../lib/cli';
 import {
@@ -222,7 +222,7 @@ export function changesPhase(ctx: LiveContext): LivePhase {
         `document.querySelector('[data-missing-version]')?.textContent ?? null`,
       );
       await ghostPage.close();
-      if (notice === null || !notice.includes('is not a version of this factory')) {
+      if (notice === null || !notice.includes(notVersionSentence([ghost])[0] ?? '')) {
         failures.push(
           `an address naming an absent version shows no missing-version notice: ${notice}`,
         );
