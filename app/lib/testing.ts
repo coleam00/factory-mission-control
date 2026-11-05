@@ -135,7 +135,7 @@ export function routeMix(rows: readonly RouteRow[]): RouteGroup[] {
     );
 }
 
-/** Every app-check line by its kind and verdict: criterion, holdout, probe, then defect. */
+/** Every app-check line by its kind and verdict: criterion, holdout, probe, assertion, then defect. */
 export function checkMix(rows: readonly CheckRow[]): CheckGroup[] {
   return groupBy(rows, (r) => `${r.kind} ${r.verdict}`)
     .map((group) => ({
@@ -215,7 +215,7 @@ export interface KindBar {
   verdicts: readonly CheckGroup[];
 }
 
-/** One bar per kind (criterion, holdout, probe, defect), each segmented by verdict. */
+/** One bar per kind (criterion, holdout, probe, assertion, defect), each segmented by verdict. */
 export function kindBars(rows: readonly CheckRow[]): KindBar[] {
   const bars: KindBar[] = [];
   for (const group of checkMix(rows)) {

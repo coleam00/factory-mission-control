@@ -16,10 +16,8 @@ const card = (id: string) => {
 // Server rendering cannot click a tab, so the card's first tab state is the Right now tab.
 const realState: (initial: unknown) => unknown = React.useState;
 beforeEach(() => {
-  let first = true;
   spyOn(React, 'useState').mockImplementation(((initial: unknown) => {
-    if (first && initial === 'when') {
-      first = false;
+    if (initial === 'when') {
       return ['live', () => {}];
     }
     return realState(initial);
@@ -52,5 +50,7 @@ const rightNow = (id: string) =>
 
 test('the App check card lists the pull requests under check on its Right now tab, and no other card does', () => {
   expect(rightNow('a-check')).toContain('Pull requests under check');
-  expect(rightNow('a-seal')).not.toContain('Pull requests under check');
+  const seal = rightNow('a-seal');
+  expect(seal).toContain('aria-selected="true" data-tab="live"');
+  expect(seal).not.toContain('Pull requests under check');
 });
