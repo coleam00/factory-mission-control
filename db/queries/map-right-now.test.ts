@@ -48,10 +48,14 @@ test('the gate lists a run once it swept and recorded, for its own factory only'
     { number: 407, action: 'return', reason: 'conflicts with main' },
   ];
   await completed(QUEUE_RUNS.merged, 'sweep', { decisions }, '2026-10-24T09:07:00Z');
+  expect((await rows('queue-factory')).filter((r) => r.kind === 'outcomes')).toEqual([]);
+  const items = [404, 405, 407].map((number) => ({ pr: { number } }));
+  await completed(QUEUE_RUNS.merged, 'facts', { items }, '2026-10-24T09:06:00Z');
   const gate = (await rows('queue-factory')).filter((r) => r.kind === 'outcomes');
   expect(gate).toHaveLength(1);
   expect(JSON.parse(gate[0]?.decisions ?? 'null')).toEqual(decisions);
   expect(JSON.parse(gate[0]?.merged ?? 'null')).toEqual([404, 405]);
+  expect(JSON.parse(gate[0]?.claimed ?? 'null')).toEqual([404, 405, 407]);
   expect(await rows('mission-control')).toEqual([]);
 });
 

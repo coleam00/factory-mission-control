@@ -122,7 +122,7 @@ factory as it is now, at whatever version the address names.
 - Gate outcomes, newest run first: a pull request the run's `record` step read back as merged is
   merged, whatever the sweep said; else a `return` decision is listed as sent back; an `ask` is
   listed only when the record step raised it. Sent back and asked are the sweep's decision, which
-  the record step may still park, wait on or skip. Only a number's first decision counts. A `wait`
+  the record step may still park, wait on or skip. Only a number's first decision counts, and a number the run did not claim is not listed. A `wait`
   decision, or an ask not raised, is not listed. Each shows the decision's reason and links the
   pull request.
 - The latest deploy shows the revision (seven characters) and whether the deploy verified, or its

@@ -330,6 +330,7 @@ const ROW_COLUMNS: Record<string, string[]> = {
     'decisions',
     'merged',
     'asked',
+    'claimed',
     'revision',
     'health',
     'status',

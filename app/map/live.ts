@@ -85,6 +85,8 @@ export interface MapRightNowRow {
   merged: string | null;
   /** The number of the pull request the record step asked about, when it did. */
   asked: string | null;
+  /** A gate row's pull requests the run claimed, as the JSON text of an array of numbers. */
+  claimed: string | null;
   revision: string | null;
   health: string | null;
   status: 'verified' | 'failed' | null;
@@ -223,6 +225,7 @@ export function gateOutcomes(rows: readonly MapRightNowRow[]): GateOutcome[] {
     .flatMap((row) => {
       const merged = new Set(mergedPulls(row.merged ?? '[]'));
       const asked = row.asked === null ? null : Number(row.asked);
+      const claimed = new Set(mergedPulls(row.claimed ?? '[]'));
       const seen = new Set<number>();
       return jsonArray(row.decisions).flatMap((decision): GateOutcome[] => {
         if (typeof decision !== 'object' || decision === null) return [];
@@ -231,7 +234,7 @@ export function gateOutcomes(rows: readonly MapRightNowRow[]): GateOutcome[] {
           return [];
         }
         const n = number as number;
-        if (seen.has(n)) return [];
+        if (seen.has(n) || !claimed.has(n)) return [];
         seen.add(n);
         const outcome = merged.has(n)
           ? 'merged'
