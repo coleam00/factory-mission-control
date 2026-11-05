@@ -11,7 +11,7 @@
       "kind": "split",
       "title": "Split",
       "text": "Breaks a document or a bundle into work items",
-      "x": 520,
+      "x": 260,
       "y": 240,
       "covers": [
         {
@@ -51,7 +51,7 @@
       "kind": "input",
       "title": "Product document",
       "text": "What to build and why",
-      "x": 260,
+      "x": 0,
       "y": 282,
       "covers": [],
       "details": {
@@ -72,7 +72,7 @@
       "kind": "manager",
       "title": "Manager",
       "text": "Keeps the factory healthy and work moving. Brings you the decisions it can't make.",
-      "x": 1332,
+      "x": 1072,
       "y": 0,
       "width": 478,
       "chips": ["waiting"],
@@ -107,7 +107,7 @@
       "kind": "input",
       "title": "New issue",
       "text": "A work item you file yourself",
-      "x": 260,
+      "x": 0,
       "y": 542,
       "covers": [],
       "details": {
@@ -126,7 +126,7 @@
       "kind": "input",
       "title": "Found by the factory",
       "text": "Problems spotted in review, app check or staging",
-      "x": 260,
+      "x": 0,
       "y": 802,
       "covers": [
         {
@@ -151,7 +151,7 @@
       "kind": "triage",
       "title": "Intake",
       "text": "Checks each work item is clear, picks its route and size",
-      "x": 520,
+      "x": 260,
       "y": 542,
       "covers": [
         {
@@ -181,7 +181,7 @@
       "kind": "work order",
       "title": "Work order",
       "text": "The next group of work to build and ship together",
-      "x": 812,
+      "x": 552,
       "y": 542,
       "chips": ["orders"],
       "covers": [],
@@ -204,7 +204,7 @@
       "kind": "build",
       "title": "Build",
       "text": "Writes the code and opens the PR",
-      "x": 1072,
+      "x": 812,
       "y": 542,
       "chips": ["queued"],
       "covers": [
@@ -250,7 +250,7 @@
       "kind": "review",
       "title": "Review",
       "text": "Up to five reviewers read the change",
-      "x": 1332,
+      "x": 1072,
       "y": 542,
       "covers": [
         {
@@ -299,7 +299,7 @@
       "kind": "test",
       "title": "App check",
       "text": "Tries the change in the running app",
-      "x": 1592,
+      "x": 1332,
       "y": 542,
       "chips": ["failing"],
       "covers": [
@@ -348,7 +348,7 @@
       "kind": "gate",
       "title": "Merge",
       "text": "Lands only what passed",
-      "x": 1884,
+      "x": 1624,
       "y": 542,
       "covers": [
         {
@@ -378,7 +378,7 @@
       "kind": "ship",
       "title": "Staging",
       "text": "Where the work order lands for you to try",
-      "x": 2144,
+      "x": 1884,
       "y": 542,
       "covers": [
         {
@@ -407,7 +407,7 @@
       "kind": "output",
       "title": "Shipped",
       "text": "Merged PRs, closed work items",
-      "x": 2404,
+      "x": 2144,
       "y": 542,
       "chips": ["merged"],
       "covers": [],
@@ -417,7 +417,7 @@
     }
   ],
   "group": {
-    "x": 500,
+    "x": 240,
     "y": 492,
     "width": 2142,
     "height": 316,
@@ -443,14 +443,14 @@
       "from": "intake",
       "to": "split",
       "style": "flow",
-      "route": [[582, 542], [582, 452]]
+      "route": [[322, 542], [322, 452]]
     },
     {
       "from": "split",
       "to": "intake",
       "style": "flow",
       "label": "files the pieces",
-      "route": [[666, 452], [666, 542]]
+      "route": [[406, 452], [406, 542]]
     },
     {
       "from": "intake",
@@ -495,27 +495,27 @@
       "to": "review",
       "style": "ask",
       "label": "keeps it moving",
-      "route": [[1571, 212], [1571, 492]]
+      "route": [[1311, 212], [1311, 492]]
     },
     {
       "from": "review",
       "to": "disc",
       "style": "loop",
-      "route": [[1436, 754], [1436, 1072], [364, 1072], [364, 1014]]
+      "route": [[1176, 754], [1176, 1072], [104, 1072], [104, 1014]]
     },
     {
       "from": "app",
       "to": "disc",
       "style": "loop",
       "arrow": false,
-      "route": [[1696, 754], [1696, 1072]]
+      "route": [[1436, 754], [1436, 1072]]
     },
     {
       "from": "deploy",
       "to": "disc",
       "style": "loop",
       "label": "problems found become new work",
-      "route": [[2248, 754], [2248, 1072], [364, 1072], [364, 1014]]
+      "route": [[1988, 754], [1988, 1072], [104, 1072], [104, 1014]]
     }
   ],
   "tour": ["prd", "intake", "order", "build", "review", "app", "merge", "deploy", "out"],

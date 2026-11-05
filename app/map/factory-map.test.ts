@@ -38,23 +38,23 @@ test('every line, the tour and the legend name cards and roles the map has', () 
 
 test("a line joins its cards' sides, turning halfway across when they are not level", () => {
   expect(linePoints(FACTORY_MAP, line('prd', 'intake'))).toEqual([
-    [468, 388],
-    [494, 388],
-    [494, 648],
-    [520, 648],
+    [208, 388],
+    [234, 388],
+    [234, 648],
+    [260, 648],
   ]);
   expect(linePoints(FACTORY_MAP, line('mgr', 'review'))).toEqual([
-    [1571, 212],
-    [1571, 492],
+    [1311, 212],
+    [1311, 492],
   ]);
   expect(linePoints(FACTORY_MAP, line('intake', 'split'))).toEqual([
-    [582, 542],
-    [582, 452],
+    [322, 542],
+    [322, 452],
   ]);
 });
 
 test("a label sits halfway along its line's length", () => {
-  expect(midpoint(linePoints(FACTORY_MAP, line('build', 'review')))).toEqual([1306, 648]);
+  expect(midpoint(linePoints(FACTORY_MAP, line('build', 'review')))).toEqual([1046, 648]);
   expect(
     midpoint([
       [0, 0],
@@ -66,8 +66,8 @@ test("a label sits halfway along its line's length", () => {
 
 test('the tour runs card centre to card centre along the line, Product document to Shipped', () => {
   const points = tourPoints(FACTORY_MAP);
-  expect(points[0]).toEqual([364, 388]);
-  expect(points.at(-1)).toEqual([2508, 648]);
+  expect(points[0]).toEqual([104, 388]);
+  expect(points.at(-1)).toEqual([2248, 648]);
   for (const [i, [x, y]] of points.slice(1).entries()) {
     const [px, py] = points[i] as [number, number];
     expect(x === px || y === py).toBe(true);
@@ -88,7 +88,7 @@ test("a card's neighbours are the cards a line joins to it", () => {
 });
 
 test('the world holds every card, the group box and the routed lines, with margin', () => {
-  expect(worldSize(FACTORY_MAP)).toEqual({ width: 2654, height: 1084 });
+  expect(worldSize(FACTORY_MAP)).toEqual({ width: 2394, height: 1084 });
   expect(card('mgr').width).toBe(478);
 });
 
