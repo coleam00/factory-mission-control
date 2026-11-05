@@ -319,6 +319,17 @@ export function cardChain(map: FactoryMap, workflow: string, path: string): Card
   }
 }
 
+/**
+ * Every card a step's laps show on: its `cardChain`, plus each card that counts as one of those.
+ * Coverage uses `cardChain` alone, since an alias covers nothing.
+ */
+export function cardsCounting(map: FactoryMap, workflow: string, path: string): Card[] {
+  const chain = cardChain(map, workflow, path);
+  const ids = new Set(chain.map((card) => card.id));
+  const aliases = allCards(map).filter((card) => card.countsAs && ids.has(card.countsAs));
+  return [...chain, ...aliases];
+}
+
 /** A cover entry's screen: its own, or the step itself in the covered workflow. */
 export const screenOf = (cover: Cover, step: string): Screen =>
   cover.screens?.[step] ?? { workflow: cover.workflow, path: step };

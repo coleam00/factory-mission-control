@@ -23,7 +23,7 @@ package (`fixtures/pack/queue`). A live row carries only a workflow name, so cou
 A card that opens a deeper view names it in `opens`; the view sits under `views.<id>` and has the
 root's shape (caption, `cardSize`, cards, lines, tour) without the legend, `views` or a required
 group. Card ids are unique across every level. A view's `next` card may name `upTo`, a card of
-the level above: clicking it goes up and selects that card. The view's crumb and Open button use
+the level above: clicking it goes up and selects that card. A card may name `countsAs`, a card whose laps it shows as its own, as the Deliver view's Review card does for Review. The view's crumb and Open button use
 the title of the card that opens it. One component draws every level, so selection, the details
 strip, chips, flow and the tour work the same in a view.
 
@@ -67,7 +67,7 @@ of the view, and no card of the view covers a step, or a workflow, the opening c
 view covers only the steps its opening card has (Deliver's view never sees the review rounds,
 which Review has at the root), so an entry such as `ship/deliver` still counts the steps under
 it that belong to the opener. The check also fails on an `opens` naming no view, a view opened by
-no card or by two, a card id used twice, and an `upTo` naming no card of the level above.
+no card or by two, a card id used twice, an `upTo` naming no card of the level above, and a `countsAs` naming no card.
 
 The queue pack is the snapshot `fixtures/pack/queue/`: `sdlc/` is `.archon/workflows/sdlc` of
 coleam00/Archon and `factory/` is `.archon/workflows/factory` of coleam00/ai-software-factory, at
@@ -108,7 +108,7 @@ Behind the scenes says the pinned steps are unavailable when `step-detail` faile
 A lap counts once per level: on the card that covers its deepest running step at the root, and
 then on the card of that card's view that covers it, so one run on `ship/deliver/rounds/implement`
 is on Build at the home map, on Deliver in the Build view, and on Implement in the Deliver view. A step that Review covers at the
-root counts on no card of the Build view.
+root counts on no card of the Build view, and also shows on the Deliver view's Review card.
 
 ## Clicking a card
 

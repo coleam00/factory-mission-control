@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test';
 import { LANE_STEPS } from '../lib/lap-graph';
-import { FACTORY_MAP } from './factory-map';
+import { cardsCounting, FACTORY_MAP, stepPath } from './factory-map';
 import { cardLive, deepestStep, type HomeMapRow, mergedToday, versionRecorded } from './live';
 
 const lap = (
@@ -320,4 +320,13 @@ test('a step counts on its own card in the Deliver view, and review on the Revie
     'd-ci': ['ci'],
     'd-rev': ['rev'],
   });
+});
+
+test('the shared counting rule puts a review lap on the Deliver Review card, for the live oracle too', () => {
+  const ids = cardsCounting(
+    FACTORY_MAP,
+    'archon-build-queue',
+    stepPath('ship__deliver__rounds.review__policy'),
+  ).map((card) => card.id);
+  expect(ids).toContain('d-rev');
 });

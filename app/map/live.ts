@@ -12,8 +12,8 @@ import {
   allCards,
   type Card,
   type Chip,
-  cardChain,
   cardForStep,
+  cardsCounting,
   type FactoryMap,
   stepPath,
 } from './factory-map';
@@ -252,13 +252,9 @@ export function cardLive(
       step: placed.step,
       issue: row.number === null ? null : { number: row.number, title: row.title, url: row.url },
     };
-    for (const card of cardChain(factoryMap, placed.workflow, placed.step)) {
+    for (const card of cardsCounting(factoryMap, placed.workflow, placed.step)) {
       live.get(card.id)?.here.push(lap);
     }
-  }
-  for (const card of cards) {
-    const source = card.countsAs === undefined ? undefined : live.get(card.countsAs);
-    if (source) (live.get(card.id) as CardLive).here = [...source.here];
   }
   const items = chipItems(sources, now);
   for (const card of cards) {
