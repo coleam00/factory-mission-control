@@ -156,10 +156,10 @@ function header(rows: readonly WorkItemRow[]): WorkItemRow | undefined {
   return rows.find((r) => r.kind === 'item');
 }
 
-/** The run the header's "Runs in console" opens: the newest run on the timeline. */
+/** The run the header's "Runs in console" opens: the newest run or merge-queue sweep. */
 function newestRun(rows: readonly WorkItemRow[]): WorkItemRow | undefined {
   return rows
-    .filter((r) => r.kind === 'run' && r.run_id !== null)
+    .filter((r) => (r.kind === 'run' || r.kind === 'sweep') && r.run_id !== null)
     .sort((a, b) => (b.started_at?.getTime() ?? 0) - (a.started_at?.getTime() ?? 0))[0];
 }
 

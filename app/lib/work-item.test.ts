@@ -247,3 +247,11 @@ test('the header links the issue and the newest run in the console', () => {
   });
   expect(workItemHeader([row({})])).toBeNull();
 });
+
+test('the header opens a merge-queue run that is newer than every build run', () => {
+  const SWEEP = '5eed0005-0000-4000-8000-000000000014';
+  const merge = row({ kind: 'sweep', run_id: SWEEP, started_at: at('13:55') });
+  expect(workItemHeader([item, row({}), merge])?.latestRunHref).toBe(
+    `http://localhost:3090/console/r/${SWEEP}`,
+  );
+});
