@@ -447,18 +447,33 @@ describe('the rules the live queries restate, which they may not call a function
   });
 
   test('every mention of build-queue in a live query is one of the two rules, none a stray copy', () => {
-    const copies: [string, string, number, number][] = [
-      ['version-strip', query('version-strip'), 1, 0],
-      ['decisions-timeline', query('decisions-timeline'), 2, 0],
-      ['arch-diff', query('arch-diff'), 2, 0],
-      ['improvements-ledger', query('improvements-ledger'), 2, 1],
-      ['scorecard', query('scorecard'), 0, 2],
-      ['live changes oracle', read('scripts', 'live', 'changes.ts'), 0, 1],
-      ['live ledger oracle', read('scripts', 'live', 'ledger.ts'), 0, 1],
+    // [mc.dates_version copies, lap-rule copies, named-exception mentions] per name; a live query
+    // not listed here may mention none of them.
+    const expected: Record<string, [number, number, number]> = {
+      'version-strip': [1, 0, 0],
+      'decisions-timeline': [2, 0, 0],
+      'arch-diff': [2, 0, 0],
+      'improvements-ledger': [2, 1, 0],
+      scorecard: [0, 2, 0],
+      // The same list as mc.dates_version: the lap a work order's row names is one that ran a version.
+      board: [1, 0, 0],
+      // Exception: the queues row asks which intake or build-queue runs exist, not what dates a version.
+      'home-map': [0, 0, 1],
+      'live changes oracle': [0, 1, 0],
+      'live ledger oracle': [0, 1, 0],
+    };
+    const copies = [
+      ...queries,
+      ['live changes oracle', read('scripts', 'live', 'changes.ts')],
+      ['live ledger oracle', read('scripts', 'live', 'ledger.ts')],
     ];
-    for (const [name, sql, datesVersion, lap] of copies) {
+    for (const [name, sql] of copies) {
+      const [datesVersion, lap, exception] = expected[name] ?? [0, 0, 0];
       expect([name, count(sql, DATES_VERSION), count(sql, LAP)]).toEqual([name, datesVersion, lap]);
-      expect([name, count(sql, "'archon-build-queue'")]).toEqual([name, datesVersion + lap]);
+      expect([name, count(sql, "'archon-build-queue'")]).toEqual([
+        name,
+        datesVersion + lap + exception,
+      ]);
     }
   });
 
