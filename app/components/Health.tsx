@@ -17,7 +17,6 @@ import {
 } from '../lib/health';
 import { since, stepLabel } from '../lib/laps';
 import { waited } from '../lib/owner-queue';
-import { LAP_WORKFLOW } from '../lib/scorecard';
 import { LivePanel } from '../live/LivePanel';
 import { LABEL, MONO, NONE, PanelBody, useNow, utcMinute } from './Lanes';
 import { LiveDot } from './LiveDot';
@@ -47,6 +46,8 @@ function LapLink({ factory, runId }: { factory: string; runId: string }): ReactE
   );
 }
 
+const LAP_PAGE_WORKFLOW = 'archon-loop';
+
 /** A run's id: a link to its lap page when it has one, which only an `archon-loop` run does. */
 function RunLink({
   factory,
@@ -55,7 +56,7 @@ function RunLink({
   factory: string;
   run: { run_id: string; workflow_name: string };
 }): ReactElement {
-  return run.workflow_name === LAP_WORKFLOW ? (
+  return run.workflow_name === LAP_PAGE_WORKFLOW ? (
     <LapLink factory={factory} runId={run.run_id} />
   ) : (
     <span className={`${MONO} text-text-secondary`}>{shortRunId(run.run_id)}</span>

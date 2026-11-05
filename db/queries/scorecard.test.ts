@@ -9,7 +9,7 @@ import {
   versionLaps,
   versionPin,
 } from '../../app/lib/scorecard';
-import { SEED_CODEBASE } from '../../scripts/fixture/seed';
+import { QUEUE_DIGEST, QUEUE_RUNS, SEED_CODEBASE } from '../../scripts/fixture/seed';
 import { REPO_ROOT } from '../../scripts/lib/cli';
 import type { Db } from '../../scripts/lib/db';
 import { onTheSeed, queries } from './test-seed';
@@ -100,6 +100,48 @@ describe('scorecard on the seed', () => {
         });
     },
   );
+
+  test('a queue-only version counts the build-queue runs that took an item, and no idle run', async () => {
+    const rowsOf = async (tx: Pick<Db, 'query'>) =>
+      (await tx.query(sql, ['queue-factory'])) as unknown as ScorecardRow[];
+    const rows = await rowsOf(db);
+    const [{ pin_sha }] = (await db.query(
+      `SELECT pin_sha FROM mc.versions WHERE factory = 'queue-factory' AND digest = $1`,
+      [QUEUE_DIGEST],
+    )) as { pin_sha: string }[];
+    expect(
+      versionLaps(rows, QUEUE_DIGEST)
+        .map((lap) => lap.id)
+        .sort(),
+    ).toEqual([QUEUE_RUNS.built, QUEUE_RUNS.build, QUEUE_RUNS.review, QUEUE_RUNS.ask].sort());
+    expect(versionPin(rows, QUEUE_DIGEST)?.pin).toBe(pin_sha);
+
+    const rollback = new Error('rollback');
+    await db
+      .transaction(async (tx) => {
+        const [{ id }] = (await tx.query(
+          `INSERT INTO public.remote_agent_workflow_runs
+             (workflow_name, codebase_id, status, user_message, metadata, started_at)
+           SELECT 'archon-build-queue', c.id, 'completed', 'idle', $1::jsonb, now()
+           FROM public.remote_agent_codebases c WHERE c.name = 'coleam00/queue-factory'
+           RETURNING id`,
+          [JSON.stringify({ workflow_source: { digest: QUEUE_DIGEST } })],
+        )) as { id: string }[];
+        await tx.query(
+          `INSERT INTO public.remote_agent_workflow_events
+             (workflow_run_id, event_type, step_name, data)
+           VALUES ($1, 'node_completed', 'facts', $2)`,
+          [id, JSON.stringify({ structured_output: { path: 'idle', item: null } })],
+        );
+        const ids = versionLaps(await rowsOf(tx), QUEUE_DIGEST).map((lap) => lap.id);
+        expect(ids).not.toContain(id);
+        expect(ids).toHaveLength(4);
+        throw rollback;
+      })
+      .catch((error) => {
+        if (error !== rollback) throw error;
+      });
+  });
 
   test('names each seed version by the pin the version strip names it by', async () => {
     const rows = (await db.query(sql, ['mission-control'])) as unknown as ScorecardRow[];

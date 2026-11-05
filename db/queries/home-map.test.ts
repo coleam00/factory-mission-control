@@ -46,7 +46,10 @@ describe('home-map on the seed', () => {
         WHERE c.factory = 'mission-control' LIMIT 1`,
     );
     const row = (await rows()).find((r) => r.run_id === claimed?.run_id);
-    expect(row).toMatchObject({ number: claimed?.issue_number, title: claimed?.title });
+    expect(row).toMatchObject({
+      number: claimed?.issue_number,
+      title: claimed?.title,
+    });
   });
 
   test('a queue factory: its runs carry the issue of their number input, it is on the queues, one run waits, one merged two pulls', async () => {
@@ -70,11 +73,23 @@ describe('home-map on the seed', () => {
     ]);
     expect(queue.filter((r) => r.kind === 'queues')).toHaveLength(1);
     expect(queue.filter((r) => r.kind === 'waiting')).toMatchObject([
-      { run_id: QUEUE_RUNS.waiting, workflow: 'archon-merge-queue', number: null },
+      {
+        run_id: QUEUE_RUNS.waiting,
+        workflow: 'archon-merge-queue',
+        number: null,
+      },
     ]);
     expect(queue.filter((r) => r.kind === 'merged')).toMatchObject([
       { run_id: QUEUE_RUNS.merged, prs: '[404, 405]' },
     ]);
+  });
+
+  test('at a pin, the queue factory shows the queue runs that ran it', async () => {
+    expect(await versions('queue-factory', V2)).toBe(1);
+    expect(Object.keys(await laps('queue-factory', V2)).sort()).toEqual(
+      [QUEUE_RUNS.build, QUEUE_RUNS.review, QUEUE_RUNS.ask, QUEUE_RUNS.intake].sort(),
+    );
+    expect(await laps('queue-factory', V1)).toEqual({});
   });
 
   test('a factory on the old loop has no queues row, no waiting row and merges only through land', async () => {
@@ -195,7 +210,9 @@ describe('home-map on the seed', () => {
       `INSERT INTO mc.lap_steps (run_id, step_id, status) VALUES ($1, 'check-app', 'running')`,
       [run],
     );
-    expect(await laps('mission-control', V1)).toEqual({ [run]: 'archon-loop check-app' });
+    expect(await laps('mission-control', V1)).toEqual({
+      [run]: 'archon-loop check-app',
+    });
     expect(await laps('mission-control', V2)).toEqual({});
     expect(Object.keys(await laps())).toContain(run);
   });

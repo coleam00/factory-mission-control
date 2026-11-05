@@ -297,6 +297,7 @@ test('the eligibility upgrade keeps live history and installs the same functions
       '0019_structured_output_string.sql',
       '0020_queue_step_events.sql',
       '0021_split_step_events.sql',
+      '0022_queue_versions.sql',
     ]);
     expect(await projectionDefinitions(upgraded)).toEqual(await projectionDefinitions(db));
     expect(await runMigrations({ files: migrationFiles, db: upgraded })).toEqual([]);
@@ -353,6 +354,7 @@ test('0011 rewrites a short pin to the one full sha it prefixes, and clears ambi
       '0019_structured_output_string.sql',
       '0020_queue_step_events.sql',
       '0021_split_step_events.sql',
+      '0022_queue_versions.sql',
     ]);
     const migrated = [
       { sha: 'p1', archon_sha: full },
@@ -425,6 +427,7 @@ test('0012 rewrites CRLF to LF in stored architecture texts, and changes nothing
       '0019_structured_output_string.sql',
       '0020_queue_step_events.sql',
       '0021_split_step_events.sql',
+      '0022_queue_versions.sql',
     ]);
     const migrated = [
       { kind: 'hook', path: '.factory/hooks/gate.sh', text: 'exit 0\n' },
@@ -508,6 +511,7 @@ test('0013 gives back the runs of a step the old key merged, and changes nothing
       '0019_structured_output_string.sql',
       '0020_queue_step_events.sql',
       '0021_split_step_events.sql',
+      '0022_queue_versions.sql',
     ]);
     expect(await attempts()).toEqual([
       { step_id: 'land', outcome: 'merged', cost_usd: null },
@@ -777,6 +781,7 @@ test('0014 keeps only a stored citation’s references, and changes nothing run 
       '0019_structured_output_string.sql',
       '0020_queue_step_events.sql',
       '0021_split_step_events.sql',
+      '0022_queue_versions.sql',
     ]);
     const lines = () =>
       historical.query(
@@ -834,6 +839,7 @@ test('0016 lets a pin have no reason, keeps stored reasons, and changes nothing 
       '0019_structured_output_string.sql',
       '0020_queue_step_events.sql',
       '0021_split_step_events.sql',
+      '0022_queue_versions.sql',
     ]);
     await pin('b'.repeat(40), null);
     const reasons = () => historical.query('SELECT sha, reason FROM mc.pins ORDER BY sha');
@@ -879,6 +885,7 @@ test('0017 keeps lines projected before it without an id, fills new reports’ i
       '0019_structured_output_string.sql',
       '0020_queue_step_events.sql',
       '0021_split_step_events.sql',
+      '0022_queue_versions.sql',
     ]);
     const after = await run();
     await historical.query('SELECT mc.project_app_check_lines($1, $2)', [
@@ -1453,6 +1460,41 @@ test('a factory’s archon-loop run with a new digest is one version labelled by
   expect(await projectionErrors()).toEqual([]);
 });
 
+test('an archon-build-queue run with a new digest is a version, and another queue workflow’s run is not', async () => {
+  const codebase = await factoryCodebase();
+  await pin('before', minutes(-10));
+  await runAt(codebase, NOW, { workflow: 'archon-build-queue' });
+  await runAt(codebase, minutes(-30), {
+    workflow: 'archon-intake',
+    digest: 'sha256:intake',
+  });
+  await runAt(codebase, minutes(-30), {
+    workflow: 'archon-manager',
+    digest: 'sha256:manager',
+  });
+
+  expect(await db.query('SELECT * FROM mc.versions')).toEqual([
+    {
+      factory: 'mission-control',
+      digest: DIGEST,
+      first_run_at: NOW,
+      pin_sha: 'before',
+    },
+  ]);
+  expect(await projectionErrors()).toEqual([]);
+});
+
+test('a version’s first run is the earliest of its loop and build-queue runs', async () => {
+  const codebase = await factoryCodebase();
+  await runAt(codebase, NOW);
+  await runAt(codebase, minutes(20), { workflow: 'archon-build-queue' });
+  const first = () => db.query('SELECT first_run_at FROM mc.versions');
+  expect(await first()).toEqual([{ first_run_at: NOW }]);
+
+  await runAt(codebase, minutes(-20), { workflow: 'archon-build-queue' });
+  expect(await first()).toEqual([{ first_run_at: minutes(-20) }]);
+});
+
 test('a pin written after the run labels its version', async () => {
   await runAt(await factoryCodebase(), NOW);
   expect(await db.query('SELECT pin_sha FROM mc.versions')).toEqual([{ pin_sha: null }]);
@@ -1621,7 +1663,9 @@ test('a run paused at an open attention wait is one attention item, and leaves w
   });
   expect(new Date(String(item?.waiting_since)).toISOString()).toBe('2026-10-24T10:20:00.000Z');
 
-  await setAttentionMetadata(id, { wait: { ...ATTN_WAIT, labels: { build: 'stop' } } });
+  await setAttentionMetadata(id, {
+    wait: { ...ATTN_WAIT, labels: { build: 'stop' } },
+  });
   expect((await attentionItems())[0]?.labels).toBe('{"build": "stop"}');
 
   for (const gone of [
@@ -1675,7 +1719,9 @@ test('an update that changes nothing an attention item shows does not fire the p
 
 test('an unreadable wait time commits Archon’s write and records one projection error', async () => {
   const id = await pausedRun();
-  await setAttentionMetadata(id, { wait: { ...ATTN_WAIT, waitingSince: 'not a time' } });
+  await setAttentionMetadata(id, {
+    wait: { ...ATTN_WAIT, waitingSince: 'not a time' },
+  });
   expect(await attentionItems()).toHaveLength(1);
   expect(await db.query('SELECT source, run_id FROM mc.projection_errors')).toEqual([
     { source: 'mc_project_attention_update', run_id: id },
@@ -1696,7 +1742,10 @@ test('deleting a paused run removes its attention item', async () => {
 test('0019 projects the attention runs already paused, and changes nothing run again', async () => {
   const historical = await archonDb();
   try {
-    await runMigrations({ files: migrationFiles.filter((f) => f.name < '0019'), db: historical });
+    await runMigrations({
+      files: migrationFiles.filter((f) => f.name < '0019'),
+      db: historical,
+    });
     await historical.query(
       `INSERT INTO public.remote_agent_workflow_runs (workflow_name, status, user_message, metadata)
        VALUES ('archon-build-queue', 'paused', 'queue', $1)`,
@@ -1708,6 +1757,7 @@ test('0019 projects the attention runs already paused, and changes nothing run a
       '0019_structured_output_string.sql',
       '0020_queue_step_events.sql',
       '0021_split_step_events.sql',
+      '0022_queue_versions.sql',
     ]);
     expect(await historical.query('SELECT node_id FROM mc.attention_items')).toEqual([
       { node_id: 'ask' },
@@ -1721,7 +1771,12 @@ test('0019 projects the attention runs already paused, and changes nothing run a
   }
 });
 
-const WAIT = { kind: 'attention', owner: 'node', nodeId: 'ask', message: MARKER };
+const WAIT = {
+  kind: 'attention',
+  owner: 'node',
+  nodeId: 'ask',
+  message: MARKER,
+};
 
 async function setMetadata(metadata: unknown, status?: string): Promise<void> {
   await db.query(
@@ -1738,7 +1793,10 @@ const queueLap = async () =>
 
 test('a lap’s issue is its run’s number input, unless the run is for a pull request', async () => {
   await setMetadata({ inputs: { number: '401' } });
-  expect(await queueLap()).toEqual({ issue_number: 401, attention_open: false });
+  expect(await queueLap()).toEqual({
+    issue_number: 401,
+    attention_open: false,
+  });
   await setMetadata({ inputs: { number: '401', kind: 'pull_request' } });
   expect((await queueLap())?.issue_number).toBeNull();
   await setMetadata({ inputs: { number: '' } });
@@ -1763,7 +1821,10 @@ test('a lap waits on attention from its pause until the wait is answered or the 
 test('metadata of an odd shape commits in Archon, with no issue and no wait, and records no error', async () => {
   for (const odd of [[1, 2], 'text', 5, { inputs: 'x' }, { inputs: { number: '99999999999' } }]) {
     await setMetadata(odd, 'paused');
-    expect(await queueLap()).toEqual({ issue_number: null, attention_open: false });
+    expect(await queueLap()).toEqual({
+      issue_number: null,
+      attention_open: false,
+    });
   }
   expect(await projectionErrors()).toEqual([]);
 });
@@ -1771,7 +1832,10 @@ test('metadata of an odd shape commits in Archon, with no issue and no wait, and
 test('0019 fills a lap projected before it, and changes nothing run again', async () => {
   const historical = await archonDb();
   try {
-    await runMigrations({ files: migrationFiles.filter((f) => f.name < '0019'), db: historical });
+    await runMigrations({
+      files: migrationFiles.filter((f) => f.name < '0019'),
+      db: historical,
+    });
     await historical.query(
       `INSERT INTO public.remote_agent_workflow_runs (workflow_name, status, user_message, metadata)
        VALUES ('archon-build-queue', 'paused', 'historical', $1)`,
@@ -1783,11 +1847,56 @@ test('0019 fills a lap projected before it, and changes nothing run again', asyn
       '0019_structured_output_string.sql',
       '0020_queue_step_events.sql',
       '0021_split_step_events.sql',
+      '0022_queue_versions.sql',
     ]);
     const lap = () => historical.query('SELECT issue_number, attention_open FROM mc.laps');
     expect(await lap()).toEqual([{ issue_number: 402, attention_open: true }]);
     const migrated = await snapshot(historical);
     const [file] = migrationFiles.filter((f) => f.name === '0019_queue_laps.sql');
+    await historical.query(file?.sql ?? '');
+    expect(await snapshot(historical)).toEqual(migrated);
+  } finally {
+    await historical.close();
+  }
+});
+
+test('0022 writes the versions build-queue runs already have, and changes nothing run again', async () => {
+  const historical = await archonDb();
+  try {
+    await runMigrations({
+      files: migrationFiles.filter((f) => f.name < '0022'),
+      db: historical,
+    });
+    await historical.query(`INSERT INTO mc.factories VALUES
+      ('mission-control', 'coleam00/factory-mission-control', 'coleam00/factory-mission-control',
+       'http://localhost:3090')`);
+    const [codebase] = await historical.query(`INSERT INTO public.remote_agent_codebases (name)
+      VALUES ('coleam00/factory-mission-control') RETURNING id`);
+    for (const [workflow, digest] of [
+      ['archon-loop', 'sha256:loop'],
+      ['archon-build-queue', 'sha256:queue'],
+    ]) {
+      await historical.query(
+        `INSERT INTO public.remote_agent_workflow_runs
+           (workflow_name, codebase_id, status, user_message, metadata, started_at)
+         VALUES ($1, $2, 'completed', 'historical', $3, $4)`,
+        [workflow, codebase?.id, JSON.stringify({ workflow_source: { digest } }), NOW],
+      );
+    }
+    const versions = () => historical.query('SELECT digest, first_run_at FROM mc.versions');
+    expect(await versions()).toEqual([{ digest: 'sha256:loop', first_run_at: NOW }]);
+
+    expect(await runMigrations({ files: migrationFiles, db: historical })).toEqual([
+      '0022_queue_versions.sql',
+    ]);
+    expect(
+      (await versions()).sort((a, b) => String(a.digest).localeCompare(String(b.digest))),
+    ).toEqual([
+      { digest: 'sha256:loop', first_run_at: NOW },
+      { digest: 'sha256:queue', first_run_at: NOW },
+    ]);
+    const migrated = await snapshot(historical);
+    const [file] = migrationFiles.filter((f) => f.name === '0022_queue_versions.sql');
     await historical.query(file?.sql ?? '');
     expect(await snapshot(historical)).toEqual(migrated);
   } finally {
