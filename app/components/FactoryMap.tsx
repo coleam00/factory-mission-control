@@ -766,7 +766,7 @@ export function FactoryMap({
       >
         {crumbs.map((crumb, i) => (
           <span key={crumb.id ?? 'root'} className="flex items-center gap-1">
-            {i > 0 ? <span className="text-text-tertiary">›</span> : null}
+            {i > 0 ? <span className="text-text-secondary">›</span> : null}
             <button
               type="button"
               data-crumb={crumb.id ?? 'root'}
