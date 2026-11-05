@@ -14,6 +14,7 @@ export interface StepRow {
   depends_on: string[];
   trigger_rule: string | null;
   include: string | null;
+  child_workflow: string | null;
   command_file: string | null;
   script: string | null;
   script_file: string | null;
@@ -50,6 +51,13 @@ export interface YamlPartRow {
   file: string;
   part: number;
   chunk: string;
+}
+
+/** What the step screen's Kind fact says: the include or child workflow a node names, else its kind. */
+export function kindLabel(step: StepRow): string {
+  if (step.include !== null) return `include ${step.include}`;
+  if (step.child_workflow !== null) return `workflow ${step.child_workflow}`;
+  return step.kind;
 }
 
 /** The step a URL names: its path within the workflow, as react-router decoded it. */
@@ -146,8 +154,9 @@ export function nesting(rows: readonly NestingRow[], step: StepRow, at?: string 
 }
 
 /**
- * One row of `db/queries/step-versions.sql`: a pin with architecture, and whether it is the version
- * the step screen shows without one in its address.
+ * One row of `db/queries/step-versions.sql`: a pin with architecture, or on a factory on the queues
+ * the current version when no pin names it (its Archon commit, `committed_at` its parse time), and
+ * whether it is the version the step screen shows without one in its address.
  */
 export interface StepVersionRow {
   sha: string;
@@ -158,9 +167,9 @@ export interface StepVersionRow {
 
 export interface StepVersion {
   sha: string;
-  /** The pin's first 8 characters and its commit date. */
+  /** The pin's (or the unpinned current version's Archon commit's) first 8 characters and its date. */
   label: string;
-  /** The pin's reason, or `not recorded` for a bare pin. */
+  /** The pin's reason, or `not recorded` for a bare pin or for the current version no pin names. */
   reason: string;
   current: boolean;
 }

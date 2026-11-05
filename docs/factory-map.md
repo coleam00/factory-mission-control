@@ -70,7 +70,16 @@ of the view, and no card of the view covers a step, or a workflow, the opening c
 view covers only the steps its opening card has (Deliver's view never sees the review rounds,
 which Review has at the root), so an entry such as `ship/deliver` still counts the steps under
 it that belong to the opener. The check also fails on an `opens` naming no view, a view opened by
-no card or by two, a card id used twice, an `upTo` naming no card of the level above, and a `countsAs` naming no card.
+no card or by two, a card id used twice, and an `upTo` naming no card of the level above. A
+`countsAs` fails when it names no card, the card itself, or a card that itself counts as another,
+and when its card covers steps of its own, so a lap counts once on each card that shows it.
+
+`map:check` also fails on any key of `factory-map.json` that the map's types do not declare (a
+misspelled `countsAs` would otherwise be dropped); the key lists in `scripts/map-check.ts` follow
+the interfaces of `factory-map.ts`, and the compiler fails when they drift. A routed line's first
+point must lie on an edge of its `from` card and its last on an edge of its `to` card, on the dashed
+group's edge when that card sits inside the group, or, for a line with `"arrow": false`, on another
+line into the same card. Moving a card or changing `cardSize` without moving the routes fails.
 
 The queue pack is the snapshot `fixtures/pack/queue/`: `sdlc/` is `.archon/workflows/sdlc` of
 coleam00/Archon and `factory/` is `.archon/workflows/factory` of coleam00/ai-software-factory, at
@@ -121,6 +130,13 @@ A lap counts once per level: on the card that covers its deepest running step at
 then on the card of that card's view that covers it, so one run on `ship/deliver/rounds/implement`
 is on Build at the home map, on Deliver in the Build view, and on Implement in the Deliver view. A step that Review covers at the
 root counts on no card of the Build view, and also shows on the Deliver view's Review card.
+
+In the Review view a lens the router skipped for the round a run is in has no count for it, and the
+lens card's Right now says that run's change did not earn the reviewer. It reads the skipped lens
+steps of a round whose `route` step completed with `false` for that lens (the `home-map` query's
+`picks` rows, which keep only steps that finished since the round's `policy` step last started) and
+says nothing for a lens that ran, a round not yet at its lenses, or a round the router never ran (a
+light round, a rereview, a refused round).
 
 ## Right now in the Merge and Staging views
 
@@ -176,7 +192,7 @@ holdout verifier and the fence (journey 1). Esc, the close button or a click on 
 deselects.
 
 A card with a view shows ⤢ and a stacked edge, and its strip has an Open button naming the number
-of cards in the view. A card shows ⤢ only once its view exists; today Build's, Split's, Intake's, App check's, Merge's and Staging's do (`?view=build`, `?view=split`, `?view=intake`, `?view=app`, `?view=merge`, `?view=deploy`), and so does Deliver inside Build (`?view=build/deliver`; Review shows none until its view exists).
+of cards in the view. A card shows ⤢ only once its view exists; today Build's, Review's, Split's, Intake's, App check's, Merge's and Staging's do (`?view=build`, `?view=review`, `?view=split`, `?view=intake`, `?view=app`, `?view=merge`, `?view=deploy`), and so does Deliver inside Build (`?view=build/deliver`). Deliver's Review card opens the same Review view (`?view=review`); opened from there the address also carries `from=build/deliver`, so the breadcrumbs keep the Build and Deliver path and going up returns to Deliver (a link to `?view=review` alone opens it from the home map).
 Double-click, Enter on the selected card or the Open button zooms into the view. Breadcrumbs above
 the caption (the factory, then each opened view), the up control, a crumb, Esc (with nothing
 selected) and Backspace go up, and the card that opened the view flashes. The address is

@@ -27,7 +27,9 @@ export const BUILD_STEP = 'ship__deliver__rounds.implement__implement';
 /** A running merge-queue run the phase adds: a sweep on it counts on Merge and its view's Sweep. */
 export const MERGE_SWEEP_RUN = '5eed0005-0000-4000-8000-0000000000a1';
 const REVIEW_STEP = 'ship__deliver__rounds.review__policy';
-const WRITTEN_STEPS = [BUILD_STEP, REVIEW_STEP];
+const REVIEW_CODE_STEP = 'ship__deliver__rounds.review__code';
+const REREVIEW_TESTS_STEP = 'ship__deliver__rounds.rereview__tests';
+const WRITTEN_STEPS = [BUILD_STEP, REVIEW_STEP, REVIEW_CODE_STEP, REREVIEW_TESTS_STEP];
 const WAITING = `${MAP} [data-card="mgr"] [data-chip="waiting"]`;
 
 const viewStage = (id: string) => `[data-map-stage][data-view="${id}"][data-placed]`;
@@ -77,6 +79,9 @@ export function queueMapPhase(ctx: LiveContext): LivePhase {
     build: null as number | null,
     deliver: null as number | null,
     review: null as number | null,
+    scope: null as number | null,
+    code: null as number | null,
+    tests: null as number | null,
     waiting: null as number | null,
     merge: null as number | null,
     sweep: null as number | null,
@@ -126,6 +131,7 @@ export function queueMapPhase(ctx: LiveContext): LivePhase {
       const { base, failures } = ctx;
       const page = await openPage(deps.env);
       const view = await openPage(deps.env);
+      const reviewView = await openPage(deps.env);
       const drill = await openPage(deps.env);
       const split = await openPage(deps.env);
       const intake = await openPage(deps.env);
@@ -167,6 +173,8 @@ export function queueMapPhase(ctx: LiveContext): LivePhase {
         await open(drill, 'merge', 'merge-view.png');
         await open(drill, 'deploy', 'staging-view.png');
         await open(drill, 'merge');
+
+        await open(reviewView, 'review', 'review-view.png');
 
         const timed = async (card: string, run: string, step: string) => {
           const target = Number(await page.evaluate<string>(liveCountOf(card))) + 1;
@@ -219,6 +227,21 @@ export function queueMapPhase(ctx: LiveContext): LivePhase {
           untilShown(drill, `${liveCountOf('m-sweep')} === '${sweepTarget}'`),
         ]);
         ms.review = await timed('review', QUEUE_RUNS.review, REVIEW_STEP);
+
+        ms.scope = await untilShown(reviewView, `${liveCountOf('r-scope')} === '1'`);
+        const startStep = (step: string) => ['step', '--run', QUEUE_RUNS.review, '--step', step];
+        ms.code = await writeToScreen(
+          reviewView,
+          deps,
+          [...startStep(REVIEW_CODE_STEP), '--event', 'node_started'],
+          `${liveCountOf('r-l2')} === '1'`,
+        );
+        ms.tests = await writeToScreen(
+          reviewView,
+          deps,
+          [...startStep(REREVIEW_TESTS_STEP), '--event', 'node_started'],
+          `${liveCountOf('r-l3')} === '1'`,
+        );
 
         const onBoth = async (
           run: string,
@@ -273,6 +296,7 @@ export function queueMapPhase(ctx: LiveContext): LivePhase {
         await intake.close().catch(() => undefined);
         await split.close().catch(() => undefined);
         await view.close().catch(() => undefined);
+        await reviewView.close().catch(() => undefined);
         await page.close().catch(() => undefined);
         await restore();
       }
@@ -291,6 +315,13 @@ export function queueMapPhase(ctx: LiveContext): LivePhase {
       ...lateWrite('a build-queue run on implement', `${name}'s Build`, ms.build),
       ...lateWrite('a build-queue run on implement', `${name}'s Build view Deliver`, ms.deliver),
       ...lateWrite('a build-queue run on review', `${name}'s Review`, ms.review),
+      ...lateWrite(
+        'a build-queue run on review',
+        `${name}'s Review view Scope the change`,
+        ms.scope,
+      ),
+      ...lateWrite('a build-queue run on review/code', `${name}'s Review view Code`, ms.code),
+      ...lateWrite('a build-queue run on rereview/tests', `${name}'s Review view Tests`, ms.tests),
       ...lateWrite('a merge-queue run on sweep', `${name}'s Merge`, ms.merge),
       ...lateWrite('a merge-queue run on sweep', `${name}'s Merge view Sweep`, ms.sweep),
       ...lateWrite('an intake run on triage', `${name}'s Intake`, ms.intake),
@@ -303,6 +334,7 @@ export function queueMapPhase(ctx: LiveContext): LivePhase {
     async probe(designProbe) {
       for (const [id, file] of [
         ['build', 'build'],
+        ['review', 'review'],
         ['split', 'split'],
         ['intake', 'intake'],
         ['merge', 'merge'],

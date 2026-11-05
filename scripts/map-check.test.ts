@@ -2,8 +2,14 @@ import { afterEach, describe, expect, test } from 'bun:test';
 import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { type Card, FACTORY_MAP, type FactoryMap, type MapView } from '../app/map/factory-map';
-import { parsePack } from '../parsers/pack';
+import {
+  type Card,
+  FACTORY_MAP,
+  type FactoryMap,
+  type MapView,
+  type Point,
+} from '../app/map/factory-map';
+import { parsePack, type Workflow } from '../parsers/pack';
 import { REPO_ROOT } from './lib/cli';
 import { mapCheck, parseQueuePack } from './map-check';
 
@@ -34,13 +40,20 @@ const queue = () => parseQueuePack(QUEUE_ROOT, TEMPLATE);
 const loop = () => parsePack(PACK, TEMPLATE);
 const check = (map: FactoryMap, pack = loop()) => mapCheck(map, { loop: pack, queue: queue() });
 
+const deliverWithoutReview: MapView = {
+  ...(FACTORY_MAP.views?.['build/deliver'] as MapView),
+  cards: (FACTORY_MAP.views?.['build/deliver']?.cards ?? []).map((c) =>
+    c.opens === undefined ? c : { ...c, opens: undefined },
+  ),
+};
+
 /** The map with only the Build view and the Deliver view inside it, so the tests of the root cards and of Build's view are not also held to the other views. */
 const onlyBuild = (cards: FactoryMap['cards']): FactoryMap => ({
   ...FACTORY_MAP,
   cards: cards.map((c) => (c.opens === 'build' ? c : { ...c, opens: undefined })),
   views: {
     build: FACTORY_MAP.views?.build as MapView,
-    'build/deliver': FACTORY_MAP.views?.['build/deliver'] as MapView,
+    'build/deliver': deliverWithoutReview,
   },
 });
 
@@ -97,7 +110,7 @@ describe('map:check', () => {
       ...withCards(without),
       views: {
         build: FACTORY_MAP.views?.build as MapView,
-        'build/deliver': FACTORY_MAP.views?.['build/deliver'] as MapView,
+        'build/deliver': deliverWithoutReview,
       },
     };
     expect(check(map)).toEqual([
@@ -107,7 +120,7 @@ describe('map:check', () => {
 
   test('a step a lap marks that the pack lacks fails when two cards cover it', () => {
     const twice = FACTORY_MAP.cards.map((card) =>
-      card.id === 'review'
+      card.id === 'merge'
         ? {
             ...card,
             covers: [
@@ -118,7 +131,7 @@ describe('map:check', () => {
         : card,
     );
     expect(check(withCards(twice))).toEqual([
-      'loop pack: archon-loop handoff is covered by Review and App check',
+      'loop pack: archon-loop handoff is covered by App check and Merge',
     ]);
   });
 
@@ -342,14 +355,18 @@ describe('map:check', () => {
   test('an opens naming no view, and a view no card opens, fail', () => {
     const dead = {
       ...FACTORY_MAP,
-      cards: FACTORY_MAP.cards.map((c) => (c.id === 'review' ? { ...c, opens: 'nowhere' } : c)),
+      cards: FACTORY_MAP.cards.map((c) => (c.id === 'app' ? { ...c, opens: 'nowhere' } : c)),
     };
-    expect(check(dead)).toEqual(['Review opens view nowhere, which the map lacks']);
+    expect(check(dead)).toEqual([
+      'App check opens view nowhere, which the map lacks',
+      'view app is opened by no card',
+    ]);
     const orphan = {
       ...FACTORY_MAP,
       cards: FACTORY_MAP.cards.map(({ opens: _, ...c }) => c),
     };
     expect(check(orphan)).toContain('view build is opened by no card');
+    expect(check(orphan)).toContain('view review cannot be reached from the root');
   });
 
   test('a card id used twice fails naming it', () => {
@@ -383,12 +400,95 @@ describe('map:check', () => {
     expect(check(map)).toEqual(['Review counts as nowhere, which is no card']);
   });
 
+  describe('Deliver view card shapes', () => {
+    const deliver = FACTORY_MAP.views?.['build/deliver'] as MapView;
+    const dRev = deliver.cards.find((c) => c.id === 'd-rev') as Card;
+    const withDeliver = (cards: Card[]): FactoryMap => ({
+      ...FACTORY_MAP,
+      views: { ...FACTORY_MAP.views, 'build/deliver': { ...deliver, cards } },
+    });
+    const replacingReview = (change: Partial<Card>) =>
+      withDeliver(deliver.cards.map((c) => (c.id === 'd-rev' ? { ...c, ...change } : c)));
+
+    test('a misspelled card key fails naming it', () => {
+      const map = withDeliver(
+        deliver.cards.map(({ countsAs, ...c }) =>
+          countsAs === undefined ? c : ({ ...c, countAs: countsAs } as Card),
+        ),
+      );
+      expect(check(map)).toEqual(['Review has key "countAs", which the map does not read']);
+    });
+
+    test('a card counting as itself fails', () => {
+      expect(check(replacingReview({ countsAs: 'd-rev' }))).toEqual(['Review counts as itself']);
+    });
+
+    test('a card counting as another alias fails', () => {
+      const map = withDeliver([...deliver.cards, { ...dRev, id: 'd-rev-2', countsAs: 'd-rev' }]);
+      expect(check(map)).toContain('Review counts as d-rev, which counts as review');
+    });
+
+    test('a card counting as another while covering steps fails', () => {
+      const impl = deliver.cards.find((c) => c.id === 'd-impl') as Card;
+      expect(check(replacingReview({ covers: impl.covers }))).toContain(
+        'Review counts as review but covers steps of its own',
+      );
+    });
+  });
+
+  describe('routed lines', () => {
+    test('a card moved off its routes fails naming each line', () => {
+      const map = {
+        ...FACTORY_MAP,
+        cards: FACTORY_MAP.cards.map((c) => (c.id === 'review' ? { ...c, y: c.y + 10 } : c)),
+      };
+      expect(check(map)).toEqual([
+        'line review to build starts at 1176,542, off review',
+        'line review to disc starts at 1176,754, off review',
+      ]);
+    });
+
+    test('an arrowless join ending off the line it joins fails', () => {
+      const map = {
+        ...FACTORY_MAP,
+        lines: FACTORY_MAP.lines.map((l) =>
+          l.from === 'app' && l.to === 'build'
+            ? {
+                ...l,
+                route: [
+                  [1436, 542],
+                  [1436, 517],
+                  [1176, 500],
+                ] as Point[],
+              }
+            : l,
+        ),
+      };
+      expect(check(map)).toEqual(['line app to build ends at 1176,500, off build']);
+    });
+  });
+
   test('a view two cards open fails naming both', () => {
     const map = {
       ...FACTORY_MAP,
       cards: FACTORY_MAP.cards.map((c) => (c.id === 'review' ? { ...c, opens: 'build' } : c)),
     };
     expect(check(map)).toContain('view build is opened by Build and Review');
+  });
+
+  test('a view two cards of one level open fails, though another level may open it too', () => {
+    const deliver = FACTORY_MAP.views?.['build/deliver'] as MapView;
+    const map: FactoryMap = {
+      ...FACTORY_MAP,
+      views: {
+        ...FACTORY_MAP.views,
+        'build/deliver': {
+          ...deliver,
+          cards: deliver.cards.map((c) => (c.id === 'd-pr' ? { ...c, opens: 'review' } : c)),
+        },
+      },
+    };
+    expect(check(map)).toEqual([expect.stringMatching(/^view review is opened by .+ and .+$/)]);
   });
 
   test('a view opened only from inside itself fails as unreachable', () => {
@@ -409,5 +509,39 @@ describe('map:check', () => {
     expect(check(map)).toContain(
       'queue pack: Build view: Write the brief names workflow archon-merge-queue, which Build does not cover',
     );
+  });
+});
+
+describe('the picks seam of the home map', () => {
+  const sql = readFileSync(join(REPO_ROOT, 'db', 'queries', 'home-map.sql'), 'utf8');
+  const workflow = (name: string): Workflow => {
+    const found = queue().workflows.find((w) => w.name === name);
+    if (!found) throw new Error(`the queue pack lacks ${name}`);
+    return found;
+  };
+
+  test('the lens steps its SQL selects are the review-lens nodes of the review block', () => {
+    const block = workflow('archon-review-block');
+    const nodes = (
+      Bun.YAML.parse(block.yaml) as {
+        nodes: {
+          id: string;
+          output_type?: string;
+          output_format?: { properties?: Record<string, { type?: string }>; required?: string[] };
+        }[];
+      }
+    ).nodes;
+    const lenses = nodes.filter((n) => n.output_type === 'review-lens').map((n) => n.id);
+    // The SQL rewrites a lens id with '__[a-z]+$', so every lens id must be lowercase letters.
+    expect(lenses.every((id) => /^[a-z]+$/.test(id))).toBe(true);
+    const selected = /review__\(([^)]+)\)\$/.exec(sql)?.[1].split('|');
+    expect(selected?.slice().sort()).toEqual(lenses.sort());
+    expect(block.steps[0]?.id).toBe('policy');
+    // The SQL reads route's output keyed by lens id, as a boolean.
+    const route = nodes.find((n) => n.id === 'route')?.output_format;
+    for (const id of lenses) {
+      expect(route?.properties?.[id]?.type).toBe('boolean');
+      expect(route?.required).toContain(id);
+    }
   });
 });

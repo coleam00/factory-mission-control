@@ -4,18 +4,25 @@ import {
   allCards,
   type Card,
   CHIPS,
+  type Cover,
   cardChain,
+  cardWidth,
   coveringCards,
+  type Details,
   FACTORY_MAP,
   type FactoryMap,
   LINE_STYLES,
   LISTS,
+  type Line,
   levelsOf,
+  linePoints,
   type MapView,
   openerOf,
   PACKS,
   type Pack,
+  type Point,
   ROLES,
+  type Screen,
   screenOf,
   viewPath,
 } from '../app/map/factory-map';
@@ -80,6 +87,104 @@ function unknownValues(map: FactoryMap): string[] {
   ];
 }
 
+/**
+ * The keys the map reads from each kind of object in `factory-map.json`. Each list names every key
+ * of its interface, so the compiler fails when the two drift apart.
+ */
+const ROOT_KEYS: Record<keyof FactoryMap, true> = {
+  caption: true,
+  cardSize: true,
+  cards: true,
+  group: true,
+  lines: true,
+  tour: true,
+  legend: true,
+  views: true,
+};
+const VIEW_KEYS: Record<keyof MapView, true> = {
+  caption: true,
+  cardSize: true,
+  cards: true,
+  group: true,
+  lines: true,
+  tour: true,
+};
+const SIZE_KEYS: Record<keyof MapView['cardSize'], true> = { width: true, height: true };
+const GROUP_KEYS: Record<keyof NonNullable<MapView['group']>, true> = {
+  x: true,
+  y: true,
+  width: true,
+  height: true,
+  label: true,
+};
+const LEGEND_KEYS: Record<keyof FactoryMap['legend'][number], true> = { role: true, label: true };
+const CARD_KEYS: Record<keyof Card, true> = {
+  id: true,
+  role: true,
+  kind: true,
+  title: true,
+  text: true,
+  x: true,
+  y: true,
+  width: true,
+  chips: true,
+  lists: true,
+  covers: true,
+  details: true,
+  opens: true,
+  upTo: true,
+  countsAs: true,
+};
+const COVER_KEYS: Record<keyof Cover, true> = {
+  pack: true,
+  workflow: true,
+  steps: true,
+  screens: true,
+};
+const SCREEN_KEYS: Record<keyof Screen, true> = { workflow: true, path: true };
+const DETAILS_KEYS: Record<keyof Details, true> = { when: true, what: true, how: true };
+const LINE_KEYS: Record<keyof Line, true> = {
+  from: true,
+  to: true,
+  style: true,
+  label: true,
+  route: true,
+  arrow: true,
+};
+
+/** The keys of the owner's JSON the map's types do not declare: the map would drop them silently. */
+function unknownKeys(map: FactoryMap): string[] {
+  const extra = (what: string, value: object, keys: object) =>
+    Object.keys(value)
+      .filter((key) => !Object.hasOwn(keys, key))
+      .map((key) => `${what} has key ${JSON.stringify(key)}, which the map does not read`);
+  const views = Object.entries(map.views ?? {});
+  const levels: [string, MapView][] = [
+    ['the map', map],
+    ...views.map(([id, view]): [string, MapView] => [`view ${id}`, view]),
+  ];
+  return [
+    ...extra('the map', map, ROOT_KEYS),
+    ...views.flatMap(([id, view]) => extra(`view ${id}`, view, VIEW_KEYS)),
+    ...map.legend.flatMap((entry) => extra(`legend ${entry.label}`, entry, LEGEND_KEYS)),
+    ...levels.flatMap(([name, level]) => [
+      ...extra(`${name} cardSize`, level.cardSize, SIZE_KEYS),
+      ...(level.group ? extra(`${name} group`, level.group, GROUP_KEYS) : []),
+      ...level.lines.flatMap((line) => extra(`line ${line.from} to ${line.to}`, line, LINE_KEYS)),
+      ...level.cards.flatMap((card) => [
+        ...extra(card.title, card, CARD_KEYS),
+        ...extra(`${card.title} details`, card.details, DETAILS_KEYS),
+        ...card.covers.flatMap((cover) => [
+          ...extra(`${card.title} cover ${cover.workflow}`, cover, COVER_KEYS),
+          ...Object.entries(cover.screens ?? {}).flatMap(([step, screen]) =>
+            extra(`${card.title} cover ${cover.workflow} screen ${step}`, screen, SCREEN_KEYS),
+          ),
+        ]),
+      ]),
+    ]),
+  ];
+}
+
 type Trees = Record<Pack, Map<string, Map<string, Step>>>;
 
 /** The level above the view `card` sits in; undefined for a root card. */
@@ -90,7 +195,12 @@ function parentLevel(map: FactoryMap, card: Card): MapView | undefined {
   return opener && levelsOf(map).find((level) => level.cards.includes(opener));
 }
 
-/** The shape of the views: every `opens` and `upTo` leads somewhere, and every view hangs off the root once. */
+/**
+ * The shape of the views: every `opens` and `upTo` leads somewhere, and every view hangs off the
+ * root once (a card deeper in the map may open it again, one per level). A `countsAs` names a card
+ * that counts as nothing else, and its card covers no step of its own, so `cardsCounting` counts
+ * each lap once.
+ */
 function viewFailures(map: FactoryMap): string[] {
   const failures: string[] = [];
   const views = Object.keys(map.views ?? {});
@@ -102,8 +212,20 @@ function viewFailures(map: FactoryMap): string[] {
     if (card.opens !== undefined && !views.includes(card.opens)) {
       failures.push(`${card.title} opens view ${card.opens}, which the map lacks`);
     }
-    if (card.countsAs !== undefined && !cards.some((c) => c.id === card.countsAs)) {
-      failures.push(`${card.title} counts as ${card.countsAs}, which is no card`);
+    if (card.countsAs !== undefined) {
+      const target = cards.find((c) => c.id === card.countsAs);
+      if (target === undefined) {
+        failures.push(`${card.title} counts as ${card.countsAs}, which is no card`);
+      } else if (target === card) {
+        failures.push(`${card.title} counts as itself`);
+      } else if (target.countsAs !== undefined) {
+        failures.push(
+          `${card.title} counts as ${card.countsAs}, which counts as ${target.countsAs}`,
+        );
+      }
+      if (card.covers.length > 0) {
+        failures.push(`${card.title} counts as ${card.countsAs} but covers steps of its own`);
+      }
     }
     if (card.upTo === undefined) continue;
     if (!parentLevel(map, card)?.cards.some((c) => c.id === card.upTo)) {
@@ -113,14 +235,85 @@ function viewFailures(map: FactoryMap): string[] {
   for (const id of views) {
     const openers = cards.filter((c) => c.opens === id);
     if (openers.length === 0) failures.push(`view ${id} is opened by no card`);
-    if (openers.length > 1) {
-      failures.push(`view ${id} is opened by ${openers.map((c) => c.title).join(' and ')}`);
+    const sameLevel = levelsOf(map)
+      .map((level) => openers.filter((c) => level.cards.includes(c)))
+      .find((inLevel) => inLevel.length > 1);
+    if (sameLevel !== undefined) {
+      failures.push(`view ${id} is opened by ${sameLevel.map((c) => c.title).join(' and ')}`);
     }
-    if (openers.length === 1 && viewPath(map, id).length === 0) {
+    if (openers.length > 0 && viewPath(map, id).length === 0) {
       failures.push(`view ${id} cannot be reached from the root`);
     }
   }
   return failures;
+}
+
+interface Box {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+const onBox = (box: Box, [x, y]: Point) =>
+  x >= box.x &&
+  x <= box.x + box.width &&
+  y >= box.y &&
+  y <= box.y + box.height &&
+  (x === box.x || x === box.x + box.width || y === box.y || y === box.y + box.height);
+
+const inside = (outer: Box, inner: Box) =>
+  inner.x >= outer.x &&
+  inner.y >= outer.y &&
+  inner.x + inner.width <= outer.x + outer.width &&
+  inner.y + inner.height <= outer.y + outer.height;
+
+/** Whether `point` lies on a segment of the orthogonal `points`. */
+function onPolyline(points: readonly Point[], [x, y]: Point): boolean {
+  return points.slice(1).some(([bx, by], i) => {
+    const [ax, ay] = points[i] as Point;
+    const collinear = (bx - ax) * (y - ay) === (by - ay) * (x - ax);
+    const inBox = x >= Math.min(ax, bx) && x <= Math.max(ax, bx);
+    return collinear && inBox && y >= Math.min(ay, by) && y <= Math.max(ay, by);
+  });
+}
+
+/**
+ * Whether each routed line starts on an edge of its `from` card and ends on an edge of its `to`
+ * card, so moving a card or resizing the cards without the route detaches it. A route may also end
+ * on the dashed group's edge when its `to` card sits inside the group, and an arrowless line, which
+ * joins another, may end on a line into the same card.
+ */
+function routeFailures(map: FactoryMap): string[] {
+  return levelsOf(map).flatMap((level) =>
+    level.lines.flatMap((line) => {
+      const from = level.cards.find((c) => c.id === line.from);
+      const to = level.cards.find((c) => c.id === line.to);
+      if (!line.route || from === undefined || to === undefined) return [];
+      const box = (card: Card): Box => ({
+        x: card.x,
+        y: card.y,
+        width: cardWidth(level, card),
+        height: level.cardSize.height,
+      });
+      const first = line.route[0] as Point;
+      const last = line.route[line.route.length - 1] as Point;
+      const joins = level.lines
+        .filter((other) => other !== line && other.to === line.to)
+        .map((other) => linePoints(level, other));
+      const endsOn =
+        onBox(box(to), last) ||
+        (level.group !== undefined && inside(level.group, box(to)) && onBox(level.group, last)) ||
+        (line.arrow === false && joins.some((points) => onPolyline(points, last)));
+      const name = `line ${line.from} to ${line.to}`;
+      return [
+        ...(onBox(box(from), first)
+          ? []
+          : [`${name} starts at ${first.join(',')}, off ${line.from}`]),
+        ...(endsOn ? [] : [`${name} ends at ${last.join(',')}, off ${line.to}`]),
+      ];
+    }),
+  );
 }
 
 /**
@@ -184,11 +377,17 @@ function viewPartition(map: FactoryMap, trees: Trees): string[] {
  * workflow or a step its pack lacks, an entry whose screen is not the step's own, a step of a
  * covered workflow that no card covers or that two do, a step a lap's row marks that no card
  * covers, and a step of a pack that counts on a card only through another pack's entry (a live row
- * carries only the workflow name, so the pack cannot tell them apart at runtime). A failure naming
- * a pack's step starts with that pack.
+ * carries only the workflow name, so the pack cannot tell them apart at runtime). Also a key the
+ * map's types do not declare, a `countsAs` that would make a lap count twice or not at all, and a
+ * routed line off its cards. A failure naming a pack's step starts with that pack.
  */
 export function mapCheck(map: FactoryMap, packs: Record<Pack, PackVersion>): string[] {
-  const failures: string[] = [...unknownValues(map), ...viewFailures(map)];
+  const failures: string[] = [
+    ...unknownKeys(map),
+    ...unknownValues(map),
+    ...viewFailures(map),
+    ...routeFailures(map),
+  ];
   const trees = Object.fromEntries(
     PACKS.map((pack) => [
       pack,

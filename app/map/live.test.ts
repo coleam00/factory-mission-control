@@ -348,6 +348,32 @@ test('a run of the old loop on build counts on Build and Deliver', () => {
   expect(hereOn(rows, BUILD_VIEW)).toEqual({ 'b-del': ['old'] });
 });
 
+test('a lens the engine skipped shows the run on its card, not a count; a lens of another round or run says nothing', () => {
+  const picks = (run: string, step: string): HomeMapRow => ({
+    ...lap(run, [step]),
+    kind: 'picks',
+  });
+  const reviewing = lap('a', ['ship__deliver__rounds.review__code'], 'archon-build-queue', 7);
+  const skippedBy = (rows: HomeMapRow[]) =>
+    Object.fromEntries(
+      [...cardLive(FACTORY_MAP, { map: rows }, new Date()).entries()]
+        .filter(([, live]) => live.skipped !== undefined)
+        .map(([id, live]) => [id, live.skipped?.map((l) => l.run)]),
+    );
+  const skip = (run: string, round: string, lens: string) =>
+    picks(run, `ship__deliver__rounds.${round}__${lens}`);
+  expect(
+    skippedBy([reviewing, skip('a', 'review', 'seams'), skip('a', 'review', 'tests')]),
+  ).toEqual({ 'r-l1': ['a'], 'r-l3': ['a'] });
+  expect(skippedBy([reviewing, skip('a', 'rereview', 'tests')])).toEqual({});
+  expect(skippedBy([reviewing, skip('other', 'review', 'tests')])).toEqual({});
+  expect(skippedBy([reviewing])).toEqual({});
+  const rereviewing = lap('a', ['ship__deliver__rounds.rereview__tests'], 'archon-build-queue');
+  expect(cardLive(FACTORY_MAP, { map: [rereviewing] }, new Date()).get('r-l3')?.here).toHaveLength(
+    1,
+  );
+});
+
 test('a step counts on its own card in the Deliver view, and review on the Review card as well', () => {
   const rows = [
     lap('impl', ['ship__deliver__rounds.implement__implement', 'ship'], 'archon-build-queue'),

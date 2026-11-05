@@ -82,8 +82,8 @@ test("the map draws every card's wording, the caption, the group and the legend,
   }
   expect(html).toContain('the manager watches everything on this line');
   for (const entry of FACTORY_MAP.legend) expect(html).toContain(entry.label);
-  // Only Build, Split, Intake, App check, Merge and Staging have a deeper view, so only they offer to open one.
-  const opens = ['build', 'split', 'intake', 'app', 'merge', 'deploy'];
+  // Only Build, Review, Split, Intake, App check, Merge and Staging have a deeper view, so only they offer to open one.
+  const opens = ['build', 'review', 'split', 'intake', 'app', 'merge', 'deploy'];
   for (const id of opens) expect(cardTag(html, id)).toContain(`data-opens="${id}"`);
   expect(html).toContain('opens a deeper view');
   for (const card of FACTORY_MAP.cards.filter((c) => !opens.includes(c.id))) {
@@ -449,6 +449,30 @@ test('Right now links a lap entry to its page and to its GitHub issue, and only 
   expect(html).toContain('href="https://github.com/o/r/issues/7"');
   expect(html).toContain('/f/here/laps/bbbbbbbb-2');
   expect(html.match(/data-lap-issue/g)).toHaveLength(1);
+});
+
+test('Right now says a skipped reviewer was not earned, naming the lap by issue or by run', () => {
+  const skipped = [
+    {
+      run: 'aaaaaaaa-1',
+      step: 'review/tests',
+      workflow: 'archon-loop',
+      issue: { number: 7, title: 'T', url: null },
+    },
+    { run: 'bbbbbbbb-2', step: 'review/tests', workflow: 'archon-loop', issue: null },
+  ];
+  const render = (live: Parameters<typeof RightNow>[0]['live']) =>
+    renderToStaticMarkup(
+      <MemoryRouter>
+        <RightNow live={live} factory="here" />
+      </MemoryRouter>,
+    );
+  const html = render({ here: [], skipped });
+  expect(html).toContain('data-skipped="aaaaaaaa-1"');
+  expect(html).toContain('#7');
+  expect(html).toContain('lap bbbbbbbb');
+  expect(html.match(/did not earn this reviewer/g)).toHaveLength(2);
+  expect(render({ here: [] })).not.toContain('data-skipped');
 });
 
 test('Right now links only a run with a lap page; a queue run and a merge-queue merge show plainly', () => {

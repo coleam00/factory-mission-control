@@ -6,7 +6,11 @@ import { holdoutId } from '../parsers/metrics';
 import { eventData, structuredOutputFor } from '../scripts/fixture/write';
 import type { Db, Row } from '../scripts/lib/db';
 import { runMigrations } from '../scripts/migrate';
+import { queries } from './queries/test-seed';
 import { archonDb, migrationFiles, snapshot } from './test-db';
+
+const migrationsFrom = (cut: string) =>
+  migrationFiles.filter((f) => f.name >= cut).map((f) => f.name);
 
 const NOW = new Date('2026-10-25T12:00:00Z');
 const DIGEST = `sha256:${'ab'.repeat(32)}`;
@@ -287,22 +291,9 @@ test('the eligibility upgrade keeps live history and installs the same functions
       '0012_arch_text_lf.sql',
     ]);
     expect(await snapshot(upgraded)).toEqual(before);
-    expect(await runMigrations({ files: migrationFiles, db: upgraded })).toEqual([
-      '0013_step_attempt_identity.sql',
-      '0014_pre_existing_refs.sql',
-      '0015_step_attempt_usage.sql',
-      '0016_pin_reason_optional.sql',
-      '0017_app_check_line_ids.sql',
-      '0018_issue_label_time.sql',
-      '0019_attention_items.sql',
-      '0019_queue_laps.sql',
-      '0019_structured_output_string.sql',
-      '0020_queue_step_events.sql',
-      '0021_split_step_events.sql',
-      '0022_queue_versions.sql',
-      '0024_queue_app_check_lines.sql',
-      '0025_queue_app_check_sealed.sql',
-    ]);
+    expect(await runMigrations({ files: migrationFiles, db: upgraded })).toEqual(
+      migrationsFrom('0013'),
+    );
     expect(await projectionDefinitions(upgraded)).toEqual(await projectionDefinitions(db));
     expect(await runMigrations({ files: migrationFiles, db: upgraded })).toEqual([]);
     const migrated = await snapshot(upgraded);
@@ -344,24 +335,9 @@ test('0011 rewrites a short pin to the one full sha it prefixes, and clears ambi
       );
     }
 
-    expect(await runMigrations({ files: migrationFiles, db: historical })).toEqual([
-      '0011_pin_full_archon_sha.sql',
-      '0012_arch_text_lf.sql',
-      '0013_step_attempt_identity.sql',
-      '0014_pre_existing_refs.sql',
-      '0015_step_attempt_usage.sql',
-      '0016_pin_reason_optional.sql',
-      '0017_app_check_line_ids.sql',
-      '0018_issue_label_time.sql',
-      '0019_attention_items.sql',
-      '0019_queue_laps.sql',
-      '0019_structured_output_string.sql',
-      '0020_queue_step_events.sql',
-      '0021_split_step_events.sql',
-      '0022_queue_versions.sql',
-      '0024_queue_app_check_lines.sql',
-      '0025_queue_app_check_sealed.sql',
-    ]);
+    expect(await runMigrations({ files: migrationFiles, db: historical })).toEqual(
+      migrationsFrom('0011'),
+    );
     const migrated = [
       { sha: 'p1', archon_sha: full },
       { sha: 'p2', archon_sha: null },
@@ -420,23 +396,9 @@ test('0012 rewrites CRLF to LF in stored architecture texts, and changes nothing
       v,
     );
 
-    expect(await runMigrations({ files: migrationFiles, db: historical })).toEqual([
-      '0012_arch_text_lf.sql',
-      '0013_step_attempt_identity.sql',
-      '0014_pre_existing_refs.sql',
-      '0015_step_attempt_usage.sql',
-      '0016_pin_reason_optional.sql',
-      '0017_app_check_line_ids.sql',
-      '0018_issue_label_time.sql',
-      '0019_attention_items.sql',
-      '0019_queue_laps.sql',
-      '0019_structured_output_string.sql',
-      '0020_queue_step_events.sql',
-      '0021_split_step_events.sql',
-      '0022_queue_versions.sql',
-      '0024_queue_app_check_lines.sql',
-      '0025_queue_app_check_sealed.sql',
-    ]);
+    expect(await runMigrations({ files: migrationFiles, db: historical })).toEqual(
+      migrationsFrom('0012'),
+    );
     const migrated = [
       { kind: 'hook', path: '.factory/hooks/gate.sh', text: 'exit 0\n' },
       { kind: 'script', path: 'run.sh', text: '#!/bin/sh\necho hi\n' },
@@ -507,22 +469,9 @@ test('0013 gives back the runs of a step the old key merged, and changes nothing
     const errors = () => historical.query('SELECT event_id, sqlstate FROM mc.projection_errors');
     expect(await errors()).toEqual([{ event_id: refused, sqlstate: '23514' }]);
 
-    expect(await runMigrations({ files: migrationFiles, db: historical })).toEqual([
-      '0013_step_attempt_identity.sql',
-      '0014_pre_existing_refs.sql',
-      '0015_step_attempt_usage.sql',
-      '0016_pin_reason_optional.sql',
-      '0017_app_check_line_ids.sql',
-      '0018_issue_label_time.sql',
-      '0019_attention_items.sql',
-      '0019_queue_laps.sql',
-      '0019_structured_output_string.sql',
-      '0020_queue_step_events.sql',
-      '0021_split_step_events.sql',
-      '0022_queue_versions.sql',
-      '0024_queue_app_check_lines.sql',
-      '0025_queue_app_check_sealed.sql',
-    ]);
+    expect(await runMigrations({ files: migrationFiles, db: historical })).toEqual(
+      migrationsFrom('0013'),
+    );
     expect(await attempts()).toEqual([
       { step_id: 'land', outcome: 'merged', cost_usd: null },
       { step_id: 'land', outcome: 'refused', cost_usd: null },
@@ -781,21 +730,9 @@ test('0014 keeps only a stored citation’s references, and changes nothing run 
       );
     }
 
-    expect(await runMigrations({ files: migrationFiles, db: historical })).toEqual([
-      '0014_pre_existing_refs.sql',
-      '0015_step_attempt_usage.sql',
-      '0016_pin_reason_optional.sql',
-      '0017_app_check_line_ids.sql',
-      '0018_issue_label_time.sql',
-      '0019_attention_items.sql',
-      '0019_queue_laps.sql',
-      '0019_structured_output_string.sql',
-      '0020_queue_step_events.sql',
-      '0021_split_step_events.sql',
-      '0022_queue_versions.sql',
-      '0024_queue_app_check_lines.sql',
-      '0025_queue_app_check_sealed.sql',
-    ]);
+    expect(await runMigrations({ files: migrationFiles, db: historical })).toEqual(
+      migrationsFrom('0014'),
+    );
     const lines = () =>
       historical.query(
         `SELECT position, pre_existing, pre_existing_refs, pre_existing_refs::text LIKE $1 AS marked
@@ -843,19 +780,9 @@ test('0016 lets a pin have no reason, keeps stored reasons, and changes nothing 
     await pin('a'.repeat(40), 'a reason');
     await expect(pin('b'.repeat(40), null)).rejects.toThrow();
 
-    expect(await runMigrations({ files: migrationFiles, db: historical })).toEqual([
-      '0016_pin_reason_optional.sql',
-      '0017_app_check_line_ids.sql',
-      '0018_issue_label_time.sql',
-      '0019_attention_items.sql',
-      '0019_queue_laps.sql',
-      '0019_structured_output_string.sql',
-      '0020_queue_step_events.sql',
-      '0021_split_step_events.sql',
-      '0022_queue_versions.sql',
-      '0024_queue_app_check_lines.sql',
-      '0025_queue_app_check_sealed.sql',
-    ]);
+    expect(await runMigrations({ files: migrationFiles, db: historical })).toEqual(
+      migrationsFrom('0016'),
+    );
     await pin('b'.repeat(40), null);
     const reasons = () => historical.query('SELECT sha, reason FROM mc.pins ORDER BY sha');
     const stored = [
@@ -892,18 +819,9 @@ test('0017 keeps lines projected before it without an id, fills new reports’ i
       [before],
     );
 
-    expect(await runMigrations({ files: migrationFiles, db: historical })).toEqual([
-      '0017_app_check_line_ids.sql',
-      '0018_issue_label_time.sql',
-      '0019_attention_items.sql',
-      '0019_queue_laps.sql',
-      '0019_structured_output_string.sql',
-      '0020_queue_step_events.sql',
-      '0021_split_step_events.sql',
-      '0022_queue_versions.sql',
-      '0024_queue_app_check_lines.sql',
-      '0025_queue_app_check_sealed.sql',
-    ]);
+    expect(await runMigrations({ files: migrationFiles, db: historical })).toEqual(
+      migrationsFrom('0017'),
+    );
     const after = await run();
     await historical.query('SELECT mc.project_app_check_lines($1, $2)', [
       after,
@@ -1768,16 +1686,9 @@ test('0019 projects the attention runs already paused, and changes nothing run a
        VALUES ('archon-build-queue', 'paused', 'queue', $1)`,
       [JSON.stringify({ wait: ATTN_WAIT })],
     );
-    expect(await runMigrations({ files: migrationFiles, db: historical })).toEqual([
-      '0019_attention_items.sql',
-      '0019_queue_laps.sql',
-      '0019_structured_output_string.sql',
-      '0020_queue_step_events.sql',
-      '0021_split_step_events.sql',
-      '0022_queue_versions.sql',
-      '0024_queue_app_check_lines.sql',
-      '0025_queue_app_check_sealed.sql',
-    ]);
+    expect(await runMigrations({ files: migrationFiles, db: historical })).toEqual(
+      migrationsFrom('0019'),
+    );
     expect(await historical.query('SELECT node_id FROM mc.attention_items')).toEqual([
       { node_id: 'ask' },
     ]);
@@ -1860,16 +1771,9 @@ test('0019 fills a lap projected before it, and changes nothing run again', asyn
        VALUES ('archon-build-queue', 'paused', 'historical', $1)`,
       [JSON.stringify({ inputs: { number: '402' }, wait: WAIT })],
     );
-    expect(await runMigrations({ files: migrationFiles, db: historical })).toEqual([
-      '0019_attention_items.sql',
-      '0019_queue_laps.sql',
-      '0019_structured_output_string.sql',
-      '0020_queue_step_events.sql',
-      '0021_split_step_events.sql',
-      '0022_queue_versions.sql',
-      '0024_queue_app_check_lines.sql',
-      '0025_queue_app_check_sealed.sql',
-    ]);
+    expect(await runMigrations({ files: migrationFiles, db: historical })).toEqual(
+      migrationsFrom('0019'),
+    );
     const lap = () => historical.query('SELECT issue_number, attention_open FROM mc.laps');
     expect(await lap()).toEqual([{ issue_number: 402, attention_open: true }]);
     const migrated = await snapshot(historical);
@@ -1907,11 +1811,9 @@ test('0022 writes the versions build-queue runs already have, and changes nothin
     const versions = () => historical.query('SELECT digest, first_run_at FROM mc.versions');
     expect(await versions()).toEqual([{ digest: 'sha256:loop', first_run_at: NOW }]);
 
-    expect(await runMigrations({ files: migrationFiles, db: historical })).toEqual([
-      '0022_queue_versions.sql',
-      '0024_queue_app_check_lines.sql',
-      '0025_queue_app_check_sealed.sql',
-    ]);
+    expect(await runMigrations({ files: migrationFiles, db: historical })).toEqual(
+      migrationsFrom('0022'),
+    );
     expect(
       (await versions()).sort((a, b) => String(a.digest).localeCompare(String(b.digest))),
     ).toEqual([
@@ -2021,6 +1923,54 @@ test('a holdout workflow’s steps keep status and timing but no output, route o
     ).toEqual([{ route: null, outcome: null, reason: null }]);
   }
   expect(await projectionErrors()).toEqual([]);
+});
+
+test('the architecture diff reports a step whose only change is the workflow it runs', async () => {
+  const diff = queries.find(([name]) => name === 'arch-diff')?.[1] as string;
+  const before = new Date('2026-10-01T00:00:00Z');
+  const after = new Date('2026-10-10T00:00:00Z');
+  const versions = [
+    { digest: 'sha256:aaaa', archon: 'a1', pinnedAt: before, child: 'c3c3' },
+    { digest: 'sha256:bbbb', archon: 'a2', pinnedAt: after, child: '9a9a' },
+  ];
+  await db.query('TRUNCATE mc.arch_versions, mc.arch_steps');
+  for (const v of versions) {
+    const ranAt = new Date(v.pinnedAt.getTime() + 3_600_000);
+    await db.query(
+      `INSERT INTO mc.pins (sha, archon_sha, reason, committed_at) VALUES ($1, $1, 'r', $2)`,
+      [v.archon, v.pinnedAt],
+    );
+    await db.query(
+      `INSERT INTO mc.arch_versions (archon_sha, factory_sha, parsed_at) VALUES ($1, 'f1', $2)`,
+      [v.archon, v.pinnedAt],
+    );
+    await db.query(
+      `INSERT INTO mc.laps (run_id, factory, workflow_name, status, digest, started_at)
+       VALUES (gen_random_uuid(), 'mission-control', 'archon-loop', 'completed', $1, $2)`,
+      [v.digest, ranAt],
+    );
+    for (const [path, child] of [
+      ['judge', v.child],
+      ['other', 'same'],
+    ]) {
+      await db.query(
+        `INSERT INTO mc.arch_steps (archon_sha, factory_sha, workflow, path, position, step_id, kind, child_workflow, defined_in, file)
+         VALUES ($1, 'f1', 'calibrate', $2, 0, $2, 'workflow', $3, 'calibrate', 'calibrate.yaml')`,
+        [v.archon, path, child],
+      );
+    }
+  }
+
+  const rows = await db.query(diff, ['mission-control']);
+  const entries = (digest: string) =>
+    new Map(
+      ((rows.find((r) => r.digest === digest && r.kind === 'step')?.entries ?? []) as string[]).map(
+        (e) => e.split('\t'),
+      ) as [string, string][],
+    );
+  const [old, next] = [entries('sha256:aaaa'), entries('sha256:bbbb')];
+  expect(next.get('judge')).not.toBe(old.get('judge'));
+  expect(next.get('other')).toBe(old.get('other'));
 });
 
 async function appCheckRun(

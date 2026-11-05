@@ -273,22 +273,28 @@ export const levelsOf = (map: FactoryMap): MapView[] => [map, ...Object.values(m
 /** Every card of the map, at every level. */
 export const allCards = (map: FactoryMap): Card[] => levelsOf(map).flatMap((level) => level.cards);
 
-/** The card, at any level, whose `opens` names `viewId`. */
-export const openerOf = (map: FactoryMap, viewId: string): Card | undefined =>
-  allCards(map).find((card) => card.opens === viewId);
+/**
+ * The card whose `opens` names `viewId`: the first in document order, which is the one the view
+ * hangs off. A view may also be opened from a card deeper in the map (the Deliver view's Review
+ * card opens the Review view); `inLevel` picks that card.
+ */
+export const openerOf = (map: FactoryMap, viewId: string, inLevel?: MapView): Card | undefined =>
+  (inLevel?.cards ?? allCards(map)).find((card) => card.opens === viewId);
 
 /**
  * The view ids from the root down to the view `id` names, through the card that opens each; the
- * root's `[]` for no id, an unknown one, or a chain that never reaches the root.
+ * root's `[]` for no id, an unknown one, or a chain that never reaches the root. `from` names the
+ * view the viewer opened `id` from when a card there opens it too: the path then runs through it.
  */
-export function viewPath(map: FactoryMap, id: string | null): string[] {
+export function viewPath(map: FactoryMap, id: string | null, from?: string | null): string[] {
   const path: string[] = [];
   let at = id;
   for (let hops = 0; at && hops <= Object.keys(map.views ?? {}).length; hops++) {
     if (map.views?.[at] === undefined) return [];
     path.unshift(at);
-    const opener = openerOf(map, at);
-    if (opener === undefined) return [];
+    const via = hops === 0 && from ? map.views[from] : undefined;
+    const opener = openerOf(map, at, via);
+    if (opener === undefined) return hops === 0 && via !== undefined ? viewPath(map, id) : [];
     const parent = Object.entries(map.views).find(([, v]) => v.cards.includes(opener))?.[0];
     if (parent === undefined) return path;
     at = parent;
@@ -299,12 +305,28 @@ export function viewPath(map: FactoryMap, id: string | null): string[] {
 /** The address parameter that names the open view. */
 export const VIEW_PARAM = 'view';
 
-/** `prev` with `view` set to the deepest view of `path`, or removed for the root. */
-export function viewSearch(prev: URLSearchParams, path: readonly string[]): URLSearchParams {
+/** The address parameter naming the view a shared view was opened from. */
+export const FROM_PARAM = 'from';
+
+/**
+ * `prev` with `view` set to the deepest view of `path`, or removed for the root. A view reached
+ * other than through its first opener also records the view above it in `from`.
+ */
+export function viewSearch(
+  map: FactoryMap,
+  prev: URLSearchParams,
+  path: readonly string[],
+): URLSearchParams {
   const next = new URLSearchParams(prev);
+  next.delete(FROM_PARAM);
   const view = path.at(-1);
-  if (view === undefined) next.delete(VIEW_PARAM);
-  else next.set(VIEW_PARAM, view);
+  if (view === undefined) {
+    next.delete(VIEW_PARAM);
+    return next;
+  }
+  next.set(VIEW_PARAM, view);
+  const above = path.at(-2);
+  if (above !== undefined && viewPath(map, view).at(-2) !== above) next.set(FROM_PARAM, above);
   return next;
 }
 
