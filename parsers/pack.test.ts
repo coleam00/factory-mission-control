@@ -3,7 +3,7 @@ import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } f
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { archRows } from '../scripts/arch-parse';
-import { parsePack, type Step, type Workflow } from './pack';
+import { parsePack, parseVersion, type Step, type Workflow } from './pack';
 
 const repoRoot = resolve(import.meta.dir, '..');
 const packDir = join(repoRoot, 'fixtures', 'pack', 'sdlc');
@@ -257,5 +257,32 @@ describe('sub-workflow nodes', () => {
     const judge = step(metrics?.steps ?? [], 'judge');
     expect(judge.kind).toBe('workflow');
     expect(judge.model).toBeNull();
+  });
+});
+
+describe('a version holds the loop pack and the factory package', () => {
+  const queueDir = join(repoRoot, 'fixtures', 'pack', 'queue');
+  const version = parseVersion(packDir, join(queueDir, 'factory'), templateDir);
+  const commandOf = (name: string, id: string) =>
+    step(version.workflows.find((w) => w.name === name)?.steps ?? [], id).commandFile;
+
+  test('each manager keeps its own prompt, and no stored path is shared', () => {
+    expect(commandOf('archon-manager', 'manage')).toBe('manager/commands/manage.md');
+    expect(commandOf('factory-manager', 'manage')).toBe(
+      '.archon/workflows/factory/manager/commands/manage.md',
+    );
+    expect(commandOf('factory-app-check', 'check')).toBe(
+      '.archon/workflows/factory/app-check/commands/check.md',
+    );
+    const paths = [...version.commands, ...version.sharedDocs, ...version.scripts].map(
+      (f) => f.path,
+    );
+    expect(new Set(paths).size).toBe(paths.length);
+  });
+
+  test('records the full commit the package names', () => {
+    const recorded = readFileSync(join(queueDir, 'FACTORY_COMMIT'), 'utf8').trim();
+    expect(recorded).toHaveLength(40);
+    expect(version.packageCommit).toBe(recorded);
   });
 });

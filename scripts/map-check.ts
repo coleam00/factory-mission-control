@@ -18,7 +18,7 @@ import {
   screenOf,
   viewPath,
 } from '../app/map/factory-map';
-import { type PackVersion, parsePack, type Step } from '../parsers/pack';
+import { type PackVersion, parsePack, parseVersion, type Step } from '../parsers/pack';
 import { failing, type Main, noArguments, runCli } from './lib/cli';
 
 const USAGE = 'usage: bun run map:check';
@@ -269,17 +269,7 @@ export function mapCheck(map: FactoryMap, packs: Record<Pack, PackVersion>): str
 
 /** The queue pack and the factory package, as one pack: Archon's `sdlc` workflows and the factory's own. */
 export function parseQueuePack(root: string, templateDir: string): PackVersion {
-  const sdlc = parsePack(join(root, 'sdlc'), templateDir);
-  const factory = parsePack(join(root, 'factory'), templateDir);
-  const names = new Set(sdlc.workflows.map((w) => w.name));
-  const twice = factory.workflows.find((w) => names.has(w.name));
-  if (twice) throw new Error(`two workflows are named ${twice.name}`);
-  return {
-    ...sdlc,
-    workflows: [...sdlc.workflows, ...factory.workflows],
-    commands: [...sdlc.commands, ...factory.commands],
-    scripts: [...sdlc.scripts, ...factory.scripts],
-  };
+  return parseVersion(join(root, 'sdlc'), join(root, 'factory'), templateDir);
 }
 
 export const main: Main = async (argv, deps) =>
