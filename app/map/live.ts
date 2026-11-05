@@ -35,8 +35,8 @@ import {
   cardChain,
   cardForStep,
   type FactoryMap,
-  levelsOf,
   type List,
+  levelsOf,
   stepPath,
 } from './factory-map';
 
