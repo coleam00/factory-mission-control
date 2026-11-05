@@ -63,14 +63,15 @@ interface Version {
   factory_sha: string;
 }
 
-/** The architecture key of the seed's current version, as the step queries choose it. */
+/**
+ * The architecture key of the seed's current version, as the step queries choose it for
+ * mission-control, a factory on the queues (#435): the architecture parsed last.
+ */
 async function currentVersion(db: Db): Promise<Version> {
   const [version] = await db.query(
-    `SELECT a.archon_sha, a.factory_sha FROM mc.arch_versions a
-       JOIN mc.pins p ON p.archon_sha = a.archon_sha
-      ORDER BY p.committed_at DESC, a.parsed_at DESC LIMIT 1`,
+    'SELECT a.archon_sha, a.factory_sha FROM mc.arch_versions a ORDER BY a.parsed_at DESC LIMIT 1',
   );
-  if (!version) throw new Error('the check branch has no pin with architecture rows');
+  if (!version) throw new Error('the check branch has no architecture rows');
   return version as unknown as Version;
 }
 

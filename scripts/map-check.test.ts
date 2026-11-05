@@ -2,7 +2,13 @@ import { afterEach, describe, expect, test } from 'bun:test';
 import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { type Card, FACTORY_MAP, type FactoryMap, type MapView } from '../app/map/factory-map';
+import {
+  type Card,
+  FACTORY_MAP,
+  type FactoryMap,
+  type MapView,
+  type Point,
+} from '../app/map/factory-map';
 import { parsePack } from '../parsers/pack';
 import { REPO_ROOT } from './lib/cli';
 import { mapCheck, parseQueuePack } from './map-check';
@@ -438,6 +444,74 @@ describe('map:check', () => {
       },
     };
     expect(check(map)).toEqual(['Review counts as nowhere, which is no card']);
+  });
+
+  describe('Deliver view card shapes', () => {
+    const deliver = FACTORY_MAP.views?.['build/deliver'] as MapView;
+    const dRev = deliver.cards.find((c) => c.id === 'd-rev') as Card;
+    const withDeliver = (cards: Card[]): FactoryMap => ({
+      ...FACTORY_MAP,
+      views: { ...FACTORY_MAP.views, 'build/deliver': { ...deliver, cards } },
+    });
+    const replacingReview = (change: Partial<Card>) =>
+      withDeliver(deliver.cards.map((c) => (c.id === 'd-rev' ? { ...c, ...change } : c)));
+
+    test('a misspelled card key fails naming it', () => {
+      const map = withDeliver(
+        deliver.cards.map(({ countsAs, ...c }) =>
+          countsAs === undefined ? c : ({ ...c, countAs: countsAs } as Card),
+        ),
+      );
+      expect(check(map)).toEqual(['Review has key "countAs", which the map does not read']);
+    });
+
+    test('a card counting as itself fails', () => {
+      expect(check(replacingReview({ countsAs: 'd-rev' }))).toEqual(['Review counts as itself']);
+    });
+
+    test('a card counting as another alias fails', () => {
+      const map = withDeliver([...deliver.cards, { ...dRev, id: 'd-rev-2', countsAs: 'd-rev' }]);
+      expect(check(map)).toContain('Review counts as d-rev, which counts as review');
+    });
+
+    test('a card counting as another while covering steps fails', () => {
+      const impl = deliver.cards.find((c) => c.id === 'd-impl') as Card;
+      expect(check(replacingReview({ covers: impl.covers }))).toContain(
+        'Review counts as review but covers steps of its own',
+      );
+    });
+  });
+
+  describe('routed lines', () => {
+    test('a card moved off its routes fails naming each line', () => {
+      const map = {
+        ...FACTORY_MAP,
+        cards: FACTORY_MAP.cards.map((c) => (c.id === 'review' ? { ...c, y: c.y + 10 } : c)),
+      };
+      expect(check(map)).toEqual([
+        'line review to build starts at 1176,542, off review',
+        'line review to disc starts at 1176,754, off review',
+      ]);
+    });
+
+    test('an arrowless join ending off the line it joins fails', () => {
+      const map = {
+        ...FACTORY_MAP,
+        lines: FACTORY_MAP.lines.map((l) =>
+          l.from === 'app' && l.to === 'build'
+            ? {
+                ...l,
+                route: [
+                  [1436, 542],
+                  [1436, 517],
+                  [1176, 500],
+                ] as Point[],
+              }
+            : l,
+        ),
+      };
+      expect(check(map)).toEqual(['line app to build ends at 1176,500, off build']);
+    });
   });
 
   test('a view two cards open fails naming both', () => {

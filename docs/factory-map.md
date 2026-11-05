@@ -70,7 +70,16 @@ of the view, and no card of the view covers a step, or a workflow, the opening c
 view covers only the steps its opening card has (Deliver's view never sees the review rounds,
 which Review has at the root), so an entry such as `ship/deliver` still counts the steps under
 it that belong to the opener. The check also fails on an `opens` naming no view, a view opened by
-no card or by two, a card id used twice, an `upTo` naming no card of the level above, and a `countsAs` naming no card.
+no card or by two, a card id used twice, and an `upTo` naming no card of the level above. A
+`countsAs` fails when it names no card, the card itself, or a card that itself counts as another,
+and when its card covers steps of its own, so a lap counts once on each card that shows it.
+
+`map:check` also fails on any key of `factory-map.json` that the map's types do not declare (a
+misspelled `countsAs` would otherwise be dropped); the key lists in `scripts/map-check.ts` follow
+the interfaces of `factory-map.ts`, and the compiler fails when they drift. A routed line's first
+point must lie on an edge of its `from` card and its last on an edge of its `to` card, on the dashed
+group's edge when that card sits inside the group, or, for a line with `"arrow": false`, on another
+line into the same card. Moving a card or changing `cardSize` without moving the routes fails.
 
 A question card's `asks` is checked against the queue pack: it is `{"rest": true}` (on one card
 per level at most) or a `label` that some wait of the pack declares, with an optional `value` that
@@ -197,7 +206,7 @@ type scale. It adds three live queries to the home map's: `attention-items`, and
 `health-runs` and `health-steps`; each is a live query, none polls.
 
 - A question card counts the open Archon attention items its `asks` names, by their labels:
-  `stage: archon-triage` (a stopped triage, which intake runs) to Work item is unclear, `build:` to
+  `stage: archon-triage` (a stopped triage) to Work item is unclear, `build:` to
   Build is stuck, `merge:` to Risky merge, `discoveries:` to Is this a real problem?. An item no
   card names counts on the Manager card. A failed query shows `? waiting`, never a count.
 - The Manager's Right now lists every open question with its recommended choice, then the
