@@ -26,6 +26,7 @@ const lap: OneLapRow = {
     { line: 'H2', action: 'blocks' },
     { line: 'H9', action: 'issue' },
   ],
+  hidden_lines: [],
   gate_status: null,
   gate_outcome: null,
   gate_reason: null,

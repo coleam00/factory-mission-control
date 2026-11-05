@@ -137,6 +137,7 @@ const lap = (over: Partial<OneLapRow>): OneLapRow => ({
   review_outcome: null,
   review_delivers: null,
   dispositions: null,
+  hidden_lines: [],
   gate_status: null,
   gate_outcome: null,
   gate_reason: null,

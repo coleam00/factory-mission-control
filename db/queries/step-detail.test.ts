@@ -117,6 +117,9 @@ ${'x'.repeat(5000)}`;
         chunk: 'manager judge file',
       },
     ]);
+    await db.query(`INSERT INTO mc.arch_subagents (archon_sha, factory_sha, workflow, step_path,
+        name, description) VALUES ('a2', 'f', 'archon-manager', 'check-app', 'holdout-writer', 'x')`);
+    expect((await manager('step-subagents')).map((r) => r.name)).toEqual(['judge']);
     expect(await manager('step-scripts')).toEqual([
       { path: 'manager/scripts/check.ts', part: 0, chunk: 'manager script' },
     ]);
@@ -267,6 +270,28 @@ describe('step screens of included blocks on the seed', () => {
     db = await onTheSeed();
   }, 60_000);
   afterAll(() => db.close());
+
+  test('no agent the fence admits is listed on any step screen, at any pin', async () => {
+    const fenced = await db.query(
+      `SELECT DISTINCT a.workflow, a.step_path, a.name, pn.sha AS pin
+       FROM mc.arch_hooks h
+       CROSS JOIN LATERAL unnest(h.admitted_agents) AS f(agent)
+       JOIN mc.arch_subagents a ON a.archon_sha = h.archon_sha AND a.factory_sha = h.factory_sha
+         AND a.name = f.agent
+       JOIN mc.pins pn ON pn.archon_sha = a.archon_sha
+       WHERE h.path ILIKE '%fence%'`,
+    );
+    expect(fenced.length).toBeGreaterThan(0);
+    for (const f of fenced) {
+      const listed = await db.query(sql('step-subagents'), [
+        'mission-control',
+        f.workflow,
+        f.step_path,
+        f.pin,
+      ]);
+      expect([f.name, listed.some((r) => r.name === f.name)]).toEqual([f.name, false]);
+    }
+  });
 
   test("the step that writes the code has its own screen and prompt, and no alias under deliver's block", async () => {
     const steps = (await db.query(sql('step-detail'), [

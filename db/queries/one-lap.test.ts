@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { attemptsInOrder, type StepAttemptRow } from '../../app/lib/one-lap';
+import { attemptsInOrder, type StepAttemptRow, shownDispositions } from '../../app/lib/one-lap';
 import { seedLaps } from '../../scripts/fixture/seed-laps';
 import { eventData } from '../../scripts/fixture/write';
 import type { Db, Row } from '../../scripts/lib/db';
@@ -63,6 +63,7 @@ describe('one-lap on the seed', () => {
         review_outcome: 'merge',
         review_delivers: 'all',
         dispositions: [],
+        hidden_lines: ['H1'],
         gate_status: 'completed',
         gate_outcome: 'refused',
         gate_reason: 'it changes .claude/settings.json, which only the owner changes',
@@ -162,14 +163,14 @@ describe('one-lap on the seed', () => {
   test("a sent-back lap's review shows no disposition for the old holdout line it blocks on", async () => {
     const [sentBack] = await lap('one-lap', '5eed0001-0000-4000-8000-000000000001');
     expect(sentBack.review_outcome).toBe('sent-back');
-    expect(sentBack.dispositions).toEqual([]);
+    expect(shownDispositions(sentBack as never)).toEqual([]);
   });
 
   test("every seed lap's shown review disposition names exactly one shown app-check line", async () => {
     for (const { runId } of seedLaps(seed)) {
       const [header] = await lap('one-lap', runId);
       const lines = await lap('one-lap-checks', runId);
-      for (const { line } of (header?.dispositions ?? []) as { line: string | null }[]) {
+      for (const { line } of shownDispositions(header as never)) {
         if (line === null) continue;
         expect([runId, line, lines.filter((l) => l.line_id === line).length]).toEqual([
           runId,

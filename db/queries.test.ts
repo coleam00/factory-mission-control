@@ -177,6 +177,7 @@ const ROW_COLUMNS: Record<string, string[]> = {
     'review_outcome',
     'review_delivers',
     'dispositions',
+    'hidden_lines',
     'gate_status',
     'gate_outcome',
     'gate_reason',

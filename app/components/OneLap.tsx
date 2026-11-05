@@ -15,6 +15,7 @@ import {
   type OneLapRow,
   prNumber,
   pullUrl,
+  shownDispositions,
   LAP_OUTCOME_TOKEN,
   REVIEW_TOKEN,
   STEP_STATUS_TOKEN,
@@ -225,6 +226,7 @@ function Review({
   checks: readonly CheckLineRow[] | undefined;
 }): ReactElement {
   const outcome = lap.review_outcome;
+  const dispositions = shownDispositions(lap);
   return (
     <section
       data-review
@@ -247,11 +249,11 @@ function Review({
             </Field>
             <Field label="Delivers">{lap.review_delivers ?? <None />}</Field>
           </dl>
-          {(lap.dispositions ?? []).length === 0 ? (
+          {dispositions.length === 0 ? (
             <p className="text-sm text-text-secondary">No disposition.</p>
           ) : (
             <ol className="grid gap-1.5">
-              {(lap.dispositions ?? []).map((d, i) => {
+              {dispositions.map((d, i) => {
                 const action = actionText(d.action);
                 const answered = checks === undefined ? undefined : checkLineFor(d.line, checks);
                 return (
