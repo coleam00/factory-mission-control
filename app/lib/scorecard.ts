@@ -79,7 +79,8 @@ const isRun = (row: ScorecardRow): row is LapRow =>
   !isVersion(row) && !isMerge(row) && !isAttempt(row);
 
 /** PRD 4.2: the workflows whose runs can be laps. `scorecard.sql` keeps only the build-queue runs on a work item. */
-export const LAP_WORKFLOWS: readonly string[] = ['archon-loop', 'archon-build-queue'];
+const BUILD_QUEUE = 'archon-build-queue';
+export const LAP_WORKFLOWS: readonly string[] = ['archon-loop', BUILD_QUEUE];
 
 export interface Lap {
   id: string;
@@ -105,8 +106,6 @@ interface FinishedLap extends Lap {
 }
 
 const isFinished = (lap: Lap): lap is FinishedLap => lap.startedAt !== null && lap.endedAt !== null;
-
-const BUILD_QUEUE = 'archon-build-queue';
 
 const positive = (text: string | null): number | null => {
   const n = Number(text);
