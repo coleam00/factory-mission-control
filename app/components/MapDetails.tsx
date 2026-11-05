@@ -1,5 +1,6 @@
 import { type ReactElement, type ReactNode, useState } from 'react';
 import { Link } from 'react-router';
+import { relativeTime } from '../lib/format';
 import type { StepRow } from '../lib/step-detail';
 import { type Card, pinnedStepLinks, workflowFile } from '../map/factory-map';
 import type { CardLive, GateOutcome, LatestDeploy, MapItem, WorkOrderRow } from '../map/live';
@@ -98,7 +99,7 @@ function Deploy({ deploy }: { deploy: LatestDeploy | null }): ReactElement {
           {name}: the last deploy failed, health {deploy.health ?? 'not reported'}
         </>
       )}
-      {deploy.at === null ? null : <span className={CHIP}>{deploy.at.toLocaleString()}</span>}
+      {deploy.at === null ? null : <span className={CHIP}>{relativeTime(deploy.at.toISOString())}</span>}
     </li>
   );
 }
