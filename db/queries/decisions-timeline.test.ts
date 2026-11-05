@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { SEED_CODEBASE } from '../../scripts/fixture/seed';
+import { QUEUE_DIGEST, SEED_CODEBASE } from '../../scripts/fixture/seed';
 import { writeRow } from '../../scripts/fixture/write';
 import type { Db } from '../../scripts/lib/db';
 import { onTheSeed, queries } from './test-seed';
@@ -140,7 +140,10 @@ describe('decisions-timeline and improvements-ledger on the seed', () => {
     const counted = await db.query(
       `SELECT v.pin_sha, count(*)::int AS laps FROM mc.laps l
        JOIN mc.versions v ON v.factory = l.factory AND v.digest = l.digest
-       WHERE l.factory = $1 AND l.workflow_name = 'archon-loop' GROUP BY v.pin_sha`,
+       WHERE l.factory = $1 AND (l.workflow_name = 'archon-loop' OR l.workflow_name = 'archon-build-queue'
+         AND EXISTS (SELECT 1 FROM mc.lap_steps f WHERE f.run_id = l.run_id AND f.step_id = 'facts'
+           AND f.output -> 'item' ->> 'number' IS NOT NULL))
+       GROUP BY v.pin_sha`,
       ['mission-control'],
     );
     const rows = await ledgerRows();
@@ -149,6 +152,42 @@ describe('decisions-timeline and improvements-ledger on the seed', () => {
     }
     expect(await byPin('8e3e1cef')).toMatchObject({ verdict: 'helped' });
     expect(await byPin('5ffd60c6')).toMatchObject({ verdict: null });
+  });
+
+  test('the ledger counts a queue-only version’s build-queue runs that took an item, and no idle run', async () => {
+    const queueLaps = async (tx: Pick<Db, 'query'>) => {
+      const [{ pin_sha }] = (await tx.query(
+        `SELECT pin_sha FROM mc.versions WHERE factory = 'queue-factory' AND digest = $1`,
+        [QUEUE_DIGEST],
+      )) as { pin_sha: string }[];
+      const rows = await tx.query(named('improvements-ledger'), ['queue-factory']);
+      return rows.find((r) => r.pin_sha === pin_sha)?.laps;
+    };
+    expect(await queueLaps(db)).toBe(4);
+
+    const rollback = new Error('rollback');
+    await db
+      .transaction(async (tx) => {
+        const [{ id }] = (await tx.query(
+          `INSERT INTO public.remote_agent_workflow_runs
+             (workflow_name, codebase_id, status, user_message, metadata, started_at)
+           SELECT 'archon-build-queue', c.id, 'completed', 'idle', $1::jsonb, now()
+           FROM public.remote_agent_codebases c WHERE c.name = 'coleam00/queue-factory'
+           RETURNING id`,
+          [JSON.stringify({ workflow_source: { digest: QUEUE_DIGEST } })],
+        )) as { id: string }[];
+        await tx.query(
+          `INSERT INTO public.remote_agent_workflow_events
+             (workflow_run_id, event_type, step_name, data)
+           VALUES ($1, 'node_completed', 'facts', $2)`,
+          [id, JSON.stringify({ structured_output: { path: 'idle', item: null } })],
+        );
+        expect(await queueLaps(tx)).toBe(4);
+        throw rollback;
+      })
+      .catch((error) => {
+        if (error !== rollback) throw error;
+      });
   });
 
   test('decisions are shared but lap counts are each factory’s own; a factory with no laps lists nothing', async () => {

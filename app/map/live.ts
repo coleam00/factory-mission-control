@@ -7,7 +7,15 @@
 import type { HealthWorkableRow } from '../lib/health';
 import type { OwnerQueueRow } from '../lib/owner-queue';
 import type { PanelState } from '../live/LivePanel';
-import { type Card, type Chip, cardForStep, type FactoryMap, stepPath } from './factory-map';
+import {
+  allCards,
+  type Card,
+  type Chip,
+  cardChain,
+  cardForStep,
+  type FactoryMap,
+  stepPath,
+} from './factory-map';
 
 /** One row of `db/queries/home-map.sql`. */
 export interface HomeMapRow {
@@ -149,12 +157,14 @@ export const onQueues = (map: readonly HomeMapRow[]): boolean =>
 export function lapCard(
   factoryMap: FactoryMap,
   row: HomeMapRow,
-): { card: Card; step: string } | undefined {
+): { card: Card; step: string; run: string; workflow: string } | undefined {
   if (row.kind !== 'lap' || row.run_id === null || row.workflow === null) return undefined;
   const step = deepestStep(row.steps);
   if (step === undefined) return undefined;
   const card = cardForStep(factoryMap, row.workflow, stepPath(step));
-  return card === undefined ? undefined : { card, step: stepPath(step) };
+  return card === undefined
+    ? undefined
+    : { card, step: stepPath(step), run: row.run_id, workflow: row.workflow };
 }
 
 /** Open Archon attention items: paused runs waiting on a person, named by their issue when they have one. */
@@ -234,26 +244,31 @@ function chipItems(
 }
 
 /**
- * Each card's live state: the laps of the factory on a step it covers, each counted once on the
- * card covering its deepest running step, and the items of each chip the card carries.
+ * Each card's live state: the laps of the factory on a step it covers, each counted once per level
+ * on the card covering its deepest running step there (Build at the root, Deliver in its view),
+ * and the items of each chip the card carries.
  */
 export function cardLive(
   factoryMap: FactoryMap,
   sources: MapSources,
   now: Date,
 ): Map<string, CardLive> {
-  const live = new Map(factoryMap.cards.map((card): [string, CardLive] => [card.id, { here: [] }]));
+  const cards = allCards(factoryMap);
+  const live = new Map(cards.map((card): [string, CardLive] => [card.id, { here: [] }]));
   for (const row of sources.map) {
     const placed = lapCard(factoryMap, row);
-    if (placed === undefined || row.run_id === null) continue;
-    live.get(placed.card.id)?.here.push({
-      run: row.run_id,
+    if (placed === undefined) continue;
+    const lap: MapLap = {
+      run: placed.run,
       step: placed.step,
       issue: row.number === null ? null : { number: row.number, title: row.title, url: row.url },
-    });
+    };
+    for (const card of cardChain(factoryMap, placed.workflow, placed.step)) {
+      live.get(card.id)?.here.push(lap);
+    }
   }
   const items = chipItems(sources, now);
-  for (const card of factoryMap.cards) {
+  for (const card of cards) {
     const entry = live.get(card.id) as CardLive;
     entry.here.sort(
       (a, b) => (a.issue?.number ?? 0) - (b.issue?.number ?? 0) || a.run.localeCompare(b.run),

@@ -1,15 +1,15 @@
-import { afterAll, beforeAll, beforeEach, expect, test } from 'bun:test';
-import { FACTORY_MAP } from '../app/map/factory-map';
-import { holdoutId } from '../parsers/metrics';
-import { eventData, structuredOutputFor } from '../scripts/fixture/write';
-import type { Db, Row } from '../scripts/lib/db';
-import { runMigrations } from '../scripts/migrate';
-import { archonDb, migrationFiles, snapshot } from './test-db';
+import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
+import { FACTORY_MAP } from "../app/map/factory-map";
+import { holdoutId } from "../parsers/metrics";
+import { eventData, structuredOutputFor } from "../scripts/fixture/write";
+import type { Db, Row } from "../scripts/lib/db";
+import { runMigrations } from "../scripts/migrate";
+import { archonDb, migrationFiles, snapshot } from "./test-db";
 
-const NOW = new Date('2026-10-25T12:00:00Z');
-const DIGEST = `sha256:${'ab'.repeat(32)}`;
-const MARKER = 'HOLDOUT-TEXT-MARKER';
-const REVIEWED = structuredOutputFor('review') as { sha: string };
+const NOW = new Date("2026-10-25T12:00:00Z");
+const DIGEST = `sha256:${"ab".repeat(32)}`;
+const MARKER = "HOLDOUT-TEXT-MARKER";
+const REVIEWED = structuredOutputFor("review") as { sha: string };
 
 let db: Db;
 let runId: string;
@@ -37,7 +37,11 @@ async function newRun(codebaseId: string | null = null): Promise<string> {
   return String(row?.id);
 }
 
-function insertEvent(eventType: string, step: string, data: unknown): Promise<Row[]> {
+function insertEvent(
+  eventType: string,
+  step: string,
+  data: unknown,
+): Promise<Row[]> {
   return db.query(
     `INSERT INTO public.remote_agent_workflow_events (workflow_run_id, event_type, step_name, data)
      VALUES ($1, $2, $3, $4) RETURNING id`,
@@ -45,14 +49,16 @@ function insertEvent(eventType: string, step: string, data: unknown): Promise<Ro
   );
 }
 
-const stepEvent = (step: string, event: 'node_started' | 'node_completed' | 'node_failed') =>
-  insertEvent(event, step, eventData(step, event, NOW));
+const stepEvent = (
+  step: string,
+  event: "node_started" | "node_completed" | "node_failed",
+) => insertEvent(event, step, eventData(step, event, NOW));
 
 /** Projects every event again under its own id, in Archon's order, as `reconcile:laps` does. */
 const replayEvents = () =>
   db.transaction(async (tx) => {
     await tx.query(
-      'CREATE TEMP TABLE replayed_events (LIKE public.remote_agent_workflow_events) ON COMMIT DROP',
+      "CREATE TEMP TABLE replayed_events (LIKE public.remote_agent_workflow_events) ON COMMIT DROP",
       [],
     );
     await tx.query(
@@ -75,7 +81,9 @@ async function dashboardCounts(): Promise<Record<string, number>> {
   );
   const counts: Record<string, number> = {};
   for (const { table_name } of tables) {
-    const [row] = await db.query(`SELECT count(*)::int AS n FROM mc.${table_name}`);
+    const [row] = await db.query(
+      `SELECT count(*)::int AS n FROM mc.${table_name}`,
+    );
     counts[String(table_name)] = Number(row?.n);
   }
   return counts;
@@ -83,7 +91,8 @@ async function dashboardCounts(): Promise<Record<string, number>> {
 
 /** How many values in every mc text, json and array column contain the marker. */
 async function markerCount(): Promise<number> {
-  const columns = await db.query(`SELECT table_name, column_name FROM information_schema.columns
+  const columns =
+    await db.query(`SELECT table_name, column_name FROM information_schema.columns
     WHERE table_schema = 'mc'
       AND data_type IN ('text', 'character varying', 'jsonb', 'json', 'ARRAY')`);
   expect(columns.length).toBeGreaterThan(0);
@@ -99,7 +108,9 @@ async function markerCount(): Promise<number> {
 }
 
 async function projectionErrors(): Promise<Row[]> {
-  return db.query('SELECT source, run_id, event_id, sqlstate, message FROM mc.projection_errors');
+  return db.query(
+    "SELECT source, run_id, event_id, sqlstate, message FROM mc.projection_errors",
+  );
 }
 
 const projectionDefinitions = (database: Db) =>
@@ -109,102 +120,120 @@ const projectionDefinitions = (database: Db) =>
      'mc.project_step_event()'::regprocedure) ORDER BY proname`,
   );
 
-test.each(['archon-manager', 'archon-holdouts', 'archon-backlog', 'fence-proof'])(
-  '%s events are excluded before parsing payloads or projecting steps, attempts and check lines',
+test.each([
+  "archon-manager",
+  "archon-holdouts",
+  "archon-backlog",
+  "fence-proof",
+])(
+  "%s events are excluded before parsing payloads or projecting steps, attempts and check lines",
   async (workflow) => {
     await db.query(
-      'UPDATE public.remote_agent_workflow_runs SET workflow_name = $1 WHERE id = $2',
+      "UPDATE public.remote_agent_workflow_runs SET workflow_name = $1 WHERE id = $2",
       [workflow, runId],
     );
     const before = await dashboardCounts();
     const payloads = [
-      eventData('check-app', 'node_completed', NOW),
-      { structured_output: 'malformed' },
-      { timing: { startedAt: 'invalid' } },
-      { duration_ms: 'invalid' },
-      { cost_usd: 'invalid' },
+      eventData("check-app", "node_completed", NOW),
+      { structured_output: "malformed" },
+      { timing: { startedAt: "invalid" } },
+      { duration_ms: "invalid" },
+      { cost_usd: "invalid" },
     ];
-    for (const event of ['node_started', 'node_completed', 'node_failed', 'node_skipped']) {
+    for (const event of [
+      "node_started",
+      "node_completed",
+      "node_failed",
+      "node_skipped",
+    ]) {
       for (const data of payloads) {
-        await insertEvent(event, 'check-app', data);
-        if (event !== 'node_started') {
-          await db.query('SELECT mc.record_step_attempt(gen_random_uuid(), $1, $2, $3, $4)', [
-            runId,
-            event,
-            'check-app',
-            JSON.stringify(data),
-          ]);
+        await insertEvent(event, "check-app", data);
+        if (event !== "node_started") {
+          await db.query(
+            "SELECT mc.record_step_attempt(gen_random_uuid(), $1, $2, $3, $4)",
+            [runId, event, "check-app", JSON.stringify(data)],
+          );
         }
       }
     }
     expect(await dashboardCounts()).toEqual(before);
     expect(
-      await db.query('SELECT count(*)::int AS n FROM public.remote_agent_workflow_events'),
+      await db.query(
+        "SELECT count(*)::int AS n FROM public.remote_agent_workflow_events",
+      ),
     ).toEqual([{ n: 20 }]);
   },
 );
 
-test('an attempt failure is recorded without losing the source event or its step', async () => {
+test("an attempt failure is recorded without losing the source event or its step", async () => {
   const rolledBack = db.transaction(async (tx) => {
-    await tx.query('ALTER TABLE mc.lap_step_attempts ADD CONSTRAINT reject_attempt CHECK (false)');
+    await tx.query(
+      "ALTER TABLE mc.lap_step_attempts ADD CONSTRAINT reject_attempt CHECK (false)",
+    );
     const [event] = await tx.query(
       `INSERT INTO public.remote_agent_workflow_events (workflow_run_id, event_type, step_name, data)
        VALUES ($1, 'node_completed', 'review', '{}') RETURNING id`,
       [runId],
     );
-    expect(await tx.query('SELECT id FROM public.remote_agent_workflow_events')).toEqual([event]);
-    expect(await tx.query('SELECT step_id, status FROM mc.lap_steps')).toEqual([
-      { step_id: 'review', status: 'completed' },
+    expect(
+      await tx.query("SELECT id FROM public.remote_agent_workflow_events"),
+    ).toEqual([event]);
+    expect(await tx.query("SELECT step_id, status FROM mc.lap_steps")).toEqual([
+      { step_id: "review", status: "completed" },
     ]);
-    expect(await tx.query('SELECT * FROM mc.lap_step_attempts')).toEqual([]);
-    expect(await tx.query('SELECT source, event_id, sqlstate FROM mc.projection_errors')).toEqual([
+    expect(await tx.query("SELECT * FROM mc.lap_step_attempts")).toEqual([]);
+    expect(
+      await tx.query(
+        "SELECT source, event_id, sqlstate FROM mc.projection_errors",
+      ),
+    ).toEqual([
       {
-        source: 'mc_project_step_event',
+        source: "mc_project_step_event",
         event_id: event?.id,
-        sqlstate: '23514',
+        sqlstate: "23514",
       },
     ]);
-    throw new Error('rollback after attempt failure');
+    throw new Error("rollback after attempt failure");
   });
-  await expect(rolledBack).rejects.toThrow('rollback after attempt failure');
+  await expect(rolledBack).rejects.toThrow("rollback after attempt failure");
 });
 
-test('0010 undoes the replay errors of non-laps but keeps missing parents of eligible laps', async () => {
+test("0010 undoes the replay errors of non-laps but keeps missing parents of eligible laps", async () => {
   const historical = await archonDb();
   try {
     await runMigrations({
-      files: migrationFiles.filter((f) => f.name < '0006'),
+      files: migrationFiles.filter((f) => f.name < "0006"),
       db: historical,
     });
     for (const workflow of [
-      'archon-manager',
-      'archon-holdouts',
-      'archon-backlog',
-      'fence-proof',
-      'archon-loop',
+      "archon-manager",
+      "archon-holdouts",
+      "archon-backlog",
+      "fence-proof",
+      "archon-loop",
     ]) {
       const [run] = await historical.query(
         `INSERT INTO public.remote_agent_workflow_runs (workflow_name, user_message)
          VALUES ($1, 'historical') RETURNING id`,
         [workflow],
       );
-      for (const status of ['completed', 'failed', 'skipped']) {
+      for (const status of ["completed", "failed", "skipped"]) {
         await historical.query(
           `INSERT INTO public.remote_agent_workflow_events
              (workflow_run_id, event_type, step_name, data)
            VALUES ($1, $2, $3, '{}'), ($1, $2, $4, '{}')`,
           [run?.id, `node_${status}`, status, `missing-${status}`],
         );
-        if (workflow === 'archon-loop') {
+        if (workflow === "archon-loop") {
           await historical.query(
-            'INSERT INTO mc.lap_steps (run_id, step_id, status) VALUES ($1, $2, $2)',
+            "INSERT INTO mc.lap_steps (run_id, step_id, status) VALUES ($1, $2, $2)",
             [run?.id, status],
           );
         }
       }
     }
     await runMigrations({
-      files: migrationFiles.filter((f) => f.name < '0010'),
+      files: migrationFiles.filter((f) => f.name < "0010"),
       db: historical,
     });
     expect(
@@ -219,8 +248,8 @@ test('0010 undoes the replay errors of non-laps but keeps missing parents of eli
        JOIN public.remote_agent_workflow_runs r ON r.id = a.run_id ORDER BY a.step_id`,
       ),
     ).toEqual(
-      ['completed', 'failed', 'skipped'].map((status) => ({
-        workflow_name: 'archon-loop',
+      ["completed", "failed", "skipped"].map((status) => ({
+        workflow_name: "archon-loop",
         step_id: status,
         status,
       })),
@@ -232,11 +261,11 @@ test('0010 undoes the replay errors of non-laps but keeps missing parents of eli
        JOIN public.remote_agent_workflow_events e ON e.id = p.event_id ORDER BY e.step_name`,
       ),
     ).toEqual(
-      ['completed', 'failed', 'skipped'].map((status) => ({
-        workflow_name: 'archon-loop',
+      ["completed", "failed", "skipped"].map((status) => ({
+        workflow_name: "archon-loop",
         step_name: `missing-${status}`,
-        source: '0007_step_attempts',
-        sqlstate: '23503',
+        source: "0007_step_attempts",
+        sqlstate: "23503",
       })),
     );
     await expect(
@@ -244,20 +273,20 @@ test('0010 undoes the replay errors of non-laps but keeps missing parents of eli
         `SELECT mc.record_step_attempt(gen_random_uuid(), '00000000-0000-0000-0000-000000000000',
         'node_completed', 'review', '{}')`,
       ),
-    ).rejects.toMatchObject({ code: '23503' });
+    ).rejects.toMatchObject({ code: "23503" });
   } finally {
     await historical.close();
   }
 });
 
-test('the eligibility upgrade keeps live history and installs the same functions as a fresh database', async () => {
+test("the eligibility upgrade keeps live history and installs the same functions as a fresh database", async () => {
   const upgraded = await archonDb();
   try {
     await runMigrations({
-      files: migrationFiles.filter((f) => f.name < '0010'),
+      files: migrationFiles.filter((f) => f.name < "0010"),
       db: upgraded,
     });
-    for (const workflow of ['archon-loop', 'archon-manager']) {
+    for (const workflow of ["archon-loop", "archon-manager"]) {
       await upgraded.query(
         `WITH r AS (
           INSERT INTO public.remote_agent_workflow_runs (workflow_name, user_message)
@@ -267,40 +296,51 @@ test('the eligibility upgrade keeps live history and installs the same functions
         [workflow],
       );
     }
-    expect(await upgraded.query('SELECT count(*)::int AS n FROM mc.lap_step_attempts')).toEqual([
-      { n: 2 },
-    ]);
-    expect(await upgraded.query('SELECT count(*)::int AS n FROM mc.projection_errors')).toEqual([
-      { n: 2 },
-    ]);
+    expect(
+      await upgraded.query(
+        "SELECT count(*)::int AS n FROM mc.lap_step_attempts",
+      ),
+    ).toEqual([{ n: 2 }]);
+    expect(
+      await upgraded.query(
+        "SELECT count(*)::int AS n FROM mc.projection_errors",
+      ),
+    ).toEqual([{ n: 2 }]);
     const before = await snapshot(upgraded);
     expect(
       await runMigrations({
-        files: migrationFiles.filter((f) => f.name < '0013'),
+        files: migrationFiles.filter((f) => f.name < "0013"),
         db: upgraded,
       }),
     ).toEqual([
-      '0010_step_attempt_eligibility.sql',
-      '0011_pin_full_archon_sha.sql',
-      '0012_arch_text_lf.sql',
+      "0010_step_attempt_eligibility.sql",
+      "0011_pin_full_archon_sha.sql",
+      "0012_arch_text_lf.sql",
     ]);
     expect(await snapshot(upgraded)).toEqual(before);
-    expect(await runMigrations({ files: migrationFiles, db: upgraded })).toEqual([
-      '0013_step_attempt_identity.sql',
-      '0014_pre_existing_refs.sql',
-      '0015_step_attempt_usage.sql',
-      '0016_pin_reason_optional.sql',
-      '0017_app_check_line_ids.sql',
-      '0018_issue_label_time.sql',
-      '0019_attention_items.sql',
-      '0019_queue_laps.sql',
-      '0019_structured_output_string.sql',
-      '0020_queue_step_events.sql',
-      '0021_split_step_events.sql',
-      '0022_arch_step_child_workflow.sql',
+    expect(
+      await runMigrations({ files: migrationFiles, db: upgraded }),
+    ).toEqual([
+      "0013_step_attempt_identity.sql",
+      "0014_pre_existing_refs.sql",
+      "0015_step_attempt_usage.sql",
+      "0016_pin_reason_optional.sql",
+      "0017_app_check_line_ids.sql",
+      "0018_issue_label_time.sql",
+      "0019_attention_items.sql",
+      "0019_queue_laps.sql",
+      "0019_structured_output_string.sql",
+      "0020_queue_step_events.sql",
+      "0021_split_step_events.sql",
+      "0022_queue_versions.sql",
+      "0023_arch_step_child_workflow.sql",
     ]);
-    expect(await projectionDefinitions(upgraded)).toEqual(await projectionDefinitions(db));
-    expect(await runMigrations({ files: migrationFiles, db: upgraded })).toEqual([]);
+    expect(await projectionDefinitions(upgraded)).toEqual(
+      await projectionDefinitions(db),
+    );
+    expect(
+      await runMigrations({ files: migrationFiles, db: upgraded }),
+    ).toEqual([]);
     const migrated = await snapshot(upgraded);
     await upgraded.query(
       `INSERT INTO public.remote_agent_workflow_events (workflow_run_id, event_type, step_name, data)
@@ -313,26 +353,27 @@ test('the eligibility upgrade keeps live history and installs the same functions
   }
 });
 
-test('0011 rewrites a short pin to the one full sha it prefixes, and clears ambiguous and unknown ones', async () => {
+test("0011 rewrites a short pin to the one full sha it prefixes, and clears ambiguous and unknown ones", async () => {
   const historical = await archonDb();
-  const full = `abcdef12${'0'.repeat(32)}`;
-  const twin = (last: string) => `12345678${'0'.repeat(31)}${last}`;
-  const pinShas = () => historical.query('SELECT sha, archon_sha FROM mc.pins ORDER BY sha');
+  const full = `abcdef12${"0".repeat(32)}`;
+  const twin = (last: string) => `12345678${"0".repeat(31)}${last}`;
+  const pinShas = () =>
+    historical.query("SELECT sha, archon_sha FROM mc.pins ORDER BY sha");
   try {
     await runMigrations({
-      files: migrationFiles.filter((f) => f.name < '0011'),
+      files: migrationFiles.filter((f) => f.name < "0011"),
       db: historical,
     });
     await historical.query(
       `INSERT INTO mc.arch_versions (archon_sha, factory_sha, parsed_at)
         VALUES ($1, 'f1', $4), ($1, 'f2', $4), ($2, 'f1', $4), ($3, 'f1', $4)`,
-      [full, twin('1'), twin('2'), NOW],
+      [full, twin("1"), twin("2"), NOW],
     );
     for (const [sha, archon] of [
-      ['p1', full.slice(0, 8)],
-      ['p2', '12345678'],
-      ['p3', 'deadbeef'],
-      ['p4', twin('1')],
+      ["p1", full.slice(0, 8)],
+      ["p2", "12345678"],
+      ["p3", "deadbeef"],
+      ["p4", twin("1")],
     ]) {
       await historical.query(
         `INSERT INTO mc.pins (sha, archon_sha, reason, committed_at) VALUES ($1, $2, 'r', $3)`,
@@ -340,38 +381,41 @@ test('0011 rewrites a short pin to the one full sha it prefixes, and clears ambi
       );
     }
 
-    expect(await runMigrations({ files: migrationFiles, db: historical })).toEqual([
-      '0011_pin_full_archon_sha.sql',
-      '0012_arch_text_lf.sql',
-      '0013_step_attempt_identity.sql',
-      '0014_pre_existing_refs.sql',
-      '0015_step_attempt_usage.sql',
-      '0016_pin_reason_optional.sql',
-      '0017_app_check_line_ids.sql',
-      '0018_issue_label_time.sql',
-      '0019_attention_items.sql',
-      '0019_queue_laps.sql',
-      '0019_structured_output_string.sql',
-      '0020_queue_step_events.sql',
-      '0021_split_step_events.sql',
-      '0022_arch_step_child_workflow.sql',
+    expect(
+      await runMigrations({ files: migrationFiles, db: historical }),
+    ).toEqual([
+      "0011_pin_full_archon_sha.sql",
+      "0012_arch_text_lf.sql",
+      "0013_step_attempt_identity.sql",
+      "0014_pre_existing_refs.sql",
+      "0015_step_attempt_usage.sql",
+      "0016_pin_reason_optional.sql",
+      "0017_app_check_line_ids.sql",
+      "0018_issue_label_time.sql",
+      "0019_attention_items.sql",
+      "0019_queue_laps.sql",
+      "0019_structured_output_string.sql",
+      "0020_queue_step_events.sql",
+      "0021_split_step_events.sql",
+      "0022_queue_versions.sql",
+      "0023_arch_step_child_workflow.sql",
     ]);
     const migrated = [
-      { sha: 'p1', archon_sha: full },
-      { sha: 'p2', archon_sha: null },
-      { sha: 'p3', archon_sha: null },
-      { sha: 'p4', archon_sha: twin('1') },
+      { sha: "p1", archon_sha: full },
+      { sha: "p2", archon_sha: null },
+      { sha: "p3", archon_sha: null },
+      { sha: "p4", archon_sha: twin("1") },
     ];
     expect(await pinShas()).toEqual(migrated);
-    const [rewrite] = migrationFiles.filter((f) => f.name.startsWith('0011'));
-    await historical.query(rewrite?.sql ?? '');
+    const [rewrite] = migrationFiles.filter((f) => f.name.startsWith("0011"));
+    await historical.query(rewrite?.sql ?? "");
     expect(await pinShas()).toEqual(migrated);
   } finally {
     await historical.close();
   }
 });
 
-test('0012 rewrites CRLF to LF in stored architecture texts, and changes nothing run again', async () => {
+test("0012 rewrites CRLF to LF in stored architecture texts, and changes nothing run again", async () => {
   const historical = await archonDb();
   const texts = () =>
     historical.query(
@@ -383,10 +427,10 @@ test('0012 rewrites CRLF to LF in stored architecture texts, and changes nothing
     );
   try {
     await runMigrations({
-      files: migrationFiles.filter((f) => f.name < '0012'),
+      files: migrationFiles.filter((f) => f.name < "0012"),
       db: historical,
     });
-    const v = ['a1', 'f1'];
+    const v = ["a1", "f1"];
     await historical.query(
       `INSERT INTO mc.arch_versions (archon_sha, factory_sha, parsed_at) VALUES ($1, $2, $3)`,
       [...v, NOW],
@@ -414,43 +458,46 @@ test('0012 rewrites CRLF to LF in stored architecture texts, and changes nothing
       v,
     );
 
-    expect(await runMigrations({ files: migrationFiles, db: historical })).toEqual([
-      '0012_arch_text_lf.sql',
-      '0013_step_attempt_identity.sql',
-      '0014_pre_existing_refs.sql',
-      '0015_step_attempt_usage.sql',
-      '0016_pin_reason_optional.sql',
-      '0017_app_check_line_ids.sql',
-      '0018_issue_label_time.sql',
-      '0019_attention_items.sql',
-      '0019_queue_laps.sql',
-      '0019_structured_output_string.sql',
-      '0020_queue_step_events.sql',
-      '0021_split_step_events.sql',
-      '0022_arch_step_child_workflow.sql',
+    expect(
+      await runMigrations({ files: migrationFiles, db: historical }),
+    ).toEqual([
+      "0012_arch_text_lf.sql",
+      "0013_step_attempt_identity.sql",
+      "0014_pre_existing_refs.sql",
+      "0015_step_attempt_usage.sql",
+      "0016_pin_reason_optional.sql",
+      "0017_app_check_line_ids.sql",
+      "0018_issue_label_time.sql",
+      "0019_attention_items.sql",
+      "0019_queue_laps.sql",
+      "0019_structured_output_string.sql",
+      "0020_queue_step_events.sql",
+      "0021_split_step_events.sql",
+      "0022_queue_versions.sql",
+      "0023_arch_step_child_workflow.sql",
     ]);
     const migrated = [
-      { kind: 'hook', path: '.factory/hooks/gate.sh', text: 'exit 0\n' },
-      { kind: 'script', path: 'run.sh', text: '#!/bin/sh\necho hi\n' },
-      { kind: 'text', path: 'crlf.md', text: '# Plan\n\nDo it.\n' },
-      { kind: 'text', path: 'lf.md', text: '# Plan\n\nDo it.\n' },
-      { kind: 'text', path: 'lone-cr.md', text: 'a\rb\n' },
-      { kind: 'workflow', path: 'loop', text: 'name: loop\nnodes: []\n' },
+      { kind: "hook", path: ".factory/hooks/gate.sh", text: "exit 0\n" },
+      { kind: "script", path: "run.sh", text: "#!/bin/sh\necho hi\n" },
+      { kind: "text", path: "crlf.md", text: "# Plan\n\nDo it.\n" },
+      { kind: "text", path: "lf.md", text: "# Plan\n\nDo it.\n" },
+      { kind: "text", path: "lone-cr.md", text: "a\rb\n" },
+      { kind: "workflow", path: "loop", text: "name: loop\nnodes: []\n" },
     ];
     expect(await texts()).toEqual(migrated);
-    const [rewrite] = migrationFiles.filter((f) => f.name.startsWith('0012'));
-    await historical.query(rewrite?.sql ?? '');
+    const [rewrite] = migrationFiles.filter((f) => f.name.startsWith("0012"));
+    await historical.query(rewrite?.sql ?? "");
     expect(await texts()).toEqual(migrated);
   } finally {
     await historical.close();
   }
 });
 
-test('0013 gives back the runs of a step the old key merged, and changes nothing run again', async () => {
+test("0013 gives back the runs of a step the old key merged, and changes nothing run again", async () => {
   const historical = await archonDb();
   try {
     await runMigrations({
-      files: migrationFiles.filter((f) => f.name < '0013'),
+      files: migrationFiles.filter((f) => f.name < "0013"),
       db: historical,
     });
     const [run] = await historical.query(
@@ -468,87 +515,93 @@ test('0013 gives back the runs of a step the old key merged, and changes nothing
     };
     const timing = { timing: { startedAt: NOW.toISOString() } };
     const events = [
-      await finished('review', {
+      await finished("review", {
         ...timing,
         cost_usd: 1,
-        structured_output: { outcome: 'sent-back' },
+        structured_output: { outcome: "sent-back" },
       }),
-      await finished('review', {
+      await finished("review", {
         ...timing,
         cost_usd: 2,
-        structured_output: { outcome: 'merge' },
+        structured_output: { outcome: "merge" },
       }),
-      await finished('land', {
-        structured_output: { outcome: 'refused', reason: 'red' },
+      await finished("land", {
+        structured_output: { outcome: "refused", reason: "red" },
       }),
-      await finished('land', { structured_output: { outcome: 'merged' } }),
+      await finished("land", { structured_output: { outcome: "merged" } }),
     ];
     // An attempt only this constraint refuses: its step row stays and its error is recorded.
     await historical.query(
       `ALTER TABLE mc.lap_step_attempts ADD CONSTRAINT refuse_pick CHECK (step_id <> 'pick')`,
     );
-    const refused = await finished('pick', {});
+    const refused = await finished("pick", {});
     const attempts = () =>
       historical.query(
         `SELECT step_id, outcome, cost_usd FROM mc.lap_step_attempts ORDER BY step_id, cost_usd, outcome`,
       );
     expect(await attempts()).toEqual([
-      { step_id: 'land', outcome: 'merged', cost_usd: null },
-      { step_id: 'review', outcome: 'merge', cost_usd: '2' },
+      { step_id: "land", outcome: "merged", cost_usd: null },
+      { step_id: "review", outcome: "merge", cost_usd: "2" },
     ]);
-    const errors = () => historical.query('SELECT event_id, sqlstate FROM mc.projection_errors');
-    expect(await errors()).toEqual([{ event_id: refused, sqlstate: '23514' }]);
+    const errors = () =>
+      historical.query("SELECT event_id, sqlstate FROM mc.projection_errors");
+    expect(await errors()).toEqual([{ event_id: refused, sqlstate: "23514" }]);
 
-    expect(await runMigrations({ files: migrationFiles, db: historical })).toEqual([
-      '0013_step_attempt_identity.sql',
-      '0014_pre_existing_refs.sql',
-      '0015_step_attempt_usage.sql',
-      '0016_pin_reason_optional.sql',
-      '0017_app_check_line_ids.sql',
-      '0018_issue_label_time.sql',
-      '0019_attention_items.sql',
-      '0019_queue_laps.sql',
-      '0019_structured_output_string.sql',
-      '0020_queue_step_events.sql',
-      '0021_split_step_events.sql',
-      '0022_arch_step_child_workflow.sql',
+    expect(
+      await runMigrations({ files: migrationFiles, db: historical }),
+    ).toEqual([
+      "0013_step_attempt_identity.sql",
+      "0014_pre_existing_refs.sql",
+      "0015_step_attempt_usage.sql",
+      "0016_pin_reason_optional.sql",
+      "0017_app_check_line_ids.sql",
+      "0018_issue_label_time.sql",
+      "0019_attention_items.sql",
+      "0019_queue_laps.sql",
+      "0019_structured_output_string.sql",
+      "0020_queue_step_events.sql",
+      "0021_split_step_events.sql",
+      "0022_queue_versions.sql",
+      "0023_arch_step_child_workflow.sql",
     ]);
     expect(await attempts()).toEqual([
-      { step_id: 'land', outcome: 'merged', cost_usd: null },
-      { step_id: 'land', outcome: 'refused', cost_usd: null },
-      { step_id: 'review', outcome: 'sent-back', cost_usd: '1' },
-      { step_id: 'review', outcome: 'merge', cost_usd: '2' },
+      { step_id: "land", outcome: "merged", cost_usd: null },
+      { step_id: "land", outcome: "refused", cost_usd: null },
+      { step_id: "review", outcome: "sent-back", cost_usd: "1" },
+      { step_id: "review", outcome: "merge", cost_usd: "2" },
     ]);
     expect(
-      (await historical.query('SELECT event_id FROM mc.lap_step_attempts ORDER BY event_id')).map(
-        (row) => row.event_id,
-      ),
+      (
+        await historical.query(
+          "SELECT event_id FROM mc.lap_step_attempts ORDER BY event_id",
+        )
+      ).map((row) => row.event_id),
     ).toEqual(events.sort());
-    expect(await errors()).toEqual([{ event_id: refused, sqlstate: '23514' }]);
+    expect(await errors()).toEqual([{ event_id: refused, sqlstate: "23514" }]);
     const migrated = await snapshot(historical);
-    const [identity] = migrationFiles.filter((f) => f.name.startsWith('0013'));
-    await historical.query(identity?.sql ?? '');
+    const [identity] = migrationFiles.filter((f) => f.name.startsWith("0013"));
+    await historical.query(identity?.sql ?? "");
     expect(await snapshot(historical)).toEqual(migrated);
   } finally {
     await historical.close();
   }
 });
 
-test('a started then completed step is one completed row with the event’s timing and cost', async () => {
-  await stepEvent('review', 'node_started');
-  await stepEvent('review', 'node_completed');
+test("a started then completed step is one completed row with the event’s timing and cost", async () => {
+  await stepEvent("review", "node_started");
+  await stepEvent("review", "node_completed");
 
-  const completed = eventData('review', 'node_completed', NOW);
-  expect(await db.query('SELECT * FROM mc.lap_steps')).toEqual([
+  const completed = eventData("review", "node_completed", NOW);
+  expect(await db.query("SELECT * FROM mc.lap_steps")).toEqual([
     {
       run_id: runId,
-      step_id: 'review',
-      status: 'completed',
+      step_id: "review",
+      status: "completed",
       started_at: new Date(NOW.getTime() - 184_250),
       completed_at: NOW,
       duration_ms: 184_250,
-      provider: 'claude',
-      model: 'sonnet',
+      provider: "claude",
+      model: "sonnet",
       tokens_input: 48_210,
       tokens_output: 6_904,
       tokens_cache_read: 39_877,
@@ -556,10 +609,10 @@ test('a started then completed step is one completed row with the event’s timi
       cost_usd: String(completed.cost_usd),
       error: null,
       output: {
-        outcome: 'merge',
-        pr: '#29',
+        outcome: "merge",
+        pr: "#29",
         sha: REVIEWED.sha,
-        delivers: 'all',
+        delivers: "all",
         dispositions: [],
       },
     },
@@ -567,100 +620,120 @@ test('a started then completed step is one completed row with the event’s timi
   expect(await projectionErrors()).toEqual([]);
 });
 
-test('a failed step keeps its error and duration', async () => {
-  await stepEvent('pick', 'node_started');
-  await stepEvent('pick', 'node_failed');
+test("a failed step keeps its error and duration", async () => {
+  await stepEvent("pick", "node_started");
+  await stepEvent("pick", "node_failed");
   expect(
-    await db.query('SELECT status, duration_ms, error, cost_usd, output FROM mc.lap_steps'),
+    await db.query(
+      "SELECT status, duration_ms, error, cost_usd, output FROM mc.lap_steps",
+    ),
   ).toEqual([
     {
-      status: 'failed',
+      status: "failed",
       duration_ms: 18_400,
-      error: 'pick failed: fixture error',
+      error: "pick failed: fixture error",
       cost_usd: null,
       output: null,
     },
   ]);
 });
 
-test('a skipped step is a skipped row', async () => {
-  await insertEvent('node_skipped', 'land', { reason: 'when: false' });
-  expect(await db.query('SELECT step_id, status FROM mc.lap_steps')).toEqual([
-    { step_id: 'land', status: 'skipped' },
+test("a skipped step is a skipped row", async () => {
+  await insertEvent("node_skipped", "land", { reason: "when: false" });
+  expect(await db.query("SELECT step_id, status FROM mc.lap_steps")).toEqual([
+    { step_id: "land", status: "skipped" },
   ]);
 });
 
-test('the model is the one the provider resolved when Archon reports it', async () => {
-  await insertEvent('node_completed', 'verify', {
-    model: 'haiku',
-    model_usage: { requested: 'haiku', resolved: 'claude-haiku-4-5-20251001' },
+test("the model is the one the provider resolved when Archon reports it", async () => {
+  await insertEvent("node_completed", "verify", {
+    model: "haiku",
+    model_usage: { requested: "haiku", resolved: "claude-haiku-4-5-20251001" },
     timing: { startedAt: NOW.toISOString(), durationMs: 30_599 },
   });
-  expect(await db.query('SELECT model, duration_ms FROM mc.lap_steps')).toEqual([
-    { model: 'claude-haiku-4-5-20251001', duration_ms: 30_599 },
-  ]);
+  expect(await db.query("SELECT model, duration_ms FROM mc.lap_steps")).toEqual(
+    [{ model: "claude-haiku-4-5-20251001", duration_ms: 30_599 }],
+  );
 });
 
-test('a provider_event changes no dashboard row and never fires the trigger', async () => {
+test("a provider_event changes no dashboard row and never fires the trigger", async () => {
   const before = await dashboardCounts();
-  await insertEvent('provider_event', 'review', {
-    type: 'assistant',
-    text: 'thinking',
+  await insertEvent("provider_event", "review", {
+    type: "assistant",
+    text: "thinking",
   });
   expect(await dashboardCounts()).toEqual(before);
 
-  const [trigger] = await db.query(`SELECT pg_get_triggerdef(oid) AS def FROM pg_trigger
+  const [trigger] =
+    await db.query(`SELECT pg_get_triggerdef(oid) AS def FROM pg_trigger
     WHERE tgname = 'mc_project_step_event'`);
-  const when = String(trigger?.def).match(/ WHEN \((.*)\) EXECUTE /)?.[1] ?? '';
+  const when = String(trigger?.def).match(/ WHEN \((.*)\) EXECUTE /)?.[1] ?? "";
   const types = [...when.matchAll(/'([a-z_]+)'/g)].map((match) => match[1]);
-  expect(types.sort()).toEqual(['node_completed', 'node_failed', 'node_skipped', 'node_started']);
+  expect(types.sort()).toEqual([
+    "node_completed",
+    "node_failed",
+    "node_skipped",
+    "node_started",
+  ]);
 });
 
-test('a structured_output that is a JSON string holding an object is projected as that object', async () => {
-  const completed = eventData('pick', 'node_completed', NOW);
-  await insertEvent('node_completed', 'pick', {
+test("a structured_output that is a JSON string holding an object is projected as that object", async () => {
+  const completed = eventData("pick", "node_completed", NOW);
+  await insertEvent("node_completed", "pick", {
     ...completed,
     structured_output: '{"route":"x"}',
   });
 
   expect(await projectionErrors()).toEqual([]);
-  expect(await db.query('SELECT step_id, status, cost_usd, output FROM mc.lap_steps')).toEqual([
+  expect(
+    await db.query(
+      "SELECT step_id, status, cost_usd, output FROM mc.lap_steps",
+    ),
+  ).toEqual([
     {
-      step_id: 'pick',
-      status: 'completed',
+      step_id: "pick",
+      status: "completed",
       cost_usd: String(completed.cost_usd),
-      output: { route: 'x' },
+      output: { route: "x" },
     },
   ]);
-  expect(await db.query('SELECT route FROM mc.lap_step_attempts')).toEqual([{ route: 'x' }]);
+  expect(await db.query("SELECT route FROM mc.lap_step_attempts")).toEqual([
+    { route: "x" },
+  ]);
 });
 
-test.each(['text', '[1]', '{', '"{}"'])(
-  'a structured_output string %p holding no object commits in Archon, is recorded and keeps its step',
+test.each(["text", "[1]", "{", '"{}"'])(
+  "a structured_output string %p holding no object commits in Archon, is recorded and keeps its step",
   async (text) => {
-    const completed = eventData('pick', 'node_completed', NOW);
-    const [event] = await insertEvent('node_completed', 'pick', {
+    const completed = eventData("pick", "node_completed", NOW);
+    const [event] = await insertEvent("node_completed", "pick", {
       ...completed,
       structured_output: text,
     });
 
     expect(
-      await db.query('SELECT count(*)::int AS n FROM public.remote_agent_workflow_events'),
+      await db.query(
+        "SELECT count(*)::int AS n FROM public.remote_agent_workflow_events",
+      ),
     ).toEqual([{ n: 1 }]);
     expect(await projectionErrors()).toEqual([
       {
-        source: 'mc_project_step_event',
+        source: "mc_project_step_event",
         run_id: runId,
         event_id: event?.id,
-        sqlstate: '22000',
-        message: 'structured_output is a jsonb string, not an object',
+        sqlstate: "22000",
+        message: "structured_output is a jsonb string, not an object",
       },
     ]);
     // The step still ran and cost what it cost: only its unreadable output is dropped.
-    expect(await db.query('SELECT step_id, status, cost_usd, output FROM mc.lap_steps')).toEqual([
+    expect(
+      await db.query(
+        "SELECT step_id, status, cost_usd, output FROM mc.lap_steps",
+      ),
+    ).toEqual([
       {
-        step_id: 'pick',
-        status: 'completed',
+        step_id: "pick",
+        status: "completed",
         cost_usd: String(completed.cost_usd),
         output: null,
       },
@@ -668,32 +741,36 @@ test.each(['text', '[1]', '{', '"{}"'])(
   },
 );
 
-test('a check-app report stored as a JSON string projects the same lines as the object', async () => {
-  const data = eventData('check-app', 'node_completed', NOW);
-  const fixture = structuredOutputFor('check-app') as {
+test("a check-app report stored as a JSON string projects the same lines as the object", async () => {
+  const data = eventData("check-app", "node_completed", NOW);
+  const fixture = structuredOutputFor("check-app") as {
     lines: Record<string, unknown>[];
   };
   const report = {
     ...fixture,
     lines: fixture.lines.map((line) =>
-      line.kind === 'holdout' ? { ...line, verdict: 'FAIL', pre_existing: '' } : line,
+      line.kind === "holdout"
+        ? { ...line, verdict: "FAIL", pre_existing: "" }
+        : line,
     ),
   };
   const projected = async () => ({
-    lines: await db.query('SELECT * FROM mc.app_check_lines ORDER BY position'),
-    output: await db.query('SELECT output FROM mc.lap_steps'),
+    lines: await db.query("SELECT * FROM mc.app_check_lines ORDER BY position"),
+    output: await db.query("SELECT output FROM mc.lap_steps"),
   });
   const catches = () =>
-    db.query('SELECT holdout_catches FROM mc.lap_step_attempts ORDER BY event_id');
+    db.query(
+      "SELECT holdout_catches FROM mc.lap_step_attempts ORDER BY event_id",
+    );
 
-  await insertEvent('node_completed', 'check-app', {
+  await insertEvent("node_completed", "check-app", {
     ...data,
     structured_output: JSON.stringify(report),
   });
   const fromString = await projected();
   expect(await catches()).toEqual([{ holdout_catches: 1 }]);
-  await db.query('DELETE FROM mc.app_check_lines');
-  await insertEvent('node_completed', 'check-app', {
+  await db.query("DELETE FROM mc.app_check_lines");
+  await insertEvent("node_completed", "check-app", {
     ...data,
     structured_output: report,
   });
@@ -701,26 +778,31 @@ test('a check-app report stored as a JSON string projects the same lines as the 
   expect(await projectionErrors()).toEqual([]);
   expect(fromString.lines.length).toBeGreaterThan(0);
   expect(fromString).toEqual(await projected());
-  expect(await catches()).toEqual([{ holdout_catches: 1 }, { holdout_catches: 1 }]);
+  expect(await catches()).toEqual([
+    { holdout_catches: 1 },
+    { holdout_catches: 1 },
+  ]);
 });
 
-test('an error the projection cannot even record still never fails Archon’s write', async () => {
+test("an error the projection cannot even record still never fails Archon’s write", async () => {
   const rolledBack = db.transaction(async (tx) => {
-    await tx.query('ALTER TABLE mc.projection_errors RENAME TO projection_errors_gone');
+    await tx.query(
+      "ALTER TABLE mc.projection_errors RENAME TO projection_errors_gone",
+    );
     await tx.query(
       `INSERT INTO public.remote_agent_workflow_events (workflow_run_id, event_type, step_name, data)
          VALUES ($1, 'node_completed', 'pick', '{"structured_output": "text"}')`,
       [runId],
     );
     const [events] = await tx.query(
-      'SELECT count(*)::int AS n FROM public.remote_agent_workflow_events',
+      "SELECT count(*)::int AS n FROM public.remote_agent_workflow_events",
     );
     throw new Error(`rollback after ${events?.n} event`);
   });
-  await expect(rolledBack).rejects.toThrow('rollback after 1 event');
+  await expect(rolledBack).rejects.toThrow("rollback after 1 event");
 });
 
-test('every projection function stops a lock wait after 100 ms, and only inside itself', async () => {
+test("every projection function stops a lock wait after 100 ms, and only inside itself", async () => {
   // PGlite has one session, so the wait itself is proved on a check branch by
   // `bun run projection:locks`; this keeps the setting from being dropped.
   const functions = await db.query(`SELECT p.proname, p.proconfig FROM pg_proc p
@@ -728,30 +810,30 @@ test('every projection function stops a lock wait after 100 ms, and only inside 
     WHERE n.nspname = 'mc' AND l.lanname = 'plpgsql' ORDER BY p.proname`);
   expect(functions).toEqual([
     // It relabels versions in the transaction that writes a pin, never in Archon's, so it waits.
-    { proname: 'label_versions', proconfig: null },
+    { proname: "label_versions", proconfig: null },
     ...[
-      'project_app_check_lines',
-      'project_attention',
-      'project_attention_item',
-      'project_run',
-      'project_step_event',
-      'project_version',
-      'record_attempt_usage',
-      'record_projection_error',
-      'record_step_attempt',
-      'structured_output',
-    ].map((proname) => ({ proname, proconfig: ['lock_timeout=100ms'] })),
+      "project_app_check_lines",
+      "project_attention",
+      "project_attention_item",
+      "project_run",
+      "project_step_event",
+      "project_version",
+      "record_attempt_usage",
+      "record_projection_error",
+      "record_step_attempt",
+      "structured_output",
+    ].map((proname) => ({ proname, proconfig: ["lock_timeout=100ms"] })),
   ]);
 
-  await stepEvent('check-app', 'node_completed');
-  expect(await db.query('SHOW lock_timeout')).toEqual([{ lock_timeout: '0' }]);
+  await stepEvent("check-app", "node_completed");
+  expect(await db.query("SHOW lock_timeout")).toEqual([{ lock_timeout: "0" }]);
 });
 
-test('0014 keeps only a stored citation’s references, and changes nothing run again', async () => {
+test("0014 keeps only a stored citation’s references, and changes nothing run again", async () => {
   const historical = await archonDb();
   try {
     await runMigrations({
-      files: migrationFiles.filter((f) => f.name < '0014'),
+      files: migrationFiles.filter((f) => f.name < "0014"),
       db: historical,
     });
     const [run] = await historical.query(
@@ -759,8 +841,8 @@ test('0014 keeps only a stored citation’s references, and changes nothing run 
        VALUES ('archon-loop', 'historical') RETURNING id`,
     );
     for (const [position, citation] of [
-      '',
-      'baseline/health.txt',
+      "",
+      "baseline/health.txt",
       `${MARKER} fails on main in run 675828cb-50ab-4296-9ba0-3c999bee3960, see #14`,
     ].entries()) {
       await historical.query(
@@ -770,18 +852,21 @@ test('0014 keeps only a stored citation’s references, and changes nothing run 
       );
     }
 
-    expect(await runMigrations({ files: migrationFiles, db: historical })).toEqual([
-      '0014_pre_existing_refs.sql',
-      '0015_step_attempt_usage.sql',
-      '0016_pin_reason_optional.sql',
-      '0017_app_check_line_ids.sql',
-      '0018_issue_label_time.sql',
-      '0019_attention_items.sql',
-      '0019_queue_laps.sql',
-      '0019_structured_output_string.sql',
-      '0020_queue_step_events.sql',
-      '0021_split_step_events.sql',
-      '0022_arch_step_child_workflow.sql',
+    expect(
+      await runMigrations({ files: migrationFiles, db: historical }),
+    ).toEqual([
+      "0014_pre_existing_refs.sql",
+      "0015_step_attempt_usage.sql",
+      "0016_pin_reason_optional.sql",
+      "0017_app_check_line_ids.sql",
+      "0018_issue_label_time.sql",
+      "0019_attention_items.sql",
+      "0019_queue_laps.sql",
+      "0019_structured_output_string.sql",
+      "0020_queue_step_events.sql",
+      "0021_split_step_events.sql",
+      "0022_queue_versions.sql",
+      "0023_arch_step_child_workflow.sql",
     ]);
     const lines = () =>
       historical.query(
@@ -800,14 +885,14 @@ test('0014 keeps only a stored citation’s references, and changes nothing run 
       {
         position: 3,
         pre_existing: true,
-        pre_existing_refs: ['#14', '675828cb-50ab-4296-9ba0-3c999bee3960'],
+        pre_existing_refs: ["#14", "675828cb-50ab-4296-9ba0-3c999bee3960"],
         marked: false,
       },
     ];
     expect(await lines()).toEqual(converted);
     const migrated = await snapshot(historical);
-    const [refs] = migrationFiles.filter((f) => f.name.startsWith('0014'));
-    await historical.query(refs?.sql ?? '');
+    const [refs] = migrationFiles.filter((f) => f.name.startsWith("0014"));
+    await historical.query(refs?.sql ?? "");
     expect(await snapshot(historical)).toEqual(migrated);
     expect(await lines()).toEqual(converted);
   } finally {
@@ -815,11 +900,11 @@ test('0014 keeps only a stored citation’s references, and changes nothing run 
   }
 });
 
-test('0016 lets a pin have no reason, keeps stored reasons, and changes nothing run again', async () => {
+test("0016 lets a pin have no reason, keeps stored reasons, and changes nothing run again", async () => {
   const historical = await archonDb();
   try {
     await runMigrations({
-      files: migrationFiles.filter((f) => f.name < '0016'),
+      files: migrationFiles.filter((f) => f.name < "0016"),
       db: historical,
     });
     const pin = (sha: string, reason: string | null) =>
@@ -827,40 +912,44 @@ test('0016 lets a pin have no reason, keeps stored reasons, and changes nothing 
         `INSERT INTO mc.pins (sha, archon_sha, reason, committed_at) VALUES ($1, NULL, $2, $3)`,
         [sha, reason, NOW],
       );
-    await pin('a'.repeat(40), 'a reason');
-    await expect(pin('b'.repeat(40), null)).rejects.toThrow();
+    await pin("a".repeat(40), "a reason");
+    await expect(pin("b".repeat(40), null)).rejects.toThrow();
 
-    expect(await runMigrations({ files: migrationFiles, db: historical })).toEqual([
-      '0016_pin_reason_optional.sql',
-      '0017_app_check_line_ids.sql',
-      '0018_issue_label_time.sql',
-      '0019_attention_items.sql',
-      '0019_queue_laps.sql',
-      '0019_structured_output_string.sql',
-      '0020_queue_step_events.sql',
-      '0021_split_step_events.sql',
-      '0022_arch_step_child_workflow.sql',
+    expect(
+      await runMigrations({ files: migrationFiles, db: historical }),
+    ).toEqual([
+      "0016_pin_reason_optional.sql",
+      "0017_app_check_line_ids.sql",
+      "0018_issue_label_time.sql",
+      "0019_attention_items.sql",
+      "0019_queue_laps.sql",
+      "0019_structured_output_string.sql",
+      "0020_queue_step_events.sql",
+      "0021_split_step_events.sql",
+      "0022_queue_versions.sql",
+      "0023_arch_step_child_workflow.sql",
     ]);
-    await pin('b'.repeat(40), null);
-    const reasons = () => historical.query('SELECT sha, reason FROM mc.pins ORDER BY sha');
+    await pin("b".repeat(40), null);
+    const reasons = () =>
+      historical.query("SELECT sha, reason FROM mc.pins ORDER BY sha");
     const stored = [
-      { sha: 'a'.repeat(40), reason: 'a reason' },
-      { sha: 'b'.repeat(40), reason: null },
+      { sha: "a".repeat(40), reason: "a reason" },
+      { sha: "b".repeat(40), reason: null },
     ];
     expect(await reasons()).toEqual(stored);
-    const [optional] = migrationFiles.filter((f) => f.name.startsWith('0016'));
-    await historical.query(optional?.sql ?? '');
+    const [optional] = migrationFiles.filter((f) => f.name.startsWith("0016"));
+    await historical.query(optional?.sql ?? "");
     expect(await reasons()).toEqual(stored);
   } finally {
     await historical.close();
   }
 });
 
-test('0017 keeps lines projected before it without an id, fills new reports’ ids, and changes nothing run again', async () => {
+test("0017 keeps lines projected before it without an id, fills new reports’ ids, and changes nothing run again", async () => {
   const historical = await archonDb();
   try {
     await runMigrations({
-      files: migrationFiles.filter((f) => f.name < '0017'),
+      files: migrationFiles.filter((f) => f.name < "0017"),
       db: historical,
     });
     const run = async () => {
@@ -877,70 +966,87 @@ test('0017 keeps lines projected before it without an id, fills new reports’ i
       [before],
     );
 
-    expect(await runMigrations({ files: migrationFiles, db: historical })).toEqual([
-      '0017_app_check_line_ids.sql',
-      '0018_issue_label_time.sql',
-      '0019_attention_items.sql',
-      '0019_queue_laps.sql',
-      '0019_structured_output_string.sql',
-      '0020_queue_step_events.sql',
-      '0021_split_step_events.sql',
-      '0022_arch_step_child_workflow.sql',
+    expect(
+      await runMigrations({ files: migrationFiles, db: historical }),
+    ).toEqual([
+      "0017_app_check_line_ids.sql",
+      "0018_issue_label_time.sql",
+      "0019_attention_items.sql",
+      "0019_queue_laps.sql",
+      "0019_structured_output_string.sql",
+      "0020_queue_step_events.sql",
+      "0021_split_step_events.sql",
+      "0022_queue_versions.sql",
+      "0023_arch_step_child_workflow.sql",
     ]);
     const after = await run();
-    await historical.query('SELECT mc.project_app_check_lines($1, $2)', [
+    await historical.query("SELECT mc.project_app_check_lines($1, $2)", [
       after,
       JSON.stringify([
-        { id: 'C1', kind: 'criterion', verdict: 'PASS' },
-        { id: ' h2 ', kind: 'holdout', verdict: 'FAIL', text: 'H-02' },
+        { id: "C1", kind: "criterion", verdict: "PASS" },
+        { id: " h2 ", kind: "holdout", verdict: "FAIL", text: "H-02" },
       ]),
     ]);
     const ids = (runId: unknown) =>
       historical.query(
-        'SELECT position, line_id FROM mc.app_check_lines WHERE run_id = $1 ORDER BY position',
+        "SELECT position, line_id FROM mc.app_check_lines WHERE run_id = $1 ORDER BY position",
         [runId],
       );
     expect(await ids(before)).toEqual([{ position: 1, line_id: null }]);
     expect(await ids(after)).toEqual([
-      { position: 1, line_id: 'C1' },
-      { position: 2, line_id: 'H2' },
+      { position: 1, line_id: "C1" },
+      { position: 2, line_id: "H2" },
     ]);
     const migrated = await snapshot(historical);
-    const [lineIds] = migrationFiles.filter((f) => f.name.startsWith('0017'));
-    await historical.query(lineIds?.sql ?? '');
+    const [lineIds] = migrationFiles.filter((f) => f.name.startsWith("0017"));
+    await historical.query(lineIds?.sql ?? "");
     expect(await snapshot(historical)).toEqual(migrated);
   } finally {
     await historical.close();
   }
 });
 
-test('a check-app line keeps only its report id’s leading letters and digits, as a disposition’s line id', async () => {
-  const report = structuredOutputFor('check-app') as {
+test("a check-app line keeps only its report id’s leading letters and digits, as a disposition’s line id", async () => {
+  const report = structuredOutputFor("check-app") as {
     lines: Record<string, unknown>[];
   };
-  const ids = ['C1', ' \th2\n', `H3 holdout FAIL H-07 ${MARKER}`, '2', '', MARKER];
-  await insertEvent('node_completed', 'check-app', {
-    ...eventData('check-app', 'node_completed', NOW),
+  const ids = [
+    "C1",
+    " \th2\n",
+    `H3 holdout FAIL H-07 ${MARKER}`,
+    "2",
+    "",
+    MARKER,
+  ];
+  await insertEvent("node_completed", "check-app", {
+    ...eventData("check-app", "node_completed", NOW),
     structured_output: {
       ...report,
       lines: ids.map((id) => ({ ...report.lines[0], id })),
     },
   });
 
-  expect(await db.query('SELECT line_id FROM mc.app_check_lines ORDER BY position')).toEqual(
-    ['C1', 'H2', 'H3', null, null, null].map((line_id) => ({ line_id })),
+  expect(
+    await db.query("SELECT line_id FROM mc.app_check_lines ORDER BY position"),
+  ).toEqual(
+    ["C1", "H2", "H3", null, null, null].map((line_id) => ({ line_id })),
   );
   expect(await projectionErrors()).toEqual([]);
   expect(await markerCount()).toBe(0);
 });
 
-test('check-app lines keep kind, verdict, evidence count and only a holdout’s scenario id', async () => {
-  const report = structuredOutputFor('check-app') as {
+test("check-app lines keep kind, verdict, evidence count and only a holdout’s scenario id", async () => {
+  const report = structuredOutputFor("check-app") as {
     lines: Record<string, unknown>[];
     head: string;
     merged_with: string;
   };
-  const line = (id: string, verdict: string, text: string, evidence: string[]) => ({
+  const line = (
+    id: string,
+    verdict: string,
+    text: string,
+    evidence: string[],
+  ) => ({
     ...report.lines[1],
     id,
     verdict,
@@ -949,16 +1055,19 @@ test('check-app lines keep kind, verdict, evidence count and only a holdout’s 
   });
   const lines = [
     report.lines[0],
-    line('2', 'FAIL', `H-07 ${MARKER} the user sees the lap`, ['a.txt', 'b.txt']),
-    line('3', '\tpass\n', `${MARKER} with no scenario id`, []),
+    line("2", "FAIL", `H-07 ${MARKER} the user sees the lap`, [
+      "a.txt",
+      "b.txt",
+    ]),
+    line("3", "\tpass\n", `${MARKER} with no scenario id`, []),
     {
       ...report.lines[2],
-      kind: '\tprobe\r\n',
-      pre_existing: '\nbaseline/health.txt\t',
+      kind: "\tprobe\r\n",
+      pre_existing: "\nbaseline/health.txt\t",
     },
   ];
-  const data = eventData('check-app', 'node_completed', NOW);
-  await insertEvent('node_completed', 'check-app', {
+  const data = eventData("check-app", "node_completed", NOW);
+  await insertEvent("node_completed", "check-app", {
     ...data,
     structured_output: {
       ...report,
@@ -976,8 +1085,8 @@ test('check-app lines keep kind, verdict, evidence count and only a holdout’s 
   ).toEqual([
     {
       position: 1,
-      kind: 'criterion',
-      verdict: 'PASS',
+      kind: "criterion",
+      verdict: "PASS",
       evidence_count: 1,
       pre_existing: false,
       pre_existing_refs: [],
@@ -985,39 +1094,39 @@ test('check-app lines keep kind, verdict, evidence count and only a holdout’s 
     },
     {
       position: 2,
-      kind: 'holdout',
-      verdict: 'FAIL',
+      kind: "holdout",
+      verdict: "FAIL",
       evidence_count: 2,
       pre_existing: false,
       pre_existing_refs: [],
-      scenario_id: 'H-07',
+      scenario_id: "H-07",
     },
     {
       position: 3,
-      kind: 'holdout',
-      verdict: 'PASS',
+      kind: "holdout",
+      verdict: "PASS",
       evidence_count: 0,
       pre_existing: false,
       pre_existing_refs: [],
-      scenario_id: 'unidentified',
+      scenario_id: "unidentified",
     },
     {
       position: 4,
-      kind: 'probe',
-      verdict: 'OK',
+      kind: "probe",
+      verdict: "OK",
       evidence_count: 1,
       pre_existing: true,
       pre_existing_refs: [],
       scenario_id: null,
     },
   ]);
-  expect(await db.query('SELECT output FROM mc.lap_steps')).toEqual([
+  expect(await db.query("SELECT output FROM mc.lap_steps")).toEqual([
     {
       output: {
-        pr: '#29',
+        pr: "#29",
         head: report.head,
         merged_with: report.merged_with,
-        overall: 'PASS',
+        overall: "PASS",
       },
     },
   ]);
@@ -1025,30 +1134,30 @@ test('check-app lines keep kind, verdict, evidence count and only a holdout’s 
   expect(await markerCount()).toBe(0);
 });
 
-test('a line’s pre-existing citation keeps only the references it names, never its text', async () => {
-  const report = structuredOutputFor('check-app') as {
+test("a line’s pre-existing citation keeps only the references it names, never its text", async () => {
+  const report = structuredOutputFor("check-app") as {
     lines: Record<string, unknown>[];
   };
   const holdout = (id: string, preExisting: string) => ({
     id,
-    kind: 'holdout',
-    verdict: 'FAIL',
+    kind: "holdout",
+    verdict: "FAIL",
     text: `H-0${id} ${MARKER}`,
     evidence: [],
     pre_existing: preExisting,
   });
-  const [event] = await insertEvent('node_completed', 'check-app', {
-    ...eventData('check-app', 'node_completed', NOW),
+  const [event] = await insertEvent("node_completed", "check-app", {
+    ...eventData("check-app", "node_completed", NOW),
     structured_output: {
       ...report,
       lines: [
         holdout(
-          '1',
+          "1",
           `${MARKER} fails on main at 8AAD49143CFCB155CA918A0513CF99D381263E30, tracked in #14 and https://github.com/o/r/pull/216; see C:\\runs\\675828CB-50AB-4296-9BA0-3c999bee3960\\holdout-runs\\base-results.txt`,
         ),
-        holdout('2', `${MARKER} the same thing happens on main`),
-        holdout('3', ' \t\n'),
-        holdout('4', ''),
+        holdout("2", `${MARKER} the same thing happens on main`),
+        holdout("3", " \t\n"),
+        holdout("4", ""),
       ],
     },
   });
@@ -1061,82 +1170,85 @@ test('a line’s pre-existing citation keeps only the references it names, never
   ).toEqual([
     {
       position: 1,
-      verdict: 'FAIL',
-      scenario_id: 'H-01',
+      verdict: "FAIL",
+      scenario_id: "H-01",
       pre_existing: true,
       pre_existing_refs: [
-        '#14',
-        '#216',
-        '675828cb-50ab-4296-9ba0-3c999bee3960',
-        '8aad49143cfcb155ca918a0513cf99d381263e30',
+        "#14",
+        "#216",
+        "675828cb-50ab-4296-9ba0-3c999bee3960",
+        "8aad49143cfcb155ca918a0513cf99d381263e30",
       ],
     },
     {
       position: 2,
-      verdict: 'FAIL',
-      scenario_id: 'H-02',
+      verdict: "FAIL",
+      scenario_id: "H-02",
       pre_existing: true,
       pre_existing_refs: [],
     },
     {
       position: 3,
-      verdict: 'FAIL',
-      scenario_id: 'H-03',
+      verdict: "FAIL",
+      scenario_id: "H-03",
       pre_existing: false,
       pre_existing_refs: [],
     },
     {
       position: 4,
-      verdict: 'FAIL',
-      scenario_id: 'H-04',
+      verdict: "FAIL",
+      scenario_id: "H-04",
       pre_existing: false,
       pre_existing_refs: [],
     },
   ]);
   expect(
-    await db.query('SELECT holdout_catches FROM mc.lap_step_attempts WHERE event_id = $1', [
-      event?.id,
-    ]),
+    await db.query(
+      "SELECT holdout_catches FROM mc.lap_step_attempts WHERE event_id = $1",
+      [event?.id],
+    ),
   ).toEqual([{ holdout_catches: 2 }]);
   expect(await projectionErrors()).toEqual([]);
   expect(await markerCount()).toBe(0);
 });
 
-test('a review keeps its outcome and each disposition’s action and line id, never its text', async () => {
-  const data = eventData('review', 'node_completed', NOW);
+test("a review keeps its outcome and each disposition’s action and line id, never its text", async () => {
+  const data = eventData("review", "node_completed", NOW);
   const disposition = {
     line: `h1 holdout FAIL H-07 ${MARKER} the lane never moves`,
-    action: 'blocks',
+    action: "blocks",
     file: `review/${MARKER}.md`,
     issue: MARKER,
     reason: `H-07 ${MARKER}`,
   };
-  await insertEvent('node_completed', 'review', {
+  await insertEvent("node_completed", "review", {
     ...data,
     structured_output: {
-      ...structuredOutputFor('review'),
-      outcome: 'sent-back',
+      ...structuredOutputFor("review"),
+      outcome: "sent-back",
       dispositions: [
         disposition,
-        { ...disposition, line: MARKER, action: 'issue' },
-        { ...disposition, line: ` \t\n r2 holdout ${MARKER}`, action: 'issue' },
+        { ...disposition, line: MARKER, action: "issue" },
+        { ...disposition, line: ` \t\n r2 holdout ${MARKER}`, action: "issue" },
       ],
-      judge_changes: [{ file: 'holdouts/H-07.md', change: MARKER, approval: MARKER }],
+      judge_changes: [
+        { file: "holdouts/H-07.md", change: MARKER, approval: MARKER },
+      ],
       reason: `Sent back: ${MARKER}`,
     },
   });
 
-  expect(await db.query('SELECT output FROM mc.lap_steps')).toEqual([
+  expect(await db.query("SELECT output FROM mc.lap_steps")).toEqual([
     {
       output: {
-        outcome: 'sent-back',
-        pr: '#29',
+        outcome: "sent-back",
+        pr: "#29",
         sha: REVIEWED.sha,
-        delivers: 'all',
+        delivers: "all",
         dispositions: [
-          { line: 'H1', action: 'blocks' },
-          { line: null, action: 'issue' },
-          { line: 'R2', action: 'issue' },
+          { line: "H1", action: "blocks" },
+          { line: null, action: "issue" },
+          { line: "R2", action: "issue" },
         ],
       },
     },
@@ -1145,66 +1257,70 @@ test('a review keeps its outcome and each disposition’s action and line id, ne
   expect(await markerCount()).toBe(0);
 });
 
-test('a holdout line’s scenario id is the one parsers/metrics.ts holdoutId reads', async () => {
+test("a holdout line’s scenario id is the one parsers/metrics.ts holdoutId reads", async () => {
   const texts = [
-    'H-07 fine',
-    'PH-12 then H-07 seen',
-    'H-07a only',
-    'see H-123, then H-04',
-    'H-1 is too short',
-    'x_H-07 and (H-08)',
-    'no id at all',
+    "H-07 fine",
+    "PH-12 then H-07 seen",
+    "H-07a only",
+    "see H-123, then H-04",
+    "H-1 is too short",
+    "x_H-07 and (H-08)",
+    "no id at all",
   ];
-  const report = structuredOutputFor('check-app') as {
+  const report = structuredOutputFor("check-app") as {
     lines: Record<string, unknown>[];
   };
   const holdout = report.lines[1];
-  await insertEvent('node_completed', 'check-app', {
-    ...eventData('check-app', 'node_completed', NOW),
+  await insertEvent("node_completed", "check-app", {
+    ...eventData("check-app", "node_completed", NOW),
     structured_output: {
       ...report,
       lines: texts.map((text) => ({ ...holdout, text })),
     },
   });
-  const rows = await db.query('SELECT scenario_id FROM mc.app_check_lines ORDER BY position');
+  const rows = await db.query(
+    "SELECT scenario_id FROM mc.app_check_lines ORDER BY position",
+  );
   expect(rows.map((row) => row.scenario_id)).toEqual(texts.map(holdoutId));
 });
 
-test('a check-app line that cannot be stored is recorded and the step row stays', async () => {
-  const report = structuredOutputFor('check-app') as {
+test("a check-app line that cannot be stored is recorded and the step row stays", async () => {
+  const report = structuredOutputFor("check-app") as {
     lines: Record<string, unknown>[];
   };
-  const [event] = await insertEvent('node_completed', 'check-app', {
-    ...eventData('check-app', 'node_completed', NOW),
+  const [event] = await insertEvent("node_completed", "check-app", {
+    ...eventData("check-app", "node_completed", NOW),
     structured_output: {
       ...report,
-      lines: [{ ...report.lines[0], kind: 'remark' }],
+      lines: [{ ...report.lines[0], kind: "remark" }],
     },
   });
-  expect(await db.query('SELECT step_id, status FROM mc.lap_steps')).toEqual([
-    { step_id: 'check-app', status: 'completed' },
+  expect(await db.query("SELECT step_id, status FROM mc.lap_steps")).toEqual([
+    { step_id: "check-app", status: "completed" },
   ]);
-  expect(await db.query('SELECT position FROM mc.app_check_lines')).toEqual([]);
+  expect(await db.query("SELECT position FROM mc.app_check_lines")).toEqual([]);
   expect(await projectionErrors()).toMatchObject([
-    { source: 'mc_project_step_event', event_id: event?.id, sqlstate: '23514' },
+    { source: "mc_project_step_event", event_id: event?.id, sqlstate: "23514" },
   ]);
 });
 
-test('a shorter check-app report replaces the lines of an earlier one', async () => {
-  const report = structuredOutputFor('check-app') as { lines: unknown[] };
-  const data = eventData('check-app', 'node_completed', NOW);
-  await insertEvent('node_completed', 'check-app', data);
-  await insertEvent('node_completed', 'check-app', {
+test("a shorter check-app report replaces the lines of an earlier one", async () => {
+  const report = structuredOutputFor("check-app") as { lines: unknown[] };
+  const data = eventData("check-app", "node_completed", NOW);
+  await insertEvent("node_completed", "check-app", data);
+  await insertEvent("node_completed", "check-app", {
     ...data,
     structured_output: { ...report, lines: report.lines.slice(0, 1) },
   });
-  expect(await db.query('SELECT position FROM mc.app_check_lines')).toEqual([{ position: 1 }]);
+  expect(await db.query("SELECT position FROM mc.app_check_lines")).toEqual([
+    { position: 1 },
+  ]);
 });
 
-test('replaying the same events leaves every row count unchanged', async () => {
-  await stepEvent('pick', 'node_started');
-  await stepEvent('pick', 'node_completed');
-  await stepEvent('check-app', 'node_completed');
+test("replaying the same events leaves every row count unchanged", async () => {
+  await stepEvent("pick", "node_started");
+  await stepEvent("pick", "node_completed");
+  await stepEvent("check-app", "node_completed");
   const once = await dashboardCounts();
   await replayEvents();
   expect(await dashboardCounts()).toEqual(once);
@@ -1217,86 +1333,92 @@ test('replaying the same events leaves every row count unchanged', async () => {
   });
 });
 
-test('every finished attempt of a step is its own row, and goes with its step row', async () => {
+test("every finished attempt of a step is its own row, and goes with its step row", async () => {
   const later = new Date(NOW.getTime() + 3_600_000);
   const review = (outcome: string, at: Date) =>
-    insertEvent('node_completed', 'review', {
-      ...eventData('review', 'node_completed', at),
+    insertEvent("node_completed", "review", {
+      ...eventData("review", "node_completed", at),
       structured_output: { ...REVIEWED, outcome },
     });
-  const report = structuredOutputFor('check-app') as {
+  const report = structuredOutputFor("check-app") as {
     lines: Record<string, unknown>[];
   };
   const holdout = {
-    kind: 'holdout',
-    verdict: 'FAIL',
+    kind: "holdout",
+    verdict: "FAIL",
     text: `H-07 ${MARKER}`,
     evidence: [],
   };
   const checkApp = (lines: Record<string, unknown>[], at: Date) =>
-    insertEvent('node_completed', 'check-app', {
-      ...eventData('check-app', 'node_completed', at),
+    insertEvent("node_completed", "check-app", {
+      ...eventData("check-app", "node_completed", at),
       structured_output: { ...report, lines },
     });
-  await review('sent-back', NOW);
-  await review('approved', later);
-  await checkApp([holdout, { ...holdout, pre_existing: 'baseline' }], NOW);
-  await checkApp([holdout, { ...holdout, verdict: ' fail\t' }, report.lines[0]], later);
-  await insertEvent('node_skipped', 'land', { reason: 'when: false' });
+  await review("sent-back", NOW);
+  await review("approved", later);
+  await checkApp([holdout, { ...holdout, pre_existing: "baseline" }], NOW);
+  await checkApp(
+    [holdout, { ...holdout, verdict: " fail\t" }, report.lines[0]],
+    later,
+  );
+  await insertEvent("node_skipped", "land", { reason: "when: false" });
 
   const attempts = () =>
     db.query(`SELECT step_id, CASE WHEN isfinite(started_at) THEN started_at END AS started_at,
         status, duration_ms, cost_usd, outcome, holdout_catches
       FROM mc.lap_step_attempts ORDER BY step_id, mc.lap_step_attempts.started_at`);
   const at = (d: Date) => new Date(d.getTime() - 184_250);
-  const cost = String(eventData('review', 'node_completed', NOW).cost_usd);
-  const done = { status: 'completed', duration_ms: 184_250, cost_usd: cost };
+  const cost = String(eventData("review", "node_completed", NOW).cost_usd);
+  const done = { status: "completed", duration_ms: 184_250, cost_usd: cost };
   expect(await attempts()).toEqual([
     {
-      step_id: 'check-app',
+      step_id: "check-app",
       started_at: at(NOW),
       ...done,
       outcome: null,
       holdout_catches: 1,
     },
     {
-      step_id: 'check-app',
+      step_id: "check-app",
       started_at: at(later),
       ...done,
       outcome: null,
       holdout_catches: 2,
     },
     {
-      step_id: 'land',
+      step_id: "land",
       // No start time on the event: the step's one unstarted attempt (`-infinity`).
       started_at: null,
-      status: 'skipped',
+      status: "skipped",
       duration_ms: null,
       cost_usd: null,
       outcome: null,
       holdout_catches: 0,
     },
     {
-      step_id: 'review',
+      step_id: "review",
       started_at: at(NOW),
       ...done,
-      outcome: 'sent-back',
+      outcome: "sent-back",
       holdout_catches: 0,
     },
     {
-      step_id: 'review',
+      step_id: "review",
       started_at: at(later),
       ...done,
-      outcome: 'approved',
+      outcome: "approved",
       holdout_catches: 0,
     },
   ]);
   expect(
-    await db.query('SELECT step_id, output FROM mc.lap_steps WHERE step_id = $1', ['review']),
+    await db.query(
+      "SELECT step_id, output FROM mc.lap_steps WHERE step_id = $1",
+      ["review"],
+    ),
   ).toEqual([
     {
-      step_id: 'review',
-      output: expect.objectContaining({ outcome: 'approved' }),
+      step_id: "review",
+      output: expect.objectContaining({ outcome: "approved" }),
     },
   ]);
   expect(await projectionErrors()).toEqual([]);
@@ -1306,30 +1428,37 @@ test('every finished attempt of a step is its own row, and goes with its step ro
   await replayEvents();
   expect(await attempts()).toEqual(recorded);
   await db.query(`DELETE FROM mc.lap_steps WHERE step_id = 'review'`);
-  expect((await attempts()).map((a) => a.step_id)).toEqual(['check-app', 'check-app', 'land']);
-});
-
-test('a replayed start never reopens a finished step, and a retry does', async () => {
-  await stepEvent('pick', 'node_started');
-  await stepEvent('pick', 'node_completed');
-  await stepEvent('pick', 'node_started');
-  expect(await db.query('SELECT status FROM mc.lap_steps')).toEqual([{ status: 'completed' }]);
-
-  const retry = new Date(NOW.getTime() + 60_000).toISOString();
-  await insertEvent('node_started', 'pick', {
-    provider: 'claude',
-    timing: { startedAt: retry },
-  });
-  expect(await db.query('SELECT status, cost_usd, output FROM mc.lap_steps')).toEqual([
-    { status: 'running', cost_usd: null, output: null },
+  expect((await attempts()).map((a) => a.step_id)).toEqual([
+    "check-app",
+    "check-app",
+    "land",
   ]);
 });
 
-test('a run is a lap of the factory whose codebase it ran, with its digest', async () => {
+test("a replayed start never reopens a finished step, and a retry does", async () => {
+  await stepEvent("pick", "node_started");
+  await stepEvent("pick", "node_completed");
+  await stepEvent("pick", "node_started");
+  expect(await db.query("SELECT status FROM mc.lap_steps")).toEqual([
+    { status: "completed" },
+  ]);
+
+  const retry = new Date(NOW.getTime() + 60_000).toISOString();
+  await insertEvent("node_started", "pick", {
+    provider: "claude",
+    timing: { startedAt: retry },
+  });
+  expect(
+    await db.query("SELECT status, cost_usd, output FROM mc.lap_steps"),
+  ).toEqual([{ status: "running", cost_usd: null, output: null }]);
+});
+
+test("a run is a lap of the factory whose codebase it ran, with its digest", async () => {
   await db.query(`INSERT INTO mc.factories VALUES
     ('mission-control', 'coleam00/factory-mission-control', 'coleam00/factory-mission-control',
      'http://localhost:3090')`);
-  const [codebase] = await db.query(`INSERT INTO public.remote_agent_codebases (name)
+  const [codebase] =
+    await db.query(`INSERT INTO public.remote_agent_codebases (name)
     VALUES ('coleam00/factory-mission-control') RETURNING id`);
   const [other] = await db.query(
     `INSERT INTO public.remote_agent_codebases (name) VALUES ('mc-fence-proof') RETURNING id`,
@@ -1350,57 +1479,64 @@ test('a run is a lap of the factory whose codebase it ran, with its digest', asy
   ).toEqual([
     {
       run_id: runId,
-      factory: '',
-      workflow_name: 'archon-loop',
-      status: 'running',
+      factory: "",
+      workflow_name: "archon-loop",
+      status: "running",
       digest: DIGEST,
       done: false,
     },
     {
       run_id: theirs,
-      factory: 'mc-fence-proof',
-      workflow_name: 'archon-loop',
-      status: 'running',
+      factory: "mc-fence-proof",
+      workflow_name: "archon-loop",
+      status: "running",
       digest: DIGEST,
       done: false,
     },
     {
       run_id: ours,
-      factory: 'mission-control',
-      workflow_name: 'archon-loop',
-      status: 'completed',
+      factory: "mission-control",
+      workflow_name: "archon-loop",
+      status: "completed",
       digest: DIGEST,
       done: true,
     },
   ]);
 });
 
-test('an update that changes nothing a lap shows does not fire the projection', async () => {
-  await db.query(`UPDATE mc.laps SET status = 'stale' WHERE run_id = $1`, [runId]);
+test("an update that changes nothing a lap shows does not fire the projection", async () => {
+  await db.query(`UPDATE mc.laps SET status = 'stale' WHERE run_id = $1`, [
+    runId,
+  ]);
   await db.query(
     `UPDATE public.remote_agent_workflow_runs SET last_activity_at = now() + interval '1 minute'
      WHERE id = $1`,
     [runId],
   );
-  expect(await db.query('SELECT status FROM mc.laps')).toEqual([{ status: 'stale' }]);
+  expect(await db.query("SELECT status FROM mc.laps")).toEqual([
+    { status: "stale" },
+  ]);
 });
 
-test('a lap follows a change of its run’s digest or codebase', async () => {
-  const [codebase] = await db.query(`INSERT INTO public.remote_agent_codebases (name)
+test("a lap follows a change of its run’s digest or codebase", async () => {
+  const [codebase] =
+    await db.query(`INSERT INTO public.remote_agent_codebases (name)
     VALUES ('mc-fence-proof') RETURNING id`);
-  const digest = `sha256:${'cd'.repeat(32)}`;
-  await db.query(`UPDATE public.remote_agent_workflow_runs SET metadata = $2 WHERE id = $1`, [
-    runId,
-    JSON.stringify({ workflow_source: { digest } }),
+  const digest = `sha256:${"cd".repeat(32)}`;
+  await db.query(
+    `UPDATE public.remote_agent_workflow_runs SET metadata = $2 WHERE id = $1`,
+    [runId, JSON.stringify({ workflow_source: { digest } })],
+  );
+  expect(await db.query("SELECT factory, digest FROM mc.laps")).toEqual([
+    { factory: "", digest },
   ]);
-  expect(await db.query('SELECT factory, digest FROM mc.laps')).toEqual([{ factory: '', digest }]);
 
-  await db.query(`UPDATE public.remote_agent_workflow_runs SET codebase_id = $2 WHERE id = $1`, [
-    runId,
-    codebase?.id,
-  ]);
-  expect(await db.query('SELECT factory, digest FROM mc.laps')).toEqual([
-    { factory: 'mc-fence-proof', digest },
+  await db.query(
+    `UPDATE public.remote_agent_workflow_runs SET codebase_id = $2 WHERE id = $1`,
+    [runId, codebase?.id],
+  );
+  expect(await db.query("SELECT factory, digest FROM mc.laps")).toEqual([
+    { factory: "mc-fence-proof", digest },
   ]);
 });
 
@@ -1408,7 +1544,8 @@ async function factoryCodebase(): Promise<string> {
   await db.query(`INSERT INTO mc.factories VALUES
     ('mission-control', 'coleam00/factory-mission-control', 'coleam00/factory-mission-control',
      'http://localhost:3090')`);
-  const [codebase] = await db.query(`INSERT INTO public.remote_agent_codebases (name)
+  const [codebase] =
+    await db.query(`INSERT INTO public.remote_agent_codebases (name)
     VALUES ('coleam00/factory-mission-control') RETURNING id`);
   return String(codebase?.id);
 }
@@ -1416,7 +1553,10 @@ async function factoryCodebase(): Promise<string> {
 function runAt(
   codebaseId: string,
   startedAt: Date,
-  { workflow = 'archon-loop', digest = DIGEST }: { workflow?: string; digest?: string | null } = {},
+  {
+    workflow = "archon-loop",
+    digest = DIGEST,
+  }: { workflow?: string; digest?: string | null } = {},
 ): Promise<Row[]> {
   return db.query(
     `INSERT INTO public.remote_agent_workflow_runs
@@ -1440,90 +1580,140 @@ function pin(sha: string, committedAt: Date): Promise<Row[]> {
 
 const minutes = (n: number) => new Date(NOW.getTime() + n * 60_000);
 
-test('a factory’s archon-loop run with a new digest is one version labelled by the pin before it, and a second run adds none', async () => {
+test("a factory’s archon-loop run with a new digest is one version labelled by the pin before it, and a second run adds none", async () => {
   const codebase = await factoryCodebase();
-  await pin('before', minutes(-10));
-  await pin('after', minutes(10));
+  await pin("before", minutes(-10));
+  await pin("after", minutes(10));
   await runAt(codebase, NOW);
   await runAt(codebase, minutes(20));
-  await runAt(codebase, minutes(-30), { workflow: 'archon-fix' });
+  await runAt(codebase, minutes(-30), { workflow: "archon-fix" });
   await runAt(codebase, minutes(-30), { digest: null });
 
-  expect(await db.query('SELECT * FROM mc.versions')).toEqual([
+  expect(await db.query("SELECT * FROM mc.versions")).toEqual([
     {
-      factory: 'mission-control',
+      factory: "mission-control",
       digest: DIGEST,
       first_run_at: NOW,
-      pin_sha: 'before',
+      pin_sha: "before",
     },
   ]);
   expect(await projectionErrors()).toEqual([]);
 });
 
-test('a pin written after the run labels its version', async () => {
-  await runAt(await factoryCodebase(), NOW);
-  expect(await db.query('SELECT pin_sha FROM mc.versions')).toEqual([{ pin_sha: null }]);
+test("an archon-build-queue run with a new digest is a version, and another queue workflow’s run is not", async () => {
+  const codebase = await factoryCodebase();
+  await pin("before", minutes(-10));
+  await runAt(codebase, NOW, { workflow: "archon-build-queue" });
+  await runAt(codebase, minutes(-30), {
+    workflow: "archon-intake",
+    digest: "sha256:intake",
+  });
+  await runAt(codebase, minutes(-30), {
+    workflow: "archon-manager",
+    digest: "sha256:manager",
+  });
 
-  await pin('before', minutes(-10));
-  expect(await db.query('SELECT pin_sha FROM mc.versions')).toEqual([{ pin_sha: 'before' }]);
-
-  await pin('after', minutes(10));
-  expect(await db.query('SELECT pin_sha FROM mc.versions')).toEqual([{ pin_sha: 'before' }]);
+  expect(await db.query("SELECT * FROM mc.versions")).toEqual([
+    {
+      factory: "mission-control",
+      digest: DIGEST,
+      first_run_at: NOW,
+      pin_sha: "before",
+    },
+  ]);
+  expect(await projectionErrors()).toEqual([]);
 });
 
-test('an earlier run projected later moves its version’s first run and pin back', async () => {
+test("a version’s first run is the earliest of its loop and build-queue runs", async () => {
   const codebase = await factoryCodebase();
-  await pin('earlier', minutes(-40));
-  await pin('later', minutes(-10));
+  await runAt(codebase, NOW);
+  await runAt(codebase, minutes(20), { workflow: "archon-build-queue" });
+  const first = () => db.query("SELECT first_run_at FROM mc.versions");
+  expect(await first()).toEqual([{ first_run_at: NOW }]);
+
+  await runAt(codebase, minutes(-20), { workflow: "archon-build-queue" });
+  expect(await first()).toEqual([{ first_run_at: minutes(-20) }]);
+});
+
+test("a pin written after the run labels its version", async () => {
+  await runAt(await factoryCodebase(), NOW);
+  expect(await db.query("SELECT pin_sha FROM mc.versions")).toEqual([
+    { pin_sha: null },
+  ]);
+
+  await pin("before", minutes(-10));
+  expect(await db.query("SELECT pin_sha FROM mc.versions")).toEqual([
+    { pin_sha: "before" },
+  ]);
+
+  await pin("after", minutes(10));
+  expect(await db.query("SELECT pin_sha FROM mc.versions")).toEqual([
+    { pin_sha: "before" },
+  ]);
+});
+
+test("an earlier run projected later moves its version’s first run and pin back", async () => {
+  const codebase = await factoryCodebase();
+  await pin("earlier", minutes(-40));
+  await pin("later", minutes(-10));
   await runAt(codebase, NOW);
   await runAt(codebase, minutes(-30));
 
-  expect(await db.query('SELECT * FROM mc.versions')).toEqual([
+  expect(await db.query("SELECT * FROM mc.versions")).toEqual([
     {
-      factory: 'mission-control',
+      factory: "mission-control",
       digest: DIGEST,
       first_run_at: minutes(-30),
-      pin_sha: 'earlier',
+      pin_sha: "earlier",
     },
   ]);
 });
 
-test('a pin updated or deleted relabels the versions it labelled', async () => {
+test("a pin updated or deleted relabels the versions it labelled", async () => {
   await runAt(await factoryCodebase(), NOW);
-  await pin('first', minutes(-20));
-  await pin('second', minutes(-10));
-  expect(await db.query('SELECT pin_sha FROM mc.versions')).toEqual([{ pin_sha: 'second' }]);
+  await pin("first", minutes(-20));
+  await pin("second", minutes(-10));
+  expect(await db.query("SELECT pin_sha FROM mc.versions")).toEqual([
+    { pin_sha: "second" },
+  ]);
 
-  await db.query(`UPDATE mc.pins SET committed_at = $1 WHERE sha = 'second'`, [minutes(10)]);
-  expect(await db.query('SELECT pin_sha FROM mc.versions')).toEqual([{ pin_sha: 'first' }]);
+  await db.query(`UPDATE mc.pins SET committed_at = $1 WHERE sha = 'second'`, [
+    minutes(10),
+  ]);
+  expect(await db.query("SELECT pin_sha FROM mc.versions")).toEqual([
+    { pin_sha: "first" },
+  ]);
 
   await db.query(`DELETE FROM mc.pins WHERE sha = 'first'`);
-  expect(await db.query('SELECT pin_sha FROM mc.versions')).toEqual([{ pin_sha: null }]);
+  expect(await db.query("SELECT pin_sha FROM mc.versions")).toEqual([
+    { pin_sha: null },
+  ]);
 });
 
-test('a lap that moves off a digest takes its version along', async () => {
+test("a lap that moves off a digest takes its version along", async () => {
   const codebase = await factoryCodebase();
-  const other = `sha256:${'ef'.repeat(32)}`;
+  const other = `sha256:${"ef".repeat(32)}`;
   const [only] = await runAt(codebase, NOW);
   const [first] = await runAt(codebase, minutes(-30), { digest: other });
   await runAt(codebase, minutes(10), { digest: other });
-  const versions = () => db.query('SELECT digest, first_run_at FROM mc.versions ORDER BY 1');
+  const versions = () =>
+    db.query("SELECT digest, first_run_at FROM mc.versions ORDER BY 1");
   const setDigest = (runId: unknown, digest: string) =>
-    db.query(`UPDATE public.remote_agent_workflow_runs SET metadata = $2 WHERE id = $1`, [
-      runId,
-      JSON.stringify({ workflow_source: { digest } }),
-    ]);
+    db.query(
+      `UPDATE public.remote_agent_workflow_runs SET metadata = $2 WHERE id = $1`,
+      [runId, JSON.stringify({ workflow_source: { digest } })],
+    );
 
-  await setDigest(only?.id, `sha256:${'cd'.repeat(32)}`);
+  await setDigest(only?.id, `sha256:${"cd".repeat(32)}`);
   expect(await versions()).toEqual([
-    { digest: `sha256:${'cd'.repeat(32)}`, first_run_at: NOW },
+    { digest: `sha256:${"cd".repeat(32)}`, first_run_at: NOW },
     { digest: other, first_run_at: minutes(-30) },
   ]);
 
   await setDigest(first?.id, DIGEST);
   expect(await versions()).toEqual([
     { digest: DIGEST, first_run_at: minutes(-30) },
-    { digest: `sha256:${'cd'.repeat(32)}`, first_run_at: NOW },
+    { digest: `sha256:${"cd".repeat(32)}`, first_run_at: NOW },
     { digest: other, first_run_at: minutes(10) },
   ]);
 
@@ -1531,69 +1721,91 @@ test('a lap that moves off a digest takes its version along', async () => {
     `UPDATE public.remote_agent_workflow_runs SET workflow_name = 'archon-fix' WHERE id = $1`,
     [first?.id],
   );
-  await db.query(`UPDATE public.remote_agent_workflow_runs SET codebase_id = NULL WHERE id = $1`, [
-    only?.id,
+  await db.query(
+    `UPDATE public.remote_agent_workflow_runs SET codebase_id = NULL WHERE id = $1`,
+    [only?.id],
+  );
+  expect(await versions()).toEqual([
+    { digest: other, first_run_at: minutes(10) },
   ]);
-  expect(await versions()).toEqual([{ digest: other, first_run_at: minutes(10) }]);
   expect(await projectionErrors()).toEqual([]);
 });
 
-test('a version that cannot be written keeps the lap and is recorded', async () => {
+test("a version that cannot be written keeps the lap and is recorded", async () => {
   const codebase = await factoryCodebase();
   const rolledBack = db.transaction(async (tx) => {
-    await tx.query('ALTER TABLE mc.versions ADD CONSTRAINT no_rows CHECK (false) NOT VALID');
+    await tx.query(
+      "ALTER TABLE mc.versions ADD CONSTRAINT no_rows CHECK (false) NOT VALID",
+    );
     const [run] = await tx.query(
       `INSERT INTO public.remote_agent_workflow_runs
          (workflow_name, codebase_id, status, user_message, metadata)
        VALUES ('archon-loop', $1, 'running', 'Run the loop', $2) RETURNING id`,
       [codebase, JSON.stringify({ workflow_source: { digest: DIGEST } })],
     );
-    expect(await tx.query('SELECT factory FROM mc.laps WHERE run_id = $1', [run?.id])).toEqual([
-      { factory: 'mission-control' },
+    expect(
+      await tx.query("SELECT factory FROM mc.laps WHERE run_id = $1", [
+        run?.id,
+      ]),
+    ).toEqual([{ factory: "mission-control" }]);
+    expect(
+      await tx.query(
+        "SELECT source, run_id, sqlstate FROM mc.projection_errors",
+      ),
+    ).toEqual([
+      { source: "mc_project_run_insert", run_id: run?.id, sqlstate: "23514" },
     ]);
-    expect(await tx.query('SELECT source, run_id, sqlstate FROM mc.projection_errors')).toEqual([
-      { source: 'mc_project_run_insert', run_id: run?.id, sqlstate: '23514' },
-    ]);
-    throw new Error('rollback after the run committed');
+    throw new Error("rollback after the run committed");
   });
-  await expect(rolledBack).rejects.toThrow('rollback after the run committed');
+  await expect(rolledBack).rejects.toThrow("rollback after the run committed");
 });
 
-test('a run status update commits and is recorded when the trigger cannot reach mc.laps, even on its first call', async () => {
+test("a run status update commits and is recorded when the trigger cannot reach mc.laps, even on its first call", async () => {
   // PGlite has one session, so no lock wait is possible here; `bun run projection:locks` proves
   // that on a check branch. Recompiling the trigger with mc.laps out of reach is what a session's
   // first call under a lock on it does: anything the trigger resolves when it compiles fails
   // outside its exception blocks (#114).
   const rolledBack = db.transaction(async (tx) => {
-    await tx.query(`ALTER FUNCTION mc.project_run() SET lock_timeout = '100ms'`);
-    await tx.query('ALTER TABLE mc.laps RENAME TO laps_gone');
-    await tx.query(`UPDATE public.remote_agent_workflow_runs SET status = 'paused' WHERE id = $1`, [
-      runId,
+    await tx.query(
+      `ALTER FUNCTION mc.project_run() SET lock_timeout = '100ms'`,
+    );
+    await tx.query("ALTER TABLE mc.laps RENAME TO laps_gone");
+    await tx.query(
+      `UPDATE public.remote_agent_workflow_runs SET status = 'paused' WHERE id = $1`,
+      [runId],
+    );
+    expect(
+      await tx.query(
+        "SELECT source, run_id, sqlstate FROM mc.projection_errors",
+      ),
+    ).toEqual([
+      { source: "mc_project_run_update", run_id: runId, sqlstate: "42P01" },
     ]);
-    expect(await tx.query('SELECT source, run_id, sqlstate FROM mc.projection_errors')).toEqual([
-      { source: 'mc_project_run_update', run_id: runId, sqlstate: '42P01' },
-    ]);
-    throw new Error('rollback after the run committed');
+    throw new Error("rollback after the run committed");
   });
-  await expect(rolledBack).rejects.toThrow('rollback after the run committed');
+  await expect(rolledBack).rejects.toThrow("rollback after the run committed");
 });
 
 const ATTN_WAIT = {
-  owner: 'node',
-  nodeId: 'ask',
-  kind: 'attention',
-  waitingSince: '2026-10-24T10:20:00.000Z',
-  message: '**Build queue, issue 15: scope decision**\n\n**What it is.** Ship it?',
-  pauseId: 'p1',
-  form: 'select',
+  owner: "node",
+  nodeId: "ask",
+  kind: "attention",
+  waitingSince: "2026-10-24T10:20:00.000Z",
+  message:
+    "**Build queue, issue 15: scope decision**\n\n**What it is.** Ship it?",
+  pauseId: "p1",
+  form: "select",
   options: [
-    { id: 'ship', label: 'Ship' },
-    { id: 'other', label: 'Something else' },
+    { id: "ship", label: "Ship" },
+    { id: "other", label: "Something else" },
   ],
-  labels: { build: 'scope' },
+  labels: { build: "scope" },
 };
 
-async function pausedRun(wait: object = ATTN_WAIT, extra: object = {}): Promise<string> {
+async function pausedRun(
+  wait: object = ATTN_WAIT,
+  extra: object = {},
+): Promise<string> {
   const [row] = await db.query(
     `INSERT INTO public.remote_agent_workflow_runs (workflow_name, status, user_message, metadata)
      VALUES ('archon-build-queue', 'paused', 'queue', $1) RETURNING id`,
@@ -1603,10 +1815,10 @@ async function pausedRun(wait: object = ATTN_WAIT, extra: object = {}): Promise<
 }
 
 const setAttentionMetadata = (id: string, metadata: object) =>
-  db.query('UPDATE public.remote_agent_workflow_runs SET metadata = $2 WHERE id = $1', [
-    id,
-    JSON.stringify(metadata),
-  ]);
+  db.query(
+    "UPDATE public.remote_agent_workflow_runs SET metadata = $2 WHERE id = $1",
+    [id, JSON.stringify(metadata)],
+  );
 
 const attentionItems = () =>
   db.query(
@@ -1614,62 +1826,70 @@ const attentionItems = () =>
        length(message)::int AS length FROM mc.attention_items`,
   );
 
-test('a run paused at an open attention wait is one attention item, and leaves when it is not', async () => {
+test("a run paused at an open attention wait is one attention item, and leaves when it is not", async () => {
   const id = await pausedRun();
-  const [item] = await db.query(`SELECT * FROM mc.attention_items WHERE run_id = $1`, [id]);
+  const [item] = await db.query(
+    `SELECT * FROM mc.attention_items WHERE run_id = $1`,
+    [id],
+  );
   expect(item).toMatchObject({
-    factory: '',
-    workflow_name: 'archon-build-queue',
-    node_id: 'ask',
-    form: 'select',
+    factory: "",
+    workflow_name: "archon-build-queue",
+    node_id: "ask",
+    form: "select",
     options: ATTN_WAIT.options,
-    labels: { build: 'scope' },
+    labels: { build: "scope" },
     message: ATTN_WAIT.message,
   });
-  expect(new Date(String(item?.waiting_since)).toISOString()).toBe('2026-10-24T10:20:00.000Z');
+  expect(new Date(String(item?.waiting_since)).toISOString()).toBe(
+    "2026-10-24T10:20:00.000Z",
+  );
 
-  await setAttentionMetadata(id, { wait: { ...ATTN_WAIT, labels: { build: 'stop' } } });
+  await setAttentionMetadata(id, {
+    wait: { ...ATTN_WAIT, labels: { build: "stop" } },
+  });
   expect((await attentionItems())[0]?.labels).toBe('{"build": "stop"}');
 
   for (const gone of [
-    { wait: { ...ATTN_WAIT, answer: { decision: 'ship' } } },
-    { wait: ATTN_WAIT, source_release: { nodeId: 'ask' } },
+    { wait: { ...ATTN_WAIT, answer: { decision: "ship" } } },
+    { wait: ATTN_WAIT, source_release: { nodeId: "ask" } },
   ]) {
     await setAttentionMetadata(id, gone);
     expect(await attentionItems()).toEqual([]);
     await setAttentionMetadata(id, { wait: ATTN_WAIT });
     expect(await attentionItems()).toHaveLength(1);
   }
-  await db.query(`UPDATE public.remote_agent_workflow_runs SET status = 'running' WHERE id = $1`, [
-    id,
-  ]);
+  await db.query(
+    `UPDATE public.remote_agent_workflow_runs SET status = 'running' WHERE id = $1`,
+    [id],
+  );
   expect(await attentionItems()).toEqual([]);
 });
 
-test('an attention item’s node and choices follow the wait’s owner and form', async () => {
+test("an attention item’s node and choices follow the wait’s owner and form", async () => {
   await pausedRun({
     ...ATTN_WAIT,
-    owner: 'loop_group',
-    nodeId: 'rounds',
-    bodyWaitId: 'ask',
-    form: 'approval',
+    owner: "loop_group",
+    nodeId: "rounds",
+    bodyWaitId: "ask",
+    form: "approval",
   });
-  await pausedRun({ ...ATTN_WAIT, form: 'message' });
+  await pausedRun({ ...ATTN_WAIT, form: "message" });
   const items = await attentionItems();
   expect(items.map((i) => [i.node_id, i.form, i.options])).toEqual(
     expect.arrayContaining([
-      ['rounds.ask', 'approval', '[{"id": "approve"}, {"id": "reject"}]'],
-      ['ask', 'message', '[]'],
+      ["rounds.ask", "approval", '[{"id": "approve"}, {"id": "reject"}]'],
+      ["ask", "message", "[]"],
     ]),
   );
 });
 
-test('an attention message is stored as its first 4000 characters', async () => {
-  await pausedRun({ ...ATTN_WAIT, message: 'x'.repeat(5000) });
+test("an attention message is stored as its first 4000 characters", async () => {
+  await pausedRun({ ...ATTN_WAIT, message: "x".repeat(5000) });
   expect((await attentionItems())[0]?.length).toBe(4000);
 });
 
-test('an update that changes nothing an attention item shows does not fire the projection', async () => {
+test("an update that changes nothing an attention item shows does not fire the projection", async () => {
   const id = await pausedRun();
   await db.query(`UPDATE mc.attention_items SET labels = '{"by":"hand"}'`);
   await db.query(
@@ -1680,56 +1900,76 @@ test('an update that changes nothing an attention item shows does not fire the p
   expect((await attentionItems())[0]?.labels).toBe('{"by": "hand"}');
 });
 
-test('an unreadable wait time commits Archon’s write and records one projection error', async () => {
+test("an unreadable wait time commits Archon’s write and records one projection error", async () => {
   const id = await pausedRun();
-  await setAttentionMetadata(id, { wait: { ...ATTN_WAIT, waitingSince: 'not a time' } });
+  await setAttentionMetadata(id, {
+    wait: { ...ATTN_WAIT, waitingSince: "not a time" },
+  });
   expect(await attentionItems()).toHaveLength(1);
-  expect(await db.query('SELECT source, run_id FROM mc.projection_errors')).toEqual([
-    { source: 'mc_project_attention_update', run_id: id },
-  ]);
+  expect(
+    await db.query("SELECT source, run_id FROM mc.projection_errors"),
+  ).toEqual([{ source: "mc_project_attention_update", run_id: id }]);
   const [run] = await db.query(
-    'SELECT metadata FROM public.remote_agent_workflow_runs WHERE id = $1',
+    "SELECT metadata FROM public.remote_agent_workflow_runs WHERE id = $1",
     [id],
   );
-  expect(JSON.stringify(run?.metadata)).toContain('not a time');
+  expect(JSON.stringify(run?.metadata)).toContain("not a time");
 });
 
-test('deleting a paused run removes its attention item', async () => {
+test("deleting a paused run removes its attention item", async () => {
   const id = await pausedRun();
-  await db.query('DELETE FROM public.remote_agent_workflow_runs WHERE id = $1', [id]);
+  await db.query(
+    "DELETE FROM public.remote_agent_workflow_runs WHERE id = $1",
+    [id],
+  );
   expect(await attentionItems()).toEqual([]);
 });
 
-test('0019 projects the attention runs already paused, and changes nothing run again', async () => {
+test("0019 projects the attention runs already paused, and changes nothing run again", async () => {
   const historical = await archonDb();
   try {
-    await runMigrations({ files: migrationFiles.filter((f) => f.name < '0019'), db: historical });
+    await runMigrations({
+      files: migrationFiles.filter((f) => f.name < "0019"),
+      db: historical,
+    });
     await historical.query(
       `INSERT INTO public.remote_agent_workflow_runs (workflow_name, status, user_message, metadata)
        VALUES ('archon-build-queue', 'paused', 'queue', $1)`,
       [JSON.stringify({ wait: ATTN_WAIT })],
     );
-    expect(await runMigrations({ files: migrationFiles, db: historical })).toEqual([
-      '0019_attention_items.sql',
-      '0019_queue_laps.sql',
-      '0019_structured_output_string.sql',
-      '0020_queue_step_events.sql',
-      '0021_split_step_events.sql',
-      '0022_arch_step_child_workflow.sql',
+    expect(
+      await runMigrations({ files: migrationFiles, db: historical }),
+    ).toEqual([
+      "0019_attention_items.sql",
+      "0019_queue_laps.sql",
+      "0019_structured_output_string.sql",
+      "0020_queue_step_events.sql",
+      "0021_split_step_events.sql",
+      "0022_queue_versions.sql",
+      "0023_arch_step_child_workflow.sql",
     ]);
-    expect(await historical.query('SELECT node_id FROM mc.attention_items')).toEqual([
-      { node_id: 'ask' },
-    ]);
-    const before = await historical.query('SELECT * FROM mc.attention_items');
-    const [attention] = migrationFiles.filter((f) => f.name === '0019_attention_items.sql');
-    await historical.query(attention?.sql ?? '');
-    expect(await historical.query('SELECT * FROM mc.attention_items')).toEqual(before);
+    expect(
+      await historical.query("SELECT node_id FROM mc.attention_items"),
+    ).toEqual([{ node_id: "ask" }]);
+    const before = await historical.query("SELECT * FROM mc.attention_items");
+    const [attention] = migrationFiles.filter(
+      (f) => f.name === "0019_attention_items.sql",
+    );
+    await historical.query(attention?.sql ?? "");
+    expect(await historical.query("SELECT * FROM mc.attention_items")).toEqual(
+      before,
+    );
   } finally {
     await historical.close();
   }
 });
 
-const WAIT = { kind: 'attention', owner: 'node', nodeId: 'ask', message: MARKER };
+const WAIT = {
+  kind: "attention",
+  owner: "node",
+  nodeId: "ask",
+  message: MARKER,
+};
 
 async function setMetadata(metadata: unknown, status?: string): Promise<void> {
   await db.query(
@@ -1741,70 +1981,156 @@ async function setMetadata(metadata: unknown, status?: string): Promise<void> {
 
 const queueLap = async () =>
   (
-    await db.query('SELECT issue_number, attention_open FROM mc.laps WHERE run_id = $1', [runId])
+    await db.query(
+      "SELECT issue_number, attention_open FROM mc.laps WHERE run_id = $1",
+      [runId],
+    )
   )[0];
 
-test('a lap’s issue is its run’s number input, unless the run is for a pull request', async () => {
-  await setMetadata({ inputs: { number: '401' } });
-  expect(await queueLap()).toEqual({ issue_number: 401, attention_open: false });
-  await setMetadata({ inputs: { number: '401', kind: 'pull_request' } });
+test("a lap’s issue is its run’s number input, unless the run is for a pull request", async () => {
+  await setMetadata({ inputs: { number: "401" } });
+  expect(await queueLap()).toEqual({
+    issue_number: 401,
+    attention_open: false,
+  });
+  await setMetadata({ inputs: { number: "401", kind: "pull_request" } });
   expect((await queueLap())?.issue_number).toBeNull();
-  await setMetadata({ inputs: { number: '' } });
+  await setMetadata({ inputs: { number: "" } });
   expect((await queueLap())?.issue_number).toBeNull();
 });
 
-test('a lap waits on attention from its pause until the wait is answered or the run resumes', async () => {
-  await setMetadata({ wait: WAIT }, 'paused');
+test("a lap waits on attention from its pause until the wait is answered or the run resumes", async () => {
+  await setMetadata({ wait: WAIT }, "paused");
   expect((await queueLap())?.attention_open).toBe(true);
-  await setMetadata({ wait: { ...WAIT, answer: { text: 'yes' } } });
+  await setMetadata({ wait: { ...WAIT, answer: { text: "yes" } } });
   expect((await queueLap())?.attention_open).toBe(false);
-  await setMetadata({ wait: WAIT }, 'paused');
+  await setMetadata({ wait: WAIT }, "paused");
   expect((await queueLap())?.attention_open).toBe(true);
-  await setMetadata({ wait: WAIT }, 'running');
+  await setMetadata({ wait: WAIT }, "running");
   expect((await queueLap())?.attention_open).toBe(false);
-  await setMetadata({ wait: { kind: 'quota' } }, 'paused');
+  await setMetadata({ wait: { kind: "quota" } }, "paused");
   expect((await queueLap())?.attention_open).toBe(false);
-  await setMetadata({ source_release: { nodeId: 'a' }, wait: WAIT }, 'paused');
+  await setMetadata({ source_release: { nodeId: "a" }, wait: WAIT }, "paused");
   expect((await queueLap())?.attention_open).toBe(false);
 });
 
-test('metadata of an odd shape commits in Archon, with no issue and no wait, and records no error', async () => {
-  for (const odd of [[1, 2], 'text', 5, { inputs: 'x' }, { inputs: { number: '99999999999' } }]) {
-    await setMetadata(odd, 'paused');
-    expect(await queueLap()).toEqual({ issue_number: null, attention_open: false });
+test("metadata of an odd shape commits in Archon, with no issue and no wait, and records no error", async () => {
+  for (const odd of [
+    [1, 2],
+    "text",
+    5,
+    { inputs: "x" },
+    { inputs: { number: "99999999999" } },
+  ]) {
+    await setMetadata(odd, "paused");
+    expect(await queueLap()).toEqual({
+      issue_number: null,
+      attention_open: false,
+    });
   }
   expect(await projectionErrors()).toEqual([]);
 });
 
-test('0019 fills a lap projected before it, and changes nothing run again', async () => {
+test("0019 fills a lap projected before it, and changes nothing run again", async () => {
   const historical = await archonDb();
   try {
-    await runMigrations({ files: migrationFiles.filter((f) => f.name < '0019'), db: historical });
+    await runMigrations({
+      files: migrationFiles.filter((f) => f.name < "0019"),
+      db: historical,
+    });
     await historical.query(
       `INSERT INTO public.remote_agent_workflow_runs (workflow_name, status, user_message, metadata)
        VALUES ('archon-build-queue', 'paused', 'historical', $1)`,
-      [JSON.stringify({ inputs: { number: '402' }, wait: WAIT })],
+      [JSON.stringify({ inputs: { number: "402" }, wait: WAIT })],
     );
-    expect(await runMigrations({ files: migrationFiles, db: historical })).toEqual([
-      '0019_attention_items.sql',
-      '0019_queue_laps.sql',
-      '0019_structured_output_string.sql',
-      '0020_queue_step_events.sql',
-      '0021_split_step_events.sql',
-      '0022_arch_step_child_workflow.sql',
+    expect(
+      await runMigrations({ files: migrationFiles, db: historical }),
+    ).toEqual([
+      "0019_attention_items.sql",
+      "0019_queue_laps.sql",
+      "0019_structured_output_string.sql",
+      "0020_queue_step_events.sql",
+      "0021_split_step_events.sql",
+      "0022_queue_versions.sql",
+      "0023_arch_step_child_workflow.sql",
     ]);
-    const lap = () => historical.query('SELECT issue_number, attention_open FROM mc.laps');
+    const lap = () =>
+      historical.query("SELECT issue_number, attention_open FROM mc.laps");
     expect(await lap()).toEqual([{ issue_number: 402, attention_open: true }]);
     const migrated = await snapshot(historical);
-    const [file] = migrationFiles.filter((f) => f.name === '0019_queue_laps.sql');
-    await historical.query(file?.sql ?? '');
+    const [file] = migrationFiles.filter(
+      (f) => f.name === "0019_queue_laps.sql",
+    );
+    await historical.query(file?.sql ?? "");
     expect(await snapshot(historical)).toEqual(migrated);
   } finally {
     await historical.close();
   }
 });
 
-async function archonEvent(workflow: string, type: string, step: string, data: unknown) {
+test("0022 writes the versions build-queue runs already have, and changes nothing run again", async () => {
+  const historical = await archonDb();
+  try {
+    await runMigrations({
+      files: migrationFiles.filter((f) => f.name < "0022"),
+      db: historical,
+    });
+    await historical.query(`INSERT INTO mc.factories VALUES
+      ('mission-control', 'coleam00/factory-mission-control', 'coleam00/factory-mission-control',
+       'http://localhost:3090')`);
+    const [codebase] =
+      await historical.query(`INSERT INTO public.remote_agent_codebases (name)
+      VALUES ('coleam00/factory-mission-control') RETURNING id`);
+    for (const [workflow, digest] of [
+      ["archon-loop", "sha256:loop"],
+      ["archon-build-queue", "sha256:queue"],
+    ]) {
+      await historical.query(
+        `INSERT INTO public.remote_agent_workflow_runs
+           (workflow_name, codebase_id, status, user_message, metadata, started_at)
+         VALUES ($1, $2, 'completed', 'historical', $3, $4)`,
+        [
+          workflow,
+          codebase?.id,
+          JSON.stringify({ workflow_source: { digest } }),
+          NOW,
+        ],
+      );
+    }
+    const versions = () =>
+      historical.query("SELECT digest, first_run_at FROM mc.versions");
+    expect(await versions()).toEqual([
+      { digest: "sha256:loop", first_run_at: NOW },
+    ]);
+
+    expect(
+      await runMigrations({ files: migrationFiles, db: historical }),
+    ).toEqual(["0022_queue_versions.sql", "0023_arch_step_child_workflow.sql"]);
+    expect(
+      (await versions()).sort((a, b) =>
+        String(a.digest).localeCompare(String(b.digest)),
+      ),
+    ).toEqual([
+      { digest: "sha256:loop", first_run_at: NOW },
+      { digest: "sha256:queue", first_run_at: NOW },
+    ]);
+    const migrated = await snapshot(historical);
+    const [file] = migrationFiles.filter(
+      (f) => f.name === "0022_queue_versions.sql",
+    );
+    await historical.query(file?.sql ?? "");
+    expect(await snapshot(historical)).toEqual(migrated);
+  } finally {
+    await historical.close();
+  }
+});
+
+async function archonEvent(
+  workflow: string,
+  type: string,
+  step: string,
+  data: unknown,
+) {
   const [run] = await db.query(
     `INSERT INTO public.remote_agent_workflow_runs (workflow_name, status, user_message)
      VALUES ($1, 'running', 'queue') RETURNING id`,
@@ -1819,43 +2145,77 @@ async function archonEvent(workflow: string, type: string, step: string, data: u
 }
 
 const projectedSteps = (id: unknown) =>
-  db.query('SELECT step_id, status, output FROM mc.lap_steps WHERE run_id = $1', [id]);
+  db.query(
+    "SELECT step_id, status, output FROM mc.lap_steps WHERE run_id = $1",
+    [id],
+  );
 
-test('a queue run’s step events project steps and attempts, as the old pack’s other workflows still do not', async () => {
-  const started = await archonEvent('archon-build-queue', 'node_started', 'implement', {});
+test("a queue run’s step events project steps and attempts, as the old pack’s other workflows still do not", async () => {
+  const started = await archonEvent(
+    "archon-build-queue",
+    "node_started",
+    "implement",
+    {},
+  );
   expect(await projectedSteps(started)).toEqual([
-    { step_id: 'implement', status: 'running', output: null },
+    { step_id: "implement", status: "running", output: null },
   ]);
-  const merged = await archonEvent('archon-merge-queue', 'node_completed', 'record', {
-    structured_output: { merged: [404, 405] },
-    duration_ms: 5,
-  });
+  const merged = await archonEvent(
+    "archon-merge-queue",
+    "node_completed",
+    "record",
+    {
+      structured_output: { merged: [404, 405] },
+      duration_ms: 5,
+    },
+  );
   const [record] = await projectedSteps(merged);
-  expect(record).toMatchObject({ step_id: 'record', status: 'completed' });
+  expect(record).toMatchObject({ step_id: "record", status: "completed" });
   expect(
-    await db.query('SELECT step_id, status FROM mc.lap_step_attempts WHERE run_id = $1', [merged]),
-  ).toEqual([{ step_id: 'record', status: 'completed' }]);
+    await db.query(
+      "SELECT step_id, status FROM mc.lap_step_attempts WHERE run_id = $1",
+      [merged],
+    ),
+  ).toEqual([{ step_id: "record", status: "completed" }]);
   expect(
-    await db.query('SELECT step_id FROM mc.lap_step_attempt_usage WHERE run_id = $1', [merged]),
-  ).toEqual([{ step_id: 'record' }]);
-  const split = await archonEvent('archon-split', 'node_started', 'slice', {});
+    await db.query(
+      "SELECT step_id FROM mc.lap_step_attempt_usage WHERE run_id = $1",
+      [merged],
+    ),
+  ).toEqual([{ step_id: "record" }]);
+  const split = await archonEvent("archon-split", "node_started", "slice", {});
   expect(await projectedSteps(split)).toEqual([
-    { step_id: 'slice', status: 'running', output: null },
+    { step_id: "slice", status: "running", output: null },
   ]);
-  const manager = await archonEvent('archon-manager', 'node_started', 'steer', {});
+  const manager = await archonEvent(
+    "archon-manager",
+    "node_started",
+    "steer",
+    {},
+  );
   expect(await projectedSteps(manager)).toEqual([]);
   expect(await projectionErrors()).toEqual([]);
 });
 
-test('the workflows projecting step events are the map’s queue covers and the old loop, no other', async () => {
+test("the workflows projecting step events are the map’s queue covers and the old loop, no other", async () => {
   const covers = FACTORY_MAP.cards.flatMap((c) => c.covers ?? []);
   const projecting = new Set(
-    covers.filter((c) => c.pack === 'queue' || c.workflow === 'archon-loop').map((c) => c.workflow),
+    covers
+      .filter((c) => c.pack === "queue" || c.workflow === "archon-loop")
+      .map((c) => c.workflow),
   );
-  const notProjecting = new Set(covers.map((c) => c.workflow).filter((w) => !projecting.has(w)));
-  expect([...notProjecting].sort()).toEqual(['archon-backlog', 'archon-manager']);
+  const notProjecting = new Set(
+    covers.map((c) => c.workflow).filter((w) => !projecting.has(w)),
+  );
+  expect([...notProjecting].sort()).toEqual([
+    "archon-backlog",
+    "archon-manager",
+  ]);
   for (const workflow of [...projecting, ...notProjecting]) {
-    const [row] = await db.query('SELECT mc.projects_step_events($1) AS projects', [workflow]);
+    const [row] = await db.query(
+      "SELECT mc.projects_step_events($1) AS projects",
+      [workflow],
+    );
     expect({ workflow, projects: row?.projects }).toEqual({
       workflow,
       projects: projecting.has(workflow),
@@ -1863,11 +2223,22 @@ test('the workflows projecting step events are the map’s queue covers and the 
   }
 });
 
-test('mc.keeps_step_output drops output for the workflows that once read holdouts, kept for old rows', async () => {
-  const redacted = ['factory-app-check', 'factory-holdout-sweep', 'factory-holdouts'];
-  const kept = ['archon-build-queue', 'archon-intake', 'archon-split', 'factory-manager'];
+test("mc.keeps_step_output drops output for the workflows that once read holdouts, kept for old rows", async () => {
+  const redacted = [
+    "factory-app-check",
+    "factory-holdout-sweep",
+    "factory-holdouts",
+  ];
+  const kept = [
+    "archon-build-queue",
+    "archon-intake",
+    "archon-split",
+    "factory-manager",
+  ];
   for (const workflow of [...redacted, ...kept]) {
-    const [row] = await db.query('SELECT mc.keeps_step_output($1) AS keeps', [workflow]);
+    const [row] = await db.query("SELECT mc.keeps_step_output($1) AS keeps", [
+      workflow,
+    ]);
     expect({ workflow, keeps: row?.keeps }).toEqual({
       workflow,
       keeps: !redacted.includes(workflow),
@@ -1875,26 +2246,27 @@ test('mc.keeps_step_output drops output for the workflows that once read holdout
   }
 });
 
-test('a holdout workflow’s steps keep status and timing but no output, route or reason', async () => {
-  const secret = 'H-07 SECRET report text';
+test("a holdout workflow’s steps keep status and timing but no output, route or reason", async () => {
+  const secret = "H-07 SECRET report text";
   const cases: [string, string, Record<string, unknown>][] = [
-    ['factory-app-check', 'evidence', { report: secret, overall: 'FAIL' }],
-    ['factory-app-check', 'choose', { route: 'fix', reason: secret }],
-    ['factory-holdouts', 'write', { summary: secret }],
-    ['factory-holdout-sweep', 'check', { summary: secret }],
+    ["factory-app-check", "evidence", { report: secret, overall: "FAIL" }],
+    ["factory-app-check", "choose", { route: "fix", reason: secret }],
+    ["factory-holdouts", "write", { summary: secret }],
+    ["factory-holdout-sweep", "check", { summary: secret }],
   ];
   for (const [workflow, step, structured_output] of cases) {
-    const id = await archonEvent(workflow, 'node_completed', step, {
+    const id = await archonEvent(workflow, "node_completed", step, {
       structured_output,
       duration_ms: 5,
     });
     expect(await projectedSteps(id)).toEqual([
-      { step_id: step, status: 'completed', output: null },
+      { step_id: step, status: "completed", output: null },
     ]);
     expect(
-      await db.query('SELECT route, outcome, reason FROM mc.lap_step_attempts WHERE run_id = $1', [
-        id,
-      ]),
+      await db.query(
+        "SELECT route, outcome, reason FROM mc.lap_step_attempts WHERE run_id = $1",
+        [id],
+      ),
     ).toEqual([{ route: null, outcome: null, reason: null }]);
   }
   expect(await projectionErrors()).toEqual([]);

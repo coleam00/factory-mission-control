@@ -186,7 +186,10 @@ export function changesPhase(ctx: LiveContext): LivePhase {
       const withLaps = new Set(
         (
           await db.query(
-            `SELECT DISTINCT digest FROM mc.laps WHERE factory = $1 AND workflow_name = 'archon-loop'`,
+            `SELECT DISTINCT l.digest FROM mc.laps l WHERE l.factory = $1
+              AND (l.workflow_name = 'archon-loop' OR l.workflow_name = 'archon-build-queue' AND EXISTS (
+                SELECT 1 FROM mc.lap_steps f WHERE f.run_id = l.run_id AND f.step_id = 'facts'
+                  AND f.output -> 'item' ->> 'number' IS NOT NULL))`,
             [factory],
           )
         ).map((row) => String(row.digest)),

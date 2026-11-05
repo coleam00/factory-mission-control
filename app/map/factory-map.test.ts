@@ -6,12 +6,15 @@ import {
   FIT_PAD,
   heroFrameHeight,
   linePoints,
+  type MapView,
   MIN_FRAME,
   midpoint,
   neighbours,
   pinnedStepLinks,
   stepLinks,
   tourPoints,
+  viewPath,
+  viewSearch,
   worldSize,
 } from './factory-map';
 
@@ -26,15 +29,42 @@ const card = (id: string) => {
   return found;
 };
 
-test('every line, the tour and the legend name cards and roles the map has', () => {
-  const ids = new Set(FACTORY_MAP.cards.map((c) => c.id));
-  expect(ids.size).toBe(FACTORY_MAP.cards.length);
-  for (const l of FACTORY_MAP.lines)
-    expect([l.from, l.to].filter((id) => !ids.has(id))).toEqual([]);
-  expect(FACTORY_MAP.tour.filter((id) => !ids.has(id))).toEqual([]);
-  expect(new Set(FACTORY_MAP.legend.map((l) => l.role))).toEqual(
-    new Set(FACTORY_MAP.cards.map((c) => c.role)),
+const levels: MapView[] = [FACTORY_MAP, ...Object.values(FACTORY_MAP.views ?? {})];
+
+test('every line, the tour and the legend name cards and roles the map has, at every level', () => {
+  const all = levels.flatMap((level) => level.cards);
+  expect(new Set(all.map((c) => c.id)).size).toBe(all.length);
+  for (const level of levels) {
+    const ids = new Set(level.cards.map((c) => c.id));
+    for (const l of level.lines) expect([l.from, l.to].filter((id) => !ids.has(id))).toEqual([]);
+    expect(level.tour.filter((id) => !ids.has(id))).toEqual([]);
+  }
+  expect(new Set(FACTORY_MAP.legend.map((l) => l.role))).toEqual(new Set(all.map((c) => c.role)));
+});
+
+test('viewPath resolves ?view to its path; unknown, empty and null go to the root', () => {
+  expect(viewPath(FACTORY_MAP, 'build')).toEqual(['build']);
+  for (const id of ['nope', '', null]) expect(viewPath(FACTORY_MAP, id)).toEqual([]);
+});
+
+test('viewSearch sets or deletes view and keeps the other parameters', () => {
+  const prev = new URLSearchParams('at=abc');
+  expect(viewSearch(prev, ['build']).toString()).toBe('at=abc&view=build');
+  expect(viewSearch(new URLSearchParams('at=abc&view=build'), []).toString()).toBe('at=abc');
+});
+
+test('the Build view fitted at 1440 in the home frame keeps the card type at or above its floors', () => {
+  const view = FACTORY_MAP.views?.build as MapView;
+  const world = worldSize(view);
+  const frame = heroFrameHeight(worldSize(FACTORY_MAP), 1384);
+  const k = Math.min(
+    (1384 - FIT_PAD * 2) / world.width,
+    (frame - FIT_PAD * 2 - FIT_FOOT) / world.height,
+    1.15,
   );
+  expect(k * MAP_TYPE.title).toBeGreaterThanOrEqual(14);
+  expect(k * MAP_TYPE.text).toBeGreaterThanOrEqual(11);
+  expect(k * MAP_TYPE.label).toBeGreaterThanOrEqual(10);
 });
 
 test("a line joins its cards' sides, turning halfway across when they are not level", () => {

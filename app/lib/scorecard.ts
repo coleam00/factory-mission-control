@@ -1,14 +1,15 @@
 /**
  * The scorecard of one factory version, from `db/queries/scorecard.sql`'s rows (one per finished
  * attempt of a lap's step, so a step that ran twice counts twice), by the definitions in PRD 4.2.
- * A lap is an `archon-loop` run whatever its status (owner decision on #16, as
+ * A lap is an `archon-loop` run, or an `archon-build-queue` run on a work item (`scorecard.sql`
+ * decides which), whatever its status (owner decisions on #16 and #378, as
  * `fixtures/expected-scorecard.sql`): count measures and cost use every lap, the time measures use
  * finished laps. Pure, no React.
  */
 
 import { formatNumber } from './format';
 
-/** An `archon-loop` run of this factory with a digest: a lap. */
+/** A lap of this factory with a digest. */
 export interface LapRow {
   run_id: string;
   digest: string;
@@ -51,8 +52,8 @@ const isVersion = (row: ScorecardRow): row is VersionRow => row.run_id === null;
 const isAttempt = (row: ScorecardRow): row is AttemptRow => row.step_id !== null;
 const isRun = (row: ScorecardRow): row is LapRow => !isVersion(row) && !isAttempt(row);
 
-/** PRD 4.2: a lap is an `archon-loop` run. */
-export const LAP_WORKFLOW = 'archon-loop';
+/** PRD 4.2: the workflows whose runs can be laps. `scorecard.sql` keeps only the build-queue runs on a work item. */
+export const LAP_WORKFLOWS: readonly string[] = ['archon-loop', 'archon-build-queue'];
 
 export interface Lap {
   id: string;
@@ -84,7 +85,8 @@ export function versionLaps(rows: readonly ScorecardRow[], digest: string): Lap[
     Lap & { routes: string[]; reviews: string[]; lands: string[]; refusals: string[] }
   >();
   for (const row of rows) {
-    if (!isRun(row) || row.digest !== digest || row.workflow_name !== LAP_WORKFLOW) continue;
+    if (!isRun(row) || row.digest !== digest || !LAP_WORKFLOWS.includes(row.workflow_name))
+      continue;
     laps.set(row.run_id, {
       id: row.run_id,
       status: row.status,
@@ -155,7 +157,7 @@ export function newestVersionWithLaps(rows: readonly ScorecardRow[]): string | n
   }
   const ran = new Set<string>();
   for (const row of rows) {
-    if (!isRun(row) || row.workflow_name !== LAP_WORKFLOW) continue;
+    if (!isRun(row) || !LAP_WORKFLOWS.includes(row.workflow_name)) continue;
     ran.add(row.digest);
     if (versioned.has(row.digest)) continue;
     const at = row.started_at?.getTime() ?? Number.NEGATIVE_INFINITY;

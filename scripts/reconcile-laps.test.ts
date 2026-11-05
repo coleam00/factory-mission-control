@@ -857,3 +857,28 @@ test('when mc.laps itself is locked, a running run with no lap is reported busy,
   ]);
   expect(await rows('SELECT 1 FROM mc.laps WHERE run_id = $1', [runId])).toEqual([]);
 });
+
+test('a finished build-queue run whose version is missing gets it back', async () => {
+  await rows(`INSERT INTO mc.factories VALUES
+    ('mission-control', 'coleam00/factory-mission-control', 'coleam00/factory-mission-control',
+     'http://localhost:3090')`);
+  const [codebase] = await rows(`INSERT INTO public.remote_agent_codebases (name)
+    VALUES ('coleam00/factory-mission-control') RETURNING id`);
+  await rows(
+    `INSERT INTO public.remote_agent_workflow_runs
+       (workflow_name, codebase_id, status, user_message, metadata, started_at, completed_at)
+     VALUES ('archon-build-queue', $1, 'completed', 'Run the queue', $2, $3, $4)`,
+    [
+      codebase?.id,
+      JSON.stringify({ workflow_source: { digest: 'sha256:queue' } }),
+      new Date(NOW.getTime() - 60 * 60_000).toISOString(),
+      NOW.toISOString(),
+    ],
+  );
+  const live = await rows('SELECT * FROM mc.versions');
+  expect(live).toHaveLength(1);
+
+  await rows('DELETE FROM mc.versions');
+  expect((await run([])).out).toEqual(['reconcile: 1 run(s) repaired']);
+  expect(await rows('SELECT * FROM mc.versions')).toEqual(live);
+});

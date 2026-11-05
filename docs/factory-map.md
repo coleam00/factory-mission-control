@@ -20,6 +20,13 @@ Review the two review rounds inside it. An entry an include expanded names its o
 package (`fixtures/pack/queue`). A live row carries only a workflow name, so counting ignores
 `pack`; the map check is what keeps the two sets apart.
 
+A card that opens a deeper view names it in `opens`; the view sits under `views.<id>` and has the
+root's shape (caption, `cardSize`, cards, lines, tour) without the legend, `views` or a required
+group. Card ids are unique across every level. A view's `next` card may name `upTo`, a card of
+the level above: clicking it goes up and selects that card. The view's crumb and Open button use
+the title of the card that opens it. One component draws every level, so selection, the details
+strip, chips, flow and the tour work the same in a view.
+
 ## Size and readability (owner deviation from the mockup)
 
 The map is the home screen's hero. Its frame spans the window between the page gutters; the
@@ -55,6 +62,13 @@ missing from the pack's copy of the loop, so App check may cover it without the 
 is the one step a card may name that the pack lacks, and it is held to exactly one card. When a
 pack changes, update `covers` until the check passes.
 
+Every view is held to its opening card: each step the card covers is covered by exactly one card
+of the view, and no card of the view covers a step, or a workflow, the opening card does not. A
+view covers only the steps its opening card has (Deliver's view never sees the review rounds,
+which Review has at the root), so an entry such as `ship/deliver` still counts the steps under
+it that belong to the opener. The check also fails on an `opens` naming no view, a view opened by
+no card or by two, a card id used twice, and an `upTo` naming no card of the level above.
+
 The queue pack is the snapshot `fixtures/pack/queue/`: `sdlc/` is `.archon/workflows/sdlc` of
 coleam00/Archon and `factory/` is `.archon/workflows/factory` of coleam00/ai-software-factory, at
 the commits this factory runs, with `ARCHON_COMMIT` and `FACTORY_COMMIT` beside them.
@@ -89,6 +103,13 @@ A chip of 0 is not drawn. A chip appears once its query has answered. A chip who
 shows as `? queued`, `? orders` or `? waiting`, never as a count; Right now says the count is unavailable, and
 Behind the scenes says the pinned steps are unavailable when `step-detail` failed.
 
+## Live counts in a view
+
+A lap counts once per level: on the card that covers its deepest running step at the root, and
+then on the card of that card's view that covers it, so one run on `ship/deliver/rounds/implement`
+is on Build at the home map and on Deliver in the Build view. A step that Review covers at the
+root counts on no card of the Build view.
+
 ## Clicking a card
 
 A card keeps itself and the cards a line joins to it lit and dims the rest; its details strip opens
@@ -103,7 +124,14 @@ are not in this version. App check's includes `check-app`, whose screen shows it
 holdout verifier and the fence (journey 1). Esc, the close button or a click on empty canvas
 deselects.
 
-No card has a deeper view yet: none shows ⤢ or an Open button until its view is built.
+A card with a view shows ⤢ and a stacked edge, and its strip has an Open button naming the number
+of cards in the view. A card shows ⤢ only once its view exists; today Build's does (`?view=build`).
+Double-click, Enter on the selected card or the Open button zooms into the view. Breadcrumbs above
+the caption (the factory, then each opened view), the up control, a crumb, Esc (with nothing
+selected) and Backspace go up, and the card that opened the view flashes. The address is
+`/f/<factory>?view=<id>`: opening and going up each push a history entry, so the browser's back
+button goes up, and a link or reload opens straight into the view. An unknown `view` shows the
+home map.
 
 ## Versions
 
@@ -117,4 +145,5 @@ factory.” The queued, failing, waiting, merged and open chips count the factor
 One dot travels Product document to Shipped and each card it reaches pulses once; dashes flow along
 the forward lines. The flow button beside the screen's title, or `prefers-reduced-motion`, stops
 both; the button shows once the map is drawn, and under reduced motion it reads off and is
-disabled.
+disabled. Opening a view zooms the camera onto the card while the map fades, swaps the level, and
+fits the new one; under reduced motion the swap is instant.
