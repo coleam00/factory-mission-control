@@ -440,6 +440,7 @@ describe('the rules the live queries restate, which they may not call a function
   const read = (...path: string[]) => readFileSync(join(import.meta.dir, '..', ...path), 'utf8');
   const query = (name: string) => queries.find(([n]) => n === name)?.[1] as string;
   const DATES_VERSION = "IN ('archon-loop', 'archon-build-queue')";
+  const ON_THE_QUEUES = "IN ('archon-intake', 'archon-build-queue')";
 
   const LAP =
     /workflow_name = 'archon-loop' OR l\.workflow_name = 'archon-build-queue' AND EXISTS \(\s*SELECT 1 FROM mc\.lap_steps f WHERE f\.run_id = l\.run_id AND f\.step_id = 'facts'\s*AND f\.output -> 'item' ->> 'number' IS NOT NULL\)/g;
@@ -458,8 +459,8 @@ describe('the rules the live queries restate, which they may not call a function
     }
   });
 
-  test('every mention of build-queue in a live query is one of the two rules, none a stray copy', () => {
-    // [mc.dates_version copies, lap-rule copies, named-exception mentions] per name; a live query
+  test('every mention of build-queue in a live query is one of the three rules, none a stray copy', () => {
+    // [mc.dates_version copies, lap-rule copies, queues-rule copies] per name; a live query
     // not listed here may mention none of them.
     const expected: Record<string, [number, number, number]> = {
       'version-strip': [1, 0, 0],
@@ -469,16 +470,24 @@ describe('the rules the live queries restate, which they may not call a function
       scorecard: [0, 2, 0],
       // The same list as mc.dates_version: the lap a work order's row names is one that ran a version.
       board: [1, 0, 0],
-      // Exception: the queues row asks which intake or build-queue runs exist, not what dates a version.
+      // The queues rule asks which intake or build-queue runs exist, not what dates a version.
       'home-map': [0, 0, 1],
+      'step-detail': [0, 0, 1],
+      'step-nesting': [0, 0, 1],
+      'step-prompt': [0, 0, 1],
+      'step-scripts': [0, 0, 1],
+      'step-subagents': [0, 0, 1],
+      'step-yaml': [0, 0, 1],
+      'step-versions': [0, 0, 1],
     };
     const copies = [...queries];
     for (const [name, sql] of copies) {
-      const [datesVersion, lap, exception] = expected[name] ?? [0, 0, 0];
+      const [datesVersion, lap, queues] = expected[name] ?? [0, 0, 0];
       expect([name, count(sql, DATES_VERSION), count(sql, LAP)]).toEqual([name, datesVersion, lap]);
+      expect([name, count(sql, ON_THE_QUEUES)]).toEqual([name, queues]);
       expect([name, count(sql, "'archon-build-queue'")]).toEqual([
         name,
-        datesVersion + lap + exception,
+        datesVersion + lap + queues,
       ]);
     }
   });
