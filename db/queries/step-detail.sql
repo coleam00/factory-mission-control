@@ -24,6 +24,7 @@ SELECT
   s.depends_on,
   s.trigger_rule,
   s.include,
+  s.child_workflow,
   s.command_file,
   s.script,
   s.script_file,

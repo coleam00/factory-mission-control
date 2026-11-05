@@ -286,6 +286,7 @@ const ROW_COLUMNS: Record<string, string[]> = {
     'depends_on',
     'trigger_rule',
     'include',
+    'child_workflow',
     'command_file',
     'script',
     'script_file',
