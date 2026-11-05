@@ -72,7 +72,7 @@ const UNAVAILABLE = {
   lands: 'Where the work orders land is unavailable.',
 } as const;
 
-/** One pull request the gate settled, with the reason the sweep gave. */
+/** One pull request in the gate's recent decisions: merged as read back, or the sweep's send-back or ask, with its reason. */
 function Gate({ outcome }: { outcome: GateOutcome }): ReactElement {
   return (
     <li data-gate-outcome={outcome.number}>
