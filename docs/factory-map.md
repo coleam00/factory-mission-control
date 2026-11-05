@@ -207,7 +207,7 @@ home map.
 
 `?view=manager` draws `refs/18-drill-manager.png`: four violet question cards (Work item is unclear,
 Build is stuck on a choice, Risky merge, Is this a real problem?), the Manager and the Written rules
-under them. Its cards are 250 high, not the 200 of the other views, because a question card's kind,
+under them. Its cards are 250 high, taller than the other views' cards, because a question card's kind,
 two-line title, three-line text and chip need that to keep the chip inside the border at the map's
 type scale. It adds three live queries to the home map's: `attention-items`, and the Health screen's
 `health-runs` and `health-steps`; each is a live query, none polls.
