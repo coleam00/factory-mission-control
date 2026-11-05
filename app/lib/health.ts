@@ -17,6 +17,8 @@ export interface HealthRunRow {
   failed_step: string | null;
   error: string | null;
   failed_at: Date | null;
+  /** The factory's Archon console, for the run link. */
+  console: string;
 }
 
 /**
@@ -30,6 +32,8 @@ export interface HealthStepRow {
   step_id: string;
   at: Date | null;
   duration_ms: number | null;
+  /** The factory's Archon console, for the run link; null on a completion. */
+  console: string | null;
 }
 
 /** One row of health-workable.sql: a workable issue, or a running lap. */
@@ -148,6 +152,7 @@ export interface OverdueStep {
   running_ms: number;
   p90_ms: number;
   completions: number;
+  console: string | null;
 }
 
 /**
@@ -170,6 +175,7 @@ export function overdueSteps(rows: readonly HealthStepRow[], now: number): Overd
       running_ms,
       p90_ms: step.p90,
       completions: step.completions,
+      console: row.console,
     });
   }
   return overdue.sort(

@@ -5,12 +5,30 @@
  * open product documents from `product-documents`. Every chip keeps the items it counted,
  * which the details strip's Right now lists (invariant 4). Pure, no React.
  */
-import type { HealthWorkableRow } from '../lib/health';
+import {
+  type AttentionItem,
+  type AttentionRow,
+  attentionOrigin,
+  attentionTitle,
+  attentionItems as parseAttention,
+  recommendedChoice,
+} from '../lib/attention';
+import { formatElapsed } from '../lib/format';
+import {
+  CAUSE_LABEL,
+  failedLaps,
+  type HealthRunRow,
+  type HealthStepRow,
+  type HealthWorkableRow,
+  overdueSteps,
+  waitingRuns,
+} from '../lib/health';
 import { claimedPulls, mergedPulls } from '../lib/merge-queue';
-import { pullUrl } from '../lib/one-lap';
+import { consoleUrl, pullUrl } from '../lib/one-lap';
 import type { OwnerQueueRow } from '../lib/owner-queue';
 import type { PanelState } from '../live/LivePanel';
 import {
+  type Asks,
   allCards,
   type Card,
   type Chip,
@@ -19,6 +37,7 @@ import {
   cardsCounting,
   type FactoryMap,
   type List,
+  levelsOf,
   stepPath,
 } from './factory-map';
 
@@ -57,6 +76,18 @@ export interface MapItem {
   /** Null for an attention item whose run names no issue. */
   number: number | null;
   title: string;
+  url: string | null;
+  /** What Right now says beside it when it is not the chip's own word: a question's recommendation. */
+  note?: string;
+}
+
+/** One thing wrong with the factory, for the Manager's Right now: a run in the console. */
+export interface MapHealth {
+  key: string;
+  /** What is wrong, in plain words. */
+  note: string;
+  run: string;
+  /** The run in the factory's Archon console. */
   url: string | null;
 }
 
@@ -138,6 +169,14 @@ export interface CardLive {
   queued?: MapItem[];
   failing?: MapItem[];
   waiting?: MapItem[];
+  /** Every open question, which the Manager's Right now lists in place of its `waiting` ones. */
+  questions?: MapItem[];
+  /** Runs pending or paused and failed runs by cause. */
+  health?: MapHealth[];
+  /** The step rows whose overdue ones the view works out against its own ticking clock. */
+  steps?: readonly HealthStepRow[];
+  /** The health queries failed: not healthy, unknown. */
+  healthUnavailable?: boolean;
   merged?: MapMerge[];
   orders?: WorkOrderRow[];
   /** Laps in a review round whose reviewer for this card the engine skipped. */
@@ -159,16 +198,14 @@ export interface MapSources {
   workable?: readonly HealthWorkableRow[];
   owner?: readonly OwnerQueueRow[];
   orders?: readonly WorkOrderRow[];
+  /** The open Archon attention items with their labels, which the question cards count. */
+  attention?: readonly AttentionRow[];
+  healthRuns?: readonly HealthRunRow[];
+  healthSteps?: readonly HealthStepRow[];
   rightNow?: readonly MapRightNowRow[];
   documents?: readonly ProductDocumentRow[];
   /** A source in `error` keeps its rows, but its chip is unavailable, never a count. */
-  states?: {
-    workable?: PanelState;
-    owner?: PanelState;
-    orders?: PanelState;
-    rightNow?: PanelState;
-    documents?: PanelState;
-  };
+  states?: Partial<Record<Exclude<keyof MapSources, 'map' | 'states'>, PanelState>>;
 }
 
 const depth = (step: string) => stepPath(step).split('/').length;
@@ -468,9 +505,95 @@ export function cardLive(
     }
     for (const list of card.lists ?? []) listInto(entry, list, sources);
   }
+  countQuestions(factoryMap, live, sources);
   return live;
 }
 
 /** Whether the version the address names is recorded: always, for the current version. */
 export const versionRecorded = (rows: readonly HomeMapRow[], at: string | null) =>
   at === null || rows.some((r) => r.kind === 'version');
+
+const asked = (ask: Asks, item: AttentionItem): boolean =>
+  'label' in ask &&
+  item.labels[ask.label] !== undefined &&
+  (ask.value === undefined || item.labels[ask.label] === ask.value);
+
+function question(item: AttentionItem): MapItem {
+  const recommended = recommendedChoice(item.message, item.options);
+  const option = item.options.find((o) => o.id === recommended);
+  return {
+    key: `attention-${item.run_id}`,
+    number: null,
+    title: attentionTitle(item.message) ?? attentionOrigin(item),
+    url: consoleUrl(item.console, item.run_id),
+    ...(option && { note: `recommends ${option.label ?? option.id}` }),
+  };
+}
+
+/**
+ * The question cards of every view: each counts the open attention items its `asks` names, and the
+ * card asking for `rest` the ones no sibling counts and lists every question in its Right now.
+ */
+function countQuestions(
+  factoryMap: FactoryMap,
+  live: Map<string, CardLive>,
+  sources: MapSources,
+): void {
+  const { attention, healthRuns, healthSteps, states = {} } = sources;
+  const items = parseAttention(attention ?? []);
+  for (const level of levelsOf(factoryMap)) {
+    const asking = level.cards.filter((card) => card.asks !== undefined);
+    for (const card of asking) {
+      const entry = live.get(card.id) as CardLive;
+      const ask = card.asks as Asks;
+      if (states.attention === 'error') entry.unavailable = ['waiting'];
+      if ('rest' in ask) {
+        if (states.healthRuns === 'error' || states.healthSteps === 'error') {
+          entry.healthUnavailable = true;
+        } else if (healthRuns !== undefined && healthSteps !== undefined) {
+          entry.health = healthItems(sources);
+          entry.steps = healthSteps;
+        }
+      }
+      if (attention === undefined || states.attention === 'error') continue;
+      const own = items.filter((item) =>
+        'rest' in ask
+          ? !asking.some((other) => other.asks && asked(other.asks, item))
+          : asked(ask, item),
+      );
+      entry.waiting = own.map(question);
+      if ('rest' in ask) entry.questions = items.map(question);
+    }
+  }
+}
+
+const runLink = (console: string | null, run: string) =>
+  console === null ? null : consoleUrl(console, run);
+
+/** The health the Manager's Right now lists, by the screen's own definitions (lib/health). */
+function healthItems({ healthRuns }: MapSources): MapHealth[] {
+  return [
+    ...waitingRuns(healthRuns ?? []).map((run) => ({
+      key: `health-${run.status}-${run.run_id}`,
+      note: `${run.status}: ${run.workflow_name}`,
+      run: run.run_id,
+      url: runLink(run.console, run.run_id),
+    })),
+    ...failedLaps(healthRuns ?? []).map((lap) => ({
+      key: `health-failed-${lap.run_id}`,
+      note: `failed: ${CAUSE_LABEL[lap.cause]}`,
+      run: lap.run_id,
+      url: runLink(lap.console, lap.run_id),
+    })),
+  ];
+}
+
+/** The steps running far past normal at `now` (ms), by the Health screen's definition. */
+export function overdueHealth(steps: readonly HealthStepRow[], now: number): MapHealth[] {
+  return overdueSteps(steps, now).map((step) => ({
+    key: `health-overdue-${step.run_id}-${step.step_id}`,
+    note: `${step.step_id} has run ${formatElapsed(step.running_ms / 1000)}, usually ${formatElapsed(step.p90_ms / 1000)}`,
+    run: step.run_id,
+    url: runLink(step.console, step.run_id),
+  }));
+}

@@ -42,6 +42,21 @@ export interface Details {
   how?: string[];
 }
 
+/**
+ * The open Archon attention items a question card counts: those carrying the label `label` (with
+ * `value` when it names one), or, for `rest`, those no sibling question card counts.
+ */
+export type LabelAsk = { label: string; value?: string };
+export type RestAsk = { rest: true };
+export type Asks = LabelAsk | RestAsk;
+
+/** Every key of each `Asks` arm; the compiler fails here when `Asks` and these drift apart. */
+export const LABEL_ASK_KEYS: Record<keyof LabelAsk, true> = {
+  label: true,
+  value: true,
+};
+export const REST_ASK_KEYS: Record<keyof RestAsk, true> = { rest: true };
+
 export interface Card {
   id: string;
   role: Role;
@@ -58,6 +73,8 @@ export interface Card {
   lists?: List[];
   covers: Cover[];
   details: Details;
+  /** The attention items this card of a question view counts; its `waiting` chip is theirs. */
+  asks?: Asks;
   /** The view this card opens (a key of `views`); only a card whose view exists shows ⤢. */
   opens?: string;
   /** A card of the parent level: clicking this card goes up to it (a view's "next" card). */
@@ -97,7 +114,8 @@ export interface FactoryMap extends MapView {
   views?: Record<string, MapView>;
 }
 
-export const FACTORY_MAP = data as FactoryMap;
+// JSON infers a route as `number[][]`, which TypeScript will not compare to a `Point[]` when every line of a view routes.
+export const FACTORY_MAP = data as unknown as FactoryMap;
 
 export const cardWidth = (map: MapView, card: Card) => card.width ?? map.cardSize.width;
 

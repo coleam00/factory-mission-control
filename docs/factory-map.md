@@ -80,6 +80,12 @@ point must lie on an edge of its `from` card and its last on an edge of its `to`
 group's edge when that card sits inside the group, or, for a line with `"arrow": false`, on another
 line into the same card. Moving a card or changing `cardSize` without moving the routes fails.
 
+A question card's `asks` is checked against the queue pack: it is `{"rest": true}` (on one card
+per level at most) or a `label` that some wait of the pack declares, with an optional `value` that
+the pack sets for that label. The check fails on an `asks` with an unknown key, no label, a
+label no wait declares, a value that is not a string, or, for a label the pack sets values for, a value it never sets.
+Labels fed from workflow output, such as `build` and `merge`, take any value unchecked.
+
 The queue pack is the snapshot `fixtures/pack/queue/`: `sdlc/` is `.archon/workflows/sdlc` of
 coleam00/Archon and `factory/` is `.archon/workflows/factory` of coleam00/ai-software-factory, at
 the commits this factory runs, with `ARCHON_COMMIT` and `FACTORY_COMMIT` beside them. The
@@ -88,7 +94,7 @@ its steps have screens beside the pack's.
 
 ## Live counts
 
-The cards' chips come from these live queries (`map-right-now` also feeds the Merge and Staging views' lists, below): `home-map` (each running run of the factory with its
+The cards' chips come from these live queries (`map-right-now` also feeds the Merge and Staging views' lists, and the Manager view adds three, below): `home-map` (each running run of the factory with its
 running steps and issue, the runs waiting on attention, whether the factory is on the queues, the
 open pull requests whose latest app check failed, the merges with when they finished, and whether
 the version the address names is recorded),
@@ -191,13 +197,31 @@ holdout verifier and the fence (journey 1). Esc, the close button or a click on 
 deselects.
 
 A card with a view shows ⤢ and a stacked edge, and its strip has an Open button naming the number
-of cards in the view. A card shows ⤢ only once its view exists; today Build's, Review's, Split's, Intake's, App check's, Merge's and Staging's do (`?view=build`, `?view=review`, `?view=split`, `?view=intake`, `?view=app`, `?view=merge`, `?view=deploy`), and so does Deliver inside Build (`?view=build/deliver`). Deliver's Review card opens the same Review view (`?view=review`); opened from there the address also carries `from=build/deliver`, so the breadcrumbs keep the Build and Deliver path and going up returns to Deliver (a link to `?view=review` alone opens it from the home map).
+of cards in the view. A card shows ⤢ only once its view exists; today Build's, Review's, Split's, Intake's, the Manager's, App check's, Merge's and Staging's do (`?view=build`, `?view=review`, `?view=split`, `?view=intake`, `?view=manager`, `?view=app`, `?view=merge`, `?view=deploy`), and so does Deliver inside Build (`?view=build/deliver`). Deliver's Review card opens the same Review view (`?view=review`); opened from there the address also carries `from=build/deliver`, so the breadcrumbs keep the Build and Deliver path and going up returns to Deliver (a link to `?view=review` alone opens it from the home map).
 Double-click, Enter on the selected card or the Open button zooms into the view. Breadcrumbs above
 the caption (the factory, then each opened view), the up control, a crumb, Esc (with nothing
 selected) and Backspace go up, and the card that opened the view flashes. The address is
 `/f/<factory>?view=<id>`: opening and going up each push a history entry, so the browser's back
 button goes up, and a link or reload opens straight into the view. An unknown `view` shows the
 home map.
+
+## The Manager view
+
+`?view=manager` draws `refs/18-drill-manager.png`: four violet question cards (Work item is unclear,
+Build is stuck on a choice, Risky merge, Is this a real problem?), the Manager and the Written rules
+under them. Its cards are 250 high, taller than the other views' cards, because a question card's kind,
+two-line title, three-line text and chip need that to keep the chip inside the border at the map's
+type scale. It adds three live queries to the home map's: `attention-items`, and the Health screen's
+`health-runs` and `health-steps`; each is a live query, none polls.
+
+- A question card counts the open Archon attention items its `asks` names, by their labels:
+  `stage: archon-triage` (a stopped triage) to Work item is unclear, `build:` to
+  Build is stuck, `merge:` to Risky merge, `discoveries:` to Is this a real problem?. An item no
+  card names counts on the Manager card. A failed query shows `? waiting`, never a count.
+- The Manager's Right now lists every open question with its recommended choice, then the
+  factory's health by the Health screen's own definitions (`app/lib/health.ts`): runs pending or
+  paused, steps running past twice their usual time, failed runs by cause. Each links to its run in
+  the factory's Archon console. A failed health query says the health is unavailable.
 
 ## Versions
 
