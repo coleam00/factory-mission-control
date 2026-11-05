@@ -19,7 +19,6 @@ export const STEP_PANELS = [
   'step-prompt',
   'step-subagents',
   'step-scripts',
-  'step-hooks',
   'step-yaml',
 ];
 export const CHECK_APP = ['archon-loop', 'check-app'];

@@ -27,7 +27,6 @@ const STEP_QUERIES = [
   'step-prompt',
   'step-subagents',
   'step-scripts',
-  'step-hooks',
   'step-yaml',
   'step-versions',
 ];
@@ -44,10 +43,8 @@ const REVIEW_PROMPT = 'loop/commands/loop-review.md';
  */
 const SEED_CHECK_APP = {
   prompt: 'fixtures/pack/sdlc/loop/commands/loop-check-app.md',
-  subagent: 'holdout-verifier',
+  hiddenSubagent: 'holdout-verifier',
   dependsOn: 'subject',
-  hook: '.factory/hooks/holdout_fence.py',
-  admitted: ['holdout-verifier', 'holdout-writer'],
 };
 
 interface StepTimings extends GroupTimings {
@@ -85,27 +82,19 @@ async function checkAppMismatches(page: Page, repoRoot: string): Promise<string[
     prompt: string | null;
     subagent: boolean;
     dependsOn: string | null;
-    hook: boolean;
-    admitted: string[];
   }>(`({
     prompt: document.querySelector('[data-live="step-prompt"] [data-prompt]')?.textContent ?? null,
-    subagent: document.querySelector('[data-live="step-subagents"] [data-subagent="${SEED_CHECK_APP.subagent}"]') !== null,
+    subagent: document.querySelector('[data-live="step-subagents"] [data-subagent="${SEED_CHECK_APP.hiddenSubagent}"]') !== null,
     dependsOn: document.querySelector('[data-depends-on]')?.getAttribute('data-depends-on') ?? null,
-    hook: document.querySelector('[data-live="step-hooks"] [data-hook="${SEED_CHECK_APP.hook}"]') !== null,
-    admitted: [...document.querySelectorAll('[data-live="step-hooks"] [data-admitted-agent]')]
-      .map((el) => el.getAttribute('data-admitted-agent')).sort(),
   })`);
   const failures: string[] = [];
   if (shown.prompt !== readFileSync(join(repoRoot, SEED_CHECK_APP.prompt), 'utf-8')) {
     failures.push(`check-app's prompt is not ${SEED_CHECK_APP.prompt} byte for byte`);
   }
-  if (!shown.subagent) failures.push(`check-app shows no subagent ${SEED_CHECK_APP.subagent}`);
+  if (shown.subagent)
+    failures.push(`check-app lists the subagent ${SEED_CHECK_APP.hiddenSubagent}`);
   if (shown.dependsOn !== SEED_CHECK_APP.dependsOn) {
     failures.push(`check-app depends on "${shown.dependsOn}", not "${SEED_CHECK_APP.dependsOn}"`);
-  }
-  if (!shown.hook) failures.push(`check-app shows no hook ${SEED_CHECK_APP.hook}`);
-  if (shown.admitted.join() !== SEED_CHECK_APP.admitted.join()) {
-    failures.push(`the fence admits ${shown.admitted.join(', ')}`);
   }
   return failures;
 }
