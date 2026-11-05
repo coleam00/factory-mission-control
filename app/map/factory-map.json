@@ -374,7 +374,8 @@
         "how": [
           "The agent decides; a script merges, and only if the Ready verdict, every check and the default branch are green at the PR's head."
         ]
-      }
+      },
+      "opens": "merge"
     },
     {
       "id": "deploy",
@@ -403,7 +404,8 @@
           "You choose where a work order lands. Staging is the one we recommend."
         ],
         "how": ["Health check plus revision read-back, so a stale deploy fails loudly."]
-      }
+      },
+      "opens": "deploy"
     },
     {
       "id": "out",
@@ -1248,6 +1250,296 @@
         }
       ],
       "tour": ["i-trust", "i-tri", "i-plan", "i-next"]
+    },
+    "merge": {
+      "caption": "One sweep looks at all Ready PRs at once. An agent decides merge, send back, or ask; only a script can actually merge, and only when every condition holds at the PR's head.",
+      "cardSize": {
+        "width": 260,
+        "height": 200
+      },
+      "cards": [
+        {
+          "id": "m-snap",
+          "role": "source",
+          "kind": "script",
+          "title": "Snapshot",
+          "text": "Every Ready PR, one read",
+          "x": 0,
+          "y": 0,
+          "covers": [
+            {
+              "pack": "queue",
+              "workflow": "archon-merge-queue",
+              "steps": ["facts"]
+            }
+          ],
+          "details": {
+            "what": ["Every Ready PR, one read"]
+          }
+        },
+        {
+          "id": "m-sweep",
+          "role": "agent",
+          "kind": "agent · large",
+          "title": "Sweep",
+          "text": "Merge, send back, or ask",
+          "x": 344,
+          "y": 0,
+          "covers": [
+            {
+              "pack": "queue",
+              "workflow": "archon-merge-queue",
+              "steps": ["sweep"]
+            },
+            {
+              "pack": "loop",
+              "workflow": "archon-loop",
+              "steps": ["review"]
+            }
+          ],
+          "details": {
+            "what": ["Merge, send back, or ask"]
+          }
+        },
+        {
+          "id": "m-gate",
+          "role": "source",
+          "kind": "script · the gate",
+          "title": "Merge gate",
+          "text": "Ready at head, all checks green, main green",
+          "x": 688,
+          "y": 0,
+          "lists": ["outcomes"],
+          "covers": [
+            {
+              "pack": "loop",
+              "workflow": "archon-loop",
+              "steps": ["land"]
+            }
+          ],
+          "details": {
+            "what": ["Ready at head, all checks green, main green"],
+            "how": [
+              "It refuses a PR that is not open: already merged or closed.",
+              "It refuses a draft.",
+              "It refuses a PR that does not target the default branch.",
+              "It refuses when the PR's head is no longer the commit the sweep decided on.",
+              "It refuses a PR that is behind the default branch, unless the forge says it merges cleanly.",
+              "It refuses unless a maintainer's review verdict says Ready, for exactly the PR's head.",
+              "It refuses unless CI at the PR's head is green: a failing or unfinished check holds it.",
+              "It refuses while the default branch's CI is red.",
+              "A merge the forge accepts but that does not read back merged at that head fails the gate."
+            ]
+          }
+        },
+        {
+          "id": "m-rec",
+          "role": "source",
+          "kind": "script",
+          "title": "Read it back",
+          "text": "Close the work item via Intake",
+          "x": 1032,
+          "y": 0,
+          "covers": [
+            {
+              "pack": "queue",
+              "workflow": "archon-merge-queue",
+              "steps": ["record", "retriage"]
+            },
+            {
+              "pack": "loop",
+              "workflow": "archon-loop",
+              "steps": ["release"]
+            }
+          ],
+          "details": {
+            "what": ["Close the work item via Intake"]
+          }
+        },
+        {
+          "id": "m-back",
+          "role": "source",
+          "kind": "send back",
+          "title": "Build queue",
+          "text": "With a brief of what to fix",
+          "x": 344,
+          "y": 288,
+          "covers": [],
+          "details": {
+            "what": ["With a brief of what to fix"]
+          }
+        },
+        {
+          "id": "m-ask",
+          "role": "person",
+          "kind": "waits",
+          "title": "Ask you",
+          "text": "Borderline PR or red main",
+          "x": 688,
+          "y": 288,
+          "covers": [
+            {
+              "pack": "queue",
+              "workflow": "archon-merge-queue",
+              "steps": ["ask", "ruling"]
+            }
+          ],
+          "details": {
+            "what": ["Borderline PR or red main"]
+          }
+        }
+      ],
+      "lines": [
+        {
+          "from": "m-snap",
+          "to": "m-sweep",
+          "style": "flow"
+        },
+        {
+          "from": "m-sweep",
+          "to": "m-gate",
+          "style": "flow",
+          "label": "merge"
+        },
+        {
+          "from": "m-gate",
+          "to": "m-rec",
+          "style": "flow",
+          "label": "merged"
+        },
+        {
+          "from": "m-sweep",
+          "to": "m-back",
+          "style": "loop",
+          "route": [[474, 200], [474, 288]]
+        },
+        {
+          "from": "m-sweep",
+          "to": "m-ask",
+          "style": "ask",
+          "route": [[474, 200], [474, 388], [688, 388]]
+        }
+      ],
+      "tour": ["m-snap", "m-sweep", "m-gate", "m-rec"]
+    },
+    "deploy": {
+      "caption": "Where a finished work order lands for you to try. You choose the target: main, dev, a release branch or a staging environment. Staging is the one we recommend, because you can open it and try everything in the order at once. It runs only the commands in DEPLOY.md, then checks health and reads the running revision back, so a deploy that silently served the old build fails.",
+      "cardSize": {
+        "width": 260,
+        "height": 200
+      },
+      "cards": [
+        {
+          "id": "y-pre",
+          "role": "source",
+          "kind": "script",
+          "title": "Preflight",
+          "text": "Which revision, is main green",
+          "x": 0,
+          "y": 0,
+          "lists": ["deploys", "lands"],
+          "covers": [
+            {
+              "pack": "queue",
+              "workflow": "factory-deploy",
+              "steps": ["preflight"]
+            },
+            {
+              "pack": "loop",
+              "workflow": "archon-loop",
+              "steps": ["deploy/resolve"],
+              "screens": {
+                "deploy/resolve": {
+                  "workflow": "archon-deploy",
+                  "path": "resolve"
+                }
+              }
+            }
+          ],
+          "details": {
+            "what": ["Which revision, is main green"]
+          }
+        },
+        {
+          "id": "y-dep",
+          "role": "agent",
+          "kind": "agent · @factory-deployer",
+          "title": "Deploy",
+          "text": "Only DEPLOY.md commands",
+          "x": 344,
+          "y": 0,
+          "lists": ["deploys", "lands"],
+          "covers": [
+            {
+              "pack": "queue",
+              "workflow": "factory-deploy",
+              "steps": ["deploy"]
+            },
+            {
+              "pack": "loop",
+              "workflow": "archon-loop",
+              "steps": ["deploy", "deploy/deploy"],
+              "screens": {
+                "deploy/deploy": {
+                  "workflow": "archon-deploy",
+                  "path": "deploy"
+                }
+              }
+            }
+          ],
+          "details": {
+            "what": ["Only DEPLOY.md commands"]
+          }
+        },
+        {
+          "id": "y-ver",
+          "role": "source",
+          "kind": "script",
+          "title": "Verify",
+          "text": "Health + revision read back",
+          "x": 688,
+          "y": 0,
+          "lists": ["deploys", "lands"],
+          "covers": [
+            {
+              "pack": "queue",
+              "workflow": "factory-deploy",
+              "steps": ["verify"]
+            },
+            {
+              "pack": "loop",
+              "workflow": "archon-loop",
+              "steps": ["deploy/health", "deploy/verify"],
+              "screens": {
+                "deploy/health": {
+                  "workflow": "archon-deploy",
+                  "path": "health"
+                },
+                "deploy/verify": {
+                  "workflow": "archon-deploy",
+                  "path": "verify"
+                }
+              }
+            }
+          ],
+          "details": {
+            "what": ["Health + revision read back"]
+          }
+        }
+      ],
+      "lines": [
+        {
+          "from": "y-pre",
+          "to": "y-dep",
+          "style": "flow"
+        },
+        {
+          "from": "y-dep",
+          "to": "y-ver",
+          "style": "flow"
+        }
+      ],
+      "tour": ["y-pre", "y-dep", "y-ver"]
     }
   }
 }
