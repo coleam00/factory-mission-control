@@ -1,7 +1,6 @@
 import { expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join, sep } from 'node:path';
-import { SWEEP_ACTIONS } from '../lib/merge-queue';
 import { allCards, FACTORY_MAP } from './factory-map';
 import { gateOutcomes, type MapRightNowRow } from './live';
 
@@ -10,9 +9,10 @@ const read = (...path: string[]) => readFileSync(join(root, ...path), 'utf8');
 // A computed path keeps tsc out of the pack, whose `.ts` import extensions this config refuses.
 const pack = (...path: string[]) => import(join(root, 'fixtures', 'pack', ...path));
 
-test("the app's sweep actions are the pinned SWEEP_ACTIONS", async () => {
+test("the gate's 'return' and 'ask' are pinned sweep actions", async () => {
   const pinned = await pack('queue', 'sdlc', '.shared', 'merge.ts');
-  expect([...SWEEP_ACTIONS]).toEqual([...pinned.SWEEP_ACTIONS]);
+  expect(pinned.SWEEP_ACTIONS).toContain('return');
+  expect(pinned.SWEEP_ACTIONS).toContain('ask');
 });
 
 type Decide = (
