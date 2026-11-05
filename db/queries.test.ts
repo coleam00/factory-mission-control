@@ -25,6 +25,7 @@ import type {
 } from '../app/lib/step-detail';
 import type { CheckRow, DefaultHoldoutRow, RouteRow } from '../app/lib/testing';
 import type { VersionStripRow } from '../app/lib/version-strip';
+import type { WorkItemRow } from '../app/lib/work-item';
 import type { HomeMapRow, WorkOrderRow } from '../app/map/live';
 import { LIVE_QUERY_NAME, parameterCount } from '../server/live';
 import { migratedDb, paramsFor, queries } from './queries/test-seed';
@@ -94,6 +95,44 @@ const ROW_COLUMNS: Record<string, string[]> = {
     'title',
     'url',
     'run_id',
+  ]),
+  'work-item': columns<WorkItemRow>()([
+    'kind',
+    'run_id',
+    'workflow',
+    'status',
+    'started_at',
+    'completed_at',
+    'lap',
+    'waiting',
+    'cost',
+    'steps',
+    'failed_step',
+    'error',
+    'route',
+    'depth',
+    'labels',
+    'deliveries',
+    'review',
+    'review_at',
+    'check_overall',
+    'check_at',
+    'decision',
+    'reason',
+    'decision_at',
+    'answer',
+    'answer_summary',
+    'answer_at',
+    'line_kind',
+    'line_verdict',
+    'pr',
+    'decisions',
+    'landed',
+    'asked_pr',
+    'number',
+    'title',
+    'url',
+    'console',
   ]),
   board: columns<BoardRow>()([
     'kind',
@@ -442,6 +481,7 @@ describe('the rules the live queries restate, which they may not call a function
     for (const sql of [
       query('scorecard'),
       query('improvements-ledger'),
+      query('work-item'),
       read('fixtures', 'expected-scorecard.sql'),
     ]) {
       expect(sql).toContain("f.step_id = 'facts'");
