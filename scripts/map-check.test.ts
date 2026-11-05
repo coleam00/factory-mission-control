@@ -34,11 +34,14 @@ const queue = () => parseQueuePack(QUEUE_ROOT, TEMPLATE);
 const loop = () => parsePack(PACK, TEMPLATE);
 const check = (map: FactoryMap, pack = loop()) => mapCheck(map, { loop: pack, queue: queue() });
 
-/** The map with only the Build view, so a test that edits root covers is not also held to the Split and Intake views. */
+/** The map with only the Build view and the Deliver view inside it, so a test that edits root covers is not also held to the Split and Intake views. */
 const onlyBuild = (cards: FactoryMap['cards']): FactoryMap => ({
   ...FACTORY_MAP,
   cards: cards.map((c) => (c.opens === 'build' ? c : { ...c, opens: undefined })),
-  views: { build: FACTORY_MAP.views?.build as MapView },
+  views: {
+    build: FACTORY_MAP.views?.build as MapView,
+    'build/deliver': FACTORY_MAP.views?.['build/deliver'] as MapView,
+  },
 });
 
 const withCards = (cards: FactoryMap['cards']): FactoryMap => onlyBuild(cards);
@@ -47,7 +50,7 @@ const withCards = (cards: FactoryMap['cards']): FactoryMap => onlyBuild(cards);
 const withBuildView = (edit: (cards: FactoryMap['cards']) => FactoryMap['cards']): FactoryMap => ({
   ...onlyBuild(FACTORY_MAP.cards),
   views: {
-    ...FACTORY_MAP.views,
+    ...onlyBuild(FACTORY_MAP.cards).views,
     build: {
       ...(FACTORY_MAP.views?.build as MapView),
       cards: edit(FACTORY_MAP.views?.build?.cards ?? []),
