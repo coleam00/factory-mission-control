@@ -292,7 +292,8 @@
           "One agent combines what they found into a single comment: Ready, or a list of fixes."
         ],
         "how": ["Fixes go back to Build. Merge only trusts a Ready comment on the latest commit."]
-      }
+      },
+      "opens": "review"
     },
     {
       "id": "app",
@@ -890,6 +891,642 @@
         }
       ],
       "tour": ["b-brief", "b-del", "b-dec", "b-push", "b-next"]
+    },
+    "review": {
+      "caption": "A quick agent picks the reviewers this change earns, up to five, each reading through one lens, side by side. A synthesis agent merges what they found into one PR comment. That comment's Ready verdict at the PR's head is what the merge gate trusts.",
+      "cardSize": {
+        "width": 260,
+        "height": 150
+      },
+      "cards": [
+        {
+          "id": "r-scope",
+          "role": "agent",
+          "kind": "agent",
+          "title": "Scope the change",
+          "text": "What changed and why",
+          "x": 0,
+          "y": 340,
+          "covers": [
+            {
+              "pack": "loop",
+              "workflow": "archon-loop",
+              "steps": [
+                "ship/deliver/rounds/review",
+                "ship/deliver/rounds/review/policy",
+                "ship/deliver/rounds/review/mode",
+                "ship/deliver/rounds/review/review-dir",
+                "ship/deliver/rounds/review/scope",
+                "ship/deliver/rounds/rereview",
+                "ship/deliver/rounds/rereview/policy",
+                "ship/deliver/rounds/rereview/mode",
+                "ship/deliver/rounds/rereview/review-dir",
+                "ship/deliver/rounds/rereview/scope"
+              ],
+              "screens": {
+                "ship/deliver/rounds/review": {
+                  "workflow": "archon-deliver-block",
+                  "path": "rounds/review"
+                },
+                "ship/deliver/rounds/review/policy": {
+                  "workflow": "archon-review-block",
+                  "path": "policy"
+                },
+                "ship/deliver/rounds/review/mode": {
+                  "workflow": "archon-review-block",
+                  "path": "mode"
+                },
+                "ship/deliver/rounds/review/review-dir": {
+                  "workflow": "archon-review-block",
+                  "path": "review-dir"
+                },
+                "ship/deliver/rounds/review/scope": {
+                  "workflow": "archon-review-block",
+                  "path": "scope"
+                },
+                "ship/deliver/rounds/rereview": {
+                  "workflow": "archon-deliver-block",
+                  "path": "rounds/rereview"
+                },
+                "ship/deliver/rounds/rereview/policy": {
+                  "workflow": "archon-review-block",
+                  "path": "policy"
+                },
+                "ship/deliver/rounds/rereview/mode": {
+                  "workflow": "archon-review-block",
+                  "path": "mode"
+                },
+                "ship/deliver/rounds/rereview/review-dir": {
+                  "workflow": "archon-review-block",
+                  "path": "review-dir"
+                },
+                "ship/deliver/rounds/rereview/scope": {
+                  "workflow": "archon-review-block",
+                  "path": "scope"
+                }
+              }
+            },
+            {
+              "pack": "queue",
+              "workflow": "archon-build-queue",
+              "steps": [
+                "ship/deliver/rounds/review",
+                "ship/deliver/rounds/review/policy",
+                "ship/deliver/rounds/review/mode",
+                "ship/deliver/rounds/review/review-dir",
+                "ship/deliver/rounds/review/scope",
+                "ship/deliver/rounds/rereview",
+                "ship/deliver/rounds/rereview/policy",
+                "ship/deliver/rounds/rereview/mode",
+                "ship/deliver/rounds/rereview/review-dir",
+                "ship/deliver/rounds/rereview/scope"
+              ],
+              "screens": {
+                "ship/deliver/rounds/review": {
+                  "workflow": "archon-deliver-block",
+                  "path": "rounds/review"
+                },
+                "ship/deliver/rounds/review/policy": {
+                  "workflow": "archon-review-block",
+                  "path": "policy"
+                },
+                "ship/deliver/rounds/review/mode": {
+                  "workflow": "archon-review-block",
+                  "path": "mode"
+                },
+                "ship/deliver/rounds/review/review-dir": {
+                  "workflow": "archon-review-block",
+                  "path": "review-dir"
+                },
+                "ship/deliver/rounds/review/scope": {
+                  "workflow": "archon-review-block",
+                  "path": "scope"
+                },
+                "ship/deliver/rounds/rereview": {
+                  "workflow": "archon-deliver-block",
+                  "path": "rounds/rereview"
+                },
+                "ship/deliver/rounds/rereview/policy": {
+                  "workflow": "archon-review-block",
+                  "path": "policy"
+                },
+                "ship/deliver/rounds/rereview/mode": {
+                  "workflow": "archon-review-block",
+                  "path": "mode"
+                },
+                "ship/deliver/rounds/rereview/review-dir": {
+                  "workflow": "archon-review-block",
+                  "path": "review-dir"
+                },
+                "ship/deliver/rounds/rereview/scope": {
+                  "workflow": "archon-review-block",
+                  "path": "scope"
+                }
+              }
+            }
+          ],
+          "details": {
+            "what": ["What changed and why"]
+          }
+        },
+        {
+          "id": "r-route",
+          "role": "agent",
+          "kind": "agent · small",
+          "title": "Pick the reviewers",
+          "text": "Only the lenses this change earns",
+          "x": 344,
+          "y": 340,
+          "covers": [
+            {
+              "pack": "loop",
+              "workflow": "archon-loop",
+              "steps": ["ship/deliver/rounds/review/route", "ship/deliver/rounds/rereview/route"],
+              "screens": {
+                "ship/deliver/rounds/review/route": {
+                  "workflow": "archon-review-block",
+                  "path": "route"
+                },
+                "ship/deliver/rounds/rereview/route": {
+                  "workflow": "archon-review-block",
+                  "path": "route"
+                }
+              }
+            },
+            {
+              "pack": "queue",
+              "workflow": "archon-build-queue",
+              "steps": ["ship/deliver/rounds/review/route", "ship/deliver/rounds/rereview/route"],
+              "screens": {
+                "ship/deliver/rounds/review/route": {
+                  "workflow": "archon-review-block",
+                  "path": "route"
+                },
+                "ship/deliver/rounds/rereview/route": {
+                  "workflow": "archon-review-block",
+                  "path": "route"
+                }
+              }
+            }
+          ],
+          "details": {
+            "what": ["Only the lenses this change earns"]
+          }
+        },
+        {
+          "id": "r-l1",
+          "role": "agent",
+          "kind": "lens",
+          "title": "Seams",
+          "text": "Boundaries and contracts",
+          "x": 688,
+          "y": 0,
+          "covers": [
+            {
+              "pack": "loop",
+              "workflow": "archon-loop",
+              "steps": ["ship/deliver/rounds/review/seams", "ship/deliver/rounds/rereview/seams"],
+              "screens": {
+                "ship/deliver/rounds/review/seams": {
+                  "workflow": "archon-review-block",
+                  "path": "seams"
+                },
+                "ship/deliver/rounds/rereview/seams": {
+                  "workflow": "archon-review-block",
+                  "path": "seams"
+                }
+              }
+            },
+            {
+              "pack": "queue",
+              "workflow": "archon-build-queue",
+              "steps": ["ship/deliver/rounds/review/seams", "ship/deliver/rounds/rereview/seams"],
+              "screens": {
+                "ship/deliver/rounds/review/seams": {
+                  "workflow": "archon-review-block",
+                  "path": "seams"
+                },
+                "ship/deliver/rounds/rereview/seams": {
+                  "workflow": "archon-review-block",
+                  "path": "seams"
+                }
+              }
+            }
+          ],
+          "details": {
+            "what": ["Boundaries and contracts"]
+          }
+        },
+        {
+          "id": "r-l2",
+          "role": "agent",
+          "kind": "lens · large",
+          "title": "Code",
+          "text": "Correctness",
+          "x": 688,
+          "y": 170,
+          "covers": [
+            {
+              "pack": "loop",
+              "workflow": "archon-loop",
+              "steps": ["ship/deliver/rounds/review/code", "ship/deliver/rounds/rereview/code"],
+              "screens": {
+                "ship/deliver/rounds/review/code": {
+                  "workflow": "archon-review-block",
+                  "path": "code"
+                },
+                "ship/deliver/rounds/rereview/code": {
+                  "workflow": "archon-review-block",
+                  "path": "code"
+                }
+              }
+            },
+            {
+              "pack": "queue",
+              "workflow": "archon-build-queue",
+              "steps": ["ship/deliver/rounds/review/code", "ship/deliver/rounds/rereview/code"],
+              "screens": {
+                "ship/deliver/rounds/review/code": {
+                  "workflow": "archon-review-block",
+                  "path": "code"
+                },
+                "ship/deliver/rounds/rereview/code": {
+                  "workflow": "archon-review-block",
+                  "path": "code"
+                }
+              }
+            }
+          ],
+          "details": {
+            "what": ["Correctness"]
+          }
+        },
+        {
+          "id": "r-l3",
+          "role": "agent",
+          "kind": "lens",
+          "title": "Tests",
+          "text": "Do they protect anything?",
+          "x": 688,
+          "y": 340,
+          "covers": [
+            {
+              "pack": "loop",
+              "workflow": "archon-loop",
+              "steps": ["ship/deliver/rounds/review/tests", "ship/deliver/rounds/rereview/tests"],
+              "screens": {
+                "ship/deliver/rounds/review/tests": {
+                  "workflow": "archon-review-block",
+                  "path": "tests"
+                },
+                "ship/deliver/rounds/rereview/tests": {
+                  "workflow": "archon-review-block",
+                  "path": "tests"
+                }
+              }
+            },
+            {
+              "pack": "queue",
+              "workflow": "archon-build-queue",
+              "steps": ["ship/deliver/rounds/review/tests", "ship/deliver/rounds/rereview/tests"],
+              "screens": {
+                "ship/deliver/rounds/review/tests": {
+                  "workflow": "archon-review-block",
+                  "path": "tests"
+                },
+                "ship/deliver/rounds/rereview/tests": {
+                  "workflow": "archon-review-block",
+                  "path": "tests"
+                }
+              }
+            }
+          ],
+          "details": {
+            "what": ["Do they protect anything?"]
+          }
+        },
+        {
+          "id": "r-l4",
+          "role": "agent",
+          "kind": "lens",
+          "title": "Errors",
+          "text": "Failure paths",
+          "x": 688,
+          "y": 510,
+          "covers": [
+            {
+              "pack": "loop",
+              "workflow": "archon-loop",
+              "steps": ["ship/deliver/rounds/review/errors", "ship/deliver/rounds/rereview/errors"],
+              "screens": {
+                "ship/deliver/rounds/review/errors": {
+                  "workflow": "archon-review-block",
+                  "path": "errors"
+                },
+                "ship/deliver/rounds/rereview/errors": {
+                  "workflow": "archon-review-block",
+                  "path": "errors"
+                }
+              }
+            },
+            {
+              "pack": "queue",
+              "workflow": "archon-build-queue",
+              "steps": ["ship/deliver/rounds/review/errors", "ship/deliver/rounds/rereview/errors"],
+              "screens": {
+                "ship/deliver/rounds/review/errors": {
+                  "workflow": "archon-review-block",
+                  "path": "errors"
+                },
+                "ship/deliver/rounds/rereview/errors": {
+                  "workflow": "archon-review-block",
+                  "path": "errors"
+                }
+              }
+            }
+          ],
+          "details": {
+            "what": ["Failure paths"]
+          }
+        },
+        {
+          "id": "r-l5",
+          "role": "agent",
+          "kind": "lens",
+          "title": "Docs",
+          "text": "What a reader needs",
+          "x": 688,
+          "y": 680,
+          "covers": [
+            {
+              "pack": "loop",
+              "workflow": "archon-loop",
+              "steps": ["ship/deliver/rounds/review/docs", "ship/deliver/rounds/rereview/docs"],
+              "screens": {
+                "ship/deliver/rounds/review/docs": {
+                  "workflow": "archon-review-block",
+                  "path": "docs"
+                },
+                "ship/deliver/rounds/rereview/docs": {
+                  "workflow": "archon-review-block",
+                  "path": "docs"
+                }
+              }
+            },
+            {
+              "pack": "queue",
+              "workflow": "archon-build-queue",
+              "steps": ["ship/deliver/rounds/review/docs", "ship/deliver/rounds/rereview/docs"],
+              "screens": {
+                "ship/deliver/rounds/review/docs": {
+                  "workflow": "archon-review-block",
+                  "path": "docs"
+                },
+                "ship/deliver/rounds/rereview/docs": {
+                  "workflow": "archon-review-block",
+                  "path": "docs"
+                }
+              }
+            }
+          ],
+          "details": {
+            "what": ["What a reader needs"]
+          }
+        },
+        {
+          "id": "r-syn",
+          "role": "agent",
+          "kind": "agent · @reviewer",
+          "title": "Synthesize",
+          "text": "One verdict",
+          "x": 1032,
+          "y": 340,
+          "covers": [
+            {
+              "pack": "loop",
+              "workflow": "archon-loop",
+              "steps": [
+                "ship/deliver/rounds/review/review-complete",
+                "ship/deliver/rounds/review/synthesize",
+                "ship/deliver/rounds/rereview/review-complete",
+                "ship/deliver/rounds/rereview/synthesize"
+              ],
+              "screens": {
+                "ship/deliver/rounds/review/review-complete": {
+                  "workflow": "archon-review-block",
+                  "path": "review-complete"
+                },
+                "ship/deliver/rounds/review/synthesize": {
+                  "workflow": "archon-review-block",
+                  "path": "synthesize"
+                },
+                "ship/deliver/rounds/rereview/review-complete": {
+                  "workflow": "archon-review-block",
+                  "path": "review-complete"
+                },
+                "ship/deliver/rounds/rereview/synthesize": {
+                  "workflow": "archon-review-block",
+                  "path": "synthesize"
+                }
+              }
+            },
+            {
+              "pack": "queue",
+              "workflow": "archon-build-queue",
+              "steps": [
+                "ship/deliver/rounds/review/review-complete",
+                "ship/deliver/rounds/review/synthesize",
+                "ship/deliver/rounds/rereview/review-complete",
+                "ship/deliver/rounds/rereview/synthesize"
+              ],
+              "screens": {
+                "ship/deliver/rounds/review/review-complete": {
+                  "workflow": "archon-review-block",
+                  "path": "review-complete"
+                },
+                "ship/deliver/rounds/review/synthesize": {
+                  "workflow": "archon-review-block",
+                  "path": "synthesize"
+                },
+                "ship/deliver/rounds/rereview/review-complete": {
+                  "workflow": "archon-review-block",
+                  "path": "review-complete"
+                },
+                "ship/deliver/rounds/rereview/synthesize": {
+                  "workflow": "archon-review-block",
+                  "path": "synthesize"
+                }
+              }
+            }
+          ],
+          "details": {
+            "what": ["One verdict"]
+          }
+        },
+        {
+          "id": "r-pub",
+          "role": "source",
+          "kind": "script",
+          "title": "Post the verdict",
+          "text": "One canonical PR comment",
+          "x": 1376,
+          "y": 340,
+          "covers": [
+            {
+              "pack": "loop",
+              "workflow": "archon-loop",
+              "steps": [
+                "ship/deliver/rounds/review/publish",
+                "ship/deliver/rounds/review/result",
+                "ship/deliver/rounds/review/prune-scratch",
+                "ship/deliver/rounds/rereview/publish",
+                "ship/deliver/rounds/rereview/result",
+                "ship/deliver/rounds/rereview/prune-scratch"
+              ],
+              "screens": {
+                "ship/deliver/rounds/review/publish": {
+                  "workflow": "archon-review-block",
+                  "path": "publish"
+                },
+                "ship/deliver/rounds/review/result": {
+                  "workflow": "archon-review-block",
+                  "path": "result"
+                },
+                "ship/deliver/rounds/review/prune-scratch": {
+                  "workflow": "archon-review-block",
+                  "path": "prune-scratch"
+                },
+                "ship/deliver/rounds/rereview/publish": {
+                  "workflow": "archon-review-block",
+                  "path": "publish"
+                },
+                "ship/deliver/rounds/rereview/result": {
+                  "workflow": "archon-review-block",
+                  "path": "result"
+                },
+                "ship/deliver/rounds/rereview/prune-scratch": {
+                  "workflow": "archon-review-block",
+                  "path": "prune-scratch"
+                }
+              }
+            },
+            {
+              "pack": "queue",
+              "workflow": "archon-build-queue",
+              "steps": [
+                "ship/deliver/rounds/review/publish",
+                "ship/deliver/rounds/review/result",
+                "ship/deliver/rounds/review/prune-scratch",
+                "ship/deliver/rounds/rereview/publish",
+                "ship/deliver/rounds/rereview/result",
+                "ship/deliver/rounds/rereview/prune-scratch"
+              ],
+              "screens": {
+                "ship/deliver/rounds/review/publish": {
+                  "workflow": "archon-review-block",
+                  "path": "publish"
+                },
+                "ship/deliver/rounds/review/result": {
+                  "workflow": "archon-review-block",
+                  "path": "result"
+                },
+                "ship/deliver/rounds/review/prune-scratch": {
+                  "workflow": "archon-review-block",
+                  "path": "prune-scratch"
+                },
+                "ship/deliver/rounds/rereview/publish": {
+                  "workflow": "archon-review-block",
+                  "path": "publish"
+                },
+                "ship/deliver/rounds/rereview/result": {
+                  "workflow": "archon-review-block",
+                  "path": "result"
+                },
+                "ship/deliver/rounds/rereview/prune-scratch": {
+                  "workflow": "archon-review-block",
+                  "path": "prune-scratch"
+                }
+              }
+            }
+          ],
+          "details": {
+            "what": ["One canonical PR comment"]
+          }
+        }
+      ],
+      "lines": [
+        {
+          "from": "r-scope",
+          "to": "r-route",
+          "style": "flow"
+        },
+        {
+          "from": "r-route",
+          "to": "r-l1",
+          "style": "flow",
+          "route": [[604, 415], [646, 415], [646, 75], [688, 75]]
+        },
+        {
+          "from": "r-route",
+          "to": "r-l2",
+          "style": "flow",
+          "route": [[604, 415], [646, 415], [646, 245], [688, 245]]
+        },
+        {
+          "from": "r-route",
+          "to": "r-l3",
+          "style": "flow",
+          "route": [[604, 415], [646, 415], [646, 415], [688, 415]]
+        },
+        {
+          "from": "r-route",
+          "to": "r-l4",
+          "style": "flow",
+          "route": [[604, 415], [646, 415], [646, 585], [688, 585]]
+        },
+        {
+          "from": "r-route",
+          "to": "r-l5",
+          "style": "flow",
+          "route": [[604, 415], [646, 415], [646, 755], [688, 755]]
+        },
+        {
+          "from": "r-l1",
+          "to": "r-syn",
+          "style": "flow",
+          "route": [[948, 75], [990, 75], [990, 415], [1032, 415]]
+        },
+        {
+          "from": "r-l2",
+          "to": "r-syn",
+          "style": "flow",
+          "route": [[948, 245], [990, 245], [990, 415], [1032, 415]]
+        },
+        {
+          "from": "r-l3",
+          "to": "r-syn",
+          "style": "flow",
+          "route": [[948, 415], [990, 415], [990, 415], [1032, 415]]
+        },
+        {
+          "from": "r-l4",
+          "to": "r-syn",
+          "style": "flow",
+          "route": [[948, 585], [990, 585], [990, 415], [1032, 415]]
+        },
+        {
+          "from": "r-l5",
+          "to": "r-syn",
+          "style": "flow",
+          "route": [[948, 755], [990, 755], [990, 415], [1032, 415]]
+        },
+        {
+          "from": "r-syn",
+          "to": "r-pub",
+          "style": "flow"
+        }
+      ],
+      "tour": ["r-scope", "r-route", "r-l3", "r-syn", "r-pub"]
     }
   }
 }

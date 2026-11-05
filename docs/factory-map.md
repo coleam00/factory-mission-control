@@ -110,6 +110,11 @@ then on the card of that card's view that covers it, so one run on `ship/deliver
 is on Build at the home map and on Deliver in the Build view. A step that Review covers at the
 root counts on no card of the Build view.
 
+In the Review view a lens the router skipped for the round a run is in has no count for it, and the
+lens card's Right now says that run's change did not earn the reviewer. It reads the round's `route`
+step output (the `home-map` query's `picks` rows) and says nothing while the round has none, as in a
+light round.
+
 ## Clicking a card
 
 A card keeps itself and the cards a line joins to it lit and dims the rest; its details strip opens
@@ -125,7 +130,7 @@ holdout verifier and the fence (journey 1). Esc, the close button or a click on 
 deselects.
 
 A card with a view shows ⤢ and a stacked edge, and its strip has an Open button naming the number
-of cards in the view. A card shows ⤢ only once its view exists; today Build's does (`?view=build`).
+of cards in the view. A card shows ⤢ only once its view exists; today Build's and Review's do (`?view=build`, `?view=review`).
 Double-click, Enter on the selected card or the Open button zooms into the view. Breadcrumbs above
 the caption (the factory, then each opened view), the up control, a crumb, Esc (with nothing
 selected) and Backspace go up, and the card that opened the view flashes. The address is

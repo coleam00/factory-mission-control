@@ -40,6 +40,7 @@ const withCards = (cards: FactoryMap['cards']): FactoryMap => ({ ...FACTORY_MAP,
 const withBuildView = (edit: (cards: FactoryMap['cards']) => FactoryMap['cards']): FactoryMap => ({
   ...FACTORY_MAP,
   views: {
+    ...FACTORY_MAP.views,
     build: {
       ...(FACTORY_MAP.views?.build as MapView),
       cards: edit(FACTORY_MAP.views?.build?.cards ?? []),
@@ -87,7 +88,7 @@ describe('map:check', () => {
 
   test('a step a lap marks that the pack lacks fails when two cards cover it', () => {
     const twice = FACTORY_MAP.cards.map((card) =>
-      card.id === 'review'
+      card.id === 'merge'
         ? {
             ...card,
             covers: [
@@ -98,7 +99,7 @@ describe('map:check', () => {
         : card,
     );
     expect(check(withCards(twice))).toEqual([
-      'loop pack: archon-loop handoff is covered by Review and App check',
+      'loop pack: archon-loop handoff is covered by App check and Merge',
     ]);
   });
 
@@ -291,14 +292,15 @@ describe('map:check', () => {
   test('an opens naming no view, and a view no card opens, fail', () => {
     const dead = {
       ...FACTORY_MAP,
-      cards: FACTORY_MAP.cards.map((c) => (c.id === 'review' ? { ...c, opens: 'nowhere' } : c)),
+      cards: FACTORY_MAP.cards.map((c) => (c.id === 'app' ? { ...c, opens: 'nowhere' } : c)),
     };
-    expect(check(dead)).toEqual(['Review opens view nowhere, which the map lacks']);
+    expect(check(dead)).toEqual(['App check opens view nowhere, which the map lacks']);
     const orphan = {
       ...FACTORY_MAP,
       cards: FACTORY_MAP.cards.map(({ opens: _, ...c }) => c),
     };
     expect(check(orphan)).toContain('view build is opened by no card');
+    expect(check(orphan)).toContain('view review is opened by no card');
   });
 
   test('a card id used twice fails naming it', () => {

@@ -99,6 +99,16 @@ export function RightNow({
         <span className={CHIP}>{lap.step}</span>
       </li>
     )),
+    ...(live?.skipped ?? []).map((lap) => (
+      <li key={`skipped-${lap.run}`} data-skipped={lap.run}>
+        {lap.issue ? (
+          <span className="font-mono tabular-nums">#{lap.issue.number} </span>
+        ) : (
+          <span className="font-mono">lap {lap.run.slice(0, 8)} </span>
+        )}
+        This change did not earn this reviewer.
+      </li>
+    )),
     ...(live?.unavailable ?? []).map((chip) => (
       <li key={`unavailable-${chip}`} className="text-text-secondary">
         The {chip} count is unavailable.

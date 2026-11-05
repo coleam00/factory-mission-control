@@ -142,3 +142,13 @@ test('on a phone, a level change lands on the same camera as mounting that level
     await page.setViewport(1440);
   }
 }, 30_000);
+
+test('a link to ?view=review opens the Review view, and a double-click on Review opens it from the home map', async () => {
+  const [linked, opened] = await inPage<Shown[]>(`
+    const linked = await m.mount('/f/x?view=review');
+    await m.mount('/f/x');
+    m.dblclick('review');
+    return [linked, await m.waitFor('review')];`);
+  expect(linked).toMatchObject({ view: 'review', search: '?view=review' });
+  expect(opened).toMatchObject({ view: 'review', search: '?view=review' });
+}, 30_000);

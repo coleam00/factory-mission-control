@@ -18,6 +18,7 @@ const lap = (
   url: null,
   at: null,
   prs: null,
+  output: null,
 });
 
 const hereOn = (rows: HomeMapRow[], cards: readonly { id: string }[]) => {
@@ -121,6 +122,7 @@ test('each chip sits on the card that carries it, and a source not delivered yet
     url: 'https://github.com/o/r/pull/109',
     at: null,
     prs: null,
+    output: null,
   };
   const live = cardLive(
     FACTORY_MAP,
@@ -306,4 +308,35 @@ test('a run of the old loop on build counts on Build and Deliver', () => {
   const rows = [lap('old', ['build'], 'archon-loop')];
   expect(here(rows)).toEqual({ build: ['old'] });
   expect(hereOn(rows, BUILD_VIEW)).toEqual({ 'b-del': ['old'] });
+});
+
+test('a lens the router skipped shows the run on its card, not a count; the other lenses and a missing route say nothing', () => {
+  const picks = (run: string, round: string, output: string | null): HomeMapRow => ({
+    ...lap(run, [`ship__deliver__rounds.${round}__route`]),
+    kind: 'picks',
+    output,
+  });
+  const reviewing = lap('a', ['ship__deliver__rounds.review__code'], 'archon-build-queue', 7);
+  const picked = JSON.stringify({
+    seams: false,
+    code: true,
+    tests: false,
+    errors: true,
+    docs: true,
+    reason: 'a small change',
+  });
+  const skippedBy = (rows: HomeMapRow[]) =>
+    Object.fromEntries(
+      [...cardLive(FACTORY_MAP, { map: rows }, new Date()).entries()]
+        .filter(([, live]) => live.skipped !== undefined)
+        .map(([id, live]) => [id, live.skipped?.map((l) => l.run)]),
+    );
+  expect(skippedBy([reviewing, picks('a', 'review', picked)])).toEqual({
+    'r-l1': ['a'],
+    'r-l3': ['a'],
+  });
+  expect(skippedBy([reviewing, picks('a', 'rereview', picked)])).toEqual({});
+  expect(skippedBy([reviewing, picks('other', 'review', picked)])).toEqual({});
+  expect(skippedBy([reviewing, picks('a', 'review', 'oops')])).toEqual({});
+  expect(skippedBy([reviewing])).toEqual({});
 });

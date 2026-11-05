@@ -26,7 +26,7 @@ const REVIEW_STEP = 'ship__deliver__rounds.review__policy';
 const WRITTEN_STEPS = [BUILD_STEP, REVIEW_STEP];
 const WAITING = `${MAP} [data-card="mgr"] [data-chip="waiting"]`;
 
-const VIEW = '[data-map-stage][data-view="build"][data-placed]';
+const viewStage = (id: string) => `[data-map-stage][data-view="${id}"][data-placed]`;
 
 const liveCountOf = (card: string) =>
   `document.querySelector('${MAP} [data-card="${card}"]')?.getAttribute('data-live-count')`;
@@ -41,6 +41,7 @@ export function queueMapPhase(ctx: LiveContext): LivePhase {
     build: null as number | null,
     deliver: null as number | null,
     review: null as number | null,
+    scope: null as number | null,
     waiting: null as number | null,
   };
 
@@ -66,6 +67,7 @@ export function queueMapPhase(ctx: LiveContext): LivePhase {
       const { base, failures } = ctx;
       const page = await openPage(deps.env);
       const view = await openPage(deps.env);
+      const reviewView = await openPage(deps.env);
       try {
         await page.setViewport(MAP_READABLE.width);
         await page.goto(`${base}/f/${name}`);
@@ -79,7 +81,7 @@ export function queueMapPhase(ctx: LiveContext): LivePhase {
         await view.goto(`${base}/f/${name}?view=build`);
         await view.evaluate<boolean>(
           pageWait(
-            `document.querySelector('${MAP}[data-state="ready"] ${VIEW}') !== null`,
+            `document.querySelector('${MAP}[data-state="ready"] ${viewStage('build')}') !== null`,
             READY_WAIT_MS,
           ),
         );
@@ -91,6 +93,23 @@ export function queueMapPhase(ctx: LiveContext): LivePhase {
           ),
         );
         writeFileSync(join(outDir, 'build-view.png'), await view.screenshot(1440));
+
+        await reviewView.setViewport(MAP_READABLE.width);
+        await reviewView.goto(`${base}/f/${name}?view=review`);
+        await reviewView.evaluate<boolean>(
+          pageWait(
+            `document.querySelector('${MAP}[data-state="ready"] ${viewStage('review')}') !== null`,
+            READY_WAIT_MS,
+          ),
+        );
+        failures.push(
+          ...mapMismatches(
+            await mapCards(reviewView),
+            await lapsOnCards(db, name),
+            FACTORY_MAP.views?.review?.cards,
+          ),
+        );
+        writeFileSync(join(outDir, 'review-view.png'), await reviewView.screenshot(1440));
 
         const timed = async (card: string, run: string, step: string) => {
           const target = Number(await page.evaluate<string>(liveCountOf(card))) + 1;
@@ -118,6 +137,8 @@ export function queueMapPhase(ctx: LiveContext): LivePhase {
         ]);
         ms.review = await timed('review', QUEUE_RUNS.review, REVIEW_STEP);
 
+        ms.scope = await untilShown(reviewView, `${liveCountOf('r-scope')} === '1'`);
+
         const waiting = (await waitingCount(page)) + 1;
         await writeToScreen(page, deps, ['attention', '--run', QUEUE_RUNS.ask], 'true');
         ms.waiting = await untilShown(
@@ -127,6 +148,7 @@ export function queueMapPhase(ctx: LiveContext): LivePhase {
         failures.push(...mapMismatches(await mapCards(page), await lapsOnCards(db, name)));
       } finally {
         await view.close().catch(() => undefined);
+        await reviewView.close().catch(() => undefined);
         await page.close().catch(() => undefined);
         await restore();
       }
@@ -145,11 +167,17 @@ export function queueMapPhase(ctx: LiveContext): LivePhase {
       ...lateWrite('a build-queue run on implement', `${name}'s Build`, ms.build),
       ...lateWrite('a build-queue run on implement', `${name}'s Build view Deliver`, ms.deliver),
       ...lateWrite('a build-queue run on review', `${name}'s Review`, ms.review),
+      ...lateWrite(
+        'a build-queue run on review',
+        `${name}'s Review view Scope the change`,
+        ms.scope,
+      ),
       ...lateWrite('a paused attention wait', `${name}'s Manager waiting chip`, ms.waiting),
     ],
 
     async probe(designProbe) {
       designProbe(`${ctx.base}/f/${name}?view=build`, 'build-view-design-probe.json');
+      designProbe(`${ctx.base}/f/${name}?view=review`, 'review-view-design-probe.json');
     },
 
     summary: () => [`queue map: ${JSON.stringify({ ...ms, limit: LIMITS.insertToScreenMs })}`],

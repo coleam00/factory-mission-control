@@ -20,12 +20,12 @@ import {
 
 /** One row of `db/queries/home-map.sql`. */
 export interface HomeMapRow {
-  kind: 'version' | 'lap' | 'failing' | 'waiting' | 'queues' | 'merged';
+  kind: 'version' | 'lap' | 'failing' | 'waiting' | 'queues' | 'merged' | 'picks';
   /** A lap's run. */
   run_id: string | null;
   /** A lap's workflow. */
   workflow: string | null;
-  /** A lap's running steps by Archon's step id, newest first; null while none runs. */
+  /** A lap's running steps by Archon's step id, newest first; null while none runs. A picks row's one step. */
   steps: string[] | null;
   /** A lap's issue (its claim, else its number input), or a failing pull request. */
   number: number | null;
@@ -35,6 +35,8 @@ export interface HomeMapRow {
   at: Date | null;
   /** A merge-queue lap's merged pull requests, as the JSON text of an array of numbers. */
   prs: string | null;
+  /** A picks row's step output, the reviewers its round's router picked, as JSON text. */
+  output: string | null;
 }
 
 /** A lap on the map: its run, its claimed issue, and the step it counts on. */
@@ -80,6 +82,8 @@ export interface CardLive {
   waiting?: MapItem[];
   merged?: MapMerge[];
   orders?: WorkOrderRow[];
+  /** Laps in a review round whose router did not pick this card's reviewer. */
+  skipped?: MapLap[];
   /** Chips whose source failed: not zero, unknown, so drawn as such. */
   unavailable?: Chip[];
 }
@@ -154,6 +158,36 @@ export function lapCard(
   return card === undefined
     ? undefined
     : { card, step: stepPath(step), run: row.run_id, workflow: row.workflow };
+}
+
+const REVIEW_ROUND = /^(.*\/(?:re)?review)\//;
+
+/** The reviewers a router's output declines, by lens name; none for output that is not an object. */
+function declinedLenses(output: string | null): string[] {
+  let route: unknown;
+  try {
+    route = JSON.parse(output ?? '');
+  } catch {
+    return [];
+  }
+  if (typeof route !== 'object' || route === null) return [];
+  return Object.entries(route).flatMap(([lens, picked]) => (picked === false ? [lens] : []));
+}
+
+/**
+ * The lens steps the router skipped in the review round `lap` is in, read from that round's route
+ * step output when the run has one: paths below the round, like `<round>/tests`.
+ */
+function skippedLensSteps(rows: readonly HomeMapRow[], row: HomeMapRow, lap: MapLap): string[] {
+  const round = REVIEW_ROUND.exec(lap.step)?.[1];
+  if (round === undefined) return [];
+  const picks = rows.find(
+    (r) =>
+      r.kind === 'picks' &&
+      r.run_id === row.run_id &&
+      stepPath(r.steps?.[0] ?? '').startsWith(`${round}/`),
+  );
+  return declinedLenses(picks?.output ?? null).map((lens) => `${round}/${lens}`);
 }
 
 /** Open Archon attention items: paused runs waiting on a person, named by their issue when they have one. */
@@ -254,6 +288,11 @@ export function cardLive(
     };
     for (const card of cardChain(factoryMap, placed.workflow, placed.step)) {
       live.get(card.id)?.here.push(lap);
+    }
+    for (const step of skippedLensSteps(sources.map, row, lap)) {
+      const lens = cardChain(factoryMap, placed.workflow, step).at(-1);
+      const entry = lens && live.get(lens.id);
+      if (entry) entry.skipped = [...(entry.skipped ?? []), lap];
     }
   }
   const items = chipItems(sources, now);
