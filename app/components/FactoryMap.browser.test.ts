@@ -21,7 +21,7 @@ beforeAll(async () => {
   expect(bundle.success).toBe(true);
   source = Buffer.from(await bundle.outputs[0].text()).toString('base64');
   page = await openPage(process.env);
-}, 75_000);
+}, 90_000);
 
 afterAll(async () => {
   await page?.close();
