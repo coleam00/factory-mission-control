@@ -1,5 +1,6 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { currentVersionSql } from '../../db/queries/version-rule';
 import { openPage, type Page } from '../lib/cdp';
 import type { Db } from '../lib/db';
 import {
@@ -69,14 +70,9 @@ interface Version {
   factory_sha: string;
 }
 
-/**
- * The architecture key of the seed's current version, as the step queries choose it for
- * mission-control, a factory on the queues (#435): the architecture parsed last.
- */
-async function currentVersion(db: Db): Promise<Version> {
-  const [version] = await db.query(
-    'SELECT a.archon_sha, a.factory_sha FROM mc.arch_versions a ORDER BY a.parsed_at DESC LIMIT 1',
-  );
+/** The architecture key of the factory's current version, by step-detail.sql's own rule. */
+async function currentVersion(db: Db, stepDetailSql: string, factory: string): Promise<Version> {
+  const [version] = await db.query(currentVersionSql(stepDetailSql), [factory, '']);
   if (!version) throw new Error('the check branch has no architecture rows');
   return version as unknown as Version;
 }
@@ -159,16 +155,22 @@ const onVersionPicker = `document.querySelector('[data-step-version]') !== null`
  * at the older pin shows its own prompt, not the current one, and a version nobody recorded reads
  * one sentence. Both keep the version picker.
  */
-async function olderVersionMismatches(page: Page, base: string, db: Db): Promise<string[]> {
+async function olderVersionMismatches(
+  page: Page,
+  base: string,
+  db: Db,
+  current: Version,
+): Promise<string[]> {
   const failures: string[] = [];
   const pins = (await db.query(
     `SELECT p.sha, a.archon_sha, a.factory_sha FROM mc.arch_versions a
        JOIN mc.pins p ON p.archon_sha = a.archon_sha
       ORDER BY p.committed_at DESC, a.parsed_at DESC`,
   )) as unknown as (Version & { sha: string })[];
-  const [current] = pins;
-  const older = pins.find((pin) => pin.sha !== current?.sha);
-  if (!current || !older) return ['the check branch has no older pin with architecture rows'];
+  const older = pins.find(
+    (pin) => pin.archon_sha !== current.archon_sha || pin.factory_sha !== current.factory_sha,
+  );
+  if (!older) return ['the check branch has no older pin with architecture rows'];
   const olderPrompt = await reviewPromptAt(db, older);
   if (olderPrompt === null || olderPrompt === (await reviewPromptAt(db, current))) {
     return [`the seed's review prompt does not differ at ${older.sha.slice(0, 8)}`];
@@ -264,7 +266,11 @@ export function stepDetailPhase(ctx: LiveContext): LivePhase {
     // check-app's description is written only once every phase has written: it is in V2's
     // architecture, so the diff screen would list it as changed.
     async beforeHold() {
-      const version = await currentVersion(db);
+      const version = await currentVersion(
+        db,
+        required(ctx.queries.get('step-detail'), 'step-detail query'),
+        ctx.factory,
+      );
       const [checkApp] = await db.query(
         `SELECT description FROM mc.arch_steps
           WHERE archon_sha = $1 AND factory_sha = $2 AND workflow = 'archon-loop' AND path = 'check-app'`,
@@ -304,7 +310,14 @@ export function stepDetailPhase(ctx: LiveContext): LivePhase {
         ctx.failures.push(`land shows when "${when}", stored "${land?.when_condition}"`);
       }
       ctx.failures.push(...(await includedImplementMismatches(page, base, deps.repoRoot)));
-      ctx.failures.push(...(await olderVersionMismatches(page, base, db)));
+      ctx.failures.push(
+        ...(await olderVersionMismatches(
+          page,
+          base,
+          db,
+          required(described, "check-app's description").version,
+        )),
+      );
       await openStep(
         page,
         base,
