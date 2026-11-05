@@ -55,7 +55,7 @@ test('the gate lists a run once it swept and recorded, for its own factory only'
   expect(gate).toHaveLength(1);
   expect(JSON.parse(gate[0]?.decisions ?? 'null')).toEqual(decisions);
   expect(JSON.parse(gate[0]?.merged ?? 'null')).toEqual([404, 405]);
-  expect(JSON.parse(gate[0]?.claimed ?? 'null')).toEqual([404, 405, 407]);
+  expect(JSON.parse(gate[0]?.claimed ?? 'null')).toEqual(items);
   expect(await rows('mission-control')).toEqual([]);
 });
 

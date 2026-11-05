@@ -324,7 +324,7 @@ const right = (over: Partial<MapRightNowRow>): MapRightNowRow => ({
   decisions: null,
   merged: '[]',
   asked: null,
-  claimed: '[1,2,3,4,5,6,7,8]',
+  claimed: JSON.stringify([1, 2, 3, 4, 5, 6, 7, 8].map((number) => ({ pr: { number } }))),
   revision: null,
   health: null,
   status: null,
@@ -356,7 +356,10 @@ test("the gate lists merged as read back, the sweep's send-backs, an ask only wh
     outcome: 'sent back',
     url: 'https://github.com/o/r/pull/8',
   });
-  const stray = right({ decisions: JSON.stringify([decision(9, 'return')]), claimed: '[8]' });
+  const stray = right({
+    decisions: JSON.stringify([decision(9, 'return')]),
+    claimed: JSON.stringify([{ pr: { number: 8 } }]),
+  });
   expect(gateOutcomes([stray])).toEqual([]);
   expect(gateOutcomes([right({ decisions: 'not json' }), right({ decisions: '{}' })])).toEqual([]);
 });

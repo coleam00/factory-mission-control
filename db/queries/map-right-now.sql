@@ -2,7 +2,8 @@ SELECT * FROM (
   -- What the gate card and the Staging cards list as live (PRD 4.1): recent gate decisions and the
   -- latest deploy. Its own feed, so a refusal here leaves the map drawn (the home-map query blanks it).
   -- Kept apart from the shared columns of home-map: none of its other kinds has these.
-  -- Decisions and merged pull requests come as JSON text, which the browser expands, as home-map's prs.
+  -- Decisions, merged pull requests and the facts items come as JSON text, which the browser expands,
+  -- as home-map's prs.
   -- A run that swept and then recorded: the sweep's decisions, the pull requests the record step
   -- read back as landed, the one it asked about, and the numbers the run claimed (facts). Only these
   -- steps exist in that queue, so they identify the run, and its workflow name is never read.
@@ -11,8 +12,7 @@ SELECT * FROM (
     (sw.output -> 'decisions')::text AS decisions,
     (rec.output -> 'merged')::text AS merged,
     rec.output -> 'asked' -> 'pr' ->> 'number' AS asked,
-    (SELECT coalesce(jsonb_agg(i -> 'pr' -> 'number'), '[]'::jsonb)
-       FROM jsonb_array_elements(fa.output -> 'items') i)::text AS claimed,
+    (fa.output -> 'items')::text AS claimed,
     NULL::text AS revision, NULL::text AS health, NULL::text AS status, f.repository
   FROM mc.laps l
   JOIN mc.factories f ON f.name = l.factory

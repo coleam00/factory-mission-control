@@ -85,7 +85,7 @@ export interface MapRightNowRow {
   merged: string | null;
   /** The number of the pull request the record step asked about, when it did. */
   asked: string | null;
-  /** A gate row's pull requests the run claimed, as the JSON text of an array of numbers. */
+  /** A gate row's `facts` items, the pull requests the run listed, as the JSON text of an array. */
   claimed: string | null;
   revision: string | null;
   health: string | null;
@@ -215,8 +215,9 @@ const newestFirst = (a: MapRightNowRow, b: MapRightNowRow) =>
  * request the record step read back as merged is merged whatever the sweep said; else a `return`
  * decision is listed as sent back, and an ask only when the record step raised it. Those two are
  * the sweep's decision: the record step may still park, wait on or skip the pull request. Only the
- * first decision per number counts, as the sweep's own `decide()` does. A waiting decision, or an
- * ask not raised, is not listed.
+ * first decision per number counts, and a number the run's facts did not list is dropped, as the
+ * record step's `decide()` does (`merge-queue/scripts/record.ts`). A waiting decision, or an ask
+ * not raised, is not listed.
  */
 export function gateOutcomes(rows: readonly MapRightNowRow[]): GateOutcome[] {
   return rows
@@ -225,7 +226,11 @@ export function gateOutcomes(rows: readonly MapRightNowRow[]): GateOutcome[] {
     .flatMap((row) => {
       const merged = new Set(mergedPulls(row.merged ?? '[]'));
       const asked = row.asked === null ? null : Number(row.asked);
-      const claimed = new Set(mergedPulls(row.claimed ?? '[]'));
+      const claimed = new Set(
+        jsonArray(row.claimed).map(
+          (item) => (item as { pr?: { number?: unknown } } | null)?.pr?.number,
+        ),
+      );
       const seen = new Set<number>();
       return jsonArray(row.decisions).flatMap((decision): GateOutcome[] => {
         if (typeof decision !== 'object' || decision === null) return [];
