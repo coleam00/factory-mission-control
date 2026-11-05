@@ -154,8 +154,9 @@ export function nesting(rows: readonly NestingRow[], step: StepRow, at?: string 
 }
 
 /**
- * One row of `db/queries/step-versions.sql`: a pin with architecture, and whether it is the version
- * the step screen shows without one in its address.
+ * One row of `db/queries/step-versions.sql`: a pin with architecture, or on a factory on the queues
+ * the current version when no pin names it (its Archon commit, `committed_at` its parse time), and
+ * whether it is the version the step screen shows without one in its address.
  */
 export interface StepVersionRow {
   sha: string;
@@ -166,9 +167,9 @@ export interface StepVersionRow {
 
 export interface StepVersion {
   sha: string;
-  /** The pin's first 8 characters and its commit date. */
+  /** The pin's (or the unpinned current version's Archon commit's) first 8 characters and its date. */
   label: string;
-  /** The pin's reason, or `not recorded` for a bare pin. */
+  /** The pin's reason, or `not recorded` for a bare pin or for the current version no pin names. */
   reason: string;
   current: boolean;
 }
