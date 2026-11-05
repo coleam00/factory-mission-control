@@ -8,6 +8,7 @@ import { homeHref } from '../lib/home-map';
 import type { OwnerQueueRow } from '../lib/owner-queue';
 import type { StepRow } from '../lib/step-detail';
 import { useFactory } from '../live/FactoryProvider';
+import { AWAITED, Feed, type Source } from '../live/Feed';
 import { LivePanel, type PanelState } from '../live/LivePanel';
 import { useLive } from '../live/LiveProvider';
 import { FACTORY_MAP } from '../map/factory-map';
@@ -92,41 +93,6 @@ export function HomeMapBody({
       steps={steps}
       stepsFailed={states.steps === 'error'}
     />
-  );
-}
-
-interface Source<Row> {
-  rows: readonly Row[] | undefined;
-  state: PanelState;
-}
-
-const AWAITED = { rows: undefined, state: 'loading' } as const;
-
-/** Hands a panel's rows and state up, so the panel never wraps the map and remounts it. */
-function Report<Row>({
-  rows,
-  state,
-  into,
-}: Source<Row> & { into: (source: Source<Row>) => void }): null {
-  useEffect(() => into({ rows, state }), [rows, state, into]);
-  return null;
-}
-
-function Feed<Row>({
-  query,
-  factory,
-  args,
-  into,
-}: {
-  query: string;
-  factory: string | undefined;
-  args?: readonly string[];
-  into: (source: Source<Row>) => void;
-}): ReactElement {
-  return (
-    <LivePanel<Row> query={query} factory={factory} args={args}>
-      {(rows, state) => <Report rows={rows} state={state} into={into} />}
-    </LivePanel>
   );
 }
 
