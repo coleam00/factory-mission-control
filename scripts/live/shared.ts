@@ -75,12 +75,8 @@ export async function freePort(
   }
 }
 
-export async function waitForHealth(
-  base: string,
-  exited: () => boolean,
-  waitMs = 60_000,
-): Promise<void> {
-  const deadline = Date.now() + waitMs;
+export async function waitForHealth(base: string, exited: () => boolean): Promise<void> {
+  const deadline = Date.now() + 60_000;
   while (Date.now() < deadline) {
     if (exited()) throw new Error('the server exited before answering /api/health');
     const ok = await fetch(`${base}/api/health`).then(
@@ -90,7 +86,7 @@ export async function waitForHealth(
     if (ok) return;
     await Bun.sleep(200);
   }
-  throw new Error(`the server did not answer /api/health within ${Math.round(waitMs / 1000)}s`);
+  throw new Error('the server did not answer /api/health within 60s');
 }
 
 /** An in-page promise: true once `condition` holds, false after `ms`; it watches, never polls. */
