@@ -87,10 +87,9 @@ screens, `/steps/<workflow>/<step>`).
 - **The manager**, centred above the line: one card, the orchestrator the owner talks to. It keeps
   the factory healthy and work moving and brings the owner the decisions it can't make. One
   arrow comes down from it into the box.
-- **Two loops back:** Review, App check and Merge each rise to a dashed line along the top that
-  runs back to Build, labelled "fixes". Review, App check and Staging each drop to a dashed line along
-  the bottom that runs back into Found by the factory, labelled "unrelated problems become new work".
-  These are the only lines that run right to left.
+- **One loop back:** Review, App check and Staging each drop to a dashed line along the bottom that
+  runs back into Found by the factory, labelled "problems found become new work". It is the only
+  line that runs right to left.
 
 **The words (Cole and Rasmus, 2026-11-04).** **Work** is any single item the factory takes, one issue
 and one `work/<n>` state document. A **work order** is a group of work that goes through the factory
@@ -242,6 +241,8 @@ the failing step's error text (`usage limit|429` = usage limit, `401|unauthor` =
 no `needs-owner`, every `Depends on` closed, no live claim) against running laps.
 
 ### 4.9 Where v2 is going: fewer screens, one story (owner decision 2026-11-03)
+
+**Owner decision 2026-11-05, which overrides the table below:** four tabs: **Factory**, **Board**, **Decisions** (only what is waiting) and **Laps** (every run running right now). Changes, Scorecard, Versions, Diff, Ledger, Health, Testing, Owner, Issues and Rewind are gone, and each old address redirects. Health, history and whether a change helped are questions for the owner's agent, not screens; the data stays so the agent can answer them.
 
 v1 was a proof of concept: eleven tabs, most of them tables, and the owner had to know the factory's
 internals to read them. v2 answers four questions, each on one screen, in the design of
