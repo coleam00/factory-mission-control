@@ -178,7 +178,7 @@ export function lapCard(
     : { card, step: stepPath(step), run: row.run_id, workflow: row.workflow };
 }
 
-const REVIEW_ROUND = /^(.*\/(?:re)?review)\//;
+export const REVIEW_ROUND = /^(.*\/(?:re)?review)\//;
 
 /**
  * The lens steps the engine skipped in the review round `lap` is in, from the run's `picks` rows:

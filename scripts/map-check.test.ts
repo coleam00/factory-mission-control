@@ -3,7 +3,8 @@ import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:f
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { type Card, FACTORY_MAP, type FactoryMap, type MapView } from '../app/map/factory-map';
-import { parsePack } from '../parsers/pack';
+import { REVIEW_ROUND } from '../app/map/live';
+import { parsePack, type Step, type Workflow } from '../parsers/pack';
 import { REPO_ROOT } from './lib/cli';
 import { mapCheck, parseQueuePack } from './map-check';
 
@@ -380,5 +381,35 @@ describe('map:check', () => {
     expect(check(map)).toContain(
       'queue pack: Build view: Write the brief names workflow archon-merge-queue, which Build does not cover',
     );
+  });
+});
+
+describe('the picks seam of the home map', () => {
+  const sql = readFileSync(join(REPO_ROOT, 'db', 'queries', 'home-map.sql'), 'utf8');
+  const workflow = (name: string): Workflow => {
+    const found = queue().workflows.find((w) => w.name === name);
+    if (!found) throw new Error(`the queue pack lacks ${name}`);
+    return found;
+  };
+  const flatten = (steps: Step[]): Step[] => steps.flatMap((s) => [s, ...flatten(s.steps)]);
+
+  test('the lens steps its SQL selects are the review-lens nodes of the review block', () => {
+    const block = workflow('archon-review-block');
+    const lenses = [...block.yaml.matchAll(/- id: (\w+)\s+output_type: review-lens/g)].map(
+      (m) => m[1],
+    );
+    const selected = /review__\(([^)]+)\)\$/.exec(sql)?.[1].split('|');
+    expect(selected?.slice().sort()).toEqual(lenses.sort());
+    expect(block.steps[0]?.id).toBe('policy');
+    expect(block.steps.some((s) => s.id === 'route')).toBe(true);
+  });
+
+  test('live.ts reads a lens step as in a round exactly where the deliver block includes the review block', () => {
+    const rounds = flatten(workflow('archon-deliver-block').steps).filter(
+      (s) => s.include === 'archon-review-block',
+    );
+    expect(rounds.map((s) => s.path).sort()).toEqual(['rounds/rereview', 'rounds/review']);
+    for (const round of rounds)
+      expect(REVIEW_ROUND.exec(`${round.path}/code`)?.[1]).toBe(round.path);
   });
 });

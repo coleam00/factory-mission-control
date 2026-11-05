@@ -363,6 +363,25 @@ test('Right now links a lap entry to its page and to its GitHub issue, and only 
   expect(html.match(/data-lap-issue/g)).toHaveLength(1);
 });
 
+test('Right now says a skipped reviewer was not earned, naming the lap by issue or by run', () => {
+  const skipped = [
+    { run: 'aaaaaaaa-1', step: 'review/tests', issue: { number: 7, title: 'T', url: null } },
+    { run: 'bbbbbbbb-2', step: 'review/tests', issue: null },
+  ];
+  const render = (live: Parameters<typeof RightNow>[0]['live']) =>
+    renderToStaticMarkup(
+      <MemoryRouter>
+        <RightNow live={live} factory="here" />
+      </MemoryRouter>,
+    );
+  const html = render({ here: [], skipped });
+  expect(html).toContain('data-skipped="aaaaaaaa-1"');
+  expect(html).toContain('#7');
+  expect(html).toContain('lap bbbbbbbb');
+  expect(html.match(/did not earn this reviewer/g)).toHaveLength(2);
+  expect(render({ here: [] })).not.toContain('data-skipped');
+});
+
 test('Right now says a chip count is unavailable', () => {
   const html = renderToStaticMarkup(
     <MemoryRouter>

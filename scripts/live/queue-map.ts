@@ -252,7 +252,7 @@ export function queueMapPhase(ctx: LiveContext): LivePhase {
     ],
 
     async probe(designProbe) {
-      for (const id of ['build', 'review', 'split', 'intake']) {
+      for (const id of Object.keys(FACTORY_MAP.views ?? {})) {
         designProbe(`${ctx.base}/f/${name}?view=${id}`, `${id}-view-design-probe.json`);
       }
     },
