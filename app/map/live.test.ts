@@ -39,6 +39,16 @@ const hereOn = (rows: HomeMapRow[], cards: readonly { id: string }[]) => {
   );
 };
 
+test("a card's laps carry the workflow of the run placed on it", () => {
+  const rows = [
+    lap('a', ['check-app'], 'archon-loop'),
+    lap('rev', ['ship__deliver__rounds.review__policy', 'ship'], 'archon-build-queue'),
+  ];
+  const live = cardLive(FACTORY_MAP, { map: rows }, new Date());
+  expect(live.get('app')?.here.map((l) => l.workflow)).toEqual(['archon-loop']);
+  expect(live.get('review')?.here.map((l) => l.workflow)).toEqual(['archon-build-queue']);
+});
+
 /** The home map's cards only; `BUILD_VIEW` has the Build view's. */
 const here = (rows: HomeMapRow[]) => hereOn(rows, FACTORY_MAP.cards);
 const BUILD_VIEW = FACTORY_MAP.views?.build?.cards ?? [];

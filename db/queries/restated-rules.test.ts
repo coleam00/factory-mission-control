@@ -2,6 +2,7 @@ import { expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { COLUMNS } from '../../app/lib/board';
+import { LAP_PAGE_WORKFLOW } from '../../app/lib/one-lap';
 import { queries } from './test-seed';
 
 const root = join(import.meta.dir, '..', '..');
@@ -95,5 +96,21 @@ test('map-right-now reads only paths the pinned merge queue declares', () => {
       expect(Object.keys(at.properties), `${step}.${walked.join('.')} is declared`).toContain(key);
       at = at.properties[key] as { properties?: Record<string, unknown> };
     }
+  }
+});
+
+test('the queries behind a link to the lap page filter on LAP_PAGE_WORKFLOW', () => {
+  const testing = queries.map(([n]) => n).filter((n) => n.startsWith('testing-'));
+  expect([...testing].sort()).toEqual(['testing-app-check', 'testing-holdouts', 'testing-routes']);
+  const archonLiterals = (name: string) =>
+    [...sqlOf(name).matchAll(/'(archon-[a-z-]+)'/g)].map((m) => m[1]);
+
+  expect(archonLiterals('testing-holdouts')).toEqual([]);
+  for (const name of ['recent-laps', ...testing.filter((n) => n !== 'testing-holdouts')]) {
+    expect([
+      name,
+      [...sqlOf(name).matchAll(/workflow_name = '([^']*)'/g)].map((m) => m[1]),
+    ]).toEqual([name, [LAP_PAGE_WORKFLOW]]);
+    expect([name, archonLiterals(name)]).toEqual([name, [LAP_PAGE_WORKFLOW]]);
   }
 });
