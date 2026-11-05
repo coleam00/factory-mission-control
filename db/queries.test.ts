@@ -7,9 +7,7 @@ import type { AppCheckRow } from '../app/lib/app-check';
 import type { ArchDiffRow } from '../app/lib/arch-diff';
 import type { AttentionRow } from '../app/lib/attention';
 import type { BoardRow } from '../app/lib/board';
-import type { LedgerRow, TimelineRow } from '../app/lib/decisions-ledger';
 import type { HealthRunRow, HealthStepRow, HealthWorkableRow } from '../app/lib/health';
-import type { IssueGraphRow } from '../app/lib/issue-graph';
 import type { LapMapRow } from '../app/lib/lap-graph';
 import type { LaneRow, RecentLapRow } from '../app/lib/laps';
 import type { CheckLineRow, OneLapRow, StepAttemptRow } from '../app/lib/one-lap';
@@ -25,7 +23,6 @@ import type {
   SubagentRow,
   YamlPartRow,
 } from '../app/lib/step-detail';
-import type { CheckRow, DefaultHoldoutRow, RouteRow } from '../app/lib/testing';
 import type { VersionStripRow } from '../app/lib/version-strip';
 import type { WorkItemRow } from '../app/lib/work-item';
 import type { HomeMapRow, MapRightNowRow, ProductDocumentRow, WorkOrderRow } from '../app/map/live';
@@ -70,17 +67,6 @@ const ROW_COLUMNS: Record<string, string[]> = {
     'labels',
     'message',
     'console',
-  ]),
-  'decisions-timeline': columns<TimelineRow>()([
-    'date',
-    'title',
-    'decision',
-    'why',
-    'replaces',
-    'version',
-    'pin_sha',
-    'ambiguous',
-    'digest',
   ]),
   'factory-switcher': columns<FactorySwitcherRow>()(['factory', 'running', 'is_default']),
   'health-runs': columns<HealthRunRow>()([
@@ -177,26 +163,6 @@ const ROW_COLUMNS: Record<string, string[]> = {
     'url',
     'at',
     'prs',
-  ]),
-  'improvements-ledger': columns<LedgerRow>()([
-    'pin_sha',
-    'reason',
-    'measure',
-    'committed_at',
-    'laps',
-    'verdict',
-    'sentence',
-    'verdict_at',
-    'pin_matches',
-  ]),
-  'issue-graph': columns<IssueGraphRow>()([
-    'kind',
-    'number',
-    'title',
-    'phase',
-    'url',
-    'state',
-    'depends_on',
   ]),
   lanes: columns<LaneRow>()([
     'run_id',
@@ -350,28 +316,6 @@ const ROW_COLUMNS: Record<string, string[]> = {
   ]),
   'step-versions': columns<StepVersionRow>()(['sha', 'reason', 'committed_at', 'is_current']),
   'step-yaml': columns<YamlPartRow>()(['name', 'file', 'part', 'chunk']),
-  'testing-app-check': columns<CheckRow>()([
-    'run_id',
-    'position',
-    'kind',
-    'verdict',
-    'scenario_id',
-    'started_at',
-    'pr',
-  ]),
-  'testing-holdouts': columns<DefaultHoldoutRow>()([
-    'at',
-    'sha',
-    'report_issue',
-    'scenario_id',
-    'verdict',
-    'issue_number',
-    'issue_title',
-    'issue_state',
-    'issue_url',
-    'repository',
-  ]),
-  'testing-routes': columns<RouteRow>()(['run_id', 'status', 'started_at', 'route', 'depth']),
   'map-right-now': columns<MapRightNowRow>()([
     'kind',
     'run_id',
@@ -490,12 +434,7 @@ describe('the rules the live queries restate, which they may not call a function
 
   test('what dates a version is the one list mc.dates_version holds', () => {
     expect(read('db/migrations', '0022_queue_versions.sql')).toContain(DATES_VERSION);
-    for (const name of [
-      'version-strip',
-      'decisions-timeline',
-      'arch-diff',
-      'improvements-ledger',
-    ]) {
+    for (const name of ['version-strip', 'arch-diff']) {
       expect(query(name)).toContain(DATES_VERSION);
     }
   });
@@ -505,9 +444,7 @@ describe('the rules the live queries restate, which they may not call a function
     // not listed here may mention none of them.
     const expected: Record<string, [number, number, number, number?]> = {
       'version-strip': [1, 0, 0],
-      'decisions-timeline': [2, 0, 0],
       'arch-diff': [2, 0, 0],
-      'improvements-ledger': [2, 1, 0],
       scorecard: [0, 2, 0],
       // The same list as mc.dates_version: the lap a work order's row names is one that ran a version.
       board: [1, 0, 0],
@@ -539,7 +476,6 @@ describe('the rules the live queries restate, which they may not call a function
   test('a build-queue lap is a run whose facts step names an item, in every copy of the rule', () => {
     for (const sql of [
       query('scorecard'),
-      query('improvements-ledger'),
       query('work-item'),
       read('fixtures', 'expected-scorecard.sql'),
     ]) {
