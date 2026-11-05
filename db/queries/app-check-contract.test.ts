@@ -1,6 +1,7 @@
 // The App check's projection contract (migration 0024) is restated by its readers: home-map.sql,
 // board.sql and app-check.sql each spell out which (workflow, step) carries the verdict. These tests
-// bind the copies to one owner, the map card that lists the panel, and to the writer.
+// bind the copies to 0024's accepted pairs, check the map card that lists the panel covers only those, and
+// bind the pinned pack to the writer.
 import { afterAll, beforeAll, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -57,25 +58,29 @@ test('the seed holds no verdict for the pull request the contract tests use', as
   expect(s.panel?.overall ?? null).toBeNull();
 });
 
-test('the readers count exactly the steps the App check card covers', async () => {
+test('the readers count the (workflow, step) pairs 0024 keeps as the App check', async () => {
+  // 0024 keeps `check-app` from any workflow (no workflow guard) and `check` only from
+  // factory-app-check. The card's covers must be inside that set.
+  const accepted = (workflow: string, step: string) =>
+    step === 'check-app' || (workflow === 'factory-app-check' && step === 'check');
   const owners = allCards(FACTORY_MAP).filter((card) => card.lists?.includes('checks'));
   expect(owners).toHaveLength(1);
-  const covered = (owners[0]?.covers ?? []).flatMap((c) =>
+  const covers = (owners[0]?.covers ?? []).flatMap((c) =>
     c.steps.map((step) => [c.workflow, step] as const),
   );
-  const decoys = [
-    ['archon-loop', 'check'],
-    ['archon-build-queue', 'check'],
-    ['factory-app-check', 'select'],
-    ['factory-app-check', 'evidence'],
-  ] as const;
+  for (const [workflow, step] of covers) expect(accepted(workflow, step)).toBe(true);
+
+  const workflows = ['archon-loop', 'archon-build-queue', 'factory-app-check'];
+  const steps = ['check-app', 'check', 'select', 'evidence'];
+  const probes = workflows.flatMap((w) => steps.map((s) => [w, s] as const));
+  const covered = probes.filter(([w, s]) => accepted(w, s));
 
   const counted: Record<'failing' | 'board' | 'panel', string[]> = {
     failing: [],
     board: [],
     panel: [],
   };
-  for (const [i, [workflow, step]] of [...covered, ...decoys].entries()) {
+  for (const [i, [workflow, step]] of probes.entries()) {
     const run = `00000000-0000-4000-8000-0000000009${String(i).padStart(2, '0')}`;
     await db.query('BEGIN');
     try {

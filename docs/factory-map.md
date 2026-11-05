@@ -141,8 +141,8 @@ light round, a rereview, a refused round).
 ## Right now in the Merge and Staging views
 
 A card's `lists` (a closed set, held by the map check) name what its Right now shows beside its
-chips' items: `outcomes` (Merge gate), `deploys` and `lands` (each Staging card), and `checks` (Use the app, the App check panel, which
-subscribes its own `app-check` query, below). The rest come from
+chips' items: `outcomes` (Merge gate), `deploys` and `lands` (each Staging card), and `checks` (Use the app, the App
+check panel, which subscribes its own `app-check` query, below). The rest come from
 `map-right-now` (the newest 10 `archon-merge-queue` runs that swept and then recorded, and the
 factory's latest finished deploy, from `factory-deploy` or from the old loop's `deploy` include)
 and from `work-orders`; nothing is written and nothing polls. Like the chips, they describe the
@@ -166,8 +166,8 @@ factory as it is now, at whatever version the address names.
 `config`, `select` and `pending`, How deep? `scope`, Protected paths `policy`, PR + main, started
 `prepare`, Use the app `check`, Seal the evidence `evidence` and `factory/app-check` `publish`,
 `finalize` and `cleanup`; the old loop's `briefs`, `check-app`, `evidence` and `handoff` sit on the
-same cards in the same order. Use the app's Right now also lists, through its `checks` list, the open pull requests the app
-check has looked at (the `app-check` query): each one's latest verdict and its lines by kind.
+same cards in the same order. Use the app's Right now also lists, through its `checks` list, the open
+pull requests the app check has looked at (the `app-check` query): each one's latest verdict and its lines by kind.
 
 The home map's failing chip and the Board's verdict chip read the old `check-app` step or, on the
 queues, the `check` step of `factory-app-check` (migration 0024). That step keeps only its overall
