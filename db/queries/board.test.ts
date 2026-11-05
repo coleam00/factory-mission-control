@@ -104,6 +104,32 @@ test('a work item carries its pull request, rounds, route and app verdict from t
   expect(of(13)?.work_orders).toEqual([]);
 });
 
+test("a queue factory's check step is the app verdict, and another queue workflow's is not", async () => {
+  await db.query('BEGIN');
+  try {
+    const [lap] = await db.query(
+      `SELECT run_id FROM mc.laps WHERE factory = 'mission-control' AND status = 'completed' LIMIT 1`,
+    );
+    await db.query(
+      `INSERT INTO mc.lap_steps (run_id, step_id, status, started_at, output)
+        VALUES ($1, 'check', 'completed', '2030-01-01T00:00:00Z', '{"pr":112,"overall":"FAIL"}')`,
+      [lap?.run_id],
+    );
+    const verdict = async (workflow: string) => {
+      await db.query('UPDATE mc.laps SET workflow_name = $2 WHERE run_id = $1', [
+        lap?.run_id,
+        workflow,
+      ]);
+      const rows = await run<BoardRow>('board', 'mission-control');
+      return rows.find((r) => r.number === 12)?.app_check;
+    };
+    expect(await verdict('archon-build-queue')).toBeNull();
+    expect(await verdict('factory-app-check')).toBe('FAIL');
+  } finally {
+    await db.query('ROLLBACK');
+  }
+});
+
 test('each work order panel counts the board rows that name it', async () => {
   const rows = await run<BoardRow>('board', 'mission-control');
   const orders = await run<WorkOrderRow>('work-orders', 'mission-control');

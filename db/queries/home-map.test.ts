@@ -168,6 +168,33 @@ describe('home-map on the seed', () => {
     expect((await rows()).filter((r) => r.kind === 'failing')).toEqual([]);
   });
 
+  test("a queue factory's check step counts for failing, and a queue run's check step is not an old loop's", async () => {
+    await db.query('BEGIN');
+    try {
+      const [lap] = await db.query(
+        `SELECT run_id FROM mc.laps WHERE factory = 'mission-control' AND status = 'completed' LIMIT 1`,
+      );
+      const check = (workflow: string) =>
+        db.query(`UPDATE mc.laps SET workflow_name = $2 WHERE run_id = $1`, [
+          lap?.run_id,
+          workflow,
+        ]);
+      await db.query(
+        `INSERT INTO mc.lap_steps (run_id, step_id, status, started_at, output)
+          VALUES ($1, 'check', 'completed', '2026-11-01T00:00:00Z', '{"pr":109,"overall":"FAIL"}')`,
+        [lap?.run_id],
+      );
+      const failing = async () =>
+        (await rows()).filter((r) => r.kind === 'failing').map((r) => r.number);
+      await check('archon-build-queue');
+      expect(await failing()).toEqual([]);
+      await check('factory-app-check');
+      expect(await failing()).toEqual([109]);
+    } finally {
+      await db.query('ROLLBACK');
+    }
+  });
+
   test('merged: each lap whose land step merged, timed when the land step finished, running laps too', async () => {
     const recount = await db.query(
       `SELECT l.run_id, s.completed_at FROM mc.laps l JOIN mc.lap_steps s USING (run_id)

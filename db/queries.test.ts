@@ -3,6 +3,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { StatusStripRow } from '../app/components/FactoryStrip';
 import type { FactorySwitcherRow } from '../app/components/FactorySwitcher';
+import type { AppCheckRow } from '../app/lib/app-check';
 import type { ArchDiffRow } from '../app/lib/arch-diff';
 import type { AttentionRow } from '../app/lib/attention';
 import type { BoardRow } from '../app/lib/board';
@@ -47,6 +48,16 @@ const columns =
 
 /** Each live query's result columns, in order, bound to the row type its panel reads. */
 const ROW_COLUMNS: Record<string, string[]> = {
+  'app-check': columns<AppCheckRow>()([
+    'number',
+    'title',
+    'url',
+    'run_id',
+    'overall',
+    'criteria',
+    'probes',
+    'assertions',
+  ]),
   'arch-diff': columns<ArchDiffRow>()(['digest', 'kind', 'workflow', 'first_run_at', 'entries']),
   'attention-items': columns<AttentionRow>()([
     'run_id',
