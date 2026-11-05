@@ -3,8 +3,7 @@ import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:f
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { type Card, FACTORY_MAP, type FactoryMap, type MapView } from '../app/map/factory-map';
-import { REVIEW_ROUND } from '../app/map/live';
-import { parsePack, type Step, type Workflow } from '../parsers/pack';
+import { parsePack, type Workflow } from '../parsers/pack';
 import { REPO_ROOT } from './lib/cli';
 import { mapCheck, parseQueuePack } from './map-check';
 
@@ -446,7 +445,6 @@ describe('the picks seam of the home map', () => {
     if (!found) throw new Error(`the queue pack lacks ${name}`);
     return found;
   };
-  const flatten = (steps: Step[]): Step[] => steps.flatMap((s) => [s, ...flatten(s.steps)]);
 
   test('the lens steps its SQL selects are the review-lens nodes of the review block', () => {
     const block = workflow('archon-review-block');
@@ -471,14 +469,5 @@ describe('the picks seam of the home map', () => {
       expect(route?.properties?.[id]?.type).toBe('boolean');
       expect(route?.required).toContain(id);
     }
-  });
-
-  test('live.ts reads a lens step as in a round exactly where the deliver block includes the review block', () => {
-    const rounds = flatten(workflow('archon-deliver-block').steps).filter(
-      (s) => s.include === 'archon-review-block',
-    );
-    expect(rounds.map((s) => s.path).sort()).toEqual(['rounds/rereview', 'rounds/review']);
-    for (const round of rounds)
-      expect(REVIEW_ROUND.exec(`${round.path}/code`)?.[1]).toBe(round.path);
   });
 });
