@@ -186,7 +186,7 @@ type RowKind = {
   needs?: string;
 };
 
-/** The issue `label` labels next: the factory's highest-numbered open work item without needs-owner. */
+/** The issue `label` labels next: the factory's highest-numbered open one without needs-owner. */
 export const NEXT_TO_LABEL = `SELECT i.factory, i.number FROM mc.issues i
   WHERE i.factory = $1::text AND i.state = 'open'
     AND NOT EXISTS (SELECT 1 FROM mc.issue_labels l
@@ -214,7 +214,7 @@ const ROW_KINDS = {
   },
   label: {
     table: 'mc.issue_labels',
-    needs: `an open ${FACTORY} issue without needs-owner`,
+    needs: `the issue --issue names, or else an open ${FACTORY} issue without needs-owner`,
     insert: (at, { label = 'needs-owner', issue }) => ({
       sql: `INSERT INTO mc.issue_labels (factory, issue_number, label, labeled_at)
         SELECT next.factory, next.number, $3::text, $2::timestamptz FROM (${
