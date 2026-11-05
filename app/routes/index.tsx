@@ -4,7 +4,8 @@ import { EmptyState } from '../components/EmptyState';
 import { FactoryMap, useReducedMotion } from '../components/FactoryMap';
 import { StepVersionPicker } from '../components/StepVersionPicker';
 import { useMapPath } from '../components/useMapPath';
-import type { HealthWorkableRow } from '../lib/health';
+import type { AttentionRow } from '../lib/attention';
+import type { HealthRunRow, HealthStepRow, HealthWorkableRow } from '../lib/health';
 import { homeHref } from '../lib/home-map';
 import type { OwnerQueueRow } from '../lib/owner-queue';
 import type { StepRow } from '../lib/step-detail';
@@ -76,7 +77,7 @@ export function HomeMapBody({
   path?: readonly string[];
   onPath?: (path: readonly string[]) => void;
 }): ReactElement {
-  const { map, workable, owner, orders } = sources;
+  const { map, workable, owner, orders, attention, healthRuns, healthSteps } = sources;
   const empty = (title: string) => (
     <div className={COLUMN}>
       <EmptyState title={title} />
@@ -87,7 +88,11 @@ export function HomeMapBody({
   if (map === undefined && configured === false) return empty('No factory is configured.');
   if (map === undefined) return empty('Loading the factory map.');
   if (!versionRecorded(map, at)) return empty(`No version ${at} is recorded for this factory.`);
-  const live = cardLive(FACTORY_MAP, { map, workable, owner, orders, states }, now);
+  const live = cardLive(
+    FACTORY_MAP,
+    { map, workable, owner, orders, attention, healthRuns, healthSteps, states },
+    now,
+  );
   return (
     <FactoryMap
       map={FACTORY_MAP}
@@ -122,6 +127,9 @@ export default function Home(): ReactElement {
   const [workable, setWorkable] = useState<Source<HealthWorkableRow>>(AWAITED);
   const [owner, setOwner] = useState<Source<OwnerQueueRow>>(AWAITED);
   const [orders, setOrders] = useState<Source<WorkOrderRow>>(AWAITED);
+  const [attention, setAttention] = useState<Source<AttentionRow>>(AWAITED);
+  const [healthRuns, setHealthRuns] = useState<Source<HealthRunRow>>(AWAITED);
+  const [healthSteps, setHealthSteps] = useState<Source<HealthStepRow>>(AWAITED);
   const [steps, setSteps] = useState<Source<StepRow>>(AWAITED);
   const configured = live.status === 'ready' ? live.factories.length > 0 : undefined;
   return (
@@ -154,16 +162,30 @@ export default function Home(): ReactElement {
       <Feed<HealthWorkableRow> query="health-workable" factory={factory} into={setWorkable} />
       <Feed<OwnerQueueRow> query="owner-queue" factory={factory} into={setOwner} />
       <Feed<WorkOrderRow> query="work-orders" factory={factory} into={setOrders} />
+      <Feed<AttentionRow> query="attention-items" factory={factory} into={setAttention} />
+      <Feed<HealthRunRow> query="health-runs" factory={factory} into={setHealthRuns} />
+      <Feed<HealthStepRow> query="health-steps" factory={factory} into={setHealthSteps} />
       <Feed<StepRow> query="step-detail" factory={factory} args={[at ?? '']} into={setSteps} />
       <LivePanel<HomeMapRow> query="home-map" factory={factory} args={[at ?? '']}>
         {(map, state) => (
           <HomeMapBody
-            sources={{ map, workable: workable.rows, owner: owner.rows, orders: orders.rows }}
+            sources={{
+              map,
+              workable: workable.rows,
+              owner: owner.rows,
+              orders: orders.rows,
+              attention: attention.rows,
+              healthRuns: healthRuns.rows,
+              healthSteps: healthSteps.rows,
+            }}
             steps={steps.rows}
             states={{
               workable: workable.state,
               owner: owner.state,
               orders: orders.state,
+              attention: attention.state,
+              healthRuns: healthRuns.state,
+              healthSteps: healthSteps.state,
               steps: steps.state,
             }}
             state={state}

@@ -97,6 +97,7 @@ const run = (overrides: Partial<HealthRunRow>): HealthRunRow => ({
   failed_step: null,
   error: null,
   failed_at: null,
+  console: 'http://archon.test',
   ...overrides,
 });
 

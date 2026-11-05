@@ -40,6 +40,7 @@ const withCards = (cards: FactoryMap['cards']): FactoryMap => ({ ...FACTORY_MAP,
 const withBuildView = (edit: (cards: FactoryMap['cards']) => FactoryMap['cards']): FactoryMap => ({
   ...FACTORY_MAP,
   views: {
+    ...FACTORY_MAP.views,
     build: {
       ...(FACTORY_MAP.views?.build as MapView),
       cards: edit(FACTORY_MAP.views?.build?.cards ?? []),

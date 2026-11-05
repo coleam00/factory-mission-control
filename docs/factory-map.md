@@ -125,13 +125,29 @@ holdout verifier and the fence (journey 1). Esc, the close button or a click on 
 deselects.
 
 A card with a view shows ⤢ and a stacked edge, and its strip has an Open button naming the number
-of cards in the view. A card shows ⤢ only once its view exists; today Build's does (`?view=build`).
+of cards in the view. A card shows ⤢ only once its view exists; today Build's (`?view=build`) and the Manager's (`?view=manager`) do.
 Double-click, Enter on the selected card or the Open button zooms into the view. Breadcrumbs above
 the caption (the factory, then each opened view), the up control, a crumb, Esc (with nothing
 selected) and Backspace go up, and the card that opened the view flashes. The address is
 `/f/<factory>?view=<id>`: opening and going up each push a history entry, so the browser's back
 button goes up, and a link or reload opens straight into the view. An unknown `view` shows the
 home map.
+
+## The Manager view
+
+`?view=manager` draws `refs/18-drill-manager.png`: four violet question cards (Work item is unclear,
+Build is stuck on a choice, Risky merge, Is this a real problem?), the Manager and the Written rules
+under them. It adds two live queries to the home map's, `attention-items` and the Health screen's
+`health-runs` and `health-steps`; each is a live query, none polls.
+
+- A question card counts the open Archon attention items its `asks` names, by their labels:
+  `stage: archon-triage` (a stopped triage, which intake runs) to Work item is unclear, `build:` to
+  Build is stuck, `merge:` to Risky merge, `discoveries:` to Is this a real problem?. An item no
+  card names counts on the Manager card. A failed query shows `? waiting`, never a count.
+- The Manager's Right now lists every open question with its recommended choice, then the
+  factory's health by the Health screen's own definitions (`app/lib/health.ts`): runs pending or
+  paused, steps running past twice their usual time, failed runs by cause. Each links to its run in
+  the factory's Archon console. A failed health query says the health is unavailable.
 
 ## Versions
 

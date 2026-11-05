@@ -81,10 +81,11 @@ test("the map draws every card's wording, the caption, the group and the legend,
   }
   expect(html).toContain('the manager watches everything on this line');
   for (const entry of FACTORY_MAP.legend) expect(html).toContain(entry.label);
-  // Only Build has a deeper view, so only it offers to open one.
+  // Only Build and the Manager have a deeper view, so only they offer to open one.
   expect(cardTag(html, 'build')).toContain('data-opens="build"');
+  expect(cardTag(html, 'mgr')).toContain('data-opens="manager"');
   expect(html).toContain('opens a deeper view');
-  for (const card of FACTORY_MAP.cards.filter((c) => c.id !== 'build')) {
+  for (const card of FACTORY_MAP.cards.filter((c) => c.id !== 'build' && c.id !== 'mgr')) {
     expect(cardTag(html, card.id)).not.toContain('data-opens');
   }
   expect(html).not.toContain('data-chip');

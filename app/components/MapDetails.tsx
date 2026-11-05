@@ -108,7 +108,28 @@ export function RightNow({
     ...(live?.failing ?? []).map((item) => (
       <Item key={item.key} item={item} note="app check failed" />
     )),
-    ...(live?.waiting ?? []).map((item) => <Item key={item.key} item={item} note="waiting" />),
+    ...(live?.questions ?? live?.waiting ?? []).map((item) => (
+      <Item key={item.key} item={item} note={item.note ?? 'waiting'} />
+    )),
+    ...(live?.healthUnavailable
+      ? [
+          <li key="health-unavailable" className="text-text-secondary">
+            The factory's health is unavailable.
+          </li>,
+        ]
+      : []),
+    ...(live?.health ?? []).map((item) => (
+      <li key={item.key} data-health={item.key}>
+        {item.url ? (
+          <a href={item.url} className={`${LINK} font-mono`}>
+            run {item.run.slice(0, 8)}
+          </a>
+        ) : (
+          <span className="font-mono">run {item.run.slice(0, 8)}</span>
+        )}
+        <span className={CHIP}>{item.note}</span>
+      </li>
+    )),
     ...(live?.orders ?? []).map((order) => <Order key={`order-${order.name}`} order={order} />),
     ...(live?.merged ?? []).map((merge) => (
       <li key={`merged-${merge.run}-${merge.number ?? 'lap'}`} data-lap={merge.run}>

@@ -76,6 +76,7 @@
       "y": 0,
       "width": 478,
       "chips": ["waiting"],
+      "opens": "manager",
       "covers": [
         {
           "workflow": "archon-manager",
@@ -890,6 +891,180 @@
         }
       ],
       "tour": ["b-brief", "b-del", "b-dec", "b-push", "b-next"]
+    },
+    "manager": {
+      "caption": "The manager keeps work items moving and brings you the decisions it should not make itself. It answers on its own when one of your written rules covers the question, like “always ask before merging a database change”. If you keep giving the same answer, add it as a rule.",
+      "cardSize": {
+        "width": 260,
+        "height": 200
+      },
+      "cards": [
+        {
+          "id": "u-c",
+          "role": "person",
+          "kind": "from intake",
+          "title": "Work item is unclear",
+          "text": "What should it do, and how do we know it works?",
+          "x": 0,
+          "y": 0,
+          "asks": {
+            "label": "stage",
+            "value": "archon-triage"
+          },
+          "covers": [],
+          "details": {
+            "when": ["Whenever the factory reaches a decision it should not make alone."],
+            "what": [
+              "Examples: a work item too vague to build, a merge that changes the database, a build that keeps growing in scope, a problem that may or may not deserve a work item.",
+              "Each question shows the recommended answer and the other options, and you can always write your own."
+            ],
+            "how": [
+              "Answering resumes the paused run. The answer is written back into the work item as a dated ruling."
+            ]
+          }
+        },
+        {
+          "id": "u-b",
+          "role": "person",
+          "kind": "from build",
+          "title": "Build is stuck on a choice",
+          "text": "Keep going, stop, or change what is in scope?",
+          "x": 300,
+          "y": 0,
+          "asks": {
+            "label": "build"
+          },
+          "covers": [],
+          "details": {
+            "when": ["Whenever the factory reaches a decision it should not make alone."],
+            "what": [
+              "Examples: a work item too vague to build, a merge that changes the database, a build that keeps growing in scope, a problem that may or may not deserve a work item.",
+              "Each question shows the recommended answer and the other options, and you can always write your own."
+            ],
+            "how": [
+              "Answering resumes the paused run. The answer is written back into the work item as a dated ruling."
+            ]
+          }
+        },
+        {
+          "id": "u-m",
+          "role": "person",
+          "kind": "from merge",
+          "title": "Risky merge",
+          "text": "Touches the database or login, or is very large",
+          "x": 600,
+          "y": 0,
+          "asks": {
+            "label": "merge"
+          },
+          "covers": [],
+          "details": {
+            "when": ["Whenever the factory reaches a decision it should not make alone."],
+            "what": [
+              "Examples: a work item too vague to build, a merge that changes the database, a build that keeps growing in scope, a problem that may or may not deserve a work item.",
+              "Each question shows the recommended answer and the other options, and you can always write your own."
+            ],
+            "how": [
+              "Answering resumes the paused run. The answer is written back into the work item as a dated ruling."
+            ]
+          }
+        },
+        {
+          "id": "u-d",
+          "role": "person",
+          "kind": "from findings",
+          "title": "Is this a real problem?",
+          "text": "Make it a work item, or drop it?",
+          "x": 900,
+          "y": 0,
+          "asks": {
+            "label": "discoveries"
+          },
+          "covers": [],
+          "details": {
+            "when": ["Whenever the factory reaches a decision it should not make alone."],
+            "what": [
+              "Examples: a work item too vague to build, a merge that changes the database, a build that keeps growing in scope, a problem that may or may not deserve a work item.",
+              "Each question shows the recommended answer and the other options, and you can always write your own."
+            ],
+            "how": [
+              "Answering resumes the paused run. The answer is written back into the work item as a dated ruling."
+            ]
+          }
+        },
+        {
+          "id": "u-mgr",
+          "role": "person",
+          "kind": "manager",
+          "title": "Manager",
+          "text": "Answers when your rules cover it",
+          "x": 450,
+          "y": 300,
+          "asks": {
+            "rest": true
+          },
+          "covers": [
+            {
+              "workflow": "archon-manager",
+              "steps": ["briefs", "manage"],
+              "pack": "loop"
+            },
+            {
+              "workflow": "factory-manager",
+              "steps": ["manage"],
+              "pack": "queue"
+            }
+          ],
+          "details": {
+            "when": ["All the time, while the factory runs. You can also talk to it directly."],
+            "what": [
+              "Health: finds runs that are stuck, silent or failing and reports them.",
+              "Questions: answers the ones your written rules already cover, for example “dependency updates can merge without asking”.",
+              "Everything else it passes to you with a recommendation."
+            ],
+            "how": [
+              "Your rules are plain text files (triage, build, merge) in the repo.",
+              "It never cancels a run and never decides what the product should be."
+            ]
+          }
+        },
+        {
+          "id": "u-pol",
+          "role": "source",
+          "kind": "your rules",
+          "title": "Written rules",
+          "text": "When to ask, when to just go",
+          "x": 790,
+          "y": 300,
+          "covers": [],
+          "details": {
+            "what": ["When to ask, when to just go."],
+            "how": ["Your rules are plain text files (triage, build, merge) in the repo."]
+          }
+        }
+      ],
+      "lines": [
+        {
+          "from": "u-mgr",
+          "to": "u-b",
+          "style": "ask",
+          "route": [[520, 300], [520, 250], [430, 250], [430, 200]]
+        },
+        {
+          "from": "u-mgr",
+          "to": "u-m",
+          "style": "ask",
+          "route": [[640, 300], [640, 250], [730, 250], [730, 200]]
+        },
+        {
+          "from": "u-pol",
+          "to": "u-mgr",
+          "style": "loop",
+          "label": "reads",
+          "route": [[790, 400], [750, 400], [710, 400]]
+        }
+      ],
+      "tour": []
     }
   }
 }

@@ -79,6 +79,7 @@ const ROW_COLUMNS: Record<string, string[]> = {
     'failed_step',
     'error',
     'failed_at',
+    'console',
   ]),
   'health-steps': columns<HealthStepRow>()([
     'kind',
@@ -87,6 +88,7 @@ const ROW_COLUMNS: Record<string, string[]> = {
     'step_id',
     'at',
     'duration_ms',
+    'console',
   ]),
   'health-workable': columns<HealthWorkableRow>()([
     'kind',

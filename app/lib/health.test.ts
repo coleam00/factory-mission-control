@@ -51,6 +51,7 @@ const completions = (n: number, duration: (i: number) => number): HealthStepRow[
     step_id: 'build',
     at: new Date(START + i * 60 * MINUTE),
     duration_ms: duration(i),
+    console: null,
   }));
 
 const running = (startedAt: number, step = 'build'): HealthStepRow => ({
@@ -60,6 +61,7 @@ const running = (startedAt: number, step = 'build'): HealthStepRow => ({
   step_id: step,
   at: new Date(startedAt),
   duration_ms: null,
+  console: null,
 });
 
 test('the p90 rule reads only the latest 50 completions', () => {
@@ -87,6 +89,7 @@ test('a running step is overdue only past twice its p90, and a step with no comp
       running_ms: 18 * MINUTE + 1,
       p90_ms: 9 * MINUTE,
       completions: 10,
+      console: null,
     },
   ]);
 });
@@ -109,6 +112,7 @@ const run = (overrides: Partial<HealthRunRow>): HealthRunRow => ({
   failed_step: null,
   error: null,
   failed_at: null,
+  console: 'http://archon.test',
   ...overrides,
 });
 

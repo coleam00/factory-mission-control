@@ -1,6 +1,8 @@
 SELECT l.run_id, l.workflow_name, l.status, l.started_at, l.completed_at,
-  f.step_id AS failed_step, f.error, f.completed_at AS failed_at
+  f.step_id AS failed_step, f.error, f.completed_at AS failed_at,
+  fa.console -- the factory's Archon console, for the run link
 FROM mc.laps l
+JOIN mc.factories fa ON fa.name = l.factory
 -- The run's latest failed step: its error names the cause.
 LEFT JOIN LATERAL (
   SELECT ls.step_id, ls.error, ls.completed_at FROM mc.lap_steps ls
