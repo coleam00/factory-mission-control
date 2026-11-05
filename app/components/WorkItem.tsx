@@ -57,7 +57,7 @@ function Row({ event, before }: { event: TimelineEvent; before: Date | null }): 
     >
       <time
         dateTime={event.at.toISOString()}
-        className="text-right font-mono text-[12px] text-text-tertiary"
+        className="text-right font-mono text-[12px] text-text-secondary"
       >
         {whenOf(event.at, before)}
       </time>

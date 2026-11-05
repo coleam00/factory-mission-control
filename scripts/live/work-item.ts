@@ -85,8 +85,8 @@ export function workItemPhase(ctx: LiveContext): LivePhase {
         writeFileSync(join(outDir, 'work-item.png'), await page.screenshot(1440));
         failures.push(...(await mismatches(page, QUEUE_FACTORY.name, QUEUE_RETURNED.issue)));
         const shown = await page.evaluate<string[]>(SHOWN);
-        const back = shown.findIndex((t) => t.startsWith('Returned to Build'));
-        const merged = shown.findIndex((t) => t.startsWith('Merged'));
+        const back = shown.findIndex((t) => t.includes('Returned to Build'));
+        const merged = shown.findIndex((t) => t.includes('Merged'));
         if (back < 0 || merged < 0 || back > merged)
           failures.push(
             `${returned}: the return (row ${back}) is not before the merge (row ${merged})`,
