@@ -358,6 +358,21 @@ describe('map:check', () => {
     );
   });
 
+  test('a card counting as a card the map lacks fails naming it', () => {
+    const deliver = FACTORY_MAP.views?.['build/deliver'] as MapView;
+    const map: FactoryMap = {
+      ...FACTORY_MAP,
+      views: {
+        ...FACTORY_MAP.views,
+        'build/deliver': {
+          ...deliver,
+          cards: deliver.cards.map((c) => (c.countsAs ? { ...c, countsAs: 'nowhere' } : c)),
+        },
+      },
+    };
+    expect(check(map)).toEqual(['Review counts as nowhere, which is no card']);
+  });
+
   test('a view two cards open fails naming both', () => {
     const map = {
       ...FACTORY_MAP,
