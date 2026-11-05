@@ -157,12 +157,14 @@ export const onQueues = (map: readonly HomeMapRow[]): boolean =>
 export function lapCard(
   factoryMap: FactoryMap,
   row: HomeMapRow,
-): { card: Card; step: string } | undefined {
+): { card: Card; step: string; run: string; workflow: string } | undefined {
   if (row.kind !== 'lap' || row.run_id === null || row.workflow === null) return undefined;
   const step = deepestStep(row.steps);
   if (step === undefined) return undefined;
   const card = cardForStep(factoryMap, row.workflow, stepPath(step));
-  return card === undefined ? undefined : { card, step: stepPath(step) };
+  return card === undefined
+    ? undefined
+    : { card, step: stepPath(step), run: row.run_id, workflow: row.workflow };
 }
 
 /** Open Archon attention items: paused runs waiting on a person, named by their issue when they have one. */
@@ -255,13 +257,13 @@ export function cardLive(
   const live = new Map(cards.map((card): [string, CardLive] => [card.id, { here: [] }]));
   for (const row of sources.map) {
     const placed = lapCard(factoryMap, row);
-    if (placed === undefined || row.run_id === null || row.workflow === null) continue;
+    if (placed === undefined) continue;
     const lap: MapLap = {
-      run: row.run_id,
+      run: placed.run,
       step: placed.step,
       issue: row.number === null ? null : { number: row.number, title: row.title, url: row.url },
     };
-    for (const card of cardChain(factoryMap, row.workflow, placed.step)) {
+    for (const card of cardChain(factoryMap, placed.workflow, placed.step)) {
       live.get(card.id)?.here.push(lap);
     }
   }
