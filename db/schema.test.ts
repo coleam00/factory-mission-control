@@ -87,6 +87,7 @@ test('gives every table in mc a primary key, one table per family', async () => 
       'laps',
       'lap_steps',
       'app_check_lines',
+      'attention_items',
       'lap_step_attempts',
       'projection_errors',
     ]),
@@ -178,6 +179,9 @@ test("adds only the projection's triggers to Archon's schema", async () => {
   const projection = await db.query(`SELECT c.relname, t.tgname FROM pg_trigger t
     JOIN pg_class c ON c.oid = t.tgrelid WHERE t.tgname LIKE 'mc_project_%' ORDER BY t.tgname`);
   expect(projection).toEqual([
+    { relname: 'remote_agent_workflow_runs', tgname: 'mc_project_attention_delete' },
+    { relname: 'remote_agent_workflow_runs', tgname: 'mc_project_attention_insert' },
+    { relname: 'remote_agent_workflow_runs', tgname: 'mc_project_attention_update' },
     { relname: 'remote_agent_workflow_runs', tgname: 'mc_project_run_insert' },
     { relname: 'remote_agent_workflow_runs', tgname: 'mc_project_run_update' },
     { relname: 'remote_agent_workflow_events', tgname: 'mc_project_step_event' },

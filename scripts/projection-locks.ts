@@ -114,6 +114,12 @@ export const CASES: Case[] = [
     write: newStatus,
   },
   {
+    name: 'ACCESS EXCLUSIVE mc.attention_items: run status UPDATE',
+    hold: exclusive('attention_items'),
+    errors: 1,
+    write: newStatus,
+  },
+  {
     name: 'uncommitted UPDATE of the same mc.laps row: run status UPDATE',
     hold: 'UPDATE mc.laps SET status = status WHERE run_id = $1',
     errors: 1,
@@ -139,6 +145,7 @@ export const CASES: Case[] = [
       'lap_step_attempts',
       'lap_step_attempt_usage',
       'app_check_lines',
+      'attention_items',
       'factories',
       'versions',
       'pins',

@@ -10,7 +10,7 @@ test("reads every run of the seed's mission-control codebase, with the generator
   const laps = seedLaps(seed);
   const runs = seed
     .match(/^INSERT INTO remote_agent_workflow_runs .*$/gm)
-    ?.filter((run) => run.includes(`'${SEED_CODEBASE}'`));
+    ?.filter((run) => run.includes(`'${SEED_CODEBASE}'`) && run.includes("'archon-loop'"));
   expect(laps).toHaveLength(runs?.length ?? 0);
   expect(new Set(laps.map((l) => l.runId)).size).toBe(laps.length);
   expect(laps.find((l) => l.label === 'V1 k4')).toEqual({

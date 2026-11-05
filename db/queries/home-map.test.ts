@@ -76,11 +76,9 @@ describe('home-map on the seed', () => {
   });
 
   test('a factory on the old loop has no queues row, no waiting row and merges only through land', async () => {
-    for (const factory of ['mission-control', 'second-factory']) {
-      const kinds = new Set((await rows(factory)).map((r) => r.kind));
-      expect(kinds.has('queues')).toBe(false);
-      expect(kinds.has('waiting')).toBe(false);
-    }
+    const kinds = new Set((await rows('second-factory')).map((r) => r.kind));
+    expect(kinds.has('queues')).toBe(false);
+    expect(kinds.has('waiting')).toBe(false);
     expect((await rows()).filter((r) => r.kind === 'merged').every((r) => r.prs === null)).toBe(
       true,
     );
