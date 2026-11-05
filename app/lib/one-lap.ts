@@ -3,7 +3,7 @@
  * `one-lap-checks.sql` return them, and the ordering, sums and links the queries leave to the
  * browser. Pure, no React.
  */
-import { costOf, OUTCOME_TOKEN, type Outcome, since } from './laps';
+import { costOf, type Outcome, since } from './laps';
 
 /** One review disposition as `mc.step_output` keeps it: the line id it answers, or null. */
 export interface Disposition {
@@ -15,11 +15,29 @@ export interface Disposition {
 export const shownDispositions = (lap: Pick<OneLapRow, 'dispositions' | 'hidden_lines'>) =>
   (lap.dispositions ?? []).filter((d) => d.line === null || !lap.hidden_lines.includes(d.line));
 
-/** The one workflow whose runs have a lap page: `db/queries/one-lap*.sql` filter on it (#395). */
+/**
+ * The one workflow whose runs have a lap page: `db/queries/one-lap*.sql` filter on it (#395), and
+ * `db/queries/restated-rules.test.ts` binds `recent-laps.sql` and the `testing-*` queries to it.
+ */
 export const LAP_PAGE_WORKFLOW = 'archon-loop';
 
 /** Whether a run of `workflow` has a lap page to open. */
 export const hasLapPage = (workflow: string | null): boolean => workflow === LAP_PAGE_WORKFLOW;
+
+/** What a running workflow is, in the map's words; an unknown one shows its own name. */
+const WORKFLOW_LABEL: Readonly<Record<string, string>> = {
+  [LAP_PAGE_WORKFLOW]: 'Lap',
+  'archon-build-queue': 'Build',
+  'archon-merge-queue': 'Merge',
+  'archon-intake': 'Intake',
+  'archon-split': 'Split',
+  'archon-discoveries': 'Found by the factory',
+  'factory-app-check': 'App check',
+  'factory-deploy': 'Staging',
+  'factory-manager': 'Manager',
+  'factory-backlog': 'Split',
+};
+export const workflowLabel = (workflow: string): string => WORKFLOW_LABEL[workflow] ?? workflow;
 
 /** The lap itself: its claim, route and depth, its review and its merge gate. */
 export interface OneLapRow {
@@ -181,16 +199,6 @@ export const STEP_STATUS_TOKEN: Record<string, `--${string}`> = {
   completed: '--success',
   failed: '--error',
   skipped: '--text-tertiary',
-};
-
-/**
- * The lap page's outcome colors in v2 roles: a send-back is done (teal), a lap that needs the
- * owner waits on them (violet). `OUTCOME_TOKEN` stays for the v1 Laps list until #321.
- */
-export const LAP_OUTCOME_TOKEN: Record<Outcome, `--${string}`> = {
-  ...OUTCOME_TOKEN,
-  'sent-back': '--success',
-  'needs-owner': '--role-person',
 };
 
 export const GATE_TOKEN: Record<string, `--${string}`> = {

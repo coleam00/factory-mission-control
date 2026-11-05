@@ -2,6 +2,7 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { FACTORY_MAP } from '../../app/map/factory-map';
 import { QUEUE_DIGEST, QUEUE_FACTORY, QUEUE_RUNS } from '../fixture/seed';
+import { requireObject } from '../fixture/write';
 import { openPage, type Page } from '../lib/cdp';
 import { REPO_ROOT } from '../lib/cli';
 import {
@@ -200,17 +201,19 @@ export function queueMapPhase(ctx: LiveContext): LivePhase {
           untilShown(page, `${liveCountOf('build')} === '${buildTarget}'`),
           untilShown(view, `${liveCountOf('b-del')} === '${deliverTarget}'`),
         ]);
-        await db.query(
+        const [sweep] = await db.query(
           `INSERT INTO remote_agent_workflow_runs (id, workflow_name, codebase_id, status, user_message, metadata, started_at)
            SELECT $1, 'archon-merge-queue', codebase_id, 'running', $2, $3::jsonb, now()
-           FROM remote_agent_workflow_runs WHERE id = $4`,
+           FROM remote_agent_workflow_runs WHERE id = $4
+           RETURNING jsonb_typeof(metadata) AS stored`,
           [
             MERGE_SWEEP_RUN,
             `Run archon-merge-queue on ${QUEUE_FACTORY.repository}`,
-            JSON.stringify({ workflow_source: { digest: QUEUE_DIGEST } }),
+            { workflow_source: { digest: QUEUE_DIGEST } },
             QUEUE_RUNS.merged,
           ],
         );
+        requireObject('the merge sweep run metadata', sweep);
         const mergeTarget = Number(await page.evaluate<string>(liveCountOf('merge'))) + 1;
         const sweepTarget = Number(await drill.evaluate<string>(liveCountOf('m-sweep'))) + 1;
         await fixtureWrite(deps, [

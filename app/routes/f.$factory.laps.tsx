@@ -5,7 +5,7 @@ import { Lanes } from '../components/Lanes';
 export default function Laps(): ReactElement {
   const { factory } = useParams();
   return (
-    <main data-v1-screen="laps" className="mx-auto grid max-w-6xl gap-8 px-6 py-6">
+    <main className="mx-auto grid max-w-6xl gap-8 px-6 py-6">
       <Lanes factory={factory} />
     </main>
   );
