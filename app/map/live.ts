@@ -91,11 +91,14 @@ export interface MapRightNowRow {
   repository: string;
 }
 
-/** What the gate did with a pull request in a run: only what the record step settled. */
+/**
+ * What the gate did with a pull request in a run. `merged` is read back by the record step;
+ * `sent back` and `asked` are the sweep's decision, which the record step may still park or skip.
+ */
 export interface GateOutcome {
   run: string;
   number: number;
-  outcome: 'merged' | 'returned' | 'asked';
+  outcome: 'merged' | 'sent back' | 'asked';
   reason: string;
   url: string;
   at: Date | null;
@@ -206,10 +209,12 @@ const newestFirst = (a: MapRightNowRow, b: MapRightNowRow) =>
   a.run_id.localeCompare(b.run_id);
 
 /**
- * The gate's recent outcomes, newest run first and in the sweep's order within a run, mirroring
- * what the record step settled: a pull request the forge read back as merged is merged whatever
- * the sweep said, else a returned one is returned, and an ask counts only when the record step
- * raised it. A waiting decision, or an ask not raised, waits for the next sweep and is not listed.
+ * The gate's recent outcomes, newest run first and in the sweep's order within a run. A pull
+ * request the record step read back as merged is merged whatever the sweep said; else a `return`
+ * decision is listed as sent back, and an ask only when the record step raised it. Those two are
+ * the sweep's decision: the record step may still park, wait on or skip the pull request. Only the
+ * first decision per number counts, as the sweep's own `decide()` does. A waiting decision, or an
+ * ask not raised, is not listed.
  */
 export function gateOutcomes(rows: readonly MapRightNowRow[]): GateOutcome[] {
   return rows
@@ -218,6 +223,7 @@ export function gateOutcomes(rows: readonly MapRightNowRow[]): GateOutcome[] {
     .flatMap((row) => {
       const merged = new Set(mergedPulls(row.merged ?? '[]'));
       const asked = row.asked === null ? null : Number(row.asked);
+      const seen = new Set<number>();
       return jsonArray(row.decisions).flatMap((decision): GateOutcome[] => {
         if (typeof decision !== 'object' || decision === null) return [];
         const { number, action, reason } = decision as Record<string, unknown>;
@@ -225,10 +231,12 @@ export function gateOutcomes(rows: readonly MapRightNowRow[]): GateOutcome[] {
           return [];
         }
         const n = number as number;
+        if (seen.has(n)) return [];
+        seen.add(n);
         const outcome = merged.has(n)
           ? 'merged'
           : action === 'return'
-            ? 'returned'
+            ? 'sent back'
             : action === 'ask' && asked === n
               ? 'asked'
               : null;

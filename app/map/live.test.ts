@@ -332,7 +332,7 @@ const right = (over: Partial<MapRightNowRow>): MapRightNowRow => ({
 });
 const decision = (number: number, action: string) => ({ number, action, reason: `why ${number}` });
 
-test('the gate lists what the record step settled: merged as read back, returned, and an ask only when raised', () => {
+test("the gate lists merged as read back, the sweep's send-backs, an ask only when raised, and a number once", () => {
   const run = right({
     decisions: JSON.stringify([
       decision(1, 'return'),
@@ -341,6 +341,7 @@ test('the gate lists what the record step settled: merged as read back, returned
       decision(4, 'ask'),
       decision(5, 'wait'),
       { number: 6, action: 'merged' },
+      { number: 3, action: 'return', reason: 'again' },
     ]),
     merged: '[1, 7]',
     asked: '3',
@@ -351,7 +352,7 @@ test('the gate lists what the record step settled: merged as read back, returned
   ]);
   const returned = right({ decisions: JSON.stringify([decision(8, 'return')]) });
   expect(gateOutcomes([returned])[0]).toMatchObject({
-    outcome: 'returned',
+    outcome: 'sent back',
     url: 'https://github.com/o/r/pull/8',
   });
   expect(gateOutcomes([right({ decisions: 'not json' }), right({ decisions: '{}' })])).toEqual([]);

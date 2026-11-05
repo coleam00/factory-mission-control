@@ -135,14 +135,14 @@ test('Right now lists the gate outcomes, the latest deploy or that there is none
       {
         run: 'r',
         number: 9,
-        outcome: 'returned',
+        outcome: 'sent back',
         reason: 'conflicts with main',
         url: 'https://github.com/o/r/pull/9',
         at: null,
       },
     ],
   });
-  expect(gate).toContain('#9 returned conflicts with main');
+  expect(gate).toContain('#9 sent back conflicts with main');
   expect(rightNow({ here: [], gate: [] })).toContain(
     'No gate decision is recorded for this factory yet.',
   );
