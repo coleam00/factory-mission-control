@@ -77,7 +77,7 @@ export function HomeMapBody({
   path?: readonly string[];
   onPath?: (path: readonly string[]) => void;
 }): ReactElement {
-  const { map, workable, owner, orders, attention, healthRuns, healthSteps } = sources;
+  const { map } = sources;
   const empty = (title: string) => (
     <div className={COLUMN}>
       <EmptyState title={title} />
@@ -88,11 +88,7 @@ export function HomeMapBody({
   if (map === undefined && configured === false) return empty('No factory is configured.');
   if (map === undefined) return empty('Loading the factory map.');
   if (!versionRecorded(map, at)) return empty(`No version ${at} is recorded for this factory.`);
-  const live = cardLive(
-    FACTORY_MAP,
-    { map, workable, owner, orders, attention, healthRuns, healthSteps, states },
-    now,
-  );
+  const live = cardLive(FACTORY_MAP, { ...sources, map, states }, now);
   return (
     <FactoryMap
       map={FACTORY_MAP}
