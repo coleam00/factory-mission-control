@@ -2,6 +2,7 @@ import { expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { COLUMNS } from '../../app/lib/board';
+import { LAP_PAGE_WORKFLOW } from '../../app/lib/one-lap';
 import { queries } from './test-seed';
 
 const root = join(import.meta.dir, '..', '..');
@@ -68,7 +69,12 @@ test('map-right-now reads only paths the pinned merge queue declares', () => {
 
   const yaml = Bun.YAML.parse(
     read('fixtures', 'pack', 'queue', 'sdlc', 'merge-queue', 'archon-merge-queue.yaml'),
-  ) as { nodes: { id: string; output_format?: { properties?: Record<string, unknown> } }[] };
+  ) as {
+    nodes: {
+      id: string;
+      output_format?: { properties?: Record<string, unknown> };
+    }[];
+  };
   const mergeTs = read('fixtures', 'pack', 'queue', 'sdlc', '.shared', 'merge.ts');
   const forgeTs = read('fixtures', 'pack', 'queue', 'sdlc', '.shared', 'forge.ts');
 
@@ -95,5 +101,18 @@ test('map-right-now reads only paths the pinned merge queue declares', () => {
       expect(Object.keys(at.properties), `${step}.${walked.join('.')} is declared`).toContain(key);
       at = at.properties[key] as { properties?: Record<string, unknown> };
     }
+  }
+});
+
+test('the queries behind a link to the lap page filter on LAP_PAGE_WORKFLOW', () => {
+  for (const name of ['recent-laps', 'testing-app-check', 'testing-routes']) {
+    expect([
+      name,
+      [...sqlOf(name).matchAll(/workflow_name = '([^']*)'/g)].map((m) => m[1]),
+    ]).toEqual([name, [LAP_PAGE_WORKFLOW]]);
+    expect([name, [...sqlOf(name).matchAll(/'(archon-[a-z-]+)'/g)].map((m) => m[1])]).toEqual([
+      name,
+      [LAP_PAGE_WORKFLOW],
+    ]);
   }
 });

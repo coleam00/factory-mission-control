@@ -15,7 +15,7 @@ import {
   stepLabel,
   workflowLabel,
 } from '../lib/laps';
-import { consoleUrl } from '../lib/one-lap';
+import { consoleUrl, hasLapPage } from '../lib/one-lap';
 import { LivePanel, type PanelState } from '../live/LivePanel';
 import { laneMarks } from '../lib/lap-graph';
 import { LaneMarks } from './LapGraph';
@@ -102,7 +102,7 @@ export function LaneList({
     <ol className="grid gap-3">
       {sorted.map((lane) => {
         const onStep = since(lane.step_started_at, now);
-        const loop = lane.workflow_name === 'archon-loop';
+        const loop = hasLapPage(lane.workflow_name);
         return (
           <li
             key={lane.run_id}
