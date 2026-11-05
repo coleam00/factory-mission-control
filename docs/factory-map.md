@@ -70,7 +70,16 @@ of the view, and no card of the view covers a step, or a workflow, the opening c
 view covers only the steps its opening card has (Deliver's view never sees the review rounds,
 which Review has at the root), so an entry such as `ship/deliver` still counts the steps under
 it that belong to the opener. The check also fails on an `opens` naming no view, a view opened by
-no card or by two, a card id used twice, an `upTo` naming no card of the level above, and a `countsAs` naming no card.
+no card or by two, a card id used twice, and an `upTo` naming no card of the level above. A
+`countsAs` fails when it names no card, the card itself, or a card that itself counts as another,
+and when its card covers steps of its own, so a lap counts once on each card that shows it.
+
+`map:check` also fails on any key of `factory-map.json` that the map's types do not declare (a
+misspelled `countsAs` would otherwise be dropped); the key lists in `scripts/map-check.ts` follow
+the interfaces of `factory-map.ts`, and the compiler fails when they drift. A routed line's first
+point must lie on an edge of its `from` card and its last on an edge of its `to` card, on the dashed
+group's edge when that card sits inside the group, or, for a line with `"arrow": false`, on another
+line into the same card. Moving a card or changing `cardSize` without moving the routes fails.
 
 The queue pack is the snapshot `fixtures/pack/queue/`: `sdlc/` is `.archon/workflows/sdlc` of
 coleam00/Archon and `factory/` is `.archon/workflows/factory` of coleam00/ai-software-factory, at
