@@ -49,10 +49,6 @@
         "cost_per_merge": {
           "value": 7.6,
           "laps": 12
-        },
-        "new_holdout_catches": {
-          "value": 1,
-          "laps": 12
         }
       }
     },
@@ -104,10 +100,6 @@
         "cost_per_merge": {
           "value": 4.5,
           "laps": 12
-        },
-        "new_holdout_catches": {
-          "value": 2,
-          "laps": 12
         }
       }
     },
@@ -158,10 +150,6 @@
         },
         "cost_per_merge": {
           "value": 6.6,
-          "laps": 7
-        },
-        "new_holdout_catches": {
-          "value": 1,
           "laps": 7
         }
       }

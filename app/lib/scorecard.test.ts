@@ -24,7 +24,6 @@ const step = (run: string, step_id: string, over: Partial<AttemptRow> = {}): Att
   route: null,
   outcome: null,
   reason: null,
-  holdout_catches: 0,
   pin_sha: null,
   ...over,
 });
@@ -80,8 +79,6 @@ test('each count is the laps its 4.2 definition names, and lists them', () => {
     ...lap('r', '2026-10-01T08:00:00Z', '2026-10-01T08:50:00Z', [
       step('r', 'land', { outcome: 'refused', reason: 'it changes ci.yml' }),
     ]),
-    step('r', 'check-app', { holdout_catches: 2 }),
-    step('s', 'check-app', { holdout_catches: 1 }),
   ];
   const s = card(rows);
   expect(s.laps).toEqual({
@@ -94,7 +91,6 @@ test('each count is the laps its 4.2 definition names, and lists them', () => {
   expect(s.failed_laps.counted).toEqual(['f']);
   expect(s.send_backs.counted).toEqual(['s']);
   expect(s.gate_refusals.counted).toEqual(['r']);
-  expect(s.new_holdout_catches).toMatchObject({ value: 3, counted: ['r', 's'] });
   for (const key of [
     'merges',
     'empty_laps',
@@ -186,10 +182,10 @@ test('lap-hours per merge and app-check share on known durations, to 4 decimals'
 test('a step that ran twice in a lap counts both attempts', () => {
   const s = card(
     lap('x', '2026-10-01T08:00:00Z', '2026-10-01T09:00:00Z', [
-      step('x', 'check-app', { duration_ms: 600_000, cost_usd: 1, holdout_catches: 1 }),
+      step('x', 'check-app', { duration_ms: 600_000, cost_usd: 1 }),
       step('x', 'review', { outcome: 'sent-back', cost_usd: 0.5 }),
       step('x', 'build', { cost_usd: 2 }),
-      step('x', 'check-app', { duration_ms: 300_000, cost_usd: 1, holdout_catches: 1 }),
+      step('x', 'check-app', { duration_ms: 300_000, cost_usd: 1 }),
       step('x', 'review', { outcome: 'approved', cost_usd: 0.5 }),
       step('x', 'land', { outcome: 'refused', reason: 'the checks failed' }),
       step('x', 'land', { outcome: 'merged' }),
@@ -201,7 +197,6 @@ test('a step that ran twice in a lap counts both attempts', () => {
   // 900 000 ms of check-app over a 3 600 000 ms lap; $5 over every attempt of every step.
   expect(s.app_check_share.value).toBe(0.25);
   expect(s.cost_per_merge.value).toBe(5);
-  expect(s.new_holdout_catches).toMatchObject({ value: 2, counted: ['x'] });
 });
 
 test('with merges but no finished lap, lap-hours per merge is n/a, not 0', () => {

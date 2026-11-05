@@ -7,6 +7,10 @@ SELECT l.run_id, l.status, l.started_at, l.completed_at, f.repository, f.console
   -- output with outcome refused, its reason the reason text (PRD 4.2).
   review.status AS review_status, review.output ->> 'outcome' AS review_outcome,
   review.output ->> 'delivers' AS review_delivers, review.output -> 'dispositions' AS dispositions,
+  -- The old holdout lines the checks panel never shows: app/lib/one-lap.ts drops the dispositions
+  -- that answer them (Realtime refuses a set-returning function to filter the list here).
+  ARRAY(SELECT a.line_id FROM mc.app_check_lines a
+        WHERE a.run_id = l.run_id AND a.kind = 'holdout' AND a.line_id IS NOT NULL) AS hidden_lines,
   land.status AS gate_status, land.output ->> 'outcome' AS gate_outcome,
   land.output ->> 'reason' AS gate_reason
 FROM mc.laps l

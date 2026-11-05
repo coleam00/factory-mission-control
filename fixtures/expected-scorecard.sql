@@ -17,10 +17,7 @@ WITH lap AS (
       WHERE s.run_id = l.run_id AND s.step_id = 'land') AS land,
     (SELECT s.duration_ms FROM mc.lap_steps s
       WHERE s.run_id = l.run_id AND s.step_id = 'check-app')::numeric / 3600000 AS check_app_hours,
-    (SELECT coalesce(sum(s.cost_usd), 0) FROM mc.lap_steps s WHERE s.run_id = l.run_id) AS cost,
-    (SELECT count(*) FROM mc.app_check_lines a
-      WHERE a.run_id = l.run_id AND a.kind = 'holdout' AND a.verdict = 'FAIL'
-        AND NOT a.pre_existing) AS catches
+    (SELECT coalesce(sum(s.cost_usd), 0) FROM mc.lap_steps s WHERE s.run_id = l.run_id) AS cost
   FROM mc.laps l
   WHERE l.factory = 'mission-control' AND l.workflow_name = 'archon-loop'
 ),
@@ -43,8 +40,7 @@ measured AS (
     coalesce(max(active.hours), 0) AS active_hours,
     sum(lap.hours) FILTER (WHERE lap.finished) AS lap_hours,
     sum(lap.check_app_hours) FILTER (WHERE lap.finished) AS check_app_hours,
-    sum(lap.cost) AS cost,
-    sum(lap.catches) AS catches
+    sum(lap.cost) AS cost
   FROM mc.versions v
   JOIN lap ON lap.digest = v.digest
   LEFT JOIN active ON active.digest = v.digest
@@ -71,8 +67,7 @@ SELECT json_build_object(
         'value', round(lap_hours / nullif(merges, 0), 4), 'laps', finished),
       'app_check_share', json_build_object(
         'value', round(check_app_hours / nullif(lap_hours, 0), 4), 'laps', finished),
-      'cost_per_merge', json_build_object('value', round(cost / nullif(merges, 0), 4), 'laps', laps),
-      'new_holdout_catches', json_build_object('value', catches, 'laps', laps)
+      'cost_per_merge', json_build_object('value', round(cost / nullif(merges, 0), 4), 'laps', laps)
     )
   ) ORDER BY first_run_at)
 ) AS scorecard

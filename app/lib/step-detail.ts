@@ -37,16 +37,6 @@ export interface SubagentRow {
   chunk: string | null;
 }
 
-/** One row of `db/queries/step-hooks.sql`: a hook, and one of a step's subagents it lets through. */
-export interface HookRow {
-  path: string;
-  admitted_agents: string[];
-  workflow: string;
-  step_path: string;
-  agent: string;
-  description: string | null;
-}
-
 /** One part of a file in `step-prompt.sql`, `step-scripts.sql` or `step-yaml.sql`. */
 export interface PartRow {
   path: string;
