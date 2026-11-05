@@ -54,7 +54,9 @@ async function pinnedDecide(): Promise<Decide> {
   return decide;
 }
 
-test('the gate lists what the pinned decide() decides', async () => {
+// Binds the claimed-set and first-per-number rules. Refused returns (empty brief) are outside what
+// the gate restates: it lists the sweep's decision, and the record step may still wait on it.
+test('the gate lists the sweep returns and asks the pinned decide() claims, first per number', async () => {
   const decide = await pinnedDecide();
   const pr = (number: number) => ({ repo: { host: 'github.com', path: 'o/r' }, number });
   const item = (number: number, own_pr = false) => ({

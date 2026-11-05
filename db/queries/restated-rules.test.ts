@@ -43,17 +43,20 @@ test('the Board grid has one track per column', () => {
 test('map-right-now reads only paths the pinned merge queue declares', () => {
   const sql = sqlOf('map-right-now');
   const gate = sql.slice(0, sql.indexOf(') gate'));
-  const steps = Object.fromEntries(
-    [
-      ...gate.matchAll(
-        /JOIN mc\.lap_steps (\w+) ON \1\.run_id = l\.run_id AND \1\.step_id = '([\w-]+)'/g,
-      ),
-    ].map((m) => [m[1], m[2]] as const),
-  );
+  const joins = [
+    ...gate.matchAll(
+      /JOIN mc\.lap_steps (\w+) ON \1\.run_id = l\.run_id AND \1\.step_id = '([\w-]+)'/g,
+    ),
+  ];
+  const steps = Object.fromEntries(joins.map((m) => [m[1], m[2]] as const));
   expect(steps).toEqual({ rec: 'record', fa: 'facts', sw: 'sweep' });
+  // A read or join this parser cannot spell would otherwise be skipped unchecked.
+  expect(joins.length).toBe(gate.split('mc.lap_steps').length - 1);
 
+  const reads = [...gate.matchAll(/\b(rec|fa|sw)\.output((?: ->>? '[\w]+')+)/g)];
+  expect(reads.length).toBe(gate.split(/\.output\b/).length - 1);
   const paths = new Set(
-    [...gate.matchAll(/\b(rec|fa|sw)\.output((?: ->>? '[\w]+')+)/g)].map(
+    reads.map(
       (m) =>
         `${steps[m[1] as string]}${[...(m[2] as string).matchAll(/'(\w+)'/g)].map((k) => `.${k[1]}`).join('')}`,
     ),
