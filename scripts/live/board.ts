@@ -125,10 +125,14 @@ export function boardPhase(ctx: LiveContext): LivePhase {
         writeFileSync(join(outDir, 'board.png'), await page.screenshot(1440));
         failures.push(...(await mismatches(page, FACTORY, null)));
 
+        const [shownCard] = (await page.evaluate<Shown>(SHOWN)).columns.flatMap(
+          ([, , numbers]) => numbers,
+        );
+        if (shownCard === undefined) throw new Error('the board shows no card for the demo label');
         ms.demoPanel = await writeToScreen(
           page,
           deps,
-          ['label', '--label', `work-order:${DEMO}`],
+          ['label', '--label', `work-order:${DEMO}`, '--issue', String(shownCard)],
           `document.querySelector('[data-work-order="${DEMO}"]') !== null`,
         );
         failures.push(...(await mismatches(page, FACTORY, null)));
