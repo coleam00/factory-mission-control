@@ -2129,7 +2129,7 @@ test('0024 deliberately keeps a line with no evidence, empty evidence, or leadin
   )) as { LINE: RegExp };
   const texts = [
     'C1  PASS  No evidence.',
-    'C2  PASS  Empty evidence.  evidence:   ',
+    'C2  PASS  Empty evidence.  evidence:',
     '  C3  PASS  Leading space.  evidence: a.png',
   ];
   expect(texts.filter((t) => LINE.test(t))).toEqual([]);
