@@ -47,10 +47,23 @@ test('viewPath resolves ?view to its path; unknown, empty and null go to the roo
   for (const id of ['nope', '', null]) expect(viewPath(FACTORY_MAP, id)).toEqual([]);
 });
 
+test('Review opened from Deliver keeps the Build and Deliver path through the address', () => {
+  const deliver = ['build', 'build/deliver'];
+  expect(viewPath(FACTORY_MAP, 'review')).toEqual(['review']);
+  expect(viewPath(FACTORY_MAP, 'review', 'build/deliver')).toEqual([...deliver, 'review']);
+  expect(viewPath(FACTORY_MAP, 'review', 'split')).toEqual(['review']);
+  const search = viewSearch(FACTORY_MAP, new URLSearchParams(), [...deliver, 'review']);
+  expect(search.toString()).toBe('view=review&from=build%2Fdeliver');
+  expect(viewSearch(FACTORY_MAP, search, deliver).toString()).toBe('view=build%2Fdeliver');
+  expect(viewSearch(FACTORY_MAP, new URLSearchParams(), ['review']).toString()).toBe('view=review');
+});
+
 test('viewSearch sets or deletes view and keeps the other parameters', () => {
   const prev = new URLSearchParams('at=abc');
-  expect(viewSearch(prev, ['build']).toString()).toBe('at=abc&view=build');
-  expect(viewSearch(new URLSearchParams('at=abc&view=build'), []).toString()).toBe('at=abc');
+  expect(viewSearch(FACTORY_MAP, prev, ['build']).toString()).toBe('at=abc&view=build');
+  expect(viewSearch(FACTORY_MAP, new URLSearchParams('at=abc&view=build'), []).toString()).toBe(
+    'at=abc',
+  );
 });
 
 test('the Build view fitted at 1440 in the home frame keeps the card type at or above its floors', () => {
