@@ -14,7 +14,6 @@ import type { OwnerQueueRow } from '../app/lib/owner-queue';
 import type { RewindBranchRow } from '../app/lib/rewind';
 import type { ScorecardRow } from '../app/lib/scorecard';
 import type {
-  HookRow,
   NestingRow,
   PartRow,
   StepRow,
@@ -132,7 +131,6 @@ const ROW_COLUMNS: Record<string, string[]> = {
     'kind',
     'verdict',
     'evidence_count',
-    'scenario_id',
   ]),
   'one-lap-map': columns<LapMapRow>()([
     'pin',
@@ -219,7 +217,6 @@ const ROW_COLUMNS: Record<string, string[]> = {
     'route',
     'outcome',
     'reason',
-    'holdout_catches',
     'pin_sha',
     'first_run_at',
   ]),
@@ -245,14 +242,6 @@ const ROW_COLUMNS: Record<string, string[]> = {
     'prompt',
     'defined_in',
     'file',
-  ]),
-  'step-hooks': columns<HookRow>()([
-    'path',
-    'admitted_agents',
-    'workflow',
-    'step_path',
-    'agent',
-    'description',
   ]),
   'step-nesting': columns<NestingRow>()([
     'relation',

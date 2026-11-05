@@ -53,7 +53,6 @@ const GROUP: Record<string, { color: string; better: 'up' | 'down' | null }> = {
   lap_hours_per_merge: { color: 'var(--node-prompt)', better: 'down' },
   app_check_share: { color: 'var(--node-prompt)', better: 'down' },
   cost_per_merge: { color: 'var(--node-prompt)', better: 'down' },
-  new_holdout_catches: { color: 'var(--success)', better: null },
 };
 const groupOf = (key: string) => GROUP[key] ?? { color: 'var(--accent-bright)', better: null };
 const tint = (color: string, transparent: number) =>

@@ -59,11 +59,6 @@ ${'x'.repeat(5000)}`;
         [sha, `${sha} ${long}`],
       );
       await db.query(
-        `INSERT INTO mc.arch_hooks (archon_sha, factory_sha, path, text, admitted_agents)
-         VALUES ($1, 'f', 'hooks/fence.py', $1, '{verifier}')`,
-        [sha],
-      );
-      await db.query(
         `INSERT INTO mc.arch_workflows (archon_sha, factory_sha, name, file, yaml)
          VALUES ($1, 'f', 'archon-loop', 'loop/archon-loop.yaml', $2)`,
         [sha, `${sha} ${long}`],
@@ -103,8 +98,6 @@ ${'x'.repeat(5000)}`;
         'manager/agents/judge.md')`);
     await db.query(`INSERT INTO mc.arch_scripts (archon_sha, factory_sha, path, text)
       VALUES ('a2', 'f', 'manager/scripts/check.ts', 'manager script')`);
-    await db.query(`INSERT INTO mc.arch_hooks (archon_sha, factory_sha, path, text, admitted_agents)
-      VALUES ('a2', 'f', 'hooks/judge.py', 'manager hook', '{judge}')`);
     await db.query(`INSERT INTO mc.arch_workflows (archon_sha, factory_sha, name, file, yaml)
       VALUES ('a2', 'f', 'archon-manager', 'manager/archon-manager.yaml', 'manager yaml')`);
     const manager = (name: string) =>
@@ -126,16 +119,6 @@ ${'x'.repeat(5000)}`;
     ]);
     expect(await manager('step-scripts')).toEqual([
       { path: 'manager/scripts/check.ts', part: 0, chunk: 'manager script' },
-    ]);
-    expect(await manager('step-hooks')).toEqual([
-      {
-        path: 'hooks/judge.py',
-        admitted_agents: ['judge'],
-        workflow: 'archon-manager',
-        step_path: 'check-app',
-        agent: 'judge',
-        description: 'manager judge',
-      },
     ]);
     expect(await manager('step-yaml')).toEqual([
       {
@@ -171,16 +154,6 @@ ${'x'.repeat(5000)}`;
     expect(await files('step-yaml', (row) => row.name)).toEqual(
       new Map([['archon-loop', `a2 ${long}`]]),
     );
-    expect(await db.query(sql('step-hooks'), paramsFor('step-hooks', 'mission-control'))).toEqual([
-      {
-        path: 'hooks/fence.py',
-        admitted_agents: ['verifier'],
-        workflow: 'archon-loop',
-        step_path: 'check-app',
-        agent: 'verifier',
-        description: 'a2',
-      },
-    ]);
 
     // The version the address names by its pin, and nothing for any other value.
     const olderSteps = await db.query(sql('step-detail'), ['mission-control', 'p1']);
@@ -197,8 +170,6 @@ ${'x'.repeat(5000)}`;
     expect(await files('step-yaml', (row) => row.name, 'p1')).toEqual(
       new Map([['archon-loop', `a1 ${long}`]]),
     );
-    const hooks = await db.query(sql('step-hooks'), ['mission-control', ...CHECK_APP, 'p1']);
-    expect(hooks.map((h) => h.description)).toEqual(['a1']);
 
     // A pin with no architecture, an archon sha, a prefix of a pin, a made-up value, and a known
     // pin for a factory the dashboard does not show.

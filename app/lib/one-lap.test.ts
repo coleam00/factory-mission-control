@@ -160,10 +160,9 @@ test("a lap's outcome reads as recent-laps.sql's CASE: failure, gate, review, th
 const check = (position: number, line_id: string | null): CheckLineRow => ({
   position,
   line_id,
-  kind: 'holdout',
+  kind: 'defect',
   verdict: 'FAIL',
   evidence_count: 1,
-  scenario_id: 'H-02',
 });
 
 test('a disposition answers the one check line with its id, and no line when none or several do', () => {

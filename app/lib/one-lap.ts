@@ -55,7 +55,7 @@ export interface StepAttemptRow {
   position: number | null;
 }
 
-/** One app-check line: never its text, and a holdout only by its scenario id. */
+/** One app-check line: never its text. */
 export interface CheckLineRow {
   position: number;
   /** The report's line id, as a disposition names it; null for a line projected before #184. */
@@ -63,7 +63,6 @@ export interface CheckLineRow {
   kind: string;
   verdict: string;
   evidence_count: number;
-  scenario_id: string | null;
 }
 
 const timeOf = (at: Date | null) => (at === null ? Number.NaN : at.getTime());

@@ -38,15 +38,13 @@ const lines: CheckLineRow[] = [
     kind: 'criterion',
     verdict: 'PASS',
     evidence_count: 1,
-    scenario_id: null,
   },
   {
     position: 4,
     line_id: 'H2',
-    kind: 'holdout',
+    kind: 'defect',
     verdict: 'FAIL',
     evidence_count: 1,
-    scenario_id: 'H-02',
   },
 ];
 

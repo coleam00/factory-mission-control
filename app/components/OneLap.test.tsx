@@ -185,7 +185,7 @@ test('token counts Realtime sends as strings still group their thousands', () =>
   expect(html).toContain('cache read 39,877, cache write 8,333');
 });
 
-test('a holdout line shows only its scenario id beside its kind, verdict and evidence', () => {
+test('a line shows its kind, verdict and evidence, and a labelled one its id', () => {
   const lines: CheckLineRow[] = [
     {
       position: 1,
@@ -193,20 +193,17 @@ test('a holdout line shows only its scenario id beside its kind, verdict and evi
       kind: 'criterion',
       verdict: 'PASS',
       evidence_count: 2,
-      scenario_id: null,
     },
     {
       position: 3,
       line_id: 'H2',
-      kind: 'holdout',
+      kind: 'defect',
       verdict: 'FAIL',
       evidence_count: 1,
-      scenario_id: 'H-01',
     },
   ];
   const html = render(<CheckList rows={lines} />);
-  expect(html).toContain('data-scenario="H-01"');
-  expect(html).toContain('>H-01<');
+  expect(html).not.toContain('data-scenario');
   expect(html).toContain('data-verdict="FAIL"');
   expect(html).toContain('data-evidence="2"');
   expect(html).toContain('data-position="3" data-line-id="H2"');
@@ -219,10 +216,9 @@ test('a disposition marks the one app check line it answers, or says it matches 
     {
       position: 4,
       line_id: 'H2',
-      kind: 'holdout',
+      kind: 'defect',
       verdict: 'FAIL',
       evidence_count: 1,
-      scenario_id: 'H-02',
     },
     {
       position: 5,
@@ -230,7 +226,6 @@ test('a disposition marks the one app check line it answers, or says it matches 
       kind: 'defect',
       verdict: 'FAIL',
       evidence_count: 1,
-      scenario_id: null,
     },
   ];
   const lap: OneLapRow = {
