@@ -334,16 +334,26 @@ function sweepDecision(row: WorkItemRow, base: Base): TimelineEvent[] {
     case 'merged':
       if ((row.landed ?? []).includes(row.pr))
         return [{ ...base, at, tone: 'done', text: 'Merged', detail: reason }];
-      // The read-back has not finished, so the merge may still land.
+      // Only a finished read-back can say the merge did not land: the sweep decides
+      // `merged` after the gate merged, so an unfinished read-back proves nothing.
+      if (row.record_status === 'completed')
+        return [{ ...base, at, tone: 'failed', text: `The merge did not land. ${NO_REASON}` }];
       if (
         row.completed_at === null &&
         row.status !== 'failed' &&
         row.status !== 'cancelled' &&
-        row.record_status !== 'completed' &&
         row.record_status !== 'failed'
       )
         return [{ ...base, at, tone: 'running', text: 'Merging', detail: reason }];
-      return [{ ...base, at, tone: 'failed', text: `The merge did not land. ${NO_REASON}` }];
+      return [
+        {
+          ...base,
+          at,
+          tone: 'plain',
+          text: 'Merged, not read back: the run ended before checking it.',
+          detail: reason,
+        },
+      ];
     case 'return':
       return [
         {
