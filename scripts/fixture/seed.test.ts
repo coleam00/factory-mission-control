@@ -180,6 +180,18 @@ test('the seed holds a queue factory: three running build-queue laps and an inta
     {
       workflow_name: 'archon-build-queue',
       status: 'completed',
+      issue_number: 407,
+      attention_open: false,
+    },
+    {
+      workflow_name: 'archon-build-queue',
+      status: 'completed',
+      issue_number: 407,
+      attention_open: false,
+    },
+    {
+      workflow_name: 'archon-build-queue',
+      status: 'completed',
       issue_number: null,
       attention_open: false,
     },
@@ -203,8 +215,26 @@ test('the seed holds a queue factory: three running build-queue laps and an inta
     },
     {
       workflow_name: 'archon-intake',
+      status: 'completed',
+      issue_number: 407,
+      attention_open: false,
+    },
+    {
+      workflow_name: 'archon-intake',
       status: 'running',
       issue_number: 401,
+      attention_open: false,
+    },
+    {
+      workflow_name: 'archon-merge-queue',
+      status: 'completed',
+      issue_number: null,
+      attention_open: false,
+    },
+    {
+      workflow_name: 'archon-merge-queue',
+      status: 'completed',
+      issue_number: null,
       attention_open: false,
     },
     {

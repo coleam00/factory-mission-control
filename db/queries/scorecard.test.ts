@@ -9,7 +9,12 @@ import {
   versionLaps,
   versionPin,
 } from '../../app/lib/scorecard';
-import { QUEUE_DIGEST, QUEUE_RUNS, SEED_CODEBASE } from '../../scripts/fixture/seed';
+import {
+  QUEUE_DIGEST,
+  QUEUE_RETURNED,
+  QUEUE_RUNS,
+  SEED_CODEBASE,
+} from '../../scripts/fixture/seed';
 import { REPO_ROOT } from '../../scripts/lib/cli';
 import type { Db } from '../../scripts/lib/db';
 import { onTheSeed, queries } from './test-seed';
@@ -113,7 +118,16 @@ describe('scorecard on the seed', () => {
       versionLaps(rows, QUEUE_DIGEST)
         .map((lap) => lap.id)
         .sort(),
-    ).toEqual([QUEUE_RUNS.built, QUEUE_RUNS.build, QUEUE_RUNS.review, QUEUE_RUNS.ask].sort());
+    ).toEqual(
+      [
+        QUEUE_RUNS.built,
+        QUEUE_RUNS.build,
+        QUEUE_RUNS.review,
+        QUEUE_RUNS.ask,
+        QUEUE_RETURNED.first,
+        QUEUE_RETURNED.second,
+      ].sort(),
+    );
     expect(versionPin(rows, QUEUE_DIGEST)?.pin).toBe(pin_sha);
 
     const rollback = new Error('rollback');
@@ -135,7 +149,7 @@ describe('scorecard on the seed', () => {
         );
         const ids = versionLaps(await rowsOf(tx), QUEUE_DIGEST).map((lap) => lap.id);
         expect(ids).not.toContain(id);
-        expect(ids).toHaveLength(4);
+        expect(ids).toHaveLength(6);
         throw rollback;
       })
       .catch((error) => {
