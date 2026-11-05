@@ -387,6 +387,12 @@ test('the latest deploy is the newest of the queue and the old loop, and null wh
   expect(latestDeploy([queue, loop])).toMatchObject({ run: 'l', revision: 'b', verified: false });
 });
 
+test('a deploy counts as read back only when its status is verified', () => {
+  const deploy = (status: string) => right({ kind: 'deploys', run_id: 'l', revision: 'b', status });
+  expect(latestDeploy([deploy('deployed')])).toMatchObject({ verified: true, readBack: false });
+  expect(latestDeploy([deploy('verified')])).toMatchObject({ verified: true, readBack: true });
+});
+
 test('Merge gate lists the gate, the Staging cards the deploy and open work orders, and an error is unavailable', () => {
   const order = {
     name: 'combat',

@@ -132,3 +132,22 @@ test('an old-loop deploy with no revision read back is deployed, and a failed de
   const failed = (await rows('mission-control')).filter((r) => r.kind === 'deploys');
   expect(failed[0]).toMatchObject({ status: 'failed', health: null });
 });
+
+test('an old-loop deploy whose verify step observed the revision is verified', async () => {
+  const lap = (
+    (await db.query(
+      `SELECT run_id FROM mc.laps WHERE factory = 'mission-control' AND workflow_name = 'archon-loop' LIMIT 1`,
+    )) as { run_id: string }[]
+  )[0]?.run_id as string;
+  const revision = 'e'.repeat(40);
+  await completed(lap, 'deploy__deploy', { ok: true }, '2026-10-29T09:00:00Z');
+  await completed(lap, 'deploy__health', { ok: true }, '2026-10-29T09:01:00Z');
+  await completed(
+    lap,
+    'deploy__verify',
+    { deployed: true, revision, observed: revision },
+    '2026-10-29T09:02:00Z',
+  );
+  const deploys = (await rows('mission-control')).filter((r) => r.kind === 'deploys');
+  expect(deploys[0]).toMatchObject({ status: 'verified', health: 'healthy' });
+});
