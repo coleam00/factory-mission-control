@@ -50,10 +50,11 @@ test('map-right-now reads only paths the pinned merge queue declares', () => {
   ];
   const steps = Object.fromEntries(joins.map((m) => [m[1], m[2]] as const));
   expect(steps).toEqual({ rec: 'record', fa: 'facts', sw: 'sweep' });
-  // A read or join this parser cannot spell would otherwise be skipped unchecked.
+  // A read or join this parser cannot spell, or whose path continues past what it parsed,
+  // would otherwise be skipped unchecked.
   expect(joins.length).toBe(gate.split('mc.lap_steps').length - 1);
 
-  const reads = [...gate.matchAll(/\b(rec|fa|sw)\.output((?: ->>? '[\w]+')+)/g)];
+  const reads = [...gate.matchAll(/\b(rec|fa|sw)\.output((?: ->>? '[\w]+')+)(?!\s*(?:->|#>|\[))/g)];
   expect(reads.length).toBe(gate.split(/\.output\b/).length - 1);
   const paths = new Set(
     reads.map(
