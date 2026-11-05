@@ -17,7 +17,7 @@ const card = (id: string) => {
 const realState: (initial: unknown) => unknown = React.useState;
 beforeEach(() => {
   spyOn(React, 'useState').mockImplementation(((initial: unknown) => {
-    if (initial === 'when') {
+    if (initial === 'about') {
       return ['live', () => {}];
     }
     return realState(initial);
@@ -53,4 +53,20 @@ test('the App check card lists the pull requests under check on its Right now ta
   const seal = rightNow('a-seal');
   expect(seal).toContain('aria-selected="true" data-tab="live"');
   expect(seal).not.toContain('Pull requests under check');
+});
+
+test('a card has three tabs: About holds when it runs, what it does and how it works', () => {
+  (React.useState as unknown as { mockRestore?: () => void }).mockRestore?.();
+  const html = rightNow('a-check');
+  expect(html.match(/role="tab"/g)).toHaveLength(3);
+  expect(html).toContain('data-tab="about"');
+  expect(html).toContain('data-tab="live"');
+  expect(html).toContain('data-tab="behind"');
+  expect(html).toContain('aria-selected="true" data-tab="about"');
+  for (const key of ['when', 'what', 'how']) {
+    if (card('a-check').details[key as 'when' | 'what' | 'how'] !== undefined) {
+      expect(html).toContain(`data-about="${key}"`);
+    }
+  }
+  expect(html).not.toContain('data-tab="when"');
 });
