@@ -21,7 +21,6 @@ const STEP_TIMEOUT_MS = 20_000;
 // a fresh process opens it in about 20 s (#355, #368, #386, #423). So each launch waits 30 s and a
 // miss relaunches once.
 const DEVTOOLS_PORT_WAIT_MS = 30_000;
-const DEVTOOLS_PORT_LAUNCHES = 2;
 
 function findBrowser(env: Record<string, string | undefined>): string {
   if (env.MC_BROWSER) return env.MC_BROWSER;
@@ -98,7 +97,6 @@ interface Launch {
 export async function startBrowser(
   launch: () => Launch,
   waitMs = DEVTOOLS_PORT_WAIT_MS,
-  launches = DEVTOOLS_PORT_LAUNCHES,
 ): Promise<{ url: string; stop: () => Promise<void> }> {
   for (let attempt = 1; ; attempt++) {
     const browser = launch();
@@ -109,7 +107,7 @@ export async function startBrowser(
       };
     } catch (error) {
       await browser.stop();
-      if (!(error instanceof DevToolsPortTimeout) || attempt >= launches) throw error;
+      if (!(error instanceof DevToolsPortTimeout) || attempt >= 2) throw error;
       console.warn(`${error.message}; launching it once more`);
     }
   }
