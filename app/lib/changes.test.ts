@@ -166,6 +166,8 @@ const withLaps = (digest: string, id: string): ScorecardRow => ({
   status: 'completed',
   started_at: at(1),
   completed_at: at(1),
+  issue: null,
+  pull_request: null,
   step_id: null,
   pin_sha: null,
 });
