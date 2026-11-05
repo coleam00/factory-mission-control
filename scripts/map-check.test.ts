@@ -396,15 +396,27 @@ describe('the picks seam of the home map', () => {
 
   test('the lens steps its SQL selects are the review-lens nodes of the review block', () => {
     const block = workflow('archon-review-block');
-    const nodes = (Bun.YAML.parse(block.yaml) as { nodes: { id: string; output_type?: string }[] })
-      .nodes;
+    const nodes = (
+      Bun.YAML.parse(block.yaml) as {
+        nodes: {
+          id: string;
+          output_type?: string;
+          output_format?: { properties?: Record<string, { type?: string }>; required?: string[] };
+        }[];
+      }
+    ).nodes;
     const lenses = nodes.filter((n) => n.output_type === 'review-lens').map((n) => n.id);
     // The SQL rewrites a lens id with '__[a-z]+$', so every lens id must be lowercase letters.
     expect(lenses.every((id) => /^[a-z]+$/.test(id))).toBe(true);
     const selected = /review__\(([^)]+)\)\$/.exec(sql)?.[1].split('|');
     expect(selected?.slice().sort()).toEqual(lenses.sort());
     expect(block.steps[0]?.id).toBe('policy');
-    expect(block.steps.some((s) => s.id === 'route')).toBe(true);
+    // The SQL reads route's output keyed by lens id, as a boolean.
+    const route = nodes.find((n) => n.id === 'route')?.output_format;
+    for (const id of lenses) {
+      expect(route?.properties?.[id]?.type).toBe('boolean');
+      expect(route?.required).toContain(id);
+    }
   });
 
   test('live.ts reads a lens step as in a round exactly where the deliver block includes the review block', () => {

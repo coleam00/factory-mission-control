@@ -122,10 +122,10 @@ root counts on no card of the Build view.
 
 In the Review view a lens the router skipped for the round a run is in has no count for it, and the
 lens card's Right now says that run's change did not earn the reviewer. It reads the skipped lens
-steps of a round whose `route` step completed with `false` for that lens (the `home-map` query's `picks` rows, which keep only
-steps that finished since the round's `policy` step last started) and says nothing for a lens that
-ran, a round not yet at its lenses, or a round the router never ran (a light round, a rereview, a
-refused round).
+steps of a round whose `route` step completed with `false` for that lens (the `home-map` query's
+`picks` rows, which keep only steps that finished since the round's `policy` step last started) and
+says nothing for a lens that ran, a round not yet at its lenses, or a round the router never ran (a
+light round, a rereview, a refused round).
 
 ## Right now in the Merge and Staging views
 
