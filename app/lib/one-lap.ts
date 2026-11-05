@@ -3,7 +3,7 @@
  * `one-lap-checks.sql` return them, and the ordering, sums and links the queries leave to the
  * browser. Pure, no React.
  */
-import { costOf, OUTCOME_TOKEN, type Outcome, since } from './laps';
+import { costOf, type Outcome, since } from './laps';
 
 /** One review disposition as `mc.step_output` keeps it: the line id it answers, or null. */
 export interface Disposition {
@@ -181,16 +181,6 @@ export const STEP_STATUS_TOKEN: Record<string, `--${string}`> = {
   completed: '--success',
   failed: '--error',
   skipped: '--text-tertiary',
-};
-
-/**
- * The lap page's outcome colors in v2 roles: a send-back is done (teal), a lap that needs the
- * owner waits on them (violet). `OUTCOME_TOKEN` stays for the v1 Laps list until #321.
- */
-export const LAP_OUTCOME_TOKEN: Record<Outcome, `--${string}`> = {
-  ...OUTCOME_TOKEN,
-  'sent-back': '--success',
-  'needs-owner': '--role-person',
 };
 
 export const GATE_TOKEN: Record<string, `--${string}`> = {

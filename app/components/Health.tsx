@@ -154,7 +154,7 @@ export function WaitingList({
   rows,
   factory,
   now: fixed,
-  color = 'var(--warning)',
+  color = 'var(--role-person)',
 }: {
   rows: readonly HealthRunRow[];
   factory: string;
