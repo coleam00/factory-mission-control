@@ -1,4 +1,8 @@
-import { expect, test } from 'bun:test';
+import { afterAll, describe, expect, test } from 'bun:test';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { MEASURES } from '../../app/lib/scorecard';
 import { compareScorecard, readExpectedScorecard, type ShownCell } from './scorecard';
 
 test('the scorecard comparison counts a number missing from the screen as a mismatch', () => {
@@ -46,4 +50,27 @@ test('the scorecard comparison counts a number missing from the screen as a mism
 
 test('the expected scorecard on disk keys its measures by MEASURES', () => {
   expect(readExpectedScorecard(process.cwd()).versions.length).toBeGreaterThan(0);
+});
+
+describe('readExpectedScorecard refuses a file that disagrees with MEASURES', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'scorecard-'));
+  afterAll(() => rmSync(dir, { recursive: true, force: true }));
+  const load = (measures: Record<string, unknown>) => {
+    mkdirSync(join(dir, 'fixtures'), { recursive: true });
+    writeFileSync(
+      join(dir, 'fixtures', 'expected-scorecard.json'),
+      JSON.stringify({ versions: [{ digest: 'sha256:a1', measures }] }),
+    );
+    return () => readExpectedScorecard(dir);
+  };
+  const all = Object.fromEntries(MEASURES.map((m) => [m.key, { value: 1, laps: 1 }]));
+
+  test('a key MEASURES lacks', () => {
+    expect(load({ ...all, bogus: { value: 1, laps: 1 } })).toThrow('bogus');
+  });
+
+  test('a MEASURES key the file lacks', () => {
+    const { merges: _dropped, ...rest } = all;
+    expect(load(rest)).toThrow('merges');
+  });
 });

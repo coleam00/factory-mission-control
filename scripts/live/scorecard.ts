@@ -62,17 +62,19 @@ export interface ExpectedScorecard {
   }[];
 }
 
-/** `fixtures/expected-scorecard.json`, refusing a measure key `MEASURES` does not have. */
+/** `fixtures/expected-scorecard.json`, refusing a version whose measure keys are not exactly those of `MEASURES`. */
 export function readExpectedScorecard(repoRoot: string): ExpectedScorecard {
   const expected: ExpectedScorecard = JSON.parse(
     readFileSync(join(repoRoot, 'fixtures', 'expected-scorecard.json'), 'utf-8'),
   );
   const known = new Set<string>(MEASURES.map((m) => m.key));
   for (const { digest, measures } of expected.versions) {
-    const unknown = Object.keys(measures).filter((key) => !known.has(key));
-    if (unknown.length > 0) {
+    const keys = Object.keys(measures);
+    const unknown = keys.filter((key) => !known.has(key));
+    const missing = [...known].filter((key) => !keys.includes(key));
+    if (unknown.length > 0 || missing.length > 0) {
       throw new Error(
-        `expected-scorecard.json version ${digest} has measures MEASURES does not: ${unknown.join(', ')}`,
+        `expected-scorecard.json version ${digest} disagrees with MEASURES: unknown [${unknown.join(', ')}], missing [${missing.join(', ')}]`,
       );
     }
   }

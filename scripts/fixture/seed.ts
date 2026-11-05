@@ -1,7 +1,11 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { PGlite } from '@electric-sql/pglite';
-import { renderAttention } from '../../fixtures/pack/queue/sdlc/.shared/queue';
+import {
+  type Attention,
+  attentionOptions,
+  renderAttention,
+} from '../../fixtures/pack/queue/sdlc/.shared/queue';
 import { pinnedArchonSha } from '../../function/ingest';
 import {
   parseClaim,
@@ -1206,19 +1210,23 @@ function archonSql(factory: FactoryEntry, runs: Run[]): string[] {
  * branch's real Postgres.
  */
 function attentionSql(): string[] {
-  const waits = [
+  const waits: {
+    id: string;
+    workflow: string;
+    waitingSince: string;
+    pauseId: string;
+    labels: Record<string, string>;
+    title: string;
+    attention: Attention<string>;
+  }[] = [
     {
       id: '5eed0006-0000-4000-8000-000000000001',
       workflow: 'archon-build-queue',
       waitingSince: '2026-10-24T10:20:00.000Z',
       pauseId: 'seed-build-ask',
       labels: { build: 'scope' },
-      options: [
-        { id: 'split', label: 'Split the issue in two' },
-        { id: 'build', label: 'Build it as written' },
-        { id: 'other', label: 'Something else' },
-      ],
-      message: renderAttention('Build queue, issue 15: scope decision', {
+      title: 'Build queue, issue 15: scope decision',
+      attention: {
         what: 'Issue 15 asks for the lanes panel and the one-lap page in one change, and the two touch different screens.',
         why: 'A change that spans both screens is hard to review and holds the queue behind it.',
         recommendation: {
@@ -1235,7 +1243,7 @@ function attentionSql(): string[] {
         ].map((choice) => ({ ...choice, effect: choice.id, ruling: '' })),
         if_unanswered: 'The queue stays on this issue and takes the next ready one.',
         links: ['https://github.com/coleam00/factory-mission-control/issues/15'],
-      }),
+      },
     },
     {
       id: '5eed0006-0000-4000-8000-000000000002',
@@ -1243,12 +1251,8 @@ function attentionSql(): string[] {
       waitingSince: '2026-10-24T11:35:00.000Z',
       pauseId: 'seed-merge-ask',
       labels: { merge: 'pr' },
-      options: [
-        { id: 'merge', label: 'Merge it now' },
-        { id: 'hold', label: 'Hold it for the next lap' },
-        { id: 'other', label: 'Something else' },
-      ],
-      message: renderAttention('Merge queue, pull request 16: ready to merge', {
+      title: 'Merge queue, pull request 16: ready to merge',
+      attention: {
         what: 'Pull request 16 has every check green and no open review finding.',
         why: 'It is the last change before the version is pinned.',
         recommendation: {
@@ -1269,7 +1273,7 @@ function attentionSql(): string[] {
         ].map((choice) => ({ ...choice, effect: choice.id, ruling: '' })),
         if_unanswered: 'The queue leaves it open and moves to the next pull request.',
         links: ['https://github.com/coleam00/factory-mission-control/pull/16'],
-      }),
+      },
     },
   ];
   return [
@@ -1290,10 +1294,10 @@ function attentionSql(): string[] {
             pauseId: w.pauseId,
             revision: 1,
             form: 'select',
-            options: w.options,
+            options: attentionOptions(w.attention),
             labels: w.labels,
             waitingSince: w.waitingSince,
-            message: w.message,
+            message: renderAttention(w.title, w.attention),
           },
         }),
         started_at: w.waitingSince,
