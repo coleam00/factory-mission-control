@@ -97,3 +97,31 @@ test('Esc and Backspace deselect a selected card first, and go up only when noth
     expect(second).toMatchObject({ view: 'root' });
   }
 }, 30_000);
+
+test('on a phone, a level change lands on the same camera as mounting that level', async () => {
+  await page.setViewport(390);
+  try {
+    const [openedFromRoot, build, upFromBuild, root] = await inPage<string[]>(`
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      const camera = () => document.querySelector('[data-map-world]').style.transform;
+      await m.mount('/f/x');
+      m.dblclick('build');
+      await m.waitFor('build');
+      await sleep(1500);
+      const openedFromRoot = camera();
+      m.click('[data-map-up]');
+      await m.waitFor('root');
+      await sleep(1500);
+      const upFromBuild = camera();
+      await m.mount('/f/x?view=build');
+      await sleep(300);
+      const build = camera();
+      await m.mount('/f/x');
+      await sleep(300);
+      return [openedFromRoot, build, upFromBuild, camera()];`);
+    expect(openedFromRoot).toBe(build);
+    expect(upFromBuild).toBe(root);
+  } finally {
+    await page.setViewport(1440);
+  }
+}, 30_000);
