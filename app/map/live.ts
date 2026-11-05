@@ -134,14 +134,7 @@ export interface MapSources {
   healthRuns?: readonly HealthRunRow[];
   healthSteps?: readonly HealthStepRow[];
   /** A source in `error` keeps its rows, but its chip is unavailable, never a count. */
-  states?: {
-    workable?: PanelState;
-    owner?: PanelState;
-    orders?: PanelState;
-    attention?: PanelState;
-    healthRuns?: PanelState;
-    healthSteps?: PanelState;
-  };
+  states?: Partial<Record<Exclude<keyof MapSources, 'map' | 'states'>, PanelState>>;
 }
 
 const depth = (step: string) => stepPath(step).split('/').length;

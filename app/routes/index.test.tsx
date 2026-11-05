@@ -506,3 +506,23 @@ test('the Work order card counts its open work orders and says nothing with none
   expect(right).toContain('combat');
   expect(right).toContain('2 open, 1 merged, lands on staging');
 });
+
+test('the Manager view draws the open attention items the route is fed as a count on their card', () => {
+  const html = render([], 'ready', {
+    path: ['manager'],
+    attention: [
+      {
+        run_id: 'r1',
+        workflow_name: 'archon-build-queue',
+        node_id: 'ask',
+        waiting_since: new Date('2026-11-05T10:00:00Z'),
+        form: 'select',
+        options: '[]',
+        labels: JSON.stringify({ build: 'scope' }),
+        message: '**A question**',
+        console: 'http://archon.test',
+      },
+    ],
+  });
+  expect(html).toMatch(/data-card="u-b"[\s\S]*?data-chip="waiting"[^>]*>1 waiting</);
+});

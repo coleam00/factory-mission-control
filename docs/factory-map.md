@@ -81,7 +81,7 @@ the commits this factory runs, with `ARCHON_COMMIT` and `FACTORY_COMMIT` beside 
 
 ## Live counts
 
-The cards' chips come from four live queries: `home-map` (each running run of the factory with its
+The cards' chips come from four live queries (the Manager view adds three, below): `home-map` (each running run of the factory with its
 running steps and issue, the runs waiting on attention, whether the factory is on the queues, the
 open pull requests whose latest app check failed, the merges with when they finished, and whether
 the version the address names is recorded),
@@ -143,7 +143,7 @@ home map.
 
 `?view=manager` draws `refs/18-drill-manager.png`: four violet question cards (Work item is unclear,
 Build is stuck on a choice, Risky merge, Is this a real problem?), the Manager and the Written rules
-under them. It adds two live queries to the home map's, `attention-items` and the Health screen's
+under them. It adds three live queries to the home map's: `attention-items`, and the Health screen's
 `health-runs` and `health-steps`; each is a live query, none polls.
 
 - A question card counts the open Archon attention items its `asks` names, by their labels:
