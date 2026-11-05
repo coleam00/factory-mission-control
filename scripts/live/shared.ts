@@ -1,4 +1,4 @@
-import { cardForStep, FACTORY_MAP, stepPath } from '../../app/map/factory-map';
+import { type Card, cardChain, FACTORY_MAP, stepPath } from '../../app/map/factory-map';
 import { SERVE_PORTS } from '../../server/ports';
 import type { Page } from '../lib/cdp';
 import type { Deps } from '../lib/cli';
@@ -143,8 +143,9 @@ export async function lapsOnCards(db: Db, factory: string): Promise<Map<string, 
   }
   const counts = new Map<string, number>();
   for (const { workflow, step } of deepest.values()) {
-    const card = cardForStep(FACTORY_MAP, workflow, stepPath(step));
-    if (card) counts.set(card.id, (counts.get(card.id) ?? 0) + 1);
+    for (const card of cardChain(FACTORY_MAP, workflow, stepPath(step))) {
+      counts.set(card.id, (counts.get(card.id) ?? 0) + 1);
+    }
   }
   return counts;
 }
@@ -204,15 +205,19 @@ export function mapTypeFailures(type: MapType): string[] {
 }
 
 /** Where the map, in document order, differs from factory-map.json and from `counts`: one line each. */
-export function mapMismatches(cards: ShownCard[], counts: ReadonlyMap<string, number>): string[] {
+export function mapMismatches(
+  cards: ShownCard[],
+  counts: ReadonlyMap<string, number>,
+  expected: readonly Card[] = FACTORY_MAP.cards,
+): string[] {
   const failures: string[] = [];
   const shown = cards.map((c) => c.card).join(', ');
-  const drawn = FACTORY_MAP.cards.map((c) => c.id).join(', ');
+  const drawn = expected.map((c) => c.id).join(', ');
   if (shown !== drawn) failures.push(`the map shows cards ${shown}, not ${drawn}`);
   for (const { card, count } of cards) {
-    const expected = counts.get(card) ?? 0;
-    if (Number(count) !== expected) {
-      failures.push(`${card} shows ${count} laps, the database has ${expected}`);
+    const want = counts.get(card) ?? 0;
+    if (Number(count) !== want) {
+      failures.push(`${card} shows ${count} laps, the database has ${want}`);
     }
   }
   return failures;

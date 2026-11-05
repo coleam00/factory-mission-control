@@ -150,10 +150,7 @@ const ROW_COLUMNS: Record<string, string[]> = {
     'app_check',
     'pr',
     'pr_open',
-    'run_id',
-    'run_workflow',
     'repository',
-    'console',
     'merged_total',
   ]),
   'home-map': columns<HomeMapRow>()([
@@ -295,6 +292,10 @@ const ROW_COLUMNS: Record<string, string[]> = {
     'reason',
     'pin_sha',
     'first_run_at',
+    'issue',
+    'pull_request',
+    'merged',
+    'items',
   ]),
   'status-strip': columns<StatusStripRow>()(['running']),
   'step-detail': columns<StepRow>()([

@@ -27,12 +27,8 @@ export interface BoardRow {
   /** The open pull request that closes it, else the merged one. */
   pr: number | null;
   pr_open: boolean | null;
-  /** Its latest run. */
-  run_id: string | null;
-  run_workflow: string | null;
-  /** The factory row: its repository, its Archon console and its work items a pull request merged. */
+  /** The factory row: its repository and its work items a pull request merged. */
   repository: string | null;
-  console: string | null;
   merged_total: number | null;
 }
 
