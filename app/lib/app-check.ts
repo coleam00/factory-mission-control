@@ -1,6 +1,6 @@
 /**
  * The kinds `mc.app_check_lines` stores (0024's `app_check_lines_kind_check`, held by
- * `db/schema.test.ts`), in the order the testing screen lists them.
+ * `db/schema.test.ts`).
  */
 export const APP_CHECK_KINDS = ['criterion', 'holdout', 'probe', 'assertion', 'defect'] as const;
 
