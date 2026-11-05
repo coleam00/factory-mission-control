@@ -32,8 +32,6 @@ export interface AttemptRow {
   route: string | null;
   outcome: string | null;
   reason: string | null;
-  /** The attempt's new holdout catches (a check-app attempt's only). */
-  holdout_catches: number | null;
   pin_sha: null;
 }
 
@@ -70,7 +68,6 @@ export interface Lap {
   /** The summed `duration_ms` of its check-app attempts; null when none reported one. */
   checkAppMs: number | null;
   cost: number;
-  catches: number;
 }
 
 interface FinishedLap extends Lap {
@@ -99,7 +96,6 @@ export function versionLaps(rows: readonly ScorecardRow[], digest: string): Lap[
       refusals: [],
       checkAppMs: null,
       cost: 0,
-      catches: 0,
     });
   }
   for (const row of rows) {
@@ -107,7 +103,6 @@ export function versionLaps(rows: readonly ScorecardRow[], digest: string): Lap[
     const lap = laps.get(row.run_id);
     if (lap === undefined) continue;
     lap.cost += row.cost_usd ?? 0;
-    lap.catches += row.holdout_catches ?? 0;
     if (row.step_id === 'pick' && row.route !== null) lap.routes.push(row.route);
     else if (row.step_id === 'review' && row.outcome !== null) lap.reviews.push(row.outcome);
     else if (row.step_id === 'land' && row.outcome !== null) {
@@ -198,8 +193,7 @@ export type MeasureKey =
   | 'merges_per_active_hour'
   | 'lap_hours_per_merge'
   | 'app_check_share'
-  | 'cost_per_merge'
-  | 'new_holdout_catches';
+  | 'cost_per_merge';
 
 export interface Measure {
   key: MeasureKey;
@@ -221,7 +215,6 @@ export const MEASURES: readonly Measure[] = [
   { key: 'lap_hours_per_merge', label: 'Lap-hours per merge', unit: 'ratio' },
   { key: 'app_check_share', label: 'App-check share', unit: 'ratio' },
   { key: 'cost_per_merge', label: 'Cost per merge', unit: 'usd' },
-  { key: 'new_holdout_catches', label: 'New holdout catches', unit: 'count' },
 ];
 
 export interface Measured {
@@ -273,7 +266,6 @@ export function scorecard(laps: readonly Lap[]): Scorecard {
   const hours = activeHours(finished);
   const lapMs = sum(finished.map((lap) => lap.endedAt.getTime() - lap.startedAt.getTime()));
   const checkAppMs = sum(finished.map((lap) => lap.checkAppMs ?? 0));
-  const caught = laps.filter((lap) => lap.catches > 0).map((lap) => lap.id);
 
   return {
     laps: count(() => true),
@@ -292,11 +284,6 @@ export function scorecard(laps: readonly Lap[]): Scorecard {
     // No check-app on a finished lap adds 0 to the sum; only no finished lap time is n/a.
     app_check_share: { value: ratio(checkAppMs, lapMs), laps: finishedIds },
     cost_per_merge: { value: ratio(sum(laps.map((lap) => lap.cost)), merges.value), laps: all },
-    new_holdout_catches: {
-      value: sum(laps.map((lap) => lap.catches)),
-      laps: all,
-      counted: caught,
-    },
   };
 }
 
@@ -310,9 +297,16 @@ export function difference(a: Measured, b: Measured): number | null {
   return a.value === null || b.value === null ? null : round4(b.value - a.value);
 }
 
-/** PRD 4.2: a difference resting on fewer laps than this on either side is not yet meaningful. */
+/**
+ * PRD 4.2: a difference resting on fewer laps than this on either side is not yet meaningful. The
+ * rule counts each side's laps, so a time measure that rests on fewer finished laps is labelled
+ * like every other measure of the same comparison.
+ */
 export const MEANINGFUL_LAPS = 10;
 
-export function meaningful(a: Measured, b: Measured): boolean {
-  return a.laps.length >= MEANINGFUL_LAPS && b.laps.length >= MEANINGFUL_LAPS;
+/** The label a difference carries until it is meaningful. */
+export const NOT_YET_MEANINGFUL = 'not yet meaningful';
+
+export function meaningful(aLaps: number, bLaps: number): boolean {
+  return aLaps >= MEANINGFUL_LAPS && bLaps >= MEANINGFUL_LAPS;
 }

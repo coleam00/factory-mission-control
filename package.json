@@ -5,7 +5,7 @@
   "scripts": {
     "setup": "vite build",
     "serve": "bun server/main.ts",
-    "check": "tsc --noEmit && biome check && bun scripts/map-check.ts && bun test --timeout 60000 app server harness scripts parsers db function",
+    "check": "tsc --noEmit && biome check && bun scripts/map-check.ts && bun test --timeout 60000 ./app ./server ./harness ./scripts ./parsers ./db ./function",
     "map:check": "bun scripts/map-check.ts",
     "function:dev": "bun function/dev.ts",
     "function:deploy": "bun scripts/function-deploy.ts",

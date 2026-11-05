@@ -37,6 +37,31 @@ test('pending and paused runs show their wait by the browser clock and open thei
   expect(html).toContain('href="/f/mission-control/laps/5eed0003-0000-4000-8000-00000000000c"');
 });
 
+test('a paused run of another workflow has no lap page to open', () => {
+  const html = render(
+    <WaitingList
+      rows={[
+        run({ workflow_name: 'archon-build-queue', status: 'paused', started_at: new Date(NOW) }),
+      ]}
+      factory="mission-control"
+      now={NOW}
+    />,
+  );
+  expect(html).not.toContain('data-lap-link');
+  expect(html).toContain('archon-build-queue');
+});
+
+test('a failed run of another workflow has no lap page to open', () => {
+  const html = render(
+    <Failures
+      rows={[run({ run_id: 'q', workflow_name: 'archon-build-queue', failed_step: 'build' })]}
+      factory="mission-control"
+    />,
+  );
+  expect(html).not.toContain('data-lap-link');
+  expect(html).toContain('data-failed-lap="q"');
+});
+
 test('failed laps show a count per cause, every cause even at zero, and each lap with its error', () => {
   const html = render(
     <Failures

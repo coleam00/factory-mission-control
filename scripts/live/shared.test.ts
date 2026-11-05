@@ -68,7 +68,7 @@ test("the map is compared card for card with factory-map.json and each card's la
     'build shows 1 laps, the database has 0',
   ]);
   expect(mapMismatches(shown({ app: 1 }).slice(1), counts)[0]).toStartWith(
-    'the map shows cards plan, ',
+    'the map shows cards prd, ',
   );
 });
 

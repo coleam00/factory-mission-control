@@ -12,7 +12,6 @@ const STEP_QUERIES = [
   'step-prompt',
   'step-subagents',
   'step-scripts',
-  'step-hooks',
   'step-yaml',
 ];
 

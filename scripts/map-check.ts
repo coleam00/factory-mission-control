@@ -6,6 +6,8 @@ import {
   FACTORY_MAP,
   type FactoryMap,
   LINE_STYLES,
+  PACKS,
+  type Pack,
   ROLES,
 } from '../app/map/factory-map';
 import { type PackVersion, parsePack, type Step } from '../parsers/pack';
@@ -43,76 +45,128 @@ function unknownValues(map: FactoryMap): string[] {
       outside(`line ${line.from} to ${line.to} style`, line.style, LINE_STYLES),
     ),
     ...map.legend.flatMap((entry) => outside(`legend ${entry.label} role`, entry.role, ROLES)),
+    ...map.cards.flatMap((card) =>
+      card.covers.flatMap((cover) =>
+        outside(`${card.title} cover ${cover.workflow} pack`, cover.pack, PACKS),
+      ),
+    ),
   ];
 }
 
 /**
- * Where the map has drifted from the pack (PRD 4.1, invariant 6), one line each: a card naming a
- * workflow or a step the pack lacks, an entry whose screen is not the step's own, and a step of a
- * covered workflow that no card covers or that two do, or a step a lap's row marks that no card
- * covers.
+ * Where the map has drifted from the packs (PRD 4.1, invariant 6), one line each: a card naming a
+ * workflow or a step its pack lacks, a step of a
+ * covered workflow that no card covers or that two do, a step a lap's row marks that no card
+ * covers, and a step of a pack that counts on a card only through another pack's entry (a live row
+ * carries only the workflow name, so the pack cannot tell them apart at runtime). A failure naming
+ * a pack's step starts with that pack.
  */
-export function mapCheck(map: FactoryMap, pack: PackVersion): string[] {
+export function mapCheck(map: FactoryMap, packs: Record<Pack, PackVersion>): string[] {
   const failures: string[] = unknownValues(map);
-  const workflows = new Map(pack.workflows.map((w) => [w.name, nodesByPath(w.steps)]));
-  const covered = new Set<string>();
+  const trees = Object.fromEntries(
+    PACKS.map((pack) => [
+      pack,
+      new Map(packs[pack].workflows.map((w) => [w.name, nodesByPath(w.steps)])),
+    ]),
+  ) as Record<Pack, Map<string, Map<string, Step>>>;
+  const covered: Record<Pack, Set<string>> = { loop: new Set(), queue: new Set() };
   for (const card of map.cards) {
     for (const cover of card.covers) {
-      const nodes = workflows.get(cover.workflow);
+      const at = `${cover.pack} pack: ${card.title}`;
+      if (!PACKS.includes(cover.pack)) continue;
+      const nodes = trees[cover.pack].get(cover.workflow);
       if (nodes === undefined) {
-        failures.push(`${card.title} names workflow ${cover.workflow}, which the pack lacks`);
+        failures.push(`${at} names workflow ${cover.workflow}, which the pack lacks`);
         continue;
       }
-      covered.add(cover.workflow);
+      covered[cover.pack].add(cover.workflow);
       for (const step of cover.steps) {
         if (!nodes.has(step)) {
-          if (cover.workflow === 'archon-loop' && step === STEP_THE_PACK_LACKS) continue;
-          failures.push(`${card.title} names ${cover.workflow} ${step}, which the pack lacks`);
+          if (
+            cover.pack === 'loop' &&
+            cover.workflow === 'archon-loop' &&
+            step === STEP_THE_PACK_LACKS
+          ) {
+            continue;
+          }
+          failures.push(`${at} names ${cover.workflow} ${step}, which the pack lacks`);
         }
       }
     }
   }
   // A lane step the pack has goes through the per-step check below; one it lacks needs its own.
-  const loopNodes = workflows.get('archon-loop');
+  const loopNodes = trees.loop.get('archon-loop');
   for (const step of LOOP_LANE_STEPS) {
     if (loopNodes?.has(step)) continue;
     const cards = coveringCards(map, 'archon-loop', step);
     if (cards.length === 0) {
-      failures.push(`archon-loop ${step} is marked on a lap's row but covered by no card`);
+      failures.push(
+        `loop pack: archon-loop ${step} is marked on a lap's row but covered by no card`,
+      );
     }
     if (cards.length > 1) {
-      failures.push(`archon-loop ${step} is covered by ${cards.map((c) => c.title).join(' and ')}`);
+      failures.push(
+        `loop pack: archon-loop ${step} is covered by ${cards.map((c) => c.title).join(' and ')}`,
+      );
     }
   }
-  for (const workflow of covered) {
-    for (const path of (workflows.get(workflow) as Map<string, Step>).keys()) {
-      if (path.includes('.')) {
-        failures.push(`${workflow} ${path} holds a dot, which the home map reads as a loop group`);
-      }
-      const cards = coveringCards(map, workflow, path);
-      if (cards.length === 0) failures.push(`${workflow} ${path} is covered by no card`);
-      if (cards.length > 1) {
-        failures.push(
-          `${workflow} ${path} is covered by ${cards.map((c) => c.title).join(' and ')}`,
-        );
+  for (const pack of PACKS) {
+    for (const [workflow, nodes] of trees[pack]) {
+      for (const path of nodes.keys()) {
+        const cards = coveringCards(map, workflow, path);
+        const names = cards.map((c) => c.title).join(' and ');
+        if (!covered[pack].has(workflow)) {
+          if (cards.length > 0) {
+            failures.push(
+              `${pack} pack: ${workflow} ${path}, which no ${pack} card covers, counts on ${names}`,
+            );
+          }
+          continue;
+        }
+        if (path.includes('.')) {
+          failures.push(
+            `${pack} pack: ${workflow} ${path} holds a dot, which the home map reads as a loop group`,
+          );
+        }
+        if (cards.length === 0)
+          failures.push(`${pack} pack: ${workflow} ${path} is covered by no card`);
+        if (cards.length > 1)
+          failures.push(`${pack} pack: ${workflow} ${path} is covered by ${names}`);
       }
     }
   }
   return failures;
 }
 
+/** The queue pack and the factory package, as one pack: Archon's `sdlc` workflows and the factory's own. */
+export function parseQueuePack(root: string, templateDir: string): PackVersion {
+  const sdlc = parsePack(join(root, 'sdlc'), templateDir);
+  const factory = parsePack(join(root, 'factory'), templateDir);
+  const names = new Set(sdlc.workflows.map((w) => w.name));
+  const twice = factory.workflows.find((w) => names.has(w.name));
+  if (twice) throw new Error(`two workflows are named ${twice.name}`);
+  return {
+    ...sdlc,
+    workflows: [...sdlc.workflows, ...factory.workflows],
+    commands: [...sdlc.commands, ...factory.commands],
+    scripts: [...sdlc.scripts, ...factory.scripts],
+  };
+}
+
 export const main: Main = async (argv, deps) =>
   noArguments(argv, USAGE, deps) ??
   failing(deps, async () => {
-    const pack = parsePack(
-      join(deps.repoRoot, 'fixtures', 'pack', 'sdlc'),
-      join(deps.repoRoot, 'fixtures', 'factory-template'),
-    );
-    const failures = mapCheck(FACTORY_MAP, pack);
+    const template = join(deps.repoRoot, 'fixtures', 'factory-template');
+    const queueRoot = join(deps.repoRoot, 'fixtures', 'pack', 'queue');
+    const packs = {
+      loop: parsePack(join(deps.repoRoot, 'fixtures', 'pack', 'sdlc'), template),
+      queue: parseQueuePack(queueRoot, template),
+    };
+    const failures = mapCheck(FACTORY_MAP, packs);
     for (const failure of failures) deps.err(failure);
     if (failures.length > 0) {
       throw new Error(
-        `map:check: the factory map has drifted from fixtures/pack in ${failures.length} places`,
+        `map:check: the factory map has drifted from the packs in ${failures.length} places`,
       );
     }
     deps.out(

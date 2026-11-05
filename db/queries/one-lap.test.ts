@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { attemptsInOrder, type StepAttemptRow } from '../../app/lib/one-lap';
+import { attemptsInOrder, type StepAttemptRow, shownDispositions } from '../../app/lib/one-lap';
 import { seedLaps } from '../../scripts/fixture/seed-laps';
 import { eventData } from '../../scripts/fixture/write';
 import type { Db, Row } from '../../scripts/lib/db';
@@ -31,7 +31,7 @@ describe('one-lap on the seed', () => {
 
   afterAll(() => db.close());
 
-  test('the seed has the gate-refused lap with a holdout line these tests read', async () => {
+  test('the seed has the gate-refused lap, with an old holdout line, these tests read', async () => {
     const [refused] = await db.query(
       `SELECT l.run_id::text AS run_id FROM mc.laps l
        JOIN mc.lap_steps land ON land.run_id = l.run_id AND land.step_id = 'land'
@@ -63,6 +63,7 @@ describe('one-lap on the seed', () => {
         review_outcome: 'merge',
         review_delivers: 'all',
         dispositions: [],
+        hidden_lines: ['H1'],
         gate_status: 'completed',
         gate_outcome: 'refused',
         gate_reason: 'it changes .claude/settings.json, which only the owner changes',
@@ -146,50 +147,31 @@ describe('one-lap on the seed', () => {
     ]);
   });
 
-  test('the app-check lines are kind, verdict, evidence and a holdout scenario id, never text', async () => {
+  test('the app-check lines are kind, verdict and evidence, never text or an old holdout line', async () => {
     const lines = await lap('one-lap-checks', LAP_RUN);
     expect(lines).toEqual(
       await db.query(
-        `SELECT position, line_id, kind, verdict, evidence_count, scenario_id
-         FROM mc.app_check_lines WHERE run_id = $1 ORDER BY position`,
+        `SELECT position, line_id, kind, verdict, evidence_count
+         FROM mc.app_check_lines WHERE run_id = $1 AND kind <> 'holdout' ORDER BY position`,
         [LAP_RUN],
       ),
     );
-    expect(lines.some((l) => l.kind === 'holdout' && l.scenario_id === 'H-01')).toBe(true);
+    expect(lines.length).toBeGreaterThan(0);
     for (const line of lines) expect(line).not.toHaveProperty('pre_existing');
   });
 
-  test("a sent-back lap's review names the line each disposition answers", async () => {
+  test("a sent-back lap's review shows no disposition for the old holdout line it blocks on", async () => {
     const [sentBack] = await lap('one-lap', '5eed0001-0000-4000-8000-000000000001');
     expect(sentBack.review_outcome).toBe('sent-back');
-    expect(sentBack.dispositions).toEqual([{ line: 'H2', action: 'blocks' }]);
+    expect(shownDispositions(sentBack as never)).toEqual([]);
   });
 
-  test("the app-check line a sent-back lap's review blocks on is labelled with its id", async () => {
-    const answered = (await lap('one-lap-checks', '5eed0001-0000-4000-8000-000000000001')).filter(
-      (l) => l.line_id === 'H2',
-    );
-    expect(answered).toEqual([
-      {
-        position: 4,
-        line_id: 'H2',
-        kind: 'holdout',
-        verdict: 'FAIL',
-        evidence_count: 1,
-        scenario_id: 'H-02',
-      },
-    ]);
-  });
-
-  test("every seed lap's review disposition names exactly one of its app-check lines", async () => {
-    let checked = 0;
+  test("every seed lap's shown review disposition names exactly one shown app-check line", async () => {
     for (const { runId } of seedLaps(seed)) {
       const [header] = await lap('one-lap', runId);
-      const dispositions = (header?.dispositions ?? []) as { line: string | null }[];
       const lines = await lap('one-lap-checks', runId);
-      if (dispositions.length === 0 || lines.length === 0) continue;
-      checked += 1;
-      for (const { line } of dispositions) {
+      for (const { line } of shownDispositions(header as never)) {
+        if (line === null) continue;
         expect([runId, line, lines.filter((l) => l.line_id === line).length]).toEqual([
           runId,
           line,
@@ -197,7 +179,12 @@ describe('one-lap on the seed', () => {
         ]);
       }
     }
-    expect(checked).toBeGreaterThanOrEqual(2);
+  });
+
+  test("the old holdout line a sent-back lap's review blocks on is not shown", async () => {
+    const lines = await lap('one-lap-checks', '5eed0001-0000-4000-8000-000000000001');
+    expect(lines.filter((l) => l.line_id === 'H2')).toEqual([]);
+    expect(lines.filter((l) => l.kind === 'holdout')).toEqual([]);
   });
 
   test('another factory and a malformed run id find no lap, without an error', async () => {

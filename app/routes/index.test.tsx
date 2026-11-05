@@ -60,6 +60,7 @@ const lap = (run: string, step: string): HomeMapRow => ({
   title: null,
   url: null,
   at: null,
+  prs: null,
 });
 
 const cardTag = (html: string, id: string) =>
@@ -113,6 +114,7 @@ test('queued, failing, waiting and merged chips sit on Build, App check, the Man
               title: 't',
               url: null,
               at: null,
+              prs: null,
             },
             {
               kind: 'merged',
@@ -123,6 +125,7 @@ test('queued, failing, waiting and merged chips sit on Build, App check, the Man
               title: null,
               url: null,
               at: new Date(2026, 10, 3, 9),
+              prs: null,
             },
           ],
           workable: [{ kind: 'issue', issue_number: 2, title: 'w', url: null, run_id: null }],
@@ -350,10 +353,48 @@ test('Behind the scenes shows each workflow its own YAML path, and none for a wo
   expect(block('wf-a')).not.toContain('workflows/b.yaml');
   expect(block('wf-b')).toContain('workflows/b.yaml');
   expect(workflowFile(steps, 'missing')).toBeUndefined();
+  expect(html).not.toContain('data-steps-missing');
+  const lacking = renderToStaticMarkup(
+    <MemoryRouter>
+      <Behind
+        card={{
+          ...card,
+          covers: [{ pack: 'loop' as const, workflow: 'wf-a', steps: ['one', 'gone'] }],
+        }}
+        at={null}
+        steps={steps}
+        failed={false}
+      />
+    </MemoryRouter>,
+  );
+  expect(lacking).toContain('are not in this version');
 });
 
 test('the home clock turns over at the next local midnight', () => {
   const lateEvening = new Date(2026, 10, 3, 23, 59, 30);
   expect(msToLocalMidnight(lateEvening)).toBe(30_000);
   expect(msToLocalMidnight(new Date(2026, 10, 4, 0, 0, 0))).toBeGreaterThan(23 * 3_600_000);
+});
+
+test('the Work order card counts its open work orders and says nothing with none; Right now lists each', () => {
+  const orders = [{ name: 'combat', open_count: 2, merged_count: 1, lands_on: 'staging' }];
+  const chips = (html: string) => {
+    const start = html.indexOf('data-card="order"');
+    const end = html.indexOf('data-card=', start + 1);
+    return [...html.slice(start, end).matchAll(/data-chip="(\w+)"[^>]*>([^<]*)</g)].map(
+      (m) => `${m[1]} ${m[2]}`,
+    );
+  };
+  expect(chips(render([], 'ready', { orders }))).toEqual(['orders 1 open']);
+  expect(render([], 'ready', { orders: [] })).not.toContain('data-chip="orders"');
+
+  const right = textOf(
+    renderToStaticMarkup(
+      <MemoryRouter>
+        <RightNow live={{ here: [], orders }} factory="here" />
+      </MemoryRouter>,
+    ),
+  );
+  expect(right).toContain('combat');
+  expect(right).toContain('2 open, 1 merged, lands on staging');
 });

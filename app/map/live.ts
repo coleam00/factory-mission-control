@@ -1,7 +1,7 @@
 /**
  * What the factory map's chips count (PRD 4.1 "Live"), from the live rows: the laps on each card
- * and today's merges from `home-map`, Build's workable issues from `health-workable` and the
- * owner's open items from `owner-queue`. Every chip keeps the items it counted,
+ * and today's merges from `home-map`, Build's workable issues from `health-workable`, the
+ * owner's open items from `owner-queue` and the work orders with open issues from `work-orders`. Every chip keeps the items it counted,
  * which the details strip's Right now lists (invariant 4). Pure, no React.
  */
 import type { HealthWorkableRow } from '../lib/health';
@@ -11,19 +11,21 @@ import { type Chip, cardForStep, type FactoryMap, stepPath } from './factory-map
 
 /** One row of `db/queries/home-map.sql`. */
 export interface HomeMapRow {
-  kind: 'version' | 'lap' | 'failing' | 'merged';
+  kind: 'version' | 'lap' | 'failing' | 'waiting' | 'queues' | 'merged';
   /** A lap's run. */
   run_id: string | null;
   /** A lap's workflow. */
   workflow: string | null;
   /** A lap's running steps by Archon's step id, newest first; null while none runs. */
   steps: string[] | null;
-  /** A lap's claimed issue, or a failing pull request. */
+  /** A lap's issue (its claim, else its number input), or a failing pull request. */
   number: number | null;
   title: string | null;
   url: string | null;
-  /** When a merged lap's land step finished. */
+  /** When a merged lap's land or record step finished. */
   at: Date | null;
+  /** A merge-queue lap's merged pull requests, as the JSON text of an array of numbers. */
+  prs: string | null;
 }
 
 /** A lap on the map: its run, its claimed issue, and the step it counts on. */
@@ -37,16 +39,26 @@ export interface MapLap {
 /** An issue, a pull request or a question a chip counts. */
 export interface MapItem {
   key: string;
-  number: number;
+  /** Null for an attention item whose run names no issue. */
+  number: number | null;
   title: string;
   url: string | null;
 }
 
-/** A merge a chip counts: the lap that landed it. */
+/** A merge a chip counts: the lap that landed it, and the issue or pull request it merged. */
 export interface MapMerge {
   run: string;
-  issue: number | null;
+  number: number | null;
   at: Date;
+}
+
+/** One row of `db/queries/work-orders.sql`: a work order with an open issue. */
+export interface WorkOrderRow {
+  name: string;
+  open_count: number;
+  merged_count: number;
+  /** The `lands-on:<target>` label its issues carry, when one does. */
+  lands_on: string | null;
 }
 
 export interface CardLive {
@@ -55,6 +67,7 @@ export interface CardLive {
   failing?: MapItem[];
   waiting?: MapItem[];
   merged?: MapMerge[];
+  orders?: WorkOrderRow[];
   /** Chips whose source failed: not zero, unknown, so drawn as such. */
   unavailable?: Chip[];
 }
@@ -63,8 +76,9 @@ export interface MapSources {
   map: readonly HomeMapRow[];
   workable?: readonly HealthWorkableRow[];
   owner?: readonly OwnerQueueRow[];
+  orders?: readonly WorkOrderRow[];
   /** A source in `error` keeps its rows, but its chip is unavailable, never a count. */
-  states?: { workable?: PanelState; owner?: PanelState };
+  states?: { workable?: PanelState; owner?: PanelState; orders?: PanelState };
 }
 
 const depth = (step: string) => stepPath(step).split('/').length;
@@ -83,24 +97,89 @@ const sameLocalDay = (a: Date, b: Date) =>
   a.getMonth() === b.getMonth() &&
   a.getDate() === b.getDate();
 
-/** The laps whose land step merged on `now`'s local day, newest first. */
-export function mergedToday(rows: readonly HomeMapRow[], now: Date): MapMerge[] {
-  return rows
-    .flatMap((row) =>
-      row.kind === 'merged' && row.run_id !== null && row.at !== null && sameLocalDay(row.at, now)
-        ? [{ run: row.run_id, issue: row.number, at: row.at }]
-        : [],
-    )
-    .sort((a, b) => b.at.getTime() - a.at.getTime() || a.run.localeCompare(b.run));
+/** The pull requests of a merge-queue lap's list; anything but an array of positive integers gives none. */
+function mergedPulls(prs: string): number[] {
+  try {
+    const parsed: unknown = JSON.parse(prs);
+    return Array.isArray(parsed)
+      ? parsed.filter((n): n is number => Number.isInteger(n) && n > 0)
+      : [];
+  } catch {
+    return [];
+  }
 }
 
-const byNumber = (a: MapItem, b: MapItem) => a.number - b.number || a.key.localeCompare(b.key);
+/**
+ * The merges of `now`'s local day, newest first: a loop lap whose land step merged is one, a
+ * merge-queue lap is one per pull request its record step read back as merged.
+ */
+export function mergedToday(rows: readonly HomeMapRow[], now: Date): MapMerge[] {
+  return rows
+    .flatMap((row): MapMerge[] => {
+      if (row.kind !== 'merged' || row.run_id === null || row.at === null) return [];
+      if (!sameLocalDay(row.at, now)) return [];
+      const { run_id: run, at } = row;
+      if (row.prs === null) return [{ run, number: row.number, at }];
+      return mergedPulls(row.prs).map((number) => ({ run, number, at }));
+    })
+    .sort(
+      (a, b) =>
+        b.at.getTime() - a.at.getTime() ||
+        a.run.localeCompare(b.run) ||
+        (a.number ?? 0) - (b.number ?? 0),
+    );
+}
+
+const byNumber = (a: MapItem, b: MapItem) =>
+  (a.number ?? Number.POSITIVE_INFINITY) - (b.number ?? Number.POSITIVE_INFINITY) ||
+  a.key.localeCompare(b.key);
+
+/** Open Archon attention items: paused runs waiting on a person, named by their issue when they have one. */
+function attentionItems(map: readonly HomeMapRow[]): MapItem[] {
+  return map
+    .filter((r) => r.kind === 'waiting' && r.run_id !== null)
+    .map((r) => ({
+      key: `attention-${r.run_id}`,
+      number: r.number,
+      title: r.title ?? `${r.workflow} run ${String(r.run_id).slice(0, 8)}`,
+      url: r.url,
+    }))
+    .sort(byNumber);
+}
+
+/**
+ * What the Manager's waiting chip counts. A factory on the queues (it has run an intake or build
+ * queue) waits on attention items alone; one on the old loop on its owner's open items, as ever.
+ */
+function waitingItems({
+  map,
+  owner,
+  states = {},
+}: MapSources): MapItem[] | 'unavailable' | undefined {
+  const attention = attentionItems(map);
+  if (map.some((r) => r.kind === 'queues')) return attention;
+  if (states.owner === 'error') return 'unavailable';
+  if (!owner) return undefined;
+  return [
+    ...owner.map((r) => ({
+      key:
+        r.kind === 'issue'
+          ? `issue-${r.issue_number}`
+          : `question-${r.issue_number}-${r.question_number}`,
+      number: r.issue_number,
+      title: r.title,
+      url: r.url,
+    })),
+    ...attention,
+  ].sort(byNumber);
+}
 
 /** The items each chip kind counts; a source not delivered yet counts nothing and draws no chip. */
 function chipItems(
-  { map, workable, owner, states = {} }: MapSources,
+  sources: MapSources,
   now: Date,
 ): { [K in Chip]?: Required<CardLive>[K] | 'unavailable' } {
+  const { map, workable, orders, states = {} } = sources;
   return {
     failing: map
       .filter((r) => r.kind === 'failing' && r.number !== null)
@@ -124,22 +203,10 @@ function chipItems(
           }))
           .sort(byNumber),
       }),
-    ...(states.owner === 'error' && { waiting: 'unavailable' as const }),
-    ...(owner &&
-      states.owner !== 'error' && {
-        waiting: owner
-          .map((r) => ({
-            key:
-              r.kind === 'issue'
-                ? `issue-${r.issue_number}`
-                : `question-${r.issue_number}-${r.question_number}`,
-            number: r.issue_number,
-            title: r.title,
-            url: r.url,
-          }))
-          .sort(byNumber),
-      }),
+    waiting: waitingItems(sources),
     merged: mergedToday(map, now),
+    ...(states.orders === 'error' && { orders: 'unavailable' as const }),
+    ...(orders && states.orders !== 'error' && { orders: [...orders] }),
   };
 }
 

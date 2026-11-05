@@ -1,6 +1,6 @@
 import { type ReactElement, type ReactNode, useEffect, useMemo, useState } from 'react';
 import { formatCost, formatCount, formatElapsed, shortRunId } from '../lib/format';
-import { costOf, durationOf, OUTCOME_LABEL, OUTCOME_TOKEN, since, stepLabel } from '../lib/laps';
+import { costOf, durationOf, OUTCOME_LABEL, since, stepLabel } from '../lib/laps';
 import {
   actionText,
   attemptSeconds,
@@ -15,6 +15,8 @@ import {
   type OneLapRow,
   prNumber,
   pullUrl,
+  shownDispositions,
+  LAP_OUTCOME_TOKEN,
   REVIEW_TOKEN,
   STEP_STATUS_TOKEN,
   type StepAttemptRow,
@@ -127,7 +129,7 @@ export function LapHeaderBody({
     ? 'var(--running)'
     : outcome === null
       ? undefined
-      : `var(${OUTCOME_TOKEN[outcome]})`;
+      : `var(${LAP_OUTCOME_TOKEN[outcome]})`;
   // The console's grey is too dim for text on a surface; its dot keeps it.
   const text = outcome === 'nothing' ? undefined : color;
   const label = running ? 'Running' : outcome === null ? lap.status : OUTCOME_LABEL[outcome];
@@ -224,6 +226,7 @@ function Review({
   checks: readonly CheckLineRow[] | undefined;
 }): ReactElement {
   const outcome = lap.review_outcome;
+  const dispositions = shownDispositions(lap);
   return (
     <section
       data-review
@@ -246,11 +249,11 @@ function Review({
             </Field>
             <Field label="Delivers">{lap.review_delivers ?? <None />}</Field>
           </dl>
-          {(lap.dispositions ?? []).length === 0 ? (
+          {dispositions.length === 0 ? (
             <p className="text-sm text-text-secondary">No disposition.</p>
           ) : (
             <ol className="grid gap-1.5">
-              {(lap.dispositions ?? []).map((d, i) => {
+              {dispositions.map((d, i) => {
                 const action = actionText(d.action);
                 const answered = checks === undefined ? undefined : checkLineFor(d.line, checks);
                 return (
@@ -313,13 +316,13 @@ function Gate({ lap }: { lap: OneLapRow }): ReactElement {
 }
 
 /** A panel's rows as it last delivered them. */
-interface Lifted<Row> {
+export interface Lifted<Row> {
   rows: readonly Row[] | undefined;
   state: PanelState;
 }
 
 /** Hands a panel's rows up to the screen that draws them with another panel's rows. */
-function Lift<Row>({
+export function Lift<Row>({
   rows,
   state,
   onChange,
@@ -522,8 +525,7 @@ export function StepList({
 }
 
 /**
- * The lap's app-check lines: the report's line id, kind, verdict, evidence count, and a holdout by
- * its scenario id.
+ * The lap's app-check lines: the report's line id, kind, verdict and evidence count.
  */
 export function LapChecks({
   factory,
@@ -570,13 +572,11 @@ export function CheckList({ rows }: { rows: readonly CheckLineRow[] }): ReactEle
           data-kind={line.kind}
           data-verdict={line.verdict}
           data-evidence={line.evidence_count}
-          data-scenario={line.scenario_id ?? undefined}
-          className={`${MONO} grid grid-cols-[32px_40px_minmax(0,1fr)_auto] items-center gap-x-[18px] gap-y-1 border-b border-border/40 px-[18px] py-[11px] last:border-b-0 sm:grid-cols-[32px_40px_96px_minmax(0,1fr)_72px_120px]`}
+          className={`${MONO} grid grid-cols-[32px_40px_minmax(0,1fr)_auto] items-center gap-x-[18px] gap-y-1 border-b border-border/40 px-[18px] py-[11px] last:border-b-0 sm:grid-cols-[32px_40px_minmax(0,1fr)_72px_120px]`}
         >
           <span className="text-text-secondary">{line.position}</span>
           <span className="text-text-primary">{line.line_id ?? ''}</span>
           <span className="text-text-primary">{line.kind}</span>
-          <span className="text-text-secondary">{line.scenario_id ?? ''}</span>
           <span
             className={`${TAG} text-text-secondary`}
             style={tokenColor(VERDICT_TOKEN[line.verdict])}

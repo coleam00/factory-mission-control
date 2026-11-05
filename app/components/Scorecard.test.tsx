@@ -31,7 +31,6 @@ function laps(digest: string, n: number, merged: number): ScorecardRow[] {
         route: null,
         outcome: i < merged ? 'merged' : 'refused',
         reason: i < merged ? 'Merged.' : 'it changes ci.yml',
-        holdout_catches: 0,
         pin_sha: null,
       },
       {
@@ -42,7 +41,6 @@ function laps(digest: string, n: number, merged: number): ScorecardRow[] {
         route: null,
         outcome: null,
         reason: null,
-        holdout_catches: 0,
         pin_sha: null,
       },
     ];
@@ -95,7 +93,7 @@ const differences = (html: string) =>
 
 test('every measure carries its key, its plain value and its laps, and lists exactly those laps', () => {
   const shown = cells(render(laps(V1, 12, 3), V1));
-  expect(shown).toHaveLength(12);
+  expect(shown).toHaveLength(11);
   for (const cell of shown) {
     expect(cell.value).toMatch(/^\d+(\.\d{1,4})?$/);
     expect(cell.summary).toBe(cell.laps);
@@ -128,7 +126,6 @@ test('costs read as the laps screen writes them, counts whole, ratios without tr
     lap_hours_per_merge: '2',
     app_check_share: '0.0006',
     cost_per_merge: '$2.00',
-    new_holdout_catches: '0',
   });
   expect(text('b')).toMatchObject({
     merges: '4',
@@ -149,7 +146,6 @@ test('costs read as the laps screen writes them, counts whole, ratios without tr
     lap_hours_per_merge: '-0.5',
     app_check_share: '0',
     cost_per_merge: '-$0.50',
-    new_holdout_catches: '0',
   });
   for (const d of differences(html)) expect(shownText(d.body)).toBe(d.value);
 });
@@ -174,18 +170,39 @@ test('with no merge the per-merge measures show n/a', () => {
 
 test('a side under 10 laps labels each difference not yet meaningful; 12 against 12 does not', () => {
   const thin = differences(render([...laps(V1, 12, 3), ...laps(V2, 9, 4)], V1, V2));
-  expect(thin).toHaveLength(12);
+  expect(thin).toHaveLength(11);
   for (const d of thin) {
     expect(d.meaningful).toBe('false');
     expect(d.body).toContain('not yet meaningful');
+    expect(d.body).not.toContain('text-warning');
   }
   const both = differences(render([...laps(V1, 12, 3), ...laps(V2, 12, 4)], V1, V2));
-  expect(both).toHaveLength(12);
+  expect(both).toHaveLength(11);
   for (const d of both) {
     expect(d.meaningful).toBe('true');
     expect(d.body).not.toContain('not yet meaningful');
   }
   expect(both.find((d) => d.value === '+1')).toBeDefined();
+});
+
+test('10 laps a side label the time measures like the rest, though some laps are unfinished', () => {
+  const unfinished = laps(V2, 10, 4).map((row) =>
+    row.run_id === 'b2b2-09' && 'completed_at' in row ? { ...row, completed_at: null } : row,
+  );
+  const shown = differences(render([...laps(V1, 12, 3), ...unfinished], V1, V2));
+  expect(shown).toHaveLength(11);
+  for (const d of shown) {
+    expect(d.meaningful).toBe('true');
+    expect(d.body).not.toContain('not yet meaningful');
+  }
+});
+
+test('a worse difference not yet meaningful is neutral, not red; a meaningful one is red', () => {
+  const thin = differences(render([...laps(V1, 12, 6), ...laps(V2, 9, 1)], V1, V2));
+  expect(thin.every((d) => d.body.includes('not yet meaningful'))).toBe(true);
+  expect(thin.some((d) => d.body.includes('text-error'))).toBe(false);
+  const full = differences(render([...laps(V1, 12, 6), ...laps(V2, 12, 1)], V1, V2));
+  expect(full.some((d) => d.body.includes('text-error'))).toBe(true);
 });
 
 test('with no version picked, it opens on the newest version with laps and says which', () => {
@@ -226,7 +243,7 @@ test('a version no lap ran is still compared: 0 laps, n/a where undefined, not y
   const rows = [...laps(V1, 12, 3), version(V2, '2026-10-09T00:00:00Z', null)];
   const html = render(rows, V1, V2);
   const shown = cells(html);
-  expect(shown).toHaveLength(24);
+  expect(shown).toHaveLength(22);
   const a = shown.filter((c) => c.version === 'a');
   const b = shown.filter((c) => c.version === 'b');
   expect(a.find((c) => c.measure === 'merges')).toMatchObject({ value: '3', laps: 12 });
@@ -234,7 +251,7 @@ test('a version no lap ran is still compared: 0 laps, n/a where undefined, not y
     expect(cell).toMatchObject({ laps: 0, summary: 0, listed: 0 });
   }
   const value = (measure: string) => b.find((c) => c.measure === measure)?.value;
-  for (const measure of ['laps', 'merges', 'empty_laps', 'active_hours', 'new_holdout_catches']) {
+  for (const measure of ['laps', 'merges', 'empty_laps', 'active_hours']) {
     expect(value(measure)).toBe('0');
   }
   for (const measure of [
@@ -246,7 +263,7 @@ test('a version no lap ran is still compared: 0 laps, n/a where undefined, not y
     expect(value(measure)).toBe('n/a');
   }
   const diffs = differences(html);
-  expect(diffs).toHaveLength(12);
+  expect(diffs).toHaveLength(11);
   for (const d of diffs) {
     expect(d.meaningful).toBe('false');
     expect(d.body).toContain('not yet meaningful');
@@ -381,4 +398,17 @@ test('each version is named by its version row, as the versions screen names it'
   expect(header(notAVersion, 'a')?.[1]).toBeUndefined();
   expect(header(notAVersion, 'a')?.[3]).toContain('not recorded');
   expect(header(notAVersion, 'a')?.[3]).not.toContain('first run');
+});
+
+test('a difference not yet meaningful is the neutral chip, better or worse; meaningful ones keep green and red', () => {
+  const thinWorse = differences(render([...laps(V1, 12, 6), ...laps(V2, 9, 1)], V1, V2));
+  const thinBetter = differences(render([...laps(V1, 12, 1), ...laps(V2, 9, 6)], V1, V2));
+  for (const d of [...thinWorse, ...thinBetter]) {
+    expect(d.body).toContain('not yet meaningful');
+    expect(d.body).not.toMatch(/text-error|text-success|--error|--success|text-warning/);
+  }
+  const worse = differences(render([...laps(V1, 12, 6), ...laps(V2, 12, 1)], V1, V2));
+  const better = differences(render([...laps(V1, 12, 1), ...laps(V2, 12, 6)], V1, V2));
+  expect(worse.some((d) => d.body.includes('text-error'))).toBe(true);
+  expect(better.some((d) => d.body.includes('text-success'))).toBe(true);
 });

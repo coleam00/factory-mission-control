@@ -1,6 +1,8 @@
 import { describe, expect, test } from 'bun:test';
-import { readFileSync } from 'node:fs';
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
+import { archRows } from '../scripts/arch-parse';
 import { parsePack, type Step, type Workflow } from './pack';
 
 const repoRoot = resolve(import.meta.dir, '..');
@@ -180,5 +182,80 @@ describe('the pack', () => {
 
   test('parsing twice gives deep-equal output', () => {
     expect(parsePack(packDir, templateDir)).toEqual(parsed);
+  });
+});
+
+describe('a queue-style pack', () => {
+  test('reads a wait node as kind wait, and tells an inline script from a named one', () => {
+    const root = mkdtempSync(join(tmpdir(), 'pack-wait-'));
+    try {
+      mkdirSync(join(root, 'q', 'scripts'), { recursive: true });
+      writeFileSync(join(root, 'q', 'scripts', 'facts.ts'), 'console.log(1);\n');
+      writeFileSync(
+        join(root, 'q', 'q.yaml'),
+        [
+          'name: q',
+          'nodes:',
+          '  - id: facts',
+          '    script: facts',
+          '    runtime: bun',
+          '  - id: outcome',
+          '    script: console.log(JSON.stringify(1))',
+          '    runtime: bun',
+          '  - id: ask',
+          '    wait: attention',
+          '',
+        ].join('\n'),
+      );
+      const [q] = parsePack(root, templateDir).workflows;
+      const [facts, outcome, ask] = q?.steps ?? [];
+      expect(facts?.scriptFile).toBe('q/scripts/facts.ts');
+      expect(outcome?.scriptFile).toBeNull();
+      expect(ask?.kind).toBe('wait');
+      expect(ask?.model).toBeNull();
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('the policy files under .shared', () => {
+  const policy = '.shared/policy/build.md';
+  const texts = (dir: string) => archRows(parsePack(dir, templateDir)).arch_texts;
+
+  test('are recorded as architecture texts, apart from command files', () => {
+    expect(texts(packDir).map((t) => t.path)).toContain(policy);
+    expect(parsed.commands.map((c) => c.path)).not.toContain(policy);
+    expect(parsed.scripts.map((s) => s.path)).not.toContain(policy);
+  });
+
+  test('a one-line edit changes the recorded texts, and an untouched copy does not', () => {
+    const copy = mkdtempSync(join(tmpdir(), 'pack-'));
+    try {
+      cpSync(packDir, join(copy, 'sdlc'), { recursive: true });
+      const dir = join(copy, 'sdlc');
+      expect(texts(dir)).toEqual(texts(packDir));
+      const file = join(dir, policy);
+      writeFileSync(
+        file,
+        `${readFileSync(file, 'utf8')}
+One more rule.
+`,
+      );
+      const changed = texts(dir).filter((t, i) => t.text !== texts(packDir)[i]?.text);
+      expect(changed.map((t) => t.path)).toEqual([policy]);
+    } finally {
+      rmSync(copy, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('sub-workflow nodes', () => {
+  test('a workflow: node parses as kind workflow and runs no agent model', () => {
+    const queue = parsePack(join(repoRoot, 'fixtures', 'pack', 'queue', 'sdlc'), templateDir);
+    const metrics = queue.workflows.find((w) => w.name === 'archon-metrics-test-value');
+    const judge = step(metrics?.steps ?? [], 'judge');
+    expect(judge.kind).toBe('workflow');
+    expect(judge.model).toBeNull();
   });
 });

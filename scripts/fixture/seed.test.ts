@@ -5,7 +5,7 @@ import { migrationFiles, testDb } from '../../db/test-db';
 import { REPO_ROOT } from '../lib/cli';
 import type { Db } from '../lib/db';
 import { runMigrations } from '../migrate';
-import { buildSeed, SECOND_FACTORY, SEED_CODEBASE } from './seed';
+import { buildSeed, QUEUE_FACTORY, SECOND_FACTORY, SEED_CODEBASE } from './seed';
 import { markerHits, minimums, scorecard, tableCounts } from './seed-report';
 import { writeRow } from './write';
 
@@ -144,6 +144,7 @@ test("the seed holds a second factory with one running lap, kept out of mission-
   const strip = readFileSync(join(REPO_ROOT, 'db', 'queries', 'status-strip.sql'), 'utf8');
   expect(await db.query('SELECT name FROM mc.factories ORDER BY name')).toEqual([
     { name: 'mission-control' },
+    { name: QUEUE_FACTORY.name },
     { name: SECOND_FACTORY.name },
   ]);
   expect(
@@ -161,4 +162,57 @@ test("the seed holds a second factory with one running lap, kept out of mission-
     [SEED_CODEBASE],
   );
   expect(await db.query(strip, ['mission-control'])).toEqual([own]);
+});
+
+test('the seed holds a queue factory: three running build-queue laps by number input, one waiting, one merged', async () => {
+  expect(await db.query('SELECT name FROM mc.factories ORDER BY name')).toEqual([
+    { name: 'mission-control' },
+    { name: QUEUE_FACTORY.name },
+    { name: SECOND_FACTORY.name },
+  ]);
+  expect(
+    await db.query(
+      `SELECT workflow_name, status, issue_number, attention_open FROM mc.laps
+        WHERE factory = $1 ORDER BY workflow_name, status, issue_number`,
+      [QUEUE_FACTORY.name],
+    ),
+  ).toEqual([
+    {
+      workflow_name: 'archon-build-queue',
+      status: 'running',
+      issue_number: 401,
+      attention_open: false,
+    },
+    {
+      workflow_name: 'archon-build-queue',
+      status: 'running',
+      issue_number: 402,
+      attention_open: false,
+    },
+    {
+      workflow_name: 'archon-build-queue',
+      status: 'running',
+      issue_number: 403,
+      attention_open: false,
+    },
+    {
+      workflow_name: 'archon-merge-queue',
+      status: 'completed',
+      issue_number: null,
+      attention_open: false,
+    },
+    {
+      workflow_name: 'archon-merge-queue',
+      status: 'paused',
+      issue_number: null,
+      attention_open: true,
+    },
+  ]);
+  expect(
+    await db.query(
+      `SELECT count(*)::int AS n FROM mc.lap_steps s JOIN mc.laps l USING (run_id)
+      WHERE l.factory = $1 AND s.status = 'running'`,
+      [QUEUE_FACTORY.name],
+    ),
+  ).toEqual([{ n: 0 }]);
 });

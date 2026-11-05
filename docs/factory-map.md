@@ -7,7 +7,7 @@ The home screen (`/f/<factory>`, and `/` for the selected factory) draws the fac
 
 `app/map/factory-map.json` holds the map: its caption, every card (id, role, kind label, title,
 one-line text, position, optional width, the chips it carries, the workflows and steps it covers,
-and its details text), every line (from, to, style `flow`, `ask`, `loop` or `holdout`, an optional
+and its details text), every line (from, to, style `flow`, `ask` or `loop`, an optional
 label and, for the routed lines, explicit points), the dashed group, the tour order and the legend.
 Change what the map says there; the React components (`app/components/FactoryMap.tsx`,
 `MapDetails.tsx`) only draw it.
@@ -15,7 +15,10 @@ Change what the map says there; the React components (`app/components/FactoryMap
 A card's `covers` lists, per workflow, the steps it covers. Each entry covers that step and every
 step under it; a step under two entries belongs to the deeper one, so Build covers `ship` and
 Review the two review rounds inside it. Each entry's step link opens that step's place in the
-covered workflow.
+covered workflow. Each entry names its `pack`: `loop` for the old `archon-loop` pack
+(`fixtures/pack/sdlc`), `queue` for Archon's queue workflows and the factory package
+(`fixtures/pack/queue`). A live row carries only a workflow name, so counting ignores `pack`; the
+map check is what keeps the two sets apart.
 
 ## Size and readability (owner deviation from the mockup)
 
@@ -39,46 +42,64 @@ fits the whole map, at any width.
 
 ## The map check
 
-`bun run map:check` (part of `bun run check`) parses `fixtures/pack/` with the architecture parser,
+`bun run map:check` (part of `bun run check`) parses both packs with the architecture parser,
 offline, and fails, naming the step, when a step of a workflow a card covers is covered by no card
-or by two, when a card names a workflow or a step the pack lacks, when an entry's screen is not
-the step's own, when a role, chip, line style or legend role is outside the closed sets, or when a
-covered step's pack path holds a dot (the map reads a step's path by its dots). It also fails when a
+or by two, when a card names a workflow or a step its pack lacks, when an entry's screen is not
+the step's own, when a role, chip, line style, legend role or pack is outside the closed sets, or
+when a covered step's pack path holds a dot (the map reads a step's path by its dots). A failure
+that names a pack's step starts `loop pack: ` or `queue pack: `. A step of one pack that counts on a
+card only through the other pack's entry (the packs share workflow names such as
+`archon-merge-queue`) also fails, since a live row cannot tell them apart. It also fails when a
 step a lap's row marks (`LANE_STEPS`) is covered by no card or by two. The loop's `handoff` step is
 missing from the pack's copy of the loop, so App check may cover it without the pack having it; it
-is the one step a card may name that the pack lacks, and it is held to exactly one card. When the
+is the one step a card may name that the pack lacks, and it is held to exactly one card. When a
 pack changes, update `covers` until the check passes.
+
+The queue pack is the snapshot `fixtures/pack/queue/`: `sdlc/` is `.archon/workflows/sdlc` of
+coleam00/Archon and `factory/` is `.archon/workflows/factory` of coleam00/ai-software-factory, at
+the commits this factory runs, with `ARCHON_COMMIT` and `FACTORY_COMMIT` beside them.
 
 ## Live counts
 
-The cards' chips come from three live queries: `home-map` (each running run of the factory with its
-running steps, the open pull requests whose latest app check failed, the laps whose land step
-merged with when it finished, and whether the version the address names is recorded),
-`health-workable` and `owner-queue`.
+The cards' chips come from four live queries: `home-map` (each running run of the factory with its
+running steps and issue, the runs waiting on attention, whether the factory is on the queues, the
+open pull requests whose latest app check failed, the merges with when they finished, and whether
+the version the address names is recorded),
+`health-workable`, `owner-queue` and `work-orders` (the distinct `work-order:<name>` labels on the
+factory's open issues, from the mirrored label data; it writes nothing).
 
+- A run's issue is its claim comment's issue on the old loop, and on the queues its `number` input
+  (a pull request's number, when the run's `kind` input says so, is no issue).
 - "<n> here" on any card: a run counts once, on the card covering its deepest running step (the
   newest of those as deep). A loop group's iteration of a step (`rounds.review__policy`) counts as
   that step (`rounds/review/policy`). A card with runs on it carries `data-live-count` above 0.
 - "<n> queued" on Build: the workable issues, as Health counts them.
+- "<n> open" on Work order: the work orders with an open issue, nothing when there are none. Right now
+  lists each with its open and merged issue counts and its `lands-on:<target>` label when one exists.
 - "<n> failing" on App check: open pull requests whose latest app check came out FAIL.
-- "<n> waiting" on the Manager: open owner questions and open `needs-owner` issues.
+- "<n> waiting" on the Manager: open Archon attention items (paused runs waiting on a person).
+  A factory not on the queues, one that has run neither `archon-intake` nor `archon-build-queue`,
+  also counts open owner questions and open `needs-owner` issues; on the queues those are not
+  counted.
 - "<n> merged" on Shipped: laps whose land step merged today, the browser's local day, counted
-  from the moment that step finished, not when the run ends. The count moves on at local midnight.
+  from the moment that step finished, not when the run ends, and each pull request an
+  `archon-merge-queue` run's `record` step read back as merged. The count moves on at local midnight.
 
 A chip of 0 is not drawn. A chip appears once its query has answered. A chip whose query failed
-shows as `? queued` or `? waiting`, never as a count; Right now says the count is unavailable, and
+shows as `? queued`, `? orders` or `? waiting`, never as a count; Right now says the count is unavailable, and
 Behind the scenes says the pinned steps are unavailable when `step-detail` failed.
 
 ## Clicking a card
 
 A card keeps itself and the cards a line joins to it lit and dims the rest; its details strip opens
 under the map. Right now lists the runs and items the card's chips count, each opening its page;
-a lap with a claimed issue also links that issue on GitHub, until the ticket page exists (#317).
+an open attention item is listed there too, and a lap with an issue also links that issue on GitHub, until the ticket page exists (#317).
 Behind the scenes lists, per workflow, its YAML path in the pinned pack (from the parsed
 architecture, and none when the version lacks it) and the steps the card covers that the version shown has, each
 opening its step screen beside the model its parsed architecture gives it (`step-detail`, the
 step screens' own query): only facts from the factory's pinned code, never a step or path the
-version lacks (owner, #307). App check's includes `check-app`, whose screen shows its prompt, the
+version lacks (owner, #307); when a covered step is left out for that, one line says those steps
+are not in this version. App check's includes `check-app`, whose screen shows its prompt, the
 holdout verifier and the fence (journey 1). Esc, the close button or a click on empty canvas
 deselects.
 
@@ -89,7 +110,7 @@ No card has a deeper view yet: none shows ⤢ or an Open button until its view i
 The Version control above the map opens it at an older pin (`/?at=<pin>`). The drawing is the same;
 step links open their screens at that version, and the "here" counts include only the runs that
 ran it. A version that is not recorded for the factory reads “No version <pin> is recorded for this
-factory.” The queued, failing, waiting and merged chips count the factory as it is now.
+factory.” The queued, failing, waiting, merged and open chips count the factory as it is now.
 
 ## Motion
 

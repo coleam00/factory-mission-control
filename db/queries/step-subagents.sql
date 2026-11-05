@@ -27,3 +27,5 @@ LEFT JOIN mc.arch_texts t
 JOIN (VALUES (0), (1), (2), (3), (4), (5), (6), (7), (8), (9), (10), (11), (12), (13), (14), (15), (16), (17), (18), (19), (20), (21), (22), (23), (24)) AS n(part)
   ON n.part = 0 OR n.part * 4000 < length(t.text)
 WHERE g.workflow = $2 AND g.step_path = $3
+  -- An old pin's holdout agent stays in the table and is never listed (PRD invariant 3).
+  AND g.name NOT ILIKE '%holdout%'

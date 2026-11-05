@@ -7,18 +7,21 @@ import { parseArgs } from 'node:util';
 import { createRealtimeClient, type WebSocketLike } from '@neon/realtime/client';
 import { createRealtime, rawSql } from '@neon/realtime/server';
 import { loadLiveQueries, realtimeUrlFor } from '../server/live';
-import { SECOND_FACTORY } from './fixture/seed';
+import { QUEUE_FACTORY, SECOND_FACTORY } from './fixture/seed';
 import { type Deps, failing, guardedDatabaseUrl, type Main, runCli } from './lib/cli';
 import { machineLockPath, withMachineLock } from './lib/machine-lock';
 import { resolveBranchName } from './lib/target';
+import { changesPhase } from './live/changes';
 import { decisionsPhase } from './live/decisions';
 import { diffPhase } from './live/diff';
 import { healthPhase } from './live/health';
 import { homePhase } from './live/home';
 import { issuesPhase } from './live/issues';
 import { lapsPhase } from './live/laps';
+import { ledgerPhase } from './live/ledger';
 import { oneLapPhase } from './live/one-lap';
 import { ownerPhase } from './live/owner';
+import { queueMapPhase } from './live/queue-map';
 import { rewindPhase } from './live/rewind';
 import { scorecardPhase } from './live/scorecard';
 import {
@@ -46,7 +49,8 @@ const USAGE = [
   '  `bun run fixture:branch` first): serves the app on a free port in 8850-8864 (waiting up to 30',
   "  minutes while every one is taken), opens `/` in a headless browser, checks the map's cards and",
   '  their lap counts against the seed, times inserted laps to the factory strip',
-  '  and `fixture:write step` events to the map, holds the page open --hold seconds (default 180)',
+  '  and `fixture:write step` events to the map, times queue-run steps and `fixture:write attention`',
+  "  on the seed's queue factory's map, holds the page open --hold seconds (default 180)",
   "  across seal renewals, follows App check's Behind the scenes to check-app's step screen,",
   '  re-runs the probes in db/queries/REALTIME.md, and runs',
   '  the design probe. Writes realtime-timings.json, realtime-features.json, home-map-timings.json,',
@@ -59,17 +63,23 @@ const USAGE = [
   '  `fixture:write step --step land` on a V2 lap to the screen before and after the hold, writing',
   '  scorecard-vs-expected.json, scorecard-timings.json, scorecard.png and',
   "  scorecard-design-probe.json; it restores those laps' land steps afterwards.",
+  '  It checks the changes screen against the versions and decisions screens and the same expected',
+  '  scorecard on the untouched seed, writing changes.png and changes-design-probe.json.',
   '  It checks the testing screen against SQL over the seed, with no holdout text on it, and times',
   '  `fixture:write step --step check-app --event node_completed` on a lap with no app check to its',
   '  kind and verdict counts before the hold and on a second such lap after it, writing',
   '  testing-check.txt, testing-panel-timings.json, testing-panel.png and',
   "  testing-panel-design-probe.json; it removes those laps' app checks afterwards.",
-  '  It checks the decisions screen against the seed, times `fixture:write verdict --pin <V2>` and',
+  '  It checks the ledger screen against the seed, times `fixture:write verdict --pin <V2>` and',
   '  `fixture:write decision` to that screen before and after the hold, writing ledger-check.txt,',
   '  decisions-ledger-timings.json, decisions-ledger.png and decisions-ledger-design-probe.json.',
   "  It checks the owner queue against the seed's open needs-owner issues and open owner questions,",
   '  and times `fixture:write label` to it before and after the hold, writing owner-queue-check.txt,',
   '  owner-queue-timings.json, owner-queue.png and owner-queue-design-probe.json.',
+  "  It checks the decisions screen against the seed's attention items, open owner items and health,",
+  '  and the tab count against the items shown, and times `fixture:write label` to it before and',
+  '  after the hold, writing decisions-check.txt, decisions-timings.json, decisions.png and',
+  '  decisions-design-probe.json.',
   '  It checks the issues screen against the seed and times `fixture:write label` to it before and',
   '  after the hold, writing issue-graph-check.txt, phases-issue-graph-timings.json,',
   '  phases-issue-graph.png and phases-issue-graph-design-probe.json.',
@@ -80,8 +90,8 @@ const USAGE = [
   '  It checks the laps screen against the seed and times the same `fixture:write step` events to',
   '  their lanes before and after the hold, writing lanes-check.txt, lanes-recent-laps-timings.json,',
   '  lanes-recent-laps.png and lanes-recent-laps-design-probe.json.',
-  "  It checks a gate-refused seed lap's page against SQL over the seed, with no holdout text on",
-  "  it, then times the first of those `fixture:write step` events to a running lap's page and",
+  "  It checks a gate-refused seed lap's page against SQL over the seed, with no holdout line or",
+  "  text on it, then times the first of those `fixture:write step` events to a running lap's page and",
   '  one more on that lap after the hold, writing one-lap-check.txt, one-lap-timings.json,',
   '  one-lap.png, one-lap-design-probe.json and one-lap-refused-design-probe.json.',
   "  Then it opens the diff of the two versions, checks it lists exactly the seed's scripted change,",
@@ -186,11 +196,11 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
   const { factories } = JSON.parse(readFileSync(join(deps.repoRoot, 'factories.json'), 'utf-8'));
   const factory: string = factories[0].name;
   mkdirSync(outDir, { recursive: true });
-  // The seed's second factory is in mc.factories only; the app shows it once its file names it.
+  // The seed's second and queue factories are in mc.factories only; the app shows each once its file names it.
   const factoriesFile = join(outDir, 'factories.json');
   writeFileSync(
     factoriesFile,
-    `${JSON.stringify({ factories: [...factories, SECOND_FACTORY] }, null, 2)}
+    `${JSON.stringify({ factories: [...factories, SECOND_FACTORY, QUEUE_FACTORY] }, null, 2)}
 `,
   );
 
@@ -234,22 +244,26 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
   const { failures } = ctx;
   const rewind = rewindPhase(ctx);
   // The order is the order of every write against every read that judges it: the laps screen
-  // and the lap open before the strip's first insert, the decisions screen writes before the
+  // and the lap open before the strip's first insert, the ledger screen writes before the
   // step, versions and scorecard screens open and judges the versions screen's pin after the
   // hold, and the switcher runs before the diff adds steps to the architecture the second
-  // factory's map shows. The owner queue labels just before the issues screen does, so each of the
-  // issues screen's labels lands on a waiting issue. Rewind is last: making a rewind branch starts a new Neon compute on the
+  // factory's map shows. The owner queue labels just before the issues screen does, so each of
+  // the issues screen's labels lands on a waiting issue; the Decisions screen removes its own
+  // labels as soon as it has timed them. Rewind is last: making a rewind branch starts a new Neon compute on the
   // project, so every other screen's first snapshots are timed before it.
   const phases: LivePhase[] = [
     homePhase(ctx),
+    queueMapPhase(ctx),
     lapsPhase(ctx),
     oneLapPhase(ctx),
-    decisionsPhase(ctx),
+    ledgerPhase(ctx),
     stepDetailPhase(ctx),
     versionsPhase(ctx),
     scorecardPhase(ctx),
+    changesPhase(ctx),
     testingPhase(ctx),
     ownerPhase(ctx),
+    decisionsPhase(ctx),
     issuesPhase(ctx),
     healthPhase(ctx),
     switcherPhase(ctx),

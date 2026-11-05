@@ -34,6 +34,7 @@ const refused: OneLapRow = {
     { line: 'B1', action: 'fixed' },
     { line: null, action: 'declined' },
   ],
+  hidden_lines: [],
   gate_status: 'completed',
   gate_outcome: 'refused',
   gate_reason: REASON,
@@ -73,6 +74,25 @@ test('the header links the console run, the pull request and the issue, and says
   expect(html).toContain('1:00:00');
 });
 
+test('a disposition naming a hidden line does not render in the header', () => {
+  const html = render(
+    <LapHeaderBody
+      lap={{
+        ...refused,
+        dispositions: [
+          { line: 'B1', action: 'fixed' },
+          { line: 'H1', action: 'fixed' },
+        ],
+        hidden_lines: ['H1'],
+      }}
+      now={0}
+    />,
+  );
+  expect(html.match(/data-disposition/g)).toHaveLength(1);
+  expect(html).toContain('data-line="B1"');
+  expect(html).not.toContain('H1');
+});
+
 test('the pull request a step names by URL links as its number', () => {
   const html = render(
     <LapHeaderBody
@@ -97,6 +117,7 @@ test('a lap with no review or gate yet says so', () => {
         review_outcome: null,
         review_delivers: null,
         dispositions: null,
+        hidden_lines: [],
         gate_status: null,
         gate_outcome: null,
         gate_reason: null,
@@ -183,7 +204,7 @@ test('token counts Realtime sends as strings still group their thousands', () =>
   expect(html).toContain('cache read 39,877, cache write 8,333');
 });
 
-test('a holdout line shows only its scenario id beside its kind, verdict and evidence', () => {
+test('a line shows its kind, verdict and evidence, and a labelled one its id', () => {
   const lines: CheckLineRow[] = [
     {
       position: 1,
@@ -191,20 +212,17 @@ test('a holdout line shows only its scenario id beside its kind, verdict and evi
       kind: 'criterion',
       verdict: 'PASS',
       evidence_count: 2,
-      scenario_id: null,
     },
     {
       position: 3,
       line_id: 'H2',
-      kind: 'holdout',
+      kind: 'defect',
       verdict: 'FAIL',
       evidence_count: 1,
-      scenario_id: 'H-01',
     },
   ];
   const html = render(<CheckList rows={lines} />);
-  expect(html).toContain('data-scenario="H-01"');
-  expect(html).toContain('>H-01<');
+  expect(html).not.toContain('data-scenario');
   expect(html).toContain('data-verdict="FAIL"');
   expect(html).toContain('data-evidence="2"');
   expect(html).toContain('data-position="3" data-line-id="H2"');
@@ -217,10 +235,9 @@ test('a disposition marks the one app check line it answers, or says it matches 
     {
       position: 4,
       line_id: 'H2',
-      kind: 'holdout',
+      kind: 'defect',
       verdict: 'FAIL',
       evidence_count: 1,
-      scenario_id: 'H-02',
     },
     {
       position: 5,
@@ -228,7 +245,6 @@ test('a disposition marks the one app check line it answers, or says it matches 
       kind: 'defect',
       verdict: 'FAIL',
       evidence_count: 1,
-      scenario_id: null,
     },
   ];
   const lap: OneLapRow = {
@@ -393,4 +409,18 @@ test('a block where no step ran is one box with its step count, its steps drawn 
   expect(html.slice(hiddenAt)).toContain('data-graph-step="ship/intel"');
   // Every attempt stays a row under the graph.
   expect(html.match(/data-step-attempt=/g)).toHaveLength(2);
+});
+
+test('a sent-back lap reads teal and a needs-owner lap violet, never amber', () => {
+  const quiet = { ...refused, gate_status: null, gate_outcome: null, gate_reason: null };
+  const sentBack = render(
+    <LapHeaderBody lap={{ ...quiet, review_outcome: 'sent-back' }} now={0} />,
+  );
+  expect(sentBack).toContain('<span style="color:var(--success)">sent-back</span>');
+  expect(sentBack).not.toContain('--warning');
+  const needsOwner = render(
+    <LapHeaderBody lap={{ ...quiet, review_outcome: 'needs-owner' }} now={0} />,
+  );
+  expect(needsOwner).toContain('<span style="color:var(--role-person)">needs-owner</span>');
+  expect(needsOwner).not.toContain('--warning');
 });

@@ -17,6 +17,7 @@ const lap = (
   title: number === null ? null : `issue ${number}`,
   url: null,
   at: null,
+  prs: null,
 });
 
 const here = (rows: HomeMapRow[]) =>
@@ -39,8 +40,7 @@ test('a lap counts once, on the card covering its deepest running step', () => {
       lap('h', ['claim']),
     ]),
   ).toEqual({
-    plan: ['e'],
-    hold: ['g'],
+    split: ['e'],
     mgr: ['f'],
     intake: ['h'],
     build: ['c'],
@@ -114,6 +114,7 @@ test('each chip sits on the card that carries it, and a source not delivered yet
     title: 'Broken thing',
     url: 'https://github.com/o/r/pull/109',
     at: null,
+    prs: null,
   };
   const live = cardLive(
     FACTORY_MAP,
@@ -153,4 +154,126 @@ test('the current version is always recorded; a pinned one only when the query n
   expect(versionRecorded([], null)).toBe(true);
   expect(versionRecorded([], 'abc')).toBe(false);
   expect(versionRecorded([version], 'abc')).toBe(true);
+});
+
+test('a queue run counts on the card covering its deepest step: implement on Build, review on Review', () => {
+  expect(
+    here([
+      lap(
+        'impl',
+        ['ship__deliver__rounds.implement__implement', 'ship'],
+        'archon-build-queue',
+        401,
+      ),
+      lap('rev', ['ship__deliver__rounds.review__policy', 'ship'], 'archon-build-queue', 402),
+      lap('rerev', ['ship__deliver__rounds.rereview__scope'], 'archon-build-queue'),
+      lap('ask', ['ask'], 'archon-build-queue'),
+      lap('sweep', ['sweep'], 'archon-merge-queue'),
+      lap('slice', ['slice'], 'archon-split'),
+      lap('take', ['triage'], 'archon-intake'),
+    ]),
+  ).toEqual({
+    build: ['ask', 'impl'],
+    review: ['rerev', 'rev'],
+    merge: ['sweep'],
+    split: ['slice'],
+    intake: ['take'],
+  });
+});
+
+test('a run in the old loop keeps its own steps off the queue cards', () => {
+  expect(
+    here([
+      lap('a', ['merge__execute'], 'archon-merge-queue'),
+      lap('b', ['resolve-input'], 'archon-discoveries'),
+    ]),
+  ).toEqual({});
+});
+
+const attention = (run: string, number: number | null, title: string | null): HomeMapRow => ({
+  ...lap(run, null, 'archon-merge-queue', number),
+  kind: 'waiting',
+  title,
+});
+const queues: HomeMapRow = { ...lap('x', null), kind: 'queues', run_id: null, workflow: null };
+const ownerRow = {
+  kind: 'issue' as const,
+  issue_number: 9,
+  question_number: null,
+  title: 'Needs owner',
+  url: null,
+  options: null,
+  recommendation: null,
+  default_option: null,
+  default_at: null,
+  waiting_since: null,
+  approximate: false,
+};
+const waitingOf = (sources: Parameters<typeof cardLive>[1]) =>
+  cardLive(FACTORY_MAP, sources, new Date()).get('mgr');
+
+test('on a factory on the queues, waiting is the attention items alone, whatever the owner source says', () => {
+  const map = [
+    queues,
+    attention('run-with-issue', 404, 'Fix it'),
+    attention('abcdef0123', null, null),
+  ];
+  expect(waitingOf({ map, owner: [ownerRow], states: { owner: 'error' } })?.waiting).toEqual([
+    { key: 'attention-run-with-issue', number: 404, title: 'Fix it', url: null },
+    {
+      key: 'attention-abcdef0123',
+      number: null,
+      title: 'archon-merge-queue run abcdef01',
+      url: null,
+    },
+  ]);
+});
+
+test('on a factory on the old loop, waiting is the owner items, unavailable or absent as before', () => {
+  expect(waitingOf({ map: [], owner: [ownerRow] })?.waiting?.map((i) => i.key)).toEqual([
+    'issue-9',
+  ]);
+  expect(waitingOf({ map: [], states: { owner: 'error' } })?.unavailable).toEqual(['waiting']);
+  expect(waitingOf({ map: [] })?.waiting).toBeUndefined();
+});
+
+test('a merge-queue lap merges each pull request its record read back; a malformed list merges none', () => {
+  const now = new Date(2026, 10, 4, 15, 0);
+  const at = new Date(2026, 10, 4, 9, 0);
+  const queued = (run: string, prs: string): HomeMapRow => ({
+    ...lap(run, null, 'archon-merge-queue'),
+    kind: 'merged',
+    at,
+    prs,
+  });
+  expect(
+    mergedToday(
+      [
+        queued('q', '[404, 405]'),
+        queued('bad', 'oops'),
+        queued('odd', '[0, "x", 7.5, -1]'),
+        queued('obj', '{"a":1}'),
+      ],
+      now,
+    ).map((m) => [m.run, m.number]),
+  ).toEqual([
+    ['q', 404],
+    ['q', 405],
+  ]);
+  expect(mergedToday([{ ...queued('old', '[]'), prs: null, number: 12 }], now)).toEqual([
+    { run: 'old', number: 12, at },
+  ]);
+});
+
+test('the work orders with an open issue are the chip of the Work order card: absent until answered, unavailable on error', () => {
+  const order = { name: 'combat', open_count: 2, merged_count: 1, lands_on: 'staging' };
+  const ordersOf = (sources: Partial<Parameters<typeof cardLive>[1]>) =>
+    cardLive(FACTORY_MAP, { map: [], ...sources }, new Date()).get('order');
+  expect(ordersOf({ orders: [order] })?.orders).toEqual([order]);
+  expect(ordersOf({ orders: [] })?.orders).toEqual([]);
+  expect(ordersOf({})?.orders).toBeUndefined();
+  expect(ordersOf({ orders: [order], states: { orders: 'error' } })).toEqual({
+    here: [],
+    unavailable: ['orders'],
+  });
 });

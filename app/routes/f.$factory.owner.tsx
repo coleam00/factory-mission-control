@@ -4,7 +4,7 @@ import { OwnerQueue } from '../components/OwnerQueue';
 
 export default function Owner(): ReactElement {
   return (
-    <main className="mx-auto max-w-6xl px-6 py-6">
+    <main data-v1-screen="owner" className="mx-auto max-w-6xl px-6 py-6">
       <OwnerQueue factory={useParams().factory} />
     </main>
   );

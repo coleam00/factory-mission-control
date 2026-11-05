@@ -1,5 +1,6 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { meaningful, NOT_YET_MEANINGFUL } from '../../app/lib/scorecard';
 import { openPage, type Page } from '../lib/cdp';
 import type { Deps } from '../lib/cli';
 import type { Row } from '../lib/db';
@@ -45,7 +46,7 @@ export interface ShownCell {
   summary: string | null;
 }
 
-const cellsOnScreen = `[...document.querySelectorAll('${SCORECARD} [data-version][data-measure]')].map((cell) => ({
+export const cellsOnScreen = `[...document.querySelectorAll('${SCORECARD} [data-version][data-measure]')].map((cell) => ({
   digest: cell.getAttribute('data-digest'),
   measure: cell.getAttribute('data-measure'),
   value: cell.getAttribute('data-value'),
@@ -54,7 +55,7 @@ const cellsOnScreen = `[...document.querySelectorAll('${SCORECARD} [data-version
   summary: cell.querySelector('summary')?.textContent ?? null,
 }))`;
 
-interface ExpectedScorecard {
+export interface ExpectedScorecard {
   versions: { digest: string; measures: Record<string, { value: number | null; laps: number }> }[];
 }
 
@@ -122,18 +123,29 @@ async function openScorecard(deps: Deps, base: string, factory: string, a: strin
 /** Each difference's `data-meaningful` and whether it carries the `not yet meaningful` label. */
 const differencesOnScreen = `[...document.querySelectorAll('${SCORECARD} [data-difference]')].map((d) => ({
   meaningful: d.getAttribute('data-meaningful'),
-  labelled: d.textContent.includes('not yet meaningful'),
+  labelled: d.textContent.includes(${JSON.stringify(NOT_YET_MEANINGFUL)}),
 }))`;
 
-async function labelFailures(page: Page, pair: string, meaningful: boolean): Promise<string[]> {
+/** Whether the fixture's laps make a difference between two versions meaningful, by the app's rule. */
+function expectedMeaningful(expected: ExpectedScorecard, a: string, b: string): boolean {
+  const laps = (digest: string): number => {
+    const count = expected.versions.find((v) => v.digest === digest)?.measures.laps?.laps;
+    if (count === undefined)
+      throw new Error(`fixtures/expected-scorecard.json has no laps for ${digest}`);
+    return count;
+  };
+  return meaningful(laps(a), laps(b));
+}
+
+async function labelFailures(page: Page, pair: string, isMeaningful: boolean): Promise<string[]> {
   const shown =
     await page.evaluate<{ meaningful: string | null; labelled: boolean }[]>(differencesOnScreen);
   if (shown.length === 0) return [`${pair} shows no differences`];
   return shown
-    .filter((d) => d.meaningful !== String(meaningful) || d.labelled === meaningful)
+    .filter((d) => d.meaningful !== String(isMeaningful) || d.labelled === isMeaningful)
     .map(
       (d) =>
-        `${pair}: a difference has data-meaningful=${d.meaningful}${d.labelled ? ' and is' : ' and is not'} labelled not yet meaningful`,
+        `${pair}: a difference has data-meaningful=${d.meaningful}${d.labelled ? ' and is' : ' and is not'} labelled ${NOT_YET_MEANINGFUL}`,
     );
 }
 
@@ -183,22 +195,26 @@ export function scorecardPhase(ctx: LiveContext): LivePhase {
     async write() {
       const { base } = ctx;
       const [v1, v2, v3] = await versionDigests(db, factory);
+      const expected: ExpectedScorecard = JSON.parse(
+        readFileSync(join(deps.repoRoot, 'fixtures', 'expected-scorecard.json'), 'utf-8'),
+      );
       pair = [v1, v2];
       const page = await openScorecard(deps, base, factory, v1, v2);
       scorePage = page;
       Object.assign(scorecardTimings, (await measure(page, ['scorecard'])).scorecard);
       const shown = await page.evaluate<ShownCell[]>(cellsOnScreen);
-      ctx.failures.push(...(await labelFailures(page, 'V1 against V2', true)));
+      ctx.failures.push(
+        ...(await labelFailures(page, 'V1 against V2', expectedMeaningful(expected, v1, v2))),
+      );
       const thinPage = await openScorecard(deps, base, factory, v1, v3);
       try {
         shown.push(...(await thinPage.evaluate<ShownCell[]>(cellsOnScreen)));
-        ctx.failures.push(...(await labelFailures(thinPage, 'V1 against V3', false)));
+        ctx.failures.push(
+          ...(await labelFailures(thinPage, 'V1 against V3', expectedMeaningful(expected, v1, v3))),
+        );
       } finally {
         await thinPage.close();
       }
-      const expected: ExpectedScorecard = JSON.parse(
-        readFileSync(join(deps.repoRoot, 'fixtures', 'expected-scorecard.json'), 'utf-8'),
-      );
       const compared = compareScorecard(shown, expected);
       writeFileSync(
         join(outDir, 'scorecard-vs-expected.json'),

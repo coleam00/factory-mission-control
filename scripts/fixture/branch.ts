@@ -12,13 +12,13 @@ import type { Db } from '../lib/db';
 import { requireCheckBranch } from '../lib/guard';
 import { type NeonApi, poll, waitForOperations } from '../lib/neon';
 import { migrationsDir, readMigrationFiles, runMigrations } from '../migrate';
-import { staleBranchPrefix } from './drop';
+import { hoursPhrase, STALE_MS, staleBranchPrefix } from './drop';
 
 const PARENT_BRANCH = 'fixture';
 
 const USAGE = [
   "usage: bun run fixture:branch (creates a check-* branch from fixture, migrates and seeds it, writes .mc-check.env, and records this checkout's lease on the branch, naming the Archon run it runs in when there is one, so other checkouts' fixture:drop keep it while that run or this checkout still uses it; see fixture:drop --help)",
-  "       bun run fixture:branch --stale (creates <MC_CHECK_BRANCH>-stale-<id>, a bare branch that this checkout's fixture:drop deletes as stale and other sessions' drops leave until it is 3 hours old; an unattended check runs it, then fixture:drop, to prove stale cleanup while other sessions hold check-* branches)",
+  `       bun run fixture:branch --stale (creates <MC_CHECK_BRANCH>-stale-<id>, a bare branch that this checkout's fixture:drop deletes as stale and other sessions' drops leave until it is ${hoursPhrase(STALE_MS)} old; an unattended check runs it, then fixture:drop, to prove stale cleanup while other sessions hold check-* branches)`,
 ].join('\n');
 
 function newCheckBranchName(prefix = 'check-'): string {
@@ -145,7 +145,7 @@ async function createSessionBranch(deps: Deps): Promise<void> {
     );
     if (!writeLease(deps.leaseDir, name, deps.now(), deps.env.WORKFLOW_ID)) {
       deps.err(
-        `could not record a lease for ${name} in ${deps.leaseDir}: other checkouts' fixture:drop will delete it once it is 3 hours old`,
+        `could not record a lease for ${name} in ${deps.leaseDir}: other checkouts' fixture:drop will delete it once it is ${hoursPhrase(STALE_MS)} old`,
       );
     }
   } catch (error) {

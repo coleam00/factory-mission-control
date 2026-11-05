@@ -2,7 +2,8 @@
 /**
  * The design probe (PRD 8.3). Loads a URL in a headless Chromium at 1440 px and 390 px and fails
  * on any computed color outside the tokens copied in docs/design/archon-console/ and the v2 role
- * colors in docs/design/v2/tokens.css, any text font other than Geist or Geist Mono, a
+ * colors in docs/design/v2/tokens.css, any rendered color in the amber hue range (except inside
+ * `[data-v1-screen]`, the v1 screens #321 retires), any text font other than Geist or Geist Mono, a
  * browser-default control, text contrast below 4.5:1, horizontal overflow, and any interactive element without an accessible name. It checks the
  * page as first rendered and, when a live panel was still loading (`data-state="loading"`), again
  * once none is, or after 10 s; each failure names the state it was found in.
@@ -24,6 +25,12 @@ const WIDTHS = [1440, 390];
 const HEIGHT = 900;
 /** How long one DevTools command, the page load or the in-page checks may take. */
 const STEP_TIMEOUT_MS = 20000;
+/**
+ * How long the browser may take to open its DevTools port. A cold first start on GitHub's Linux
+ * runner takes 7-23 s and has passed 20 s (#355); later starts take under 1 s. 45 s covers the
+ * cold start and leaves a 60 s test budget room for the page checks.
+ */
+const PORT_TIMEOUT_MS = 45000;
 /** The console's tokens, then the v2 role colors laid over them (docs/design/v2/README.md). */
 export const TOKEN_SOURCES = [
   ['archon-console', 'index.css'],
@@ -104,8 +111,8 @@ async function removeProfile(profile) {
   }
 }
 
-/** Starts the browser and connects to it. `readPort` reads DevToolsActivePort; tests replace it. */
-export async function launchBrowser(readPort = readPortFile) {
+/** Starts the browser and connects to it, waiting up to `portTimeoutMs` for its DevTools port. `readPort` reads DevToolsActivePort; tests replace both. */
+export async function launchBrowser(readPort = readPortFile, portTimeoutMs = PORT_TIMEOUT_MS) {
   const profile = mkdtempSync(join(tmpdir(), 'design-probe-'));
   const args = [
     '--headless=new',
@@ -129,7 +136,7 @@ export async function launchBrowser(readPort = readPortFile) {
   };
   try {
     const activePort = join(profile, 'DevToolsActivePort');
-    const [port, path] = await poll('the browser opening its DevTools port', 20000, () => {
+    const [port, path] = await poll('the browser opening its DevTools port', portTimeoutMs, () => {
       if (proc.exitCode !== null) throw new ProbeError(`the browser exited with ${proc.exitCode}`);
       let lines;
       try {
@@ -350,9 +357,40 @@ async function pageChecks(tokenLayers, settle) {
           if (palette.has(key({ r: r + dr, g: g + dg, b: b + db }))) return true;
     return false;
   };
+  /** The OKLCH chroma and hue (0-360) of an sRGB color. */
+  const oklchOf = ({ r, g, b }) => {
+    const [lr, lg, lb] = [r, g, b].map((v) => {
+      const c = v / 255;
+      return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+    });
+    const l = Math.cbrt(0.4122214708 * lr + 0.5363325363 * lg + 0.0514459929 * lb);
+    const m = Math.cbrt(0.2119034982 * lr + 0.6806995451 * lg + 0.1073969566 * lb);
+    const s = Math.cbrt(0.0883024619 * lr + 0.2817188376 * lg + 0.6299787005 * lb);
+    const a = 1.9779984951 * l - 2.428592205 * m + 0.4505937099 * s;
+    const bb = 0.0259040371 * l + 0.7827717662 * m - 0.808675766 * s;
+    const hue = (Math.atan2(bb, a) * 180) / Math.PI;
+    return { C: Math.hypot(a, bb), h: hue < 0 ? hue + 360 : hue };
+  };
+  // #b45309 reads as hue 49, just under the range, so the three amber hexes are listed.
+  const AMBER_HEX = [
+    [180, 83, 9],
+    [245, 158, 11],
+    [217, 119, 6],
+  ];
+  const isAmber = (rgb, { C, h }) =>
+    (C > 0.08 && h >= 50 && h <= 95) ||
+    AMBER_HEX.some((hex) => hex.every((v, i) => Math.abs(v - [rgb.r, rgb.g, rgb.b][i]) <= 1));
   const checkColor = (el, property, color) => {
-    if (rgba(color).a > 0 && !inPalette(color))
-      fail('color', el, `${property} ${color} is not a token`);
+    const shown = rgba(color);
+    if (shown.a === 0) return;
+    if (!inPalette(color)) fail('color', el, `${property} ${color} is not a token`);
+    const hueChroma = oklchOf(shown);
+    if (isAmber(shown, hueChroma) && !el.closest('[data-v1-screen]'))
+      fail(
+        'amber',
+        el,
+        `${property} ${color} is amber (oklch hue ${hueChroma.h.toFixed(0)}, chroma ${hueChroma.C.toFixed(2)})`,
+      );
   };
 
   const luminance = ({ r, g, b }) => {

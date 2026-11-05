@@ -2,7 +2,7 @@ import { type ReactElement, type ReactNode, useState } from 'react';
 import { Link } from 'react-router';
 import type { StepRow } from '../lib/step-detail';
 import { type Card, pinnedStepLinks, workflowFile } from '../map/factory-map';
-import type { CardLive, MapItem } from '../map/live';
+import type { CardLive, MapItem, WorkOrderRow } from '../map/live';
 
 type Tab = 'when' | 'what' | 'how' | 'live' | 'behind';
 
@@ -33,7 +33,10 @@ function Bullets({ lines }: { lines: readonly string[] }): ReactElement {
 function Item({ item, note }: { item: MapItem; note: string }): ReactElement {
   const name = (
     <>
-      <span className="font-mono tabular-nums">#{item.number}</span> {item.title}
+      {item.number === null ? null : (
+        <span className="font-mono tabular-nums">#{item.number} </span>
+      )}
+      {item.title}
     </>
   );
   return (
@@ -46,6 +49,19 @@ function Item({ item, note }: { item: MapItem; note: string }): ReactElement {
         name
       )}
       <span className={CHIP}>{note}</span>
+    </li>
+  );
+}
+
+/** A work order with its open and merged issues and where it lands. */
+function Order({ order }: { order: WorkOrderRow }): ReactElement {
+  const lands = order.lands_on === null ? '' : `, lands on ${order.lands_on}`;
+  return (
+    <li data-work-order={order.name}>
+      <span className="font-mono">{order.name}</span>
+      <span className={CHIP}>
+        {order.open_count} open, {order.merged_count} merged{lands}
+      </span>
     </li>
   );
 }
@@ -93,13 +109,14 @@ export function RightNow({
       <Item key={item.key} item={item} note="app check failed" />
     )),
     ...(live?.waiting ?? []).map((item) => <Item key={item.key} item={item} note="waiting" />),
+    ...(live?.orders ?? []).map((order) => <Order key={`order-${order.name}`} order={order} />),
     ...(live?.merged ?? []).map((merge) => (
-      <li key={`merged-${merge.run}`} data-lap={merge.run}>
+      <li key={`merged-${merge.run}-${merge.number ?? 'lap'}`} data-lap={merge.run}>
         <Link to={lapHref(merge.run)} className={LINK}>
-          {merge.issue === null ? (
+          {merge.number === null ? (
             <span className="font-mono">lap {merge.run.slice(0, 8)}</span>
           ) : (
-            <span className="font-mono tabular-nums">#{merge.issue}</span>
+            <span className="font-mono tabular-nums">#{merge.number}</span>
           )}
         </Link>
         <span className={CHIP}>merged {time(merge.at)}</span>
@@ -138,6 +155,9 @@ export function Behind({
     return <p className="text-text-secondary">This version has none of this card's steps.</p>;
   }
   const workflows = [...new Set(links.map((l) => l.workflow))];
+  const covered = card.covers
+    .filter((cover) => steps.some((s) => s.workflow === cover.workflow))
+    .reduce((n, cover) => n + cover.steps.length, 0);
   return (
     <>
       {workflows.map((workflow) => (
@@ -171,6 +191,11 @@ export function Behind({
       <p className={`${LABEL} mt-1.5`}>
         From the pinned code. The map check fails if any of these names disappear.
       </p>
+      {links.length < covered && (
+        <p data-steps-missing className={LABEL}>
+          Steps this card covers that are not listed are not in this version.
+        </p>
+      )}
     </>
   );
 }

@@ -43,7 +43,7 @@ How this repository is built. The product is `docs/mission-control.prd.md`; this
   `factories.json`; checks use it to add a fixture-only factory, a real install leaves it unset).
   Never `DATABASE_URL`. Never commit a secret; `.mc-check.env` is gitignored.
 - Serve on `127.0.0.1:<port>`, open as `http://localhost:<port>`, ports 8850-8864 only.
-- Holdout scenario text never enters the dashboard's tables or screens: ids and verdicts only.
+- Holdout scenario text from Archon's old rows never enters the dashboard's tables or screens. The factory no longer uses holdouts.
 - Design: dark only, Geist for text and Geist Mono for data. Copy the components from
   `docs/design/archon-console/`. Colors live in one place: the tokens in `index.css` and
   `theme.css` there, copied identically into `app/styles.css` (`styles.test.ts` holds the copy,

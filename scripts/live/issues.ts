@@ -326,9 +326,10 @@ async function labelToScreen(
   if (!target) throw new Error(`no open ${factory} issue for fixture:write label to label`);
   const issue = Number(target.number);
   const node = `${ISSUES} [data-issue="${issue}"]`;
-  const before = await page.evaluate<string | null>(
-    `document.querySelector('${node}')?.getAttribute('data-issue-state') ?? null`,
-  );
+  const state = `document.querySelector('${node}')?.getAttribute('data-issue-state') ?? null`;
+  // An earlier phase may have just removed its label from this issue: wait for the page to show it.
+  await page.evaluate(pageWait(`(${state}) === 'waiting'`, READY_WAIT_MS));
+  const before = await page.evaluate<string | null>(state);
   if (before !== 'waiting') {
     throw new Error(`fixture:write label will label #${issue}, which is ${before}, not waiting`);
   }

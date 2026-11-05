@@ -8,9 +8,11 @@ import { basename, dirname, join, relative } from 'node:path';
 
 export type StepKind =
   | 'include'
+  | 'workflow'
   | 'loop_group'
   | 'loop'
   | 'approval'
+  | 'wait'
   | 'command'
   | 'script'
   | 'bash'
@@ -87,6 +89,8 @@ export interface PackVersion {
   factoryCommit: string | null;
   workflows: Workflow[];
   commands: TextFile[];
+  /** Markdown under `.shared/` (and any under a workflow's `scripts/`) that commands tell agents to read, such as the policy defaults. */
+  sharedDocs: TextFile[];
   scripts: TextFile[];
   hooks: Hook[];
 }
@@ -199,9 +203,11 @@ function scriptFile(packDir: string, dir: string, name: string): string | null {
 
 function kindOf(node: Node): StepKind {
   if (node.include !== undefined) return 'include';
+  if (node.workflow !== undefined) return 'workflow';
   if (node.loop_group !== undefined) return 'loop_group';
   if (node.loop !== undefined) return 'loop';
   if (node.approval !== undefined) return 'approval';
+  if (node.wait !== undefined) return 'wait';
   if (node.command !== undefined) return 'command';
   if (node.script !== undefined) return 'script';
   if (node.bash !== undefined) return 'bash';
@@ -230,13 +236,14 @@ export function parsePack(packDir: string, templateDir: string): PackVersion {
   const commandText = new Map(commands.map((c) => [c.path, c.text]));
 
   const scripts: TextFile[] = [];
+  const sharedDocs: TextFile[] = [];
   for (const entry of list(packDir)) {
     const root = join(packDir, entry);
     if (!isDir(root)) continue;
     const files = entry === '.shared' ? filesUnder(root) : filesUnder(join(root, 'scripts'));
     for (const path of files) {
-      if (path.endsWith('.md')) continue;
-      scripts.push({ path: slash(relative(packDir, path)), text: readText(path) });
+      const file = { path: slash(relative(packDir, path)), text: readText(path) };
+      (path.endsWith('.md') ? sharedDocs : scripts).push(file);
     }
   }
 
@@ -289,7 +296,8 @@ export function parsePack(packDir: string, templateDir: string): PackVersion {
         }
       }
       const script = str(node.script);
-      const inline = script !== null && /\s/.test(script);
+      // Archon's isInlineScript (packages/workflows/src/executor-shared.ts): a name never holds these.
+      const inline = script !== null && (script.includes('\n') || /[;(){}&|<>$`"' ]/.test(script));
       const resolvedScript = script && !inline ? scriptFile(packDir, source.dir, script) : null;
       if (script && !inline && !resolvedScript) {
         throw new Error(
@@ -366,6 +374,7 @@ export function parsePack(packDir: string, templateDir: string): PackVersion {
     factoryCommit: commit(join(templateDir, 'FACTORY_COMMIT')),
     workflows,
     commands,
+    sharedDocs,
     scripts,
     hooks,
   };

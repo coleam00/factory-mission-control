@@ -10,11 +10,15 @@ import data from './factory-map.json';
 export const ROLES = ['source', 'agent', 'test', 'person'] as const;
 export type Role = (typeof ROLES)[number];
 
-export const CHIPS = ['queued', 'failing', 'waiting', 'merged'] as const;
+export const CHIPS = ['queued', 'failing', 'waiting', 'merged', 'orders'] as const;
 export type Chip = (typeof CHIPS)[number];
 
-export const LINE_STYLES = ['flow', 'ask', 'loop', 'holdout'] as const;
+export const LINE_STYLES = ['flow', 'ask', 'loop'] as const;
 export type LineStyle = (typeof LINE_STYLES)[number];
+
+/** The pack a cover entry is held to: the old loop's, or the queue workflows plus the factory package. */
+export const PACKS = ['loop', 'queue'] as const;
+export type Pack = (typeof PACKS)[number];
 
 /**
  * The steps of one workflow a card covers. Each entry covers that step and every step under it;
@@ -22,6 +26,8 @@ export type LineStyle = (typeof LINE_STYLES)[number];
  * rounds inside it).
  */
 export interface Cover {
+  /** Which pack `bun run map:check` holds this entry to; a live row carries only the workflow name. */
+  pack: Pack;
   workflow: string;
   steps: string[];
 }
@@ -248,18 +254,22 @@ export const workflowFile = (steps: readonly StepRow[], workflow: string): strin
  * its parsed architecture gives it (null for a step that names none).
  */
 export function pinnedStepLinks(card: Card, at: string | null, steps: readonly StepRow[]) {
-  return card.covers.flatMap((cover) =>
-    cover.steps.flatMap((step) => {
-      const row = placeOf(steps, cover.workflow, step)?.step;
-      if (row === undefined) return [];
-      return [
-        {
-          workflow: cover.workflow,
-          step,
-          model: row.model,
-          href: stepHref(cover.workflow, step, at),
-        },
-      ];
-    }),
-  );
+  // Both packs' places can resolve to one step (archon-deliver-block rounds/review), so an entry
+  // counts only when the pinned version has its workflow.
+  return card.covers
+    .filter((cover) => steps.some((s) => s.workflow === cover.workflow))
+    .flatMap((cover) =>
+      cover.steps.flatMap((step) => {
+        const row = placeOf(steps, cover.workflow, step)?.step;
+        if (row === undefined) return [];
+        return [
+          {
+            workflow: cover.workflow,
+            step,
+            model: row.model,
+            href: stepHref(cover.workflow, step, at),
+          },
+        ];
+      }),
+    );
 }
