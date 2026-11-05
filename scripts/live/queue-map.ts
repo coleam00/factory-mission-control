@@ -19,7 +19,7 @@ import {
 } from './shared';
 
 /** Where the queue runs step: Build's implement round, and Review's policy round. */
-const BUILD_STEP = 'ship__deliver__rounds.implement__implement';
+export const BUILD_STEP = 'ship__deliver__rounds.implement__implement';
 const REVIEW_STEP = 'ship__deliver__rounds.review__policy';
 const WRITTEN_STEPS = [BUILD_STEP, REVIEW_STEP];
 const WAITING = `${MAP} [data-card="mgr"] [data-chip="waiting"]`;

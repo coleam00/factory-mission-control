@@ -238,7 +238,7 @@ describe('decisions-timeline and improvements-ledger on the seed', () => {
 
   test('a verdict on V2 by prefix gives V2 that verdict', async () => {
     await db.transaction(async (tx) => {
-      await writeRow(tx, 'verdict', new Date('2026-10-25T12:00:00Z'), '5ffd60c6');
+      await writeRow(tx, 'verdict', new Date('2026-10-25T12:00:00Z'), { pin: '5ffd60c6' });
     });
     expect(await byPin('5ffd60c6')).toMatchObject({ verdict: 'inconclusive' });
     expect(await byPin('58c5f774')).toMatchObject({ verdict: null });

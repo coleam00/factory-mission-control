@@ -7,7 +7,7 @@ const EVENTS = ['node_started', 'node_completed', 'node_failed'] as const;
 type StepEvent = (typeof EVENTS)[number];
 
 const USAGE =
-  'usage: bun run fixture:write step [--run <id>] [--step <step id>] [--event node_started|node_completed|node_failed] [--error <text>] | attention --run <id> | label | comment | issue | pin | verdict [--pin <sha prefix>] | decision';
+  'usage: bun run fixture:write step [--run <id>] [--step <step id>] [--event node_started|node_completed|node_failed] [--error <text>] | attention --run <id> | label [--label <name>] [--issue <number>] | comment | issue | pin | verdict [--pin <sha prefix>] | decision';
 
 export const WORKFLOW = 'archon-loop';
 export const FACTORY = 'mission-control';
@@ -175,17 +175,21 @@ async function eventCount(db: Tx, runId: string): Promise<number> {
   return Number(row.n);
 }
 
+/** What a row kind can be told besides the time: the pin a verdict judges, the label `label` writes and the issue it writes it on. */
+type RowOptions = { pin?: string; label?: string; issue?: number };
+
 /** A dashboard row a kind inserts, its values taken from the moment it runs so writes never collide. */
 type RowKind = {
   table: string;
-  insert: (at: Date, pin?: string) => { sql: string; params: unknown[] };
+  insert: (at: Date, options: RowOptions) => { sql: string; params: unknown[] };
   /** What the insert must find on the branch, for a kind whose row is chosen from others. */
   needs?: string;
 };
 
 /** The issue `label` labels next: the factory's highest-numbered open one without needs-owner. */
 export const NEXT_TO_LABEL = `SELECT i.factory, i.number FROM mc.issues i
-  WHERE i.factory = $1::text AND i.state = 'open' AND NOT EXISTS (SELECT 1 FROM mc.issue_labels l
+  WHERE i.factory = $1::text AND i.state = 'open'
+    AND NOT EXISTS (SELECT 1 FROM mc.issue_labels l
     WHERE l.factory = i.factory AND l.issue_number = i.number AND l.label = 'needs-owner')
   ORDER BY i.number DESC LIMIT 1`;
 
@@ -210,12 +214,19 @@ const ROW_KINDS = {
   },
   label: {
     table: 'mc.issue_labels',
-    needs: `an open ${FACTORY} issue without needs-owner`,
-    insert: (at) => ({
+    needs: `the issue --issue names, or else an open ${FACTORY} issue without needs-owner`,
+    insert: (at, { label = 'needs-owner', issue }) => ({
       sql: `INSERT INTO mc.issue_labels (factory, issue_number, label, labeled_at)
-        SELECT next.factory, next.number, 'needs-owner', $2::timestamptz FROM (${NEXT_TO_LABEL}) next
+        SELECT next.factory, next.number, $3::text, $2::timestamptz FROM (${
+          issue === undefined
+            ? NEXT_TO_LABEL
+            : 'SELECT factory, number FROM mc.issues WHERE factory = $1::text AND number = $4::int'
+        }) next
         RETURNING issue_number`,
-      params: [FACTORY, at.toISOString()],
+      params:
+        issue === undefined
+          ? [FACTORY, at.toISOString(), label]
+          : [FACTORY, at.toISOString(), label, issue],
     }),
   },
   comment: {
@@ -248,7 +259,7 @@ const ROW_KINDS = {
   verdict: {
     table: 'mc.verdicts',
     needs: 'a pin to judge (the latest, or the one --pin names by prefix)',
-    insert: (at, pin) => ({
+    insert: (at, { pin }) => ({
       sql: `INSERT INTO mc.verdicts (sha, pin, verdict, sentence, committed_at)
         SELECT $1::text, left(p.sha, 8), 'inconclusive', $2::text, $3::timestamptz
         FROM mc.pins p WHERE $4::text IS NULL OR p.sha LIKE $4::text || '%'
@@ -286,12 +297,18 @@ async function rowCount(tx: Tx, table: string): Promise<number> {
 
 /**
  * Inserts one row of `name`, and fails unless its table holds exactly one more row. `pin` is a sha
- * prefix naming the pin a verdict judges; without it a verdict judges the latest pin.
+ * prefix naming the pin a verdict judges; without it a verdict judges the latest pin. `label` is
+ * the label `label` writes, `needs-owner` without it, on `issue` or else the next issue to label.
  */
-export async function writeRow(tx: Tx, name: RowKindName, at: Date, pin?: string): Promise<string> {
+export async function writeRow(
+  tx: Tx,
+  name: RowKindName,
+  at: Date,
+  options: RowOptions = {},
+): Promise<string> {
   const kind: RowKind = ROW_KINDS[name];
   const before = await rowCount(tx, kind.table);
-  const { sql, params } = kind.insert(at, pin);
+  const { sql, params } = kind.insert(at, options);
   await tx.query(sql, params);
   const after = await rowCount(tx, kind.table);
   const report = `${kind.table} rows: ${before} -> ${after}`;
@@ -353,7 +370,7 @@ export const main: Main = async (argv, deps) => {
         if (parsed.kind === 'step') report = await writeEvent(tx, parsed, deps.now());
         else if (parsed.kind === 'attention')
           report = await pauseOnAttention(tx, parsed.run, deps.now());
-        else report = await writeRow(tx, parsed.kind, deps.now(), parsed.pin);
+        else report = await writeRow(tx, parsed.kind, deps.now(), parsed);
       });
       deps.out(report);
     } finally {
@@ -364,7 +381,7 @@ export const main: Main = async (argv, deps) => {
 
 type StepCli = { kind: 'step'; step: string; event: StepEvent; run?: string; error?: string };
 type AttentionCli = { kind: 'attention'; run: string };
-type Cli = StepCli | AttentionCli | { kind: RowKindName; pin?: string };
+type Cli = StepCli | AttentionCli | ({ kind: RowKindName } & RowOptions);
 
 function parseCli(argv: string[]): Cli {
   const { values, positionals } = parseArgs({
@@ -375,6 +392,8 @@ function parseCli(argv: string[]): Cli {
       step: { type: 'string' },
       event: { type: 'string' },
       pin: { type: 'string' },
+      label: { type: 'string' },
+      issue: { type: 'string' },
       error: { type: 'string' },
     },
   });
@@ -387,16 +406,35 @@ function parseCli(argv: string[]): Cli {
     return { kind, run };
   }
   if (isRowKind(kind)) {
-    const { pin, ...stepOnly } = values;
+    const { pin, label, issue: issueText, ...stepOnly } = values;
     if (Object.keys(stepOnly).length > 0) {
       throw new Error('--run, --step, --event and --error are for step');
     }
-    if (pin === undefined) return { kind };
-    if (kind !== 'verdict') throw new Error('--pin is for verdict');
-    if (!/^[0-9a-f]{4,40}$/.test(pin)) throw new Error(`--pin takes a sha prefix, not ${pin}`);
-    return { kind, pin };
+    if (label !== undefined) {
+      if (kind !== 'label') throw new Error('--label is for label');
+      if (label === '' || label !== label.trim()) {
+        throw new Error('--label takes a name with no leading or trailing space');
+      }
+    }
+    if (issueText !== undefined) {
+      if (kind !== 'label') throw new Error('--issue is for label');
+      if (!/^[1-9][0-9]*$/.test(issueText))
+        throw new Error(`--issue takes an issue number, not ${issueText}`);
+    }
+    if (pin !== undefined) {
+      if (kind !== 'verdict') throw new Error('--pin is for verdict');
+      if (!/^[0-9a-f]{4,40}$/.test(pin)) throw new Error(`--pin takes a sha prefix, not ${pin}`);
+    }
+    return {
+      kind,
+      ...(pin !== undefined && { pin }),
+      ...(label !== undefined && { label }),
+      ...(issueText !== undefined && { issue: Number(issueText) }),
+    };
   }
   if (values.pin !== undefined) throw new Error('--pin is for verdict');
+  if (values.label !== undefined) throw new Error('--label is for label');
+  if (values.issue !== undefined) throw new Error('--issue is for label');
   if (kind !== 'step') throw new Error(`unknown kind ${kind}`);
   const event = EVENTS.find((name) => name === (values.event ?? 'node_completed'));
   if (!event) throw new Error(`unknown event ${values.event}`);
