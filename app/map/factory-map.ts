@@ -259,11 +259,15 @@ export const cardForStep = (map: MapView, workflow: string, path: string): Card 
 export const levelOf = (map: FactoryMap, path: readonly string[]): MapView =>
   map.views?.[path.at(-1) ?? ''] ?? map;
 
+/** The root, then every deeper view. */
+export const levelsOf = (map: FactoryMap): MapView[] => [map, ...Object.values(map.views ?? {})];
+
+/** Every card of the map, at every level. */
+export const allCards = (map: FactoryMap): Card[] => levelsOf(map).flatMap((level) => level.cards);
+
 /** The card, at any level, whose `opens` names `viewId`. */
 export const openerOf = (map: FactoryMap, viewId: string): Card | undefined =>
-  [map, ...Object.values(map.views ?? {})]
-    .flatMap((level) => level.cards)
-    .find((card) => card.opens === viewId);
+  allCards(map).find((card) => card.opens === viewId);
 
 /**
  * The view ids from the root down to the view `id` names, through the card that opens each; the

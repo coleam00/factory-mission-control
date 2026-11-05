@@ -1,6 +1,7 @@
 import { join } from 'node:path';
 import { LANE_STEPS } from '../app/lib/lap-graph';
 import {
+  allCards,
   type Card,
   CHIPS,
   cardChain,
@@ -8,7 +9,9 @@ import {
   FACTORY_MAP,
   type FactoryMap,
   LINE_STYLES,
+  levelsOf,
   type MapView,
+  openerOf,
   PACKS,
   type Pack,
   ROLES,
@@ -52,11 +55,6 @@ function ownScreen(workflow: string, nodes: ReadonlyMap<string, Step>, path: str
   return { workflow: node.definedIn, path };
 }
 
-/** The root, then every deeper view. */
-const levelsOf = (map: FactoryMap): MapView[] => [map, ...Object.values(map.views ?? {})];
-
-const allCards = (map: FactoryMap): Card[] => levelsOf(map).flatMap((level) => level.cards);
-
 /** The values the owner's JSON holds outside the closed sets the drawing indexes by. */
 function unknownValues(map: FactoryMap): string[] {
   const outside = (what: string, value: string, allowed: readonly string[]) =>
@@ -86,7 +84,7 @@ type Trees = Record<Pack, Map<string, Map<string, Step>>>;
 function parentLevel(map: FactoryMap, card: Card): MapView | undefined {
   const own = levelsOf(map).find((level) => level.cards.includes(card));
   const id = Object.entries(map.views ?? {}).find(([, view]) => view === own)?.[0];
-  const opener = allCards(map).find((c) => id !== undefined && c.opens === id);
+  const opener = id === undefined ? undefined : openerOf(map, id);
   return opener && levelsOf(map).find((level) => level.cards.includes(opener));
 }
 

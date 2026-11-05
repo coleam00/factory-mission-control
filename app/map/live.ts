@@ -7,7 +7,13 @@
 import type { HealthWorkableRow } from '../lib/health';
 import type { OwnerQueueRow } from '../lib/owner-queue';
 import type { PanelState } from '../live/LivePanel';
-import { type Card, type Chip, cardChain, type FactoryMap, stepPath } from './factory-map';
+import {
+  allCards,
+  type Chip,
+  cardChain,
+  type FactoryMap,
+  stepPath,
+} from './factory-map';
 
 /** One row of `db/queries/home-map.sql`. */
 export interface HomeMapRow {
@@ -209,12 +215,6 @@ function chipItems(
     ...(orders && states.orders !== 'error' && { orders: [...orders] }),
   };
 }
-
-/** Every card of the map, at every level. */
-const allCards = (map: FactoryMap): Card[] => [
-  ...map.cards,
-  ...Object.values(map.views ?? {}).flatMap((view) => view.cards),
-];
 
 /**
  * Each card's live state: the laps of the factory on a step it covers, each counted once per level
