@@ -155,7 +155,7 @@ export function lapGraph(map: readonly LapMapRow[], attempts: readonly StepAttem
     }
   }
 
-  const graph = stepGraph(rows);
+  const graph = stepGraph(rows, map[0]?.pin ?? null);
   const children = graph.clusters;
   // Every iteration of a loop's step is an attempt of its one node, oldest first.
   const own = new Map<string, StepAttemptRow[]>();
