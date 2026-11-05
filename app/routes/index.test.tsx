@@ -429,6 +429,7 @@ test('Right now links a lap entry to its page and to its GitHub issue, and only 
   ) => ({
     run,
     step: 'plan',
+    workflow: 'archon-loop',
     issue,
   });
   const html = renderToStaticMarkup(
@@ -451,8 +452,13 @@ test('Right now links a lap entry to its page and to its GitHub issue, and only 
 
 test('Right now says a skipped reviewer was not earned, naming the lap by issue or by run', () => {
   const skipped = [
-    { run: 'aaaaaaaa-1', step: 'review/tests', issue: { number: 7, title: 'T', url: null } },
-    { run: 'bbbbbbbb-2', step: 'review/tests', issue: null },
+    {
+      run: 'aaaaaaaa-1',
+      step: 'review/tests',
+      workflow: 'archon-loop',
+      issue: { number: 7, title: 'T', url: null },
+    },
+    { run: 'bbbbbbbb-2', step: 'review/tests', workflow: 'archon-loop', issue: null },
   ];
   const render = (live: Parameters<typeof RightNow>[0]['live']) =>
     renderToStaticMarkup(
@@ -466,6 +472,35 @@ test('Right now says a skipped reviewer was not earned, naming the lap by issue 
   expect(html).toContain('lap bbbbbbbb');
   expect(html.match(/did not earn this reviewer/g)).toHaveLength(2);
   expect(render({ here: [] })).not.toContain('data-skipped');
+});
+
+test('Right now links only a run with a lap page; a queue run and a merge-queue merge show plainly', () => {
+  const issue = { number: 9, title: 'Queued', url: 'https://github.com/o/r/issues/9' };
+  const at = new Date();
+  const html = renderToStaticMarkup(
+    <MemoryRouter>
+      <RightNow
+        live={{
+          here: [
+            { run: 'loop-run', step: 'plan', workflow: 'archon-loop', issue: null },
+            { run: 'queue-run', step: 'plan', workflow: 'archon-build-queue', issue },
+          ],
+          merged: [
+            { run: 'loop-merge', workflow: 'archon-loop', number: 4, at },
+            { run: 'queue-merge', workflow: 'archon-merge-queue', number: 5, at },
+          ],
+        }}
+        factory="here"
+      />
+    </MemoryRouter>,
+  );
+  expect(html).toContain('/f/here/laps/loop-run');
+  expect(html).toContain('/f/here/laps/loop-merge');
+  expect(html).not.toContain('/laps/queue-run');
+  expect(html).not.toContain('/laps/queue-merge');
+  expect(html).toContain('Queued');
+  expect(html).toContain('href="https://github.com/o/r/issues/9"');
+  expect(html).toContain('#5');
 });
 
 test('Right now says a chip count is unavailable', () => {

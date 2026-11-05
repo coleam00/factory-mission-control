@@ -96,23 +96,32 @@ async function poll(what, timeoutMs, attempt) {
 /**
  * Removes the browser's profile, retrying for up to 5 s while Windows still has a file in it
  * locked after the browser exits. Bun's rmSync ignores `maxRetries`, so the retry is here.
+ * A profile still locked after that is left behind with a warning: the probe's verdict was
+ * already judged, and a temp directory is not worth losing it.
  */
-async function removeProfile(profile) {
+async function removeProfile(profile, remove) {
   const deadline = Date.now() + 5000;
   for (;;) {
     try {
-      rmSync(profile, { recursive: true, force: true });
+      remove(profile, { recursive: true, force: true });
       return;
     } catch (error) {
-      if (!['EBUSY', 'EPERM', 'ENOTEMPTY'].includes(error.code) || Date.now() >= deadline)
-        throw error;
-      await Bun.sleep(200);
+      if (['EBUSY', 'EPERM', 'ENOTEMPTY'].includes(error.code) && Date.now() < deadline) {
+        await Bun.sleep(200);
+        continue;
+      }
+      console.error(`design probe: could not remove ${profile}: ${error.message}`);
+      return;
     }
   }
 }
 
-/** Starts the browser and connects to it, waiting up to `portTimeoutMs` for its DevTools port. `readPort` reads DevToolsActivePort; tests replace both. */
-export async function launchBrowser(readPort = readPortFile, portTimeoutMs = PORT_TIMEOUT_MS) {
+/** Starts the browser and connects to it, waiting up to `portTimeoutMs` for its DevTools port. `readPort` reads DevToolsActivePort and `remove` deletes the profile; tests replace all three. */
+export async function launchBrowser(
+  readPort = readPortFile,
+  portTimeoutMs = PORT_TIMEOUT_MS,
+  remove = rmSync,
+) {
   const profile = mkdtempSync(join(tmpdir(), 'design-probe-'));
   const args = [
     '--headless=new',
@@ -132,7 +141,7 @@ export async function launchBrowser(readPort = readPortFile, portTimeoutMs = POR
       proc.kill();
       await Promise.race([exited, Bun.sleep(5000)]);
     }
-    await removeProfile(profile);
+    await removeProfile(profile, remove);
   };
   try {
     const activePort = join(profile, 'DevToolsActivePort');
@@ -571,9 +580,9 @@ async function checksIn(cdp, session, tokenLayers, state) {
   };
 }
 
-export async function probe(url, readPort = readPortFile) {
+export async function probe(url, readPort = readPortFile, remove = rmSync) {
   const tokenLayers = TOKEN_SOURCES.map((path) => tokenDeclarations(readFileSync(path, 'utf8')));
-  const browser = await launchBrowser(readPort);
+  const browser = await launchBrowser(readPort, PORT_TIMEOUT_MS, remove);
   try {
     const { cdp } = browser;
     const { targetId } = await cdp.send('Target.createTarget', { url: 'about:blank' });
