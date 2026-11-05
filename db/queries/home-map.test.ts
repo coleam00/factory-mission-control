@@ -55,6 +55,7 @@ describe('home-map on the seed', () => {
       [QUEUE_RUNS.build]: 'archon-build-queue ',
       [QUEUE_RUNS.review]: 'archon-build-queue ',
       [QUEUE_RUNS.ask]: 'archon-build-queue ',
+      [QUEUE_RUNS.intake]: 'archon-intake triage',
     });
     expect(
       queue
@@ -62,6 +63,7 @@ describe('home-map on the seed', () => {
         .map((r) => [r.number, r.title])
         .sort(),
     ).toEqual([
+      [401, 'Queue issue 401'],
       [401, 'Queue issue 401'],
       [402, 'Queue issue 402'],
       [403, 'Queue issue 403'],
