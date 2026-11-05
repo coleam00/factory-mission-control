@@ -169,9 +169,12 @@ same cards in the same order. Use the app's Right now also lists the open pull r
 check has looked at (the `app-check` query): each one's latest verdict and its lines by kind.
 
 The home map's failing chip and the Board's verdict chip read the old `check-app` step or, on the
-queues, the `check` step of `factory-app-check` (migration 0024). That step keeps only its overall
-verdict and the pull request and head its `select` step kept, and its lines are stored by id, kind
-and verdict without their text. A run whose report names a holdout keeps no output and no lines.
+queues, the `check` step of `factory-app-check` (migrations 0024 and 0025). On the queues that step
+keeps a verdict only once the run's `evidence` step sealed the result: `evidence`'s overall with the
+pull request and head the `select` step kept. Its lines are the sealed ones that match the factory's
+`LINE` in full, stored by id, kind and verdict without their text. A run whose `evidence` did not
+complete shows no verdict and no lines, and a run whose report names a holdout keeps no output and
+no lines.
 Showing those lines on the work item page's timeline waits on that page (#317).
 
 ## Clicking a card
