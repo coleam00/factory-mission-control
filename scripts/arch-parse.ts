@@ -136,17 +136,14 @@ async function storeVersion(tx: Tx, version: Version, parsedAt: Date): Promise<v
   const rows = archRows(version.pack);
   for (const table of ARCH_TABLES) {
     await tx.query(`DELETE FROM mc.${table} WHERE archon_sha = $1 AND factory_sha = $2`, key);
-    // Bound inside an object: Bun would send a bare array as a Postgres array, not jsonb.
     await tx.query(
-      `INSERT INTO mc.${table} SELECT * FROM jsonb_populate_recordset(NULL::mc.${table}, $1::jsonb -> 'rows')`,
+      `INSERT INTO mc.${table} SELECT * FROM jsonb_populate_recordset(NULL::mc.${table}, $1::jsonb)`,
       [
-        {
-          rows: rows[table].map((row) => ({
-            archon_sha: version.archonSha,
-            factory_sha: version.factorySha,
-            ...row,
-          })),
-        },
+        rows[table].map((row) => ({
+          archon_sha: version.archonSha,
+          factory_sha: version.factorySha,
+          ...row,
+        })),
       ],
     );
   }
