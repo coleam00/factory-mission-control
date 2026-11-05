@@ -395,9 +395,11 @@ describe('the picks seam of the home map', () => {
 
   test('the lens steps its SQL selects are the review-lens nodes of the review block', () => {
     const block = workflow('archon-review-block');
-    const lenses = [...block.yaml.matchAll(/- id: (\w+)\s+output_type: review-lens/g)].map(
-      (m) => m[1],
-    );
+    const nodes = (Bun.YAML.parse(block.yaml) as { nodes: { id: string; output_type?: string }[] })
+      .nodes;
+    const lenses = nodes.filter((n) => n.output_type === 'review-lens').map((n) => n.id);
+    // The SQL rewrites a lens id with '__[a-z]+$', so every lens id must be lowercase letters.
+    expect(lenses.every((id) => /^[a-z]+$/.test(id))).toBe(true);
     const selected = /review__\(([^)]+)\)\$/.exec(sql)?.[1].split('|');
     expect(selected?.slice().sort()).toEqual(lenses.sort());
     expect(block.steps[0]?.id).toBe('policy');
