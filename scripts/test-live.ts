@@ -40,6 +40,7 @@ import { switcherPhase } from './live/switcher';
 import { testingPhase } from './live/testing';
 import { measurePanels } from './live/timings';
 import { versionsPhase } from './live/versions';
+import { workItemPhase } from './live/work-item';
 
 const USAGE = [
   'usage: bun run test:live [--out <dir>] [--hold <seconds>]',
@@ -77,6 +78,10 @@ const USAGE = [
   '  It checks the board against a recount of the seed, times `fixture:write label --label',
   "  work-order:demo --issue <a card on the board>` to its panel and a build step on the queue factory's work item 401 to its",
   '  Build column, and checks `?order=demo`, writing board.png and board-design-probe.json.',
+  "  It checks the work item page of the queue factory's returned-then-merged item 407 and of the",
+  "  seed's loop items against a recount, with no hidden check line or text on them, and times a",
+  '  build step on work item 401 to its running row, writing work-item.png, work-item-loop.png and',
+  '  work-item-design-probe.json.',
   "  It checks the owner queue against the seed's open needs-owner issues and open owner questions,",
   '  and times `fixture:write label` to it before and after the hold, writing owner-queue-check.txt,',
   '  owner-queue-timings.json, owner-queue.png and owner-queue-design-probe.json.',
@@ -259,6 +264,7 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
     homePhase(ctx),
     queueMapPhase(ctx),
     boardPhase(ctx),
+    workItemPhase(ctx),
     lapsPhase(ctx),
     oneLapPhase(ctx),
     ledgerPhase(ctx),
