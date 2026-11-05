@@ -24,7 +24,7 @@ package (`fixtures/pack/queue`). A live row carries only a workflow name, so cou
 A card that opens a deeper view names it in `opens`; the view sits under `views.<id>` and has the
 root's shape (caption, `cardSize`, cards, lines, tour) without the legend, `views` or a required
 group. Card ids are unique across every level. A view's `next` card may name `upTo`, a card of
-the level above: clicking it goes up and selects that card. The view's crumb and Open button use
+the level above: clicking it goes up and selects that card. A card may name `countsAs`, a card whose laps it shows as its own, as the Deliver view's Review card does for Review. The view's crumb and Open button use
 the title of the card that opens it. One component draws every level, so selection, the details
 strip, chips, flow and the tour work the same in a view.
 
@@ -70,11 +70,22 @@ of the view, and no card of the view covers a step, or a workflow, the opening c
 view covers only the steps its opening card has (Deliver's view never sees the review rounds,
 which Review has at the root), so an entry such as `ship/deliver` still counts the steps under
 it that belong to the opener. The check also fails on an `opens` naming no view, a view opened by
-no card or by two, a card id used twice, and an `upTo` naming no card of the level above.
+no card or by two, a card id used twice, and an `upTo` naming no card of the level above. A
+`countsAs` fails when it names no card, the card itself, or a card that itself counts as another,
+and when its card covers steps of its own, so a lap counts once on each card that shows it.
+
+`map:check` also fails on any key of `factory-map.json` that the map's types do not declare (a
+misspelled `countsAs` would otherwise be dropped); the key lists in `scripts/map-check.ts` follow
+the interfaces of `factory-map.ts`, and the compiler fails when they drift. A routed line's first
+point must lie on an edge of its `from` card and its last on an edge of its `to` card, on the dashed
+group's edge when that card sits inside the group, or, for a line with `"arrow": false`, on another
+line into the same card. Moving a card or changing `cardSize` without moving the routes fails.
 
 The queue pack is the snapshot `fixtures/pack/queue/`: `sdlc/` is `.archon/workflows/sdlc` of
 coleam00/Archon and `factory/` is `.archon/workflows/factory` of coleam00/ai-software-factory, at
-the commits this factory runs, with `ARCHON_COMMIT` and `FACTORY_COMMIT` beside them.
+the commits this factory runs, with `ARCHON_COMMIT` and `FACTORY_COMMIT` beside them. The
+architecture job and the seed store `factory/` too, under `.archon/workflows/factory/` paths, so
+its steps have screens beside the pack's.
 
 ## Live counts
 
@@ -117,8 +128,8 @@ Behind the scenes says the pinned steps are unavailable when `step-detail` faile
 
 A lap counts once per level: on the card that covers its deepest running step at the root, and
 then on the card of that card's view that covers it, so one run on `ship/deliver/rounds/implement`
-is on Build at the home map and on Deliver in the Build view. A step that Review covers at the
-root counts on no card of the Build view.
+is on Build at the home map, on Deliver in the Build view, and on Implement in the Deliver view. A step that Review covers at the
+root counts on no card of the Build view, and also shows on the Deliver view's Review card.
 
 ## Right now in the Merge and Staging views
 
@@ -171,7 +182,7 @@ holdout verifier and the fence (journey 1). Esc, the close button or a click on 
 deselects.
 
 A card with a view shows ⤢ and a stacked edge, and its strip has an Open button naming the number
-of cards in the view. A card shows ⤢ only once its view exists; today Build's, Split's, Intake's, App check's, Merge's and Staging's do (`?view=build`, `?view=split`, `?view=intake`, `?view=app`, `?view=merge`, `?view=deploy`).
+of cards in the view. A card shows ⤢ only once its view exists; today Build's, Split's, Intake's, App check's, Merge's and Staging's do (`?view=build`, `?view=split`, `?view=intake`, `?view=app`, `?view=merge`, `?view=deploy`), and so does Deliver inside Build (`?view=build/deliver`; Review shows none until its view exists).
 Double-click, Enter on the selected card or the Open button zooms into the view. Breadcrumbs above
 the caption (the factory, then each opened view), the up control, a crumb, Esc (with nothing
 selected) and Backspace go up, and the card that opened the view flashes. The address is

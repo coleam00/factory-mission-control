@@ -403,7 +403,7 @@ measures are the right ones, are owner calls (product direction).
 | Issues, labels, `Depends on`, PRD phase, claims, reviews, owner decisions, `Loop metrics` and `holdouts at` lines, pull requests | GitHub | webhook into the Neon Function; nightly reconcile; backfill |
 | Versions, reasons, `Hypothesis`, `Measure`, verdicts | commits on `coleam00/ai-software-factory` | push webhook (section 11.5) |
 | Key decisions | `DECISIONS.md` in `coleam00/ai-software-factory` | push webhook |
-| Architecture | the pack at the pinned Archon commit (`.archon/workflows/sdlc/` in `coleam00/Archon`) and the factory template (`template/` in ai-software-factory) | the architecture job (11.4) |
+| Architecture | the pack at the pinned Archon commit (`.archon/workflows/sdlc/` in `coleam00/Archon`) and the factory template (`template/` in ai-software-factory) and the factory package (`.archon/workflows/factory/`) | the architecture job (11.4) |
 
 Archon's `provider_event` rows (about 30 per step) are never read by a live query.
 
@@ -441,8 +441,9 @@ Archon's `provider_event` rows (about 30 per step) are never read by a live quer
 ### 11.4 The architecture job and the Archon projection
 
 - **Architecture job** (`bun run arch:parse <archon-sha> <factory-sha>`): reads the pack at that
-  Archon commit and the factory template at that factory commit (from GitHub, or from a local
-  path), and stores, per version: workflows, steps (id, kind, description, model tier, `when`,
+  Archon commit, and the factory package and the template hooks at that factory commit (each factory
+  part optional, not both missing), from GitHub or a local path (`--package-path` for a local
+  package), and stores, per version: workflows, steps (id, kind, description, model tier, `when`,
   `depends_on`, `trigger_rule`, includes, inline subagents), edges, the workflow YAML, command and
   instruction text, and scripts. Includes are expanded the way Archon expands them. Its tests run
   on the committed pack snapshot in `fixtures/pack/` (no network).

@@ -106,8 +106,8 @@ test('the tour runs card centre to card centre along the line, Product document 
 });
 
 test("a card's neighbours are the cards a line joins to it", () => {
-  expect([...neighbours(FACTORY_MAP, 'build')].sort()).toEqual(['order', 'review']);
-  expect([...neighbours(FACTORY_MAP, 'app')].sort()).toEqual(['disc', 'merge', 'review']);
+  expect([...neighbours(FACTORY_MAP, 'build')].sort()).toEqual(['app', 'merge', 'order', 'review']);
+  expect([...neighbours(FACTORY_MAP, 'app')].sort()).toEqual(['build', 'disc', 'merge', 'review']);
   expect([...neighbours(FACTORY_MAP, 'intake')].sort()).toEqual([
     'disc',
     'issue',
@@ -116,6 +116,30 @@ test("a card's neighbours are the cards a line joins to it", () => {
     'split',
   ]);
   expect(neighbours(FACTORY_MAP, null).size).toBe(0);
+});
+
+test("the fixes line runs from Review's top to Build's top and App check and Merge join it, arrowless", () => {
+  const top = (id: string): [number, number] => {
+    const c = card(id);
+    return [c.x + FACTORY_MAP.cardSize.width / 2, c.y];
+  };
+  const fixes = line('review', 'build');
+  const joins = [line('app', 'build'), line('merge', 'build')];
+  const rail = linePoints(FACTORY_MAP, fixes);
+  expect([fixes, ...joins].map((l) => l.style)).toEqual(['loop', 'loop', 'loop']);
+  expect(fixes.label).toBe('fixes');
+  expect(fixes.arrow).not.toBe(false);
+  expect(rail[0]).toEqual(top('review'));
+  expect(rail.at(-1)).toEqual(top('build'));
+  const railY = (rail[1] as [number, number])[1];
+  expect(railY).toBeLessThan(card('review').y);
+  expect(railY).toBeGreaterThan(FACTORY_MAP.group.y);
+  for (const [i, join] of joins.entries()) {
+    const points = linePoints(FACTORY_MAP, join);
+    expect(join.arrow).toBe(false);
+    expect(points[0]).toEqual(top(['app', 'merge'][i] as string));
+    expect(points.at(-1)).toEqual([top('review')[0], railY]);
+  }
 });
 
 test('the world holds every card, the group box and the routed lines, with margin', () => {

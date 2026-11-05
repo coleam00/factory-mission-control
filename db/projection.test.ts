@@ -5,6 +5,7 @@ import { holdoutId } from '../parsers/metrics';
 import { eventData, structuredOutputFor } from '../scripts/fixture/write';
 import type { Db, Row } from '../scripts/lib/db';
 import { runMigrations } from '../scripts/migrate';
+import { queries } from './queries/test-seed';
 import { archonDb, migrationFiles, snapshot } from './test-db';
 
 const NOW = new Date('2026-10-25T12:00:00Z');
@@ -299,6 +300,7 @@ test('the eligibility upgrade keeps live history and installs the same functions
       '0020_queue_step_events.sql',
       '0021_split_step_events.sql',
       '0022_queue_versions.sql',
+      '0023_arch_step_child_workflow.sql',
       '0024_queue_app_check_lines.sql',
     ]);
     expect(await projectionDefinitions(upgraded)).toEqual(await projectionDefinitions(db));
@@ -357,6 +359,7 @@ test('0011 rewrites a short pin to the one full sha it prefixes, and clears ambi
       '0020_queue_step_events.sql',
       '0021_split_step_events.sql',
       '0022_queue_versions.sql',
+      '0023_arch_step_child_workflow.sql',
       '0024_queue_app_check_lines.sql',
     ]);
     const migrated = [
@@ -431,6 +434,7 @@ test('0012 rewrites CRLF to LF in stored architecture texts, and changes nothing
       '0020_queue_step_events.sql',
       '0021_split_step_events.sql',
       '0022_queue_versions.sql',
+      '0023_arch_step_child_workflow.sql',
       '0024_queue_app_check_lines.sql',
     ]);
     const migrated = [
@@ -516,6 +520,7 @@ test('0013 gives back the runs of a step the old key merged, and changes nothing
       '0020_queue_step_events.sql',
       '0021_split_step_events.sql',
       '0022_queue_versions.sql',
+      '0023_arch_step_child_workflow.sql',
       '0024_queue_app_check_lines.sql',
     ]);
     expect(await attempts()).toEqual([
@@ -787,6 +792,7 @@ test('0014 keeps only a stored citation’s references, and changes nothing run 
       '0020_queue_step_events.sql',
       '0021_split_step_events.sql',
       '0022_queue_versions.sql',
+      '0023_arch_step_child_workflow.sql',
       '0024_queue_app_check_lines.sql',
     ]);
     const lines = () =>
@@ -846,6 +852,7 @@ test('0016 lets a pin have no reason, keeps stored reasons, and changes nothing 
       '0020_queue_step_events.sql',
       '0021_split_step_events.sql',
       '0022_queue_versions.sql',
+      '0023_arch_step_child_workflow.sql',
       '0024_queue_app_check_lines.sql',
     ]);
     await pin('b'.repeat(40), null);
@@ -893,6 +900,7 @@ test('0017 keeps lines projected before it without an id, fills new reports’ i
       '0020_queue_step_events.sql',
       '0021_split_step_events.sql',
       '0022_queue_versions.sql',
+      '0023_arch_step_child_workflow.sql',
       '0024_queue_app_check_lines.sql',
     ]);
     const after = await run();
@@ -1766,6 +1774,7 @@ test('0019 projects the attention runs already paused, and changes nothing run a
       '0020_queue_step_events.sql',
       '0021_split_step_events.sql',
       '0022_queue_versions.sql',
+      '0023_arch_step_child_workflow.sql',
       '0024_queue_app_check_lines.sql',
     ]);
     expect(await historical.query('SELECT node_id FROM mc.attention_items')).toEqual([
@@ -1857,6 +1866,7 @@ test('0019 fills a lap projected before it, and changes nothing run again', asyn
       '0020_queue_step_events.sql',
       '0021_split_step_events.sql',
       '0022_queue_versions.sql',
+      '0023_arch_step_child_workflow.sql',
       '0024_queue_app_check_lines.sql',
     ]);
     const lap = () => historical.query('SELECT issue_number, attention_open FROM mc.laps');
@@ -1898,6 +1908,7 @@ test('0022 writes the versions build-queue runs already have, and changes nothin
 
     expect(await runMigrations({ files: migrationFiles, db: historical })).toEqual([
       '0022_queue_versions.sql',
+      '0023_arch_step_child_workflow.sql',
       '0024_queue_app_check_lines.sql',
     ]);
     expect(
@@ -2009,6 +2020,54 @@ test('a holdout workflow’s steps keep status and timing but no output, route o
     ).toEqual([{ route: null, outcome: null, reason: null }]);
   }
   expect(await projectionErrors()).toEqual([]);
+});
+
+test('the architecture diff reports a step whose only change is the workflow it runs', async () => {
+  const diff = queries.find(([name]) => name === 'arch-diff')?.[1] as string;
+  const before = new Date('2026-10-01T00:00:00Z');
+  const after = new Date('2026-10-10T00:00:00Z');
+  const versions = [
+    { digest: 'sha256:aaaa', archon: 'a1', pinnedAt: before, child: 'c3c3' },
+    { digest: 'sha256:bbbb', archon: 'a2', pinnedAt: after, child: '9a9a' },
+  ];
+  await db.query('TRUNCATE mc.arch_versions, mc.arch_steps');
+  for (const v of versions) {
+    const ranAt = new Date(v.pinnedAt.getTime() + 3_600_000);
+    await db.query(
+      `INSERT INTO mc.pins (sha, archon_sha, reason, committed_at) VALUES ($1, $1, 'r', $2)`,
+      [v.archon, v.pinnedAt],
+    );
+    await db.query(
+      `INSERT INTO mc.arch_versions (archon_sha, factory_sha, parsed_at) VALUES ($1, 'f1', $2)`,
+      [v.archon, v.pinnedAt],
+    );
+    await db.query(
+      `INSERT INTO mc.laps (run_id, factory, workflow_name, status, digest, started_at)
+       VALUES (gen_random_uuid(), 'mission-control', 'archon-loop', 'completed', $1, $2)`,
+      [v.digest, ranAt],
+    );
+    for (const [path, child] of [
+      ['judge', v.child],
+      ['other', 'same'],
+    ]) {
+      await db.query(
+        `INSERT INTO mc.arch_steps (archon_sha, factory_sha, workflow, path, position, step_id, kind, child_workflow, defined_in, file)
+         VALUES ($1, 'f1', 'calibrate', $2, 0, $2, 'workflow', $3, 'calibrate', 'calibrate.yaml')`,
+        [v.archon, path, child],
+      );
+    }
+  }
+
+  const rows = await db.query(diff, ['mission-control']);
+  const entries = (digest: string) =>
+    new Map(
+      ((rows.find((r) => r.digest === digest && r.kind === 'step')?.entries ?? []) as string[]).map(
+        (e) => e.split('\t'),
+      ) as [string, string][],
+    );
+  const [old, next] = [entries('sha256:aaaa'), entries('sha256:bbbb')];
+  expect(next.get('judge')).not.toBe(old.get('judge'));
+  expect(next.get('other')).toBe(old.get('other'));
 });
 
 async function appCheckRun(steps: [string, Record<string, unknown>][]) {

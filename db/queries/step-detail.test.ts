@@ -254,6 +254,119 @@ describe('the version the picker marks current', () => {
   });
 });
 
+describe('the current version of a factory on the queues', () => {
+  let db: Db;
+  const sql = (name: string) => queries.find(([n]) => n === name)?.[1] as string;
+  const descriptions = (rows: { description: string | null }[]) => rows.map((r) => r.description);
+
+  beforeAll(async () => {
+    db = await migratedDb();
+  });
+  afterAll(() => db.close());
+
+  /** Every answer the step screen and the picker read for a factory, at the address with no version. */
+  async function answers(factory: string) {
+    const out: Record<string, unknown> = {
+      'step-detail': await db.query(sql('step-detail'), [factory, '']),
+      'step-versions': await db.query(sql('step-versions'), [factory]),
+    };
+    for (const name of STEP_PANELS) {
+      out[name] = await db.query(sql(name), [factory, 'archon-loop', 'check-app', '']);
+    }
+    return out;
+  }
+
+  test('follows the last parse with no pin, leaves a loop factory on its pin, and a re-parse changes nothing', async () => {
+    await db.query(`INSERT INTO mc.factories (name, repository, codebase, console) VALUES
+      ('queue', 'o/r', 'o/q', 'http://localhost:3090'), ('loop', 'o/r', 'o/l', 'http://localhost:3090')`);
+    await db.query(`INSERT INTO mc.laps (run_id, factory, workflow_name, status, started_at) VALUES
+      ('5eed0001-0000-4000-8000-0000000000a1', 'queue', 'archon-build-queue', 'completed', now()),
+      ('5eed0001-0000-4000-8000-0000000000a2', 'loop', 'archon-loop', 'completed', now())`);
+    await db.query(`INSERT INTO mc.pins (sha, archon_sha, reason, committed_at)
+      VALUES ('p1', 'a1', 'one', '2026-01-01T00:00:00Z')`);
+    for (const sha of ['a1', 'a2']) {
+      await db.query(
+        `INSERT INTO mc.arch_steps (archon_sha, factory_sha, workflow, path, position, step_id, kind,
+           description, depends_on, command_file, script_file, defined_in, file)
+         VALUES ($1, 'f', 'archon-loop', 'check-app', 0, 'check-app', 'command', $1, '{}',
+           'c.md', 's.ts', 'archon-loop', 'loop.yaml')`,
+        [sha],
+      );
+      await db.query(
+        `INSERT INTO mc.arch_texts (archon_sha, factory_sha, path, text) VALUES
+           ($1, 'f', 'c.md', $1), ($1, 'f', 'agent.md', $1)`,
+        [sha],
+      );
+      await db.query(
+        `INSERT INTO mc.arch_subagents (archon_sha, factory_sha, workflow, step_path, name,
+           description, instruction_file) VALUES ($1, 'f', 'archon-loop', 'check-app', 'v', $1, 'agent.md')`,
+        [sha],
+      );
+      await db.query(
+        `INSERT INTO mc.arch_scripts (archon_sha, factory_sha, path, text) VALUES ($1, 'f', 's.ts', $1)`,
+        [sha],
+      );
+      await db.query(
+        `INSERT INTO mc.arch_workflows (archon_sha, factory_sha, name, file, yaml)
+         VALUES ($1, 'f', 'archon-loop', 'loop.yaml', $1)`,
+        [sha],
+      );
+    }
+    await db.query(`INSERT INTO mc.arch_versions (archon_sha, factory_sha, parsed_at)
+      VALUES ('a1', 'f', '2026-01-02T00:00:00Z')`);
+    const shown = async (factory: string) =>
+      descriptions((await db.query(sql('step-detail'), [factory, ''])) as never);
+    const marked = async (factory: string) =>
+      (await db.query(sql('step-versions'), [factory]))
+        .filter((v) => v.is_current)
+        .map((v) => v.sha);
+
+    expect([await shown('queue'), await shown('loop')]).toEqual([['a1'], ['a1']]);
+    expect([await marked('queue'), await marked('loop')]).toEqual([['p1'], ['p1']]);
+    const loopBefore = await answers('loop');
+
+    // A parse of a new version, and nothing else written.
+    await db.query(`INSERT INTO mc.arch_versions (archon_sha, factory_sha, parsed_at)
+      VALUES ('a2', 'f', '2026-02-02T00:00:00Z')`);
+    const queue = await answers('queue');
+    expect(await shown('queue')).toEqual(['a2']);
+    // step-nesting answers nothing for a step with no include, so it has no version to show.
+    for (const name of STEP_PANELS.filter((n) => n !== 'step-nesting')) {
+      expect(JSON.stringify(queue[name])).toContain('a2');
+      expect(JSON.stringify(queue[name])).not.toContain('a1');
+    }
+    expect(queue['step-versions']).toEqual([
+      {
+        sha: 'p1',
+        reason: 'one',
+        committed_at: new Date('2026-01-01T00:00:00Z'),
+        is_current: false,
+      },
+      { sha: 'a2', reason: null, committed_at: new Date('2026-02-02T00:00:00Z'), is_current: true },
+    ]);
+    expect(await answers('loop')).toEqual(loopBefore);
+    expect(descriptions((await db.query(sql('step-detail'), ['queue', 'p1'])) as never)).toEqual([
+      'a1',
+    ]);
+
+    // The same version parsed again keeps its first parse time.
+    await db.query(`INSERT INTO mc.arch_versions (archon_sha, factory_sha, parsed_at)
+      VALUES ('a2', 'f', '2026-03-01T00:00:00Z') ON CONFLICT DO NOTHING`);
+    expect(await answers('queue')).toEqual(queue);
+    expect(await answers('loop')).toEqual(loopBefore);
+
+    // A pin that names the new version: the picker marks it, with no row by Archon commit.
+    await db.query(`INSERT INTO mc.pins (sha, archon_sha, reason, committed_at)
+      VALUES ('p2', 'a2', 'two', '2026-02-03T00:00:00Z')`);
+    expect(await marked('queue')).toEqual(['p2']);
+    expect((await db.query(sql('step-versions'), ['queue'])).map((v) => v.sha).sort()).toEqual([
+      'p1',
+      'p2',
+    ]);
+    expect(await shown('loop')).toEqual(['a2']);
+  });
+});
+
 describe('step screens of included blocks on the seed', () => {
   let db: Db;
   const sql = (name: string) => queries.find(([n]) => n === name)?.[1] as string;
@@ -316,6 +429,25 @@ describe('step screens of included blocks on the seed', () => {
     );
   });
 
+  test("the queue factory's current version opens factory-app-check check with its prompt", async () => {
+    const steps = (await db.query(sql('step-detail'), [
+      'queue-factory',
+      '',
+    ])) as unknown as StepRow[];
+    const check = findStep(steps, 'factory-app-check', 'check');
+    expect(check?.command_file).toBe('.archon/workflows/factory/app-check/commands/check.md');
+    const parts = (await db.query(sql('step-prompt'), [
+      'queue-factory',
+      'factory-app-check',
+      'check',
+      '',
+    ])) as { path: string; part: number; chunk: string }[];
+    const fixture = join(REPO_ROOT, 'fixtures/pack/queue/factory/app-check/commands/check.md');
+    expect(joinParts(parts, (row) => row.path).get(check?.command_file ?? '')).toBe(
+      readFileSync(fixture, 'utf8').replaceAll('\r\n', '\n'),
+    );
+  });
+
   test('an older pin opens the step as it was: V1 has briefs and its own review prompt', async () => {
     const V1 = '8e3e1cefaf1e1b7955789d6a43a81b6c2dbd7082';
     const V2 = '5ffd60c6c6e591487f2fbb5ec67ccc8fc55ca915';
@@ -349,6 +481,48 @@ describe('step screens of included blocks on the seed', () => {
     expect(inside.get('deliver/rounds/implement')).toBe('archon-deliver-block / rounds/implement');
     expect(inside.get('deliver/rounds/implement/implement')).toBe('archon-implement / implement');
     expect(inside.get('deliver/rounds/reshape/implement')).toBe('archon-implement / implement');
+  });
+
+  test('a parse of a new version moves a queue factory and not a loop one, with no pin written', async () => {
+    const fresh = 'a'.repeat(40);
+    const factorySha = 'e739394670c61c450c796bbf1671b5b75d9c00f3';
+    const written = async () => ({
+      pins: await db.query('SELECT sha FROM mc.pins ORDER BY sha'),
+      versions: await db.query('SELECT * FROM mc.versions ORDER BY 1'),
+    });
+    const described = async (factory: string) =>
+      (
+        findStep(
+          (await db.query(sql('step-detail'), [factory, ''])) as unknown as StepRow[],
+          'factory-app-check',
+          'check',
+        ) as { description: string | null } | undefined
+      )?.description;
+    const before = await written();
+    const loopBefore = await described('second-factory');
+    try {
+      await db.query(
+        `INSERT INTO mc.arch_versions (archon_sha, factory_sha, parsed_at)
+         VALUES ($1, $2, '2026-11-05T00:00:00Z')`,
+        [fresh, factorySha],
+      );
+      await db.query(
+        `INSERT INTO mc.arch_steps
+           SELECT (jsonb_populate_record(NULL::mc.arch_steps,
+             to_jsonb(s) || jsonb_build_object('archon_sha', $1::text, 'description', 'parsed later'))).*
+           FROM mc.arch_steps s
+           WHERE s.workflow = 'factory-app-check' AND s.path = 'check' AND s.archon_sha = (
+             SELECT archon_sha FROM mc.arch_versions ORDER BY parsed_at DESC OFFSET 1 LIMIT 1)`,
+        [fresh],
+      );
+      expect(await described('queue-factory')).toBe('parsed later');
+      expect(await described('mission-control')).toBe('parsed later');
+      expect(await described('second-factory')).toBe(loopBefore);
+      expect(await written()).toEqual(before);
+    } finally {
+      await db.query('DELETE FROM mc.arch_steps WHERE archon_sha = $1', [fresh]);
+      await db.query('DELETE FROM mc.arch_versions WHERE archon_sha = $1', [fresh]);
+    }
   });
 
   test('every step beneath ship opens a screen that exists', async () => {
