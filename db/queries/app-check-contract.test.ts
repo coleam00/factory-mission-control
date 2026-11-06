@@ -1,4 +1,4 @@
-// The App check's projection contract (migrations 0024 and 0025) is restated by its readers:
+// The App check's projection contract (migrations 0024, 0025 and 0027) is restated by its readers:
 // home-map.sql, board.sql and app-check.sql each spell out which (workflow, step) carries the
 // verdict. These tests bind the copies to the pairs the writer keeps a verdict for, check the map card that lists the panel covers only those, and
 // bind the pinned pack to the writer.
@@ -18,9 +18,9 @@ const ISSUE = 12;
 const CODEBASE = '5eed0000-0000-4000-8000-000000000000';
 // Newer than any seeded step, so the readers' ORDER BY started_at DESC picks this test's row.
 const LATER = '2040-01-01T00:00:00Z';
-// The step whose completion the writer (`mc.project_queue_app_check`, 0025) takes the verdict from;
-// it stores that verdict on the run's VERDICT_ROW row, which is where the readers look.
-const VERDICT_STEP = 'evidence';
+// The step whose completion the writer (`mc.project_queue_app_check`, 0027) takes the verdict from
+// (its `state`); it stores that verdict on the run's VERDICT_ROW row, which is where the readers look.
+const VERDICT_STEP = 'publish';
 const VERDICT_ROW = 'check';
 
 let db: Db;
@@ -72,7 +72,7 @@ test('the readers count the (workflow, step) pairs the writer keeps a verdict fo
   );
 
   const workflows = ['archon-loop', 'archon-build-queue', 'factory-app-check', 'factory-holdouts'];
-  const steps = ['check-app', 'check', 'select', 'evidence'];
+  const steps = ['check-app', 'check', 'select', 'evidence', 'publish'];
   const expected: string[] = [];
   const counted: Record<'failing' | 'board' | 'panel', string[]> = {
     failing: [],
@@ -102,7 +102,10 @@ test('the readers count the (workflow, step) pairs the writer keeps a verdict fo
         const completed = [
           ['select', { pr: PR, head: 'abc1234' }],
           ['check', { overall: 'PASS', lines: [] }],
-          [step, { pr: PR, overall: 'FAIL', lines: [] }],
+          [
+            step,
+            step === VERDICT_STEP ? { state: 'failure' } : { pr: PR, overall: 'FAIL', lines: [] },
+          ],
         ] as const;
         for (const [name, structured_output] of completed) {
           await db.query(
@@ -129,8 +132,8 @@ test('the readers count the (workflow, step) pairs the writer keeps a verdict fo
 });
 
 test('the pinned app check declares exactly the shapes the writer keeps', () => {
-  const writer = 'the writer (0025) keeps';
-  const verdict = format(VERDICT_STEP);
+  const writer = 'the writer (0027) keeps';
+  const verdict = format('evidence');
   expect(format('select')?.properties?.pr, `${writer} pr as bare digits`).toEqual({
     type: ['integer', 'null'],
   });
@@ -144,15 +147,22 @@ test('the pinned app check declares exactly the shapes the writer keeps', () => 
   });
   expect(verdict?.required).toEqual(expect.arrayContaining(['overall', 'lines']));
   expect(format('select')?.required).toContain('pr');
+  expect(
+    format(VERDICT_STEP)?.properties?.state,
+    `${writer} state only as success or failure`,
+  ).toEqual({
+    type: 'string',
+    enum: ['success', 'failure'],
+  });
 });
 
-const OVERALLS = format(VERDICT_STEP)?.properties?.overall?.enum ?? [];
+const OVERALLS = format('evidence')?.properties?.overall?.enum ?? [];
+const STATE_OF: Record<string, string> = { PASS: 'success', FAIL: 'failure' };
 
 test.each(OVERALLS)(
   'a factory-app-check run with %s reaches the home map, the Board and the App check panel through the trigger',
   async (value) => {
     const other = OVERALLS.find((o) => o !== value);
-    const overall = (step: string) => (step === VERDICT_STEP ? value : other);
     const lines = [
       'C1  PASS  A criterion.  evidence: a.png',
       'P1  FAIL  A probe.  evidence: b.png',
@@ -163,7 +173,7 @@ test.each(OVERALLS)(
       [
         'check',
         {
-          overall: overall('check'),
+          overall: other,
           lines,
           summary: 'summary',
         },
@@ -171,11 +181,12 @@ test.each(OVERALLS)(
       [
         'evidence',
         {
-          overall: overall('evidence'),
+          overall: other,
           lines,
           report: 'report',
         },
       ],
+      [VERDICT_STEP, { state: STATE_OF[value], comment: 'created' }],
     ];
     await db.query('BEGIN');
     try {
