@@ -234,6 +234,31 @@ describe('the attention kind', () => {
   });
 });
 
+describe('the retriage kind', () => {
+  test('sets the one state row it names to now and bumps its revision', async () => {
+    const run = recordingDeps({ repoRoot: repo(), rows: () => [{ number: 413 }] });
+    expect(await main(['retriage', '--issue', '413'], run.deps)).toBe(0);
+    expect(run.out).toEqual(['work item #413: re-triaged']);
+    const at = run.sql.findIndex((sql) => sql.startsWith('UPDATE mc.work_item_states'));
+    expect(run.params[at]).toEqual([413, NOW.toISOString()]);
+  });
+
+  test('refuses a work item with no state row, and anything but --issue', async () => {
+    const none = recordingDeps({ repoRoot: repo(), rows: () => [] });
+    expect(await main(['retriage', '--issue', '9'], none.deps)).toBe(1);
+    expect(none.err.join('\n')).toContain('0 work item states for #9');
+    for (const argv of [
+      ['retriage'],
+      ['retriage', '--issue', 'x'],
+      ['retriage', '--issue', '9', '--label', 'a'],
+    ]) {
+      const refused = recordingDeps({ repoRoot: repo() });
+      expect(await main(argv, refused.deps)).toBe(2);
+      expect(refused.opened).toEqual([]);
+    }
+  });
+});
+
 test('label writes needs-owner unless --label names another, and --issue names the issue; both are refused where they do not apply', async () => {
   const insertedLabel = async (argv: string[]) => {
     const run = recordingDeps({ repoRoot: repo(), rows: counting(1, 2) });
