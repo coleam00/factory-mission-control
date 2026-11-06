@@ -81,7 +81,7 @@ export function StepVersionPickerBody({
     >
       <summary className="flex cursor-pointer items-center gap-3">
         <span className={LABEL}>Version</span>
-        <span className="font-mono text-sm tabular-nums text-text-primary [overflow-wrap:anywhere]">
+        <span className="font-mono text-[12px] tabular-nums text-text-primary [overflow-wrap:anywhere]">
           {name}
         </span>
       </summary>
@@ -106,7 +106,7 @@ export function StepVersionPicker({
 }): ReactElement {
   const [open, setOpen] = useState(false);
   return (
-    <LivePanel<StepVersionRow> query="step-versions" factory={factory} className="mb-6">
+    <LivePanel<StepVersionRow> query="step-versions" factory={factory}>
       {(rows, state) => (
         <StepVersionPickerBody
           rows={rows}
