@@ -51,6 +51,15 @@ export const STATE_TOKEN: Record<StepState, `--${string}`> = {
 export const pathOf = (stepId: string) => stepId.split('__').join('/');
 
 /**
+ * A step's path from Archon's step id. Archon names a nested step by its path joined with `__`
+ * (`ship__deliver__rounds__review`), and a loop group's body step `<group>.<step>` on every
+ * iteration (`ship__deliver__rounds.review__policy`, lap-graph.ts), so both separate segments.
+ * `mapPathOf` builds on it; `bun run map:check` holds that no pinned path of a covered workflow
+ * holds a dot.
+ */
+export const stepPath = (stepId: string) => pathOf(stepId).replaceAll('.', '/');
+
+/**
  * The map path a lap's step id runs at. Archon names a loop group's body step `<group>.<step>`
  * (composing across nested groups: `rounds.review__scope`), the same name on every iteration, so
  * a dotted name is the pinned step it is an iteration of when the map has that step (#282).
@@ -58,7 +67,7 @@ export const pathOf = (stepId: string) => stepId.split('__').join('/');
 export function mapPathOf(stepId: string, known: ReadonlySet<string>): string {
   const path = pathOf(stepId);
   if (!path.includes('.') || known.has(path)) return path;
-  const split = path.replaceAll('.', '/');
+  const split = stepPath(stepId);
   return known.has(split) ? split : path;
 }
 
@@ -217,7 +226,6 @@ export const LANE_STEPS = [
   'briefs',
   'check-app',
   'evidence',
-  'handoff',
   'review',
   'land',
   'deploy',

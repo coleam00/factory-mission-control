@@ -16,8 +16,8 @@ JOIN LATERAL (
   WHERE l.factory = pr.factory
     AND (s.status = 'running' OR s.output ? 'overall')
     AND (s.step_id = 'check-app' OR (s.step_id = 'check' AND l.workflow_name = 'factory-app-check'))
-    AND substring(coalesce(s.output ->> 'pr', sel.output ->> 'pr') FROM '([0-9]+)/?$')::integer
-      = pr.number
+    -- The pull request is the step's projected pr_number, or its select's when it has no pr text.
+    AND CASE WHEN s.output ->> 'pr' IS NOT NULL THEN s.pr_number ELSE sel.pr_number END = pr.number
   ORDER BY s.started_at DESC NULLS LAST, s.run_id LIMIT 1
 ) latest ON true
 LEFT JOIN mc.app_check_lines a ON a.run_id = latest.run_id

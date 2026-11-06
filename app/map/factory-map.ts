@@ -233,15 +233,6 @@ export function neighbours(map: MapView, id: string | null): Set<string> {
   return near;
 }
 
-/**
- * A step's path from Archon's step id. Archon names a nested step by its path joined with `__`
- * (`ship__deliver__rounds__review`), and a loop group's body step `<group>.<step>` on every
- * iteration (`ship__deliver__rounds.review__policy`, lap-graph.ts), so both separate segments.
- * That is lap-graph's `mapPathOf` while no pinned path holds a dot, which `bun run map:check`
- * holds for every covered workflow of the fixture pack.
- */
-export const stepPath = (stepId: string) => stepId.split('__').join('/').replaceAll('.', '/');
-
 const under = (path: string, entry: string) => path === entry || path.startsWith(`${entry}/`);
 
 /**

@@ -438,6 +438,12 @@ describe('the rules the live queries restate, which they may not call a function
   const count = (sql: string, part: string | RegExp) =>
     typeof part === 'string' ? sql.split(part).length - 1 : (sql.match(part) ?? []).length;
 
+  test('no live query parses a step pr itself, they read the projected pr_number', () => {
+    for (const [name, sql] of queries) {
+      expect(sql, name).not.toMatch(/->>\s*'pr'\s+FROM/);
+    }
+  });
+
   test('what dates a version is the one list mc.dates_version holds', () => {
     expect(read('db/migrations', '0022_queue_versions.sql')).toContain(DATES_VERSION);
     for (const name of ['version-strip', 'arch-diff']) {

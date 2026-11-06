@@ -2,7 +2,7 @@ import { expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { COLUMNS, parked } from '../../app/lib/board';
-import { LAP_PAGE_WORKFLOW } from '../../app/lib/one-lap';
+import { LAP_PAGE_WORKFLOW, prNumber } from '../../app/lib/one-lap';
 import { REVIEW_TONE } from '../../app/lib/review-outcome';
 import {
   QUEUE_ENDING,
@@ -12,7 +12,7 @@ import {
 } from '../../app/lib/work-item';
 import { runMigrations } from '../../scripts/migrate';
 import { archonDb, migrationFiles } from '../test-db';
-import { onTheSeed, queries } from './test-seed';
+import { migratedDb, onTheSeed, queries } from './test-seed';
 
 const root = join(import.meta.dir, '..', '..');
 const read = (...path: string[]) => readFileSync(join(root, ...path), 'utf8');
@@ -119,6 +119,61 @@ test('the queries behind a link to the lap page filter on LAP_PAGE_WORKFLOW', ()
     expect([name, archonLiterals(name)]).toEqual([name, [LAP_PAGE_WORKFLOW]]);
   }
 });
+
+test('mc.pr_number reads a step pr as prNumber does, a JSON object included', async () => {
+  const pull = (n: number) => `https://github.com/o/r/pull/${n}`;
+  const cases: unknown[] = [
+    '#103',
+    '103',
+    ' 103 ',
+    pull(103),
+    `${pull(103)}/`,
+    'https://github.com/o/r/issues/103',
+    'see PR 103',
+    '',
+    '#0',
+    '#999999999999999999999999999',
+    { number: 103 },
+    { number: 103, url: pull(9) },
+    { url: pull(9) },
+    { number: 1.5, url: pull(9) },
+    { number: -3, url: pull(4) },
+    { url: 'https://github.com/o/r/issues/9' },
+    {},
+    [103],
+    103,
+    '{"number": 7}',
+    '{not json',
+  ];
+  const db = await migratedDb();
+  try {
+    for (const [i, pr] of cases.entries()) {
+      const run = `00000000-0000-4000-8000-${String(i).padStart(12, '0')}`;
+      await db.query(
+        `INSERT INTO mc.lap_steps (run_id, step_id, status, output)
+         VALUES ($1, 'check-app', 'completed', $2)`,
+        [run, JSON.stringify({ pr })],
+      );
+      const [row] = await db.query(
+        `SELECT output ->> 'pr' AS text, pr_number FROM mc.lap_steps WHERE run_id = $1`,
+        [run],
+      );
+      const expected = prNumber(row?.text as string);
+      // A number past integer has no pull request, so the column reads NULL where the rule returns it.
+      const fits = expected !== null && expected <= 2147483647;
+      expect(row?.pr_number, JSON.stringify(pr)).toBe(fits ? expected : null);
+    }
+    await db.query(
+      `UPDATE mc.lap_steps SET output = '{"pr":"#7"}' WHERE run_id = '00000000-0000-4000-8000-000000000000'`,
+    );
+    const [moved] = await db.query(
+      `SELECT pr_number FROM mc.lap_steps WHERE run_id = '00000000-0000-4000-8000-000000000000'`,
+    );
+    expect(moved?.pr_number).toBe(7);
+  } finally {
+    await db.close();
+  }
+}, 60_000);
 
 test('the Board’s parked rule agrees with the pickups of the pinned build and merge queues', async () => {
   const { buildWaits, LAUNCH_STAGES } = await pack('queue', 'sdlc', '.shared', 'build.ts');

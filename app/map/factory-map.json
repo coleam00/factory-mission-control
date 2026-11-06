@@ -296,7 +296,7 @@
       "covers": [
         {
           "workflow": "archon-loop",
-          "steps": ["briefs", "check-app", "evidence", "handoff"],
+          "steps": ["briefs", "check-app", "evidence"],
           "pack": "loop"
         },
         {
@@ -2260,11 +2260,6 @@
           "x": 1720,
           "y": 40,
           "covers": [
-            {
-              "pack": "loop",
-              "workflow": "archon-loop",
-              "steps": ["handoff"]
-            },
             {
               "pack": "queue",
               "workflow": "factory-app-check",

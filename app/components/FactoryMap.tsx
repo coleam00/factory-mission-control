@@ -15,6 +15,8 @@ import {
 import {
   allCards,
   type Card,
+  CHIPS,
+  type Chip,
   cardWidth,
   FIT_FOOT,
   FIT_MAX,
@@ -209,6 +211,24 @@ function flash(el: HTMLElement | undefined): void {
   el.classList.add('animate-map-hit');
 }
 
+/** How each chip draws; a mapped type, so a chip in CHIPS without a look fails type-check. */
+const CHIP_LOOK: Record<Chip, { word: string; className: string }> = {
+  queued: { word: 'queued', className: 'bg-surface-hover text-text-primary' },
+  failing: {
+    word: 'failing',
+    className: 'bg-[color:var(--error-soft)] text-[color:var(--error)]',
+  },
+  waiting: {
+    word: 'waiting',
+    className: 'bg-[color:var(--role-person-soft)] text-[color:var(--role-person)]',
+  },
+  merged: {
+    word: 'merged',
+    className: 'bg-[color:var(--role-test-soft)] text-[color:var(--role-test)]',
+  },
+  orders: { word: 'open', className: 'bg-surface-hover text-text-primary' },
+};
+
 function chipsOf(live: CardLive | undefined) {
   if (live === undefined) return [];
   const chips: { chip: string; text: string; className: string; pulse?: boolean }[] = [];
@@ -221,29 +241,13 @@ function chipsOf(live: CardLive | undefined) {
     'here',
     'bg-[color:var(--accent-soft)] text-[color:var(--running)]',
   );
-  add('queued', live.queued?.length, 'queued', 'bg-surface-hover text-text-primary');
-  for (const chip of live.unavailable ?? []) {
-    chips.push({ chip, text: `? ${chip}`, className: 'bg-surface-hover text-text-secondary' });
+  for (const chip of CHIPS) {
+    if (live.unavailable?.includes(chip)) {
+      chips.push({ chip, text: `? ${chip}`, className: 'bg-surface-hover text-text-secondary' });
+    } else {
+      add(chip, live[chip]?.length, CHIP_LOOK[chip].word, CHIP_LOOK[chip].className);
+    }
   }
-  add(
-    'failing',
-    live.failing?.length,
-    'failing',
-    'bg-[color:var(--error-soft)] text-[color:var(--error)]',
-  );
-  add(
-    'waiting',
-    live.waiting?.length,
-    'waiting',
-    'bg-[color:var(--role-person-soft)] text-[color:var(--role-person)]',
-  );
-  add(
-    'merged',
-    live.merged?.length,
-    'merged',
-    'bg-[color:var(--role-test-soft)] text-[color:var(--role-test)]',
-  );
-  add('orders', live.orders?.length, 'open', 'bg-surface-hover text-text-primary');
   return chips;
 }
 

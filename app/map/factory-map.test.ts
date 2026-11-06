@@ -172,11 +172,10 @@ test("the owner's tighter pitch: 52 between cards, 84 where the ready and passed
 
 test("App check's steps open their screens, check-app's among them; Review's open their places", () => {
   const hrefs = (id: string, at: string | null) => stepLinks(card(id), at).map((l) => l.href);
-  expect(hrefs('app', null).slice(0, 4)).toEqual([
+  expect(hrefs('app', null).slice(0, 3)).toEqual([
     '/steps/archon-loop/briefs',
     '/steps/archon-loop/check-app',
     '/steps/archon-loop/evidence',
-    '/steps/archon-loop/handoff',
   ]);
   expect(hrefs('app', null)).toContain('/steps/factory-app-check/check');
   expect(hrefs('review', 'abc')).toContain(

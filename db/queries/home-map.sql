@@ -36,7 +36,8 @@ WHERE l.factory = $1 AND l.status = 'running'
   AND ($2 = '' OR EXISTS (SELECT 1 FROM mc.versions vr
     WHERE vr.factory = l.factory AND vr.digest = l.digest AND vr.pin_sha = $2))
 UNION ALL
--- Each open pull request whose latest app check came out FAIL overall.
+-- Each open pull request whose latest app check came out FAIL overall. A check names its pull
+-- request by the step's projected pr_number (prNumber's rule, mc.pr_number).
 SELECT 'failing', NULL, NULL, NULL, pr.number, pr.title, pr.url, NULL, NULL
 FROM mc.pull_requests pr
 JOIN LATERAL (
@@ -45,7 +46,7 @@ JOIN LATERAL (
   JOIN mc.laps l ON l.run_id = s.run_id
   WHERE l.factory = pr.factory AND s.step_id IN ('check-app', 'check')
     AND (s.step_id = 'check-app' OR l.workflow_name = 'factory-app-check')
-    AND substring(s.output ->> 'pr' FROM '([0-9]+)/?$')::integer = pr.number
+    AND s.pr_number = pr.number
   ORDER BY s.started_at DESC NULLS LAST, s.run_id LIMIT 1
 ) latest ON latest.overall = 'FAIL'
 WHERE pr.factory = $1 AND pr.state = 'open'

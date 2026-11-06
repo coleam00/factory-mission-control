@@ -1,4 +1,5 @@
-import { type Card, cardsCounting, FACTORY_MAP, stepPath } from '../../app/map/factory-map';
+import { stepPath } from '../../app/lib/lap-graph';
+import { type Card, cardsCounting, FACTORY_MAP } from '../../app/map/factory-map';
 import { SERVE_PORTS } from '../../server/ports';
 import type { Page } from '../lib/cdp';
 import type { Deps } from '../lib/cli';

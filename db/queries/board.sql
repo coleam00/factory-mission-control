@@ -75,13 +75,14 @@ LEFT JOIN LATERAL (
   LIMIT 1
 ) pr ON true
 LEFT JOIN LATERAL (
-  -- That pull request's latest app check verdict, as the map's failing chip reads it.
+  -- That pull request's latest app check verdict, as the map's failing chip reads it,
+  -- matched by the step's projected pr_number.
   SELECT s.output ->> 'overall' AS overall
   FROM mc.lap_steps s
   JOIN mc.laps l ON l.run_id = s.run_id
   WHERE l.factory = i.factory AND s.step_id IN ('check-app', 'check') AND pr.number IS NOT NULL
     AND (s.step_id = 'check-app' OR l.workflow_name = 'factory-app-check')
-    AND substring(s.output ->> 'pr' FROM '([0-9]+)/?$')::integer = pr.number
+    AND s.pr_number = pr.number
   ORDER BY s.started_at DESC NULLS LAST, s.run_id LIMIT 1
 ) ac ON true
 LEFT JOIN LATERAL (
