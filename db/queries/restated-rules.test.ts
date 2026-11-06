@@ -3,7 +3,14 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { COLUMNS } from '../../app/lib/board';
 import { LAP_PAGE_WORKFLOW, prNumber } from '../../app/lib/one-lap';
-import { migratedDb, queries } from './test-seed';
+import { REVIEW_TONE } from '../../app/lib/review-outcome';
+import {
+  QUEUE_ENDING,
+  QUEUE_REVIEW,
+  ROUTE_OF_LABEL,
+  WORK_ITEM_NUMBER,
+} from '../../app/lib/work-item';
+import { migratedDb, onTheSeed, queries } from './test-seed';
 
 const root = join(import.meta.dir, '..', '..');
 const read = (...path: string[]) => readFileSync(join(root, ...path), 'utf8');
@@ -161,6 +168,74 @@ test('mc.pr_number reads a step pr as prNumber does, a JSON object included', as
       `SELECT pr_number FROM mc.lap_steps WHERE run_id = '00000000-0000-4000-8000-000000000000'`,
     );
     expect(moved?.pr_number).toBe(7);
+  } finally {
+    await db.close();
+  }
+}, 60_000);
+
+const yamlEnum = (file: string[], node: string, key: string): string[] => {
+  const doc = Bun.YAML.parse(read('fixtures', 'pack', ...file)) as {
+    nodes: { id: string; output_format?: { properties?: Record<string, { enum?: string[] }> } }[];
+  };
+  const values = doc.nodes.find((n) => n.id === node)?.output_format?.properties?.[key]?.enum;
+  expect(values, `${file.join('/')} ${node}.${key} declares an enum`).toBeDefined();
+  return values as string[];
+};
+
+test('the work item page reads the pack route labels', async () => {
+  const { ROUTE_LABEL } = await pack('queue', 'sdlc', '.shared', 'labels.ts');
+  // `continue` shares `deliver`'s label, which the Board and the page both read as deliver.
+  const { continue: _continue, ...routes } = ROUTE_LABEL;
+  expect(ROUTE_OF_LABEL).toEqual(
+    Object.fromEntries(Object.entries(routes).map(([route, label]) => [label, route])),
+  );
+});
+
+test('the work item page words every build-queue ending, or the pack leaves it unworded on purpose', () => {
+  const decisions = yamlEnum(
+    ['queue', 'sdlc', 'build-queue', 'archon-build-queue.yaml'],
+    'apply',
+    'decision',
+  );
+  const unworded = decisions.filter((d) => !(d in QUEUE_ENDING));
+  // `idle` and `launch` end no delivery round: a new decision fails here until it is worded or listed.
+  expect(unworded.sort()).toEqual(['idle', 'launch']);
+  expect(Object.keys(QUEUE_ENDING).every((d) => decisions.includes(d))).toBe(true);
+});
+
+test('the work item page words exactly the build-queue review actions', () => {
+  const actions = yamlEnum(
+    ['queue', 'sdlc', 'review', 'archon-review-block.yaml'],
+    'synthesize',
+    'action',
+  );
+  expect(Object.keys(QUEUE_REVIEW).sort()).toEqual([...actions].sort());
+});
+
+test('the old loop review outcomes the page words are the archon-loop enum', () => {
+  const outcomes = yamlEnum(['sdlc', 'loop', 'archon-loop.yaml'], 'review', 'outcome');
+  expect(Object.keys(REVIEW_TONE).sort()).toEqual([...outcomes].sort());
+});
+
+test('the work item page renders exactly the pack sweep actions', async () => {
+  const { SWEEP_ACTIONS } = await pack('queue', 'sdlc', '.shared', 'merge.ts');
+  const body = read('app', 'lib', 'work-item.ts');
+  const cases = [
+    ...body.slice(body.indexOf('function sweepDecision')).matchAll(/case '([^']*)':/g),
+  ];
+  expect(cases.map((m) => m[1]).sort()).toEqual([...SWEEP_ACTIONS].sort());
+});
+
+test('the work item address guard accepts the numbers mc.run_issue_number reads', async () => {
+  const db = await onTheSeed();
+  try {
+    for (const n of ['0', '1', '123', '999999999', '1000000000', '01', '-1', '1a', '']) {
+      const [row] = await db.query(
+        `SELECT mc.run_issue_number(jsonb_build_object('inputs', jsonb_build_object('number', $1::text))) AS n`,
+        [n],
+      );
+      expect([n, WORK_ITEM_NUMBER.test(n)]).toEqual([n, row?.n !== null]);
+    }
   } finally {
     await db.close();
   }

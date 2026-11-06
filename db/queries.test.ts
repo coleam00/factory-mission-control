@@ -479,6 +479,31 @@ describe('the rules the live queries restate, which they may not call a function
     }
   });
 
+  test('merged is closed, not as not planned or a duplicate, with a merged pull request that closes or Refs it, in every copy', () => {
+    const NOT_DELIVERED =
+      /i\.state = 'closed'\s+AND coalesce\(i\.close_reason, 'completed'\) NOT IN \('not_planned', 'duplicate'\)/g;
+    // The delivery branches as one predicate: a merged PR that closes the item, or one that Refs it.
+    const DELIVERED =
+      /AND \(EXISTS \(\s*SELECT 1 FROM mc\.pull_request_issues pi\s+JOIN mc\.pull_requests p ON p\.factory = pi\.factory AND p\.number = pi\.pr_number\s+WHERE pi\.factory = i\.factory AND pi\.issue_number = i\.number AND p\.merged_at IS NOT NULL\s*\) OR EXISTS \(\s*SELECT 1 FROM mc\.pull_request_references rf\s+JOIN mc\.pull_requests p ON p\.factory = rf\.factory AND p\.number = rf\.pr_number\s+WHERE rf\.factory = i\.factory AND rf\.issue_number = i\.number AND p\.merged_at IS NOT NULL\s*\)\)/g;
+    // The closing branch alone, so a copy in the pre-Refs form is counted too.
+    const BY_CLOSING = 'pi.issue_number = i.number AND p.merged_at IS NOT NULL';
+    // [copies] per name; a live query not listed here may state the rule nowhere.
+    const copies: Record<string, number> = {
+      board: 2,
+      'work-orders': 1,
+      'product-documents': 1,
+    };
+    for (const [name, sql] of queries) {
+      const expected = copies[name] ?? 0;
+      expect([
+        name,
+        count(sql, NOT_DELIVERED),
+        count(sql, DELIVERED),
+        count(sql, BY_CLOSING),
+      ]).toEqual([name, expected, expected, expected]);
+    }
+  });
+
   test('a build-queue lap is a run whose facts step names an item, in every copy of the rule', () => {
     for (const sql of [
       query('scorecard'),
