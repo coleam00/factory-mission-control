@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test';
 import { onTheSeed, queries } from './test-seed';
-import { currentVersionSql, STEP_QUERIES_WITH_THE_RULE, versionRule } from './version-rule';
+import { currentVersionSql, versionRule } from './version-rule';
 
 const sql = (name: string) => queries.find(([n]) => n === name)?.[1] as string;
 const normalized = (text: string) =>
@@ -18,6 +18,7 @@ function parts(name: string, address: string) {
   };
 }
 
+const stepQueries = queries.map(([n]) => n).filter((n) => n.startsWith('step-'));
 const addressOf = (name: string) => (name === 'step-detail' ? '$2' : '$4');
 const owner = parts('step-detail', '$2');
 
@@ -25,15 +26,8 @@ const owner = parts('step-detail', '$2');
 const WITH_ADDRESS = "CASE WHEN $V = '' THEN q.on_queues OR p.sha IS NOT NULL ELSE p.sha = $V END";
 const WITH_ADDRESS_ORDER = "CASE WHEN $V = '' AND q.on_queues THEN";
 
-test('every step query is one that restates the rule', () => {
-  const stepQueries = queries.map(([n]) => n).filter((n) => n.startsWith('step-'));
-  expect(stepQueries.sort()).toEqual([...STEP_QUERIES_WITH_THE_RULE].sort());
-});
-
 test("every step query's queues test is step-detail's", () => {
-  const differ = STEP_QUERIES_WITH_THE_RULE.filter(
-    (name) => parts(name, addressOf(name)).queues !== owner.queues,
-  );
+  const differ = stepQueries.filter((name) => parts(name, addressOf(name)).queues !== owner.queues);
   expect(differ).toEqual([]);
 });
 
@@ -44,7 +38,7 @@ test('every step query chooses its version as step-detail does', () => {
     .replace(WITH_ADDRESS, 'q.on_queues OR p.sha IS NOT NULL')
     .replace(WITH_ADDRESS_ORDER, 'CASE WHEN q.on_queues THEN');
 
-  const differ = STEP_QUERIES_WITH_THE_RULE.flatMap((name) => {
+  const differ = stepQueries.flatMap((name) => {
     const expected = name === 'step-versions' ? withoutAddress : owner.version;
     const got = parts(name, addressOf(name)).version;
     return got === expected ? [] : [[name, got]];

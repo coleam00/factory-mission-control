@@ -17,14 +17,3 @@ export function versionRule(sql: string): string {
 export function currentVersionSql(stepDetailSql: string): string {
   return `${versionRule(stepDetailSql)}\nSELECT archon_sha, factory_sha FROM version`;
 }
-
-/** Every query that copies the rule, step-detail first. */
-export const STEP_QUERIES_WITH_THE_RULE = [
-  'step-detail',
-  'step-nesting',
-  'step-prompt',
-  'step-scripts',
-  'step-subagents',
-  'step-yaml',
-  'step-versions',
-];
