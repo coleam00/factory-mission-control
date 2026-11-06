@@ -114,7 +114,7 @@ test('the queries behind a link to the lap page filter on LAP_PAGE_WORKFLOW', ()
 });
 
 test('the Board’s parked rule agrees with the pickups of the pinned build and merge queues', async () => {
-  const { buildWaits } = await pack('queue', 'sdlc', '.shared', 'build.ts');
+  const { buildWaits, LAUNCH_STAGES } = await pack('queue', 'sdlc', '.shared', 'build.ts');
   const { mergeWaits } = await pack('queue', 'sdlc', '.shared', 'merge.ts');
   const hour = (h: number) => `2026-11-05T${String(h).padStart(2, '0')}:00:00.000Z`;
   const doc = (stage: string, facts: object) => ({
@@ -187,7 +187,11 @@ test('the Board’s parked rule agrees with the pickups of the pinned build and 
             ? f.merge.at
             : null;
       const triagedAt = f.triage?.at ?? null;
-      const retriaged = triagedAt !== null && parkedAt !== null && triagedAt > parkedAt;
+      const retriaged =
+        !(LAUNCH_STAGES as readonly string[]).includes(d.stage) &&
+        triagedAt !== null &&
+        parkedAt !== null &&
+        triagedAt > parkedAt;
       const expected = !retriaged && parkedAt !== null && !buildWaits(d) && !mergeWaits(d);
       expect(parked(state), JSON.stringify(d.facts)).toBe(expected);
     }
