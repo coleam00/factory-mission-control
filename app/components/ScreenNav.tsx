@@ -5,7 +5,7 @@ import type { FactoryScreen } from '../routing';
 import { DecisionsCount } from './DecisionsCount';
 
 const LINK =
-  'relative inline-flex items-center px-1 pb-2.5 pt-2 font-mono text-[11px] font-semibold uppercase tracking-[0.1em] transition-colors';
+  'inline-flex items-center gap-2 rounded-md border px-3 py-1.5 text-sm font-medium transition-colors';
 
 /**
  * Which link is the current screen at `pathname`: the screen's own address, a lap's page
@@ -34,16 +34,14 @@ function ScreenLink({
     <Link
       to={to}
       aria-current={isActive ? 'page' : undefined}
-      className={`${LINK} ${isActive ? 'text-accent-bright' : 'text-text-secondary hover:text-text-primary'}`}
+      className={`${LINK} ${
+        isActive
+          ? 'border-border bg-surface-elevated text-text-primary'
+          : 'border-transparent text-text-secondary hover:text-text-primary'
+      }`}
     >
       {label}
       {children}
-      {isActive ? (
-        <span
-          aria-hidden
-          className="pointer-events-none absolute inset-x-0 -bottom-px h-0.5 rounded-full bg-selected"
-        />
-      ) : null}
     </Link>
   );
 }
@@ -66,7 +64,7 @@ export function ScreenNavBody({
   const inUrl = useParams().factory;
   const home = inUrl === undefined ? '/' : `/f/${encodeURIComponent(inUrl)}`;
   return (
-    <nav aria-label="Screens" className="mx-auto flex max-w-6xl flex-wrap gap-x-5 px-6">
+    <nav aria-label="Screens" className="flex flex-wrap items-center gap-1">
       <ScreenLink to={home} label="Factory" kind="map" />
       {factory === undefined
         ? null

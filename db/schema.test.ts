@@ -68,6 +68,7 @@ test('gives every table in mc a primary key, one table per family', async () => 
       'issue_labels',
       'issue_dependencies',
       'comments',
+      'work_item_states',
       'pull_requests',
       'claims',
       'reviews',
@@ -173,6 +174,7 @@ test("adds only the projection's triggers to Archon's schema", async () => {
   expect(publicTables).toEqual([
     'mc_schema_migrations',
     'remote_agent_codebases',
+    'remote_agent_state_revisions',
     'remote_agent_workflow_events',
     'remote_agent_workflow_runs',
   ]);
@@ -186,6 +188,7 @@ test("adds only the projection's triggers to Archon's schema", async () => {
     { relname: 'remote_agent_workflow_runs', tgname: 'mc_project_run_insert' },
     { relname: 'remote_agent_workflow_runs', tgname: 'mc_project_run_update' },
     { relname: 'remote_agent_workflow_events', tgname: 'mc_project_step_event' },
+    { relname: 'remote_agent_state_revisions', tgname: 'mc_project_work_item_state' },
   ]);
 });
 

@@ -31,6 +31,7 @@ SELECT 'item' AS kind, i.number, i.title, i.url, i.state, i.closed_at,
   coalesce(rd.rounds, 0) AS rounds,
   ac.overall AS app_check,
   pr.number AS pr, pr.open AS pr_open,
+  st.build_status, st.build_at, st.merge_status, st.merge_at, st.triage_at, st.own_pr_at,
   NULL::text AS repository, NULL::integer AS merged_total
 FROM items i
 LEFT JOIN LATERAL (
@@ -84,10 +85,18 @@ LEFT JOIN LATERAL (
     AND s.pr_number = pr.number
   ORDER BY s.started_at DESC NULLS LAST, s.run_id LIMIT 1
 ) ac ON true
+LEFT JOIN LATERAL (
+  -- The queues' own state for the item (Archon's work/<n> document), as the Board's parked rule reads it.
+  SELECT w.build_status, w.build_at, w.merge_status, w.merge_at, w.triage_at, w.own_pr_at
+  FROM mc.work_item_states w
+  JOIN mc.factories f ON f.codebase = w.project_key
+  WHERE f.name = i.factory AND w.number = i.number
+) st ON true
 UNION ALL
 -- One row for the factory: where "N older" points, and how many work items a merged pull
 -- request closed or named with `Refs` in all, of which only the newest 200 are above.
 SELECT 'factory', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+  NULL, NULL, NULL, NULL, NULL, NULL,
   f.repository,
   (SELECT count(*)::int FROM mc.issues i
    WHERE i.factory = f.name AND i.state = 'closed' AND coalesce(i.close_reason, 'completed') NOT IN ('not_planned', 'duplicate') AND (EXISTS (

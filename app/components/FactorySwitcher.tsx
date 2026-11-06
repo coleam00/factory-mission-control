@@ -13,7 +13,6 @@ export interface FactorySwitcherRow {
   is_default: boolean;
 }
 
-const LABEL = 'font-mono text-[10px] font-semibold uppercase tracking-[0.04em] text-text-secondary';
 const NOTE = 'px-3 py-2 text-sm text-text-secondary';
 
 /** The history state of a page the switcher opened, so its screen can tell (`isSwitched`). */
@@ -133,7 +132,7 @@ export function FactorySwitcherBody({
       className="relative"
     >
       <summary className="flex cursor-pointer items-center gap-3">
-        <span className={LABEL}>Factory</span>
+        <span className="sr-only">Factory</span>
         <span className="inline-flex items-center gap-1.5 rounded-md border border-[color:var(--accent-muted)] bg-[color:var(--accent-soft)] px-2 py-0.5 font-mono text-sm font-semibold text-accent-bright [overflow-wrap:anywhere]">
           {current ?? '-'}
           <span aria-hidden="true" className="text-[10px]">
@@ -195,7 +194,7 @@ export function FactorySwitcher({ screens }: { screens: readonly FactoryScreen[]
     <LivePanel<FactorySwitcherRow>
       query="factory-switcher"
       factory={fallback}
-      className="mx-auto flex max-w-6xl flex-wrap gap-y-2 px-6 pt-3"
+      className="flex flex-wrap items-center gap-y-2"
     >
       {(all, state) => {
         const rows = shownRows(all, factories);

@@ -29,7 +29,7 @@ afterAll(() => db.close());
 beforeEach(async () => {
   await db.query(`TRUNCATE public.remote_agent_workflow_runs, public.remote_agent_codebases CASCADE;
     TRUNCATE mc.laps, mc.lap_steps, mc.attention_items, mc.lap_step_attempts, mc.app_check_lines, mc.projection_errors,
-      mc.factories, mc.versions, mc.pins`);
+      mc.factories, mc.versions, mc.pins, mc.work_item_states, public.remote_agent_state_revisions`);
   runId = await newRun();
 });
 
@@ -697,6 +697,8 @@ test('every projection function stops a lock wait after 100 ms, and only inside 
       'project_run',
       'project_step_event',
       'project_version',
+      'project_work_item_state',
+      'project_work_item_state_revision',
       'record_attempt_usage',
       'record_projection_error',
       'record_step_attempt',
@@ -2471,4 +2473,95 @@ test('the queue app check projection reads the node ids and output keys the pack
     pr: '$select.output.pr',
     head: '$select.output.head',
   });
+});
+
+const stateDoc = (facts: object) => JSON.stringify({ version: 1, stage: 'deliver', facts });
+const WORK = 'coleam00/factory-mission-control';
+
+async function putState(name: string, revision: number, value: string | null, operation = 'put') {
+  await db.query(
+    `INSERT INTO public.remote_agent_state_revisions (project_key, name, revision, value, operation, writer_kind)
+     VALUES ($1, $2, $3, $4, $5, 'run')`,
+    [WORK, name, revision, value, operation],
+  );
+}
+
+const workStates = () =>
+  db.query(
+    `SELECT number, revision, build_status, build_at, merge_status, triage_at, own_pr_at
+     FROM mc.work_item_states ORDER BY number`,
+  );
+
+test('a work item state revision replaces the row, an older one inserted after it does not, and a delete removes it', async () => {
+  await putState(
+    'work/356',
+    1,
+    stateDoc({ triage: { at: 'T1' }, build: { status: 'next', at: 'T2' } }),
+  );
+  await putState(
+    'work/356',
+    3,
+    stateDoc({ triage: { at: 'T1' }, build: { status: 'parked', at: 'T3' } }),
+  );
+  await putState('work/356', 2, stateDoc({ build: { status: 'asking', at: 'T0' } }));
+  expect(await workStates()).toEqual([
+    {
+      number: 356,
+      revision: 3,
+      build_status: 'parked',
+      build_at: 'T3',
+      merge_status: null,
+      triage_at: 'T1',
+      own_pr_at: null,
+    },
+  ]);
+
+  await putState('work/356', 4, null, 'delete');
+  expect(await workStates()).toEqual([]);
+});
+
+test('only work/<n> documents of the state store are projected, and a bad one never fails the write', async () => {
+  await putState('discoveries/x', 1, stateDoc({ build: { status: 'parked', at: 'T1' } }));
+  await putState('work/abc', 1, stateDoc({ build: { status: 'parked', at: 'T1' } }));
+  expect(await workStates()).toEqual([]);
+
+  await putState('work/9', 1, '{not json');
+  expect(await workStates()).toEqual([]);
+  expect(
+    await db.query('SELECT count(*)::int AS n FROM public.remote_agent_state_revisions'),
+  ).toEqual([{ n: 3 }]);
+  const errors = await projectionErrors();
+  expect(errors).toHaveLength(1);
+  expect(errors[0]?.source).toBe('mc_project_work_item_state');
+  expect(String(errors[0]?.message)).toStartWith('work/9: ');
+});
+
+test('0028 projects the latest revision of each stored work item, and nothing changes run again', async () => {
+  const historical = await archonDb();
+  const put = (name: string, revision: number, value: string | null) =>
+    historical.query(
+      `INSERT INTO public.remote_agent_state_revisions (project_key, name, revision, value, operation, writer_kind)
+       VALUES ($1, $2, $3, $4, 'put', 'run')`,
+      [WORK, name, revision, value],
+    );
+  await put('work/5', 1, stateDoc({ build: { status: 'next', at: 'T1' } }));
+  await put('work/5', 2, stateDoc({ build: { status: 'parked', at: 'T2' } }));
+  await put('work/6', 1, stateDoc({ merge: { status: 'parked', at: 'T3' } }));
+  await put('discoveries/x', 1, '{}');
+  await runMigrations({ files: migrationFiles, db: historical });
+
+  expect(
+    await historical.query(
+      'SELECT number, revision, build_status, merge_status FROM mc.work_item_states ORDER BY number',
+    ),
+  ).toEqual([
+    { number: 5, revision: 2, build_status: 'parked', merge_status: null },
+    { number: 6, revision: 1, build_status: null, merge_status: 'parked' },
+  ]);
+  const before = await snapshot(historical);
+  await historical.query(
+    await Bun.file(join(import.meta.dir, 'migrations/0028_work_item_states.sql')).text(),
+  );
+  expect(await snapshot(historical)).toEqual(before);
+  await historical.close();
 });

@@ -27,6 +27,13 @@ export interface BoardRow {
   /** The open pull request that closes it, else the merged one. */
   pr: number | null;
   pr_open: boolean | null;
+  /** The queues' work-item state, the six fields the Parked rule reads; null without a state. */
+  build_status: string | null;
+  build_at: string | null;
+  merge_status: string | null;
+  merge_at: string | null;
+  triage_at: string | null;
+  own_pr_at: string | null;
   /** The factory row: its repository and its work items a pull request merged. */
   repository: string | null;
   merged_total: number | null;
@@ -40,7 +47,8 @@ export type ColumnId =
   | 'app'
   | 'merge'
   | 'decision'
-  | 'merged';
+  | 'merged'
+  | 'parked';
 
 /** The map's cards the stage columns follow, in the order work moves through them. */
 const STAGES = ['intake', 'build', 'review', 'app', 'merge'] as const;
@@ -52,6 +60,10 @@ export interface ColumnSpec {
   title: string;
   /** The color of the title; absent for Queued, which is nobody's yet. */
   role?: Role;
+  /** Who holds the column's items, under its title. */
+  holder?: string;
+  /** What an empty column says; 'Nothing here' when absent. */
+  empty?: string;
 }
 
 function stageSpec(id: StageId): ColumnSpec {
@@ -65,6 +77,7 @@ export const COLUMNS: readonly ColumnSpec[] = [
   ...STAGES.map(stageSpec),
   { id: 'decision', title: 'Your decision', role: 'person' },
   { id: 'merged', title: 'Merged', role: 'test' },
+  { id: 'parked', title: 'Parked', holder: 'you', empty: 'Empty' },
 ];
 
 /** How long a merged work item and a finished work order stay on the board. */
@@ -163,8 +176,33 @@ interface Facts {
   workable: ReadonlySet<number>;
 }
 
+type WorkItemState = Pick<
+  BoardRow,
+  'build_status' | 'build_at' | 'merge_status' | 'merge_at' | 'triage_at' | 'own_pr_at'
+>;
+
+/** Whether `at` is a later ISO instant than `than`; compared as text, as the queues compare them. */
+const later = (at: string | null, than: string | null) => at !== null && than !== null && at > than;
+
+/**
+ * Whether the queues have parked a work item and nothing since has released it: its build record
+ * says parked and no triage came after that decision, or its merge record says parked and neither a
+ * triage nor a renewed readiness came after it. Restates `buildWaits` and `mergeWaits` of the
+ * queue pack; db/queries/restated-rules.test.ts fails when they disagree.
+ */
+export function parked(state: WorkItemState): boolean {
+  if (state.build_status === 'parked') return !later(state.triage_at, state.build_at);
+  if (state.merge_status !== 'parked' || later(state.triage_at, state.merge_at)) return false;
+  // An own pull request is renewed only by a new head, which the state does not hold.
+  if (state.build_status === null && state.own_pr_at !== null) return true;
+  const readyAt = state.build_status === 'ready' ? state.build_at : state.own_pr_at;
+  return !later(readyAt, state.merge_at);
+}
+
 /** The column that holds an open work item right now; the first rule that matches wins. */
-function columnOf(number: number, prOpen: boolean, facts: Facts): ColumnId | null {
+function columnOf(row: BoardRow, number: number, facts: Facts): ColumnId | null {
+  if (parked(row)) return 'parked';
+  const prOpen = row.pr_open === true;
   if (facts.attention.has(number) || facts.needsOwner.has(number)) return 'decision';
   const stage = facts.running.get(number);
   if (stage) return stage;
@@ -214,11 +252,7 @@ export function itemOnBoard(
   const id =
     row.state === 'closed'
       ? 'merged'
-      : columnOf(
-          number,
-          row.pr_open === true,
-          factsOf(sources.map, sources.workable, sources.owner),
-        );
+      : columnOf(row, number, factsOf(sources.map, sources.workable, sources.owner));
   return {
     column: COLUMNS.find((c) => c.id === id) ?? null,
     pr: row.pr,
@@ -245,7 +279,7 @@ export function boardView(sources: BoardSources, now: Date, order: string | null
       if (!withinKeep(row.closed_at, now)) continue;
       recent++;
       column = 'merged';
-    } else column = columnOf(number, row.pr_open === true, facts);
+    } else column = columnOf(row, number, facts);
     if (column === null) continue;
     const names = row.work_orders ?? [];
     if (names.length === 0) notInOrder++;

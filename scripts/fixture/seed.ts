@@ -1538,7 +1538,7 @@ function secondFactorySql(loop: Loop): string[] {
  * holds one merge. One open needs-owner issue must not count. One open
  * product document (410, label `archon-prd`) whose completed `archon-split` run recorded issues
  * 411, 412 and 413 and adopted 405; 411 and 412 are closed by merged pull requests, so the document
- * is 2 merged of 4. A running `archon-intake` run (on 401) and a running `archon-split` run (on
+ * is 2 merged of 4. 413 is parked (QUEUE_PARKED). A running `archon-intake` run (on 401) and a running `archon-split` run (on
  * 410) have no step yet, for the live check to put on Triage and Break it up.
  */
 export const QUEUE_FACTORY: FactoryEntry = {
@@ -1578,6 +1578,19 @@ export const QUEUE_RETURNED = {
   landed: '5eed0005-0000-4000-8000-000000000014',
   reason: 'It conflicts with main in app/routes/board.tsx.',
   brief: 'Merge main into the branch, keep both column rules, and run the board tests again.',
+} as const;
+
+/**
+ * The queue factory's open issue 413, parked by the build queue after its triage. It is an mc row of
+ * the work item state, not an Archon revision: neither the `fixture` branch nor
+ * fixtures/archon-schema.sql has Archon's state table, so the trigger that fills the row is proved
+ * in db/projection.test.ts.
+ */
+export const QUEUE_PARKED = {
+  issue: 413,
+  revision: 2,
+  triagedAt: '2026-10-24T09:01:00.000Z',
+  parkedAt: '2026-10-24T09:06:00.000Z',
 } as const;
 
 /** The source digest of the queue factory's runs: every workflow run from one source shares it. */
@@ -1709,6 +1722,17 @@ function queueFactorySql(): string[] {
     '',
     '-- A third factory, on the queue workflows: runs with a number input, one waiting on attention, one that merged, and finished build-queue runs on two versions.',
     insert('mc.factories', QUEUE_FACTORY),
+    insert('mc.work_item_states', {
+      project_key: QUEUE_FACTORY.codebase,
+      number: QUEUE_PARKED.issue,
+      revision: QUEUE_PARKED.revision,
+      build_status: 'parked',
+      build_at: QUEUE_PARKED.parkedAt,
+      merge_status: null,
+      merge_at: null,
+      triage_at: QUEUE_PARKED.triagedAt,
+      own_pr_at: null,
+    }),
     insert('remote_agent_codebases', {
       id: QUEUE_CODEBASE,
       name: QUEUE_FACTORY.codebase,

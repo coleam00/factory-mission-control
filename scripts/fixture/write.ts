@@ -7,7 +7,7 @@ const EVENTS = ['node_started', 'node_completed', 'node_failed'] as const;
 type StepEvent = (typeof EVENTS)[number];
 
 const USAGE =
-  'usage: bun run fixture:write step [--run <id>] [--step <step id>] [--event node_started|node_completed|node_failed] [--error <text>] | attention --run <id> | label [--label <name>] [--issue <number>] | comment | issue | pin | verdict [--pin <sha prefix>] | decision';
+  'usage: bun run fixture:write step [--run <id>] [--step <step id>] [--event node_started|node_completed|node_failed] [--error <text>] | attention --run <id> | label [--label <name>] [--issue <number>] | retriage --issue <number> | comment | issue | pin | verdict [--pin <sha prefix>] | decision';
 
 export const WORKFLOW = 'archon-loop';
 export const FACTORY = 'mission-control';
@@ -354,6 +354,23 @@ async function pauseOnAttention(tx: Tx, runId: string, at: Date): Promise<string
   return `run ${runId}: running -> paused on attention`;
 }
 
+/**
+ * Marks a re-triage of a work item in its state row, as the intake queue does to the item's
+ * work/<n> document, and bumps the revision; fails unless exactly one row changed.
+ */
+async function retriage(tx: Tx, issue: number, at: Date): Promise<string> {
+  const changed = await tx.query(
+    `UPDATE mc.work_item_states SET triage_at = $2, revision = revision + 1
+     WHERE number = $1 RETURNING number`,
+    [issue, at.toISOString()],
+  );
+  if (changed.length !== 1)
+    throw new Error(
+      `${changed.length} work item states for #${issue}, not one, so it was not re-triaged`,
+    );
+  return `work item #${issue}: re-triaged`;
+}
+
 export const main: Main = async (argv, deps) => {
   let parsed: Cli;
   try {
@@ -370,6 +387,7 @@ export const main: Main = async (argv, deps) => {
         if (parsed.kind === 'step') report = await writeEvent(tx, parsed, deps.now());
         else if (parsed.kind === 'attention')
           report = await pauseOnAttention(tx, parsed.run, deps.now());
+        else if (parsed.kind === 'retriage') report = await retriage(tx, parsed.issue, deps.now());
         else report = await writeRow(tx, parsed.kind, deps.now(), parsed);
       });
       deps.out(report);
@@ -381,7 +399,8 @@ export const main: Main = async (argv, deps) => {
 
 type StepCli = { kind: 'step'; step: string; event: StepEvent; run?: string; error?: string };
 type AttentionCli = { kind: 'attention'; run: string };
-type Cli = StepCli | AttentionCli | ({ kind: RowKindName } & RowOptions);
+type RetriageCli = { kind: 'retriage'; issue: number };
+type Cli = StepCli | AttentionCli | RetriageCli | ({ kind: RowKindName } & RowOptions);
 
 function parseCli(argv: string[]): Cli {
   const { values, positionals } = parseArgs({
@@ -404,6 +423,13 @@ function parseCli(argv: string[]): Cli {
     if (run === undefined) throw new Error('attention needs --run <id>');
     if (Object.keys(others).length > 0) throw new Error('attention takes only --run');
     return { kind, run };
+  }
+  if (kind === 'retriage') {
+    const { issue, ...others } = values;
+    if (issue === undefined || !/^[1-9][0-9]*$/.test(issue))
+      throw new Error('retriage needs --issue <number>');
+    if (Object.keys(others).length > 0) throw new Error('retriage takes only --issue');
+    return { kind, issue: Number(issue) };
   }
   if (isRowKind(kind)) {
     const { pin, label, issue: issueText, ...stepOnly } = values;
