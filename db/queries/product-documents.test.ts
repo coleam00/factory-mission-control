@@ -86,18 +86,44 @@ test("the seeded split record has exactly the keys the queue pack's publish step
   }
 });
 
-test('only a closed item with a merged pull request counts as merged, filed or adopted', async () => {
+test('a closed item counts as merged only by the Board rule, filed or adopted', async () => {
+  // The seed's merged pieces are 411 and 412; each step below adds or withholds one item.
+  const mergedPr = (number: number) =>
+    db.query(
+      `INSERT INTO mc.pull_requests (factory, number, title, state, merged_at, head_sha, url, created_at, updated_at)
+       VALUES ('queue-factory', $1, 'p', 'closed', now(), 'x', 'u', now(), now())`,
+      [number],
+    );
+  const merged = async () => (await documents())[0]?.merged_count;
+  await mergedPr(423);
+
+  // 405 is adopted and delivered by Refs only: it counts once closed.
   await db.query(
-    `UPDATE mc.issues SET state = 'closed', closed_at = now() WHERE factory = 'queue-factory' AND number IN (405, 413)`,
+    `INSERT INTO mc.pull_request_references (factory, pr_number, issue_number) VALUES ('queue-factory', 423, 405)`,
+  );
+  expect(await merged()).toBe(2);
+  await db.query(
+    `UPDATE mc.issues SET state = 'closed', closed_at = now() WHERE factory = 'queue-factory' AND number = 405`,
+  );
+  expect(await merged()).toBe(3);
+
+  // 413 is filed and closed by a merged pull request, but closed as not planned: it does not count.
+  await db.query(
+    `INSERT INTO mc.pull_request_issues (factory, pr_number, issue_number) VALUES ('queue-factory', 423, 413)`,
   );
   await db.query(
-    `INSERT INTO mc.pull_requests (factory, number, title, state, merged_at, head_sha, url, created_at, updated_at)
-     VALUES ('queue-factory', 423, 'p', 'closed', now(), 'x', 'u', now(), now())`,
+    `UPDATE mc.issues SET state = 'closed', closed_at = now(), close_reason = 'not_planned' WHERE factory = 'queue-factory' AND number = 413`,
   );
+  expect(await merged()).toBe(3);
   await db.query(
-    `INSERT INTO mc.pull_request_issues (factory, pr_number, issue_number) VALUES ('queue-factory', 423, 405)`,
+    `UPDATE mc.issues SET close_reason = 'completed' WHERE factory = 'queue-factory' AND number = 413`,
   );
-  expect(await documents()).toMatchObject([{ number: 410, total_count: 4, merged_count: 3 }]);
+  expect(await merged()).toBe(4);
+  expect(await documents()).toMatchObject([{ number: 410, total_count: 4, merged_count: 4 }]);
+  // Later tests start from 413 closed with no pull request, as the old rule's test left it.
+  await db.query(
+    `DELETE FROM mc.pull_request_issues WHERE factory = 'queue-factory' AND issue_number = 413`,
+  );
 });
 
 test('the newest split record wins, a closed document is not listed, and one with no record is 0 of 0', async () => {
