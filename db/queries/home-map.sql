@@ -37,7 +37,7 @@ WHERE l.factory = $1 AND l.status = 'running'
     WHERE vr.factory = l.factory AND vr.digest = l.digest AND vr.pin_sha = $2))
 UNION ALL
 -- Each open pull request whose latest app check came out FAIL overall. A check names its pull
--- request by the step's projected pr_number (prNumber's rule, migration 0028).
+-- request by the step's projected pr_number (prNumber's rule, mc.pr_number).
 SELECT 'failing', NULL, NULL, NULL, pr.number, pr.title, pr.url, NULL, NULL
 FROM mc.pull_requests pr
 JOIN LATERAL (

@@ -180,7 +180,7 @@ when it posted failure (a result it found stale included), with the pull request
 stored by id, kind and verdict without their text. A run whose `publish` did not complete shows no
 verdict, a run whose `evidence` did not complete shows no lines, and a run whose report names a
 holdout keeps no output and no lines.
-A check names its pull request by the step's projected `pr_number` (migration 0028), read as the lap
+A check names its pull request by the step's projected `pr_number` (owned by `mc.pr_number`), read as the lap
 page's `prNumber` reads `pr`: `#N`, `N`, a `/pull/N` URL, or a JSON object's `number` or `url`.
 Showing those lines on the work item page's timeline waits on that page (#317).
 
