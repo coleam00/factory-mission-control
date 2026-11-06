@@ -144,38 +144,11 @@ describe('map:check', () => {
     expect(check(FACTORY_MAP, pack)).toEqual([
       'loop pack: App check names archon-loop briefs, which the pack lacks',
       'loop pack: Pick a PR names archon-loop briefs, which the pack lacks',
+      "loop pack: archon-loop briefs is marked on a lap's row, which the pack lacks",
     ]);
   });
 
-  test('a step a lap marks that the pack lacks passes only while a card covers it', () => {
-    const without = FACTORY_MAP.cards.map((card) =>
-      card.id === 'app'
-        ? {
-            ...card,
-            opens: undefined,
-            covers: [
-              {
-                pack: 'loop' as const,
-                workflow: 'archon-loop',
-                steps: ['briefs', 'check-app', 'evidence'],
-              },
-            ],
-          }
-        : card,
-    );
-    const map = {
-      ...withCards(without),
-      views: {
-        build: FACTORY_MAP.views?.build as MapView,
-        'build/deliver': deliverWithoutReview,
-      },
-    };
-    expect(check(map)).toEqual([
-      "loop pack: archon-loop handoff is marked on a lap's row but covered by no card",
-    ]);
-  });
-
-  test('a step a lap marks that the pack lacks fails when two cards cover it', () => {
+  test('a card naming the old loop handoff step fails as a step the pack lacks', () => {
     const twice = FACTORY_MAP.cards.map((card) =>
       card.id === 'merge'
         ? {
@@ -188,7 +161,7 @@ describe('map:check', () => {
         : card,
     );
     expect(check(withCards(twice))).toEqual([
-      'loop pack: archon-loop handoff is covered by App check and Merge',
+      'loop pack: Merge names archon-loop handoff, which the pack lacks',
     ]);
   });
 
@@ -378,7 +351,7 @@ describe('map:check', () => {
     ]);
   });
 
-  test('a view card covering the step the pack lacks, which its opener does not name, fails', () => {
+  test('a view card naming a step the pack lacks fails once', () => {
     const map = withBuildView((cards) =>
       buildCard(cards, 'b-del', (c) => ({
         ...c,
@@ -390,8 +363,7 @@ describe('map:check', () => {
       })),
     );
     expect(check(map)).toEqual([
-      'loop pack: Build view: Deliver covers archon-loop handoff, which Build does not',
-      'loop pack: Deliver view: archon-loop handoff is covered by no card',
+      'loop pack: Deliver names archon-loop handoff, which the pack lacks',
     ]);
   });
 

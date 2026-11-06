@@ -226,7 +226,6 @@ export const LANE_STEPS = [
   'briefs',
   'check-app',
   'evidence',
-  'handoff',
   'review',
   'land',
   'deploy',

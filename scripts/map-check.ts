@@ -34,9 +34,6 @@ const USAGE = 'usage: bun run map:check';
 /** The loop steps a lap's row marks and its header counts; a running lap on one counts on a card. */
 const LOOP_LANE_STEPS = LANE_STEPS.flatMap((step) => step.split('/'));
 
-/** The one lane step the running loop has that the pack's copy of it lacks. */
-const STEP_THE_PACK_LACKS = 'handoff';
-
 /** Every node of a workflow's expanded tree, at every depth, by its path. */
 function nodesByPath(steps: readonly Step[], into = new Map<string, Step>()): Map<string, Step> {
   for (const step of steps) {
@@ -416,7 +413,6 @@ function viewPartition(map: FactoryMap, trees: Trees): string[] {
           (node) => cardChain(map, cover.workflow, node)[depth]?.id === opener.id,
         ),
       );
-      for (const step of cover.steps) if (!nodes.has(step)) mine.add(step);
       inOpener.set(`${cover.pack} ${cover.workflow}`, mine);
       for (const node of mine) {
         const covering = coveringCards(view, cover.workflow, node);
@@ -438,9 +434,7 @@ function viewPartition(map: FactoryMap, trees: Trees): string[] {
           continue;
         }
         for (const step of cover.steps) {
-          const known =
-            trees[cover.pack].get(cover.workflow)?.has(step) || step === STEP_THE_PACK_LACKS;
-          if (known && !mine.has(step)) {
+          if (trees[cover.pack].get(cover.workflow)?.has(step) && !mine.has(step)) {
             failures.push(`${at} covers ${cover.workflow} ${step}, which ${opener.title} does not`);
           }
         }
@@ -452,10 +446,10 @@ function viewPartition(map: FactoryMap, trees: Trees): string[] {
 
 /**
  * Where the map has drifted from the packs (PRD 4.1, invariant 6), one line each: a card naming a
- * workflow or a step its pack lacks, a step of a
- * covered workflow that no card covers or that two do, a step a lap's row marks that no card
- * covers, and a step of a pack that counts on a card only through another pack's entry (a live row
- * carries only the workflow name, so the pack cannot tell them apart at runtime). Also a key the
+ * workflow or a step its pack lacks, a step of a covered workflow that no card covers or that two
+ * do, a step a lap's row marks that the pack lacks, and a step of a pack that counts on a card only
+ * through another pack's entry (a live row carries only the workflow name, so the pack cannot
+ * tell them apart at runtime). Also a key the
  * map's types do not declare, a `countsAs` that would make a lap count twice or not at all, and a
  * routed line off its cards. A failure naming a pack's step starts with that pack.
  */
@@ -486,31 +480,16 @@ export function mapCheck(map: FactoryMap, packs: Record<Pack, PackVersion>): str
       if (map.cards.includes(card)) covered[cover.pack].add(cover.workflow);
       for (const step of cover.steps) {
         if (!nodes.has(step)) {
-          if (
-            cover.pack === 'loop' &&
-            cover.workflow === 'archon-loop' &&
-            step === STEP_THE_PACK_LACKS
-          ) {
-            continue;
-          }
           failures.push(`${at} names ${cover.workflow} ${step}, which the pack lacks`);
         }
       }
     }
   }
-  // A lane step the pack has goes through the per-step check below; one it lacks needs its own.
   const loopNodes = trees.loop.get('archon-loop');
   for (const step of LOOP_LANE_STEPS) {
-    if (loopNodes?.has(step)) continue;
-    const cards = coveringCards(map, 'archon-loop', step);
-    if (cards.length === 0) {
+    if (!loopNodes?.has(step)) {
       failures.push(
-        `loop pack: archon-loop ${step} is marked on a lap's row but covered by no card`,
-      );
-    }
-    if (cards.length > 1) {
-      failures.push(
-        `loop pack: archon-loop ${step} is covered by ${cards.map((c) => c.title).join(' and ')}`,
+        `loop pack: archon-loop ${step} is marked on a lap's row, which the pack lacks`,
       );
     }
   }

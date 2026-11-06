@@ -57,9 +57,7 @@ when a covered step's pack path holds a dot (the map reads a step's path by its 
 that names a pack's step starts `loop pack: ` or `queue pack: `. A step of one pack that counts on a
 card only through the other pack's entry (the packs share workflow names such as
 `archon-merge-queue`) also fails, since a live row cannot tell them apart. It also fails when a
-step a lap's row marks (`LANE_STEPS`) is covered by no card or by two. The loop's `handoff` step is
-missing from the pack's copy of the loop, so App check may cover it without the pack having it; it
-is the one step a card may name that the pack lacks, and it is held to exactly one card. The loop
+step a lap's row marks (`LANE_STEPS`) is one the pack's loop lacks. The loop
 pack's steps on the Split and Intake cards sit on the view card of their role (`read-prd` on Take
 the item, `authorize` with `publish` on File the issues, `pick` and `claim` on Triage). When a
 pack changes, update `covers` until the check passes.
@@ -170,7 +168,7 @@ factory as it is now, at whatever version the address names.
 `?view=app` is drawn from the mockup's `V.app`. On a factory on the queues, Pick a PR covers
 `config`, `select` and `pending`, How deep? `scope`, Protected paths `policy`, PR + main, started
 `prepare`, Use the app `check`, Seal the evidence `evidence` and `factory/app-check` `publish`,
-`finalize` and `cleanup`; the old loop's `briefs`, `check-app`, `evidence` and `handoff` sit on the
+`finalize` and `cleanup`; the old loop's `briefs`, `check-app` and `evidence` sit on the
 same cards in the same order. Use the app's Right now also lists, through its `checks` list, the open
 pull requests the app check has looked at (the `app-check` query): each one's latest verdict and its lines by kind.
 
@@ -182,6 +180,8 @@ when it posted failure (a result it found stale included), with the pull request
 stored by id, kind and verdict without their text. A run whose `publish` did not complete shows no
 verdict, a run whose `evidence` did not complete shows no lines, and a run whose report names a
 holdout keeps no output and no lines.
+A check names its pull request by the step's projected `pr_number` (migration 0028), read as the lap
+page's `prNumber` reads `pr`: `#N`, `N`, a `/pull/N` URL, or a JSON object's `number` or `url`.
 Showing those lines on the work item page's timeline waits on that page (#317).
 
 ## Clicking a card

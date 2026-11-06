@@ -84,7 +84,6 @@ test("a lap running on any step a lane marks counts on a card, so the cards' lap
   const rows = LANE_STEPS.flatMap((mark) => mark.split('/')).map((step) => lap(step, [step]));
   const counted = Object.values(here(rows)).flat();
   expect(counted.sort()).toEqual(rows.map((r) => r.run_id as string).sort());
-  expect(here([lap('a', ['handoff'])])).toEqual({ app: ['a'] });
 });
 
 test('a lap with no running step, on a step no card covers, or of another workflow is on no card', () => {
