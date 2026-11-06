@@ -1,5 +1,6 @@
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { prNumber } from '../../app/lib/one-lap';
 import { MARKER } from '../fixture/seed-report';
 import { openPage, type Page } from '../lib/cdp';
 import type { Db } from '../lib/db';
@@ -185,7 +186,7 @@ async function seedOneLapMismatches(
     [runId],
   );
   const issue = nullable(lap.issue);
-  const pr = String(lap.pr ?? '').replace(/^#/, '');
+  const pr = prNumber(lap.pr === null ? null : String(lap.pr));
   const headerSql = {
     lap: runId,
     route: lap.route,
@@ -194,7 +195,7 @@ async function seedOneLapMismatches(
     links: {
       console: `http://localhost:3090/console/r/${runId}`,
       issue: lap.issue_url,
-      pr: pr === '' ? null : `https://github.com/${lap.repository}/pull/${pr}`,
+      pr: pr === null ? null : `https://github.com/${lap.repository}/pull/${pr}`,
     },
     review: lap.review,
     gate: lap.gate,

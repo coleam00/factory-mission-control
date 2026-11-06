@@ -33,6 +33,12 @@ const REREVIEW_TESTS_STEP = 'ship__deliver__rounds.rereview__tests';
 const WRITTEN_STEPS = [BUILD_STEP, REVIEW_STEP, REVIEW_CODE_STEP, REREVIEW_TESTS_STEP];
 const WAITING = `${MAP} [data-card="mgr"] [data-chip="waiting"]`;
 
+/** Every view the map defines, so a view added to the map is opened and probed without editing this file. */
+const MAP_VIEW_IDS = Object.keys(FACTORY_MAP.views ?? {});
+
+/** The output name of a view: its id, except the deploy view, which the live suite has always called staging. */
+const viewFileName = (id: string) => (id === 'deploy' ? 'staging' : id.replaceAll('/', '-'));
+
 const viewStage = (id: string) => `[data-map-stage][data-view="${id}"][data-placed]`;
 
 /** The steps the check writes to put a running Intake run on Triage and a Split run on Break it up. */
@@ -168,15 +174,11 @@ export function queueMapPhase(ctx: LiveContext): LivePhase {
           );
           if (file !== undefined) writeFileSync(join(outDir, file), await target.screenshot(1440));
         };
-        await open(view, 'build', 'build-view.png');
-        await open(split, 'split', 'split-view.png');
-        await open(intake, 'intake', 'intake-view.png');
-        await open(drill, 'merge', 'merge-view.png');
-        await open(drill, 'deploy', 'staging-view.png');
-        await open(drill, 'order', 'order-view.png');
+        const pageOf: Record<string, Page> = { build: view, split, intake, review: reviewView };
+        for (const id of MAP_VIEW_IDS) {
+          await open(pageOf[id] ?? drill, id, `${viewFileName(id)}-view.png`);
+        }
         await open(drill, 'merge');
-
-        await open(reviewView, 'review', 'review-view.png');
 
         const timed = async (card: string, run: string, step: string) => {
           const target = Number(await page.evaluate<string>(liveCountOf(card))) + 1;
@@ -336,16 +338,11 @@ export function queueMapPhase(ctx: LiveContext): LivePhase {
     ],
 
     async probe(designProbe) {
-      for (const [id, file] of [
-        ['build', 'build'],
-        ['review', 'review'],
-        ['split', 'split'],
-        ['intake', 'intake'],
-        ['order', 'order'],
-        ['merge', 'merge'],
-        ['deploy', 'staging'],
-      ]) {
-        designProbe(`${ctx.base}/f/${name}?view=${id}`, `${file}-view-design-probe.json`);
+      for (const id of MAP_VIEW_IDS) {
+        designProbe(
+          `${ctx.base}/f/${name}?view=${id}`,
+          `${viewFileName(id)}-view-design-probe.json`,
+        );
       }
       designProbe(
         `${ctx.base}/steps/factory-app-check/check`,
