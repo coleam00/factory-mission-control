@@ -191,6 +191,7 @@ export default function Home(): ReactElement {
                 href={(pin) => homeHref(pin, search)}
                 open={pickerOpen}
                 onToggle={setPickerOpen}
+                compact
               />
             }
             now={now}
