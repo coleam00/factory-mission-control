@@ -2,6 +2,7 @@ import type { WebSocketLike } from '@neon/realtime/client';
 import { createRoot } from 'react-dom/client';
 import { createMemoryRouter, RouterProvider } from 'react-router';
 import type { StepRow } from '../../lib/step-detail';
+import { ALL_STEP_QUERIES } from '../../lib/step-queries';
 import { FactoryProvider } from '../../live/FactoryProvider';
 import { LiveProvider } from '../../live/LiveProvider';
 import StepDetail from '../steps.$workflow.$step';
@@ -231,23 +232,12 @@ function shown({ container }: Screen) {
   };
 }
 
-/** The step's seven queries and the picker's: every one the screen asks for. */
-const QUERIES = [
-  'step-versions',
-  'step-detail',
-  'step-nesting',
-  'step-prompt',
-  'step-subagents',
-  'step-scripts',
-  'step-yaml',
-];
-
 /** Every panel has answered, and step-detail shows the step or its one sentence. */
 function settled({ container }: Screen): boolean {
   const panels = [...container.querySelectorAll('[data-live]')];
   const detail = container.querySelector('[data-live="step-detail"]');
   return (
-    panels.length === QUERIES.length &&
+    panels.length === ALL_STEP_QUERIES.length &&
     panels.every((panel) => panel.getAttribute('data-state') === 'ready') &&
     detail?.textContent !== ''
   );
@@ -303,13 +293,16 @@ export async function openHeld() {
   try {
     const release = screen.hold(({ query }) => query === 'step-detail');
     const asked = () => new Set(screen.asked.map(({ query }) => query));
-    await until(() => QUERIES.every((query) => asked().has(query)), 'every query to be asked for');
+    await until(
+      () => ALL_STEP_QUERIES.every((query) => asked().has(query)),
+      'every query to be asked for',
+    );
     const whileHeld = {
       asked: [...asked()].sort(),
       detail: screen.container
         .querySelector('[data-live="step-detail"]')
         ?.getAttribute('data-state'),
-      requested: QUERIES.filter(
+      requested: ALL_STEP_QUERIES.filter(
         (query) => performance.getEntriesByName(`live:${query}:requested`).length > 0,
       ).sort(),
     };
