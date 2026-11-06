@@ -473,6 +473,29 @@ describe('the rules the live queries restate, which they may not call a function
     }
   });
 
+  test('merged is closed, not as not planned or a duplicate, with a merged pull request that closes or Refs it, in every copy', () => {
+    const NOT_DELIVERED =
+      "coalesce(i.close_reason, 'completed') NOT IN ('not_planned', 'duplicate')";
+    const BY_REFS = 'FROM mc.pull_request_references rf';
+    const BY_CLOSING = 'FROM mc.pull_request_issues pi';
+    // [copies] per name; a live query not listed here may state the rule nowhere.
+    const copies: Record<string, number> = { board: 2, 'work-orders': 1, 'product-documents': 1 };
+    for (const [name, sql] of queries) {
+      const expected = copies[name] ?? 0;
+      expect([name, count(sql, NOT_DELIVERED), count(sql, BY_REFS)]).toEqual([
+        name,
+        expected,
+        expected,
+      ]);
+      expect([name, count(sql, "'not_planned'"), count(sql, 'pull_request_references')]).toEqual([
+        name,
+        expected,
+        expected,
+      ]);
+      if (expected > 0) expect(count(sql, BY_CLOSING)).toBeGreaterThanOrEqual(expected);
+    }
+  });
+
   test('a build-queue lap is a run whose facts step names an item, in every copy of the rule', () => {
     for (const sql of [
       query('scorecard'),
