@@ -17,12 +17,22 @@ export const shownDispositions = (lap: Pick<OneLapRow, 'dispositions' | 'hidden_
 
 /**
  * The one workflow whose runs have a lap page: `db/queries/one-lap*.sql` filter on it (#395), and
- * `db/queries/restated-rules.test.ts` binds `recent-laps.sql` and the `testing-*` queries to it.
+ * `db/queries/restated-rules.test.ts` binds `recent-laps.sql` to it.
  */
 export const LAP_PAGE_WORKFLOW = 'archon-loop';
 
 /** Whether a run of `workflow` has a lap page to open. */
 export const hasLapPage = (workflow: string | null): boolean => workflow === LAP_PAGE_WORKFLOW;
+
+/**
+ * The pack's old loop, whose runs carry route, depth, the old review outcomes and the merge gate.
+ * Deliberately not `LAP_PAGE_WORKFLOW` (which runs have a lap page) nor `LAP_WORKFLOWS` (which
+ * runs are laps): widening either must not change what counts as an old-loop run.
+ */
+const OLD_LOOP_WORKFLOW = 'archon-loop';
+
+/** Whether a run of `workflow` is an old-loop run. */
+export const isOldLoop = (workflow: string | null): boolean => workflow === OLD_LOOP_WORKFLOW;
 
 /** What a running workflow is, in the map's words; an unknown one shows its own name. */
 const WORKFLOW_LABEL: Readonly<Record<string, string>> = {

@@ -1,4 +1,6 @@
+import { Glob } from 'bun';
 import { expect, test } from 'bun:test';
+import { join } from 'node:path';
 import {
   attemptSeconds,
   attemptsInOrder,
@@ -174,4 +176,23 @@ test('a disposition answers the one check line with its id, and no line when non
   expect(checkLineFor('H2', [check(2, 'H2'), check(4, 'H2')])).toBeNull();
   expect(checkLineFor('H2', [check(1, null), check(2, null)])).toBeNull();
   expect(checkLineFor('H2', [])).toBeNull();
+});
+
+test("no file in app/lib or app/components outside one-lap.ts and scorecard.ts names 'archon-loop'", async () => {
+  const root = join(import.meta.dir, '..', '..');
+  const hits: string[] = [];
+  for (const dir of ['app/lib', 'app/components']) {
+    for (const f of new Glob('**/*.{ts,tsx}').scanSync({ cwd: join(root, dir) })) {
+      const path = `${dir}/${f.split('\\').join('/')}`;
+      if (
+        /\.test\.tsx?$/.test(path) ||
+        path === 'app/lib/one-lap.ts' ||
+        path === 'app/lib/scorecard.ts'
+      ) {
+        continue;
+      }
+      if ((await Bun.file(join(root, path)).text()).includes("'archon-loop'")) hits.push(path);
+    }
+  }
+  expect(hits).toEqual([]);
 });
