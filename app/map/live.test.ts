@@ -316,6 +316,26 @@ test('the work orders with an open issue are the chip of the Work order card: ab
   });
 });
 
+test('the Work order view lists the open work orders on Choose what goes next: unavailable on error', () => {
+  const order = {
+    name: 'combat',
+    total_count: 3,
+    open_count: 2,
+    merged_count: 1,
+    lands_on: null,
+    last_closed_at: null,
+  };
+  const of = (sources: Partial<Parameters<typeof cardLive>[1]>) =>
+    cardLive(FACTORY_MAP, { map: [], ...sources }, new Date()).get('o-pick');
+  expect(of({ orders: [order, { ...order, name: 'done', open_count: 0 }] })?.orders).toEqual([
+    order,
+  ]);
+  expect(of({ orders: [order], states: { orders: 'error' } })).toEqual({
+    here: [],
+    listsUnavailable: ['orders'],
+  });
+});
+
 test('a split lap counts on Break it up, an intake triage lap on Triage, a backlog authorize lap on File the issues', () => {
   const SPLIT_VIEW = FACTORY_MAP.views?.split?.cards ?? [];
   const INTAKE_VIEW = FACTORY_MAP.views?.intake?.cards ?? [];
@@ -654,6 +674,7 @@ const LIST_FIELD: Record<RoutedList, keyof CardLive> = {
   outcomes: 'gate',
   deploys: 'deploy',
   lands: 'lands',
+  orders: 'orders',
 };
 
 test.each(LISTS.filter((l): l is RoutedList => l !== 'checks'))(

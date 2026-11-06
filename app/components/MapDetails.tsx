@@ -84,14 +84,17 @@ function Item({ item, note }: { item: MapItem; note: string }): ReactElement {
   );
 }
 
-/** A work order with its open and merged issues and where it lands. */
-function Order({ order }: { order: WorkOrderRow }): ReactElement {
-  const lands = order.lands_on === null ? '' : `, lands on ${order.lands_on}`;
+/** A work order as the Board counts it, linking to the Board filtered to it. */
+function Order({ order, factory }: { order: WorkOrderRow; factory: string }): ReactElement {
+  const lands = order.lands_on === null ? '' : ` · lands on ${order.lands_on}`;
+  const board = `/f/${encodeURIComponent(factory)}/board?order=${encodeURIComponent(order.name)}`;
   return (
     <li data-work-order={order.name}>
-      <span className="font-mono">{order.name}</span>
+      <Link to={board} className={`${LINK} font-mono`}>
+        {order.name}
+      </Link>
       <span className={CHIP}>
-        {order.open_count} open, {order.merged_count} merged{lands}
+        {order.merged_count} of {order.total_count} merged{lands}
       </span>
     </li>
   );
@@ -102,6 +105,7 @@ const UNAVAILABLE = {
   outcomes: 'The recent gate decisions are unavailable.',
   deploys: 'The latest deploy is unavailable.',
   lands: 'Where the work orders land is unavailable.',
+  orders: 'The open work orders are unavailable.',
 } as const;
 
 /** One pull request in the gate's recent decisions: merged as read back, or the sweep's send-back or ask, with its reason. */
@@ -262,7 +266,9 @@ export function RightNow({
         <span className={CHIP}>{item.note}</span>
       </li>
     )),
-    ...(live?.orders ?? []).map((order) => <Order key={`order-${order.name}`} order={order} />),
+    ...(live?.orders ?? []).map((order) => (
+      <Order key={`order-${order.name}`} order={order} factory={factory} />
+    )),
     ...(live?.documents ?? []).map((document) => (
       <ProductDocument key={`document-${document.number}`} document={document} />
     )),

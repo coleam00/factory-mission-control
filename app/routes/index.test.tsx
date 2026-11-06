@@ -83,7 +83,7 @@ test("the map draws every card's wording, the caption, the group and the legend,
   expect(html).toContain('the manager watches everything on this line');
   for (const entry of FACTORY_MAP.legend) expect(html).toContain(entry.label);
   // Only Build, Review, Split, Intake, the Manager, App check, Merge and Staging have a deeper view, so only they offer to open one.
-  const opens = ['build', 'review', 'split', 'intake', 'app', 'merge', 'deploy'];
+  const opens = ['build', 'review', 'split', 'intake', 'app', 'merge', 'deploy', 'order'];
   for (const id of opens) expect(cardTag(html, id)).toContain(`data-opens="${id}"`);
   expect(cardTag(html, 'mgr')).toContain('data-opens="manager"');
   expect(html).toContain('opens a deeper view');
@@ -672,7 +672,7 @@ test('the Work order card counts its open work orders and says nothing with none
     ),
   );
   expect(right).toContain('combat');
-  expect(right).toContain('2 open, 1 merged, lands on staging');
+  expect(right).toContain('1 of 3 merged · lands on staging');
 });
 
 test('the Manager view draws the open attention items the route is fed as a count on their card', () => {
