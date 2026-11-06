@@ -132,20 +132,13 @@ export const QUEUE_ENDING: Record<string, { text: string; tone: Tone }> = {
   parked: { text: 'parked', tone: 'owner' },
 };
 
-const LOOP_REVIEW_TEXT: Record<keyof typeof REVIEW_TONE, string> = {
-  merge: 'ready to merge',
-  approved: 'approved',
-  nothing: 'nothing to do',
-  'sent-back': 'sent back',
-  'needs-owner': 'needs you',
+const LOOP_REVIEW: Record<string, { text: string; tone: Tone }> = {
+  merge: { text: 'ready to merge', tone: REVIEW_TONE.merge },
+  approved: { text: 'approved', tone: REVIEW_TONE.approved },
+  nothing: { text: 'nothing to do', tone: REVIEW_TONE.nothing },
+  'sent-back': { text: 'sent back', tone: REVIEW_TONE['sent-back'] },
+  'needs-owner': { text: 'needs you', tone: REVIEW_TONE['needs-owner'] },
 };
-
-const LOOP_REVIEW: Record<string, { text: string; tone: Tone }> = Object.fromEntries(
-  Object.entries(LOOP_REVIEW_TEXT).map(([outcome, text]) => [
-    outcome,
-    { text, tone: REVIEW_TONE[outcome as keyof typeof REVIEW_TONE] },
-  ]),
-);
 
 export const QUEUE_REVIEW: Record<string, { text: string; tone: Tone }> = {
   none: { text: 'Ready', tone: 'done' },
