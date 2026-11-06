@@ -2,7 +2,7 @@ import { type ReactElement, useCallback, useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router';
 import { BoardBody } from '../components/Board';
 import { EmptyState } from '../components/EmptyState';
-import { type BoardRow, type BoardSources, boardView, nextChange } from '../lib/board';
+import { type BoardRow, type BoardSources, boardView, nextChange, ORDER_PARAM } from '../lib/board';
 import type { HealthWorkableRow } from '../lib/health';
 import type { OwnerQueueRow } from '../lib/owner-queue';
 import { useFactory } from '../live/FactoryProvider';
@@ -25,7 +25,7 @@ function useClock(next: Date | null): Date {
 export default function Board(): ReactElement {
   const factory = useFactory();
   const [search, setSearch] = useSearchParams();
-  const order = search.get('order') || null;
+  const order = search.get(ORDER_PARAM) || null;
   const [board, setBoard] = useState<Source<BoardRow>>(AWAITED);
   const [map, setMap] = useState<Source<HomeMapRow>>(AWAITED);
   const [workable, setWorkable] = useState<Source<HealthWorkableRow>>(AWAITED);
@@ -38,8 +38,8 @@ export default function Board(): ReactElement {
     (name: string | null) =>
       setSearch((was) => {
         const next = new URLSearchParams(was);
-        if (name === null) next.delete('order');
-        else next.set('order', name);
+        if (name === null) next.delete(ORDER_PARAM);
+        else next.set(ORDER_PARAM, name);
         return next;
       }),
     [setSearch],

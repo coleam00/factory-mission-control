@@ -1,6 +1,7 @@
 import { expect, test } from 'bun:test';
 import { MAP_TYPE } from '../components/FactoryMap';
 import {
+  cardWidth,
   FACTORY_MAP,
   FIT_FOOT,
   FIT_PAD,
@@ -235,4 +236,24 @@ test('Split sits above Intake, the Work order on the line between Intake and Bui
   expect(order?.x).toBeGreaterThan(intake?.x as number);
   expect(order?.x).toBeLessThan(build?.x as number);
   expect(JSON.stringify(FACTORY_MAP)).not.toMatch(/ticket|holdout/i);
+});
+
+test('no two cards overlap at any level, and the Work order view joins its sources in one arrow', () => {
+  for (const level of levels) {
+    const { height } = level.cardSize;
+    for (const [i, a] of level.cards.entries()) {
+      for (const b of level.cards.slice(i + 1)) {
+        const apart =
+          a.x + cardWidth(level, a) <= b.x ||
+          b.x + cardWidth(level, b) <= a.x ||
+          a.y + height <= b.y ||
+          b.y + height <= a.y;
+        expect([a.id, b.id, apart]).toEqual([a.id, b.id, true]);
+      }
+    }
+  }
+  const order = FACTORY_MAP.views?.order as MapView;
+  const into = order.lines.filter((l) => l.to === 'o-pick');
+  expect(into).toHaveLength(3);
+  expect(into.filter((l) => l.arrow !== false)).toHaveLength(1);
 });

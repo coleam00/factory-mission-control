@@ -106,6 +106,29 @@ export interface OrderPanel {
   landsOn: string | null;
 }
 
+/** The query parameter the Board filters to one work order by. */
+export const ORDER_PARAM = 'order';
+
+/** The Board filtered to one work order: the one address every link to it is built from. */
+export function boardHref(factory: string, order: string): string {
+  return `/f/${encodeURIComponent(factory)}/board?${ORDER_PARAM}=${encodeURIComponent(order)}`;
+}
+
+/** The Board's panel for a work order row; the map reads orders through it too. */
+export function orderPanel(row: WorkOrderRow): OrderPanel {
+  return {
+    name: row.name,
+    merged: row.merged_count,
+    total: row.total_count,
+    landsOn: row.lands_on,
+  };
+}
+
+/** How far a work order has got, in the words the Board and the map both show. */
+export function orderProgress({ merged, total, landsOn }: OrderPanel): string {
+  return `${merged} of ${total} merged${landsOn === null ? '' : ` · lands on ${landsOn}`}`;
+}
+
 export interface BoardColumn extends ColumnSpec {
   items: WorkItem[];
 }
@@ -306,12 +329,7 @@ export function boardView(sources: BoardSources, now: Date, order: string | null
   return {
     orders: orders
       .filter((o) => o.open_count > 0 || withinKeep(o.last_closed_at, now))
-      .map((o) => ({
-        name: o.name,
-        merged: o.merged_count,
-        total: o.total_count,
-        landsOn: o.lands_on,
-      })),
+      .map(orderPanel),
     columns: COLUMNS.map((c) => ({ ...c, items: columns.get(c.id) ?? [] })),
     notInOrder,
     older: Math.max(0, total - recent),

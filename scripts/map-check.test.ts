@@ -227,7 +227,7 @@ describe('map:check', () => {
     expect(check(map)).toEqual([
       `${first.title} role "robot" is not one of source, agent, test, person`,
       `${first.title} chip "lost" is not one of queued, failing, waiting, merged, orders`,
-      `${first.title} list "nope" is not one of documents, outcomes, deploys, lands, checks`,
+      `${first.title} list "nope" is not one of documents, outcomes, deploys, lands, choices, checks`,
       `line ${line.from} to ${line.to} style "flwo" is not one of flow, ask, loop`,
       `legend ${entry.label} role "ghost" is not one of source, agent, test, person`,
     ]);

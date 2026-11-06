@@ -173,6 +173,7 @@ export function queueMapPhase(ctx: LiveContext): LivePhase {
         await open(intake, 'intake', 'intake-view.png');
         await open(drill, 'merge', 'merge-view.png');
         await open(drill, 'deploy', 'staging-view.png');
+        await open(drill, 'order', 'order-view.png');
         await open(drill, 'merge');
 
         await open(reviewView, 'review', 'review-view.png');
@@ -340,6 +341,7 @@ export function queueMapPhase(ctx: LiveContext): LivePhase {
         ['review', 'review'],
         ['split', 'split'],
         ['intake', 'intake'],
+        ['order', 'order'],
         ['merge', 'merge'],
         ['deploy', 'staging'],
       ]) {

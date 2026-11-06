@@ -190,6 +190,7 @@
       "x": 552,
       "y": 542,
       "chips": ["orders"],
+      "opens": "order",
       "covers": [],
       "details": {
         "when": ["Before the build queue starts on the next group of work."],
@@ -1722,6 +1723,128 @@
         }
       ],
       "tour": ["i-trust", "i-tri", "i-plan", "i-next"]
+    },
+    "order": {
+      "caption": "A work order is the next group of work to go through the factory together: pieces of one product document, pieces of another, a few bug fixes, whatever belongs in the next release. A single item on its own works too. You choose where it lands when it is done.",
+      "cardSize": {
+        "width": 260,
+        "height": 200
+      },
+      "cards": [
+        {
+          "id": "o-doc",
+          "role": "source",
+          "kind": "from split",
+          "title": "Pieces of a document",
+          "text": "Rarely the whole document at once",
+          "x": 0,
+          "y": 0,
+          "covers": [],
+          "details": {
+            "what": ["Rarely the whole document at once"]
+          }
+        },
+        {
+          "id": "o-bug",
+          "role": "source",
+          "kind": "from intake",
+          "title": "Bug fixes",
+          "text": "Triaged and ready",
+          "x": 0,
+          "y": 240,
+          "covers": [],
+          "details": {
+            "what": ["Triaged and ready"]
+          }
+        },
+        {
+          "id": "o-more",
+          "role": "source",
+          "kind": "from intake",
+          "title": "Anything else ready",
+          "text": "The rest of the backlog",
+          "x": 0,
+          "y": 480,
+          "covers": [],
+          "details": {
+            "what": ["The rest of the backlog"]
+          }
+        },
+        {
+          "id": "o-pick",
+          "role": "person",
+          "kind": "you, or the manager for you",
+          "title": "Choose what goes next",
+          "text": "So the whole backlog does not start at once",
+          "x": 344,
+          "y": 240,
+          "lists": ["choices"],
+          "covers": [],
+          "details": {
+            "what": ["So the whole backlog does not start at once"]
+          }
+        },
+        {
+          "id": "o-land",
+          "role": "person",
+          "kind": "you choose",
+          "title": "Where it lands",
+          "text": "Main, dev, a release branch or staging",
+          "x": 344,
+          "y": 498,
+          "covers": [],
+          "details": {
+            "what": ["Main, dev, a release branch or staging"]
+          }
+        },
+        {
+          "id": "o-next",
+          "role": "source",
+          "kind": "next",
+          "title": "Build queue",
+          "text": "Builds what is in the order, in order",
+          "x": 688,
+          "y": 240,
+          "upTo": "build",
+          "covers": [],
+          "details": {
+            "what": ["Builds what is in the order, in order"]
+          }
+        }
+      ],
+      "lines": [
+        {
+          "from": "o-doc",
+          "to": "o-pick",
+          "style": "flow",
+          "arrow": false,
+          "route": [[260, 100], [302, 100], [302, 340], [344, 340]]
+        },
+        {
+          "from": "o-bug",
+          "to": "o-pick",
+          "style": "flow"
+        },
+        {
+          "from": "o-more",
+          "to": "o-pick",
+          "style": "flow",
+          "arrow": false,
+          "route": [[260, 580], [302, 580], [302, 340], [344, 340]]
+        },
+        {
+          "from": "o-pick",
+          "to": "o-next",
+          "style": "flow"
+        },
+        {
+          "from": "o-pick",
+          "to": "o-land",
+          "style": "ask",
+          "route": [[474, 440], [474, 498]]
+        }
+      ],
+      "tour": ["o-bug", "o-pick", "o-next"]
     },
     "merge": {
       "caption": "One sweep looks at all Ready PRs at once. An agent decides merge, send back, or ask; only a script can actually merge, and only when every condition holds at the PR's head.",

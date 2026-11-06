@@ -1,19 +1,11 @@
 import { afterAll, beforeAll, expect, test } from 'bun:test';
 import { openPage, type Page } from '../../scripts/lib/cdp';
+import { ALL_STEP_QUERIES, STEP_QUERIES, STEP_VERSIONS_QUERY } from '../lib/step-queries';
 import type { Asked } from './fixtures/render-step';
 
 const OLDER = '8e3e1cefaf1e1b7955789d6a43a81b6c2dbd7082';
 const NEWER = '5ffd60c6c6e591487f2fbb5ec67ccc8fc55ca915';
 const BEFORE_REVIEW = '1b2a52a5d44d3a1b1d8f2d4d3c6c2e0f9a8b7c6d';
-
-const STEP_QUERIES = [
-  'step-detail',
-  'step-nesting',
-  'step-prompt',
-  'step-subagents',
-  'step-scripts',
-  'step-yaml',
-];
 
 interface Shown {
   state: string | null;
@@ -54,7 +46,7 @@ test('every step query is sealed for the version the address names, and shows it
   const { shown, asked } = await openStep(`/steps/archon-loop/review?at=${OLDER}`);
   expect(shown).toEqual({ state: 'ready', prompt: `Review at ${OLDER}`, sentence: null });
   expect(versions(asked)).toEqual({
-    'step-versions': null,
+    [STEP_VERSIONS_QUERY]: null,
     ...Object.fromEntries(STEP_QUERIES.map((query) => [query, OLDER])),
   });
 }, 30_000);
@@ -63,7 +55,7 @@ test('without a version every step query is sealed for the current one', async (
   const { shown, asked } = await openStep('/steps/archon-loop/review');
   expect(shown).toEqual({ state: 'ready', prompt: 'Review, current', sentence: null });
   expect(versions(asked)).toEqual({
-    'step-versions': null,
+    [STEP_VERSIONS_QUERY]: null,
     ...Object.fromEntries(STEP_QUERIES.map((query) => [query, ''])),
   });
 }, 30_000);
@@ -94,14 +86,16 @@ test('every step panel asks for its seal at navigation, not after step-detail an
     whileHeld: { asked: string[]; detail: string | null; requested: string[] };
     after: Shown;
   }>('openHeld()');
-  const all = ['step-versions', ...STEP_QUERIES].sort();
+  const all = [...ALL_STEP_QUERIES].sort();
   expect(whileHeld).toEqual({ asked: all, detail: 'loading', requested: all });
   expect(after).toEqual({ state: 'ready', prompt: 'Review, current', sentence: null });
 }, 30_000);
 
 test('every panel beside step-detail is sealed for the workflow and path the address names', async () => {
   const { asked } = await openStep(`/steps/archon-loop/review?at=${OLDER}`);
-  const beside = asked.filter(({ query }) => STEP_QUERIES.slice(1).includes(query));
+  const beside = asked.filter(({ query }) =>
+    (STEP_QUERIES.slice(1) as readonly string[]).includes(query),
+  );
   expect(beside.map(({ query, args }) => [query, args])).toEqual(
     STEP_QUERIES.slice(1).map((query) => [query, ['archon-loop', 'review', OLDER]]),
   );

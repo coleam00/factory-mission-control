@@ -7,8 +7,9 @@ import { deepestStep } from '../map/live';
 import { formatCost, formatElapsed } from './format';
 import { stepPath } from './lap-graph';
 import { costOf, durationOf, stepLabel } from './laps';
-import { consoleUrl } from './one-lap';
+import { consoleUrl, hasLapPage, isOldLoop } from './one-lap';
 import { REVIEW_TONE } from './review-outcome';
+import { LAP_WORKFLOWS } from './scorecard';
 
 /**
  * One row of `db/queries/work-item.sql`. `kind` says which columns are filled: `item` (the issue:
@@ -85,9 +86,6 @@ export const NO_REASON = 'No reason was recorded.';
 
 export type Tone = 'done' | 'failed' | 'owner' | 'running' | 'plain';
 
-/** Only an old-loop run has a lap page; #395 owns which workflows get one. */
-const LAP_PAGE_WORKFLOW = 'archon-loop';
-
 export type RunLink = { kind: 'lap'; to: string } | { kind: 'console'; href: string };
 
 export interface TimelineEvent {
@@ -150,7 +148,7 @@ export const QUEUE_REVIEW: Record<string, { text: string; tone: Tone }> = {
 
 const runLink = (row: WorkItemRow, factory: string, console: string | null): RunLink | null => {
   if (row.run_id === null) return null;
-  if (row.workflow === LAP_PAGE_WORKFLOW)
+  if (hasLapPage(row.workflow))
     return { kind: 'lap', to: `/f/${encodeURIComponent(factory)}/laps/${row.run_id}` };
   return console === null ? null : { kind: 'console', href: consoleUrl(console, row.run_id) };
 };
@@ -192,10 +190,7 @@ function roundNumbers(rows: readonly WorkItemRow[]): Map<string, number> {
   const numbers = new Map<string, number>();
   const seen = new Map<string, number>();
   const rounds = rows
-    .filter(
-      (r) =>
-        r.kind === 'run' && (r.workflow === 'archon-loop' || r.workflow === 'archon-build-queue'),
-    )
+    .filter((r) => r.kind === 'run' && r.workflow !== null && LAP_WORKFLOWS.includes(r.workflow))
     .sort((a, b) => (a.started_at?.getTime() ?? 0) - (b.started_at?.getTime() ?? 0));
   for (const r of rounds) {
     const n = (seen.get(r.workflow ?? '') ?? 0) + 1;
@@ -281,7 +276,7 @@ function roundEvent(row: WorkItemRow, n: number, at: Date, base: Base): Timeline
   const seconds = durationOf(row);
   const cost = costOf(row.cost);
   const facts = [
-    row.workflow === 'archon-loop'
+    isOldLoop(row.workflow)
       ? [row.route && `route ${row.route}`, row.depth && `depth ${row.depth}`]
       : [row.deliveries && deliveries(Number(row.deliveries))],
     seconds === null ? null : formatElapsed(seconds),
@@ -289,7 +284,7 @@ function roundEvent(row: WorkItemRow, n: number, at: Date, base: Base): Timeline
   ]
     .flat()
     .filter(Boolean);
-  if (row.workflow === 'archon-loop') {
+  if (isOldLoop(row.workflow)) {
     const nothing = row.review === 'nothing' || row.route === 'none';
     return {
       ...base,
@@ -459,11 +454,12 @@ export function workItemTimeline(rows: readonly WorkItemRow[], factory: string):
     const at = row.started_at ?? row.completed_at;
     if (at === null) continue;
     events.push(roundEvent(row, numbers.get(row.run_id) ?? 1, at, base('round')));
-    if (row.workflow === 'archon-loop') {
+    if (isOldLoop(row.workflow)) {
       events.push(...checkEvent(row, lines, base('check')), ...loopDecision(row, base('decision')));
     }
-    const verdicts: Record<string, { text: string; tone: Tone }> =
-      row.workflow === 'archon-loop' ? LOOP_REVIEW : QUEUE_REVIEW;
+    const verdicts: Record<string, { text: string; tone: Tone }> = isOldLoop(row.workflow)
+      ? LOOP_REVIEW
+      : QUEUE_REVIEW;
     for (const [name, outcome, reviewedAt] of [
       ['Review', row.review, row.review_at],
       ['Re-review', row.rereview, row.rereview_at],

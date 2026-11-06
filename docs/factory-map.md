@@ -106,7 +106,8 @@ factory's issues with their counts, from the mirrored label data; it writes noth
   that step (`rounds/review/policy`). A card with runs on it carries `data-live-count` above 0.
 - "<n> queued" on Build: the workable issues, as Health counts them.
 - "<n> open" on Work order: the work orders with an open issue, nothing when there are none. Right now
-  lists each with its open and merged issue counts and its `lands-on:<target>` label when one exists.
+  lists each as the Board counts it, "<merged> of <total> merged", with its `lands-on:<target>` label when
+  one exists, linking to the Board filtered to it (`?order=<name>`).
 - "<n> failing" on App check: open pull requests whose latest app check came out FAIL.
 - "<n> waiting" on the Manager: open Archon attention items (paused runs waiting on a person).
   A factory not on the queues, one that has run neither `archon-intake` nor `archon-build-queue`,
@@ -144,7 +145,7 @@ light round, a rereview, a refused round).
 ## Right now in the Merge and Staging views
 
 A card's `lists` (a closed set, held by the map check) name what its Right now shows beside its
-chips' items: `outcomes` (Merge gate), `deploys` and `lands` (each Staging card), and `checks` (Use the app, the App
+chips' items: `outcomes` (Merge gate), `deploys` and `lands` (each Staging card), `choices` (Choose what goes next in the Work order view, the same rows as the Work order chip) and `checks` (Use the app, the App
 check panel, which subscribes its own `app-check` query, below). The rest come from
 `map-right-now` (the newest 10 `archon-merge-queue` runs that swept and then recorded, and the
 factory's latest finished deploy, from `factory-deploy` or from the old loop's `deploy` include)
@@ -162,6 +163,16 @@ factory as it is now, at whatever version the address names.
 - Where each work order lands lists the orders with an open issue and the `lands-on:<target>`
   label their issues carry, or that they name no target yet.
 - A list whose source failed says it is unavailable and the other lists stay.
+
+## The Work order view
+
+The Work order card opens `?view=order`, drawn from the mockup's `order` view: three source cards
+(pieces of a document, bug fixes, anything else ready) join Choose what goes next, which leads to
+Build queue and, dashed, to Where it lands. Its cards cover no steps, since work orders are
+`work-order:<name>` labels and not a workflow, so `map:check` has nothing to bind: the card
+covers `[]` and the view covers none of its opening card's steps. Right now on Choose what goes
+next lists the open work orders from the same `work-orders` rows the Board reads, so a label
+change moves them as it moves the Board.
 
 ## The App check view
 
@@ -199,7 +210,7 @@ holdout verifier and the fence (journey 1). Esc, the close button or a click on 
 deselects.
 
 A card with a view shows ⤢ and a stacked edge, and its strip has an Open button naming the number
-of cards in the view. A card shows ⤢ only once its view exists; today Build's, Review's, Split's, Intake's, the Manager's, App check's, Merge's and Staging's do (`?view=build`, `?view=review`, `?view=split`, `?view=intake`, `?view=manager`, `?view=app`, `?view=merge`, `?view=deploy`), and so does Deliver inside Build (`?view=build/deliver`). Deliver's Review card opens the same Review view (`?view=review`); opened from there the address also carries `from=build/deliver`, so the breadcrumbs keep the Build and Deliver path and going up returns to Deliver (a link to `?view=review` alone opens it from the home map).
+of cards in the view. A card shows ⤢ only once its view exists; today Build's, Review's, Split's, Intake's, the Manager's, App check's, Merge's, Staging's and Work order's do (`?view=build`, `?view=review`, `?view=split`, `?view=intake`, `?view=manager`, `?view=app`, `?view=merge`, `?view=deploy`, `?view=order`), and so does Deliver inside Build (`?view=build/deliver`). Deliver's Review card opens the same Review view (`?view=review`); opened from there the address also carries `from=build/deliver`, so the breadcrumbs keep the Build and Deliver path and going up returns to Deliver (a link to `?view=review` alone opens it from the home map).
 Double-click, Enter on the selected card or the Open button zooms into the view. Breadcrumbs above
 the caption (the factory, then each opened view), the up control, a crumb, Esc (with nothing
 selected) and Backspace go up, and the card that opened the view flashes. The address is

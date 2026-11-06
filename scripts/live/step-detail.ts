@@ -1,5 +1,6 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { ALL_STEP_QUERIES } from '../../app/lib/step-queries';
 import { currentVersionSql } from '../../db/queries/version-rule';
 import { openPage, type Page } from '../lib/cdp';
 import type { Db } from '../lib/db';
@@ -21,16 +22,6 @@ import {
   readyFailures,
 } from './timings';
 
-/** Every live query the step screen reads, one panel each. */
-const STEP_QUERIES = [
-  'step-detail',
-  'step-nesting',
-  'step-prompt',
-  'step-subagents',
-  'step-scripts',
-  'step-yaml',
-  'step-versions',
-];
 const STEP_PATH = '/steps/archon-loop/check-app';
 /**
  * The step deliver's block includes to write the code, and the prompt the seed pins for it. Its
@@ -77,7 +68,7 @@ async function currentVersion(db: Db, stepDetailSql: string, factory: string): P
   return version as unknown as Version;
 }
 
-const stepPanelsReady = `document.querySelectorAll('${STEP_QUERIES.map((q) => `[data-live="${q}"][data-state="ready"]`).join(', ')}').length === ${STEP_QUERIES.length}`;
+const stepPanelsReady = `document.querySelectorAll('${ALL_STEP_QUERIES.map((q) => `[data-live="${q}"][data-state="ready"]`).join(', ')}').length === ${ALL_STEP_QUERIES.length}`;
 
 /** Where check-app's screen differs from the seed: one line each. */
 async function checkAppMismatches(page: Page, repoRoot: string): Promise<string[]> {
@@ -239,7 +230,7 @@ export function stepDetailPhase(ctx: LiveContext): LivePhase {
   const stepTimings: StepTimings = {
     branch,
     port: null,
-    ...emptyGroupTimings(STEP_QUERIES),
+    ...emptyGroupTimings(ALL_STEP_QUERIES),
     descriptionToScreenMs: null,
     holdSeconds,
     renewals: null,
@@ -258,7 +249,7 @@ export function stepDetailPhase(ctx: LiveContext): LivePhase {
       stepPage = page;
       await openStep(page, base, STEP_PATH, stepPanelsReady);
       await page.evaluate('window.__mcNoReload = true');
-      Object.assign(stepTimings, groupTimings(await measure(page, STEP_QUERIES)));
+      Object.assign(stepTimings, groupTimings(await measure(page, ALL_STEP_QUERIES)));
       ctx.failures.push(...(await checkAppMismatches(page, deps.repoRoot)));
       writeFileSync(join(outDir, 'step-detail.png'), await page.screenshot(1440));
     },
@@ -363,7 +354,7 @@ export function stepDetailPhase(ctx: LiveContext): LivePhase {
     judge() {
       const failures: string[] = [];
       failures.push(...readyFailures('the step screen', stepTimings, LIMITS.readyMs));
-      failures.push(...groupPerformanceFailures(STEP_QUERIES, stepTimings));
+      failures.push(...groupPerformanceFailures(ALL_STEP_QUERIES, stepTimings));
       failures.push(
         ...lateWrite('the first description write', 'the step', stepTimings.descriptionToScreenMs),
       );

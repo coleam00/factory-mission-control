@@ -1,6 +1,7 @@
 import { type ReactElement, type ReactNode, useState } from 'react';
 import { Link } from 'react-router';
 import type { AppCheckRow } from '../lib/app-check';
+import { boardHref, orderPanel, orderProgress } from '../lib/board';
 import { relativeTime } from '../lib/format';
 import { hasLapPage } from '../lib/one-lap';
 import type { StepRow } from '../lib/step-detail';
@@ -84,15 +85,14 @@ function Item({ item, note }: { item: MapItem; note: string }): ReactElement {
   );
 }
 
-/** A work order with its open and merged issues and where it lands. */
-function Order({ order }: { order: WorkOrderRow }): ReactElement {
-  const lands = order.lands_on === null ? '' : `, lands on ${order.lands_on}`;
+/** A work order as the Board counts it, linking to the Board filtered to it. */
+function Order({ order, factory }: { order: WorkOrderRow; factory: string }): ReactElement {
   return (
     <li data-work-order={order.name}>
-      <span className="font-mono">{order.name}</span>
-      <span className={CHIP}>
-        {order.open_count} open, {order.merged_count} merged{lands}
-      </span>
+      <Link to={boardHref(factory, order.name)} className={`${LINK} font-mono`}>
+        {order.name}
+      </Link>
+      <span className={CHIP}>{orderProgress(orderPanel(order))}</span>
     </li>
   );
 }
@@ -102,6 +102,7 @@ const UNAVAILABLE = {
   outcomes: 'The recent gate decisions are unavailable.',
   deploys: 'The latest deploy is unavailable.',
   lands: 'Where the work orders land is unavailable.',
+  choices: 'The open work orders are unavailable.',
 } as const;
 
 /** One pull request in the gate's recent decisions: merged as read back, or the sweep's send-back or ask, with its reason. */
@@ -209,8 +210,8 @@ export function RightNow({
     waiting: (live?.questions ?? live?.waiting ?? []).map((item) => (
       <Item key={item.key} item={item} note={item.note ?? 'waiting'} />
     )),
-    orders: (live?.orders ?? []).map((order) => (
-      <Order key={`order-${order.name}`} order={order} />
+    orders: [...(live?.orders ?? []), ...(live?.choices ?? [])].map((order) => (
+      <Order key={`order-${order.name}`} order={order} factory={factory} />
     )),
     merged: (live?.merged ?? []).map((merge) => (
       <li key={`merged-${merge.run}-${merge.number ?? 'lap'}`} data-lap={merge.run}>

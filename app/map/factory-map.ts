@@ -13,8 +13,8 @@ export type Role = (typeof ROLES)[number];
 export const CHIPS = ['queued', 'failing', 'waiting', 'merged', 'orders'] as const;
 export type Chip = (typeof CHIPS)[number];
 
-/** What a card's Right now lists besides its chips' items: product documents, recent gate outcomes, the latest deploy, where work orders land, the pull requests under check (the App check panel, which subscribes `app-check` itself). */
-export const LISTS = ['documents', 'outcomes', 'deploys', 'lands', 'checks'] as const;
+/** What a card's Right now lists besides its chips' items: product documents, recent gate outcomes, the latest deploy, where work orders land, the open work orders with their progress (`choices`), the pull requests under check (the App check panel, which subscribes `app-check` itself). */
+export const LISTS = ['documents', 'outcomes', 'deploys', 'lands', 'choices', 'checks'] as const;
 export type List = (typeof LISTS)[number];
 
 export const LINE_STYLES = ['flow', 'ask', 'loop'] as const;

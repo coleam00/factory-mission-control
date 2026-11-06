@@ -182,7 +182,10 @@ export interface CardLive {
   /** The health queries failed: not healthy, unknown. */
   healthUnavailable?: boolean;
   merged?: MapMerge[];
+  /** The work orders with open issues, for the Work order card's chip. */
   orders?: WorkOrderRow[];
+  /** The open work orders Choose what goes next lists, each with its progress. */
+  choices?: WorkOrderRow[];
   /** Laps in a review round whose reviewer for this card the engine skipped. */
   skipped?: MapLap[];
   documents?: ProductDocumentRow[];
@@ -451,13 +454,17 @@ function listInto(
   // The App check panel subscribes its own query, so there is nothing to route or to mark unavailable.
   if (list === 'checks') return;
   const source =
-    list === 'documents' ? states.documents : list === 'lands' ? states.orders : states.rightNow;
+    list === 'documents'
+      ? states.documents
+      : list === 'lands' || list === 'choices'
+        ? states.orders
+        : states.rightNow;
   if (source === 'error') {
     entry.listsUnavailable = [...(entry.listsUnavailable ?? []), list];
   } else if (list === 'documents') {
     if (documents) entry.documents = [...documents];
-  } else if (list === 'lands') {
-    if (orders) entry.lands = orders.filter((o) => o.open_count > 0);
+  } else if (list === 'lands' || list === 'choices') {
+    if (orders) entry[list] = orders.filter((o) => o.open_count > 0);
   } else if (rightNow) {
     if (list === 'outcomes') entry.gate = gateOutcomes(rightNow);
     else entry.deploy = latestDeploy(rightNow);
