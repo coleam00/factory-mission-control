@@ -3,13 +3,13 @@ import { useSearchParams } from 'react-router';
 import { EmptyState } from '../components/EmptyState';
 import { FactoryMap } from '../components/FactoryMap';
 import { useFlow } from '../components/FlowToggle';
-import { StepVersionPicker } from '../components/StepVersionPicker';
+import { StepVersionPickerBody } from '../components/StepVersionPicker';
 import { useMapPath } from '../components/useMapPath';
 import type { AttentionRow } from '../lib/attention';
 import type { HealthRunRow, HealthStepRow, HealthWorkableRow } from '../lib/health';
 import { homeHref } from '../lib/home-map';
 import type { OwnerQueueRow } from '../lib/owner-queue';
-import type { StepRow } from '../lib/step-detail';
+import type { StepRow, StepVersionRow } from '../lib/step-detail';
 import { useFactory } from '../live/FactoryProvider';
 import { AWAITED, Feed, type Source } from '../live/Feed';
 import { LivePanel, type PanelState } from '../live/LivePanel';
@@ -134,6 +134,10 @@ export default function Home(): ReactElement {
   const [rightNow, setRightNow] = useState<Source<MapRightNowRow>>(AWAITED);
   const [documents, setDocuments] = useState<Source<ProductDocumentRow>>(AWAITED);
   const [steps, setSteps] = useState<Source<StepRow>>(AWAITED);
+  // The picker's feed and open state live here, above the panel: it renders at a different place
+  // in each of the panel's exits, so anything it held itself would reset at every load.
+  const [versions, setVersions] = useState<Source<StepVersionRow>>(AWAITED);
+  const [pickerOpen, setPickerOpen] = useState(false);
   const configured = live.status === 'ready' ? live.factories.length > 0 : undefined;
   return (
     <main className="py-4">
@@ -146,6 +150,7 @@ export default function Home(): ReactElement {
       <Feed<MapRightNowRow> query="map-right-now" factory={factory} into={setRightNow} />
       <Feed<ProductDocumentRow> query="product-documents" factory={factory} into={setDocuments} />
       <Feed<StepRow> query="step-detail" factory={factory} args={[at ?? '']} into={setSteps} />
+      <Feed<StepVersionRow> query="step-versions" factory={factory} into={setVersions} />
       <LivePanel<HomeMapRow> query="home-map" factory={factory} args={[at ?? '']}>
         {(map, state) => (
           <HomeMapBody
@@ -179,7 +184,14 @@ export default function Home(): ReactElement {
             flow={flow}
             onDrawn={setDrawn}
             aside={
-              <StepVersionPicker factory={factory} at={at} href={(pin) => homeHref(pin, search)} />
+              <StepVersionPickerBody
+                rows={versions.rows}
+                state={versions.state}
+                at={at}
+                href={(pin) => homeHref(pin, search)}
+                open={pickerOpen}
+                onToggle={setPickerOpen}
+              />
             }
             now={now}
             path={path}
