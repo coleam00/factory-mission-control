@@ -213,6 +213,26 @@ describe('home-map on the seed', () => {
     expect((await rows()).filter((r) => r.kind === 'failing')).toEqual([]);
   });
 
+  test('a check whose pr is a JSON object names its pull request, as the lap page reads it', async () => {
+    await db.query('BEGIN');
+    try {
+      const [lap] = await db.query(
+        `SELECT run_id FROM mc.laps WHERE factory = 'mission-control' AND status = 'completed' LIMIT 1`,
+      );
+      await db.query(
+        `INSERT INTO mc.lap_steps (run_id, step_id, status, started_at, output)
+          VALUES ($1, 'check-app', 'completed', '2026-11-02T00:00:00Z',
+            '{"pr":{"number":112,"url":"https://github.com/o/r/pull/112"},"overall":"FAIL"}')
+          ON CONFLICT (run_id, step_id) DO UPDATE SET started_at = EXCLUDED.started_at, output = EXCLUDED.output`,
+        [lap?.run_id],
+      );
+      const failing = (await rows()).filter((r) => r.kind === 'failing').map((r) => r.number);
+      expect(failing).toContain(112);
+    } finally {
+      await db.query('ROLLBACK');
+    }
+  });
+
   test("a queue factory's check step counts for failing, and a queue run's check step is not an old loop's", async () => {
     await db.query('BEGIN');
     try {

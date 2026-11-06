@@ -521,6 +521,7 @@ test('a started then completed step is one completed row with the event’s timi
         delivers: 'all',
         dispositions: [],
       },
+      pr_number: 29,
     },
   ]);
   expect(await projectionErrors()).toEqual([]);
@@ -699,8 +700,10 @@ test('every projection function stops a lock wait after 100 ms, and only inside 
       'record_attempt_usage',
       'record_projection_error',
       'record_step_attempt',
-      'structured_output',
     ].map((proname) => ({ proname, proconfig: ['lock_timeout=100ms'] })),
+    // It only sets a column of the row being written and takes no lock of its own.
+    { proname: 'set_lap_step_pr_number', proconfig: null },
+    { proname: 'structured_output', proconfig: ['lock_timeout=100ms'] },
   ]);
 
   await stepEvent('check-app', 'node_completed');
