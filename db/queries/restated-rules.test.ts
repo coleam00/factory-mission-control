@@ -114,7 +114,7 @@ test('the queries behind a link to the lap page filter on LAP_PAGE_WORKFLOW', ()
 test('the Board’s parked rule agrees with the pickups of the pinned build and merge queues', async () => {
   const { buildWaits } = await pack('queue', 'sdlc', '.shared', 'build.ts');
   const { mergeWaits } = await pack('queue', 'sdlc', '.shared', 'merge.ts');
-  const T = (h: number) => `2026-11-05T${String(h).padStart(2, '0')}:00:00.000Z`;
+  const hour = (h: number) => `2026-11-05T${String(h).padStart(2, '0')}:00:00.000Z`;
   const doc = (stage: string, facts: object) => ({
     version: 1,
     subject: { repo: { host: 'github.com', path: 'o/r' }, number: 1 },
@@ -125,25 +125,25 @@ test('the Board’s parked rule agrees with the pickups of the pinned build and 
     history: [],
   });
   const triage = (h: number) => ({
-    at: T(h),
+    at: hour(h),
     run_id: 'x',
     verdict: { contract: 'READY', route: 'deliver' },
   });
   const build = (status: string, h: number) => ({
     status,
-    at: T(h),
+    at: hour(h),
     brief: '',
     rounds: [],
     decisions: [],
   });
   const merge = (status: string, h: number) => ({
     status,
-    at: T(h),
+    at: hour(h),
     pr: null,
     approval: null,
     decisions: [],
   });
-  const ownPr = (h: number) => ({ url: 'https://github.com/o/r/pull/1', at: T(h) });
+  const ownPr = (h: number) => ({ url: 'https://github.com/o/r/pull/1', at: hour(h) });
   const docs = [
     doc('deliver', { triage: triage(1), build: build('parked', 2) }),
     doc('deliver', { triage: triage(3), build: build('parked', 2) }),

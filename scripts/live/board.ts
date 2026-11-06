@@ -4,7 +4,7 @@ import { type BoardRow, boardView } from '../../app/lib/board';
 import type { HealthWorkableRow } from '../../app/lib/health';
 import type { OwnerQueueRow } from '../../app/lib/owner-queue';
 import type { HomeMapRow, WorkOrderRow } from '../../app/map/live';
-import { QUEUE_FACTORY, QUEUE_RUNS, REFS_DELIVERED } from '../fixture/seed';
+import { QUEUE_FACTORY, QUEUE_PARKED, QUEUE_RUNS, REFS_DELIVERED } from '../fixture/seed';
 import { FACTORY } from '../fixture/write';
 import { openPage, type Page } from '../lib/cdp';
 import { BUILD_STEP } from './queue-map';
@@ -56,6 +56,7 @@ export function boardPhase(ctx: LiveContext): LivePhase {
     demoPanel: null as number | null,
     refsMerged: null as number | null,
     intakeToBuild: null as number | null,
+    unparked: null as number | null,
   };
 
   const run = async <Row>(name: string, factory: string, ...args: string[]) =>
@@ -119,6 +120,10 @@ export function boardPhase(ctx: LiveContext): LivePhase {
       QUEUE_RUNS.build,
       BUILD_STEP,
     ]);
+    await db.query(
+      'UPDATE mc.work_item_states SET triage_at = $2, revision = $3 WHERE project_key = $1 AND number = $4',
+      [QUEUE_FACTORY.codebase, QUEUE_PARKED.triagedAt, QUEUE_PARKED.revision, QUEUE_PARKED.issue],
+    );
   }
 
   const path = `/f/${FACTORY}/board`;
@@ -196,6 +201,18 @@ export function boardPhase(ctx: LiveContext): LivePhase {
           `document.querySelector('[data-board-column="build"] [data-work-item="401"]') !== null`,
         );
         failures.push(...(await mismatches(page, QUEUE_FACTORY.name, null)));
+
+        const parked = await page.evaluate<boolean>(
+          `document.querySelector('[data-board-column="parked"] [data-work-item="${QUEUE_PARKED.issue}"]') !== null`,
+        );
+        if (!parked) failures.push(`board: work item ${QUEUE_PARKED.issue} is not in Parked`);
+        ms.unparked = await writeToScreen(
+          page,
+          deps,
+          ['retriage', '--issue', String(QUEUE_PARKED.issue)],
+          `document.querySelector('[data-board-column="parked"] [data-work-item="${QUEUE_PARKED.issue}"]') === null && document.querySelector('[data-board-column="queued"] [data-work-item="${QUEUE_PARKED.issue}"]') !== null`,
+        );
+        failures.push(...(await mismatches(page, QUEUE_FACTORY.name, null)));
       } finally {
         await page.close().catch(() => undefined);
         await restore();
@@ -223,6 +240,11 @@ export function boardPhase(ctx: LiveContext): LivePhase {
         ms.refsMerged,
       ),
       ...lateWrite('a build step on 401', `${QUEUE_FACTORY.name}'s Build column`, ms.intakeToBuild),
+      ...lateWrite(
+        `a re-triage of #${QUEUE_PARKED.issue}`,
+        `${QUEUE_FACTORY.name}'s Queued column`,
+        ms.unparked,
+      ),
     ],
 
     summary: () => [`board: ${JSON.stringify({ ...ms, limit: LIMITS.insertToScreenMs })}`],
