@@ -82,7 +82,7 @@ test("the map draws every card's wording, the caption, the group and the legend,
   }
   expect(html).toContain('the manager watches everything on this line');
   for (const entry of FACTORY_MAP.legend) expect(html).toContain(entry.label);
-  // Only Build, Review, Split, Intake, the Manager, App check, Merge and Staging have a deeper view, so only they offer to open one.
+  // Only Build, Review, Split, Intake, the Manager, App check, Merge, Staging and Work order have a deeper view, so only they offer to open one.
   const opens = ['build', 'review', 'split', 'intake', 'app', 'merge', 'deploy', 'order'];
   for (const id of opens) expect(cardTag(html, id)).toContain(`data-opens="${id}"`);
   expect(cardTag(html, 'mgr')).toContain('data-opens="manager"');
@@ -667,12 +667,23 @@ test('the Work order card counts its open work orders and says nothing with none
   const right = textOf(
     renderToStaticMarkup(
       <MemoryRouter>
-        <RightNow live={{ here: [], orders }} factory="here" />
+        <RightNow live={{ here: [], choices: orders }} factory="here" />
       </MemoryRouter>,
     ),
   );
   expect(right).toContain('combat');
   expect(right).toContain('1 of 3 merged · lands on staging');
+  const odd = { ...orders[0], name: 'a b&c' };
+  const links = renderToStaticMarkup(
+    <MemoryRouter>
+      <RightNow live={{ here: [], choices: [orders[0], odd] }} factory="here" />
+    </MemoryRouter>,
+  );
+  expect(links).toContain('href="/f/here/board?order=combat"');
+  expect(links).toContain('href="/f/here/board?order=a%20b%26c"');
+  const view = render([], 'ready', { path: ['order'], orders });
+  const pick = view.slice(view.indexOf('data-card="o-pick"'));
+  expect(pick.slice(0, pick.indexOf('data-card=', 1))).not.toContain('data-chip');
 });
 
 test('the Manager view draws the open attention items the route is fed as a count on their card', () => {

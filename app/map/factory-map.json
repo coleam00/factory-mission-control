@@ -1778,7 +1778,7 @@
           "text": "So the whole backlog does not start at once",
           "x": 344,
           "y": 170,
-          "lists": ["orders"],
+          "lists": ["choices"],
           "covers": [],
           "details": {
             "what": ["So the whole backlog does not start at once"]

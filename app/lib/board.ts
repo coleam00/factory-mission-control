@@ -93,6 +93,19 @@ export interface OrderPanel {
   landsOn: string | null;
 }
 
+/** The query parameter the Board filters to one work order by. */
+export const ORDER_PARAM = 'order';
+
+/** The Board filtered to one work order: the one address every link to it is built from. */
+export function boardHref(factory: string, order: string): string {
+  return `/f/${encodeURIComponent(factory)}/board?${ORDER_PARAM}=${encodeURIComponent(order)}`;
+}
+
+/** How far a work order has got, in the words the Board and the map both show. */
+export function orderProgress({ merged, total, landsOn }: OrderPanel): string {
+  return `${merged} of ${total} merged${landsOn === null ? '' : ` · lands on ${landsOn}`}`;
+}
+
 export interface BoardColumn extends ColumnSpec {
   items: WorkItem[];
 }

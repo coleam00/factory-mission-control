@@ -1,6 +1,7 @@
 import { type ReactElement, type ReactNode, useState } from 'react';
 import { Link } from 'react-router';
 import type { AppCheckRow } from '../lib/app-check';
+import { boardHref, orderProgress } from '../lib/board';
 import { relativeTime } from '../lib/format';
 import { hasLapPage } from '../lib/one-lap';
 import type { StepRow } from '../lib/step-detail';
@@ -86,15 +87,18 @@ function Item({ item, note }: { item: MapItem; note: string }): ReactElement {
 
 /** A work order as the Board counts it, linking to the Board filtered to it. */
 function Order({ order, factory }: { order: WorkOrderRow; factory: string }): ReactElement {
-  const lands = order.lands_on === null ? '' : ` · lands on ${order.lands_on}`;
-  const board = `/f/${encodeURIComponent(factory)}/board?order=${encodeURIComponent(order.name)}`;
   return (
     <li data-work-order={order.name}>
-      <Link to={board} className={`${LINK} font-mono`}>
+      <Link to={boardHref(factory, order.name)} className={`${LINK} font-mono`}>
         {order.name}
       </Link>
       <span className={CHIP}>
-        {order.merged_count} of {order.total_count} merged{lands}
+        {orderProgress({
+          name: order.name,
+          merged: order.merged_count,
+          total: order.total_count,
+          landsOn: order.lands_on,
+        })}
       </span>
     </li>
   );
@@ -105,7 +109,7 @@ const UNAVAILABLE = {
   outcomes: 'The recent gate decisions are unavailable.',
   deploys: 'The latest deploy is unavailable.',
   lands: 'Where the work orders land is unavailable.',
-  orders: 'The open work orders are unavailable.',
+  choices: 'The open work orders are unavailable.',
 } as const;
 
 /** One pull request in the gate's recent decisions: merged as read back, or the sweep's send-back or ask, with its reason. */
@@ -266,7 +270,7 @@ export function RightNow({
         <span className={CHIP}>{item.note}</span>
       </li>
     )),
-    ...(live?.orders ?? []).map((order) => (
+    ...(live?.choices ?? []).map((order) => (
       <Order key={`order-${order.name}`} order={order} factory={factory} />
     )),
     ...(live?.documents ?? []).map((document) => (

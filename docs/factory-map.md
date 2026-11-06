@@ -147,7 +147,7 @@ light round, a rereview, a refused round).
 ## Right now in the Merge and Staging views
 
 A card's `lists` (a closed set, held by the map check) name what its Right now shows beside its
-chips' items: `outcomes` (Merge gate), `deploys` and `lands` (each Staging card), `orders` (Choose what goes next in the Work order view, the same rows as the Work order chip) and `checks` (Use the app, the App
+chips' items: `outcomes` (Merge gate), `deploys` and `lands` (each Staging card), `choices` (Choose what goes next in the Work order view, the same rows as the Work order chip) and `checks` (Use the app, the App
 check panel, which subscribes its own `app-check` query, below). The rest come from
 `map-right-now` (the newest 10 `archon-merge-queue` runs that swept and then recorded, and the
 factory's latest finished deploy, from `factory-deploy` or from the old loop's `deploy` include)
@@ -210,7 +210,7 @@ holdout verifier and the fence (journey 1). Esc, the close button or a click on 
 deselects.
 
 A card with a view shows ⤢ and a stacked edge, and its strip has an Open button naming the number
-of cards in the view. A card shows ⤢ only once its view exists; today Build's, Review's, Split's, Intake's, the Manager's, App check's, Merge's and Staging's do (`?view=build`, `?view=review`, `?view=split`, `?view=intake`, `?view=manager`, `?view=app`, `?view=merge`, `?view=deploy`), and so does Deliver inside Build (`?view=build/deliver`). Deliver's Review card opens the same Review view (`?view=review`); opened from there the address also carries `from=build/deliver`, so the breadcrumbs keep the Build and Deliver path and going up returns to Deliver (a link to `?view=review` alone opens it from the home map).
+of cards in the view. A card shows ⤢ only once its view exists; today Build's, Review's, Split's, Intake's, the Manager's, App check's, Merge's, Staging's and Work order's do (`?view=build`, `?view=review`, `?view=split`, `?view=intake`, `?view=manager`, `?view=app`, `?view=merge`, `?view=deploy`, `?view=order`), and so does Deliver inside Build (`?view=build/deliver`). Deliver's Review card opens the same Review view (`?view=review`); opened from there the address also carries `from=build/deliver`, so the breadcrumbs keep the Build and Deliver path and going up returns to Deliver (a link to `?view=review` alone opens it from the home map).
 Double-click, Enter on the selected card or the Open button zooms into the view. Breadcrumbs above
 the caption (the factory, then each opened view), the up control, a crumb, Esc (with nothing
 selected) and Backspace go up, and the card that opened the view flashes. The address is

@@ -327,12 +327,12 @@ test('the Work order view lists the open work orders on Choose what goes next: u
   };
   const of = (sources: Partial<Parameters<typeof cardLive>[1]>) =>
     cardLive(FACTORY_MAP, { map: [], ...sources }, new Date()).get('o-pick');
-  expect(of({ orders: [order, { ...order, name: 'done', open_count: 0 }] })?.orders).toEqual([
+  expect(of({ orders: [order, { ...order, name: 'done', open_count: 0 }] })?.choices).toEqual([
     order,
   ]);
   expect(of({ orders: [order], states: { orders: 'error' } })).toEqual({
     here: [],
-    listsUnavailable: ['orders'],
+    listsUnavailable: ['choices'],
   });
 });
 
@@ -660,7 +660,7 @@ test('Merge gate lists the gate, the Staging cards the deploy and open work orde
   expect(live.get('m-gate')?.gate).toEqual([]);
   expect(live.get('y-ver')?.deploy).toBeNull();
   expect(live.get('y-ver')?.lands).toEqual([order]);
-  expect(live.get('y-dep')?.orders).toBeUndefined();
+  expect(live.get('y-dep')?.choices).toBeUndefined();
 
   const failed = cardLive(FACTORY_MAP, { ...sources, states: { rightNow: 'error' } }, new Date());
   expect(failed.get('m-gate')).toEqual({ here: [], listsUnavailable: ['outcomes'] });
@@ -674,7 +674,7 @@ const LIST_FIELD: Record<RoutedList, keyof CardLive> = {
   outcomes: 'gate',
   deploys: 'deploy',
   lands: 'lands',
-  orders: 'orders',
+  choices: 'choices',
 };
 
 test.each(LISTS.filter((l): l is RoutedList => l !== 'checks'))(

@@ -1,6 +1,12 @@
 import type { ReactElement } from 'react';
 import { Link } from 'react-router';
-import type { BoardChip, BoardColumn, BoardView, WorkItem } from '../lib/board';
+import {
+  type BoardChip,
+  type BoardColumn,
+  type BoardView,
+  orderProgress,
+  type WorkItem,
+} from '../lib/board';
 
 const CHIP_TONE: Record<NonNullable<BoardChip['tone']> | 'plain', string> = {
   plain: 'bg-surface-hover text-text-secondary',
@@ -99,10 +105,7 @@ function OrderPanel({
     >
       <span className="flex items-baseline justify-between gap-2">
         <span className="min-w-0 text-[13px] font-semibold text-text-primary">{order.name}</span>
-        <span className="font-mono text-[11px] text-text-secondary">
-          {order.merged} of {order.total} merged
-          {order.landsOn === null ? '' : ` · lands on ${order.landsOn}`}
-        </span>
+        <span className="font-mono text-[11px] text-text-secondary">{orderProgress(order)}</span>
       </span>
       <span className="mt-2 block h-1.5 overflow-hidden rounded-full bg-surface-hover">
         <span
