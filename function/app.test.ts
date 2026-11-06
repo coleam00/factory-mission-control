@@ -14,6 +14,7 @@ import {
   pinnedArchonSha,
   replaceDecisions,
   writeIssue,
+  writePullRequest,
 } from './ingest';
 import { sign, verify } from './signature';
 
@@ -239,6 +240,68 @@ test('an older delivery of an issue does not undo a newer one', async () => {
   expect(
     await rows('SELECT label FROM mc.issue_labels WHERE issue_number = 10 ORDER BY 1'),
   ).toEqual([{ label: 'enhancement' }, { label: 'needs-owner' }]);
+});
+
+test('a Refs line is stored apart from the closing links, and a closed issue keeps the close reason only while closed', async () => {
+  const pullRequest = (body: string, updated_at: string) => ({
+    number: 9201,
+    title: 't',
+    state: 'open' as const,
+    body,
+    merged_at: null,
+    head: { sha: 'abc' },
+    html_url: 'https://github.com/o/r/pull/9201',
+    created_at: '2026-10-01T00:00:00Z',
+    updated_at,
+    closed_at: null,
+  });
+  const issue = (state: 'open' | 'closed', state_reason: string, updated_at: string) => ({
+    number: 9210,
+    title: 't',
+    state,
+    state_reason,
+    body: null,
+    html_url: 'https://github.com/o/r/issues/9210',
+    created_at: '2026-10-01T00:00:00Z',
+    updated_at,
+    closed_at: state === 'closed' ? updated_at : null,
+    labels: [],
+  });
+  const links = async () => ({
+    closes: await rows(
+      'SELECT pr_number, issue_number FROM mc.pull_request_issues WHERE pr_number = 9201',
+    ),
+    refs: await rows(
+      'SELECT pr_number, issue_number FROM mc.pull_request_references WHERE pr_number = 9201',
+    ),
+  });
+  const reason = async () =>
+    (await rows('SELECT close_reason FROM mc.issues WHERE number = 9210'))[0]?.close_reason;
+
+  await db.transaction((tx) =>
+    writePullRequest(
+      tx,
+      'mission-control',
+      pullRequest('Closes #9210\nRefs #9211', '2026-10-02T00:00:00Z'),
+    ),
+  );
+  expect(await links()).toEqual({
+    closes: [{ pr_number: 9201, issue_number: 9210 }],
+    refs: [{ pr_number: 9201, issue_number: 9211 }],
+  });
+  await db.transaction((tx) =>
+    writePullRequest(tx, 'mission-control', pullRequest('Closes #9210', '2026-10-03T00:00:00Z')),
+  );
+  expect((await links()).refs).toEqual([]);
+
+  await db.transaction((tx) =>
+    writeIssue(tx, 'mission-control', issue('closed', 'not_planned', '2026-10-02T00:00:00Z')),
+  );
+  expect(await reason()).toBe('not_planned');
+  await db.transaction((tx) =>
+    writeIssue(tx, 'mission-control', issue('open', 'reopened', '2026-10-03T00:00:00Z')),
+  );
+  expect(await reason()).toBeNull();
 });
 
 test('an Owner decisions needed edit stores each question, and closes one that is gone', async () => {

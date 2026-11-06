@@ -8,6 +8,7 @@ import {
   parseDependsOn,
   parseOwnerQuestions,
   parsePhase,
+  parseReferencedIssues,
   parseReview,
 } from '../../parsers/comments';
 import { parsePin, parseVerdict } from '../../parsers/commits';
@@ -847,11 +848,20 @@ const ISSUES: IssueSpec[] = [
   { number: 16, title: 'The owner queue', phase: 'Screens', dependsOn: [] },
 ];
 
-/** Closed by the owner, not by a merge: issue #4 with its pull request, and #13's pull request. */
+/**
+ * Closed by the owner, not by a merge: issue #4 with its pull request, and #13's pull request.
+ * Issue #4 was delivered all the same, by #103, whose body names it with `Refs`.
+ */
 const CLOSED_BY_OWNER: Record<string, Record<number, string>> = {
   issues: { 4: '2026-10-02T12:00:00Z' },
   pulls: { 104: '2026-10-02T12:00:00Z', 113: '2026-10-11T12:00:00Z' },
 };
+
+/** The `Refs` line of a pull request's body: #4 was closed as completed after #103, which names it, merged. */
+const PR_REFERENCES: Record<number, string> = { 103: 'Refs #4' };
+
+/** The issue #103's `Refs` delivers, which the Board's Merged column and its order's bar count. */
+export const REFS_DELIVERED = parseReferencedIssues(PR_REFERENCES[103] ?? '')[0];
 
 const OWNER_ISSUE = 17;
 const METRICS_ISSUE = 18;
@@ -1025,6 +1035,7 @@ function githubSql(runs: Run[]): string[] {
         created_at: iso(created),
         updated_at: iso(Math.max(created, closed ?? 0, lastComment(number))),
         closed_at: closed === null ? null : iso(closed),
+        close_reason: closed === null ? null : 'completed',
       }),
     );
     for (const dependsOn of parseDependsOn(body)) {
@@ -1099,6 +1110,17 @@ function githubSql(runs: Run[]): string[] {
         issue_number: pr.issue,
       }),
     );
+  }
+  for (const [number, text] of Object.entries(PR_REFERENCES)) {
+    for (const issue of parseReferencedIssues(text)) {
+      out.push(
+        insert('mc.pull_request_references', {
+          factory: FACTORY,
+          pr_number: Number(number),
+          issue_number: issue,
+        }),
+      );
+    }
   }
 
   out.push(
@@ -1630,6 +1652,7 @@ function queueFactorySql(): string[] {
       created_at: when.created,
       updated_at: when.closed ?? at(1),
       closed_at: when.closed,
+      close_reason: when.closed === null ? null : 'completed',
     });
   const merged = (pr: number, number: number) => [
     insert('mc.pull_requests', {

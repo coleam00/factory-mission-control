@@ -192,3 +192,16 @@ export function parseClosingIssues(body: string): number[] {
   }
   return found;
 }
+
+/**
+ * The same-repository issues a pull request body names with `Refs #12` (`refs: #14`), which never
+ * closes them, in order, without repeats.
+ */
+export function parseReferencedIssues(body: string): number[] {
+  const found: number[] = [];
+  for (const match of body.matchAll(/\brefs:?\s+#(\d+)\b/gi)) {
+    const n = Number(match[1]);
+    if (!found.includes(n)) found.push(n);
+  }
+  return found;
+}
