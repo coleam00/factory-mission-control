@@ -3,7 +3,6 @@ import { switchBranch } from '../lib/rewind';
 import type { PanelState } from '../live/LivePanel';
 import { LivePanel } from '../live/LivePanel';
 import { useFactory } from '../live/FactoryProvider';
-import { useLive } from '../live/LiveProvider';
 import { LiveDot } from './LiveDot';
 
 export interface StatusStripRow {
@@ -100,20 +99,16 @@ export function FactoryStripBody({
   );
 }
 
-/** The app shell's live strip for one factory. */
+/** The bar's "Running now" for one factory. */
 export function FactoryStrip(): ReactElement {
-  const live = useLive();
   const factory = useFactory();
   return (
-    <>
-      <RewindIndicator rewind={live.status === 'ready' ? live.rewind : null} />
-      <LivePanel<StatusStripRow>
-        query="status-strip"
-        factory={factory}
-        className="mx-auto flex max-w-6xl flex-wrap items-center gap-x-6 gap-y-2 px-6 py-3"
-      >
-        {(rows, state) => <FactoryStripBody factory={factory} rows={rows} state={state} />}
-      </LivePanel>
-    </>
+    <LivePanel<StatusStripRow>
+      query="status-strip"
+      factory={factory}
+      className="flex flex-wrap items-center gap-x-6 gap-y-2"
+    >
+      {(rows, state) => <FactoryStripBody factory={factory} rows={rows} state={state} />}
+    </LivePanel>
   );
 }

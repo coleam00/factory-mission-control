@@ -1,14 +1,15 @@
-import { type ReactElement, useEffect, useState } from 'react';
+import { type ReactElement, type ReactNode, useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router';
 import { EmptyState } from '../components/EmptyState';
-import { FactoryMap, useReducedMotion } from '../components/FactoryMap';
-import { StepVersionPicker } from '../components/StepVersionPicker';
+import { FactoryMap } from '../components/FactoryMap';
+import { useFlow } from '../components/FlowToggle';
+import { StepVersionPickerBody } from '../components/StepVersionPicker';
 import { useMapPath } from '../components/useMapPath';
 import type { AttentionRow } from '../lib/attention';
 import type { HealthRunRow, HealthStepRow, HealthWorkableRow } from '../lib/health';
 import { homeHref } from '../lib/home-map';
 import type { OwnerQueueRow } from '../lib/owner-queue';
-import type { StepRow } from '../lib/step-detail';
+import type { StepRow, StepVersionRow } from '../lib/step-detail';
 import { useFactory } from '../live/FactoryProvider';
 import { AWAITED, Feed, type Source } from '../live/Feed';
 import { LivePanel, type PanelState } from '../live/LivePanel';
@@ -53,6 +54,7 @@ export function HomeMapBody({
   configured,
   flow,
   onDrawn,
+  aside,
   steps,
   states = {},
   now = new Date(),
@@ -69,6 +71,8 @@ export function HomeMapBody({
   configured?: boolean;
   flow: boolean;
   onDrawn?: (drawn: boolean) => void;
+  /** The version line, beside the map's breadcrumb. */
+  aside?: ReactNode;
   /** The pinned version's steps, for Behind the scenes; undefined until `step-detail` answers. */
   steps?: readonly StepRow[];
   /** The secondary sources' states: a failed one is unavailable, not empty. */
@@ -82,6 +86,7 @@ export function HomeMapBody({
   const { map } = sources;
   const empty = (title: string) => (
     <div className={COLUMN}>
+      {aside ? <div className="mb-4">{aside}</div> : null}
       <EmptyState title={title} />
     </div>
   );
@@ -101,6 +106,7 @@ export function HomeMapBody({
       path={path}
       onPath={onPath}
       onDrawn={onDrawn}
+      aside={aside}
       steps={steps}
       stepsFailed={states.steps === 'error'}
     />
@@ -117,11 +123,8 @@ export default function Home(): ReactElement {
   const [path, onPath] = useMapPath(FACTORY_MAP);
   const factory = useFactory();
   const live = useLive();
-  const [flow, setFlow] = useState(true);
+  const { flow, setDrawn } = useFlow();
   const now = useToday();
-  // The toggle shows with the map it moves, and reads off while the system asks for no motion.
-  const [drawn, setDrawn] = useState(false);
-  const reduced = useReducedMotion();
   const [workable, setWorkable] = useState<Source<HealthWorkableRow>>(AWAITED);
   const [owner, setOwner] = useState<Source<OwnerQueueRow>>(AWAITED);
   const [orders, setOrders] = useState<Source<WorkOrderRow>>(AWAITED);
@@ -131,34 +134,13 @@ export default function Home(): ReactElement {
   const [rightNow, setRightNow] = useState<Source<MapRightNowRow>>(AWAITED);
   const [documents, setDocuments] = useState<Source<ProductDocumentRow>>(AWAITED);
   const [steps, setSteps] = useState<Source<StepRow>>(AWAITED);
+  // The picker's feed and open state live here, above the panel: it renders at a different place
+  // in each of the panel's exits, so anything it held itself would reset at every load.
+  const [versions, setVersions] = useState<Source<StepVersionRow>>(AWAITED);
+  const [pickerOpen, setPickerOpen] = useState(false);
   const configured = live.status === 'ready' ? live.factories.length > 0 : undefined;
   return (
-    <main className="py-6">
-      <div className={`${COLUMN} mb-4 flex min-h-8 items-center gap-3`}>
-        <h1 className="text-base font-semibold text-text-primary">Factory map</h1>
-        {drawn ? (
-          <button
-            type="button"
-            aria-pressed={flow && !reduced}
-            aria-label="Flow animation"
-            title={
-              reduced
-                ? 'Flow animation is off: your system asks for reduced motion'
-                : 'Toggle flow animation'
-            }
-            disabled={reduced}
-            onClick={() => setFlow((was) => !was)}
-            className={`ml-auto cursor-pointer rounded-[7px] border border-border bg-surface px-2.5 py-1.5 font-mono text-[12px] hover:border-border-bright hover:text-text-primary disabled:cursor-default ${
-              flow && !reduced ? 'text-text-primary' : 'text-text-secondary'
-            }`}
-          >
-            ≋ flow
-          </button>
-        ) : null}
-      </div>
-      <div className={COLUMN}>
-        <StepVersionPicker factory={factory} at={at} href={(pin) => homeHref(pin, search)} />
-      </div>
+    <main className="py-4">
       <Feed<HealthWorkableRow> query="health-workable" factory={factory} into={setWorkable} />
       <Feed<OwnerQueueRow> query="owner-queue" factory={factory} into={setOwner} />
       <Feed<WorkOrderRow> query="work-orders" factory={factory} into={setOrders} />
@@ -168,6 +150,7 @@ export default function Home(): ReactElement {
       <Feed<MapRightNowRow> query="map-right-now" factory={factory} into={setRightNow} />
       <Feed<ProductDocumentRow> query="product-documents" factory={factory} into={setDocuments} />
       <Feed<StepRow> query="step-detail" factory={factory} args={[at ?? '']} into={setSteps} />
+      <Feed<StepVersionRow> query="step-versions" factory={factory} into={setVersions} />
       <LivePanel<HomeMapRow> query="home-map" factory={factory} args={[at ?? '']}>
         {(map, state) => (
           <HomeMapBody
@@ -200,6 +183,17 @@ export default function Home(): ReactElement {
             configured={configured}
             flow={flow}
             onDrawn={setDrawn}
+            aside={
+              <StepVersionPickerBody
+                rows={versions.rows}
+                state={versions.state}
+                at={at}
+                href={(pin) => homeHref(pin, search)}
+                open={pickerOpen}
+                onToggle={setPickerOpen}
+                compact
+              />
+            }
             now={now}
             path={path}
             onPath={onPath}

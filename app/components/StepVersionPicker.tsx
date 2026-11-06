@@ -59,6 +59,7 @@ export function StepVersionPickerBody({
   href,
   open,
   onToggle,
+  compact = false,
 }: {
   rows: readonly StepVersionRow[] | undefined;
   state: PanelState;
@@ -68,6 +69,8 @@ export function StepVersionPickerBody({
   href: (at: string | null) => string;
   open: boolean;
   onToggle: (open: boolean) => void;
+  /** The smaller version name the home bar's breadcrumb row uses. */
+  compact?: boolean;
 }): ReactElement {
   const versions = stepVersions(rows ?? []);
   const shown = versions.find((version) => (at === null ? version.current : version.sha === at));
@@ -81,7 +84,9 @@ export function StepVersionPickerBody({
     >
       <summary className="flex cursor-pointer items-center gap-3">
         <span className={LABEL}>Version</span>
-        <span className="font-mono text-sm tabular-nums text-text-primary [overflow-wrap:anywhere]">
+        <span
+          className={`font-mono ${compact ? 'text-[12px]' : 'text-sm'} tabular-nums text-text-primary [overflow-wrap:anywhere]`}
+        >
           {name}
         </span>
       </summary>

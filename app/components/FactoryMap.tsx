@@ -3,6 +3,7 @@ import {
   type KeyboardEvent,
   type PointerEvent,
   type ReactElement,
+  type ReactNode,
   type RefObject,
   useCallback,
   useEffect,
@@ -478,6 +479,7 @@ export function FactoryMap({
   onDrawn,
   steps,
   stepsFailed,
+  aside,
 }: {
   map: FactoryMapData;
   live: ReadonlyMap<string, CardLive>;
@@ -494,6 +496,8 @@ export function FactoryMap({
   steps?: readonly StepRow[];
   /** True when `step-detail` failed, so Behind the scenes says so instead of loading forever. */
   stepsFailed?: boolean;
+  /** Sits beside the breadcrumb, such as the version line. */
+  aside?: ReactNode;
 }): ReactElement {
   const [shown, setShown] = useState(path);
   const level = levelOf(map, shown);
@@ -761,31 +765,34 @@ export function FactoryMap({
 
   return (
     <div className="flex flex-col">
-      <nav
-        aria-label="Map level"
-        data-map-crumbs
-        className={`${COLUMN} mb-2 flex flex-wrap items-center gap-1 font-mono text-[13px]`}
-      >
-        {crumbs.map((crumb, i) => (
-          <span key={crumb.id ?? 'root'} className="flex items-center gap-1">
-            {i > 0 ? <span className="text-text-secondary">›</span> : null}
-            <button
-              type="button"
-              data-crumb={crumb.id ?? 'root'}
-              aria-current={i === path.length ? 'page' : undefined}
-              disabled={i === path.length}
-              onClick={() => onPath(path.slice(0, i))}
-              className={`rounded-md px-2 py-0.5 ${
-                i === path.length
-                  ? 'bg-surface-elevated text-text-primary'
-                  : 'cursor-pointer text-text-secondary hover:bg-surface-elevated hover:text-text-primary'
-              }`}
-            >
-              {crumb.title}
-            </button>
-          </span>
-        ))}
-      </nav>
+      <div className={`${COLUMN} mb-2 flex flex-wrap items-center justify-between gap-x-4 gap-y-1`}>
+        <nav
+          aria-label="Map level"
+          data-map-crumbs
+          className="flex flex-wrap items-center gap-1 font-mono text-[13px]"
+        >
+          {crumbs.map((crumb, i) => (
+            <span key={crumb.id ?? 'root'} className="flex items-center gap-1">
+              {i > 0 ? <span className="text-text-secondary">›</span> : null}
+              <button
+                type="button"
+                data-crumb={crumb.id ?? 'root'}
+                aria-current={i === path.length ? 'page' : undefined}
+                disabled={i === path.length}
+                onClick={() => onPath(path.slice(0, i))}
+                className={`rounded-md px-2 py-0.5 ${
+                  i === path.length
+                    ? 'bg-surface-elevated text-text-primary'
+                    : 'cursor-pointer text-text-secondary hover:bg-surface-elevated hover:text-text-primary'
+                }`}
+              >
+                {crumb.title}
+              </button>
+            </span>
+          ))}
+        </nav>
+        {aside}
+      </div>
       <p data-map-caption className={`${COLUMN} mb-3 text-sm text-text-secondary`}>
         {level.caption}
       </p>
