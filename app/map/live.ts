@@ -164,6 +164,9 @@ export interface ProductDocumentRow {
   merged_count: number;
 }
 
+/** The lists `cardLive` fills; the App check panel's `checks` subscribes its own query. */
+export type RoutedList = Exclude<List, 'checks'>;
+
 export interface CardLive {
   here: MapLap[];
   queued?: MapItem[];
@@ -183,7 +186,7 @@ export interface CardLive {
   skipped?: MapLap[];
   documents?: ProductDocumentRow[];
   /** Lists whose source failed: unknown, never empty. */
-  listsUnavailable?: List[];
+  listsUnavailable?: RoutedList[];
   /** Chips whose source failed: not zero, unknown, so drawn as such. */
   unavailable?: Chip[];
   gate?: GateOutcome[];
@@ -448,6 +451,8 @@ function listInto(
   list: List,
   { orders, rightNow, documents, states = {} }: MapSources,
 ) {
+  // The App check panel subscribes its own query, so there is nothing to route or to mark unavailable.
+  if (list === 'checks') return;
   const source =
     list === 'documents' ? states.documents : list === 'lands' ? states.orders : states.rightNow;
   if (source === 'error') {

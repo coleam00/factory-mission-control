@@ -524,7 +524,7 @@ export function MapDetails({
           {tab === 'live' ? (
             <>
               <RightNow live={live} factory={factory} />
-              {card.id === 'a-check' ? <AppChecks factory={factory} /> : null}
+              {card.lists?.includes('checks') ? <AppChecks factory={factory} /> : null}
             </>
           ) : tab === 'behind' ? (
             <Behind card={card} at={at} steps={steps} failed={stepsFailed} />
