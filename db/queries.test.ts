@@ -1,20 +1,28 @@
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { readdirSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
-import type { StatusStripRow } from '../app/components/FactoryStrip';
-import type { FactorySwitcherRow } from '../app/components/FactorySwitcher';
-import type { AppCheckRow } from '../app/lib/app-check';
-import type { ArchDiffRow } from '../app/lib/arch-diff';
-import type { AttentionRow } from '../app/lib/attention';
-import type { BoardRow } from '../app/lib/board';
-import type { HealthRunRow, HealthStepRow, HealthWorkableRow } from '../app/lib/health';
-import type { LapMapRow } from '../app/lib/lap-graph';
-import type { LaneRow, RecentLapRow } from '../app/lib/laps';
-import type { CheckLineRow, OneLapRow, StepAttemptRow } from '../app/lib/one-lap';
-import { LAP_PAGE_WORKFLOW } from '../app/lib/one-lap';
-import type { OwnerQueueRow } from '../app/lib/owner-queue';
-import type { RewindBranchRow } from '../app/lib/rewind';
-import type { ScorecardRow } from '../app/lib/scorecard';
+import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+import type { StatusStripRow } from "../app/components/FactoryStrip";
+import type { FactorySwitcherRow } from "../app/components/FactorySwitcher";
+import type { AppCheckRow } from "../app/lib/app-check";
+import type { ArchDiffRow } from "../app/lib/arch-diff";
+import type { AttentionRow } from "../app/lib/attention";
+import type { BoardRow } from "../app/lib/board";
+import type {
+  HealthRunRow,
+  HealthStepRow,
+  HealthWorkableRow,
+} from "../app/lib/health";
+import type { LapMapRow } from "../app/lib/lap-graph";
+import type { LaneRow, RecentLapRow } from "../app/lib/laps";
+import type {
+  CheckLineRow,
+  OneLapRow,
+  StepAttemptRow,
+} from "../app/lib/one-lap";
+import { LAP_PAGE_WORKFLOW } from "../app/lib/one-lap";
+import type { OwnerQueueRow } from "../app/lib/owner-queue";
+import type { RewindBranchRow } from "../app/lib/rewind";
+import type { ScorecardRow } from "../app/lib/scorecard";
 import type {
   NestingRow,
   PartRow,
@@ -22,15 +30,20 @@ import type {
   StepVersionRow,
   SubagentRow,
   YamlPartRow,
-} from '../app/lib/step-detail';
-import type { VersionStripRow } from '../app/lib/version-strip';
-import type { WorkItemRow } from '../app/lib/work-item';
-import type { HomeMapRow, MapRightNowRow, ProductDocumentRow, WorkOrderRow } from '../app/map/live';
-import { LIVE_QUERY_NAME, parameterCount } from '../server/live';
-import { migratedDb, paramsFor, queries } from './queries/test-seed';
-import type { TestDb } from './test-db';
+} from "../app/lib/step-detail";
+import type { VersionStripRow } from "../app/lib/version-strip";
+import type { WorkItemRow } from "../app/lib/work-item";
+import type {
+  HomeMapRow,
+  MapRightNowRow,
+  ProductDocumentRow,
+  WorkOrderRow,
+} from "../app/map/live";
+import { LIVE_QUERY_NAME, parameterCount } from "../server/live";
+import { migratedDb, paramsFor, queries } from "./queries/test-seed";
+import type { TestDb } from "./test-db";
 
-const dir = join(import.meta.dir, 'queries');
+const dir = join(import.meta.dir, "queries");
 
 /** Every key any member of a union row has. */
 type Keys<Row> = Row extends unknown ? keyof Row & string : never;
@@ -46,312 +59,337 @@ const columns =
 
 /** Each live query's result columns, in order, bound to the row type its panel reads. */
 const ROW_COLUMNS: Record<string, string[]> = {
-  'app-check': columns<AppCheckRow>()([
-    'number',
-    'title',
-    'url',
-    'run_id',
-    'overall',
-    'criteria',
-    'probes',
-    'assertions',
+  "app-check": columns<AppCheckRow>()([
+    "number",
+    "title",
+    "url",
+    "run_id",
+    "overall",
+    "criteria",
+    "probes",
+    "assertions",
   ]),
-  'arch-diff': columns<ArchDiffRow>()(['digest', 'kind', 'workflow', 'first_run_at', 'entries']),
-  'attention-items': columns<AttentionRow>()([
-    'run_id',
-    'workflow_name',
-    'node_id',
-    'waiting_since',
-    'form',
-    'options',
-    'labels',
-    'message',
-    'console',
+  "arch-diff": columns<ArchDiffRow>()([
+    "digest",
+    "kind",
+    "workflow",
+    "first_run_at",
+    "entries",
   ]),
-  'factory-switcher': columns<FactorySwitcherRow>()(['factory', 'running', 'is_default']),
-  'health-runs': columns<HealthRunRow>()([
-    'run_id',
-    'workflow_name',
-    'status',
-    'started_at',
-    'completed_at',
-    'failed_step',
-    'error',
-    'failed_at',
-    'console',
+  "attention-items": columns<AttentionRow>()([
+    "run_id",
+    "workflow_name",
+    "node_id",
+    "waiting_since",
+    "form",
+    "options",
+    "labels",
+    "message",
+    "console",
   ]),
-  'health-steps': columns<HealthStepRow>()([
-    'kind',
-    'run_id',
-    'workflow_name',
-    'step_id',
-    'at',
-    'duration_ms',
-    'console',
+  "factory-switcher": columns<FactorySwitcherRow>()([
+    "factory",
+    "running",
+    "is_default",
   ]),
-  'health-workable': columns<HealthWorkableRow>()([
-    'kind',
-    'issue_number',
-    'title',
-    'url',
-    'run_id',
+  "health-runs": columns<HealthRunRow>()([
+    "run_id",
+    "workflow_name",
+    "status",
+    "started_at",
+    "completed_at",
+    "failed_step",
+    "error",
+    "failed_at",
+    "console",
   ]),
-  'work-item': columns<WorkItemRow>()([
-    'kind',
-    'run_id',
-    'workflow',
-    'status',
-    'started_at',
-    'completed_at',
-    'lap',
-    'waiting',
-    'cost',
-    'steps',
-    'failed_step',
-    'error',
-    'route',
-    'depth',
-    'labels',
-    'deliveries',
-    'review',
-    'review_at',
-    'rereview',
-    'rereview_at',
-    'check_overall',
-    'check_at',
-    'decision',
-    'reason',
-    'decision_at',
-    'answer',
-    'answer_summary',
-    'answer_at',
-    'line_kind',
-    'line_verdict',
-    'pr',
-    'decisions',
-    'landed',
-    'asked_pr',
-    'record_status',
-    'number',
-    'title',
-    'url',
-    'console',
+  "health-steps": columns<HealthStepRow>()([
+    "kind",
+    "run_id",
+    "workflow_name",
+    "step_id",
+    "at",
+    "duration_ms",
+    "console",
+  ]),
+  "health-workable": columns<HealthWorkableRow>()([
+    "kind",
+    "issue_number",
+    "title",
+    "url",
+    "run_id",
+  ]),
+  "work-item": columns<WorkItemRow>()([
+    "kind",
+    "run_id",
+    "workflow",
+    "status",
+    "started_at",
+    "completed_at",
+    "lap",
+    "waiting",
+    "cost",
+    "steps",
+    "failed_step",
+    "error",
+    "route",
+    "depth",
+    "labels",
+    "deliveries",
+    "review",
+    "review_at",
+    "rereview",
+    "rereview_at",
+    "check_overall",
+    "check_at",
+    "decision",
+    "reason",
+    "decision_at",
+    "answer",
+    "answer_summary",
+    "answer_at",
+    "line_kind",
+    "line_verdict",
+    "pr",
+    "decisions",
+    "landed",
+    "asked_pr",
+    "record_status",
+    "number",
+    "title",
+    "url",
+    "console",
   ]),
   board: columns<BoardRow>()([
-    'kind',
-    'number',
-    'title',
-    'url',
-    'state',
-    'closed_at',
-    'work_orders',
-    'route',
-    'rounds',
-    'app_check',
-    'pr',
-    'pr_open',
-    'repository',
-    'merged_total',
+    "kind",
+    "number",
+    "title",
+    "url",
+    "state",
+    "closed_at",
+    "work_orders",
+    "route",
+    "rounds",
+    "app_check",
+    "pr",
+    "pr_open",
+    "repository",
+    "merged_total",
   ]),
-  'home-map': columns<HomeMapRow>()([
-    'kind',
-    'run_id',
-    'workflow',
-    'steps',
-    'number',
-    'title',
-    'url',
-    'at',
-    'prs',
+  "home-map": columns<HomeMapRow>()([
+    "kind",
+    "run_id",
+    "workflow",
+    "steps",
+    "number",
+    "title",
+    "url",
+    "at",
+    "prs",
   ]),
   lanes: columns<LaneRow>()([
-    'run_id',
-    'workflow_name',
-    'console',
-    'started_at',
-    'issue_number',
-    'issue_title',
-    'issue_url',
-    'route',
-    'depth',
-    'step_id',
-    'step_started_at',
-    'cost_usd',
-    'steps',
+    "run_id",
+    "workflow_name",
+    "console",
+    "started_at",
+    "issue_number",
+    "issue_title",
+    "issue_url",
+    "route",
+    "depth",
+    "step_id",
+    "step_started_at",
+    "cost_usd",
+    "steps",
   ]),
-  'one-lap-checks': columns<CheckLineRow>()([
-    'position',
-    'line_id',
-    'kind',
-    'verdict',
-    'evidence_count',
+  "one-lap-checks": columns<CheckLineRow>()([
+    "position",
+    "line_id",
+    "kind",
+    "verdict",
+    "evidence_count",
   ]),
-  'one-lap-map': columns<LapMapRow>()([
-    'pin',
-    'path',
-    'parent_path',
-    'position',
-    'step_id',
-    'kind',
-    'depends_on',
-    'when_condition',
-    'trigger_rule',
+  "one-lap-map": columns<LapMapRow>()([
+    "pin",
+    "path",
+    "parent_path",
+    "position",
+    "step_id",
+    "kind",
+    "depends_on",
+    "when_condition",
+    "trigger_rule",
   ]),
-  'one-lap-steps': columns<StepAttemptRow>()([
-    'step_id',
-    'status',
-    'started_at',
-    'duration_ms',
-    'model',
-    'tokens_input',
-    'tokens_output',
-    'tokens_cache_read',
-    'tokens_cache_write',
-    'cost_usd',
-    'outcome',
-    'error',
-    'position',
+  "one-lap-steps": columns<StepAttemptRow>()([
+    "step_id",
+    "status",
+    "started_at",
+    "duration_ms",
+    "model",
+    "tokens_input",
+    "tokens_output",
+    "tokens_cache_read",
+    "tokens_cache_write",
+    "cost_usd",
+    "outcome",
+    "error",
+    "position",
   ]),
-  'one-lap': columns<OneLapRow>()([
-    'run_id',
-    'status',
-    'started_at',
-    'completed_at',
-    'repository',
-    'console',
-    'issue_number',
-    'issue_title',
-    'issue_url',
-    'route',
-    'depth',
-    'pr',
-    'review_status',
-    'review_outcome',
-    'review_delivers',
-    'dispositions',
-    'hidden_lines',
-    'gate_status',
-    'gate_outcome',
-    'gate_reason',
+  "one-lap": columns<OneLapRow>()([
+    "run_id",
+    "status",
+    "started_at",
+    "completed_at",
+    "repository",
+    "console",
+    "issue_number",
+    "issue_title",
+    "issue_url",
+    "route",
+    "depth",
+    "pr",
+    "review_status",
+    "review_outcome",
+    "review_delivers",
+    "dispositions",
+    "hidden_lines",
+    "gate_status",
+    "gate_outcome",
+    "gate_reason",
   ]),
-  'owner-queue': columns<OwnerQueueRow>()([
-    'kind',
-    'issue_number',
-    'question_number',
-    'title',
-    'url',
-    'options',
-    'recommendation',
-    'default_option',
-    'default_at',
-    'waiting_since',
-    'approximate',
+  "owner-queue": columns<OwnerQueueRow>()([
+    "kind",
+    "issue_number",
+    "question_number",
+    "title",
+    "url",
+    "options",
+    "recommendation",
+    "default_option",
+    "default_at",
+    "waiting_since",
+    "approximate",
   ]),
-  'recent-laps': columns<RecentLapRow>()([
-    'run_id',
-    'status',
-    'started_at',
-    'completed_at',
-    'issue_number',
-    'outcome',
-    'cost_usd',
+  "recent-laps": columns<RecentLapRow>()([
+    "run_id",
+    "status",
+    "started_at",
+    "completed_at",
+    "issue_number",
+    "outcome",
+    "cost_usd",
   ]),
-  'rewind-branches': columns<RewindBranchRow>()(['name', 'parent', 'at', 'created_at']),
+  "rewind-branches": columns<RewindBranchRow>()([
+    "name",
+    "parent",
+    "at",
+    "created_at",
+  ]),
   scorecard: columns<ScorecardRow>()([
-    'run_id',
-    'digest',
-    'workflow_name',
-    'status',
-    'started_at',
-    'completed_at',
-    'step_id',
-    'duration_ms',
-    'cost_usd',
-    'route',
-    'outcome',
-    'reason',
-    'pin_sha',
-    'first_run_at',
-    'issue',
-    'pull_request',
-    'merged',
-    'items',
+    "run_id",
+    "digest",
+    "workflow_name",
+    "status",
+    "started_at",
+    "completed_at",
+    "step_id",
+    "duration_ms",
+    "cost_usd",
+    "route",
+    "outcome",
+    "reason",
+    "pin_sha",
+    "first_run_at",
+    "issue",
+    "pull_request",
+    "merged",
+    "items",
   ]),
-  'status-strip': columns<StatusStripRow>()(['running']),
-  'step-detail': columns<StepRow>()([
-    'workflow',
-    'path',
-    'parent_path',
-    'position',
-    'step_id',
-    'kind',
-    'description',
-    'model',
-    'when_condition',
-    'depends_on',
-    'trigger_rule',
-    'include',
-    'child_workflow',
-    'command_file',
-    'script',
-    'script_file',
-    'runtime',
-    'bash',
-    'prompt',
-    'defined_in',
-    'file',
+  "status-strip": columns<StatusStripRow>()(["running"]),
+  "step-detail": columns<StepRow>()([
+    "workflow",
+    "path",
+    "parent_path",
+    "position",
+    "step_id",
+    "kind",
+    "description",
+    "model",
+    "when_condition",
+    "depends_on",
+    "trigger_rule",
+    "include",
+    "child_workflow",
+    "command_file",
+    "script",
+    "script_file",
+    "runtime",
+    "bash",
+    "prompt",
+    "defined_in",
+    "file",
   ]),
-  'step-nesting': columns<NestingRow>()(['path', 'position', 'step_id', 'kind']),
-  'step-prompt': columns<PartRow>()(['path', 'part', 'chunk']),
-  'step-scripts': columns<PartRow>()(['path', 'part', 'chunk']),
-  'step-subagents': columns<SubagentRow>()([
-    'workflow',
-    'step_path',
-    'name',
-    'description',
-    'prompt',
-    'instruction_file',
-    'part',
-    'chunk',
+  "step-nesting": columns<NestingRow>()([
+    "path",
+    "position",
+    "step_id",
+    "kind",
   ]),
-  'step-versions': columns<StepVersionRow>()(['sha', 'reason', 'committed_at', 'is_current']),
-  'step-yaml': columns<YamlPartRow>()(['name', 'file', 'part', 'chunk']),
-  'map-right-now': columns<MapRightNowRow>()([
-    'kind',
-    'run_id',
-    'at',
-    'decisions',
-    'merged',
-    'asked',
-    'claimed',
-    'revision',
-    'health',
-    'status',
-    'repository',
+  "step-prompt": columns<PartRow>()(["path", "part", "chunk"]),
+  "step-scripts": columns<PartRow>()(["path", "part", "chunk"]),
+  "step-subagents": columns<SubagentRow>()([
+    "workflow",
+    "step_path",
+    "name",
+    "description",
+    "prompt",
+    "instruction_file",
+    "part",
+    "chunk",
   ]),
-  'product-documents': columns<ProductDocumentRow>()([
-    'number',
-    'title',
-    'url',
-    'total_count',
-    'merged_count',
+  "step-versions": columns<StepVersionRow>()([
+    "sha",
+    "reason",
+    "committed_at",
+    "is_current",
   ]),
-  'work-orders': columns<WorkOrderRow>()([
-    'name',
-    'total_count',
-    'open_count',
-    'merged_count',
-    'lands_on',
-    'last_closed_at',
+  "step-yaml": columns<YamlPartRow>()(["name", "file", "part", "chunk"]),
+  "map-right-now": columns<MapRightNowRow>()([
+    "kind",
+    "run_id",
+    "at",
+    "decisions",
+    "merged",
+    "asked",
+    "claimed",
+    "revision",
+    "health",
+    "status",
+    "repository",
   ]),
-  'version-strip': columns<VersionStripRow>()([
-    'digest',
-    'first_run_at',
-    'pin_sha',
-    'reason',
-    'hypothesis',
-    'measure',
-    'committed_at',
+  "product-documents": columns<ProductDocumentRow>()([
+    "number",
+    "title",
+    "url",
+    "total_count",
+    "merged_count",
+  ]),
+  "work-orders": columns<WorkOrderRow>()([
+    "name",
+    "total_count",
+    "open_count",
+    "merged_count",
+    "lands_on",
+    "last_closed_at",
+  ]),
+  "version-strip": columns<VersionStripRow>()([
+    "digest",
+    "first_run_at",
+    "pin_sha",
+    "reason",
+    "hypothesis",
+    "measure",
+    "committed_at",
   ]),
 };
 
@@ -363,32 +401,37 @@ const VOLATILE =
 const SET_RETURNING =
   /\b(generate_series|generate_subscripts|unnest|jsonb?_array_elements(_text)?|jsonb?_each(_text)?|jsonb?_object_keys|jsonb?_to_recordset|jsonb?_populate_recordset|jsonb?_path_query(_array)?|regexp_matches|regexp_split_to_table|string_to_table|json_table|pg_ls_dir|pg_stat_get_activity|pg_show_all_settings)\s*\(/i;
 
-test('every file in db/queries/ is a live query named for its panel', () => {
-  const sqlFiles = readdirSync(dir).filter((f) => f.endsWith('.sql'));
+test("every file in db/queries/ is a live query named for its panel", () => {
+  const sqlFiles = readdirSync(dir).filter((f) => f.endsWith(".sql"));
   expect(sqlFiles.length).toBeGreaterThan(0);
-  for (const file of sqlFiles) expect(file.slice(0, -4)).toMatch(LIVE_QUERY_NAME);
+  for (const file of sqlFiles)
+    expect(file.slice(0, -4)).toMatch(LIVE_QUERY_NAME);
 });
 
-test('every live query has a row type bound to its columns', () => {
-  expect(Object.keys(ROW_COLUMNS).sort()).toEqual(queries.map(([name]) => name).sort());
+test("every live query has a row type bound to its columns", () => {
+  expect(Object.keys(ROW_COLUMNS).sort()).toEqual(
+    queries.map(([name]) => name).sort(),
+  );
 });
 
-describe.each(queries)('db/queries/%s.sql', (name, sql) => {
-  test('is one read-only SELECT', () => {
-    expect(sql).not.toContain(';');
+describe.each(queries)("db/queries/%s.sql", (name, sql) => {
+  test("is one read-only SELECT", () => {
+    expect(sql).not.toContain(";");
     expect(sql).toMatch(/^(SELECT|WITH)\b/i);
-    expect(sql).not.toMatch(/\b(insert|update|delete|merge|truncate|for\s+update|for\s+share)\b/i);
+    expect(sql).not.toMatch(
+      /\b(insert|update|delete|merge|truncate|for\s+update|for\s+share)\b/i,
+    );
   });
 
-  test('uses no volatile function', () => {
+  test("uses no volatile function", () => {
     expect(sql).not.toMatch(VOLATILE);
   });
 
-  test('calls no set-returning function', () => {
+  test("calls no set-returning function", () => {
     expect(sql).not.toMatch(SET_RETURNING);
   });
 
-  test('calls no function of the mc schema', () => {
+  test("calls no function of the mc schema", () => {
     // A user-defined STABLE function is not approved either; #357's mc.version_pin call was refused.
     expect(sql).not.toMatch(/\bmc\.\w+\s*\(/i);
   });
@@ -399,11 +442,11 @@ describe.each(queries)('db/queries/%s.sql', (name, sql) => {
 
   test("is keyed by one factory, $1, the home map's and a step panel's by the version too, a lap's by its run id", () => {
     expect(sql).toMatch(/\$1\b/);
-    expect(parameterCount(sql)).toBe(paramsFor(name, '').length);
+    expect(parameterCount(sql)).toBe(paramsFor(name, "").length);
   });
 });
 
-describe('against the migrated schema', () => {
+describe("against the migrated schema", () => {
   let db: TestDb;
 
   beforeAll(async () => {
@@ -412,59 +455,76 @@ describe('against the migrated schema', () => {
 
   afterAll(() => db.close());
 
-  test.each(queries)('%s runs with a factory name as $1', async (name, sql) => {
-    await db.query(sql, paramsFor(name, 'mission-control'));
+  test.each(queries)("%s runs with a factory name as $1", async (name, sql) => {
+    await db.query(sql, paramsFor(name, "mission-control"));
   });
 
-  test.each(queries)('%s returns the columns its row type names', async (name, sql) => {
-    expect(await db.columns(sql, paramsFor(name, 'mission-control'))).toEqual(ROW_COLUMNS[name]);
-  });
+  test.each(queries)(
+    "%s returns the columns its row type names",
+    async (name, sql) => {
+      expect(await db.columns(sql, paramsFor(name, "mission-control"))).toEqual(
+        ROW_COLUMNS[name],
+      );
+    },
+  );
 });
 
-describe('the rules the live queries restate, which they may not call a function for', () => {
-  const read = (...path: string[]) => readFileSync(join(import.meta.dir, '..', ...path), 'utf8');
-  const query = (name: string) => queries.find(([n]) => n === name)?.[1] as string;
+describe("the rules the live queries restate, which they may not call a function for", () => {
+  const read = (...path: string[]) =>
+    readFileSync(join(import.meta.dir, "..", ...path), "utf8");
+  const query = (name: string) =>
+    queries.find(([n]) => n === name)?.[1] as string;
   const DATES_VERSION = "IN ('archon-loop', 'archon-build-queue')";
   const ON_THE_QUEUES = "IN ('archon-intake', 'archon-build-queue')";
 
   const LAP =
     /workflow_name = 'archon-loop' OR l\.workflow_name = 'archon-build-queue' AND EXISTS \(\s*SELECT 1 FROM mc\.lap_steps f WHERE f\.run_id = l\.run_id AND f\.step_id = 'facts'\s*AND f\.output -> 'item' ->> 'number' IS NOT NULL\)/g;
   const count = (sql: string, part: string | RegExp) =>
-    typeof part === 'string' ? sql.split(part).length - 1 : (sql.match(part) ?? []).length;
+    typeof part === "string"
+      ? sql.split(part).length - 1
+      : (sql.match(part) ?? []).length;
 
-  test('what dates a version is the one list mc.dates_version holds', () => {
-    expect(read('db/migrations', '0022_queue_versions.sql')).toContain(DATES_VERSION);
-    for (const name of ['version-strip', 'arch-diff']) {
+  test("what dates a version is the one list mc.dates_version holds", () => {
+    expect(read("db/migrations", "0022_queue_versions.sql")).toContain(
+      DATES_VERSION,
+    );
+    for (const name of ["version-strip", "arch-diff"]) {
       expect(query(name)).toContain(DATES_VERSION);
     }
   });
 
-  test('every mention of build-queue in a live query is one of the three rules, none a stray copy', () => {
+  test("every mention of build-queue in a live query is one of the three rules, none a stray copy", () => {
     // [mc.dates_version copies, lap-rule copies, queues-rule copies, other mentions] per name; a live query
     // not listed here may mention none of them.
     const expected: Record<string, [number, number, number, number?]> = {
-      'version-strip': [1, 0, 0],
-      'arch-diff': [2, 0, 0],
+      "version-strip": [1, 0, 0],
+      "arch-diff": [2, 0, 0],
       scorecard: [0, 2, 0],
       // The same list as mc.dates_version: the lap a work order's row names is one that ran a version.
       board: [1, 0, 0],
       // The queues rule asks which intake or build-queue runs exist, not what dates a version.
-      'home-map': [0, 0, 1],
+      "home-map": [0, 0, 1],
       // Exception: the lap rule narrowed to one item ($2) rather than any item, and the route join that
       // reads a build-queue run's own routing step.
-      'work-item': [0, 0, 0, 2],
-      'step-detail': [0, 0, 1],
-      'step-nesting': [0, 0, 1],
-      'step-prompt': [0, 0, 1],
-      'step-scripts': [0, 0, 1],
-      'step-subagents': [0, 0, 1],
-      'step-yaml': [0, 0, 1],
-      'step-versions': [0, 0, 1],
+      "work-item": [0, 0, 0, 2],
+      "step-detail": [0, 0, 1],
+      "step-nesting": [0, 0, 1],
+      "step-prompt": [0, 0, 1],
+      "step-scripts": [0, 0, 1],
+      "step-subagents": [0, 0, 1],
+      "step-yaml": [0, 0, 1],
+      "step-versions": [0, 0, 1],
     };
     const copies = [...queries];
     for (const [name, sql] of copies) {
-      const [datesVersion, lap, queues, other = 0] = expected[name] ?? [0, 0, 0];
-      expect([name, count(sql, DATES_VERSION), count(sql, LAP)]).toEqual([name, datesVersion, lap]);
+      const [datesVersion, lap, queues, other = 0] = expected[name] ?? [
+        0, 0, 0,
+      ];
+      expect([name, count(sql, DATES_VERSION), count(sql, LAP)]).toEqual([
+        name,
+        datesVersion,
+        lap,
+      ]);
       expect([name, count(sql, ON_THE_QUEUES)]).toEqual([name, queues]);
       expect([name, count(sql, "'archon-build-queue'")]).toEqual([
         name,
@@ -473,34 +533,36 @@ describe('the rules the live queries restate, which they may not call a function
     }
   });
 
-  test('merged is closed, not as not planned or a duplicate, with a merged pull request that closes or Refs it, in every copy', () => {
+  test("merged is closed, not as not planned or a duplicate, with a merged pull request that closes or Refs it, in every copy", () => {
     const NOT_DELIVERED =
       "coalesce(i.close_reason, 'completed') NOT IN ('not_planned', 'duplicate')";
-    const BY_REFS = 'FROM mc.pull_request_references rf';
-    const BY_CLOSING = 'FROM mc.pull_request_issues pi';
+    // The delivery branches as one predicate: a merged PR that closes the item, or one that Refs it.
+    const DELIVERED =
+      /AND \(EXISTS \(\s*SELECT 1 FROM mc\.pull_request_issues pi\s+JOIN mc\.pull_requests p ON p\.factory = pi\.factory AND p\.number = pi\.pr_number\s+WHERE pi\.factory = i\.factory AND pi\.issue_number = i\.number AND p\.merged_at IS NOT NULL\s*\) OR EXISTS \(\s*SELECT 1 FROM mc\.pull_request_references rf\s+JOIN mc\.pull_requests p ON p\.factory = rf\.factory AND p\.number = rf\.pr_number\s+WHERE rf\.factory = i\.factory AND rf\.issue_number = i\.number AND p\.merged_at IS NOT NULL\s*\)\)/g;
+    // The closing branch alone, so a copy in the pre-Refs form is counted too.
+    const BY_CLOSING = "pi.issue_number = i.number AND p.merged_at IS NOT NULL";
     // [copies] per name; a live query not listed here may state the rule nowhere.
-    const copies: Record<string, number> = { board: 2, 'work-orders': 1, 'product-documents': 1 };
+    const copies: Record<string, number> = {
+      board: 2,
+      "work-orders": 1,
+      "product-documents": 1,
+    };
     for (const [name, sql] of queries) {
       const expected = copies[name] ?? 0;
-      expect([name, count(sql, NOT_DELIVERED), count(sql, BY_REFS)]).toEqual([
+      expect([
         name,
-        expected,
-        expected,
-      ]);
-      expect([name, count(sql, "'not_planned'"), count(sql, 'pull_request_references')]).toEqual([
-        name,
-        expected,
-        expected,
-      ]);
-      if (expected > 0) expect(count(sql, BY_CLOSING)).toBeGreaterThanOrEqual(expected);
+        count(sql, NOT_DELIVERED),
+        count(sql, DELIVERED),
+        count(sql, BY_CLOSING),
+      ]).toEqual([name, expected, expected, expected]);
     }
   });
 
-  test('a build-queue lap is a run whose facts step names an item, in every copy of the rule', () => {
+  test("a build-queue lap is a run whose facts step names an item, in every copy of the rule", () => {
     for (const sql of [
-      query('scorecard'),
-      query('work-item'),
-      read('fixtures', 'expected-scorecard.sql'),
+      query("scorecard"),
+      query("work-item"),
+      read("fixtures", "expected-scorecard.sql"),
     ]) {
       expect(sql).toContain("f.step_id = 'facts'");
       expect(sql).toContain("-> 'item' ->> 'number'");
@@ -508,24 +570,38 @@ describe('the rules the live queries restate, which they may not call a function
   });
 
   test("the lap page's workflow is the one LAP_PAGE_WORKFLOW names, in every one-lap query", () => {
-    const names = queries.map(([n]) => n).filter((n) => n.startsWith('one-lap'));
-    expect(names.sort()).toEqual(['one-lap', 'one-lap-checks', 'one-lap-map', 'one-lap-steps']);
+    const names = queries
+      .map(([n]) => n)
+      .filter((n) => n.startsWith("one-lap"));
+    expect(names.sort()).toEqual([
+      "one-lap",
+      "one-lap-checks",
+      "one-lap-map",
+      "one-lap-steps",
+    ]);
     const expected: [string, number, number][] = [
-      ['one-lap', 1, 0],
-      ['one-lap-checks', 1, 0],
-      ['one-lap-map', 1, 1],
-      ['one-lap-steps', 3, 1],
+      ["one-lap", 1, 0],
+      ["one-lap-checks", 1, 0],
+      ["one-lap-map", 1, 1],
+      ["one-lap-steps", 3, 1],
     ];
     for (const [name, runFilters, stepFilters] of expected) {
       const sql = query(name);
-      const run = [...sql.matchAll(/workflow_name = '([^']*)'/g)].map((m) => m[1]);
-      const step = [...sql.matchAll(/\bs\.workflow = '([^']*)'/g)].map((m) => m[1]);
+      const run = [...sql.matchAll(/workflow_name = '([^']*)'/g)].map(
+        (m) => m[1],
+      );
+      const step = [...sql.matchAll(/\bs\.workflow = '([^']*)'/g)].map(
+        (m) => m[1],
+      );
       expect([name, run, step]).toEqual([
         name,
         Array(runFilters).fill(LAP_PAGE_WORKFLOW),
         Array(stepFilters).fill(LAP_PAGE_WORKFLOW),
       ]);
-      expect([name, [...sql.matchAll(/'archon-[a-z-]+'/g)].map((m) => m[0])]).toEqual([
+      expect([
+        name,
+        [...sql.matchAll(/'archon-[a-z-]+'/g)].map((m) => m[0]),
+      ]).toEqual([
         name,
         Array(runFilters + stepFilters).fill(`'${LAP_PAGE_WORKFLOW}'`),
       ]);
