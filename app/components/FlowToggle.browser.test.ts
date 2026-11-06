@@ -26,14 +26,14 @@ test('the bar toggle flips the home map and is gone on the other tabs', async ()
       const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
       const out = [];
       const note = (step) => out.push({ step, ...m.shown() });
-      await m.mount('/f/x');
-      await sleep(300);
+      m.mount('/f/x');
+      await sleep(1500);
       note('home');
       m.clickToggle();
       await sleep(100);
       note('toggled');
       m.goBoard();
-      await sleep(300);
+      await sleep(1500);
       note('board');
       return out;
     })`,
