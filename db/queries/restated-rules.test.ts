@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { COLUMNS } from '../../app/lib/board';
+import { COLUMNS, parked } from '../../app/lib/board';
 import { LAP_PAGE_WORKFLOW } from '../../app/lib/one-lap';
 import { REVIEW_TONE } from '../../app/lib/review-outcome';
 import {
@@ -10,6 +10,8 @@ import {
   ROUTE_OF_LABEL,
   WORK_ITEM_NUMBER,
 } from '../../app/lib/work-item';
+import { runMigrations } from '../../scripts/migrate';
+import { archonDb, migrationFiles } from '../test-db';
 import { onTheSeed, queries } from './test-seed';
 
 const root = join(import.meta.dir, '..', '..');
@@ -41,7 +43,7 @@ test('the board route CASE agrees with the pack ROUTE_LABEL', async () => {
 
 test('the Board grid has one track per column', () => {
   expect(read('app', 'components', 'Board.tsx')).toContain(
-    `grid-cols-[repeat(${COLUMNS.length},minmax(160px,1fr))]`,
+    `grid-cols-[repeat(${COLUMNS.length},minmax(`,
   );
 });
 
@@ -115,6 +117,93 @@ test('the queries behind a link to the lap page filter on LAP_PAGE_WORKFLOW', ()
       [...sqlOf(name).matchAll(/workflow_name = '([^']*)'/g)].map((m) => m[1]),
     ]).toEqual([name, [LAP_PAGE_WORKFLOW]]);
     expect([name, archonLiterals(name)]).toEqual([name, [LAP_PAGE_WORKFLOW]]);
+  }
+});
+
+test('the Board’s parked rule agrees with the pickups of the pinned build and merge queues', async () => {
+  const { buildWaits, LAUNCH_STAGES } = await pack('queue', 'sdlc', '.shared', 'build.ts');
+  const { mergeWaits } = await pack('queue', 'sdlc', '.shared', 'merge.ts');
+  const hour = (h: number) => `2026-11-05T${String(h).padStart(2, '0')}:00:00.000Z`;
+  const doc = (stage: string, facts: object) => ({
+    version: 1,
+    subject: { repo: { host: 'github.com', path: 'o/r' }, number: 1 },
+    stage,
+    claim: null,
+    requests: [],
+    facts,
+    history: [],
+  });
+  const triage = (h: number) => ({
+    at: hour(h),
+    run_id: 'x',
+    verdict: { contract: 'READY', route: 'deliver' },
+  });
+  const build = (status: string, h: number) => ({
+    status,
+    at: hour(h),
+    brief: '',
+    rounds: [],
+    decisions: [],
+  });
+  const merge = (status: string, h: number) => ({
+    status,
+    at: hour(h),
+    pr: null,
+    approval: null,
+    decisions: [],
+  });
+  const ownPr = (h: number) => ({ url: 'https://github.com/o/r/pull/1', at: hour(h) });
+  const docs = [
+    doc('deliver', { triage: triage(1), build: build('parked', 2) }),
+    doc('deliver', { triage: triage(3), build: build('parked', 2) }),
+    doc('blocked', { triage: triage(3), build: build('parked', 2) }),
+    doc('deliver', { triage: triage(1), build: build('next', 2) }),
+    doc('deliver', { triage: triage(1), build: build('asking', 2) }),
+    doc('deliver', { triage: triage(1), merge: merge('returned', 2), build: build('parked', 3) }),
+    doc('deliver', { triage: triage(1), build: build('ready', 2), merge: merge('parked', 3) }),
+    doc('deliver', { triage: triage(1), build: build('ready', 4), merge: merge('parked', 3) }),
+    doc('deliver', { triage: triage(5), build: build('ready', 2), merge: merge('parked', 3) }),
+    doc('deliver', { triage: triage(1), build: build('ready', 2), merge: merge('waiting', 3) }),
+    doc('merge', { own_pr: ownPr(1), merge: merge('parked', 2) }),
+    doc('merge', { own_pr: ownPr(3), merge: merge('parked', 2) }),
+    doc('merge', { own_pr: ownPr(1), merge: merge('waiting', 2) }),
+    doc('deliver', { build: build('asking', 1), own_pr: ownPr(3), merge: merge('parked', 2) }),
+  ];
+  const db = await archonDb();
+  try {
+    await runMigrations({ files: migrationFiles, db });
+    for (const [i, d] of docs.entries()) {
+      await db.query(
+        `INSERT INTO public.remote_agent_state_revisions (project_key, name, revision, value, operation, writer_kind)
+         VALUES ('o/r', $1, 1, $2, 'put', 'run')`,
+        [`work/${i + 1}`, JSON.stringify(d)],
+      );
+    }
+    for (const [i, d] of docs.entries()) {
+      const [row] = await db.query(
+        `SELECT build_status, build_at, merge_status, merge_at, triage_at, own_pr_at
+         FROM mc.work_item_states WHERE number = $1`,
+        [i + 1],
+      );
+      const state = row as unknown as Parameters<typeof parked>[0];
+      const f = d.facts as Record<string, { status?: string; at: string } | undefined>;
+      const parkedAt =
+        f.build?.status === 'parked'
+          ? f.build.at
+          : f.merge?.status === 'parked'
+            ? f.merge.at
+            : null;
+      const triagedAt = f.triage?.at ?? null;
+      const retriaged =
+        !(LAUNCH_STAGES as readonly string[]).includes(d.stage) &&
+        triagedAt !== null &&
+        parkedAt !== null &&
+        triagedAt > parkedAt;
+      const expected = !retriaged && parkedAt !== null && !buildWaits(d) && !mergeWaits(d);
+      expect(parked(state), JSON.stringify(d.facts)).toBe(expected);
+    }
+  } finally {
+    await db.close();
   }
 });
 

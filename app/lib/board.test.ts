@@ -7,6 +7,7 @@ import {
   itemOnBoard,
   KEEP_MS,
   nextChange,
+  parked,
 } from './board';
 import type { OwnerQueueRow } from './owner-queue';
 
@@ -26,6 +27,12 @@ const item = (number: number, over: Partial<BoardRow> = {}): BoardRow => ({
   app_check: null,
   pr: null,
   pr_open: null,
+  build_status: null,
+  build_at: null,
+  merge_status: null,
+  merge_at: null,
+  triage_at: null,
+  own_pr_at: null,
   repository: null,
   merged_total: null,
   ...over,
@@ -253,4 +260,70 @@ test('itemOnBoard: a closed item is Merged however old, an open one is in the co
   );
   expect(open).toMatchObject({ pr: 8, workOrders: ['screens'] });
   expect(itemOnBoard(sources, 3)).toBeNull();
+});
+
+const T = (h: number) => `2026-11-05T${String(h).padStart(2, '0')}:00:00.000Z`;
+const buildParked = { build_status: 'parked', build_at: T(2), triage_at: T(1) };
+
+test('Parked is the last column, held by you, and a parked item is in it and nowhere else', () => {
+  const v = view({
+    board: [
+      item(1, buildParked),
+      item(2, { ...buildParked, pr: 9, pr_open: true, app_check: 'PASS' }),
+      item(3, buildParked),
+      item(4, buildParked),
+      item(5),
+    ],
+    map: [lap(2, 'archon-build-queue', [BUILD]), row('waiting', 3)],
+    workable: [workable(1), workable(4), workable(5)],
+  });
+  expect(v.columns.at(-1)).toMatchObject({ id: 'parked', title: 'Parked', holder: 'you' });
+  expect(column(v, 'parked')).toEqual([1, 2, 3, 4]);
+  expect(column(v, 'queued')).toEqual([5]);
+  expect(column(v, 'build')).toEqual([]);
+  expect(column(v, 'decision')).toEqual([]);
+  expect(v.columns.find((c) => c.id === 'parked')?.items[1]?.chips.map((c) => c.text)).toEqual([
+    'running',
+    'app pass',
+    'PR #9',
+  ]);
+  expect(view({}).columns.at(-1)).toMatchObject({ id: 'parked', empty: 'Empty' });
+});
+
+test('a re-triage takes an item out of Parked, and a closed parked item is Merged', () => {
+  const retriaged = { ...buildParked, triage_at: T(3) };
+  const v = view({
+    board: [
+      item(1, retriaged),
+      item(2, { ...buildParked, state: 'closed', closed_at: daysAgo(1) }),
+    ],
+    workable: [workable(1)],
+  });
+  expect(column(v, 'parked')).toEqual([]);
+  expect(column(v, 'queued')).toEqual([1]);
+  expect(column(v, 'merged')).toEqual([2]);
+});
+
+test('itemOnBoard names Parked for a parked item', () => {
+  const sources = { board: [item(1, buildParked), factoryRow()], map: [], workable: [], owner: [] };
+  expect(itemOnBoard(sources, 1)?.column?.id).toBe('parked');
+});
+
+test('parked: a merge park holds until a triage or renewed readiness, an own pull request until nothing the state holds', () => {
+  const none = { ...item(1) };
+  const merge = {
+    ...none,
+    build_status: 'ready',
+    build_at: T(2),
+    merge_status: 'parked',
+    merge_at: T(3),
+  };
+  expect(parked(none)).toBe(false);
+  expect(parked(merge)).toBe(true);
+  expect(parked({ ...merge, triage_at: T(5) })).toBe(false);
+  expect(parked({ ...merge, build_at: T(4) })).toBe(false);
+  const own = { ...none, own_pr_at: T(1), merge_status: 'parked', merge_at: T(2) };
+  expect(parked(own)).toBe(true);
+  expect(parked({ ...own, own_pr_at: T(3) })).toBe(true);
+  expect(parked({ ...merge, merge_status: 'waiting' })).toBe(false);
 });

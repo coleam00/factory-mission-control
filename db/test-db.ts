@@ -7,7 +7,8 @@ export const migrationFiles = readMigrationFiles(migrationsDir(join(import.meta.
 
 /**
  * The columns of Archon's tables the projection reads, with their types, defaults and keys as
- * the `fixture` branch has them (Postgres 18, Archon's own migrations).
+ * Archon's own migrations make them (Postgres 18). The `fixture` branch predates the state
+ * table, so the migration that reads it guards on it.
  */
 export const ARCHON_TABLES = `
   CREATE TABLE public.remote_agent_codebases (
@@ -32,7 +33,16 @@ export const ARCHON_TABLES = `
     step_index integer,
     step_name varchar(255),
     data jsonb DEFAULT '{}'::jsonb,
-    created_at timestamptz DEFAULT CURRENT_TIMESTAMP);`;
+    created_at timestamptz DEFAULT CURRENT_TIMESTAMP);
+  CREATE TABLE public.remote_agent_state_revisions (
+    project_key text NOT NULL,
+    name text NOT NULL,
+    revision integer NOT NULL CHECK (revision >= 1),
+    value text,
+    operation text NOT NULL,
+    writer_kind text NOT NULL CHECK (writer_kind IN ('run', 'operator')),
+    created_at timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (project_key, name, revision));`;
 
 /** Without params a migration file is several statements, which only exec runs. */
 function txOn(client: PGlite | Transaction): Tx {
