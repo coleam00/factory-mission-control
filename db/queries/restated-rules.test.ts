@@ -3,6 +3,8 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { COLUMNS, parked } from '../../app/lib/board';
 import { LAP_PAGE_WORKFLOW } from '../../app/lib/one-lap';
+import { runMigrations } from '../../scripts/migrate';
+import { archonDb, migrationFiles } from '../test-db';
 import { queries } from './test-seed';
 
 const root = join(import.meta.dir, '..', '..');
@@ -158,26 +160,38 @@ test('the Board’s parked rule agrees with the pickups of the pinned build and 
     doc('merge', { own_pr: ownPr(1), merge: merge('parked', 2) }),
     doc('merge', { own_pr: ownPr(3), merge: merge('parked', 2) }),
     doc('merge', { own_pr: ownPr(1), merge: merge('waiting', 2) }),
+    doc('deliver', { build: build('asking', 1), own_pr: ownPr(3), merge: merge('parked', 2) }),
   ];
-  type Facts = Record<string, { status?: string; at: string } | undefined>;
-  for (const d of docs) {
-    const f = d.facts as Facts;
-    const state = {
-      build_status: f.build?.status ?? null,
-      build_at: f.build?.at ?? null,
-      merge_status: f.merge?.status ?? null,
-      merge_at: f.merge?.at ?? null,
-      triage_at: f.triage?.at ?? null,
-      own_pr_at: f.own_pr?.at ?? null,
-    };
-    const parkedAt =
-      state.build_status === 'parked'
-        ? state.build_at
-        : state.merge_status === 'parked'
-          ? state.merge_at
-          : null;
-    const retriaged = state.triage_at !== null && parkedAt !== null && state.triage_at > parkedAt;
-    const expected = !retriaged && parkedAt !== null && !buildWaits(d) && !mergeWaits(d);
-    expect(parked(state), JSON.stringify(f)).toBe(expected);
+  const db = await archonDb();
+  try {
+    await runMigrations({ files: migrationFiles, db });
+    for (const [i, d] of docs.entries()) {
+      await db.query(
+        `INSERT INTO public.remote_agent_state_revisions (project_key, name, revision, value, operation, writer_kind)
+         VALUES ('o/r', $1, 1, $2, 'put', 'run')`,
+        [`work/${i + 1}`, JSON.stringify(d)],
+      );
+    }
+    for (const [i, d] of docs.entries()) {
+      const [row] = await db.query(
+        `SELECT build_status, build_at, merge_status, merge_at, triage_at, own_pr_at
+         FROM mc.work_item_states WHERE number = $1`,
+        [i + 1],
+      );
+      const state = row as unknown as Parameters<typeof parked>[0];
+      const f = d.facts as Record<string, { status?: string; at: string } | undefined>;
+      const parkedAt =
+        f.build?.status === 'parked'
+          ? f.build.at
+          : f.merge?.status === 'parked'
+            ? f.merge.at
+            : null;
+      const triagedAt = f.triage?.at ?? null;
+      const retriaged = triagedAt !== null && parkedAt !== null && triagedAt > parkedAt;
+      const expected = !retriaged && parkedAt !== null && !buildWaits(d) && !mergeWaits(d);
+      expect(parked(state), JSON.stringify(d.facts)).toBe(expected);
+    }
+  } finally {
+    await db.close();
   }
 });
