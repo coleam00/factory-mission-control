@@ -51,6 +51,7 @@ test('the seed recount: each column and each work order bar equal the definition
     merge: [],
     decision: [],
     merged: [10],
+    parked: [],
   });
   expect(mission.older).toBe(8);
   // foundations holds 5, 6, 7 (merged) and 9 (open); screens holds 10 (merged), 11, 12 and 14.
@@ -66,10 +67,11 @@ test('the seed recount: each column and each work order bar equal the definition
   // queue-factory: 401 is in triage and built (the build run is between steps), so Intake; 402 and
   // 403 only have runs between steps, so no column; 404 and 405 are workable with no run (Queued);
   // 406 is needs-owner, which a queue factory does not read, and is not workable. 410 is a product
-  // document, 411 and 412 are its merged pieces and 413 its open one (Queued).
+  // document, 411 and 412 are its merged pieces and 413 its open one. 413's work item state says
+  // its build was parked after its triage, so it is Parked and not Queued (workable or not).
   const queue = await view('queue-factory');
   expect(columns(queue)).toEqual({
-    queued: [404, 405, 413],
+    queued: [404, 405],
     intake: [401],
     build: [],
     review: [],
@@ -77,6 +79,7 @@ test('the seed recount: each column and each work order bar equal the definition
     merge: [],
     decision: [],
     merged: [411, 412],
+    parked: [413],
   });
   expect(queue.notInOrder).toBe(6);
 });
@@ -240,5 +243,24 @@ test('a Refs-delivered item is merged unless closed as not planned or a duplicat
     await db.query(
       `DELETE FROM mc.pull_requests WHERE factory = 'mission-control' AND number = 9101`,
     );
+  }
+});
+
+test('a work item state reaches only the factory whose codebase it names', async () => {
+  const parkedOf = async (factory: string) =>
+    (await run<BoardRow>('board', factory))
+      .filter((r) => r.kind === 'item' && r.build_status === 'parked')
+      .map((r) => r.number);
+  expect(await parkedOf('queue-factory')).toEqual([413]);
+  expect(await parkedOf('mission-control')).toEqual([]);
+  await db.query(
+    `INSERT INTO mc.work_item_states (project_key, number, revision, build_status, build_at)
+     SELECT codebase, 9, 1, 'parked', '2026-10-24T09:06:00.000Z' FROM mc.factories WHERE name = 'mission-control'`,
+  );
+  try {
+    expect(await parkedOf('queue-factory')).toEqual([413]);
+    expect(await parkedOf('mission-control')).toEqual([9]);
+  } finally {
+    await db.query(`DELETE FROM mc.work_item_states WHERE number = 9`);
   }
 });
