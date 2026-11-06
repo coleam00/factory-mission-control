@@ -2345,7 +2345,7 @@ test('0025 re-projects stored queue app checks from the sealed evidence, leaves 
     ]);
 
     await runMigrations({
-      files: migrationFiles.filter((f) => f.name < '0026'),
+      files: migrationFiles.filter((f) => f.name < '0027'),
       db: historical,
     });
     const migrated = [await stored(refused), await stored(sealed)];
@@ -2376,7 +2376,7 @@ test('0025 re-projects stored queue app checks from the sealed evidence, leaves 
   }
 });
 
-test('0026 re-projects stored queue app checks from what publish posted, leaves the old loop alone, and nothing changes run again', async () => {
+test('0027 re-projects stored queue app checks from what publish posted, leaves the old loop alone, and nothing changes run again', async () => {
   const historical = await archonDb();
   const lines = ['C1  PASS  Fine.  evidence: a.png'];
   const run = async (workflow: string, events: [string, unknown][]) => {
@@ -2408,7 +2408,7 @@ test('0026 re-projects stored queue app checks from what publish posted, leaves 
   ];
   try {
     await runMigrations({
-      files: migrationFiles.filter((f) => f.name < '0026'),
+      files: migrationFiles.filter((f) => f.name < '0027'),
       db: historical,
     });
     const stale = await run('factory-app-check', [
@@ -2433,7 +2433,7 @@ test('0026 re-projects stored queue app checks from what publish posted, leaves 
       null,
     ]);
     expect(await stored(oldLoop)).toEqual(oldLoopBefore);
-    const [file] = migrationFiles.filter((f) => f.name.startsWith('0026'));
+    const [file] = migrationFiles.filter((f) => f.name.startsWith('0027'));
     await historical.query(file?.sql ?? '');
     expect(await verdicts()).toEqual(migrated);
   } finally {

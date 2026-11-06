@@ -174,7 +174,7 @@ same cards in the same order. Use the app's Right now also lists the open pull r
 check has looked at (the `app-check` query): each one's latest verdict and its lines by kind.
 
 The home map's failing chip and the Board's verdict chip read the old `check-app` step or, on the
-queues, the `check` step of `factory-app-check` (migrations 0024, 0025 and 0026). On the queues that
+queues, the `check` step of `factory-app-check` (migrations 0024, 0025 and 0027). On the queues that
 step keeps a verdict only once the run's `publish` step posted it: PASS when it posted success, FAIL
 when it posted failure (a result it found stale included), with the pull request and head the
 `select` step kept. Lines are the ones `evidence` sealed that match the factory's `LINE` in full,
