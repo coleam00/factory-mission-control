@@ -1751,7 +1751,7 @@
           "title": "Bug fixes",
           "text": "Triaged and ready",
           "x": 0,
-          "y": 170,
+          "y": 240,
           "covers": [],
           "details": {
             "what": ["Triaged and ready"]
@@ -1764,7 +1764,7 @@
           "title": "Anything else ready",
           "text": "The rest of the backlog",
           "x": 0,
-          "y": 340,
+          "y": 480,
           "covers": [],
           "details": {
             "what": ["The rest of the backlog"]
@@ -1777,7 +1777,7 @@
           "title": "Choose what goes next",
           "text": "So the whole backlog does not start at once",
           "x": 344,
-          "y": 170,
+          "y": 240,
           "lists": ["choices"],
           "covers": [],
           "details": {
@@ -1791,7 +1791,7 @@
           "title": "Where it lands",
           "text": "Main, dev, a release branch or staging",
           "x": 344,
-          "y": 458,
+          "y": 498,
           "covers": [],
           "details": {
             "what": ["Main, dev, a release branch or staging"]
@@ -1804,7 +1804,7 @@
           "title": "Build queue",
           "text": "Builds what is in the order, in order",
           "x": 688,
-          "y": 170,
+          "y": 240,
           "upTo": "build",
           "covers": [],
           "details": {
@@ -1817,7 +1817,8 @@
           "from": "o-doc",
           "to": "o-pick",
           "style": "flow",
-          "route": [[260, 75], [302, 75], [302, 245], [344, 245]]
+          "arrow": false,
+          "route": [[260, 100], [302, 100], [302, 340], [344, 340]]
         },
         {
           "from": "o-bug",
@@ -1828,7 +1829,8 @@
           "from": "o-more",
           "to": "o-pick",
           "style": "flow",
-          "route": [[260, 415], [302, 415], [302, 245], [344, 245]]
+          "arrow": false,
+          "route": [[260, 580], [302, 580], [302, 340], [344, 340]]
         },
         {
           "from": "o-pick",
@@ -1839,7 +1841,7 @@
           "from": "o-pick",
           "to": "o-land",
           "style": "ask",
-          "route": [[474, 370], [474, 458]]
+          "route": [[474, 440], [474, 498]]
         }
       ],
       "tour": ["o-bug", "o-pick", "o-next"]
