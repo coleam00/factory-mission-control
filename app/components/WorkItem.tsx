@@ -3,6 +3,7 @@ import { Link } from 'react-router';
 import { type BoardRow, type ItemOnBoard, itemOnBoard } from '../lib/board';
 import type { HealthWorkableRow } from '../lib/health';
 import type { OwnerQueueRow } from '../lib/owner-queue';
+import { TONE_TOKEN } from '../lib/review-outcome';
 import {
   type TimelineEvent,
   type Tone,
@@ -16,9 +17,9 @@ import type { HomeMapRow } from '../map/live';
 import { EmptyState } from './EmptyState';
 
 const TONE_COLOR: Record<Tone, string> = {
-  done: 'var(--success)',
+  done: `var(${TONE_TOKEN.done})`,
   failed: 'var(--error)',
-  owner: 'var(--role-person)',
+  owner: `var(${TONE_TOKEN.owner})`,
   running: 'var(--running)',
   plain: 'var(--border-bright)',
 };
