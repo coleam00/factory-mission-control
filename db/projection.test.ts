@@ -2003,7 +2003,7 @@ const select = {
   issue_body: 'SECRET',
 };
 
-test('a queue app check keeps the verdict and lines evidence sealed, by kind without their text', async () => {
+test('a queue app check keeps the verdict publish posted and the lines evidence sealed, by kind without their text', async () => {
   const id = await appCheckRun([
     ['select', select],
     ['check', { overall: 'PASS', summary: 'SECRET summary', lines: ['C9  PASS  Self-reported.'] }],
@@ -2021,10 +2021,12 @@ test('a queue app check keeps the verdict and lines evidence sealed, by kind wit
         ],
       },
     ],
+    ['publish', { state: 'failure', comment: 'created' }],
   ]);
   expect(await appCheckSteps(id)).toEqual([
     { step_id: 'check', status: 'completed', output: { pr: 7, head: 'abc1234', overall: 'FAIL' } },
     { step_id: 'evidence', status: 'completed', output: null },
+    { step_id: 'publish', status: 'completed', output: null },
     { step_id: 'select', status: 'completed', output: { pr: 7, head: 'abc1234' } },
   ]);
   expect(
@@ -2040,7 +2042,23 @@ test('a queue app check keeps the verdict and lines evidence sealed, by kind wit
   expect(await projectionErrors()).toEqual([]);
 });
 
-test('a queue app check shows no verdict and no lines until evidence completes, or when it fails', async () => {
+test('a queue app check shows the verdict publish posted: success is PASS, a stale or failed result is FAIL', async () => {
+  const verdict = async (overall: string, state: string) => {
+    const id = await appCheckRun([
+      ['select', select],
+      ['check', { overall }],
+      ['evidence', { overall, lines: ['C1  PASS  Fine.  evidence: a.png'] }],
+      ['publish', { state, comment: 'created' }],
+    ]);
+    return (await appCheckSteps(id)).find((r) => r.step_id === 'check')?.output;
+  };
+  expect(await verdict('PASS', 'success')).toEqual({ pr: 7, head: 'abc1234', overall: 'PASS' });
+  expect(await verdict('PASS', 'failure')).toEqual({ pr: 7, head: 'abc1234', overall: 'FAIL' });
+  expect(await verdict('FAIL', 'failure')).toEqual({ pr: 7, head: 'abc1234', overall: 'FAIL' });
+  expect(await projectionErrors()).toEqual([]);
+});
+
+test('a queue app check shows no verdict and no lines until evidence completes, and no verdict until publish completes', async () => {
   const check = [
     'check',
     { overall: 'PASS', lines: ['C1  PASS  Fine.  evidence: a.png'] },
@@ -2059,6 +2077,17 @@ test('a queue app check shows no verdict and no lines until evidence completes, 
     ]);
     expect(await db.query('SELECT 1 FROM mc.app_check_lines WHERE run_id = $1', [id])).toEqual([]);
   }
+  const evidence = ['evidence', { overall: 'PASS', lines: check[1].lines }] as const;
+  const unpublished = await appCheckRun([['select', select], [...check], [...evidence]]);
+  const publishFailed = await appCheckRun([
+    ['select', select],
+    [...check],
+    [...evidence],
+    ['publish', {}, 'node_failed'],
+  ]);
+  for (const id of [unpublished, publishFailed]) {
+    expect((await appCheckSteps(id)).find((r) => r.step_id === 'check')?.output).toBeNull();
+  }
   expect(await projectionErrors()).toEqual([]);
 });
 
@@ -2073,10 +2102,12 @@ test('a queue app check that names a holdout, at check or at evidence, keeps no 
       ['select', select],
       ['check', { overall: 'FAIL', lines: checkLines }],
       ['evidence', { overall: 'FAIL', lines: evidenceLines }],
+      ['publish', { state: 'success', comment: 'created' }],
     ]);
     expect(await appCheckSteps(id)).toEqual([
       { step_id: 'check', status: 'completed', output: null },
       { step_id: 'evidence', status: 'completed', output: null },
+      { step_id: 'publish', status: 'completed', output: null },
       { step_id: 'select', status: 'completed', output: null },
     ]);
     expect(await db.query('SELECT 1 FROM mc.app_check_lines WHERE run_id = $1', [id])).toEqual([]);
@@ -2313,7 +2344,10 @@ test('0025 re-projects stored queue app checks from the sealed evidence, leaves 
       [{ line_id: 'C1' }, { line_id: 'C2' }],
     ]);
 
-    await runMigrations({ files: migrationFiles, db: historical });
+    await runMigrations({
+      files: migrationFiles.filter((f) => f.name < '0027'),
+      db: historical,
+    });
     const migrated = [await stored(refused), await stored(sealed)];
     expect(migrated).toEqual([
       [
@@ -2342,6 +2376,71 @@ test('0025 re-projects stored queue app checks from the sealed evidence, leaves 
   }
 });
 
+test('0027 re-projects stored queue app checks from what publish posted, leaves the old loop alone, and nothing changes run again', async () => {
+  const historical = await archonDb();
+  const lines = ['C1  PASS  Fine.  evidence: a.png'];
+  const run = async (workflow: string, events: [string, unknown][]) => {
+    const [r] = await historical.query(
+      `INSERT INTO public.remote_agent_workflow_runs (workflow_name, status, user_message)
+       VALUES ($1, 'running', 'queue') RETURNING id`,
+      [workflow],
+    );
+    for (const [step, structured_output] of events) {
+      await historical.query(
+        `INSERT INTO public.remote_agent_workflow_events (workflow_run_id, event_type, step_name, data)
+         VALUES ($1, 'node_completed', $2, $3)`,
+        [r?.id, step, JSON.stringify({ structured_output, duration_ms: 5 })],
+      );
+    }
+    return r?.id;
+  };
+  const stored = (id: unknown) =>
+    historical.query(
+      'SELECT step_id, output FROM mc.lap_steps WHERE run_id = $1 ORDER BY step_id',
+      [id],
+    );
+  const verdict = async (id: unknown) =>
+    (await stored(id)).find((r) => r.step_id === 'check')?.output;
+  const upToEvidence: [string, unknown][] = [
+    ['select', select],
+    ['check', { overall: 'PASS', lines }],
+    ['evidence', { overall: 'PASS', lines }],
+  ];
+  try {
+    await runMigrations({
+      files: migrationFiles.filter((f) => f.name < '0027'),
+      db: historical,
+    });
+    const stale = await run('factory-app-check', [
+      ...upToEvidence,
+      ['publish', { state: 'failure', comment: 'created' }],
+    ]);
+    const fresh = await run('factory-app-check', [
+      ...upToEvidence,
+      ['publish', { state: 'success', comment: 'created' }],
+    ]);
+    const unpublished = await run('factory-app-check', upToEvidence);
+    const oldLoop = await run('archon-loop', [['check-app', { lines: [] }]]);
+    const oldLoopBefore = await stored(oldLoop);
+    expect(await verdict(stale)).toEqual({ pr: 7, head: 'abc1234', overall: 'PASS' });
+
+    await runMigrations({ files: migrationFiles, db: historical });
+    const verdicts = () => Promise.all([stale, fresh, unpublished].map(verdict));
+    const migrated = await verdicts();
+    expect(migrated).toEqual([
+      { pr: 7, head: 'abc1234', overall: 'FAIL' },
+      { pr: 7, head: 'abc1234', overall: 'PASS' },
+      null,
+    ]);
+    expect(await stored(oldLoop)).toEqual(oldLoopBefore);
+    const [file] = migrationFiles.filter((f) => f.name.startsWith('0027'));
+    await historical.query(file?.sql ?? '');
+    expect(await verdicts()).toEqual(migrated);
+  } finally {
+    await historical.close();
+  }
+});
+
 test('the queue app check projection reads the node ids and output keys the pack declares', () => {
   type Node = {
     id: string;
@@ -2361,6 +2460,8 @@ test('the queue app check projection reads the node ids and output keys the pack
     expect.arrayContaining(['overall', 'lines']),
   );
   expect(node('evidence')?.output_format?.properties?.overall?.enum).toEqual(['PASS', 'FAIL']);
+  expect(node('publish')?.output_format?.required).toEqual(expect.arrayContaining(['state']));
+  expect(node('publish')?.output_format?.properties?.state?.enum).toEqual(['success', 'failure']);
   expect(node('publish')?.with).toMatchObject({
     overall: '$evidence.output.overall',
     lines: '$evidence.output.lines',
