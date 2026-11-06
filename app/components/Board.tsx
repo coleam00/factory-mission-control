@@ -67,8 +67,13 @@ function Column({ column, older }: { column: BoardColumn; older: ReactElement | 
           {column.items.length}
         </span>
       </h2>
+      {column.holder ? (
+        <p data-holder className="px-1 font-mono text-[11px] text-text-secondary">
+          {column.holder}
+        </p>
+      ) : null}
       {column.items.length === 0 ? (
-        <p className="px-1 text-[12px] text-text-secondary">Nothing here</p>
+        <p className="px-1 text-[12px] text-text-secondary">{column.empty ?? 'Nothing here'}</p>
       ) : (
         column.items.map((item) => <Card key={item.number} item={item} />)
       )}
@@ -148,7 +153,7 @@ export function BoardBody({
         {view.notInOrder} not in a work order
       </p>
       <div className="overflow-x-auto">
-        <div className="grid min-w-[1320px] grid-cols-[repeat(8,minmax(160px,1fr))] gap-2">
+        <div className="grid min-w-[1504px] grid-cols-[repeat(9,minmax(160px,1fr))] gap-2">
           {view.columns.map((column) => (
             <Column
               key={column.id}
