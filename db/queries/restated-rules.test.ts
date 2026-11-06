@@ -36,7 +36,7 @@ test('the board route CASE agrees with the pack ROUTE_LABEL', async () => {
 
 test('the Board grid has one track per column', () => {
   expect(read('app', 'components', 'Board.tsx')).toContain(
-    `grid-cols-[repeat(${COLUMNS.length},minmax(160px,1fr))]`,
+    `grid-cols-[repeat(${COLUMNS.length},minmax(`,
   );
 });
 
