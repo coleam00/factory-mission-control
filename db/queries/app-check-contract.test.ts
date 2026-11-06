@@ -1,4 +1,4 @@
-// The App check's projection contract (migrations 0024, 0025 and 0027) is restated by its readers:
+// The App check's projection contract (migrations 0024 and 0025) is restated by its readers:
 // home-map.sql, board.sql and app-check.sql each spell out which (workflow, step) carries the
 // verdict. These tests bind the copies to the pairs the writer keeps a verdict for, check the map card that lists the panel covers only those, and
 // bind the pinned pack to the writer.
@@ -18,9 +18,15 @@ const ISSUE = 12;
 const CODEBASE = '5eed0000-0000-4000-8000-000000000000';
 // Newer than any seeded step, so the readers' ORDER BY started_at DESC picks this test's row.
 const LATER = '2040-01-01T00:00:00Z';
-// The step whose completion the writer (`mc.project_queue_app_check`, 0027) takes the verdict from
-// (its `state`); it stores that verdict on the run's VERDICT_ROW row, which is where the readers look.
+// The step whose completion the writer (`mc.project_queue_app_check`, 0027) takes the verdict from:
+// publish's `state`, success as PASS and failure as FAIL. It stores that verdict on the run's
+// VERDICT_ROW row, which is where the readers look. `evidence` still stores the lines.
 const VERDICT_STEP = 'publish';
+/** What VERDICT_STEP outputs for a verdict. */
+const published = (overall: 'PASS' | 'FAIL') => ({
+  state: overall === 'PASS' ? 'success' : 'failure',
+  comment: 'created',
+});
 const VERDICT_ROW = 'check';
 
 let db: Db;
@@ -104,7 +110,7 @@ test('the readers count the (workflow, step) pairs the writer keeps a verdict fo
           ['check', { overall: 'PASS', lines: [] }],
           [
             step,
-            step === VERDICT_STEP ? { state: 'failure' } : { pr: PR, overall: 'FAIL', lines: [] },
+            step === VERDICT_STEP ? published('FAIL') : { pr: PR, overall: 'FAIL', lines: [] },
           ],
         ] as const;
         for (const [name, structured_output] of completed) {
@@ -133,20 +139,10 @@ test('the readers count the (workflow, step) pairs the writer keeps a verdict fo
 
 test('the pinned app check declares exactly the shapes the writer keeps', () => {
   const writer = 'the writer (0027) keeps';
-  const verdict = format('evidence');
+  const lines = format('evidence');
   expect(format('select')?.properties?.pr, `${writer} pr as bare digits`).toEqual({
     type: ['integer', 'null'],
   });
-  expect(verdict?.properties?.overall, `${writer} overall only as PASS or FAIL`).toEqual({
-    type: 'string',
-    enum: ['PASS', 'FAIL'],
-  });
-  expect(verdict?.properties?.lines, `${writer} lines only as an array`).toEqual({
-    type: 'array',
-    items: { type: 'string' },
-  });
-  expect(verdict?.required).toEqual(expect.arrayContaining(['overall', 'lines']));
-  expect(format('select')?.required).toContain('pr');
   expect(
     format(VERDICT_STEP)?.properties?.state,
     `${writer} state only as success or failure`,
@@ -154,15 +150,28 @@ test('the pinned app check declares exactly the shapes the writer keeps', () => 
     type: 'string',
     enum: ['success', 'failure'],
   });
+  expect(format(VERDICT_STEP)?.required).toContain('state');
+  expect(lines?.properties?.overall, `${writer} evidence's overall only as PASS or FAIL`).toEqual({
+    type: 'string',
+    enum: ['PASS', 'FAIL'],
+  });
+  expect(lines?.properties?.lines, `${writer} lines only as an array`).toEqual({
+    type: 'array',
+    items: { type: 'string' },
+  });
+  expect(lines?.required).toEqual(expect.arrayContaining(['overall', 'lines']));
+  expect(format('select')?.required).toContain('pr');
 });
 
-const OVERALLS = format('evidence')?.properties?.overall?.enum ?? [];
-const STATE_OF: Record<string, string> = { PASS: 'success', FAIL: 'failure' };
+const OVERALLS = ['PASS', 'FAIL'] as const;
 
 test.each(OVERALLS)(
   'a factory-app-check run with %s reaches the home map, the Board and the App check panel through the trigger',
   async (value) => {
     const other = OVERALLS.find((o) => o !== value);
+    // Only VERDICT_STEP carries the verdict; check and evidence say the other one, so a reader that
+    // took either would show the wrong verdict.
+    const overall = (_step: string) => other;
     const lines = [
       'C1  PASS  A criterion.  evidence: a.png',
       'P1  FAIL  A probe.  evidence: b.png',
@@ -173,7 +182,7 @@ test.each(OVERALLS)(
       [
         'check',
         {
-          overall: other,
+          overall: overall('check'),
           lines,
           summary: 'summary',
         },
@@ -181,12 +190,12 @@ test.each(OVERALLS)(
       [
         'evidence',
         {
-          overall: other,
+          overall: overall('evidence'),
           lines,
           report: 'report',
         },
       ],
-      [VERDICT_STEP, { state: STATE_OF[value], comment: 'created' }],
+      [VERDICT_STEP, published(value)],
     ];
     await db.query('BEGIN');
     try {
