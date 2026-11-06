@@ -1,7 +1,7 @@
 import { type ReactElement, type ReactNode, useState } from 'react';
 import { Link } from 'react-router';
 import type { AppCheckRow } from '../lib/app-check';
-import { boardHref, orderProgress } from '../lib/board';
+import { boardHref, orderPanel, orderProgress } from '../lib/board';
 import { relativeTime } from '../lib/format';
 import { hasLapPage } from '../lib/one-lap';
 import type { StepRow } from '../lib/step-detail';
@@ -92,14 +92,7 @@ function Order({ order, factory }: { order: WorkOrderRow; factory: string }): Re
       <Link to={boardHref(factory, order.name)} className={`${LINK} font-mono`}>
         {order.name}
       </Link>
-      <span className={CHIP}>
-        {orderProgress({
-          name: order.name,
-          merged: order.merged_count,
-          total: order.total_count,
-          landsOn: order.lands_on,
-        })}
-      </span>
+      <span className={CHIP}>{orderProgress(orderPanel(order))}</span>
     </li>
   );
 }
@@ -270,7 +263,7 @@ export function RightNow({
         <span className={CHIP}>{item.note}</span>
       </li>
     )),
-    ...(live?.choices ?? []).map((order) => (
+    ...[...(live?.orders ?? []), ...(live?.choices ?? [])].map((order) => (
       <Order key={`order-${order.name}`} order={order} factory={factory} />
     )),
     ...(live?.documents ?? []).map((document) => (

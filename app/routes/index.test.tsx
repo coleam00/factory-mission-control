@@ -8,7 +8,7 @@ import { AppCheckList, Behind, MapDetails, RightNow } from '../components/MapDet
 import type { AppCheckRow } from '../lib/app-check';
 import type { StepRow } from '../lib/step-detail';
 import { FACTORY_MAP, workflowFile } from '../map/factory-map';
-import type { CardLive, HomeMapRow, MapSources } from '../map/live';
+import { type CardLive, cardLive, type HomeMapRow, type MapSources } from '../map/live';
 import { HomeMapBody, msToLocalMidnight } from './index';
 
 const REPO = join(import.meta.dir, '..', '..');
@@ -667,7 +667,10 @@ test('the Work order card counts its open work orders and says nothing with none
   const right = textOf(
     renderToStaticMarkup(
       <MemoryRouter>
-        <RightNow live={{ here: [], choices: orders }} factory="here" />
+        <RightNow
+          live={cardLive(FACTORY_MAP, { map: [], orders }, new Date()).get('order')}
+          factory="here"
+        />
       </MemoryRouter>,
     ),
   );
