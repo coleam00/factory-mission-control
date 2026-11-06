@@ -1,6 +1,6 @@
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { prNumber } from '../../app/lib/one-lap';
+import { prNumber, pullUrl } from '../../app/lib/one-lap';
 import { MARKER } from '../fixture/seed-report';
 import { openPage, type Page } from '../lib/cdp';
 import type { Db } from '../lib/db';
@@ -195,7 +195,7 @@ async function seedOneLapMismatches(
     links: {
       console: `http://localhost:3090/console/r/${runId}`,
       issue: lap.issue_url,
-      pr: pr === null ? null : `https://github.com/${lap.repository}/pull/${pr}`,
+      pr: pr === null ? null : pullUrl(String(lap.repository), pr),
     },
     review: lap.review,
     gate: lap.gate,
