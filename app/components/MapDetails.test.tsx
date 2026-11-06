@@ -2,7 +2,8 @@ import { afterEach, beforeEach, expect, spyOn, test } from 'bun:test';
 import * as React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { createMemoryRouter, RouterProvider } from 'react-router';
-import { allCards, type Card, FACTORY_MAP } from '../map/factory-map';
+import { allCards, type Card, CHIPS, type Chip, FACTORY_MAP } from '../map/factory-map';
+import type { CardLive } from '../map/live';
 import { MapDetails } from './MapDetails';
 
 const card = (id: string) => {
@@ -25,7 +26,7 @@ afterEach(() => {
   (React.useState as unknown as { mockRestore?: () => void }).mockRestore?.();
 });
 
-const rightNow = (shown: Card) =>
+const rightNow = (shown: Card, live?: CardLive) =>
   renderToStaticMarkup(
     <RouterProvider
       router={createMemoryRouter([
@@ -34,7 +35,7 @@ const rightNow = (shown: Card) =>
           element: (
             <MapDetails
               card={shown}
-              live={undefined}
+              live={live}
               factory="mission-control"
               at={null}
               steps={undefined}
@@ -70,4 +71,29 @@ test('a card has three tabs: About holds when it runs, what it does and how it w
     }
   }
   expect(html).not.toContain('data-tab="when"');
+});
+
+const ITEM = { key: 'item', number: 1, title: 'An item', url: null };
+const ONE: { [K in Chip]: Pick<Required<CardLive>, K> } = {
+  queued: { queued: [ITEM] },
+  failing: { failing: [ITEM] },
+  waiting: { waiting: [ITEM] },
+  merged: { merged: [{ run: 'run-1', workflow: null, number: 1, at: new Date(0) }] },
+  orders: {
+    orders: [
+      {
+        name: 'order',
+        total_count: 1,
+        open_count: 1,
+        merged_count: 0,
+        lands_on: null,
+        last_closed_at: null,
+      },
+    ],
+  },
+};
+
+test.each(CHIPS)('Right now draws one row for the %s chip', (chip) => {
+  const html = rightNow(card('mgr'), { here: [], ...ONE[chip] });
+  expect(html.match(/<li[ >]/g)).toHaveLength(1);
 });

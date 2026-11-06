@@ -5,7 +5,7 @@ import { relativeTime } from '../lib/format';
 import { hasLapPage } from '../lib/one-lap';
 import type { StepRow } from '../lib/step-detail';
 import { LivePanel } from '../live/LivePanel';
-import { type Card, pinnedStepLinks, workflowFile } from '../map/factory-map';
+import { type Card, type Chip, pinnedStepLinks, workflowFile } from '../map/factory-map';
 import {
   type CardLive,
   type GateOutcome,
@@ -200,6 +200,31 @@ export function RightNow({
 }): ReactElement {
   const ticking = useNow();
   const lapHref = (run: string) => `/f/${encodeURIComponent(factory)}/laps/${run}`;
+  // A mapped type: a chip without rows here fails type-check.
+  const chipRows: { [K in Chip]: ReactNode[] } = {
+    queued: (live?.queued ?? []).map((item) => <Item key={item.key} item={item} note="queued" />),
+    failing: (live?.failing ?? []).map((item) => (
+      <Item key={item.key} item={item} note="app check failed" />
+    )),
+    waiting: (live?.questions ?? live?.waiting ?? []).map((item) => (
+      <Item key={item.key} item={item} note={item.note ?? 'waiting'} />
+    )),
+    orders: (live?.orders ?? []).map((order) => (
+      <Order key={`order-${order.name}`} order={order} />
+    )),
+    merged: (live?.merged ?? []).map((merge) => (
+      <li key={`merged-${merge.run}-${merge.number ?? 'lap'}`} data-lap={merge.run}>
+        <RunName workflow={merge.workflow} href={lapHref(merge.run)}>
+          {merge.number === null ? (
+            <span className="font-mono">lap {merge.run.slice(0, 8)}</span>
+          ) : (
+            <span className="font-mono tabular-nums">#{merge.number}</span>
+          )}
+        </RunName>
+        <span className={CHIP}>merged {time(merge.at)}</span>
+      </li>
+    )),
+  };
   const rows: ReactNode[] = [
     ...(live?.here ?? []).map((lap) => (
       <li key={`lap-${lap.run}`} data-lap={lap.run}>
@@ -236,13 +261,9 @@ export function RightNow({
         The {chip} count is unavailable.
       </li>
     )),
-    ...(live?.queued ?? []).map((item) => <Item key={item.key} item={item} note="queued" />),
-    ...(live?.failing ?? []).map((item) => (
-      <Item key={item.key} item={item} note="app check failed" />
-    )),
-    ...(live?.questions ?? live?.waiting ?? []).map((item) => (
-      <Item key={item.key} item={item} note={item.note ?? 'waiting'} />
-    )),
+    ...chipRows.queued,
+    ...chipRows.failing,
+    ...chipRows.waiting,
     ...(live?.healthUnavailable
       ? [
           <li key="health-unavailable" className="text-text-secondary">
@@ -262,7 +283,7 @@ export function RightNow({
         <span className={CHIP}>{item.note}</span>
       </li>
     )),
-    ...(live?.orders ?? []).map((order) => <Order key={`order-${order.name}`} order={order} />),
+    ...chipRows.orders,
     ...(live?.documents ?? []).map((document) => (
       <ProductDocument key={`document-${document.number}`} document={document} />
     )),
@@ -273,18 +294,7 @@ export function RightNow({
           </li>,
         ]
       : []),
-    ...(live?.merged ?? []).map((merge) => (
-      <li key={`merged-${merge.run}-${merge.number ?? 'lap'}`} data-lap={merge.run}>
-        <RunName workflow={merge.workflow} href={lapHref(merge.run)}>
-          {merge.number === null ? (
-            <span className="font-mono">lap {merge.run.slice(0, 8)}</span>
-          ) : (
-            <span className="font-mono tabular-nums">#{merge.number}</span>
-          )}
-        </RunName>
-        <span className={CHIP}>merged {time(merge.at)}</span>
-      </li>
-    )),
+    ...chipRows.merged,
     ...(live?.listsUnavailable ?? []).map((list) => (
       <li key={`unavailable-list-${list}`} className="text-text-secondary">
         {UNAVAILABLE[list]}
