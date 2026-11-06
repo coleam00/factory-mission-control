@@ -133,14 +133,14 @@ test("a queue factory's check step is the app verdict, and another queue workflo
 test('an item with two route labels shows the route the work item page reads', async () => {
   await db.query(
     `INSERT INTO mc.issue_labels (factory, issue_number, label, labeled_at)
-     VALUES ('mission-control', 13, 'archon-split', now()), ('mission-control', 13, 'archon-ready', now())`,
+     VALUES ('mission-control', 13, 'archon-investigate', now()), ('mission-control', 13, 'archon-ready', now())`,
   );
   try {
     const rows = await run<BoardRow>('board', 'mission-control');
     expect(rows.find((r) => r.number === 13)?.route).toBe('deliver');
   } finally {
     await db.query(
-      `DELETE FROM mc.issue_labels WHERE factory = 'mission-control' AND issue_number = 13 AND label IN ('archon-split', 'archon-ready')`,
+      `DELETE FROM mc.issue_labels WHERE factory = 'mission-control' AND issue_number = 13 AND label IN ('archon-investigate', 'archon-ready')`,
     );
   }
 });

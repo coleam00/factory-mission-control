@@ -278,7 +278,7 @@ test('the header skips a newer sweep the timeline does not show for this item', 
 test('an intake with two route labels reads the route the Board shows', () => {
   const intake = row({
     workflow: 'archon-intake',
-    labels: ['archon-split', 'archon-ready'],
+    labels: ['archon-investigate', 'archon-ready'],
   });
   expect(texts([item, intake])).toEqual(['Filed', 'Intake: route deliver']);
 });
