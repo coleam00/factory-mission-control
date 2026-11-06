@@ -132,13 +132,13 @@ export const QUEUE_ENDING: Record<string, { text: string; tone: Tone }> = {
   parked: { text: 'parked', tone: 'owner' },
 };
 
-const LOOP_REVIEW: Record<string, { text: string; tone: Tone }> = {
+const LOOP_REVIEW = {
   merge: { text: 'ready to merge', tone: REVIEW_TONE.merge },
   approved: { text: 'approved', tone: REVIEW_TONE.approved },
   nothing: { text: 'nothing to do', tone: REVIEW_TONE.nothing },
   'sent-back': { text: 'sent back', tone: REVIEW_TONE['sent-back'] },
   'needs-owner': { text: 'needs you', tone: REVIEW_TONE['needs-owner'] },
-};
+} satisfies Record<keyof typeof REVIEW_TONE, { text: string; tone: Tone }>;
 
 export const QUEUE_REVIEW: Record<string, { text: string; tone: Tone }> = {
   none: { text: 'Ready', tone: 'done' },
@@ -461,7 +461,8 @@ export function workItemTimeline(rows: readonly WorkItemRow[], factory: string):
     if (row.workflow === 'archon-loop') {
       events.push(...checkEvent(row, lines, base('check')), ...loopDecision(row, base('decision')));
     }
-    const verdicts = row.workflow === 'archon-loop' ? LOOP_REVIEW : QUEUE_REVIEW;
+    const verdicts: Record<string, { text: string; tone: Tone }> =
+      row.workflow === 'archon-loop' ? LOOP_REVIEW : QUEUE_REVIEW;
     for (const [name, outcome, reviewedAt] of [
       ['Review', row.review, row.review_at],
       ['Re-review', row.rereview, row.rereview_at],
