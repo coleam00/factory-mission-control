@@ -22,10 +22,12 @@ import {
   type HealthWorkableRow,
   overdueSteps,
   waitingRuns,
+  workable,
 } from '../lib/health';
+import { stepPath } from '../lib/lap-graph';
 import { claimedPulls, mergedPulls } from '../lib/merge-queue';
 import { consoleUrl, pullUrl } from '../lib/one-lap';
-import type { OwnerQueueRow } from '../lib/owner-queue';
+import { type OwnerQueueRow, ownerQueue } from '../lib/owner-queue';
 import type { PanelState } from '../live/LivePanel';
 import {
   type Asks,
@@ -38,7 +40,6 @@ import {
   type FactoryMap,
   type List,
   levelsOf,
-  stepPath,
 } from './factory-map';
 
 /** One row of `db/queries/home-map.sql`. */
@@ -396,14 +397,11 @@ function waitingItems({
   if (states.owner === 'error') return 'unavailable';
   if (!owner) return undefined;
   return [
-    ...owner.map((r) => ({
-      key:
-        r.kind === 'issue'
-          ? `issue-${r.issue_number}`
-          : `question-${r.issue_number}-${r.question_number}`,
-      number: r.issue_number,
-      title: r.title,
-      url: r.url,
+    ...ownerQueue(owner).map((item) => ({
+      key: item.id,
+      number: item.issue_number,
+      title: item.title,
+      url: item.url,
     })),
     ...attention,
   ].sort(byNumber);
@@ -414,7 +412,7 @@ function chipItems(
   sources: MapSources,
   now: Date,
 ): { [K in Chip]?: Required<CardLive>[K] | 'unavailable' } {
-  const { map, workable, orders, states = {} } = sources;
+  const { map, workable: workableRows, orders, states = {} } = sources;
   return {
     failing: map
       .filter((r) => r.kind === 'failing' && r.number !== null)
@@ -426,15 +424,14 @@ function chipItems(
       }))
       .sort(byNumber),
     ...(states.workable === 'error' && { queued: 'unavailable' as const }),
-    ...(workable &&
+    ...(workableRows &&
       states.workable !== 'error' && {
-        queued: workable
-          .filter((r) => r.kind === 'issue' && r.issue_number !== null)
-          .map((r) => ({
-            key: `issue-${r.issue_number}`,
-            number: Number(r.issue_number),
-            title: r.title ?? '',
-            url: r.url,
+        queued: workable(workableRows)
+          .issues.map((i) => ({
+            key: `issue-${i.issue_number}`,
+            number: i.issue_number,
+            title: i.title,
+            url: i.url,
           }))
           .sort(byNumber),
       }),

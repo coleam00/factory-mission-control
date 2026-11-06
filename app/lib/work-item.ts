@@ -2,9 +2,10 @@
  * The work item page's rows, as `db/queries/work-item.sql` returns them, and the timeline the
  * browser makes of them: one event per fact, oldest first. Pure, no React.
  */
-import { cardForStep, FACTORY_MAP, stepPath } from '../map/factory-map';
+import { cardForStep, FACTORY_MAP } from '../map/factory-map';
 import { deepestStep } from '../map/live';
 import { formatCost, formatElapsed } from './format';
+import { stepPath } from './lap-graph';
 import { costOf, durationOf, stepLabel } from './laps';
 import { consoleUrl } from './one-lap';
 

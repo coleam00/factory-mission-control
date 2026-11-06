@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test';
 import type { HealthStepRow } from '../lib/health';
-import { LANE_STEPS } from '../lib/lap-graph';
-import { allCards, cardsCounting, FACTORY_MAP, LISTS, stepPath } from './factory-map';
+import { LANE_STEPS, stepPath } from '../lib/lap-graph';
+import { allCards, cardsCounting, FACTORY_MAP, LISTS } from './factory-map';
 import {
   type CardLive,
   cardLive,
