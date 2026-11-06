@@ -153,7 +153,7 @@ export function BoardBody({
         {view.notInOrder} not in a work order
       </p>
       <div className="overflow-x-auto">
-        <div className="grid min-w-[1504px] grid-cols-[repeat(9,minmax(160px,1fr))] gap-2">
+        <div className="grid min-w-[1320px] grid-cols-[repeat(9,minmax(140px,1fr))] gap-2">
           {view.columns.map((column) => (
             <Column
               key={column.id}
