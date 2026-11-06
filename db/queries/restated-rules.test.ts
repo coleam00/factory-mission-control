@@ -10,7 +10,7 @@ import {
   ROUTE_OF_LABEL,
   WORK_ITEM_NUMBER,
 } from '../../app/lib/work-item';
-import { queries } from './test-seed';
+import { onTheSeed, queries } from './test-seed';
 
 const root = join(import.meta.dir, '..', '..');
 const read = (...path: string[]) => readFileSync(join(root, ...path), 'utf8');
@@ -171,7 +171,17 @@ test('the work item page renders exactly the pack sweep actions', async () => {
   expect(cases.map((m) => m[1]).sort()).toEqual([...SWEEP_ACTIONS].sort());
 });
 
-test('the work item address guard is the migration run_issue_number pattern', () => {
-  const migration = read('db', 'migrations', '0019_queue_laps.sql');
-  expect(migration).toContain(`~ '${WORK_ITEM_NUMBER.source}'`);
-});
+test('the work item address guard accepts the numbers mc.run_issue_number reads', async () => {
+  const db = await onTheSeed();
+  try {
+    for (const n of ['0', '1', '123', '999999999', '1000000000', '01', '-1', '1a', '']) {
+      const [row] = await db.query(
+        `SELECT mc.run_issue_number(jsonb_build_object('inputs', jsonb_build_object('number', $1::text))) AS n`,
+        [n],
+      );
+      expect([n, WORK_ITEM_NUMBER.test(n)]).toEqual([n, row?.n !== null]);
+    }
+  } finally {
+    await db.close();
+  }
+}, 60_000);
