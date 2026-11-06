@@ -1,4 +1,6 @@
 WITH queues AS (
+  -- This rule is owned here: every step query copies these two CTEs, and
+  -- db/queries/version-rule.test.ts fails a copy that differs.
   -- A factory on the queues has run a workflow only the queue pack has (home-map.sql's queues
   -- row). Its runs follow no pin, so its current version is the architecture parsed last (#435).
   SELECT EXISTS (SELECT 1 FROM mc.laps l
