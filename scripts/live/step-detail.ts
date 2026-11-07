@@ -24,6 +24,7 @@ import {
   readyFailures,
 } from './timings';
 
+/** A step screen's path within a factory; `inFactory` makes it the address. */
 const STEP_PATH = '/steps/archon-loop/check-app';
 /**
  * The step deliver's block includes to write the code, and the prompt the seed pins for it. Its
@@ -104,8 +105,10 @@ const stepShown = `document.querySelector('[data-live="step-detail"] [data-descr
  * before the new route commits, and the redirecting address's panels are all ready yet render no
  * prompt and no links.
  */
-const readyAt = (path: string) =>
-  `location.pathname === '${path}' && ${stepShown} && ${stepPanelsReady}`;
+const inFactory = (factory: string, path: string) => `/f/${factory}${path}`;
+
+const readyAt = (factory: string, path: string) =>
+  `location.pathname === '${inFactory(factory, path)}' && ${stepShown} && ${stepPanelsReady}`;
 
 /**
  * Where the way from deliver's screen to the step that writes the code differs from the seed:
@@ -115,10 +118,17 @@ const readyAt = (path: string) =>
 async function includedImplementMismatches(
   page: Page,
   base: string,
+  factory: string,
   repoRoot: string,
 ): Promise<string[]> {
   const failures: string[] = [];
-  await openStep(page, base, '/steps/archon-ship-block/deliver', readyAt(DELIVER_PLACE));
+  await openStep(
+    page,
+    base,
+    factory,
+    '/steps/archon-ship-block/deliver',
+    readyAt(factory, DELIVER_PLACE),
+  );
   const places: [string, string][] = [
     ['rounds/implement/implement', IMPLEMENT_PLACE],
     ['rounds/reshape/implement', RESHAPE_PLACE],
@@ -127,9 +137,10 @@ async function includedImplementMismatches(
     const href = await page.evaluate<string | null>(
       `document.querySelector('[data-live="step-nesting"] [data-inside="${label}"] a')?.getAttribute('href') ?? null`,
     );
-    if (href !== place) failures.push(`deliver's ${label} opens ${href}, not ${place}`);
+    if (href !== inFactory(factory, place))
+      failures.push(`deliver's ${label} opens ${href}, not ${inFactory(factory, place)}`);
   }
-  await openStep(page, base, IMPLEMENT_PATH, readyAt(IMPLEMENT_PLACE));
+  await openStep(page, base, factory, IMPLEMENT_PATH, readyAt(factory, IMPLEMENT_PLACE));
   const prompt = await page.evaluate<string | null>(
     `document.querySelector('[data-live="step-prompt"] [data-prompt]')?.textContent ?? null`,
   );
@@ -160,6 +171,7 @@ const onVersionPicker = `document.querySelector('[data-step-version]') !== null`
 async function olderVersionMismatches(
   page: Page,
   base: string,
+  factory: string,
   db: Db,
   current: Version,
 ): Promise<string[]> {
@@ -177,7 +189,7 @@ async function olderVersionMismatches(
   if (olderPrompt === null || olderPrompt === (await reviewPromptAt(db, current))) {
     return [`the seed's review prompt does not differ at ${older.sha.slice(0, 8)}`];
   }
-  await openStep(page, base, `${REVIEW_PATH}?at=${older.sha}`, stepPanelsReady);
+  await openStep(page, base, factory, `${REVIEW_PATH}?at=${older.sha}`, stepPanelsReady);
   const prompt = await page.evaluate<string | null>(
     `document.querySelector('[data-live="step-prompt"] [data-prompt]')?.textContent ?? null`,
   );
@@ -190,6 +202,7 @@ async function olderVersionMismatches(
   await openStep(
     page,
     base,
+    factory,
     `${REVIEW_PATH}?at=not-a-version`,
     `document.querySelector('[data-live="step-detail"][data-state="ready"]') !== null`,
   );
@@ -224,8 +237,14 @@ async function descriptionToScreen(page: Page, db: Db, version: Version): Promis
 }
 
 /** Opens `path` on the app and waits until `ready` holds in the page. */
-async function openStep(page: Page, base: string, path: string, ready: string): Promise<void> {
-  await page.goto(`${base}${path}`);
+async function openStep(
+  page: Page,
+  base: string,
+  factory: string,
+  path: string,
+  ready: string,
+): Promise<void> {
+  await page.goto(`${base}${inFactory(factory, path)}`);
   if (!(await page.evaluate<boolean>(pageWait(ready, READY_WAIT_MS)))) {
     throw new Error(`${path} did not reach data-state="ready" within ${READY_WAIT_MS} ms`);
   }
@@ -262,10 +281,10 @@ export function stepDetailPhase(ctx: LiveContext): LivePhase {
 
   return {
     async write() {
-      const { base } = ctx;
+      const { base, factory } = ctx;
       const page = await openPage(deps.env);
       stepPage = page;
-      await openStep(page, base, STEP_PATH, stepPanelsReady);
+      await openStep(page, base, factory, STEP_PATH, stepPanelsReady);
       await page.evaluate('window.__mcNoReload = true');
       Object.assign(stepTimings, groupTimings(await measure(page, ALL_STEP_QUERIES)));
       ctx.failures.push(...(await checkAppMismatches(page, deps.repoRoot)));
@@ -297,7 +316,7 @@ export function stepDetailPhase(ctx: LiveContext): LivePhase {
     },
 
     async writeAgain() {
-      const { base } = ctx;
+      const { base, factory } = ctx;
       const page = required(stepPage, 'step page');
       const { version } = required(described, "check-app's description");
       stepTimings.renewals = await page.evaluate<number>(
@@ -306,7 +325,7 @@ export function stepDetailPhase(ctx: LiveContext): LivePhase {
       stepTimings.afterHoldDescriptionToScreenMs = await descriptionToScreen(page, db, version);
       stepTimings.noReload = await page.evaluate<boolean>('window.__mcNoReload === true');
 
-      await openStep(page, base, '/steps/archon-loop/land', stepPanelsReady);
+      await openStep(page, base, factory, '/steps/archon-loop/land', stepPanelsReady);
       const [land] = await db.query(
         `SELECT when_condition FROM mc.arch_steps
           WHERE archon_sha = $1 AND factory_sha = $2 AND workflow = 'archon-loop' AND path = 'land'`,
@@ -318,11 +337,12 @@ export function stepDetailPhase(ctx: LiveContext): LivePhase {
       if (typeof land?.when_condition !== 'string' || when !== land.when_condition) {
         ctx.failures.push(`land shows when "${when}", stored "${land?.when_condition}"`);
       }
-      ctx.failures.push(...(await includedImplementMismatches(page, base, deps.repoRoot)));
+      ctx.failures.push(...(await includedImplementMismatches(page, base, factory, deps.repoRoot)));
       ctx.failures.push(
         ...(await olderVersionMismatches(
           page,
           base,
+          factory,
           db,
           required(described, "check-app's description").version,
         )),
@@ -330,6 +350,7 @@ export function stepDetailPhase(ctx: LiveContext): LivePhase {
       await openStep(
         page,
         base,
+        factory,
         '/steps/archon-loop/no-such-step',
         `document.querySelector('[data-live="step-detail"][data-state="ready"]') !== null`,
       );
@@ -344,8 +365,8 @@ export function stepDetailPhase(ctx: LiveContext): LivePhase {
     },
 
     async probe(designProbe) {
-      const { base } = ctx;
-      designProbe(`${base}${STEP_PATH}`, FILES.probe, STEP_PATH);
+      const { base, factory } = ctx;
+      designProbe(`${base}${inFactory(factory, STEP_PATH)}`, FILES.probe, STEP_PATH);
     },
 
     async close() {

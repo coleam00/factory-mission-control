@@ -72,21 +72,29 @@ const liveCountOf = (card: string) =>
 const waitingCount = (page: Page) =>
   page.evaluate<number>(`parseInt(document.querySelector('${WAITING}')?.textContent ?? '0', 10)`);
 
-const CHECK_SCREEN = '/steps/factory-app-check/check';
+const checkScreen = (factory: string) => `/f/${factory}/steps/factory-app-check/check`;
 const CHECK_PROMPT = 'fixtures/pack/queue/factory/app-check/commands/check.md';
 
-/** Map, App check, Behind the scenes, `check`: the factory package's step opens with its prompt. */
-async function appCheckPromptMismatches(page: Page, base: string): Promise<string[]> {
+/**
+ * Map, App check, Behind the scenes, `check`: the factory package's step opens in the factory's
+ * address with its prompt, the Factory tab current and a breadcrumb back to the App check card; then
+ * `finalize`, which the package gives a trigger rule, shows it.
+ */
+async function appCheckPromptMismatches(
+  page: Page,
+  base: string,
+  factory: string,
+): Promise<string[]> {
+  const screen = checkScreen(factory);
   const opened =
     (await click(page, `${MAP} [data-card="app"]`)) &&
     (await click(page, '[data-details="app"] [data-tab="behind"]')) &&
     (await click(page, '[data-step-link="factory-app-check check"]'));
   if (opened) {
-    await page.evaluate<boolean>(pageWait(`location.pathname === '${CHECK_SCREEN}'`, 2000));
+    await page.evaluate<boolean>(pageWait(`location.pathname === '${screen}'`, 2000));
   }
   const at = await page.evaluate<string>('location.pathname');
-  if (at !== CHECK_SCREEN)
-    return [`App check's Behind the scenes check opened ${at}, not ${CHECK_SCREEN}`];
+  if (at !== screen) return [`App check's Behind the scenes check opened ${at}, not ${screen}`];
   await page.evaluate<boolean>(
     pageWait(
       `document.querySelector('[data-live="step-prompt"]')?.getAttribute('data-state') === 'ready'`,
@@ -97,7 +105,32 @@ async function appCheckPromptMismatches(page: Page, base: string): Promise<strin
     `document.querySelector('[data-live="step-prompt"] [data-prompt]')?.textContent ?? null`,
   );
   const expected = readFileSync(join(REPO_ROOT, CHECK_PROMPT), 'utf8').replaceAll('\r\n', '\n');
-  return prompt === expected ? [] : [`${base}${CHECK_SCREEN} does not show ${CHECK_PROMPT}`];
+  const failures = prompt === expected ? [] : [`${base}${screen} does not show ${CHECK_PROMPT}`];
+  const current = await page.evaluate<{ name: string | null; href: string | null }>(
+    `({ name: document.querySelector('nav[aria-label="Screens"] a[aria-current="page"]')?.textContent?.trim() ?? null,
+       href: document.querySelector('nav[aria-label="Screens"] a[aria-current="page"]')?.getAttribute('href') ?? null })`,
+  );
+  if (current.name !== 'Factory' || current.href !== `/f/${factory}`) {
+    failures.push(`the check step marks ${current.name} (${current.href}) current, not Factory`);
+  }
+  await click(page, '[data-breadcrumb-back]');
+  const back = await page.evaluate<boolean>(
+    pageWait(
+      `location.pathname === '/f/${factory}' && document.querySelector('${MAP} [data-card="app"][data-selected]') !== null`,
+      2000,
+    ),
+  );
+  if (!back) failures.push('the check step breadcrumb does not return to the App check card');
+  // finalize declares `trigger_rule: all_done` in fixtures/pack/queue/factory/app-check/factory-app-check.yaml.
+  await page.goto(`${base}/f/${factory}/steps/factory-app-check/finalize`);
+  await page.evaluate<boolean>(
+    pageWait(`document.querySelector('[data-trigger-rule]') !== null`, READY_WAIT_MS),
+  );
+  const rule = await page.evaluate<string | null>(
+    `document.querySelector('[data-trigger-rule]')?.textContent ?? null`,
+  );
+  if (rule !== 'all_done') failures.push(`finalize shows Trigger rule ${rule}, not all_done`);
+  return failures;
 }
 
 /** The queue factory's map: queue runs count on their cards, and an attention pause raises "waiting". */
@@ -172,7 +205,7 @@ export function queueMapPhase(ctx: LiveContext): LivePhase {
         );
         failures.push(...mapMismatches(await mapCards(page), await lapsOnCards(db, name)));
         ctx.save(FILES.shot, await page.screenshot(1440));
-        failures.push(...(await appCheckPromptMismatches(page, base)));
+        failures.push(...(await appCheckPromptMismatches(page, base, name)));
         await page.goto(`${base}/f/${name}`);
         await page.evaluate<boolean>(
           pageWait(`document.querySelector('${MAP}[data-state="ready"]') !== null`, READY_WAIT_MS),
@@ -364,8 +397,8 @@ export function queueMapPhase(ctx: LiveContext): LivePhase {
 
     async probe(designProbe) {
       for (const v of QUEUE_MAP_VIEWS) designProbe(`${ctx.base}/f/${name}?view=${v.id}`, v.probe);
-      designProbe(`${ctx.base}/steps/factory-app-check/check`, FILES.checkProbe);
-      designProbe(`${ctx.base}/steps/factory-app-check/config`, FILES.configProbe);
+      designProbe(`${ctx.base}${checkScreen(name)}`, FILES.checkProbe);
+      designProbe(`${ctx.base}/f/${name}/steps/factory-app-check/config`, FILES.configProbe);
     },
 
     summary: () => [`queue map: ${JSON.stringify({ ...ms, limit: LIMITS.insertToScreenMs })}`],

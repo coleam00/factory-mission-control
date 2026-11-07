@@ -484,6 +484,7 @@ export function FactoryMap({
   steps,
   stepsFailed,
   aside,
+  select,
 }: {
   map: FactoryMapData;
   live: ReadonlyMap<string, CardLive>;
@@ -502,6 +503,8 @@ export function FactoryMap({
   stepsFailed?: boolean;
   /** Sits beside the breadcrumb, such as the version line. */
   aside?: ReactNode;
+  /** The card to have selected when the map first shows, such as the one a step screen came from. */
+  select?: string;
 }): ReactElement {
   const [shown, setShown] = useState(path);
   const level = levelOf(map, shown);
@@ -517,7 +520,7 @@ export function FactoryMap({
   const [cam, setCam] = useState<Camera>({ x: 0, y: 0, k: 0.5 });
   /** Whether the camera has been placed for the frame yet (read by `bun run test:live`). */
   const [placed, setPlaced] = useState(false);
-  const [selected, setSelected] = useState<string | null>(null);
+  const [selected, setSelected] = useState<string | null>(select ?? null);
   /** The world's fade and zoom while a level opens or closes. */
   const [motion, setMotion] = useState({ moving: false, hidden: false });
   /** The card to select, and flash, on the level above once an `upTo` card has gone up. */

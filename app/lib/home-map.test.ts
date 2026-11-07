@@ -44,14 +44,14 @@ const rows: StepTreeRow[] = [
 ];
 
 test('the loop is in declaration order, each expanded step followed by its stages', () => {
-  const loop = stepGraph(rows);
+  const loop = stepGraph(rows, 'x');
   expect(loop.steps.map((n) => n.id)).toEqual(['a', 'b', 'b/one', 'b/two', 'c']);
   expect(loop.steps.map((n) => n.role)).toEqual(['step', 'step', 'stage', 'stage', 'step']);
   expect(loop.clusters).toEqual(new Map([['b', ['b/one', 'b/two']]]));
 });
 
 test("a stage's depends_on names its siblings, and a stage with none hangs off its step", () => {
-  const { edges } = stepGraph(rows);
+  const { edges } = stepGraph(rows, 'x');
   expect(edges).toContainEqual({ from: 'b', to: 'b/one' });
   expect(edges).toContainEqual({ from: 'b/one', to: 'b/two' });
   expect(edges).not.toContainEqual({ from: 'one', to: 'b/two' });
@@ -69,21 +69,21 @@ test('an edge another path already implies is not drawn', () => {
     { from: 'b', to: 'c' },
     { from: 'c', to: 'd' },
   ]);
-  const loop = stepGraph([...rows, step('d', 10, ['a', 'c'])]);
+  const loop = stepGraph([...rows, step('d', 10, ['a', 'c'])], 'x');
   expect(loop.edges).toContainEqual({ from: 'c', to: 'd' });
   expect(loop.edges).not.toContainEqual({ from: 'a', to: 'd' });
 });
 
 test('every step opens its place in the loop workflow', () => {
-  const loop = stepGraph(rows);
+  const loop = stepGraph(rows, 'x');
   const href = (id: string) => loop.steps.find((n) => n.id === id)?.href;
-  expect(href('a')).toBe('/steps/wf-loop/a');
-  expect(href('b/two')).toBe('/steps/wf-loop/b%2Ftwo');
+  expect(href('a')).toBe('/f/x/steps/wf-loop/a');
+  expect(href('b/two')).toBe('/f/x/steps/wf-loop/b%2Ftwo');
 });
 
 test("at a version, every step opens its screen at that version; the current map's name none", () => {
   const at = '8e3e1cefaf1e1b7955789d6a43a81b6c2dbd7082';
-  const hrefs = (at?: string) => stepGraph(rows, at).steps.map((n) => n.href);
+  const hrefs = (at: string | null = null) => stepGraph(rows, 'x', at).steps.map((n) => n.href);
   expect(hrefs(at).every((href) => href.endsWith(`?at=${at}`))).toBe(true);
   expect(hrefs().some((href) => href.includes('?at='))).toBe(false);
   expect(homeHref(null)).toBe('/');
@@ -94,7 +94,7 @@ test("at a version, every step opens its screen at that version; the current map
 });
 
 test('with no steps stored the graph is empty', () => {
-  expect(stepGraph([])).toEqual({ steps: [], edges: [], clusters: new Map() });
+  expect(stepGraph([], 'x')).toEqual({ steps: [], edges: [], clusters: new Map() });
 });
 
 const within = (inner: Box | undefined, outer: Box | undefined) =>
@@ -119,7 +119,7 @@ const twoLevels: StepTreeRow[] = [
 ];
 
 test('an include inside an include expands too, every step inside each box around it', () => {
-  const loop = stepGraph(twoLevels);
+  const loop = stepGraph(twoLevels, 'x');
   expect(loop.steps.map((n) => n.id)).toEqual(['a', 'b', 'b/x', 'b/x/y', 'b/x/z', 'c']);
   expect(loop.clusters).toEqual(
     new Map([
@@ -143,14 +143,14 @@ test('an include inside an include expands too, every step inside each box aroun
 });
 
 test('a nested step opens its place in its own workflow', () => {
-  const loop = stepGraph(twoLevels);
+  const loop = stepGraph(twoLevels, 'x');
   const node = (id: string) => loop.steps.find((n) => n.id === id);
-  expect(node('b/x/y')?.href).toBe('/steps/wf-loop/b%2Fx%2Fy');
-  expect(node('b/x')?.href).toBe('/steps/wf-loop/b%2Fx');
+  expect(node('b/x/y')?.href).toBe('/f/x/steps/wf-loop/b%2Fx%2Fy');
+  expect(node('b/x')?.href).toBe('/f/x/steps/wf-loop/b%2Fx');
 });
 
 test('the narrow layout keeps the spine in one column, each box beside it moving with what it holds', () => {
-  const loop = stepGraph(twoLevels);
+  const loop = stepGraph(twoLevels, 'x');
   const desktop = layoutSteps(loop);
   const narrow = layoutSteps(loop, true);
   const spine = ['a', 'b', 'c'];
@@ -190,7 +190,7 @@ test('the narrow layout keeps the spine in one column, each box beside it moving
 });
 
 test('the layout places every step apart, and the box around the stages beside their step', () => {
-  const loop = stepGraph(rows);
+  const loop = stepGraph(rows, 'x');
   const laid = layoutSteps(loop);
   expect([...laid.nodes.keys()]).toEqual(loop.steps.map((n) => n.id));
   const boxes = [...laid.nodes.values()];
@@ -215,6 +215,7 @@ test('each step box is wide enough for its longest name line, and taller for a s
   const names = ['build', 'update-pr-body', 'review-completeness', 'averyveryverylongstepname'];
   const loop = stepGraph(
     names.map((name, i) => step(name, i, i === 0 ? [] : [names[i - 1] as string])),
+    'x',
   );
   const laid = layoutSteps(loop);
   for (const name of names) {
@@ -235,7 +236,7 @@ test('each block opens folded: one box with its step count, its steps hidden in 
     step('b/two/x', 4, []),
     step('c', 5, ['b']),
   ];
-  const loop = stepGraph(nested);
+  const loop = stepGraph(nested, 'x');
   const folded = foldSteps(loop, new Set());
   expect(folded.graph.steps.map((s) => s.id)).toEqual(['a', 'b', 'c']);
   expect(folded.graph.edges).toEqual([
@@ -298,7 +299,7 @@ const fork: StepTreeRow[] = [
 ];
 
 test('a route fork is drawn side by side, each edge into it labelled, rejoining after', () => {
-  const loop = stepGraph(fork);
+  const loop = stepGraph(fork, 'x');
   expect(loop.edges).toEqual([
     { from: 'claim', to: 'build', label: 'simple / continue' },
     { from: 'claim', to: 'ship', label: 'complex' },
@@ -310,13 +311,14 @@ test('a route fork is drawn side by side, each edge into it labelled, rejoining 
   // Without the trigger rule that lets ship run past a skipped build, the edge is a real order.
   const ordered = stepGraph(
     fork.map((r) => (r.path === 'ship' ? { ...r, trigger_rule: null } : r)),
+    'x',
   );
   expect(ordered.edges).toContainEqual({ from: 'build', to: 'ship' });
   expect(ordered.edges.some((e) => e.label !== undefined)).toBe(false);
 });
 
 test("an open top-level block's steps sit in a box beside its step, and what follows leaves its end", () => {
-  const loop = stepGraph(fork);
+  const loop = stepGraph(fork, 'x');
   expect(topBlocks(loop)).toEqual(['ship']);
   const laid = layoutSteps(foldSteps(loop, new Set(topBlocks(loop))).graph);
   const box = laid.clusters.get('ship') as Box;

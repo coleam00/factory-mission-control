@@ -9,12 +9,12 @@ const LINK =
 
 /**
  * Which link is the current screen at `pathname`: the screen's own address, a lap's page
- * (`.../laps/<run id>`) under Laps, and a step's page (`/steps/...`) under the Map it opens from.
+ * (`.../laps/<run id>`) under Laps, and a step's page (`.../steps/...`) under the Factory tab, the map it opens from.
  * At most one link matches any address.
  */
 export function currentLink(pathname: string, to: string, kind: 'map' | 'screen'): boolean {
   if (pathname === to) return true;
-  if (kind === 'map') return pathname.startsWith('/steps/');
+  if (kind === 'map') return pathname.startsWith(`${to}/steps/`);
   return to.endsWith('/laps') && pathname.startsWith(`${to}/`);
 }
 

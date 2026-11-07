@@ -72,7 +72,7 @@ says and fixes anything that reads badly. What it may not do is drift from the c
 names the workflows and steps it covers, and a check (`bun run map:check`, part of `bun run check`)
 fails when a step of a covered workflow at the current pin is covered by no card, or a card names
 a step that does not exist. Step details still come from the pinned code (the existing step
-screens, `/steps/<workflow>/<step>`).
+screens, `/f/<factory>/steps/<workflow>/<step>`).
 
 **What the map shows** (left to right; see `refs/01-home-map.png`):
 

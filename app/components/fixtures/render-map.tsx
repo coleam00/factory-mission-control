@@ -1,12 +1,13 @@
 import { createRoot } from 'react-dom/client';
-import { createMemoryRouter, RouterProvider } from 'react-router';
-import { FACTORY_MAP } from '../../map/factory-map';
+import { createMemoryRouter, RouterProvider, useLocation } from 'react-router';
+import { FACTORY_MAP, selectOnArrival } from '../../map/factory-map';
 import { FactoryMap } from '../FactoryMap';
 import { useMapPath } from '../useMapPath';
 
 /** The map as `Home` mounts it: the address names the view, and a level change is a navigation. */
 function Screen() {
   const [path, onPath] = useMapPath(FACTORY_MAP);
+  const select = selectOnArrival(useLocation().state);
   return (
     <FactoryMap
       map={FACTORY_MAP}
@@ -14,6 +15,7 @@ function Screen() {
       factory="x"
       at={null}
       flow={false}
+      select={select}
       path={path}
       onPath={onPath}
       steps={undefined}
@@ -28,6 +30,11 @@ async function until(done: () => boolean, what: string): Promise<void> {
     await new Promise((resolve) => setTimeout(resolve, 10));
   }
 }
+
+const parsed = (url: string) => {
+  const { pathname, search } = new URL(url, 'http://test');
+  return { pathname, search };
+};
 
 let current: { router: ReturnType<typeof createMemoryRouter>; unmount: () => void } | undefined;
 
@@ -45,10 +52,10 @@ export const state = () => ({
 });
 
 /** Mounts the map at `url` and waits until its camera is placed. */
-export async function mount(url: string) {
+export async function mount(url: string, historyState?: unknown) {
   current?.unmount();
   const router = createMemoryRouter([{ path: '/f/:factory', element: <Screen /> }], {
-    initialEntries: [url],
+    initialEntries: [{ ...parsed(url), state: historyState }],
   });
   const container = document.createElement('div');
   document.body.append(container);

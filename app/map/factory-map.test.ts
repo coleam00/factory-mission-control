@@ -9,6 +9,7 @@ import {
   linePoints,
   type MapView,
   MIN_FRAME,
+  mapOrigin,
   midpoint,
   neighbours,
   pinnedStepLinks,
@@ -171,18 +172,18 @@ test("the owner's tighter pitch: 52 between cards, 84 where the ready and passed
 });
 
 test("App check's steps open their screens, check-app's among them; Review's open their places", () => {
-  const hrefs = (id: string, at: string | null) => stepLinks(card(id), at).map((l) => l.href);
+  const hrefs = (id: string, at: string | null) => stepLinks(card(id), 'x', at).map((l) => l.href);
   expect(hrefs('app', null).slice(0, 3)).toEqual([
-    '/steps/archon-loop/briefs',
-    '/steps/archon-loop/check-app',
-    '/steps/archon-loop/evidence',
+    '/f/x/steps/archon-loop/briefs',
+    '/f/x/steps/archon-loop/check-app',
+    '/f/x/steps/archon-loop/evidence',
   ]);
-  expect(hrefs('app', null)).toContain('/steps/factory-app-check/check');
+  expect(hrefs('app', null)).toContain('/f/x/steps/factory-app-check/check');
   expect(hrefs('review', 'abc')).toContain(
-    '/steps/archon-loop/ship%2Fdeliver%2Frounds%2Freview?at=abc',
+    '/f/x/steps/archon-loop/ship%2Fdeliver%2Frounds%2Freview?at=abc',
   );
   expect(hrefs('review', 'abc')).toContain(
-    '/steps/archon-build-queue/ship%2Fdeliver%2Frounds%2Frereview?at=abc',
+    '/f/x/steps/archon-build-queue/ship%2Fdeliver%2Frounds%2Frereview?at=abc',
   );
 });
 
@@ -190,7 +191,7 @@ test('a version with only the old loop lists each review round once, not once pe
   const row = (workflow: string, path: string, kind: string, include: string | null = null) =>
     ({ workflow, path, kind, include, model: null }) as unknown as Parameters<
       typeof pinnedStepLinks
-    >[2][number];
+    >[3][number];
   const old = [
     row('archon-loop', 'ship', 'include', 'a'),
     row('a', 'deliver', 'include', 'b'),
@@ -198,7 +199,7 @@ test('a version with only the old loop lists each review round once, not once pe
     row('b', 'rounds/review', 'agent'),
     row('b', 'rounds/rereview', 'agent'),
   ];
-  const links = pinnedStepLinks(card('review'), 'abc', old);
+  const links = pinnedStepLinks(card('review'), 'x', 'abc', old);
   expect(links.map((l) => `${l.workflow} ${l.step}`)).toEqual([
     'archon-loop ship/deliver/rounds/review',
     'archon-loop ship/deliver/rounds/rereview',
@@ -256,4 +257,17 @@ test('no two cards overlap at any level, and the Work order view joins its sourc
   const into = order.lines.filter((l) => l.to === 'o-pick');
   expect(into).toHaveLength(3);
   expect(into.filter((l) => l.arrow !== false)).toHaveLength(1);
+});
+
+test("a step's default origin is the map at the view of its deepest card, that card selected", () => {
+  const app = mapOrigin(FACTORY_MAP, 'x', 'factory-app-check', 'check', null);
+  expect(app.href).toBe('/f/x?view=app');
+  expect(app.card).toBe('a-check');
+  expect(mapOrigin(FACTORY_MAP, 'x', 'factory-app-check', 'check', 'abc').href).toBe(
+    '/f/x?at=abc&view=app',
+  );
+  expect(mapOrigin(FACTORY_MAP, 'x', 'archon-implement', 'implement', null)).toEqual({
+    href: '/f/x',
+    label: 'Factory',
+  });
 });

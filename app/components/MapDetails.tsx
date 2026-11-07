@@ -1,10 +1,10 @@
 import { type ReactElement, type ReactNode, useState } from 'react';
-import { Link } from 'react-router';
+import { Link, useLocation } from 'react-router';
 import type { AppCheckRow } from '../lib/app-check';
 import { boardHref, orderPanel, orderProgress } from '../lib/board';
 import { relativeTime } from '../lib/format';
 import { hasLapPage } from '../lib/one-lap';
-import type { StepRow } from '../lib/step-detail';
+import { type StepRow, stepOriginState } from '../lib/step-detail';
 import { LivePanel } from '../live/LivePanel';
 import { type Card, type Chip, pinnedStepLinks, workflowFile } from '../map/factory-map';
 import {
@@ -380,21 +380,24 @@ function AppChecks({ factory }: { factory: string }): ReactElement {
  */
 export function Behind({
   card,
+  factory,
   at,
   steps,
   failed,
 }: {
   card: Card;
+  factory: string;
   at: string | null;
   steps: readonly StepRow[] | undefined;
   failed: boolean;
 }): ReactElement {
+  const { pathname, search } = useLocation();
   if (card.covers.length === 0) {
     return <p className="text-text-secondary">This card runs no workflow step.</p>;
   }
   if (failed) return <p className="text-text-secondary">The pinned steps are unavailable.</p>;
   if (steps === undefined) return <p className="text-text-secondary">Loading the pinned steps.</p>;
-  const links = pinnedStepLinks(card, at, steps);
+  const links = pinnedStepLinks(card, factory, at, steps);
   if (links.length === 0) {
     return <p className="text-text-secondary">This version has none of this card's steps.</p>;
   }
@@ -419,6 +422,11 @@ export function Behind({
                 <li key={link.step} className="contents">
                   <Link
                     to={link.href}
+                    state={stepOriginState({
+                      href: `${pathname}${search}`,
+                      label: `Factory / ${card.title}`,
+                      card: card.id,
+                    })}
                     data-step-link={`${link.workflow} ${link.step}`}
                     className={LINK}
                   >
@@ -538,7 +546,7 @@ export function MapDetails({
               {card.lists?.includes('checks') ? <AppChecks factory={factory} /> : null}
             </>
           ) : tab === 'behind' ? (
-            <Behind card={card} at={at} steps={steps} failed={stepsFailed} />
+            <Behind card={card} factory={factory} at={at} steps={steps} failed={stepsFailed} />
           ) : (
             <About details={details} />
           )}
