@@ -255,9 +255,11 @@ internals to read them. v2 answers four questions, each on one screen, in the de
 | **Decisions** (`/f/<factory>/decisions`) | What is waiting on me, and is the factory healthy? Archon attention items (paused runs waiting on a person) with their question, choices and recommendation, answered in the Archon console or Slack; on a factory still on the old loop, owner questions and `needs-owner` items, answered on GitHub; then health (stuck, pending and paused runs, failed laps by cause) | Owner, Health |
 | **Changes** (`/f/<factory>/changes`) | Did my last change to the factory help? Versions newest first with reason, hypothesis and verdict, two versions compared on the scorecard of 4.2, decisions from `DECISIONS.md` on the same timeline, the architecture diff one click away | Versions, Scorecard, Diff, Decisions |
 
-Above every screen: the factory switcher and one line of live numbers (merged today, in flight,
-waiting on you, cost per merge over 7 days, median hours from a work item's first run to its merge),
-each traceable (invariant 4). Rewind is retired. The one-lap page stays, opened from a work item.
+Above every screen: one bar with the product name, the factory switcher, "Running now" and the
+four tabs (owner decision 2026-11-05, #459). The mockup's line of live numbers under the bar is not
+built: merged today, cost per merge and time to merge are questions for the owner's agent. Rewind is
+retired, and every old address, `/f/<factory>/rewind` included, redirects. The one-lap page stays,
+opened from a work item.
 
 Sequencing: the Factory map ships first (4.1), then its deeper views, then the v2 colors on every
 screen, then the screens above, and the screens they replace are removed last, each in its own issue.
