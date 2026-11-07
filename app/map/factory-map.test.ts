@@ -279,7 +279,7 @@ test('a deeper view with few cards fits at the reference card size at 1440', () 
 });
 
 test('the views that matched their references keep their fit at every hero width', () => {
-  for (const id of ['intake', 'review', 'app', 'build']) {
+  for (const id of ['intake', 'review', 'app', 'build', 'build/deliver']) {
     const v = view(id);
     for (let width = 701; width <= 2560; width += 7) {
       const frame = hero(width);
@@ -343,6 +343,9 @@ test("the Manager's two asks share one trunk", () => {
     linePoints(m, m.lines.find((l) => l.from === 'u-mgr' && l.to === to) as never);
   const [b, mg] = [pts('u-b'), pts('u-m')];
   expect(b.slice(0, 2)).toEqual(mg.slice(0, 2));
+  expect(
+    m.lines.filter((l) => l.from === 'u-mgr' && l.arrow !== false && l.style === 'ask'),
+  ).toHaveLength(1);
   for (const [to, p] of [
     ['u-b', b],
     ['u-m', mg],
