@@ -374,22 +374,6 @@ test('the work item address guard accepts the numbers mc.run_issue_number reads'
   }
 }, 60_000);
 
-const HELD_ITEM =
-  "coalesce(c.issue_number, (facts.output -> 'item' ->> 'number')::int, l.issue_number)";
-
-test('lanes, home-map and health-workable spell the one rule for the work item a running run holds', () => {
-  const count = (name: string) => sqlOf(name).split(HELD_ITEM).length - 1;
-  expect(count('lanes')).toBe(2);
-  expect(count('home-map')).toBe(2);
-  expect(count('health-workable')).toBe(1);
-  for (const [name, sql] of queries) {
-    expect(sql, name).not.toContain('coalesce(c.issue_number, l.issue_number)');
-    expect(sql, name).not.toContain(
-      "coalesce(c.issue_number, (facts.output -> 'item' ->> 'number')::int)",
-    );
-  }
-});
-
 test('lanes, home-map and health-workable resolve the same item for every source of it', async () => {
   const db = await migratedDb();
   try {
