@@ -33,13 +33,15 @@ function Chip({ chip }: { chip: BoardChip }): ReactElement {
 }
 
 const CARD =
-  'block rounded-[7px] border border-border bg-surface px-2.5 py-2 hover:border-border-bright';
+  'block min-w-0 rounded-[7px] border border-border bg-surface px-2.5 py-2 hover:border-border-bright';
 
 function Card({ item }: { item: WorkItem }): ReactElement {
   const body = (
     <>
       <span className="font-mono text-[11px] text-text-secondary">#{item.number}</span>
-      <span className="mt-0.5 block text-[13px] text-text-primary">{item.title}</span>
+      <span className="mt-0.5 block text-[13px] text-text-primary [overflow-wrap:anywhere]">
+        {item.title}
+      </span>
       {item.chips.length > 0 ? (
         <span className="mt-1.5 flex flex-wrap gap-1">
           {item.chips.map((chip) => (
@@ -62,7 +64,7 @@ function Column({ column, older }: { column: BoardColumn; older: ReactElement | 
       data-board-column={column.id}
       data-count={column.items.length}
       aria-label={column.title}
-      className="flex min-h-[300px] flex-col gap-2 rounded-[10px] border border-border bg-surface/40 p-2"
+      className="flex min-h-[300px] min-w-0 flex-col gap-2 rounded-[10px] border border-border bg-surface/40 p-2"
     >
       <h2
         className="flex items-baseline justify-between px-1 text-[13px] font-semibold"
