@@ -137,6 +137,41 @@ describe('lanes and recent-laps on the seed', () => {
       });
   });
 
+  test("a build run's lane cost leaves out its loop roll-up", async () => {
+    const rollback = new Error('rollback');
+    await db
+      .transaction(async (tx) => {
+        const [run] = await tx.query(
+          `INSERT INTO remote_agent_workflow_runs (workflow_name, codebase_id, status, user_message,
+           metadata, started_at)
+         VALUES ('archon-build-queue', $1, 'running', 'Build', '{}', '2026-10-25T10:00:00Z')
+         RETURNING id`,
+          [SEED_CODEBASE],
+        );
+        const runId = String(run?.id);
+        const event = (step: string, at: string, data: object) =>
+          tx.query(
+            `INSERT INTO remote_agent_workflow_events (workflow_run_id, event_type, step_name, data,
+             created_at) VALUES ($1, 'node_completed', $2, $3, $4)`,
+            [runId, step, JSON.stringify({ timing: { startedAt: at }, ...data }), at],
+          );
+        await event('implement', '2026-10-25T10:05:00Z', { cost_usd: 0.5 });
+        await event('review', '2026-10-25T10:10:00Z', { cost_usd: 0.25 });
+        await event('ship__deliver__rounds', '2026-10-25T10:15:00Z', {
+          cost_usd: 0.75,
+          aggregate: true,
+        });
+        const lane = (await tx.query(sqlOf('lanes'), ['mission-control'])).find(
+          (l) => l.run_id === runId,
+        );
+        expect(lane?.cost_usd).toBeCloseTo(0.75, 9);
+        throw rollback;
+      })
+      .catch((error) => {
+        if (error !== rollback) throw error;
+      });
+  });
+
   test('a review node_started from fixture:write moves its lane to review', async () => {
     const errors = () => db.query('SELECT id FROM mc.projection_errors ORDER BY id');
     const before = await errors();
