@@ -112,6 +112,8 @@ export interface FactoryMap extends MapView {
   legend: { role: Role; label: string }[];
   /** The deeper views by id; a card's `opens` names one. Card ids are unique across every level. */
   views?: Record<string, MapView>;
+  /** The views whose cards already match their references; a deeper view is never fitted larger than they are (issue #485). */
+  referenceViews: string[];
 }
 
 // JSON infers a route as `number[][]`, which TypeScript will not compare to a `Point[]` when every line of a view routes.
@@ -173,9 +175,6 @@ export function fitScale(
   );
 }
 
-/** The views whose cards already match their references; a deeper view is never fitted larger than they are (issue #485). */
-export const REFERENCE_VIEWS = ['intake', 'review', 'app', 'build', 'build/deliver'];
-
 /**
  * The largest scale `level` is fitted at in `frame`: FIT_MAX for the root; for a deeper view, the
  * largest scale the matching views fit at in the same frame, so a view with few cards is not drawn
@@ -187,7 +186,9 @@ export function levelMax(
   frame: { width: number; height: number },
 ): number {
   if (level === map) return FIT_MAX;
-  const fits = REFERENCE_VIEWS.map((id) => fitScale(worldSize(map.views?.[id] as MapView), frame));
+  const fits = map.referenceViews.map((id) =>
+    fitScale(worldSize(map.views?.[id] as MapView), frame),
+  );
   return Math.max(...fits);
 }
 

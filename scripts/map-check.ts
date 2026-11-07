@@ -178,6 +178,7 @@ const ROOT_KEYS: Record<keyof FactoryMap, true> = {
   lines: true,
   tour: true,
   legend: true,
+  referenceViews: true,
   views: true,
 };
 const VIEW_KEYS: Record<keyof MapView, true> = {

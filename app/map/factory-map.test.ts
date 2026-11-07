@@ -16,7 +16,6 @@ import {
   midpoint,
   neighbours,
   pinnedStepLinks,
-  REFERENCE_VIEWS,
   stepLinks,
   tourPoints,
   viewPath,
@@ -270,10 +269,10 @@ const hero = (width: number) => ({
 const view = (id: string) => FACTORY_MAP.views?.[id] as MapView;
 const FEW_CARDS = ['deploy', 'merge', 'split', 'order', 'manager'];
 
-const MATCHING = REFERENCE_VIEWS;
+const MATCHING = FACTORY_MAP.referenceViews;
 
 test('every reference view exists', () => {
-  for (const id of REFERENCE_VIEWS) expect(FACTORY_MAP.views?.[id]).toBeDefined();
+  for (const id of FACTORY_MAP.referenceViews) expect(FACTORY_MAP.views?.[id]).toBeDefined();
 });
 
 test('a deeper view with few cards is fitted no larger than the matching views at 1440', () => {

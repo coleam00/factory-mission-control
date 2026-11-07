@@ -556,6 +556,7 @@
       "label": "You and the manager"
     }
   ],
+  "referenceViews": ["intake", "review", "app", "build", "build/deliver"],
   "views": {
     "build": {
       "caption": "One build run takes one work item one round forward. A round writes a brief, plans or investigates if triage asked for it, then delivers: implement, open the PR, review, fix. After the round an agent decides: done, another round, or ask you. After 2 rounds it also checks that the rounds are converging. It also asks when a change has outgrown its size or stopped converging.",
