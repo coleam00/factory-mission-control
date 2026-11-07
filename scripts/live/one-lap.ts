@@ -174,6 +174,10 @@ const pageLapClaimJoin = (sql: string) =>
     'claim lateral',
   );
 
+/** The pick step join: the step whose route and depth a lap shows. */
+const pageLapPickJoin = (sql: string) =>
+  pageLapRule(sql, /^LEFT JOIN mc\.lap_steps p ON .*$/m, 'pick step join');
+
 /** The route expression: the pick step's route, else the claim's. */
 const pageLapRoute = (sql: string) =>
   pageLapRule(sql, /coalesce\(p\.output ->> 'route', c\.route\)/, 'route expression');
@@ -205,7 +209,7 @@ async function seedOneLapMismatches(
      FROM mc.laps l
      JOIN mc.factories f ON f.name = l.factory
      ${pageLapClaimJoin(oneLapSql)}
-     LEFT JOIN mc.lap_steps p ON p.run_id = l.run_id AND p.step_id = 'pick'
+     ${pageLapPickJoin(oneLapSql)}
      LEFT JOIN mc.lap_steps review ON review.run_id = l.run_id AND review.step_id = 'review'
      LEFT JOIN mc.lap_steps land ON land.run_id = l.run_id AND land.step_id = 'land'
      ${pageLapPrJoin(oneLapSql)}
