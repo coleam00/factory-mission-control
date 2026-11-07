@@ -9,7 +9,7 @@ The home screen (`/f/<factory>`, and `/` for the selected factory) draws the fac
 one-line text, position, optional width, the chips it carries, the `lists` Right now shows for it
 (`documents`, the open product documents), the workflows and steps it covers,
 and its details text), every line (from, to, style `flow`, `ask` or `loop`, an optional
-label and, for the routed lines, explicit points), the dashed group, the tour order and the legend.
+label and, for the routed lines, explicit points), the dashed group, the tour order, the legend and `referenceViews`, the views whose fit caps deeper ones.
 Change what the map says there; the React components (`app/components/FactoryMap.tsx`,
 `MapDetails.tsx`) only draw it.
 
@@ -34,7 +34,7 @@ The map is the home screen's hero. Its frame spans the window between the page g
 caption, legend and details strip stay in the app's column. The frame's height is the map's height
 at the scale that fits its width, plus its padding (at least 420px), so a fit leaves no empty band;
 the page scrolls below it. A deeper view is fitted no larger than the largest scale the matching views
-(Intake, Review, App check, Build, Deliver) fit at in the same frame (about 0.73 at 1440x900), centred in
+(the ones listed in the root's `referenceViews` key: Intake, Review, App check, Build, Deliver) fit at in the same frame (about 0.73 at 1440x900), centred in
 the frame; below 701px wide Fit fits as before. A card whose kind label would wrap is widened
 through `width` (Staging's Deploy, Work order's middle column).
 
