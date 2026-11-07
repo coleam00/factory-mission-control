@@ -121,7 +121,7 @@ export const SCREENS: readonly LiveScreen[] = [
     phase: stepDetailPhase,
     outputs: STEP_DETAIL_OUTPUTS,
     help: [
-      'It opens /steps/archon-loop/check-app, checks it against the seed, times description writes to',
+      'It opens /f/<factory>/steps/archon-loop/check-app, checks it against the seed, times description writes to',
       'it across the same hold, and checks land, the way from deliver to the implement step it',
       "includes and that step's prompt, and an unknown step.",
     ],

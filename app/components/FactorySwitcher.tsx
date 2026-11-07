@@ -179,7 +179,7 @@ function PublishFactories({
 
 /**
  * The shell's factory switcher: every row of `mc.factories` the server shows, live, opening the
- * same screen (`factoryPath`), and remembering the choice for the pages whose URL names no factory.
+ * same screen (`factoryPath`), and remembering the choice for the old step address, whose URL names none.
  */
 export function FactorySwitcher({ screens }: { screens: readonly FactoryScreen[] }): ReactElement {
   const live = useLive();

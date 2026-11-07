@@ -43,7 +43,7 @@ const versions = (asked: Asked[]) =>
   Object.fromEntries(asked.map(({ query, args }) => [query, args.at(-1) ?? null]));
 
 test('every step query is sealed for the version the address names, and shows its files', async () => {
-  const { shown, asked } = await openStep(`/steps/archon-loop/review?at=${OLDER}`);
+  const { shown, asked } = await openStep(`/f/factory-a/steps/archon-loop/review?at=${OLDER}`);
   expect(shown).toEqual({ state: 'ready', prompt: `Review at ${OLDER}`, sentence: null });
   expect(versions(asked)).toEqual({
     [STEP_VERSIONS_QUERY]: null,
@@ -52,7 +52,7 @@ test('every step query is sealed for the version the address names, and shows it
 }, 30_000);
 
 test('without a version every step query is sealed for the current one', async () => {
-  const { shown, asked } = await openStep('/steps/archon-loop/review');
+  const { shown, asked } = await openStep('/f/factory-a/steps/archon-loop/review');
   expect(shown).toEqual({ state: 'ready', prompt: 'Review, current', sentence: null });
   expect(versions(asked)).toEqual({
     [STEP_VERSIONS_QUERY]: null,
@@ -61,12 +61,14 @@ test('without a version every step query is sealed for the current one', async (
 }, 30_000);
 
 test('a version nobody recorded, and one without the step, each read one sentence', async () => {
-  expect((await openStep('/steps/archon-loop/review?at=not-a-version')).shown).toEqual({
+  expect((await openStep('/f/factory-a/steps/archon-loop/review?at=not-a-version')).shown).toEqual({
     state: 'ready',
     prompt: null,
     sentence: 'No version not-a-version is recorded for this factory.',
   });
-  expect((await openStep(`/steps/archon-loop/review?at=${BEFORE_REVIEW}`)).shown).toEqual({
+  expect(
+    (await openStep(`/f/factory-a/steps/archon-loop/review?at=${BEFORE_REVIEW}`)).shown,
+  ).toEqual({
     state: 'ready',
     prompt: null,
     sentence: 'No step review in archon-loop at version 1b2a52a5.',
@@ -92,7 +94,7 @@ test('every step panel asks for its seal at navigation, not after step-detail an
 }, 30_000);
 
 test('every panel beside step-detail is sealed for the workflow and path the address names', async () => {
-  const { asked } = await openStep(`/steps/archon-loop/review?at=${OLDER}`);
+  const { asked } = await openStep(`/f/factory-a/steps/archon-loop/review?at=${OLDER}`);
   const beside = asked.filter(({ query }) =>
     (STEP_QUERIES.slice(1) as readonly string[]).includes(query),
   );
@@ -101,6 +103,44 @@ test('every panel beside step-detail is sealed for the workflow and path the add
   );
 }, 30_000);
 
+test('the old step address ends on the factory-scoped one, keeping the version', async () => {
+  const placed = await openPlace(`/steps/archon-loop/review?at=${OLDER}`);
+  expect(placed.location).toBe(`/f/factory-a/steps/archon-loop/review?at=${OLDER}`);
+  expect(placed.prompt).toEqual([`Review at ${OLDER}`]);
+}, 30_000);
+
+test("a step's Trigger rule shows its rule, and a dash when it declares none", async () => {
+  const rule = (step: string) =>
+    inPage<string | null>(
+      `triggerRuleAt(${JSON.stringify(`/f/factory-a/steps/archon-loop/${step}`)})`,
+    );
+  expect(await rule('finalize')).toBe('all_done');
+  expect(await rule('review')).toBe('-');
+}, 30_000);
+
+interface Crumbs {
+  opened: { href: string | null; text: string | null };
+  moved: { href: string | null; text: string | null };
+  selected: string | null;
+  expectedDefault: { href: string; label: string };
+}
+
+test('the breadcrumb returns to where the step was opened from, and keeps it while the screen stays open', async () => {
+  const from = { href: '/f/factory-a', label: 'Factory / App check', card: 'app' };
+  const crumbs = await inPage<Crumbs>(`breadcrumbOf(${JSON.stringify({ from })})`);
+  expect(crumbs.opened).toEqual({ href: from.href, text: from.label });
+  expect(crumbs.moved).toEqual(crumbs.opened);
+  expect(crumbs.selected).toBe(from.card);
+}, 30_000);
+
+test('without an opener the breadcrumb returns to the map card that covers the step', async () => {
+  const crumbs = await inPage<Crumbs>('breadcrumbOf(undefined)');
+  const { href, label } = crumbs.expectedDefault;
+  expect(crumbs.opened).toEqual({ href, text: label });
+}, 30_000);
+
+// The first test to lose a subscription makes later seals for the same step wait, so the ones
+// that open `review` at the current version come before it.
 test('once step-detail no longer shows the step, no panel beside it shows that step', async () => {
   expect(
     await inPage<{ detail: string; sentence: string; headings: string[] }>('loseStep()'),
@@ -120,14 +160,14 @@ interface Placed {
 const openPlace = (url: string) => inPage<Placed>(`openPlace(${JSON.stringify(url)})`);
 
 test("an included block's shared address opens its first place, keeping the version", async () => {
-  const placed = await openPlace(`/steps/block/code?at=${TWICE}`);
-  expect(placed.location).toBe(`/steps/archon-loop/review%2Fcode?at=${TWICE}`);
+  const placed = await openPlace(`/f/factory-a/steps/block/code?at=${TWICE}`);
+  expect(placed.location).toBe(`/f/factory-a/steps/archon-loop/review%2Fcode?at=${TWICE}`);
   expect(placed.prompt).toEqual(['Write the code']);
 }, 30_000);
 
 test('a place shows the definition, its own path, the routing around it and every place', async () => {
-  const placed = await openPlace(`/steps/archon-loop/rereview%2Fcode?at=${TWICE}`);
-  expect(placed.location).toBe(`/steps/archon-loop/rereview%2Fcode?at=${TWICE}`);
+  const placed = await openPlace(`/f/factory-a/steps/archon-loop/rereview%2Fcode?at=${TWICE}`);
+  expect(placed.location).toBe(`/f/factory-a/steps/archon-loop/rereview%2Fcode?at=${TWICE}`);
   expect(placed.title).toBe('rereview/code');
   expect(placed.prompt).toEqual(['Write the code']);
   expect(placed.routes).toEqual([{ path: 'rereview', inputs: 'fix' }]);

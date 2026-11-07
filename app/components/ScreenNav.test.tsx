@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { createMemoryRouter, Outlet, RouterProvider } from 'react-router';
 import { factoryScreens, type RouteModule, routesFromModules } from '../routing';
-import { ScreenNavBody } from './ScreenNav';
+import { currentLink, ScreenNavBody } from './ScreenNav';
 
 const FACTORY = 'mission-control';
 const page: RouteModule = { default: () => null };
@@ -145,9 +145,11 @@ test("a lap's page marks Laps as current, and a step's page marks Factory, one l
     navAt(registeredRoutes(), `/f/${FACTORY}/laps/5eed0001-0000-4000-8000-000000000003`).html(),
   );
   expect(lap.filter((l) => l.current).map((l) => l.href)).toEqual([`/f/${FACTORY}/laps`]);
-  for (const step of ['/steps/archon-loop/build', '/steps/archon-ship-block/intel']) {
-    const found = links(navAt(registeredRoutes(), step).html());
-    expect(found.filter((l) => l.current).map((l) => l.name)).toEqual(['Factory']);
+  for (const step of ['archon-loop/build', 'archon-ship-block/intel']) {
+    const found = links(navAt(registeredRoutes(), `/f/${FACTORY}/steps/${step}`).html());
+    expect(found.filter((l) => l.current)).toEqual([
+      { href: `/f/${FACTORY}`, name: 'Factory', current: true },
+    ]);
   }
   // Every screen still marks itself alone.
   for (const screen of ['laps', 'board', 'decisions']) {
@@ -157,4 +159,9 @@ test("a lap's page marks Laps as current, and a step's page marks Factory, one l
   expect(links(navAt(registeredRoutes(), `/f/${FACTORY}`).html()).filter((l) => l.current)).toEqual(
     [{ href: `/f/${FACTORY}`, name: 'Factory', current: true }],
   );
+});
+
+test("a step's page is current under the factory it names only", () => {
+  expect(currentLink('/f/a/steps/x/y', '/f/a', 'map')).toBe(true);
+  expect(currentLink('/f/a/steps/x/y', '/f/b', 'map')).toBe(false);
 });

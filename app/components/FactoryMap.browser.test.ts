@@ -176,3 +176,10 @@ test("Deliver's Review card opens the Review view, and going up returns to Deliv
   expect(down).toMatchObject({ view: 'review', search: '?view=review&from=build%2Fdeliver' });
   expect(up?.flashed).toContain('d-rev');
 }, 30_000);
+
+test('arriving with a card to select shows it selected, in the view the address names', async () => {
+  const arrived = await inPage<Shown>(
+    `return await m.mount('/f/x?view=app', { select: 'a-check' });`,
+  );
+  expect(arrived).toMatchObject({ view: 'app', selected: 'a-check' });
+}, 30_000);

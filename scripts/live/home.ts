@@ -46,7 +46,7 @@ export const HOME_OUTPUTS: readonly LiveOutput[] = Object.values(FILES);
 /** Journey 1: App check's details, then its Behind the scenes, open check-app's step screen. */
 const CLICKED_CARD = 'app';
 const CLICKED_STEP = 'archon-loop check-app';
-const CLICKED_SCREEN = '/steps/archon-loop/check-app';
+const clickedScreen = (factory: string) => `/f/${factory}/steps/archon-loop/check-app`;
 /** The card `fixture:write` moves a lap onto: the one covering LIVE_STEP. */
 const LIVE_CARD = cardForStep(FACTORY_MAP, 'archon-loop', LIVE_STEP)?.id ?? '';
 
@@ -195,12 +195,14 @@ export function homePhase(ctx: LiveContext): LivePhase {
         (await click(page, `[data-details="${CLICKED_CARD}"] [data-tab="behind"]`)) &&
         (await click(page, `[data-step-link="${CLICKED_STEP}"]`));
       if (opened) {
-        await page.evaluate<boolean>(pageWait(`location.pathname === '${CLICKED_SCREEN}'`, 2000));
+        await page.evaluate<boolean>(
+          pageWait(`location.pathname === '${clickedScreen(factory)}'`, 2000),
+        );
       }
       mapTimings.clickedTo = await page.evaluate<string>('location.pathname');
-      if (mapTimings.clickedTo !== CLICKED_SCREEN) {
+      if (mapTimings.clickedTo !== clickedScreen(factory)) {
         ctx.failures.push(
-          `App check's Behind the scenes ${CLICKED_STEP} opened ${mapTimings.clickedTo}, not ${CLICKED_SCREEN}`,
+          `App check's Behind the scenes ${CLICKED_STEP} opened ${mapTimings.clickedTo}, not ${clickedScreen(factory)}`,
         );
       }
       timings.noReload = await page.evaluate<boolean>('window.__mcNoReload === true');

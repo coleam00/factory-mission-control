@@ -416,7 +416,7 @@ test('Behind the scenes says the steps are unavailable, not loading, once their 
   const html = (failed: boolean) =>
     renderToStaticMarkup(
       <MemoryRouter>
-        <Behind card={card} at={null} steps={undefined} failed={failed} />
+        <Behind card={card} factory="x" at={null} steps={undefined} failed={failed} />
       </MemoryRouter>,
     );
   expect(html(true)).toContain('The pinned steps are unavailable.');
@@ -611,7 +611,7 @@ test('Behind the scenes shows each workflow its own YAML path, and none for a wo
   } as (typeof FACTORY_MAP.cards)[0];
   const html = renderToStaticMarkup(
     <MemoryRouter>
-      <Behind card={card} at={null} steps={steps} failed={false} />
+      <Behind card={card} factory="x" at={null} steps={steps} failed={false} />
     </MemoryRouter>,
   );
   const block = (workflow: string) =>
@@ -624,6 +624,7 @@ test('Behind the scenes shows each workflow its own YAML path, and none for a wo
   const lacking = renderToStaticMarkup(
     <MemoryRouter>
       <Behind
+        factory="x"
         card={{
           ...card,
           covers: [{ pack: 'loop' as const, workflow: 'wf-a', steps: ['one', 'gone'] }],

@@ -106,7 +106,11 @@ export interface LapGraph {
  * (a newer step on an older map, or no map at all) is added where its path puts it, after the
  * steps that started before it.
  */
-export function lapGraph(map: readonly LapMapRow[], attempts: readonly StepAttemptRow[]): LapGraph {
+export function lapGraph(
+  map: readonly LapMapRow[],
+  attempts: readonly StepAttemptRow[],
+  factory: string,
+): LapGraph {
   const rows: StepTreeRow[] = map.map((r) => ({
     workflow: LAP_PAGE_WORKFLOW,
     path: r.path,
@@ -158,7 +162,7 @@ export function lapGraph(map: readonly LapMapRow[], attempts: readonly StepAttem
     }
   }
 
-  const graph = stepGraph(rows, map[0]?.pin ?? null);
+  const graph = stepGraph(rows, factory, map[0]?.pin ?? null);
   const children = graph.clusters;
   // Every iteration of a loop's step is an attempt of its one node, oldest first.
   const own = new Map<string, StepAttemptRow[]>();

@@ -25,6 +25,14 @@ const SHOWN = `[...document.querySelectorAll('[data-event]')].map((li) =>
   (li.textContent ?? '').replace(/\\s+/g, ' ').trim())`;
 const MARKERS = `document.documentElement.outerHTML.split(${JSON.stringify(MARKER)}).length - 1`;
 
+/** Rows whose dot's vertical centre is outside the time's line box: the dot belongs beside the entry's first line. */
+const DOTS_OFF_TIME = `[...document.querySelectorAll('[data-event]')].flatMap((li, i) => {
+  const t = li.querySelector('time').getBoundingClientRect();
+  const d = li.querySelector('[aria-hidden]').getBoundingClientRect();
+  const mid = (d.top + d.bottom) / 2;
+  return mid >= t.top && mid <= t.bottom ? [] : [i + ': dot ' + mid.toFixed(1) + ' time ' + t.top.toFixed(1) + '-' + t.bottom.toFixed(1)];
+})`;
+
 const FILES = liveOutputs({
   shot: 'work-item.png',
   loopShot: 'work-item-loop.png',
@@ -91,6 +99,12 @@ export function workItemPhase(ctx: LiveContext): LivePhase {
         await open(page, QUEUE_FACTORY.name, QUEUE_RETURNED.issue);
         ctx.save(FILES.shot, await page.screenshot(1440));
         failures.push(...(await mismatches(page, QUEUE_FACTORY.name, QUEUE_RETURNED.issue)));
+        for (const width of [1440, 390]) {
+          await page.setViewport(width);
+          for (const row of await page.evaluate<string[]>(DOTS_OFF_TIME))
+            failures.push(`${returned} at ${width}: row ${row}`);
+        }
+        await page.setViewport(1440);
         const shown = await page.evaluate<string[]>(SHOWN);
         const back = shown.findIndex((t) => t.includes('Returned to Build'));
         const merged = shown.findIndex((t) => t.includes('Merged'));

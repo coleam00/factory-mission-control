@@ -4,7 +4,7 @@ import { ALL_STEP_QUERIES } from './step-queries';
 test('the step screen mounts a panel for exactly the queries the list names', async () => {
   const mounted = new Set<string>();
   for (const file of [
-    '../routes/steps.$workflow.$step.tsx',
+    '../routes/f.$factory.steps.$workflow.$step.tsx',
     '../components/StepVersionPicker.tsx',
   ]) {
     const source = await Bun.file(new URL(file, import.meta.url)).text();
