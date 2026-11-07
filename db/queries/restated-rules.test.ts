@@ -488,7 +488,7 @@ test('board rounds count a shipped run on the item every other screen holds', as
       const c = k + 1;
       await db.query(
         `INSERT INTO mc.laps (run_id, factory, workflow_name, status, started_at, issue_number)
-         VALUES ($1, 'f', $2, 'completed', now(), $3)`,
+         VALUES ($1, 'f', $2, 'running', now(), $3)`,
         [id(c), r.workflow ?? 'archon-build-queue', r.input],
       );
       if (r.facts !== null) {
@@ -517,8 +517,18 @@ test('board rounds count a shipped run on the item every other screen holds', as
         .filter((r) => r.number !== null)
         .map((r) => [r.number as number, r.rounds]),
     );
-    // Run 4 is on 4 alone and run 5 on 5 alone; the unshipped and other-workflow runs count nowhere.
-    expect(rounds).toEqual({ 1: 1, 2: 1, 3: 1, 4: 1, 5: 1, 6: 0 });
+    // The owner's answer: lanes.sql holds each (running) run on an item; a shipped loop/queue run is a round there.
+    const owned: Record<number, number> = {};
+    for (const row of await db.query(sqlOf('lanes'), ['f'])) {
+      const run = runs[Number(String(row.run_id).slice(-1)) - 1];
+      if (run?.ship && run.workflow === undefined && row.issue_number !== null) {
+        const n = row.issue_number as number;
+        owned[n] = (owned[n] ?? 0) + 1;
+      }
+    }
+    const expected = Object.fromEntries([1, 2, 3, 4, 5, 6].map((n) => [n, owned[n] ?? 0]));
+    expect(rounds).toEqual(expected);
+    expect(Object.values(expected).reduce((a, b) => a + b, 0)).toBe(5);
   } finally {
     await db.close();
   }
