@@ -112,6 +112,8 @@ export interface FactoryMap extends MapView {
   legend: { role: Role; label: string }[];
   /** The deeper views by id; a card's `opens` names one. Card ids are unique across every level. */
   views?: Record<string, MapView>;
+  /** The views whose cards already match their references; a deeper view is never fitted larger than they are (issue #485). */
+  referenceViews: string[];
 }
 
 // JSON infers a route as `number[][]`, which TypeScript will not compare to a `Point[]` when every line of a view routes.
@@ -158,6 +160,36 @@ export const FIT_MAX = 1.15;
 export function heroFrameHeight(world: { width: number; height: number }, width: number): number {
   const k = Math.min((width - FIT_PAD * 2) / world.width, FIT_MAX);
   return Math.max(MIN_FRAME, Math.ceil(world.height * k + FIT_PAD * 2 + FIT_FOOT));
+}
+
+/** The scale that fits `world` in `frame`, up to `max`, as the Fit control fits it. */
+export function fitScale(
+  world: { width: number; height: number },
+  frame: { width: number; height: number },
+  max = FIT_MAX,
+): number {
+  return Math.min(
+    (frame.width - FIT_PAD * 2) / world.width,
+    (frame.height - FIT_PAD * 2 - FIT_FOOT) / world.height,
+    max,
+  );
+}
+
+/**
+ * The largest scale `level` is fitted at in `frame`: FIT_MAX for the root; for a deeper view, the
+ * largest scale the matching views fit at in the same frame, so a view with few cards is not drawn
+ * larger than the reference (issue #485). The matching views keep their own fit by construction.
+ */
+export function levelMax(
+  map: FactoryMap,
+  level: MapView,
+  frame: { width: number; height: number },
+): number {
+  if (level === map) return FIT_MAX;
+  const fits = map.referenceViews.map((id) =>
+    fitScale(worldSize(map.views?.[id] as MapView), frame),
+  );
+  return Math.max(...fits);
 }
 
 const cardById = (map: MapView, id: string): Card => {

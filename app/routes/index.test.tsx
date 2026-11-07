@@ -296,6 +296,10 @@ test('queued, failing, waiting and merged chips sit on Build, App check, the Man
   expect(html).not.toMatch(/warning|amber/);
 });
 
+test('the Manager view, which has no tour, draws no travelling dot', () => {
+  expect(render([], 'ready', { path: ['manager'] })).not.toContain('data-tour');
+});
+
 test('with the flow off there is no travelling dot and no flowing dashes', () => {
   const on = render([], 'ready');
   expect(on).toContain('data-tour');

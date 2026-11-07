@@ -4,8 +4,11 @@ import {
   cardWidth,
   FACTORY_MAP,
   FIT_FOOT,
+  FIT_MAX,
   FIT_PAD,
+  fitScale,
   heroFrameHeight,
+  levelMax,
   linePoints,
   type MapView,
   MIN_FRAME,
@@ -259,8 +262,98 @@ test('no two cards overlap at any level, and the Work order view joins its sourc
   expect(into.filter((l) => l.arrow !== false)).toHaveLength(1);
 });
 
-/** Cards whose role line wraps until PR #496 (issue #485) widens them; delete this list with that change. */
-const WRAPS_UNTIL_485 = ['o-pick', 'y-dep'];
+const hero = (width: number) => ({
+  width,
+  height: heroFrameHeight(worldSize(FACTORY_MAP), width),
+});
+const view = (id: string) => FACTORY_MAP.views?.[id] as MapView;
+const FEW_CARDS = ['deploy', 'merge', 'split', 'order', 'manager'];
+
+const MATCHING = FACTORY_MAP.referenceViews;
+
+test('every reference view exists', () => {
+  for (const id of FACTORY_MAP.referenceViews) expect(FACTORY_MAP.views?.[id]).toBeDefined();
+});
+
+test('a deeper view with few cards is fitted no larger than the matching views at 1440', () => {
+  const frame = hero(1384);
+  const largest = Math.max(...MATCHING.map((id) => fitScale(worldSize(view(id)), frame)));
+  expect(largest).toBeGreaterThan(0.65);
+  expect(largest).toBeLessThan(0.76);
+  for (const id of FEW_CARDS) {
+    const v = view(id);
+    expect(fitScale(worldSize(v), frame, levelMax(FACTORY_MAP, v, frame))).toBeLessThanOrEqual(
+      largest,
+    );
+  }
+});
+
+test('the views that matched their references keep their fit at every hero width', () => {
+  for (const id of MATCHING) {
+    const v = view(id);
+    for (let width = 701; width <= 2560; width += 7) {
+      const frame = hero(width);
+      const world = worldSize(v);
+      expect(fitScale(world, frame, levelMax(FACTORY_MAP, v, frame))).toBe(fitScale(world, frame));
+    }
+  }
+  expect(levelMax(FACTORY_MAP, FACTORY_MAP, hero(1384))).toBe(FIT_MAX);
+});
+
+test("every level's tour stays on its drawn lines", () => {
+  const levels = [FACTORY_MAP, ...Object.values(FACTORY_MAP.views ?? {})] as MapView[];
+  for (const level of levels.filter((l) => l.tour.length > 1)) {
+    const polylines = level.lines.map((l) => linePoints(level, l));
+    const onLine = (x: number, y: number) =>
+      polylines.some((pts) =>
+        pts.slice(1).some(([x2, y2], i) => {
+          const [x1, y1] = pts[i] as [number, number];
+          const len2 = (x2 - x1) ** 2 + (y2 - y1) ** 2;
+          const t =
+            len2 === 0
+              ? 0
+              : Math.max(0, Math.min(1, ((x - x1) * (x2 - x1) + (y - y1) * (y2 - y1)) / len2));
+          return Math.hypot(x - (x1 + t * (x2 - x1)), y - (y1 + t * (y2 - y1))) <= 0.5;
+        }),
+      );
+    const underCard = (x: number, y: number) =>
+      level.cards.some(
+        (c) =>
+          x >= c.x &&
+          x <= c.x + cardWidth(level, c) &&
+          y >= c.y &&
+          y <= c.y + level.cardSize.height,
+      );
+    const pts = tourPoints(level);
+    for (let i = 1; i < pts.length; i++) {
+      const [x1, y1] = pts[i - 1] as [number, number];
+      const [x2, y2] = pts[i] as [number, number];
+      for (let s = 0; s <= 50; s++) {
+        const x = x1 + ((x2 - x1) * s) / 50;
+        const y = y1 + ((y2 - y1) * s) / 50;
+        expect(underCard(x, y) || onLine(x, y)).toBe(true);
+      }
+    }
+  }
+});
+
+test("the Manager's two asks share one trunk", () => {
+  const m = view('manager');
+  const pts = (to: string) =>
+    linePoints(m, m.lines.find((l) => l.from === 'u-mgr' && l.to === to) as never);
+  const [b, mg] = [pts('u-b'), pts('u-m')];
+  expect(b.slice(0, 2)).toEqual(mg.slice(0, 2));
+  expect(
+    m.lines.filter((l) => l.from === 'u-mgr' && l.arrow !== false && l.style === 'ask'),
+  ).toHaveLength(1);
+  for (const [to, p] of [
+    ['u-b', b],
+    ['u-m', mg],
+  ] as const) {
+    const c = m.cards.find((x) => x.id === to) as (typeof m.cards)[number];
+    expect(p.at(-1)).toEqual([c.x + cardWidth(m, c) / 2, c.y + m.cardSize.height]);
+  }
+});
 
 test('no role line wraps in any view', () => {
   // Geist Mono advances 0.6em plus tracking-[0.06em]; MapCard adds pl-4 pr-3 and a 2px border each side.
@@ -269,8 +362,7 @@ test('no role line wraps in any view', () => {
       .filter((c) => c.kind.length * MAP_TYPE.kind * 0.66 + 32 > cardWidth(level, c))
       .map((c) => c.id),
   );
-  expect(wide.filter((id) => !WRAPS_UNTIL_485.includes(id))).toEqual([]);
-  expect(WRAPS_UNTIL_485.filter((id) => !wide.includes(id))).toEqual([]);
+  expect(wide).toEqual([]);
 });
 
 test("a step's default origin is the map at the view of its deepest card, that card selected", () => {

@@ -21,7 +21,9 @@ import {
   FIT_FOOT,
   FIT_MAX,
   FIT_PAD,
+  fitScale,
   heroFrameHeight,
+  levelMax,
   levelOf,
   MIN_FRAME,
   type FactoryMap as FactoryMapData,
@@ -528,30 +530,28 @@ export function FactoryMap({
   const drag = useRef<{ x: number; y: number; cam: Camera; moved: boolean } | null>(null);
   const reduced = useReducedMotion();
   const moving = flow && !reduced;
-  useTour(level, moving, dot, cardEls);
+  const touring = moving && level.tour.length > 1;
+  useTour(level, touring, dot, cardEls);
   useEffect(() => {
     onDrawn?.(true);
     return () => onDrawn?.(false);
   }, [onDrawn]);
 
-  /** The whole map in the frame, centred, as large as both of the frame's sides allow. */
+  /** The whole map in the frame, centred, as large as the frame allows; from phone width up, a deeper view no larger than `levelMax`. */
   const fit = useCallback(() => {
     const el = stage.current;
     if (!el) return;
-    const { world } = levelRef.current;
-    const { clientWidth: width, clientHeight: height } = el;
-    const k = Math.min(
-      (width - FIT_PAD * 2) / world.width,
-      (height - FIT_PAD * 2 - FIT_FOOT) / world.height,
-      FIT_MAX,
-    );
+    const { level, world } = levelRef.current;
+    const frame = { width: el.clientWidth, height: el.clientHeight };
+    const { width, height } = frame;
+    const k = fitScale(world, frame, width >= PHONE ? levelMax(map, level, frame) : FIT_MAX);
     setCam({
       k,
       x: (width - world.width * k) / 2,
       y: Math.max(FIT_PAD, (height - FIT_FOOT - world.height * k) / 2),
     });
     setPlaced(true);
-  }, []);
+  }, [map]);
 
   /**
    * The frame's height for its width: the map's height at the scale that fits its width, so a fit
@@ -870,7 +870,7 @@ export function FactoryMap({
                 />
               ),
             )}
-            {moving ? (
+            {touring ? (
               <circle
                 ref={dot}
                 data-tour
