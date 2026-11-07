@@ -45,7 +45,7 @@ where, and every line, are the mockup's. `bun run test:live` measures the render
 fitted and fails below these numbers.
 A card whose kind label would not fit on one line at that size is widened through its `width` and the
 cards after it move right to keep their spacing (App check's Use the app, Build's Investigate and Plan,
-Deliver's Implement); `factory-map.test.ts` fails any kind label that would wrap.
+Deliver's Implement); `factory-map.test.ts` fails any new kind label that would wrap (Pick and Dependencies are exempted until issue #485).
 
 Below 701px wide the map opens as `refs/40-home-phone.png` draws it: the line at a readable scale
 in a 460px frame, centred on the line's box with the Manager above, the rest a pan away. Fit always
