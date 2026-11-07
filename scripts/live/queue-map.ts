@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { FACTORY_MAP } from '../../app/map/factory-map';
 import { QUEUE_DIGEST, QUEUE_FACTORY, QUEUE_RUNS } from '../fixture/seed';
@@ -10,9 +10,11 @@ import {
   fixtureWrite,
   LIMITS,
   type LiveContext,
+  type LiveOutput,
   type LivePhase,
   lapsOnCards,
   lateWrite,
+  liveOutputs,
   MAP,
   MAP_READABLE,
   mapCards,
@@ -23,6 +25,32 @@ import {
   writeToScreen,
 } from './shared';
 
+const FILES = liveOutputs({
+  shot: 'queue-map.png',
+  checkProbe: 'factory-step-check-design-probe.json',
+  configProbe: 'factory-step-config-design-probe.json',
+});
+
+/** Every view the map defines, so a view added to the map is opened and probed without editing this file. */
+const MAP_VIEW_IDS = Object.keys(FACTORY_MAP.views ?? {});
+
+/** The output name of a view: its id, except the deploy view, which the live suite has always called staging. */
+const viewFileName = (id: string) => (id === 'deploy' ? 'staging' : id.replaceAll('/', '-'));
+
+/** The views test:live screenshots and probes, by `?view=` id; --help names their files from this list. */
+export const QUEUE_MAP_VIEWS = MAP_VIEW_IDS.map((id) => ({
+  id,
+  ...liveOutputs({
+    shot: `${viewFileName(id)}-view.png`,
+    probe: `${viewFileName(id)}-view-design-probe.json`,
+  }),
+}));
+
+export const QUEUE_MAP_OUTPUTS: readonly LiveOutput[] = [
+  ...Object.values(FILES),
+  ...QUEUE_MAP_VIEWS.flatMap((v) => [v.shot, v.probe]),
+];
+
 /** Where the queue runs step: Build's implement round, and Review's policy round. */
 export const BUILD_STEP = 'ship__deliver__rounds.implement__implement';
 /** A running merge-queue run the phase adds: a sweep on it counts on Merge and its view's Sweep. */
@@ -32,12 +60,6 @@ const REVIEW_CODE_STEP = 'ship__deliver__rounds.review__code';
 const REREVIEW_TESTS_STEP = 'ship__deliver__rounds.rereview__tests';
 const WRITTEN_STEPS = [BUILD_STEP, REVIEW_STEP, REVIEW_CODE_STEP, REREVIEW_TESTS_STEP];
 const WAITING = `${MAP} [data-card="mgr"] [data-chip="waiting"]`;
-
-/** Every view the map defines, so a view added to the map is opened and probed without editing this file. */
-const MAP_VIEW_IDS = Object.keys(FACTORY_MAP.views ?? {});
-
-/** The output name of a view: its id, except the deploy view, which the live suite has always called staging. */
-const viewFileName = (id: string) => (id === 'deploy' ? 'staging' : id.replaceAll('/', '-'));
 
 const viewStage = (id: string) => `[data-map-stage][data-view="${id}"][data-placed]`;
 
@@ -80,7 +102,7 @@ async function appCheckPromptMismatches(page: Page, base: string): Promise<strin
 
 /** The queue factory's map: queue runs count on their cards, and an attention pause raises "waiting". */
 export function queueMapPhase(ctx: LiveContext): LivePhase {
-  const { deps, db, outDir } = ctx;
+  const { deps, db } = ctx;
   const name = QUEUE_FACTORY.name;
   const ms = {
     build: null as number | null,
@@ -149,14 +171,14 @@ export function queueMapPhase(ctx: LiveContext): LivePhase {
           pageWait(`document.querySelector('${MAP}[data-state="ready"]') !== null`, READY_WAIT_MS),
         );
         failures.push(...mapMismatches(await mapCards(page), await lapsOnCards(db, name)));
-        writeFileSync(join(outDir, 'queue-map.png'), await page.screenshot(1440));
+        ctx.save(FILES.shot, await page.screenshot(1440));
         failures.push(...(await appCheckPromptMismatches(page, base)));
         await page.goto(`${base}/f/${name}`);
         await page.evaluate<boolean>(
           pageWait(`document.querySelector('${MAP}[data-state="ready"]') !== null`, READY_WAIT_MS),
         );
 
-        const open = async (target: Page, id: string, file?: string) => {
+        const open = async (target: Page, id: string, shoot = false) => {
           await target.setViewport(MAP_READABLE.width);
           await target.goto(`${base}/f/${name}?view=${id}`);
           await target.evaluate<boolean>(
@@ -172,12 +194,15 @@ export function queueMapPhase(ctx: LiveContext): LivePhase {
               FACTORY_MAP.views?.[id]?.cards,
             ),
           );
-          if (file !== undefined) writeFileSync(join(outDir, file), await target.screenshot(1440));
+          if (shoot) {
+            const opened = QUEUE_MAP_VIEWS.find((v) => v.id === id);
+            if (!opened)
+              throw new Error(`queue-map opens ?view=${id}, which QUEUE_MAP_VIEWS does not list`);
+            ctx.save(opened.shot, await target.screenshot(1440));
+          }
         };
         const pageOf: Record<string, Page> = { build: view, split, intake, review: reviewView };
-        for (const id of MAP_VIEW_IDS) {
-          await open(pageOf[id] ?? drill, id, `${viewFileName(id)}-view.png`);
-        }
+        for (const id of MAP_VIEW_IDS) await open(pageOf[id] ?? drill, id, true);
         await open(drill, 'merge');
 
         const timed = async (card: string, run: string, step: string) => {
@@ -338,20 +363,9 @@ export function queueMapPhase(ctx: LiveContext): LivePhase {
     ],
 
     async probe(designProbe) {
-      for (const id of MAP_VIEW_IDS) {
-        designProbe(
-          `${ctx.base}/f/${name}?view=${id}`,
-          `${viewFileName(id)}-view-design-probe.json`,
-        );
-      }
-      designProbe(
-        `${ctx.base}/steps/factory-app-check/check`,
-        'factory-step-check-design-probe.json',
-      );
-      designProbe(
-        `${ctx.base}/steps/factory-app-check/config`,
-        'factory-step-config-design-probe.json',
-      );
+      for (const v of QUEUE_MAP_VIEWS) designProbe(`${ctx.base}/f/${name}?view=${v.id}`, v.probe);
+      designProbe(`${ctx.base}/steps/factory-app-check/check`, FILES.checkProbe);
+      designProbe(`${ctx.base}/steps/factory-app-check/config`, FILES.configProbe);
     },
 
     summary: () => [`queue map: ${JSON.stringify({ ...ms, limit: LIMITS.insertToScreenMs })}`],

@@ -1,5 +1,5 @@
 // Each screen's test:live phase is one module under scripts/live/ returning a LivePhase; adding a
-// screen is one new module and one line in `phases` in testLive. Helpers two modules use live in
+// screen is one new module and one entry in `SCREENS` (its phase, its outputs and its --help prose). Helpers two modules use live in
 // scripts/live/shared.ts.
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
@@ -11,116 +11,203 @@ import { QUEUE_FACTORY, SECOND_FACTORY } from './fixture/seed';
 import { type Deps, failing, guardedDatabaseUrl, type Main, runCli } from './lib/cli';
 import { machineLockPath, withMachineLock } from './lib/machine-lock';
 import { resolveBranchName } from './lib/target';
-import { boardPhase } from './live/board';
-import { decisionsPhase } from './live/decisions';
-import { homePhase } from './live/home';
-import { lapsPhase } from './live/laps';
-import { oneLapPhase } from './live/one-lap';
-import { queueMapPhase } from './live/queue-map';
+import { BOARD_OUTPUTS, boardPhase } from './live/board';
+import { DECISIONS_OUTPUTS, decisionsPhase } from './live/decisions';
+import { HOME_OUTPUTS, homePhase } from './live/home';
+import { LAPS_OUTPUTS, lapsPhase } from './live/laps';
+import { ONE_LAP_OUTPUTS, oneLapPhase } from './live/one-lap';
+import { QUEUE_MAP_OUTPUTS, QUEUE_MAP_VIEWS, queueMapPhase } from './live/queue-map';
 import {
-  type DesignProbe,
   fixtureWrite,
   freePort,
   LIVE_STEP,
   type LiveContext,
+  type LiveOutput,
   type LivePhase,
+  liveOutputs,
   READY_WAIT_MS,
   waitForHealth,
 } from './live/shared';
-import { stepDetailPhase } from './live/step-detail';
-import { switcherPhase } from './live/switcher';
+import { STEP_DETAIL_OUTPUTS, stepDetailPhase } from './live/step-detail';
+import { SWITCHER_OUTPUTS, switcherPhase } from './live/switcher';
 import { measurePanels } from './live/timings';
-import { workItemPhase } from './live/work-item';
+import { WORK_ITEM_OUTPUTS, workItemPhase } from './live/work-item';
+
+const RUNNER_FILES = liveOutputs({
+  factories: 'factories.json',
+  features: 'realtime-features.json',
+});
+
+/** One screen of test:live: its phase, the files it writes and its --help prose (naming no file). */
+interface LiveScreen {
+  phase?: (ctx: LiveContext) => LivePhase;
+  outputs: readonly LiveOutput[];
+  help: readonly string[];
+}
+
+/**
+ * The runner first, then every phase in the order of every write against every read that judges
+ * it: the laps screen and the lap open before the strip's first insert, and the Decisions screen
+ * removes its own labels as soon as it has timed them.
+ */
+export const SCREENS: readonly LiveScreen[] = [
+  {
+    outputs: Object.values(RUNNER_FILES),
+    help: [
+      'Proves the screens are live against the check branch in .mc-check.env (run',
+      '`bun run fixture:branch` first): serves the app on a free port in 8850-8864 (waiting up to 30',
+      'minutes while every one is taken), reading a factories file (in --out, as MC_FACTORIES_FILE) of',
+      "factories.json plus the seed's second and queue factories, re-runs the probes in",
+      'db/queries/REALTIME.md, and writes every file below to --out (default harness/.results/live).',
+    ],
+  },
+  {
+    phase: homePhase,
+    outputs: HOME_OUTPUTS,
+    help: [
+      "It opens `/` in a headless browser, checks the map's cards and their lap counts against the",
+      'seed, times inserted laps to the factory strip and `fixture:write step` events to the map,',
+      "holds the page open --hold seconds (default 180) across seal renewals, follows App check's",
+      "Behind the scenes to check-app's step screen, and runs the design probe.",
+    ],
+  },
+  {
+    phase: queueMapPhase,
+    outputs: QUEUE_MAP_OUTPUTS,
+    help: [
+      "On the queue factory's map it times queue-run steps and `fixture:write attention`, opens each",
+      `of its views (${QUEUE_MAP_VIEWS.map((v) => `\`?view=${v.id}\``).join(', ')}) with a screenshot and a design probe,`,
+      "and follows App check's Behind the scenes check step, which must show the factory package",
+      'prompt, with a design probe on each of the two package steps.',
+    ],
+  },
+  {
+    phase: boardPhase,
+    outputs: BOARD_OUTPUTS,
+    help: [
+      'It checks the board against a recount of the seed, times `fixture:write label --label',
+      'work-order:demo --issue <a card on the board>` to its panel, the same label on #4 (delivered',
+      "by a merged pull request that says Refs) to that panel's merged count and a build step on the",
+      "queue factory's work item 401 to its Build column, and checks `?order=demo`.",
+    ],
+  },
+  {
+    phase: workItemPhase,
+    outputs: WORK_ITEM_OUTPUTS,
+    help: [
+      "It checks the work item page of the queue factory's returned-then-merged item 407 and of the",
+      "seed's loop items against a recount, with no hidden check line or text on them, and times a",
+      'build step on work item 401 to its running row.',
+    ],
+  },
+  {
+    phase: lapsPhase,
+    outputs: LAPS_OUTPUTS,
+    help: [
+      'It checks the laps screen against the seed and times the same `fixture:write step` events to',
+      'their lanes before and after the hold.',
+    ],
+  },
+  {
+    phase: oneLapPhase,
+    outputs: ONE_LAP_OUTPUTS,
+    help: [
+      "It checks a gate-refused seed lap's page against SQL over the seed, with no holdout line or",
+      "text on it, then times the first of those `fixture:write step` events to a running lap's page",
+      'and one more on that lap after the hold.',
+    ],
+  },
+  {
+    phase: stepDetailPhase,
+    outputs: STEP_DETAIL_OUTPUTS,
+    help: [
+      'It opens /steps/archon-loop/check-app, checks it against the seed, times description writes to',
+      'it across the same hold, and checks land, the way from deliver to the implement step it',
+      "includes and that step's prompt, and an unknown step.",
+    ],
+  },
+  {
+    phase: decisionsPhase,
+    outputs: DECISIONS_OUTPUTS,
+    help: [
+      "It checks the decisions screen against the seed's attention items, open owner items and health,",
+      'and the tab count against the items shown, and times `fixture:write label` to it before and',
+      'after the hold.',
+    ],
+  },
+  {
+    phase: switcherPhase,
+    outputs: SWITCHER_OUTPUTS,
+    help: [
+      'It checks the factory switcher: every factory in the factories file with its running laps, an',
+      'inserted lap on the second factory timed to its count, choosing that factory from /, every',
+      'factory screen and step detail, its map, strip and lanes, and the remembered choice with its',
+      'fallback for a removed factory; then, on a second server reading factories.json alone, that the',
+      "switcher lists only factories.json's factories and the second factory is neither sealed for nor",
+      'shown when remembered.',
+    ],
+  },
+];
+
+/** Every file test:live writes to --out: what --help names and what a run must have written. */
+export const LIVE_OUTPUTS: readonly LiveOutput[] = SCREENS.flatMap((screen) => screen.outputs);
+
+const WRAP = 100;
+
+/** "  Writes a, b and c." wrapped at WRAP columns with a two-space indent. */
+function writesLine(files: readonly string[]): string[] {
+  const list =
+    files.length < 2 ? files.join('') : `${files.slice(0, -1).join(', ')} and ${files.at(-1)}`;
+  const lines: string[] = [];
+  let line = '  Writes';
+  for (const word of `${list}.`.split(' ')) {
+    if (line.length + 1 + word.length > WRAP) {
+      lines.push(line);
+      line = `  ${word}`;
+    } else {
+      line += ` ${word}`;
+    }
+  }
+  return [...lines, line];
+}
 
 const USAGE = [
   'usage: bun run test:live [--out <dir>] [--hold <seconds>]',
   '  Runs one at a time per machine: it takes a lock in the temp directory before serving and',
   '  measuring, waits up to 30 minutes for another running test:live (naming its process id),',
   '  takes over a lock whose process no longer exists, and releases it when it ends.',
-  '  Proves the home screen is live against the check branch in .mc-check.env (run',
-  '  `bun run fixture:branch` first): serves the app on a free port in 8850-8864 (waiting up to 30',
-  "  minutes while every one is taken), opens `/` in a headless browser, checks the map's cards and",
-  '  their lap counts against the seed, times inserted laps to the factory strip',
-  '  and `fixture:write step` events to the map, times queue-run steps and `fixture:write attention`',
-  "  on the seed's queue factory's map, holds the page open --hold seconds (default 180)",
-  "  across seal renewals, follows App check's Behind the scenes to check-app's step screen,",
-  '  re-runs the probes in db/queries/REALTIME.md, and runs',
-  '  the design probe. Writes realtime-timings.json, realtime-features.json, home-map-timings.json,',
-  '  home-map.png and home-map-design-probe.json to --out (default harness/.results/live). The queue',
-  "  factory's map also writes queue-map.png, plus a screenshot and a design probe file for each of",
-  '  its Build, Review, Split, Intake, Merge and Staging views (`?view=build`, `review`, `split`, `intake`, `merge`, `deploy`):',
-  '  build-view.png, build-view-design-probe.json, and the same for review, split, intake, merge and staging.',
-  '  On the same run it checks the versions screen against the seed, picks two versions, and times',
-  '  `fixture:write pin` to that screen before and after the hold, writing version-strip-check.txt,',
-  '  version-strip-timings.json, version-strip.png and version-strip-design-probe.json.',
-  '  It then opens the scorecard of V1 against V2 and of V1 against V3, checks every number against',
-  '  fixtures/expected-scorecard.json and the not-yet-meaningful labels, and times',
-  '  `fixture:write step --step land` on a V2 lap to the screen before and after the hold, writing',
-  '  scorecard-vs-expected.json, scorecard-timings.json, scorecard.png and',
-  "  scorecard-design-probe.json; it restores those laps' land steps afterwards.",
-  '  It checks the changes screen against the versions and decisions screens and the same expected',
-  '  scorecard on the untouched seed, writing changes.png and changes-design-probe.json.',
-  '  It checks the testing screen against SQL over the seed, with no holdout text on it, and times',
-  '  `fixture:write step --step check-app --event node_completed` on a lap with no app check to its',
-  '  kind and verdict counts before the hold and on a second such lap after it, writing',
-  '  testing-check.txt, testing-panel-timings.json, testing-panel.png and',
-  "  testing-panel-design-probe.json; it removes those laps' app checks afterwards.",
-  '  It checks the ledger screen against the seed, times `fixture:write verdict --pin <V2>` and',
-  '  `fixture:write decision` to that screen before and after the hold, writing ledger-check.txt,',
-  '  decisions-ledger-timings.json, decisions-ledger.png and decisions-ledger-design-probe.json.',
-  '  It checks the board against a recount of the seed, times `fixture:write label --label',
-  "  work-order:demo --issue <a card on the board>` to its panel, the same label on #4 (delivered by a merged pull request that says Refs) to that panel's merged count and a build step on the queue factory's work item 401 to its",
-  '  Build column, and checks `?order=demo`, writing board.png and board-design-probe.json.',
-  "  It checks the work item page of the queue factory's returned-then-merged item 407 and of the",
-  "  seed's loop items against a recount, with no hidden check line or text on them, and times a",
-  '  build step on work item 401 to its running row, writing work-item.png, work-item-loop.png and',
-  '  work-item-design-probe.json.',
-  "  It checks the owner queue against the seed's open needs-owner issues and open owner questions,",
-  '  and times `fixture:write label` to it before and after the hold, writing owner-queue-check.txt,',
-  '  owner-queue-timings.json, owner-queue.png and owner-queue-design-probe.json.',
-  "  It checks the decisions screen against the seed's attention items, open owner items and health,",
-  '  and the tab count against the items shown, and times `fixture:write label` to it before and',
-  '  after the hold, writing decisions-check.txt, decisions-timings.json, decisions.png and',
-  '  decisions-design-probe.json.',
-  '  It checks the issues screen against the seed and times `fixture:write label` to it before and',
-  '  after the hold, writing issue-graph-check.txt, phases-issue-graph-timings.json,',
-  '  phases-issue-graph.png and phases-issue-graph-design-probe.json.',
-  '  It checks the health screen against SQL over the seed and times `fixture:write step --event',
-  '  node_failed --error ECONNRESET` on each running lap to its infrastructure count, one before and',
-  '  one after the hold, writing health-check.txt, health-timings.json, health.png and',
-  '  health-design-probe.json.',
-  '  It checks the laps screen against the seed and times the same `fixture:write step` events to',
-  '  their lanes before and after the hold, writing lanes-check.txt, lanes-recent-laps-timings.json,',
-  '  lanes-recent-laps.png and lanes-recent-laps-design-probe.json.',
-  "  It checks a gate-refused seed lap's page against SQL over the seed, with no holdout line or",
-  "  text on it, then times the first of those `fixture:write step` events to a running lap's page and",
-  '  one more on that lap after the hold, writing one-lap-check.txt, one-lap-timings.json,',
-  '  one-lap.png, one-lap-design-probe.json and one-lap-refused-design-probe.json.',
-  "  Then it opens the diff of the two versions, checks it lists exactly the seed's scripted change,",
-  '  and times a step inserted into the second version to that screen before and after the hold,',
-  '  writing arch-diff-timings.json, arch-diff.png and arch-diff-design-probe.json.',
-  '  It opens /steps/archon-loop/check-app, checks it against the seed, times description writes to',
-  '  it across the same hold, and checks land, the way from deliver to the implement step it',
-  "  includes and that step's prompt, and an unknown step, writing",
-  '  step-detail-timings.json, step-detail.png and step-detail-design-probe.json.',
-  "  The queue factory's map also opens App check's Behind the scenes check step, which must show the",
-  '  factory package prompt, and writes factory-step-check-design-probe.json and',
-  '  factory-step-config-design-probe.json for the two package steps.',
-  '  It opens /rewind on a second server, which must refuse a switch to an unlisted rewind-* name,',
-  '  makes a rewind branch of the check branch with `bun run rewind:create` before the hold and',
-  '  another after it, switches to the first and back, and a second page left open on / must',
-  '  follow each switch by itself within 55 s; that page then switches to the second, opens Issues',
-  '  and must come back to Issues, live, from its Switch back, writing rewind-run.txt, rewind-timings.json, rewind.png and rewind-design-probe.json.',
-  "  Its server reads factories.json plus the seed's second factory (factories.json in --out, as",
-  '  MC_FACTORIES_FILE). Before the diff it checks the factory switcher: every factory in that file',
-  '  with its running laps, an inserted lap on the second factory timed to its count, choosing that',
-  '  factory from /, every factory screen and step detail, its map, strip and lanes, and the',
-  '  remembered choice with its fallback for a removed factory; then, on a second server reading',
-  "  factories.json alone, that the switcher lists only factories.json's factories and the second",
-  '  factory is neither sealed for nor shown when remembered. It writes switcher-check.txt,',
-  '  switcher-timings.json, switcher.png and switcher-design-probe.json.',
+  ...SCREENS.flatMap(({ help, outputs }) => [
+    ...help.map((line) => `  ${line}`),
+    ...writesLine(outputs),
+  ]),
   '  Each `fixture:write` is timed from its exit, when its write has committed, to the screen.',
 ].join('\n');
+
+/**
+ * What a run wrote against what --help names: a file written but not named is always a failure;
+ * a file named but not written is one only when the run otherwise passed, so a broken run reports
+ * its real failure first.
+ */
+export function outputFailures(
+  named: readonly string[],
+  written: ReadonlySet<string>,
+  passed: boolean,
+): string[] {
+  const failures = [...written]
+    .filter((file) => !named.includes(file))
+    .map(
+      (file) =>
+        `test:live wrote ${file}, which --help does not name: add it to its phase's outputs`,
+    );
+  if (passed) {
+    failures.push(
+      ...named
+        .filter((file) => !written.has(file))
+        .map((file) => `--help names ${file}, but no phase wrote it`),
+    );
+  }
+  return failures;
+}
 
 const FEATURE_TIMEOUT_MS = 10_000;
 
@@ -202,7 +289,8 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
   const factory: string = factories[0].name;
   mkdirSync(outDir, { recursive: true });
   // The seed's second and queue factories are in mc.factories only; the app shows each once its file names it.
-  const factoriesFile = join(outDir, 'factories.json');
+  const factoriesFile = join(outDir, RUNNER_FILES.factories);
+  const outputsWritten = new Set<string>([RUNNER_FILES.factories]);
   writeFileSync(
     factoriesFile,
     `${JSON.stringify({ factories: [...factories, SECOND_FACTORY, QUEUE_FACTORY] }, null, 2)}
@@ -213,10 +301,10 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
   const timingDatabase = { db, branch: homeBranch, selectedBranch: null };
   /** Laps `fixture:write` started LIVE_STEP on; the cleanup removes those events and steps. */
   const written: string[] = [];
+  const failures: string[] = [];
   const ctx: LiveContext = {
     deps,
     db,
-    outDir,
     factory,
     factoriesFile,
     holdSeconds,
@@ -226,6 +314,20 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
     timingDatabase,
     measure: (page, names) =>
       measurePanels(page, names, timingDatabase, queries, factory, READY_WAIT_MS),
+    save(file, data) {
+      outputsWritten.add(file);
+      writeFileSync(join(outDir, file), data);
+    },
+    designProbe(url, file, on) {
+      outputsWritten.add(file);
+      const probe = Bun.spawnSync(
+        ['bun', 'harness/design-probe.js', url, '--out', join(outDir, file)],
+        { cwd: deps.repoRoot, env: deps.env, stdout: 'ignore', stderr: 'inherit' },
+      );
+      if (probe.exitCode !== 0) {
+        failures.push(`the design probe${on ? ` on ${on}` : ''} exited ${probe.exitCode}`);
+      }
+    },
     port: null,
     base: '',
     laps: ['', ''],
@@ -244,32 +346,9 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
       await Promise.all(phases.map((phase) => phase.onLapStep?.(run, afterHold)));
     },
     inserted: [],
-    failures: [],
+    failures,
   };
-  const { failures } = ctx;
-  // The order is the order of every write against every read that judges it: the laps screen
-  // and the lap open before the strip's first insert. The Decisions screen removes its own labels
-  // as soon as it has timed them.
-  const phases: LivePhase[] = [
-    homePhase(ctx),
-    queueMapPhase(ctx),
-    boardPhase(ctx),
-    workItemPhase(ctx),
-    lapsPhase(ctx),
-    oneLapPhase(ctx),
-    stepDetailPhase(ctx),
-    decisionsPhase(ctx),
-    switcherPhase(ctx),
-  ];
-  const designProbe: DesignProbe = (url, file, on) => {
-    const probe = Bun.spawnSync(
-      ['bun', 'harness/design-probe.js', url, '--out', join(outDir, file)],
-      { cwd: deps.repoRoot, env: deps.env, stdout: 'ignore', stderr: 'inherit' },
-    );
-    if (probe.exitCode !== 0) {
-      failures.push(`the design probe${on ? ` on ${on}` : ''} exited ${probe.exitCode}`);
-    }
-  };
+  const phases = SCREENS.flatMap(({ phase }) => (phase ? [phase(ctx)] : []));
   let server: ReturnType<typeof Bun.spawn> | undefined;
   try {
     const setup = Bun.spawnSync(['bun', 'run', 'setup'], {
@@ -305,8 +384,8 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
         );
       }
     }
-    writeFileSync(
-      join(outDir, 'realtime-features.json'),
+    ctx.save(
+      RUNNER_FILES.features,
       `${JSON.stringify({ branch: ctx.branch, features }, null, 2)}\n`,
     );
 
@@ -329,7 +408,7 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
     await deps.sleep(holdSeconds * 1000);
     for (const phase of phases) await phase.writeAgain?.();
     for (const phase of phases) await phase.afterHold?.();
-    for (const phase of phases) await phase.probe?.(designProbe);
+    for (const phase of phases) await phase.probe?.(ctx.designProbe);
   } finally {
     // The pages and the server go first, so a failed cleanup below cannot leave them running.
     for (const phase of phases) await phase.close?.();
@@ -366,6 +445,7 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
   }
 
   for (const phase of phases) failures.push(...(phase.judge?.() ?? []));
+  failures.push(...outputFailures(LIVE_OUTPUTS, outputsWritten, failures.length === 0));
   if (failures.length > 0) throw new Error(failures.join('\n'));
   for (const phase of phases) for (const line of phase.summary?.() ?? []) deps.out(line);
 }

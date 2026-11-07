@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { SECOND_FACTORY } from '../fixture/seed';
 import { openPage, type Page } from '../lib/cdp';
@@ -7,9 +7,11 @@ import {
   LANE,
   LIMITS,
   type LiveContext,
+  type LiveOutput,
   type LivePhase,
   lapsOnCards,
   lateWrite,
+  liveOutputs,
   MAP,
   mapCards,
   mapMismatches,
@@ -80,6 +82,14 @@ async function choose(page: Page, factory: string, path: string): Promise<string
   return page.evaluate<string>('location.pathname');
 }
 
+const FILES = liveOutputs({
+  shot: 'switcher.png',
+  check: 'switcher-check.txt',
+  timings: 'switcher-timings.json',
+  probe: 'switcher-design-probe.json',
+});
+export const SWITCHER_OUTPUTS: readonly LiveOutput[] = Object.values(FILES);
+
 const namesIn = (file: string): string[] =>
   (JSON.parse(readFileSync(file, 'utf-8')) as { factories: { name: string }[] }).factories.map(
     (f) => f.name,
@@ -92,7 +102,7 @@ const namesIn = (file: string): string[] =>
  * factories.json alone lists only its factories, though the seed's second is in `mc.factories`.
  */
 async function checkSwitcher(ctx: LiveContext): Promise<void> {
-  const { deps, db, base, outDir, factory, factoriesFile, inserted, failures } = ctx;
+  const { deps, db, base, factory, factoriesFile, inserted, failures } = ctx;
   const lines: string[] = [];
   const check = (what: string, shown: unknown, expected: unknown) => {
     const same = JSON.stringify(shown) === JSON.stringify(expected);
@@ -145,7 +155,7 @@ async function checkSwitcher(ctx: LiveContext): Promise<void> {
       [...rows].sort(([a], [b]) => a.localeCompare(b));
     check('the factories on /', byName(shown), byName(listed));
     check('the first entry', shown[0]?.[0], factory);
-    writeFileSync(join(outDir, 'switcher.png'), await page.screenshot(1440));
+    ctx.save(FILES.shot, await page.screenshot(1440));
 
     const before = listed.find(([name]) => name === second)?.[1] ?? 0;
     const started = performance.now();
@@ -294,8 +304,8 @@ async function checkSwitcher(ctx: LiveContext): Promise<void> {
     }
   } finally {
     await page.close().catch(() => undefined);
-    writeFileSync(join(outDir, 'switcher-check.txt'), `${lines.join('\n')}\n`);
-    writeFileSync(join(outDir, 'switcher-timings.json'), `${JSON.stringify(timings, null, 2)}\n`);
+    ctx.save(FILES.check, `${lines.join('\n')}\n`);
+    ctx.save(FILES.timings, `${JSON.stringify(timings, null, 2)}\n`);
   }
 
   failures.push(...readyFailures('the switcher', timings, LIMITS.readyMs));
@@ -303,18 +313,7 @@ async function checkSwitcher(ctx: LiveContext): Promise<void> {
   failures.push(...lateWrite('an insert', 'the switcher', timings.insertToScreenMs));
   if (timings.noReload !== true) failures.push('the page reloaded while the switcher counted');
 
-  const probe = Bun.spawnSync(
-    [
-      'bun',
-      'harness/design-probe.js',
-      `${base}/f/${second}`,
-      '--out',
-      join(outDir, 'switcher-design-probe.json'),
-    ],
-    { cwd: deps.repoRoot, env: deps.env, stdout: 'ignore', stderr: 'inherit' },
-  );
-  if (probe.exitCode !== 0)
-    failures.push(`the design probe on /f/${second} exited ${probe.exitCode}`);
+  ctx.designProbe(`${base}/f/${second}`, FILES.probe, `/f/${second}`);
 }
 
 /** The factory switcher's phase: all of it runs among the writes before the hold. */

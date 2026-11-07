@@ -1,5 +1,3 @@
-import { writeFileSync } from 'node:fs';
-import { join } from 'node:path';
 import { type WorkItemRow, workItemTimeline } from '../../app/lib/work-item';
 import { QUEUE_FACTORY, QUEUE_RETURNED, QUEUE_RUNS } from '../fixture/seed';
 import { MARKER } from '../fixture/seed-report';
@@ -8,8 +6,10 @@ import { openPage, type Page } from '../lib/cdp';
 import { BUILD_STEP } from './queue-map';
 import {
   type LiveContext,
+  type LiveOutput,
   type LivePhase,
   lateWrite,
+  liveOutputs,
   pageWait,
   READY_WAIT_MS,
   writeToScreen,
@@ -25,9 +25,16 @@ const SHOWN = `[...document.querySelectorAll('[data-event]')].map((li) =>
   (li.textContent ?? '').replace(/\\s+/g, ' ').trim())`;
 const MARKERS = `document.documentElement.outerHTML.split(${JSON.stringify(MARKER)}).length - 1`;
 
+const FILES = liveOutputs({
+  shot: 'work-item.png',
+  loopShot: 'work-item-loop.png',
+  probe: 'work-item-design-probe.json',
+});
+export const WORK_ITEM_OUTPUTS: readonly LiveOutput[] = Object.values(FILES);
+
 /** The work item page (#317): its timeline equals a recount, shows no hidden line, and a running row moves. */
 export function workItemPhase(ctx: LiveContext): LivePhase {
-  const { deps, db, outDir, queries } = ctx;
+  const { deps, db, queries } = ctx;
   const ms = { runningRow: null as number | null };
 
   const open = async (page: Page, factory: string, number: number) => {
@@ -82,7 +89,7 @@ export function workItemPhase(ctx: LiveContext): LivePhase {
       try {
         await page.setViewport(1440);
         await open(page, QUEUE_FACTORY.name, QUEUE_RETURNED.issue);
-        writeFileSync(join(outDir, 'work-item.png'), await page.screenshot(1440));
+        ctx.save(FILES.shot, await page.screenshot(1440));
         failures.push(...(await mismatches(page, QUEUE_FACTORY.name, QUEUE_RETURNED.issue)));
         const shown = await page.evaluate<string[]>(SHOWN);
         const back = shown.findIndex((t) => t.includes('Returned to Build'));
@@ -98,7 +105,7 @@ export function workItemPhase(ctx: LiveContext): LivePhase {
           await open(page, FACTORY, number);
           failures.push(...(await mismatches(page, FACTORY, number)));
           if (number !== REFUSED_ITEM) continue;
-          writeFileSync(join(outDir, 'work-item-loop.png'), await page.screenshot(1440));
+          ctx.save(FILES.loopShot, await page.screenshot(1440));
           const refusals = (await page.evaluate<string[]>(SHOWN)).filter((t) =>
             t.includes('Merge gate refused'),
           );
@@ -128,7 +135,7 @@ export function workItemPhase(ctx: LiveContext): LivePhase {
     },
 
     async probe(designProbe) {
-      designProbe(`${ctx.base}${returned}`, 'work-item-design-probe.json', 'the work item page');
+      designProbe(`${ctx.base}${returned}`, FILES.probe, 'the work item page');
     },
 
     async cleanup() {

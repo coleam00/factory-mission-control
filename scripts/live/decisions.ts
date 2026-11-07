@@ -1,5 +1,3 @@
-import { writeFileSync } from 'node:fs';
-import { join } from 'node:path';
 import { openPage, type Page } from '../lib/cdp';
 import type { Row } from '../lib/db';
 import {
@@ -15,8 +13,10 @@ import {
 import {
   LIMITS,
   type LiveContext,
+  type LiveOutput,
   type LivePhase,
   lateWrite,
+  liveOutputs,
   pageWait,
   READY_WAIT_MS,
   RENEWALS_IN_180S,
@@ -156,12 +156,20 @@ export function attentionMismatches(
   return mismatches;
 }
 
+const FILES = liveOutputs({
+  check: 'decisions-check.txt',
+  shot: 'decisions.png',
+  probe: 'decisions-design-probe.json',
+  timings: 'decisions-timings.json',
+});
+export const DECISIONS_OUTPUTS: readonly LiveOutput[] = Object.values(FILES);
+
 /**
  * The Decisions screen: the seed's attention items and owner items against SQL, the tab's
  * count against the items shown, and `fixture:write label` timed to it before and after the hold.
  */
 export function decisionsPhase(ctx: LiveContext): LivePhase {
-  const { deps, db, factory, outDir, holdSeconds, branch, measure } = ctx;
+  const { deps, db, factory, holdSeconds, branch, measure } = ctx;
   const timings: DecisionsTimings = {
     branch,
     port: null,
@@ -234,8 +242,8 @@ export function decisionsPhase(ctx: LiveContext): LivePhase {
       screenAgainstSql(mismatches)('tab count', count, attention.length + owner.length);
       for (const control of controls) mismatches.push(`the screen has a control: ${control}`);
       for (const element of amber) mismatches.push(`the screen renders amber: ${element}`);
-      writeFileSync(
-        join(outDir, 'decisions-check.txt'),
+      ctx.save(
+        FILES.check,
         [
           'recount, screen against SQL:',
           `attention items: screen ${attention.length}, mc.attention_items ${projected.length}, Archon's open attention waits ${archon.length}`,
@@ -251,7 +259,7 @@ export function decisionsPhase(ctx: LiveContext): LivePhase {
         ].join('\n'),
       );
       ctx.failures.push(...mismatches.map((m) => `decisions screen against the seed: ${m}`));
-      writeFileSync(join(outDir, 'decisions.png'), await page.screenshot(1440));
+      ctx.save(FILES.shot, await page.screenshot(1440));
     },
 
     async write() {
@@ -280,15 +288,12 @@ export function decisionsPhase(ctx: LiveContext): LivePhase {
     },
 
     async probe(designProbe) {
-      designProbe(url(), 'decisions-design-probe.json', 'the decisions screen');
+      designProbe(url(), FILES.probe, 'the decisions screen');
     },
 
     async close() {
       timings.port = ctx.port;
-      writeFileSync(
-        join(outDir, 'decisions-timings.json'),
-        `${JSON.stringify(timings, null, 2)}\n`,
-      );
+      ctx.save(FILES.timings, `${JSON.stringify(timings, null, 2)}\n`);
       await decisionsPage?.close().catch(() => undefined);
     },
 

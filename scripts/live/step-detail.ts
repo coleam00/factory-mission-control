@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { ALL_STEP_QUERIES } from '../../app/lib/step-queries';
 import { currentVersionSql } from '../../db/queries/version-rule';
@@ -7,8 +7,10 @@ import type { Db } from '../lib/db';
 import {
   LIMITS,
   type LiveContext,
+  type LiveOutput,
   type LivePhase,
   lateWrite,
+  liveOutputs,
   pageWait,
   READY_WAIT_MS,
   RENEWALS_IN_180S,
@@ -229,13 +231,20 @@ async function openStep(page: Page, base: string, path: string, ready: string): 
   }
 }
 
+const FILES = liveOutputs({
+  shot: 'step-detail.png',
+  probe: 'step-detail-design-probe.json',
+  timings: 'step-detail-timings.json',
+});
+export const STEP_DETAIL_OUTPUTS: readonly LiveOutput[] = Object.values(FILES);
+
 /**
  * The step screen on check-app: the seed's step, description writes timed to it across the hold,
  * then land, the way from deliver to the implement step it includes, review at an older version
  * and at an unknown one, and an unknown step.
  */
 export function stepDetailPhase(ctx: LiveContext): LivePhase {
-  const { deps, db, outDir, holdSeconds, branch, measure } = ctx;
+  const { deps, db, holdSeconds, branch, measure } = ctx;
   const stepTimings: StepTimings = {
     branch,
     port: null,
@@ -260,7 +269,7 @@ export function stepDetailPhase(ctx: LiveContext): LivePhase {
       await page.evaluate('window.__mcNoReload = true');
       Object.assign(stepTimings, groupTimings(await measure(page, ALL_STEP_QUERIES)));
       ctx.failures.push(...(await checkAppMismatches(page, deps.repoRoot)));
-      writeFileSync(join(outDir, 'step-detail.png'), await page.screenshot(1440));
+      ctx.save(FILES.shot, await page.screenshot(1440));
     },
 
     // check-app's description is written only once every phase has written: it is in V2's
@@ -336,15 +345,12 @@ export function stepDetailPhase(ctx: LiveContext): LivePhase {
 
     async probe(designProbe) {
       const { base } = ctx;
-      designProbe(`${base}${STEP_PATH}`, 'step-detail-design-probe.json', STEP_PATH);
+      designProbe(`${base}${STEP_PATH}`, FILES.probe, STEP_PATH);
     },
 
     async close() {
       stepTimings.port = ctx.port;
-      writeFileSync(
-        join(outDir, 'step-detail-timings.json'),
-        `${JSON.stringify(stepTimings, null, 2)}\n`,
-      );
+      ctx.save(FILES.timings, `${JSON.stringify(stepTimings, null, 2)}\n`);
       await stepPage?.close().catch(() => undefined);
     },
 

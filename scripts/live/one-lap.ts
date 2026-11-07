@@ -1,5 +1,3 @@
-import { writeFileSync } from 'node:fs';
-import { join } from 'node:path';
 import { consoleUrl, prNumber, pullUrl } from '../../app/lib/one-lap';
 import { MARKER } from '../fixture/seed-report';
 import { openPage, type Page } from '../lib/cdp';
@@ -8,8 +6,10 @@ import {
   LIMITS,
   LIVE_STEP,
   type LiveContext,
+  type LiveOutput,
   type LivePhase,
   lateWrite,
+  liveOutputs,
   pageWait,
   READY_WAIT_MS,
   RENEWALS_IN_180S,
@@ -344,12 +344,21 @@ async function seedOneLapMismatches(
   return { mismatches, report };
 }
 
+const FILES = liveOutputs({
+  check: 'one-lap-check.txt',
+  shot: 'one-lap.png',
+  probe: 'one-lap-design-probe.json',
+  refusedProbe: 'one-lap-refused-design-probe.json',
+  timings: 'one-lap-timings.json',
+});
+export const ONE_LAP_OUTPUTS: readonly LiveOutput[] = Object.values(FILES);
+
 /**
  * One lap's screen: a gate-refused seed lap against SQL, then the first running lap, timed live
  * on the first lap step event and on one more start of its review after the hold.
  */
 export function oneLapPhase(ctx: LiveContext): LivePhase {
-  const { deps, db, factory, outDir, holdSeconds, branch, measure } = ctx;
+  const { deps, db, factory, holdSeconds, branch, measure } = ctx;
   const oneLapTimings: OneLapTimings = {
     branch,
     port: null,
@@ -403,9 +412,9 @@ export function oneLapPhase(ctx: LiveContext): LivePhase {
           refusedRun,
           ctx.queries.get('one-lap') as string,
         );
-        writeFileSync(join(outDir, 'one-lap-check.txt'), `${oneLapSeed.report}\n`);
+        ctx.save(FILES.check, `${oneLapSeed.report}\n`);
         ctx.failures.push(...oneLapSeed.mismatches.map((m) => `one lap against the seed: ${m}`));
-        writeFileSync(join(outDir, 'one-lap.png'), await refusedPage.screenshot(1440));
+        ctx.save(FILES.shot, await refusedPage.screenshot(1440));
       } finally {
         await refusedPage.close().catch(() => undefined);
       }
@@ -463,19 +472,16 @@ export function oneLapPhase(ctx: LiveContext): LivePhase {
       const { base } = ctx;
       const [firstLap] = ctx.laps;
       for (const [run, file] of [
-        [firstLap, 'one-lap-design-probe.json'],
-        [required(refusedRun, 'refused lap'), 'one-lap-refused-design-probe.json'],
-      ]) {
+        [firstLap, FILES.probe],
+        [required(refusedRun, 'refused lap'), FILES.refusedProbe],
+      ] as const) {
         designProbe(`${base}/f/${factory}/laps/${run}`, file, `the lap ${run}`);
       }
     },
 
     async close() {
       oneLapTimings.port = ctx.port;
-      writeFileSync(
-        join(outDir, 'one-lap-timings.json'),
-        `${JSON.stringify(oneLapTimings, null, 2)}\n`,
-      );
+      ctx.save(FILES.timings, `${JSON.stringify(oneLapTimings, null, 2)}\n`);
       await lapPage?.close().catch(() => undefined);
     },
 

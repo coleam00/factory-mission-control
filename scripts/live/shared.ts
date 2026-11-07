@@ -312,14 +312,24 @@ export async function versionDigests(db: Db, factory: string): Promise<string[]>
   return rows.map((r) => String(r.digest));
 }
 
-/** Runs harness/design-probe.js on `url`; `on` names the screen in the failure. */
-export type DesignProbe = (url: string, file: string, on?: string) => void;
+declare const liveOutput: unique symbol;
+/** A file a test:live phase writes to --out; only `liveOutputs` makes one, so --help names it. */
+export type LiveOutput = string & { readonly [liveOutput]: true };
+
+/** Declares a phase's files: the names its writes use and --help lists. */
+export function liveOutputs<const K extends string>(
+  files: Record<K, string>,
+): Record<K, LiveOutput> {
+  return files as Record<K, LiveOutput>;
+}
+
+/** Runs harness/design-probe.js on `url` into `file`; `on` names the screen in the failure. */
+export type DesignProbe = (url: string, file: LiveOutput, on?: string) => void;
 
 /** What every phase shares: built before the app is served; `port`, `base` and `laps` are set once it is. */
 export interface LiveContext {
   deps: Deps;
   db: Db;
-  outDir: string;
   /** factories.json's first. */
   factory: string;
   /** The factories file the app's server reads (`MC_FACTORIES_FILE`): factories.json's and the seed's second. */
@@ -331,6 +341,10 @@ export interface LiveContext {
   branch: string | null;
   timingDatabase: TimingDatabase;
   measure: (page: Page, names: readonly string[]) => Promise<Record<string, PanelTimings>>;
+  /** Writes `file` to `--out`, and records it for the check that --help names every file written. */
+  save(file: LiveOutput, data: string | Uint8Array): void;
+  /** Runs harness/design-probe.js into `file` under `--out`, and records it. */
+  designProbe: DesignProbe;
   /** Set when the app is served. */
   port: number | null;
   base: string;
