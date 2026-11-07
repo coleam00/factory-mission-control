@@ -2,19 +2,20 @@ import type { WebSocketLike } from '@neon/realtime/client';
 import { createRoot } from 'react-dom/client';
 import { createMemoryRouter, RouterProvider } from 'react-router';
 import { Shell } from '../../Shell';
+import type { HomeMapRow } from '../../map/live';
 import Home from '../../routes/index';
 
-const HOME_MAP_COLUMNS = [
-  'kind',
-  'run_id',
-  'workflow',
-  'steps',
-  'number',
-  'title',
-  'url',
-  'at',
-  'prs',
-];
+const VERSION_ROW: HomeMapRow = {
+  kind: 'version',
+  run_id: null,
+  workflow: null,
+  steps: null,
+  number: null,
+  title: null,
+  url: null,
+  at: null,
+  prs: null,
+};
 
 /** A socket that answers every subscribe with `home-map`'s one version row, and no rows otherwise. */
 class Socket implements WebSocketLike {
@@ -43,7 +44,7 @@ class Socket implements WebSocketLike {
         live_id,
         epoch: '1',
         first_sequence: '1',
-        columns: (rows ? HOME_MAP_COLUMNS : ['value']).map((name) => ({
+        columns: (rows ? Object.keys(VERSION_ROW) : ['value']).map((name) => ({
           name,
           type_oid: 25,
           typmod: -1,
@@ -64,7 +65,7 @@ class Socket implements WebSocketLike {
           rows: [
             {
               row_key: 'a'.repeat(64),
-              values: HOME_MAP_COLUMNS.map((name) => (name === 'kind' ? 'version' : null)),
+              values: Object.values(VERSION_ROW),
             },
           ],
         });
