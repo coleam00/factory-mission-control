@@ -21,7 +21,9 @@ import {
   FIT_FOOT,
   FIT_MAX,
   FIT_PAD,
+  fitScale,
   heroFrameHeight,
+  levelMax,
   levelOf,
   MIN_FRAME,
   type FactoryMap as FactoryMapData,
@@ -139,7 +141,7 @@ function useTour(
   cards: RefObject<Map<string, HTMLElement>>,
 ): void {
   useEffect(() => {
-    if (!running) return;
+    if (!running || map.tour.length < 2) return;
     const points = tourPoints(map);
     const path = along(points);
     const centres = new Set(
@@ -535,20 +537,17 @@ export function FactoryMap({
   const fit = useCallback(() => {
     const el = stage.current;
     if (!el) return;
-    const { world } = levelRef.current;
-    const { clientWidth: width, clientHeight: height } = el;
-    const k = Math.min(
-      (width - FIT_PAD * 2) / world.width,
-      (height - FIT_PAD * 2 - FIT_FOOT) / world.height,
-      FIT_MAX,
-    );
+    const { level, world } = levelRef.current;
+    const frame = { width: el.clientWidth, height: el.clientHeight };
+    const { width, height } = frame;
+    const k = fitScale(world, frame, width >= PHONE ? levelMax(map, level, frame) : FIT_MAX);
     setCam({
       k,
       x: (width - world.width * k) / 2,
       y: Math.max(FIT_PAD, (height - FIT_FOOT - world.height * k) / 2),
     });
     setPlaced(true);
-  }, []);
+  }, [map]);
 
   /**
    * The frame's height for its width: the map's height at the scale that fits its width, so a fit
@@ -867,7 +866,7 @@ export function FactoryMap({
                 />
               ),
             )}
-            {moving ? (
+            {moving && level.tour.length > 1 ? (
               <circle
                 ref={dot}
                 data-tour

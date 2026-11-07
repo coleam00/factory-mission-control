@@ -33,7 +33,10 @@ strip, chips, flow and the tour work the same in a view.
 The map is the home screen's hero. Its frame spans the window between the page gutters; the
 caption, legend and details strip stay in the app's column. The frame's height is the map's height
 at the scale that fits its width, plus its padding (at least 420px), so a fit leaves no empty band;
-the page scrolls below it.
+the page scrolls below it. A deeper view is fitted no larger than the scale at which its card is 1.92
+times the home card fitted in the same frame (the 225px card refs 10-19 draw at 1440), centred in
+the frame; below 701px wide Fit fits as before. A card whose kind label would wrap is widened
+through `width` (Staging's Deploy, Work order's middle column).
 
 The owner chose readability over the mockup's proportions (PR #326 review, 2026-11-03): at 1440x900,
 fitted, a card's title renders at least 14px, its text 11px, and its kind label and the line labels
@@ -225,7 +228,8 @@ Build is stuck on a choice, Risky merge, Is this a real problem?), the Manager a
 under them. Its cards are 250 high, taller than the other views' cards, because a question card's kind,
 two-line title, three-line text and chip need that to keep the chip inside the border at the map's
 type scale. It adds three live queries to the home map's: `attention-items`, and the Health screen's
-`health-runs` and `health-steps`; each is a live query, none polls.
+`health-runs` and `health-steps`; each is a live query, none polls. Its two ask lines share one
+trunk up from the Manager, as the reference draws them.
 
 - A question card counts the open Archon attention items its `asks` names, by their labels:
   `stage: archon-triage` (a stopped triage) to Work item is unclear, `build:` to
@@ -249,4 +253,5 @@ One dot travels Product document to Shipped and each card it reaches pulses once
 the forward lines. The flow button beside the screen's title, or `prefers-reduced-motion`, stops
 both; the button shows once the map is drawn, and under reduced motion it reads off and is
 disabled. Opening a view zooms the camera onto the card while the map fades, swaps the level, and
-fits the new one; under reduced motion the swap is instant.
+fits the new one; under reduced motion the swap is instant. A view with no tour (the Manager's)
+draws no dot.

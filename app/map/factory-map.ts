@@ -160,6 +160,40 @@ export function heroFrameHeight(world: { width: number; height: number }, width:
   return Math.max(MIN_FRAME, Math.ceil(world.height * k + FIT_PAD * 2 + FIT_FOOT));
 }
 
+/**
+ * How much wider on screen a deeper view's card may be than the home map's card at the home fit:
+ * at 1440 x 900 that is the 225px card refs 10-19 draw (issue #485).
+ */
+export const DRILL_CARD_MAX = 1.92;
+
+/** The scale that fits `world` in `frame`, up to `max`, as the Fit control fits it. */
+export function fitScale(
+  world: { width: number; height: number },
+  frame: { width: number; height: number },
+  max = FIT_MAX,
+): number {
+  return Math.min(
+    (frame.width - FIT_PAD * 2) / world.width,
+    (frame.height - FIT_PAD * 2 - FIT_FOOT) / world.height,
+    max,
+  );
+}
+
+/**
+ * The largest scale `level` is fitted at in `frame`: FIT_MAX for the root; for a deeper view, the
+ * scale at which its card is DRILL_CARD_MAX times as wide as the home card fitted in the same
+ * frame, so a view with few cards does not fill the frame (issue #485).
+ */
+export function levelMax(
+  map: FactoryMap,
+  level: MapView,
+  frame: { width: number; height: number },
+): number {
+  if (level === map) return FIT_MAX;
+  const home = fitScale(worldSize(map), frame) * map.cardSize.width;
+  return Math.min(FIT_MAX, (DRILL_CARD_MAX * home) / level.cardSize.width);
+}
+
 const cardById = (map: MapView, id: string): Card => {
   const card = map.cards.find((c) => c.id === id);
   if (card === undefined) throw new Error(`the factory map has no card ${id}`);
