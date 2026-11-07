@@ -17,9 +17,10 @@ WHERE f.name = $1
 UNION ALL
 -- Each running run of the factory, at a version the address names only the runs that ran it (a
 -- run's version is its factory's digest's, labelled with its pin, PRD 11.2), with its running
--- steps, newest first, and the issue it claimed, or for a queue run (which claims nothing) the
--- issue in its number input. The browser counts it on the card covering its deepest running step.
-SELECT 'lap', l.run_id, l.workflow_name, s.steps, coalesce(c.issue_number, l.issue_number),
+-- steps, newest first, and the item it holds: its claim, else its facts step's item, else its
+-- number input (the rule of lanes.sql and health-workable.sql, bound by
+-- db/queries/restated-rules.test.ts). The browser counts it on the card covering its deepest running step.
+SELECT 'lap', l.run_id, l.workflow_name, s.steps, coalesce(c.issue_number, (facts.output -> 'item' ->> 'number')::int, l.issue_number),
   i.title, i.url, NULL, NULL
 FROM mc.laps l
 LEFT JOIN LATERAL (
@@ -31,7 +32,8 @@ LEFT JOIN LATERAL (
   WHERE c.factory = l.factory AND c.run_id = l.run_id
   ORDER BY c.claimed_at DESC NULLS LAST, c.issue_number LIMIT 1
 ) c ON true
-LEFT JOIN mc.issues i ON i.factory = l.factory AND i.number = coalesce(c.issue_number, l.issue_number)
+LEFT JOIN mc.lap_steps facts ON facts.run_id = l.run_id AND facts.step_id = 'facts'
+LEFT JOIN mc.issues i ON i.factory = l.factory AND i.number = coalesce(c.issue_number, (facts.output -> 'item' ->> 'number')::int, l.issue_number)
 WHERE l.factory = $1 AND l.status = 'running'
   AND ($2 = '' OR EXISTS (SELECT 1 FROM mc.versions vr
     WHERE vr.factory = l.factory AND vr.digest = l.digest AND vr.pin_sha = $2))

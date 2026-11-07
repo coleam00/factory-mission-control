@@ -3,7 +3,8 @@ import { join } from 'node:path';
 import { type BoardRow, boardView } from '../../app/lib/board';
 import type { HealthWorkableRow } from '../../app/lib/health';
 import type { OwnerQueueRow } from '../../app/lib/owner-queue';
-import type { HomeMapRow, WorkOrderRow } from '../../app/map/live';
+import { FACTORY_MAP } from '../../app/map/factory-map';
+import { cardLive, type HomeMapRow, type WorkOrderRow } from '../../app/map/live';
 import { QUEUE_PARKED } from '../../scripts/fixture/seed';
 import type { Db } from '../../scripts/lib/db';
 import { onTheSeed, queries } from './test-seed';
@@ -67,12 +68,13 @@ test('the seed recount: each column and each work order bar equal the definition
 
   // queue-factory: 401 is in triage and built (the build run is between steps), so Intake; 402 and
   // 403 only have runs between steps, so no column; 404 and 405 are workable with no run (Queued);
+  // 410's running split run holds nothing, so it is Queued too, which makes 7 not in order;
   // 406 is needs-owner, which a queue factory does not read, and is not workable. 410 is a product
   // document, 411 and 412 are its merged pieces and 413 its open one. 413's work item state says
   // its build was parked after its triage, so it is Parked, not Queued, and not workable either.
   const queue = await view('queue-factory');
   expect(columns(queue)).toEqual({
-    queued: [404, 405],
+    queued: [404, 405, 410],
     intake: [401],
     build: [],
     review: [],
@@ -82,7 +84,7 @@ test('the seed recount: each column and each work order bar equal the definition
     merged: [411, 412],
     parked: [413],
   });
-  expect(queue.notInOrder).toBe(6);
+  expect(queue.notInOrder).toBe(7);
 });
 
 test('a work item carries its pull request, rounds, route and app verdict from the seed laps', async () => {
@@ -289,15 +291,15 @@ test('a work item state reaches only the factory whose codebase it names', async
 test("another factory's parked work item does not make this factory's issue unworkable", async () => {
   await db.query(
     `INSERT INTO mc.work_item_states (project_key, number, revision, build_status, build_at)
-     SELECT codebase, 401, 1, 'parked', '2026-10-24T09:06:00.000Z' FROM mc.factories WHERE name = 'mission-control'`,
+     SELECT codebase, 404, 1, 'parked', '2026-10-24T09:06:00.000Z' FROM mc.factories WHERE name = 'mission-control'`,
   );
   try {
     const workable = (await run<HealthWorkableRow>('health-workable', 'queue-factory')).map(
       (r) => r.issue_number,
     );
-    expect(workable).toContain(401);
+    expect(workable).toContain(404);
   } finally {
-    await db.query(`DELETE FROM mc.work_item_states WHERE number = 401`);
+    await db.query(`DELETE FROM mc.work_item_states WHERE number = 404`);
   }
 });
 
@@ -310,7 +312,7 @@ test('a parked work item is not workable, and a re-triage makes it workable agai
     (await view('queue-factory')).columns
       .find((c) => c.id === 'parked')
       ?.items.map((i) => i.number);
-  expect(await workable()).toEqual([401, 402, 403, 404, 405, 410]);
+  expect(await workable()).toEqual([404, 405, 410]);
   expect(await parkedItems()).toEqual([QUEUE_PARKED.issue]);
   try {
     await db.query(
@@ -325,5 +327,58 @@ test('a parked work item is not workable, and a re-triage makes it workable agai
       `UPDATE mc.work_item_states SET triage_at = $2, revision = $3 WHERE number = $1`,
       [QUEUE_PARKED.issue, QUEUE_PARKED.triagedAt, QUEUE_PARKED.revision],
     );
+  }
+});
+
+test('a run that has just taken a work item is running on the Board, here on the map Build card, and on Laps', async () => {
+  const runId = '5eed0491-0000-4000-8000-000000000001';
+  const item = { repo: { host: 'github.com', path: 'coleam00/queue-factory' }, number: 404 };
+  await db.query('BEGIN');
+  try {
+    await db.query(
+      `INSERT INTO mc.laps (run_id, factory, workflow_name, status, started_at)
+       VALUES ($1, 'queue-factory', 'archon-build-queue', 'running', '2026-10-25T11:50:00Z')`,
+      [runId],
+    );
+    for (const [step, status, output] of [
+      ['blocked', 'completed', null],
+      ['facts', 'completed', { path: 'route', item }],
+      ['route', 'running', null],
+    ] as const) {
+      await db.query(
+        `INSERT INTO mc.lap_steps (run_id, step_id, status, started_at, output)
+         VALUES ($1, $2, $3, '2026-10-25T11:51:00Z', $4)`,
+        [runId, step, status, output === null ? null : JSON.stringify(output)],
+      );
+    }
+
+    const board = await view('queue-factory');
+    const column = (id: string) => board.columns.find((c) => c.id === id)?.items ?? [];
+    expect(column('queued').map((i) => i.number)).not.toContain(404);
+    expect(column('build').find((i) => i.number === 404)?.chips).toContainEqual(
+      expect.objectContaining({ kind: 'round', tone: 'running' }),
+    );
+
+    const live = cardLive(
+      FACTORY_MAP,
+      {
+        map: await run<HomeMapRow>('home-map', 'queue-factory', ''),
+        workable: await run<HealthWorkableRow>('health-workable', 'queue-factory'),
+      },
+      NOW,
+    ).get('build');
+    expect(live?.here.map((l) => l.issue?.number)).toContain(404);
+    expect(live?.queued?.map((i) => i.number)).toEqual([405, 410]);
+
+    const laps = await run<{ issue_number: number | null; step_id: string }>(
+      'lanes',
+      'queue-factory',
+    );
+    expect(laps.find((l) => (l as unknown as { run_id: string }).run_id === runId)).toMatchObject({
+      issue_number: 404,
+      step_id: 'route',
+    });
+  } finally {
+    await db.query('ROLLBACK');
   }
 });

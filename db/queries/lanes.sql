@@ -1,5 +1,5 @@
 SELECT l.run_id, l.workflow_name, f.console, l.started_at,
-  coalesce(c.issue_number, (facts.output -> 'item' ->> 'number')::int) AS issue_number,
+  coalesce(c.issue_number, (facts.output -> 'item' ->> 'number')::int, l.issue_number) AS issue_number,
   i.title AS issue_title, i.url AS issue_url,
   -- The pick step's route, or else the one the lap's claim comment records (often first).
   coalesce(p.output ->> 'route', c.route) AS route, p.output ->> 'depth' AS depth,
@@ -11,10 +11,12 @@ LEFT JOIN LATERAL (
   WHERE c.factory = l.factory AND c.run_id = l.run_id
   ORDER BY c.claimed_at DESC NULLS LAST, c.issue_number LIMIT 1
 ) c ON true
--- A queue run names its work item in its facts step, the old loop's claims it.
+-- The work item a running run holds: its claim, else its facts step's item, else its number input.
+-- Restated in home-map.sql and health-workable.sql (a live query may call no mc function),
+-- db/queries/restated-rules.test.ts fails when the three disagree.
 LEFT JOIN mc.lap_steps facts ON facts.run_id = l.run_id AND facts.step_id = 'facts'
 LEFT JOIN mc.issues i ON i.factory = l.factory
-  AND i.number = coalesce(c.issue_number, (facts.output -> 'item' ->> 'number')::int)
+  AND i.number = coalesce(c.issue_number, (facts.output -> 'item' ->> 'number')::int, l.issue_number)
 LEFT JOIN mc.lap_steps p ON p.run_id = l.run_id AND p.step_id = 'pick'
 -- The step a lap is on: its newest running step, or else the last one it started.
 LEFT JOIN LATERAL (
