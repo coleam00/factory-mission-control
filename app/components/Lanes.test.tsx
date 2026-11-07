@@ -18,7 +18,6 @@ const lane = (over: Partial<LaneRow>): LaneRow => ({
   started_at: new Date('2026-10-21T09:00:00Z'),
   issue_number: 11,
   issue_title: 'Show the scorecard',
-  issue_url: 'https://github.com/coleam00/factory-mission-control/issues/11',
   route: 'simple',
   depth: 'normal',
   step_id: 'ship__intel',
@@ -40,8 +39,10 @@ test('a lane shows its issue, route, depth, step, time on the step and cost so f
   expect(html).toContain(`href="/f/mission-control/laps/${RUN}"`);
   expect(html).toContain('data-step="ship__intel"');
   expect(html).toContain('data-cost="1.3"');
-  expect(html).toContain('href="https://github.com/coleam00/factory-mission-control/issues/11"');
+  expect(html).toContain('href="/f/mission-control/work/11"');
+  expect(html).not.toContain('github.com');
   expect(html).toContain('>#11<');
+  expect(html).toContain('href="/f/mission-control/steps/archon-loop/ship%2Fintel"');
   expect(html).toContain('ship / intel');
   expect(html).toContain('1d 1:01:30');
   expect(html).toContain('$1.30');
@@ -54,7 +55,6 @@ test('a lane before its pick and claim says so instead of guessing', () => {
         lane({
           issue_number: null,
           issue_title: null,
-          issue_url: null,
           route: null,
           depth: null,
           step_id: null,
@@ -68,6 +68,8 @@ test('a lane before its pick and claim says so instead of guessing', () => {
   );
   expect(html).toContain('No issue claimed yet');
   expect(html).toContain('not started');
+  expect(html).toContain('<span class="text-text-secondary">not started</span>');
+  expect(html).not.toContain('/steps/');
   expect(html).toContain('not recorded');
   expect(html).toContain('$0.00');
 });
@@ -155,6 +157,10 @@ test('a queue run says what it is and where it is, and links its console, not a 
   );
   expect(html).toContain('Build');
   expect(html).toContain('review · seams');
+  expect(html).toContain(
+    'href="/f/alpha/steps/archon-build-queue/ship%2Fdeliver%2Frounds%2Freview%2Fseams"',
+  );
+  expect(html).toContain('href="/f/alpha/work/11"');
   expect(html).toContain('#11');
   expect(html).toContain(`https://console.example/console/r/${RUN}`);
   expect(html).not.toContain(`/f/alpha/laps/${RUN}`);

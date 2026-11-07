@@ -8,6 +8,7 @@ import { type HomeMapRow, lapCard, onQueues, type WorkOrderRow } from '../map/li
 import type { HealthWorkableRow } from './health';
 import { pullUrl } from './one-lap';
 import type { OwnerQueueRow } from './owner-queue';
+import { workItemHref } from './work-item';
 
 /** One row of `db/queries/board.sql`: a work item, or the one row for the factory. */
 export interface BoardRow {
@@ -328,7 +329,7 @@ export function boardView(sources: BoardSources, now: Date, order: string | null
       number,
       title: row.title ?? '',
       chips: chipsOf(row, column, row.state === 'open' && running.has(number)),
-      to: `/f/${encodeURIComponent(factory)}/work/${number}`,
+      to: workItemHref(factory, number),
     };
     if (column === 'merged' && row.closed_at !== null)
       merged.push({ item, closedAt: row.closed_at });

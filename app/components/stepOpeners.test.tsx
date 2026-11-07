@@ -21,6 +21,7 @@ mock.module('react-router', () => ({
 }));
 const { Behind } = await import('./MapDetails');
 const { StepPanel } = await import('./LapGraph');
+const { LaneList } = await import('./Lanes');
 
 const at = (element: ReactElement, url: string) =>
   renderToStaticMarkup(
@@ -81,6 +82,27 @@ test("a lap's step definition link opens the step with the lap as its origin", (
   at(<StepPanel lap={lap} path="review" now={0} onClose={() => {}} />, '/f/x/laps/abc');
   const opened = links.find((l) => String(l.to).includes('/steps/'));
   expect(stepOriginOf(opened?.state)).toEqual({ href: '/f/x/laps/abc', label: 'Laps / This lap' });
+});
+
+test("a Laps lane's step link opens the step with Laps as its origin", () => {
+  const lane = {
+    run_id: '5eed0003-0000-4000-8000-00000000000a',
+    workflow_name: 'archon-loop',
+    console: null,
+    started_at: null,
+    issue_number: 11,
+    issue_title: null,
+    route: 'simple',
+    depth: 'normal',
+    step_id: 'ship__intel',
+    step_started_at: null,
+    cost_usd: null,
+    steps: ['ship__intel running'],
+  };
+  links.length = 0;
+  at(<LaneList rows={[lane]} factory="x" now={0} />, '/f/x/laps');
+  const opened = links.find((l) => l.to === '/f/x/steps/archon-loop/ship%2Fintel');
+  expect(stepOriginOf(opened?.state)).toEqual({ href: '/f/x/laps', label: 'Laps' });
 });
 
 test('the map reads back the card a breadcrumb selects', () => {
