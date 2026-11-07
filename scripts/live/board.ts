@@ -1,5 +1,3 @@
-import { writeFileSync } from 'node:fs';
-import { join } from 'node:path';
 import { type BoardRow, boardView } from '../../app/lib/board';
 import type { HealthWorkableRow } from '../../app/lib/health';
 import type { OwnerQueueRow } from '../../app/lib/owner-queue';
@@ -11,8 +9,10 @@ import { BUILD_STEP } from './queue-map';
 import {
   LIMITS,
   type LiveContext,
+  type LiveOutput,
   type LivePhase,
   lateWrite,
+  liveOutputs,
   pageWait,
   READY_WAIT_MS,
   writeToScreen,
@@ -49,9 +49,15 @@ const SHOWN = `(() => {
   };
 })()`;
 
+const FILES = liveOutputs({
+  shot: 'board.png',
+  probe: 'board-design-probe.json',
+});
+export const BOARD_OUTPUTS: readonly LiveOutput[] = Object.values(FILES);
+
 /** The Board (#316): its columns and work order panels equal a recount, and it moves without a reload. */
 export function boardPhase(ctx: LiveContext): LivePhase {
-  const { deps, db, outDir, queries } = ctx;
+  const { deps, db, queries } = ctx;
   const ms = {
     demoPanel: null as number | null,
     refsMerged: null as number | null,
@@ -134,7 +140,7 @@ export function boardPhase(ctx: LiveContext): LivePhase {
       try {
         await page.setViewport(1440);
         await open(page, path);
-        writeFileSync(join(outDir, 'board.png'), await page.screenshot(1440));
+        ctx.save(FILES.shot, await page.screenshot(1440));
         failures.push(...(await mismatches(page, FACTORY, null)));
         const merged = await run<BoardRow>('board', FACTORY);
         if (!merged.some((r) => r.number === REFS_DELIVERED && r.state === 'closed'))
@@ -220,7 +226,7 @@ export function boardPhase(ctx: LiveContext): LivePhase {
     },
 
     async probe(designProbe) {
-      designProbe(`${ctx.base}${path}`, 'board-design-probe.json', 'the board');
+      designProbe(`${ctx.base}${path}`, FILES.probe, 'the board');
     },
 
     async cleanup() {

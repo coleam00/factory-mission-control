@@ -1,5 +1,3 @@
-import { writeFileSync } from 'node:fs';
-import { join } from 'node:path';
 import { cardForStep, FACTORY_MAP } from '../../app/map/factory-map';
 import { openPage, type Page } from '../lib/cdp';
 import {
@@ -8,9 +6,11 @@ import {
   LIMITS,
   LIVE_STEP,
   type LiveContext,
+  type LiveOutput,
   type LivePhase,
   lapsOnCards,
   lateWrite,
+  liveOutputs,
   MAP,
   MAP_READABLE,
   type MapType,
@@ -34,6 +34,14 @@ import {
   performanceFailures,
   readyFailures,
 } from './timings';
+
+const FILES = liveOutputs({
+  stripTimings: 'realtime-timings.json',
+  mapTimings: 'home-map-timings.json',
+  shot: 'home-map.png',
+  probe: 'home-map-design-probe.json',
+});
+export const HOME_OUTPUTS: readonly LiveOutput[] = Object.values(FILES);
 
 /** Journey 1: App check's details, then its Behind the scenes, open check-app's step screen. */
 const CLICKED_CARD = 'app';
@@ -88,7 +96,7 @@ const liveCountOf = (card: string) =>
 
 /** The home screen: the factory strip's inserted laps and the map's lap step events. */
 export function homePhase(ctx: LiveContext): LivePhase {
-  const { deps, db, factory, outDir, holdSeconds, branch, timingDatabase, queries, inserted } = ctx;
+  const { deps, db, factory, holdSeconds, branch, timingDatabase, queries, inserted } = ctx;
   const panelTimings = (): Timings => ({
     branch,
     port: null,
@@ -103,8 +111,20 @@ export function homePhase(ctx: LiveContext): LivePhase {
   const timings = panelTimings();
   const mapTimings: Timings = { ...panelTimings(), clickedTo: null };
   const panels = [
-    { name: 'the strip', query: 'status-strip', selector: PANEL, timings, file: 'realtime' },
-    { name: 'the map', query: 'home-map', selector: MAP, timings: mapTimings, file: 'home-map' },
+    {
+      name: 'the strip',
+      query: 'status-strip',
+      selector: PANEL,
+      timings,
+      file: FILES.stripTimings,
+    },
+    {
+      name: 'the map',
+      query: 'home-map',
+      selector: MAP,
+      timings: mapTimings,
+      file: FILES.mapTimings,
+    },
   ];
   let homePage: Page | undefined;
   let before = 0;
@@ -132,7 +152,7 @@ export function homePhase(ctx: LiveContext): LivePhase {
       );
       mapTimings.type = await mapType(page);
       ctx.failures.push(...mapTypeFailures(mapTimings.type));
-      writeFileSync(join(outDir, 'home-map.png'), await page.screenshot(1440));
+      ctx.save(FILES.shot, await page.screenshot(1440));
       onLiveStep = Number(await page.evaluate<string>(liveCountOf(LIVE_CARD)));
     },
 
@@ -191,17 +211,14 @@ export function homePhase(ctx: LiveContext): LivePhase {
 
     async probe(designProbe) {
       const { base } = ctx;
-      designProbe(`${base}/`, 'home-map-design-probe.json');
+      designProbe(`${base}/`, FILES.probe);
     },
 
     async close() {
       timings.port = ctx.port;
       mapTimings.port = ctx.port;
       for (const panel of panels) {
-        writeFileSync(
-          join(outDir, `${panel.file}-timings.json`),
-          `${JSON.stringify(panel.timings, null, 2)}\n`,
-        );
+        ctx.save(panel.file, `${JSON.stringify(panel.timings, null, 2)}\n`);
       }
       await homePage?.close().catch(() => undefined);
     },

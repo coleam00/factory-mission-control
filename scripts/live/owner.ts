@@ -1,45 +1,12 @@
-import { writeFileSync } from 'node:fs';
-import { join } from 'node:path';
 import { NEXT_TO_LABEL } from '../fixture/write';
-import { openPage, type Page } from '../lib/cdp';
+import type { Page } from '../lib/cdp';
 import type { Deps } from '../lib/cli';
 import type { Db, Row } from '../lib/db';
-import {
-  LIMITS,
-  type LiveContext,
-  type LivePhase,
-  lateWrite,
-  pageWait,
-  READY_WAIT_MS,
-  RENEWALS_IN_180S,
-  renewalsOf,
-  required,
-  screenAgainstSql,
-  writeToScreen,
-} from './shared';
-import {
-  emptyPanelTimings,
-  type PanelTimings,
-  performanceFailures,
-  readyFailures,
-} from './timings';
+import { screenAgainstSql, writeToScreen } from './shared';
 
 const OWNER = '[data-live="owner-queue"]';
 const ITEM = `${OWNER} [data-owner-item]`;
 
-interface OwnerQueueTimings extends PanelTimings {
-  branch: string | null;
-  port: number | null;
-  /** The issue `fixture:write label` labelled, and how long the queue took to list it. */
-  labelToScreen: { issue: number; ms: number | null } | null;
-  holdSeconds: number;
-  renewals: number | null;
-  afterHoldLabelToScreen: { issue: number; ms: number | null } | null;
-  noReload: boolean | null;
-  limits: typeof LIMITS;
-}
-
-/** One item as the screen shows it, read from the page. */
 export interface ShownOwnerItem {
   id: string | null;
   title: string;
@@ -190,129 +157,4 @@ export async function labelToScreen(
     `document.querySelector('${item}') !== null`,
   );
   return { issue, ms };
-}
-
-/** The owner queue: the seed's items against SQL, and `fixture:write label` timed to it. */
-export function ownerPhase(ctx: LiveContext): LivePhase {
-  const { deps, db, factory, outDir, holdSeconds, branch, measure } = ctx;
-  const timings: OwnerQueueTimings = {
-    branch,
-    port: null,
-    ...emptyPanelTimings(),
-    labelToScreen: null,
-    holdSeconds,
-    renewals: null,
-    afterHoldLabelToScreen: null,
-    noReload: null,
-    limits: LIMITS,
-  };
-  const labelled: number[] = [];
-  let ownerPage: Page | undefined;
-  const url = () => `${ctx.base}/f/${encodeURIComponent(factory)}/owner`;
-
-  return {
-    /** On the untouched seed: the queue is every open needs-owner issue and open question. */
-    async open() {
-      const page = await openPage(deps.env);
-      ownerPage = page;
-      await page.goto(url());
-      await page.evaluate('window.__mcNoReload = true');
-      const ready = await page.evaluate<boolean>(
-        pageWait(`document.querySelector('${OWNER}[data-state="ready"]') !== null`, READY_WAIT_MS),
-      );
-      if (!ready) {
-        throw new Error(
-          `the owner queue did not reach data-state="ready" within ${READY_WAIT_MS} ms`,
-        );
-      }
-      Object.assign(timings, (await measure(page, ['owner-queue']))['owner-queue']);
-      const shown = await page.evaluate<ShownOwnerItem[]>(itemsOnScreen);
-      const controls = await page.evaluate<string[]>(controlsOnScreen);
-      const issues = await db.query(OPEN_NEEDS_OWNER_SQL, [factory]);
-      const questions = await db.query(OPEN_QUESTIONS_SQL, [factory]);
-      const mismatches = ownerMismatches(shown, expectedItems(issues, questions));
-      for (const control of controls) mismatches.push(`the screen has a control: ${control}`);
-      writeFileSync(
-        join(outDir, 'owner-queue-check.txt'),
-        [
-          'screen:',
-          ...shown.map((s) => `  ${JSON.stringify(s)}`),
-          `controls (form, button, input, select, textarea in main): ${controls.length}`,
-          'SQL (open needs-owner issues in mc.issues and mc.issue_labels):',
-          ...issues.map((i) => `  ${JSON.stringify(i)}`),
-          'SQL (open questions in mc.owner_questions):',
-          ...questions.map((q) => `  ${JSON.stringify(q)}`),
-          ...mismatches,
-          `mismatches: ${mismatches.length}`,
-          '',
-        ].join('\n'),
-      );
-      ctx.failures.push(...mismatches.map((m) => `owner queue against the seed: ${m}`));
-      writeFileSync(join(outDir, 'owner-queue.png'), await page.screenshot(1440));
-    },
-
-    async write() {
-      const page = required(ownerPage, 'owner queue page');
-      timings.labelToScreen = await labelToScreen(page, db, deps, factory, labelled);
-      deps.out(`first label reached the owner queue in ${timings.labelToScreen.ms ?? 'never'} ms`);
-    },
-
-    async afterHold() {
-      const page = required(ownerPage, 'owner queue page');
-      timings.renewals = await page.evaluate<number>(renewalsOf('owner-queue'));
-      timings.afterHoldLabelToScreen = await labelToScreen(page, db, deps, factory, labelled);
-      timings.noReload = await page.evaluate<boolean>('window.__mcNoReload === true');
-      await page.close();
-      ownerPage = undefined;
-    },
-
-    async probe(designProbe) {
-      designProbe(url(), 'owner-queue-design-probe.json', 'the owner queue');
-    },
-
-    async close() {
-      timings.port = ctx.port;
-      writeFileSync(
-        join(outDir, 'owner-queue-timings.json'),
-        `${JSON.stringify(timings, null, 2)}\n`,
-      );
-      await ownerPage?.close().catch(() => undefined);
-    },
-
-    async cleanup() {
-      try {
-        if (labelled.length > 0) {
-          await db.query(
-            `DELETE FROM mc.issue_labels
-             WHERE factory = $1 AND label = 'needs-owner' AND issue_number = ANY($2::int[])`,
-            [factory, `{${labelled.join(',')}}`],
-          );
-        }
-        return [];
-      } catch (err) {
-        return [`removing the owner queue's labels failed: ${(err as Error).message}`];
-      }
-    },
-
-    judge() {
-      const failures: string[] = [];
-      failures.push(...readyFailures('owner queue', timings, LIMITS.readyMs));
-      failures.push(...performanceFailures('owner queue', timings));
-      for (const [when, write] of [
-        ['first', timings.labelToScreen],
-        [`after ${holdSeconds}s`, timings.afterHoldLabelToScreen],
-      ] as const) {
-        failures.push(...lateWrite(`label ${when}`, 'the owner queue', write?.ms));
-      }
-      if (holdSeconds >= 180 && (timings.renewals ?? 0) < RENEWALS_IN_180S) {
-        failures.push(
-          `${timings.renewals} owner queue seal renewals in ${holdSeconds}s, expected at least ${RENEWALS_IN_180S}`,
-        );
-      }
-      if (timings.noReload !== true) failures.push('the owner queue reloaded');
-      return failures;
-    },
-
-    summary: () => [`owner: ${JSON.stringify(timings)}`],
-  };
 }

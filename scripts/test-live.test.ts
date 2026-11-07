@@ -1,9 +1,9 @@
 import { expect, test } from 'bun:test';
-import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { REPO_ROOT } from './lib/cli';
 import { NOW, recordingDeps, scratchRepo } from './lib/test-deps';
-import { main, parseRealtimeFeatures } from './test-live';
+import { LIVE_OUTPUTS, main, outputFailures, parseRealtimeFeatures } from './test-live';
 
 test('REALTIME.md gives test:live a probe and a verdict for each feature the live queries rely on', () => {
   const features = parseRealtimeFeatures(
@@ -122,4 +122,44 @@ test('the usage text says test:live runs one at a time per machine', async () =>
   const { recorder } = lockedRun();
   expect(await main(['--help'], recorder.deps)).toBe(0);
   expect(recorder.out.join('\n')).toContain('Runs one at a time per machine');
+});
+
+test("--help names exactly the files test:live's phases write", async () => {
+  const { recorder } = lockedRun();
+  expect(await main(['--help'], recorder.deps)).toBe(0);
+  const named = new Set(recorder.out.join('\n').match(/[\w-]+\.(?:png|json|txt)\b/g));
+  expect(named).toEqual(new Set(LIVE_OUTPUTS));
+  // Two phases declaring one name would overwrite each other's evidence and hide a missing write.
+  expect(new Set(LIVE_OUTPUTS).size).toBe(LIVE_OUTPUTS.length);
+});
+
+test('no live phase writes to --out except through ctx.save and ctx.designProbe', () => {
+  const dir = join(REPO_ROOT, 'scripts', 'live');
+  const phases = readdirSync(dir).filter(
+    (f) => f.endsWith('.ts') && f !== 'shared.ts' && !f.endsWith('.test.ts'),
+  );
+  expect(phases.length).toBeGreaterThan(0);
+  for (const file of phases) {
+    const source = readFileSync(join(dir, file), 'utf-8');
+    expect({ file, writes: /writeFileSync|harness\/design-probe\.js/.test(source) }).toEqual({
+      file,
+      writes: false,
+    });
+  }
+});
+
+test('outputFailures names a written file --help does not name and, on a passing run, a named file nothing wrote', () => {
+  const named = ['a.png', 'b.json'];
+  expect(outputFailures(named, new Set(['a.png', 'b.json']), true)).toEqual([]);
+  const extra = new Set(['a.png', 'b.json', 'c.png']);
+  const wroteExtra = [
+    "test:live wrote c.png, which --help does not name: add it to its phase's outputs",
+  ];
+  expect(outputFailures(named, extra, true)).toEqual(wroteExtra);
+  expect(outputFailures(named, extra, false)).toEqual(wroteExtra);
+  const missing = new Set(['a.png']);
+  expect(outputFailures(named, missing, true)).toEqual([
+    '--help names b.json, but no phase wrote it',
+  ]);
+  expect(outputFailures(named, missing, false)).toEqual([]);
 });

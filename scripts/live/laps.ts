@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { seedLaps } from '../fixture/seed-laps';
 import { openPage, type Page } from '../lib/cdp';
@@ -8,8 +8,10 @@ import {
   LIMITS,
   LIVE_STEP,
   type LiveContext,
+  type LiveOutput,
   type LivePhase,
   lateWrite,
+  liveOutputs,
   pageWait,
   READY_WAIT_MS,
   RENEWALS_IN_180S,
@@ -148,9 +150,17 @@ async function seedLapsMismatches(
   return { mismatches, report };
 }
 
+const FILES = liveOutputs({
+  check: 'lanes-check.txt',
+  shot: 'lanes-recent-laps.png',
+  probe: 'lanes-recent-laps-design-probe.json',
+  timings: 'lanes-recent-laps-timings.json',
+});
+export const LAPS_OUTPUTS: readonly LiveOutput[] = Object.values(FILES);
+
 /** The laps screen: the seed's lanes, and the lap step events to their lanes. */
 export function lapsPhase(ctx: LiveContext): LivePhase {
-  const { deps, db, factory, outDir, holdSeconds, branch, measure } = ctx;
+  const { deps, db, factory, holdSeconds, branch, measure } = ctx;
   const lapsTimings: LapsTimings = {
     branch,
     port: null,
@@ -193,9 +203,9 @@ export function lapsPhase(ctx: LiveContext): LivePhase {
         factory,
         readFileSync(join(deps.repoRoot, 'fixtures', 'seed.sql'), 'utf-8'),
       );
-      writeFileSync(join(outDir, 'lanes-check.txt'), `${lapsSeed.report}\n`);
+      ctx.save(FILES.check, `${lapsSeed.report}\n`);
       ctx.failures.push(...lapsSeed.mismatches.map((m) => `laps screen against the seed: ${m}`));
-      writeFileSync(join(outDir, 'lanes-recent-laps.png'), await page.screenshot(1440));
+      ctx.save(FILES.shot, await page.screenshot(1440));
       for (const lap of [firstLap, secondLap]) {
         if (await page.evaluate<boolean>(laneOn(lap, LIVE_STEP))) {
           throw new Error(`the lane of ${lap} is on ${LIVE_STEP} before any write`);
@@ -230,19 +240,12 @@ export function lapsPhase(ctx: LiveContext): LivePhase {
 
     async probe(designProbe) {
       const { base } = ctx;
-      designProbe(
-        `${base}/f/${factory}/laps`,
-        'lanes-recent-laps-design-probe.json',
-        'the laps screen',
-      );
+      designProbe(`${base}/f/${factory}/laps`, FILES.probe, 'the laps screen');
     },
 
     async close() {
       lapsTimings.port = ctx.port;
-      writeFileSync(
-        join(outDir, 'lanes-recent-laps-timings.json'),
-        `${JSON.stringify(lapsTimings, null, 2)}\n`,
-      );
+      ctx.save(FILES.timings, `${JSON.stringify(lapsTimings, null, 2)}\n`);
       await lapsPage?.close().catch(() => undefined);
     },
 
