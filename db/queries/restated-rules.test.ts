@@ -383,8 +383,8 @@ test('lanes, home-map and health-workable resolve the same item for every source
     for (let n = 1; n <= 7; n++) {
       await db.query(
         `INSERT INTO mc.issues (factory, number, title, state, url, created_at, updated_at)
-         VALUES ('f', $1, 't', 'open', 'u', now(), now())`,
-        [n],
+         VALUES ('f', $1, $2, 'open', 'u', now(), now())`,
+        [n, `t${n}`],
       );
     }
     const id = (c: string) => `5eed0000-0000-4000-8000-00000000000${c}`;
@@ -430,11 +430,11 @@ test('lanes, home-map and health-workable resolve the same item for every source
       [id('5')]: 5,
       [id('6')]: null,
     };
-    // Every seeded issue is titled 't', so a title join that drifts from the held item yields null.
+    // Each issue is titled by its own number, so a title join that drops a source or reorders precedence differs from the held item.
     const titled = (rows: Record<string, unknown>[], col: string) =>
       Object.fromEntries(rows.map((r) => [r.run_id as string, r[col] ?? null]));
     const expectedTitles = Object.fromEntries(
-      Object.entries(expected).map(([k, v]) => [k, v === null ? null : 't']),
+      Object.entries(expected).map(([k, v]) => [k, v === null ? null : `t${v}`]),
     );
     const lanes = await db.query(sqlOf('lanes'), ['f']);
     const laps = (await db.query(sqlOf('home-map'), ['f', ''])).filter((r) => r.kind === 'lap');
