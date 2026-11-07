@@ -1,6 +1,6 @@
 SELECT l.run_id, l.workflow_name, f.console, l.started_at,
   coalesce(c.issue_number, (facts.output -> 'item' ->> 'number')::int, l.issue_number) AS issue_number,
-  i.title AS issue_title, i.url AS issue_url,
+  i.title AS issue_title,
   -- The pick step's route, or else the one the lap's claim comment records (often first).
   coalesce(p.output ->> 'route', c.route) AS route, p.output ->> 'depth' AS depth,
   s.step_id, s.started_at AS step_started_at, k.cost_usd, t.steps

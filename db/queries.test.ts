@@ -177,7 +177,6 @@ const ROW_COLUMNS: Record<string, string[]> = {
     'started_at',
     'issue_number',
     'issue_title',
-    'issue_url',
     'route',
     'depth',
     'step_id',

@@ -82,6 +82,11 @@ export interface SweepDecision {
 /** The shape of `mc.run_issue_number`'s numbers: an address that is not one names no work item. */
 export const WORK_ITEM_NUMBER = /^[1-9][0-9]{0,8}$/;
 
+/** The address of a factory's work item page: the one writer of what `WORK_ITEM_NUMBER` reads. */
+export function workItemHref(factory: string, number: number): string {
+  return `/f/${encodeURIComponent(factory)}/work/${number}`;
+}
+
 export const NO_REASON = 'No reason was recorded.';
 
 export type Tone = 'done' | 'failed' | 'owner' | 'running' | 'plain';

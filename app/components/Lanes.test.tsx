@@ -18,7 +18,6 @@ const lane = (over: Partial<LaneRow>): LaneRow => ({
   started_at: new Date('2026-10-21T09:00:00Z'),
   issue_number: 11,
   issue_title: 'Show the scorecard',
-  issue_url: 'https://github.com/coleam00/factory-mission-control/issues/11',
   route: 'simple',
   depth: 'normal',
   step_id: 'ship__intel',
@@ -56,7 +55,6 @@ test('a lane before its pick and claim says so instead of guessing', () => {
         lane({
           issue_number: null,
           issue_title: null,
-          issue_url: null,
           route: null,
           depth: null,
           step_id: null,
@@ -70,6 +68,7 @@ test('a lane before its pick and claim says so instead of guessing', () => {
   );
   expect(html).toContain('No issue claimed yet');
   expect(html).toContain('not started');
+  expect(html).toContain('<span class="text-text-secondary">not started</span>');
   expect(html).not.toContain('/steps/');
   expect(html).toContain('not recorded');
   expect(html).toContain('$0.00');

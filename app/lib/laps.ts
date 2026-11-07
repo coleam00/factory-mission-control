@@ -47,7 +47,6 @@ export interface LaneRow {
   started_at: Date | null;
   issue_number: number | null;
   issue_title: string | null;
-  issue_url: string | null;
   route: string | null;
   depth: string | null;
   step_id: string | null;

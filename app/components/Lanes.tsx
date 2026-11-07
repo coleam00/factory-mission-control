@@ -18,6 +18,7 @@ import { consoleUrl, hasLapPage, workflowLabel } from '../lib/one-lap';
 import { LivePanel, type PanelState } from '../live/LivePanel';
 import { laneMarks, stepPath } from '../lib/lap-graph';
 import { stepHref, stepOriginState } from '../lib/step-detail';
+import { workItemHref } from '../lib/work-item';
 import { LaneMarks } from './LapGraph';
 
 export const LABEL =
@@ -139,7 +140,7 @@ export function LaneList({
                   </span>
                 ) : (
                   <Link
-                    to={`/f/${encodeURIComponent(factory)}/work/${lane.issue_number}`}
+                    to={workItemHref(factory, lane.issue_number)}
                     className={`${MONO} shrink-0 font-bold text-text-primary underline decoration-border-bright underline-offset-2 hover:decoration-text-primary`}
                   >
                     #{lane.issue_number}
@@ -176,7 +177,7 @@ export function LaneList({
               {loop ? <Field label="Depth">{lane.depth ?? NONE}</Field> : null}
               <Field label="Step">
                 {lane.step_id === null ? (
-                  <span className="text-[color:var(--running)]">not started</span>
+                  <span className="text-text-secondary">not started</span>
                 ) : (
                   <Link
                     to={stepHref(factory, lane.workflow_name, stepPath(lane.step_id))}
