@@ -1,7 +1,7 @@
 SELECT 'issue' AS kind, i.number AS issue_number, i.title, i.url, NULL::uuid AS run_id
 FROM mc.issues i
 -- Workable: open, not labelled needs-owner, every `Depends on` closed (one that is not mirrored
--- is not known to be closed), no live claim, one not yet released, and not parked by the queues as
+-- is not known to be closed), no live claim, one not yet released, not held by a running run, and not parked by the queues as
 -- the Board reads it. The manager's two tracking
 -- issues, kept by exact title, are never work a lap picks (#247).
 WHERE i.factory = $1 AND i.state = 'open'
@@ -20,6 +20,20 @@ WHERE i.factory = $1 AND i.state = 'open'
   AND NOT EXISTS (
     SELECT 1 FROM mc.claims c
     WHERE c.factory = i.factory AND c.issue_number = i.number AND c.released_at IS NULL
+  )
+  -- Not held by a running run: the run's claim, else its facts step's item, else its number input
+  -- (the rule lanes.sql and home-map.sql read, but a split run holds nothing, as it only slices an item into children, so the item stays workable.
+  -- Restated because a live query may call no mc function. db/queries/restated-rules.test.ts fails when the three disagree).
+  AND NOT EXISTS (
+    SELECT 1 FROM mc.laps l
+    LEFT JOIN LATERAL (
+      SELECT c.issue_number FROM mc.claims c
+      WHERE c.factory = l.factory AND c.run_id = l.run_id
+      ORDER BY c.claimed_at DESC NULLS LAST, c.issue_number LIMIT 1
+    ) c ON true
+    LEFT JOIN mc.lap_steps facts ON facts.run_id = l.run_id AND facts.step_id = 'facts'
+    WHERE l.factory = i.factory AND l.status = 'running' AND l.workflow_name <> 'archon-split'
+      AND coalesce(c.issue_number, (facts.output -> 'item' ->> 'number')::int, l.issue_number) = i.number
   )
   -- Not parked: the Board's parked rule (`parked` in app/lib/board.ts), restated because a live
   -- query may call no mc function. db/queries/restated-rules.test.ts fails when the two disagree.

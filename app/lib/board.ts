@@ -164,14 +164,18 @@ export interface BoardSources {
 const withinKeep = (at: Date | null, now: Date): at is Date =>
   at !== null && now.getTime() - at.getTime() < KEEP_MS;
 
+/** The workflow that slices an item into children; it holds nothing (health-workable.sql restates this; restated-rules.test.ts binds the two). */
+export const SPLIT_WORKFLOW = 'archon-split';
+
 /**
  * Every work item with a running run, and the furthest stage those runs are on. A run on a card
- * with no stage column, or between two steps, is on no stage but still holds the work item.
+ * with no stage column, or between two steps, is on no stage but still holds the work item; a
+ * split run holds none.
  */
 function runningRuns(map: readonly HomeMapRow[]): Map<number, StageId | null> {
   const running = new Map<number, StageId | null>();
   for (const row of map) {
-    if (row.kind !== 'lap' || row.number === null) continue;
+    if (row.kind !== 'lap' || row.number === null || row.workflow === SPLIT_WORKFLOW) continue;
     const placed = lapCard(FACTORY_MAP, row)?.card.id;
     const stage = placed !== undefined && isStage(placed) ? placed : null;
     const was = running.get(row.number) ?? null;

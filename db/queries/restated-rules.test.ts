@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { COLUMNS, PARKED, parked } from '../../app/lib/board';
+import { COLUMNS, PARKED, parked, SPLIT_WORKFLOW } from '../../app/lib/board';
 import { LAP_PAGE_WORKFLOW, prNumber } from '../../app/lib/one-lap';
 import { REVIEW_TONE } from '../../app/lib/review-outcome';
 import {
@@ -118,6 +118,12 @@ test('the queries behind a link to the lap page filter on LAP_PAGE_WORKFLOW', ()
     ]).toEqual([name, [LAP_PAGE_WORKFLOW]]);
     expect([name, archonLiterals(name)]).toEqual([name, [LAP_PAGE_WORKFLOW]]);
   }
+});
+
+test('health-workable.sql excludes the workflows board.ts says hold no work item', () => {
+  expect(
+    [...sqlOf('health-workable').matchAll(/workflow_name <> '([^']*)'/g)].map((m) => m[1]),
+  ).toEqual([SPLIT_WORKFLOW]);
 });
 
 test('mc.pr_number reads a step pr as prNumber does, a JSON object included', async () => {
@@ -373,3 +379,83 @@ test('the work item address guard accepts the numbers mc.run_issue_number reads'
     await db.close();
   }
 }, 60_000);
+
+test('lanes, home-map and health-workable resolve the same item for every source of it', async () => {
+  const db = await migratedDb();
+  try {
+    await db.query(
+      `INSERT INTO mc.factories (name, repository, codebase, console) VALUES ('f', 'o/r', 'o/r', 'c')`,
+    );
+    for (let n = 1; n <= 8; n++) {
+      await db.query(
+        `INSERT INTO mc.issues (factory, number, title, state, url, created_at, updated_at)
+         VALUES ('f', $1, $2, 'open', 'u', now(), now())`,
+        [n, `t${n}`],
+      );
+    }
+    const id = (c: string) => `5eed0000-0000-4000-8000-00000000000${c}`;
+    // claim, facts item, number input; null for a source the run does not have
+    const runs = {
+      '1': { status: 'running', claim: 1, facts: null, input: null },
+      '2': { status: 'running', claim: null, facts: 2, input: null },
+      '3': { status: 'running', claim: null, facts: null, input: 3 },
+      '4': { status: 'running', claim: 4, facts: 5, input: 6 },
+      '5': { status: 'running', claim: null, facts: 5, input: 6 },
+      '6': { status: 'running', claim: null, facts: null, input: null },
+      '7': { status: 'completed', claim: null, facts: 7, input: null },
+      '8': { status: 'running', claim: null, facts: 8, input: null, workflow: SPLIT_WORKFLOW },
+    } as const;
+    for (const [c, r] of Object.entries(runs)) {
+      await db.query(
+        `INSERT INTO mc.laps (run_id, factory, workflow_name, status, started_at, issue_number)
+         VALUES ($1, 'f', $4, $2, now(), $3)`,
+        [id(c), r.status, r.input, 'workflow' in r ? r.workflow : 'w'],
+      );
+      if (r.facts !== null) {
+        await db.query(
+          `INSERT INTO mc.lap_steps (run_id, step_id, status, started_at, output)
+           VALUES ($1, 'facts', 'completed', now(), $2)`,
+          [id(c), JSON.stringify({ item: { number: r.facts } })],
+        );
+      }
+      if (r.claim !== null) {
+        // Released, so the held-by-a-run clause, not the unreleased-claim clause, is what holds it.
+        await db.query(
+          `INSERT INTO mc.claims (factory, issue_number, run_id, claimed_at, released_at)
+           VALUES ('f', $1, $2, now(), now())`,
+          [r.claim, id(c)],
+        );
+      }
+    }
+    const held = (rows: Record<string, unknown>[]) =>
+      Object.fromEntries(rows.map((r) => [r.run_id as string, r.issue_number ?? r.number ?? null]));
+    const expected = {
+      [id('1')]: 1,
+      [id('2')]: 2,
+      [id('3')]: 3,
+      [id('4')]: 4,
+      [id('5')]: 5,
+      [id('6')]: null,
+      [id('8')]: 8,
+    };
+    // Each issue is titled by its own number, so a title join that drops a source or reorders precedence differs from the held item.
+    const titled = (rows: Record<string, unknown>[], col: string) =>
+      Object.fromEntries(rows.map((r) => [r.run_id as string, r[col] ?? null]));
+    const expectedTitles = Object.fromEntries(
+      Object.entries(expected).map(([k, v]) => [k, v === null ? null : `t${v}`]),
+    );
+    const lanes = await db.query(sqlOf('lanes'), ['f']);
+    const laps = (await db.query(sqlOf('home-map'), ['f', ''])).filter((r) => r.kind === 'lap');
+    expect(held(lanes)).toEqual(expected);
+    expect(held(laps)).toEqual(expected);
+    expect(titled(lanes, 'issue_title')).toEqual(expectedTitles);
+    expect(titled(laps, 'title')).toEqual(expectedTitles);
+    const workable = (await db.query(sqlOf('health-workable'), ['f']))
+      .flatMap((r) => (r.kind === 'issue' ? [r.issue_number as number] : []))
+      .sort();
+    // A split run shows its item on Laps and the map, but holds nothing: 8 stays workable.
+    expect(workable).toEqual([6, 7, 8]);
+  } finally {
+    await db.close();
+  }
+});

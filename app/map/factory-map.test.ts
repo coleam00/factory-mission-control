@@ -296,16 +296,6 @@ test('the views that matched their references keep their fit at every hero width
   expect(levelMax(FACTORY_MAP, FACTORY_MAP, hero(1384))).toBe(FIT_MAX);
 });
 
-test('no kind label wraps in the Staging, Merge, Split, Work order and Manager views', () => {
-  // Geist Mono advances 0.6em plus tracking-[0.06em]; MapCard adds pl-4 pr-3 and a 2px border each side.
-  for (const id of FEW_CARDS) {
-    const v = view(id);
-    for (const c of v.cards) {
-      expect(c.kind.length * MAP_TYPE.kind * 0.66 + 32).toBeLessThanOrEqual(cardWidth(v, c));
-    }
-  }
-});
-
 test("every level's tour stays on its drawn lines", () => {
   const levels = [FACTORY_MAP, ...Object.values(FACTORY_MAP.views ?? {})] as MapView[];
   for (const level of levels.filter((l) => l.tour.length > 1)) {
@@ -359,6 +349,16 @@ test("the Manager's two asks share one trunk", () => {
     const c = m.cards.find((x) => x.id === to) as (typeof m.cards)[number];
     expect(p.at(-1)).toEqual([c.x + cardWidth(m, c) / 2, c.y + m.cardSize.height]);
   }
+});
+
+test('no role line wraps in any view', () => {
+  // Geist Mono advances 0.6em plus tracking-[0.06em]; MapCard adds pl-4 pr-3 and a 2px border each side.
+  const wide = levels.flatMap((level) =>
+    level.cards
+      .filter((c) => c.kind.length * MAP_TYPE.kind * 0.66 + 32 > cardWidth(level, c))
+      .map((c) => c.id),
+  );
+  expect(wide).toEqual([]);
 });
 
 test("a step's default origin is the map at the view of its deepest card, that card selected", () => {

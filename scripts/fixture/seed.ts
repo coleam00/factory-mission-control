@@ -1561,6 +1561,7 @@ export const QUEUE_RUNS = {
   split: '5eed0005-0000-4000-8000-00000000000b',
   splitting: '5eed0005-0000-4000-8000-00000000000c',
   triaging: '5eed0005-0000-4000-8000-00000000000a',
+  factsOnly: '5eed0005-0000-4000-8000-000000000015',
 } as const;
 
 /**
@@ -1832,6 +1833,20 @@ function queueFactorySql(): string[] {
       labeled_at: at(2),
     }),
     ...queueReturnedSql({ run, done, issue }),
+    // Queue work item 412 as a real run shapes it: no number input, no source digest, the item named only by its facts step.
+    insert('remote_agent_workflow_runs', {
+      id: QUEUE_RUNS.factsOnly,
+      workflow_name: 'archon-build-queue',
+      codebase_id: QUEUE_CODEBASE,
+      status: 'completed',
+      user_message: `Run archon-build-queue on ${QUEUE_FACTORY.repository}`,
+      metadata: json({}),
+      started_at: at(3),
+      completed_at: at(6),
+      last_activity_at: at(6),
+    }),
+    done(QUEUE_RUNS.factsOnly, 'facts', 3, claimed(412)),
+    done(QUEUE_RUNS.factsOnly, 'ship', 5, { done: true }),
   ];
 }
 
