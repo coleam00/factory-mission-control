@@ -64,7 +64,7 @@ function Row({ event, before }: { event: TimelineEvent; before: Date | null }): 
       </time>
       <span
         aria-hidden="true"
-        className={`h-[9px] w-[9px] self-center rounded-full ${
+        className={`h-[9px] w-[9px] rounded-full ${
           event.tone === 'running' ? 'motion-safe:animate-pulse' : ''
         }`}
         style={{ background: TONE_COLOR[event.tone] }}
