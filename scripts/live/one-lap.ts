@@ -412,8 +412,7 @@ export function oneLapPhase(ctx: LiveContext): LivePhase {
           refusedRun,
           ctx.queries.get('one-lap') as string,
         );
-        ctx.save(FILES.check, `${oneLapSeed.report}
-`);
+        ctx.save(FILES.check, `${oneLapSeed.report}\n`);
         ctx.failures.push(...oneLapSeed.mismatches.map((m) => `one lap against the seed: ${m}`));
         ctx.save(FILES.shot, await refusedPage.screenshot(1440));
       } finally {
