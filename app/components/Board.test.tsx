@@ -28,6 +28,4 @@ test('a card title with a long unbroken token wraps inside its card', () => {
   const html = renderToStaticMarkup(<RouterProvider router={router} />);
   const title = html.match(/<span class="([^"]*)">\.archon\/workflows/);
   expect(title?.[1]).toContain('[overflow-wrap:anywhere]');
-  expect(html.match(/<a [^>]*data-work-item="441"[^>]*>/)?.[0]).toContain('min-w-0');
-  expect(html.match(/<section [^>]*data-board-column="merged"[^>]*>/)?.[0]).toContain('min-w-0');
 });

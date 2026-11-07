@@ -19,7 +19,7 @@ function Chip({ chip }: { chip: BoardChip }): ReactElement {
   return (
     <span
       data-chip={chip.kind}
-      className={`inline-flex items-center gap-1 rounded-[5px] px-1.5 py-0.5 font-mono text-[11px] ${CHIP_TONE[chip.tone ?? 'plain']}`}
+      className={`inline-flex items-center gap-1 rounded-[5px] [overflow-wrap:anywhere] px-1.5 py-0.5 font-mono text-[11px] ${CHIP_TONE[chip.tone ?? 'plain']}`}
     >
       {chip.pulse ? (
         <span
@@ -33,7 +33,7 @@ function Chip({ chip }: { chip: BoardChip }): ReactElement {
 }
 
 const CARD =
-  'block min-w-0 rounded-[7px] border border-border bg-surface px-2.5 py-2 hover:border-border-bright';
+  'block rounded-[7px] border border-border bg-surface px-2.5 py-2 hover:border-border-bright';
 
 function Card({ item }: { item: WorkItem }): ReactElement {
   const body = (
@@ -64,7 +64,7 @@ function Column({ column, older }: { column: BoardColumn; older: ReactElement | 
       data-board-column={column.id}
       data-count={column.items.length}
       aria-label={column.title}
-      className="flex min-h-[300px] min-w-0 flex-col gap-2 rounded-[10px] border border-border bg-surface/40 p-2"
+      className="flex min-h-[300px] flex-col gap-2 rounded-[10px] border border-border bg-surface/40 p-2"
     >
       <h2
         className="flex items-baseline justify-between px-1 text-[13px] font-semibold"
