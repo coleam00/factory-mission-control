@@ -6,6 +6,8 @@ import { BoardBody } from './Board';
 
 const longTitle = '.archon/workflows/factory-build-queue-with-an-unbroken-path-token.yaml';
 
+const longChip = 'factory-build-queue-with-an-unbroken-order-name-token';
+
 const view: BoardView = {
   orders: [],
   columns: [
@@ -13,7 +15,14 @@ const view: BoardView = {
       id: 'merged',
       title: 'Merged',
       role: 'test',
-      items: [{ number: 441, title: longTitle, chips: [], to: '/f/x/work/441' }],
+      items: [
+        {
+          number: 441,
+          title: longTitle,
+          chips: [{ kind: 'order', text: longChip }],
+          to: '/f/x/work/441',
+        },
+      ],
     },
   ],
   notInOrder: 0,
@@ -21,11 +30,13 @@ const view: BoardView = {
   olderHref: null,
 };
 
-test('a card title with a long unbroken token wraps inside its card', () => {
+test('a card title and an order chip with long unbroken tokens wrap inside their card', () => {
   const router = createMemoryRouter([
     { path: '/', element: <BoardBody view={view} order={null} onOrder={() => {}} /> },
   ]);
   const html = renderToStaticMarkup(<RouterProvider router={router} />);
   const title = html.match(/<span class="([^"]*)">\.archon\/workflows/);
   expect(title?.[1]).toContain('[overflow-wrap:anywhere]');
+  const chip = html.match(/<span data-chip="order" class="([^"]*)"/);
+  expect(chip?.[1]).toContain('[overflow-wrap:anywhere]');
 });
