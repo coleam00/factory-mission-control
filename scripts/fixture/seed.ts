@@ -1851,7 +1851,7 @@ function queueReturnedSql(h: {
     run: string,
     step: string,
     minute: number,
-    output: Record<string, unknown>,
+    output: Record<string, unknown> | undefined,
     time: Clock,
     extra?: Record<string, unknown>,
   ) => string;
@@ -1932,6 +1932,7 @@ function queueReturnedSql(h: {
       base,
       { cost_usd: 1.5 },
     ),
+    h.done(id, 'ship__deliver__rounds', 5, undefined, base, { cost_usd: 1.5, aggregate: true }),
     h.done(
       id,
       'answer',
