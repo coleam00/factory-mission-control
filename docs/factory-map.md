@@ -84,10 +84,6 @@ point must lie on an edge of its `from` card and its last on an edge of its `to`
 group's edge when that card sits inside the group, or, for a line with `"arrow": false`, on another
 line into the same card. Moving a card or changing `cardSize` without moving the routes fails.
 
-A view's `matchesReference: true` says its cards already match their references. The fit of every
-other deeper view is capped at the largest scale those views fit at (`levelMax` in `factory-map.ts`),
-so mark a view only when its cards match, and mark at least one.
-
 A question card's `asks` is checked against the queue pack: it is `{"rest": true}` (on one card
 per level at most) or a `label` that some wait of the pack declares, with an optional `value` that
 the pack sets for that label. The check fails on an `asks` with an unknown key, no label, a

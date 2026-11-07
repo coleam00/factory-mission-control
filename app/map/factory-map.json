@@ -559,7 +559,6 @@
   "views": {
     "build": {
       "caption": "One build run takes one work item one round forward. A round writes a brief, plans or investigates if triage asked for it, then delivers: implement, open the PR, review, fix. After the round an agent decides: done, another round, or ask you. After 2 rounds it also checks that the rounds are converging. It also asks when a change has outgrown its size or stopped converging.",
-      "matchesReference": true,
       "cardSize": {
         "width": 260,
         "height": 200
@@ -823,7 +822,6 @@
     },
     "build/deliver": {
       "caption": "The inner loop. Each delivery round implements or fixes, publishes a draft PR, and runs the review. A Ready review gets one simplify pass and a light re-review, then CI. Findings send it back to Implement, up to 4 rounds in all.",
-      "matchesReference": true,
       "cardSize": {
         "width": 260,
         "height": 200
@@ -1032,7 +1030,6 @@
     },
     "review": {
       "caption": "A quick agent picks the reviewers this change earns, up to five, each reading through one lens, side by side. A synthesis agent merges what they found into one PR comment. That comment's Ready verdict at the PR's head is what the merge gate trusts.",
-      "matchesReference": true,
       "cardSize": {
         "width": 260,
         "height": 150
@@ -1525,7 +1522,6 @@
     },
     "intake": {
       "caption": "Every new or edited work item passes through Intake. It checks who wrote it, then triage decides the route by how uncertain the work is, not how big it is. A product document or a bundle goes to Split.",
-      "matchesReference": true,
       "cardSize": {
         "width": 260,
         "height": 200
@@ -2126,7 +2122,6 @@
     },
     "app": {
       "caption": "Every PR passes through App check before Merge. It picks a PR, merges it with the latest main in a scratch checkout, starts the app and uses it like a person, against what the work item asks for. Every claim must point at a file made during this check. The result is a commit status the merge gate requires, and it stands until the PR gets a new commit.",
-      "matchesReference": true,
       "cardSize": {
         "width": 260,
         "height": 200
