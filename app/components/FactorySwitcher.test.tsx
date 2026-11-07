@@ -189,9 +189,9 @@ test("from a screen the entries go to that screen, and from a step's page they s
     '/f/mission-control/board',
     '/f/second-factory/board',
   ]);
-  expect(hrefs('/steps/archon-loop/review', '?at=8e3e1cef')).toEqual([
-    '/steps/archon-loop/review?at=8e3e1cef',
-    '/steps/archon-loop/review?at=8e3e1cef',
+  expect(hrefs('/f/mission-control/steps/archon-loop/review', '?at=8e3e1cef')).toEqual([
+    '/f/mission-control/steps/archon-loop/review?at=8e3e1cef',
+    '/f/second-factory/steps/archon-loop/review?at=8e3e1cef',
   ]);
 });
 

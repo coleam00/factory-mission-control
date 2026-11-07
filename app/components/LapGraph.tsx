@@ -1,5 +1,5 @@
 import { type ReactElement, useEffect, useMemo, useRef, useState } from 'react';
-import { Link } from 'react-router';
+import { Link, useLocation } from 'react-router';
 import { formatCost, formatCount, formatElapsed } from '../lib/format';
 import { type Box, layoutSteps, openedBlocks, type StepNode, shownAs } from '../lib/home-map';
 import {
@@ -13,6 +13,7 @@ import {
   type StepState,
 } from '../lib/lap-graph';
 import { costOf, since } from '../lib/laps';
+import type { StepOrigin } from '../lib/step-detail';
 import { errorHeadline } from '../lib/error-text';
 import { attemptSeconds } from '../lib/one-lap';
 import { GraphViewport } from './GraphViewport';
@@ -345,6 +346,7 @@ export function StepPanel({
   now: number;
   onClose: () => void;
 }): ReactElement {
+  const { pathname, search } = useLocation();
   const step = path === null ? undefined : lap.steps.get(path);
   const node = lap.graph.steps.find((n) => n.id === path);
   if (step === undefined || node === undefined) {
@@ -454,7 +456,13 @@ export function StepPanel({
           This step is not on the map of the lap's pin: it is drawn where its name puts it.
         </p>
       ) : (
-        <Link to={node.href} className={`${MONO} w-fit text-text-secondary ${LINK}`}>
+        <Link
+          to={node.href}
+          state={{
+            from: { href: `${pathname}${search}`, label: 'Laps / This lap' } satisfies StepOrigin,
+          }}
+          className={`${MONO} w-fit text-text-secondary ${LINK}`}
+        >
           The step's definition
         </Link>
       )}

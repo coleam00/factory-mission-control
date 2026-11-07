@@ -358,7 +358,7 @@ export function LapSteps({
           <>
             <h2 className={`${LABEL} mb-3`}>Steps</h2>
             <PanelBody rows={rows} state={state} factory={factory} what="the steps">
-              {(loaded) => <LapStepsBody rows={loaded} map={map} />}
+              {(loaded) => <LapStepsBody rows={loaded} map={map} factory={factory ?? ''} />}
             </PanelBody>
           </>
         )}
@@ -371,9 +371,11 @@ export function LapSteps({
 export function LapStepsBody({
   rows,
   map,
+  factory,
   now: fixed,
 }: {
   rows: readonly StepAttemptRow[];
+  factory: string;
   map: Lifted<LapMapRow>;
   /** A fixed clock, for tests; the screen uses the browser's. */
   now?: number;
@@ -384,8 +386,8 @@ export function LapStepsBody({
   // Until a map arrives the graph waits; a map that cannot load leaves the lap's own steps.
   const mapRows = map.state === 'error' ? [] : map.rows;
   const lap = useMemo(
-    () => (mapRows === undefined ? undefined : lapGraph(mapRows, rows)),
-    [mapRows, rows],
+    () => (mapRows === undefined ? undefined : lapGraph(mapRows, rows, factory)),
+    [mapRows, rows, factory],
   );
   // undefined: follow the step running now; null: the panel was closed.
   const [picked, setPicked] = useState<string | null | undefined>(undefined);

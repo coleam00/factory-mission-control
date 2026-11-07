@@ -179,17 +179,46 @@ export interface NestingRow {
 }
 
 /**
- * A step's screen, at the version pinned `at` when one is given. A nested path's `/` is encoded,
- * and react-router decodes it back.
+ * A step's screen in `factory`, at the version pinned `at` when one is given. A nested path's `/` is
+ * encoded, and react-router decodes it back.
  */
-export function stepHref(workflow: string, path: string, at?: string | null): string {
-  const href = `/steps/${encodeURIComponent(workflow)}/${encodeURIComponent(path)}`;
+export function stepHref(
+  factory: string,
+  workflow: string,
+  path: string,
+  at?: string | null,
+): string {
+  const href = `/f/${encodeURIComponent(factory)}/steps/${encodeURIComponent(workflow)}/${encodeURIComponent(path)}`;
   return at ? `${href}?at=${encodeURIComponent(at)}` : href;
+}
+
+/**
+ * Where a step screen was opened from: the address to return to, how the breadcrumb names it, and
+ * the map card to select there. The opener passes it as history state, `{ from }`.
+ */
+export interface StepOrigin {
+  href: string;
+  label: string;
+  card?: string;
+}
+
+/** The origin a navigation's history state carries, when the opener passed one. */
+export function stepOriginOf(state: unknown): StepOrigin | undefined {
+  if (typeof state !== 'object' || state === null || !('from' in state)) return undefined;
+  const from = state.from;
+  if (typeof from !== 'object' || from === null) return undefined;
+  if (!('href' in from) || typeof from.href !== 'string') return undefined;
+  if (!('label' in from) || typeof from.label !== 'string') return undefined;
+  const card = 'card' in from && typeof from.card === 'string' ? from.card : undefined;
+  return card === undefined
+    ? { href: from.href, label: from.label }
+    : { href: from.href, label: from.label, card };
 }
 
 /** The nodes beneath `path`, each opening its place in `workflow` at the version pinned `at`. */
 export function nesting(
   rows: readonly NestingRow[],
+  factory: string,
   workflow: string,
   path: string,
   at?: string | null,
@@ -202,7 +231,7 @@ export function nesting(
         label,
         depth: label.split('/').length - 1,
         kind: row.kind,
-        href: stepHref(workflow, row.path, at),
+        href: stepHref(factory, workflow, row.path, at),
       };
     });
 }

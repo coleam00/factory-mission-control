@@ -54,7 +54,7 @@ test('index serves /, a dotted name serves nested segments and $name is a parame
   expect(routePath('versions')).toBe('/versions');
   expect(routePath('f.$factory.versions')).toBe('/f/:factory/versions');
   expect(routePath('f.$factory.laps.$run')).toBe('/f/:factory/laps/:run');
-  expect(routePath('steps.$workflow.$step')).toBe('/steps/:workflow/:step');
+  expect(routePath('f.$factory.steps.$workflow.$step')).toBe('/f/:factory/steps/:workflow/:step');
   expect(() => routePath('f..versions')).toThrow('empty path segment');
   expect(() => routePath('f.$')).toThrow('empty path segment');
 });
@@ -101,12 +101,17 @@ test('choosing a factory keeps the screen, else goes to its home map', () => {
 
 test("choosing a factory from a step's page stays on that step's page, at the same version", () => {
   const screens = [{ path: 'laps', label: 'Laps' }];
-  expect(factoryPath('/steps/archon-loop/check-app', 'second-factory', screens)).toBe(
-    '/steps/archon-loop/check-app',
-  );
-  expect(factoryPath('/steps/archon-loop/review', 'second-factory', screens, '?at=8e3e1cef')).toBe(
-    '/steps/archon-loop/review?at=8e3e1cef',
-  );
+  expect(
+    factoryPath('/f/mission-control/steps/archon-loop/check-app', 'second-factory', screens),
+  ).toBe('/f/second-factory/steps/archon-loop/check-app');
+  expect(
+    factoryPath(
+      '/f/mission-control/steps/archon-loop/review',
+      'second-factory',
+      screens,
+      '?at=8e3e1cef',
+    ),
+  ).toBe('/f/second-factory/steps/archon-loop/review?at=8e3e1cef');
 });
 
 test("choosing a factory drops the old factory's search", () => {
@@ -125,6 +130,8 @@ test("a removed screen's address goes to the screen that replaced it, under the 
     expect(routes.some((r) => r.path === `/f/:factory/${from}`)).toBe(true);
     expect(['', 'board', 'decisions']).toContain(to);
   }
+  const routes = appRoutes({ './routes/index.tsx': { default: () => null } })[0]?.children ?? [];
+  expect(routes.some((r) => r.path === '/steps/:workflow/:step')).toBe(true);
   const screens = factoryScreens(
     routesFromModules({ './routes/f.$factory.board.tsx': { default: () => null } }),
   );

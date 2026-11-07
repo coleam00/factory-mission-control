@@ -1,6 +1,8 @@
 import { type ComponentType, createElement } from 'react';
-import { Navigate, type RouteObject, useParams } from 'react-router';
+import { Navigate, type RouteObject, useParams, useSearchParams } from 'react-router';
 import { NotFound, RouteError } from './errors';
+import { stepHref } from './lib/step-detail';
+import { useFactory } from './live/FactoryProvider';
 import { Shell } from './Shell';
 
 export interface RouteModule {
@@ -66,9 +68,8 @@ export function factoryScreens(routes: readonly RouteObject[]): FactoryScreen[] 
 
 /**
  * Where choosing `factory` goes from `pathname` and its `search`: the same screen for it when
- * `pathname` is one of `screens`, a step's page as it is (a step's page names no factory: the
- * switcher remembers the chosen one), otherwise its home map (`/f/:factory`). A screen's search
- * names the old factory's items, so it is not kept.
+ * `pathname` is one of `screens`, a step's page as it is (the pinned version stays), otherwise its home map (`/f/:factory`). A screen's search names the
+ * old factory's items, so it is not kept.
  */
 export function factoryPath(
   pathname: string,
@@ -76,8 +77,9 @@ export function factoryPath(
   screens: readonly FactoryScreen[],
   search = '',
 ): string {
-  if (/^\/steps\/[^/]+\/[^/]+$/.test(pathname)) return `${pathname}${search}`;
   const home = `/f/${encodeURIComponent(factory)}`;
+  const step = pathname.match(/^\/f\/[^/]+\/(steps\/[^/]+\/[^/]+)$/)?.[1];
+  if (step !== undefined) return `${home}/${step}${search}`;
   const rest = pathname.match(/^\/f\/[^/]+\/(.+)$/)?.[1];
   if (rest === undefined || !screens.some((screen) => screen.path === rest)) return home;
   return `${home}/${rest}`;
@@ -104,11 +106,27 @@ function RemovedScreen({ to }: { to: string }): ReturnType<typeof createElement>
   });
 }
 
+/**
+ * A step's old address, `/steps/:workflow/:step`, which named no factory: the same step, at the same
+ * `?at=`, in the factory the switcher remembers, else the default one.
+ */
+export function OldStepAddress(): ReturnType<typeof createElement> | null {
+  const { workflow = '', step = '' } = useParams();
+  const [search] = useSearchParams();
+  const factory = useFactory();
+  if (factory === undefined) return null;
+  return createElement(Navigate, {
+    to: stepHref(factory, workflow, step, search.get('at')),
+    replace: true,
+  });
+}
+
 const removedRoutes = (): RouteObject[] => [
   ...Object.entries(REMOVED_SCREENS).map(([from, to]) => ({
     path: `/f/:factory/${from}`,
     element: createElement(RemovedScreen, { to }),
   })),
+  { path: '/steps/:workflow/:step', element: createElement(OldStepAddress) },
   { path: '/rewind', element: createElement(Navigate, { to: '/', replace: true }) },
 ];
 

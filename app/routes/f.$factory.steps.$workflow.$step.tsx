@@ -1,5 +1,5 @@
-import { type ReactElement, type ReactNode, useLayoutEffect, useState } from 'react';
-import { Link, Navigate, useParams, useSearchParams } from 'react-router';
+import { type ReactElement, type ReactNode, useLayoutEffect, useRef, useState } from 'react';
+import { Link, Navigate, useLocation, useParams, useSearchParams } from 'react-router';
 import { EmptyState } from '../components/EmptyState';
 import { StepVersionPicker } from '../components/StepVersionPicker';
 import {
@@ -16,11 +16,13 @@ import {
   type StepRow,
   type SubagentRow,
   stepHref,
+  stepOriginOf,
   versionName,
   type YamlPartRow,
 } from '../lib/step-detail';
 import { useFactory } from '../live/FactoryProvider';
 import { LivePanel, type PanelState } from '../live/LivePanel';
+import { FACTORY_MAP, mapOrigin } from '../map/factory-map';
 
 const LABEL = 'font-mono text-[10px] font-semibold uppercase tracking-[0.04em] text-text-secondary';
 const CARD = 'flex flex-col gap-3 rounded-lg border border-border bg-surface p-5';
@@ -39,6 +41,8 @@ interface PanelProps {
   workflow: string;
   path: string;
   factory: string | undefined;
+  /** The factory the address names, for the links. */
+  address: string;
   at: string | null;
 }
 
@@ -119,7 +123,7 @@ function StepList({ steps, ...data }: { steps: readonly string[]; [a: `data-${st
 }
 
 /** Every node beneath this step, each opening its place: on an include, the steps it runs. */
-function Nesting({ step, workflow, path, factory, at }: PanelProps): ReactElement {
+function Nesting({ step, workflow, path, factory, address, at }: PanelProps): ReactElement {
   return (
     <LivePanel<NestingRow>
       query="step-nesting"
@@ -136,7 +140,7 @@ function Nesting({ step, workflow, path, factory, at }: PanelProps): ReactElemen
             </div>
           );
         if (rows === undefined || rows.length === 0) return null;
-        const inside = nesting(rows, workflow, path, at);
+        const inside = nesting(rows, address, workflow, path, at);
         return (
           <div className={CARD}>
             <h2 className={LABEL}>Steps inside</h2>
@@ -297,10 +301,12 @@ function Yaml({ step, workflow, path, factory, at }: PanelProps): ReactElement {
 /** The routing a place gives its step: each enclosing node, from the outermost in. */
 function WhereItRuns({
   around,
+  factory,
   workflow,
   at,
 }: {
   around: Placed['around'];
+  factory: string;
   workflow: string;
   at: string | null;
 }): ReactElement {
@@ -310,7 +316,7 @@ function WhereItRuns({
       <ul className="flex flex-col gap-3">
         {around.map(({ path, row }) => (
           <li key={path} data-route={path} className="flex flex-col gap-1">
-            <Link to={stepHref(workflow, path, at)} className="flex flex-wrap gap-x-3">
+            <Link to={stepHref(factory, workflow, path, at)} className="flex flex-wrap gap-x-3">
               <span className={MONO}>{path}</span>
               <span className={NOTE}>
                 {row.include !== null ? `include ${row.include}` : row.kind}
@@ -334,12 +340,14 @@ function WhereItRuns({
 function IncludedAt({
   steps,
   placed,
+  factory,
   workflow,
   path,
   at,
 }: {
   steps: readonly StepRow[];
   placed: Placed;
+  factory: string;
   workflow: string;
   path: string;
   at: string | null;
@@ -356,7 +364,7 @@ function IncludedAt({
               data-included-at={`${place.workflow} ${place.path}`}
             >
               <Link
-                to={stepHref(place.workflow, place.path, at)}
+                to={stepHref(factory, place.workflow, place.path, at)}
                 aria-current={here ? 'page' : undefined}
                 className="flex flex-wrap gap-x-3"
               >
@@ -374,12 +382,14 @@ function IncludedAt({
 function Step({
   placed,
   steps,
+  factory,
   workflow,
   path,
   at,
 }: {
   placed: Placed;
   steps: readonly StepRow[];
+  factory: string;
   workflow: string;
   path: string;
   at: string | null;
@@ -402,7 +412,9 @@ function Step({
         <Fact label="When">
           <span data-when="">{step.when_condition ?? '-'}</span>
         </Fact>
-        <Fact label="Trigger rule">{step.trigger_rule ?? '-'}</Fact>
+        <Fact label="Trigger rule">
+          <span data-trigger-rule="">{step.trigger_rule ?? '-'}</span>
+        </Fact>
         <Fact label="Inputs">
           <StepList steps={step.depends_on} data-depends-on={step.depends_on.join(' ')} />
         </Fact>
@@ -411,9 +423,18 @@ function Step({
         </Fact>
         <Fact label="Defined in">{step.file}</Fact>
       </dl>
-      {around.length > 0 ? <WhereItRuns around={around} workflow={workflow} at={at} /> : null}
+      {around.length > 0 ? (
+        <WhereItRuns around={around} factory={factory} workflow={workflow} at={at} />
+      ) : null}
       {isIncluded(steps, step.workflow) ? (
-        <IncludedAt steps={steps} placed={placed} workflow={workflow} path={path} at={at} />
+        <IncludedAt
+          steps={steps}
+          placed={placed}
+          factory={factory}
+          workflow={workflow}
+          path={path}
+          at={at}
+        />
       ) : null}
     </div>
   );
@@ -443,11 +464,23 @@ function FoundStep({
 }
 
 /**
+ * Where this step screen was opened from: the origin its opener passed as history state, kept
+ * while the screen stays open (the version picker and the links inside it pass none), else the map
+ * card that covers the step.
+ */
+function useStepOrigin(factory: string, workflow: string, path: string, at: string | null) {
+  const opened = stepOriginOf(useLocation().state);
+  const kept = useRef(opened);
+  if (opened !== undefined) kept.current = opened;
+  return kept.current ?? mapOrigin(FACTORY_MAP, factory, workflow, path, at);
+}
+
+/**
  * One step of the version its address names, else the current one: what it does, what routes a
  * lap through it, what it runs.
  */
 export default function StepDetail(): ReactElement {
-  const { workflow = '', step = '' } = useParams();
+  const { factory: address = '', workflow = '', step = '' } = useParams();
   const [search] = useSearchParams();
   const at = search.get('at') || null;
   const factory = useFactory();
@@ -458,14 +491,31 @@ export default function StepDetail(): ReactElement {
     workflow,
     path: step,
     factory,
+    address,
     at,
   };
+  const origin = useStepOrigin(address, workflow, step, at);
   return (
     <main className="mx-auto max-w-6xl px-6 py-8">
+      <nav
+        aria-label="Breadcrumb"
+        data-breadcrumb=""
+        className={`mb-4 flex flex-wrap gap-x-2 ${NOTE}`}
+      >
+        <Link
+          to={origin.href}
+          state={origin.card === undefined ? undefined : { select: origin.card }}
+          data-breadcrumb-back=""
+        >
+          {origin.label}
+        </Link>
+        <span aria-hidden>/</span>
+        <span className={MONO}>{step}</span>
+      </nav>
       <StepVersionPicker
         factory={factory}
         at={at}
-        href={(version) => stepHref(workflow, step, version)}
+        href={(version) => stepHref(address, workflow, step, version)}
       />
       <div className="flex flex-col gap-6">
         <LivePanel<StepRow> query="step-detail" factory={factory} args={[at ?? '']}>
@@ -486,11 +536,18 @@ export default function StepDetail(): ReactElement {
               ? placesOf(rows, workflow, step)[0]
               : undefined;
             if (first !== undefined) {
-              return <Navigate replace to={stepHref(first.workflow, first.path, at)} />;
+              return <Navigate replace to={stepHref(address, first.workflow, first.path, at)} />;
             }
             return (
               <>
-                <Step placed={placed} steps={rows} workflow={workflow} path={step} at={at} />
+                <Step
+                  placed={placed}
+                  steps={rows}
+                  factory={address}
+                  workflow={workflow}
+                  path={step}
+                  at={at}
+                />
                 <FoundStep asked={asked} step={placed.step} onFound={setKnown} />
               </>
             );

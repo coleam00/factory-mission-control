@@ -1,5 +1,5 @@
 import { type ReactElement, type ReactNode, useEffect, useState } from 'react';
-import { useSearchParams } from 'react-router';
+import { useLocation, useSearchParams } from 'react-router';
 import { EmptyState } from '../components/EmptyState';
 import { FactoryMap } from '../components/FactoryMap';
 import { useFlow } from '../components/FlowToggle';
@@ -14,7 +14,7 @@ import { useFactory } from '../live/FactoryProvider';
 import { AWAITED, Feed, type Source } from '../live/Feed';
 import { LivePanel, type PanelState } from '../live/LivePanel';
 import { useLive } from '../live/LiveProvider';
-import { FACTORY_MAP } from '../map/factory-map';
+import { FACTORY_MAP, selectOnArrival } from '../map/factory-map';
 import {
   cardLive,
   type HomeMapRow,
@@ -60,6 +60,7 @@ export function HomeMapBody({
   now = new Date(),
   path = [],
   onPath = () => {},
+  select,
 }: {
   /** `map` is undefined until `home-map` has answered. */
   sources: Omit<MapSources, 'map'> & { map: readonly HomeMapRow[] | undefined };
@@ -82,6 +83,8 @@ export function HomeMapBody({
   /** The view ids the address names, root first; none is the home map. */
   path?: readonly string[];
   onPath?: (path: readonly string[]) => void;
+  /** The card to have selected on arrival. */
+  select?: string;
 }): ReactElement {
   const { map } = sources;
   const empty = (title: string) => (
@@ -102,6 +105,7 @@ export function HomeMapBody({
       live={live}
       factory={factory}
       at={at}
+      select={select}
       flow={flow}
       path={path}
       onPath={onPath}
@@ -119,6 +123,7 @@ export function HomeMapBody({
  */
 export default function Home(): ReactElement {
   const [search] = useSearchParams();
+  const select = selectOnArrival(useLocation().state);
   const at = search.get('at') || null;
   const [path, onPath] = useMapPath(FACTORY_MAP);
   const factory = useFactory();
@@ -179,6 +184,7 @@ export default function Home(): ReactElement {
             }}
             state={state}
             factory={factory ?? ''}
+            select={select}
             at={at}
             configured={configured}
             flow={flow}

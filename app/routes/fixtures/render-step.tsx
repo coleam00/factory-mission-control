@@ -1,11 +1,13 @@
 import type { WebSocketLike } from '@neon/realtime/client';
 import { createRoot } from 'react-dom/client';
 import { createMemoryRouter, RouterProvider } from 'react-router';
-import type { StepRow } from '../../lib/step-detail';
+import type { StepOrigin, StepRow } from '../../lib/step-detail';
 import { ALL_STEP_QUERIES } from '../../lib/step-queries';
 import { FactoryProvider } from '../../live/FactoryProvider';
 import { LiveProvider } from '../../live/LiveProvider';
-import StepDetail from '../steps.$workflow.$step';
+import { FACTORY_MAP, mapOrigin } from '../../map/factory-map';
+import { OldStepAddress } from '../../routing';
+import StepDetail from '../f.$factory.steps.$workflow.$step';
 
 type Cell = string | number | string[] | null;
 type Rows = Record<string, Cell>[];
@@ -133,7 +135,7 @@ async function until(done: () => boolean, what: string): Promise<void> {
  * Mounts the step screen at `url` over a server whose step-detail answers, for the version `at`,
  * `steps[at]`, and every other query no rows. A seal `hold` matches waits until it is released.
  */
-function mount(url: string, steps: Record<string, StepRow[]>) {
+function mount(url: string, steps: Record<string, StepRow[]>, state?: unknown) {
   performance.clearMarks();
   const originalFetch = window.fetch;
   const header = btoa(JSON.stringify({ alg: 'dir', enc: 'A256GCM', v: 1 })).replace(/=+$/, '');
@@ -169,18 +171,27 @@ function mount(url: string, steps: Record<string, StepRow[]>) {
     early: [JSON.stringify({ type: 'ready' })],
     socket: socket as unknown as WebSocket,
   };
+  const at = new URL(url, 'http://test');
   const router = createMemoryRouter(
     [
       {
-        path: '/steps/:workflow/:step',
+        path: '/f/:factory/steps/:workflow/:step',
         element: (
           <FactoryProvider>
             <StepDetail />
           </FactoryProvider>
         ),
       },
+      {
+        path: '/steps/:workflow/:step',
+        element: (
+          <FactoryProvider>
+            <OldStepAddress />
+          </FactoryProvider>
+        ),
+      },
     ],
-    { initialEntries: [url] },
+    { initialEntries: [{ pathname: at.pathname, search: at.search, state }] },
   );
   const container = document.createElement('div');
   document.body.append(container);
@@ -266,7 +277,10 @@ const STEPS: Record<string, StepRow[]> = {
       file: 'block.yaml',
     }),
   ],
-  '': [stepRow('review', 'Review, current')],
+  '': [
+    stepRow('review', 'Review, current'),
+    stepRow('finalize', 'Finalize', { trigger_rule: 'all_done' }),
+  ],
   [OLDER]: [stepRow('review', `Review at ${OLDER}`)],
   [NEWER]: [stepRow('review', `Review at ${NEWER}`)],
   [BEFORE_REVIEW]: [stepRow('implement', 'Implement')],
@@ -289,7 +303,7 @@ export async function openStep(url: string) {
  * screen showed once step-detail answered.
  */
 export async function openHeld() {
-  const screen = mount('/steps/archon-loop/review', STEPS);
+  const screen = mount('/f/factory-a/steps/archon-loop/review', STEPS);
   try {
     const release = screen.hold(({ query }) => query === 'step-detail');
     const asked = () => new Set(screen.asked.map(({ query }) => query));
@@ -319,11 +333,11 @@ export async function openHeld() {
  * are unanswered: every distinct thing the screen showed while they were, and once they were.
  */
 export async function switchVersion() {
-  const screen = mount(`/steps/archon-loop/review?at=${OLDER}`, STEPS);
+  const screen = mount(`/f/factory-a/steps/archon-loop/review?at=${OLDER}`, STEPS);
   try {
     await until(() => settled(screen) && shown(screen).prompt !== null, 'the older version');
     const release = screen.hold(({ args }) => args.at(-1) === NEWER);
-    await screen.navigate(`/steps/archon-loop/review?at=${NEWER}`);
+    await screen.navigate(`/f/factory-a/steps/archon-loop/review?at=${NEWER}`);
     await until(
       () => screen.asked.some(({ query, args }) => query === 'step-detail' && args[0] === NEWER),
       'the newer version to be asked for',
@@ -349,7 +363,7 @@ export async function switchVersion() {
  * step-detail's state then, and the headings of every section still shown.
  */
 export async function loseStep() {
-  const screen = mount('/steps/archon-loop/review', STEPS);
+  const screen = mount('/f/factory-a/steps/archon-loop/review', STEPS);
   try {
     await until(() => settled(screen) && shown(screen).prompt !== null, 'the step');
     screen.fail('step-detail');
@@ -388,6 +402,39 @@ export async function openPlace(url: string) {
         current: el.querySelector('a')?.getAttribute('aria-current') === 'page',
       })),
       prompt: text('[data-prompt]'),
+    };
+  } finally {
+    screen.unmount();
+  }
+}
+
+/** The Trigger rule the step screen at `url` shows. */
+export async function triggerRuleAt(url: string) {
+  const screen = mount(url, STEPS);
+  try {
+    await until(() => settled(screen) && shown(screen).prompt !== null, 'the step');
+    return screen.container.querySelector('[data-trigger-rule]')?.textContent ?? null;
+  } finally {
+    screen.unmount();
+  }
+}
+
+/** Where the review step's breadcrumb leads and reads, as opened with `state` and after moving in place. */
+export async function breadcrumbOf(state: { from: StepOrigin } | undefined) {
+  const screen = mount('/f/factory-a/steps/archon-loop/review', STEPS, state);
+  try {
+    await until(() => settled(screen) && shown(screen).prompt !== null, 'the step');
+    const back = () => {
+      const link = screen.container.querySelector('[data-breadcrumb-back]');
+      return { href: link?.getAttribute('href') ?? null, text: link?.textContent ?? null };
+    };
+    const opened = back();
+    await screen.navigate(`/f/factory-a/steps/archon-loop/review?at=${NEWER}`);
+    await until(() => shown(screen).prompt === `Review at ${NEWER}`, 'the newer version');
+    return {
+      opened,
+      moved: back(),
+      expectedDefault: mapOrigin(FACTORY_MAP, 'factory-a', 'archon-loop', 'review', null),
     };
   } finally {
     screen.unmount();

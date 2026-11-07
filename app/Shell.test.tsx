@@ -13,7 +13,7 @@ const routes = routesFromModules({
   './routes/index.tsx': { default: Home },
   './routes/f.$factory.tsx': { default: Home },
   './routes/f.$factory.versions.tsx': { default: Home },
-  './routes/steps.$workflow.$step.tsx': { default: Home },
+  './routes/f.$factory.steps.$workflow.$step.tsx': { default: Home },
 });
 const SCREENS = [{ path: 'versions', label: 'Versions' }];
 const client = {} as RealtimeClient;
