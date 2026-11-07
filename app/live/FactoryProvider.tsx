@@ -108,7 +108,10 @@ export function useUrlFactory(): UrlFactory {
   return useContext(FactoryContext).inUrl;
 }
 
-/** How the switcher makes a factory the current one where the URL names none (a step's page). */
+/**
+ * How the switcher makes a factory the current one where the URL names none (the old step
+ * address, `/steps/...`).
+ */
 export function useChooseFactory(): (factory: string) => void {
   return useContext(FactoryContext).choose;
 }

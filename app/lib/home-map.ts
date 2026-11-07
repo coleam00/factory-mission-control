@@ -127,10 +127,14 @@ const ANY_RAN = /none_failed|one_success/;
  * A route fork is drawn as one: a step that depends on a sibling whose `when` can never hold with
  * its own, under a trigger rule that lets it run with that sibling skipped (ship after build),
  * waits on it only for order, so the edge is dropped and the two stand side by side, each edge
- * into them labelled with the route values that take it. Each step opens its screen at `at`, the
+ * into them labelled with the route values that take it. Each step opens its screen in `factory` at `at`, the
  * version shown, or at the current version for null.
  */
-export function stepGraph(rows: readonly StepTreeRow[], at: string | null = null): StepGraph {
+export function stepGraph(
+  rows: readonly StepTreeRow[],
+  factory: string,
+  at: string | null = null,
+): StepGraph {
   const nodes = [...rows].sort((a, b) => a.position - b.position);
   const edges: Edge[] = [];
   const clusters = new Map<string, string[]>();
@@ -165,7 +169,7 @@ export function stepGraph(rows: readonly StepTreeRow[], at: string | null = null
       role: row.parent_path === null ? 'step' : 'stage',
       label: row.step_id,
       kind: row.kind ?? '',
-      href: stepHref(row.workflow, row.path, at),
+      href: stepHref(factory, row.workflow, row.path, at),
     })),
     edges: reduceEdges(edges).map((edge) => {
       const label = labels.get(edge.to);

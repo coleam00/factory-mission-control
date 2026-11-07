@@ -137,28 +137,29 @@ function nested(path: string, position: number): NestingRow {
 }
 
 test("a nested path's slash is encoded in the step's link", () => {
-  expect(stepHref('archon-deliver-block', 'rounds/implement')).toBe(
-    '/steps/archon-deliver-block/rounds%2Fimplement',
+  expect(stepHref('x', 'archon-deliver-block', 'rounds/implement')).toBe(
+    '/f/x/steps/archon-deliver-block/rounds%2Fimplement',
   );
 });
 
 test("a step's link keeps the version it is opened at, and has none for the current version", () => {
-  expect(stepHref('archon-loop', 'review', '8e3e1cef/x')).toBe(
-    '/steps/archon-loop/review?at=8e3e1cef%2Fx',
+  expect(stepHref('x', 'archon-loop', 'review', '8e3e1cef/x')).toBe(
+    '/f/x/steps/archon-loop/review?at=8e3e1cef%2Fx',
   );
-  expect(stepHref('archon-loop', 'review', null)).toBe('/steps/archon-loop/review');
-  expect(stepHref('archon-loop', 'review', '')).toBe('/steps/archon-loop/review');
+  expect(stepHref('x', 'archon-loop', 'review', null)).toBe('/f/x/steps/archon-loop/review');
+  expect(stepHref('x', 'archon-loop', 'review', '')).toBe('/f/x/steps/archon-loop/review');
 });
 
 test("nesting's links open each node's place in the address's workflow at the version", () => {
   const inside = nesting(
     [nested('ship/deliver/rounds/implement', 2)],
+    'x',
     'archon-loop',
     'ship/deliver',
     'p1',
   );
   expect(inside.map((node) => node.href)).toEqual([
-    '/steps/archon-loop/ship%2Fdeliver%2Frounds%2Fimplement?at=p1',
+    '/f/x/steps/archon-loop/ship%2Fdeliver%2Frounds%2Fimplement?at=p1',
   ]);
 });
 
@@ -196,20 +197,21 @@ test('repeated occurrences beneath a step are two entries, by their path beneath
       nested('deliver/rounds/implement', 2),
       nested('deliver/rounds/implement/implement', 3),
     ],
+    'x',
     'archon-ship-block',
     'deliver',
   );
   expect(inside.map((node) => [node.label, node.depth, node.href])).toEqual([
-    ['rounds/implement', 1, '/steps/archon-ship-block/deliver%2Frounds%2Fimplement'],
+    ['rounds/implement', 1, '/f/x/steps/archon-ship-block/deliver%2Frounds%2Fimplement'],
     [
       'rounds/implement/implement',
       2,
-      '/steps/archon-ship-block/deliver%2Frounds%2Fimplement%2Fimplement',
+      '/f/x/steps/archon-ship-block/deliver%2Frounds%2Fimplement%2Fimplement',
     ],
     [
       'rounds/reshape/implement',
       2,
-      '/steps/archon-ship-block/deliver%2Frounds%2Freshape%2Fimplement',
+      '/f/x/steps/archon-ship-block/deliver%2Frounds%2Freshape%2Fimplement',
     ],
   ]);
 });

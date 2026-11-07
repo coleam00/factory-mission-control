@@ -3,7 +3,7 @@
  * read here. Its coverage is held to the pinned pack by `bun run map:check` (invariant 6). Pure,
  * no React.
  */
-import { placeOf, type StepRow, stepHref } from '../lib/step-detail';
+import { placeOf, type StepOrigin, type StepRow, stepHref } from '../lib/step-detail';
 import data from './factory-map.json';
 
 /** Who is acting on a card, which is its color (docs/design/v2/tokens.css). */
@@ -381,6 +381,42 @@ export function cardChain(map: FactoryMap, workflow: string, path: string): Card
 }
 
 /**
+ * Where a step's screen returns to when nothing says where it was opened from: the map at the view
+ * of the deepest card that covers the step, that card selected; the root map for an uncovered step.
+ * The version `at` stays in the address.
+ */
+export function mapOrigin(
+  map: FactoryMap,
+  factory: string,
+  workflow: string,
+  path: string,
+  at: string | null,
+): StepOrigin {
+  const chain = cardChain(map, workflow, path);
+  const search = viewSearch(
+    map,
+    new URLSearchParams(at ? { at } : {}),
+    chain.slice(0, -1).flatMap((card) => (card.opens === undefined ? [] : [card.opens])),
+  ).toString();
+  const href = `/f/${encodeURIComponent(factory)}${search ? `?${search}` : ''}`;
+  const deepest = chain.at(-1);
+  return deepest === undefined
+    ? { href, label: 'Factory' }
+    : { href, label: `Factory / ${deepest.title}`, card: deepest.id };
+}
+
+/** The history state that makes the map select `card` on arrival. */
+export function selectState(card: string): { select: string } {
+  return { select: card };
+}
+
+/** The card id a navigation's history state asks the map to select on arrival, as `{ select }`. */
+export function selectOnArrival(state: unknown): string | undefined {
+  if (typeof state !== 'object' || state === null || !('select' in state)) return undefined;
+  return typeof state.select === 'string' ? state.select : undefined;
+}
+
+/**
  * Every card a step's laps show on: its `cardChain`, plus each card that counts as one of those.
  * Coverage uses `cardChain` alone, since an alias covers nothing.
  */
@@ -393,12 +429,12 @@ export function cardsCounting(map: FactoryMap, workflow: string, path: string): 
 
 /** Each step a card covers, opening its place in the covered workflow at the version pinned `at`. */
 
-export const stepLinks = (card: Card, at: string | null) =>
+export const stepLinks = (card: Card, factory: string, at: string | null) =>
   card.covers.flatMap((cover) =>
     cover.steps.map((step) => ({
       workflow: cover.workflow,
       step,
-      href: stepHref(cover.workflow, step, at),
+      href: stepHref(factory, cover.workflow, step, at),
     })),
   );
 
@@ -410,7 +446,12 @@ export const workflowFile = (steps: readonly StepRow[], workflow: string): strin
  * The steps of `stepLinks` the pinned version has, by `step-detail`'s rows, each with the model
  * its parsed architecture gives it (null for a step that names none).
  */
-export function pinnedStepLinks(card: Card, at: string | null, steps: readonly StepRow[]) {
+export function pinnedStepLinks(
+  card: Card,
+  factory: string,
+  at: string | null,
+  steps: readonly StepRow[],
+) {
   // Both packs' places can resolve to one step (archon-deliver-block rounds/review), so an entry
   // counts only when the pinned version has its workflow.
   return card.covers
@@ -424,7 +465,7 @@ export function pinnedStepLinks(card: Card, at: string | null, steps: readonly S
             workflow: cover.workflow,
             step,
             model: row.model,
-            href: stepHref(cover.workflow, step, at),
+            href: stepHref(factory, cover.workflow, step, at),
           },
         ];
       }),

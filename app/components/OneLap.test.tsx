@@ -158,6 +158,7 @@ const map: LapMapRow[] = [
 test('both attempts of a repeated review show, the running one with its time so far', () => {
   const html = render(
     <LapStepsBody
+      factory="x"
       map={{ rows: map, state: 'ready' }}
       rows={[
         step({}),
@@ -327,6 +328,7 @@ test('each step of the map is a node marked by what happened to it, inner steps 
   const at = (minute: number) => new Date(Date.UTC(2026, 9, 25, 12, minute));
   const html = render(
     <LapStepsBody
+      factory="x"
       map={{ rows: map, state: 'ready' }}
       rows={[
         step({ step_id: 'pick', started_at: at(0), outcome: null }),
@@ -357,6 +359,7 @@ test('each step of the map is a node marked by what happened to it, inner steps 
 test("a step the pin's map lacks is still drawn, after the step that ran before it", () => {
   const html = render(
     <LapStepsBody
+      factory="x"
       map={{ rows: map, state: 'ready' }}
       rows={[
         step({ step_id: 'pick', started_at: new Date('2026-10-25T12:00:00Z') }),
@@ -373,6 +376,7 @@ test("a step the pin's map lacks is still drawn, after the step that ran before 
 test("with no map stored for any pin, the lap's own steps are drawn in the order they ran", () => {
   const html = render(
     <LapStepsBody
+      factory="x"
       map={{ rows: [], state: 'ready' }}
       rows={[
         step({ step_id: 'pick', started_at: new Date('2026-10-25T12:00:00Z') }),
@@ -389,6 +393,7 @@ test("with no map stored for any pin, the lap's own steps are drawn in the order
 test('a block where no step ran is one box with its step count, its steps drawn once opened', () => {
   const html = render(
     <LapStepsBody
+      factory="x"
       map={{ rows: map, state: 'ready' }}
       rows={[
         step({ step_id: 'pick', started_at: new Date('2026-10-25T12:00:00Z') }),
@@ -433,6 +438,7 @@ test("a step the lap's pin lacks has no definition link, at any pin; a step on t
       step({ step_id: map[0].step_id, started_at: new Date('2026-10-25T12:00:00Z') }),
       step({ step_id: 'newstep', started_at: new Date('2026-10-25T12:01:00Z') }),
     ],
+    'x',
   );
   const panel = (path: string) =>
     render(<StepPanel lap={lap} path={path} now={0} onClose={() => {}} />);

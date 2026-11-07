@@ -134,7 +134,7 @@ export function FactorySwitcherBody({
       <summary className="flex cursor-pointer items-center gap-3">
         <span className="sr-only">Factory</span>
         <span className="inline-flex items-center gap-1.5 rounded-md border border-[color:var(--accent-muted)] bg-[color:var(--accent-soft)] px-2 py-0.5 font-mono text-sm font-semibold text-accent-bright [overflow-wrap:anywhere]">
-          {current ?? '-'}
+          {current ?? 'Choose a factory'}
           <span aria-hidden="true" className="text-[10px]">
             ▾
           </span>
@@ -179,7 +179,7 @@ function PublishFactories({
 
 /**
  * The shell's factory switcher: every row of `mc.factories` the server shows, live, opening the
- * same screen (`factoryPath`), and remembering the choice for the pages whose URL names no factory.
+ * same screen (`factoryPath`), and remembering the choice for the old step address, whose URL names none.
  */
 export function FactorySwitcher({ screens }: { screens: readonly FactoryScreen[] }): ReactElement {
   const live = useLive();

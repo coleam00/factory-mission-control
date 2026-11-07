@@ -222,11 +222,15 @@ async function checkSwitcher(ctx: LiveContext): Promise<void> {
       check(`${second}'s lanes`, lanes, running.map((r) => String(r.run)).sort());
     }
 
-    // A step's page names no factory: choosing one stays on the step and shows it (#202).
-    const stepPage = '/steps/archon-loop/check-app';
+    // Choosing a factory from a step's page stays on that step, in the chosen factory (#202).
+    const stepPage = (name: string) => `/f/${name}/steps/archon-loop/check-app`;
     for (const name of [factory, second]) {
-      await page.goto(`${base}${stepPage}`);
-      check(`choosing ${name} from step detail`, await choose(page, name, stepPage), stepPage);
+      await page.goto(`${base}${stepPage(name === factory ? second : factory)}`);
+      check(
+        `choosing ${name} from step detail`,
+        await choose(page, name, stepPage(name)),
+        stepPage(name),
+      );
       await waitFor(page, `step detail did not show ${name}`, switcherNames(name));
     }
 

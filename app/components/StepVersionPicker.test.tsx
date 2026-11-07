@@ -17,7 +17,7 @@ const render = (
   rows: StepVersionRow[] | undefined,
   state: PanelState,
   at: string | null,
-  href = (version: string | null) => stepHref('archon-loop', 'review', version),
+  href = (version: string | null) => stepHref('x', 'archon-loop', 'review', version ?? undefined),
 ) =>
   renderToStaticMarkup(
     <MemoryRouter>
@@ -52,8 +52,8 @@ const summary = (html: string) =>
 test('without a version the current one is shown, and opens the address without a version', () => {
   const html = render(ROWS, 'ready', null);
   expect(entries(html)).toEqual([
-    { sha: CURRENT, href: '/steps/archon-loop/review', shown: true },
-    { sha: OLDER, href: `/steps/archon-loop/review?at=${OLDER}`, shown: false },
+    { sha: CURRENT, href: '/f/x/steps/archon-loop/review', shown: true },
+    { sha: OLDER, href: `/f/x/steps/archon-loop/review?at=${OLDER}`, shown: false },
   ]);
   expect(summary(html)).toBe('Version 5ffd60c6 2026-02-01 current');
   expect(html).toContain('data-step-version');
