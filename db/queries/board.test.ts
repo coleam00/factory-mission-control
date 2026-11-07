@@ -68,12 +68,13 @@ test('the seed recount: each column and each work order bar equal the definition
 
   // queue-factory: 401 is in triage and built (the build run is between steps), so Intake; 402 and
   // 403 only have runs between steps, so no column; 404 and 405 are workable with no run (Queued);
+  // 410's running split run holds nothing, so it is Queued too;
   // 406 is needs-owner, which a queue factory does not read, and is not workable. 410 is a product
   // document, 411 and 412 are its merged pieces and 413 its open one. 413's work item state says
   // its build was parked after its triage, so it is Parked, not Queued, and not workable either.
   const queue = await view('queue-factory');
   expect(columns(queue)).toEqual({
-    queued: [404, 405],
+    queued: [404, 405, 410],
     intake: [401],
     build: [],
     review: [],
@@ -306,7 +307,7 @@ test('a parked work item is not workable, and a re-triage makes it workable agai
     (await view('queue-factory')).columns
       .find((c) => c.id === 'parked')
       ?.items.map((i) => i.number);
-  expect(await workable()).toEqual([404, 405]);
+  expect(await workable()).toEqual([404, 405, 410]);
   expect(await parkedItems()).toEqual([QUEUE_PARKED.issue]);
   try {
     await db.query(
@@ -362,7 +363,7 @@ test('a run that has just taken a work item is running on the Board, here on the
       NOW,
     ).get('build');
     expect(live?.here.map((l) => l.issue?.number)).toContain(404);
-    expect(live?.queued?.map((i) => i.number)).toEqual([405]);
+    expect(live?.queued?.map((i) => i.number)).toEqual([405, 410]);
 
     const laps = await run<{ issue_number: number | null; step_id: string }>(
       'lanes',

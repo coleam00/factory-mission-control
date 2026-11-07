@@ -22,8 +22,8 @@ WHERE i.factory = $1 AND i.state = 'open'
     WHERE c.factory = i.factory AND c.issue_number = i.number AND c.released_at IS NULL
   )
   -- Not held by a running run: the run's claim, else its facts step's item, else its number input
-  -- (the rule lanes.sql and home-map.sql read, restated because a live query may call no mc
-  -- function. db/queries/restated-rules.test.ts fails when the three disagree).
+  -- (the rule lanes.sql and home-map.sql read, but a split run holds nothing, as it only slices an item into children, so the item stays workable.
+  -- Restated because a live query may call no mc function. db/queries/restated-rules.test.ts fails when the three disagree).
   AND NOT EXISTS (
     SELECT 1 FROM mc.laps l
     LEFT JOIN LATERAL (
@@ -32,7 +32,7 @@ WHERE i.factory = $1 AND i.state = 'open'
       ORDER BY c.claimed_at DESC NULLS LAST, c.issue_number LIMIT 1
     ) c ON true
     LEFT JOIN mc.lap_steps facts ON facts.run_id = l.run_id AND facts.step_id = 'facts'
-    WHERE l.factory = i.factory AND l.status = 'running'
+    WHERE l.factory = i.factory AND l.status = 'running' AND l.workflow_name <> 'archon-split'
       AND coalesce(c.issue_number, (facts.output -> 'item' ->> 'number')::int, l.issue_number) = i.number
   )
   -- Not parked: the Board's parked rule (`parked` in app/lib/board.ts), restated because a live

@@ -119,11 +119,20 @@ test('the furthest stage a work item runs on wins', () => {
 test('a run on a card with no column, or between steps, holds the work item out of Queued', () => {
   const v = view({
     board: [item(1), item(2), item(3)],
-    map: [lap(1, 'archon-split', ['slice']), lap(2, 'archon-build-queue', null)],
+    map: [lap(1, 'archon-intake', ['slice']), lap(2, 'archon-build-queue', null)],
     workable: [workable(1), workable(2), workable(3)],
   });
   expect(v.columns.flatMap((c) => c.items.map((i) => i.number))).toEqual([3]);
   expect(column(v, 'queued')).toEqual([3]);
+});
+
+test('a running split run holds no work item: it stays in Queued', () => {
+  const v = view({
+    board: [item(1)],
+    map: [lap(1, 'archon-split', ['slice'])],
+    workable: [workable(1)],
+  });
+  expect(column(v, 'queued')).toEqual([1]);
 });
 
 test('an open pull request with no run waits in Build; Queued is workable items only', () => {
