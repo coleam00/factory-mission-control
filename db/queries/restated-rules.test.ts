@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { COLUMNS, parked } from '../../app/lib/board';
+import { COLUMNS, PARKED, parked } from '../../app/lib/board';
 import { LAP_PAGE_WORKFLOW, prNumber } from '../../app/lib/one-lap';
 import { REVIEW_TONE } from '../../app/lib/review-outcome';
 import {
@@ -209,20 +209,20 @@ test('the Board’s parked rule agrees with the pickups of the pinned build and 
   });
   const ownPr = (h: number) => ({ url: 'https://github.com/o/r/pull/1', at: hour(h) });
   const docs = [
-    doc('deliver', { triage: triage(1), build: build('parked', 2) }),
-    doc('deliver', { triage: triage(3), build: build('parked', 2) }),
-    doc('blocked', { triage: triage(3), build: build('parked', 2) }),
+    doc('deliver', { triage: triage(1), build: build(PARKED, 2) }),
+    doc('deliver', { triage: triage(3), build: build(PARKED, 2) }),
+    doc('blocked', { triage: triage(3), build: build(PARKED, 2) }),
     doc('deliver', { triage: triage(1), build: build('next', 2) }),
     doc('deliver', { triage: triage(1), build: build('asking', 2) }),
-    doc('deliver', { triage: triage(1), merge: merge('returned', 2), build: build('parked', 3) }),
-    doc('deliver', { triage: triage(1), build: build('ready', 2), merge: merge('parked', 3) }),
-    doc('deliver', { triage: triage(1), build: build('ready', 4), merge: merge('parked', 3) }),
-    doc('deliver', { triage: triage(5), build: build('ready', 2), merge: merge('parked', 3) }),
+    doc('deliver', { triage: triage(1), merge: merge('returned', 2), build: build(PARKED, 3) }),
+    doc('deliver', { triage: triage(1), build: build('ready', 2), merge: merge(PARKED, 3) }),
+    doc('deliver', { triage: triage(1), build: build('ready', 4), merge: merge(PARKED, 3) }),
+    doc('deliver', { triage: triage(5), build: build('ready', 2), merge: merge(PARKED, 3) }),
     doc('deliver', { triage: triage(1), build: build('ready', 2), merge: merge('waiting', 3) }),
-    doc('merge', { own_pr: ownPr(1), merge: merge('parked', 2) }),
-    doc('merge', { own_pr: ownPr(3), merge: merge('parked', 2) }),
+    doc('merge', { own_pr: ownPr(1), merge: merge(PARKED, 2) }),
+    doc('merge', { own_pr: ownPr(3), merge: merge(PARKED, 2) }),
     doc('merge', { own_pr: ownPr(1), merge: merge('waiting', 2) }),
-    doc('deliver', { build: build('asking', 1), own_pr: ownPr(3), merge: merge('parked', 2) }),
+    doc('deliver', { build: build('asking', 1), own_pr: ownPr(3), merge: merge(PARKED, 2) }),
   ];
   const db = await archonDb();
   try {
@@ -234,6 +234,22 @@ test('the Board’s parked rule agrees with the pickups of the pinned build and 
         [`work/${i + 1}`, JSON.stringify(d)],
       );
     }
+    await db.query(
+      `INSERT INTO mc.factories (name, repository, codebase, console) VALUES ('f', 'o/r', 'o/r', 'c')`,
+    );
+    for (const n of [...docs.keys()].map((i) => i + 1).concat(99)) {
+      await db.query(
+        `INSERT INTO mc.issues (factory, number, title, state, url, created_at, updated_at)
+         VALUES ('f', $1, 't', 'open', 'u', now(), now())`,
+        [n],
+      );
+    }
+    const workable = new Set(
+      (await db.query(sqlOf('health-workable'), ['f'])).flatMap((r) =>
+        r.kind === 'issue' ? [r.issue_number as number] : [],
+      ),
+    );
+    expect(workable.has(99), 'an issue with no work item state stays workable').toBe(true);
     for (const [i, d] of docs.entries()) {
       const [row] = await db.query(
         `SELECT build_status, build_at, merge_status, merge_at, triage_at, own_pr_at
@@ -256,10 +272,38 @@ test('the Board’s parked rule agrees with the pickups of the pinned build and 
         triagedAt > parkedAt;
       const expected = !retriaged && parkedAt !== null && !buildWaits(d) && !mergeWaits(d);
       expect(parked(state), JSON.stringify(d.facts)).toBe(expected);
+      expect(!workable.has(i + 1), JSON.stringify(d.facts)).toBe(expected);
     }
   } finally {
     await db.close();
   }
+});
+
+const statusUnion = (file: string, name: string) => {
+  const match = read('fixtures', 'pack', 'queue', 'sdlc', '.shared', file).match(
+    new RegExp(`export type ${name} =([^;]*);`),
+  );
+  expect(match, `${file} declares ${name}`).not.toBeNull();
+  return quoted(match?.[1] ?? '');
+};
+
+test('the parked status is the pinned pack’s, in parked() and in health-workable', () => {
+  const statuses = {
+    build: statusUnion('build.ts', 'BuildStatus'),
+    merge: statusUnion('merge.ts', 'MergeStatus'),
+  };
+  expect(statuses.build).toContain(PARKED);
+  expect(statuses.merge).toContain(PARKED);
+  const literals = [
+    ...sqlOf('health-workable').matchAll(/(build|merge)_status (?:=|IS DISTINCT FROM) '([^']*)'/g),
+  ];
+  expect(literals.length).toBeGreaterThan(0);
+  for (const [, queue, status] of literals) {
+    expect(statuses[queue as 'build' | 'merge'], `${queue}_status '${status}'`).toContain(status);
+  }
+  expect(new Set(literals.map((l) => l[2]).filter((s) => s !== 'ready'))).toEqual(
+    new Set([PARKED]),
+  );
 });
 
 const yamlEnum = (file: string[], node: string, key: string): string[] => {

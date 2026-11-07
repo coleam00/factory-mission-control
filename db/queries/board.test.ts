@@ -4,6 +4,7 @@ import { type BoardRow, boardView } from '../../app/lib/board';
 import type { HealthWorkableRow } from '../../app/lib/health';
 import type { OwnerQueueRow } from '../../app/lib/owner-queue';
 import type { HomeMapRow, WorkOrderRow } from '../../app/map/live';
+import { QUEUE_PARKED } from '../../scripts/fixture/seed';
 import type { Db } from '../../scripts/lib/db';
 import { onTheSeed, queries } from './test-seed';
 
@@ -68,7 +69,7 @@ test('the seed recount: each column and each work order bar equal the definition
   // 403 only have runs between steps, so no column; 404 and 405 are workable with no run (Queued);
   // 406 is needs-owner, which a queue factory does not read, and is not workable. 410 is a product
   // document, 411 and 412 are its merged pieces and 413 its open one. 413's work item state says
-  // its build was parked after its triage, so it is Parked and not Queued (workable or not).
+  // its build was parked after its triage, so it is Parked, not Queued, and not workable either.
   const queue = await view('queue-factory');
   expect(columns(queue)).toEqual({
     queued: [404, 405],
@@ -277,5 +278,47 @@ test('a work item state reaches only the factory whose codebase it names', async
     expect(await parkedOf('mission-control')).toEqual([9]);
   } finally {
     await db.query(`DELETE FROM mc.work_item_states WHERE number = 9`);
+  }
+});
+
+test("another factory's parked work item does not make this factory's issue unworkable", async () => {
+  await db.query(
+    `INSERT INTO mc.work_item_states (project_key, number, revision, build_status, build_at)
+     SELECT codebase, 401, 1, 'parked', '2026-10-24T09:06:00.000Z' FROM mc.factories WHERE name = 'mission-control'`,
+  );
+  try {
+    const workable = (await run<HealthWorkableRow>('health-workable', 'queue-factory')).map(
+      (r) => r.issue_number,
+    );
+    expect(workable).toContain(401);
+  } finally {
+    await db.query(`DELETE FROM mc.work_item_states WHERE number = 401`);
+  }
+});
+
+test('a parked work item is not workable, and a re-triage makes it workable again', async () => {
+  const workable = async () =>
+    (await run<HealthWorkableRow>('health-workable', 'queue-factory'))
+      .flatMap((r) => (r.kind === 'issue' && r.issue_number !== null ? [r.issue_number] : []))
+      .sort();
+  const parkedItems = async () =>
+    (await view('queue-factory')).columns
+      .find((c) => c.id === 'parked')
+      ?.items.map((i) => i.number);
+  expect(await workable()).toEqual([401, 402, 403, 404, 405, 410]);
+  expect(await parkedItems()).toEqual([QUEUE_PARKED.issue]);
+  try {
+    await db.query(
+      `UPDATE mc.work_item_states SET triage_at = '2026-10-24T10:00:00.000Z', revision = revision + 1
+       WHERE number = $1`,
+      [QUEUE_PARKED.issue],
+    );
+    expect(await workable()).toContain(QUEUE_PARKED.issue);
+    expect(await parkedItems()).toEqual([]);
+  } finally {
+    await db.query(
+      `UPDATE mc.work_item_states SET triage_at = $2, revision = $3 WHERE number = $1`,
+      [QUEUE_PARKED.issue, QUEUE_PARKED.triagedAt, QUEUE_PARKED.revision],
+    );
   }
 });
