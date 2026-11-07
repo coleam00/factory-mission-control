@@ -105,6 +105,8 @@ export interface MapView {
   group?: { x: number; y: number; width: number; height: number; label: string };
   lines: Line[];
   tour: string[];
+  /** The view's cards already match their references; the fit of any other deeper view is capped by theirs (issue #485). */
+  matchesReference?: boolean;
 }
 
 export interface FactoryMap extends MapView {
@@ -160,9 +162,6 @@ export function heroFrameHeight(world: { width: number; height: number }, width:
   return Math.max(MIN_FRAME, Math.ceil(world.height * k + FIT_PAD * 2 + FIT_FOOT));
 }
 
-/** The deeper views whose cards already match their references; the fit of any other view is capped by theirs (issue #485). */
-const MATCHING_VIEWS = ['intake', 'review', 'app', 'build', 'build/deliver'];
-
 /** The scale that fits `world` in `frame`, up to `max`, as the Fit control fits it. */
 export function fitScale(
   world: { width: number; height: number },
@@ -187,7 +186,9 @@ export function levelMax(
   frame: { width: number; height: number },
 ): number {
   if (level === map) return FIT_MAX;
-  const fits = MATCHING_VIEWS.map((id) => fitScale(worldSize(map.views?.[id] as MapView), frame));
+  const fits = Object.values(map.views ?? {})
+    .filter((view) => view.matchesReference)
+    .map((view) => fitScale(worldSize(view), frame));
   return Math.max(...fits);
 }
 

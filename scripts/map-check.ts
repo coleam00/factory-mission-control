@@ -177,6 +177,7 @@ const ROOT_KEYS: Record<keyof FactoryMap, true> = {
   group: true,
   lines: true,
   tour: true,
+  matchesReference: true,
   legend: true,
   views: true,
 };
@@ -187,6 +188,7 @@ const VIEW_KEYS: Record<keyof MapView, true> = {
   group: true,
   lines: true,
   tour: true,
+  matchesReference: true,
 };
 const SIZE_KEYS: Record<keyof MapView['cardSize'], true> = { width: true, height: true };
 const GROUP_KEYS: Record<keyof NonNullable<MapView['group']>, true> = {
