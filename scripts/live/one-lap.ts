@@ -1,6 +1,6 @@
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { prNumber, pullUrl } from '../../app/lib/one-lap';
+import { consoleUrl, prNumber, pullUrl } from '../../app/lib/one-lap';
 import { MARKER } from '../fixture/seed-report';
 import { openPage, type Page } from '../lib/cdp';
 import type { Db } from '../lib/db';
@@ -151,8 +151,17 @@ async function openOneLap(page: Page, base: string, factory: string, runId: stri
   }
 }
 
+/** The pull request lateral of db/queries/one-lap.sql, the page's own rule for which PR a lap shows. */
+function pageLapPrJoin(sql: string): string {
+  const lateral =
+    /^LEFT JOIN LATERAL \(\r?\n\s*SELECT s\.output ->> 'pr' AS pr[\s\S]*?^\) pr ON true/m.exec(sql);
+  if (!lateral) throw new Error('db/queries/one-lap.sql has no pr lateral to read');
+  return lateral[0];
+}
+
 /**
- * A finished lap's screen against SQL over the seed's tables, not the screen's queries: each
+ * A finished lap's screen against SQL over the seed's tables, not the screen's queries (except the PR column, which runs
+ * the one-lap.sql lateral so the page and the check share one owner): each
  * step's single attempt, the lap's cost, its review, merge gate and app-check lines, its links,
  * and no holdout line or text anywhere on the page. The seed lap has holdout lines, so equal
  * lines prove the page leaves them out.
@@ -161,6 +170,7 @@ async function seedOneLapMismatches(
   page: Page,
   db: Db,
   runId: string,
+  oneLapSql: string,
 ): Promise<{ mismatches: string[]; report: string }> {
   const shown = await page.evaluate<OneLapOnScreen>(oneLapOnScreen);
   const mismatches: string[] = [];
@@ -168,20 +178,21 @@ async function seedOneLapMismatches(
   const nullable = (value: unknown) => (value === null ? null : Number(value));
 
   const [lap] = await db.query(
-    `SELECT f.repository,
+    `SELECT f.repository, f.console,
        (SELECT c.issue_number FROM mc.claims c WHERE c.factory = l.factory AND c.run_id = l.run_id
          ORDER BY c.claimed_at DESC NULLS LAST LIMIT 1) AS issue,
        (SELECT i.url FROM mc.issues i WHERE i.factory = l.factory AND i.number =
          (SELECT c.issue_number FROM mc.claims c WHERE c.factory = l.factory AND c.run_id = l.run_id
            ORDER BY c.claimed_at DESC NULLS LAST LIMIT 1)) AS issue_url,
        pick.output ->> 'route' AS route, pick.output ->> 'depth' AS depth,
-       review.output ->> 'outcome' AS review, review.output ->> 'pr' AS pr,
+       review.output ->> 'outcome' AS review, pr.pr,
        land.output ->> 'outcome' AS gate, land.output ->> 'reason' AS reason
      FROM mc.laps l
      JOIN mc.factories f ON f.name = l.factory
      LEFT JOIN mc.lap_steps pick ON pick.run_id = l.run_id AND pick.step_id = 'pick'
      LEFT JOIN mc.lap_steps review ON review.run_id = l.run_id AND review.step_id = 'review'
      LEFT JOIN mc.lap_steps land ON land.run_id = l.run_id AND land.step_id = 'land'
+     ${pageLapPrJoin(oneLapSql)}
      WHERE l.run_id = $1`,
     [runId],
   );
@@ -193,7 +204,7 @@ async function seedOneLapMismatches(
     depth: lap.depth,
     issue,
     links: {
-      console: `http://localhost:3090/console/r/${runId}`,
+      console: consoleUrl(String(lap.console), runId),
       issue: lap.issue_url,
       pr: pr === null ? null : pullUrl(String(lap.repository), pr),
     },
@@ -386,7 +397,12 @@ export function oneLapPhase(ctx: LiveContext): LivePhase {
       const refusedPage = await openPage(deps.env);
       try {
         await openOneLap(refusedPage, base, factory, refusedRun);
-        const oneLapSeed = await seedOneLapMismatches(refusedPage, db, refusedRun);
+        const oneLapSeed = await seedOneLapMismatches(
+          refusedPage,
+          db,
+          refusedRun,
+          ctx.queries.get('one-lap') as string,
+        );
         writeFileSync(join(outDir, 'one-lap-check.txt'), `${oneLapSeed.report}\n`);
         ctx.failures.push(...oneLapSeed.mismatches.map((m) => `one lap against the seed: ${m}`));
         writeFileSync(join(outDir, 'one-lap.png'), await refusedPage.screenshot(1440));
