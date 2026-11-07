@@ -268,13 +268,13 @@ const hero = (width: number) => ({
 const view = (id: string) => FACTORY_MAP.views?.[id] as MapView;
 const FEW_CARDS = ['deploy', 'merge', 'split', 'order', 'manager'];
 
-test('a deeper view with few cards fits at the reference card size at 1440', () => {
+test('a deeper view with few cards is capped near 212px at 1440', () => {
   const frame = hero(1384);
   for (const id of FEW_CARDS) {
     const v = view(id);
     const px = fitScale(worldSize(v), frame, levelMax(FACTORY_MAP, v, frame)) * v.cardSize.width;
-    expect(px).toBeGreaterThanOrEqual(200);
-    expect(px).toBeLessThanOrEqual(230);
+    expect(px).toBeGreaterThanOrEqual(205);
+    expect(px).toBeLessThanOrEqual(215);
   }
 });
 

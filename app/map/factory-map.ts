@@ -162,9 +162,9 @@ export function heroFrameHeight(world: { width: number; height: number }, width:
 
 /**
  * How much wider on screen a deeper view's card may be than the home map's card at the home fit:
- * at 1440 x 900 that is the 225px card refs 10-19 draw (issue #485).
+ * at 1440 x 900 that is about 212px: the least that leaves the matching views' fit unchanged (issue #485).
  */
-export const DRILL_CARD_MAX = 1.92;
+export const DRILL_CARD_MAX = 1.81;
 
 /** The scale that fits `world` in `frame`, up to `max`, as the Fit control fits it. */
 export function fitScale(
