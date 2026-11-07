@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync } from 'node:fs';
+import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { consoleUrl, prNumber, pullUrl } from '../../app/lib/one-lap';
 import { MARKER } from '../fixture/seed-report';
@@ -152,8 +152,7 @@ async function openOneLap(page: Page, base: string, factory: string, runId: stri
 }
 
 /** The pull request lateral of db/queries/one-lap.sql, the page's own rule for which PR a lap shows. */
-function pageLapPrJoin(repoRoot: string): string {
-  const sql = readFileSync(join(repoRoot, 'db', 'queries', 'one-lap.sql'), 'utf8');
+function pageLapPrJoin(sql: string): string {
   const lateral =
     /^LEFT JOIN LATERAL \(\r?\n\s*SELECT s\.output ->> 'pr' AS pr[\s\S]*?^\) pr ON true/m.exec(sql);
   if (!lateral) throw new Error('db/queries/one-lap.sql has no pr lateral to read');
@@ -171,7 +170,7 @@ async function seedOneLapMismatches(
   page: Page,
   db: Db,
   runId: string,
-  repoRoot: string,
+  oneLapSql: string,
 ): Promise<{ mismatches: string[]; report: string }> {
   const shown = await page.evaluate<OneLapOnScreen>(oneLapOnScreen);
   const mismatches: string[] = [];
@@ -193,7 +192,7 @@ async function seedOneLapMismatches(
      LEFT JOIN mc.lap_steps pick ON pick.run_id = l.run_id AND pick.step_id = 'pick'
      LEFT JOIN mc.lap_steps review ON review.run_id = l.run_id AND review.step_id = 'review'
      LEFT JOIN mc.lap_steps land ON land.run_id = l.run_id AND land.step_id = 'land'
-     ${pageLapPrJoin(repoRoot)}
+     ${pageLapPrJoin(oneLapSql)}
      WHERE l.run_id = $1`,
     [runId],
   );
@@ -398,7 +397,12 @@ export function oneLapPhase(ctx: LiveContext): LivePhase {
       const refusedPage = await openPage(deps.env);
       try {
         await openOneLap(refusedPage, base, factory, refusedRun);
-        const oneLapSeed = await seedOneLapMismatches(refusedPage, db, refusedRun, deps.repoRoot);
+        const oneLapSeed = await seedOneLapMismatches(
+          refusedPage,
+          db,
+          refusedRun,
+          ctx.queries.get('one-lap') as string,
+        );
         writeFileSync(join(outDir, 'one-lap-check.txt'), `${oneLapSeed.report}\n`);
         ctx.failures.push(...oneLapSeed.mismatches.map((m) => `one lap against the seed: ${m}`));
         writeFileSync(join(outDir, 'one-lap.png'), await refusedPage.screenshot(1440));
