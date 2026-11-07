@@ -60,23 +60,32 @@ export interface ColumnSpec {
   title: string;
   /** The color of the title; absent for Queued, which is nobody's yet. */
   role?: Role;
-  /** Who holds the column's items, under its title. */
-  holder?: string;
+  /** Who holds the column's items, shown under its title, as the reference (`docs/design/v2/mockup.html` `COLS`) names it. */
+  holder: string;
   /** What an empty column says; 'Nothing here' when absent. */
   empty?: string;
 }
 
+/** Who holds a stage column's items: the reference's captions, and for Review and App check the workflow that runs them. */
+const STAGE_HOLDER: Record<StageId, string> = {
+  intake: 'triage',
+  build: 'build queue',
+  review: 'build queue',
+  app: 'app check',
+  merge: 'merge queue',
+};
+
 function stageSpec(id: StageId): ColumnSpec {
   const card = FACTORY_MAP.cards.find((c) => c.id === id);
   if (card === undefined) throw new Error(`the factory map has no ${id} card`);
-  return { id, title: card.title, role: card.role };
+  return { id, title: card.title, role: card.role, holder: STAGE_HOLDER[id] };
 }
 
 export const COLUMNS: readonly ColumnSpec[] = [
-  { id: 'queued', title: 'Queued' },
+  { id: 'queued', title: 'Queued', holder: 'build queue' },
   ...STAGES.map(stageSpec),
-  { id: 'decision', title: 'Your decision', role: 'person' },
-  { id: 'merged', title: 'Merged', role: 'test' },
+  { id: 'decision', title: 'Your decision', role: 'person', holder: 'manager' },
+  { id: 'merged', title: 'Merged', role: 'test', holder: 'done' },
   { id: 'parked', title: 'Parked', holder: 'you', empty: 'Empty' },
 ];
 
