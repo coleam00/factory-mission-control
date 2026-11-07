@@ -160,6 +160,37 @@ export function heroFrameHeight(world: { width: number; height: number }, width:
   return Math.max(MIN_FRAME, Math.ceil(world.height * k + FIT_PAD * 2 + FIT_FOOT));
 }
 
+/** The deeper views whose cards already match their references; the fit of any other view is capped by theirs (issue #485). */
+const MATCHING_VIEWS = ['intake', 'review', 'app', 'build', 'build/deliver'];
+
+/** The scale that fits `world` in `frame`, up to `max`, as the Fit control fits it. */
+export function fitScale(
+  world: { width: number; height: number },
+  frame: { width: number; height: number },
+  max = FIT_MAX,
+): number {
+  return Math.min(
+    (frame.width - FIT_PAD * 2) / world.width,
+    (frame.height - FIT_PAD * 2 - FIT_FOOT) / world.height,
+    max,
+  );
+}
+
+/**
+ * The largest scale `level` is fitted at in `frame`: FIT_MAX for the root; for a deeper view, the
+ * largest scale the matching views fit at in the same frame, so a view with few cards is not drawn
+ * larger than the reference (issue #485). The matching views keep their own fit by construction.
+ */
+export function levelMax(
+  map: FactoryMap,
+  level: MapView,
+  frame: { width: number; height: number },
+): number {
+  if (level === map) return FIT_MAX;
+  const fits = MATCHING_VIEWS.map((id) => fitScale(worldSize(map.views?.[id] as MapView), frame));
+  return Math.max(...fits);
+}
+
 const cardById = (map: MapView, id: string): Card => {
   const card = map.cards.find((c) => c.id === id);
   if (card === undefined) throw new Error(`the factory map has no card ${id}`);

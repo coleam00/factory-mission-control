@@ -1778,6 +1778,7 @@
           "text": "So the whole backlog does not start at once",
           "x": 344,
           "y": 240,
+          "width": 360,
           "lists": ["choices"],
           "covers": [],
           "details": {
@@ -1792,6 +1793,7 @@
           "text": "Main, dev, a release branch or staging",
           "x": 344,
           "y": 498,
+          "width": 360,
           "covers": [],
           "details": {
             "what": ["Main, dev, a release branch or staging"]
@@ -1803,7 +1805,7 @@
           "kind": "next",
           "title": "Build queue",
           "text": "Builds what is in the order, in order",
-          "x": 688,
+          "x": 788,
           "y": 240,
           "upTo": "build",
           "covers": [],
@@ -1841,7 +1843,7 @@
           "from": "o-pick",
           "to": "o-land",
           "style": "ask",
-          "route": [[474, 440], [474, 498]]
+          "route": [[524, 440], [524, 498]]
         }
       ],
       "tour": ["o-bug", "o-pick", "o-next"]
@@ -2057,6 +2059,7 @@
           "text": "Only DEPLOY.md commands",
           "x": 344,
           "y": 0,
+          "width": 336,
           "lists": ["deploys", "lands"],
           "covers": [
             {
@@ -2080,7 +2083,7 @@
           "kind": "script",
           "title": "Verify",
           "text": "Health + revision read back",
-          "x": 688,
+          "x": 764,
           "y": 0,
           "lists": ["deploys", "lands"],
           "covers": [
@@ -2466,13 +2469,14 @@
           "from": "u-mgr",
           "to": "u-b",
           "style": "ask",
-          "route": [[520, 350], [520, 300], [430, 300], [430, 250]]
+          "arrow": false,
+          "route": [[580, 350], [580, 300], [430, 300], [430, 250]]
         },
         {
           "from": "u-mgr",
           "to": "u-m",
           "style": "ask",
-          "route": [[640, 350], [640, 300], [730, 300], [730, 250]]
+          "route": [[580, 350], [580, 300], [730, 300], [730, 250]]
         },
         {
           "from": "u-pol",
