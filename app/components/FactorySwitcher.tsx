@@ -134,7 +134,7 @@ export function FactorySwitcherBody({
       <summary className="flex cursor-pointer items-center gap-3">
         <span className="sr-only">Factory</span>
         <span className="inline-flex items-center gap-1.5 rounded-md border border-[color:var(--accent-muted)] bg-[color:var(--accent-soft)] px-2 py-0.5 font-mono text-sm font-semibold text-accent-bright [overflow-wrap:anywhere]">
-          {current ?? '-'}
+          {current ?? 'Choose a factory'}
           <span aria-hidden="true" className="text-[10px]">
             ▾
           </span>

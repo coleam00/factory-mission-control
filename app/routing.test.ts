@@ -120,6 +120,7 @@ test("a removed screen's address goes to the screen that replaced it, under the 
   expect(REMOVED_SCREENS.owner).toBe('decisions');
   expect(REMOVED_SCREENS.issues).toBe('board');
   expect(REMOVED_SCREENS.scorecard).toBe('');
+  expect(REMOVED_SCREENS.rewind).toBe('');
   for (const [from, to] of Object.entries(REMOVED_SCREENS)) {
     const routes = appRoutes({ './routes/index.tsx': { default: () => null } })[0]?.children ?? [];
     expect(routes.some((r) => r.path === `/f/:factory/${from}`)).toBe(true);
