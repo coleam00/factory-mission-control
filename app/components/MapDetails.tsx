@@ -4,7 +4,7 @@ import type { AppCheckRow } from '../lib/app-check';
 import { boardHref, orderPanel, orderProgress } from '../lib/board';
 import { relativeTime } from '../lib/format';
 import { hasLapPage } from '../lib/one-lap';
-import type { StepOrigin, StepRow } from '../lib/step-detail';
+import { type StepRow, stepOriginState } from '../lib/step-detail';
 import { LivePanel } from '../live/LivePanel';
 import { type Card, type Chip, pinnedStepLinks, workflowFile } from '../map/factory-map';
 import {
@@ -422,13 +422,11 @@ export function Behind({
                 <li key={link.step} className="contents">
                   <Link
                     to={link.href}
-                    state={{
-                      from: {
-                        href: `${pathname}${search}`,
-                        label: `Factory / ${card.title}`,
-                        card: card.id,
-                      } satisfies StepOrigin,
-                    }}
+                    state={stepOriginState({
+                      href: `${pathname}${search}`,
+                      label: `Factory / ${card.title}`,
+                      card: card.id,
+                    })}
                     data-step-link={`${link.workflow} ${link.step}`}
                     className={LINK}
                   >

@@ -13,7 +13,7 @@ import {
   type StepState,
 } from '../lib/lap-graph';
 import { costOf, since } from '../lib/laps';
-import type { StepOrigin } from '../lib/step-detail';
+import { stepOriginState } from '../lib/step-detail';
 import { errorHeadline } from '../lib/error-text';
 import { attemptSeconds } from '../lib/one-lap';
 import { GraphViewport } from './GraphViewport';
@@ -458,9 +458,7 @@ export function StepPanel({
       ) : (
         <Link
           to={node.href}
-          state={{
-            from: { href: `${pathname}${search}`, label: 'Laps / This lap' } satisfies StepOrigin,
-          }}
+          state={stepOriginState({ href: `${pathname}${search}`, label: 'Laps / This lap' })}
           className={`${MONO} w-fit text-text-secondary ${LINK}`}
         >
           The step's definition

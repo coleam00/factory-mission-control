@@ -202,6 +202,11 @@ export interface StepOrigin {
   card?: string;
 }
 
+/** The history state an opener passes so the step screen knows where it was opened from. */
+export function stepOriginState(from: StepOrigin): { from: StepOrigin } {
+  return { from };
+}
+
 /** The origin a navigation's history state carries, when the opener passed one. */
 export function stepOriginOf(state: unknown): StepOrigin | undefined {
   if (typeof state !== 'object' || state === null || !('from' in state)) return undefined;

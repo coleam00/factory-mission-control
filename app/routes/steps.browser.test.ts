@@ -121,6 +121,7 @@ test("a step's Trigger rule shows its rule, and a dash when it declares none", a
 interface Crumbs {
   opened: { href: string | null; text: string | null };
   moved: { href: string | null; text: string | null };
+  selected: string | null;
   expectedDefault: { href: string; label: string };
 }
 
@@ -129,6 +130,7 @@ test('the breadcrumb returns to where the step was opened from, and keeps it whi
   const crumbs = await inPage<Crumbs>(`breadcrumbOf(${JSON.stringify({ from })})`);
   expect(crumbs.opened).toEqual({ href: from.href, text: from.label });
   expect(crumbs.moved).toEqual(crumbs.opened);
+  expect(crumbs.selected).toBe(from.card);
 }, 30_000);
 
 test('without an opener the breadcrumb returns to the map card that covers the step', async () => {

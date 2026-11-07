@@ -373,6 +373,11 @@ export function mapOrigin(
     : { href, label: `Factory / ${deepest.title}`, card: deepest.id };
 }
 
+/** The history state that makes the map select `card` on arrival. */
+export function selectState(card: string): { select: string } {
+  return { select: card };
+}
+
 /** The card id a navigation's history state asks the map to select on arrival, as `{ select }`. */
 export function selectOnArrival(state: unknown): string | undefined {
   if (typeof state !== 'object' || state === null || !('select' in state)) return undefined;

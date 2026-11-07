@@ -22,7 +22,7 @@ import {
 } from '../lib/step-detail';
 import { useFactory } from '../live/FactoryProvider';
 import { LivePanel, type PanelState } from '../live/LivePanel';
-import { FACTORY_MAP, mapOrigin } from '../map/factory-map';
+import { FACTORY_MAP, mapOrigin, selectState } from '../map/factory-map';
 
 const LABEL = 'font-mono text-[10px] font-semibold uppercase tracking-[0.04em] text-text-secondary';
 const CARD = 'flex flex-col gap-3 rounded-lg border border-border bg-surface p-5';
@@ -504,7 +504,7 @@ export default function StepDetail(): ReactElement {
       >
         <Link
           to={origin.href}
-          state={origin.card === undefined ? undefined : { select: origin.card }}
+          state={origin.card === undefined ? undefined : selectState(origin.card)}
           data-breadcrumb-back=""
         >
           {origin.label}

@@ -5,7 +5,7 @@ import type { StepOrigin, StepRow } from '../../lib/step-detail';
 import { ALL_STEP_QUERIES } from '../../lib/step-queries';
 import { FactoryProvider } from '../../live/FactoryProvider';
 import { LiveProvider } from '../../live/LiveProvider';
-import { FACTORY_MAP, mapOrigin } from '../../map/factory-map';
+import { FACTORY_MAP, mapOrigin, selectOnArrival } from '../../map/factory-map';
 import { OldStepAddress } from '../../routing';
 import StepDetail from '../f.$factory.steps.$workflow.$step';
 
@@ -182,6 +182,7 @@ function mount(url: string, steps: Record<string, StepRow[]>, state?: unknown) {
           </FactoryProvider>
         ),
       },
+      { path: '/f/:factory', element: null },
       {
         path: '/steps/:workflow/:step',
         element: (
@@ -205,6 +206,7 @@ function mount(url: string, steps: Record<string, StepRow[]>, state?: unknown) {
     container,
     asked,
     navigate: (to: string) => router.navigate(to),
+    state: () => router.state.location.state,
     location: () => `${router.state.location.pathname}${router.state.location.search}`,
     fail(query: string) {
       for (const capability of socket.live.keys())
@@ -431,9 +433,14 @@ export async function breadcrumbOf(state: { from: StepOrigin } | undefined) {
     const opened = back();
     await screen.navigate(`/f/factory-a/steps/archon-loop/review?at=${NEWER}`);
     await until(() => shown(screen).prompt === `Review at ${NEWER}`, 'the newer version');
+    const moved = back();
+    const before = screen.location();
+    screen.container.querySelector<HTMLElement>('[data-breadcrumb-back]')?.click();
+    await until(() => screen.location() !== before, 'the opener');
     return {
       opened,
-      moved: back(),
+      moved,
+      selected: selectOnArrival(screen.state()) ?? null,
       expectedDefault: mapOrigin(FACTORY_MAP, 'factory-a', 'archon-loop', 'review', null),
     };
   } finally {
