@@ -1,9 +1,18 @@
 import { describe, expect, test } from 'bun:test';
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  cpSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { join, relative, resolve } from 'node:path';
 import { archRows } from '../scripts/arch-parse';
-import { parsePack, parseVersion, type Step, type Workflow } from './pack';
+import { FACTORY_PACKAGE_DIR, parsePack, parseVersion, type Step, type Workflow } from './pack';
 
 const repoRoot = resolve(import.meta.dir, '..');
 const packDir = join(repoRoot, 'fixtures', 'pack', 'sdlc');
@@ -301,6 +310,36 @@ describe('a version holds the loop pack and the factory package', () => {
     const recorded = readFileSync(join(queueDir, 'FACTORY_COMMIT'), 'utf8').trim();
     expect(recorded).toHaveLength(40);
     expect(version.packageCommit).toBe(recorded);
+  });
+
+  test('keeps the factory snapshot identical to the package it copies', () => {
+    const files = (root: string): Map<string, string> => {
+      const found = new Map<string, string>();
+      const walk = (dir: string): void => {
+        for (const entry of readdirSync(dir, { withFileTypes: true })) {
+          const path = join(dir, entry.name);
+          if (entry.isDirectory()) walk(path);
+          else
+            found.set(
+              relative(root, path).replaceAll('\\', '/'),
+              readFileSync(path, 'utf8').replaceAll('\r\n', '\n'),
+            );
+        }
+      };
+      if (existsSync(root)) walk(root);
+      return found;
+    };
+    const snapshot = files(join(queueDir, 'factory'));
+    const source = files(join(repoRoot, FACTORY_PACKAGE_DIR));
+    const differing = [...new Set([...snapshot.keys(), ...source.keys()])]
+      .filter((path) => snapshot.get(path) !== source.get(path))
+      .sort();
+    expect(
+      differing,
+      `fixtures/pack/queue/factory differs from ${FACTORY_PACKAGE_DIR} in: ${differing.join(', ')}. ` +
+        'Copy the package into the snapshot and update fixtures/pack/queue/FACTORY_COMMIT.',
+    ).toEqual([]);
+    expect(source.size).toBeGreaterThan(0);
   });
 
   test('refuses a package workflow that reuses a loop pack workflow name', () => {
