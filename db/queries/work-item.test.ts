@@ -107,3 +107,19 @@ test('a build-queue run is on the item once its facts step names it, or while th
     expect(ids).toContain(starting);
   });
 });
+
+test("a build run's cost is its non-aggregate steps, not its loop roll-up on top", async () => {
+  const runs = (await rowsOf(db, 'queue-factory', QUEUE_RETURNED.issue)).filter(
+    (r) => r.workflow === 'archon-build-queue',
+  );
+  expect(runs).toHaveLength(2);
+  for (const run of runs) {
+    expect(run.cost).toBeCloseTo(2.2, 9);
+    const [rollup] = await db.query(
+      `SELECT cost_usd::float8 AS c FROM mc.lap_steps
+       WHERE run_id = $1 AND step_id = 'ship__deliver__rounds'`,
+      [run.run_id],
+    );
+    expect(rollup.c).toBe(1.5);
+  }
+});

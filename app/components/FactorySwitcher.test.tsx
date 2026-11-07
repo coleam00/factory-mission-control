@@ -201,3 +201,21 @@ test('only a page the switcher opened reads as switched', () => {
     expect(isSwitched(state)).toBe(false);
   }
 });
+
+test('where the URL names no listed factory the label invites a choice instead of reading "-"', () => {
+  const html = renderToStaticMarkup(
+    <MemoryRouter>
+      <FactorySwitcherBody
+        rows={[{ factory: 'mission-control', running: 0, is_default: true }]}
+        state="ready"
+        current={undefined}
+        hrefFor={(factory) => factoryPath('/f/nope', factory, SCREENS)}
+        open
+        onToggle={() => {}}
+      />
+    </MemoryRouter>,
+  );
+  expect(html).toContain('Choose a factory');
+  expect(html).not.toMatch(/>-\s*<span/);
+  expect(entries(html).map((e) => e.factory)).toEqual(['mission-control']);
+});

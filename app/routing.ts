@@ -91,6 +91,7 @@ export const REMOVED_SCREENS: Readonly<Record<string, string>> = {
   issues: 'board',
   ledger: 'decisions',
   owner: 'decisions',
+  rewind: '',
   scorecard: '',
   testing: 'board',
   versions: '',

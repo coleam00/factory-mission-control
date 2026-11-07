@@ -4,6 +4,7 @@ import {
   type BoardRow,
   type BoardSources,
   boardView,
+  COLUMNS,
   itemOnBoard,
   KEEP_MS,
   nextChange,
@@ -326,4 +327,19 @@ test('parked: a merge park holds until a triage or renewed readiness, an own pul
   expect(parked(own)).toBe(true);
   expect(parked({ ...own, own_pr_at: T(3) })).toBe(true);
   expect(parked({ ...merge, merge_status: 'waiting' })).toBe(false);
+});
+
+// Captions are the reference's (mockup `COLS`); Review and App check name the workflow that runs them.
+test('every column carries the caption the reference draws', () => {
+  expect(COLUMNS.map((c) => [c.id, c.holder])).toEqual([
+    ['queued', 'build queue'],
+    ['intake', 'triage'],
+    ['build', 'build queue'],
+    ['review', 'build queue'],
+    ['app', 'app check'],
+    ['merge', 'merge queue'],
+    ['decision', 'manager'],
+    ['merged', 'done'],
+    ['parked', 'you'],
+  ]);
 });
