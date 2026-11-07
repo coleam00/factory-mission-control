@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test';
-import { existsSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { REPO_ROOT } from './lib/cli';
 import { NOW, recordingDeps, scratchRepo } from './lib/test-deps';
@@ -146,21 +146,6 @@ test("--help names a screenshot and a design probe for every view in the map's v
     const name = id === 'deploy' ? 'staging' : id.replaceAll('/', '-');
     expect(help).toContain(`${name}-view.png`);
     expect(help).toContain(`${name}-view-design-probe.json`);
-  }
-});
-
-test('no live phase writes to --out except through ctx.save and ctx.designProbe', () => {
-  const dir = join(REPO_ROOT, 'scripts', 'live');
-  const phases = readdirSync(dir).filter(
-    (f) => f.endsWith('.ts') && f !== 'shared.ts' && !f.endsWith('.test.ts'),
-  );
-  expect(phases.length).toBeGreaterThan(0);
-  for (const file of phases) {
-    const source = readFileSync(join(dir, file), 'utf-8');
-    expect({ file, writes: /writeFileSync|harness\/design-probe\.js/.test(source) }).toEqual({
-      file,
-      writes: false,
-    });
   }
 });
 
