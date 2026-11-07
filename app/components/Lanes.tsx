@@ -16,7 +16,8 @@ import {
 } from '../lib/laps';
 import { consoleUrl, hasLapPage, workflowLabel } from '../lib/one-lap';
 import { LivePanel, type PanelState } from '../live/LivePanel';
-import { laneMarks } from '../lib/lap-graph';
+import { laneMarks, stepPath } from '../lib/lap-graph';
+import { stepHref, stepOriginState } from '../lib/step-detail';
 import { LaneMarks } from './LapGraph';
 
 export const LABEL =
@@ -136,17 +137,13 @@ export function LaneList({
                   <span className={`${MONO} text-text-secondary`}>
                     {loop ? 'No issue claimed yet' : ''}
                   </span>
-                ) : lane.issue_url === null ? (
-                  <span className={`${MONO} font-bold text-text-primary`}>
-                    #{lane.issue_number}
-                  </span>
                 ) : (
-                  <a
-                    href={lane.issue_url}
+                  <Link
+                    to={`/f/${encodeURIComponent(factory)}/work/${lane.issue_number}`}
                     className={`${MONO} shrink-0 font-bold text-text-primary underline decoration-border-bright underline-offset-2 hover:decoration-text-primary`}
                   >
                     #{lane.issue_number}
-                  </a>
+                  </Link>
                 )}
                 {lane.issue_title === null ? null : (
                   <span className="min-w-0 truncate text-[12.5px] text-text-secondary">
@@ -178,13 +175,21 @@ export function LaneList({
               {loop ? <Field label="Route">{lane.route ?? NONE}</Field> : null}
               {loop ? <Field label="Depth">{lane.depth ?? NONE}</Field> : null}
               <Field label="Step">
-                <span className="text-[color:var(--running)]">
-                  {lane.step_id === null
-                    ? 'not started'
-                    : loop
-                      ? stepLabel(lane.step_id)
-                      : queueStepLabel(lane.step_id)}
-                </span>
+                {lane.step_id === null ? (
+                  <span className="text-[color:var(--running)]">not started</span>
+                ) : (
+                  <Link
+                    to={stepHref(factory, lane.workflow_name, stepPath(lane.step_id))}
+                    state={stepOriginState({
+                      href: `/f/${encodeURIComponent(factory)}/laps`,
+                      label: 'Laps',
+                    })}
+                    data-step-link
+                    className="text-[color:var(--running)] underline decoration-border-bright underline-offset-2 hover:decoration-text-primary"
+                  >
+                    {loop ? stepLabel(lane.step_id) : queueStepLabel(lane.step_id)}
+                  </Link>
+                )}
               </Field>
               <Field label="On step for">
                 <span data-elapsed>{onStep === null ? NONE : formatElapsed(onStep)}</span>
