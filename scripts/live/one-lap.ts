@@ -161,7 +161,8 @@ function pageLapPrJoin(repoRoot: string): string {
 }
 
 /**
- * A finished lap's screen against SQL over the seed's tables, not the screen's queries: each
+ * A finished lap's screen against SQL over the seed's tables, not the screen's queries (except the PR column, which runs
+ * the one-lap.sql lateral so the page and the check share one owner): each
  * step's single attempt, the lap's cost, its review, merge gate and app-check lines, its links,
  * and no holdout line or text anywhere on the page. The seed lap has holdout lines, so equal
  * lines prove the page leaves them out.
