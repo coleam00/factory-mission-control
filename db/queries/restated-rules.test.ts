@@ -430,10 +430,18 @@ test('lanes, home-map and health-workable resolve the same item for every source
       [id('5')]: 5,
       [id('6')]: null,
     };
-    expect(held(await db.query(sqlOf('lanes'), ['f']))).toEqual(expected);
-    expect(
-      held((await db.query(sqlOf('home-map'), ['f', ''])).filter((r) => r.kind === 'lap')),
-    ).toEqual(expected);
+    // Every seeded issue is titled 't', so a title join that drifts from the held item yields null.
+    const titled = (rows: Record<string, unknown>[], col: string) =>
+      Object.fromEntries(rows.map((r) => [r.run_id as string, r[col] ?? null]));
+    const expectedTitles = Object.fromEntries(
+      Object.entries(expected).map(([k, v]) => [k, v === null ? null : 't']),
+    );
+    const lanes = await db.query(sqlOf('lanes'), ['f']);
+    const laps = (await db.query(sqlOf('home-map'), ['f', ''])).filter((r) => r.kind === 'lap');
+    expect(held(lanes)).toEqual(expected);
+    expect(held(laps)).toEqual(expected);
+    expect(titled(lanes, 'issue_title')).toEqual(expectedTitles);
+    expect(titled(laps, 'title')).toEqual(expectedTitles);
     const workable = (await db.query(sqlOf('health-workable'), ['f']))
       .flatMap((r) => (r.kind === 'issue' ? [r.issue_number as number] : []))
       .sort();
