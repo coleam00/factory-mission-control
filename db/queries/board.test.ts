@@ -281,6 +281,21 @@ test('a work item state reaches only the factory whose codebase it names', async
   }
 });
 
+test("another factory's parked work item does not make this factory's issue unworkable", async () => {
+  await db.query(
+    `INSERT INTO mc.work_item_states (project_key, number, revision, build_status, build_at)
+     SELECT codebase, 401, 1, 'parked', '2026-10-24T09:06:00.000Z' FROM mc.factories WHERE name = 'mission-control'`,
+  );
+  try {
+    const workable = (await run<HealthWorkableRow>('health-workable', 'queue-factory')).map(
+      (r) => r.issue_number,
+    );
+    expect(workable).toContain(401);
+  } finally {
+    await db.query(`DELETE FROM mc.work_item_states WHERE number = 401`);
+  }
+});
+
 test('a parked work item is not workable, and a re-triage makes it workable again', async () => {
   const workable = async () =>
     (await run<HealthWorkableRow>('health-workable', 'queue-factory'))
