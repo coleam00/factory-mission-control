@@ -141,7 +141,7 @@ function useTour(
   cards: RefObject<Map<string, HTMLElement>>,
 ): void {
   useEffect(() => {
-    if (!running || map.tour.length < 2) return;
+    if (!running) return;
     const points = tourPoints(map);
     const path = along(points);
     const centres = new Set(
@@ -530,7 +530,8 @@ export function FactoryMap({
   const drag = useRef<{ x: number; y: number; cam: Camera; moved: boolean } | null>(null);
   const reduced = useReducedMotion();
   const moving = flow && !reduced;
-  useTour(level, moving, dot, cardEls);
+  const touring = moving && level.tour.length > 1;
+  useTour(level, touring, dot, cardEls);
   useEffect(() => {
     onDrawn?.(true);
     return () => onDrawn?.(false);
@@ -869,7 +870,7 @@ export function FactoryMap({
                 />
               ),
             )}
-            {moving && level.tour.length > 1 ? (
+            {touring ? (
               <circle
                 ref={dot}
                 data-tour
