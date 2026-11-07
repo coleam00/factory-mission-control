@@ -33,8 +33,8 @@ strip, chips, flow and the tour work the same in a view.
 The map is the home screen's hero. Its frame spans the window between the page gutters; the
 caption, legend and details strip stay in the app's column. The frame's height is the map's height
 at the scale that fits its width, plus its padding (at least 420px), so a fit leaves no empty band;
-the page scrolls below it. A deeper view is fitted no larger than the scale at which its card is 1.81
-times the home card fitted in the same frame (about 212px at 1440, the least that leaves the matching views as they are), centred in
+the page scrolls below it. A deeper view is fitted no larger than the largest scale the matching views
+(Intake, Review, App check, Build, Deliver) fit at in the same frame (about 0.73 at 1440x900), centred in
 the frame; below 701px wide Fit fits as before. A card whose kind label would wrap is widened
 through `width` (Staging's Deploy, Work order's middle column).
 

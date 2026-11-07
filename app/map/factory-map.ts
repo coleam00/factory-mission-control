@@ -160,11 +160,8 @@ export function heroFrameHeight(world: { width: number; height: number }, width:
   return Math.max(MIN_FRAME, Math.ceil(world.height * k + FIT_PAD * 2 + FIT_FOOT));
 }
 
-/**
- * How much wider on screen a deeper view's card may be than the home map's card at the home fit:
- * at 1440 x 900 that is about 212px: the least that leaves the matching views' fit unchanged (issue #485).
- */
-export const DRILL_CARD_MAX = 1.81;
+/** The deeper views whose cards already match their references; the fit of any other view is capped by theirs (issue #485). */
+const MATCHING_VIEWS = ['intake', 'review', 'app', 'build', 'build/deliver'];
 
 /** The scale that fits `world` in `frame`, up to `max`, as the Fit control fits it. */
 export function fitScale(
@@ -181,8 +178,8 @@ export function fitScale(
 
 /**
  * The largest scale `level` is fitted at in `frame`: FIT_MAX for the root; for a deeper view, the
- * scale at which its card is DRILL_CARD_MAX times as wide as the home card fitted in the same
- * frame, so a view with few cards does not fill the frame (issue #485).
+ * largest scale the matching views fit at in the same frame, so a view with few cards is not drawn
+ * larger than the reference (issue #485). The matching views keep their own fit by construction.
  */
 export function levelMax(
   map: FactoryMap,
@@ -190,8 +187,8 @@ export function levelMax(
   frame: { width: number; height: number },
 ): number {
   if (level === map) return FIT_MAX;
-  const home = fitScale(worldSize(map), frame) * map.cardSize.width;
-  return Math.min(FIT_MAX, (DRILL_CARD_MAX * home) / level.cardSize.width);
+  const fits = MATCHING_VIEWS.map((id) => fitScale(worldSize(map.views?.[id] as MapView), frame));
+  return Math.max(...fits);
 }
 
 const cardById = (map: MapView, id: string): Card => {

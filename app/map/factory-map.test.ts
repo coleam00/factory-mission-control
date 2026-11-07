@@ -268,18 +268,21 @@ const hero = (width: number) => ({
 const view = (id: string) => FACTORY_MAP.views?.[id] as MapView;
 const FEW_CARDS = ['deploy', 'merge', 'split', 'order', 'manager'];
 
-test('a deeper view with few cards is capped near 212px at 1440', () => {
+const MATCHING = ['intake', 'review', 'app', 'build', 'build/deliver'];
+
+test('a deeper view with few cards is fitted no larger than the matching views at 1440', () => {
   const frame = hero(1384);
+  const largest = Math.max(...MATCHING.map((id) => fitScale(worldSize(view(id)), frame)));
+  expect(largest).toBeGreaterThan(0.65);
+  expect(largest).toBeLessThan(0.76);
   for (const id of FEW_CARDS) {
     const v = view(id);
-    const px = fitScale(worldSize(v), frame, levelMax(FACTORY_MAP, v, frame)) * v.cardSize.width;
-    expect(px).toBeGreaterThanOrEqual(205);
-    expect(px).toBeLessThanOrEqual(215);
+    expect(fitScale(worldSize(v), frame, levelMax(FACTORY_MAP, v, frame))).toBeLessThanOrEqual(largest);
   }
 });
 
 test('the views that matched their references keep their fit at every hero width', () => {
-  for (const id of ['intake', 'review', 'app', 'build', 'build/deliver']) {
+  for (const id of MATCHING) {
     const v = view(id);
     for (let width = 701; width <= 2560; width += 7) {
       const frame = hero(width);
