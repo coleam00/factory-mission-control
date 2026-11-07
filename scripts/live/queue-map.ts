@@ -31,20 +31,19 @@ const FILES = liveOutputs({
   configProbe: 'factory-step-config-design-probe.json',
 });
 
+/** Every view the map defines, so a view added to the map is opened and probed without editing this file. */
+const MAP_VIEW_IDS = Object.keys(FACTORY_MAP.views ?? {});
+
+/** The output name of a view: its id, except the deploy view, which the live suite has always called staging. */
+const viewFileName = (id: string) => (id === 'deploy' ? 'staging' : id.replaceAll('/', '-'));
+
 /** The views test:live screenshots and probes, by `?view=` id; --help names their files from this list. */
-export const QUEUE_MAP_VIEWS = (
-  [
-    ['build', 'build'],
-    ['review', 'review'],
-    ['split', 'split'],
-    ['intake', 'intake'],
-    ['order', 'order'],
-    ['merge', 'merge'],
-    ['deploy', 'staging'],
-  ] as const
-).map(([id, stem]) => ({
+export const QUEUE_MAP_VIEWS = MAP_VIEW_IDS.map((id) => ({
   id,
-  ...liveOutputs({ shot: `${stem}-view.png`, probe: `${stem}-view-design-probe.json` }),
+  ...liveOutputs({
+    shot: `${viewFileName(id)}-view.png`,
+    probe: `${viewFileName(id)}-view-design-probe.json`,
+  }),
 }));
 
 export const QUEUE_MAP_OUTPUTS: readonly LiveOutput[] = [
@@ -204,15 +203,9 @@ export function queueMapPhase(ctx: LiveContext): LivePhase {
             ctx.save(opened.shot, await target.screenshot(1440));
           }
         };
-        await open(view, 'build', true);
-        await open(split, 'split', true);
-        await open(intake, 'intake', true);
-        await open(drill, 'merge', true);
-        await open(drill, 'deploy', true);
-        await open(drill, 'order', true);
+        const pageOf: Record<string, Page> = { build: view, split, intake, review: reviewView };
+        for (const id of MAP_VIEW_IDS) await open(pageOf[id] ?? drill, id, true);
         await open(drill, 'merge');
-
-        await open(reviewView, 'review', true);
 
         const timed = async (card: string, run: string, step: string) => {
           const target = Number(await page.evaluate<string>(liveCountOf(card))) + 1;
