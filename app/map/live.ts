@@ -441,8 +441,13 @@ function chipItems(
     waiting: waitingItems(sources),
     merged: mergedToday(map, now),
     ...(states.orders === 'error' && { orders: 'unavailable' as const }),
-    ...(orders && states.orders !== 'error' && { orders: orders.filter((o) => o.open_count > 0) }),
+    ...(orders && states.orders !== 'error' && { orders: openOrders(orders) }),
   };
+}
+
+/** The work orders with open issues: the Work order chip and the lands and choices lists show these. */
+function openOrders(orders: readonly WorkOrderRow[]) {
+  return orders.filter((o) => o.open_count > 0);
 }
 
 /** What one list of a card shows: unavailable when its source failed, nothing until it is delivered. */
@@ -464,7 +469,7 @@ function listInto(
   } else if (list === 'documents') {
     if (documents) entry.documents = [...documents];
   } else if (list === 'lands' || list === 'choices') {
-    if (orders) entry[list] = orders.filter((o) => o.open_count > 0);
+    if (orders) entry[list] = openOrders(orders);
   } else if (rightNow) {
     if (list === 'outcomes') entry.gate = gateOutcomes(rightNow);
     else entry.deploy = latestDeploy(rightNow);
