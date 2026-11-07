@@ -1,6 +1,6 @@
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { type BoardRow, boardView } from '../../app/lib/board';
+import { type BoardRow, boardView, orderProgress } from '../../app/lib/board';
 import type { HealthWorkableRow } from '../../app/lib/health';
 import type { OwnerQueueRow } from '../../app/lib/owner-queue';
 import type { HomeMapRow, WorkOrderRow } from '../../app/map/live';
@@ -63,8 +63,8 @@ export function boardPhase(ctx: LiveContext): LivePhase {
     (await db.query(queries.get(name) as string, [factory, ...args])) as unknown as Row[];
 
   /** What the board must show for `factory`, from the same five queries run straight against the database. */
-  async function recount(factory: string, order: string | null) {
-    const view = boardView(
+  async function sqlView(factory: string, order: string | null) {
+    return boardView(
       {
         factory,
         board: await run<BoardRow>('board', factory),
@@ -76,12 +76,13 @@ export function boardPhase(ctx: LiveContext): LivePhase {
       new Date(),
       order,
     );
+  }
+
+  async function recount(factory: string, order: string | null) {
+    const view = await sqlView(factory, order);
     return {
       columns: view.columns.map((c) => [c.id, c.items.length, c.items.map((i) => i.number)]),
-      orders: view.orders.map((o) => [
-        o.name,
-        `${o.merged} of ${o.total} merged${o.landsOn === null ? '' : ` · lands on ${o.landsOn}`}`,
-      ]),
+      orders: view.orders.map((o) => [o.name, orderProgress(o)]),
       notInOrder: `${view.notInOrder} not in a work order`,
       older: view.older,
     };
@@ -154,12 +155,9 @@ export function boardPhase(ctx: LiveContext): LivePhase {
         );
         failures.push(...(await mismatches(page, FACTORY, null)));
 
-        const panel = await page.evaluate<string>(
-          `(document.querySelector('[data-work-order="${DEMO}"] span:nth-of-type(2)')?.textContent ?? '')`,
-        );
-        const counts = panel.match(/(\d+) of (\d+) merged/);
-        if (counts === null) throw new Error(`the ${DEMO} panel reads "${panel}"`);
-        const after = `${Number(counts[1]) + 1} of ${Number(counts[2]) + 1} merged`;
+        const demo = (await sqlView(FACTORY, null)).orders.find((o) => o.name === DEMO);
+        if (demo === undefined) throw new Error(`the board has no ${DEMO} work order`);
+        const after = orderProgress({ ...demo, merged: demo.merged + 1, total: demo.total + 1 });
         ms.refsMerged = await writeToScreen(
           page,
           deps,
