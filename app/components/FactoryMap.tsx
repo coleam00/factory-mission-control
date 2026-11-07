@@ -533,7 +533,7 @@ export function FactoryMap({
     return () => onDrawn?.(false);
   }, [onDrawn]);
 
-  /** The whole map in the frame, centred, as large as the frame allows; a deeper view no larger than `levelMax`. */
+  /** The whole map in the frame, centred, as large as the frame allows; from phone width up, a deeper view no larger than `levelMax`. */
   const fit = useCallback(() => {
     const el = stage.current;
     if (!el) return;
