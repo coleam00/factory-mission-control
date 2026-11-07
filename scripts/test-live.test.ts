@@ -133,6 +133,22 @@ test("--help names exactly the files test:live's phases write", async () => {
   expect(new Set(LIVE_OUTPUTS).size).toBe(LIVE_OUTPUTS.length);
 });
 
+test("--help names a screenshot and a design probe for every view in the map's views", async () => {
+  const views = Object.keys(
+    JSON.parse(readFileSync(join(REPO_ROOT, 'app', 'map', 'factory-map.json'), 'utf-8')).views,
+  );
+  const { recorder } = lockedRun();
+  expect(await main(['--help'], recorder.deps)).toBe(0);
+  const help = recorder.out.join('\n');
+  expect(views).toContain('build/deliver');
+  expect(views).toContain('deploy');
+  for (const id of views) {
+    const name = id === 'deploy' ? 'staging' : id.replaceAll('/', '-');
+    expect(help).toContain(`${name}-view.png`);
+    expect(help).toContain(`${name}-view-design-probe.json`);
+  }
+});
+
 test('no live phase writes to --out except through ctx.save and ctx.designProbe', () => {
   const dir = join(REPO_ROOT, 'scripts', 'live');
   const phases = readdirSync(dir).filter(

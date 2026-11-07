@@ -47,10 +47,8 @@ export const QUEUE_MAP_VIEWS = MAP_VIEW_IDS.map((id) => ({
 }));
 
 export const QUEUE_MAP_OUTPUTS: readonly LiveOutput[] = [
-  FILES.shot,
+  ...Object.values(FILES),
   ...QUEUE_MAP_VIEWS.flatMap((v) => [v.shot, v.probe]),
-  FILES.checkProbe,
-  FILES.configProbe,
 ];
 
 /** Where the queue runs step: Build's implement round, and Review's policy round. */

@@ -305,7 +305,6 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
   const ctx: LiveContext = {
     deps,
     db,
-    outDir,
     factory,
     factoriesFile,
     holdSeconds,

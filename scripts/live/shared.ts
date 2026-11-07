@@ -330,7 +330,6 @@ export type DesignProbe = (url: string, file: LiveOutput, on?: string) => void;
 export interface LiveContext {
   deps: Deps;
   db: Db;
-  outDir: string;
   /** factories.json's first. */
   factory: string;
   /** The factories file the app's server reads (`MC_FACTORIES_FILE`): factories.json's and the seed's second. */
@@ -342,9 +341,9 @@ export interface LiveContext {
   branch: string | null;
   timingDatabase: TimingDatabase;
   measure: (page: Page, names: readonly string[]) => Promise<Record<string, PanelTimings>>;
-  /** Writes `file` to `outDir`, and records it for the check that --help names every file written. */
+  /** Writes `file` to `--out`, and records it for the check that --help names every file written. */
   save(file: LiveOutput, data: string | Uint8Array): void;
-  /** Runs harness/design-probe.js into `file` under `outDir`, and records it. */
+  /** Runs harness/design-probe.js into `file` under `--out`, and records it. */
   designProbe: DesignProbe;
   /** Set when the app is served. */
   port: number | null;
