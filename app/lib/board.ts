@@ -155,8 +155,8 @@ export interface BoardSources {
 const withinKeep = (at: Date | null, now: Date): at is Date =>
   at !== null && now.getTime() - at.getTime() < KEEP_MS;
 
-/** The workflow that slices an item into children; it holds nothing (health-workable.sql restates this). */
-const SPLIT_WORKFLOW = 'archon-split';
+/** The workflow that slices an item into children; it holds nothing (health-workable.sql restates this; restated-rules.test.ts binds the two). */
+export const SPLIT_WORKFLOW = 'archon-split';
 
 /**
  * Every work item with a running run, and the furthest stage those runs are on. A run on a card

@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { COLUMNS, PARKED, parked } from '../../app/lib/board';
+import { COLUMNS, PARKED, parked, SPLIT_WORKFLOW } from '../../app/lib/board';
 import { LAP_PAGE_WORKFLOW, prNumber } from '../../app/lib/one-lap';
 import { REVIEW_TONE } from '../../app/lib/review-outcome';
 import {
@@ -118,6 +118,12 @@ test('the queries behind a link to the lap page filter on LAP_PAGE_WORKFLOW', ()
     ]).toEqual([name, [LAP_PAGE_WORKFLOW]]);
     expect([name, archonLiterals(name)]).toEqual([name, [LAP_PAGE_WORKFLOW]]);
   }
+});
+
+test('health-workable.sql excludes the workflows board.ts says hold no work item', () => {
+  expect(
+    [...sqlOf('health-workable').matchAll(/workflow_name <> '([^']*)'/g)].map((m) => m[1]),
+  ).toEqual([SPLIT_WORKFLOW]);
 });
 
 test('mc.pr_number reads a step pr as prNumber does, a JSON object included', async () => {
@@ -397,7 +403,7 @@ test('lanes, home-map and health-workable resolve the same item for every source
       '5': { status: 'running', claim: null, facts: 5, input: 6 },
       '6': { status: 'running', claim: null, facts: null, input: null },
       '7': { status: 'completed', claim: null, facts: 7, input: null },
-      '8': { status: 'running', claim: null, facts: 8, input: null, workflow: 'archon-split' },
+      '8': { status: 'running', claim: null, facts: 8, input: null, workflow: SPLIT_WORKFLOW },
     } as const;
     for (const [c, r] of Object.entries(runs)) {
       await db.query(

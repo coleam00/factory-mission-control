@@ -68,7 +68,7 @@ test('the seed recount: each column and each work order bar equal the definition
 
   // queue-factory: 401 is in triage and built (the build run is between steps), so Intake; 402 and
   // 403 only have runs between steps, so no column; 404 and 405 are workable with no run (Queued);
-  // 410's running split run holds nothing, so it is Queued too;
+  // 410's running split run holds nothing, so it is Queued too, which makes 7 not in order;
   // 406 is needs-owner, which a queue factory does not read, and is not workable. 410 is a product
   // document, 411 and 412 are its merged pieces and 413 its open one. 413's work item state says
   // its build was parked after its triage, so it is Parked, not Queued, and not workable either.
@@ -84,7 +84,7 @@ test('the seed recount: each column and each work order bar equal the definition
     merged: [411, 412],
     parked: [413],
   });
-  expect(queue.notInOrder).toBe(6);
+  expect(queue.notInOrder).toBe(7);
 });
 
 test('a work item carries its pull request, rounds, route and app verdict from the seed laps', async () => {
