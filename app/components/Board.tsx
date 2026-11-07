@@ -19,7 +19,7 @@ function Chip({ chip }: { chip: BoardChip }): ReactElement {
   return (
     <span
       data-chip={chip.kind}
-      className={`inline-flex items-center gap-1 rounded-[5px] px-1.5 py-0.5 font-mono text-[11px] ${CHIP_TONE[chip.tone ?? 'plain']}`}
+      className={`inline-flex items-center gap-1 rounded-[5px] [overflow-wrap:anywhere] px-1.5 py-0.5 font-mono text-[11px] ${CHIP_TONE[chip.tone ?? 'plain']}`}
     >
       {chip.pulse ? (
         <span
@@ -39,7 +39,9 @@ function Card({ item }: { item: WorkItem }): ReactElement {
   const body = (
     <>
       <span className="font-mono text-[11px] text-text-secondary">#{item.number}</span>
-      <span className="mt-0.5 block text-[13px] text-text-primary">{item.title}</span>
+      <span className="mt-0.5 block text-[13px] text-text-primary [overflow-wrap:anywhere]">
+        {item.title}
+      </span>
       {item.chips.length > 0 ? (
         <span className="mt-1.5 flex flex-wrap gap-1">
           {item.chips.map((chip) => (
