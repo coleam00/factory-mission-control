@@ -54,12 +54,16 @@ LEFT JOIN LATERAL (
   ORDER BY c.claimed_at DESC NULLS LAST, c.run_id LIMIT 1
 ) lp ON true
 LEFT JOIN LATERAL (
-  -- Rounds so far: the item's runs that reached the ship step, by claim or by number input.
+  -- Rounds so far: the item's runs that reached the ship step, by claim, by the facts step's item
+  -- (a queue run names its item only there), or by number input.
   SELECT count(*)::int AS rounds FROM mc.laps l
   WHERE l.factory = i.factory AND l.workflow_name IN ('archon-loop', 'archon-build-queue')
     AND (l.issue_number = i.number OR EXISTS (
       SELECT 1 FROM mc.claims c
-      WHERE c.factory = l.factory AND c.run_id = l.run_id AND c.issue_number = i.number))
+      WHERE c.factory = l.factory AND c.run_id = l.run_id AND c.issue_number = i.number)
+    OR EXISTS (
+      SELECT 1 FROM mc.lap_steps f
+      WHERE f.run_id = l.run_id AND f.step_id = 'facts' AND (f.output -> 'item' ->> 'number')::int = i.number))
     AND EXISTS (
       SELECT 1 FROM mc.lap_steps s
       WHERE s.run_id = l.run_id AND (s.step_id = 'ship' OR starts_with(s.step_id, 'ship__')))

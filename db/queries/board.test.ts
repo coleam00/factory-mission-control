@@ -108,6 +108,11 @@ test('a work item carries its pull request, rounds, route and app verdict from t
   expect(of(13)?.work_orders).toEqual([]);
 });
 
+test('a queue run that names its item only in its facts step counts as a round', async () => {
+  const rows = await run<BoardRow>('board', 'queue-factory');
+  expect(rows.find((r) => r.number === 412)).toMatchObject({ rounds: 1 });
+});
+
 test("a queue factory's check step is the app verdict, and another queue workflow's is not", async () => {
   await db.query('BEGIN');
   try {
