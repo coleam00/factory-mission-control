@@ -257,3 +257,17 @@ test('no two cards overlap at any level, and the Work order view joins its sourc
   expect(into).toHaveLength(3);
   expect(into.filter((l) => l.arrow !== false)).toHaveLength(1);
 });
+
+/** Cards whose role line wraps until PR #496 (issue #485) widens them; delete this list with that change. */
+const WRAPS_UNTIL_485 = ['o-pick', 'y-dep'];
+
+test('no role line wraps in any view', () => {
+  // Geist Mono advances 0.6em plus tracking-[0.06em]; MapCard adds pl-4 pr-3 and a 2px border each side.
+  const wide = levels.flatMap((level) =>
+    level.cards
+      .filter((c) => c.kind.length * MAP_TYPE.kind * 0.66 + 32 > cardWidth(level, c))
+      .map((c) => c.id),
+  );
+  expect(wide.filter((id) => !WRAPS_UNTIL_485.includes(id))).toEqual([]);
+  expect(WRAPS_UNTIL_485.filter((id) => !wide.includes(id))).toEqual([]);
+});

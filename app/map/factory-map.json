@@ -606,6 +606,7 @@
           "text": "Prove the cause first",
           "x": 400,
           "y": 76,
+          "width": 288,
           "covers": [
             {
               "pack": "queue",
@@ -630,6 +631,7 @@
           "text": "Settle the design first",
           "x": 400,
           "y": 536,
+          "width": 288,
           "covers": [
             {
               "pack": "queue",
@@ -652,7 +654,7 @@
           "kind": "up to 4 rounds",
           "title": "Deliver",
           "text": "Implement, PR, review, CI",
-          "x": 744,
+          "x": 772,
           "y": 306,
           "covers": [
             {
@@ -677,7 +679,7 @@
           "kind": "agent · large",
           "title": "Decide",
           "text": "Done, another round, or ask",
-          "x": 1088,
+          "x": 1116,
           "y": 306,
           "covers": [
             {
@@ -701,7 +703,7 @@
           "kind": "script",
           "title": "Record the round",
           "text": "Push, release the work item",
-          "x": 1432,
+          "x": 1460,
           "y": 306,
           "covers": [
             {
@@ -725,7 +727,7 @@
           "kind": "waits",
           "title": "Ask you",
           "text": "Route, stop, or scope",
-          "x": 1088,
+          "x": 1116,
           "y": 594,
           "covers": [
             {
@@ -744,7 +746,7 @@
           "kind": "next",
           "title": "Merge queue",
           "text": "When the PR is Ready and green",
-          "x": 1776,
+          "x": 1804,
           "y": 306,
           "upTo": "merge",
           "covers": [],
@@ -806,14 +808,14 @@
           "from": "b-dec",
           "to": "b-ask",
           "style": "ask",
-          "route": [[1218, 506], [1218, 594]]
+          "route": [[1246, 506], [1246, 594]]
         },
         {
           "from": "b-dec",
           "to": "b-brief",
           "style": "loop",
           "label": "another round",
-          "route": [[1218, 306], [1218, 40], [130, 40], [130, 306]]
+          "route": [[1246, 306], [1246, 40], [130, 40], [130, 306]]
         }
       ],
       "tour": ["b-brief", "b-del", "b-dec", "b-push", "b-next"]
@@ -833,6 +835,7 @@
           "text": "Build it, or fix findings",
           "x": 0,
           "y": 306,
+          "width": 280,
           "covers": [
             {
               "pack": "queue",
@@ -868,7 +871,7 @@
           "kind": "script + agent",
           "title": "Draft PR",
           "text": "Publish the description",
-          "x": 344,
+          "x": 364,
           "y": 306,
           "covers": [
             {
@@ -900,7 +903,7 @@
           "kind": "up to 5 lenses",
           "title": "Review",
           "text": "Ready, or findings",
-          "x": 688,
+          "x": 708,
           "y": 306,
           "countsAs": "review",
           "opens": "review",
@@ -915,7 +918,7 @@
           "kind": "agent",
           "title": "Simplify",
           "text": "Names a smaller shape",
-          "x": 1032,
+          "x": 1052,
           "y": 306,
           "covers": [
             {
@@ -939,7 +942,7 @@
           "kind": "agent · medium",
           "title": "CI",
           "text": "Waits for green, marks ready",
-          "x": 1376,
+          "x": 1396,
           "y": 306,
           "covers": [
             {
@@ -977,7 +980,7 @@
           "kind": "back to",
           "title": "Decide",
           "text": "In the Build view",
-          "x": 1720,
+          "x": 1740,
           "y": 306,
           "upTo": "b-dec",
           "covers": [],
@@ -1020,7 +1023,7 @@
           "to": "d-impl",
           "style": "loop",
           "label": "findings (max 4 rounds)",
-          "route": [[818, 306], [818, 40], [130, 40], [130, 306]]
+          "route": [[838, 306], [838, 40], [140, 40], [140, 306]]
         }
       ],
       "tour": ["d-impl", "d-pr", "d-rev", "d-simp", "d-ci", "d-out"]
@@ -2210,6 +2213,7 @@
           "text": "Browser, like a user",
           "x": 1032,
           "y": 40,
+          "width": 336,
           "lists": ["checks"],
           "covers": [
             {
@@ -2233,7 +2237,7 @@
           "kind": "script",
           "title": "Seal the evidence",
           "text": "Every claim cites a fresh file",
-          "x": 1376,
+          "x": 1452,
           "y": 40,
           "covers": [
             {
@@ -2257,7 +2261,7 @@
           "kind": "commit status",
           "title": "factory/app-check",
           "text": "Pass or fail at this commit",
-          "x": 1720,
+          "x": 1796,
           "y": 40,
           "covers": [
             {
