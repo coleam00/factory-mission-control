@@ -277,7 +277,9 @@ test('a deeper view with few cards is fitted no larger than the matching views a
   expect(largest).toBeLessThan(0.76);
   for (const id of FEW_CARDS) {
     const v = view(id);
-    expect(fitScale(worldSize(v), frame, levelMax(FACTORY_MAP, v, frame))).toBeLessThanOrEqual(largest);
+    expect(fitScale(worldSize(v), frame, levelMax(FACTORY_MAP, v, frame))).toBeLessThanOrEqual(
+      largest,
+    );
   }
 });
 
