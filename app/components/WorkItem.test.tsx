@@ -35,7 +35,7 @@ test('the header links the issue, the pull request and the newest run, under the
       header={header}
       events={[]}
       board={{
-        column: { id: 'merged', title: 'Merged', role: 'test' },
+        column: { id: 'merged', title: 'Merged', role: 'test', holder: 'done' },
         pr: 410,
         prUrl: 'https://github.com/o/r/pull/410',
         workOrders: ['screens'],

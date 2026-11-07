@@ -73,11 +73,9 @@ function Column({ column, older }: { column: BoardColumn; older: ReactElement | 
           {column.items.length}
         </span>
       </h2>
-      {column.holder ? (
-        <p data-holder className="px-1 font-mono text-[11px] text-text-secondary">
-          {column.holder}
-        </p>
-      ) : null}
+      <p data-holder className="px-1 font-mono text-[11px] text-text-secondary">
+        {column.holder}
+      </p>
       {column.items.length === 0 ? (
         <p className="px-1 text-[12px] text-text-secondary">{column.empty ?? 'Nothing here'}</p>
       ) : (
