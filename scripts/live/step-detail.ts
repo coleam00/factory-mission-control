@@ -93,8 +93,17 @@ async function checkAppMismatches(page: Page, repoRoot: string): Promise<string[
   return failures;
 }
 
-/** Ready once the browser is at `path` (the address a redirect ends at) and every panel answered. */
-const readyAt = (path: string) => `location.pathname === '${path}' && ${stepPanelsReady}`;
+/** step-detail shows a step here: only the step renders [data-description], never the redirect. */
+const stepShown = `document.querySelector('[data-live="step-detail"] [data-description]') !== null`;
+
+/**
+ * Ready once the browser is at `path` (the address a redirect ends at), step-detail shows the step
+ * there, and every panel answered. The pathname alone is not enough: the router moves the URL
+ * before the new route commits, and the redirecting address's panels are all ready yet render no
+ * prompt and no links.
+ */
+const readyAt = (path: string) =>
+  `location.pathname === '${path}' && ${stepShown} && ${stepPanelsReady}`;
 
 /**
  * Where the way from deliver's screen to the step that writes the code differs from the seed:
