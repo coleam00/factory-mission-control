@@ -207,15 +207,19 @@ type WorkItemState = Pick<
 /** Whether `at` is a later ISO instant than `than`; compared as text, as the queues compare them. */
 const later = (at: string | null, than: string | null) => at !== null && than !== null && at > than;
 
+/** The status both queues record for an item they stopped working; the pack's BuildStatus and MergeStatus name it (restated-rules.test.ts). */
+export const PARKED = 'parked';
+
 /**
  * Whether the queues have parked a work item and nothing since has released it: its build record
  * says parked and no triage came after that decision, or its merge record says parked and neither a
  * triage nor a renewed readiness came after it. Restates `buildWaits` and `mergeWaits` of the
- * queue pack; db/queries/restated-rules.test.ts fails when they disagree.
+ * queue pack, as does db/queries/health-workable.sql; db/queries/restated-rules.test.ts fails when
+ * any of them disagree.
  */
 export function parked(state: WorkItemState): boolean {
-  if (state.build_status === 'parked') return !later(state.triage_at, state.build_at);
-  if (state.merge_status !== 'parked' || later(state.triage_at, state.merge_at)) return false;
+  if (state.build_status === PARKED) return !later(state.triage_at, state.build_at);
+  if (state.merge_status !== PARKED || later(state.triage_at, state.merge_at)) return false;
   // An own pull request is renewed only by a new head, which the state does not hold.
   if (state.build_status === null && state.own_pr_at !== null) return true;
   const readyAt = state.build_status === 'ready' ? state.build_at : state.own_pr_at;
