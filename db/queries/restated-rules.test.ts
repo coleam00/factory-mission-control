@@ -373,3 +373,88 @@ test('the work item address guard accepts the numbers mc.run_issue_number reads'
     await db.close();
   }
 }, 60_000);
+
+const HELD_ITEM =
+  "coalesce(c.issue_number, (facts.output -> 'item' ->> 'number')::int, l.issue_number)";
+
+test('lanes, home-map and health-workable spell the one rule for the work item a running run holds', () => {
+  const count = (name: string) => sqlOf(name).split(HELD_ITEM).length - 1;
+  expect(count('lanes')).toBe(2);
+  expect(count('home-map')).toBe(2);
+  expect(count('health-workable')).toBe(1);
+  for (const [name, sql] of queries) {
+    expect(sql, name).not.toContain('coalesce(c.issue_number, l.issue_number)');
+    expect(sql, name).not.toContain(
+      "coalesce(c.issue_number, (facts.output -> 'item' ->> 'number')::int)",
+    );
+  }
+});
+
+test('lanes, home-map and health-workable resolve the same item for every source of it', async () => {
+  const db = await migratedDb();
+  try {
+    await db.query(
+      `INSERT INTO mc.factories (name, repository, codebase, console) VALUES ('f', 'o/r', 'o/r', 'c')`,
+    );
+    for (let n = 1; n <= 7; n++) {
+      await db.query(
+        `INSERT INTO mc.issues (factory, number, title, state, url, created_at, updated_at)
+         VALUES ('f', $1, 't', 'open', 'u', now(), now())`,
+        [n],
+      );
+    }
+    const id = (c: string) => `5eed0000-0000-4000-8000-00000000000${c}`;
+    // claim, facts item, number input; null for a source the run does not have
+    const runs = {
+      '1': { status: 'running', claim: 1, facts: null, input: null },
+      '2': { status: 'running', claim: null, facts: 2, input: null },
+      '3': { status: 'running', claim: null, facts: null, input: 3 },
+      '4': { status: 'running', claim: 4, facts: 5, input: 6 },
+      '5': { status: 'running', claim: null, facts: 5, input: 6 },
+      '6': { status: 'running', claim: null, facts: null, input: null },
+      '7': { status: 'completed', claim: null, facts: 7, input: null },
+    } as const;
+    for (const [c, r] of Object.entries(runs)) {
+      await db.query(
+        `INSERT INTO mc.laps (run_id, factory, workflow_name, status, started_at, issue_number)
+         VALUES ($1, 'f', 'w', $2, now(), $3)`,
+        [id(c), r.status, r.input],
+      );
+      if (r.facts !== null) {
+        await db.query(
+          `INSERT INTO mc.lap_steps (run_id, step_id, status, started_at, output)
+           VALUES ($1, 'facts', 'completed', now(), $2)`,
+          [id(c), JSON.stringify({ item: { number: r.facts } })],
+        );
+      }
+      if (r.claim !== null) {
+        // Released, so the held-by-a-run clause, not the unreleased-claim clause, is what holds it.
+        await db.query(
+          `INSERT INTO mc.claims (factory, issue_number, run_id, claimed_at, released_at)
+           VALUES ('f', $1, $2, now(), now())`,
+          [r.claim, id(c)],
+        );
+      }
+    }
+    const held = (rows: Record<string, unknown>[]) =>
+      Object.fromEntries(rows.map((r) => [r.run_id as string, r.issue_number ?? r.number ?? null]));
+    const expected = {
+      [id('1')]: 1,
+      [id('2')]: 2,
+      [id('3')]: 3,
+      [id('4')]: 4,
+      [id('5')]: 5,
+      [id('6')]: null,
+    };
+    expect(held(await db.query(sqlOf('lanes'), ['f']))).toEqual(expected);
+    expect(
+      held((await db.query(sqlOf('home-map'), ['f', ''])).filter((r) => r.kind === 'lap')),
+    ).toEqual(expected);
+    const workable = (await db.query(sqlOf('health-workable'), ['f']))
+      .flatMap((r) => (r.kind === 'issue' ? [r.issue_number as number] : []))
+      .sort();
+    expect(workable).toEqual([6, 7]);
+  } finally {
+    await db.close();
+  }
+});
