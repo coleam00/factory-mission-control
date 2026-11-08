@@ -215,6 +215,12 @@ test('the seed holds a queue factory: three running build-queue laps, two intake
     },
     {
       workflow_name: 'archon-build-queue',
+      status: 'paused',
+      issue_number: null,
+      attention_open: false,
+    },
+    {
+      workflow_name: 'archon-build-queue',
       status: 'running',
       issue_number: 401,
       attention_open: false,
