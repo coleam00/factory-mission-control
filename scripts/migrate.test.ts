@@ -164,7 +164,7 @@ test.each(['default', 'override'])(
       expect(await query('factory-switcher', FACTORIES[0].name)).not.toContainEqual(
         expect.objectContaining({ factory: added.name }),
       );
-      expect(await query('status-strip', added.name)).toEqual([{ running: 0 }]);
+      expect(await query('status-strip', added.name)).toEqual([{ running: 0, waiting: 0, engine: null }]);
       expect(await query('lanes', added.name)).toEqual([]);
 
       writeFileSync(file, JSON.stringify({ factories: [...FACTORIES, added] }));
@@ -177,14 +177,14 @@ test.each(['default', 'override'])(
         running: 1,
         is_default: false,
       });
-      expect(await query('status-strip', added.name)).toEqual([{ running: 1 }]);
+      expect(await query('status-strip', added.name)).toEqual([{ running: 1, waiting: 0, engine: null }]);
       expect(await query('lanes', added.name)).toEqual([
         expect.objectContaining({ run_id: pending }),
       ]);
       expect(await db.query('SELECT * FROM mc.laps WHERE run_id = $1', [original])).toEqual(
         originalLaps,
       );
-      expect(await query('status-strip', FACTORIES[0].name)).toEqual([{ running: 1 }]);
+      expect(await query('status-strip', FACTORIES[0].name)).toEqual([{ running: 1, waiting: 0, engine: null }]);
       expect(await db.query('SELECT * FROM public.remote_agent_workflow_runs ORDER BY id')).toEqual(
         sourceRows,
       );
@@ -207,7 +207,7 @@ test.each(['default', 'override'])(
       expect(await db.query('SELECT factory FROM mc.laps WHERE run_id = $1', [next])).toEqual([
         { factory: added.name },
       ]);
-      expect(await query('status-strip', added.name)).toEqual([{ running: 2 }]);
+      expect(await query('status-strip', added.name)).toEqual([{ running: 2, waiting: 0, engine: null }]);
     } finally {
       await db.close();
     }

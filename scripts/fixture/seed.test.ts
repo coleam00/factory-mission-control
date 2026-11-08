@@ -154,14 +154,15 @@ test("the seed holds a second factory with one running lap, kept out of mission-
       [SECOND_FACTORY.name],
     ),
   ).toEqual([{ step_id: 'claim', status: 'running' }]);
-  expect(await db.query(strip, [SECOND_FACTORY.name])).toEqual([{ running: 1 }]);
+  expect(await db.query(strip, [SECOND_FACTORY.name])).toEqual([{ running: 1, waiting: 0, engine: null }]);
   const [own] = await db.query(
     `SELECT count(*)::int AS running FROM mc.laps l
       JOIN remote_agent_workflow_runs r ON r.id = l.run_id
      WHERE r.codebase_id = $1 AND l.workflow_name = 'archon-loop' AND l.status = 'running'`,
     [SEED_CODEBASE],
   );
-  expect(await db.query(strip, ['mission-control'])).toEqual([own]);
+  const [stripRow] = await db.query(strip, ['mission-control']);
+  expect(stripRow?.running).toEqual(own?.running);
 });
 
 test('the seed holds a queue factory: three running build-queue laps, two intake laps and two split laps by number input, four finished build-queue laps, one waiting, one merged', async () => {
