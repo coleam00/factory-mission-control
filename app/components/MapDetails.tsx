@@ -3,7 +3,7 @@ import { Link, useLocation } from 'react-router';
 import type { AppCheckRow } from '../lib/app-check';
 import { boardHref, orderPanel, orderProgress } from '../lib/board';
 import { relativeTime } from '../lib/format';
-import { hasLapPage } from '../lib/one-lap';
+import { hasLapPage, lapHref } from '../lib/one-lap';
 import { type StepRow, stepOriginState } from '../lib/step-detail';
 import { LivePanel } from '../live/LivePanel';
 import { type Card, type Chip, pinnedStepLinks, workflowFile } from '../map/factory-map';
@@ -200,7 +200,6 @@ export function RightNow({
   factory: string;
 }): ReactElement {
   const ticking = useNow();
-  const lapHref = (run: string) => `/f/${encodeURIComponent(factory)}/laps/${run}`;
   // A mapped type: a chip without rows here fails type-check.
   const chipRows: { [K in Chip]: ReactNode[] } = {
     queued: (live?.queued ?? []).map((item) => <Item key={item.key} item={item} note="queued" />),
@@ -215,7 +214,7 @@ export function RightNow({
     )),
     merged: (live?.merged ?? []).map((merge) => (
       <li key={`merged-${merge.run}-${merge.number ?? 'lap'}`} data-lap={merge.run}>
-        <RunName workflow={merge.workflow} href={lapHref(merge.run)}>
+        <RunName workflow={merge.workflow} href={lapHref(factory, merge.run)}>
           {merge.number === null ? (
             <span className="font-mono">lap {merge.run.slice(0, 8)}</span>
           ) : (
@@ -229,7 +228,7 @@ export function RightNow({
   const rows: ReactNode[] = [
     ...(live?.here ?? []).map((lap) => (
       <li key={`lap-${lap.run}`} data-lap={lap.run}>
-        <RunName workflow={lap.workflow} href={lapHref(lap.run)}>
+        <RunName workflow={lap.workflow} href={lapHref(factory, lap.run)}>
           {lap.issue ? (
             <>
               <span className="font-mono tabular-nums">#{lap.issue.number}</span>{' '}

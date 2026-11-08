@@ -5,7 +5,7 @@ import type { StatusStripRow } from '../app/components/FactoryStrip';
 import type { FactorySwitcherRow } from '../app/components/FactorySwitcher';
 import type { AppCheckRow } from '../app/lib/app-check';
 import type { ArchDiffRow } from '../app/lib/arch-diff';
-import type { AttentionRow } from '../app/lib/attention';
+import type { AttentionRow, DecideRow, UnstickRow } from '../app/lib/attention';
 import type { BoardRow } from '../app/lib/board';
 import type { HealthRunRow, HealthStepRow, HealthWorkableRow } from '../app/lib/health';
 import type { LapMapRow } from '../app/lib/lap-graph';
@@ -67,6 +67,30 @@ const ROW_COLUMNS: Record<string, string[]> = {
     'labels',
     'message',
     'console',
+  ]),
+  decide: columns<DecideRow>()([
+    'run_id',
+    'workflow_name',
+    'node_id',
+    'occurrence_id',
+    'waiting_since',
+    'form',
+    'options',
+    'labels',
+    'recommended',
+    'confidence',
+    'item_number',
+    'message',
+    'console',
+  ]),
+  unstick: columns<UnstickRow>()([
+    'kind',
+    'number',
+    'run_id',
+    'workflow_name',
+    'waits_on',
+    'since',
+    'action',
   ]),
   'factory-switcher': columns<FactorySwitcherRow>()(['factory', 'running', 'is_default']),
   'health-runs': columns<HealthRunRow>()([
