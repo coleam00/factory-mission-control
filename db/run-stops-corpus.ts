@@ -175,4 +175,9 @@ export const STOP_CORPUS: readonly (readonly [line: string, cls: StopClass, sour
     'environment',
     'review R8 (an id before the code word in an ENOENT path)',
   ],
+  [
+    "ENOENT: no such file or directory, open '/w/runs/b7c7da69-95e4-402c-af18-7c67e54f59df-findings.json'",
+    'environment',
+    'review R12 (a uuid before the code word in an ENOENT path)',
+  ],
 ];
