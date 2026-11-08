@@ -155,4 +155,24 @@ export const STOP_CORPUS: readonly (readonly [line: string, cls: StopClass, sour
     'environment',
     'review R8 (a refused push to a branch named findings)',
   ],
+  [
+    'git push origin HEAD:refs/heads/fix-typecheck refused: To /tmp/r.git\n ! [rejected]        HEAD -> fix-typecheck (fetch first)',
+    'environment',
+    'review R8 (a refused push whose branch has no slash in git stderr)',
+  ],
+  [
+    'git merge --no-edit origin/main: CONFLICT (content): Merge conflict in fixtures/1a2b3c4d-fail.yaml',
+    'environment',
+    'review R8 (an id before the code word in a conflicted file)',
+  ],
+  [
+    'git merge --no-edit origin/main: CONFLICT (content): Merge conflict in findings.md',
+    'environment',
+    'review R8 (a conflicted file without a slash)',
+  ],
+  [
+    "ENOENT: no such file or directory, open '/w/runs/1a2b3c4d-findings.json'",
+    'environment',
+    'review R8 (an id before the code word in an ENOENT path)',
+  ],
 ];
