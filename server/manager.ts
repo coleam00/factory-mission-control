@@ -11,7 +11,8 @@ import {
 import type { Server } from 'bun';
 import type { Context, Hono } from 'hono';
 import { parseChoices } from '../app/lib/attention';
-import { lapHref, workItemHref } from '../app/lib/work-item';
+import { lapHref } from '../app/lib/one-lap';
+import { workItemHref } from '../app/lib/work-item';
 import { type Db, openDb } from '../scripts/lib/db';
 import type { Env } from './check-env';
 import { readFactoryNames } from './factories';
