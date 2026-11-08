@@ -4,10 +4,8 @@ import { STATE_LABEL } from './lap-graph';
 import { OUTCOMES } from './laps';
 import { REVIEW_OUTCOMES } from './review-outcome';
 import {
-  BUILD_STATUS_STATE,
   CHECK_OVERALL_STATE,
   LAP_OUTCOME_STATE,
-  MERGE_STATUS_STATE,
   REVIEW_OUTCOME_STATE,
   RUN_STATE,
   STATE_COLOR,
@@ -27,13 +25,6 @@ import {
 } from './states';
 
 const sorted = (xs: Iterable<string>) => [...xs].sort();
-
-/** The literal union a pack file declares as `export type <name> = 'a' | 'b'`. */
-function packUnion(file: string, name: string): string[] {
-  const text = readFileSync(`fixtures/pack/queue/sdlc/.shared/${file}`, 'utf8');
-  const union = text.match(new RegExp(`export type ${name} = ([^;]+);`))?.[1] ?? '';
-  return sorted([...union.matchAll(/'([^']+)'/g)].map((m) => m[1] ?? ''));
-}
 
 /** The words of the `export const <name> = [...] as const` tuple a pack file declares. */
 function packTuple(file: string, name: string): string[] {
@@ -58,8 +49,6 @@ test('a map holds exactly the values its source reads, so a new value fails here
   expect(sorted(Object.keys(LAP_OUTCOME_STATE))).toEqual(sorted(OUTCOMES));
   expect(sorted(Object.keys(REVIEW_OUTCOME_STATE))).toEqual(sorted(REVIEW_OUTCOMES));
   expect(sorted(Object.keys(STEP_STATE_STATE))).toEqual(sorted(Object.keys(STATE_LABEL)));
-  expect(sorted(Object.keys(BUILD_STATUS_STATE))).toEqual(packUnion('build.ts', 'BuildStatus'));
-  expect(sorted(Object.keys(MERGE_STATUS_STATE))).toEqual(packUnion('merge.ts', 'MergeStatus'));
   expect(sorted(Object.keys(VERDICT_STATE))).toEqual(
     sorted(
       (
@@ -113,8 +102,6 @@ test("the README's States examples hold", () => {
   expect(RUN_STATE.paused).toBe('needs-you');
   expect(RUN_STATE.pending).toBe('idle');
   expect(RUN_STATE.cancelled).toBe('idle');
-  expect(BUILD_STATUS_STATE.parked).toBe('idle');
-  expect(MERGE_STATUS_STATE.parked).toBe('idle');
   expect(QUEUE_ENDING_STATE.parked).toBe('idle');
   expect(STEP_STATUS_STATE.skipped).toBe('idle');
   expect(GATE_OUTCOME_STATE.merged).toBe('done');

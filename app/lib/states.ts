@@ -7,7 +7,6 @@
 import type { GateOutcome, MapRightNowRow } from '../map/live';
 import type { StepState } from './lap-graph';
 import type { Outcome } from './laps';
-import type { OwnerQueueRow } from './owner-queue';
 import type { ReviewOutcome } from './review-outcome';
 
 export const STATES = ['running', 'needs-you', 'failed', 'done', 'idle'] as const;
@@ -167,26 +166,6 @@ export const SWEEP_ACTION_STATE: Record<'merged' | 'return' | 'ask' | 'wait', St
   wait: 'idle',
 };
 
-/** The pack's `BuildStatus` (fixtures/pack/queue/sdlc/.shared/build.ts). */
-export const BUILD_STATUS_STATE: Record<'next' | 'asking' | 'ready' | 'parked', State> = {
-  next: 'idle',
-  asking: 'needs-you',
-  ready: 'done',
-  parked: 'idle',
-};
-
-/** The pack's `MergeStatus` (fixtures/pack/queue/sdlc/.shared/merge.ts). */
-export const MERGE_STATUS_STATE: Record<
-  'waiting' | 'asking' | 'merged' | 'returned' | 'parked',
-  State
-> = {
-  waiting: 'idle',
-  asking: 'needs-you',
-  merged: 'done',
-  returned: 'done',
-  parked: 'idle',
-};
-
 /** What the merge gate did with a pull request, on the factory map. */
 export const GATE_OUTCOME_STATE: Record<GateOutcome['outcome'], State> = {
   merged: 'done',
@@ -199,12 +178,6 @@ export const DEPLOY_STATE: Record<NonNullable<MapRightNowRow['status']>, State> 
   verified: 'done',
   deployed: 'done',
   failed: 'failed',
-};
-
-/** An owner queue row: both kinds are waiting on the owner. */
-export const QUESTION_STATE: Record<OwnerQueueRow['kind'], State> = {
-  issue: 'needs-you',
-  question: 'needs-you',
 };
 
 /** A chip on a factory map card. */
@@ -229,10 +202,7 @@ export const STATE_SOURCES: Record<string, Record<string, State>> = {
   VERDICT_STATE,
   CHECK_OVERALL_STATE,
   SWEEP_ACTION_STATE,
-  BUILD_STATUS_STATE,
-  MERGE_STATUS_STATE,
   GATE_OUTCOME_STATE,
   DEPLOY_STATE,
-  QUESTION_STATE,
   MAP_CHIP_STATE,
 };
