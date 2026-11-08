@@ -25,7 +25,8 @@ CREATE TABLE IF NOT EXISTS mc.run_stops (
 CREATE INDEX IF NOT EXISTS run_stops_factory_failed ON mc.run_stops (factory, signature) WHERE status = 'failed';
 
 -- The one place a text loses its run ids, paths and shas, in that order, so a path that carries an id is
--- removed whole. mc.stop_class and mc.stop_signature both call it, each with its own replacements.
+-- removed whole. mc.stop_class and mc.stop_signature both call it, each with its own replacements;
+-- a path replacement of '\&' keeps the matched path.
 CREATE OR REPLACE FUNCTION mc.stop_strip(p_text text, p_id text, p_path text, p_sha text)
 RETURNS text LANGUAGE sql IMMUTABLE AS $$
   SELECT regexp_replace(regexp_replace(regexp_replace(p_text,
@@ -57,9 +58,7 @@ RETURNS text LANGUAGE sql IMMUTABLE AS $$
   END
   FROM (SELECT e, r, mc.stop_strip(left(p_error, 8000), '<id>', ' ', ' ') AS ep
     FROM (SELECT regexp_replace(left(p_error, 8000), '(#|\m(pulls?|issues?)/|\mPRs? ?#?)[0-9]+', ' ', 'gi') AS r,
-      nullif(btrim(regexp_replace(regexp_replace(left(p_error, 8000),
-      '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}', ' ', 'g'),
-      '\m(?=[0-9a-f]*[0-9])(?=[0-9a-f]*[a-f])[0-9a-f]{7,40}\M', ' ', 'g')), '') AS e) y) x
+      nullif(btrim(mc.stop_strip(left(p_error, 8000), ' ', '\&', ' ')), '') AS e) y) x
 $$;
 
 CREATE OR REPLACE FUNCTION mc.stop_line(p_text text)
