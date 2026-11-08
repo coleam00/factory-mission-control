@@ -185,7 +185,8 @@ export function ForFactory(): ReactElement {
       <div className="flex min-h-screen flex-col bg-[var(--v3-bg)]">
         <PhoneTop unknownKey={unknownKey} onEngine={setEngine} />
         {phoneManager ? <ManagerPanel phone onClose={() => setPhoneManager(false)} /> : content}
-        <div className="border-t border-[color:var(--v3-line)] px-4 py-2">{switcher}</div>
+        {/* Mounted but hidden: the design draws no switcher on phone, yet it is the one publisher of the factory list. */}
+        <div hidden>{switcher}</div>
         <PhoneTabs manager={phoneManager} onManager={setPhoneManager} />
       </div>
     );
