@@ -15,16 +15,16 @@ const SECRETS = {
     'postgresql://sample_user:sample_pw@ep-sample-000000.c-14.us-east-1.aws.neon.tech/factory',
 };
 
+const serverOnly = new RegExp(
+  ['@neon/realtime/server', 'claude-agent-sdk', ...Object.keys(SECRETS)].join('|'),
+);
+
 test('no browser source can reach the sealing key or the database URL', () => {
   const offenders: string[] = [];
   for (const file of new Bun.Glob('app/**/*.{ts,tsx}').scanSync(repoRoot)) {
     if (join(repoRoot, file) === import.meta.path) continue;
     const source = readFileSync(join(repoRoot, file), 'utf-8');
-    if (
-      /@neon\/realtime\/server|NEON_REALTIME_SECRET|MC_DATABASE_URL|ANTHROPIC_API_KEY|CLAUDE_CODE_OAUTH_TOKEN|claude-agent-sdk/.test(
-        source,
-      )
-    ) {
+    if (serverOnly.test(source)) {
       offenders.push(file);
     }
   }

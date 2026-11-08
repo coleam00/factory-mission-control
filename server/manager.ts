@@ -331,6 +331,8 @@ const NOTICES = {
     (hasCredential(process.env)
       ? ''
       : ' Neither CLAUDE_CODE_OAUTH_TOKEN nor ANTHROPIC_API_KEY is set on the server: set CLAUDE_CODE_OAUTH_TOKEN, or log in to Claude on the machine that runs it.'),
+  unstructured: () =>
+    'The links and buttons for this answer could not be built. The server log has the details.',
 };
 
 function notice(manager: Manager, kind: keyof typeof NOTICES): ManagerEvent {
@@ -594,7 +596,7 @@ async function produce(
       notice(manager, maxBudgetUsd < manager.settings.messageCapUsd ? 'day-cap' : 'message-cap'),
     );
   }
-  if (!structured) emit(notice(manager, 'unavailable'));
+  if (!structured) emit(notice(manager, 'unstructured'));
   return { ok: stop === 'success' && structured, cost };
 }
 

@@ -597,7 +597,10 @@ describe('a structure lookup that fails', () => {
     const got = await events(await chat(manager));
     const types = got.map((e) => e.type);
     expect(types.slice(-2)).toEqual(['notice', 'done']);
-    expect(got.find((e) => e.type === 'notice')).toMatchObject({ kind: 'unavailable' });
+    expect(got.find((e) => e.type === 'notice')).toMatchObject({
+      kind: 'unstructured',
+      text: expect.stringContaining('links and buttons'),
+    });
   });
 });
 

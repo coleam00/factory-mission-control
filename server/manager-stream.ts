@@ -31,7 +31,7 @@ export type ManagerEvent =
       from_step: string | null;
       label: string;
     }
-  | { type: 'notice'; kind: 'message-cap' | 'day-cap' | 'unavailable'; text: string }
+  | { type: 'notice'; kind: 'message-cap' | 'day-cap' | 'unavailable' | 'unstructured'; text: string }
   | {
       type: 'done';
       cost_usd: number;
