@@ -541,6 +541,48 @@ describe('the briefing', () => {
   });
 });
 
+describe('a lap that started on an earlier day and failed today', () => {
+  const OVERNIGHT = '5eed0003-0000-4000-8000-00000000000b';
+
+  test('is reached by the prompt rule in a chat answer and in the briefing', async () => {
+    clock = new Date('2026-11-08T10:00:00');
+    await fixture.direct.query(
+      `INSERT INTO mc.laps (run_id, factory, workflow_name, status, started_at, completed_at)
+         VALUES ('${OVERNIGHT}', '${FACTORY}', 'archon-loop', 'failed',
+                 '2026-10-24T08:00:00Z', '2026-11-08T05:00:00Z')`,
+    );
+    try {
+      const played = model(async () => [start, delta('fine'), result(0.01)]);
+      const manager = managerOf(played);
+      await (await chat(manager)).text();
+      const briefed = await createApp({ buildId: 't', distDir: '.', manager }).request(
+        '/api/manager/briefing',
+        { method: 'POST', body: JSON.stringify({ factory: FACTORY, refresh: true }) },
+      );
+      await briefed.text();
+      expect(played.options).toHaveLength(2);
+      for (const options of played.options) {
+        expect(options.systemPrompt as string).toContain(
+          'filter on completed_at, never started_at',
+        );
+      }
+      expect(played.prompts[1]).toContain('completed_at');
+
+      const [byCompletion] = await callTools(played.options[0], [
+        [
+          'select',
+          {
+            sql: `SELECT run_id FROM mc.laps WHERE factory = '${FACTORY}' AND status = 'failed' AND completed_at::date = DATE '2026-11-08'`,
+          },
+        ],
+      ]);
+      expect(JSON.stringify(byCompletion)).toContain(OVERNIGHT);
+    } finally {
+      await fixture.direct.query(`DELETE FROM mc.laps WHERE run_id = '${OVERNIGHT}'`);
+    }
+  });
+});
+
 describe('request validation', () => {
   test.each([
     ['an unknown factory', { factory: 'nope' }],

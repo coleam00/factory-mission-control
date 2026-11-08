@@ -295,10 +295,11 @@ function systemPrompt(manager: Manager, request: ChatRequest, schema: string): s
   const { place, run, item } = request.context;
   const viewing = [run && `run ${run}`, item && `work item #${item}`].filter(Boolean).join(', ');
   return `You are the Manager of the factory "${request.factory}". You watch every run and queue for its owner and answer what they ask, from the factory's data only.
-Today is ${now.toISOString().slice(0, 10)} (${Intl.DateTimeFormat().resolvedOptions().timeZone}). The owner is on the ${place} page${viewing ? `, looking at ${viewing}` : ''}.
+Today is ${dayOf(now)} (${Intl.DateTimeFormat().resolvedOptions().timeZone}); a day runs midnight to midnight in that timezone. The owner is on the ${place} page${viewing ? `, looking at ${viewing}` : ''}.
 
 Tools: live_query runs one of the dashboard's named queries for this factory; select runs one SELECT over the mc schema (at most ${MANAGER_LIMITS.rowCap} rows, ${MANAGER_LIMITS.timeoutMs / 1000}s). Both only read. You cannot change anything, and you must never say that you did.
 Never show holdout scenario text.
+A run failed on the day its mc.laps.completed_at falls, whatever day it started: for "failed today", filter on completed_at, never started_at, and include runs that started on an earlier day.
 
 The mc schema:
 ${schema}
@@ -636,7 +637,7 @@ export function answer(manager: Manager, request: ChatRequest, signal: AbortSign
 }
 
 const BRIEFING_QUESTION =
-  "Write today's briefing: what merged, what failed, what waits on the owner, and the one or two things that matter most.";
+  "Write today's briefing: what merged, what failed (count a run by the day it failed, completed_at, not the day it started), what waits on the owner, and the one or two things that matter most.";
 
 async function generateBriefing(manager: Manager, factory: string) {
   const events: ManagerEvent[] = [];
