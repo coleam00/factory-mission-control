@@ -23,6 +23,7 @@ import { LivePanel, type PanelState } from '../live/LivePanel';
 import { EmptyState } from './EmptyState';
 import { Failures, OverdueList, WaitingList, Workable } from './Health';
 import { LABEL, MONO, NONE, PanelBody, useNow, utcMinute } from './Lanes';
+import { RecommendedTag } from './ui/OptionTile';
 
 /** The mockup's wording (docs/design/v2/mockup.html), word for word. */
 export const CAPTION =
@@ -30,26 +31,9 @@ export const CAPTION =
 export const FOOTER =
   'Answer in the Archon console or Slack. If the same call comes up again, it should become a line in the policy files.';
 
-const PERSON = 'var(--role-person)';
-const PERSON_SOFT = 'var(--role-person-soft)';
 const LINK =
   'shrink-0 text-[13px] text-accent-bright underline decoration-border-bright underline-offset-2 hover:decoration-accent-bright';
 const FOOT = 'text-[12.5px] text-text-secondary';
-
-function Chip({
-  children,
-  ...data
-}: { children: ReactNode } & Record<string, string>): ReactElement {
-  return (
-    <span
-      {...data}
-      className="shrink-0 rounded px-1.5 py-px font-mono text-[10px] font-semibold uppercase tracking-[0.04em]"
-      style={{ color: PERSON, backgroundColor: PERSON_SOFT }}
-    >
-      {children}
-    </span>
-  );
-}
 
 /** The mockup's `.panel`: a head with where it came from, the question and a link, then a body. */
 function Panel({
@@ -116,7 +100,11 @@ export function AttentionPanel({ item, now }: { item: AttentionItem; now: number
         <ul className="grid gap-1.5 text-[13px] text-text-primary">
           {item.options.map((option) => (
             <li key={option.id} data-choice={option.id} className="flex items-baseline gap-2">
-              {option.id === recommended ? <Chip data-recommended="">recommended</Chip> : null}
+              {option.id === recommended ? (
+                <RecommendedTag badge data-recommended="">
+                  recommended
+                </RecommendedTag>
+              ) : null}
               {option.label ?? option.id}
             </li>
           ))}
@@ -186,7 +174,7 @@ function OwnerQuestionDetail({ item }: { item: OwnerItem }): ReactElement {
               >
                 <span className={`${MONO} w-4 shrink-0 font-bold`}>{option.key}</span>
                 <span className="min-w-0 flex-1">{option.text}</span>
-                {isDefault ? <Chip>default</Chip> : null}
+                {isDefault ? <RecommendedTag badge>default</RecommendedTag> : null}
               </li>
             );
           })}
@@ -322,7 +310,7 @@ export function HealthDrawn({
     );
   return (
     <>
-      <WaitingList rows={runs} factory={factory} now={now} color={PERSON} />
+      <WaitingList rows={runs} factory={factory} now={now} />
       <OverdueList rows={steps} factory={factory} now={now} />
       <Failures rows={runs} factory={factory} />
     </>

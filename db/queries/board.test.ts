@@ -360,7 +360,7 @@ test('a run that has just taken a work item is running on the Board, here on the
     const column = (id: string) => board.columns.find((c) => c.id === id)?.items ?? [];
     expect(column('queued').map((i) => i.number)).not.toContain(404);
     expect(column('build').find((i) => i.number === 404)?.chips).toContainEqual(
-      expect.objectContaining({ kind: 'round', tone: 'running' }),
+      expect.objectContaining({ kind: 'round', state: 'running' }),
     );
 
     const live = cardLive(

@@ -122,6 +122,16 @@
   }
 }
 
+/* The Toast's countdown bar. */
+@keyframes v3-toast-bar {
+  from {
+    width: 100%;
+  }
+  to {
+    width: 0;
+  }
+}
+
 @keyframes map-hit {
   30% {
     transform: scale(1.035);

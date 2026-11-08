@@ -7,7 +7,6 @@ import {
   type LaneRow,
   lanes,
   OUTCOME_LABEL,
-  OUTCOME_TOKEN,
   queueStepLabel,
   type RecentLapRow,
   recentLaps,
@@ -17,6 +16,7 @@ import {
 import { consoleUrl, hasLapPage, lapHref, workflowLabel } from '../lib/one-lap';
 import { LivePanel, type PanelState } from '../live/LivePanel';
 import { laneMarks, stepPath } from '../lib/lap-graph';
+import { LAP_OUTCOME_STATE, STATE_NAME, stateColor, stateInk } from '../lib/states';
 import { stepHref, stepOriginState } from '../lib/step-detail';
 import { workItemHref } from '../lib/work-item';
 import { LaneMarks } from './LapGraph';
@@ -118,16 +118,24 @@ export function LaneList({
           >
             <span
               aria-hidden="true"
-              className="absolute inset-y-0 left-0 w-[3px] animate-pulse bg-[color:var(--running)] shadow-[0_0_12px_color-mix(in_oklch,var(--running),transparent_60%)]"
+              className="absolute inset-y-0 left-0 w-[3px] animate-pulse"
+              style={{
+                background: stateColor('running'),
+                boxShadow: `0 0 12px color-mix(in oklch, ${stateColor('running')}, transparent 60%)`,
+              }}
             />
             <div className="flex flex-wrap items-center gap-x-[18px] gap-y-2">
               <span className="flex items-center gap-[9px]">
                 <span
                   aria-hidden="true"
-                  className="h-2 w-2 shrink-0 rounded-full bg-[color:var(--running)]"
+                  className="h-2 w-2 shrink-0 rounded-full"
+                  style={{ background: stateColor('running') }}
                 />
-                <span className="font-mono text-[11px] font-semibold uppercase tracking-[0.05em] text-[color:var(--running)]">
-                  Running
+                <span
+                  className="font-mono text-[11px] font-semibold uppercase tracking-[0.05em]"
+                  style={{ color: stateInk('running') }}
+                >
+                  {STATE_NAME.running}
                 </span>
               </span>
               <span className="flex min-w-0 flex-1 items-baseline gap-2.5">
@@ -186,7 +194,8 @@ export function LaneList({
                       label: 'Laps',
                     })}
                     data-step-link
-                    className="text-[color:var(--running)] underline decoration-border-bright underline-offset-2 hover:decoration-text-primary"
+                    className="underline decoration-border-bright underline-offset-2 hover:decoration-text-primary"
+                    style={{ color: stateInk('running') }}
                   >
                     {loop ? stepLabel(lane.step_id) : queueStepLabel(lane.step_id)}
                   </Link>
@@ -252,9 +261,9 @@ export function RecentList({
     <ol className="overflow-hidden rounded-[10px] border border-border bg-surface">
       {sorted.map((lap) => {
         const duration = durationOf(lap);
-        const color = lap.outcome === null ? undefined : `var(${OUTCOME_TOKEN[lap.outcome]})`;
-        // The console's grey is too dim for text on a surface; its dot keeps it.
-        const text = lap.outcome === 'nothing' ? undefined : color;
+        const state = lap.outcome === null ? undefined : LAP_OUTCOME_STATE[lap.outcome];
+        const color = state && stateColor(state);
+        const text = state && stateInk(state);
         const label =
           lap.outcome === null ? `No outcome, ${lap.status}` : OUTCOME_LABEL[lap.outcome];
         return (

@@ -8,6 +8,7 @@ import { type HomeMapRow, lapCard, onQueues, type WorkOrderRow } from '../map/li
 import type { HealthWorkableRow } from './health';
 import { pullUrl } from './one-lap';
 import type { OwnerQueueRow } from './owner-queue';
+import { CHECK_OVERALL_STATE, type State } from './states';
 import { workItemHref } from './work-item';
 
 /** One row of `db/queries/board.sql`: a work item, or the one row for the factory. */
@@ -96,7 +97,7 @@ export const KEEP_MS = 7 * 24 * 60 * 60 * 1000;
 export interface BoardChip {
   kind: 'route' | 'round' | 'app' | 'pr' | 'order' | 'waiting';
   text: string;
-  tone?: 'running' | 'pass' | 'fail';
+  state?: State;
   /** A run is on the work item now. */
   pulse?: boolean;
 }
@@ -194,15 +195,18 @@ function chipsOf(item: BoardRow, column: ColumnId, running: boolean): BoardChip[
     chips.push({
       kind: 'round',
       text: rounds >= 1 ? `round ${rounds}` : 'running',
-      tone: 'running',
+      state: 'running',
       pulse: true,
     });
   } else if (rounds >= 1) chips.push({ kind: 'round', text: `round ${rounds}` });
-  if (item.app_check === 'PASS') chips.push({ kind: 'app', text: 'app pass', tone: 'pass' });
-  if (item.app_check === 'FAIL') chips.push({ kind: 'app', text: 'app fail', tone: 'fail' });
+  if (item.app_check === 'PASS')
+    chips.push({ kind: 'app', text: 'app pass', state: CHECK_OVERALL_STATE.PASS });
+  if (item.app_check === 'FAIL')
+    chips.push({ kind: 'app', text: 'app fail', state: CHECK_OVERALL_STATE.FAIL });
   if (item.pr !== null) chips.push({ kind: 'pr', text: `PR #${item.pr}` });
   for (const name of item.work_orders ?? []) chips.push({ kind: 'order', text: name });
-  if (column === 'build' && !running) chips.push({ kind: 'waiting', text: 'waiting for a run' });
+  if (column === 'build' && !running)
+    chips.push({ kind: 'waiting', text: 'waiting for a run', state: 'idle' });
   return chips;
 }
 

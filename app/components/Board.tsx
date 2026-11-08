@@ -1,36 +1,8 @@
 import type { ReactElement } from 'react';
 import { Link } from 'react-router';
-import {
-  type BoardChip,
-  type BoardColumn,
-  type BoardView,
-  orderProgress,
-  type WorkItem,
-} from '../lib/board';
-
-const CHIP_TONE: Record<NonNullable<BoardChip['tone']> | 'plain', string> = {
-  plain: 'bg-surface-hover text-text-secondary',
-  running: 'bg-[color:var(--running-soft)] text-[color:var(--running)]',
-  pass: 'bg-[color:var(--role-test-soft)] text-[color:var(--role-test)]',
-  fail: 'bg-[color:var(--error-soft)] text-[color:var(--error)]',
-};
-
-function Chip({ chip }: { chip: BoardChip }): ReactElement {
-  return (
-    <span
-      data-chip={chip.kind}
-      className={`inline-flex items-center gap-1 rounded-[5px] [overflow-wrap:anywhere] px-1.5 py-0.5 font-mono text-[11px] ${CHIP_TONE[chip.tone ?? 'plain']}`}
-    >
-      {chip.pulse ? (
-        <span
-          aria-hidden="true"
-          className="h-1.5 w-1.5 rounded-full bg-[color:var(--running)] motion-safe:animate-pulse"
-        />
-      ) : null}
-      {chip.text}
-    </span>
-  );
-}
+import { type BoardColumn, type BoardView, orderProgress, type WorkItem } from '../lib/board';
+import { stateColor } from '../lib/states';
+import { Pill } from './ui/StateDot';
 
 const CARD =
   'block rounded-[7px] border border-border bg-surface px-2.5 py-2 hover:border-border-bright';
@@ -45,7 +17,15 @@ function Card({ item }: { item: WorkItem }): ReactElement {
       {item.chips.length > 0 ? (
         <span className="mt-1.5 flex flex-wrap gap-1">
           {item.chips.map((chip) => (
-            <Chip key={`${chip.kind}-${chip.text}`} chip={chip} />
+            <Pill
+              compact
+              key={`${chip.kind}-${chip.text}`}
+              data-chip={chip.kind}
+              state={chip.state}
+              live={chip.pulse}
+            >
+              {chip.text}
+            </Pill>
           ))}
         </span>
       ) : null}
@@ -114,8 +94,8 @@ function OrderPanel({
       </span>
       <span className="mt-2 block h-1.5 overflow-hidden rounded-full bg-surface-hover">
         <span
-          className="block h-full rounded-full bg-[color:var(--role-test)]"
-          style={{ width: `${percent}%` }}
+          className="block h-full rounded-full"
+          style={{ width: `${percent}%`, background: stateColor('done') }}
         />
       </span>
     </button>

@@ -1,6 +1,6 @@
 import { type ReactElement, type ReactNode, useEffect, useMemo, useState } from 'react';
 import { formatCost, formatCount, formatElapsed, shortRunId } from '../lib/format';
-import { costOf, durationOf, OUTCOME_LABEL, OUTCOME_TOKEN, since, stepLabel } from '../lib/laps';
+import { costOf, durationOf, OUTCOME_LABEL, since, stepLabel } from '../lib/laps';
 import {
   actionText,
   attemptSeconds,
@@ -8,7 +8,6 @@ import {
   type CheckLineRow,
   checkLineFor,
   consoleUrl,
-  GATE_TOKEN,
   lapCost,
   lapOutcome,
   linesInOrder,
@@ -16,12 +15,21 @@ import {
   prNumber,
   pullUrl,
   shownDispositions,
-  STEP_STATUS_TOKEN,
   type StepAttemptRow,
-  VERDICT_TOKEN,
 } from '../lib/one-lap';
 import { type LapMapRow, lapGraph } from '../lib/lap-graph';
-import { reviewToken } from '../lib/review-outcome';
+import {
+  GATE_STATE,
+  LAP_OUTCOME_STATE,
+  REVIEW_OUTCOME_STATE,
+  STATE_NAME,
+  type State,
+  STEP_STATUS_STATE,
+  stateColor,
+  stateInk,
+  stateOf,
+  VERDICT_STATE,
+} from '../lib/states';
 import { LivePanel, type PanelState } from '../live/LivePanel';
 import { LapGraphView, StepPanel } from './LapGraph';
 import { Field, LABEL, MONO, NONE, PanelBody, useNow, utcMinute } from './Lanes';
@@ -33,8 +41,9 @@ const TAG = 'font-mono text-[11px] font-semibold uppercase tracking-[0.05em]';
 /** `2026-10-24 10:00:30 UTC`: a step's start, to the second, the same for every viewer. */
 const utcSecond = (at: Date) => `${at.toISOString().slice(0, 19).replace('T', ' ')} UTC`;
 
-const tokenColor = (token: `--${string}` | undefined) =>
-  token === undefined ? undefined : { color: `var(${token})` };
+/** The text color of a value's state; none for a value no map knows. */
+const inkOf = (state: State | undefined) =>
+  state === undefined ? undefined : { color: stateInk(state) };
 
 /** A value the lap never recorded. The console's tertiary grey is below 4.5:1 on a surface. */
 function None({ children = 'none' }: { children?: ReactNode }): ReactElement {
@@ -124,14 +133,14 @@ export function LapHeaderBody({
   const now = fixed ?? ticking;
   const outcome = lapOutcome(lap);
   const running = lap.status === 'running';
-  const color = running
-    ? 'var(--running)'
+  const state = running ? 'running' : outcome === null ? undefined : LAP_OUTCOME_STATE[outcome];
+  const color = state && stateColor(state);
+  const text = state && stateInk(state);
+  const label = running
+    ? STATE_NAME.running
     : outcome === null
-      ? undefined
-      : `var(${OUTCOME_TOKEN[outcome]})`;
-  // The console's grey is too dim for text on a surface; its dot keeps it.
-  const text = outcome === 'nothing' ? undefined : color;
-  const label = running ? 'Running' : outcome === null ? lap.status : OUTCOME_LABEL[outcome];
+      ? lap.status
+      : OUTCOME_LABEL[outcome];
   const seconds = running ? since(lap.started_at, now) : durationOf(lap);
   const pr = prNumber(lap.pr);
   return (
@@ -243,7 +252,7 @@ function Review({
               {outcome === null ? (
                 <None>{lap.review_status}</None>
               ) : (
-                <span style={tokenColor(reviewToken(outcome))}>{outcome}</span>
+                <span style={inkOf(stateOf(REVIEW_OUTCOME_STATE, outcome))}>{outcome}</span>
               )}
             </Field>
             <Field label="Delivers">{lap.review_delivers ?? <None />}</Field>
@@ -298,7 +307,7 @@ function Gate({ lap }: { lap: OneLapRow }): ReactElement {
               {outcome === null ? (
                 <None>{lap.gate_status}</None>
               ) : (
-                <span style={tokenColor(GATE_TOKEN[outcome])}>{outcome}</span>
+                <span style={inkOf(stateOf(GATE_STATE, outcome))}>{outcome}</span>
               )}
             </Field>
           </dl>
@@ -454,7 +463,7 @@ export function StepList({
         {sorted.map((attempt) => {
           const seconds = attemptSeconds(attempt, now);
           const cost = costOf(attempt.cost_usd);
-          const token = STEP_STATUS_TOKEN[attempt.status];
+          const status = stateOf(STEP_STATUS_STATE, attempt.status);
           const cache =
             attempt.tokens_cache_read === null && attempt.tokens_cache_write === null
               ? undefined
@@ -477,7 +486,7 @@ export function StepList({
                 <span
                   aria-hidden="true"
                   className="h-2 w-2 shrink-0 rounded-full bg-text-tertiary"
-                  style={token === undefined ? undefined : { backgroundColor: `var(${token})` }}
+                  style={status === undefined ? undefined : { backgroundColor: stateColor(status) }}
                 />
                 <span className="min-w-0 truncate text-text-primary">
                   {stepLabel(attempt.step_id)}
@@ -486,12 +495,7 @@ export function StepList({
                   <span className="truncate text-text-secondary">{attempt.outcome}</span>
                 )}
               </span>
-              <span
-                className={`${TAG} text-text-secondary`}
-                style={
-                  token === undefined || token === '--text-tertiary' ? undefined : tokenColor(token)
-                }
-              >
+              <span className={`${TAG} text-text-secondary`} style={inkOf(status)}>
                 {attempt.status}
               </span>
               <span className="min-w-0 truncate text-text-secondary">
@@ -580,7 +584,7 @@ export function CheckList({ rows }: { rows: readonly CheckLineRow[] }): ReactEle
           <span className="text-text-primary">{line.kind}</span>
           <span
             className={`${TAG} text-text-secondary`}
-            style={tokenColor(VERDICT_TOKEN[line.verdict])}
+            style={inkOf(stateOf(VERDICT_STATE, line.verdict))}
           >
             {line.verdict}
           </span>

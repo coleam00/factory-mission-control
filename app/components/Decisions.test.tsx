@@ -56,7 +56,7 @@ test('only the recommended choice carries the violet recommended chip', () => {
   const split = waiting.match(/<li data-choice="split"[^>]*>(.*?)<\/li>/)?.[1] ?? '';
   const build = waiting.match(/<li data-choice="build"[^>]*>(.*?)<\/li>/)?.[1] ?? '';
   expect(split).toContain('data-recommended');
-  expect(split).toContain('var(--role-person)');
+  expect(split).toContain('--v3-you-2');
   expect(build).not.toContain('data-recommended');
 });
 
@@ -133,7 +133,7 @@ test('a paused run is drawn in the person color, not amber', () => {
     />,
   );
   expect(html).not.toContain('The factory is healthy.');
-  expect(html).toContain('var(--role-person)');
+  expect(html).toContain('var(--v3-you)');
   expect(html).not.toContain('warning');
 });
 

@@ -68,8 +68,8 @@ test('the header links the console run, the pull request and the issue, and says
   expect(html).toContain('data-gate-outcome="refused"');
   expect(html).toContain(REASON);
   expect(html).toContain('data-review-outcome="merge"');
-  expect(html).toContain('<span style="color:var(--success)">merge</span>');
-  expect(html).toContain('<span style="color:var(--error)">refused</span>');
+  expect(html).toContain('<span style="color:var(--v3-done)">merge</span>');
+  expect(html).toContain('<span style="color:var(--v3-failed)">refused</span>');
   expect(html).toContain('data-line="B1"');
   expect(html).toContain('no line id');
   expect(html).toContain('1:00:00');
@@ -422,12 +422,12 @@ test('a sent-back lap reads teal and a needs-owner lap violet, never amber', () 
   const sentBack = render(
     <LapHeaderBody lap={{ ...quiet, review_outcome: 'sent-back' }} now={0} />,
   );
-  expect(sentBack).toContain('<span style="color:var(--success)">sent-back</span>');
+  expect(sentBack).toContain('<span style="color:var(--v3-done)">sent-back</span>');
   expect(sentBack).not.toContain('--warning');
   const needsOwner = render(
     <LapHeaderBody lap={{ ...quiet, review_outcome: 'needs-owner' }} now={0} />,
   );
-  expect(needsOwner).toContain('<span style="color:var(--role-person)">needs-owner</span>');
+  expect(needsOwner).toContain('<span style="color:var(--v3-you-2)">needs-owner</span>');
   expect(needsOwner).not.toContain('--warning');
 });
 

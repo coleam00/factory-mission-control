@@ -8,8 +8,18 @@ import { formatCost, formatElapsed } from './format';
 import { stepPath } from './lap-graph';
 import { costOf, durationOf, stepLabel } from './laps';
 import { consoleUrl, hasLapPage, isOldLoop, lapHref } from './one-lap';
-import { REVIEW_TONE } from './review-outcome';
 import { LAP_WORKFLOWS } from './scorecard';
+import {
+  CHECK_OVERALL_STATE,
+  GATE_STATE,
+  QUEUE_ENDING_STATE,
+  QUEUE_REVIEW_STATE,
+  REVIEW_OUTCOME_STATE,
+  RUN_STATE,
+  type State,
+  stateOf,
+  SWEEP_ACTION_STATE,
+} from './states';
 
 /**
  * One row of `db/queries/work-item.sql`. `kind` says which columns are filled: `item` (the issue:
@@ -89,15 +99,13 @@ export function workItemHref(factory: string, number: number): string {
 
 export const NO_REASON = 'No reason was recorded.';
 
-export type Tone = 'done' | 'failed' | 'owner' | 'running' | 'plain';
-
 export type RunLink = { kind: 'lap'; to: string } | { kind: 'console'; href: string };
 
 export interface TimelineEvent {
   key: string;
   kind: 'filed' | 'intake' | 'review' | 'check' | 'decision' | 'answer' | 'round';
   at: Date;
-  tone: Tone;
+  tone: State;
   text: string;
   detail: string | null;
   run: { id: string; link: RunLink } | null;
@@ -129,27 +137,31 @@ export const ROUTE_OF_LABEL: Record<string, string> = {
   'archon-split': 'split',
 };
 
-export const QUEUE_ENDING: Record<string, { text: string; tone: Tone }> = {
-  ready: { text: 'Ready', tone: 'done' },
-  continue: { text: 'another round', tone: 'done' },
-  asked: { text: 'asked you', tone: 'owner' },
-  parked: { text: 'parked', tone: 'owner' },
-};
+/** A table's text for a key, undefined for a key it does not hold. */
+const textOf = (table: Readonly<Record<string, string>>, key: string): string | undefined =>
+  Object.hasOwn(table, key) ? table[key] : undefined;
 
-const LOOP_REVIEW = {
-  merge: { text: 'ready to merge', tone: REVIEW_TONE.merge },
-  approved: { text: 'approved', tone: REVIEW_TONE.approved },
-  nothing: { text: 'nothing to do', tone: REVIEW_TONE.nothing },
-  'sent-back': { text: 'sent back', tone: REVIEW_TONE['sent-back'] },
-  'needs-owner': { text: 'needs you', tone: REVIEW_TONE['needs-owner'] },
-} satisfies Record<keyof typeof REVIEW_TONE, { text: string; tone: Tone }>;
+const QUEUE_ENDING_TEXT = {
+  ready: 'Ready',
+  continue: 'another round',
+  asked: 'asked you',
+  parked: 'parked',
+} as const satisfies Record<keyof typeof QUEUE_ENDING_STATE, string>;
 
-export const QUEUE_REVIEW: Record<string, { text: string; tone: Tone }> = {
-  none: { text: 'Ready', tone: 'done' },
-  correct: { text: 'fixes requested', tone: 'done' },
-  replan: { text: 'plan again', tone: 'done' },
-  ask: { text: 'asks you', tone: 'owner' },
-};
+const LOOP_REVIEW_TEXT = {
+  merge: 'ready to merge',
+  approved: 'approved',
+  nothing: 'nothing to do',
+  'sent-back': 'sent back',
+  'needs-owner': 'needs you',
+} as const satisfies Record<keyof typeof REVIEW_OUTCOME_STATE, string>;
+
+const QUEUE_REVIEW_TEXT = {
+  none: 'Ready',
+  correct: 'fixes requested',
+  replan: 'plan again',
+  ask: 'asks you',
+} as const satisfies Record<keyof typeof QUEUE_REVIEW_STATE, string>;
 
 const runLink = (row: WorkItemRow, factory: string, console: string | null): RunLink | null => {
   if (row.run_id === null) return null;
@@ -213,8 +225,14 @@ function stageOf(row: WorkItemRow): { id: string; title: string } | null {
 
 function intakeEvent(row: WorkItemRow, at: Date, base: Base): TimelineEvent {
   if (row.status === 'failed')
-    return { ...base, at, tone: 'failed', text: `Intake failed: ${row.error ?? NO_REASON}` };
-  if (row.status === 'cancelled') return { ...base, at, tone: 'plain', text: 'Intake cancelled' };
+    return {
+      ...base,
+      at,
+      tone: RUN_STATE.failed,
+      text: `Intake failed: ${row.error ?? NO_REASON}`,
+    };
+  if (row.status === 'cancelled')
+    return { ...base, at, tone: RUN_STATE.cancelled, text: 'Intake cancelled' };
   if (row.completed_at === null)
     return {
       ...base,
@@ -260,15 +278,15 @@ function roundEvent(row: WorkItemRow, n: number, at: Date, base: Base): Timeline
     return {
       ...base,
       at,
-      tone: 'failed',
+      tone: RUN_STATE.failed,
       text: `${label} failed${
         row.failed_step === null ? '' : ` in ${failedCard?.title ?? stepLabel(row.failed_step)}`
       }: ${row.error ?? NO_REASON}`,
     };
   if (row.status === 'cancelled')
-    return { ...base, at, tone: 'plain', text: `${label}: cancelled` };
+    return { ...base, at, tone: RUN_STATE.cancelled, text: `${label}: cancelled` };
   if (row.waiting === true)
-    return { ...base, at, tone: 'owner', text: `${label}: waiting for your answer` };
+    return { ...base, at, tone: 'needs-you', text: `${label}: waiting for your answer` };
   if (row.completed_at === null)
     return {
       ...base,
@@ -293,17 +311,18 @@ function roundEvent(row: WorkItemRow, n: number, at: Date, base: Base): Timeline
     return {
       ...base,
       at,
-      tone: nothing ? 'plain' : 'done',
+      tone: nothing ? 'idle' : 'done',
       text: `${label}: ${nothing ? 'nothing to do' : facts.join(', ')}`,
     };
   }
-  const ending = QUEUE_ENDING[row.decision ?? ''];
+  const decision = row.decision ?? '';
+  const endingText = textOf(QUEUE_ENDING_TEXT, decision);
   return {
     ...base,
     at,
-    tone: ending?.tone ?? 'done',
+    tone: stateOf(QUEUE_ENDING_STATE, decision) ?? 'done',
     detail: row.reason,
-    text: `${label}: ${[...facts, ...(ending ? [`then ${ending.text}`] : [])].join(', ')}`,
+    text: `${label}: ${[...facts, ...(endingText ? [`then ${endingText}`] : [])].join(', ')}`,
   };
 }
 
@@ -320,8 +339,7 @@ function checkEvent(row: WorkItemRow, lines: readonly WorkItemRow[], base: Base)
     {
       ...base,
       at: row.check_at,
-      tone:
-        row.check_overall === 'PASS' ? 'done' : row.check_overall === 'FAIL' ? 'failed' : 'plain',
+      tone: stateOf(CHECK_OVERALL_STATE, row.check_overall) ?? 'idle',
       text: `App check ${row.check_overall}${tally === '' ? '' : `: ${tally}`}`,
     },
   ];
@@ -330,14 +348,16 @@ function checkEvent(row: WorkItemRow, lines: readonly WorkItemRow[], base: Base)
 function loopDecision(row: WorkItemRow, base: Base): TimelineEvent[] {
   if (row.decision_at === null) return [];
   if (row.decision === 'merged')
-    return [{ ...base, at: row.decision_at, tone: 'done', text: 'Merged', detail: row.reason }];
+    return [
+      { ...base, at: row.decision_at, tone: GATE_STATE.merged, text: 'Merged', detail: row.reason },
+    ];
   if (row.decision === 'refused') {
     const reason = row.reason?.trim() ? row.reason : null;
     return [
       {
         ...base,
         at: row.decision_at,
-        tone: 'failed',
+        tone: GATE_STATE.refused,
         text:
           reason === null ? `Merge gate refused. ${NO_REASON}` : `Merge gate refused: ${reason}`,
       },
@@ -371,7 +391,7 @@ function sweepDecision(row: WorkItemRow, base: Base): TimelineEvent[] {
         {
           ...base,
           at,
-          tone: 'plain',
+          tone: 'idle',
           text: 'Merged, not read back: the run ended before checking it.',
           detail: reason,
         },
@@ -381,16 +401,20 @@ function sweepDecision(row: WorkItemRow, base: Base): TimelineEvent[] {
         {
           ...base,
           at,
-          tone: 'done',
+          tone: SWEEP_ACTION_STATE.return,
           text: `Returned to Build: ${reason ?? NO_REASON}`,
           detail: entry.brief?.trim() ? `Brief: ${entry.brief}` : 'No brief was recorded.',
         },
       ];
     case 'ask':
       if (row.asked_pr !== String(row.pr)) return [];
-      return [{ ...base, at, tone: 'owner', text: `Asked you: ${reason ?? NO_REASON}` }];
+      return [
+        { ...base, at, tone: SWEEP_ACTION_STATE.ask, text: `Asked you: ${reason ?? NO_REASON}` },
+      ];
     case 'wait':
-      return [{ ...base, at, tone: 'plain', text: `Waiting: ${reason ?? NO_REASON}` }];
+      return [
+        { ...base, at, tone: SWEEP_ACTION_STATE.wait, text: `Waiting: ${reason ?? NO_REASON}` },
+      ];
     default:
       return [];
   }
@@ -411,7 +435,7 @@ function answerEvent(row: WorkItemRow, base: Base): TimelineEvent[] {
     {
       ...base,
       at: row.answer_at,
-      tone: 'owner',
+      tone: 'done',
       text: `You answered: ${row.answer}`,
       detail: row.answer_summary,
     },
@@ -461,21 +485,22 @@ export function workItemTimeline(rows: readonly WorkItemRow[], factory: string):
     if (isOldLoop(row.workflow)) {
       events.push(...checkEvent(row, lines, base('check')), ...loopDecision(row, base('decision')));
     }
-    const verdicts: Record<string, { text: string; tone: Tone }> = isOldLoop(row.workflow)
-      ? LOOP_REVIEW
-      : QUEUE_REVIEW;
+    const [reviewText, reviewState] = isOldLoop(row.workflow)
+      ? [LOOP_REVIEW_TEXT, REVIEW_OUTCOME_STATE]
+      : [QUEUE_REVIEW_TEXT, QUEUE_REVIEW_STATE];
     for (const [name, outcome, reviewedAt] of [
       ['Review', row.review, row.review_at],
       ['Re-review', row.rereview, row.rereview_at],
     ] as const) {
-      const verdict = outcome === null ? undefined : verdicts[outcome];
-      if (verdict && reviewedAt !== null)
+      const text = outcome === null ? undefined : textOf(reviewText, outcome);
+      const tone = stateOf(reviewState, outcome);
+      if (text !== undefined && tone !== undefined && reviewedAt !== null)
         events.push({
           ...base('review'),
           key: `${base('review').key}-${name}`,
           at: reviewedAt,
-          tone: verdict.tone,
-          text: `${name}: ${verdict.text}`,
+          tone,
+          text: `${name}: ${text}`,
         });
     }
     events.push(...answerEvent(row, base('answer')));

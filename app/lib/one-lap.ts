@@ -206,23 +206,3 @@ export function actionText(action: unknown): string | null {
   if (action === null || action === undefined) return null;
   return typeof action === 'string' ? action : JSON.stringify(action);
 }
-
-/** The design token of a step's status (engineering.md: blue running, teal success, red failed). */
-export const STEP_STATUS_TOKEN: Record<string, `--${string}`> = {
-  running: '--running',
-  completed: '--success',
-  failed: '--error',
-  skipped: '--text-tertiary',
-};
-
-export const GATE_TOKEN: Record<string, `--${string}`> = {
-  merged: '--success',
-  refused: '--error',
-};
-
-/** The color an app-check verdict reads in: a pass teal, a failure red, anything else plain. */
-export const VERDICT_TOKEN: Record<string, `--${string}`> = {
-  PASS: '--success',
-  OK: '--success',
-  FAIL: '--error',
-};
