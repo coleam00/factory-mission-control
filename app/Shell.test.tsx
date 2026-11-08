@@ -74,7 +74,7 @@ test('an address under an unknown key that no screen serves names the key, not a
     expectNoFactoryIdentity(html);
     expect(header(html)).toContain('Unknown factory');
     expect(header(html)).not.toContain('nope');
-    expect(main(html)).toBe('No factory is named "nope". Go to mission-control\'s map');
+    expect(main(html)).toBe('No factory is named "nope". Go to mission-control\'s Attention');
   }
 });
 
