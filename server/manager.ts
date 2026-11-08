@@ -2,6 +2,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
+  type EffortLevel,
   type Options,
   query,
   type SDKMessage,
@@ -10,7 +11,7 @@ import {
 import type { Server } from 'bun';
 import type { Context, Hono } from 'hono';
 import { parseChoices } from '../app/lib/attention';
-import { workItemHref } from '../app/lib/work-item';
+import { lapHref, workItemHref } from '../app/lib/work-item';
 import { type Db, openDb } from '../scripts/lib/db';
 import type { Env } from './check-env';
 import { readFactoryNames } from './factories';
@@ -27,11 +28,19 @@ import {
 } from './manager-stream';
 import { READ_TOOL_NAMES, TOOL_SERVER } from './manager-tools';
 
-const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'] as const;
+// A Record over the SDK's own type: the compiler fails on a level added or removed there.
+const EFFORT_SET: Record<EffortLevel, true> = {
+  low: true,
+  medium: true,
+  high: true,
+  xhigh: true,
+  max: true,
+};
+const EFFORTS = Object.keys(EFFORT_SET) as EffortLevel[];
 
 export interface ManagerSettings {
   model: string;
-  effort: (typeof EFFORTS)[number];
+  effort: EffortLevel;
   messageCapUsd: number;
   dayCapUsd: number;
 }
@@ -44,14 +53,18 @@ function positive(env: Env, name: string, fallback: number): number {
   return value;
 }
 
+function isEffort(value: string): value is EffortLevel {
+  return Object.hasOwn(EFFORT_SET, value);
+}
+
 export function managerSettings(env: Env): ManagerSettings {
   const effort = env.MC_MANAGER_EFFORT || 'low';
-  if (!(EFFORTS as readonly string[]).includes(effort)) {
+  if (!isEffort(effort)) {
     throw new Error(`MC_MANAGER_EFFORT must be one of ${EFFORTS.join(', ')}`);
   }
   return {
     model: env.MC_MANAGER_MODEL || 'claude-sonnet-5-5',
-    effort: effort as ManagerSettings['effort'],
+    effort,
     messageCapUsd: positive(env, 'MC_MANAGER_MESSAGE_USD', 0.5),
     dayCapUsd: positive(env, 'MC_MANAGER_DAY_USD', 5),
   };
@@ -324,10 +337,6 @@ function notice(manager: Manager, kind: keyof typeof NOTICES): ManagerEvent {
 
 type Emit = (event: ManagerEvent) => void;
 
-function runHref(factory: string, id: string): string {
-  return `/f/${encodeURIComponent(factory)}/laps/${id}`;
-}
-
 async function lookup(manager: Manager, sql: string, params: unknown[]) {
   return (await readOnlyQuery(manager.db, sql, params, MANAGER_LIMITS)).rows;
 }
@@ -356,7 +365,7 @@ async function runSummaries(
         status: String(row.status),
         started_at: row.started_at === null ? null : String(row.started_at),
         completed_at: row.completed_at === null ? null : String(row.completed_at),
-        href: runHref(factory, id),
+        href: lapHref(factory, id),
       },
     ];
   });
@@ -563,6 +572,11 @@ async function produce(
   const { text, block } = splitter.end();
   show(text);
   if (stop === 'error') {
+    // A run that never reached the model spent nothing: it must not fill the day cap.
+    if (!resulted && !started) {
+      tally.usd = microdollars(tally.usd - maxBudgetUsd);
+      cost = 0;
+    }
     emit(notice(manager, 'unavailable'));
     return { ok: false, cost };
   }

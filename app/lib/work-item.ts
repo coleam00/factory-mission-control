@@ -87,6 +87,11 @@ export function workItemHref(factory: string, number: number): string {
   return `/f/${encodeURIComponent(factory)}/work/${number}`;
 }
 
+/** The address of a factory's run (lap) page. */
+export function lapHref(factory: string, runId: string): string {
+  return `/f/${encodeURIComponent(factory)}/laps/${runId}`;
+}
+
 export const NO_REASON = 'No reason was recorded.';
 
 export type Tone = 'done' | 'failed' | 'owner' | 'running' | 'plain';

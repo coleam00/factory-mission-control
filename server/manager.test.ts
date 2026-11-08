@@ -323,14 +323,18 @@ describe('the day cap', () => {
 
   test('counts the ceiling of a run the client abandoned', async () => {
     clock = new Date('2026-11-08T10:00:00');
-    const played = model(
-      (options) =>
-        new Promise((_, reject) =>
+    const played = model(async () => []);
+    played.run = ({ prompt, options }) => {
+      played.prompts.push(prompt);
+      return (async function* () {
+        yield start;
+        await new Promise((_, reject) =>
           options.abortController?.signal.addEventListener('abort', () =>
             reject(new Error('aborted')),
           ),
-        ),
-    );
+        );
+      })();
+    };
     const gone = new AbortController();
     const app = createApp({ buildId: 't', distDir: '.', manager: managerOf(played) });
     const pending = Promise.resolve(
@@ -377,6 +381,16 @@ describe('a run that does not succeed', () => {
       delete process.env.ANTHROPIC_API_KEY;
       const without = await chat(managerOf(failing()));
       expect(await without.text()).toContain('CLAUDE_CODE_OAUTH_TOKEN');
+      // Runs that never reach the model spend nothing, so they never fill the day cap.
+      const never = managerOf(
+        model(async () => []),
+        { MC_MANAGER_DAY_USD: '1' },
+      );
+      for (let i = 0; i < 5; i++) {
+        const body = await (await chat(never)).text();
+        expect(body).toContain('CLAUDE_CODE_OAUTH_TOKEN');
+        expect(body).toContain('"day_spent_usd":0');
+      }
       process.env.CLAUDE_CODE_OAUTH_TOKEN = 'token';
       const withToken = await chat(managerOf(failing()));
       expect(await withToken.text()).not.toContain('CLAUDE_CODE_OAUTH_TOKEN');
@@ -431,15 +445,28 @@ describe('secrets', () => {
   });
 
   test('the CLI gets no database URL or Neon key; the database URL reaches the tool server only', async () => {
-    const played = answering();
-    const body = await (await chat(managerOf(played))).text();
-    const options = played.options[0] as Options;
-    const cli = JSON.stringify(options.env);
-    expect(Object.keys(options.env ?? {}).filter((k) => /DATABASE|NEON/.test(k))).toEqual([]);
-    expect(cli).not.toContain(fixture.url);
-    expect(body).not.toContain(fixture.url);
-    const { mc } = options.mcpServers as Record<string, { env: Record<string, string> }>;
-    expect(mc?.env.MC_DATABASE_URL).toBe(fixture.url);
+    const samples = { MC_DATABASE_URL: 'postgres://sample-db', NEON_API_KEY: 'neon_sample_key' };
+    const kept = { ...process.env };
+    Object.assign(process.env, samples);
+    try {
+      const played = answering();
+      const body = await (await chat(managerOf(played))).text();
+      const options = played.options[0] as Options;
+      const cli = JSON.stringify(options.env);
+      const { mc } = options.mcpServers as Record<string, { env: Record<string, string> }>;
+      for (const value of [fixture.url, ...Object.values(samples)]) {
+        expect(cli).not.toContain(value);
+        expect(body).not.toContain(value);
+        expect(JSON.stringify(mc?.env)).not.toContain(samples.NEON_API_KEY);
+      }
+      expect(Object.keys(options.env ?? {}).filter((k) => /DATABASE|NEON/.test(k))).toEqual([]);
+      expect(mc?.env.MC_DATABASE_URL).toBe(fixture.url);
+    } finally {
+      for (const name of Object.keys(samples)) {
+        if (kept[name] === undefined) delete process.env[name];
+        else process.env[name] = kept[name];
+      }
+    }
   });
 });
 

@@ -42,11 +42,13 @@ export async function readOnlyQuery(
 
 /** Functions that run SQL text, read files or act outside the transaction. */
 const DENIED_FUNCTIONS =
-  /\b(\w*_to_xml\w*|dblink\w*|pg_read_\w+|pg_ls_\w+|pg_stat_file|lo_\w+|pg_terminate_backend|pg_cancel_backend|pg_reload_conf|set_config|pg_advisory\w*|pg_notify|pg_sleep\w*)\s*\(/i;
+  /\b(\w*_to_xml\w*|ts_rewrite|pg_stat_get_\w+|dblink\w*|pg_read_\w+|pg_ls_\w+|pg_stat_file|lo_\w+|pg_terminate_backend|pg_cancel_backend|pg_reload_conf|set_config|pg_advisory\w*|pg_notify|pg_sleep\w*)\s*\(/i;
 
+/** Schemas of the relations and set-returning functions a plan reads; a function node has its own. */
 function schemasRead(plan: unknown, out = new Set<string>()): Set<string> {
   if (typeof plan === 'object' && plan !== null) {
     if ('Relation Name' in plan) out.add(String((plan as { Schema?: unknown }).Schema));
+    if ('Function Name' in plan) out.add(String((plan as { Schema?: unknown }).Schema));
     for (const value of Object.values(plan)) schemasRead(value, out);
   }
   return out;

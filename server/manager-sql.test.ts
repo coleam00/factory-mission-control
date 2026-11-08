@@ -40,6 +40,14 @@ describe('the ad hoc SELECT', () => {
       'query_to_xml',
       "SELECT query_to_xml('select * from public.remote_agent_workflow_runs', true, false, '')",
     ],
+    [
+      'ts_stat',
+      "SELECT word FROM ts_stat('SELECT to_tsvector(''simple'', user_message) FROM public.remote_agent_workflow_runs')",
+    ],
+    ['ts_rewrite', "SELECT ts_rewrite('a'::tsquery, 'SELECT ''a''::tsquery, ''b''::tsquery')"],
+    ['pg_settings', 'SELECT * FROM pg_settings'],
+    ['pg_show_all_settings', 'SELECT * FROM pg_show_all_settings()'],
+    ['pg_stat_get_activity', 'SELECT * FROM pg_stat_get_activity(NULL)'],
     ['a quoted query_to_xml', `SELECT "query_to_xml"('select 1', true, false, '')`],
     [
       'a write hidden in a function',

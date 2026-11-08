@@ -1,6 +1,6 @@
 import { join } from 'node:path';
 import { type Db, openDb } from '../scripts/lib/db';
-import { loadLiveQueries, parameterCount } from './live';
+import { liveParams, loadLiveQueries, parameterCount } from './live';
 import {
   adHocSelect,
   MANAGER_LIMITS,
@@ -83,11 +83,6 @@ function rowsText({ rows, truncated }: ReadResult): string {
     : json;
 }
 
-function stringArgs(value: unknown): string[] | undefined {
-  if (value === undefined) return [];
-  return Array.isArray(value) && value.every((v) => typeof v === 'string') ? value : undefined;
-}
-
 export async function callTool(
   { db, factory, queries }: ToolContext,
   name: string,
@@ -101,11 +96,9 @@ export async function callTool(
     if (name === LIVE_QUERY_TOOL) {
       const sql = typeof input.name === 'string' ? queries.get(input.name) : undefined;
       if (sql === undefined) return text('unknown live query', true);
-      const args = stringArgs(input.args);
-      if (!args || args.length !== parameterCount(sql) - 1) {
-        return text('wrong arguments for this query', true);
-      }
-      return text(rowsText(await readOnlyQuery(db, sql, [factory, ...args], MANAGER_LIMITS)));
+      const params = liveParams(sql, factory, input.args);
+      if (!params) return text('wrong arguments for this query', true);
+      return text(rowsText(await readOnlyQuery(db, sql, params, MANAGER_LIMITS)));
     }
     return text(`unknown tool ${name}`, true);
   } catch (error) {
