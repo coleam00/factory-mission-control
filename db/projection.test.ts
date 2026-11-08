@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, beforeEach, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { recommendedChoice } from '../app/lib/attention';
 import { FACTORY_MAP } from '../app/map/factory-map';
 import { holdoutId } from '../parsers/metrics';
 import { eventData, structuredOutputFor } from '../scripts/fixture/write';
@@ -29,7 +30,7 @@ afterAll(() => db.close());
 beforeEach(async () => {
   await db.query(`TRUNCATE public.remote_agent_workflow_runs, public.remote_agent_codebases CASCADE;
     TRUNCATE mc.laps, mc.lap_steps, mc.attention_items, mc.run_stops, mc.lap_step_attempts, mc.app_check_lines, mc.projection_errors,
-      mc.factories, mc.versions, mc.pins, mc.work_item_states, public.remote_agent_state_revisions`);
+      mc.factories, mc.versions, mc.pins, mc.work_item_states, mc.work_item_blockers, mc.capacity_waits, public.remote_agent_state_revisions`);
   runId = await newRun();
 });
 
@@ -2566,4 +2567,211 @@ test('0028 projects the latest revision of each stored work item, and nothing ch
   );
   expect(await snapshot(historical)).toEqual(before);
   await historical.close();
+});
+
+const renderedAttention = async (title: string, recommended = 'split') => {
+  const { renderAttention } = await import(
+    join(import.meta.dir, '../fixtures/pack/queue/sdlc/.shared/queue.ts')
+  );
+  return renderAttention(title, {
+    what: 'Two screens in one change.',
+    why: 'Hard to review.',
+    recommendation: {
+      choice: recommended,
+      why: 'Smaller changes land sooner.',
+      evidence: 'No shared component.',
+      confidence: 'high',
+      would_change: 'A shared change.',
+    },
+    choices: [
+      { id: 'split', label: 'Split (in two)', does: 'Two issues.' },
+      { id: 'build', label: 'Build', does: 'One change.' },
+    ],
+    if_unanswered: 'It waits.',
+    links: ['https://example.test/1'],
+  }) as string;
+};
+
+const ATTN_OPTIONS = [
+  { id: 'split', label: 'Split (in two)' },
+  { id: 'build', label: 'Build' },
+];
+
+const decideFields = () =>
+  db.query(
+    `SELECT occurrence_id, item_number, recommended, confidence, options::text AS options
+     FROM mc.attention_items`,
+  );
+
+test('an attention item records the rendered recommendation, confidence, descriptions, item and occurrence', async () => {
+  const message = await renderedAttention('Build queue, issue 15: scope decision');
+  await pausedRun({ ...ATTN_WAIT, message, options: ATTN_OPTIONS });
+  const [item] = await decideFields();
+  expect(item).toMatchObject({
+    occurrence_id: 'p1',
+    item_number: 15,
+    recommended: 'split',
+    confidence: 'high',
+  });
+  expect(JSON.parse(String(item?.options))).toEqual([
+    { id: 'split', label: 'Split (in two)', description: 'Two issues.' },
+    { id: 'build', label: 'Build', description: 'One change.' },
+  ]);
+  expect(recommendedChoice(message, ATTN_OPTIONS)).toBe('split');
+});
+
+test('an attention item without a recommendation or pause id still has its occurrence and item', async () => {
+  const { pauseId: _pause, ...legacy } = ATTN_WAIT;
+  const unoffered = await renderedAttention('Build queue, issue 15: scope decision', 'nope');
+  await pausedRun({ ...legacy, message: unoffered, options: ATTN_OPTIONS });
+  const [item] = await decideFields();
+  expect(item).toMatchObject({ occurrence_id: 'legacy:ask', recommended: null, confidence: null });
+
+  await db.query('TRUNCATE mc.attention_items');
+  await pausedRun({ ...legacy, message: 'Which lap next?', options: ATTN_OPTIONS });
+  const [plain] = await decideFields();
+  expect(plain).toMatchObject({ recommended: null, confidence: null, item_number: null });
+  expect(JSON.parse(String(plain?.options))).toEqual(ATTN_OPTIONS);
+
+  await db.query('TRUNCATE mc.attention_items');
+  await pausedRun({ ...legacy, owner: 'loop_group', bodyWaitId: 'ask', nodeId: 'rounds' });
+  expect((await decideFields())[0]?.occurrence_id).toBe('legacy:rounds.ask');
+});
+
+test('an attention item’s number is the merge title’s PR, else the run’s number input', async () => {
+  const merge = await renderedAttention('Merge queue, PR 16: merge decision');
+  await pausedRun({ ...ATTN_WAIT, message: merge, options: ATTN_OPTIONS });
+  expect((await decideFields())[0]?.item_number).toBe(16);
+
+  await db.query('TRUNCATE mc.attention_items');
+  await pausedRun(
+    { ...ATTN_WAIT, message: '**Build: a person decides how this run continues**\n\nAsk.' },
+    { inputs: { number: '77' } },
+  );
+  expect((await decideFields())[0]?.item_number).toBe(77);
+});
+
+const capacityWaits = () => db.query('SELECT run_id, item_number, since FROM mc.capacity_waits');
+const setStatus = (id: string, status: string) =>
+  db.query('UPDATE public.remote_agent_workflow_runs SET status = $2 WHERE id = $1', [id, status]);
+
+test('an answered run waiting for capacity is one capacity wait until it resumes or its slot is released', async () => {
+  const answered = { ...ATTN_WAIT, answer: { decision: 'ship' } };
+  const since = '2026-10-24T11:00:00.000Z';
+  const id = await pausedRun(ATTN_WAIT);
+  expect(await capacityWaits()).toEqual([]);
+  await setAttentionMetadata(id, { wait: answered });
+  expect(await capacityWaits()).toEqual([]);
+
+  await setAttentionMetadata(id, { wait: answered, capacity_wait: { since } });
+  expect(await capacityWaits()).toEqual([{ run_id: id, item_number: 15, since: new Date(since) }]);
+  expect(await attentionItems()).toEqual([]);
+
+  await setAttentionMetadata(id, { wait: answered, capacity_wait: null });
+  expect(await capacityWaits()).toEqual([]);
+
+  await setAttentionMetadata(id, { wait: answered, capacity_wait: { since } });
+  await setStatus(id, 'running');
+  expect(await capacityWaits()).toEqual([]);
+
+  await setStatus(id, 'paused');
+  expect(await capacityWaits()).toHaveLength(1);
+  await db.query('DELETE FROM public.remote_agent_workflow_runs WHERE id = $1', [id]);
+  expect(await capacityWaits()).toEqual([]);
+});
+
+test('a capacity wait with a bad since commits Archon’s write, records one error and keeps the attention item', async () => {
+  const id = await pausedRun(ATTN_WAIT);
+  await setAttentionMetadata(id, {
+    wait: { ...ATTN_WAIT, answer: {} },
+    capacity_wait: { since: 'not a time' },
+  });
+  expect(await capacityWaits()).toEqual([]);
+  const errors = await projectionErrors();
+  expect(errors).toHaveLength(1);
+  expect(errors[0]).toMatchObject({ source: 'mc.project_attention_item', run_id: id });
+});
+
+const workExtras = () =>
+  db.query('SELECT number, stage, claim_run_id FROM mc.work_item_states ORDER BY number');
+const workBlockers = () =>
+  db.query('SELECT number, blocker FROM mc.work_item_blockers ORDER BY number, blocker');
+
+test('a work item state keeps its stage, its claim’s run and the items its parking decision names', async () => {
+  const claimRun = '5eed0009-0000-4000-8000-000000000001';
+  const doc = (extra: object, facts: object) =>
+    JSON.stringify({ version: 1, stage: 'blocked', ...extra, facts });
+  await putState('work/20', 1, doc({ claim: { run_id: claimRun, at: 'T1' } }, {}));
+  await putState('work/21', 1, doc({ claim: { run_id: 'not-a-uuid' } }, {}));
+  expect(await workExtras()).toEqual([
+    { number: 20, stage: 'blocked', claim_run_id: claimRun },
+    { number: 21, stage: 'blocked', claim_run_id: null },
+  ]);
+
+  const parked = (decisions: object[], queue = 'build') => ({
+    [queue]: { status: 'parked', at: 'T2', decisions },
+  });
+  await putState(
+    'work/30',
+    1,
+    doc(
+      {},
+      parked([
+        { reason: 'Earlier #1', answer: { text: '#1' } },
+        { reason: 'Wait for #496', answer: { choice: 'wait', text: 'Wait: #496 and #30, #497' } },
+      ]),
+    ),
+  );
+  expect(await workBlockers()).toEqual([
+    { number: 30, blocker: 496 },
+    { number: 30, blocker: 497 },
+  ]);
+
+  await putState('work/31', 1, doc({}, parked([{ reason: 'Wait for #12' }], 'merge')));
+  expect(await workBlockers()).toContainEqual({ number: 31, blocker: 12 });
+
+  await putState('work/30', 2, doc({}, { build: { status: 'next', at: 'T3' } }));
+  await putState('work/31', 2, null, 'delete');
+  expect(await workBlockers()).toEqual([]);
+});
+
+test('0031 fills the new columns and tables for runs and documents stored before it, and changes nothing run again', async () => {
+  const historical = await archonDb();
+  try {
+    await runMigrations({
+      files: migrationFiles.filter((f) => f.name < '0031'),
+      db: historical,
+    });
+    const since = '2026-10-24T11:00:00.000Z';
+    await historical.query(
+      `INSERT INTO public.remote_agent_workflow_runs (workflow_name, status, user_message, metadata)
+       VALUES ('archon-build-queue', 'paused', 'queue', $1), ('archon-build-queue', 'paused', 'queue', $2)`,
+      [
+        JSON.stringify({ wait: ATTN_WAIT }),
+        JSON.stringify({ wait: { ...ATTN_WAIT, answer: {} }, capacity_wait: { since } }),
+      ],
+    );
+    await historical.query(
+      `INSERT INTO public.remote_agent_state_revisions (project_key, name, revision, value, operation, writer_kind)
+       VALUES ($1, 'work/5', 1, $2, 'put', 'run')`,
+      [
+        WORK,
+        stateDoc({ build: { status: 'parked', at: 'T2', decisions: [{ reason: 'Wait for #9' }] } }),
+      ],
+    );
+    await runMigrations({ files: migrationFiles, db: historical });
+    expect(
+      await historical.query(`SELECT
+        (SELECT occurrence_id FROM mc.attention_items) AS occurrence,
+        (SELECT item_number FROM mc.attention_items) AS item,
+        (SELECT since FROM mc.capacity_waits) AS since,
+        (SELECT blocker FROM mc.work_item_blockers) AS blocker`),
+    ).toEqual([{ occurrence: 'p1', item: 15, since: new Date(since), blocker: 9 }]);
+    const before = await snapshot(historical);
+    const [file] = migrationFiles.filter((f) => f.name.startsWith('0031'));
+    await historical.query(file?.sql ?? '');
+    expect(await snapshot(historical)).toEqual(before);
+  } finally {
+    await historical.close();
+  }
 });

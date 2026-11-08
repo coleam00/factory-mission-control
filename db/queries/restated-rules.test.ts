@@ -314,6 +314,42 @@ test('the parked status is the pinned pack’s, in parked() and in health-workab
   );
 });
 
+const PARKED_RULE = /w\.build_status = 'parked'[\s\S]*?w\.merge_at, false\)\)/;
+const squashed = (text: string) => text.replace(/\s+/g, ' ').trim();
+
+test('the Unstick parked rule is health-workable’s, verbatim', () => {
+  const rule = (name: string) => PARKED_RULE.exec(sqlOf(name))?.[0] ?? '';
+  expect(rule('health-workable')).not.toBe('');
+  expect(squashed(rule('unstick'))).toBe(squashed(rule('health-workable')));
+});
+
+test('a claim is stale in Unstick for exactly the run statuses the pinned pack releases', async () => {
+  const { claimDisposition } = await pack('queue', 'sdlc', '.shared', 'state.ts');
+  const released = ['pending', 'running', 'paused', 'completed', 'failed', 'cancelled'].filter(
+    (status) => claimDisposition(status) === 'release',
+  );
+  const list = /l\.status IN \(([^)]*)\)/.exec(sqlOf('unstick'))?.[1] ?? '';
+  expect(quoted(list).sort()).toEqual(released.sort());
+});
+
+test('the projected item number reads the titles the pinned queues render', () => {
+  const migration = read('db', 'migrations', '0031_attention_data.sql');
+  expect(migration).toContain('(?:issue|PR) ([1-9][0-9]{0,8}):');
+  expect(read('fixtures/pack/queue/sdlc/build-queue/scripts/apply.ts')).toContain(
+    'Build queue, issue ${String(item.number)}: ',
+  );
+  expect(read('fixtures/pack/queue/sdlc/merge-queue/scripts/record.ts')).toContain(
+    'Merge queue, PR ${String(raised.pr.number)}: ',
+  );
+});
+
+test('the stages Unstick reads are the pinned pack’s', () => {
+  const stages = statusUnion('workitem.ts', 'Stage');
+  const literals = [...sqlOf('unstick').matchAll(/w\.stage = '([^']*)'/g)].map((m) => m[1]);
+  expect(literals.length).toBeGreaterThan(0);
+  for (const stage of literals) expect(stages, `stage '${stage}'`).toContain(stage);
+});
+
 const yamlEnum = (file: string[], node: string, key: string): string[] => {
   const doc = Bun.YAML.parse(read('fixtures', 'pack', ...file)) as {
     nodes: { id: string; output_format?: { properties?: Record<string, { enum?: string[] }> } }[];

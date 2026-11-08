@@ -1398,7 +1398,7 @@ function archonSql(factory: FactoryEntry, runs: Run[]): string[] {
 /**
  * Two runs paused on a `wait: attention` node, the shape Archon records in `metadata.wait` and the
  * pack's queues render with `renderAttention`: a title, what it is, why it matters, the
- * recommendation, the choices. They write no `mc` row here: the projection trigger firing on these
+ * recommendation with its evidence, the choices with what each does, what happens if nobody answers. They write no `mc` row here: the projection trigger firing on these
  * inserts is what puts them in `mc.attention_items`, so loading the seed proves it on a check
  * branch's real Postgres.
  */
@@ -1419,10 +1419,14 @@ function attentionSql(): string[] {
         '**Build queue, issue 15: scope decision**',
         '**What it is.** Issue 15 asks for the lanes panel and the one-lap page in one change, and the two touch different screens.',
         '**Why it matters.** A change that spans both screens is hard to review and holds the queue behind it.',
-        '**Recommendation: `split`** (high confidence). Two small changes land sooner than one large one.',
-        '**Choices.**\n- `split`: Split the issue in two\n- `build`: Build it as written\n- `other`: Something else',
+        [
+          '**Recommendation: `split`** (high confidence). Two small changes land sooner than one large one.',
+          'Evidence: the two screens share no component.',
+          'What would change it: a shared change that must land with both.',
+        ].join('\n'),
+        '**Choices.**\n- `split` (Split the issue in two): Two issues, one per screen, each reviewed alone.\n- `build` (Build it as written): One change for both screens, reviewed together.\n- `other` (Something else): Say what to do instead.',
         '**If nobody answers.** The queue stays on this issue and takes the next ready one.',
-        '**Evidence.** https://github.com/coleam00/factory-mission-control/issues/15',
+        '**Evidence links.**\n- https://github.com/coleam00/factory-mission-control/issues/15',
       ].join('\n\n'),
     },
     {
@@ -1437,13 +1441,17 @@ function attentionSql(): string[] {
         { id: 'other', label: 'Something else' },
       ],
       message: [
-        '**Merge queue, pull request 16: ready to merge**',
+        '**Merge queue, PR 16: merge decision**',
         '**What it is.** Pull request 16 has every check green and no open review finding.',
         '**Why it matters.** It is the last change before the version is pinned.',
-        '**Recommendation: `merge`** (medium confidence). Nothing in it waits on another change.',
-        '**Choices.**\n- `merge`: Merge it now\n- `hold`: Hold it for the next lap\n- `other`: Something else',
+        [
+          '**Recommendation: `merge`** (medium confidence). Nothing in it waits on another change.',
+          'Evidence: the checks are green and the review has no open finding.',
+          'What would change it: a failing check on the base branch.',
+        ].join('\n'),
+        '**Choices.**\n- `merge` (Merge it now): Merge the pull request into the default branch.\n- `hold` (Hold it for the next lap): Leave it open and decide again next lap.\n- `other` (Something else): Say what to do instead.',
         '**If nobody answers.** The queue leaves it open and moves to the next pull request.',
-        '**Evidence.** https://github.com/coleam00/factory-mission-control/pull/16',
+        '**Evidence links.**\n- https://github.com/coleam00/factory-mission-control/pull/16',
       ].join('\n\n'),
     },
   ];
@@ -1562,6 +1570,7 @@ export const QUEUE_RUNS = {
   splitting: '5eed0005-0000-4000-8000-00000000000c',
   triaging: '5eed0005-0000-4000-8000-00000000000a',
   factsOnly: '5eed0005-0000-4000-8000-000000000015',
+  capacity: '5eed0005-0000-4000-8000-000000000016',
 } as const;
 
 /**
@@ -1592,6 +1601,23 @@ export const QUEUE_PARKED = {
   revision: 2,
   triagedAt: '2026-10-24T09:01:00.000Z',
   parkedAt: '2026-10-24T09:06:00.000Z',
+} as const;
+
+/**
+ * The queue factory's work that stopped moving (the Unstick query): 450 is blocked (stage
+ * `blocked`) on a `Depends on` pull request 451 that merged; 452 is blocked on 453, still open;
+ * 454 is parked with a ruling that names 455, merged; 456 is parked on pull request 457, still open; 458's claim
+ * is held by the finished run QUEUE_RUNS.built; and QUEUE_RUNS.capacity is an answered run waiting
+ * for a slot since 09:30. Like QUEUE_PARKED, the work item rows are written directly.
+ */
+export const QUEUE_UNSTICK = {
+  blockedMerged: { issue: 450, blocker: 451 },
+  blockedOpen: { issue: 452, blocker: 453 },
+  parkedMerged: { issue: 454, blocker: 455 },
+  parkedOpen: { issue: 456, blocker: 457 },
+  claimed: { issue: 458 },
+  capacitySince: '2026-10-24T09:30:00.000Z',
+  mergedAt: '2026-10-24T09:08:00.000Z',
 } as const;
 
 /** The source digest of the queue factory's runs: every workflow run from one source shares it. */
@@ -1713,6 +1739,65 @@ function queueFactorySql(): string[] {
     record: null,
     own_pr: false,
   });
+  const unstick = () => {
+    const u = QUEUE_UNSTICK;
+    const state = (number: number, fields: Record<string, unknown>) =>
+      insert('mc.work_item_states', {
+        project_key: QUEUE_FACTORY.codebase,
+        number,
+        revision: 1,
+        build_status: null,
+        build_at: null,
+        merge_status: null,
+        merge_at: null,
+        triage_at: at(1),
+        own_pr_at: null,
+        ...fields,
+      });
+    const prRow = (number: number, mergedAt: string | null) =>
+      insert('mc.pull_requests', {
+        factory: QUEUE_FACTORY.name,
+        number,
+        title: `Queue issue ${number}`,
+        state: mergedAt === null ? 'open' : 'closed',
+        merged_at: mergedAt,
+        head_sha: `${'e'.repeat(39)}${number % 10}`,
+        url: `https://github.com/${QUEUE_FACTORY.repository}/pull/${number}`,
+        created_at: at(2),
+        updated_at: mergedAt ?? at(2),
+        closed_at: mergedAt,
+      });
+    const depends = (number: number, dependsOn: number) =>
+      insert('mc.issue_dependencies', {
+        factory: QUEUE_FACTORY.name,
+        issue_number: number,
+        depends_on: dependsOn,
+      });
+    const blocker = (number: number, blockedOn: number) =>
+      insert('mc.work_item_blockers', {
+        project_key: QUEUE_FACTORY.codebase,
+        number,
+        blocker: blockedOn,
+      });
+    return [
+      ...[u.blockedMerged, u.blockedOpen, u.parkedMerged, u.parkedOpen].map((i) =>
+        issue(i.issue, `Queue issue ${i.issue}`),
+      ),
+      prRow(u.blockedMerged.blocker, u.mergedAt),
+      prRow(u.blockedOpen.blocker, null),
+      prRow(u.parkedMerged.blocker, u.mergedAt),
+      prRow(u.parkedOpen.blocker, null),
+      depends(u.blockedMerged.issue, u.blockedMerged.blocker),
+      depends(u.blockedOpen.issue, u.blockedOpen.blocker),
+      state(u.blockedMerged.issue, { stage: 'blocked' }),
+      state(u.blockedOpen.issue, { stage: 'blocked' }),
+      state(u.parkedMerged.issue, { build_status: 'parked', build_at: at(6) }),
+      state(u.parkedOpen.issue, { build_status: 'parked', build_at: at(6) }),
+      blocker(u.parkedMerged.issue, u.parkedMerged.blocker),
+      blocker(u.parkedOpen.issue, u.parkedOpen.blocker),
+      state(u.claimed.issue, { claim_run_id: QUEUE_RUNS.built }),
+    ];
+  };
   const first = (id: string, number: number) => [
     run(id, 'archon-build-queue', 'running', { inputs: { number: String(number) } }, false),
     done(id, 'facts', 1, claimed(number)),
@@ -1734,12 +1819,29 @@ function queueFactorySql(): string[] {
       triage_at: QUEUE_PARKED.triagedAt,
       own_pr_at: null,
     }),
+    ...unstick(),
     insert('remote_agent_codebases', {
       id: QUEUE_CODEBASE,
       name: QUEUE_FACTORY.codebase,
       repository_url: `https://github.com/${QUEUE_FACTORY.repository}`,
       default_cwd: 'C:/factory/queue-factory',
     }),
+    run(
+      QUEUE_RUNS.capacity,
+      'archon-build-queue',
+      'paused',
+      {
+        wait: {
+          ...attentionWait(at(10)),
+          message:
+            '**Build queue, issue 458: scope decision**\n\n**What it is.** An answered question.',
+          answer: { decision: 'build' },
+          answeredAt: at(20),
+        },
+        capacity_wait: { since: QUEUE_UNSTICK.capacitySince },
+      },
+      false,
+    ),
     ...first(QUEUE_RUNS.build, 401),
     ...first(QUEUE_RUNS.review, 402),
     ...first(QUEUE_RUNS.ask, 403),
