@@ -10,6 +10,7 @@ afterAll(() => rmSync(scratch, { recursive: true, force: true }));
 const SECRETS = {
   NEON_REALTIME_SECRET: 'nrt_sample_secret_do_not_ship',
   ANTHROPIC_API_KEY: 'sk-ant-sample-do-not-ship',
+  CLAUDE_CODE_OAUTH_TOKEN: 'sk-ant-oat-sample-do-not-ship',
   MC_DATABASE_URL:
     'postgresql://sample_user:sample_pw@ep-sample-000000.c-14.us-east-1.aws.neon.tech/factory',
 };
@@ -20,7 +21,7 @@ test('no browser source can reach the sealing key or the database URL', () => {
     if (join(repoRoot, file) === import.meta.path) continue;
     const source = readFileSync(join(repoRoot, file), 'utf-8');
     if (
-      /@neon\/realtime\/server|NEON_REALTIME_SECRET|MC_DATABASE_URL|ANTHROPIC_API_KEY|claude-agent-sdk/.test(
+      /@neon\/realtime\/server|NEON_REALTIME_SECRET|MC_DATABASE_URL|ANTHROPIC_API_KEY|CLAUDE_CODE_OAUTH_TOKEN|claude-agent-sdk/.test(
         source,
       )
     ) {

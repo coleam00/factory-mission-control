@@ -546,10 +546,11 @@ describe('a lap that started on an earlier day and failed today', () => {
 
   test('is reached by the prompt rule in a chat answer and in the briefing', async () => {
     clock = new Date('2026-11-08T10:00:00');
+    const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
     await fixture.direct.query(
       `INSERT INTO mc.laps (run_id, factory, workflow_name, status, started_at, completed_at)
          VALUES ('${OVERNIGHT}', '${FACTORY}', 'archon-loop', 'failed',
-                 '2026-10-24T08:00:00Z', '2026-11-08T05:00:00Z')`,
+                 '2026-10-24T08:00:00Z', '${new Date('2026-11-08T03:00:00').toISOString()}')`,
     );
     try {
       const played = model(async () => [start, delta('fine'), result(0.01)]);
@@ -565,6 +566,9 @@ describe('a lap that started on an earlier day and failed today', () => {
         expect(options.systemPrompt as string).toContain(
           'filter on completed_at, never started_at',
         );
+        expect(options.systemPrompt as string).toContain(
+          `(completed_at AT TIME ZONE '${zone}')::date = DATE '2026-11-08'`,
+        );
       }
       expect(played.prompts[1]).toContain('completed_at');
 
@@ -572,7 +576,7 @@ describe('a lap that started on an earlier day and failed today', () => {
         [
           'select',
           {
-            sql: `SELECT run_id FROM mc.laps WHERE factory = '${FACTORY}' AND status = 'failed' AND completed_at::date = DATE '2026-11-08'`,
+            sql: `SELECT run_id FROM mc.laps WHERE factory = '${FACTORY}' AND status = 'failed' AND (completed_at AT TIME ZONE '${zone}')::date = DATE '2026-11-08'`,
           },
         ],
       ]);
@@ -580,6 +584,20 @@ describe('a lap that started on an earlier day and failed today', () => {
     } finally {
       await fixture.direct.query(`DELETE FROM mc.laps WHERE run_id = '${OVERNIGHT}'`);
     }
+  });
+});
+
+describe('a structure lookup that fails', () => {
+  test('ends the answer with a notice, not a silent done', async () => {
+    const failing = Object.create(fixture.direct);
+    failing.transaction = async () => {
+      throw new Error('statement timeout');
+    };
+    const manager = { ...managerOf(answering()), db: failing };
+    const got = await events(await chat(manager));
+    const types = got.map((e) => e.type);
+    expect(types.slice(-2)).toEqual(['notice', 'done']);
+    expect(got.find((e) => e.type === 'notice')).toMatchObject({ kind: 'unavailable' });
   });
 });
 
