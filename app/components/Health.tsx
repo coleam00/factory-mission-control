@@ -18,7 +18,7 @@ import {
 import { since, stepLabel } from '../lib/laps';
 import { hasLapPage } from '../lib/one-lap';
 import { waited } from '../lib/owner-queue';
-import { RUN_STATE, type State, stateColor, stateInk } from '../lib/states';
+import { RUN_STATE, STATE_NAME, type State, stateColor, stateInk } from '../lib/states';
 import { LivePanel } from '../live/LivePanel';
 import { LABEL, MONO, NONE, PanelBody, useNow, utcMinute } from './Lanes';
 import { LiveDot } from './LiveDot';
@@ -379,7 +379,7 @@ export function OverdueList({
                 style={{ background: stateColor('running') }}
               />
               <div className="flex flex-wrap items-center gap-x-[18px] gap-y-2">
-                <Status state="running">Running</Status>
+                <Status state="running">{STATE_NAME.running}</Status>
                 <span className={`${MONO} min-w-0 flex-1 truncate font-bold text-text-primary`}>
                   {stepLabel(step.step_id)}
                 </span>

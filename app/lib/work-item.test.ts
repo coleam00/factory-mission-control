@@ -170,6 +170,18 @@ test('a build-queue round shows its review and its re-review verdicts', () => {
   expect(texts(rows).slice(2)).toEqual(['Review: fixes requested', 'Re-review: Ready']);
 });
 
+test('a build-queue round colors its ending and its review by the state map', () => {
+  const tones = (over: Partial<WorkItemRow>) =>
+    workItemTimeline([item, row(over)], 'f')
+      .slice(1)
+      .map((e) => e.tone);
+  expect(tones({ decision: 'asked' })).toEqual(['needs-you']);
+  expect(tones({ decision: 'parked' })).toEqual(['idle']);
+  expect(tones({ decision: 'ready' })).toEqual(['done']);
+  expect(tones({ review: 'ask', review_at: at('09:03') })).toContain('needs-you');
+  expect(tones({ review: 'correct', review_at: at('09:03') })).toContain('done');
+});
+
 test('a failed round names its card and error', () => {
   const failed = row({
     status: 'failed',
@@ -196,6 +208,9 @@ test('an owner answer shows on the pull request it was asked about only', () => 
   const mine = sweep({ decisions: [], asked_pr: '410', ...answered });
   const other = sweep({ decisions: [], asked_pr: '999', ...answered });
   expect(texts([item, mine])).toContain('You answered: merge it');
+  expect(workItemTimeline([item, mine], 'f').find((e) => e.kind === 'answer')).toMatchObject({
+    tone: 'done',
+  });
   expect(texts([item, other])).toEqual(['Filed']);
 });
 
@@ -206,6 +221,9 @@ test('a sweep ask shows as asked only on the pull request the record step raised
   ];
   const asked = (pr: number) => sweep({ pr, decisions, asked_pr: '410' });
   expect(texts([item, asked(410)])).toContain('Asked you: which one?');
+  expect(
+    workItemTimeline([item, asked(410)], 'f').find((e) => e.text.startsWith('Asked you')),
+  ).toMatchObject({ tone: 'needs-you' });
   expect(texts([item, asked(411)])).toEqual(['Filed']);
 });
 

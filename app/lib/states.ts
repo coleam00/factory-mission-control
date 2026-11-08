@@ -63,7 +63,7 @@ export function stateOf(
   return value == null || !Object.hasOwn(map, value) ? undefined : map[value];
 }
 
-/** Archon's run status. */
+/** Archon's run status: a vocabulary Archon owns, so nothing in this repository binds it. */
 export const RUN_STATE: Record<
   'pending' | 'running' | 'paused' | 'failed' | 'completed' | 'cancelled',
   State
@@ -76,7 +76,7 @@ export const RUN_STATE: Record<
   cancelled: 'idle',
 };
 
-/** A step attempt's status. */
+/** A step attempt's status (the CHECK list in db/migrations/0005_laps.sql). */
 export const STEP_STATUS_STATE: Record<'running' | 'completed' | 'failed' | 'skipped', State> = {
   running: 'running',
   completed: 'done',
@@ -128,17 +128,28 @@ export const QUEUE_REVIEW_STATE: Record<'none' | 'correct' | 'replan' | 'ask', S
   ask: 'needs-you',
 };
 
-/** The merge gate's decision on a lap. */
+/** The merge gate's decision on a lap (the outcomes `land.ts` emits). */
 export const GATE_STATE: Record<'merged' | 'refused', State> = {
   merged: 'done',
   refused: 'failed',
 };
 
-/** An app check's verdict. */
-export const VERDICT_STATE: Record<'PASS' | 'OK' | 'FAIL', State> = {
+/**
+ * A check line's verdict, every value the pack's `check-app` schema allows
+ * (fixtures/pack/sdlc/loop/archon-loop.yaml). INCOMPLETE counts against the merge gate like FAIL
+ * (`blocksPass`, `failure` in merge-gate.ts), a QUESTION waits on the owner.
+ */
+export const VERDICT_STATE: Record<
+  'PASS' | 'FAIL' | 'INCOMPLETE' | 'OK' | 'SURPRISE' | 'DEFECT' | 'QUESTION',
+  State
+> = {
   PASS: 'done',
   OK: 'done',
   FAIL: 'failed',
+  INCOMPLETE: 'failed',
+  SURPRISE: 'failed',
+  DEFECT: 'failed',
+  QUESTION: 'needs-you',
 };
 
 /** The pack's `BuildStatus` (fixtures/pack/queue/sdlc/.shared/build.ts). */
@@ -190,7 +201,7 @@ export const MAP_CHIP_STATE: Record<'here' | 'queued' | 'failing' | 'waiting' | 
   merged: 'done',
 };
 
-/** Every map above, named once, for the test that holds each to its vocabulary. */
+/** Every map above, named once, so the test can hold each to a declared state. */
 export const STATE_SOURCES: Record<string, Record<string, State>> = {
   RUN_STATE,
   STEP_STATUS_STATE,

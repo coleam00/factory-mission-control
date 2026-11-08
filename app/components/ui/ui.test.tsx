@@ -183,6 +183,23 @@ test('text sizes come from the five v3 sizes', () => {
   }
 });
 
+test('the compact Pill and the badge RecommendedTag keep the box the Board and Decisions tags had', () => {
+  const pill = renderToStaticMarkup(
+    <Pill compact state="running" live>
+      round 2
+    </Pill>,
+  );
+  expect(pill).toContain('gap-1 rounded-[5px] px-1.5 py-0.5');
+  expect(pill).toContain('size-1.5');
+  expect(renderToStaticMarkup(<Pill>x</Pill>)).toContain('px-2 py-1');
+  const tag = renderToStaticMarkup(<RecommendedTag badge>default</RecommendedTag>);
+  expect(tag).toContain('shrink-0 rounded');
+  expect(tag).toContain('px-1.5 py-px');
+  expect(tag).toContain('uppercase');
+  expect(tag).not.toContain('ml-1.5');
+  expect(nonV3Colors(pill + tag)).toEqual([]);
+});
+
 test('a Pill keeps its data attributes ahead of its class and wraps a long token', () => {
   const html = renderToStaticMarkup(<Pill data-chip="order">x</Pill>);
   expect(html).toMatch(/<span data-chip="order" class="[^"]*\[overflow-wrap:anywhere\]/);

@@ -19,6 +19,7 @@ import {
   VERDICT_STATE,
   QUEUE_ENDING_STATE,
   GATE_OUTCOME_STATE,
+  GATE_STATE,
   stateOf,
 } from './states';
 
@@ -29,6 +30,12 @@ function packUnion(file: string, name: string): string[] {
   const text = readFileSync(`fixtures/pack/queue/sdlc/.shared/${file}`, 'utf8');
   const union = text.match(new RegExp(`export type ${name} = ([^;]+);`))?.[1] ?? '';
   return sorted([...union.matchAll(/'([^']+)'/g)].map((m) => m[1] ?? ''));
+}
+
+/** The quoted words in the first capture group of `pattern` over a file. */
+function quoted(file: string, pattern: RegExp): string[] {
+  const list = readFileSync(file, 'utf8').match(pattern)?.[1] ?? '';
+  return sorted([...list.matchAll(/'([^']+)'/g)].map((m) => m[1] ?? ''));
 }
 
 test('every value of every source maps to one of the five states', () => {
@@ -43,6 +50,24 @@ test('a map holds exactly the values its source reads, so a new value fails here
   expect(sorted(Object.keys(STEP_STATE_STATE))).toEqual(sorted(Object.keys(STATE_LABEL)));
   expect(sorted(Object.keys(BUILD_STATUS_STATE))).toEqual(packUnion('build.ts', 'BuildStatus'));
   expect(sorted(Object.keys(MERGE_STATUS_STATE))).toEqual(packUnion('merge.ts', 'MergeStatus'));
+  expect(sorted(Object.keys(VERDICT_STATE))).toEqual(
+    sorted(
+      (
+        readFileSync('fixtures/pack/sdlc/loop/archon-loop.yaml', 'utf8').match(
+          /verdict: \{ type: string, enum: \[([^\]]+)\]/,
+        )?.[1] ?? ''
+      )
+        .split(',')
+        .map((v) => v.trim()),
+    ),
+  );
+  expect(sorted(Object.keys(STEP_STATUS_STATE))).toEqual(
+    quoted('db/migrations/0005_laps.sql', /status IN \(([^)]+)\)/),
+  );
+  const landed = readFileSync('fixtures/pack/sdlc/loop/scripts/land.ts', 'utf8');
+  expect(sorted(Object.keys(GATE_STATE))).toEqual(
+    sorted(new Set([...landed.matchAll(/emit\(\{ outcome: '([^']+)'/g)].map((m) => m[1] ?? ''))),
+  );
 });
 
 test('every state color is a token the v3 design declares', () => {
@@ -62,6 +87,8 @@ test("the README's States examples hold", () => {
   expect(GATE_OUTCOME_STATE.merged).toBe('done');
   expect(VERDICT_STATE.PASS).toBe('done');
   expect(VERDICT_STATE.FAIL).toBe('failed');
+  expect(VERDICT_STATE.INCOMPLETE).toBe('failed');
+  expect(VERDICT_STATE.QUESTION).toBe('needs-you');
 });
 
 test('an unknown value has no state', () => {

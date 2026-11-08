@@ -18,6 +18,7 @@ function Card({ item }: { item: WorkItem }): ReactElement {
         <span className="mt-1.5 flex flex-wrap gap-1">
           {item.chips.map((chip) => (
             <Pill
+              compact
               key={`${chip.kind}-${chip.text}`}
               data-chip={chip.kind}
               state={chip.state}

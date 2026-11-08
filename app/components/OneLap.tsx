@@ -22,6 +22,7 @@ import {
   GATE_STATE,
   LAP_OUTCOME_STATE,
   REVIEW_OUTCOME_STATE,
+  STATE_NAME,
   type State,
   STEP_STATUS_STATE,
   stateColor,
@@ -135,7 +136,11 @@ export function LapHeaderBody({
   const state = running ? 'running' : outcome === null ? undefined : LAP_OUTCOME_STATE[outcome];
   const color = state && stateColor(state);
   const text = state && stateInk(state);
-  const label = running ? 'Running' : outcome === null ? lap.status : OUTCOME_LABEL[outcome];
+  const label = running
+    ? STATE_NAME.running
+    : outcome === null
+      ? lap.status
+      : OUTCOME_LABEL[outcome];
   const seconds = running ? since(lap.started_at, now) : durationOf(lap);
   const pr = prNumber(lap.pr);
   return (

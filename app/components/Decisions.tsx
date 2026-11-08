@@ -101,7 +101,9 @@ export function AttentionPanel({ item, now }: { item: AttentionItem; now: number
           {item.options.map((option) => (
             <li key={option.id} data-choice={option.id} className="flex items-baseline gap-2">
               {option.id === recommended ? (
-                <RecommendedTag data-recommended="">recommended</RecommendedTag>
+                <RecommendedTag badge data-recommended="">
+                  recommended
+                </RecommendedTag>
               ) : null}
               {option.label ?? option.id}
             </li>
@@ -172,7 +174,7 @@ function OwnerQuestionDetail({ item }: { item: OwnerItem }): ReactElement {
               >
                 <span className={`${MONO} w-4 shrink-0 font-bold`}>{option.key}</span>
                 <span className="min-w-0 flex-1">{option.text}</span>
-                {isDefault ? <RecommendedTag>default</RecommendedTag> : null}
+                {isDefault ? <RecommendedTag badge>default</RecommendedTag> : null}
               </li>
             );
           })}

@@ -420,7 +420,7 @@ function answerEvent(row: WorkItemRow, base: Base): TimelineEvent[] {
     {
       ...base,
       at: row.answer_at,
-      tone: 'needs-you',
+      tone: 'done',
       text: `You answered: ${row.answer}`,
       detail: row.answer_summary,
     },

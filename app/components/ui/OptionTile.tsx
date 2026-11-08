@@ -3,12 +3,21 @@ import type { HTMLAttributes, ReactNode } from 'react';
 /** The tag on the option the Manager recommends. */
 export function RecommendedTag({
   children = 'Recommended',
+  badge,
   ...rest
-}: { children?: ReactNode } & Omit<HTMLAttributes<HTMLSpanElement>, 'className'>) {
+}: {
+  children?: ReactNode;
+  /** A filled badge in the box Decisions' tags had before its v3 screen: uppercase, mono, no left margin. */
+  badge?: boolean;
+} & Omit<HTMLAttributes<HTMLSpanElement>, 'className'>) {
   return (
     <span
       {...rest}
-      className="ml-1.5 text-[length:var(--v3-t-micro)] font-semibold text-[color:var(--v3-you-2)]"
+      className={
+        badge
+          ? 'shrink-0 rounded bg-[var(--v3-you-wash)] px-1.5 py-px font-mono text-[length:var(--v3-t-micro)] font-semibold tracking-[0.04em] text-[color:var(--v3-you-2)] uppercase'
+          : 'ml-1.5 text-[length:var(--v3-t-micro)] font-semibold text-[color:var(--v3-you-2)]'
+      }
     >
       {children}
     </span>

@@ -16,7 +16,7 @@ import {
 import { consoleUrl, hasLapPage, workflowLabel } from '../lib/one-lap';
 import { LivePanel, type PanelState } from '../live/LivePanel';
 import { laneMarks, stepPath } from '../lib/lap-graph';
-import { LAP_OUTCOME_STATE, stateColor, stateInk } from '../lib/states';
+import { LAP_OUTCOME_STATE, STATE_NAME, stateColor, stateInk } from '../lib/states';
 import { stepHref, stepOriginState } from '../lib/step-detail';
 import { workItemHref } from '../lib/work-item';
 import { LaneMarks } from './LapGraph';
@@ -135,7 +135,7 @@ export function LaneList({
                   className="font-mono text-[11px] font-semibold uppercase tracking-[0.05em]"
                   style={{ color: stateInk('running') }}
                 >
-                  Running
+                  {STATE_NAME.running}
                 </span>
               </span>
               <span className="flex min-w-0 flex-1 items-baseline gap-2.5">
