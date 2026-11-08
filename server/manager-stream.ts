@@ -50,6 +50,17 @@ export type NoticeKind = Extract<ManagerEvent, { type: 'notice' }>['kind'];
 export type ProposalAction = Extract<ManagerEvent, { type: 'proposal' }>['action'];
 export type LinkKind = Extract<ManagerEvent, { type: 'link' }>['kind'];
 
+const LINK_KINDS: Record<LinkKind, true> = { run: true, item: true };
+const PROPOSAL_ACTIONS: Record<ProposalAction, true> = { answer: true, resume: true };
+
+function isLinkKind(value: unknown): value is LinkKind {
+  return typeof value === 'string' && Object.hasOwn(LINK_KINDS, value);
+}
+
+function isProposalAction(value: unknown): value is ProposalAction {
+  return typeof value === 'string' && Object.hasOwn(PROPOSAL_ACTIONS, value);
+}
+
 /** At most this many runs in one `runs` event. */
 export const MAX_RUNS = 8;
 /** At most this many proposals in one answer. */
@@ -153,14 +164,14 @@ export function parseBlock(block: string | null): RawStructure {
   for (const entry of list(parsed.links)) {
     if (!isRecord(entry)) continue;
     const { kind, id } = entry;
-    if ((kind === 'run' || kind === 'item') && (typeof id === 'string' || typeof id === 'number')) {
+    if (isLinkKind(kind) && (typeof id === 'string' || typeof id === 'number')) {
       links.push({ kind, id });
     }
   }
   const proposals: RawStructure['proposals'] = [];
   for (const entry of list(parsed.proposals)) {
     if (!isRecord(entry) || typeof entry.run_id !== 'string') continue;
-    if (entry.action !== 'answer' && entry.action !== 'resume') continue;
+    if (!isProposalAction(entry.action)) continue;
     proposals.push({
       action: entry.action,
       run_id: entry.run_id,
