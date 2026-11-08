@@ -2,6 +2,7 @@ import { expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { COLUMNS, PARKED, parked, SPLIT_WORKFLOW } from '../../app/lib/board';
+import { causeOf } from '../../app/lib/health';
 import { LAP_PAGE_WORKFLOW, prNumber } from '../../app/lib/one-lap';
 import { REVIEW_TONE } from '../../app/lib/review-outcome';
 import {
@@ -11,6 +12,7 @@ import {
   WORK_ITEM_NUMBER,
 } from '../../app/lib/work-item';
 import { runMigrations } from '../../scripts/migrate';
+import { STOP_CORPUS } from '../run-stops-corpus';
 import { archonDb, migrationFiles } from '../test-db';
 import { migratedDb, onTheSeed, queries } from './test-seed';
 
@@ -533,3 +535,20 @@ test('board rounds count a shipped run on the item every other screen holds', as
     await db.close();
   }
 }, 60_000);
+
+test('mc.stop_class refines Health’s causes', async () => {
+  const db = await migratedDb();
+  try {
+    const seen = new Set<string>();
+    for (const [line] of STOP_CORPUS) {
+      const cause = causeOf(line);
+      if (cause === 'other') continue;
+      seen.add(cause);
+      const [row] = await db.query('SELECT mc.stop_class($1) AS class', [line]);
+      expect(row?.class).toBe(cause === 'authentication' ? 'config' : 'transient');
+    }
+    expect(seen).toEqual(new Set(['usage-limit', 'authentication', 'infrastructure']));
+  } finally {
+    await db.close();
+  }
+});

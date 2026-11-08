@@ -90,6 +90,7 @@ test('gives every table in mc a primary key, one table per family', async () => 
       'lap_steps',
       'app_check_lines',
       'attention_items',
+      'run_stops',
       'lap_step_attempts',
       'projection_errors',
     ]),

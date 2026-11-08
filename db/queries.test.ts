@@ -7,6 +7,7 @@ import type { AppCheckRow } from '../app/lib/app-check';
 import type { ArchDiffRow } from '../app/lib/arch-diff';
 import type { AttentionRow } from '../app/lib/attention';
 import type { BoardRow } from '../app/lib/board';
+import type { FailureGroupRow } from '../app/lib/failures';
 import type { HealthRunRow, HealthStepRow, HealthWorkableRow } from '../app/lib/health';
 import type { LapMapRow } from '../app/lib/lap-graph';
 import type { LaneRow, RecentLapRow } from '../app/lib/laps';
@@ -67,6 +68,19 @@ const ROW_COLUMNS: Record<string, string[]> = {
     'labels',
     'message',
     'console',
+  ]),
+  'failure-groups': columns<FailureGroupRow>()([
+    'signature',
+    'workflow_name',
+    'step_id',
+    'class',
+    'failures',
+    'first_at',
+    'last_at',
+    'latest_run_id',
+    'line',
+    'last_day',
+    'daily',
   ]),
   'factory-switcher': columns<FactorySwitcherRow>()(['factory', 'running', 'is_default']),
   'health-runs': columns<HealthRunRow>()([
