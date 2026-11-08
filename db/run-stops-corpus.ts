@@ -124,6 +124,9 @@ export const STOP_CORPUS: readonly (readonly [line: string, cls: StopClass, sour
     'issue #513 (a red app-check finding)',
   ],
   ['bun test: 3 tests failed in app/lib/health.test.ts', 'code', 'issue #513 (a test failure)'],
+  ['3 tests failed on PR #401', 'code', 'a PR number is not a status code'],
+  ['No issue matched #1401', 'input', 'an issue number is not a status code'],
+  ['git merge --no-edit failed on pulls/1429', 'environment', 'a pulls path is not a status code'],
   ['build exited 1: 3 type errors remain', 'code', 'pack queue'],
   [
     'app/lib/board.ts(12,5): error TS2322: Type string is not assignable to type number',
