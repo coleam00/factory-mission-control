@@ -23,7 +23,7 @@ WHERE i.factory = $1 AND i.state = 'open'
   )
   -- Not held by a running run: the run's claim, else its facts step's item, else its number input
   -- (the rule lanes.sql and home-map.sql read, but a split run holds nothing, as it only slices an item into children, so the item stays workable.
-  -- Restated because a live query may call no mc function. db/queries/restated-rules.test.ts fails when the three disagree).
+  -- Restated because a live query may call no mc function. db/queries/restated-rules.test.ts fails when they and board.sql's rounds disagree).
   AND NOT EXISTS (
     SELECT 1 FROM mc.laps l
     LEFT JOIN LATERAL (

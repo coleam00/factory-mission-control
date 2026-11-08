@@ -459,3 +459,77 @@ test('lanes, home-map and health-workable resolve the same item for every source
     await db.close();
   }
 });
+
+test('board rounds count a shipped run on the item every other screen holds', async () => {
+  const db = await migratedDb();
+  try {
+    await db.query(
+      `INSERT INTO mc.factories (name, repository, codebase, console) VALUES ('f', 'o/r', 'o/r', 'c')`,
+    );
+    for (let n = 1; n <= 6; n++) {
+      await db.query(
+        `INSERT INTO mc.issues (factory, number, title, state, url, created_at, updated_at)
+         VALUES ('f', $1, $2, 'open', 'u', now(), now())`,
+        [n, `t${n}`],
+      );
+    }
+    const id = (c: number) => `5eed0000-0000-4000-8000-00000000000${c}`;
+    // claim, facts item, number input, and whether the run reached ship
+    const runs = [
+      { claim: 1, facts: null, input: null, ship: true },
+      { claim: null, facts: 2, input: null, ship: true },
+      { claim: null, facts: null, input: 3, ship: true },
+      { claim: 4, facts: 5, input: 6, ship: true },
+      { claim: null, facts: 5, input: 6, ship: true },
+      { claim: 1, facts: null, input: null, ship: false },
+      { claim: 2, facts: null, input: null, ship: true, workflow: 'other' },
+    ];
+    for (const [k, r] of runs.entries()) {
+      const c = k + 1;
+      await db.query(
+        `INSERT INTO mc.laps (run_id, factory, workflow_name, status, started_at, issue_number)
+         VALUES ($1, 'f', $2, 'running', now(), $3)`,
+        [id(c), r.workflow ?? 'archon-build-queue', r.input],
+      );
+      if (r.facts !== null) {
+        await db.query(
+          `INSERT INTO mc.lap_steps (run_id, step_id, status, started_at, output)
+           VALUES ($1, 'facts', 'completed', now(), $2)`,
+          [id(c), JSON.stringify({ item: { number: r.facts } })],
+        );
+      }
+      if (r.ship) {
+        await db.query(
+          `INSERT INTO mc.lap_steps (run_id, step_id, status, started_at) VALUES ($1, 'ship', 'completed', now())`,
+          [id(c)],
+        );
+      }
+      if (r.claim !== null) {
+        await db.query(
+          `INSERT INTO mc.claims (factory, issue_number, run_id, claimed_at, released_at)
+           VALUES ('f', $1, $2, now(), now())`,
+          [r.claim, id(c)],
+        );
+      }
+    }
+    const rounds = Object.fromEntries(
+      (await db.query(sqlOf('board'), ['f']))
+        .filter((r) => r.number !== null)
+        .map((r) => [r.number as number, r.rounds]),
+    );
+    // The owner's answer: lanes.sql holds each (running) run on an item; a shipped loop/queue run is a round there.
+    const owned: Record<number, number> = {};
+    for (const row of await db.query(sqlOf('lanes'), ['f'])) {
+      const run = runs[Number(String(row.run_id).slice(-1)) - 1];
+      if (run?.ship && run.workflow === undefined && row.issue_number !== null) {
+        const n = row.issue_number as number;
+        owned[n] = (owned[n] ?? 0) + 1;
+      }
+    }
+    const expected = Object.fromEntries([1, 2, 3, 4, 5, 6].map((n) => [n, owned[n] ?? 0]));
+    expect(rounds).toEqual(expected);
+    expect(Object.values(expected).reduce((a, b) => a + b, 0)).toBe(5);
+  } finally {
+    await db.close();
+  }
+}, 60_000);

@@ -18,7 +18,7 @@ UNION ALL
 -- Each running run of the factory, at a version the address names only the runs that ran it (a
 -- run's version is its factory's digest's, labelled with its pin, PRD 11.2), with its running
 -- steps, newest first, and the item it holds: its claim, else its facts step's item, else its
--- number input (the rule of lanes.sql and health-workable.sql, bound by
+-- number input (the rule of lanes.sql, health-workable.sql and board.sql's rounds, bound by
 -- db/queries/restated-rules.test.ts). The browser counts it on the card covering its deepest running step.
 SELECT 'lap', l.run_id, l.workflow_name, s.steps, coalesce(c.issue_number, (facts.output -> 'item' ->> 'number')::int, l.issue_number),
   i.title, i.url, NULL, NULL
