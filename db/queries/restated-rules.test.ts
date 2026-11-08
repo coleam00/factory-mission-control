@@ -542,7 +542,9 @@ test('mc.stop_class refines Health’s causes, on the same patterns and the same
   expect(sqlSources).toEqual(CAUSE_PATTERNS.map(([, pattern]) => pattern.source));
   // Both read "the run's latest failed step"; a live query cannot call the mc function, so the pick is copied.
   const failedStepPick = (text: string, alias: string) =>
-    text.match(new RegExp(`ORDER BY ${alias}\\.completed_at[^;]*?LIMIT 1`))?.[0].replaceAll(`${alias}.`, '');
+    text
+      .match(new RegExp(`ORDER BY ${alias}\\.completed_at[^;]*?LIMIT 1`))?.[0]
+      .replaceAll(`${alias}.`, '');
   const healthPick = failedStepPick(read('db', 'queries', 'health-runs.sql'), 'ls');
   expect(healthPick).toBeDefined();
   expect(failedStepPick(sql, 's')).toBe(healthPick);
