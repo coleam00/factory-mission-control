@@ -24,6 +24,16 @@ CREATE TABLE IF NOT EXISTS mc.run_stops (
 );
 CREATE INDEX IF NOT EXISTS run_stops_factory_failed ON mc.run_stops (factory, signature) WHERE status = 'failed';
 
+-- The one place a text loses its run ids, paths and shas, in that order, so a path that carries an id is
+-- removed whole. mc.stop_class and mc.stop_signature both call it, each with its own replacements.
+CREATE OR REPLACE FUNCTION mc.stop_strip(p_text text, p_id text, p_path text, p_sha text)
+RETURNS text LANGUAGE sql IMMUTABLE AS $$
+  SELECT regexp_replace(regexp_replace(regexp_replace(p_text,
+    '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}', p_id, 'gi'),
+    '(?:\m[a-z]:)?(?:[[:alnum:]_.@~<>-]*[/\\])+[[:alnum:]_.@~<>-]*', p_path, 'gi'),
+    '\m(?=[0-9a-f]*[0-9])(?=[0-9a-f]*[a-f])[0-9a-f]{7,40}\M', p_sha, 'g')
+$$;
+
 -- transient, environment, config, code or input; NULL when no pattern matches. The first match wins.
 -- PRD 4.8's three patterns read the text with PR and issue references removed; the others read it with run ids and
 -- shas removed, so a hex run in an id cannot spell a word. The texts only a git refusal, a failed
@@ -45,10 +55,7 @@ RETURNS text LANGUAGE sql IMMUTABLE AS $$
     WHEN ep ~* 'tests? failed|\m[0-9]+ (tests? )?fail|failing tests?|typecheck|type errors?|error TS[0-9]+|app check failed|app-check .*(FAIL|red)|finding|\mFAIL\M' THEN 'code'
     WHEN e ~* 'did not complete|no such file or directory|ENOSPC|no space left|worktree|checkout|stale' THEN 'environment'
   END
-  FROM (SELECT e, r, regexp_replace(regexp_replace(regexp_replace(left(p_error, 8000),
-      '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}', '<id>', 'gi'),
-      '(?:\m[a-z]:)?(?:[[:alnum:]_.@~<>-]*[/\\])+[[:alnum:]_.@~<>-]*', ' ', 'gi'),
-      '\m(?=[0-9a-f]*[0-9])(?=[0-9a-f]*[a-f])[0-9a-f]{7,40}\M', ' ', 'g') AS ep
+  FROM (SELECT e, r, mc.stop_strip(left(p_error, 8000), '<id>', ' ', ' ') AS ep
     FROM (SELECT regexp_replace(left(p_error, 8000), '(#|\m(pulls?|issues?)/|\mPRs? ?#?)[0-9]+', ' ', 'gi') AS r,
       nullif(btrim(regexp_replace(regexp_replace(left(p_error, 8000),
       '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}', ' ', 'g'),
@@ -63,11 +70,8 @@ $$;
 CREATE OR REPLACE FUNCTION mc.stop_signature(p_workflow text, p_step text, p_line text)
 RETURNS text LANGUAGE sql IMMUTABLE AS $$
   SELECT p_workflow || ' · ' || coalesce(p_step, '') || ' · ' || left(btrim(
-    regexp_replace(regexp_replace(regexp_replace(regexp_replace(regexp_replace(
-      lower(coalesce(p_line, '')),
-      '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}', '<id>', 'g'),
-      '(?:\m[a-z]:)?(?:[[:alnum:]_.@~<>-]*[/\\])+[[:alnum:]_.@~<>-]*', '<path>', 'g'),
-      '\m(?=[0-9a-f]*[0-9])(?=[0-9a-f]*[a-f])[0-9a-f]{7,40}\M', '<sha>', 'g'),
+    regexp_replace(regexp_replace(
+      mc.stop_strip(lower(coalesce(p_line, '')), '<id>', '<path>', '<sha>'),
       '[0-9]+', '<n>', 'g'),
       '\s+', ' ', 'g')), 300)
 $$;

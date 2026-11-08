@@ -127,6 +127,17 @@ export const STOP_CORPUS: readonly (readonly [line: string, cls: StopClass, sour
   ['3 tests failed on PR #401', 'code', 'a PR number is not a status code'],
   ['No issue matched #1401', 'input', 'an issue number is not a status code'],
   ['git merge --no-edit failed on pulls/1429', 'environment', 'a pulls path is not a status code'],
+  [
+    '3 tests failed, see #401 status',
+    'code',
+    'the reference strip: a ref before status is not 401',
+  ],
+  [
+    'git merge --no-edit failed on pulls/429 status check',
+    'environment',
+    'the reference strip: a pulls path is not 429',
+  ],
+  ['git merge --no-edit failed with HTTP 4290', 'environment', 'a longer number is not 429'],
   ['build exited 1: 3 type errors remain', 'code', 'pack queue'],
   [
     'app/lib/board.ts(12,5): error TS2322: Type string is not assignable to type number',
