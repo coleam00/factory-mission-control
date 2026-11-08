@@ -2,7 +2,7 @@ import { expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { COLUMNS, PARKED, parked, SPLIT_WORKFLOW } from '../../app/lib/board';
-import { causeOf } from '../../app/lib/health';
+import { CAUSE_PATTERNS, causeOf } from '../../app/lib/health';
 import { LAP_PAGE_WORKFLOW, prNumber } from '../../app/lib/one-lap';
 import { REVIEW_TONE } from '../../app/lib/review-outcome';
 import {
@@ -536,11 +536,19 @@ test('board rounds count a shipped run on the item every other screen holds', as
   }
 }, 60_000);
 
-test('mc.stop_class refines Health’s causes', async () => {
+test('mc.stop_class refines Health’s causes, on the same patterns and the same text', async () => {
+  const sql = read('db', 'migrations', '0031_run_stops.sql');
+  const sqlSources = [...sql.matchAll(/WHEN p_error ~\* '([^']*)' THEN/g)].map((m) => m[1]);
+  expect(sqlSources).toEqual(CAUSE_PATTERNS.map(([, pattern]) => pattern.source));
   const db = await migratedDb();
   try {
     const seen = new Set<string>();
-    for (const [line] of STOP_CORPUS) {
+    const idLines = [
+      'Run 7c2f1e87-4290-4c2a-9ac4-f00000000000: bun test: 3 tests failed',
+      'git merge --no-edit failed at a4291bc',
+      'check must write runs/7c2f1e87-4010-4c2a-9ac4-f00000000000/app-check/result.json',
+    ];
+    for (const line of [...STOP_CORPUS.map(([l]) => l), ...idLines]) {
       const cause = causeOf(line);
       if (cause === 'other') continue;
       seen.add(cause);

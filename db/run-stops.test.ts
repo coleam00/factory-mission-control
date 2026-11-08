@@ -1,8 +1,9 @@
 import { afterAll, beforeAll, expect, test } from 'bun:test';
 import { eventData } from '../scripts/fixture/write';
+import { runMigrations } from '../scripts/migrate';
 import { migratedDb } from './queries/test-seed';
 import { STOP_CORPUS } from './run-stops-corpus';
-import type { TestDb } from './test-db';
+import { archonDb, migrationFiles, type TestDb } from './test-db';
 
 let db: TestDb;
 beforeAll(async () => {
@@ -142,4 +143,65 @@ test('a run stop record that cannot be written never fails Archon’s write', as
     throw new Error('rollback');
   });
   await expect(rolledBack).rejects.toThrow('rollback');
+});
+
+test('0031 gives runs that finished before it a stop record', async () => {
+  const historical = await archonDb();
+  try {
+    await runMigrations({ files: migrationFiles.filter((f) => f.name < '0031'), db: historical });
+    const insert = async (status: string, metadata: object = {}) =>
+      String(
+        (
+          await historical.query(
+            `INSERT INTO public.remote_agent_workflow_runs (workflow_name, status, user_message, metadata, completed_at)
+             VALUES ('archon-loop', $1::text, 'q', $2, CASE WHEN $1 IN ('running', 'paused') THEN NULL ELSE now() END)
+             RETURNING id`,
+            [status, JSON.stringify(metadata)],
+          )
+        )[0]?.id,
+      );
+    const failed = await insert('running');
+    await historical.query(
+      `INSERT INTO public.remote_agent_workflow_events (workflow_run_id, event_type, step_name, data)
+       VALUES ($1, 'node_failed', 'implement', $2)`,
+      [
+        failed,
+        JSON.stringify(eventData('implement', 'node_failed', NOW, 'bun test: 3 tests failed')),
+      ],
+    );
+    await historical.query(
+      `UPDATE public.remote_agent_workflow_runs SET status = 'failed', completed_at = now() WHERE id = $1`,
+      [failed],
+    );
+    const completed = await insert('completed');
+    const paused = await insert('paused', {
+      wait: {
+        nodeId: 'ask',
+        kind: 'attention',
+        waitingSince: '2026-10-24T10:20:00.000Z',
+        message: 'Ship it?',
+        pauseId: 'p1',
+        form: 'select',
+        options: [{ id: 'ship', label: 'Ship' }],
+      },
+    });
+
+    await runMigrations({ files: migrationFiles, db: historical });
+    const stops = await historical.query(
+      'SELECT run_id, status, step_id, class, signature FROM mc.run_stops ORDER BY status',
+    );
+    expect(stops).toEqual([
+      { run_id: completed, status: 'completed', step_id: null, class: null, signature: null },
+      {
+        run_id: failed,
+        status: 'failed',
+        step_id: 'implement',
+        class: 'code',
+        signature: 'archon-loop · implement · bun test: <n> tests failed',
+      },
+      { run_id: paused, status: 'paused', step_id: 'ask', class: null, signature: null },
+    ]);
+  } finally {
+    await historical.close();
+  }
 });

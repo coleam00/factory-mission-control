@@ -3,8 +3,9 @@
 -- alike failures one group. v3's Attention Fix group (#516) and the run page (#518) read it.
 -- The live queries may not call an mc function (db/queries/REALTIME.md), so the class and signature
 -- are computed here, at projection time, and stored. The five classes refine PRD 4.8's causes:
--- mc.stop_class tries PRD 4.8's three patterns first, so what app/lib/health.ts causeOf calls
--- usage-limit or infrastructure is transient and what it calls authentication is config.
+-- mc.stop_class tries PRD 4.8's three patterns first, on the same raw text causeOf reads, so what
+-- app/lib/health.ts causeOf calls usage-limit or infrastructure is transient and what it calls
+-- authentication is config.
 -- Like 0006's functions the writers never raise and wait at most 100 ms for a lock: they run in
 -- Archon's write transaction (fired from mc.project_run and mc.project_step_event's writes). The
 -- triggers sit on mc's own tables, so Archon's tables gain none (PRD 6.1).
@@ -24,15 +25,16 @@ CREATE TABLE IF NOT EXISTS mc.run_stops (
 );
 CREATE INDEX IF NOT EXISTS run_stops_factory_failed ON mc.run_stops (factory, signature) WHERE status = 'failed';
 
--- transient, environment, config, code or input; NULL when no pattern matches. The first match wins,
--- on the text with run ids and shas removed, since a bare 401 or 429 inside one is not a cause.
+-- transient, environment, config, code or input; NULL when no pattern matches. The first match wins.
+-- PRD 4.8's three patterns read the raw text, as causeOf does; the others read it with run ids and
+-- shas removed, so a hex run in an id cannot spell a word.
 CREATE OR REPLACE FUNCTION mc.stop_class(p_error text)
 RETURNS text LANGUAGE sql IMMUTABLE AS $$
   SELECT CASE
+    WHEN p_error ~* 'usage limit|429' THEN 'transient'
+    WHEN p_error ~* '401|unauthor' THEN 'config'
+    WHEN p_error ~* 'ECONN|ETIMEDOUT|fetch failed' THEN 'transient'
     WHEN e IS NULL THEN NULL
-    WHEN e ~* 'usage limit|429' THEN 'transient'
-    WHEN e ~* '401|unauthor' THEN 'config'
-    WHEN e ~* 'ECONN|ETIMEDOUT|fetch failed' THEN 'transient'
     WHEN e ~* 'deadlock detected|usage or credit limit|rate.?limit|too many requests|overloaded|HTTP 5[0-9]{2}|\m5[0-9]{2} (bad gateway|gateway|service unavailable|internal server)|bad gateway|gateway time-?out|service unavailable|ENOTFOUND|connection terminated|timeout exceeded when trying to connect|provider reported transient' THEN 'transient'
     WHEN e ~* 'provider reported auth|authenticat|configuration must be fixed|bad credentials|missing binding|no binding|binding [^ ]+ (is )?(missing|not set|undefined)|no schedule|schedule [^ ]+ (is )?(missing|not found)' THEN 'config'
     WHEN e ~* 'no issue matched|no matching issue|bad argument|invalid argument|unknown (option|argument)|missing required input' THEN 'input'

@@ -40,3 +40,18 @@ test('failure-groups returns the factory’s failures as groups with 14 daily co
   const daily = groups.reduce((n, g) => n + (g.daily as number[]).reduce((a, b) => a + b, 0), 0);
   expect(daily).toBe(Number(inWindow));
 });
+
+test('failure-groups orders daily oldest first and names the newest failure as the latest run', async () => {
+  const day = (d: string) => new Date(`${d}T09:00:00Z`);
+  const ids = ['aaaaaaaa-0000-4000-8000-000000000001', 'aaaaaaaa-0000-4000-8000-000000000002'];
+  await db.query(
+    `INSERT INTO mc.run_stops (run_id, factory, workflow_name, status, step_id, line, class, signature, stopped_at, stopped_day)
+    VALUES ($1, 'order-proof', 'w', 'failed', 's', 'old', 'code', 'sig', $3::timestamptz, ($3::timestamptz AT TIME ZONE 'UTC')::date),
+           ($2, 'order-proof', 'w', 'failed', 's', 'new', 'code', 'sig', $4::timestamptz, ($4::timestamptz AT TIME ZONE 'UTC')::date)`,
+    [ids[0], ids[1], day('2026-10-23').toISOString(), day('2026-10-25').toISOString()],
+  );
+  const [g] = await db.query(sql, ['order-proof']);
+  expect(g?.daily).toEqual([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1]);
+  expect(new Date(g?.last_day as string).toISOString().slice(0, 10)).toBe('2026-10-25');
+  expect(g?.latest_run_id).toBe(ids[1]);
+});
