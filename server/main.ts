@@ -9,6 +9,7 @@ import { loadCheckEnv } from './check-env';
 import { defaultLeaseDir, startLeaseRefresh } from './check-lease';
 import { syncFactoriesAtStart } from './factory-sync';
 import { liveFromEnv } from './live';
+import { managerFromEnv } from './manager';
 import { SERVE_PORTS } from './ports';
 
 const { values } = parseArgs({
@@ -48,10 +49,19 @@ try {
   process.exit(1);
 }
 
+let manager: ReturnType<typeof managerFromEnv>;
+try {
+  manager = managerFromEnv(Bun.env, repoRoot);
+} catch (error) {
+  console.error(`manager settings: ${error instanceof Error ? error.message : error}`);
+  process.exit(1);
+}
+
 const app = createApp({
   buildId: resolveBuildId(Bun.env, repoRoot),
   distDir,
   live: liveFromEnv(Bun.env, repoRoot),
+  manager,
 });
 const server = Bun.serve({ hostname: '127.0.0.1', port, fetch: app.fetch });
 console.log(`serving http://localhost:${server.port}`);

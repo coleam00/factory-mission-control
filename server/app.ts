@@ -1,6 +1,7 @@
 import { join, resolve, sep } from 'node:path';
 import { Hono } from 'hono';
 import { type Live, liveBootScript, liveConfig, liveRoutes } from './live';
+import { type Manager, managerRoutes } from './manager';
 
 interface AppOptions {
   buildId: string;
@@ -8,15 +9,18 @@ interface AppOptions {
   distDir: string;
   /** Absent when the environment holds no Realtime configuration: the live routes answer 503. */
   live?: Live;
+  /** Absent without MC_DATABASE_URL: the Manager routes answer 503. */
+  manager?: Manager;
 }
 
-export function createApp({ buildId, distDir, live }: AppOptions): Hono {
+export function createApp({ buildId, distDir, live, manager }: AppOptions): Hono {
   const root = resolve(distDir);
   const app = new Hono();
 
   app.get('/api/health', (c) => c.json({ status: 'ok' }));
   app.get('/api/build-id', (c) => c.text(buildId));
   liveRoutes(app, live);
+  managerRoutes(app, manager);
   app.all('/api/*', (c) => c.notFound());
 
   // Every other GET is either a built asset or a client-side route the app's router resolves.
