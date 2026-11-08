@@ -34,7 +34,7 @@ test('failure-groups returns the factory’s failures as groups with 14 daily co
   const [{ inWindow } = { inWindow: 0 }] = await db.query(
     `SELECT count(*)::int AS "inWindow" FROM mc.run_stops
      WHERE factory = $1 AND status = 'failed'
-       AND stopped_day > (SELECT max(stopped_day) FROM mc.run_stops WHERE factory = $1 AND status = 'failed') - 14`,
+       AND (stopped_at AT TIME ZONE 'UTC')::date > (SELECT max((stopped_at AT TIME ZONE 'UTC')::date) FROM mc.run_stops WHERE factory = $1 AND status = 'failed') - 14`,
     [FACTORY],
   );
   const daily = groups.reduce((n, g) => n + (g.daily as number[]).reduce((a, b) => a + b, 0), 0);
@@ -45,9 +45,9 @@ test('failure-groups orders daily oldest first and names the newest failure as t
   const day = (d: string) => new Date(`${d}T09:00:00Z`);
   const ids = ['aaaaaaaa-0000-4000-8000-000000000001', 'aaaaaaaa-0000-4000-8000-000000000002'];
   await db.query(
-    `INSERT INTO mc.run_stops (run_id, factory, workflow_name, status, step_id, line, class, signature, stopped_at, stopped_day)
-    VALUES ($1, 'order-proof', 'w', 'failed', 's', 'old', 'code', 'sig', $3::timestamptz, ($3::timestamptz AT TIME ZONE 'UTC')::date),
-           ($2, 'order-proof', 'w', 'failed', 's', 'new', 'code', 'sig', $4::timestamptz, ($4::timestamptz AT TIME ZONE 'UTC')::date)`,
+    `INSERT INTO mc.run_stops (run_id, factory, workflow_name, status, step_id, line, class, signature, stopped_at)
+    VALUES ($1, 'order-proof', 'w', 'failed', 's', 'old', 'code', 'sig', $3::timestamptz),
+           ($2, 'order-proof', 'w', 'failed', 's', 'new', 'code', 'sig', $4::timestamptz)`,
     [ids[0], ids[1], day('2026-10-23').toISOString(), day('2026-10-25').toISOString()],
   );
   const [g] = await db.query(sql, ['order-proof']);
@@ -59,8 +59,8 @@ test('failure-groups orders daily oldest first and names the newest failure as t
 test('failure-groups shows the latest run’s class, or mixed when the group’s runs differ', async () => {
   const row = (n: number, cls: string | null, day: string) =>
     db.query(
-      `INSERT INTO mc.run_stops (run_id, factory, workflow_name, status, step_id, line, class, signature, stopped_at, stopped_day)
-       VALUES ($1, $2, 'w', 'failed', 's', 'l', $3, $4, $5::timestamptz, $5::date)`,
+      `INSERT INTO mc.run_stops (run_id, factory, workflow_name, status, step_id, line, class, signature, stopped_at)
+       VALUES ($1, $2, 'w', 'failed', 's', 'l', $3, $4, $5::timestamptz)`,
       [
         `bbbbbbbb-0000-4000-8000-00000000000${n}`,
         `class-proof`,

@@ -219,7 +219,7 @@ test('0031 records a run it cannot project in projection_errors and still finish
       status text NOT NULL CHECK (status IN ('completed', 'failed', 'cancelled', 'paused')),
       step_id text, line text,
       class text CHECK (class IN ('transient', 'environment', 'config', 'code', 'input')),
-      signature text, stopped_at timestamptz, stopped_day date)`);
+      signature text, stopped_at timestamptz)`);
     const finished = async (workflow: string) =>
       String(
         (

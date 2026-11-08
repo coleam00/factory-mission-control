@@ -1,5 +1,6 @@
 WITH f AS (
-  SELECT s.run_id, s.workflow_name, s.step_id, s.class, s.signature, s.line, s.stopped_at, s.stopped_day
+  SELECT s.run_id, s.workflow_name, s.step_id, s.class, s.signature, s.line, s.stopped_at,
+    (s.stopped_at AT TIME ZONE 'UTC')::date AS stopped_day
   FROM mc.run_stops s WHERE s.factory = $1 AND s.status = 'failed'
 ), last AS (SELECT max(f.stopped_day) AS day FROM f)
 SELECT g.signature, g.workflow_name, g.step_id,

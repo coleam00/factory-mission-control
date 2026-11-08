@@ -20,8 +20,7 @@ CREATE TABLE IF NOT EXISTS mc.run_stops (
   line text,
   class text CHECK (class IN ('transient', 'environment', 'config', 'code', 'input')),
   signature text,
-  stopped_at timestamptz,
-  stopped_day date
+  stopped_at timestamptz
 );
 CREATE INDEX IF NOT EXISTS run_stops_factory_failed ON mc.run_stops (factory, signature) WHERE status = 'failed';
 
@@ -95,10 +94,10 @@ BEGIN
   INSERT INTO mc.run_stops AS r VALUES (p_run_id, l.factory, l.workflow_name, l.status, v_step, v_line,
     CASE WHEN l.status = 'failed' THEN mc.stop_class(v_text) END,
     CASE WHEN l.status = 'failed' THEN mc.stop_signature(l.workflow_name, v_step, v_line) END,
-    v_at, (v_at AT TIME ZONE 'UTC')::date)
+    v_at)
   ON CONFLICT (run_id) DO UPDATE SET factory = EXCLUDED.factory, workflow_name = EXCLUDED.workflow_name,
     status = EXCLUDED.status, step_id = EXCLUDED.step_id, line = EXCLUDED.line, class = EXCLUDED.class,
-    signature = EXCLUDED.signature, stopped_at = EXCLUDED.stopped_at, stopped_day = EXCLUDED.stopped_day
+    signature = EXCLUDED.signature, stopped_at = EXCLUDED.stopped_at
   WHERE (r.factory, r.workflow_name, r.status, r.step_id, r.line, r.class, r.signature, r.stopped_at)
     IS DISTINCT FROM (EXCLUDED.factory, EXCLUDED.workflow_name, EXCLUDED.status, EXCLUDED.step_id,
       EXCLUDED.line, EXCLUDED.class, EXCLUDED.signature, EXCLUDED.stopped_at);
