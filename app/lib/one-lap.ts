@@ -21,6 +21,10 @@ export const shownDispositions = (lap: Pick<OneLapRow, 'dispositions' | 'hidden_
  */
 export const LAP_PAGE_WORKFLOW = 'archon-loop';
 
+/** The address of a run's lap page; the factory is encoded, the run id is not. */
+export const lapHref = (factory: string, runId: string): string =>
+  `/f/${encodeURIComponent(factory)}/laps/${runId}`;
+
 /** Whether a run of `workflow` has a lap page to open. */
 export const hasLapPage = (workflow: string | null): boolean => workflow === LAP_PAGE_WORKFLOW;
 

@@ -7,7 +7,7 @@ import { deepestStep } from '../map/live';
 import { formatCost, formatElapsed } from './format';
 import { stepPath } from './lap-graph';
 import { costOf, durationOf, stepLabel } from './laps';
-import { consoleUrl, hasLapPage, isOldLoop } from './one-lap';
+import { consoleUrl, hasLapPage, isOldLoop, lapHref } from './one-lap';
 import { REVIEW_TONE } from './review-outcome';
 import { LAP_WORKFLOWS } from './scorecard';
 
@@ -153,8 +153,7 @@ export const QUEUE_REVIEW: Record<string, { text: string; tone: Tone }> = {
 
 const runLink = (row: WorkItemRow, factory: string, console: string | null): RunLink | null => {
   if (row.run_id === null) return null;
-  if (hasLapPage(row.workflow))
-    return { kind: 'lap', to: `/f/${encodeURIComponent(factory)}/laps/${row.run_id}` };
+  if (hasLapPage(row.workflow)) return { kind: 'lap', to: lapHref(factory, row.run_id) };
   return console === null ? null : { kind: 'console', href: consoleUrl(console, row.run_id) };
 };
 
