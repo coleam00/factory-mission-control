@@ -40,6 +40,7 @@ import {
   tourPoints,
   worldSize,
 } from '../map/factory-map';
+import { MAP_CHIP_STATE, type State, stateColor, stateInk, stateWash } from '../lib/states';
 import type { StepRow } from '../lib/step-detail';
 import type { CardLive } from '../map/live';
 import { MapDetails } from './MapDetails';
@@ -213,41 +214,50 @@ function flash(el: HTMLElement | undefined): void {
   el.classList.add('animate-map-hit');
 }
 
-/** How each chip draws; a mapped type, so a chip in CHIPS without a look fails type-check. */
-const CHIP_LOOK: Record<Chip, { word: string; className: string }> = {
-  queued: { word: 'queued', className: 'bg-surface-hover text-text-primary' },
-  failing: {
-    word: 'failing',
-    className: 'bg-[color:var(--error-soft)] text-[color:var(--error)]',
-  },
-  waiting: {
-    word: 'waiting',
-    className: 'bg-[color:var(--role-person-soft)] text-[color:var(--role-person)]',
-  },
-  merged: {
-    word: 'merged',
-    className: 'bg-[color:var(--role-test-soft)] text-[color:var(--role-test)]',
-  },
-  orders: { word: 'open', className: 'bg-surface-hover text-text-primary' },
+/** How each chip is worded; a mapped type, so a chip in CHIPS without a word fails type-check. */
+const CHIP_WORD: Record<Chip, string> = {
+  queued: 'queued',
+  failing: 'failing',
+  waiting: 'waiting',
+  merged: 'merged',
+  orders: 'open',
 };
 
-function chipsOf(live: CardLive | undefined) {
+const NEUTRAL_CHIP = 'bg-surface-hover text-text-primary';
+
+interface ChipLook {
+  chip: string;
+  text: string;
+  /** The state the chip names; a chip without one is a plain count. */
+  state?: State;
+  className?: string;
+  pulse?: boolean;
+}
+
+function chipsOf(live: CardLive | undefined): ChipLook[] {
   if (live === undefined) return [];
-  const chips: { chip: string; text: string; className: string; pulse?: boolean }[] = [];
-  const add = (chip: string, n: number | undefined, word: string, className: string) => {
-    if (n) chips.push({ chip, text: `${n} ${word}`, className, pulse: chip === 'here' });
+  const chips: ChipLook[] = [];
+  const add = (chip: string, n: number | undefined, word: string, state?: State) => {
+    if (n)
+      chips.push({
+        chip,
+        text: `${n} ${word}`,
+        state,
+        className: state ? undefined : NEUTRAL_CHIP,
+        pulse: chip === 'here',
+      });
   };
-  add(
-    'here',
-    live.here.length,
-    'here',
-    'bg-[color:var(--accent-soft)] text-[color:var(--running)]',
-  );
+  add('here', live.here.length, 'here', MAP_CHIP_STATE.here);
   for (const chip of CHIPS) {
     if (live.unavailable?.includes(chip)) {
       chips.push({ chip, text: `? ${chip}`, className: 'bg-surface-hover text-text-secondary' });
     } else {
-      add(chip, live[chip]?.length, CHIP_LOOK[chip].word, CHIP_LOOK[chip].className);
+      add(
+        chip,
+        live[chip]?.length,
+        CHIP_WORD[chip],
+        chip === 'orders' ? undefined : MAP_CHIP_STATE[chip],
+      );
     }
   }
   return chips;
@@ -373,13 +383,17 @@ function MapCard({
               <span
                 key={c.chip}
                 data-chip={c.chip}
-                className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-[6px] px-1.5 py-0.5 font-mono tabular-nums ${c.className}`}
-                style={{ fontSize: MAP_TYPE.chip }}
+                className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-[6px] px-1.5 py-0.5 font-mono tabular-nums ${c.className ?? ''}`}
+                style={{
+                  fontSize: MAP_TYPE.chip,
+                  ...(c.state ? { background: stateWash(c.state), color: stateInk(c.state) } : {}),
+                }}
               >
                 {c.pulse ? (
                   <span
                     aria-hidden="true"
-                    className="h-2 w-2 rounded-full bg-[color:var(--running)] motion-safe:animate-pulse"
+                    className="h-2 w-2 rounded-full motion-safe:animate-pulse"
+                    style={{ background: stateColor('running') }}
                   />
                 ) : null}
                 {c.text}

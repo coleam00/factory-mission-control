@@ -3,13 +3,8 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { COLUMNS, PARKED, parked, SPLIT_WORKFLOW } from '../../app/lib/board';
 import { LAP_PAGE_WORKFLOW, prNumber } from '../../app/lib/one-lap';
-import { REVIEW_TONE } from '../../app/lib/review-outcome';
-import {
-  QUEUE_ENDING,
-  QUEUE_REVIEW,
-  ROUTE_OF_LABEL,
-  WORK_ITEM_NUMBER,
-} from '../../app/lib/work-item';
+import { QUEUE_ENDING_STATE, QUEUE_REVIEW_STATE, REVIEW_OUTCOME_STATE } from '../../app/lib/states';
+import { ROUTE_OF_LABEL, WORK_ITEM_NUMBER } from '../../app/lib/work-item';
 import { runMigrations } from '../../scripts/migrate';
 import { archonDb, migrationFiles } from '../test-db';
 import { migratedDb, onTheSeed, queries } from './test-seed';
@@ -336,10 +331,10 @@ test('the work item page words every build-queue ending, or the pack leaves it u
     'apply',
     'decision',
   );
-  const unworded = decisions.filter((d) => !(d in QUEUE_ENDING));
+  const unworded = decisions.filter((d) => !(d in QUEUE_ENDING_STATE));
   // `idle` and `launch` end no delivery round: a new decision fails here until it is worded or listed.
   expect(unworded.sort()).toEqual(['idle', 'launch']);
-  expect(Object.keys(QUEUE_ENDING).every((d) => decisions.includes(d))).toBe(true);
+  expect(Object.keys(QUEUE_ENDING_STATE).every((d) => decisions.includes(d))).toBe(true);
 });
 
 test('the work item page words exactly the build-queue review actions', () => {
@@ -348,12 +343,12 @@ test('the work item page words exactly the build-queue review actions', () => {
     'synthesize',
     'action',
   );
-  expect(Object.keys(QUEUE_REVIEW).sort()).toEqual([...actions].sort());
+  expect(Object.keys(QUEUE_REVIEW_STATE).sort()).toEqual([...actions].sort());
 });
 
 test('the old loop review outcomes the page words are the archon-loop enum', () => {
   const outcomes = yamlEnum(['sdlc', 'loop', 'archon-loop.yaml'], 'review', 'outcome');
-  expect(Object.keys(REVIEW_TONE).sort()).toEqual([...outcomes].sort());
+  expect(Object.keys(REVIEW_OUTCOME_STATE).sort()).toEqual([...outcomes].sort());
 });
 
 test('the work item page renders exactly the pack sweep actions', async () => {

@@ -1,5 +1,6 @@
 import type { ReactElement } from 'react';
 import { switchBranch } from '../lib/rewind';
+import { stateInk } from '../lib/states';
 import type { PanelState } from '../live/LivePanel';
 import { LivePanel } from '../live/LivePanel';
 import { useFactory } from '../live/FactoryProvider';
@@ -85,10 +86,11 @@ export function FactoryStripBody({
           <span
             data-count={running}
             className={`font-mono text-sm font-semibold tabular-nums ${
-              running !== undefined && running > 0
-                ? 'text-[color:var(--running)]'
-                : 'text-text-primary'
+              running !== undefined && running > 0 ? '' : 'text-text-primary'
             }`}
+            style={
+              running !== undefined && running > 0 ? { color: stateInk('running') } : undefined
+            }
           >
             {running ?? '-'}
           </span>

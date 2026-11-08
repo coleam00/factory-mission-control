@@ -1,9 +1,10 @@
 import type { ReactElement } from 'react';
+import { stateInk, stateWash } from '../lib/states';
 import { LivePanel } from '../live/LivePanel';
 import { type Source, sourceOf } from './Decisions';
 
 const MARK = 'ml-1.5 rounded-full px-1.5 font-mono text-[11px] tabular-nums';
-const VIOLET = { color: 'var(--role-person)', backgroundColor: 'var(--role-person-soft)' };
+const VIOLET = { color: stateInk('needs-you'), backgroundColor: stateWash('needs-you') };
 
 /**
  * The count, or a violet "?" when either query is unavailable: rows kept through an outage are

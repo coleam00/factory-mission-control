@@ -38,15 +38,6 @@ export const STATE_LABEL: Record<StepState, string> = {
   'not-reached': 'Not reached',
 };
 
-/** The token a state's mark is drawn in (PRD 8.3): teal finished, blue running, red failed. */
-export const STATE_TOKEN: Record<StepState, `--${string}`> = {
-  finished: '--success',
-  running: '--running',
-  failed: '--error',
-  skipped: '--text-secondary',
-  'not-reached': '--text-secondary',
-};
-
 /** Archon names a nested step by its path joined with `__` (`ship__deliver__scope`). */
 export const pathOf = (stepId: string) => stepId.split('__').join('/');
 

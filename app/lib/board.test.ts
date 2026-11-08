@@ -241,8 +241,8 @@ test('chips: the route, the pulse of a run on it, the app verdict and where the 
   const [one] = v.columns.find((c) => c.id === 'build')?.items ?? [];
   expect(one?.chips).toEqual([
     { kind: 'route', text: 'deliver' },
-    { kind: 'round', text: 'round 2', tone: 'running', pulse: true },
-    { kind: 'app', text: 'app fail', tone: 'fail' },
+    { kind: 'round', text: 'round 2', state: 'running', pulse: true },
+    { kind: 'app', text: 'app fail', state: 'failed' },
     { kind: 'pr', text: 'PR #7' },
     { kind: 'order', text: 'screens' },
   ]);

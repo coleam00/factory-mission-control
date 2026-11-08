@@ -25,19 +25,6 @@ export const OUTCOME_LABEL: Record<Outcome, string> = {
   failed: 'Failed',
 };
 
-/**
- * The design token each outcome's color comes from (PRD 8.3): teal success (a send-back is done),
- * violet waiting on the owner, red failed, and the console's grey for a lap that found nothing to do.
- */
-export const OUTCOME_TOKEN: Record<Outcome, `--${string}`> = {
-  merged: '--success',
-  'sent-back': '--success',
-  'gate-refused': '--error',
-  'needs-owner': '--role-person',
-  nothing: '--text-tertiary',
-  failed: '--error',
-};
-
 /** One running lap. Timestamps are the database's; the browser computes elapsed times. */
 export interface LaneRow {
   run_id: string;

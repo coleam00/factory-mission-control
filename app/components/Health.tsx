@@ -18,6 +18,7 @@ import {
 import { since, stepLabel } from '../lib/laps';
 import { hasLapPage } from '../lib/one-lap';
 import { waited } from '../lib/owner-queue';
+import { RUN_STATE, type State, stateColor, stateInk } from '../lib/states';
 import { LivePanel } from '../live/LivePanel';
 import { LABEL, MONO, NONE, PanelBody, useNow, utcMinute } from './Lanes';
 import { LiveDot } from './LiveDot';
@@ -90,16 +91,16 @@ function Bar({
   );
 }
 
-/** A status dot and its label in one of the console's status colors. */
-function Status({ color, children }: { color: string; children: ReactNode }): ReactElement {
+/** A state's dot and its label. */
+function Status({ state, children }: { state: State; children: ReactNode }): ReactElement {
   return (
     <span className="flex items-center gap-[9px]">
       <span
         aria-hidden="true"
         className="h-2 w-2 shrink-0 rounded-full"
-        style={{ backgroundColor: color }}
+        style={{ backgroundColor: stateColor(state) }}
       />
-      <span className={STATUS_LABEL} style={{ color }}>
+      <span className={STATUS_LABEL} style={{ color: stateInk(state) }}>
         {children}
       </span>
     </span>
@@ -154,14 +155,11 @@ export function WaitingList({
   rows,
   factory,
   now: fixed,
-  color = 'var(--role-person)',
 }: {
   rows: readonly HealthRunRow[];
   factory: string;
   /** A fixed clock, for tests; the screen uses the browser's. */
   now?: number;
-  /** The status and bar color. */
-  color?: string;
 }): ReactElement {
   const ticking = useNow();
   const now = fixed ?? ticking;
@@ -177,6 +175,7 @@ export function WaitingList({
         <ol className={`${CARD} grid gap-4 px-[18px] py-4`}>
           {runs.map((run, index) => {
             const wait = waits[index] ?? null;
+            const state = RUN_STATE[run.status];
             return (
               <li
                 key={run.run_id}
@@ -185,13 +184,15 @@ export function WaitingList({
                 className="grid gap-x-[18px] gap-y-2 sm:grid-cols-[220px_minmax(0,1fr)_88px_84px] sm:items-center"
               >
                 <span className="flex min-w-0 items-center gap-x-3">
-                  <Status color={color}>{WAITING_LABEL[run.status]}</Status>
+                  <Status state={state}>{WAITING_LABEL[run.status]}</Status>
                   <span className={`${MONO} min-w-0 truncate font-bold text-text-primary`}>
                     {run.workflow_name}
                   </span>
                 </span>
                 <span className="grid min-w-0 gap-1.5">
-                  {wait === null ? null : <Bar width={share(wait, longest)} color={color} />}
+                  {wait === null ? null : (
+                    <Bar width={share(wait, longest)} color={stateColor(state)} />
+                  )}
                   <span className={`${MONO} text-[11px] text-text-secondary`}>
                     {run.started_at === null
                       ? 'start not recorded'
@@ -248,12 +249,12 @@ export function Failures({
             <dd className="min-w-0">
               <Bar
                 width={counts[cause] === 0 ? '0%' : share(counts[cause], most)}
-                color="var(--error)"
+                color={stateColor('failed')}
               />
             </dd>
             <dd
               className="text-right font-mono text-[16px] font-semibold tabular-nums"
-              style={{ color: counts[cause] > 0 ? 'var(--error)' : 'var(--text-secondary)' }}
+              style={{ color: counts[cause] > 0 ? stateInk('failed') : 'var(--text-secondary)' }}
             >
               {counts[cause]}
             </dd>
@@ -281,7 +282,7 @@ function FailedRow({ lap, factory }: { lap: FailedLap; factory: string }): React
       data-cause={lap.cause}
       className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-[18px] gap-y-1 border-b border-border/40 px-[18px] py-[13px] last:border-b-0 sm:grid-cols-[150px_120px_minmax(0,1fr)_170px_84px]"
     >
-      <Status color="var(--error)">{CAUSE_LABEL[lap.cause]}</Status>
+      <Status state="failed">{CAUSE_LABEL[lap.cause]}</Status>
       <span className={`${MONO} min-w-0 truncate text-text-primary`}>
         {lap.failed_step === null ? 'no failed step' : stepLabel(lap.failed_step)}
       </span>
@@ -320,8 +321,12 @@ function OverdueScale({ ratio, top }: { ratio: number; top: number }): ReactElem
     <div aria-hidden="true" className="relative mx-2 pb-6">
       <div className="relative h-2.5 rounded-full bg-surface-inset">
         <div
-          className="absolute inset-y-0 left-0 animate-pulse rounded-full bg-[color:var(--running)] shadow-[0_0_12px_color-mix(in_oklch,var(--running),transparent_50%)]"
-          style={{ width: at(ratio) }}
+          className="absolute inset-y-0 left-0 animate-pulse rounded-full"
+          style={{
+            width: at(ratio),
+            background: stateColor('running'),
+            boxShadow: `0 0 12px color-mix(in oklch, ${stateColor('running')}, transparent 50%)`,
+          }}
         />
       </div>
       {overdueTicks(top).map((tick) => (
@@ -370,10 +375,11 @@ export function OverdueList({
             >
               <span
                 aria-hidden="true"
-                className="absolute inset-y-0 left-0 w-[3px] bg-[color:var(--running)]"
+                className="absolute inset-y-0 left-0 w-[3px]"
+                style={{ background: stateColor('running') }}
               />
               <div className="flex flex-wrap items-center gap-x-[18px] gap-y-2">
-                <Status color="var(--running)">Running</Status>
+                <Status state="running">Running</Status>
                 <span className={`${MONO} min-w-0 flex-1 truncate font-bold text-text-primary`}>
                   {stepLabel(step.step_id)}
                 </span>

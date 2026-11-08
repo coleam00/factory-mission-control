@@ -11,5 +11,6 @@ test('the table lists exactly the outcomes the pack loop review can return', () 
     .filter(Boolean)
     .sort();
   expect(packEnum.length).toBeGreaterThan(0);
-  expect([...REVIEW_OUTCOMES].sort()).toEqual(packEnum);
+  const listed: readonly string[] = REVIEW_OUTCOMES;
+  expect([...listed].sort()).toEqual(packEnum);
 });

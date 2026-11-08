@@ -3,10 +3,9 @@ import { Link } from 'react-router';
 import { type BoardRow, type ItemOnBoard, itemOnBoard } from '../lib/board';
 import type { HealthWorkableRow } from '../lib/health';
 import type { OwnerQueueRow } from '../lib/owner-queue';
-import { TONE_TOKEN } from '../lib/review-outcome';
+import { stateColor } from '../lib/states';
 import {
   type TimelineEvent,
-  type Tone,
   type WorkItemHeader,
   type WorkItemRow,
   workItemHeader,
@@ -15,14 +14,6 @@ import {
 import { AWAITED, Feed, overall, type Source } from '../live/Feed';
 import type { HomeMapRow } from '../map/live';
 import { EmptyState } from './EmptyState';
-
-const TONE_COLOR: Record<Tone, string> = {
-  done: `var(${TONE_TOKEN.done})`,
-  failed: 'var(--error)',
-  owner: `var(${TONE_TOKEN.owner})`,
-  running: 'var(--running)',
-  plain: 'var(--border-bright)',
-};
 
 const GHOST =
   'rounded-[6px] border border-border bg-surface px-2.5 py-1 text-[12px] text-text-primary hover:border-border-bright';
@@ -67,7 +58,7 @@ function Row({ event, before }: { event: TimelineEvent; before: Date | null }): 
         className={`h-[9px] w-[9px] rounded-full ${
           event.tone === 'running' ? 'motion-safe:animate-pulse' : ''
         }`}
-        style={{ background: TONE_COLOR[event.tone] }}
+        style={{ background: stateColor(event.tone) }}
       />
       <span className="min-w-0 text-[13px] text-text-primary [overflow-wrap:anywhere]">
         {event.text}

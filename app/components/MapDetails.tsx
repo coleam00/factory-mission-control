@@ -4,6 +4,7 @@ import type { AppCheckRow } from '../lib/app-check';
 import { boardHref, orderPanel, orderProgress } from '../lib/board';
 import { relativeTime } from '../lib/format';
 import { hasLapPage } from '../lib/one-lap';
+import { stateColor } from '../lib/states';
 import { type StepRow, stepOriginState } from '../lib/step-detail';
 import { LivePanel } from '../live/LivePanel';
 import { type Card, type Chip, pinnedStepLinks, workflowFile } from '../map/factory-map';
@@ -163,7 +164,10 @@ function ProductDocument({ document }: { document: ProductDocumentRow }): ReactE
         aria-valuenow={merged}
         className="h-1.5 overflow-hidden rounded-full bg-surface-inset"
       >
-        <div className="h-full rounded-full bg-success" style={{ width: `${percent}%` }} />
+        <div
+          className="h-full rounded-full"
+          style={{ width: `${percent}%`, background: stateColor('done') }}
+        />
       </div>
     </li>
   );

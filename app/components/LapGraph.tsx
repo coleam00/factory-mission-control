@@ -9,10 +9,10 @@ import {
   type LapGraph,
   type LapStep,
   STATE_LABEL,
-  STATE_TOKEN,
   type StepState,
 } from '../lib/lap-graph';
 import { costOf, since } from '../lib/laps';
+import { STATE_COLOR, STEP_STATE_STATE, stateInk } from '../lib/states';
 import { stepOriginState } from '../lib/step-detail';
 import { errorHeadline } from '../lib/error-text';
 import { attemptSeconds } from '../lib/one-lap';
@@ -24,6 +24,9 @@ const LABEL = 'font-mono text-[10px] font-semibold uppercase tracking-[0.04em] t
 const LINK = 'underline decoration-border-bright underline-offset-2 hover:decoration-text-primary';
 
 const placed = (box: Box) => ({ left: box.x, top: box.y, width: box.width, height: box.height });
+/** The token a step state's mark is drawn in. */
+const markToken = (state: StepState) => STATE_COLOR[STEP_STATE_STATE[state]];
+
 const tint = (token: string, percent: number) =>
   `color-mix(in oklch, var(${token}) ${percent}%, transparent)`;
 
@@ -33,7 +36,7 @@ const utcSecond = (at: Date) => `${at.toISOString().slice(0, 19).replace('T', ' 
 /** A step's mark: a check, a cross, a pulsing dot, a dash, or an empty ring. */
 export function StateMark({ state, size = 14 }: { state: StepState; size?: number }): ReactElement {
   if (state === 'running') return <LiveDot size={size - 4} />;
-  const color = `var(${STATE_TOKEN[state]})`;
+  const color = `var(${markToken(state)})`;
   if (state === 'finished' || state === 'failed') {
     return (
       <svg
@@ -297,8 +300,8 @@ function StepBox({
       } ${dim ? 'opacity-55' : ''} ${selected ? 'ring-2 ring-selected' : ''}`}
       style={{
         ...(box === undefined ? {} : placed(box)),
-        background: colored ? tint(STATE_TOKEN[state], 12) : 'var(--surface)',
-        borderColor: colored ? tint(STATE_TOKEN[state], 55) : 'var(--border-bright)',
+        background: colored ? tint(markToken(state), 12) : 'var(--surface)',
+        borderColor: colored ? tint(markToken(state), 55) : 'var(--border-bright)',
       }}
     >
       <StateMark state={state} />
@@ -371,7 +374,7 @@ export function StepPanel({
             <StateMark state={step.state} />
             <span
               className="font-mono text-[11px] font-semibold uppercase tracking-[0.05em]"
-              style={{ color: `var(${STATE_TOKEN[step.state]})` }}
+              style={{ color: stateInk(STEP_STATE_STATE[step.state]) }}
             >
               {STATE_LABEL[step.state]}
             </span>
@@ -477,7 +480,7 @@ export function AttemptError({ error }: { error: string }): ReactElement {
         data-error-headline
         className="line-clamp-4 text-[12px] text-text-primary [overflow-wrap:anywhere]"
       >
-        <span style={{ color: 'var(--error)' }}>Error </span>
+        <span style={{ color: stateInk('failed') }}>Error </span>
         {headline}
       </p>
       {more ? (
@@ -540,9 +543,10 @@ export function LaneMarks({ marks }: { marks: readonly LaneMark[] }): ReactEleme
               style={{
                 borderColor:
                   mark.state === 'running' || mark.state === 'failed' || mark.state === 'finished'
-                    ? tint(STATE_TOKEN[mark.state], 50)
+                    ? tint(markToken(mark.state), 50)
                     : 'var(--border)',
-                background: mark.state === 'running' ? tint('--running', 14) : 'transparent',
+                background:
+                  mark.state === 'running' ? tint(STATE_COLOR.running, 14) : 'transparent',
               }}
             >
               <StateMark state={mark.state} size={12} />
