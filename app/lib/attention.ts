@@ -43,11 +43,12 @@ export interface DecideRow extends AttentionRow {
 export type DecideItem = AttentionItem &
   Pick<DecideRow, 'occurrence_id' | 'recommended' | 'confidence' | 'item_number'>;
 
+export const UNSTICK_KINDS = ['blocked', 'parked', 'capacity', 'claim'] as const;
 export const UNSTICK_ACTIONS = ['retriage', 'resume', 'release_claim'] as const;
 
 /** One row of unstick.sql: work that stopped moving, what it waits on, since when, and the one action that moves it. */
 export interface UnstickRow {
-  kind: 'blocked' | 'parked' | 'capacity' | 'claim';
+  kind: (typeof UNSTICK_KINDS)[number];
   number: number | null;
   run_id: string | null;
   workflow_name: string | null;

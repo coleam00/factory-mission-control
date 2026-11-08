@@ -6,7 +6,7 @@
 -- what Archon already stored and change nothing run again.
 --
 -- mc.attention_items gains
---   occurrence_id  Archon's `attentionOccurrence`: the wait's pauseId, else `legacy:<step>` where the
+--   occurrence_id  Archon's `attentionOccurrence` (packages/workflows/src/schemas/pause-occurrence.ts): the wait's pauseId, else `legacy:<step>` where the
 --                  step is node_id. The value `archon workflow ... --occurrence` accepts.
 --   item_number    the number the pack's title names (`Build queue, issue N:`, `Merge queue, PR N:`),
 --                  else the run's `number` input, else null.

@@ -334,11 +334,18 @@ test('the projected item number reads the titles the pinned queues render', () =
   const migration = read('db', 'migrations', '0031_attention_data.sql');
   expect(migration).toContain('(?:issue|PR) ([1-9][0-9]{0,8}):');
   expect(read('fixtures/pack/queue/sdlc/build-queue/scripts/apply.ts')).toContain(
-    'Build queue, issue ${',
+    'Build queue, issue ${String(item.number)}: ',
   );
   expect(read('fixtures/pack/queue/sdlc/merge-queue/scripts/record.ts')).toContain(
-    'Merge queue, PR ${',
+    'Merge queue, PR ${String(raised.pr.number)}: ',
   );
+});
+
+test('the stages Unstick reads are the pinned pack’s', () => {
+  const stages = statusUnion('workitem.ts', 'Stage');
+  const literals = [...sqlOf('unstick').matchAll(/w\.stage = '([^']*)'/g)].map((m) => m[1]);
+  expect(literals.length).toBeGreaterThan(0);
+  for (const stage of literals) expect(stages, `stage '${stage}'`).toContain(stage);
 });
 
 const yamlEnum = (file: string[], node: string, key: string): string[] => {
