@@ -1,5 +1,12 @@
 import { type ComponentType, createElement } from 'react';
-import { Navigate, type RouteObject, useParams, useSearchParams } from 'react-router';
+import {
+  type LoaderFunction,
+  Navigate,
+  type RouteObject,
+  redirect,
+  useParams,
+  useSearchParams,
+} from 'react-router';
 import { NotFound, RouteError } from './errors';
 import { stepHref } from './lib/step-detail';
 import { useFactory } from './live/FactoryProvider';
@@ -41,70 +48,69 @@ export function routesFromModules(modules: Record<string, RouteModule>): RouteOb
   });
 }
 
-/** A factory screen the shell links to: its path after `/f/:factory/` and its link's name. */
-export interface FactoryScreen {
+/** A place in the left nav: its path after `/f/:factory` ('' is the factory's home) and its name. */
+export interface Place {
   path: string;
   label: string;
 }
 
-/**
- * The factory screens among the routes: every `/f/:factory/...` path with no other parameter, so a
- * screen that needs a step or a lap is left out. Labels come from the path (`versions` is
- * "Versions"), so adding a route file adds its link with no edit to the shell.
- */
-export function factoryScreens(routes: readonly RouteObject[]): FactoryScreen[] {
-  const screens: FactoryScreen[] = [];
-  for (const { path } of routes) {
-    const rest = path?.match(/^\/f\/:factory\/(.+)$/)?.[1];
-    if (rest === undefined || rest.includes(':')) continue;
-    const label = rest
-      .split('/')
-      .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1))
-      .join(' ');
-    screens.push({ path: rest, label });
-  }
-  return screens.sort((a, b) => a.path.localeCompare(b.path));
-}
+/** The nav's fixed places (v3 README "The places"): not one entry per route file. */
+export const PLACES: readonly Place[] = [
+  { path: '', label: 'Attention' },
+  { path: 'map', label: 'Factory' },
+  { path: 'board', label: 'Board' },
+  { path: 'runs', label: 'Runs' },
+];
+
+/** A place's address for `factory`. */
+export const placeHref = (factory: string, place: Place): string =>
+  `/f/${encodeURIComponent(factory)}${place.path === '' ? '' : `/${place.path}`}`;
 
 /**
- * Where choosing `factory` goes from `pathname` and its `search`: the same screen for it when
- * `pathname` is one of `screens`, a step's page as it is (the pinned version stays), otherwise its home map (`/f/:factory`). A screen's search names the
- * old factory's items, so it is not kept.
+ * Where choosing `factory` goes from `pathname` and its `search`: the same place for it when
+ * `pathname` is one of `PLACES`, a step's page as it is (the pinned version stays), otherwise its
+ * home, Attention (`/f/:factory`). A place's search names the old factory's items, so it is not kept.
  */
-export function factoryPath(
-  pathname: string,
-  factory: string,
-  screens: readonly FactoryScreen[],
-  search = '',
-): string {
+export function factoryPath(pathname: string, factory: string, search = ''): string {
   const home = `/f/${encodeURIComponent(factory)}`;
   const step = pathname.match(/^\/f\/[^/]+\/(steps\/[^/]+\/[^/]+)$/)?.[1];
   if (step !== undefined) return `${home}/${step}${search}`;
   const rest = pathname.match(/^\/f\/[^/]+\/(.+)$/)?.[1];
-  if (rest === undefined || !screens.some((screen) => screen.path === rest)) return home;
+  if (rest === undefined || !PLACES.some((place) => place.path === rest)) return home;
   return `${home}/${rest}`;
 }
 
-/** Where each removed screen's address goes now, under the same factory. '' is the factory's map. */
+/**
+ * Where each removed screen's address goes now, under the same factory: a `PLACES` path, '' being
+ * Attention. `laps` and `laps/:runId` are not here, they carry the run id (`oldLapRoutes`).
+ */
 export const REMOVED_SCREENS: Readonly<Record<string, string>> = {
-  changes: '',
-  diff: '',
-  health: 'decisions',
+  changes: 'map',
+  decisions: '',
+  diff: 'map',
+  health: '',
   issues: 'board',
-  ledger: 'decisions',
-  owner: 'decisions',
-  rewind: '',
-  scorecard: '',
+  ledger: '',
+  owner: '',
+  rewind: 'map',
+  scorecard: 'map',
   testing: 'board',
-  versions: '',
+  versions: 'map',
 };
 
-function RemovedScreen({ to }: { to: string }): ReturnType<typeof createElement> {
-  const factory = encodeURIComponent(useParams().factory ?? '');
-  return createElement(Navigate, {
-    to: `/f/${factory}${to === '' ? '' : `/${to}`}`,
-    replace: true,
-  });
+/** The redirect from a removed address to `to` (a `PLACES` path) under the same factory, keeping a run id. */
+const redirectTo =
+  (to: string): LoaderFunction =>
+  ({ params: { factory = '', runId } }) => {
+    const rest = runId === undefined ? to : `${to}/${runId}`;
+    return redirect(`/f/${encodeURIComponent(factory)}${rest === '' ? '' : `/${rest}`}`);
+  };
+
+/** `/`, which named no factory: the Attention of the factory the switcher remembers, else the default one. */
+export function HomeAddress(): ReturnType<typeof createElement> | null {
+  const factory = useFactory();
+  if (factory === undefined) return null;
+  return createElement(Navigate, { to: `/f/${encodeURIComponent(factory)}`, replace: true });
 }
 
 /**
@@ -125,21 +131,24 @@ export function OldStepAddress(): ReturnType<typeof createElement> | null {
 const removedRoutes = (): RouteObject[] => [
   ...Object.entries(REMOVED_SCREENS).map(([from, to]) => ({
     path: `/f/:factory/${from}`,
-    element: createElement(RemovedScreen, { to }),
+    loader: redirectTo(to),
   })),
+  { path: '/f/:factory/laps', loader: redirectTo('runs') },
+  { path: '/f/:factory/laps/:runId', loader: redirectTo('runs') },
+  { path: '/', element: createElement(HomeAddress) },
   { path: '/steps/:workflow/:step', element: createElement(OldStepAddress) },
   { path: '/rewind', element: createElement(Navigate, { to: '/', replace: true }) },
 ];
 
 /**
- * The router's whole tree: the shell, linking every factory screen, around the directory's routes,
- * a not-found catch-all and an error state.
+ * The router's whole tree: the shell, with its fixed places, around the directory's routes, every
+ * old address's redirect, a not-found catch-all and an error state.
  */
 export function appRoutes(modules: Record<string, RouteModule>): RouteObject[] {
   const routes = routesFromModules(modules);
   return [
     {
-      element: createElement(Shell, { screens: factoryScreens(routes) }),
+      element: createElement(Shell),
       ErrorBoundary: RouteError,
       children: [...routes, ...removedRoutes(), { path: '*', Component: NotFound }],
     },

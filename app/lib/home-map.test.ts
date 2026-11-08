@@ -86,11 +86,13 @@ test("at a version, every step opens its screen at that version; the current map
   const hrefs = (at: string | null = null) => stepGraph(rows, 'x', at).steps.map((n) => n.href);
   expect(hrefs(at).every((href) => href.endsWith(`?at=${at}`))).toBe(true);
   expect(hrefs().some((href) => href.includes('?at='))).toBe(false);
-  expect(homeHref(null)).toBe('/');
-  expect(homeHref(at)).toBe(`/?at=${at}`);
+  expect(homeHref('x', null)).toBe('/f/x/map');
+  expect(homeHref('a b', at)).toBe(`/f/a%20b/map?at=${at}`);
   const inBuild = new URLSearchParams('view=build');
-  expect(homeHref(at, inBuild)).toBe(`/?view=build&at=${at}`);
-  expect(homeHref(null, new URLSearchParams(`view=build&at=${at}`))).toBe('/?view=build');
+  expect(homeHref('x', at, inBuild)).toBe(`/f/x/map?view=build&at=${at}`);
+  expect(homeHref('x', null, new URLSearchParams(`view=build&at=${at}`))).toBe(
+    '/f/x/map?view=build',
+  );
 });
 
 test('with no steps stored the graph is empty', () => {

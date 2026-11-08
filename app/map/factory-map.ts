@@ -398,7 +398,7 @@ export function mapOrigin(
     new URLSearchParams(at ? { at } : {}),
     chain.slice(0, -1).flatMap((card) => (card.opens === undefined ? [] : [card.opens])),
   ).toString();
-  const href = `/f/${encodeURIComponent(factory)}${search ? `?${search}` : ''}`;
+  const href = `/f/${encodeURIComponent(factory)}/map${search ? `?${search}` : ''}`;
   const deepest = chain.at(-1);
   return deepest === undefined
     ? { href, label: 'Factory' }

@@ -10,8 +10,6 @@ import {
   isSwitched,
 } from './FactorySwitcher';
 
-const SCREENS = [{ path: 'laps', label: 'Laps' }];
-
 const render = (
   rows: FactorySwitcherRow[] | undefined,
   state: PanelState,
@@ -23,7 +21,7 @@ const render = (
         rows={rows}
         state={state}
         current={current}
-        hrefFor={(factory) => factoryPath('/f/mission-control/laps', factory, SCREENS)}
+        hrefFor={(factory) => factoryPath('/f/mission-control/runs', factory)}
         open
         onToggle={() => {}}
       />
@@ -50,8 +48,8 @@ test('two factories are listed with their running laps, the default first, linki
     'ready',
   );
   expect(entries(html)).toEqual([
-    { factory: 'mission-control', running: 2, href: '/f/mission-control/laps', current: true },
-    { factory: 'second-factory', running: 1, href: '/f/second-factory/laps', current: false },
+    { factory: 'mission-control', running: 2, href: '/f/mission-control/runs', current: true },
+    { factory: 'second-factory', running: 1, href: '/f/second-factory/runs', current: false },
   ]);
   expect(html).toContain('data-factory-switcher');
 });
@@ -80,7 +78,7 @@ test('the chosen row, and only it, carries a check mark and aria-current, whiche
 test('with one factory the switcher lists that factory and nothing else', () => {
   const html = render([{ factory: 'mission-control', running: 0, is_default: true }], 'ready');
   expect(entries(html)).toEqual([
-    { factory: 'mission-control', running: 0, href: '/f/mission-control/laps', current: true },
+    { factory: 'mission-control', running: 0, href: '/f/mission-control/runs', current: true },
   ]);
   expect(html.match(/data-factory-entry=/g)).toHaveLength(1);
 });
@@ -176,9 +174,7 @@ test("from a screen the entries go to that screen, and from a step's page they s
             rows={rows}
             state="ready"
             current="mission-control"
-            hrefFor={(factory) =>
-              factoryPath(pathname, factory, [{ path: 'board', label: 'Board' }], search)
-            }
+            hrefFor={(factory) => factoryPath(pathname, factory, search)}
             open
             onToggle={() => {}}
           />
@@ -209,7 +205,7 @@ test('where the URL names no listed factory the label invites a choice instead o
         rows={[{ factory: 'mission-control', running: 0, is_default: true }]}
         state="ready"
         current={undefined}
-        hrefFor={(factory) => factoryPath('/f/nope', factory, SCREENS)}
+        hrefFor={(factory) => factoryPath('/f/nope', factory)}
         open
         onToggle={() => {}}
       />

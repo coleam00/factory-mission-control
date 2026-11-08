@@ -35,7 +35,7 @@ test('pending and paused runs show their wait by the browser clock and open thei
   expect(html.indexOf('data-status="pending"')).toBeLessThan(html.indexOf('data-status="paused"'));
   expect(html).toMatch(/data-waited="true"[^>]*>5m</);
   expect(html).toMatch(/data-waited="true"[^>]*>3d 21h</);
-  expect(html).toContain('href="/f/mission-control/laps/5eed0003-0000-4000-8000-00000000000c"');
+  expect(html).toContain('href="/f/mission-control/runs/5eed0003-0000-4000-8000-00000000000c"');
 });
 
 test('a paused run of another workflow has no lap page to open', () => {

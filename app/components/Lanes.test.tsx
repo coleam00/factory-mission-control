@@ -36,7 +36,7 @@ test('a lane shows its issue, route, depth, step, time on the step and cost so f
     />,
   );
   expect(html).toContain(`data-lane="${RUN}"`);
-  expect(html).toContain(`href="/f/mission-control/laps/${RUN}"`);
+  expect(html).toContain(`href="/f/mission-control/runs/${RUN}"`);
   expect(html).toContain('data-step="ship__intel"');
   expect(html).toContain('data-cost="1.3"');
   expect(html).toContain('href="/f/mission-control/work/11"');
@@ -122,7 +122,7 @@ test('every outcome is labelled and links its lap; a lap with none says its stat
     expect(html).toContain(OUTCOME_LABEL[outcome]);
   }
   expect(html).toContain('No outcome, cancelled');
-  expect(html).toContain('href="/f/mission-control/laps/5eed0001-0000-4000-8000-000000000000"');
+  expect(html).toContain('href="/f/mission-control/runs/5eed0001-0000-4000-8000-000000000000"');
   expect(html).toContain('1:30:00');
   expect(html).toContain('ended 2026-10-01 09:30 UTC');
 });
@@ -163,7 +163,7 @@ test('a queue run says what it is and where it is, and links its console, not a 
   expect(html).toContain('href="/f/alpha/work/11"');
   expect(html).toContain('#11');
   expect(html).toContain(`https://console.example/console/r/${RUN}`);
-  expect(html).not.toContain(`/f/alpha/laps/${RUN}`);
+  expect(html).not.toContain(`/f/alpha/runs/${RUN}`);
   expect(html).not.toContain('Route');
   expect(html).not.toContain('data-loop-mark');
 });

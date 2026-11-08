@@ -107,16 +107,16 @@ async function appCheckPromptMismatches(
   const expected = readFileSync(join(REPO_ROOT, CHECK_PROMPT), 'utf8').replaceAll('\r\n', '\n');
   const failures = prompt === expected ? [] : [`${base}${screen} does not show ${CHECK_PROMPT}`];
   const current = await page.evaluate<{ name: string | null; href: string | null }>(
-    `({ name: document.querySelector('nav[aria-label="Screens"] a[aria-current="page"]')?.textContent?.trim() ?? null,
-       href: document.querySelector('nav[aria-label="Screens"] a[aria-current="page"]')?.getAttribute('href') ?? null })`,
+    `({ name: document.querySelector('nav[aria-label="Places"] a[aria-current="page"]')?.textContent?.trim() ?? null,
+       href: document.querySelector('nav[aria-label="Places"] a[aria-current="page"]')?.getAttribute('href') ?? null })`,
   );
-  if (current.name !== 'Factory' || current.href !== `/f/${factory}`) {
+  if (current.name !== 'Factory' || current.href !== `/f/${factory}/map`) {
     failures.push(`the check step marks ${current.name} (${current.href}) current, not Factory`);
   }
   await click(page, '[data-breadcrumb-back]');
   const back = await page.evaluate<boolean>(
     pageWait(
-      `location.pathname === '/f/${factory}' && document.querySelector('${MAP} [data-card="app"][data-selected]') !== null`,
+      `location.pathname === '/f/${factory}/map' && document.querySelector('${MAP} [data-card="app"][data-selected]') !== null`,
       2000,
     ),
   );
@@ -199,21 +199,21 @@ export function queueMapPhase(ctx: LiveContext): LivePhase {
       const intake = await openPage(deps.env);
       try {
         await page.setViewport(MAP_READABLE.width);
-        await page.goto(`${base}/f/${name}`);
+        await page.goto(`${base}/f/${name}/map`);
         await page.evaluate<boolean>(
           pageWait(`document.querySelector('${MAP}[data-state="ready"]') !== null`, READY_WAIT_MS),
         );
         failures.push(...mapMismatches(await mapCards(page), await lapsOnCards(db, name)));
         ctx.save(FILES.shot, await page.screenshot(1440));
         failures.push(...(await appCheckPromptMismatches(page, base, name)));
-        await page.goto(`${base}/f/${name}`);
+        await page.goto(`${base}/f/${name}/map`);
         await page.evaluate<boolean>(
           pageWait(`document.querySelector('${MAP}[data-state="ready"]') !== null`, READY_WAIT_MS),
         );
 
         const open = async (target: Page, id: string, shoot = false) => {
           await target.setViewport(MAP_READABLE.width);
-          await target.goto(`${base}/f/${name}?view=${id}`);
+          await target.goto(`${base}/f/${name}/map?view=${id}`);
           await target.evaluate<boolean>(
             pageWait(
               `document.querySelector('${MAP}[data-state="ready"] ${viewStage(id)}') !== null`,
@@ -396,7 +396,8 @@ export function queueMapPhase(ctx: LiveContext): LivePhase {
     ],
 
     async probe(designProbe) {
-      for (const v of QUEUE_MAP_VIEWS) designProbe(`${ctx.base}/f/${name}?view=${v.id}`, v.probe);
+      for (const v of QUEUE_MAP_VIEWS)
+        designProbe(`${ctx.base}/f/${name}/map?view=${v.id}`, v.probe);
       designProbe(`${ctx.base}${checkScreen(name)}`, FILES.checkProbe);
       designProbe(`${ctx.base}/f/${name}/steps/factory-app-check/config`, FILES.configProbe);
     },

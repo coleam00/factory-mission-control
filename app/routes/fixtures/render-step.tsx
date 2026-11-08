@@ -182,7 +182,7 @@ function mount(url: string, steps: Record<string, StepRow[]>, state?: unknown) {
           </FactoryProvider>
         ),
       },
-      { path: '/f/:factory', element: null },
+      { path: '/f/:factory/map', element: null },
       {
         path: '/steps/:workflow/:step',
         element: (

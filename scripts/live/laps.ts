@@ -181,7 +181,7 @@ export function lapsPhase(ctx: LiveContext): LivePhase {
       const [firstLap, secondLap] = ctx.laps;
       const page = await openPage(deps.env);
       lapsPage = page;
-      await page.goto(`${base}/f/${factory}/laps`);
+      await page.goto(`${base}/f/${factory}/runs`);
       await page.evaluate('window.__mcNoReload = true');
       const lapsReady = await page.evaluate<boolean>(
         pageWait(
@@ -193,7 +193,7 @@ export function lapsPhase(ctx: LiveContext): LivePhase {
       );
       if (!lapsReady) {
         throw new Error(
-          `the laps screen did not reach data-state="ready" within ${READY_WAIT_MS} ms`,
+          `the runs screen did not reach data-state="ready" within ${READY_WAIT_MS} ms`,
         );
       }
       Object.assign(lapsTimings, groupTimings(await measure(page, LAPS_QUERIES)));
@@ -240,7 +240,7 @@ export function lapsPhase(ctx: LiveContext): LivePhase {
 
     async probe(designProbe) {
       const { base } = ctx;
-      designProbe(`${base}/f/${factory}/laps`, FILES.probe, 'the laps screen');
+      designProbe(`${base}/f/${factory}/runs`, FILES.probe, 'the runs screen');
     },
 
     async close() {
@@ -266,7 +266,7 @@ export function lapsPhase(ctx: LiveContext): LivePhase {
       ] as const) {
         failures.push(...lateWrite(`${LIVE_STEP} ${when}`, 'its lane', write?.ms));
       }
-      if (lapsTimings.noReload !== true) failures.push('the laps screen reloaded');
+      if (lapsTimings.noReload !== true) failures.push('the runs screen reloaded');
       return failures;
     },
 

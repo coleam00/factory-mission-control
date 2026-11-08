@@ -134,7 +134,7 @@ async function checkSwitcher(ctx: LiveContext): Promise<void> {
   }
   const page = await openPage(deps.env);
   try {
-    await page.goto(`${base}/`);
+    await page.goto(`${base}/f/${factory}/map`);
     await page.evaluate('window.__mcNoReload = true');
     await openList(page);
     Object.assign(
@@ -177,7 +177,11 @@ async function checkSwitcher(ctx: LiveContext): Promise<void> {
     );
     timings.noReload = await page.evaluate<boolean>('window.__mcNoReload === true');
 
-    check('choosing it from /', await choose(page, second, `/f/${second}`), `/f/${second}`);
+    check(
+      'choosing it from the map',
+      await choose(page, second, `/f/${second}/map`),
+      `/f/${second}/map`,
+    );
     await waitFor(page, `the strip did not name ${second}`, stripNames(second));
     const strip = await page.evaluate<string>(
       `document.querySelector('${PANEL} [data-count]')?.getAttribute('data-count')`,
@@ -191,9 +195,9 @@ async function checkSwitcher(ctx: LiveContext): Promise<void> {
     const map = mapMismatches(await mapCards(page), await lapsOnCards(db, second));
     check(`${second}'s map against its laps`, map, []);
 
-    // On a factory's own map the nav links its screens at once; on / it waits for the factory.
+    // On a factory's own Attention the nav links its places at once; on / it waits for the factory.
     await page.goto(`${base}/f/${factory}`);
-    const screenLinks = `[...document.querySelectorAll('nav[aria-label="Screens"] a')].map((a) => a.getAttribute('href')).filter((href) => href.startsWith('/f/${factory}/'))`;
+    const screenLinks = `[...document.querySelectorAll('nav[aria-label="Places"] a')].map((a) => a.getAttribute('href')).filter((href) => href.startsWith('/f/${factory}/'))`;
     await page.evaluate<boolean>(pageWait(`${screenLinks}.length > 0`, READY_WAIT_MS));
     const screens = await page.evaluate<string[]>(screenLinks);
     if (screens.length === 0) failures.push('switcher: the nav links no factory screen');
@@ -205,7 +209,7 @@ async function checkSwitcher(ctx: LiveContext): Promise<void> {
         await choose(page, second, `/f/${second}/${screen}`),
         `/f/${second}/${screen}`,
       );
-      if (screen !== 'laps') continue;
+      if (screen !== 'runs') continue;
       await waitFor(
         page,
         'the lanes were not ready',
@@ -245,6 +249,9 @@ async function checkSwitcher(ctx: LiveContext): Promise<void> {
     await page.evaluate(`localStorage.setItem('mc:factory', 'removed-factory')`);
     await page.goto(`${base}/`);
     await waitFor(page, `/ did not fall back to ${factory}`, stripNames(factory));
+    await page.evaluate(
+      `document.querySelector('nav[aria-label="Places"] a[href$="/map"]')?.click()`,
+    );
     await waitFor(
       page,
       'the map was not ready',

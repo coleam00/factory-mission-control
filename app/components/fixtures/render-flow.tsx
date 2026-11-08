@@ -3,7 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { createMemoryRouter, RouterProvider } from 'react-router';
 import { Shell } from '../../Shell';
 import type { HomeMapRow } from '../../map/live';
-import Home from '../../routes/index';
+import Home from '../../routes/f.$factory.map';
 
 const VERSION_ROW: HomeMapRow = {
   kind: 'version',
@@ -112,9 +112,9 @@ export function mount(url: string) {
   const router = createMemoryRouter(
     [
       {
-        element: <Shell screens={[{ path: 'board', label: 'Board' }]} />,
+        element: <Shell />,
         children: [
-          { path: '/f/:factory', element: <Home /> },
+          { path: '/f/:factory/map', element: <Home /> },
           { path: '/f/:factory/board', element: <p>Board</p> },
         ],
       },
@@ -135,7 +135,7 @@ export function mount(url: string) {
   };
 }
 
-const TOGGLE = 'header button[aria-label="Flow animation"]';
+const TOGGLE = 'main button[aria-label="Flow animation"]';
 
 export const shown = () => ({
   toggle: document.querySelector(TOGGLE) !== null,
@@ -145,8 +145,5 @@ export const shown = () => ({
 export const clickToggle = () => document.querySelector<HTMLButtonElement>(TOGGLE)?.click();
 
 export const goBoard = () => {
-  const link = [...document.querySelectorAll<HTMLAnchorElement>('header a')].find(
-    (a) => a.textContent === 'Board',
-  );
-  link?.click();
+  document.querySelector<HTMLAnchorElement>('nav a[href$="/board"]')?.click();
 };

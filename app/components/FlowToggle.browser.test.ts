@@ -20,13 +20,13 @@ afterAll(async () => {
   await page?.close();
 });
 
-test('the bar toggle flips the home map and is gone on the other tabs', async () => {
+test('the map toggle flips the map and is gone on the other places', async () => {
   const seen = await page.evaluate<{ step: string; toggle: boolean; flow: string | null }[]>(
     `import('data:text/javascript;base64,${source}').then(async (m) => {
       const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
       const out = [];
       const note = (step) => out.push({ step, ...m.shown() });
-      m.mount('/f/x');
+      m.mount('/f/x/map');
       await sleep(1500);
       note('home');
       m.clickToggle();

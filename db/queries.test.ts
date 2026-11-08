@@ -306,7 +306,7 @@ const ROW_COLUMNS: Record<string, string[]> = {
     'merged',
     'items',
   ]),
-  'status-strip': columns<StatusStripRow>()(['running']),
+  'status-strip': columns<StatusStripRow>()(['running', 'waiting', 'engine']),
   'step-detail': columns<StepRow>()([
     'workflow',
     'path',

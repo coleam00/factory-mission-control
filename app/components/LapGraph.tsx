@@ -461,7 +461,7 @@ export function StepPanel({
       ) : (
         <Link
           to={node.href}
-          state={stepOriginState({ href: `${pathname}${search}`, label: 'Laps / This lap' })}
+          state={stepOriginState({ href: `${pathname}${search}`, label: 'Runs / This run' })}
           className={`${MONO} w-fit text-text-secondary ${LINK}`}
         >
           The step's definition

@@ -234,7 +234,7 @@ test('old-loop rounds link to their lap page, every other run to the console', (
     e.run ? [e.run.link] : [],
   );
   expect(links).toEqual([
-    { kind: 'lap', to: `/f/f/laps/${RUN}` },
+    { kind: 'lap', to: `/f/f/runs/${RUN}` },
     {
       kind: 'console',
       href: 'http://localhost:3090/console/r/5eed0005-0000-4000-8000-00000000000b',

@@ -23,7 +23,7 @@ test('names the key as typed in one sentence and links to the default map', () =
   );
   expect(html.match(/<p/g)).toHaveLength(1);
   expect(html.match(/<a /g)).toHaveLength(1);
-  expect(html).toContain('href="/f/mission-control"');
+  expect(html).toContain('href="/f/mission-control/map"');
   expect(html).not.toContain('Live data is unavailable.');
 });
 

@@ -180,10 +180,11 @@ export function stepGraph(
 }
 
 /**
- * The home map's address at a version's pin, or at the current version for none. The rest of
+ * The factory map's address at a version's pin, or at the current version for none. The rest of
  * `search`, such as the open view, is kept.
  */
 export function homeHref(
+  factory: string,
   at?: string | null,
   search: URLSearchParams = new URLSearchParams(),
 ): string {
@@ -191,7 +192,8 @@ export function homeHref(
   if (at) next.set('at', at);
   else next.delete('at');
   const query = next.toString();
-  return query === '' ? '/' : `/?${query}`;
+  const map = `/f/${encodeURIComponent(factory)}/map`;
+  return query === '' ? map : `${map}?${query}`;
 }
 
 export interface FoldedSteps {

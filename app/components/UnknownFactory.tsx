@@ -17,7 +17,7 @@ export function UnknownFactory({
   fallback: string | undefined;
 }): ReactElement {
   const map = factory === '' ? undefined : fallback;
-  const home = map === undefined ? '/' : `/f/${encodeURIComponent(map)}`;
+  const home = map === undefined ? '/' : `/f/${encodeURIComponent(map)}/map`;
   return (
     <main
       data-unknown-factory={factory}

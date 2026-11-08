@@ -190,8 +190,8 @@ export function LaneList({
                   <Link
                     to={stepHref(factory, lane.workflow_name, stepPath(lane.step_id))}
                     state={stepOriginState({
-                      href: `/f/${encodeURIComponent(factory)}/laps`,
-                      label: 'Laps',
+                      href: `/f/${encodeURIComponent(factory)}/runs`,
+                      label: 'Runs',
                     })}
                     data-step-link
                     className="underline decoration-border-bright underline-offset-2 hover:decoration-text-primary"

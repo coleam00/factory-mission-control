@@ -19,7 +19,25 @@ describe('against the migrated schema', () => {
       ('00000000-0000-0000-0000-0000000000a5', 'mission-control', 'archon-manager', 'running'),
       ('00000000-0000-0000-0000-0000000000a4', 'other', 'archon-loop', 'running')`);
     const sql = queries.find(([name]) => name === 'status-strip')?.[1] as string;
-    expect(await db.query(sql, ['mission-control'])).toEqual([{ running: 3 }]);
-    expect(await db.query(sql, ['other'])).toEqual([{ running: 1 }]);
+    expect(await db.query(sql, ['mission-control'])).toEqual([
+      { running: 3, waiting: 0, engine: null },
+    ]);
+    expect(await db.query(sql, ['other'])).toEqual([{ running: 1, waiting: 0, engine: null }]);
+  });
+
+  test('status-strip counts the factory’s runs waiting for a slot and names its newest pin’s engine', async () => {
+    await db.query(`INSERT INTO mc.capacity_waits (run_id, factory, workflow_name, since) VALUES
+      ('00000000-0000-0000-0000-0000000000b1', 'mission-control', 'archon-build-queue', now()),
+      ('00000000-0000-0000-0000-0000000000b2', 'other', 'archon-build-queue', now())`);
+    await db.query(`INSERT INTO mc.pins (sha, archon_sha, reason, committed_at) VALUES
+      ('p1', 'aaaa1111', 'older', '2026-01-01'), ('p2', 'bbbb2222', 'newer', '2026-02-01')`);
+    await db.query(`INSERT INTO mc.versions (factory, digest, first_run_at, pin_sha) VALUES
+      ('mission-control', 'd1', '2026-01-02', 'p1'), ('mission-control', 'd2', '2026-02-02', 'p2'),
+      ('other', 'd3', '2026-03-01', NULL)`);
+    const sql = queries.find(([name]) => name === 'status-strip')?.[1] as string;
+    const [mc] = await db.query(sql, ['mission-control']);
+    expect([mc?.waiting, mc?.engine]).toEqual([1, 'bbbb2222']);
+    const [other] = await db.query(sql, ['other']);
+    expect([other?.waiting, other?.engine]).toEqual([1, null]);
   });
 });
