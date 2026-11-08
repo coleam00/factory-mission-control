@@ -26,7 +26,7 @@ export function Pill({ state, live, compact, children, ...rest }: PillProps) {
   return (
     <span
       {...rest}
-      className={`inline-flex items-center ${compact ? 'gap-1 rounded-[5px] px-1.5 py-0.5' : 'gap-1.5 rounded-md px-2 py-1'} bg-[var(--v3-raised)] font-mono text-[length:var(--v3-t-micro)] leading-tight font-medium text-[var(--v3-fg-2)] [overflow-wrap:anywhere]`}
+      className={`inline-flex items-center ${compact ? 'gap-1 rounded-[5px] px-1.5 py-0.5 text-[11px]' : 'gap-1.5 rounded-md px-2 py-1 text-[length:var(--v3-t-micro)] leading-tight font-medium'} bg-[var(--v3-raised)] font-mono text-[var(--v3-fg-2)] [overflow-wrap:anywhere]`}
       style={state ? { background: stateWash(state), color: stateInk(state) } : undefined}
     >
       {live ? <StateDot state="running" small={compact} /> : null}

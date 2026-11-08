@@ -18,6 +18,7 @@ import {
   STEP_STATUS_STATE,
   VERDICT_STATE,
   QUEUE_ENDING_STATE,
+  QUEUE_REVIEW_STATE,
   GATE_OUTCOME_STATE,
   GATE_STATE,
   stateOf,
@@ -30,6 +31,13 @@ function packUnion(file: string, name: string): string[] {
   const text = readFileSync(`fixtures/pack/queue/sdlc/.shared/${file}`, 'utf8');
   const union = text.match(new RegExp(`export type ${name} = ([^;]+);`))?.[1] ?? '';
   return sorted([...union.matchAll(/'([^']+)'/g)].map((m) => m[1] ?? ''));
+}
+
+/** The words of the `export const <name> = [...] as const` tuple a pack file declares. */
+function packTuple(file: string, name: string): string[] {
+  const text = readFileSync(`fixtures/pack/queue/sdlc/.shared/${file}`, 'utf8');
+  const list = text.split(`export const ${name} = [`)[1]?.split(']')[0] ?? '';
+  return sorted([...list.matchAll(/'([^']+)'/g)].map((m) => m[1] ?? ''));
 }
 
 /** The quoted words in the first capture group of `pattern` over a file. */
@@ -63,6 +71,17 @@ test('a map holds exactly the values its source reads, so a new value fails here
   );
   expect(sorted(Object.keys(STEP_STATUS_STATE))).toEqual(
     quoted('db/migrations/0005_laps.sql', /status IN \(([^)]+)\)/),
+  );
+  const reviewActions = readFileSync(
+    'fixtures/pack/queue/sdlc/review/archon-review-block.yaml',
+    'utf8',
+  ).match(/action:\s+type: string\s+enum: \[([^\]]+)\]/)?.[1];
+  expect(sorted(Object.keys(QUEUE_REVIEW_STATE))).toEqual(
+    sorted((reviewActions ?? '').split(',').map((v) => v.trim())),
+  );
+  // 'idle' picks no item and 'launch' throws in apply.ts before a row is written, so neither is an ending.
+  expect(sorted(Object.keys(QUEUE_ENDING_STATE))).toEqual(
+    packTuple('build.ts', 'APPLY_DECISIONS').filter((d) => d !== 'idle' && d !== 'launch'),
   );
   const landed = readFileSync('fixtures/pack/sdlc/loop/scripts/land.ts', 'utf8');
   expect(sorted(Object.keys(GATE_STATE))).toEqual(

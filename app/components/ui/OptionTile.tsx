@@ -15,7 +15,7 @@ export function RecommendedTag({
       {...rest}
       className={
         badge
-          ? 'shrink-0 rounded bg-[var(--v3-you-wash)] px-1.5 py-px font-mono text-[length:var(--v3-t-micro)] font-semibold tracking-[0.04em] text-[color:var(--v3-you-2)] uppercase'
+          ? 'shrink-0 rounded bg-[var(--v3-you-wash)] px-1.5 py-px font-mono text-[10px] font-semibold tracking-[0.04em] text-[color:var(--v3-you-2)] uppercase'
           : 'ml-1.5 text-[length:var(--v3-t-micro)] font-semibold text-[color:var(--v3-you-2)]'
       }
     >

@@ -191,11 +191,14 @@ test('the compact Pill and the badge RecommendedTag keep the box the Board and D
   );
   expect(pill).toContain('gap-1 rounded-[5px] px-1.5 py-0.5');
   expect(pill).toContain('size-1.5');
+  expect(pill).toContain('text-[11px]');
+  expect(pill).not.toMatch(/leading-|font-medium/);
   expect(renderToStaticMarkup(<Pill>x</Pill>)).toContain('px-2 py-1');
   const tag = renderToStaticMarkup(<RecommendedTag badge>default</RecommendedTag>);
   expect(tag).toContain('shrink-0 rounded');
   expect(tag).toContain('px-1.5 py-px');
   expect(tag).toContain('uppercase');
+  expect(tag).toContain('text-[10px] font-semibold');
   expect(tag).not.toContain('ml-1.5');
   expect(nonV3Colors(pill + tag)).toEqual([]);
 });
