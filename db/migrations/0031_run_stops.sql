@@ -27,7 +27,8 @@ CREATE INDEX IF NOT EXISTS run_stops_factory_failed ON mc.run_stops (factory, si
 
 -- transient, environment, config, code or input; NULL when no pattern matches. The first match wins.
 -- PRD 4.8's three patterns read the raw text, as causeOf does; the others read it with run ids and
--- shas removed, so a hex run in an id cannot spell a word.
+-- shas removed, so a hex run in an id cannot spell a word. The code arm precedes the environment
+-- arm: a failing test whose line names a worktree path is still a code failure.
 CREATE OR REPLACE FUNCTION mc.stop_class(p_error text)
 RETURNS text LANGUAGE sql IMMUTABLE AS $$
   SELECT CASE
@@ -38,8 +39,8 @@ RETURNS text LANGUAGE sql IMMUTABLE AS $$
     WHEN e ~* 'deadlock detected|usage or credit limit|rate.?limit|too many requests|overloaded|HTTP 5[0-9]{2}|\m5[0-9]{2} (bad gateway|gateway|service unavailable|internal server)|bad gateway|gateway time-?out|service unavailable|ENOTFOUND|connection terminated|timeout exceeded when trying to connect|provider reported transient' THEN 'transient'
     WHEN e ~* 'provider reported auth|authenticat|configuration must be fixed|bad credentials|missing binding|no binding|binding [^ ]+ (is )?(missing|not set|undefined)|no schedule|schedule [^ ]+ (is )?(missing|not found)' THEN 'config'
     WHEN e ~* 'no issue matched|no matching issue|bad argument|invalid argument|unknown (option|argument)|missing required input' THEN 'input'
-    WHEN e ~* 'check must write|did not complete|no such file or directory|ENOSPC|no space left|not a git repository|worktree|checkout|stale|push [^ ]+ refused|refused: |non-fast-forward|fetch first|\[rejected\]|merge --no-edit' THEN 'environment'
     WHEN e ~* 'tests? failed|\m[0-9]+ (tests? )?fail|failing tests?|typecheck|type errors?|error TS[0-9]+|app check failed|app-check .*(FAIL|red)|finding|\mFAIL\M' THEN 'code'
+    WHEN e ~* 'check must write|did not complete|no such file or directory|ENOSPC|no space left|not a git repository|worktree|checkout|stale|push [^ ]+ refused|refused: |non-fast-forward|fetch first|\[rejected\]|merge --no-edit' THEN 'environment'
   END
   FROM (SELECT nullif(btrim(regexp_replace(regexp_replace(left(p_error, 8000),
       '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}', ' ', 'g'),

@@ -130,4 +130,19 @@ export const STOP_CORPUS: readonly (readonly [line: string, cls: StopClass, sour
     'code',
     'tsc',
   ],
+  [
+    'bun test: 3 tests failed in /worktrees/archon/task-42/app/lib/health.test.ts',
+    'code',
+    'review R1 (a code failure naming a worktree path)',
+  ],
+  [
+    'app-check FAIL: stale numbers shown on the board in checkout C:w\run-1',
+    'code',
+    'review R1 (a FAIL finding naming stale and a checkout)',
+  ],
+  [
+    'C:worktrees\task-42app\board.ts(12,5): error TS2322: Type string is not assignable to type number',
+    'code',
+    'review R1 (a type error under a worktree path)',
+  ],
 ];

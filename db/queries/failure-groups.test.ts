@@ -55,3 +55,27 @@ test('failure-groups orders daily oldest first and names the newest failure as t
   expect(new Date(g?.last_day as string).toISOString().slice(0, 10)).toBe('2026-10-25');
   expect(g?.latest_run_id).toBe(ids[1]);
 });
+
+test('failure-groups shows the latest run’s class, or mixed when the group’s runs differ', async () => {
+  const row = (n: number, cls: string, day: string) =>
+    db.query(
+      `INSERT INTO mc.run_stops (run_id, factory, workflow_name, status, step_id, line, class, signature, stopped_at, stopped_day)
+       VALUES ($1, $2, 'w', 'failed', 's', 'l', $3, $4, $5::timestamptz, $5::date)`,
+      [
+        `bbbbbbbb-0000-4000-8000-00000000000${n}`,
+        `class-proof`,
+        cls,
+        `sig-${cls === 'x' ? 0 : n > 2 ? 'b' : 'a'}`,
+        day,
+      ],
+    );
+  await row(1, 'transient', '2026-10-23');
+  await row(2, 'config', '2026-10-24');
+  await row(3, 'code', '2026-10-24');
+  await row(4, 'code', '2026-10-25');
+  const groups = await db.query(sql, ['class-proof']);
+  expect(Object.fromEntries(groups.map((g) => [g.signature, g.class]))).toEqual({
+    'sig-a': 'mixed',
+    'sig-b': 'code',
+  });
+});

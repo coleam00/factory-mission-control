@@ -48,6 +48,9 @@ test('mc.stop_signature ignores ids, numbers, paths and shas, and keeps steps an
     await sig('archon-build-queue', 'check', 'x'),
   );
   expect(await sig('w', 's', 'GET https://api.github.com/x failed')).toContain('https:');
+  expect(await sig('w', 's', 'gh: HTTP 504: Gateway Timeout')).toBe(
+    await sig('w', 's', 'gh: HTTP 401: Gateway Timeout'),
+  );
 });
 
 const NOW = new Date('2026-10-25T12:00:00Z');
@@ -204,4 +207,59 @@ test('0031 gives runs that finished before it a stop record', async () => {
   } finally {
     await historical.close();
   }
+});
+
+test('0031 records a run it cannot project in projection_errors and still finishes', async () => {
+  const historical = await archonDb();
+  try {
+    await runMigrations({ files: migrationFiles.filter((f) => f.name < '0031'), db: historical });
+    await historical.query(`CREATE TABLE mc.run_stops (
+      run_id uuid PRIMARY KEY, factory text NOT NULL,
+      workflow_name text NOT NULL CHECK (workflow_name <> 'archon-bad'),
+      status text NOT NULL CHECK (status IN ('completed', 'failed', 'cancelled', 'paused')),
+      step_id text, line text,
+      class text CHECK (class IN ('transient', 'environment', 'config', 'code', 'input')),
+      signature text, stopped_at timestamptz, stopped_day date)`);
+    const finished = async (workflow: string) =>
+      String(
+        (
+          await historical.query(
+            `INSERT INTO public.remote_agent_workflow_runs (workflow_name, status, user_message, completed_at)
+             VALUES ($1, 'failed', 'q', now()) RETURNING id`,
+            [workflow],
+          )
+        )[0]?.id,
+      );
+    const bad = await finished('archon-bad');
+    const good = await finished('archon-loop');
+
+    await runMigrations({ files: migrationFiles, db: historical });
+    expect(
+      (await historical.query('SELECT run_id FROM mc.run_stops')).map((r) => r.run_id),
+    ).toEqual([good]);
+    expect(
+      await historical.query(
+        `SELECT run_id, source FROM mc.projection_errors WHERE source = '0031_run_stops'`,
+      ),
+    ).toEqual([{ run_id: bad, source: '0031_run_stops' }]);
+  } finally {
+    await historical.close();
+  }
+});
+
+test('applying 0031 a second time changes nothing', async () => {
+  const snapshot = async () => ({
+    stops: await db.query('SELECT * FROM mc.run_stops ORDER BY run_id'),
+    errors: await db.query(
+      'SELECT source, run_id, message FROM mc.projection_errors ORDER BY 1, 2, 3',
+    ),
+    triggers: await db.query(
+      `SELECT tgname FROM pg_trigger WHERE tgname LIKE 'run_stops_%' ORDER BY tgname`,
+    ),
+  });
+  const before = await snapshot();
+  expect(before.stops.length).toBeGreaterThan(0);
+  const file = migrationFiles.find((f) => f.name.startsWith('0031_run_stops'));
+  await db.query(file?.sql ?? '');
+  expect(await snapshot()).toEqual(before);
 });

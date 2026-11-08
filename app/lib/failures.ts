@@ -5,7 +5,8 @@ export interface FailureGroupRow {
   signature: string;
   workflow_name: string;
   step_id: string | null;
-  class: StopClass | null;
+  /** The class of the latest run, or 'mixed' when the group's runs differ. */
+  class: StopClass | 'mixed' | null;
   failures: number;
   first_at: Date | null;
   last_at: Date | null;
