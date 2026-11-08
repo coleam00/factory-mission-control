@@ -8,8 +8,9 @@ writes. The product document is `docs/mission-control.prd.md`; it decides.
 
 ## Never
 
-1. Never write to GitHub, to Archon, to a factory's repository or to Archon's tables. v1 is
-   read-only toward everything it shows.
+1. Never write to GitHub, to Archon, to a factory's repository or to Archon's tables, except the
+   two writes of PRD invariant 2: answer a paused run's question and resume a run, each through the
+   factory's own Archon CLI, after a 5-second Undo, and recorded.
 2. Never slow or break an Archon write. Whatever this app adds to the database fails silently
    and is counted, never raised into Archon's transaction.
 3. Never store or show a holdout scenario's title, text, steps or thresholds. The factory no longer
@@ -20,7 +21,8 @@ writes. The product document is `docs/mission-control.prd.md`; it decides.
 6. Never let the map drift from the code. Its layout and wording are the owner's, authored in
    `app/map/factory-map.json`; what each card covers is checked against the pinned code, and step
    details are parsed from it.
-7. Never invent a look. The design is `docs/design/v2/` (the owner's mockup and its screenshots),
-   built on the Archon console's tokens (`docs/design/archon-console/`).
-8. Never become a second Archon console: one lap links to the console for its full log.
+7. Never invent a look. The design is `docs/design/v3/` (the owner's mockup, screenshots, tokens and
+   README); the factory map keeps the structure and wording of `docs/design/v2/`.
+8. Never become a second Archon console: a run shows why it stopped, its timeline and its two actions,
+   and links to the console for its full log.
 9. Never sum numbers across factories; each factory's numbers stand alone.

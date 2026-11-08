@@ -1,7 +1,7 @@
 ---
 title: "Factory Mission Control - PRD v1"
 type: prd
-status: APPROVED for the first factory run (2026-10-24; Cole delegated sign-off; decisions in plans/factory-mission-control-2026-10-24.md section 9; reviewed by a subagent against them the same evening). AMENDED 2026-11-03 for v2 (4.1 rewritten, 4.9 added, invariant 6, journey 1 and 8.3 changed; design in docs/design/v2/)
+status: APPROVED for the first factory run (2026-10-24; Cole delegated sign-off; decisions in plans/factory-mission-control-2026-10-24.md section 9; reviewed by a subagent against them the same evening). AMENDED 2026-11-03 for v2 (4.1 rewritten, 4.9 added, invariant 6, journey 1 and 8.3 changed; design in docs/design/v2/) AMENDED 2026-11-08 for v3 (4.10 added, invariant 2, section 5 and 8.3 changed; design in docs/design/v3/).
 created: 2026-10-24
 owner: Cole
 product: Factory Mission Control, the live dashboard of the AI Software Factory
@@ -265,10 +265,44 @@ Sequencing: the Factory map ships first (4.1), then its deeper views, then the v
 screen, then the screens above, and the screens they replace are removed last, each in its own issue.
 Until a screen's replacement merges, the old one stays and keeps working.
 
+### 4.10 Version 3: what needs me, and what should I do about it (owner decision 2026-11-08)
+
+**This overrides 4.9's places, its home and its Decisions and Laps screens.** Mission Control converges on the
+Archon frontend redesign. The design is `docs/design/v3/` (mockup, screenshots, tokens and a README that
+states what is binding).
+
+Three decisions of 2026-11-08:
+
+1. **Attention is home.** `/f/<factory>` opens on "N things need you", grouped by the action it needs:
+   - **Decide:** questions only the owner can answer, with the recommended option first.
+   - **Unstick:** work that stopped moving and one action moves it, for example a blocked item whose
+     blocker merged, or an answered run waiting for a slot.
+   - **Fix:** failures, grouped by cause.
+   - **Clean up**
+
+   The factory map moves to `/f/<factory>/map`, one click away.
+2. **A Manager on every place.** A docked chat (⌘J), aware of the page you are on, answers questions
+   about the factory and proposes actions. An agent runs it on the server, over the same data the
+   dashboard reads; it has read-only access to the data. Its credentials stay on the server
+   (invariant 7). Health, history and "did a change help" are asked here.
+3. **The dashboard may act, in two ways only.** It may **answer** a paused run's question and
+   **resume** a failed or paused run. Both run through that factory's own Archon CLI, after a
+   5-second Undo, and both are recorded. Everything else stays a link or a copied command.
+
+The places are:
+- **Attention** (home)
+- **Factory** (the v2 map)
+- **Board** (a pipeline of work items, work orders on top)
+- **Runs** (every run, with why it stopped; one run opens on the manager's read and its timeline)
+- **Manager**
+
+Old addresses redirect: `decisions` goes to Attention, `laps` to Runs. Every state has one name and
+one color. Violet means you, your manager and the recommended action. Amber is still not used.
+
 ## 5. Out of scope, forever
 
-- Writing to GitHub, Archon or any factory from the dashboard in v1: no answering, approving,
-  halting, launching or merging.
+- Writing to GitHub, Archon or any factory from the dashboard, beyond the two writes of invariant 2
+  (answer and resume): no approving outside a question, halting, launching, merging or re-triaging.
 - Rebuilding Archon's run log viewer. One lap links to the Archon console for the full stream.
 - Anything that requires changing the Archon engine or Archon's database schema.
 - User accounts, sharing, or hosting the dashboard UI outside the owner's machine in v1. (The
@@ -280,8 +314,11 @@ Until a screen's replacement merges, the old one stays and keeps working.
    views) can never make an Archon write fail or wait. A trigger catches its own errors and counts
    them in a table; it never raises. Triggers on Archon's tables fire only for step-level events
    (section 11.4).
-2. **Read-only toward the factories.** Nothing the dashboard runs writes to GitHub, to a factory's
-   repository, or to Archon's tables.
+2. **Two writes, no more (owner decision 2026-11-08).** The dashboard writes to a factory in exactly two
+   ways: answering a paused run's question and resuming a run. Each goes through that factory's own
+   Archon CLI, after a 5-second Undo, and is recorded in the dashboard's own table. Nothing else the
+   dashboard runs writes to GitHub, to a factory's repository, or to Archon's tables, and a test
+   proves there is no other write path.
 3. **Past holdout text stays hidden.** The factory no longer uses holdouts (4.1), but Archon's old rows
    still hold scenario text. The dashboard never copies or shows it, and shows no holdout at all on
    the v2 screens.
@@ -327,6 +364,10 @@ issue. The version strip equals the pin commits in the seed. The issue graph equ
 issues' `Depends on` lines.
 
 ### 8.3 Design contract
+
+**From 2026-11-08 the design is `docs/design/v3/` (4.10).** Its README, tokens and screenshots
+replace what follows wherever they disagree. The rules on comparing screenshots and on the design
+probe stay, with `docs/design/v3/refs/` as the reference.
 
 The dashboard is part of Archon to the eye: the Archon console's theme tokens, fonts (Geist, Geist
 Mono) and component shapes, copied from `docs/design/archon-console/`, with the v2 role colors of

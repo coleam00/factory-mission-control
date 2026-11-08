@@ -280,3 +280,55 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* Mission Control v3 tokens, copied from docs/design/v3/tokens.css (owner decision 2026-11-08). */
+:root {
+  /* surfaces */
+  --v3-bg: #0b0c10;
+  --v3-panel: #121318;
+  --v3-raised: #191c23;
+  --v3-sunk: #08090c;
+  --v3-line: #26272c;
+  --v3-line-2: #34363d;
+
+  /* text */
+  --v3-fg: #ecedf1;
+  --v3-fg-2: #a6a9b4;
+  --v3-fg-3: #7c808c;
+
+  /* you, your manager, the recommended action */
+  --v3-you: #8b7cf3;
+  --v3-you-2: #a597ff;
+  --v3-you-wash: #1d1b31;
+  --v3-you-line: #4a4290;
+
+  /* states: one name, one color (see README, "States") */
+  --v3-live: #50a1fd;
+  --v3-live-wash: #14202f;
+  --v3-done: #2cc6a0;
+  --v3-done-wash: #11231f;
+  --v3-failed: #f15850;
+  --v3-failed-wash: #2a171b;
+  --v3-failed-line: #5a2328;
+  --v3-idle: #8a8e99;
+  --v3-idle-wash: #1c1d22;
+
+  /* map roles, the Factory place only */
+  --v3-role-source: #38bdf8;
+  --v3-role-agent: #3b82f6;
+  --v3-role-test: #2cc6a0;
+  --v3-role-person: #8b7cf3;
+
+  /* five text sizes */
+  --v3-t-title: 26px;
+  --v3-t-head: 16px;
+  --v3-t-body: 14px;
+  --v3-t-meta: 13px;
+  --v3-t-micro: 11.5px;
+
+  /* shape */
+  --v3-radius-card: 10px;
+  --v3-radius-control: 7px;
+  --v3-nav-width: 216px;
+  --v3-manager-width: 384px;
+}

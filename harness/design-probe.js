@@ -2,7 +2,7 @@
 /**
  * The design probe (PRD 8.3). Loads a URL in a headless Chromium at 1440 px and 390 px and fails
  * on any computed color outside the tokens copied in docs/design/archon-console/ and the v2 role
- * colors in docs/design/v2/tokens.css, any rendered color in the amber hue range (except inside
+ * colors in docs/design/v2/tokens.css and docs/design/v3/tokens.css, any rendered color in the amber hue range (except inside
  * `[data-v1-screen]`, the v1 screens #321 retires), any text font other than Geist or Geist Mono, a
  * browser-default control, text contrast below 4.5:1, horizontal overflow, and any interactive element without an accessible name. It checks the
  * page as first rendered and, when a live panel was still loading (`data-state="loading"`), again
@@ -31,11 +31,15 @@ const STEP_TIMEOUT_MS = 20000;
  * cold start and leaves a 60 s test budget room for the page checks.
  */
 const PORT_TIMEOUT_MS = 45000;
-/** The console's tokens, then the v2 role colors laid over them (docs/design/v2/README.md). */
+/**
+ * The console's tokens, the v2 role colors laid over them (docs/design/v2/README.md), and the v3
+ * surfaces, states and violet (docs/design/v3/README.md, owner decision 2026-11-08).
+ */
 export const TOKEN_SOURCES = [
   ['archon-console', 'index.css'],
   ['archon-console', 'theme.css'],
   ['v2', 'tokens.css'],
+  ['v3', 'tokens.css'],
 ].map((path) => resolve(import.meta.dir, '..', 'docs', 'design', ...path));
 
 class ProbeError extends Error {}
