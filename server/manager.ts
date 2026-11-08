@@ -23,6 +23,7 @@ import {
   MAX_PROPOSALS,
   MAX_RUNS,
   type ManagerEvent,
+  type NoticeKind,
   parseBlock,
   type RawStructure,
   type RunSummary,
@@ -322,7 +323,7 @@ const microdollars = (amount: number) => Math.round(amount * 1e6) / 1e6;
 
 const usd = (amount: number) => `$${amount.toFixed(2)}`;
 
-const NOTICES = {
+const NOTICES: Record<NoticeKind, (m: Manager) => string> = {
   'day-cap': (m: Manager) =>
     `Today's Manager budget of ${usd(m.settings.dayCapUsd)} is spent. It resets at midnight.`,
   'message-cap': (m: Manager) =>
@@ -336,7 +337,7 @@ const NOTICES = {
     'The links and buttons for this answer could not be built. The server log has the details.',
 };
 
-function notice(manager: Manager, kind: keyof typeof NOTICES): ManagerEvent {
+function notice(manager: Manager, kind: NoticeKind): ManagerEvent {
   return { type: 'notice', kind, text: NOTICES[kind](manager) };
 }
 
@@ -447,6 +448,10 @@ async function proposalEvent(
     }
     if (raw.text === undefined || raw.text.length < 1 || raw.text.length > 2000) return undefined;
     return { ...base, occurrence, option: null, text: raw.text, label: 'Answer with your text' };
+  }
+  if (raw.action !== 'resume') {
+    const unknown: never = raw.action;
+    throw new Error(`unknown proposal action ${unknown}`);
   }
   const [lap] = await lookup(
     manager,
@@ -571,7 +576,16 @@ async function produce(
     console.error(`manager failed: ${error instanceof Error ? error.message : error}`);
   } finally {
     signal.removeEventListener('abort', abort);
-    if (cwd) rmSync(cwd, { recursive: true, force: true });
+    if (cwd) {
+      // On Windows the killed CLI can still hold its cwd; a failed cleanup must not skip the refund.
+      try {
+        rmSync(cwd, { recursive: true, force: true });
+      } catch (error) {
+        console.error(
+          `manager temp dir not removed: ${error instanceof Error ? error.message : error}`,
+        );
+      }
+    }
   }
   if (stop === 'error' && !failed && !resulted) console.error('manager run ended without a result');
   const { text, block } = splitter.end();

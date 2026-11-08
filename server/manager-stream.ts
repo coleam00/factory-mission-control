@@ -46,6 +46,10 @@ export type ManagerEvent =
       cached?: boolean;
     };
 
+export type NoticeKind = Extract<ManagerEvent, { type: 'notice' }>['kind'];
+export type ProposalAction = Extract<ManagerEvent, { type: 'proposal' }>['action'];
+export type LinkKind = Extract<ManagerEvent, { type: 'link' }>['kind'];
+
 /** At most this many runs in one `runs` event. */
 export const MAX_RUNS = 8;
 /** At most this many proposals in one answer. */
@@ -69,10 +73,10 @@ export function encodeEvent(event: ManagerEvent): string {
  * server checks every entry against the database before it becomes an event.
  */
 export interface RawStructure {
-  links: { kind: 'run' | 'item'; id: string | number }[];
+  links: { kind: LinkKind; id: string | number }[];
   runs: string[];
   proposals: {
-    action: 'answer' | 'resume';
+    action: ProposalAction;
     run_id: string;
     option?: string;
     text?: string;

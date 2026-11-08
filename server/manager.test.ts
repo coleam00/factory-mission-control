@@ -269,6 +269,56 @@ describe('the chat endpoint against a stubbed model', () => {
     expect(got[1]).toMatchObject({ kind: 'message-cap', text: expect.stringContaining('$0.50') });
   });
 
+  test('a run stopped by what is left of the day says the day is spent', async () => {
+    const played = model(async () => [
+      start,
+      delta('Partial'),
+      result(0.2, 'error_max_budget_usd'),
+    ]);
+    const got = await events(
+      await chat(managerOf(played, { MC_MANAGER_DAY_USD: '0.2', MC_MANAGER_MESSAGE_USD: '0.5' })),
+    );
+    expect(played.options[0]?.maxBudgetUsd).toBe(0.2);
+    expect(got.find((e) => e.type === 'notice')).toMatchObject({ kind: 'day-cap' });
+  });
+
+  test('drops a proposal whose action is neither answer nor resume', async () => {
+    const block = JSON.stringify({
+      proposals: [
+        { action: 'cancel', run_id: FAILED_RUN },
+        { action: 'delete', run_id: FAILED_RUN },
+      ],
+    });
+    const played = model(async () => [
+      start,
+      delta(`Done.
+${FENCE}mc
+${block}
+${FENCE}
+`),
+      result(0.01),
+    ]);
+    const got = await events(await chat(managerOf(played)));
+    expect(got.filter((e) => e.type === 'proposal')).toEqual([]);
+  });
+
+  test('a temp dir that cannot be removed does not turn the answer into a failure', async () => {
+    const fs = await import('node:fs');
+    const played = model(async () => [start, delta('fine'), result(0.01)]);
+    const log = spyOn(console, 'error').mockImplementation(() => {});
+    const blocked = spyOn(fs, 'rmSync').mockImplementation(() => {
+      throw new Error('EBUSY');
+    });
+    try {
+      const got = await events(await chat(managerOf(played)));
+      expect(got.map((e) => e.type)).toEqual(['text', 'done']);
+      expect(log).toHaveBeenCalledWith(expect.stringContaining('EBUSY'));
+    } finally {
+      blocked.mockRestore();
+      log.mockRestore();
+    }
+  });
+
   test('a day cap stops the agent being called and the next day resets it', async () => {
     clock = new Date('2026-11-08T10:00:00');
     const played = model(async () => [start, delta('ok'), result(0.015)]);
