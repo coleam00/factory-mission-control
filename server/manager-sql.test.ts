@@ -14,9 +14,9 @@ const select = (text: string) => adHocSelect(fixture.db, text, MANAGER_LIMITS);
 describe('the ad hoc SELECT', () => {
   test('reads mc, accepts a trailing semicolon or comment, and caps its rows', async () => {
     expect((await select('SELECT run_id::text AS id FROM mc.laps ORDER BY 1;')).rows).toHaveLength(
-      2,
+      3,
     );
-    expect((await select('-- all\nSELECT 1 AS n FROM mc.laps -- done')).rows).toHaveLength(2);
+    expect((await select('-- all\nSELECT 1 AS n FROM mc.laps -- done')).rows).toHaveLength(3);
     const capped = await adHocSelect(fixture.db, 'SELECT * FROM mc.laps', {
       ...MANAGER_LIMITS,
       rowCap: 1,
@@ -72,5 +72,5 @@ test('a named query takes its parameters and the same read-only transaction', as
       MANAGER_LIMITS,
     ),
   ).rejects.toThrow();
-  expect((await snapshot(fixture.direct)).laps).toHaveLength(2);
+  expect((await snapshot(fixture.direct)).laps).toHaveLength(3);
 });

@@ -1,9 +1,11 @@
-import { afterAll, beforeAll, describe, expect, setDefaultTimeout, test } from 'bun:test';
+import { afterAll, beforeAll, describe, expect, setDefaultTimeout, spyOn, test } from 'bun:test';
 import type { Options, SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import { snapshot } from '../db/test-db';
 import { createApp } from './app';
 import { type AgentRunner, createManager, type Manager, managerSettings } from './manager';
 import {
+  ELSEWHERE_FAILED,
+  ELSEWHERE_WAITING,
   FACTORY,
   FAILED_RUN,
   type ManagerDb,
@@ -28,13 +30,21 @@ const STRUCTURE = {
     { kind: 'run', id: FAILED_RUN },
     { kind: 'item', id: 514 },
     { kind: 'item', id: 9999 },
+    { kind: 'run', id: ELSEWHERE_FAILED },
+    { kind: 'item', id: 600 },
   ],
-  runs: [FAILED_RUN, ghost, OTHER_RUN],
+  runs: [FAILED_RUN, ghost, OTHER_RUN, ELSEWHERE_FAILED],
   proposals: [
-    { action: 'answer', run_id: WAITING_RUN, option: 'yes' },
+    // Another factory's runs, a finished run, an unknown step and an unknown option are all dropped.
+    { action: 'answer', run_id: ELSEWHERE_WAITING, option: 'yes' },
+    { action: 'resume', run_id: ELSEWHERE_FAILED },
+    { action: 'resume', run_id: OTHER_RUN },
+    { action: 'resume', run_id: FAILED_RUN, from_step: 'nope' },
     { action: 'answer', run_id: WAITING_RUN, option: 'maybe' },
-    { action: 'resume', run_id: FAILED_RUN, from_step: 'implement' },
     { action: 'resume', run_id: ghost },
+    { action: 'answer', run_id: WAITING_RUN, option: 'yes' },
+    { action: 'answer', run_id: WAITING_RUN, text: 'Something else' },
+    { action: 'resume', run_id: FAILED_RUN, from_step: 'implement' },
   ],
 };
 
@@ -49,6 +59,7 @@ const result = (cost: number, subtype = 'success') =>
     type: 'result',
     subtype,
     is_error: subtype !== 'success',
+    errors: [`stopped: ${subtype}`],
     total_cost_usd: cost,
   }) as unknown as SDKMessage;
 
@@ -163,6 +174,7 @@ describe('the chat endpoint against a stubbed model', () => {
       'runs',
       'proposal',
       'proposal',
+      'proposal',
       'done',
     ]);
     expect(got[0]).toEqual({ type: 'text', text: 'Two things need you.\n' });
@@ -185,6 +197,16 @@ describe('the chat endpoint against a stubbed model', () => {
         option: 'yes',
         text: null,
         label: 'Answer "Ship it"',
+      },
+      {
+        type: 'proposal',
+        action: 'answer',
+        factory: FACTORY,
+        run_id: WAITING_RUN,
+        occurrence: 'ask',
+        option: null,
+        text: 'Something else',
+        label: 'Answer with your text',
       },
       {
         type: 'proposal',
@@ -263,6 +285,135 @@ describe('the chat endpoint against a stubbed model', () => {
   });
 });
 
+describe('the day cap', () => {
+  /** A model that stays in flight until `release()`. */
+  function held(cost: number) {
+    let release = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const played = model(async () => {
+      await gate;
+      return [start, delta('ok'), result(cost)];
+    });
+    return { played, release };
+  }
+  const started = async (played: Played, count: number) => {
+    while (played.prompts.length < count) await Bun.sleep(10);
+  };
+
+  test('is shared by requests in flight together', async () => {
+    clock = new Date('2026-11-08T10:00:00');
+    const { played, release } = held(0.01);
+    const manager = managerOf(played, {
+      MC_MANAGER_MESSAGE_USD: '0.1',
+      MC_MANAGER_DAY_USD: '0.15',
+    });
+    const first = chat(manager).then(events);
+    await started(played, 1);
+    const second = chat(manager).then(events);
+    await started(played, 2);
+    const third = await events(await chat(manager));
+    expect(played.options.map((o) => o.maxBudgetUsd)).toEqual([0.1, expect.closeTo(0.05, 5)]);
+    expect(third.map((e) => e.type)).toEqual(['notice', 'done']);
+    expect(third[0]).toMatchObject({ kind: 'day-cap' });
+    release();
+    await Promise.all([first, second]);
+  });
+
+  test('counts the ceiling of a run the client abandoned', async () => {
+    clock = new Date('2026-11-08T10:00:00');
+    const played = model(
+      (options) =>
+        new Promise((_, reject) =>
+          options.abortController?.signal.addEventListener('abort', () =>
+            reject(new Error('aborted')),
+          ),
+        ),
+    );
+    const gone = new AbortController();
+    const app = createApp({ buildId: 't', distDir: '.', manager: managerOf(played) });
+    const pending = Promise.resolve(
+      app.request('/api/manager/chat', {
+        method: 'POST',
+        signal: gone.signal,
+        body: JSON.stringify({
+          factory: FACTORY,
+          context: { place: 'runs' },
+          messages: [{ role: 'owner', text: 'what failed today?' }],
+        }),
+      }),
+    ).then(events);
+    await started(played, 1);
+    gone.abort();
+    expect((await pending).at(-1)).toMatchObject({
+      type: 'done',
+      cost_usd: 0.5,
+      day_spent_usd: 0.5,
+    });
+  });
+});
+
+describe('a run that does not succeed', () => {
+  test('is logged, because the notice sends the owner to the log', async () => {
+    const log = spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const got = await events(
+        await chat(managerOf(model(async () => [start, result(0.01, 'error_max_turns')]))),
+      );
+      expect(got.map((e) => e.type)).toEqual(['notice', 'done']);
+      expect(log).toHaveBeenCalledWith(expect.stringContaining('error_max_turns'));
+    } finally {
+      log.mockRestore();
+    }
+  });
+
+  test('names the missing credential when none is set', async () => {
+    const kept = { ...process.env };
+    const failing = () => model(async () => [start, result(0, 'error_during_execution')]);
+    const log = spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      delete process.env.CLAUDE_CODE_OAUTH_TOKEN;
+      delete process.env.ANTHROPIC_API_KEY;
+      const without = await chat(managerOf(failing()));
+      expect(await without.text()).toContain('CLAUDE_CODE_OAUTH_TOKEN');
+      process.env.CLAUDE_CODE_OAUTH_TOKEN = 'token';
+      const withToken = await chat(managerOf(failing()));
+      expect(await withToken.text()).not.toContain('CLAUDE_CODE_OAUTH_TOKEN');
+    } finally {
+      log.mockRestore();
+      for (const name of ['CLAUDE_CODE_OAUTH_TOKEN', 'ANTHROPIC_API_KEY']) {
+        if (kept[name] === undefined) delete process.env[name];
+        else process.env[name] = kept[name];
+      }
+    }
+  });
+});
+
+describe('over a real server', () => {
+  test('an answer that is silent for longer than the idle timeout still arrives', async () => {
+    const played = model(async () => {
+      await Bun.sleep(4000);
+      return [start, delta('late'), result(0.01)];
+    });
+    const app = createApp({ buildId: 't', distDir: '.', manager: managerOf(played) });
+    const server = Bun.serve({ port: 0, idleTimeout: 1, fetch: app.fetch });
+    try {
+      const res = await fetch(`http://127.0.0.1:${server.port}/api/manager/chat`, {
+        method: 'POST',
+        body: JSON.stringify({
+          factory: FACTORY,
+          context: { place: 'runs' },
+          messages: [{ role: 'owner', text: 'hello' }],
+        }),
+      });
+      expect((await events(res)).map((e) => e.type)).toEqual(['text', 'done']);
+    } finally {
+      await server.stop(true);
+    }
+  });
+});
+
 describe('secrets', () => {
   const secrets = {
     NEON_REALTIME_SECRET: 'nrt_sample_secret',
@@ -311,6 +462,54 @@ describe('the briefing', () => {
     expect(second.slice(0, -1)).toEqual(first.slice(0, -1));
     expect(played.prompts).toHaveLength(1);
     await ask(true);
+    expect(played.prompts).toHaveLength(2);
+  });
+
+  const briefingOf = (manager: Manager) => async (refresh?: boolean) =>
+    events(
+      await createApp({ buildId: 't', distDir: '.', manager }).request('/api/manager/briefing', {
+        method: 'POST',
+        body: JSON.stringify({ factory: FACTORY, refresh }),
+      }),
+    );
+
+  test('a failed briefing is not kept for the day', async () => {
+    clock = new Date('2026-11-08T10:00:00');
+    const log = spyOn(console, 'error').mockImplementation(() => {});
+    let calls = 0;
+    const played = model(async () => {
+      if (calls++ === 0) throw new Error('boom');
+      return [start, delta('fine'), result(0.01)];
+    });
+    const ask = briefingOf(managerOf(played));
+    try {
+      expect((await ask()).map((e) => e.type)).toEqual(['notice', 'done']);
+    } finally {
+      log.mockRestore();
+    }
+    expect((await ask()).at(-1)).toMatchObject({ cached: false });
+    expect((await ask()).at(-1)).toMatchObject({ cached: true });
+  });
+
+  test('two askers at once share one generation', async () => {
+    clock = new Date('2026-11-08T10:00:00');
+    const played = model(async () => {
+      await Bun.sleep(200);
+      return [start, delta('fine'), result(0.01)];
+    });
+    const ask = briefingOf(managerOf(played));
+    const both = await Promise.all([ask(), ask()]);
+    expect(played.prompts).toHaveLength(1);
+    expect(both.map((got) => got.at(-1))).toMatchObject([{ type: 'done' }, { type: 'done' }]);
+  });
+
+  test('is made again the next day', async () => {
+    clock = new Date('2026-11-08T10:00:00');
+    const played = answering();
+    const ask = briefingOf(managerOf(played));
+    await ask();
+    clock = new Date('2026-11-09T10:00:00');
+    expect((await ask()).at(-1)).toMatchObject({ cached: false });
     expect(played.prompts).toHaveLength(2);
   });
 });

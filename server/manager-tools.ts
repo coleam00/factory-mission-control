@@ -15,6 +15,14 @@ import {
  * does not declare; newline-delimited JSON-RPC needs nothing. Both tools only read.
  */
 
+/** The MCP server's key and the two tool names, as the SDK qualifies them: `mcp__<server>__<tool>`. */
+export const TOOL_SERVER = 'mc';
+export const LIVE_QUERY_TOOL = 'live_query';
+export const SELECT_TOOL = 'select';
+export const READ_TOOL_NAMES = [LIVE_QUERY_TOOL, SELECT_TOOL].map(
+  (name) => `mcp__${TOOL_SERVER}__${name}`,
+);
+
 export interface ToolContext {
   db: Db;
   /** The request's factory: bound by the server, never chosen by the agent. */
@@ -36,7 +44,7 @@ export function readTools(queries: Map<string, string>) {
     .join(', ');
   return [
     {
-      name: 'live_query',
+      name: LIVE_QUERY_TOOL,
       description:
         "Run one of the dashboard's named queries for the current factory. Each takes the " +
         `listed number of extra string arguments after the factory. Names: ${listing}.`,
@@ -50,7 +58,7 @@ export function readTools(queries: Map<string, string>) {
       },
     },
     {
-      name: 'select',
+      name: SELECT_TOOL,
       description:
         'Run one SELECT (or WITH ... SELECT) over the mc schema. Only mc may be read; at most ' +
         `${MANAGER_LIMITS.rowCap} rows come back and a statement over ` +
@@ -86,11 +94,11 @@ export async function callTool(
   input: Record<string, unknown>,
 ): Promise<ToolResult> {
   try {
-    if (name === 'select') {
+    if (name === SELECT_TOOL) {
       if (typeof input.sql !== 'string') return text('sql must be a string', true);
       return text(rowsText(await adHocSelect(db, input.sql, MANAGER_LIMITS)));
     }
-    if (name === 'live_query') {
+    if (name === LIVE_QUERY_TOOL) {
       const sql = typeof input.name === 'string' ? queries.get(input.name) : undefined;
       if (sql === undefined) return text('unknown live query', true);
       const args = stringArgs(input.args);
@@ -117,7 +125,7 @@ export async function handleMessage(context: ToolContext, msg: Message): Promise
     return reply({
       protocolVersion: msg.params?.protocolVersion,
       capabilities: { tools: {} },
-      serverInfo: { name: 'mc', version: '1' },
+      serverInfo: { name: TOOL_SERVER, version: '1' },
     });
   }
   if (msg.method === 'tools/list') return reply({ tools: readTools(context.queries) });

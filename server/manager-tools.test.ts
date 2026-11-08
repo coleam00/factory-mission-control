@@ -2,6 +2,7 @@ import { afterAll, beforeAll, expect, test } from 'bun:test';
 import { join } from 'node:path';
 import { snapshot } from '../db/test-db';
 import { FACTORY, type ManagerDb, startManagerDb } from './manager-fixture';
+import { READ_TOOL_NAMES } from './manager-tools';
 
 interface ToolsResult {
   tools: { name: string }[];
@@ -53,7 +54,8 @@ test('the tool server offers exactly the two read tools and refuses a write', as
     call(7, 'delete_everything', {}),
   ]);
   const byId = new Map(answers.map((a) => [a.id, a.result]));
-  expect(byId.get(2)?.tools.map((t: { name: string }) => t.name)).toEqual(['live_query', 'select']);
+  const offered = byId.get(2)?.tools.map((t: { name: string }) => `mcp__mc__${t.name}`);
+  expect(offered).toEqual(READ_TOOL_NAMES);
   const rows = JSON.parse(byId.get(3)?.content[0]?.text ?? '{}').rows;
   expect(rows.map((r: { message: string }) => r.message)).toEqual(['Ship?']);
   for (const id of [4, 5, 6, 7]) expect(byId.get(id)?.isError).toBe(true);

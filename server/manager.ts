@@ -7,7 +7,10 @@ import {
   type SDKMessage,
   type CanUseTool as SdkCanUseTool,
 } from '@anthropic-ai/claude-agent-sdk';
-import type { Hono } from 'hono';
+import type { Server } from 'bun';
+import type { Context, Hono } from 'hono';
+import { parseChoices } from '../app/lib/attention';
+import { workItemHref } from '../app/lib/work-item';
 import { type Db, openDb } from '../scripts/lib/db';
 import type { Env } from './check-env';
 import { readFactoryNames } from './factories';
@@ -22,6 +25,7 @@ import {
   type RawStructure,
   type RunSummary,
 } from './manager-stream';
+import { READ_TOOL_NAMES, TOOL_SERVER } from './manager-tools';
 
 const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'] as const;
 
@@ -172,8 +176,6 @@ export function parseChat(body: unknown, factories: string[]): ChatRequest | str
   };
 }
 
-export const READ_TOOL_NAMES = ['mcp__mc__live_query', 'mcp__mc__select'];
-
 const PASSED_TO_CLI = [
   'PATH',
   'HOME',
@@ -194,6 +196,11 @@ function pick(env: NodeJS.ProcessEnv, names: string[]): Record<string, string> {
     if (value !== undefined) out[name] = value;
   }
   return out;
+}
+
+/** The machine's own Claude login is not in the environment, so this can only say "none set". */
+function hasCredential(env: NodeJS.ProcessEnv): boolean {
+  return Boolean(env.CLAUDE_CODE_OAUTH_TOKEN || env.ANTHROPIC_API_KEY);
 }
 
 const canUseTool: SdkCanUseTool = async (name, input) =>
@@ -224,7 +231,7 @@ export function buildOptions(
     permissionMode: 'dontAsk',
     canUseTool,
     mcpServers: {
-      mc: {
+      [TOOL_SERVER]: {
         type: 'stdio',
         command: process.execPath,
         args: [join(import.meta.dir, 'manager-tools.ts')],
@@ -294,6 +301,9 @@ function renderConversation(messages: ChatRequest['messages']): string {
   return messages.map((m) => `${m.role === 'owner' ? 'Owner' : 'Manager'}: ${m.text}`).join('\n\n');
 }
 
+/** Settling by differences leaves float dust that would show in the owner's spend. */
+const microdollars = (amount: number) => Math.round(amount * 1e6) / 1e6;
+
 const usd = (amount: number) => `$${amount.toFixed(2)}`;
 
 const NOTICES = {
@@ -301,7 +311,11 @@ const NOTICES = {
     `Today's Manager budget of ${usd(m.settings.dayCapUsd)} is spent. It resets at midnight.`,
   'message-cap': (m: Manager) =>
     `This answer stopped at the ${usd(m.settings.messageCapUsd)} limit for one message. Ask a narrower question.`,
-  unavailable: () => 'The Manager could not answer right now. The server log has the details.',
+  unavailable: () =>
+    'The Manager could not answer right now. The server log has the details.' +
+    (hasCredential(process.env)
+      ? ''
+      : ' Neither CLAUDE_CODE_OAUTH_TOKEN nor ANTHROPIC_API_KEY is set on the server: set CLAUDE_CODE_OAUTH_TOKEN, or log in to Claude on the machine that runs it.'),
 };
 
 function notice(manager: Manager, kind: keyof typeof NOTICES): ManagerEvent {
@@ -311,7 +325,7 @@ function notice(manager: Manager, kind: keyof typeof NOTICES): ManagerEvent {
 type Emit = (event: ManagerEvent) => void;
 
 function runHref(factory: string, id: string): string {
-  return `/f/${factory}/laps/${id}`;
+  return `/f/${encodeURIComponent(factory)}/laps/${id}`;
 }
 
 async function lookup(manager: Manager, sql: string, params: unknown[]) {
@@ -378,19 +392,11 @@ async function linkEvents(manager: Manager, factory: string, links: RawStructure
         kind: 'item',
         id: number,
         label: `#${number} ${row.title}`,
-        href: `/f/${factory}/work/${number}`,
+        href: workItemHref(factory, number),
       });
     }
   }
   return events;
-}
-
-function parseJson(value: unknown): unknown {
-  try {
-    return JSON.parse(String(value));
-  } catch {
-    return undefined;
-  }
 }
 
 /**
@@ -407,7 +413,7 @@ async function proposalEvent(
   if (raw.action === 'answer') {
     const [row] = await lookup(
       manager,
-      `SELECT node_id, options::text AS options, labels::text AS labels
+      `SELECT node_id, options::text AS options
          FROM mc.attention_items WHERE factory = $1 AND run_id::text = $2`,
       [factory, runId],
     );
@@ -415,16 +421,15 @@ async function proposalEvent(
     const base = { type: 'proposal', action: 'answer', factory, run_id: runId } as const;
     const occurrence = String(row.node_id);
     if (raw.option !== undefined) {
-      const options = parseJson(row.options);
-      const known =
-        Array.isArray(options) && options.some((o) => isRecord(o) && o.id === raw.option);
-      if (!known) return undefined;
-      const labels = parseJson(row.labels);
-      const named =
-        isRecord(labels) && typeof labels[raw.option] === 'string'
-          ? labels[raw.option]
-          : raw.option;
-      return { ...base, occurrence, option: raw.option, text: null, label: `Answer "${named}"` };
+      const choice = parseChoices(String(row.options)).find((o) => o.id === raw.option);
+      if (!choice) return undefined;
+      return {
+        ...base,
+        occurrence,
+        option: choice.id,
+        text: null,
+        label: `Answer "${choice.label ?? choice.id}"`,
+      };
     }
     if (raw.text === undefined || raw.text.length < 1 || raw.text.length > 2000) return undefined;
     return { ...base, occurrence, option: null, text: raw.text, label: 'Answer with your text' };
@@ -491,10 +496,14 @@ async function produce(
     return { ok: false, cost: 0 };
   }
   const maxBudgetUsd = Math.min(manager.settings.messageCapUsd, left);
+  // The ceiling is spent from the day's tally before the run, so requests in flight together
+  // cannot each count on the same money; it is settled to the real cost only when one arrives.
+  const tally = manager.spend;
+  tally.usd = microdollars(tally.usd + maxBudgetUsd);
   const abortController = new AbortController();
   const abort = () => abortController.abort();
   signal.addEventListener('abort', abort);
-  const cwd = mkdtempSync(join(tmpdir(), 'mc-manager-'));
+  let cwd: string | undefined;
   const splitter = new AnswerSplitter();
   let wrote = false;
   let started = false;
@@ -504,9 +513,12 @@ async function produce(
       emit({ type: 'text', text });
     }
   };
-  let cost = 0;
+  let cost = maxBudgetUsd;
+  let failed = false;
+  let resulted = false;
   let stop: 'success' | 'budget' | 'error' = 'error';
   try {
+    cwd = mkdtempSync(join(tmpdir(), 'mc-manager-'));
     const prompt = renderConversation(request.messages);
     const system = systemPrompt(manager, request, await describeSchema(manager));
     const messages = manager.run({
@@ -528,28 +540,37 @@ async function produce(
           show(splitter.push(event.delta.text));
         }
       } else if (message.type === 'result') {
+        resulted = true;
+        tally.usd = microdollars(tally.usd + message.total_cost_usd - cost);
         cost = message.total_cost_usd;
         if (message.subtype === 'success' && !message.is_error) stop = 'success';
         else if (message.subtype === 'error_max_budget_usd') stop = 'budget';
+        else {
+          const reason = 'result' in message ? message.result : message.errors.join('; ');
+          console.error(`manager run ended with ${message.subtype}: ${reason}`);
+        }
       }
     }
   } catch (error) {
     // Upstream text can carry a connection string: it stays in the log.
+    failed = true;
     console.error(`manager failed: ${error instanceof Error ? error.message : error}`);
   } finally {
     signal.removeEventListener('abort', abort);
-    rmSync(cwd, { recursive: true, force: true });
+    if (cwd) rmSync(cwd, { recursive: true, force: true });
   }
-  manager.spend.usd = spentToday(manager) + cost;
+  if (stop === 'error' && !failed && !resulted) console.error('manager run ended without a result');
   const { text, block } = splitter.end();
   show(text);
   if (stop === 'error') {
     emit(notice(manager, 'unavailable'));
     return { ok: false, cost };
   }
+  let structured = true;
   try {
     for (const event of await structureEvents(manager, request.factory, block)) emit(event);
   } catch (error) {
+    structured = false;
     console.error(`manager structure failed: ${error instanceof Error ? error.message : error}`);
   }
   if (stop === 'budget') {
@@ -557,7 +578,7 @@ async function produce(
       notice(manager, maxBudgetUsd < manager.settings.messageCapUsd ? 'day-cap' : 'message-cap'),
     );
   }
-  return { ok: stop === 'success', cost };
+  return { ok: stop === 'success' && structured, cost };
 }
 
 function done(manager: Manager, cost: number, extra: Partial<ManagerEvent> = {}): ManagerEvent {
@@ -642,6 +663,14 @@ export function briefing(manager: Manager, factory: string, refresh: boolean): R
   });
 }
 
+/**
+ * Bun closes a request after 10 idle seconds, and an answer or briefing is silent while the model
+ * works. Under `Bun.serve` the server is Hono's `c.env`; `app.request` has none.
+ */
+function keepOpen(c: Context): void {
+  (c.env as Server<unknown> | undefined)?.timeout(c.req.raw, 0);
+}
+
 const NOT_CONFIGURED = { error: 'the manager is not configured' };
 
 export function managerRoutes(app: Hono, manager: Manager | undefined): void {
@@ -649,6 +678,7 @@ export function managerRoutes(app: Hono, manager: Manager | undefined): void {
     if (!manager) return c.json(NOT_CONFIGURED, 503);
     const request = parseChat(await c.req.json().catch(() => undefined), manager.factories);
     if (typeof request === 'string') return c.json({ error: request }, 400);
+    keepOpen(c);
     return answer(manager, request, c.req.raw.signal);
   });
 
@@ -660,6 +690,7 @@ export function managerRoutes(app: Hono, manager: Manager | undefined): void {
       return c.json({ error: 'unknown factory' }, 400);
     }
     const refresh = isRecord(body) && body.refresh === true;
+    keepOpen(c);
     return briefing(manager, factory, refresh);
   });
 }
