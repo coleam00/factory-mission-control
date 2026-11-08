@@ -427,13 +427,13 @@ async function proposalEvent(
   if (raw.action === 'answer') {
     const [row] = await lookup(
       manager,
-      `SELECT node_id, options::text AS options
+      `SELECT occurrence_id, options::text AS options
          FROM mc.attention_items WHERE factory = $1 AND run_id::text = $2`,
       [factory, runId],
     );
-    if (!row) return undefined;
+    if (!row || row.occurrence_id === null) return undefined;
     const base = { type: 'proposal', action: 'answer', factory, run_id: runId } as const;
-    const occurrence = String(row.node_id);
+    const occurrence = String(row.occurrence_id);
     if (raw.option !== undefined) {
       const choice = parseChoices(String(row.options)).find((o) => o.id === raw.option);
       if (!choice) return undefined;

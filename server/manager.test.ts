@@ -13,7 +13,7 @@ import {
   startManagerDb,
   WAITING_RUN,
 } from './manager-fixture';
-import type { ManagerEvent } from './manager-stream';
+import { MAX_PROPOSALS, MAX_RUNS, type ManagerEvent } from './manager-stream';
 
 // Each answer that calls a tool starts a `bun` subprocess, which takes seconds on Windows.
 setDefaultTimeout(30_000);
@@ -193,7 +193,7 @@ describe('the chat endpoint against a stubbed model', () => {
         action: 'answer',
         factory: FACTORY,
         run_id: WAITING_RUN,
-        occurrence: 'ask',
+        occurrence: 'pause-ask-1',
         option: 'yes',
         text: null,
         label: 'Answer "Ship it"',
@@ -203,7 +203,7 @@ describe('the chat endpoint against a stubbed model', () => {
         action: 'answer',
         factory: FACTORY,
         run_id: WAITING_RUN,
-        occurrence: 'ask',
+        occurrence: 'pause-ask-1',
         option: null,
         text: 'Something else',
         label: 'Answer with your text',
@@ -619,6 +619,59 @@ describe('request validation', () => {
     const app = createApp({ buildId: 't', distDir: '.' });
     for (const path of ['/api/manager/chat', '/api/manager/briefing']) {
       expect((await app.request(path, { method: 'POST', body: '{}' })).status).toBe(503);
+    }
+  });
+});
+
+describe('the settings', () => {
+  test('refuse a bad cap or effort and default when unset', () => {
+    expect(() => managerSettings({ MC_MANAGER_DAY_USD: 'abc' })).toThrow('MC_MANAGER_DAY_USD');
+    expect(() => managerSettings({ MC_MANAGER_MESSAGE_USD: '0' })).toThrow(
+      'MC_MANAGER_MESSAGE_USD',
+    );
+    expect(() => managerSettings({ MC_MANAGER_DAY_USD: '-1' })).toThrow('MC_MANAGER_DAY_USD');
+    expect(() => managerSettings({ MC_MANAGER_EFFORT: 'turbo' })).toThrow('MC_MANAGER_EFFORT');
+    expect(managerSettings({})).toEqual({
+      model: 'claude-sonnet-5-5',
+      effort: 'low',
+      messageCapUsd: 0.5,
+      dayCapUsd: 5,
+    });
+  });
+});
+
+describe('the caps on one answer', () => {
+  const EXTRA = Array.from(
+    { length: MAX_RUNS + 1 },
+    (_, i) => `5eed0004-0000-4000-8000-${String(i).padStart(12, '0')}`,
+  );
+
+  test('keep four backed proposals to three and a longer run list to the run cap', async () => {
+    await fixture.direct.query(
+      `INSERT INTO mc.laps (run_id, factory, workflow_name, status, started_at, completed_at)
+         VALUES ${EXTRA.map((id) => `('${id}', '${FACTORY}', 'archon-loop', 'completed', now(), now())`).join(',')}`,
+    );
+    try {
+      const structure = {
+        runs: EXTRA,
+        proposals: [
+          { action: 'answer', run_id: WAITING_RUN, option: 'yes' },
+          { action: 'answer', run_id: WAITING_RUN, option: 'no' },
+          { action: 'answer', run_id: WAITING_RUN, text: 'Something else' },
+          { action: 'resume', run_id: FAILED_RUN },
+        ],
+      };
+      const played = model(async () => [
+        start,
+        delta(`\`\`\`mc\n${JSON.stringify(structure)}\n${FENCE}\n`),
+        result(0.01),
+      ]);
+      const got = await events(await chat(managerOf(played)));
+      expect(got.filter((e) => e.type === 'proposal')).toHaveLength(MAX_PROPOSALS);
+      const runs = got.find((e) => e.type === 'runs');
+      expect(runs?.type === 'runs' && runs.runs).toHaveLength(MAX_RUNS);
+    } finally {
+      await fixture.direct.query(`DELETE FROM mc.laps WHERE run_id IN ('${EXTRA.join("','")}')`);
     }
   });
 });

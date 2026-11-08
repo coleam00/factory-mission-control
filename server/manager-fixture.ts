@@ -60,11 +60,11 @@ export async function startManagerDb(): Promise<ManagerDb> {
      INSERT INTO mc.issues (factory, number, title, state, url, created_at, updated_at)
        VALUES ('${FACTORY}', 514, 'Manager backend', 'open', 'https://example.test/514', now(), now()),
               ('${ELSEWHERE}', 600, 'Elsewhere only', 'open', 'https://example.test/600', now(), now());
-     INSERT INTO mc.attention_items (run_id, factory, workflow_name, node_id, waiting_since, form, options, labels, message)
+     INSERT INTO mc.attention_items (run_id, factory, workflow_name, node_id, waiting_since, form, options, labels, message, occurrence_id)
        VALUES ('${WAITING_RUN}', '${FACTORY}', 'archon-loop', 'ask', now(), 'choice',
-         '[{"id":"yes","label":"Ship it"},{"id":"no"}]', '{"yes":"scope"}', 'Ship?'),
+         '[{"id":"yes","label":"Ship it"},{"id":"no"}]', '{"yes":"scope"}', 'Ship?', 'pause-ask-1'),
               ('${ELSEWHERE_WAITING}', '${ELSEWHERE}', 'archon-loop', 'ask', now(), 'choice',
-         '[{"id":"yes"}]', '{}', 'Elsewhere?');`,
+         '[{"id":"yes"}]', '{}', 'Elsewhere?', 'pause-ask-2');`,
   );
   const socket = new PGLiteSocketServer({
     db: lite,
