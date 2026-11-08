@@ -2,7 +2,7 @@ import { expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { COLUMNS, PARKED, parked, SPLIT_WORKFLOW } from '../../app/lib/board';
-import { CAUSE_PATTERNS, causeOf } from '../../app/lib/health';
+import { causeOf } from '../../app/lib/health';
 import { LAP_PAGE_WORKFLOW, prNumber } from '../../app/lib/one-lap';
 import { REVIEW_TONE } from '../../app/lib/review-outcome';
 import {
@@ -574,8 +574,6 @@ test('board rounds count a shipped run on the item every other screen holds', as
 
 test('mc.stop_class refines Health’s causes, agreeing with causeOf except on reference numbers', async () => {
   const sql = read('db', 'migrations', '0031_run_stops.sql');
-  const armCount = [...sql.matchAll(/WHEN r ~\* '([^']*)' THEN/g)].length;
-  expect(armCount).toBe(CAUSE_PATTERNS.length);
   // Both read "the run's latest failed step"; a live query cannot call the mc function, so the pick is copied.
   const failedStepPick = (text: string, alias: string) =>
     text

@@ -61,7 +61,7 @@ export const CAUSE_LABEL: Record<Cause, string> = {
  * authentication is config. It counts a bare 401 or 429 only as an HTTP status, never inside a PR or issue
  * reference, so it can disagree with causeOf there. restated-rules.test.ts holds the two together.
  */
-export const CAUSE_PATTERNS: [Exclude<Cause, 'other'>, RegExp][] = [
+const CAUSE_PATTERNS: [Exclude<Cause, 'other'>, RegExp][] = [
   ['usage-limit', /usage limit|429/i],
   ['authentication', /401|unauthor/i],
   ['infrastructure', /ECONN|ETIMEDOUT|fetch failed/i],
