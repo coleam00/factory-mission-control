@@ -23,6 +23,10 @@ const THEME_COLORS = [
     /--color-([\w-]+):/g,
   ),
 ].map((m) => m[1] ?? '');
+// The `--v3-*` names the stylesheet declares; a name outside it renders no color.
+const V3_TOKENS = new Set(
+  [...readFileSync('app/styles.css', 'utf8').matchAll(/(--v3-[\w-]+):/g)].map((m) => m[1] ?? ''),
+);
 const PALETTE =
   'red|orange|amber|yellow|lime|green|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose|slate|gray|zinc|neutral|stone';
 const COLOR_UTILITY =
@@ -33,7 +37,8 @@ function nonV3Colors(html: string): string[] {
   const found: string[] = [];
   const attrs = [...html.matchAll(/\b(?:class|style)="([^"]*)"/g)].map((m) => m[1] ?? '');
   for (const attr of attrs) {
-    for (const m of attr.matchAll(/var\(--(?!v3-)[\w-]+/g)) found.push(m[0]);
+    for (const m of attr.matchAll(/var\((--[\w-]+)/g))
+      if (!V3_TOKENS.has(m[1] ?? '')) found.push(m[0]);
     for (const m of attr.matchAll(/#[0-9a-f]{3,8}\b|\b(?:rgba?|hsla?|oklch|oklab)\(/gi))
       found.push(m[0]);
     for (const cls of attr.split(/\s+/)) {
@@ -46,9 +51,10 @@ function nonV3Colors(html: string): string[] {
     // A border width with no v3 color falls back to the global `border-border`.
     const classes = attr.split(/\s+/);
     const width = classes.some((c) => /^border(?:-[trblxy])?(?:-\d+)?$/.test(c));
-    const colored = classes.some((c) =>
-      /^border-\[color:(?:var\(--v3-[\w-]+\)|transparent)\]$/.test(c),
-    );
+    const colored = classes.some((c) => {
+      const token = c.match(/^border-\[color:(?:var\((--[\w-]+)\)|transparent)\]$/);
+      return token !== null && (token[1] === undefined || V3_TOKENS.has(token[1]));
+    });
     if (width && !colored) found.push(`border without a v3 color: ${attr}`);
   }
   return found;
@@ -162,6 +168,8 @@ test('every component the folder exports is rendered above', async () => {
 test('the detector refuses a color that is not a v3 token and passes one that is', () => {
   const bad = [
     '<i style="color:var(--running)"></i>',
+    '<i style="color:var(--v3-nope)"></i>',
+    '<i class="border border-[color:var(--v3-nope)]"></i>',
     '<i style="color:#fff"></i>',
     '<i style="color:rgba(0,0,0,.4)"></i>',
     '<i class="text-error"></i>',

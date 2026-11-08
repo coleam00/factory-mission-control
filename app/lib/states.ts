@@ -152,6 +152,21 @@ export const VERDICT_STATE: Record<
   QUESTION: 'needs-you',
 };
 
+/** The check's overall verdict, the `overall` enum of the pack's check-app schema. NO PR is no check ran. */
+export const CHECK_OVERALL_STATE: Record<'PASS' | 'FAIL' | 'NO PR', State> = {
+  PASS: 'done',
+  FAIL: 'failed',
+  'NO PR': 'idle',
+};
+
+/** The merge sweep's decision on a pull request (SWEEP_ACTIONS in fixtures/pack/queue/sdlc/.shared/merge.ts). */
+export const SWEEP_ACTION_STATE: Record<'merged' | 'return' | 'ask' | 'wait', State> = {
+  merged: 'done',
+  return: 'done',
+  ask: 'needs-you',
+  wait: 'idle',
+};
+
 /** The pack's `BuildStatus` (fixtures/pack/queue/sdlc/.shared/build.ts). */
 export const BUILD_STATUS_STATE: Record<'next' | 'asking' | 'ready' | 'parked', State> = {
   next: 'idle',
@@ -212,6 +227,8 @@ export const STATE_SOURCES: Record<string, Record<string, State>> = {
   QUEUE_REVIEW_STATE,
   GATE_STATE,
   VERDICT_STATE,
+  CHECK_OVERALL_STATE,
+  SWEEP_ACTION_STATE,
   BUILD_STATUS_STATE,
   MERGE_STATUS_STATE,
   GATE_OUTCOME_STATE,

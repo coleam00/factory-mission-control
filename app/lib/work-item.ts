@@ -10,12 +10,15 @@ import { costOf, durationOf, stepLabel } from './laps';
 import { consoleUrl, hasLapPage, isOldLoop, lapHref } from './one-lap';
 import { LAP_WORKFLOWS } from './scorecard';
 import {
+  CHECK_OVERALL_STATE,
+  GATE_STATE,
   QUEUE_ENDING_STATE,
   QUEUE_REVIEW_STATE,
   REVIEW_OUTCOME_STATE,
+  RUN_STATE,
   type State,
   stateOf,
-  VERDICT_STATE,
+  SWEEP_ACTION_STATE,
 } from './states';
 
 /**
@@ -222,8 +225,14 @@ function stageOf(row: WorkItemRow): { id: string; title: string } | null {
 
 function intakeEvent(row: WorkItemRow, at: Date, base: Base): TimelineEvent {
   if (row.status === 'failed')
-    return { ...base, at, tone: 'failed', text: `Intake failed: ${row.error ?? NO_REASON}` };
-  if (row.status === 'cancelled') return { ...base, at, tone: 'idle', text: 'Intake cancelled' };
+    return {
+      ...base,
+      at,
+      tone: RUN_STATE.failed,
+      text: `Intake failed: ${row.error ?? NO_REASON}`,
+    };
+  if (row.status === 'cancelled')
+    return { ...base, at, tone: RUN_STATE.cancelled, text: 'Intake cancelled' };
   if (row.completed_at === null)
     return {
       ...base,
@@ -269,12 +278,13 @@ function roundEvent(row: WorkItemRow, n: number, at: Date, base: Base): Timeline
     return {
       ...base,
       at,
-      tone: 'failed',
+      tone: RUN_STATE.failed,
       text: `${label} failed${
         row.failed_step === null ? '' : ` in ${failedCard?.title ?? stepLabel(row.failed_step)}`
       }: ${row.error ?? NO_REASON}`,
     };
-  if (row.status === 'cancelled') return { ...base, at, tone: 'idle', text: `${label}: cancelled` };
+  if (row.status === 'cancelled')
+    return { ...base, at, tone: RUN_STATE.cancelled, text: `${label}: cancelled` };
   if (row.waiting === true)
     return { ...base, at, tone: 'needs-you', text: `${label}: waiting for your answer` };
   if (row.completed_at === null)
@@ -329,7 +339,7 @@ function checkEvent(row: WorkItemRow, lines: readonly WorkItemRow[], base: Base)
     {
       ...base,
       at: row.check_at,
-      tone: stateOf(VERDICT_STATE, row.check_overall) ?? 'idle',
+      tone: stateOf(CHECK_OVERALL_STATE, row.check_overall) ?? 'idle',
       text: `App check ${row.check_overall}${tally === '' ? '' : `: ${tally}`}`,
     },
   ];
@@ -338,14 +348,16 @@ function checkEvent(row: WorkItemRow, lines: readonly WorkItemRow[], base: Base)
 function loopDecision(row: WorkItemRow, base: Base): TimelineEvent[] {
   if (row.decision_at === null) return [];
   if (row.decision === 'merged')
-    return [{ ...base, at: row.decision_at, tone: 'done', text: 'Merged', detail: row.reason }];
+    return [
+      { ...base, at: row.decision_at, tone: GATE_STATE.merged, text: 'Merged', detail: row.reason },
+    ];
   if (row.decision === 'refused') {
     const reason = row.reason?.trim() ? row.reason : null;
     return [
       {
         ...base,
         at: row.decision_at,
-        tone: 'failed',
+        tone: GATE_STATE.refused,
         text:
           reason === null ? `Merge gate refused. ${NO_REASON}` : `Merge gate refused: ${reason}`,
       },
@@ -389,16 +401,20 @@ function sweepDecision(row: WorkItemRow, base: Base): TimelineEvent[] {
         {
           ...base,
           at,
-          tone: 'done',
+          tone: SWEEP_ACTION_STATE.return,
           text: `Returned to Build: ${reason ?? NO_REASON}`,
           detail: entry.brief?.trim() ? `Brief: ${entry.brief}` : 'No brief was recorded.',
         },
       ];
     case 'ask':
       if (row.asked_pr !== String(row.pr)) return [];
-      return [{ ...base, at, tone: 'needs-you', text: `Asked you: ${reason ?? NO_REASON}` }];
+      return [
+        { ...base, at, tone: SWEEP_ACTION_STATE.ask, text: `Asked you: ${reason ?? NO_REASON}` },
+      ];
     case 'wait':
-      return [{ ...base, at, tone: 'idle', text: `Waiting: ${reason ?? NO_REASON}` }];
+      return [
+        { ...base, at, tone: SWEEP_ACTION_STATE.wait, text: `Waiting: ${reason ?? NO_REASON}` },
+      ];
     default:
       return [];
   }

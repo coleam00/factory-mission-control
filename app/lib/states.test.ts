@@ -5,6 +5,7 @@ import { OUTCOMES } from './laps';
 import { REVIEW_OUTCOMES } from './review-outcome';
 import {
   BUILD_STATUS_STATE,
+  CHECK_OVERALL_STATE,
   LAP_OUTCOME_STATE,
   MERGE_STATUS_STATE,
   REVIEW_OUTCOME_STATE,
@@ -22,6 +23,7 @@ import {
   GATE_OUTCOME_STATE,
   GATE_STATE,
   stateOf,
+  SWEEP_ACTION_STATE,
 } from './states';
 
 const sorted = (xs: Iterable<string>) => [...xs].sort();
@@ -82,6 +84,18 @@ test('a map holds exactly the values its source reads, so a new value fails here
   // 'idle' picks no item and 'launch' throws in apply.ts before a row is written, so neither is an ending.
   expect(sorted(Object.keys(QUEUE_ENDING_STATE))).toEqual(
     packTuple('build.ts', 'APPLY_DECISIONS').filter((d) => d !== 'idle' && d !== 'launch'),
+  );
+  expect(sorted(Object.keys(SWEEP_ACTION_STATE))).toEqual(packTuple('merge.ts', 'SWEEP_ACTIONS'));
+  expect(sorted(Object.keys(CHECK_OVERALL_STATE))).toEqual(
+    sorted(
+      (
+        readFileSync('fixtures/pack/sdlc/loop/archon-loop.yaml', 'utf8').match(
+          /overall: \{ type: string, enum: \[([^\]]+)\]/,
+        )?.[1] ?? ''
+      )
+        .split(',')
+        .map((v) => v.trim()),
+    ),
   );
   const landed = readFileSync('fixtures/pack/sdlc/loop/scripts/land.ts', 'utf8');
   expect(sorted(Object.keys(GATE_STATE))).toEqual(
