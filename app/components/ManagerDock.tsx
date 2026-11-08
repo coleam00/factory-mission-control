@@ -23,20 +23,32 @@ export function readOpen(store: Pick<Storage, 'getItem'> | undefined): boolean {
   }
 }
 
+/** Remembers whether the dock is open; a refused write holds for this page only. */
+export function writeOpen(store: Pick<Storage, 'setItem'> | undefined, open: boolean): void {
+  try {
+    store?.setItem(OPEN_KEY, open ? 'open' : 'closed');
+  } catch {
+    // Storage refused the write: the choice holds for this page only.
+  }
+}
+
+/** Whether a key press is ⌘J or Ctrl+J. */
+export function isManagerShortcut(
+  event: Pick<KeyboardEvent, 'metaKey' | 'ctrlKey' | 'altKey' | 'key'>,
+): boolean {
+  return (event.metaKey || event.ctrlKey) && !event.altKey && event.key.toLowerCase() === 'j';
+}
+
 /** The docked Manager's state, kept in the browser; ⌘J or Ctrl+J toggles it. */
 export function useManagerDock(): { open: boolean; toggle: () => void } {
   const [open, setOpen] = useState(() => readOpen(storage()));
   const toggle = useCallback(() => setOpen((was) => !was), []);
   useEffect(() => {
-    try {
-      storage()?.setItem(OPEN_KEY, open ? 'open' : 'closed');
-    } catch {
-      // Storage refused the write: the choice holds for this page only.
-    }
+    writeOpen(storage(), open);
   }, [open]);
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if ((event.metaKey || event.ctrlKey) && !event.altKey && event.key.toLowerCase() === 'j') {
+      if (isManagerShortcut(event)) {
         event.preventDefault();
         toggle();
       }

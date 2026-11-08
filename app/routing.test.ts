@@ -8,6 +8,7 @@ import { createMemoryRouter, RouterProvider, useParams } from 'react-router';
 import {
   appRoutes,
   factoryPath,
+  homeAddressTarget,
   PLACES,
   REMOVED_SCREENS,
   type RouteModule,
@@ -88,15 +89,10 @@ test('choosing a factory keeps the place, else goes to its Attention', () => {
       `/f/second-factory/${path}`,
     );
   }
-  for (const from of [
-    '/',
-    '/f/mission-control',
-    '/f/a/nope',
-    '/f/a/runs/5eed0001',
-    '/steps/archon-loop',
-  ]) {
+  for (const from of ['/', '/f/mission-control', '/f/a/nope', '/steps/archon-loop']) {
     expect(factoryPath(from, 'second-factory')).toBe('/f/second-factory');
   }
+  expect(factoryPath('/f/a/runs/5eed0001', 'second-factory')).toBe('/f/second-factory/runs');
   expect(factoryPath('/f/a/board', 'a b/c')).toBe('/f/a%20b%2Fc/board');
 });
 
@@ -147,7 +143,18 @@ test('every removed screen is a route that lands on a place', () => {
   const routes = appRoutes({})[0]?.children ?? [];
   for (const [from, to] of Object.entries(REMOVED_SCREENS)) {
     expect(routes.some((r) => r.path === `/f/:factory/${from}`)).toBe(true);
-    expect(PLACES.map((place) => place.path)).toContain(to);
+    expect(PLACES.map((place): string => place.path)).toContain(to);
   }
   expect(routes.some((r) => r.path === '/steps/:workflow/:step')).toBe(true);
+});
+
+test('/ keeps an old map link on the map, with its pin and view, and otherwise opens Attention', () => {
+  const target = (search: string) => homeAddressTarget('mc', new URLSearchParams(search));
+  expect(target('view=build&at=8e3e1cef&from=review')).toBe(
+    '/f/mc/map?view=build&at=8e3e1cef&from=review',
+  );
+  expect(target('view=build')).toBe('/f/mc/map?view=build');
+  expect(target('at=8e3e1cef')).toBe('/f/mc/map?at=8e3e1cef');
+  expect(target('')).toBe('/f/mc');
+  expect(target('order=demo')).toBe('/f/mc');
 });

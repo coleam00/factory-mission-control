@@ -1,12 +1,13 @@
 import type { ReactElement, ReactNode } from 'react';
 import { Link, useLocation } from 'react-router';
+import type { BoardRow } from '../lib/board';
 import { useFactory, useUrlFactory } from '../live/FactoryProvider';
 import { LivePanel } from '../live/LivePanel';
-import { type Place, PLACES, placeHref } from '../routing';
+import { type Place, PLACES, type PlacePath, placeHref } from '../routing';
 import { DecisionsCount } from './DecisionsCount';
 
 /** The places' glyphs, 16 px, from the v3 mockup. */
-const ICON: Record<string, ReactElement> = {
+const ICON: Record<PlacePath, ReactElement> = {
   '': <path d="M8 2a6 6 0 1 0 0 12A6 6 0 0 0 8 2Zm0 2.5v4l2.5 1.5" />,
   map: <path d="M1.5 6h4v5h-4zM10.5 6h4v5h-4zM5.5 8.5h5" />,
   board: <path d="M2 3v10M6 3v6M10 3v8M14 3v4" />,
@@ -50,7 +51,7 @@ function CountFor({ place, factory }: { place: Place; factory: string }): ReactN
 /** The Board's number of open work items, from the board query the Board screen reads. */
 function BoardCount({ factory }: { factory: string }): ReactElement {
   return (
-    <LivePanel<{ kind: string; state: string | null }>
+    <LivePanel<Pick<BoardRow, 'kind' | 'state'>>
       query="board"
       name="board-count:board"
       factory={factory}

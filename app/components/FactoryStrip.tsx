@@ -1,4 +1,4 @@
-import type { ReactElement, ReactNode } from 'react';
+import { type ReactElement, useEffect } from 'react';
 import { switchBranch } from '../lib/rewind';
 import type { PanelState } from '../live/LivePanel';
 import { LivePanel } from '../live/LivePanel';
@@ -102,11 +102,30 @@ export function FactoryStripBody({
   );
 }
 
-/** The nav footer's status for one factory; `children` get the engine version once it is known. */
-export function FactoryStrip({
-  children,
+/** Hands the engine version up to the one switcher that shows it, and takes it back when the strip goes. */
+function ReportEngine({
+  engine,
+  onEngine,
 }: {
-  children: (engine: string | null | undefined) => ReactNode;
+  engine: string | null | undefined;
+  onEngine: (engine: string | null | undefined) => void;
+}): null {
+  useEffect(() => {
+    onEngine(engine);
+    return () => onEngine(undefined);
+  }, [engine, onEngine]);
+  return null;
+}
+
+/**
+ * The nav footer's status for one factory. The engine version goes to `onEngine`, not into a child:
+ * the switcher that shows it must live outside this panel, whose root remounts when the factory or
+ * the seal changes.
+ */
+export function FactoryStrip({
+  onEngine,
+}: {
+  onEngine: (engine: string | null | undefined) => void;
 }): ReactElement {
   const factory = useFactory();
   return (
@@ -118,7 +137,7 @@ export function FactoryStrip({
       {(rows, state) => (
         <>
           <FactoryStripBody factory={factory} rows={rows} state={state} />
-          {children(rows?.[0]?.engine)}
+          <ReportEngine engine={rows?.[0]?.engine} onEngine={onEngine} />
         </>
       )}
     </LivePanel>

@@ -32,33 +32,42 @@ const MANAGER_GLYPH = (
   </svg>
 );
 
-/** The footer's status line, and the factory switcher with the engine version. */
-function NavFooter({ unknownKey }: { unknownKey: string | undefined }): ReactElement {
-  if (unknownKey !== undefined) {
-    // Nothing is sealed for a key that is not a factory, so nothing reads as an outage, and no
-    // other factory's name or count shows, whatever the address under the key.
-    return (
-      <div className="mt-auto grid gap-1.5 px-2 pt-2.5">
+/** The footer's status line; the switcher is mounted once by `ForFactory`. */
+function NavFooter({
+  unknownKey,
+  switcher,
+  onEngine,
+}: {
+  unknownKey: string | undefined;
+  switcher: ReactElement;
+  onEngine: (engine: string | null | undefined) => void;
+}): ReactElement {
+  return (
+    <div className="mt-auto grid gap-1.5 px-2 pt-2.5">
+      {unknownKey === undefined ? (
+        <FactoryStrip onEngine={onEngine} />
+      ) : (
+        // Nothing is sealed for a key that is not a factory, so nothing reads as an outage, and no
+        // other factory's name or count shows, whatever the address under the key.
         <section data-url-factory="unknown">
           <FactoryStripBody factory={unknownKey} rows={undefined} state="loading" unknown />
         </section>
-        <FactorySwitcher />
-      </div>
-    );
-  }
-  return (
-    <div className="mt-auto grid gap-1.5 px-2 pt-2.5">
-      <FactoryStrip>{(engine) => <FactorySwitcher engine={engine} />}</FactoryStrip>
+      )}
+      {switcher}
     </div>
   );
 }
 
 function SideNav({
   unknownKey,
+  switcher,
+  onEngine,
   managerOpen,
   onManager,
 }: {
   unknownKey: string | undefined;
+  switcher: ReactElement;
+  onEngine: (engine: string | null | undefined) => void;
   managerOpen: boolean;
   onManager: () => void;
 }): ReactElement {
@@ -82,19 +91,25 @@ function SideNav({
           ⌘J
         </span>
       </button>
-      <NavFooter unknownKey={unknownKey} />
+      <NavFooter unknownKey={unknownKey} switcher={switcher} onEngine={onEngine} />
     </nav>
   );
 }
 
 /** The phone's two bars: the brand with the running count on top, the five tabs at the bottom. */
-function PhoneTop({ unknownKey }: { unknownKey: string | undefined }): ReactElement {
+function PhoneTop({
+  unknownKey,
+  onEngine,
+}: {
+  unknownKey: string | undefined;
+  onEngine: (engine: string | null | undefined) => void;
+}): ReactElement {
   return (
     <header className="sticky top-0 z-10 flex items-center gap-2.5 border-b border-[color:var(--v3-line)] bg-[var(--v3-bg)] px-4 py-3">
       {BRAND}
       <div className="ml-auto">
         {unknownKey === undefined ? (
-          <FactoryStrip>{() => null}</FactoryStrip>
+          <FactoryStrip onEngine={onEngine} />
         ) : (
           <FactoryStripBody factory={unknownKey} rows={undefined} state="loading" unknown />
         )}
@@ -142,6 +157,7 @@ export function ForFactory(): ReactElement {
   const dock = useManagerDock();
   const phone = usePhone();
   const [phoneManager, setPhoneManager] = useState(false);
+  const [engine, setEngine] = useState<string | null | undefined>();
   const unknownKey = inUrl.key !== undefined && inUrl.view === 'unknown' ? inUrl.key : undefined;
   const page =
     unknownKey === undefined ? (
@@ -154,6 +170,8 @@ export function ForFactory(): ReactElement {
         fallback={live.status === 'ready' ? live.factories[0] : undefined}
       />
     );
+  // One switcher at every width, outside the strip's panel, so a factory switch does not re-seal it.
+  const switcher = <FactorySwitcher engine={engine} />;
   const content = (
     <div className="min-w-0 flex-1 overflow-auto">
       <RewindIndicator
@@ -165,15 +183,22 @@ export function ForFactory(): ReactElement {
   if (phone) {
     return (
       <div className="flex min-h-screen flex-col bg-[var(--v3-bg)]">
-        <PhoneTop unknownKey={unknownKey} />
+        <PhoneTop unknownKey={unknownKey} onEngine={setEngine} />
         {phoneManager ? <ManagerPanel phone onClose={() => setPhoneManager(false)} /> : content}
+        <div className="border-t border-[color:var(--v3-line)] px-4 py-2">{switcher}</div>
         <PhoneTabs manager={phoneManager} onManager={setPhoneManager} />
       </div>
     );
   }
   return (
     <div className="flex h-screen bg-[var(--v3-bg)]">
-      <SideNav unknownKey={unknownKey} managerOpen={dock.open} onManager={dock.toggle} />
+      <SideNav
+        unknownKey={unknownKey}
+        switcher={switcher}
+        onEngine={setEngine}
+        managerOpen={dock.open}
+        onManager={dock.toggle}
+      />
       {content}
       {dock.open ? <ManagerPanel onClose={dock.toggle} /> : null}
     </div>

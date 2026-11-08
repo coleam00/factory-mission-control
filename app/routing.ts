@@ -8,8 +8,11 @@ import {
   useSearchParams,
 } from 'react-router';
 import { NotFound, RouteError } from './errors';
+import { homeHref } from './lib/home-map';
+import { lapHref } from './lib/one-lap';
 import { stepHref } from './lib/step-detail';
 import { useFactory } from './live/FactoryProvider';
+import { FROM_PARAM, VIEW_PARAM } from './map/factory-map';
 import { Shell } from './Shell';
 
 export interface RouteModule {
@@ -50,17 +53,20 @@ export function routesFromModules(modules: Record<string, RouteModule>): RouteOb
 
 /** A place in the left nav: its path after `/f/:factory` ('' is the factory's home) and its name. */
 export interface Place {
-  path: string;
+  path: PlacePath;
   label: string;
 }
 
 /** The nav's fixed places (v3 README "The places"): not one entry per route file. */
-export const PLACES: readonly Place[] = [
+export const PLACES = [
   { path: '', label: 'Attention' },
   { path: 'map', label: 'Factory' },
   { path: 'board', label: 'Board' },
   { path: 'runs', label: 'Runs' },
-];
+] as const satisfies readonly { path: string; label: string }[];
+
+/** A place's path after `/f/:factory`: '' is Attention. */
+export type PlacePath = (typeof PLACES)[number]['path'];
 
 /** A place's address for `factory`. */
 export const placeHref = (factory: string, place: Place): string =>
@@ -68,21 +74,23 @@ export const placeHref = (factory: string, place: Place): string =>
 
 /**
  * Where choosing `factory` goes from `pathname` and its `search`: the same place for it when
- * `pathname` is one of `PLACES`, a step's page as it is (the pinned version stays), otherwise its
+ * `pathname` is one of `PLACES`, Runs from a run's page, a step's page as it is (the pinned version stays), otherwise its
  * home, Attention (`/f/:factory`). A place's search names the old factory's items, so it is not kept.
  */
 export function factoryPath(pathname: string, factory: string, search = ''): string {
   const home = `/f/${encodeURIComponent(factory)}`;
+  if (/^\/f\/[^/]+\/runs\/[^/]+$/.test(pathname)) return `${home}/runs`;
   const step = pathname.match(/^\/f\/[^/]+\/(steps\/[^/]+\/[^/]+)$/)?.[1];
   if (step !== undefined) return `${home}/${step}${search}`;
   const rest = pathname.match(/^\/f\/[^/]+\/(.+)$/)?.[1];
-  if (rest === undefined || !PLACES.some((place) => place.path === rest)) return home;
+  const paths: readonly string[] = PLACES.map((place) => place.path);
+  if (rest === undefined || !paths.includes(rest)) return home;
   return `${home}/${rest}`;
 }
 
 /**
  * Where each removed screen's address goes now, under the same factory: a `PLACES` path, '' being
- * Attention. `laps` and `laps/:runId` are not here, they carry the run id (`oldLapRoutes`).
+ * Attention. `laps/:runId` is not here, it carries the run id (`lapsRunRedirect`).
  */
 export const REMOVED_SCREENS: Readonly<Record<string, string>> = {
   changes: 'map',
@@ -98,19 +106,33 @@ export const REMOVED_SCREENS: Readonly<Record<string, string>> = {
   versions: 'map',
 };
 
-/** The redirect from a removed address to `to` (a `PLACES` path) under the same factory, keeping a run id. */
+/** The redirect from a removed address to `to` (a `PLACES` path) under the same factory. */
 const redirectTo =
   (to: string): LoaderFunction =>
-  ({ params: { factory = '', runId } }) => {
-    const rest = runId === undefined ? to : `${to}/${runId}`;
-    return redirect(`/f/${encodeURIComponent(factory)}${rest === '' ? '' : `/${rest}`}`);
-  };
+  ({ params: { factory = '' } }) =>
+    redirect(`/f/${encodeURIComponent(factory)}${to === '' ? '' : `/${to}`}`);
+
+/** `laps/:runId`, to the run's page, whose address `lapHref` alone writes. */
+const lapsRunRedirect: LoaderFunction = ({ params: { factory = '', runId = '' } }) =>
+  redirect(lapHref(factory, runId));
+
+/**
+ * Where `/` goes: the map, with them, when the address carries an old map link's `at`, `view` or
+ * `from`; otherwise the factory's Attention.
+ */
+export function homeAddressTarget(factory: string, search: URLSearchParams): string {
+  const oldMapLink = ['at', VIEW_PARAM, FROM_PARAM].some((name) => search.has(name));
+  return oldMapLink
+    ? homeHref(factory, search.get('at'), search)
+    : `/f/${encodeURIComponent(factory)}`;
+}
 
 /** `/`, which named no factory: the Attention of the factory the switcher remembers, else the default one. */
 export function HomeAddress(): ReturnType<typeof createElement> | null {
   const factory = useFactory();
+  const [search] = useSearchParams();
   if (factory === undefined) return null;
-  return createElement(Navigate, { to: `/f/${encodeURIComponent(factory)}`, replace: true });
+  return createElement(Navigate, { to: homeAddressTarget(factory, search), replace: true });
 }
 
 /**
@@ -134,7 +156,7 @@ const removedRoutes = (): RouteObject[] => [
     loader: redirectTo(to),
   })),
   { path: '/f/:factory/laps', loader: redirectTo('runs') },
-  { path: '/f/:factory/laps/:runId', loader: redirectTo('runs') },
+  { path: '/f/:factory/laps/:runId', loader: lapsRunRedirect },
   { path: '/', element: createElement(HomeAddress) },
   { path: '/steps/:workflow/:step', element: createElement(OldStepAddress) },
   { path: '/rewind', element: createElement(Navigate, { to: '/', replace: true }) },
