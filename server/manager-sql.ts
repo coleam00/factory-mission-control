@@ -40,9 +40,14 @@ export async function readOnlyQuery(
   return { rows: rows.slice(0, limits.rowCap), truncated: rows.length > limits.rowCap };
 }
 
-/** Functions that run SQL text, read files or act outside the transaction. */
+/**
+ * Functions that run SQL text, read files, expose server state or act outside the transaction.
+ * The pure set-returning built-ins (unnest, generate_series, json_*, regexp_*) are none of
+ * these; every other pg_catalog one is `pg_*` or named here. A plan shows a call in the select
+ * list only in its Output text, so this scans the whole plan.
+ */
 const DENIED_FUNCTIONS =
-  /\b(\w*_to_xml\w*|ts_rewrite|pg_stat_get_\w+|dblink\w*|pg_read_\w+|pg_ls_\w+|pg_stat_file|lo_\w+|pg_terminate_backend|pg_cancel_backend|pg_reload_conf|set_config|pg_advisory\w*|pg_notify|pg_sleep\w*)\s*\(/i;
+  /\b(\w*_to_xml\w*|ts_rewrite|ts_stat|ts_debug|ts_parse|ts_token_type|aclexplode|txid_snapshot_xip|pg_\w+|dblink\w*|lo_\w+|set_config)\s*\(/i;
 
 /** Schemas of the relations and set-returning functions a plan reads; a function node has its own. */
 function schemasRead(plan: unknown, out = new Set<string>()): Set<string> {

@@ -45,6 +45,13 @@ describe('the ad hoc SELECT', () => {
       "SELECT word FROM ts_stat('SELECT to_tsvector(''simple'', user_message) FROM public.remote_agent_workflow_runs')",
     ],
     ['ts_rewrite', "SELECT ts_rewrite('a'::tsquery, 'SELECT ''a''::tsquery, ''b''::tsquery')"],
+    [
+      'ts_stat in the select list',
+      "SELECT (ts_stat('SELECT to_tsvector(''simple'', user_message) FROM public.remote_agent_workflow_runs')).word",
+    ],
+    ['pg_show_all_settings in the select list', 'SELECT pg_show_all_settings()'],
+    ['pg_hba_file_rules in the select list', 'SELECT pg_hba_file_rules()'],
+    ['pg_prepared_statement in the select list', 'SELECT pg_prepared_statement()'],
     ['pg_settings', 'SELECT * FROM pg_settings'],
     ['pg_show_all_settings', 'SELECT * FROM pg_show_all_settings()'],
     ['pg_stat_get_activity', 'SELECT * FROM pg_stat_get_activity(NULL)'],
