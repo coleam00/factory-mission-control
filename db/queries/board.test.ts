@@ -5,9 +5,12 @@ import type { HealthWorkableRow } from '../../app/lib/health';
 import type { OwnerQueueRow } from '../../app/lib/owner-queue';
 import { FACTORY_MAP } from '../../app/map/factory-map';
 import { cardLive, type HomeMapRow, type WorkOrderRow } from '../../app/map/live';
-import { QUEUE_PARKED } from '../../scripts/fixture/seed';
+import { QUEUE_PARKED, QUEUE_UNSTICK } from '../../scripts/fixture/seed';
 import type { Db } from '../../scripts/lib/db';
 import { onTheSeed, queries } from './test-seed';
+
+// The parked items the Unstick fixture adds: work item rows the Board reads like 413's.
+const UNSTICK_PARKED = [QUEUE_UNSTICK.parkedMerged.issue, QUEUE_UNSTICK.parkedOpen.issue];
 
 let db: Db;
 beforeAll(async () => {
@@ -68,7 +71,8 @@ test('the seed recount: each column and each work order bar equal the definition
 
   // queue-factory: 401 is in triage and built (the build run is between steps), so Intake; 402 and
   // 403 only have runs between steps, so no column; 404 and 405 are workable with no run (Queued);
-  // 410's running split run holds nothing, so it is Queued too, which makes 7 not in order;
+  // 410's running split run holds nothing, so it is Queued too, which makes 7 not in order, plus the
+  // two parked items of the Unstick fixture;
   // 406 is needs-owner, which a queue factory does not read, and is not workable. 410 is a product
   // document, 411 and 412 are its merged pieces and 413 its open one. 413's work item state says
   // its build was parked after its triage, so it is Parked, not Queued, and not workable either.
@@ -82,9 +86,9 @@ test('the seed recount: each column and each work order bar equal the definition
     merge: [],
     decision: [],
     merged: [411, 412],
-    parked: [413],
+    parked: [413, ...UNSTICK_PARKED],
   });
-  expect(queue.notInOrder).toBe(7);
+  expect(queue.notInOrder).toBe(7 + UNSTICK_PARKED.length);
 });
 
 test('a work item carries its pull request, rounds, route and app verdict from the seed laps', async () => {
@@ -274,14 +278,14 @@ test('a work item state reaches only the factory whose codebase it names', async
     (await run<BoardRow>('board', factory))
       .filter((r) => r.kind === 'item' && r.build_status === 'parked')
       .map((r) => r.number);
-  expect(await parkedOf('queue-factory')).toEqual([413]);
+  expect(await parkedOf('queue-factory')).toEqual([...UNSTICK_PARKED, 413]);
   expect(await parkedOf('mission-control')).toEqual([]);
   await db.query(
     `INSERT INTO mc.work_item_states (project_key, number, revision, build_status, build_at)
      SELECT codebase, 9, 1, 'parked', '2026-10-24T09:06:00.000Z' FROM mc.factories WHERE name = 'mission-control'`,
   );
   try {
-    expect(await parkedOf('queue-factory')).toEqual([413]);
+    expect(await parkedOf('queue-factory')).toEqual([...UNSTICK_PARKED, 413]);
     expect(await parkedOf('mission-control')).toEqual([9]);
   } finally {
     await db.query(`DELETE FROM mc.work_item_states WHERE number = 9`);
@@ -313,7 +317,7 @@ test('a parked work item is not workable, and a re-triage makes it workable agai
       .find((c) => c.id === 'parked')
       ?.items.map((i) => i.number);
   expect(await workable()).toEqual([404, 405, 410]);
-  expect(await parkedItems()).toEqual([QUEUE_PARKED.issue]);
+  expect(await parkedItems()).toEqual([QUEUE_PARKED.issue, ...UNSTICK_PARKED]);
   try {
     await db.query(
       `UPDATE mc.work_item_states SET triage_at = '2026-10-24T10:00:00.000Z', revision = revision + 1
@@ -321,7 +325,7 @@ test('a parked work item is not workable, and a re-triage makes it workable agai
       [QUEUE_PARKED.issue],
     );
     expect(await workable()).toContain(QUEUE_PARKED.issue);
-    expect(await parkedItems()).toEqual([]);
+    expect(await parkedItems()).toEqual(UNSTICK_PARKED);
   } finally {
     await db.query(
       `UPDATE mc.work_item_states SET triage_at = $2, revision = $3 WHERE number = $1`,

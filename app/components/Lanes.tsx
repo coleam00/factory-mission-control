@@ -13,7 +13,7 @@ import {
   since,
   stepLabel,
 } from '../lib/laps';
-import { consoleUrl, hasLapPage, workflowLabel } from '../lib/one-lap';
+import { consoleUrl, hasLapPage, lapHref, workflowLabel } from '../lib/one-lap';
 import { LivePanel, type PanelState } from '../live/LivePanel';
 import { laneMarks, stepPath } from '../lib/lap-graph';
 import { LAP_OUTCOME_STATE, STATE_NAME, stateColor, stateInk } from '../lib/states';
@@ -162,7 +162,7 @@ export function LaneList({
               </span>
               {loop ? (
                 <Link
-                  to={`/f/${encodeURIComponent(factory)}/laps/${lane.run_id}`}
+                  to={lapHref(factory, lane.run_id)}
                   data-lap-link
                   className={`${MONO} text-text-secondary underline decoration-border-bright underline-offset-2 hover:decoration-text-primary`}
                 >
@@ -275,7 +275,7 @@ export function RecentList({
             className="border-b border-border/40 last:border-b-0"
           >
             <Link
-              to={`/f/${encodeURIComponent(factory)}/laps/${lap.run_id}`}
+              to={lapHref(factory, lap.run_id)}
               aria-label={`Lap ${shortRunId(lap.run_id)}: ${label}`}
               className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-[18px] gap-y-1 px-[18px] py-[13px] transition-colors hover:bg-surface-hover sm:grid-cols-[150px_64px_minmax(0,1fr)_84px_84px_64px]"
             >

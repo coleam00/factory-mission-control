@@ -16,7 +16,7 @@ import {
   workable,
 } from '../lib/health';
 import { since, stepLabel } from '../lib/laps';
-import { hasLapPage } from '../lib/one-lap';
+import { hasLapPage, lapHref } from '../lib/one-lap';
 import { waited } from '../lib/owner-queue';
 import { RUN_STATE, STATE_NAME, type State, stateColor, stateInk } from '../lib/states';
 import { LivePanel } from '../live/LivePanel';
@@ -42,7 +42,7 @@ function Heading({ count, children }: { count?: number; children: ReactNode }): 
 
 function LapLink({ factory, runId }: { factory: string; runId: string }): ReactElement {
   return (
-    <Link to={`/f/${encodeURIComponent(factory)}/laps/${runId}`} data-lap-link className={LINK}>
+    <Link to={lapHref(factory, runId)} data-lap-link className={LINK}>
       {shortRunId(runId)}
     </Link>
   );
