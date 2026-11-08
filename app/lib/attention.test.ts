@@ -15,8 +15,8 @@ const MESSAGE = [
   '**Recommendation: `split`** (high confidence). Two small changes land sooner.',
 ].join('\n\n');
 const CHOICES = [
-  { id: 'split', label: 'Split' },
-  { id: 'build', label: null },
+  { id: 'split', label: 'Split', description: null },
+  { id: 'build', label: null, description: null },
 ];
 
 const row = (overrides: Partial<AttentionRow>): AttentionRow => ({
@@ -46,7 +46,7 @@ test('a plain message has no title and no recommendation, and its first paragrap
 });
 
 test('a recommendation that is not one of the choices marks none', () => {
-  expect(recommendedChoice(MESSAGE, [{ id: 'build', label: null }])).toBeNull();
+  expect(recommendedChoice(MESSAGE, [{ id: 'build' }])).toBeNull();
 });
 
 test('the origin is the labels, or the workflow without its archon- lead', () => {
@@ -65,4 +65,11 @@ test('items wait longest first, and unreadable choices or labels are none', () =
   expect(items.map((i) => i.run_id)).toEqual(['early', 'late']);
   expect(items[0]).toMatchObject({ options: [], labels: {} });
   expect(items[1]?.options).toEqual(CHOICES);
+});
+
+test('a choice keeps the description the projection recorded', () => {
+  const [item] = attentionItems([
+    row({ options: JSON.stringify([{ id: 'split', label: 'Split', description: 'Two changes' }]) }),
+  ]);
+  expect(item?.options).toEqual([{ id: 'split', label: 'Split', description: 'Two changes' }]);
 });
