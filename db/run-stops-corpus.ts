@@ -136,13 +136,23 @@ export const STOP_CORPUS: readonly (readonly [line: string, cls: StopClass, sour
     'review R1 (a code failure naming a worktree path)',
   ],
   [
-    'app-check FAIL: stale numbers shown on the board in checkout C:w\run-1',
+    String.raw`app-check FAIL: stale numbers shown on the board in checkout C:\w\run-1`,
     'code',
     'review R1 (a FAIL finding naming stale and a checkout)',
   ],
   [
-    'C:worktrees\task-42app\board.ts(12,5): error TS2322: Type string is not assignable to type number',
+    String.raw`C:\worktrees\task-42\app\board.ts(12,5): error TS2322: Type string is not assignable to type number`,
     'code',
     'review R1 (a type error under a worktree path)',
+  ],
+  [
+    'git merge --no-edit origin/main: CONFLICT (content): Merge conflict in .archon/workflows/factory/app-check/fixtures/fail.stubs.yaml',
+    'environment',
+    'review R8 (a merge conflict in a path named fail)',
+  ],
+  [
+    'git push origin HEAD:refs/heads/build/530-review-findings-show-on-the-board-1a2b3c4d refused: ! [rejected] (stale info)',
+    'environment',
+    'review R8 (a refused push to a branch named findings)',
   ],
 ];

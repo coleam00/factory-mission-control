@@ -1,11 +1,12 @@
-export type StopClass = 'transient' | 'environment' | 'config' | 'code' | 'input';
+export const STOP_CLASSES = ['transient', 'environment', 'config', 'code', 'input'] as const;
+export type StopClass = (typeof STOP_CLASSES)[number];
 
 /** One row of failure-groups.sql: the failed runs sharing a signature (the Fix group's data, #516). */
 export interface FailureGroupRow {
   signature: string;
   workflow_name: string;
   step_id: string | null;
-  /** The class of the latest run, or 'mixed' when the group's runs differ. */
+  /** The class of the latest run, or 'mixed' when the group's runs differ (an unclassified run counts as its own class). */
   class: StopClass | 'mixed' | null;
   failures: number;
   first_at: Date | null;

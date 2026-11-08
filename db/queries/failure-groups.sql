@@ -7,7 +7,7 @@ SELECT g.signature, g.workflow_name, g.step_id,
   latest.run_id AS latest_run_id, latest.line, last.day AS last_day, d.daily
 FROM (
   SELECT f.signature, min(f.workflow_name) AS workflow_name, min(f.step_id) AS step_id,
-    count(DISTINCT f.class)::int AS classes, count(*)::int AS failures, min(f.stopped_at) AS first_at,
+    count(DISTINCT coalesce(f.class, ''))::int AS classes, count(*)::int AS failures, min(f.stopped_at) AS first_at,
     max(f.stopped_at) AS last_at
   FROM f GROUP BY f.signature
 ) g

@@ -28,7 +28,9 @@ CREATE INDEX IF NOT EXISTS run_stops_factory_failed ON mc.run_stops (factory, si
 -- transient, environment, config, code or input; NULL when no pattern matches. The first match wins.
 -- PRD 4.8's three patterns read the raw text, as causeOf does; the others read it with run ids and
 -- shas removed, so a hex run in an id cannot spell a word. The code arm precedes the environment
--- arm: a failing test whose line names a worktree path is still a code failure.
+-- arm: a failing test whose line names a worktree path is still a code failure. It reads the text
+-- with paths removed too, so a file or branch named fail or finding cannot make an environment
+-- failure (a merge conflict, a refused push) look like code.
 CREATE OR REPLACE FUNCTION mc.stop_class(p_error text)
 RETURNS text LANGUAGE sql IMMUTABLE AS $$
   SELECT CASE
@@ -39,12 +41,13 @@ RETURNS text LANGUAGE sql IMMUTABLE AS $$
     WHEN e ~* 'deadlock detected|usage or credit limit|rate.?limit|too many requests|overloaded|HTTP 5[0-9]{2}|\m5[0-9]{2} (bad gateway|gateway|service unavailable|internal server)|bad gateway|gateway time-?out|service unavailable|ENOTFOUND|connection terminated|timeout exceeded when trying to connect|provider reported transient' THEN 'transient'
     WHEN e ~* 'provider reported auth|authenticat|configuration must be fixed|bad credentials|missing binding|no binding|binding [^ ]+ (is )?(missing|not set|undefined)|no schedule|schedule [^ ]+ (is )?(missing|not found)' THEN 'config'
     WHEN e ~* 'no issue matched|no matching issue|bad argument|invalid argument|unknown (option|argument)|missing required input' THEN 'input'
-    WHEN e ~* 'tests? failed|\m[0-9]+ (tests? )?fail|failing tests?|typecheck|type errors?|error TS[0-9]+|app check failed|app-check .*(FAIL|red)|finding|\mFAIL\M' THEN 'code'
+    WHEN ep ~* 'tests? failed|\m[0-9]+ (tests? )?fail|failing tests?|typecheck|type errors?|error TS[0-9]+|app check failed|app-check .*(FAIL|red)|finding|\mFAIL\M' THEN 'code'
     WHEN e ~* 'check must write|did not complete|no such file or directory|ENOSPC|no space left|not a git repository|worktree|checkout|stale|push [^ ]+ refused|refused: |non-fast-forward|fetch first|\[rejected\]|merge --no-edit' THEN 'environment'
   END
-  FROM (SELECT nullif(btrim(regexp_replace(regexp_replace(left(p_error, 8000),
+  FROM (SELECT e, regexp_replace(e, '(?:\m[a-z]:)?(?:[[:alnum:]_.@~<>-]*[/\\])+[[:alnum:]_.@~<>-]*', ' ', 'gi') AS ep
+    FROM (SELECT nullif(btrim(regexp_replace(regexp_replace(left(p_error, 8000),
       '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}', ' ', 'g'),
-      '\m(?=[0-9a-f]*[0-9])(?=[0-9a-f]*[a-f])[0-9a-f]{7,40}\M', ' ', 'g')), '') AS e) x
+      '\m(?=[0-9a-f]*[0-9])(?=[0-9a-f]*[a-f])[0-9a-f]{7,40}\M', ' ', 'g')), '') AS e) y) x
 $$;
 
 CREATE OR REPLACE FUNCTION mc.stop_line(p_text text)
@@ -128,7 +131,7 @@ CREATE OR REPLACE TRIGGER run_stops_attention AFTER INSERT OR UPDATE OR DELETE O
 DO $$
 DECLARE r record; v_sqlstate text; v_message text;
 BEGIN
-  FOR r IN SELECT run_id FROM mc.laps WHERE status IN ('completed', 'failed', 'cancelled', 'paused') LOOP
+  FOR r IN SELECT run_id FROM mc.laps LOOP
     BEGIN
       PERFORM mc.project_run_stop(r.run_id);
     EXCEPTION WHEN OTHERS THEN

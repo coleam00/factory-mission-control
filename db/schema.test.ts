@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, expect, test } from 'bun:test';
 import { APP_CHECK_KINDS } from '../app/lib/app-check';
+import { STOP_CLASSES } from '../app/lib/failures';
 import type { CheckLine } from '../fixtures/pack/sdlc/.shared/merge-gate';
 import { REVIEW_OUTCOMES, type Review } from '../parsers/comments';
 import { VERDICT_OUTCOMES } from '../parsers/commits';
@@ -206,6 +207,7 @@ test.each([
   ['verdicts_verdict_check', VERDICT_OUTCOMES],
   ['holdout_verdicts_verdict_check', HOLDOUT_VERDICTS],
   ['app_check_lines_kind_check', APP_CHECK_KINDS],
+  ['run_stops_class_check', STOP_CLASSES],
 ])('%s allows exactly the values its parser produces', async (name, values) => {
   expect(parserUnionsBound).toEqual([true, true]);
   const [row] = await db.query(
