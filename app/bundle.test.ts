@@ -2,6 +2,7 @@ import { afterAll, expect, test } from 'bun:test';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
+import { CREDENTIAL_NAMES } from '../server/manager';
 
 const repoRoot = resolve(import.meta.dir, '..');
 const scratch = mkdtempSync(join(tmpdir(), 'mc-bundle-'));
@@ -14,6 +15,10 @@ const SECRETS = {
   MC_DATABASE_URL:
     'postgresql://sample_user:sample_pw@ep-sample-000000.c-14.us-east-1.aws.neon.tech/factory',
 };
+
+test('every credential the Manager passes to the CLI is scanned for in the bundle', () => {
+  for (const name of CREDENTIAL_NAMES) expect(Object.keys(SECRETS)).toContain(name);
+});
 
 const serverOnly = new RegExp(
   ['@neon/realtime/server', 'claude-agent-sdk', ...Object.keys(SECRETS)].join('|'),

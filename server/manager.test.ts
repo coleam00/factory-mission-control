@@ -14,7 +14,7 @@ import {
   startManagerDb,
   WAITING_RUN,
 } from './manager-fixture';
-import { MAX_PROPOSALS, MAX_RUNS, type ManagerEvent } from './manager-stream';
+import { MAX_PROPOSALS, MAX_RUNS, type ManagerEvent, parseBlock } from './manager-stream';
 
 // Each answer that calls a tool starts a `bun` subprocess, which takes seconds on Windows.
 setDefaultTimeout(30_000);
@@ -589,6 +589,24 @@ describe('the briefing', () => {
     clock = new Date('2026-11-09T10:00:00');
     expect((await ask()).at(-1)).toMatchObject({ cached: false });
     expect(played.prompts).toHaveLength(2);
+  });
+});
+
+describe('the prompt’s example block', () => {
+  test('parses into every link kind and proposal action the parser accepts', async () => {
+    const played = model(async () => [start, delta('fine'), result(0.01)]);
+    await (await chat(managerOf(played))).text();
+    const prompt = played.options[0].systemPrompt as string;
+    const block = prompt.match(/```mc\n([\s\S]*?)\n```/)?.[1] ?? '';
+    const parsed = parseBlock(block.replace('<issue number>', '7'));
+    expect(new Set(parsed.links.map((link) => link.kind))).toEqual(new Set(['run', 'item']));
+    expect(new Set(parsed.proposals.map((proposal) => proposal.action))).toEqual(
+      new Set(['answer', 'resume']),
+    );
+    expect(parsed.runs).toHaveLength(1);
+    expect(parsed.proposals.some((proposal) => proposal.option !== undefined)).toBe(true);
+    expect(parsed.proposals.some((proposal) => proposal.text !== undefined)).toBe(true);
+    expect(parsed.proposals.some((proposal) => proposal.from_step !== undefined)).toBe(true);
   });
 });
 

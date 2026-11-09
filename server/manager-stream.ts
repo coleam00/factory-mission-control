@@ -62,6 +62,17 @@ function isProposalAction(value: unknown): value is ProposalAction {
 }
 
 /** At most this many runs in one `runs` event. */
+export const PLACES = ['attention', 'factory', 'board', 'runs', 'run', 'work', 'step'] as const;
+
+export interface ChatRequest {
+  factory: string;
+  context: { place: (typeof PLACES)[number]; run?: string; item?: number };
+  messages: { role: 'owner' | 'manager'; text: string }[];
+}
+
+/** The statuses of a run the owner can resume: the prompt names them and the proposal check admits them. */
+export const RESUMABLE_STATUSES = ['failed', 'paused'] as const;
+
 export const MAX_RUNS = 8;
 /** At most this many proposals in one answer. */
 export const MAX_PROPOSALS = 3;
