@@ -14,9 +14,9 @@ import { resolveBranchName } from './lib/target';
 import { ATTENTION_OUTPUTS, attentionPhase } from './live/attention';
 import { BOARD_OUTPUTS, boardPhase } from './live/board';
 import { HOME_OUTPUTS, homePhase } from './live/home';
-import { LAPS_OUTPUTS, lapsPhase } from './live/laps';
 import { ONE_LAP_OUTPUTS, oneLapPhase } from './live/one-lap';
 import { QUEUE_MAP_OUTPUTS, QUEUE_MAP_VIEWS, queueMapPhase } from './live/queue-map';
+import { RUNS_OUTPUTS, runsPhase } from './live/runs';
 import {
   fixtureWrite,
   freePort,
@@ -101,11 +101,12 @@ export const SCREENS: readonly LiveScreen[] = [
     ],
   },
   {
-    phase: lapsPhase,
-    outputs: LAPS_OUTPUTS,
+    phase: runsPhase,
+    outputs: RUNS_OUTPUTS,
     help: [
-      'It checks the laps screen against the seed and times the same `fixture:write step` events to',
-      'their lanes before and after the hold.',
+      'It checks the runs screen against the seed (chips, first page, failed runs), turns an inserted idle',
+      'poll through the toggle, and times the same `fixture:write step` events to their rows before and',
+      'after the hold.',
     ],
   },
   {
@@ -141,7 +142,7 @@ export const SCREENS: readonly LiveScreen[] = [
     help: [
       'It checks the factory switcher: every factory in the factories file with its running laps, an',
       'inserted lap on the second factory timed to its count, choosing that factory from /, every',
-      'factory screen and step detail, its map, strip and lanes, and the remembered choice with its',
+      'factory screen and step detail, its map, strip and runs, and the remembered choice with its',
       'fallback for a removed factory; then, on a second server reading factories.json alone, that the',
       "switcher lists only factories.json's factories and the second factory is neither sealed for nor",
       'shown when remembered.',

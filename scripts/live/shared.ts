@@ -30,7 +30,7 @@ export const MAP = '[data-live="home-map"]';
 export const LIVE_STEP = 'review';
 export const VERSIONS = '[data-live="version-strip"]';
 export const ENTRY = `${VERSIONS} [data-version-entry]`;
-export const LANE = '[data-live="lanes"] [data-lane]';
+export const RUN_ROW = '[data-live="runs"] [data-run]';
 /** How long to wait for `ready` before giving up; the limit is judged on the page's own marks. */
 export const READY_WAIT_MS = 10_000;
 

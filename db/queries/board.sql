@@ -23,7 +23,7 @@ WITH items AS (
   ) closed
 ),
 -- Each of the factory's loop and queue runs that reached the ship step, once, with the item it holds:
--- its claim, else the facts step's item, else its number input (lanes.sql, home-map.sql, health-workable.sql).
+-- its claim, else the facts step's item, else its number input (runs.sql, home-map.sql, health-workable.sql).
 claim AS (
   SELECT DISTINCT ON (c.run_id) c.run_id, c.issue_number FROM mc.claims c
   WHERE c.factory = $1

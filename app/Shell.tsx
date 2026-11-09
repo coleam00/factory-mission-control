@@ -43,7 +43,7 @@ function NavFooter({
   onEngine: (engine: string | null | undefined) => void;
 }): ReactElement {
   return (
-    <div className="mt-auto grid gap-1.5 px-2 pt-2.5">
+    <div className="mt-auto grid grid-cols-[minmax(0,1fr)] gap-1.5 px-2 pt-2.5">
       {unknownKey === undefined ? (
         <FactoryStrip onEngine={onEngine} />
       ) : (

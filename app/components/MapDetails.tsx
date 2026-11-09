@@ -17,7 +17,7 @@ import {
   type ProductDocumentRow,
   type WorkOrderRow,
 } from '../map/live';
-import { useNow } from './Lanes';
+import { useNow } from './panel';
 import { Button } from './ui/Button';
 import { Card as CardPanel } from './ui/Card';
 import { Tabs } from './ui/Tabs';

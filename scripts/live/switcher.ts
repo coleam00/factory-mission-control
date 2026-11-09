@@ -2,9 +2,9 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { SECOND_FACTORY } from '../fixture/seed';
 import { openPage, type Page } from '../lib/cdp';
+import { runsQueryPage } from './runs';
 import {
   freePort,
-  LANE,
   LIMITS,
   type LiveContext,
   type LiveOutput,
@@ -18,6 +18,7 @@ import {
   PANEL,
   pageWait,
   READY_WAIT_MS,
+  RUN_ROW,
   waitForHealth,
 } from './shared';
 import {
@@ -42,7 +43,7 @@ const entriesOnScreen = `[...document.querySelectorAll('${SWITCHER} [data-factor
   li.getAttribute('data-factory-entry'), Number(li.getAttribute('data-running'))])`;
 const stripNames = (factory: string) =>
   `document.querySelector('${PANEL}[data-state="ready"] span')?.textContent === ${JSON.stringify(factory)}`;
-// The name is the pill's own text; the caret beside it is a child span (#297).
+// The pill's first child span holds the factory name; the engine version follows it (#297).
 const switcherNames = (factory: string) =>
   `document.querySelector('${SWITCHER} summary span:last-child')?.firstChild?.textContent === ${JSON.stringify(factory)}`;
 const RUNNING_SQL = `SELECT f.name, (SELECT count(*)::int FROM mc.laps l
@@ -160,7 +161,7 @@ async function checkSwitcher(ctx: LiveContext): Promise<void> {
     check(
       'the engine beside the switcher',
       await page.evaluate<string | null>(
-        `document.querySelector('[data-engine]')?.textContent?.split('engine ')[1] ?? null`,
+        `document.querySelector('[data-engine]')?.textContent ?? null`,
       ),
       strip0?.engine ? String(strip0.engine).slice(0, 8) : null,
     );
@@ -221,18 +222,15 @@ async function checkSwitcher(ctx: LiveContext): Promise<void> {
       if (screen !== 'runs') continue;
       await waitFor(
         page,
-        'the lanes were not ready',
-        `document.querySelector('[data-live="lanes"][data-state="ready"]') !== null`,
+        'the runs were not ready',
+        `document.querySelector('[data-live="runs"][data-state="ready"]') !== null`,
       );
-      const lanes = await page.evaluate<string[]>(
-        `[...document.querySelectorAll('${LANE}')].map((el) => el.getAttribute('data-lane')).sort()`,
+      const runs = await page.evaluate<string[]>(
+        `[...document.querySelectorAll('${RUN_ROW}')].map((el) => el.getAttribute('data-run'))`,
       );
-      const running = await db.query(
-        `SELECT run_id::text AS run FROM mc.laps
-          WHERE factory = $1 AND status = 'running' ORDER BY 1`,
-        [second],
-      );
-      check(`${second}'s lanes`, lanes, running.map((r) => String(r.run)).sort());
+      // The page hides idle polls by default: newest first, as the screen orders them.
+      const newest = (await runsQueryPage(db, ctx.queries, second, true)).runs;
+      check(`${second}'s runs`, runs, newest);
     }
 
     // Choosing a factory from a step's page stays on that step, in the chosen factory (#202).

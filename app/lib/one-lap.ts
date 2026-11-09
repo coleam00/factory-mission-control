@@ -17,8 +17,7 @@ export const shownDispositions = (lap: Pick<OneLapRow, 'dispositions' | 'hidden_
   (lap.dispositions ?? []).filter((d) => d.line === null || !lap.hidden_lines.includes(d.line));
 
 /**
- * The one workflow whose runs have a lap page: `db/queries/one-lap*.sql` filter on it (#395), and
- * `db/queries/restated-rules.test.ts` binds `recent-laps.sql` to it.
+ * The one workflow whose runs have a lap page: `db/queries/one-lap*.sql` filter on it (#395).
  */
 export const LAP_PAGE_WORKFLOW = 'archon-loop';
 
@@ -190,7 +189,7 @@ export const pullUrl = (repository: string, n: number) =>
 export const issueUrl = (repository: string, n: number) =>
   `https://github.com/${repository}/issues/${n}`;
 
-/** A finished lap's outcome, read as recent-laps.sql reads it; null while it runs or when none applies. */
+/** A finished lap's outcome, by the scorecard's definitions (PRD 4.2); null while it runs or when none applies. */
 export function lapOutcome(lap: OneLapRow): Outcome | null {
   if (!['completed', 'failed', 'cancelled'].includes(lap.status)) return null;
   if (lap.status === 'failed') return 'failed';
