@@ -17,6 +17,74 @@ export function readMigrationFiles(dir: string): MigrationFile[] {
     .map((name) => ({ name, sql: readFileSync(join(dir, name), 'utf-8') }));
 }
 
+/**
+ * The `00NN_` files that predate the timestamp form (#580). They keep their names because the
+ * runner records applied migrations by filename. Never add to it: a new migration uses the timestamp form.
+ */
+export const LEGACY_MIGRATIONS: ReadonlySet<string> = new Set([
+  '0001_mc_schema.sql',
+  '0002_github_mirror.sql',
+  '0003_versions_decisions.sql',
+  '0004_architecture.sql',
+  '0005_laps.sql',
+  '0006_projection.sql',
+  '0007_step_attempts.sql',
+  '0008_rewind_branches.sql',
+  '0008_versions_projection.sql',
+  '0009_project_run_compiles_unlocked.sql',
+  '0010_step_attempt_eligibility.sql',
+  '0011_pin_full_archon_sha.sql',
+  '0012_arch_text_lf.sql',
+  '0013_step_attempt_identity.sql',
+  '0014_pre_existing_refs.sql',
+  '0015_step_attempt_usage.sql',
+  '0016_pin_reason_optional.sql',
+  '0017_app_check_line_ids.sql',
+  '0018_issue_label_time.sql',
+  '0019_attention_items.sql',
+  '0019_queue_laps.sql',
+  '0019_structured_output_string.sql',
+  '0020_queue_step_events.sql',
+  '0021_split_step_events.sql',
+  '0022_queue_versions.sql',
+  '0023_arch_step_child_workflow.sql',
+  '0024_queue_app_check_lines.sql',
+  '0025_queue_app_check_sealed.sql',
+  '0026_pull_request_references.sql',
+  '0027_queue_app_check_published.sql',
+  '0028_work_item_states.sql',
+  '0029_lap_step_pr_number.sql',
+  '0030_aggregate_attempt_cost.sql',
+  '0031_attention_data.sql',
+  '0031_run_stops.sql',
+  '0032_attempt_event_time.sql',
+  '0032_lap_step_pr_url.sql',
+  '0032_stop_line.sql',
+]);
+
+/** A new migration's name: `<YYYYMMDDTHHMMZ>_<name>.sql`, e.g. `20261109T1430Z_stop_line.sql`. */
+export const TIMESTAMP_MIGRATION = /^\d{8}T\d{4}Z_[a-z0-9_]+\.sql$/;
+
+/** Names that are neither legacy nor timestamp-form, and timestamp prefixes shared by more than one file. */
+export function migrationNameProblems(names: readonly string[]): string[] {
+  const sql = [...names].sort();
+  const problems = sql
+    .filter((name) => !LEGACY_MIGRATIONS.has(name) && !TIMESTAMP_MIGRATION.test(name))
+    .map(
+      (name) =>
+        `${name} is not named <YYYYMMDDTHHMMZ>_<name>.sql with <name> in lowercase a-z, 0-9 and _ (e.g. 20261109T1430Z_stop_line.sql)`,
+    );
+  const byPrefix = new Map<string, string[]>();
+  for (const name of sql.filter((n) => TIMESTAMP_MIGRATION.test(n))) {
+    const prefix = name.slice(0, name.indexOf('_'));
+    byPrefix.set(prefix, [...(byPrefix.get(prefix) ?? []), name]);
+  }
+  for (const [prefix, group] of byPrefix) {
+    if (group.length > 1) problems.push(`${group.join(', ')} share the prefix ${prefix}`);
+  }
+  return problems;
+}
+
 export function migrationsDir(repoRoot: string): string {
   return join(repoRoot, 'db', 'migrations');
 }
