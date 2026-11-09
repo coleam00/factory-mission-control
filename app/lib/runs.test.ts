@@ -81,6 +81,9 @@ test('the stop line is the error of a failed run and the question of a paused on
   expect(stopLine(run({ state: 'failed', stop_line: 'boom' }))).toBe('boom');
   expect(stopLine(run({ state: 'failed' }))).toBeNull();
   expect(stopLine(run({ state: 'needs-you', stop_line: 'Merge it?' }))).toBe('Asking: Merge it?');
+  expect(
+    stopLine(run({ state: 'needs-you', stop_line: '**Merge queue, PR 16: merge decision**' })),
+  ).toBe('Asking: Merge queue, PR 16: merge decision');
   expect(stopLine(run({ state: 'needs-you' }))).toBe('Waiting on you');
   expect(stopLine(run({ state: 'done', stop_line: 'x' }))).toBeNull();
 });

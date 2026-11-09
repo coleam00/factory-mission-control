@@ -3,6 +3,7 @@
  * from them. Pure, no React.
  */
 import { STATES, type State } from './states';
+import { questionOf } from './work-item';
 
 export const RUNS_PAGE_SIZE = 50;
 
@@ -141,7 +142,7 @@ export function subLine(run: RunRow): string {
 export function stopLine(run: RunRow): string | null {
   if (run.state === 'failed') return run.stop_line;
   if (run.state === 'needs-you') {
-    return run.stop_line === null ? 'Waiting on you' : `Asking: ${run.stop_line}`;
+    return run.stop_line === null ? 'Waiting on you' : `Asking: ${questionOf(run.stop_line)}`;
   }
   return null;
 }
