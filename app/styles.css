@@ -135,7 +135,7 @@
 @keyframes map-hit {
   30% {
     transform: scale(1.035);
-    box-shadow: 0 0 0 4px var(--accent-soft);
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--v3-fg-2) 25%, transparent);
   }
 }
 
