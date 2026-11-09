@@ -3,7 +3,7 @@ import { Link, useLocation } from 'react-router';
 import type { BoardRow } from '../lib/board';
 import { useFactory, useUrlFactory } from '../live/FactoryProvider';
 import { LivePanel } from '../live/LivePanel';
-import { type Place, PLACES, type PlacePath, placeHref } from '../lib/places';
+import { type Place, PLACES, type PlacePath, placeAddress } from '../lib/places';
 import { DecisionsCount } from './DecisionsCount';
 import type { StatusStripRow } from './FactoryStrip';
 
@@ -36,7 +36,7 @@ export function Glyph({ place }: { place: Place }): ReactElement {
  * matches any address.
  */
 export function currentPlace(pathname: string, factory: string, place: Place): boolean {
-  const to = placeHref(factory, place);
+  const to = placeAddress(factory, place.path);
   if (pathname === to) return true;
   if (place.path === 'map') return pathname.startsWith(`/f/${encodeURIComponent(factory)}/steps/`);
   return place.path === 'runs' && pathname.startsWith(`${to}/`);
@@ -131,7 +131,7 @@ export function PlaceLinks({
             return (
               <Link
                 key={place.path}
-                to={placeHref(factory, place)}
+                to={placeAddress(factory, place.path)}
                 onClick={onNavigate}
                 aria-current={current ? 'page' : undefined}
                 className={

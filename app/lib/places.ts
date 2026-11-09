@@ -18,7 +18,3 @@ export type PlacePath = (typeof PLACES)[number]['path'];
 /** The address of the place at `path` for `factory`: the one writer of a place's segment. */
 export const placeAddress = (factory: string, path: PlacePath): string =>
   `/f/${encodeURIComponent(factory)}${path === '' ? '' : `/${path}`}`;
-
-/** A place's address for `factory`. */
-export const placeHref = (factory: string, place: Place): string =>
-  placeAddress(factory, place.path);
