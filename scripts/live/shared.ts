@@ -1,5 +1,5 @@
 import { stepPath } from '../../app/lib/lap-graph';
-import { type Card, cardsCounting, FACTORY_MAP } from '../../app/map/factory-map';
+import { type Card, cardsCounting, FACTORY_MAP, MAP_TYPE_FLOOR } from '../../app/map/factory-map';
 import { SERVE_PORTS } from '../../server/ports';
 import type { Page } from '../lib/cdp';
 import type { Deps } from '../lib/cli';
@@ -174,8 +174,8 @@ export interface MapType {
   windowWidth: number;
 }
 
-/** The least rendered size of each, at 1440x900 fitted (owner, PR #326 review). */
-export const MAP_READABLE = { width: 1440, title: 14, text: 11, kind: 10, label: 10 } as const;
+/** The least rendered size of each, at 1440x900 fitted; the floors live in `factory-map.ts`. */
+export const MAP_READABLE = { width: 1440, ...MAP_TYPE_FLOOR } as const;
 /** The page's gutters either side of the map's frame, which spans the window between them. */
 const MAP_GUTTERS = 48;
 

@@ -19,12 +19,10 @@ import {
   type Chip,
   cardWidth,
   FIT_FOOT,
-  FIT_MAX,
-  FIT_PAD,
-  fitScale,
+  fitCamera,
   heroFrameHeight,
-  levelMax,
   levelOf,
+  MAP_TYPE,
   MIN_FRAME,
   type FactoryMap as FactoryMapData,
   type Line,
@@ -35,6 +33,7 @@ import {
   neighbours,
   openerOf,
   type Point,
+  PHONE,
   pathOf,
   type Role,
   tourPoints,
@@ -67,20 +66,14 @@ const LINE_DASH: Record<LineStyle, string | undefined> = {
   ask: '3 4',
 };
 
-/**
- * The map's type in map units, larger than the mockup's so that at 1440 wide, fitted, a card's
- * title renders at least 14px, its text 11px and the labels 10px (owner, PR #326 review).
- */
-export const MAP_TYPE = { kind: 18, title: 25, text: 20, chip: 15, label: 18 } as const;
 /** A wire label's Geist Mono advance per character, 0.6em, rounded up. */
 const LABEL_CHAR_W = Math.ceil(MAP_TYPE.label * 0.6);
 const MIN_ZOOM = 0.1;
 const MAX_ZOOM = 2.4;
 /**
- * Below this width the map opens as refs/40-home-phone.png draws it: the line at a readable scale,
+ * Below `PHONE` the map opens as refs/40-home-phone.png draws it: the line at a readable scale,
  * centred between Review and App check, the rest a pan away. Fit still fits the whole map.
  */
-const PHONE = 701;
 const PHONE_SCALE = 0.42;
 const PHONE_FRAME = 460;
 
@@ -554,19 +547,12 @@ export function FactoryMap({
     return () => onDrawn?.(false);
   }, [onDrawn]);
 
-  /** The whole map in the frame, centred, as large as the frame allows; from phone width up, a deeper view no larger than `levelMax`. */
+  /** The Fit camera: see `fitCamera`. */
   const fit = useCallback(() => {
     const el = stage.current;
     if (!el) return;
-    const { level, world } = levelRef.current;
     const frame = { width: el.clientWidth, height: el.clientHeight };
-    const { width, height } = frame;
-    const k = fitScale(world, frame, width >= PHONE ? levelMax(map, level, frame) : FIT_MAX);
-    setCam({
-      k,
-      x: (width - world.width * k) / 2,
-      y: Math.max(FIT_PAD, (height - FIT_FOOT - world.height * k) / 2),
-    });
+    setCam(fitCamera(map, levelRef.current.level, frame));
     setPlaced(true);
   }, [map]);
 

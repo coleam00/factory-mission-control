@@ -2,8 +2,8 @@ import { expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { createMemoryRouter, RouterProvider } from 'react-router';
 import { lapHref } from '../lib/one-lap';
-import { type RunRow, type RunsRow, runsView } from '../lib/runs';
-import { RunFilters, RunList } from './Runs';
+import { RUNS_PAGE_SIZE, type RunRow, type RunsFilter, type RunsRow, runsView } from '../lib/runs';
+import { addressOf, filterOf, Pager, RunFilters, RunList } from './Runs';
 
 const render = (element: React.ReactElement): string =>
   renderToStaticMarkup(<RouterProvider router={createMemoryRouter([{ path: '/', element }])} />);
@@ -82,4 +82,41 @@ test('the six chips show their counts and the toggle is on and counts the idle p
     /role="switch"[^>]*aria-checked="true"|aria-checked="true"[^>]*role="switch"/,
   );
   expect(html).toContain('Hide idle polls (4)');
+});
+
+const filter = (over: Partial<RunsFilter> = {}): RunsFilter => ({
+  q: '',
+  state: '',
+  hideIdle: true,
+  page: 1,
+  ...over,
+});
+
+test('an address with no idle parameter hides idle polls', () => {
+  expect(filterOf(new URLSearchParams('')).hideIdle).toBe(true);
+  expect(filterOf(new URLSearchParams('idle=show')).hideIdle).toBe(false);
+});
+
+test('a page the address cannot read is page 1', () => {
+  expect(filterOf(new URLSearchParams('page=0')).page).toBe(1);
+  expect(filterOf(new URLSearchParams('page=abc')).page).toBe(1);
+  expect(filterOf(new URLSearchParams('page=3')).page).toBe(3);
+});
+
+test('a filter change made from page 3 leaves the page out of the address', () => {
+  const from = filterOf(new URLSearchParams('page=3&state=failed'));
+  expect(from.page).toBe(3);
+  const query = addressOf({ ...from, page: 1, ...{ q: 'fix' } });
+  expect(query.has('page')).toBe(false);
+  expect(query.toString()).toBe('q=fix&state=failed');
+});
+
+function pager(total: number): string {
+  const counts = { all_count: total } as RunsRow;
+  return renderToStaticMarkup(<Pager counts={counts} filter={filter()} onChange={() => {}} />);
+}
+
+test('the pager shows nothing at one full page and the range at one run more', () => {
+  expect(pager(RUNS_PAGE_SIZE)).toBe('');
+  expect(pager(RUNS_PAGE_SIZE + 1)).toContain('1–50 of 51');
 });

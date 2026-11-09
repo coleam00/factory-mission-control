@@ -29,7 +29,7 @@ const COLUMNS =
 const NUMBER = 'font-mono text-[length:var(--v3-t-meta)] tabular-nums text-right';
 
 /** Everything the page's address says about what to show; a value it cannot read falls back to the default. */
-function filterOf(params: URLSearchParams): RunsFilter {
+export function filterOf(params: URLSearchParams): RunsFilter {
   const state = params.get('state');
   const page = Number.parseInt(params.get('page') ?? '', 10);
   return {
@@ -40,21 +40,24 @@ function filterOf(params: URLSearchParams): RunsFilter {
   };
 }
 
+/** The address that shows a filter; a value that is the default stays out of it. */
+export function addressOf(to: RunsFilter): URLSearchParams {
+  const query = new URLSearchParams();
+  if (to.q !== '') query.set('q', to.q);
+  if (to.state !== '') query.set('state', to.state);
+  if (!to.hideIdle) query.set('idle', 'show');
+  if (to.page > 1) query.set('page', String(to.page));
+  return query;
+}
+
 /** Every run of the factory, newest first, one page of it, with the chips' counts from the same query. */
 export function Runs({ factory }: { factory: string | undefined }): ReactElement {
   const [params, setParams] = useSearchParams();
   const filter = filterOf(params);
   const [draft, setDraft] = useState(filter.q);
 
-  const change = (next: Partial<RunsFilter>) => {
-    const to = { ...filter, page: 1, ...next };
-    const query = new URLSearchParams();
-    if (to.q !== '') query.set('q', to.q);
-    if (to.state !== '') query.set('state', to.state);
-    if (!to.hideIdle) query.set('idle', 'show');
-    if (to.page > 1) query.set('page', String(to.page));
-    setParams(query);
-  };
+  const change = (next: Partial<RunsFilter>) =>
+    setParams(addressOf({ ...filter, page: 1, ...next }));
 
   // The address follows the box after a pause, so a run of keystrokes is one search.
   useEffect(() => setDraft(filter.q), [filter.q]);
@@ -283,7 +286,7 @@ function RunItem({
   );
 }
 
-function Pager({
+export function Pager({
   counts,
   filter,
   onChange,

@@ -1,6 +1,6 @@
 SELECT l.run_id, l.status, l.started_at, l.completed_at, f.repository, f.console,
   c.issue_number, i.title AS issue_title, i.url AS issue_url,
-  -- The pick step's route, or else the one the lap's claim comment records, as runs.sql reads it.
+  -- The pick step's route, or else the one the lap's claim comment records.
   coalesce(p.output ->> 'route', c.route) AS route, p.output ->> 'depth' AS depth,
   pr.pr,
   -- The review's outcome and dispositions (PRD 4.6), and the gate's: a refusal is the land step's
