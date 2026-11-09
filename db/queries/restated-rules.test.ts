@@ -1,7 +1,13 @@
 import { expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { COLUMNS, PARKED, parked, SPLIT_WORKFLOW } from '../../app/lib/board';
+import {
+  BLOCKED_STAGES,
+  FOUND_OUTCOMES,
+  PARKED,
+  parked,
+  SPLIT_WORKFLOW,
+} from '../../app/lib/board';
 import { STOP_CLASSES } from '../../app/lib/failures';
 import { causeOf } from '../../app/lib/health';
 import { LAP_PAGE_WORKFLOW, prNumber } from '../../app/lib/one-lap';
@@ -37,12 +43,6 @@ test('the board route CASE agrees with the pack ROUTE_LABEL', async () => {
   );
   expect(new Set(pairs.map(([label]) => label))).toEqual(new Set(Object.values(ROUTE_LABEL)));
   for (const [label, route] of pairs) expect(ROUTE_LABEL[route as string]).toBe(label);
-});
-
-test('the Board grid has one track per column', () => {
-  expect(read('app', 'components', 'Board.tsx')).toContain(
-    `grid-cols-[repeat(${COLUMNS.length},minmax(`,
-  );
 });
 
 test('map-right-now reads only paths the pinned merge queue declares', () => {
@@ -344,6 +344,30 @@ test('the stages Unstick reads are the pinned pack’s', () => {
   const literals = [...sqlOf('unstick').matchAll(/w\.stage = '([^']*)'/g)].map((m) => m[1]);
   expect(literals.length).toBeGreaterThan(0);
   for (const stage of literals) expect(stages, `stage '${stage}'`).toContain(stage);
+});
+
+test('the stages the Board calls blocked are the pinned pack’s', () => {
+  const stages = statusUnion('workitem.ts', 'Stage');
+  for (const stage of BLOCKED_STAGES) expect(stages, `stage '${stage}'`).toContain(stage);
+});
+
+test('the Found card reads the pack’s discoveries outcome', () => {
+  const doc = Bun.YAML.parse(
+    read('fixtures', 'pack', 'queue', 'sdlc', 'discoveries', 'archon-discoveries.yaml'),
+  ) as {
+    nodes: {
+      id: string;
+      output_format?: {
+        properties?: Record<
+          string,
+          { items?: { properties?: Record<string, { enum?: string[] }> } }
+        >;
+      };
+    }[];
+  };
+  const properties = doc.nodes.find((n) => n.id === 'outcome')?.output_format?.properties;
+  expect(properties?.dropped).toBeDefined();
+  expect(properties?.written?.items?.properties?.outcome?.enum).toEqual([...FOUND_OUTCOMES]);
 });
 
 const yamlEnum = (file: string[], node: string, key: string): string[] => {

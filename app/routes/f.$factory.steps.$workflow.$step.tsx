@@ -2,6 +2,7 @@ import { type ReactElement, type ReactNode, useLayoutEffect, useRef, useState } 
 import { Link, Navigate, useLocation, useParams, useSearchParams } from 'react-router';
 import { EmptyState } from '../components/EmptyState';
 import { StepVersionPicker } from '../components/StepVersionPicker';
+import { CARD as PANEL } from '../components/ui/Card';
 import {
   dependents,
   isIncluded,
@@ -24,12 +25,13 @@ import { useFactory } from '../live/FactoryProvider';
 import { LivePanel, type PanelState } from '../live/LivePanel';
 import { FACTORY_MAP, mapOrigin, selectState } from '../map/factory-map';
 
-const LABEL = 'font-mono text-[10px] font-semibold uppercase tracking-[0.04em] text-text-secondary';
-const CARD = 'flex flex-col gap-3 rounded-lg border border-border bg-surface p-5';
+const LABEL =
+  'font-mono text-[10px] font-semibold uppercase tracking-[0.04em] text-[color:var(--v3-fg-2)]';
+const CARD = `${PANEL} flex flex-col gap-3 p-5`;
 const CODE =
-  'whitespace-pre-wrap rounded-md border border-border bg-surface-inset p-4 font-mono text-[12px] leading-relaxed text-text-primary [overflow-wrap:anywhere]';
-const NOTE = 'text-sm text-text-secondary';
-const MONO = 'font-mono text-[13px] text-text-primary [overflow-wrap:anywhere]';
+  'whitespace-pre-wrap rounded-md border border-[color:var(--v3-line)] bg-[var(--v3-sunk)] p-4 font-mono text-[12px] leading-relaxed text-[color:var(--v3-fg)] [overflow-wrap:anywhere]';
+const NOTE = 'text-sm text-[color:var(--v3-fg-2)]';
+const MONO = 'font-mono text-[13px] text-[color:var(--v3-fg)] [overflow-wrap:anywhere]';
 
 /**
  * A panel of the step at `workflow` and `path`, at the version pinned `at`, else the current one.
@@ -213,9 +215,11 @@ function Subagents({ step, workflow, path, factory, at }: PanelProps): ReactElem
               <article
                 key={agent.name}
                 data-subagent={agent.name}
-                className="flex flex-col gap-2 border-t border-border pt-3 first-of-type:border-t-0 first-of-type:pt-0"
+                className="flex flex-col gap-2 border-t border-[color:var(--v3-line)] pt-3 first-of-type:border-t-0 first-of-type:pt-0"
               >
-                <h3 className="font-mono text-sm font-semibold text-text-primary">{agent.name}</h3>
+                <h3 className="font-mono text-sm font-semibold text-[color:var(--v3-fg)]">
+                  {agent.name}
+                </h3>
                 {agent.description !== null ? <p className={NOTE}>{agent.description}</p> : null}
                 {agent.prompt !== null ? <pre className={CODE}>{agent.prompt}</pre> : null}
                 {agent.instruction_file !== null ? (
@@ -399,7 +403,7 @@ function Step({
     <div className="flex flex-col gap-6">
       <header className="flex flex-col gap-2">
         <p className={LABEL}>{workflow}</p>
-        <h1 className="font-mono text-2xl font-semibold text-text-primary [overflow-wrap:anywhere]">
+        <h1 className="font-mono text-2xl font-semibold text-[color:var(--v3-fg)] [overflow-wrap:anywhere]">
           {path}
         </h1>
         <p data-description="" className={`whitespace-pre-line ${NOTE}`}>

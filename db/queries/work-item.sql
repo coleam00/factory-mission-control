@@ -35,7 +35,8 @@ SELECT 'item' AS kind, NULL::uuid AS run_id, NULL::text AS workflow, i.state AS 
   NULL::text AS answer, NULL::text AS answer_summary, NULL::timestamptz AS answer_at,
   NULL::text AS line_kind, NULL::text AS line_verdict,
   NULL::integer AS pr, NULL::jsonb AS decisions, NULL::jsonb AS landed, NULL::text AS asked_pr,
-  NULL::text AS record_status, i.number, i.title, i.url, f.console
+  NULL::text AS record_status, i.number, i.title, i.url, f.console,
+  NULL::text AS stop_step, NULL::text AS stop_line, NULL::text AS stop_class
 FROM mc.issues i
 JOIN mc.factories f ON f.name = i.factory
 WHERE i.factory = $1 AND i.number::text = $2
@@ -53,7 +54,8 @@ SELECT 'run', r.run_id, r.workflow_name, r.status, r.started_at, r.completed_at,
   coalesce(land.output ->> 'reason', answer.output ->> 'reason', route.output ->> 'reason'),
   coalesce(land.completed_at, apply.completed_at),
   ruling.output ->> 'decision', ruling.output ->> 'summary', ruling.completed_at,
-  NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL
+  NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+  st.step_id, st.line, st.class
 FROM runs r
 LEFT JOIN LATERAL (
   SELECT array_agg(ls.step_id ORDER BY ls.started_at DESC NULLS LAST, ls.step_id) AS steps
@@ -80,12 +82,14 @@ LEFT JOIN mc.lap_steps route ON route.run_id = r.run_id AND route.step_id = 'rou
 LEFT JOIN mc.lap_steps answer ON answer.run_id = r.run_id AND answer.step_id = 'answer'
 LEFT JOIN mc.lap_steps apply ON apply.run_id = r.run_id AND apply.step_id = 'apply'
 LEFT JOIN mc.lap_steps ruling ON ruling.run_id = r.run_id AND ruling.step_id = 'ruling'
+LEFT JOIN mc.run_stops st ON st.run_id = r.run_id
 UNION ALL
 -- An old-loop lap's app check lines, each by kind and verdict (the browser counts them), never a
 -- line's text, and never a holdout line (MISSION rule 3).
 SELECT 'line', a.run_id, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
   NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
-  NULL, NULL, a.kind, a.verdict, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL
+  NULL, NULL, a.kind, a.verdict, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+  NULL, NULL, NULL
 FROM runs r
 JOIN mc.app_check_lines a ON a.run_id = r.run_id
 WHERE a.kind <> 'holdout'
@@ -97,7 +101,8 @@ SELECT 'sweep', l.run_id, l.workflow_name, l.status, l.started_at, l.completed_a
   l.attention_open, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
   NULL, NULL, NULL, sw.completed_at, ruling.output ->> 'decision', ruling.output ->> 'summary',
   ruling.completed_at, NULL, NULL, p.pr_number, sw.output -> 'decisions',
-  rec.output -> 'merged', rec.output -> 'asked' -> 'pr' ->> 'number', rec.status, NULL, NULL, NULL, NULL
+  rec.output -> 'merged', rec.output -> 'asked' -> 'pr' ->> 'number', rec.status, NULL, NULL, NULL, NULL,
+  NULL, NULL, NULL
 FROM mc.pull_request_issues p
 JOIN mc.pull_requests pr ON pr.factory = p.factory AND pr.number = p.pr_number
 JOIN mc.laps l ON l.factory = p.factory

@@ -1,4 +1,13 @@
-import { type BoardRow, boardView, orderProgress } from '../../app/lib/board';
+import {
+  type BoardRow,
+  boardView,
+  type DiscoveryRow,
+  found,
+  MINI_CARDS,
+  orderLine,
+  TABLE_VIEW,
+  VIEW_PARAM,
+} from '../../app/lib/board';
 import type { HealthWorkableRow } from '../../app/lib/health';
 import type { OwnerQueueRow } from '../../app/lib/owner-queue';
 import type { HomeMapRow, WorkOrderRow } from '../../app/map/live';
@@ -29,6 +38,11 @@ interface Shown {
   cardOrders: string[][];
 }
 
+interface ShownPipeline {
+  stages: [id: string, count: number, numbers: number[]][];
+  found: [filed: number, tracked: number, dropped: number] | null;
+}
+
 const SHOWN = `(() => {
   const text = (el) => (el?.textContent ?? '').replace(/\\s+/g, ' ').trim();
   return {
@@ -39,13 +53,26 @@ const SHOWN = `(() => {
     ]),
     orders: [...document.querySelectorAll('[data-work-order]')].map((b) => [
       b.getAttribute('data-work-order'),
-      text(b.querySelector('span:nth-of-type(2)')),
+      text(b.querySelector('[data-order-line]')),
     ]),
     notInOrder: text(document.querySelector('[data-not-in-order]')),
     older: Number(text(document.querySelector('[data-older]')).match(/\\d+/)?.[0] ?? 0),
     cardOrders: [...document.querySelectorAll('[data-work-item]')].map((a) =>
       [...a.querySelectorAll('[data-chip="order"]')].map(text),
     ),
+  };
+})()`;
+
+const SHOWN_PIPELINE = `(() => {
+  const found = document.querySelector('[data-found]');
+  const n = (el, name) => Number(el.getAttribute(name));
+  return {
+    stages: [...document.querySelectorAll('[data-board-stage]')].map((c) => [
+      c.getAttribute('data-board-stage'),
+      Number(c.getAttribute('data-count')),
+      [...c.querySelectorAll('[data-work-item]')].map((a) => Number(a.getAttribute('data-work-item'))),
+    ]),
+    found: found === null ? null : [n(found, 'data-filed'), n(found, 'data-tracked'), n(found, 'data-dropped')],
   };
 })()`;
 
@@ -78,6 +105,7 @@ export function boardPhase(ctx: LiveContext): LivePhase {
         workable: await run<HealthWorkableRow>('health-workable', factory),
         owner: await run<OwnerQueueRow>('owner-queue', factory),
         orders: await run<WorkOrderRow>('work-orders', factory),
+        discoveries: await run<DiscoveryRow>('discoveries', factory),
       },
       new Date(),
       order,
@@ -88,10 +116,41 @@ export function boardPhase(ctx: LiveContext): LivePhase {
     const view = await sqlView(factory, order);
     return {
       columns: view.columns.map((c) => [c.id, c.items.length, c.items.map((i) => i.number)]),
-      orders: view.orders.map((o) => [o.name, orderProgress(o)]),
+      orders: view.orders.map((o) => [o.name, orderLine(o)]),
       notInOrder: `${view.notInOrder} not in a work order`,
       older: view.older,
     };
+  }
+
+  /** The Pipeline's cards against the same recount: counts, the first mini cards, one home per item, and the found numbers. */
+  async function pipelineMismatches(page: Page, factory: string): Promise<string[]> {
+    const screen = await page.evaluate<ShownPipeline>(SHOWN_PIPELINE);
+    const view = await sqlView(factory, null);
+    const where = `board ${factory} pipeline`;
+    const stages = view.pipeline.map((s) => [
+      s.id,
+      s.items.length,
+      s.items.slice(0, MINI_CARDS).map((i) => i.number),
+    ]);
+    const { filed, tracked, dropped } = found(await run<DiscoveryRow>('discoveries', factory));
+    const failures: string[] = [];
+    if (JSON.stringify(screen.stages) !== JSON.stringify(stages))
+      failures.push(
+        `${where} stages: screen ${JSON.stringify(screen.stages)}, SQL ${JSON.stringify(stages)}`,
+      );
+    const homes = view.pipeline.flatMap((s) => s.items.map((i) => i.number));
+    if (new Set(homes).size !== homes.length)
+      failures.push(`${where}: a work item is in more than one stage`);
+    const counted = screen.stages.reduce((sum, [, count]) => sum + count, 0);
+    if (counted !== homes.length)
+      failures.push(
+        `${where}: the stage counts add to ${counted}, SQL places ${homes.length} items`,
+      );
+    if (JSON.stringify(screen.found) !== JSON.stringify([filed, tracked, dropped]))
+      failures.push(
+        `${where} found: screen ${JSON.stringify(screen.found)}, SQL ${JSON.stringify([filed, tracked, dropped])}`,
+      );
+    return failures;
   }
 
   async function mismatches(page: Page, factory: string, order: string | null) {
@@ -134,6 +193,7 @@ export function boardPhase(ctx: LiveContext): LivePhase {
   }
 
   const path = `/f/${FACTORY}/board`;
+  const table = `${path}?${VIEW_PARAM}=${TABLE_VIEW}`;
   return {
     async write() {
       const { failures } = ctx;
@@ -142,6 +202,8 @@ export function boardPhase(ctx: LiveContext): LivePhase {
         await page.setViewport(1440);
         await open(page, path);
         ctx.save(FILES.shot, await page.screenshot(1440));
+        failures.push(...(await pipelineMismatches(page, FACTORY)));
+        await open(page, table);
         failures.push(...(await mismatches(page, FACTORY, null)));
         const merged = await run<BoardRow>('board', FACTORY);
         if (!merged.some((r) => r.number === REFS_DELIVERED && r.state === 'closed'))
@@ -163,16 +225,16 @@ export function boardPhase(ctx: LiveContext): LivePhase {
 
         const demo = (await sqlView(FACTORY, null)).orders.find((o) => o.name === DEMO);
         if (demo === undefined) throw new Error(`the board has no ${DEMO} work order`);
-        const after = orderProgress({ ...demo, merged: demo.merged + 1, total: demo.total + 1 });
+        const after = orderLine({ ...demo, merged: demo.merged + 1, total: demo.total + 1 });
         ms.refsMerged = await writeToScreen(
           page,
           deps,
           ['label', '--label', `work-order:${DEMO}`, '--issue', String(REFS_DELIVERED)],
-          `(document.querySelector('[data-work-order="${DEMO}"] span:nth-of-type(2)')?.textContent ?? '').trim().startsWith('${after}')`,
+          `(document.querySelector('[data-work-order="${DEMO}"] [data-order-line]')?.textContent ?? '').trim().startsWith('${after}')`,
         );
         failures.push(...(await mismatches(page, FACTORY, null)));
 
-        await open(page, `${path}?order=${DEMO}`);
+        await open(page, `${table}&order=${DEMO}`);
         const pressed = await page.evaluate<string | null>(
           `document.querySelector('[data-work-order="${DEMO}"]')?.getAttribute('aria-pressed') ?? null`,
         );
@@ -194,6 +256,8 @@ export function boardPhase(ctx: LiveContext): LivePhase {
           failures.push('board: clicking the pressed panel left ?order= in the address');
 
         await open(page, `/f/${QUEUE_FACTORY.name}/board`);
+        failures.push(...(await pipelineMismatches(page, QUEUE_FACTORY.name)));
+        await open(page, `/f/${QUEUE_FACTORY.name}/board?${VIEW_PARAM}=${TABLE_VIEW}`);
         const intake = await page.evaluate<boolean>(
           `document.querySelector('[data-board-column="intake"] [data-work-item="401"]') !== null`,
         );
