@@ -2,6 +2,7 @@ import { expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { COLUMNS, PARKED, parked, SPLIT_WORKFLOW } from '../../app/lib/board';
+import { STOP_CLASSES } from '../../app/lib/failures';
 import { causeOf } from '../../app/lib/health';
 import { LAP_PAGE_WORKFLOW, prNumber } from '../../app/lib/one-lap';
 import { QUEUE_ENDING_STATE, QUEUE_REVIEW_STATE, REVIEW_OUTCOME_STATE } from '../../app/lib/states';
@@ -569,14 +570,22 @@ test('board rounds count a shipped run on the item every other screen holds', as
 
 test('mc.stop_class refines Health’s causes, agreeing with causeOf on every corpus line', async () => {
   const sql = read('db', 'migrations', '0031_run_stops.sql');
-  // Both read "the run's latest failed step"; a live query cannot call the mc function, so the pick is copied.
+  // All three read "the run's latest failed step": the WHERE filter and the ORDER BY, copied because a
+  // live query cannot call the mc function.
   const failedStepPick = (text: string, alias: string) =>
     text
-      .match(new RegExp(`ORDER BY ${alias}\\.completed_at[^;]*?LIMIT 1`))?.[0]
-      .replaceAll(`${alias}.`, '');
-  const healthPick = failedStepPick(read('db', 'queries', 'health-runs.sql'), 'ls');
-  expect(healthPick).toBeDefined();
-  expect(failedStepPick(sql, 's')).toBe(healthPick);
+      .match(/(\w+)\.status = 'failed'\s+ORDER BY[^;]*?LIMIT 1/g)
+      ?.find((pick) => pick.startsWith(`${alias}.`))
+      ?.replaceAll(`${alias}.`, '')
+      .replace(/\s+/g, ' ');
+  const picks = [
+    failedStepPick(sql, 's'),
+    failedStepPick(read('db', 'queries', 'health-runs.sql'), 'ls'),
+    failedStepPick(read('db', 'queries', 'work-item.sql'), 'ls'),
+  ];
+  expect(picks[0]).toBeDefined();
+  expect(picks[1]).toBe(picks[0]);
+  expect(picks[2]).toBe(picks[0]);
   const db = await migratedDb();
   try {
     const seen = new Set<string>();
@@ -603,4 +612,19 @@ test('mc.stop_class refines Health’s causes, agreeing with causeOf on every co
   } finally {
     await db.close();
   }
+});
+
+test('the run-stop migration writes only classes and stopped statuses its CHECKs allow', () => {
+  const sql = read('db', 'migrations', '0031_run_stops.sql');
+  const classFn = sql.match(/FUNCTION mc\.stop_class[\s\S]*?\$\$;/)?.[0] ?? '';
+  const thens = [...classFn.matchAll(/THEN '([^']*)'/g)].map((m) => m[1] as string);
+  expect(thens.length).toBeGreaterThan(0);
+  expect([...new Set(thens)].sort()).toEqual([...STOP_CLASSES].sort());
+
+  const checked = quoted(
+    sql.match(/status text NOT NULL CHECK \(status IN \(([^)]*)\)/)?.[1] ?? '',
+  );
+  const guard = quoted(sql.match(/l\.status NOT IN \(([^)]*)\)/)?.[1] ?? '');
+  expect(checked.length).toBeGreaterThan(0);
+  expect(guard.sort()).toEqual(checked.sort());
 });
