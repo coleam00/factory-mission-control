@@ -107,12 +107,14 @@ test('a run waiting for a slot shows that state, not "Needs you"', () => {
   expect(html).toContain('>Waiting for a slot<');
   expect(html).not.toContain('>Needs you<');
   expect(html).toContain('waiting for a free slot');
+  expect(html).not.toContain('Answer in console');
 });
 
 test('the head stays one row on a desktop, so the actions keep the top right beside the Manager dock', () => {
   const html = render();
   expect(html).toContain('min-[760px]:flex-nowrap');
   expect(html).toContain('flex shrink-0 gap-2');
+  expect(html).toContain('absolute top-3 flex left-0');
 });
 
 test("the manager's read comes from the stop record, and the primary action opens the console run", () => {

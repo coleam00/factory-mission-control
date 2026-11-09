@@ -239,6 +239,11 @@ const NO_STOP = {
   resumeCost: null,
 } as const;
 
+/** A paused run holding an answer that is queued for a free slot; the pill, the read and the primary action all key off this. */
+export function waitsForSlot(lap: OneLapRow): boolean {
+  return lap.status === 'paused' && lap.capacity_since !== null;
+}
+
 /** The manager's read of a run, written from its stop record and rows by fixed templates. */
 export function managerRead(
   lap: OneLapRow,
@@ -302,7 +307,7 @@ export function managerRead(
       return { parts, stopClass, codeFailure, resumeStep, resumeCost };
     }
     case 'paused': {
-      if (lap.capacity_since !== null) {
+      if (waitsForSlot(lap)) {
         return plain({ text: 'It has your answer and is waiting for a free slot to continue.' });
       }
       const step = lap.stop_step === null ? 'The run' : displayStep(lap.stop_step);

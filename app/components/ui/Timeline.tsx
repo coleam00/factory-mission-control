@@ -42,7 +42,7 @@ export function TimelineRow({
   const when = dateTime && time ? <time dateTime={dateTime}>{time}</time> : time;
   return (
     <li {...data} className={`relative py-1.5 ${nested ? 'pl-11' : 'pl-5'}`}>
-      <span className={`absolute top-3 ${nested ? 'left-[39px]' : 'left-0'}`}>
+      <span className={`absolute top-3 flex ${nested ? 'left-[39px]' : 'left-0'}`}>
         <StateDot state={state} />
       </span>
       <div className="flex items-baseline gap-2.5 text-[length:var(--v3-t-meta)]">

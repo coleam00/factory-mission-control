@@ -27,6 +27,7 @@ import {
   skipReason,
   stepCost,
   type TimelineEntry,
+  waitsForSlot,
 } from '../lib/one-run';
 import { placeAddress } from '../lib/places';
 import { LAP_OUTCOME_STATE, RUN_STATE, STATE_NAME, type State, stateOf } from '../lib/states';
@@ -272,7 +273,7 @@ function Tabs(): ReactElement {
 function runPill(lap: OneLapRow): { state: State | undefined; name: string } {
   const outcome = isOldLoop(lap.workflow_name) ? lapOutcome(lap) : null;
   if (outcome !== null) return { state: LAP_OUTCOME_STATE[outcome], name: OUTCOME_LABEL[outcome] };
-  if (lap.capacity_since !== null) return { state: 'idle', name: 'Waiting for a slot' };
+  if (waitsForSlot(lap)) return { state: 'idle', name: 'Waiting for a slot' };
   const state = stateOf(RUN_STATE, lap.status);
   return {
     state,
@@ -326,7 +327,7 @@ function RunHead({
   const primary =
     lap.status === 'failed' && read.resumeStep !== null
       ? `Resume from ${read.resumeStep}`
-      : lap.status === 'paused' && lap.stop_step !== null
+      : lap.status === 'paused' && lap.stop_step !== null && !waitsForSlot(lap)
         ? 'Answer in console'
         : null;
   return (
