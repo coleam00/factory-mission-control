@@ -19,6 +19,7 @@ const event = (over: Partial<TimelineEvent>): TimelineEvent => ({
   detail: null,
   run: null,
   stage: null,
+  stop: null,
   ...over,
 });
 
