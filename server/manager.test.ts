@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, setDefaultTimeout, spyOn, test } from 'bun:test';
 import type { Options, SDKMessage } from '@anthropic-ai/claude-agent-sdk';
+import { lapHref } from '../app/lib/one-lap';
 import { snapshot } from '../db/test-db';
 import { createApp } from './app';
 import { type AgentRunner, createManager, type Manager, managerSettings } from './manager';
@@ -179,7 +180,7 @@ describe('the chat endpoint against a stubbed model', () => {
     ]);
     expect(got[0]).toEqual({ type: 'text', text: 'Two things need you.\n' });
     expect(got.filter((e) => e.type === 'link')).toMatchObject([
-      { kind: 'run', id: FAILED_RUN, href: `/f/${FACTORY}/laps/${FAILED_RUN}` },
+      { kind: 'run', id: FAILED_RUN, href: lapHref(FACTORY, FAILED_RUN) },
       { kind: 'item', id: 514, label: '#514 Manager backend', href: `/f/${FACTORY}/work/514` },
     ]);
     const runs = got.find((e) => e.type === 'runs');

@@ -62,7 +62,7 @@ test('rows come in the order given, with their reason, and a lap row links its l
           kind: 'decision',
           tone: 'failed',
           text: 'Merge gate refused: it changes .claude/settings.json',
-          run: { id: 'r1', link: { kind: 'lap', to: '/f/f/laps/r1' } },
+          run: { id: 'r1', link: { kind: 'lap', to: '/f/f/runs/r1' } },
         }),
         event({ key: 'b', text: 'Round 2', detail: 'The reason.' }),
       ]}
@@ -72,7 +72,7 @@ test('rows come in the order given, with their reason, and a lap row links its l
     html.indexOf('Round 2'),
   );
   expect(html).toContain('data-tone="failed"');
-  expect(html).toContain('href="/f/f/laps/r1"');
+  expect(html).toContain('href="/f/f/runs/r1"');
   expect(html).toContain('The reason.');
 });
 

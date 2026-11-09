@@ -2,7 +2,7 @@ import { expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { createMemoryRouter, RouterProvider } from 'react-router';
 import type { CheckLineRow, OneLapRow, StepAttemptRow } from '../lib/one-lap';
-import Lap from '../routes/f.$factory.laps.$runId';
+import Lap from '../routes/f.$factory.runs.$runId';
 import { type LapMapRow, lapGraph } from '../lib/lap-graph';
 import { StepPanel } from './LapGraph';
 import { CheckList, isRunId, LapFound, LapHeaderBody, LapStepsBody, StepList } from './OneLap';
@@ -287,8 +287,8 @@ test('a disposition marks the one app check line it answers, or says it matches 
 test('a lap address that is not a run id shows the id as typed and nothing under it', () => {
   expect(isRunId(RUN)).toBe(true);
   expect(isRunId('not-a-uuid')).toBe(false);
-  const router = createMemoryRouter([{ path: '/f/:factory/laps/:runId', element: <Lap /> }], {
-    initialEntries: ['/f/mission-control/laps/not-a-uuid'],
+  const router = createMemoryRouter([{ path: '/f/:factory/runs/:runId', element: <Lap /> }], {
+    initialEntries: ['/f/mission-control/runs/not-a-uuid'],
   });
   const html = renderToStaticMarkup(<RouterProvider router={router} />);
   expect(html).toContain('not-a-uuid');

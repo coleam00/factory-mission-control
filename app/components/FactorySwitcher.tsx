@@ -4,7 +4,7 @@ import { shownRows, switcherEntries } from '../lib/factory-choice';
 import { useChooseFactory, useFactory, usePublishFactories } from '../live/FactoryProvider';
 import { LivePanel, type PanelState } from '../live/LivePanel';
 import { useLive } from '../live/LiveProvider';
-import { type FactoryScreen, factoryPath } from '../routing';
+import { factoryPath } from '../routing';
 import { LiveDot } from './LiveDot';
 
 export interface FactorySwitcherRow {
@@ -41,7 +41,7 @@ export function FactorySetupNotice({
   if (missing.length === 0) return null;
   const names = missing.map((name) => `“${name}”`).join(', ');
   return (
-    <p className="w-full text-sm text-text-secondary [overflow-wrap:anywhere]">
+    <p className="w-full text-[length:var(--v3-t-micro)] text-[color:var(--v3-fg-3)] [overflow-wrap:anywhere]">
       {rewind === null
         ? `To load configured factories ${names}, run `
         : `Configured factories ${names} are absent from this read-only rewind; switch back and, if setup is still needed, run `}
@@ -115,6 +115,7 @@ export function FactorySwitcherBody({
   open,
   onToggle,
   onChoose = () => {},
+  engine,
 }: {
   rows: readonly FactorySwitcherRow[] | undefined;
   state: PanelState;
@@ -123,6 +124,8 @@ export function FactorySwitcherBody({
   open: boolean;
   onToggle: (open: boolean) => void;
   onChoose?: (factory: string) => void;
+  /** The engine version beside the name, once known. */
+  engine?: string | null;
 }): ReactElement {
   return (
     <details
@@ -133,15 +136,14 @@ export function FactorySwitcherBody({
     >
       <summary className="flex cursor-pointer items-center gap-3">
         <span className="sr-only">Factory</span>
-        <span className="inline-flex items-center gap-1.5 rounded-md border border-[color:var(--accent-muted)] bg-[color:var(--accent-soft)] px-2 py-0.5 font-mono text-sm font-semibold text-accent-bright [overflow-wrap:anywhere]">
-          {current ?? 'Choose a factory'}
-          <span aria-hidden="true" className="text-[10px]">
-            ▾
-          </span>
+        <span className="inline-flex w-full items-center gap-1.5 rounded-md border border-[color:var(--v3-line)] px-2 py-1 font-mono text-[length:var(--v3-t-micro)] text-[color:var(--v3-fg-3)]">
+          <span className="whitespace-nowrap">{current ?? 'Choose a factory'}</span>
+          <span aria-hidden="true">▾</span>
+          {engine ? <span data-engine>· engine {engine.slice(0, 8)}</span> : null}
         </span>
       </summary>
       {open ? (
-        <div className="absolute left-0 top-full z-10 mt-2 min-w-64 rounded-md border border-border bg-surface">
+        <div className="absolute bottom-full left-0 z-10 mb-2 min-w-64 rounded-md border border-[color:var(--v3-line)] bg-[var(--v3-panel)]">
           <Entries
             rows={rows}
             state={state}
@@ -181,7 +183,7 @@ function PublishFactories({
  * The shell's factory switcher: every row of `mc.factories` the server shows, live, opening the
  * same screen (`factoryPath`), and remembering the choice for the old step address, whose URL names none.
  */
-export function FactorySwitcher({ screens }: { screens: readonly FactoryScreen[] }): ReactElement {
+export function FactorySwitcher({ engine }: { engine?: string | null }): ReactElement {
   const live = useLive();
   const current = useFactory();
   const choose = useChooseFactory();
@@ -194,7 +196,7 @@ export function FactorySwitcher({ screens }: { screens: readonly FactoryScreen[]
     <LivePanel<FactorySwitcherRow>
       query="factory-switcher"
       factory={fallback}
-      className="flex flex-wrap items-center gap-y-2"
+      className="flex flex-col gap-y-2"
     >
       {(all, state) => {
         const rows = shownRows(all, factories);
@@ -205,10 +207,11 @@ export function FactorySwitcher({ screens }: { screens: readonly FactoryScreen[]
               rows={rows}
               state={state}
               current={current}
-              hrefFor={(factory) => factoryPath(pathname, factory, screens, search)}
+              hrefFor={(factory) => factoryPath(pathname, factory, search)}
               open={open}
               onToggle={setOpen}
               onChoose={choose}
+              engine={engine}
             />
             <FactorySetupNotice
               factories={factories}

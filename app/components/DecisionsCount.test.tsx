@@ -32,3 +32,9 @@ test('healthy rows are counted, and a loading query shows nothing', () => {
     renderToStaticMarkup(<CountMark attention={sourceOf(undefined, 'loading')} owner={[{}]} />),
   ).toBe('');
 });
+
+test('the badge is a solid violet chip with dark text, as the mockup draws it', () => {
+  const html = renderToStaticMarkup(<CountMark attention={[{}]} owner={[]} />);
+  expect(html).toContain('color:var(--v3-bg)');
+  expect(html).toContain('background-color:var(--v3-you)');
+});

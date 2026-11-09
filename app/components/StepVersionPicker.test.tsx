@@ -81,8 +81,8 @@ test('loading, unavailable and empty lists each read one sentence', () => {
 });
 
 test('on the home map each version opens the map at it, the current one without a version', () => {
-  expect(entries(render(ROWS, 'ready', OLDER, homeHref))).toEqual([
-    { sha: CURRENT, href: '/', shown: false },
-    { sha: OLDER, href: `/?at=${OLDER}`, shown: true },
+  expect(entries(render(ROWS, 'ready', OLDER, (pin) => homeHref('x', pin)))).toEqual([
+    { sha: CURRENT, href: '/f/x/map', shown: false },
+    { sha: OLDER, href: `/f/x/map?at=${OLDER}`, shown: true },
   ]);
 });

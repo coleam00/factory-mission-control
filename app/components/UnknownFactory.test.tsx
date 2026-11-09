@@ -16,10 +16,10 @@ const render = (factory: string, fallback: string | undefined) =>
     </MemoryRouter>,
   );
 
-test('names the key as typed in one sentence and links to the default map', () => {
+test("names the key as typed in one sentence and links to the default factory's Attention", () => {
   const html = render('Mission-Control', 'mission-control');
   expect(text(html)).toBe(
-    'No factory is named &quot;Mission-Control&quot;. Go to mission-control&#x27;s map',
+    'No factory is named &quot;Mission-Control&quot;. Go to mission-control&#x27;s Attention',
   );
   expect(html.match(/<p/g)).toHaveLength(1);
   expect(html.match(/<a /g)).toHaveLength(1);

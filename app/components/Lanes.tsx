@@ -1,6 +1,7 @@
 import { type ReactElement, type ReactNode, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router';
 import { formatCost, formatElapsed, shortRunId } from '../lib/format';
+import { placeAddress } from '../lib/places';
 import {
   costOf,
   durationOf,
@@ -190,8 +191,8 @@ export function LaneList({
                   <Link
                     to={stepHref(factory, lane.workflow_name, stepPath(lane.step_id))}
                     state={stepOriginState({
-                      href: `/f/${encodeURIComponent(factory)}/laps`,
-                      label: 'Laps',
+                      href: placeAddress(factory, 'runs'),
+                      label: 'Runs',
                     })}
                     data-step-link
                     className="underline decoration-border-bright underline-offset-2 hover:decoration-text-primary"

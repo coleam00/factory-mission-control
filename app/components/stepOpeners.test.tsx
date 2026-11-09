@@ -79,12 +79,12 @@ test("a lap's step definition link opens the step with the lap as its origin", (
     'x',
   );
   links.length = 0;
-  at(<StepPanel lap={lap} path="review" now={0} onClose={() => {}} />, '/f/x/laps/abc');
+  at(<StepPanel lap={lap} path="review" now={0} onClose={() => {}} />, '/f/x/runs/abc');
   const opened = links.find((l) => String(l.to).includes('/steps/'));
-  expect(stepOriginOf(opened?.state)).toEqual({ href: '/f/x/laps/abc', label: 'Laps / This lap' });
+  expect(stepOriginOf(opened?.state)).toEqual({ href: '/f/x/runs/abc', label: 'Runs / This run' });
 });
 
-test("a Laps lane's step link opens the step with Laps as its origin", () => {
+test("a Runs lane's step link opens the step with Runs as its origin", () => {
   const lane = {
     run_id: '5eed0003-0000-4000-8000-00000000000a',
     workflow_name: 'archon-loop',
@@ -100,9 +100,9 @@ test("a Laps lane's step link opens the step with Laps as its origin", () => {
     steps: ['ship__intel running'],
   };
   links.length = 0;
-  at(<LaneList rows={[lane]} factory="x" now={0} />, '/f/x/laps');
+  at(<LaneList rows={[lane]} factory="x" now={0} />, '/f/x/runs');
   const opened = links.find((l) => l.to === '/f/x/steps/archon-loop/ship%2Fintel');
-  expect(stepOriginOf(opened?.state)).toEqual({ href: '/f/x/laps', label: 'Laps' });
+  expect(stepOriginOf(opened?.state)).toEqual({ href: '/f/x/runs', label: 'Runs' });
 });
 
 test('the map reads back the card a breadcrumb selects', () => {

@@ -136,7 +136,7 @@ const oneLapOnScreen = `(() => {
 
 /** Opens `runId`'s lap page and waits until every one of its panels is `ready`. */
 async function openOneLap(page: Page, base: string, factory: string, runId: string): Promise<void> {
-  await page.goto(`${base}/f/${factory}/laps/${runId}`);
+  await page.goto(`${base}/f/${factory}/runs/${runId}`);
   await page.evaluate('window.__mcNoReload = true');
   const ready = await page.evaluate<boolean>(
     pageWait(
@@ -495,7 +495,7 @@ export function oneLapPhase(ctx: LiveContext): LivePhase {
         [firstLap, FILES.probe],
         [required(refusedRun, 'refused lap'), FILES.refusedProbe],
       ] as const) {
-        designProbe(`${base}/f/${factory}/laps/${run}`, file, `the lap ${run}`);
+        designProbe(`${base}/f/${factory}/runs/${run}`, file, `the lap ${run}`);
       }
     },
 

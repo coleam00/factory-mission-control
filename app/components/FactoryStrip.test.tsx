@@ -11,7 +11,7 @@ test('in error the strip keeps the factory name and replaces only the count', ()
   expect(html).toContain(FACTORY);
   expect(html).toContain('Live data is unavailable.');
   expect(html).not.toContain('data-count');
-  expect(html).not.toContain('Running now');
+  expect(html).not.toContain('waiting for a slot');
 });
 
 test('while loading the strip keeps the factory name and shows a dash for the count', () => {
@@ -19,17 +19,22 @@ test('while loading the strip keeps the factory name and shows a dash for the co
     <FactoryStripBody factory={FACTORY} rows={undefined} state="loading" />,
   );
   expect(html).toContain(FACTORY);
-  expect(html).toContain('Running now');
+  expect(html).toContain('waiting for a slot');
   expect(html).toContain('>-<');
   expect(html).not.toContain('Live data is unavailable.');
 });
 
-test('when ready the strip shows the factory name and the running count', () => {
+test('when ready the strip shows the factory name and the running and waiting counts', () => {
   const html = renderToStaticMarkup(
-    <FactoryStripBody factory={FACTORY} rows={[{ running: 2 }]} state="ready" />,
+    <FactoryStripBody
+      factory={FACTORY}
+      rows={[{ running: 2, waiting: 1, engine: null }]}
+      state="ready"
+    />,
   );
   expect(html).toContain(FACTORY);
   expect(html).toContain('data-count="2"');
+  expect(html).toMatch(/2<\/span> running · <span[^>]*>1<\/span> waiting for a slot/);
 });
 
 test('an unknown key is marked unknown, without its name, a count or an outage', () => {
@@ -38,7 +43,7 @@ test('an unknown key is marked unknown, without its name, a count or an outage',
   );
   expect(html).not.toContain('mission-control');
   expect(html).toContain('Unknown factory');
-  expect(html).not.toContain('Running now');
+  expect(html).not.toContain('waiting for a slot');
   expect(html).not.toContain('data-count');
   expect(html).not.toContain('Live data is unavailable.');
 });

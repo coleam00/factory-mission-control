@@ -126,7 +126,7 @@ interface Crumbs {
 }
 
 test('the breadcrumb returns to where the step was opened from, and keeps it while the screen stays open', async () => {
-  const from = { href: '/f/factory-a', label: 'Factory / App check', card: 'app' };
+  const from = { href: '/f/factory-a/map', label: 'Factory / App check', card: 'app' };
   const crumbs = await inPage<Crumbs>(`breadcrumbOf(${JSON.stringify({ from })})`);
   expect(crumbs.opened).toEqual({ href: from.href, text: from.label });
   expect(crumbs.moved).toEqual(crumbs.opened);

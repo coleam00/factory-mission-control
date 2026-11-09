@@ -199,5 +199,5 @@ test("no file in app/lib or app/components outside one-lap.ts and scorecard.ts n
 });
 
 test('lapHref encodes the factory segment and leaves the run id as it is', () => {
-  expect(lapHref('acme/web app', 'run-1')).toBe('/f/acme%2Fweb%20app/laps/run-1');
+  expect(lapHref('acme/web app', 'run-1')).toBe('/f/acme%2Fweb%20app/runs/run-1');
 });

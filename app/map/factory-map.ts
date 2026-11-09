@@ -3,6 +3,7 @@
  * read here. Its coverage is held to the pinned pack by `bun run map:check` (invariant 6). Pure,
  * no React.
  */
+import { placeAddress } from '../lib/places';
 import { placeOf, type StepOrigin, type StepRow, stepHref } from '../lib/step-detail';
 import data from './factory-map.json';
 
@@ -335,11 +336,17 @@ export function viewPath(map: FactoryMap, id: string | null, from?: string | nul
   return [];
 }
 
+/** The address parameter that pins the map to a version. */
+export const AT_PARAM = 'at';
+
 /** The address parameter that names the open view. */
 export const VIEW_PARAM = 'view';
 
 /** The address parameter naming the view a shared view was opened from. */
 export const FROM_PARAM = 'from';
+
+/** Every address parameter a map link carries. */
+export const MAP_PARAMS = [AT_PARAM, VIEW_PARAM, FROM_PARAM] as const;
 
 /**
  * `prev` with `view` set to the deepest view of `path`, or removed for the root. A view reached
@@ -398,7 +405,7 @@ export function mapOrigin(
     new URLSearchParams(at ? { at } : {}),
     chain.slice(0, -1).flatMap((card) => (card.opens === undefined ? [] : [card.opens])),
   ).toString();
-  const href = `/f/${encodeURIComponent(factory)}${search ? `?${search}` : ''}`;
+  const href = `${placeAddress(factory, 'map')}${search ? `?${search}` : ''}`;
   const deepest = chain.at(-1);
   return deepest === undefined
     ? { href, label: 'Factory' }

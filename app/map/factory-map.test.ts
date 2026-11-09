@@ -367,13 +367,13 @@ test('no role line wraps in any view', () => {
 
 test("a step's default origin is the map at the view of its deepest card, that card selected", () => {
   const app = mapOrigin(FACTORY_MAP, 'x', 'factory-app-check', 'check', null);
-  expect(app.href).toBe('/f/x?view=app');
+  expect(app.href).toBe('/f/x/map?view=app');
   expect(app.card).toBe('a-check');
   expect(mapOrigin(FACTORY_MAP, 'x', 'factory-app-check', 'check', 'abc').href).toBe(
-    '/f/x?at=abc&view=app',
+    '/f/x/map?at=abc&view=app',
   );
   expect(mapOrigin(FACTORY_MAP, 'x', 'archon-implement', 'implement', null)).toEqual({
-    href: '/f/x',
+    href: '/f/x/map',
     label: 'Factory',
   });
 });

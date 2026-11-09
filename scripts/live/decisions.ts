@@ -201,7 +201,7 @@ export function decisionsPhase(ctx: LiveContext): LivePhase {
     }
   };
   let decisionsPage: Page | undefined;
-  const url = () => `${ctx.base}/f/${encodeURIComponent(factory)}/decisions`;
+  const url = () => `${ctx.base}/f/${encodeURIComponent(factory)}`;
 
   return {
     /** On the untouched seed: every item waiting on the owner. */
