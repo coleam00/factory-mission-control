@@ -1,5 +1,7 @@
 import { expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
+import { UNSTICK_KINDS } from './attention';
+import { STOP_CLASSES } from './failures';
 import { STATE_LABEL } from './lap-graph';
 import { OUTCOMES } from './laps';
 import { REVIEW_OUTCOMES } from './review-outcome';
@@ -21,7 +23,9 @@ import {
   QUEUE_REVIEW_STATE,
   GATE_OUTCOME_STATE,
   GATE_STATE,
+  STOP_CLASS_STATE,
   stateOf,
+  UNSTICK_STATE,
   SWEEP_ACTION_STATE,
 } from './states';
 
@@ -49,6 +53,10 @@ test('every value of every source maps to one of the five states', () => {
 test('a map holds exactly the values its source reads, so a new value fails here', () => {
   expect(sorted(Object.keys(LAP_OUTCOME_STATE))).toEqual(sorted(OUTCOMES));
   expect(sorted(Object.keys(REVIEW_OUTCOME_STATE))).toEqual(sorted(REVIEW_OUTCOMES));
+  expect(sorted(Object.keys(UNSTICK_STATE))).toEqual(sorted(UNSTICK_KINDS));
+  expect(sorted(Object.keys(STOP_CLASS_STATE))).toEqual(
+    sorted([...STOP_CLASSES, 'mixed', 'unclassified']),
+  );
   expect(sorted(Object.keys(STEP_STATE_STATE))).toEqual(sorted(Object.keys(STATE_LABEL)));
   expect(sorted(Object.keys(VERDICT_STATE))).toEqual(
     sorted(

@@ -220,3 +220,22 @@ test('a Pill keeps its data attributes ahead of its class and wraps a long token
   const html = renderToStaticMarkup(<Pill data-chip="order">x</Pill>);
   expect(html).toMatch(/<span data-chip="order" class="[^"]*\[overflow-wrap:anywhere\]/);
 });
+
+test('an OptionTile with an href is a link that keeps its recommended mark and data attributes', () => {
+  const html = renderToStaticMarkup(
+    <OptionTile recommended label="Ship" href="https://console/r/1" data-choice="ship" />,
+  );
+  expect(html).toMatch(/^<a /);
+  expect(html).toContain('href="https://console/r/1"');
+  expect(html).toContain('target="_blank"');
+  expect(html).toContain('data-recommended=""');
+  expect(html).toContain('data-choice="ship"');
+});
+
+test('a recommended OptionTile paints its consequence in fg-2, a plain one in fg-3', () => {
+  const recommended = renderToStaticMarkup(<OptionTile recommended label="A" consequence="x" />);
+  const plain = renderToStaticMarkup(<OptionTile label="A" consequence="x" />);
+  expect(recommended).toContain('--v3-fg-2');
+  expect(recommended).not.toContain('--v3-fg-3');
+  expect(plain).toContain('--v3-fg-3');
+});
