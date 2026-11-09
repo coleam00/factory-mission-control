@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test';
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { BLOCKED_STAGES, FOUND_OUTCOMES, PARKED, parked } from '../../app/lib/board';
 import { STOP_CLASSES } from '../../app/lib/failures';
@@ -663,11 +663,26 @@ test('the runs idle-poll rule names app-check steps the workflow gates on a sele
 
 test('the runs queries read the pack idle value, round step address and app check name as the pack spells them', () => {
   const pack = (...path: string[]) => read('fixtures', 'pack', 'queue', 'sdlc', ...path);
-  const idleEnum = pack('build-queue', 'archon-build-queue.yaml').match(
-    /path: \{ type: string, enum: \[([^\]]*)\] \}/,
-  )?.[1];
   const idle = sqlOf('runs').match(/'path' = '([^']*)'/)?.[1] ?? '';
-  expect(idleEnum?.split(',').map((v) => v.trim())).toContain(idle);
+  // runs.sql joins the `facts` step of every queue workflow, so every pack that has one is bound.
+  const packRoot = join(root, 'fixtures', 'pack', 'queue', 'sdlc');
+  let withFacts = 0;
+  for (const { name: dir } of readdirSync(packRoot, { withFileTypes: true }).filter((e) =>
+    e.isDirectory(),
+  )) {
+    for (const file of readdirSync(join(packRoot, dir)).filter((f) => f.endsWith('.yaml'))) {
+      const facts = pack(dir, file)
+        .replaceAll('\r\n', '\n')
+        .match(/^ {2}- id: facts\n[\s\S]*?path: \{ type: string, enum: \[([^\]]*)\] \}/m)?.[1];
+      if (facts === undefined) continue;
+      withFacts += 1;
+      expect({ file, idle: facts.split(',').map((v) => v.trim()) }).toEqual({
+        file,
+        idle: expect.arrayContaining([idle]),
+      });
+    }
+  }
+  expect(withFacts).toBe(5);
 
   // The round step's address: the build queue's `ship` > the ship block's `deliver` > the deliver
   // block's loop `rounds` > its `round` step, joined the way mc.lap_steps writes it.

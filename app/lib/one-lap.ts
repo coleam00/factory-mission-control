@@ -33,7 +33,7 @@ export const hasLapPage = (workflow: string | null): boolean => workflow === LAP
  * Deliberately not `LAP_PAGE_WORKFLOW` (which runs have a lap page) nor `LAP_WORKFLOWS` (which
  * runs are laps): widening either must not change what counts as an old-loop run.
  */
-const OLD_LOOP_WORKFLOW = LAP_PAGE_WORKFLOW;
+const OLD_LOOP_WORKFLOW = 'archon-loop';
 
 /** Whether a run of `workflow` is an old-loop run. */
 export const isOldLoop = (workflow: string | null): boolean => workflow === OLD_LOOP_WORKFLOW;
