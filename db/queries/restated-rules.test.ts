@@ -605,7 +605,8 @@ test('board rounds count a shipped run on the item every other screen holds', as
 }, 60_000);
 
 test('mc.stop_class refines Health’s causes, agreeing with causeOf on every corpus line', async () => {
-  const sql = read('db', 'migrations', '0031_run_stops.sql');
+  // 0032 replaced mc.project_run_stop, so its failed-step pick is the one Postgres runs.
+  const sql = read('db', 'migrations', '0032_stop_line.sql');
   // All three read "the run's latest failed step": the whole WHERE (bar the run-id correlation) and the
   // ORDER BY, copied because a live query cannot call the mc function. A pick whose WHERE is not exactly
   // `run_id = ... AND status = 'failed'` matches nothing and fails the test.
@@ -653,7 +654,9 @@ test('mc.stop_class refines Health’s causes, agreeing with causeOf on every co
 });
 
 test('the run-stop migration writes only classes and stopped statuses its CHECKs allow', () => {
+  // The class function and the table CHECK live in 0031; 0032 replaced the projector, so its guard is read there.
   const sql = read('db', 'migrations', '0031_run_stops.sql');
+  const guardSql = read('db', 'migrations', '0032_stop_line.sql');
   const classFn = sql.match(/FUNCTION mc\.stop_class[\s\S]*?\$\$;/)?.[0] ?? '';
   const thens = [...classFn.matchAll(/THEN '([^']*)'/g)].map((m) => m[1] as string);
   expect(thens.length).toBeGreaterThan(0);
@@ -662,7 +665,7 @@ test('the run-stop migration writes only classes and stopped statuses its CHECKs
   const checked = quoted(
     sql.match(/status text NOT NULL CHECK \(status IN \(([^)]*)\)/)?.[1] ?? '',
   );
-  const guard = quoted(sql.match(/l\.status NOT IN \(([^)]*)\)/)?.[1] ?? '');
+  const guard = quoted(guardSql.match(/l\.status NOT IN \(([^)]*)\)/)?.[1] ?? '');
   expect(checked.length).toBeGreaterThan(0);
   expect(guard.sort()).toEqual(checked.sort());
 });

@@ -174,7 +174,7 @@ test('the recommendation span holds the text alone, so the separator is not read
 test('the head says when the manager swept, and leaves the clause out without a finished manager run', () => {
   const swept = new Date(NOW - 12 * 60_000);
   expect(render({ sweep: ready([{ swept_at: swept }]) })).toContain(
-    'f. The manager swept 12m ago. The manager put its recommendation first on each.',
+    'f. The manager swept 12m ago and put its recommendation first on each.',
   );
   for (const sweep of [
     ready([{ swept_at: null }]),
