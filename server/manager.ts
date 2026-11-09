@@ -16,6 +16,7 @@ import { workItemHref } from '../app/lib/work-item';
 import { type Db, openDb } from '../scripts/lib/db';
 import { RESUME_FROM_SQL } from './actions';
 import type { Env } from './check-env';
+import { BASE_ENV_NAMES, pick } from './child-env';
 import { readFactoryNames } from './factories';
 import { MANAGER_LIMITS, readOnlyQuery } from './manager-sql';
 import {
@@ -188,26 +189,7 @@ export function parseChat(body: unknown, factories: string[]): ChatRequest | str
 /** Every one must also be in `SECRETS` of `app/bundle.test.ts`, which scans the browser bundle for it, and the `unavailable` notice names them (its test checks each). */
 export const CREDENTIAL_NAMES = ['ANTHROPIC_API_KEY', 'CLAUDE_CODE_OAUTH_TOKEN'] as const;
 
-const PASSED_TO_CLI = [
-  'PATH',
-  'HOME',
-  'USERPROFILE',
-  'SYSTEMROOT',
-  'TEMP',
-  'TMP',
-  'APPDATA',
-  'LOCALAPPDATA',
-  ...CREDENTIAL_NAMES,
-];
-
-function pick(env: NodeJS.ProcessEnv, names: string[]): Record<string, string> {
-  const out: Record<string, string> = {};
-  for (const name of names) {
-    const value = env[name];
-    if (value !== undefined) out[name] = value;
-  }
-  return out;
-}
+const PASSED_TO_CLI = [...BASE_ENV_NAMES, ...CREDENTIAL_NAMES];
 
 /** The machine's own Claude login is not in the environment, so this can only say "none set". */
 function hasCredential(env: NodeJS.ProcessEnv): boolean {

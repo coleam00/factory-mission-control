@@ -14,11 +14,12 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { isAbsolute, join } from 'node:path';
 import type { Hono } from 'hono';
-import type { ActionRequest, ActionResult } from '../app/lib/actions';
-import { parseChoices } from '../app/lib/attention';
+import type { ActionRequest, ActionResult, AnswerRequest, ResumeRequest } from '../app/lib/actions';
+import { isSomethingElse, parseChoices, takesFreeText } from '../app/lib/attention';
 import { isRunId } from '../app/lib/one-lap';
 import { type Db, openDb } from '../scripts/lib/db';
 import type { Env } from './check-env';
+import { BASE_ENV_NAMES, pick } from './child-env';
 import { readFactoryNames } from './factories';
 import { RESUMABLE_STATUSES } from './manager-stream';
 
@@ -81,8 +82,22 @@ export function loadOperators(env: Env, repoRoot: string, factories: string[]): 
   return operators;
 }
 
-const ANSWER_KEYS = ['factory', 'action', 'run_id', 'occurrence', 'option', 'text', 'undone'];
-const RESUME_KEYS = ['factory', 'action', 'run_id', 'from_step', 'undone'];
+const ANSWER_KEYS = Object.keys({
+  factory: true,
+  action: true,
+  run_id: true,
+  occurrence: true,
+  option: true,
+  text: true,
+  undone: true,
+} satisfies Record<keyof AnswerRequest | 'undone', true>);
+const RESUME_KEYS = Object.keys({
+  factory: true,
+  action: true,
+  run_id: true,
+  from_step: true,
+  undone: true,
+} satisfies Record<keyof ResumeRequest | 'undone', true>);
 
 const boundedString = (value: unknown, max: number): value is string =>
   typeof value === 'string' && value.length >= 1 && value.length <= max;
@@ -126,9 +141,7 @@ export const RESUME_FROM_SQL = `SELECT 1 AS found FROM mc.laps l
     AND ($3 IN (SELECT s.step_id FROM mc.run_stops s WHERE s.run_id = l.run_id)
       OR $3 IN (SELECT s.step_id FROM mc.lap_steps s WHERE s.run_id = l.run_id AND s.status = 'failed'))`;
 
-type Checked = { argvTail: string[] } | { status: 409; error: string };
-
-const isSomethingElse = (label: string | null) => label?.trim().toLowerCase() === 'something else';
+type Checked = { argvTail: string[]; option: string | null } | { status: 409; error: string };
 
 /** Checks a request against the database; the argv is built from its row, not from the request. */
 export async function checkAgainstDb(db: Db, request: ActionRequest): Promise<Checked> {
@@ -147,7 +160,7 @@ export async function checkAgainstDb(db: Db, request: ActionRequest): Promise<Ch
       ]);
       if (!step) return { status: 409, error: 'that is not the step that failed' };
     }
-    return { argvTail: ['workflow', 'resume', request.run_id, '--detach', '--json'] };
+    return { argvTail: ['workflow', 'resume', request.run_id, '--detach', '--json'], option: null };
   }
   const [row] = await db.query(
     'SELECT form, options::text AS options, occurrence_id FROM mc.attention_items WHERE factory = $1 AND run_id::text = $2',
@@ -157,19 +170,17 @@ export async function checkAgainstDb(db: Db, request: ActionRequest): Promise<Ch
     return { status: 409, error: 'the question is no longer open' };
   }
   const options = parseChoices(String(row.options));
-  let choose: string[] = [];
-  let text: string[] = [];
-  if (request.option !== null) {
-    if (!options.some((o) => o.id === request.option)) {
+  let option = request.option;
+  const text: string[] = [];
+  if (option !== null) {
+    if (!options.some((o) => o.id === option)) {
       return { status: 409, error: 'that option is not offered' };
     }
-    choose = [`--choose=${request.option}`];
   } else {
-    text = [`--text=${request.text}`];
-    if (row.form !== 'message') {
-      const other = options.find((o) => isSomethingElse(o.label));
-      if (!other) return { status: 409, error: 'this question takes no free text' };
-      choose = [`--choose=${other.id}`];
+    text.push(`--text=${request.text}`);
+    if (!takesFreeText(String(row.form))) {
+      option = options.find(isSomethingElse)?.id ?? null;
+      if (option === null) return { status: 409, error: 'this question takes no free text' };
     }
   }
   return {
@@ -178,10 +189,11 @@ export async function checkAgainstDb(db: Db, request: ActionRequest): Promise<Ch
       'answer',
       request.run_id,
       `--occurrence=${row.occurrence_id}`,
-      ...choose,
+      ...(option === null ? [] : [`--choose=${option}`]),
       ...text,
       '--json',
     ],
+    option,
   };
 }
 
@@ -204,7 +216,7 @@ async function spawnCli(operator: Operator, argvTail: string[]) {
   try {
     const child = Bun.spawn([...operator.command, ...argvTail], {
       cwd: operator.cwd,
-      env: { ...process.env, ...operator.env },
+      env: { ...pick(process.env, BASE_ENV_NAMES), ...operator.env },
       stdout: 'pipe',
       stderr: 'pipe',
       timeout: SPAWN_TIMEOUT_MS,
@@ -214,7 +226,12 @@ async function spawnCli(operator: Operator, argvTail: string[]) {
       new Response(child.stderr).text(),
       child.exited,
     ]);
-    if (child.signalCode) return { exitCode: null, output: 'timed out after 60 s' };
+    if (child.signalCode) {
+      return {
+        exitCode: null,
+        output: `stopped by ${child.signalCode} (limit ${SPAWN_TIMEOUT_MS / 1000} s)`,
+      };
+    }
     return { exitCode: code, output: summarize(stdout, stderr) };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -246,7 +263,7 @@ export async function runAction(
     request.action,
     request.run_id,
     answer?.occurrence ?? null,
-    answer?.option ?? null,
+    checked.option,
     answer?.text ?? null,
     request.action === 'resume' ? request.from_step : null,
     undone,

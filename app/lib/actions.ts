@@ -16,6 +16,7 @@ export type ActionRequest =
   | { factory: string; action: 'resume'; run_id: string; from_step: string | null };
 
 export type AnswerRequest = Extract<ActionRequest, { action: 'answer' }>;
+export type ResumeRequest = Extract<ActionRequest, { action: 'resume' }>;
 
 export type ActionResult = {
   id: number;
@@ -29,12 +30,15 @@ export const UNDO_MS = 5000;
 
 type Fetch = typeof fetch;
 
+/** The server's refusal; `noReply` when none came, so the action may still have been sent. */
+export type ActionError = { error: string; noReply?: true };
+
 /** The server's answer, or its refusal (the toast shows why). */
 export async function postAction(
   request: ActionRequest,
   undone: boolean,
   fetchImpl: Fetch = fetch,
-): Promise<ActionResult | { error: string }> {
+): Promise<ActionResult | ActionError> {
   try {
     const response = await fetchImpl('/api/actions', {
       method: 'POST',
@@ -46,7 +50,7 @@ export async function postAction(
     const error = (body as { error?: unknown } | null)?.error;
     return { error: typeof error === 'string' ? error : `the server answered ${response.status}` };
   } catch (error) {
-    return { error: error instanceof Error ? error.message : String(error) };
+    return { error: error instanceof Error ? error.message : String(error), noReply: true };
   }
 }
 
@@ -86,10 +90,20 @@ const firstLine = (text: string) => text.split('\n', 1)[0].trim();
 /** What the result toast says once the server answered. */
 export function resultText(
   sentText: string,
-  result: ActionResult | { error: string },
+  result: ActionResult | ActionError,
 ): { text: string; ok: boolean } {
-  if ('error' in result) return { text: `Not sent: ${firstLine(result.error)}`, ok: false };
+  if ('error' in result) {
+    return result.noReply
+      ? { text: 'No reply from the server; it may have been sent, check the run', ok: false }
+      : { text: `Not sent: ${firstLine(result.error)}`, ok: false };
+  }
   if (result.ok) return { text: `${sentText} · sent`, ok: true };
+  if (result.exit_code === null) {
+    return {
+      text: `Unknown outcome, check the run: ${firstLine(result.summary) || 'no output'}`,
+      ok: false,
+    };
+  }
   const why = firstLine(result.summary) || 'no output';
   return { text: `Archon refused it: ${why}`, ok: false };
 }
@@ -101,7 +115,7 @@ export type ActionState =
   | { phase: 'done'; text: string; ok: boolean };
 
 interface FlowDeps {
-  post: (request: ActionRequest, undone: boolean) => Promise<ActionResult | { error: string }>;
+  post: (request: ActionRequest, undone: boolean) => Promise<ActionResult | ActionError>;
   setTimer: (fn: () => void, ms: number) => unknown;
   clearTimer: (handle: unknown) => void;
 }

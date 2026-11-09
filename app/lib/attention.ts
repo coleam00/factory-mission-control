@@ -65,6 +65,13 @@ export interface AttentionItem extends Omit<AttentionRow, 'options' | 'labels'> 
   labels: Record<string, string>;
 }
 
+/** The option that takes the owner's own words: labelled "Something else" (its id when unlabelled). Client tiles and the action endpoint both decide with this. */
+export const isSomethingElse = (option: { id: string; label: string | null }): boolean =>
+  (option.label ?? option.id).toLowerCase() === 'something else';
+
+/** A free-text question takes text with no option to carry it. */
+export const takesFreeText = (form: string | null): boolean => form === 'message';
+
 /** The choices, in order; an unreadable value is no choices rather than a broken screen. */
 export function parseChoices(text: string): AttentionOption[] {
   try {

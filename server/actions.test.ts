@@ -129,6 +129,24 @@ describe('answer', () => {
       ],
       ['workflow', 'answer', MESSAGE_RUN, '--occurrence=pause-m-1', '--text=because', '--json'],
     ]);
+    const recorded = await rows();
+    expect(recorded.map((row) => row.option)).toEqual(['other', null]);
+  });
+
+  test('the CLI inherits none of the dashboard credentials', async () => {
+    const envFile = join(scratch, 'stub-env.json');
+    process.env.MC_DATABASE_URL_PROBE = 'dashboard-only';
+    try {
+      await post(
+        answer(WAITING_RUN, 'pause-ask-1', { option: 'yes' }),
+        appWith({ MC_STUB_ENV_FILE: envFile }),
+      );
+    } finally {
+      delete process.env.MC_DATABASE_URL_PROBE;
+    }
+    const names: string[] = JSON.parse(readFileSync(envFile, 'utf-8'));
+    expect(names).toContain('MC_STUB_ENV_FILE');
+    expect(names).not.toContain('MC_DATABASE_URL_PROBE');
   });
 
   test('text on a question with no other option is refused and never sent', async () => {

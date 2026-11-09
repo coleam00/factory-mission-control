@@ -14,7 +14,9 @@ import {
   attentionItems,
   attentionOrigin,
   attentionQuestion,
+  isSomethingElse,
   recommendationReason,
+  takesFreeText,
   UNSTICK_KINDS,
   type UnstickRow,
 } from './attention';
@@ -131,8 +133,6 @@ export const retriageCommand = (repository: string, number: number): string =>
 export const releaseCommand = (repository: string, workflow: string): string =>
   `archon workflow run ${workflow} --input repo_host=github.com --input repo_path=${repository} --detach`;
 
-const SOMETHING_ELSE = 'something else';
-
 /** Archon's open questions: each option tile answers in place with an operator, and opens the console without one. */
 export function decideCards(rows: readonly DecideRow[], factory: string): AttentionCard[] {
   return attentionItems(rows).map((item) => {
@@ -151,10 +151,9 @@ export function decideCards(rows: readonly DecideRow[], factory: string): Attent
     const tiles: Tile[] = item.options.map((o) => {
       const label = o.label ?? o.id;
       // "Something else" takes the owner's text; any other option is the answer itself.
-      const place =
-        label.toLowerCase() === SOMETHING_ELSE
-          ? { somethingElse: { request: asked, item: item.item_number } }
-          : { answer: { request: { ...asked, option: o.id }, item: item.item_number } };
+      const place = isSomethingElse(o)
+        ? { somethingElse: { request: asked, item: item.item_number } }
+        : { answer: { request: { ...asked, option: o.id }, item: item.item_number } };
       return {
         id: o.id,
         label,
@@ -165,7 +164,7 @@ export function decideCards(rows: readonly DecideRow[], factory: string): Attent
         hooks: { 'data-choice': o.id },
       };
     });
-    if (!tiles.some((t) => t.label.toLowerCase() === SOMETHING_ELSE)) {
+    if (!item.options.some(isSomethingElse)) {
       tiles.push({
         id: 'something-else',
         label: 'Something else',
@@ -173,7 +172,7 @@ export function decideCards(rows: readonly DecideRow[], factory: string): Attent
         recommended: false,
         href: link,
         // Only a free-text question takes text without a declared option to carry it.
-        ...(item.form === 'message'
+        ...(takesFreeText(item.form)
           ? { somethingElse: { request: asked, item: item.item_number } }
           : {}),
         hooks: { 'data-choice': 'something-else', 'data-something-else': '' },

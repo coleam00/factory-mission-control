@@ -42,8 +42,11 @@ How this repository is built. The product is `docs/mission-control.prd.md`; this
   `NEON_PROJECT_ID`, and optionally `MC_FACTORIES_FILE` (a factories file served instead of
   `factories.json`; checks use it to add a fixture-only factory, a real install leaves it unset)
   and `MC_OPERATORS_FILE` (the operator file, default `.mc-local/operators.json`, gitignored and
-  written by the owner: per factory its `who`, its Archon CLI `command` as an argv array naming a
-  real executable, `cwd` and optional `env`; a factory without an entry keeps console links).
+  written by the owner: `{"operators": {"<factory>": {...}}}`, keyed by factory name, each with `who`,
+  its Archon CLI `command` as an argv array naming a real executable, an absolute `cwd` and optional
+  `env`; the CLI inherits only PATH and the home and temp variables from the server, the rest comes
+  from `env`. A factory without an entry keeps console links. The server refuses to start on a
+  malformed file or an entry that is not a factory.)
   The Manager adds `MC_MANAGER_MODEL`, `MC_MANAGER_EFFORT`, `MC_MANAGER_MESSAGE_USD` and
   `MC_MANAGER_DAY_USD` (all optional, with defaults) and runs on the owner's Claude subscription:
   `CLAUDE_CODE_OAUTH_TOKEN`, or the machine's Claude login, set on the server. `ANTHROPIC_API_KEY`
