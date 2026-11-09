@@ -50,8 +50,8 @@ export function FlowToggle(): ReactElement | null {
       }
       disabled={reduced}
       onClick={() => setFlow(!flow)}
-      className={`cursor-pointer rounded-[7px] border border-border bg-surface px-2.5 py-1.5 font-mono text-[12px] hover:border-border-bright hover:text-text-primary disabled:cursor-default ${
-        flow && !reduced ? 'text-text-primary' : 'text-text-secondary'
+      className={`cursor-pointer rounded-[7px] border border-[color:var(--v3-line)] bg-[var(--v3-panel)] px-2.5 py-1.5 font-mono text-[12px] hover:border-[color:var(--v3-line-2)] hover:text-[color:var(--v3-fg)] disabled:cursor-default ${
+        flow && !reduced ? 'text-[color:var(--v3-fg)]' : 'text-[color:var(--v3-fg-2)]'
       }`}
     >
       ≋ flow

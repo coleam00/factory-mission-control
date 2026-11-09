@@ -3,8 +3,9 @@ import { Link } from 'react-router';
 import { type StepVersionRow, stepVersions } from '../lib/step-detail';
 import { LivePanel, type PanelState } from '../live/LivePanel';
 
-const LABEL = 'font-mono text-[10px] font-semibold uppercase tracking-[0.04em] text-text-secondary';
-const NOTE = 'px-3 py-2 text-sm text-text-secondary';
+const LABEL =
+  'font-mono text-[10px] font-semibold uppercase tracking-[0.04em] text-[color:var(--v3-fg-2)]';
+const NOTE = 'px-3 py-2 text-sm text-[color:var(--v3-fg-2)]';
 
 function Entries({
   rows,
@@ -33,8 +34,8 @@ function Entries({
               onClick={onChoose}
               title={version.reason}
               aria-current={shown ? 'true' : undefined}
-              className={`flex items-center justify-between gap-6 px-3 py-1.5 font-mono text-sm tabular-nums hover:bg-surface-inset ${
-                shown ? 'text-text-primary' : 'text-text-secondary'
+              className={`flex items-center justify-between gap-6 px-3 py-1.5 font-mono text-sm tabular-nums hover:bg-[var(--v3-sunk)] ${
+                shown ? 'text-[color:var(--v3-fg)]' : 'text-[color:var(--v3-fg-2)]'
               }`}
             >
               <span>{version.label}</span>
@@ -85,13 +86,13 @@ export function StepVersionPickerBody({
       <summary className="flex cursor-pointer items-center gap-3">
         <span className={LABEL}>Version</span>
         <span
-          className={`font-mono ${compact ? 'text-[12px]' : 'text-sm'} tabular-nums text-text-primary [overflow-wrap:anywhere]`}
+          className={`font-mono ${compact ? 'text-[12px]' : 'text-sm'} tabular-nums text-[color:var(--v3-fg)] [overflow-wrap:anywhere]`}
         >
           {name}
         </span>
       </summary>
       {open ? (
-        <div className="absolute left-0 top-full z-10 mt-2 min-w-64 rounded-md border border-border bg-surface">
+        <div className="absolute left-0 top-full z-10 mt-2 min-w-64 rounded-md border border-[color:var(--v3-line)] bg-[var(--v3-panel)]">
           <Entries rows={rows} state={state} at={at} href={href} onChoose={() => onToggle(false)} />
         </div>
       ) : null}

@@ -16,7 +16,7 @@ import type { HomeMapRow } from '../map/live';
 import { EmptyState } from './EmptyState';
 
 const GHOST =
-  'rounded-[6px] border border-border bg-surface px-2.5 py-1 text-[12px] text-text-primary hover:border-border-bright';
+  'rounded-[6px] border border-[color:var(--v3-line)] bg-[var(--v3-panel)] px-2.5 py-1 text-[12px] text-[color:var(--v3-fg)] hover:border-[color:var(--v3-line-2)]';
 const LINK = 'underline decoration-border-bright underline-offset-2 hover:decoration-text-primary';
 
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -31,7 +31,7 @@ function whenOf(at: Date, before: Date | null): string {
 
 export function NoWorkItem({ number }: { number: string }): ReactElement {
   return (
-    <p data-no-work-item className="text-sm text-text-secondary [overflow-wrap:anywhere]">
+    <p data-no-work-item className="text-sm text-[color:var(--v3-fg-2)] [overflow-wrap:anywhere]">
       No work item #{number} in this factory.
     </p>
   );
@@ -49,7 +49,7 @@ function Row({ event, before }: { event: TimelineEvent; before: Date | null }): 
     >
       <time
         dateTime={event.at.toISOString()}
-        className="text-right font-mono text-[12px] text-text-secondary"
+        className="text-right font-mono text-[12px] text-[color:var(--v3-fg-2)]"
       >
         {whenOf(event.at, before)}
       </time>
@@ -60,19 +60,22 @@ function Row({ event, before }: { event: TimelineEvent; before: Date | null }): 
         }`}
         style={{ background: stateColor(event.tone) }}
       />
-      <span className="min-w-0 text-[13px] text-text-primary [overflow-wrap:anywhere]">
+      <span className="min-w-0 text-[13px] text-[color:var(--v3-fg)] [overflow-wrap:anywhere]">
         {event.text}
         {run === null ? null : run.link.kind === 'lap' ? (
-          <Link to={run.link.to} className={`ml-2 text-[12px] text-text-secondary ${LINK}`}>
+          <Link to={run.link.to} className={`ml-2 text-[12px] text-[color:var(--v3-fg-2)] ${LINK}`}>
             Open the lap
           </Link>
         ) : (
-          <a href={run.link.href} className={`ml-2 text-[12px] text-text-secondary ${LINK}`}>
+          <a
+            href={run.link.href}
+            className={`ml-2 text-[12px] text-[color:var(--v3-fg-2)] ${LINK}`}
+          >
             Open the run
           </a>
         )}
         {event.detail === null || event.detail === '' ? null : (
-          <span className="block text-[12px] text-text-secondary">{event.detail}</span>
+          <span className="block text-[12px] text-[color:var(--v3-fg-2)]">{event.detail}</span>
         )}
       </span>
     </li>
@@ -91,20 +94,20 @@ export function WorkItemBody({
 }): ReactElement {
   const column = board?.column ?? null;
   return (
-    <div className="rounded-[10px] border border-border bg-surface">
-      <div className="flex flex-wrap items-start gap-3 border-b border-border px-4 py-3">
+    <div className="rounded-[10px] border border-[color:var(--v3-line)] bg-[var(--v3-panel)]">
+      <div className="flex flex-wrap items-start gap-3 border-b border-[color:var(--v3-line)] px-4 py-3">
         <div className="min-w-0 flex-1">
-          <div className="font-mono text-[11px] font-semibold uppercase tracking-[0.05em] text-text-secondary">
+          <div className="font-mono text-[11px] font-semibold uppercase tracking-[0.05em] text-[color:var(--v3-fg-2)]">
             work item #{header.number}
           </div>
-          <h1 className="text-[15px] font-semibold text-text-primary">{header.title}</h1>
+          <h1 className="text-[15px] font-semibold text-[color:var(--v3-fg)]">{header.title}</h1>
           <div className="mt-1.5 flex flex-wrap gap-1.5">
             {column === null ? null : (
               <span
                 data-column={column.id}
-                className="rounded-[5px] bg-surface-hover px-1.5 py-0.5 font-mono text-[11px]"
+                className="rounded-[5px] bg-[var(--v3-raised)] px-1.5 py-0.5 font-mono text-[11px]"
                 style={{
-                  color: column.role ? `var(--role-${column.role})` : 'var(--text-primary)',
+                  color: column.role ? `var(--role-${column.role})` : 'var(--v3-fg)',
                 }}
               >
                 {column.title}
@@ -114,7 +117,7 @@ export function WorkItemBody({
               <span
                 key={name}
                 data-chip="order"
-                className="rounded-[5px] bg-surface-hover px-1.5 py-0.5 font-mono text-[11px] text-text-secondary"
+                className="rounded-[5px] bg-[var(--v3-raised)] px-1.5 py-0.5 font-mono text-[11px] text-[color:var(--v3-fg-2)]"
               >
                 {name}
               </span>
@@ -142,7 +145,7 @@ export function WorkItemBody({
       </ol>
       <p
         data-timeline-gap
-        className="border-t border-border px-4 py-2 text-[12px] text-text-secondary"
+        className="border-t border-[color:var(--v3-line)] px-4 py-2 text-[12px] text-[color:var(--v3-fg-2)]"
       >
         This timeline does not hold app check lines for build-queue rounds, review verdicts past
         each round's review and re-review, or owner answers on old-loop runs yet. A gap here does
