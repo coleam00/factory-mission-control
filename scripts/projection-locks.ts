@@ -72,8 +72,62 @@ const loopRun = (daysBefore: number) => (tx: Tx, runId: string) =>
     [loopDigest(runId), daysBefore, WORKFLOW],
   );
 
+/** A fresh run Archon's write moves to `update`, so the triggers on its UPDATE run. */
+const updatedRun = (update: string) => async (tx: Tx) => {
+  const [run] = await tx.query(
+    `INSERT INTO remote_agent_workflow_runs (workflow_name, status, user_message, metadata)
+     VALUES ('projection-locks', 'running', 'lock wait check', '{}'::jsonb) RETURNING id`,
+  );
+  await tx.query(`UPDATE remote_agent_workflow_runs SET ${update} WHERE id = $1`, [run?.id]);
+};
+
+const stoppedRun = updatedRun(`status = 'failed', completed_at = now()`);
+
+/** An answered capacity wait: the projection writes mc.capacity_waits for it. */
+const capacityWaitRun = updatedRun(
+  `status = 'paused', metadata = jsonb_build_object(
+     'wait', jsonb_build_object('kind', 'attention', 'answer', 'wait', 'message', 'capacity'),
+     'capacity_wait', jsonb_build_object('since', now()))`,
+);
+
+/** The work item every state case writes, one revision above the last. */
+const WORK_PROJECT = 'projection-locks';
+const WORK_NAME = 'work/999999999';
+const parkedOn =
+  '{"facts":{"build":{"status":"parked","at":"T","decisions":[{"reason":"waits on #7"}]}}}';
+
+const workState = (tx: Tx) =>
+  tx.query(
+    `INSERT INTO remote_agent_state_revisions (project_key, name, revision, value, operation, writer_kind)
+     SELECT $1, $2, coalesce(max(revision), 0) + 1, $3, 'put', 'run'
+     FROM remote_agent_state_revisions WHERE project_key = $1 AND name = $2`,
+    [WORK_PROJECT, WORK_NAME, parkedOn],
+  );
+
 const exclusive = (...tables: string[]) =>
   `LOCK TABLE ${tables.map((table) => `mc.${table}`).join(', ')} IN ACCESS EXCLUSIVE MODE`;
+
+/**
+ * Every mc table a projection function writes in Archon's transaction, plus those it reads
+ * (factories, pins). The all-tables case locks this list; projection-locks.test.ts fails when a
+ * function writes a table that is not on it.
+ */
+export const PROJECTION_TABLES = [
+  'laps',
+  'lap_steps',
+  'lap_step_attempts',
+  'lap_step_attempt_usage',
+  'app_check_lines',
+  'attention_items',
+  'run_stops',
+  'capacity_waits',
+  'work_item_states',
+  'work_item_blockers',
+  'factories',
+  'versions',
+  'pins',
+  'projection_errors',
+];
 
 export const CASES: Case[] = [
   { name: 'no lock: node_completed', errors: 0, write: stepEvent('pick') },
@@ -139,20 +193,33 @@ export const CASES: Case[] = [
   },
   {
     name: 'ACCESS EXCLUSIVE on every mc table the projection writes: provider_event',
-    hold: exclusive(
-      'laps',
-      'lap_steps',
-      'lap_step_attempts',
-      'lap_step_attempt_usage',
-      'app_check_lines',
-      'attention_items',
-      'factories',
-      'versions',
-      'pins',
-      'projection_errors',
-    ),
+    hold: exclusive(...PROJECTION_TABLES),
     errors: 0,
     write: providerEvent,
+  },
+  {
+    name: 'ACCESS EXCLUSIVE mc.run_stops: run finished as failed',
+    hold: exclusive('run_stops'),
+    errors: 1,
+    write: stoppedRun,
+  },
+  {
+    name: 'ACCESS EXCLUSIVE mc.capacity_waits: answered capacity wait',
+    hold: exclusive('capacity_waits'),
+    errors: 1,
+    write: capacityWaitRun,
+  },
+  {
+    name: 'ACCESS EXCLUSIVE mc.work_item_states: work item state revision',
+    hold: exclusive('work_item_states'),
+    errors: 1,
+    write: workState,
+  },
+  {
+    name: 'ACCESS EXCLUSIVE mc.work_item_blockers: work item state revision',
+    hold: exclusive('work_item_blockers'),
+    errors: 1,
+    write: workState,
   },
   { name: 'no lock: archon-loop run INSERT with a new digest', errors: 0, write: loopRun(0) },
   {
