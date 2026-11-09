@@ -588,6 +588,10 @@ test('mc.stop_class refines Health’s causes, agreeing with causeOf on every co
       expect(row?.class).toBe(cause === 'authentication' ? 'config' : 'transient');
     }
     expect(seen).toEqual(new Set(['usage-limit', 'authentication', 'infrastructure']));
+
+    const past = `${'x'.repeat(8000)} HTTP 429`;
+    expect(causeOf(past)).toBe('other');
+    expect((await db.query('SELECT mc.stop_class($1) AS class', [past]))[0]?.class).toBeNull();
   } finally {
     await db.close();
   }

@@ -58,11 +58,15 @@ export const CAUSE_LABEL: Record<Cause, string> = {
 /** The PR and issue references mc.stop_class removes before matching: their digits are not statuses. */
 const REFERENCE = /(#|\b(?:pulls?|issues?)\/|\bPRs? ?#?)[0-9]+/gi;
 
+/** mc.stop_class reads only this many leading characters of an error; so does causeOf. */
+const STOP_CLASS_READS = 8000;
+
 /**
  * mc.stop_class's PRD 4.8 arms (migration 0031), tried in order on the error with PR and issue references
  * removed: the first that matches names the cause. A bare 401 or 429 counts only as an HTTP status. Archon's
  * "usage or credit limit" comes last, as in the SQL. Usage-limit and infrastructure are transient and
- * authentication is config; restated-rules.test.ts fails when the two disagree on a corpus line.
+ * authentication is config; restated-rules.test.ts fails when the two disagree on a corpus line that causeOf
+ * names, and on an error longer than the 8000 characters both read.
  */
 const CAUSE_PATTERNS: [Exclude<Cause, 'other'>, RegExp][] = [
   [
@@ -79,7 +83,7 @@ const CAUSE_PATTERNS: [Exclude<Cause, 'other'>, RegExp][] = [
 
 export function causeOf(error: string | null): Cause {
   if (error === null) return 'other';
-  const text = error.replace(REFERENCE, ' ');
+  const text = error.slice(0, STOP_CLASS_READS).replace(REFERENCE, ' ');
   return CAUSE_PATTERNS.find(([, pattern]) => pattern.test(text))?.[0] ?? 'other';
 }
 
