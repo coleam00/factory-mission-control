@@ -57,6 +57,7 @@ export const LEGACY_MIGRATIONS: ReadonlySet<string> = new Set([
   '0030_aggregate_attempt_cost.sql',
   '0031_attention_data.sql',
   '0031_run_stops.sql',
+  '0032_attempt_event_time.sql',
   '0032_lap_step_pr_url.sql',
   '0032_stop_line.sql',
 ]);
