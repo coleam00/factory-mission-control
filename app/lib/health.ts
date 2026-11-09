@@ -55,7 +55,12 @@ export const CAUSE_LABEL: Record<Cause, string> = {
   other: 'Other',
 };
 
-/** The PRD's patterns, tried in order: the first that matches the error text names its cause. */
+/**
+ * The PRD's patterns, tried in order: the first that matches the error text names its cause.
+ * mc.stop_class (migration 0031) refines these causes: usage-limit and infrastructure are transient,
+ * authentication is config. It counts a bare 401 or 429 only as an HTTP status, never inside a PR or issue
+ * reference, so it can disagree with causeOf there. restated-rules.test.ts holds the two together.
+ */
 const CAUSE_PATTERNS: [Exclude<Cause, 'other'>, RegExp][] = [
   ['usage-limit', /usage limit|429/i],
   ['authentication', /401|unauthor/i],

@@ -2,10 +2,12 @@ import { expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { COLUMNS, PARKED, parked, SPLIT_WORKFLOW } from '../../app/lib/board';
+import { causeOf } from '../../app/lib/health';
 import { LAP_PAGE_WORKFLOW, prNumber } from '../../app/lib/one-lap';
 import { QUEUE_ENDING_STATE, QUEUE_REVIEW_STATE, REVIEW_OUTCOME_STATE } from '../../app/lib/states';
 import { ROUTE_OF_LABEL, WORK_ITEM_NUMBER } from '../../app/lib/work-item';
 import { runMigrations } from '../../scripts/migrate';
+import { STOP_CORPUS } from '../run-stops-corpus';
 import { archonDb, migrationFiles } from '../test-db';
 import { migratedDb, onTheSeed, queries } from './test-seed';
 
@@ -564,3 +566,38 @@ test('board rounds count a shipped run on the item every other screen holds', as
     await db.close();
   }
 }, 60_000);
+
+test('mc.stop_class refines Health’s causes, agreeing with causeOf except on reference numbers', async () => {
+  const sql = read('db', 'migrations', '0031_run_stops.sql');
+  // Both read "the run's latest failed step"; a live query cannot call the mc function, so the pick is copied.
+  const failedStepPick = (text: string, alias: string) =>
+    text
+      .match(new RegExp(`ORDER BY ${alias}\\.completed_at[^;]*?LIMIT 1`))?.[0]
+      .replaceAll(`${alias}.`, '');
+  const healthPick = failedStepPick(read('db', 'queries', 'health-runs.sql'), 'ls');
+  expect(healthPick).toBeDefined();
+  expect(failedStepPick(sql, 's')).toBe(healthPick);
+  const db = await migratedDb();
+  try {
+    const seen = new Set<string>();
+    // causeOf reads a PR or issue number as a status code; stop_class does not.
+    const referenceNumbers = new Set([
+      '3 tests failed on PR #401',
+      'No issue matched #1401',
+      'git merge --no-edit failed on pulls/1429',
+      '3 tests failed, see #401 status',
+      'git merge --no-edit failed on pulls/429 status check',
+      'git merge --no-edit failed with HTTP 4290',
+    ]);
+    for (const line of STOP_CORPUS.map(([l]) => l)) {
+      const cause = causeOf(line);
+      if (cause === 'other' || referenceNumbers.has(line)) continue;
+      seen.add(cause);
+      const [row] = await db.query('SELECT mc.stop_class($1) AS class', [line]);
+      expect(row?.class).toBe(cause === 'authentication' ? 'config' : 'transient');
+    }
+    expect(seen).toEqual(new Set(['usage-limit', 'authentication', 'infrastructure']));
+  } finally {
+    await db.close();
+  }
+});

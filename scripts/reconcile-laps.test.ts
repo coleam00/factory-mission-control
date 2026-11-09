@@ -197,6 +197,17 @@ test('one run clears the lane of a finish lost to a locked lap', async () => {
   expect(await archonRows()).toEqual(archon);
 });
 
+test('a run missing only its stop record gets it back', async () => {
+  const runId = await finishedRun();
+  const projected = await snapshot(db);
+  expect(projected.run_stops).toHaveLength(1);
+  await rows('DELETE FROM mc.run_stops WHERE run_id = $1', [runId]);
+
+  const first = await run([]);
+  expect(first.out).toEqual(['reconcile: 1 run(s) repaired']);
+  expect(await snapshot(db)).toEqual(projected);
+});
+
 test('a run whose lap was never inserted gets one', async () => {
   const runId = await finishedRun();
   const projected = await snapshot(db);

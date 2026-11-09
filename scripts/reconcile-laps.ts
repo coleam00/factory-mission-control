@@ -75,6 +75,7 @@ async function lapRows(tx: Tx, runId: string, scope: Scope): Promise<string> {
      UNION ALL SELECT 'lap_step_attempt_usage', to_jsonb(u)::text FROM mc.lap_step_attempt_usage u
        WHERE run_id = $1
      UNION ALL SELECT 'app_check_lines', to_jsonb(a)::text FROM mc.app_check_lines a WHERE run_id = $1
+     UNION ALL SELECT 'run_stops', to_jsonb(r)::text FROM mc.run_stops r WHERE run_id = $1
      UNION ALL SELECT 'versions', to_jsonb(v)::text FROM mc.versions v
        JOIN mc.laps l ON l.factory = v.factory AND l.digest = v.digest WHERE l.run_id = $1`;
   const rows = await tx.query(`${stepRows} ${scope === 'run' ? otherRows : ''} ORDER BY 1, 2`, [
@@ -138,6 +139,8 @@ async function reproject(tx: Tx, runId: string, scope: Scope): Promise<void> {
        ORDER BY ${eventKey('public.remote_agent_workflow_events')}`,
     [runId],
   );
+  // The replay writes a lap's rows back unchanged, which fires no stop-record trigger.
+  if (scope === 'run') await tx.query('SELECT mc.project_run_stop($1)', [runId]);
   const busy = await tx.query(
     `SELECT 1 FROM mc.projection_errors WHERE source IN ${REPLAY_SOURCES} AND sqlstate = '55P03'`,
     [],
