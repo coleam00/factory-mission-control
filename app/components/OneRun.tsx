@@ -569,7 +569,7 @@ function FailedStep({
             <a href={consoleHref} className={buttonClass('secondary')}>
               Open transcript
             </a>
-            <Button variant="text" onClick={openManager}>
+            <Button variant="text" onClick={openManager} className="max-[759.98px]:hidden">
               Ask manager
             </Button>
           </>

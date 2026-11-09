@@ -40,10 +40,10 @@ export function isManagerShortcut(
   return (event.metaKey || event.ctrlKey) && !event.altKey && event.key.toLowerCase() === 'j';
 }
 
-/** The docked Manager's state, kept in the browser; ⌘J or Ctrl+J toggles it. */
 /** Opens the Manager dock from anywhere on the page. */
 export const openManager = () => window.dispatchEvent(new Event(OPEN_EVENT));
 
+/** The docked Manager's state, kept in the browser; ⌘J or Ctrl+J toggles it. */
 export function useManagerDock(): { open: boolean; toggle: () => void } {
   const [open, setOpen] = useState(() => readOpen(storage()));
   const toggle = useCallback(() => setOpen((was) => !was), []);

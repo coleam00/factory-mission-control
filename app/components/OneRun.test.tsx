@@ -139,7 +139,7 @@ test('the timeline is the default tab: round 1 folded, round 2 open, the failure
   expect(html).toContain('round 2 · implement');
   expect(html.match(/data-error-panel/g)).toHaveLength(1);
   expect(html).toContain(`>Resume from here</a>`);
-  expect(html).toContain('Ask manager');
+  expect(html).toMatch(/<button[^>]*max-\[759\.98px\]:hidden[^>]*>Ask manager<\/button>/);
   expect(html).toContain('data-skip-reason="upstream failed"');
   expect(html).toContain('skipped: upstream failed');
   expect(html).not.toContain('data-step-attempt');
