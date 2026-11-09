@@ -116,3 +116,31 @@ test('the Pipeline shows at most three mini cards and a more-in-Table link', () 
   expect(html).toContain('data-count="5"');
   expect(html).toMatch(/href="\/\?view=table"[^>]*>2 more in Table/);
 });
+
+test('a mini card moves its state pill under the number instead of breaking it', () => {
+  const html = render(
+    {
+      ...empty,
+      pipeline: PIPELINE.map(({ columns: _, ...spec }, i) => ({
+        ...spec,
+        items:
+          i === 0
+            ? [
+                {
+                  number: 7,
+                  title: 't',
+                  status: 'check failed' as const,
+                  chips: [],
+                  to: '/f/x/work/7',
+                },
+              ]
+            : [],
+        pills: [],
+      })),
+    },
+    'pipeline',
+  );
+  expect(html).toMatch(
+    /<span class="[^"]*\bflex-wrap\b[^"]*\bwhitespace-nowrap\b[^"]*">#?<!-- -->7|class="[^"]*flex-wrap[^"]*whitespace-nowrap/,
+  );
+});
