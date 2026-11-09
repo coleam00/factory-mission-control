@@ -89,11 +89,12 @@ const overflowConversation = `(() => {
   if (!scroller) return false;
   const filler = document.createElement('div');
   filler.style.height = window.innerHeight * 2 + 'px';
+  filler.style.flexShrink = '0';
   scroller.appendChild(filler);
   return scroller.scrollHeight > scroller.clientHeight;
 })()`;
 
-const chipNow =`document.querySelector('aside[data-manager] [data-manager-context] span')?.textContent ?? null`;
+const chipNow = `document.querySelector('aside[data-manager] [data-manager-context] span')?.textContent ?? null`;
 
 /** A message of `kind` has ended, or its notices say why it will not. */
 const messageEnded = (kind: string) =>
@@ -201,7 +202,9 @@ export function managerPhase(ctx: LiveContext): LivePhase {
         mismatches.push('the Manager tab did not open on #manager at 390');
       }
       if (!(await page.evaluate<boolean>(overflowConversation))) {
-        mismatches.push('the Manager conversation could not be made to overflow at 390, so the fit was not measured');
+        mismatches.push(
+          'the Manager conversation could not be made to overflow at 390, so the fit was not measured',
+        );
       }
       const fit = await page.evaluate<{ scrolls: boolean; inputAboveBar: boolean }>(phoneFit);
       if (fit.scrolls) mismatches.push('the Manager tab scrolls the page at 390');
