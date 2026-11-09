@@ -30,6 +30,7 @@ export function OptionTile({
   consequence,
   recommended,
   onClick,
+  disabled,
   href,
   ...data
 }: {
@@ -37,6 +38,7 @@ export function OptionTile({
   consequence?: string;
   recommended?: boolean;
   onClick?: () => void;
+  disabled?: boolean;
   href?: string;
 } & Record<`data-${string}`, string | undefined>) {
   const className = `min-w-[150px] cursor-pointer rounded-lg border px-3 py-2 text-left ${
@@ -63,7 +65,7 @@ export function OptionTile({
   );
   const marks = { ...data, 'data-recommended': recommended ? '' : undefined };
   return href === undefined ? (
-    <button type="button" onClick={onClick} {...marks} className={className}>
+    <button type="button" onClick={onClick} disabled={disabled} {...marks} className={className}>
       {body}
     </button>
   ) : (

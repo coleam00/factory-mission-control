@@ -1,6 +1,6 @@
 import { type ReactElement, useState } from 'react';
 import { Link } from 'react-router';
-import type { UnstickRow } from '../lib/attention';
+import type { DecideRow, UnstickRow } from '../lib/attention';
 import { type BoardRow, type ItemOnBoard, itemOnBoard } from '../lib/board';
 import type { HealthWorkableRow } from '../lib/health';
 import type { OwnerQueueRow } from '../lib/owner-queue';
@@ -16,7 +16,8 @@ import { type WorkItemNote, workItemNote } from '../lib/work-item-note';
 import { AWAITED, Feed, overall, type Source } from '../live/Feed';
 import type { HomeMapRow } from '../map/live';
 import { EmptyState } from './EmptyState';
-import { buttonClass } from './ui/Button';
+import { useActionPending, useActionsEnabled, useStartAction } from './ActionToast';
+import { Button, buttonClass } from './ui/Button';
 import { Card } from './ui/Card';
 import { ManagerNote } from './ui/ManagerNote';
 import { Pill } from './ui/StateDot';
@@ -85,8 +86,24 @@ function Row({ event, before }: { event: TimelineEvent; before: Date | null }): 
   );
 }
 
-/** The primary action: a console link until #521's endpoint can answer or resume in place. */
-function PrimaryLink({ action }: { action: NonNullable<WorkItemNote['action']> }): ReactElement {
+/** The primary action: answers or resumes in place when the server holds an operator for the factory, else a console link. */
+function PrimaryAction({ action }: { action: NonNullable<WorkItemNote['action']> }): ReactElement {
+  const enabled = useActionsEnabled(action.request?.factory ?? '');
+  const start = useStartAction();
+  const pending = useActionPending();
+  const marks = {
+    'data-primary-action': action.kind,
+    'data-action-run': action.runId,
+    'data-action-step': action.step ?? undefined,
+  };
+  if (enabled && action.request !== null) {
+    const { request, toast } = action;
+    return (
+      <Button variant="primary" disabled={pending} {...marks} onClick={() => start(request, toast)}>
+        {action.label}
+      </Button>
+    );
+  }
   return (
     <a
       href={action.href}
@@ -138,7 +155,7 @@ export function WorkItemBody({
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          {note?.action == null ? null : <PrimaryLink action={note.action} />}
+          {note?.action == null ? null : <PrimaryAction action={note.action} />}
           <a href={header.issueUrl} className={buttonClass('secondary')}>
             Issue
           </a>
@@ -206,6 +223,7 @@ export function WorkItem({
   const [workable, setWorkable] = useState<Source<HealthWorkableRow>>(AWAITED);
   const [owner, setOwner] = useState<Source<OwnerQueueRow>>(AWAITED);
   const [stuck, setStuck] = useState<Source<UnstickRow>>(AWAITED);
+  const [decide, setDecide] = useState<Source<DecideRow>>(AWAITED);
   const state = overall([
     item.state,
     board.state,
@@ -213,6 +231,7 @@ export function WorkItem({
     workable.state,
     owner.state,
     stuck.state,
+    decide.state,
   ]);
   const header = item.rows ? workItemHeader(item.rows) : null;
   const ready = state === 'ready' && item.rows !== undefined;
@@ -235,6 +254,7 @@ export function WorkItem({
       <Feed<HealthWorkableRow> query="health-workable" factory={factory} into={setWorkable} />
       <Feed<OwnerQueueRow> query="owner-queue" factory={factory} into={setOwner} />
       <Feed<UnstickRow> query="unstick" factory={factory} into={setStuck} />
+      <Feed<DecideRow> query="decide" factory={factory} into={setDecide} />
       {state === 'error' ? (
         <EmptyState title="Live data is unavailable." />
       ) : !ready || item.rows === undefined ? (
@@ -246,7 +266,10 @@ export function WorkItem({
           header={header}
           events={workItemTimeline(item.rows, factory ?? '')}
           board={onBoard}
-          note={workItemNote(item.rows, onBoard, stuck.rows ?? [])}
+          note={workItemNote(item.rows, onBoard, stuck.rows ?? [], {
+            decide: decide.rows ?? [],
+            factory: factory ?? '',
+          })}
         />
       )}
     </main>

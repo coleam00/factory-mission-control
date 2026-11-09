@@ -3,7 +3,8 @@
  * its state, and the one action that moves it (README rules 2 and 6). Deterministic: the same rows
  * give the same note. Pure, no React.
  */
-import type { UnstickRow } from './attention';
+import type { ActionRequest } from './actions';
+import { type DecideRow, isSomethingElse, parseChoices, type UnstickRow } from './attention';
 import type { ColumnId, ItemOnBoard } from './board';
 import { shortRunId } from './format';
 import { CLASS_NOTE, UNSTICK_NOTE } from './manager-notes';
@@ -17,13 +18,26 @@ export interface NotePart {
   mono?: true;
 }
 
-/** Opens the Archon console at the run until #521's endpoint can answer or resume in place. */
+/**
+ * The one action that moves the item. `request` answers or resumes in place when the server holds
+ * an operator for the factory; `href` is the Archon console at the run, which is the action
+ * otherwise and whenever `request` is null.
+ */
 export interface PrimaryAction {
   kind: 'answer' | 'resume';
   label: string;
   href: string;
   runId: string;
   step: string | null;
+  request: ActionRequest | null;
+  /** What the toast names: the item and, for an answer, the option. */
+  toast: { item: number | null; label: string };
+}
+
+/** What an in-place action needs beyond the item's rows: the open questions and the factory. */
+export interface ActContext {
+  decide: readonly DecideRow[];
+  factory: string;
 }
 
 export interface WorkItemNote {
@@ -94,6 +108,7 @@ export function workItemNote(
   rows: readonly WorkItemRow[],
   board: ItemOnBoard | null,
   unstick: readonly UnstickRow[],
+  act?: ActContext,
 ): WorkItemNote | null {
   const item = rows.find((r) => r.kind === 'item');
   if (item === undefined) return null;
@@ -102,10 +117,24 @@ export function workItemNote(
     kind: PrimaryAction['kind'],
     label: string,
     at: string | null,
-  ) =>
+    request: ActionRequest | null = null,
+    optionLabel = '',
+  ): PrimaryAction | null =>
     runId === null || item.console === null
       ? null
-      : { kind, label, href: consoleUrl(item.console, runId), runId, step: at };
+      : {
+          kind,
+          label,
+          href: consoleUrl(item.console, runId),
+          runId,
+          step: at,
+          request,
+          toast: { item: item.number, label: optionLabel },
+        };
+  const resume = (runId: string | null, from: string | null): ActionRequest | null =>
+    runId === null || act === undefined
+      ? null
+      : { factory: act.factory, action: 'resume', run_id: runId, from_step: from };
   const done = (pill: string, parts: NotePart[]): WorkItemNote => ({
     state: 'done',
     pill,
@@ -119,6 +148,30 @@ export function workItemNote(
       : done('Done', [bold('Closed.'), plain(' Nothing is left to do on it.')]);
 
   const latest = rows.filter((r) => r.kind === 'run').sort(newestFirst)[0];
+
+  // The Manager's recommendation, when the open question has one: the primary answers with it.
+  const answerAction = (): PrimaryAction | null => {
+    const row = act?.decide.find((r) => r.run_id === latest?.run_id);
+    const chosen = parseChoices(row?.options ?? '[]').find((o) => o.id === row?.recommended);
+    if (act === undefined || row === undefined || chosen === undefined || isSomethingElse(chosen))
+      return null;
+    const label = chosen.label ?? chosen.id;
+    return consoleOf(
+      latest?.run_id ?? null,
+      'answer',
+      `Answer "${label}"`,
+      row.node_id,
+      {
+        factory: act.factory,
+        action: 'answer',
+        run_id: row.run_id,
+        occurrence: row.occurrence_id,
+        option: chosen.id,
+        text: null,
+      },
+      label,
+    );
+  };
 
   if (latest?.waiting === true) {
     const at = latest.stop_step;
@@ -134,7 +187,7 @@ export function workItemNote(
               ...(at === null ? [] : [plain(' at '), step(at)]),
               plain(`: ${endSentence(question)}`),
             ],
-      action: consoleOf(latest.run_id, 'answer', 'Answer the question', at),
+      action: answerAction() ?? consoleOf(latest.run_id, 'answer', 'Answer the question', at),
     };
   }
 
@@ -151,7 +204,13 @@ export function workItemNote(
       parts: [bold(lead), plain(` ${rest}`), ...waits],
       action:
         stuck.kind === 'capacity'
-          ? consoleOf(stuck.run_id, 'resume', `Resume ${shortRunId(stuck.run_id ?? '')}`, null)
+          ? consoleOf(
+              stuck.run_id,
+              'resume',
+              `Resume ${shortRunId(stuck.run_id ?? '')}`,
+              null,
+              resume(stuck.run_id, null),
+            )
           : null,
     };
   }
@@ -173,6 +232,7 @@ export function workItemNote(
         'resume',
         at === null ? `Resume ${shortRunId(latest.run_id ?? '')}` : `Resume from ${at}`,
         at,
+        resume(latest.run_id, at),
       ),
     };
   }

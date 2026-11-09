@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test';
-import type { UnstickRow } from './attention';
+import type { DecideRow, UnstickRow } from './attention';
 import { COLUMNS, type ItemOnBoard } from './board';
 import { consoleUrl } from './one-lap';
 import type { WorkItemRow } from './work-item';
@@ -132,6 +132,8 @@ test('a waiting newest run beats an older failed one, and offers the console ans
     href: consoleUrl(CONSOLE, RUN),
     runId: RUN,
     step: 'ship__ask',
+    request: null,
+    toast: { item: 7, label: '' },
   });
   const bare = workItemNote([item(), row({ waiting: true, completed_at: null })], null, []);
   expect(say(bare)).toBe('**Waiting for your answer.** Its question is in the console.');
@@ -221,4 +223,90 @@ test('with no run to speak of, the board column speaks, and an item off the boar
 
 test('no item row means no note', () => {
   expect(workItemNote([], null, [])).toBeNull();
+});
+
+const decideRow = (over: Partial<DecideRow> = {}): DecideRow => ({
+  run_id: RUN,
+  workflow_name: 'archon-build-queue',
+  node_id: 'ship__ask',
+  occurrence_id: 'pause-1',
+  waiting_since: at('09:05'),
+  form: 'select',
+  options: JSON.stringify([{ id: 'split', label: 'Split it' }, { id: 'build' }]),
+  labels: '{}',
+  recommended: 'split',
+  confidence: 'high',
+  item_number: 7,
+  message: 'Which?',
+  console: CONSOLE,
+  ...over,
+});
+
+const waitingRun = () =>
+  row({ waiting: true, status: 'running', completed_at: null, stop_step: 'ship__ask' });
+
+test('a question with a recommendation is answered in place with it', () => {
+  const note = workItemNote([item(), waitingRun()], null, [], {
+    decide: [decideRow()],
+    factory: 'f',
+  });
+  expect(note?.action).toMatchObject({
+    kind: 'answer',
+    label: 'Answer "Split it"',
+    href: consoleUrl(CONSOLE, RUN),
+    request: {
+      factory: 'f',
+      action: 'answer',
+      run_id: RUN,
+      occurrence: 'pause-1',
+      option: 'split',
+      text: null,
+    },
+    toast: { item: 7, label: 'Split it' },
+  });
+});
+
+test('a question with no usable recommendation stays the console link', () => {
+  for (const decide of [
+    [],
+    [decideRow({ recommended: null })],
+    [decideRow({ recommended: 'gone' })],
+  ]) {
+    const note = workItemNote([item(), waitingRun()], null, [], { decide, factory: 'f' });
+    expect(note?.action).toMatchObject({ label: 'Answer the question', request: null });
+  }
+});
+
+test('a recommended Something else option stays the console link', () => {
+  const decide = [
+    decideRow({
+      options: JSON.stringify([
+        { id: 'split', label: 'Split it' },
+        { id: 'other', label: 'Something else' },
+      ]),
+      recommended: 'other',
+    }),
+  ];
+  const note = workItemNote([item(), waitingRun()], null, [], { decide, factory: 'f' });
+  expect(note?.action).toMatchObject({ label: 'Answer the question', request: null });
+});
+
+test('resuming names the failed step, or none for a run waiting for a slot', () => {
+  const failed = workItemNote([item(), failedRun], null, [], { decide: [], factory: 'f' });
+  expect(failed?.action?.request).toEqual({
+    factory: 'f',
+    action: 'resume',
+    run_id: RUN,
+    from_step: 'pr__prepare',
+  });
+  const capacity = workItemNote([item(), failedRun], null, [unstick({})], {
+    decide: [],
+    factory: 'f',
+  });
+  expect(capacity?.action?.request).toEqual({
+    factory: 'f',
+    action: 'resume',
+    run_id: RUN,
+    from_step: null,
+  });
 });

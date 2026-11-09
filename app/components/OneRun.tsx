@@ -1,5 +1,6 @@
 import { type ReactElement, type ReactNode, useState } from 'react';
 import { Link, useSearchParams } from 'react-router';
+import { useActionPending, useActionsEnabled, useStartAction } from './ActionToast';
 import { formatCost, formatCount, shortRunId } from '../lib/format';
 import type { LapMapRow } from '../lib/lap-graph';
 import { durationOf, OUTCOME_LABEL, since } from '../lib/laps';
@@ -220,6 +221,7 @@ export function RunView({
           timeline={timeline}
           map={mapRows}
           consoleHref={consoleHref}
+          resume={{ factory, runId: lap.run_id }}
           now={now}
           skippedOpen={skippedOpen}
         />
@@ -338,6 +340,9 @@ function RunHead({
   const seconds = lap.status === 'running' ? since(lap.started_at, now) : durationOf(lap);
   const outcome = isOldLoop(lap.workflow_name) ? lapOutcome(lap) : null;
   const read = managerRead(lap, rows, timeline);
+  const enabled = useActionsEnabled(factory);
+  const start = useStartAction();
+  const pending = useActionPending();
   const primary =
     lap.status === 'failed' && read.resumeStep !== null
       ? `Resume from ${read.resumeStep}`
@@ -391,7 +396,30 @@ function RunHead({
           </div>
         </div>
         <div className="flex shrink-0 gap-2">
-          {primary === null ? null : (
+          {primary === null ? null : enabled &&
+            read.resumeFrom !== null &&
+            lap.status === 'failed' ? (
+            <Button
+              variant="primary"
+              disabled={pending}
+              data-action="primary"
+              data-act="resume"
+              data-act-run={lap.run_id}
+              onClick={() =>
+                start(
+                  {
+                    factory,
+                    action: 'resume',
+                    run_id: lap.run_id,
+                    from_step: read.resumeFrom,
+                  },
+                  { item: null, label: '' },
+                )
+              }
+            >
+              {primary}
+            </Button>
+          ) : (
             <a data-action="primary" href={consoleHref} className={buttonClass('primary')}>
               {primary}
             </a>
@@ -464,6 +492,7 @@ function RunTimeline({
   timeline,
   map,
   consoleHref,
+  resume,
   now,
   skippedOpen,
 }: {
@@ -472,6 +501,8 @@ function RunTimeline({
   timeline: readonly TimelineEntry[];
   map: readonly LapMapRow[];
   consoleHref: string;
+  /** Which run a failed step resumes. */
+  resume: { factory: string; runId: string };
   now: number;
   skippedOpen: boolean;
 }): ReactElement {
@@ -498,7 +529,9 @@ function RunTimeline({
         data-duration-ms={row.duration_ms?.toString()}
         data-cost={cost?.toString()}
       >
-        {row === stopAttempt ? <FailedStep row={row} consoleHref={consoleHref} /> : null}
+        {row === stopAttempt ? (
+          <FailedStep row={row} consoleHref={consoleHref} resume={resume} />
+        ) : null}
       </TimelineRow>
     );
   };
@@ -632,10 +665,15 @@ function FoldedRound({ round }: { round: Round }): ReactElement {
 function FailedStep({
   row,
   consoleHref,
+  resume,
 }: {
   row: StepAttemptRow;
   consoleHref: string;
+  resume: { factory: string; runId: string };
 }): ReactElement {
+  const enabled = useActionsEnabled(resume.factory);
+  const start = useStartAction();
+  const pending = useActionPending();
   const [title = 'The step failed', ...rest] = (row.error ?? '').split(/\r?\n/);
   return (
     <div data-error-panel>
@@ -644,9 +682,31 @@ function FailedStep({
         error={rest.join('\n').trim() || 'No further detail was recorded.'}
         actions={
           <>
-            <a href={consoleHref} className={buttonClass('primary')}>
-              Resume from here
-            </a>
+            {enabled ? (
+              <Button
+                variant="primary"
+                disabled={pending}
+                data-act="resume"
+                data-act-run={resume.runId}
+                onClick={() =>
+                  start(
+                    {
+                      factory: resume.factory,
+                      action: 'resume',
+                      run_id: resume.runId,
+                      from_step: row.step_id,
+                    },
+                    { item: null, label: '' },
+                  )
+                }
+              >
+                Resume from here
+              </Button>
+            ) : (
+              <a href={consoleHref} className={buttonClass('primary')}>
+                Resume from here
+              </a>
+            )}
             <a href={consoleHref} className={buttonClass('secondary')}>
               Open transcript
             </a>

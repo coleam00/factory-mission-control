@@ -203,7 +203,12 @@ test("the manager's read of a failure names the step, the resume and whether it 
   expect(text(read)).toBe(
     'pr__prepare failed on round 2: boom. Everything before it succeeded. Resume re-runs pr__prepare and what follows, for about $2.25. This is not a code failure: the environment refused it.',
   );
-  expect(read).toMatchObject({ codeFailure: 'no', resumeStep: 'pr__prepare', resumeCost: 2.25 });
+  expect(read).toMatchObject({
+    codeFailure: 'no',
+    resumeStep: 'pr__prepare',
+    resumeFrom: `${GROUP}.pr__prepare`,
+    resumeCost: 2.25,
+  });
   const priced = [step('build', { status: 'failed', cost_usd: '0.4' })];
   expect(text(managerRead(stopped, priced, runTimeline(priced)))).toContain(
     ' Resume re-runs build and what follows. This',

@@ -16,6 +16,9 @@ INSERT INTO mc.decisions (date, title, decision, why, replaces, version) VALUES 
 INSERT INTO mc.decisions (date, title, decision, why, replaces, version) VALUES ('2026-10-15', 'Run three laps at once', 'The schedule starts a lap while two are running, never a fourth.', 'After the first items most work depends only on the seed, not on each other.', 'one lap at a time.', 'none');
 INSERT INTO mc.decisions (date, title, decision, why, replaces, version) VALUES ('2026-10-19', 'Follow dev''s pack', 'The factory runs the workflow pack dev ships, with no local changes.', 'Local changes drifted from dev and each one had to be merged again.', 'a locally edited pack.', 'a8551bfe');
 
+-- The dashboard's own record of one resume it sent (mc.actions).
+INSERT INTO mc.actions (factory, who, action, run_id, from_step, recorded_at, undone, sent_at, exit_code, output) VALUES ('mission-control', 'cole', 'resume', '5eed0000-0000-4000-8000-0000000000a1', 'implement', '2026-10-09T18:00:00Z', 'false', '2026-10-09T18:00:05Z', 0, 'resumed');
+
 -- Archon's rows (public schema, on a check branch only): the factory's codebase, one
 -- archon-loop run per lap, and the events each run wrote.
 INSERT INTO remote_agent_codebases (id, name, repository_url, default_cwd) VALUES ('5eed0000-0000-4000-8000-000000000000', 'coleam00/factory-mission-control', 'https://github.com/coleam00/factory-mission-control', 'C:/factory/mission-control');

@@ -8,29 +8,14 @@
  * "Something else") and the `occurrence` id. `resume`: the run, optionally `from_step`. This
  * file holds no secret and no server code, so the panel can `import type` from it.
  */
+import type { ActionRequest } from '../app/lib/actions';
+
 export type ManagerEvent =
   | { type: 'text'; text: string }
   | { type: 'link'; kind: 'run'; id: string; label: string; href: string }
   | { type: 'link'; kind: 'item'; id: number; label: string; href: string }
   | { type: 'runs'; runs: RunSummary[] }
-  | {
-      type: 'proposal';
-      action: 'answer';
-      factory: string;
-      run_id: string;
-      occurrence: string;
-      option: string | null;
-      text: string | null;
-      label: string;
-    }
-  | {
-      type: 'proposal';
-      action: 'resume';
-      factory: string;
-      run_id: string;
-      from_step: string | null;
-      label: string;
-    }
+  | ({ type: 'proposal'; label: string } & ActionRequest)
   | {
       type: 'notice';
       kind: 'message-cap' | 'day-cap' | 'unavailable' | 'unstructured';

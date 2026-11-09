@@ -8,12 +8,15 @@
  */
 import type { Source } from '../live/Feed';
 import { cardForStep, FACTORY_MAP } from '../map/factory-map';
+import type { ActionRequest, AnswerRequest } from './actions';
 import {
   type DecideRow,
   attentionItems,
   attentionOrigin,
   attentionQuestion,
+  isSomethingElse,
   recommendationReason,
+  takesFreeText,
   UNSTICK_KINDS,
   type UnstickRow,
 } from './attention';
@@ -79,6 +82,10 @@ export interface Tile {
   recommended: boolean;
   /** Where the answer is given; null when the item has no address. */
   href: string | null;
+  /** Answers in place with this option, when the server holds an operator for the factory. */
+  answer?: { request: AnswerRequest; item: number | null };
+  /** Opens the text box: the answer is the owner's own words, sent as `request` with `text` filled. */
+  somethingElse?: { request: AnswerRequest; item: number | null };
   hooks: Hooks;
 }
 
@@ -89,6 +96,15 @@ export type Action =
       label: string;
       href: string;
       external: boolean;
+      hooks: Hooks;
+    }
+  | {
+      /** Acts in place when the server holds an operator for the factory, else it is `fallback`. */
+      type: 'act';
+      variant: 'primary' | 'secondary';
+      label: string;
+      request: ActionRequest;
+      fallback: { href: string; external: boolean };
       hooks: Hooks;
     }
   | { type: 'copy'; variant: 'primary' | 'secondary'; label: string; command: string };
@@ -117,30 +133,48 @@ export const retriageCommand = (repository: string, number: number): string =>
 export const releaseCommand = (repository: string, workflow: string): string =>
   `archon workflow run ${workflow} --input repo_host=github.com --input repo_path=${repository} --detach`;
 
-const SOMETHING_ELSE = 'something else';
-
-/** Archon's open questions: its option tiles answer in the console until the action endpoint lands (#521). */
+/** Archon's open questions: each option tile answers in place with an operator, and opens the console without one. */
 export function decideCards(rows: readonly DecideRow[], factory: string): AttentionCard[] {
   return attentionItems(rows).map((item) => {
     const recommended = item.options.some((o) => o.id === item.recommended)
       ? item.recommended
       : null;
     const link = consoleUrl(item.console, item.run_id);
-    const tiles: Tile[] = item.options.map((o) => ({
-      id: o.id,
-      label: o.label ?? o.id,
-      ...(o.description === null ? {} : { consequence: o.description }),
-      recommended: o.id === recommended,
-      href: link,
-      hooks: { 'data-choice': o.id },
-    }));
-    if (!tiles.some((t) => t.label.toLowerCase() === SOMETHING_ELSE)) {
+    const asked: AnswerRequest = {
+      factory,
+      action: 'answer',
+      run_id: item.run_id,
+      occurrence: item.occurrence_id,
+      option: null,
+      text: null,
+    };
+    const tiles: Tile[] = item.options.map((o) => {
+      const label = o.label ?? o.id;
+      // "Something else" takes the owner's text; any other option is the answer itself.
+      const place = isSomethingElse(o)
+        ? { somethingElse: { request: asked, item: item.item_number } }
+        : { answer: { request: { ...asked, option: o.id }, item: item.item_number } };
+      return {
+        id: o.id,
+        label,
+        ...(o.description === null ? {} : { consequence: o.description }),
+        recommended: o.id === recommended,
+        href: link,
+        ...place,
+        hooks: { 'data-choice': o.id },
+      };
+    });
+    if (!item.options.some(isSomethingElse)) {
       tiles.push({
         id: 'something-else',
         label: 'Something else',
         consequence: 'Write your own answer',
         recommended: false,
         href: link,
+        // Only a free-text question takes text without a declared option to carry it.
+        ...(takesFreeText(item.form)
+          ? { somethingElse: { request: asked, item: item.item_number } }
+          : {}),
         hooks: { 'data-choice': 'something-else', 'data-something-else': '' },
       });
     }
@@ -365,12 +399,12 @@ export function unstickCards(rows: readonly UnstickRow[], factory: string): Atte
               ? []
               : [
                   {
-                    type: 'link',
+                    type: 'act',
                     variant: 'primary',
                     label: `Resume ${run}`,
-                    href: consoleUrl(row.console, row.run_id),
-                    external: true,
-                    hooks: {},
+                    request: { factory, action: 'resume', run_id: row.run_id, from_step: null },
+                    fallback: { href: consoleUrl(row.console, row.run_id), external: true },
+                    hooks: { 'data-act': 'resume', 'data-act-run': row.run_id },
                   },
                 ];
           return {

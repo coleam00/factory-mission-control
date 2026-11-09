@@ -65,6 +65,7 @@ test('gives every table in mc a primary key, one table per family', async () => 
   expect(tables).toEqual(
     expect.arrayContaining([
       'factories',
+      'actions',
       'issues',
       'issue_labels',
       'issue_dependencies',

@@ -1,5 +1,6 @@
 import { Fragment, type ReactElement, useState } from 'react';
 import { Outlet } from 'react-router';
+import { ActionToastHost } from './components/ActionToast';
 import { FactoryStrip, FactoryStripBody, RewindIndicator } from './components/FactoryStrip';
 import { FactorySwitcher } from './components/FactorySwitcher';
 import { FlowProvider } from './components/FlowToggle';
@@ -213,6 +214,7 @@ export function Shell(): ReactElement {
       <FactoryProvider>
         <FlowProvider>
           <ForFactory />
+          <ActionToastHost />
         </FlowProvider>
       </FactoryProvider>
     </LiveProvider>

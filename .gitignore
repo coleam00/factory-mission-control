@@ -24,3 +24,4 @@ node_modules/
 dist/
 .mc-serve.log
 .mc-serve.pid
+.mc-local/
