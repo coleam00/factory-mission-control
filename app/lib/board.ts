@@ -158,11 +158,14 @@ export interface BoardColumn extends ColumnSpec {
 /** The query parameter that picks the Table; the Pipeline is the default. */
 export const VIEW_PARAM = 'view';
 
+/** The `VIEW_PARAM` value that picks the Table. */
+export const TABLE_VIEW = 'table';
+
 /** How many mini cards a Pipeline card shows before it points at the Table. */
 export const MINI_CARDS = 3;
 
 /** The queue stages an item with no column of its own is blocked on: a contract, or another pull request. */
-const BLOCKED_STAGES: readonly string[] = ['blocked', 'needs_contract'];
+export const BLOCKED_STAGES: readonly string[] = ['blocked', 'needs_contract'];
 
 export type HomeId = 'intake' | 'planned' | 'build' | 'merge' | 'merged' | 'blocked';
 
@@ -239,7 +242,7 @@ export interface BoardView {
   columns: BoardColumn[];
   pipeline: PipelineStage[];
   found: Found;
-  /** Work items in a column that belong to no work order, whatever the filter. */
+  /** Work items with a home on the Pipeline that belong to no work order, whatever the filter. */
   notInOrder: number;
   /** Merged work items older than the last 7 days. */
   older: number;
@@ -408,8 +411,14 @@ function statusOf(row: BoardRow, home: ColumnId | 'blocked', running: boolean): 
   return home === 'queued' ? 'queued' : 'waiting';
 }
 
-const STATE_ORDER: readonly State[] = ['needs-you', 'failed', 'running', 'idle', 'done'];
-const stateRank = (status: Status) => STATE_ORDER.indexOf(BOARD_ITEM_STATE[status]);
+const STATE_RANK: Record<State, number> = {
+  'needs-you': 0,
+  failed: 1,
+  running: 2,
+  idle: 3,
+  done: 4,
+};
+const stateRank = (status: Status) => STATE_RANK[BOARD_ITEM_STATE[status]];
 
 function pillsOf(items: readonly PipelineItem[]): StatusPill[] {
   const counts = new Map<Status, number>();
@@ -418,6 +427,9 @@ function pillsOf(items: readonly PipelineItem[]): StatusPill[] {
     .map(([label, count]) => ({ label, state: BOARD_ITEM_STATE[label], count }))
     .sort((a, b) => stateRank(a.label) - stateRank(b.label));
 }
+
+/** The `written[].outcome` values of the pack's discoveries `outcome` node: filed, then tracked. */
+export const FOUND_OUTCOMES = ['file', 'track'] as const;
 
 /** A JSON list held as text; anything else is an empty list. */
 function listOf(text: string | null): unknown[] {
@@ -431,8 +443,8 @@ export function found(rows: readonly DiscoveryRow[]): Found {
   for (const row of rows) {
     for (const entry of listOf(row.written)) {
       const outcome = (entry as { outcome?: unknown } | null)?.outcome;
-      if (outcome === 'file') result.filed++;
-      if (outcome === 'track') result.tracked++;
+      if (outcome === FOUND_OUTCOMES[0]) result.filed++;
+      if (outcome === FOUND_OUTCOMES[1]) result.tracked++;
     }
     result.dropped += listOf(row.dropped).length;
   }

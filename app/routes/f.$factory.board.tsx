@@ -10,6 +10,7 @@ import {
   type DiscoveryRow,
   nextChange,
   ORDER_PARAM,
+  TABLE_VIEW,
   VIEW_PARAM,
 } from '../lib/board';
 import type { HealthWorkableRow } from '../lib/health';
@@ -35,7 +36,7 @@ export default function Board(): ReactElement {
   const factory = useFactory();
   const [search, setSearch] = useSearchParams();
   const order = search.get(ORDER_PARAM) || null;
-  const mode = search.get(VIEW_PARAM) === 'table' ? 'table' : 'pipeline';
+  const mode = search.get(VIEW_PARAM) === TABLE_VIEW ? 'table' : 'pipeline';
   const [board, setBoard] = useState<Source<BoardRow>>(AWAITED);
   const [map, setMap] = useState<Source<HomeMapRow>>(AWAITED);
   const [workable, setWorkable] = useState<Source<HealthWorkableRow>>(AWAITED);
@@ -59,14 +60,14 @@ export default function Board(): ReactElement {
     (next: 'pipeline' | 'table') =>
       setSearch((was) => {
         const params = new URLSearchParams(was);
-        if (next === 'table') params.set(VIEW_PARAM, 'table');
+        if (next === 'table') params.set(VIEW_PARAM, TABLE_VIEW);
         else params.delete(VIEW_PARAM);
         return params;
       }),
     [setSearch],
   );
   const tableParams = new URLSearchParams(search);
-  tableParams.set(VIEW_PARAM, 'table');
+  tableParams.set(VIEW_PARAM, TABLE_VIEW);
   const state = overall([
     board.state,
     map.state,

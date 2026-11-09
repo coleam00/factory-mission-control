@@ -5,6 +5,8 @@ import {
   found,
   MINI_CARDS,
   orderLine,
+  TABLE_VIEW,
+  VIEW_PARAM,
 } from '../../app/lib/board';
 import type { HealthWorkableRow } from '../../app/lib/health';
 import type { OwnerQueueRow } from '../../app/lib/owner-queue';
@@ -191,7 +193,7 @@ export function boardPhase(ctx: LiveContext): LivePhase {
   }
 
   const path = `/f/${FACTORY}/board`;
-  const table = `${path}?view=table`;
+  const table = `${path}?${VIEW_PARAM}=${TABLE_VIEW}`;
   return {
     async write() {
       const { failures } = ctx;
@@ -255,7 +257,7 @@ export function boardPhase(ctx: LiveContext): LivePhase {
 
         await open(page, `/f/${QUEUE_FACTORY.name}/board`);
         failures.push(...(await pipelineMismatches(page, QUEUE_FACTORY.name)));
-        await open(page, `/f/${QUEUE_FACTORY.name}/board?view=table`);
+        await open(page, `/f/${QUEUE_FACTORY.name}/board?${VIEW_PARAM}=${TABLE_VIEW}`);
         const intake = await page.evaluate<boolean>(
           `document.querySelector('[data-board-column="intake"] [data-work-item="401"]') !== null`,
         );
