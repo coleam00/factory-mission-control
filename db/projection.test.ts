@@ -553,6 +553,18 @@ test('a skipped step is a skipped row', async () => {
   ]);
 });
 
+test('a skipped step without timing is dated by its event', async () => {
+  await db.query(
+    `INSERT INTO public.remote_agent_workflow_events (workflow_run_id, event_type, step_name, data, created_at)
+     VALUES ($1, 'node_skipped', 'land', $2, '2026-10-25T12:03:00Z')`,
+    [runId, JSON.stringify({ reason: 'when: false' })],
+  );
+  const [attempt] = await db.query(
+    'SELECT event_at::text AS event_at FROM mc.lap_step_attempts',
+  );
+  expect(new Date(String(attempt?.event_at)).toISOString()).toBe('2026-10-25T12:03:00.000Z');
+});
+
 test('the model is the one the provider resolved when Archon reports it', async () => {
   await insertEvent('node_completed', 'verify', {
     model: 'haiku',

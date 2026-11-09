@@ -73,7 +73,8 @@ const stateOfStatus = (status: string): StepState =>
           ? 'finished'
           : 'not-reached';
 
-const startOf = (a: StepAttemptRow) => a.started_at?.getTime() ?? Number.NEGATIVE_INFINITY;
+const startOf = (a: StepAttemptRow) =>
+  (a.started_at ?? a.event_at ?? null)?.getTime() ?? Number.NEGATIVE_INFINITY;
 
 export interface LapStep {
   /** The step's path in the loop (`ship/deliver/scope`). */

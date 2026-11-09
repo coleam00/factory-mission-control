@@ -302,3 +302,14 @@ test("step links open each step at the lap's pin, and at the current version whe
   const unpinned = lapGraph([], attempts, 'x', 'archon-loop');
   expect(unpinned.graph.steps.every((s) => !s.href?.includes('?at='))).toBe(true);
 });
+
+test('a step completed in one round and skipped undated in the next ends skipped, the skip its last attempt', () => {
+  const skip: StepAttemptRow = {
+    ...attempt('pick', 9, 'skipped'),
+    started_at: null,
+    event_at: new Date(Date.UTC(2026, 9, 25, 12, 9)),
+  };
+  const lap = lapGraph([row('pick', 1)], [attempt('pick', 1), skip], 'x', 'archon-build-queue');
+  expect(lap.steps.get('pick')?.state).toBe('skipped');
+  expect(lap.steps.get('pick')?.attempts.at(-1)).toBe(skip);
+});
