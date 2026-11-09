@@ -18,11 +18,16 @@ import {
 const READY = 'main[data-work-item][data-state="ready"]';
 /** The seed's work items on the old loop, whose pages must show no hidden check line or text. */
 const LOOP_ITEMS = [2, 3, 7, 9, 13];
+/** The seed's open work item whose newest run failed on a stop record (class config). */
+const FAILED_ITEM = 9;
 /** The loop work item whose two refused land attempts the page must show, verbatim. */
 const REFUSED_ITEM = 3;
 
 const SHOWN = `[...document.querySelectorAll('[data-event]')].map((li) =>
   (li.textContent ?? '').replace(/\\s+/g, ' ').trim())`;
+/** Each row's stop line text, null for a row with none (rule 3). */
+const STOP_LINES = `[...document.querySelectorAll('[data-event]')].map((li) =>
+  li.querySelector('[data-stop-line]')?.textContent ?? null)`;
 const MARKERS = `document.documentElement.outerHTML.split(${JSON.stringify(MARKER)}).length - 1`;
 
 /** Rows whose dot's vertical centre is outside the time's line box: the dot belongs beside the entry's first line. */
@@ -37,6 +42,8 @@ const FILES = liveOutputs({
   shot: 'work-item.png',
   loopShot: 'work-item-loop.png',
   probe: 'work-item-design-probe.json',
+  failedShot: 'work-item-failed.png',
+  failedProbe: 'work-item-failed-design-probe.json',
 });
 export const WORK_ITEM_OUTPUTS: readonly LiveOutput[] = Object.values(FILES);
 
@@ -65,6 +72,7 @@ export function workItemPhase(ctx: LiveContext): LivePhase {
     const where = `work item ${factory} #${number}`;
     const shown = await page.evaluate<string[]>(SHOWN);
     const events = await recount(factory, number);
+    const stops = await page.evaluate<(string | null)[]>(STOP_LINES);
     const markers = await page.evaluate<number>(MARKERS);
     return [
       ...(shown.length === events.length
@@ -74,6 +82,17 @@ export function workItemPhase(ctx: LiveContext): LivePhase {
               : [`${where} row ${i}: screen "${shown[i]}", SQL "${e.text}"`],
           )
         : [`${where}: screen shows ${shown.length} rows, SQL ${events.length}`]),
+      ...(stops.length === events.length
+        ? events.flatMap((e, i) =>
+            e.stop === null
+              ? stops[i] === null
+                ? []
+                : [`${where} row ${i}: screen has a stop line, SQL has none`]
+              : stops[i]?.includes(e.stop.line)
+                ? []
+                : [`${where} row ${i}: stop line "${stops[i]}", SQL "${e.stop.line}"`],
+          )
+        : []),
       ...(markers === 0 ? [] : [`${where}: ${MARKER} occurs ${markers} times on the page`]),
     ];
   }
@@ -134,6 +153,28 @@ export function workItemPhase(ctx: LiveContext): LivePhase {
           }
         }
 
+        await open(page, FACTORY, FAILED_ITEM);
+        const rows = (await db.query(queries.get('work-item') as string, [
+          FACTORY,
+          String(FAILED_ITEM),
+        ])) as unknown as WorkItemRow[];
+        const newest = rows
+          .filter((r) => r.kind === 'run')
+          .sort((a, b) => (b.started_at?.getTime() ?? 0) - (a.started_at?.getTime() ?? 0))[0];
+        const note = await page.evaluate<string | null>(
+          `document.querySelector('[data-manager-note]')?.getAttribute('data-note-state') ?? null`,
+        );
+        const href = await page.evaluate<string | null>(
+          `document.querySelector('a[data-primary-action="resume"]')?.getAttribute('href') ?? null`,
+        );
+        if (newest?.status !== 'failed' || note !== 'failed')
+          failures.push(
+            `work item ${FACTORY} #${FAILED_ITEM}: note state ${note}, newest run ${newest?.status}`,
+          );
+        else if (!href?.endsWith(`/console/r/${newest.run_id}`))
+          failures.push(`work item ${FACTORY} #${FAILED_ITEM}: the resume action opens ${href}`);
+        ctx.save(FILES.failedShot, await page.screenshot(1440));
+
         await open(page, QUEUE_FACTORY.name, 401);
         ms.runningRow = await writeToScreen(
           page,
@@ -150,6 +191,11 @@ export function workItemPhase(ctx: LiveContext): LivePhase {
 
     async probe(designProbe) {
       designProbe(`${ctx.base}${returned}`, FILES.probe, 'the work item page');
+      designProbe(
+        `${ctx.base}/f/${FACTORY}/work/${FAILED_ITEM}`,
+        FILES.failedProbe,
+        'the work item page of a failed item',
+      );
     },
 
     async cleanup() {

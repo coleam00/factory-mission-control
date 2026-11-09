@@ -45,6 +45,9 @@ const row = (over: Partial<WorkItemRow>): WorkItemRow => ({
   title: null,
   url: null,
   console: null,
+  stop_step: null,
+  stop_line: null,
+  stop_class: null,
   ...over,
 });
 
@@ -183,13 +186,44 @@ test('a build-queue round colors its ending and its review by the state map', ()
   expect(tones({ review: 'correct', review_at: at('09:03') })).toContain('done');
 });
 
-test('a failed round names its card and error', () => {
+test('a failed round names its card, and its error is its stop line', () => {
   const failed = row({
     status: 'failed',
     failed_step: 'ship__deliver__rounds.review__policy',
     error: 'boom',
   });
-  expect(texts([item, failed])).toContain('Round 1 failed in Review: boom');
+  const [event] = workItemTimeline([item, failed], 'f').filter((e) => e.kind === 'round');
+  expect(event?.text).toBe('Round 1 failed in Review');
+  expect(event?.stop).toEqual({ step: 'ship__deliver__rounds.review__policy', line: 'boom' });
+});
+
+test('a stop record wins over the run error, and a long error gives its headline', () => {
+  const stopOf = (over: Partial<WorkItemRow>) =>
+    workItemTimeline([item, row({ status: 'failed', ...over })], 'f').find(
+      (e) => e.kind === 'round',
+    )?.stop;
+  expect(
+    stopOf({ failed_step: 'a', error: 'boom', stop_step: 'b', stop_line: '401 unauthorized' }),
+  ).toEqual({ step: 'b', line: '401 unauthorized' });
+  expect(
+    stopOf({ failed_step: 'a', error: 'node failed\nerror: disk full\n  at x (y:1)' }),
+  ).toEqual({
+    step: 'a',
+    line: 'disk full',
+  });
+  expect(stopOf({})).toEqual({ step: null, line: NO_REASON });
+});
+
+test('a round waiting on you asks its question, or says it waits, and a done round has no stop', () => {
+  const stopOf = (over: Partial<WorkItemRow>) =>
+    workItemTimeline([item, row(over)], 'f').find((e) => e.kind === 'round')?.stop;
+  const waiting = { waiting: true, completed_at: null, status: 'running', stop_step: 'ask' };
+  expect(stopOf({ ...waiting, stop_line: '**Build queue, issue 15: scope decision**' })).toEqual({
+    step: 'ask',
+    line: 'Asking: Build queue, issue 15: scope decision',
+  });
+  expect(stopOf(waiting)).toEqual({ step: 'ask', line: 'Waiting on you' });
+  expect(stopOf({})).toBeNull();
 });
 
 test('the app check reads its tally by kind and verdict, with a tone from the overall', () => {
