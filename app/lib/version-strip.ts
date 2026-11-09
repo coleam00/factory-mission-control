@@ -62,22 +62,6 @@ export function stripEntries(rows: readonly VersionStripRow[]): StripEntry[] {
     }));
 }
 
-/** The one version's own scorecard, its digest URL-encoded. */
-export function scorecardLink(factory: string, digest: string): string {
-  return `/f/${encodeURIComponent(factory)}/scorecard?a=${encodeURIComponent(digest)}`;
-}
-
-/** The scorecard and diff of two versions by digest, read from `a` (the older) to `b`. */
-export function compareLinks(
-  factory: string,
-  a: string,
-  b: string,
-): { scorecard: string; diff: string } {
-  const query = `?a=${encodeURIComponent(a)}&b=${encodeURIComponent(b)}`;
-  const base = `/f/${encodeURIComponent(factory)}`;
-  return { scorecard: `${base}/scorecard${query}`, diff: `${base}/diff${query}` };
-}
-
 export const shortDigest = (digest: string): string => digest.slice(0, 'sha256:'.length + 12);
 
 /** "<digest> <one>." for one digest, "<digest> and <digest> <many>." for two; nothing for none. */

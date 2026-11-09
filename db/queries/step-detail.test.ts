@@ -558,10 +558,7 @@ describe('step places of included blocks on the seed', () => {
   test('a parse of a new version moves a queue factory and not a loop one, with no pin written', async () => {
     const fresh = 'a'.repeat(40);
     // The package commit the seed's factory snapshot records (fixtures/pack/queue/FACTORY_COMMIT).
-    const factorySha = readFileSync(
-      join(import.meta.dir, '..', '..', 'fixtures', 'pack', 'queue', 'FACTORY_COMMIT'),
-      'utf8',
-    ).trim();
+    const factorySha = readFileSync(join(import.meta.dir, '..', '..', 'fixtures', 'pack', 'queue', 'FACTORY_COMMIT'), 'utf8').trim();
     const written = async () => ({
       pins: await db.query('SELECT sha FROM mc.pins ORDER BY sha'),
       versions: await db.query('SELECT * FROM mc.versions ORDER BY 1'),
