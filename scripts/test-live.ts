@@ -142,7 +142,7 @@ export const SCREENS: readonly LiveScreen[] = [
     help: [
       'It checks the factory switcher: every factory in the factories file with its running laps, an',
       'inserted lap on the second factory timed to its count, choosing that factory from /, every',
-      'factory screen and step detail, its map, strip and lanes, and the remembered choice with its',
+      'factory screen and step detail, its map, strip and runs, and the remembered choice with its',
       'fallback for a removed factory; then, on a second server reading factories.json alone, that the',
       "switcher lists only factories.json's factories and the second factory is neither sealed for nor",
       'shown when remembered.',
