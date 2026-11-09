@@ -151,5 +151,5 @@ test('by default the phone tabs render no Runs or Board count and the side nav r
     expect(html('tabs')).not.toContain(attr);
     expect(html('side')).toContain(attr);
   }
-  expect(html('tabs')).toContain('decisions-count:attention-items');
+  expect(html('tabs')).toContain('attention-count:decide');
 });
