@@ -11,7 +11,6 @@ import {
   issueUrl,
   lapOutcome,
   type OneLapRow,
-  prNumber,
   pullUrl,
   type StepAttemptRow,
 } from '../lib/one-lap';
@@ -320,7 +319,7 @@ function RunHead({
 }): ReactElement {
   const title = runTitle(lap, timeline);
   const pill = runPill(lap);
-  const pr = prNumber(lap.pr);
+  const pr = lap.pr_number;
   const cost = runCost(rows);
   const tokens = runTokens(rows);
   const seconds = lap.status === 'running' ? since(lap.started_at, now) : durationOf(lap);

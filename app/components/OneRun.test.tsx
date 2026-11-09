@@ -21,7 +21,7 @@ const lap: OneLapRow = {
   issue_url: null,
   route: null,
   depth: null,
-  pr: 'https://github.com/coleam00/queue-factory/pull/496',
+  pr_number: 496,
   review_status: null,
   review_outcome: null,
   review_delivers: null,

@@ -168,6 +168,32 @@ test('mc.pr_number reads a step pr as prNumber does, a JSON object included', as
   }
 }, 60_000);
 
+test('mc.lap_steps.pr_number reads a step pr, else its pr_url', async () => {
+  const pull = (n: number) => `https://github.com/o/r/pull/${n}`;
+  const outputs: [object, number | null][] = [
+    [{ pr: '#7' }, 7],
+    [{ pr: '#7', pr_url: pull(9) }, 7],
+    [{ pr: '', pr_url: pull(9) }, 9],
+    [{ pr_url: pull(9) }, 9],
+    [{ pr_url: null }, null],
+    [{ pr_url: 'https://github.com/o/r/issues/9' }, null],
+  ];
+  const db = await migratedDb();
+  try {
+    for (const [i, [output, expected]] of outputs.entries()) {
+      const run = `00000000-0000-4000-8000-${String(1000 + i).padStart(12, '0')}`;
+      await db.query(
+        `INSERT INTO mc.lap_steps (run_id, step_id, status, output) VALUES ($1, 'round', 'completed', $2)`,
+        [run, JSON.stringify(output)],
+      );
+      const [row] = await db.query(`SELECT pr_number FROM mc.lap_steps WHERE run_id = $1`, [run]);
+      expect(row?.pr_number, JSON.stringify(output)).toBe(expected);
+    }
+  } finally {
+    await db.close();
+  }
+}, 60_000);
+
 test('the Board’s parked rule agrees with the pickups of the pinned build and merge queues', async () => {
   const { buildWaits, LAUNCH_STAGES } = await pack('queue', 'sdlc', '.shared', 'build.ts');
   const { mergeWaits } = await pack('queue', 'sdlc', '.shared', 'merge.ts');

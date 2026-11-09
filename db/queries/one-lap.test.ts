@@ -66,7 +66,7 @@ describe('one-lap on the seed', () => {
         issue_url: 'https://github.com/coleam00/factory-mission-control/issues/3',
         route: 'simple',
         depth: 'normal',
-        pr: '#103',
+        pr_number: 103,
         review_status: 'completed',
         review_outcome: 'merge',
         review_delivers: 'all',
@@ -343,7 +343,7 @@ describe('one-lap on the seed', () => {
       workflow_name: 'archon-build-queue',
       status: 'failed',
       issue_number: QUEUE_PAGE_RUNS.buildIssue,
-      pr: QUEUE_PAGE_RUNS.buildPr,
+      pr_number: 496,
       stop_status: 'failed',
       stop_step: 'ship__deliver__rounds.pr__prepare',
       stop_line: "Script node 'pr__prepare' failed [exit 1]",
@@ -360,7 +360,10 @@ describe('one-lap on the seed', () => {
 
   test('the app check run names its pull request', async () => {
     const [run] = await queue('one-lap', QUEUE_RUNS.appCheck);
-    expect(run).toMatchObject({ workflow_name: 'factory-app-check', pr: QUEUE_PAGE_RUNS.checkPr });
+    expect(run).toMatchObject({
+      workflow_name: 'factory-app-check',
+      pr_number: Number(QUEUE_PAGE_RUNS.checkPr),
+    });
   });
 
   test("a run's cost is the sum of its step costs, a loop's roll-up left out", async () => {

@@ -44,7 +44,7 @@ const lap = (over: Partial<OneLapRow> = {}): OneLapRow => ({
   issue_url: null,
   route: null,
   depth: null,
-  pr: null,
+  pr_number: null,
   review_status: null,
   review_outcome: null,
   review_delivers: null,
@@ -168,15 +168,15 @@ test('a skipped step says why: a failure before it, its map condition, its trigg
 test('a run is titled for what it is', () => {
   expect(runTitle(lap(), runTimeline(failedBuild()))).toBe('Build #485, round 2');
   expect(runTitle(lap({ issue_number: null }), [])).toBe('Build');
-  expect(runTitle(lap({ workflow_name: 'factory-app-check', pr: '421' }), [])).toBe(
+  expect(runTitle(lap({ workflow_name: 'factory-app-check', pr_number: 421 }), [])).toBe(
     'App check, PR #421',
   );
   expect(runTitle(lap({ workflow_name: 'factory-app-check' }), [])).toBe('App check');
   expect(runTitle(lap({ workflow_name: 'archon-merge-queue' }), [])).toBe('Merge sweep');
   expect(runTitle(lap({ workflow_name: 'archon-loop', issue_number: 3 }), [])).toBe('Lap #3');
-  expect(runTitle(lap({ workflow_name: 'archon-intake', issue_number: null, pr: '7' }), [])).toBe(
-    'Intake, PR #7',
-  );
+  expect(
+    runTitle(lap({ workflow_name: 'archon-intake', issue_number: null, pr_number: 7 }), []),
+  ).toBe('Intake, PR #7');
 });
 
 const text = (read: ReturnType<typeof managerRead>) => read.parts.map((p) => p.text).join('');

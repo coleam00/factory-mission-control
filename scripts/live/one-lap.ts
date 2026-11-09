@@ -1,4 +1,4 @@
-import { consoleUrl, prNumber, pullUrl } from '../../app/lib/one-lap';
+import { consoleUrl, pullUrl } from '../../app/lib/one-lap';
 import { QUEUE_FACTORY, QUEUE_PAGE_RUNS, QUEUE_RUNS } from '../fixture/seed';
 import { MARKER } from '../fixture/seed-report';
 import { openPage, type Page } from '../lib/cdp';
@@ -174,7 +174,7 @@ function pageLapRule(sql: string, pattern: RegExp, name: string): string {
 const pageLapPrJoin = (sql: string) =>
   pageLapRule(
     sql,
-    /^LEFT JOIN LATERAL \(\r?\n\s*SELECT coalesce\(nullif\(s\.output ->> 'pr'[\s\S]*?^\) pr ON true/m,
+    /^LEFT JOIN LATERAL \(\r?\n\s*SELECT s\.pr_number[\s\S]*?^\) pr ON true/m,
     'pr lateral',
   );
 
@@ -224,7 +224,7 @@ async function seedOneLapMismatches(
     `SELECT f.repository, f.console,
        ${pageLapIssue(oneLapSql)} AS issue, i.url AS issue_url,
        ${pageLapRoute(oneLapSql)} AS route, p.output ->> 'depth' AS depth,
-       review.output ->> 'outcome' AS review, pr.pr,
+       review.output ->> 'outcome' AS review, pr.pr_number,
        land.output ->> 'outcome' AS gate, land.output ->> 'reason' AS reason
      FROM mc.laps l
      JOIN mc.factories f ON f.name = l.factory
@@ -237,7 +237,7 @@ async function seedOneLapMismatches(
     [runId],
   );
   const issue = nullable(lap.issue);
-  const pr = prNumber(lap.pr === null ? null : String(lap.pr));
+  const pr = nullable(lap.pr_number);
   const headerSql = {
     lap: runId,
     route: lap.route,

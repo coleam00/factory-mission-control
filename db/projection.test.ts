@@ -257,6 +257,35 @@ test('0010 undoes the replay errors of non-laps but keeps missing parents of eli
   }
 });
 
+test('0032 backfills pr_number from a step pr_url and leaves a step pr as it was', async () => {
+  const db = await archonDb();
+  try {
+    await runMigrations({ files: migrationFiles.filter((f) => f.name < '0032'), db });
+    const run = '00000000-0000-4000-8000-0000000000a1';
+    for (const [step, output] of [
+      ['round', { pr_url: 'https://github.com/o/r/pull/565' }],
+      ['control', { pr: '#7', pr_url: 'https://github.com/o/r/pull/9' }],
+    ] as const) {
+      await db.query(
+        `INSERT INTO mc.lap_steps (run_id, step_id, status, output) VALUES ($1, $2, 'completed', $3)`,
+        [run, step, JSON.stringify(output)],
+      );
+    }
+    await runMigrations({ files: migrationFiles, db });
+    expect(
+      await db.query(
+        `SELECT step_id, pr_number FROM mc.lap_steps WHERE run_id = $1 ORDER BY step_id`,
+        [run],
+      ),
+    ).toEqual([
+      { step_id: 'control', pr_number: 7 },
+      { step_id: 'round', pr_number: 565 },
+    ]);
+  } finally {
+    await db.close();
+  }
+}, 60_000);
+
 test('the eligibility upgrade keeps live history and installs the same functions as a fresh database', async () => {
   const upgraded = await archonDb();
   try {

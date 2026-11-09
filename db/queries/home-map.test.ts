@@ -186,6 +186,41 @@ describe('home-map on the seed', () => {
     },
   );
 
+  test('stays fast when a factory has many open pull requests and app-checked runs', async () => {
+    // The old failing arm read every lap step once per open pull request (#569): over a second here.
+    await db.query('BEGIN');
+    try {
+      const run = (k: string) => `('00000000-0000-4000-9000-' || lpad(${k}::text, 12, '0'))::uuid`;
+      await db.query(`INSERT INTO mc.factories VALUES ('scale-factory','o/sf','o/sf','c')`);
+      await db.query(`INSERT INTO mc.pull_requests (factory, number, title, state, head_sha, url, created_at, updated_at)
+        SELECT 'scale-factory', n, 'p' || n, 'open', 'h', 'u', now(), now() FROM generate_series(1, 200) n`);
+      await db.query(`INSERT INTO mc.laps (run_id, factory, workflow_name, status, started_at)
+        SELECT ${run('k')}, 'scale-factory',
+          CASE WHEN k % 4 = 0 THEN 'archon-merge-queue' ELSE 'archon-loop' END,
+          'completed', now() - k * interval '1 minute'
+        FROM generate_series(1, 2000) k`);
+      await db.query(`INSERT INTO mc.lap_steps (run_id, step_id, status, started_at, output)
+        SELECT ${run('k')}, st.s, 'completed', now() - k * interval '1 minute',
+          CASE st.s
+            WHEN 'check-app' THEN jsonb_build_object('pr', 1 + k % 200,
+              'overall', CASE WHEN k % 3 = 0 THEN 'FAIL' ELSE 'PASS' END)
+            WHEN 'land' THEN '{"outcome":"merged"}'::jsonb
+            WHEN 'record' THEN jsonb_build_object('merged', jsonb_build_array(k))
+          END
+        FROM generate_series(1, 2000) k,
+          LATERAL (SELECT CASE WHEN k % 4 = 0 THEN 'record' ELSE 'check-app' END AS s
+            UNION ALL SELECT 'land' UNION ALL SELECT 'ship__n' || j FROM generate_series(1, 20) j) st`);
+      await db.query('ANALYZE');
+      const plan = (await db.query(`EXPLAIN (ANALYZE, FORMAT JSON) ${sql}`, [
+        'scale-factory',
+        '',
+      ])) as unknown as { 'QUERY PLAN': { 'Execution Time': number }[] }[];
+      expect(plan[0]['QUERY PLAN'][0]['Execution Time']).toBeLessThan(500);
+    } finally {
+      await db.query('ROLLBACK');
+    }
+  }, 60_000);
+
   test('failing: each open pull request whose latest app check is FAIL, as SQL over the seed says', async () => {
     const recount = await db.query(
       `SELECT pr.number FROM mc.pull_requests pr

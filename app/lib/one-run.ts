@@ -13,7 +13,6 @@ import {
   isOldLoop,
   lapOutcome,
   type OneLapRow,
-  prNumber,
   type StepAttemptRow,
   workflowLabel,
 } from './one-lap';
@@ -141,7 +140,7 @@ const latestRound = (timeline: readonly TimelineEntry[]): number | null => {
 /** The run as a title: what it is, not its id. */
 export function runTitle(lap: OneLapRow, timeline: readonly TimelineEntry[]): string {
   const issue = lap.issue_number === null ? '' : ` #${lap.issue_number}`;
-  const pr = prNumber(lap.pr);
+  const pr = lap.pr_number;
   switch (lap.workflow_name) {
     case 'archon-build-queue': {
       const round = latestRound(timeline);

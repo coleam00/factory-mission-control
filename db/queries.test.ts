@@ -264,7 +264,7 @@ const ROW_COLUMNS: Record<string, string[]> = {
     'issue_url',
     'route',
     'depth',
-    'pr',
+    'pr_number',
     'review_status',
     'review_outcome',
     'review_delivers',
@@ -493,9 +493,10 @@ describe('the rules the live queries restate, which they may not call a function
   const count = (sql: string, part: string | RegExp) =>
     typeof part === 'string' ? sql.split(part).length - 1 : (sql.match(part) ?? []).length;
 
-  test('no live query parses a step pr itself, they read the projected pr_number', () => {
+  test('no live query takes a step pr or pr_url from its output, they read the projected pr_number', () => {
+    // app-check.sql tests `->> 'pr' IS NOT NULL` only to choose which step's pr_number to use.
     for (const [name, sql] of queries) {
-      expect(sql, name).not.toMatch(/->>\s*'pr'\s+FROM/);
+      expect(sql, name).not.toMatch(/->>\s*'pr(_url)?'(?!\s+IS NOT NULL)/);
     }
   });
 

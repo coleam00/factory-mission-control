@@ -162,7 +162,7 @@ export async function lapsOnCards(db: Db, factory: string): Promise<Map<string, 
 
 /**
  * The map's type at the fitted scale, in rendered pixels, its smallest of each kind, and how wide
- * its frame is against the window: what the owner's readability rule judges (PR #326 review).
+ * its frame is against the page column: what the owner's readability rule judges (PR #326 review).
  */
 export interface MapType {
   title: number;
@@ -171,12 +171,13 @@ export interface MapType {
   /** A line's label or the group box's. */
   label: number;
   frameWidth: number;
-  windowWidth: number;
+  /** The route's `main` content width: the window less the nav, and the Manager dock when open. */
+  columnWidth: number;
 }
 
 /** The least rendered size of each, at 1440x900 fitted; the floors live in `factory-map.ts`. */
 export const MAP_READABLE = { width: 1440, ...MAP_TYPE_FLOOR } as const;
-/** The page's gutters either side of the map's frame, which spans the window between them. */
+/** The page's gutters either side of the map's frame, which spans the page column between them. */
 const MAP_GUTTERS = 48;
 
 export const mapType = (page: Page) =>
@@ -191,12 +192,12 @@ export const mapType = (page: Page) =>
         kind: least('[data-card-kind]'),
         label: Math.min(least('[data-line-label] text'), least('[data-group-label]')),
         frameWidth: document.querySelector('${MAP} [data-map-stage]').getBoundingClientRect().width,
-        windowWidth: document.documentElement.clientWidth,
+        columnWidth: document.querySelector('${MAP} [data-map-stage]').closest('main').clientWidth,
       };
     })()`,
   );
 
-/** Each size below the owner's least, and a frame narrower than the window between its gutters. */
+/** Each size below the owner's least, and a frame narrower than the page column between its gutters. */
 export function mapTypeFailures(type: MapType): string[] {
   const failures: string[] = [];
   for (const what of ['title', 'text', 'kind', 'label'] as const) {
@@ -206,9 +207,9 @@ export function mapTypeFailures(type: MapType): string[] {
       );
     }
   }
-  if (type.frameWidth < type.windowWidth - MAP_GUTTERS - 1) {
+  if (type.frameWidth < type.columnWidth - MAP_GUTTERS - 1) {
     failures.push(
-      `the map's frame is ${Math.round(type.frameWidth)}px wide in a ${type.windowWidth}px window: it should span the window inside the gutters`,
+      `the map's frame is ${Math.round(type.frameWidth)}px wide in a ${type.columnWidth}px page column: it should span the column inside the gutters`,
     );
   }
   return failures;
