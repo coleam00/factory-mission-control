@@ -6,6 +6,7 @@
 import type { StopClass } from './failures';
 import { type Outcome, since } from './laps';
 import { placeAddress } from './places';
+import type { RUN_STATE } from './states';
 
 /** One review disposition as `mc.step_output` keeps it: the line id it answers, or null. */
 export interface Disposition {
@@ -50,7 +51,7 @@ export const workflowLabel = (workflow: string): string => WORKFLOW_LABEL[workfl
 export interface OneLapRow {
   run_id: string;
   workflow_name: string;
-  status: string;
+  status: keyof typeof RUN_STATE;
   started_at: Date | null;
   completed_at: Date | null;
   repository: string;

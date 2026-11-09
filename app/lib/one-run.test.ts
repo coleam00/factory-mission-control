@@ -216,6 +216,17 @@ test('a paused, finished, cancelled or running run is read in one sentence', () 
   expect(read({ status: 'running' })).toBe('It is running ask now.');
 });
 
+test('a paused run reads the question, not its bold title markdown', () => {
+  const rows = [step('ask', { status: 'running' })];
+  const stop_line = '**Build queue, issue 15: scope decision**';
+  const read = managerRead(
+    lap({ status: 'paused', stop_step: 'ask', stop_line }),
+    rows,
+    runTimeline(rows),
+  );
+  expect(text(read)).toBe('ask is waiting on you: Build queue, issue 15: scope decision.');
+});
+
 test('a pending run reads as not started, not as running', () => {
   const read = text(managerRead(lap({ status: 'pending' }), [], runTimeline([])));
   expect(read).toBe('It has not started yet.');

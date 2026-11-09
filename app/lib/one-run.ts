@@ -7,6 +7,7 @@ import type { StopClass } from './failures';
 import { formatCost } from './format';
 import { type LapMapRow, mapPathOf } from './lap-graph';
 import { costOf, OUTCOME_LABEL } from './laps';
+import { questionOf } from './work-item';
 import {
   attemptsInRunOrder,
   isOldLoop,
@@ -304,7 +305,9 @@ export function managerRead(
       const step = lap.stop_step === null ? 'The run' : displayStep(lap.stop_step);
       return plain(
         { text: step, bold: true },
-        { text: ` is waiting on you${lap.stop_line === null ? '.' : `: ${lap.stop_line}.`}` },
+        {
+          text: ` is waiting on you${lap.stop_line === null ? '.' : `: ${questionOf(lap.stop_line)}.`}`,
+        },
       );
     }
     case 'completed': {
@@ -317,7 +320,7 @@ export function managerRead(
       return plain({ text: 'It was cancelled.' });
     case 'pending':
       return plain({ text: 'It has not started yet.' });
-    default: {
+    case 'running': {
       const current = rows.filter((row) => row.status === 'running').at(-1);
       return current === undefined
         ? plain({ text: 'It is running.' })
@@ -326,6 +329,10 @@ export function managerRead(
             { text: displayStep(current.step_id), bold: true },
             { text: ' now.' },
           );
+    }
+    default: {
+      const unreachable: never = lap.status;
+      return plain({ text: `Its state is ${String(unreachable)}.` });
     }
   }
 }

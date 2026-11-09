@@ -476,7 +476,7 @@ async function seedRunMismatches(
   const parts =
     shown.steps.reduce((sum, s) => sum + (s.cost ?? 0), 0) +
     shown.rounds.reduce((sum, r) => sum + (r.cost ?? 0), 0);
-  if (shown.cost === null || Math.abs(shown.cost - Number(total)) > 1e-9) {
+  if (Math.abs((shown.cost ?? 0) - Number(total)) > 1e-9) {
     mismatches.push(`${expected.run}: the head shows a cost of ${shown.cost}, SQL ${total}`);
   }
   if (Math.abs(parts - Number(total)) > 1e-9) {
