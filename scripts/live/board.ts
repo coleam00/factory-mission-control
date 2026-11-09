@@ -173,9 +173,10 @@ export function boardPhase(ctx: LiveContext): LivePhase {
       return [...tile.firstElementChild.children].flatMap((p) => {
         const pill = p.firstElementChild ?? p;
         const r = pill.getBoundingClientRect();
-        const clipped = getComputedStyle(p).overflowX === 'hidden' && p.getBoundingClientRect().right <= box.right + 0.5;
+        const label = pill.lastElementChild ?? pill;
+        const hardClipped = label.scrollWidth > label.clientWidth + 0.5 && getComputedStyle(label).textOverflow !== 'ellipsis';
         const lines = Math.round(r.height / (parseFloat(getComputedStyle(pill).lineHeight) || r.height));
-        return (r.right > box.right + 0.5 && !clipped) || lines > 1 ? [tile.dataset.workItem + ' ' + p.textContent] : [];
+        return r.right > box.right + 0.5 || hardClipped || lines > 1 ? [tile.dataset.workItem + ' ' + p.textContent] : [];
       });
     });
     const seen = (status) => tiles.some((t) => t.firstElementChild.textContent.includes(status));
@@ -190,7 +191,9 @@ export function boardPhase(ctx: LiveContext): LivePhase {
       await page.setViewport(width);
       const { bad, missing } = await page.evaluate<{ bad: string[]; missing: string[] }>(PILL_FIT);
       for (const what of bad)
-        failures.push(`board at ${width}px: pill outside its tile or wrapped: ${what}`);
+        failures.push(
+          `board at ${width}px: pill outside its tile, wrapped or hard-clipped: ${what}`,
+        );
       for (const status of missing)
         failures.push(`board at ${width}px: no "${status}" tile to measure a pill on`);
     }
