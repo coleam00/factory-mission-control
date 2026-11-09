@@ -726,7 +726,12 @@ test('runs, home-map and health-workable hold the same item of a run with severa
     for (const [c, r] of Object.entries(runs)) {
       await db.query(
         `INSERT INTO mc.laps (run_id, factory, workflow_name, status, started_at)
-         VALUES ($1, 'f', 'w', 'running', now())`,
+         VALUES ($1, 'f', 'archon-loop', 'running', now())`,
+        [id(c)],
+      );
+      await db.query(
+        `INSERT INTO mc.lap_steps (run_id, step_id, status, output, started_at, completed_at)
+         VALUES ($1, 'land', 'completed', '{"outcome":"merged"}', now(), now())`,
         [id(c)],
       );
       for (const [issue, at] of r.claims) {
@@ -749,6 +754,12 @@ test('runs, home-map and health-workable hold the same item of a run with severa
     const laps = (await db.query(sqlOf('home-map'), ['f', ''])).filter((r) => r.kind === 'lap');
     expect(held(lanes)).toEqual(expected);
     expect(held(laps)).toEqual(expected);
+    const merged = (await db.query(sqlOf('home-map'), ['f', ''])).filter((r) => r.kind === 'merged');
+    expect(held(merged)).toEqual(expected);
+    for (const [c, r] of Object.entries(runs)) {
+      const [lap] = await db.query(sqlOf('one-lap'), ['f', id(c)]);
+      expect([c, lap?.issue_number]).toEqual([c, r.holds]);
+    }
     const workable = (await db.query(sqlOf('health-workable'), ['f']))
       .flatMap((r) => (r.kind === 'issue' ? [r.issue_number as number] : []))
       .sort();
