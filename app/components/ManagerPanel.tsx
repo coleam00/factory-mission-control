@@ -1,9 +1,7 @@
 import { type ReactElement, type ReactNode, useEffect, useRef, useState } from 'react';
-import { answerChoice } from '../../server/manager-stream';
 import { TEXT_ANSWER_DETAIL } from '../lib/actions';
-import { shortRunId } from '../lib/format';
+import { clock, shortRunId } from '../lib/format';
 import {
-  clock,
   linkify,
   type ManagerLink,
   type ManagerMessage,
@@ -138,8 +136,7 @@ function Proposals({
             onClick={() =>
               start(request, {
                 item: null,
-                label:
-                  proposal.action === 'answer' ? (answerChoice(label) ?? TEXT_ANSWER_DETAIL) : '',
+                label: proposal.action === 'answer' ? (proposal.option ?? TEXT_ANSWER_DETAIL) : '',
               })
             }
           >

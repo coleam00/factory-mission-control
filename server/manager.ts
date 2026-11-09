@@ -21,7 +21,6 @@ import { readFactoryNames } from './factories';
 import { MANAGER_LIMITS, readOnlyQuery } from './manager-sql';
 import {
   AnswerSplitter,
-  answerLabel,
   type ChatRequest,
   encodeEvent,
   MAX_MESSAGE_CHARS,
@@ -35,7 +34,6 @@ import {
   type RawStructure,
   RESUMABLE_STATUSES,
   type RunSummary,
-  TEXT_ANSWER_LABEL,
 } from './manager-stream';
 import { READ_TOOL_NAMES, TOOL_SERVER } from './manager-tools';
 
@@ -422,11 +420,11 @@ async function proposalEvent(
         occurrence,
         option: choice.id,
         text: null,
-        label: answerLabel(choice.label ?? choice.id),
+        label: `Answer "${choice.label ?? choice.id}"`,
       };
     }
     if (raw.text === undefined || raw.text.length < 1 || raw.text.length > 2000) return undefined;
-    return { ...base, occurrence, option: null, text: raw.text, label: TEXT_ANSWER_LABEL };
+    return { ...base, occurrence, option: null, text: raw.text, label: 'Answer with your text' };
   }
   if (raw.action !== 'resume') {
     const unknown: never = raw.action;

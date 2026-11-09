@@ -1,10 +1,5 @@
 import { expect, test } from 'bun:test';
-import {
-  answerChoice,
-  answerLabel,
-  type ManagerEvent,
-  TEXT_ANSWER_LABEL,
-} from '../../server/manager-stream';
+import type { ManagerEvent } from '../../server/manager-stream';
 import {
   applyEvent,
   askAbout,
@@ -192,11 +187,6 @@ test('the handled line counts today only, and says it in plural and singular', (
   expect(today.map((r) => r.id)).toEqual([1, 2, 3]);
   expect(handledSummary(today)).toBe('answered 1 question, resumed 2 runs');
   expect(handledSummary(today.slice(0, 1))).toBe('resumed 1 run');
-});
-
-test('an answer proposal label round-trips its choice, else it is the owner own words', () => {
-  expect(answerChoice(answerLabel('Approve "now"'))).toBe('Approve "now"');
-  expect(answerChoice(TEXT_ANSWER_LABEL)).toBeNull();
 });
 
 test('Ask manager looks at the run and work item it was pressed on', () => {

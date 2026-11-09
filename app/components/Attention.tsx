@@ -20,14 +20,8 @@ import type { DecideRow, UnstickRow } from '../lib/attention';
 import type { FailureGroupRow } from '../lib/failures';
 import { since } from '../lib/laps';
 import { lapHref } from '../lib/one-lap';
-import { shortRunId } from '../lib/format';
-import {
-  clock,
-  HANDLED_QUERY,
-  type HandledRow,
-  handledSummary,
-  handledToday,
-} from '../lib/manager';
+import { clock, shortRunId } from '../lib/format';
+import { HANDLED_QUERY, type HandledRow, handledSummary, handledToday } from '../lib/manager';
 import { type OwnerQueueRow, waited } from '../lib/owner-queue';
 import { AWAITED, Feed, type Source } from '../live/Feed';
 import { useActionPending, useActionsEnabled, useStartAction } from './ActionToast';

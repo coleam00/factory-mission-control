@@ -61,12 +61,6 @@ export const RESUMABLE_STATUSES = ['failed', 'paused'] as const;
 export const MAX_MESSAGES = 20;
 export const MAX_MESSAGE_CHARS = 4000;
 
-/** The label of an answer proposal: the server writes it, the panel reads the choice back. */
-export const TEXT_ANSWER_LABEL = 'Answer with your text';
-export const answerLabel = (choice: string): string => `Answer "${choice}"`;
-export const answerChoice = (label: string): string | null =>
-  /^Answer "(.*)"$/s.exec(label)?.[1] ?? null;
-
 /** At most this many runs in one `runs` event. */
 export const MAX_RUNS = 8;
 /** At most this many proposals in one answer. */
