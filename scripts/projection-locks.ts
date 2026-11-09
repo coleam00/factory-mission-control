@@ -20,6 +20,8 @@ type Case = {
   hold?: string;
   /** The projection errors Archon's write should leave: one when the projection gave up. */
   errors: number;
+  /** A table of Archon's the write goes through; where it is absent no projection trigger exists, so the case is skipped. */
+  needs?: string;
   write: (tx: Tx, runId: string) => Promise<unknown>;
 };
 
@@ -96,11 +98,13 @@ const WORK_NAME = 'work/999999999';
 const parkedOn =
   '{"facts":{"build":{"status":"parked","at":"T","decisions":[{"reason":"waits on #7"}]}}}';
 
+const WORK_STATE_TABLE = 'remote_agent_state_revisions';
+
 const workState = (tx: Tx) =>
   tx.query(
-    `INSERT INTO remote_agent_state_revisions (project_key, name, revision, value, operation, writer_kind)
+    `INSERT INTO ${WORK_STATE_TABLE} (project_key, name, revision, value, operation, writer_kind)
      SELECT $1, $2, coalesce(max(revision), 0) + 1, $3, 'put', 'run'
-     FROM remote_agent_state_revisions WHERE project_key = $1 AND name = $2`,
+     FROM ${WORK_STATE_TABLE} WHERE project_key = $1 AND name = $2`,
     [WORK_PROJECT, WORK_NAME, parkedOn],
   );
 
@@ -213,12 +217,14 @@ export const CASES: Case[] = [
     name: 'ACCESS EXCLUSIVE mc.work_item_states: work item state revision',
     hold: exclusive('work_item_states'),
     errors: 1,
+    needs: WORK_STATE_TABLE,
     write: workState,
   },
   {
     name: 'ACCESS EXCLUSIVE mc.work_item_blockers: work item state revision',
     hold: exclusive('work_item_blockers'),
     errors: 1,
+    needs: WORK_STATE_TABLE,
     write: workState,
   },
   { name: 'no lock: archon-loop run INSERT with a new digest', errors: 0, write: loopRun(0) },
@@ -461,8 +467,21 @@ export const main: Main = async (argv, deps) => {
       );
 
       let unlocked = 0;
+      let skipped = 0;
       const failures: string[] = [];
       for (const check of CASES) {
+        if (check.needs) {
+          const [found] = await archon.query('SELECT to_regclass($1) IS NOT NULL AS present', [
+            `public.${check.needs}`,
+          ]);
+          if (found?.present !== true) {
+            skipped++;
+            deps.out(
+              `SKIP | ${check.name} | public.${check.needs} is absent on this branch, so no projection trigger exists on that path`,
+            );
+            continue;
+          }
+        }
         const before = (await errorStates(archon)).length;
         const release = check.hold ? await holdLock(holder, check.hold, runId) : async () => {};
         const result = await archonWrite(archon, runId, check.write);
@@ -498,9 +517,9 @@ export const main: Main = async (argv, deps) => {
       const started = await startProblems(archon, holder, unlocked + BOUND_MS);
       if (started.length > 0) failures.push(startCheck);
       deps.out(`${started.length === 0 ? 'PASS' : `FAIL (${started.join('; ')})`} | ${startCheck}`);
-      const checks = CASES.length + 3;
+      const checks = CASES.length + 3 - skipped;
       if (failures.length > 0) throw new Error(`${failures.length} of ${checks} checks failed`);
-      deps.out(`all ${checks} checks passed`);
+      deps.out(`all ${checks} checks passed${skipped ? `, ${skipped} skipped` : ''}`);
     } finally {
       await Promise.all([archon.close(), holder.close()]);
     }
