@@ -139,7 +139,11 @@ export function FactorySwitcherBody({
         <span className="inline-flex w-full items-center gap-1.5 rounded-md border border-[color:var(--v3-line)] px-2 py-1 font-mono text-[length:var(--v3-t-micro)] text-[color:var(--v3-fg-3)]">
           <span className="whitespace-nowrap">{current ?? 'Choose a factory'}</span>
           <span aria-hidden="true">▾</span>
-          {engine ? <span data-engine>· engine {engine.slice(0, 8)}</span> : null}
+          {engine ? (
+            <span data-engine title={`engine ${engine}`} className="whitespace-nowrap">
+              · {engine.slice(0, 8)}
+            </span>
+          ) : null}
         </span>
       </summary>
       {open ? (
