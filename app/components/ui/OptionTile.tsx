@@ -51,7 +51,11 @@ export function OptionTile({
         {recommended ? <RecommendedTag /> : null}
       </b>
       {consequence === undefined ? null : (
-        <span className="block text-[length:var(--v3-t-meta)] text-[color:var(--v3-fg-3)]">
+        <span
+          className={`block text-[length:var(--v3-t-meta)] ${
+            recommended ? 'text-[color:var(--v3-fg-2)]' : 'text-[color:var(--v3-fg-3)]'
+          }`}
+        >
           {consequence}
         </span>
       )}

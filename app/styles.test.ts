@@ -120,6 +120,21 @@ describe('focus ring', () => {
   });
 });
 
+describe('recommended option tile', () => {
+  const token = (name: string) => {
+    const d = app.find((x) => x.property === name && x.value.startsWith('#'));
+    if (!d) throw new Error(`missing ${name}`);
+    return resolveColor(d.value, d.scope);
+  };
+
+  test('its consequence line reaches 4.5:1 on the violet wash', () => {
+    const wash = luminance(token('--v3-you-wash'));
+    expect(contrast(luminance(token('--v3-fg-2')), wash)).toBeGreaterThanOrEqual(4.5);
+    // The default consequence color is why the recommended tile uses fg-2.
+    expect(contrast(luminance(token('--v3-fg-3')), wash)).toBeLessThan(4.5);
+  });
+});
+
 describe('fonts', () => {
   const families = app
     .filter((d) => d.property === 'font-family')

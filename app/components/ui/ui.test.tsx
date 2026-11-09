@@ -231,3 +231,11 @@ test('an OptionTile with an href is a link that keeps its recommended mark and d
   expect(html).toContain('data-recommended=""');
   expect(html).toContain('data-choice="ship"');
 });
+
+test('a recommended OptionTile paints its consequence in fg-2, a plain one in fg-3', () => {
+  const recommended = renderToStaticMarkup(<OptionTile recommended label="A" consequence="x" />);
+  const plain = renderToStaticMarkup(<OptionTile label="A" consequence="x" />);
+  expect(recommended).toContain('--v3-fg-2');
+  expect(recommended).not.toContain('--v3-fg-3');
+  expect(plain).toContain('--v3-fg-3');
+});
