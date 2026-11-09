@@ -144,6 +144,17 @@ test('every old address lands where the v3 README says', async () => {
   for (const [from, to] of Object.entries(landings)) expect(await landing(from)).toBe(to);
 });
 
+test('the places and the removed screens agree with the route files on disk', async () => {
+  const paths = routesFromModules(await globRoutes(join(import.meta.dir, 'routes'))).map(
+    (r) => r.path,
+  );
+  for (const place of PLACES)
+    expect(paths).toContain(`/f/:factory${place.path && `/${place.path}`}`);
+  expect(paths).toContain('/f/:factory/runs/:runId');
+  for (const from of Object.keys(REMOVED_SCREENS))
+    expect(paths).not.toContain(`/f/:factory/${from}`);
+});
+
 test('every removed screen is a route that lands on a place', () => {
   const routes = appRoutes({})[0]?.children ?? [];
   for (const [from, to] of Object.entries(REMOVED_SCREENS)) {

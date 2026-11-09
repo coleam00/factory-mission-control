@@ -336,11 +336,17 @@ export function viewPath(map: FactoryMap, id: string | null, from?: string | nul
   return [];
 }
 
+/** The address parameter that names the pinned card. */
+export const AT_PARAM = 'at';
+
 /** The address parameter that names the open view. */
 export const VIEW_PARAM = 'view';
 
 /** The address parameter naming the view a shared view was opened from. */
 export const FROM_PARAM = 'from';
+
+/** Every address parameter a map link carries. */
+export const MAP_PARAMS = [AT_PARAM, VIEW_PARAM, FROM_PARAM] as const;
 
 /**
  * `prev` with `view` set to the deepest view of `path`, or removed for the root. A view reached

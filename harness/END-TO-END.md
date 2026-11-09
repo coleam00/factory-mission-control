@@ -4,7 +4,7 @@ What a user does with Factory Mission Control today, in plain English. Each jour
 the app served from a check branch loaded with the seed (`bun run fixture:branch`, then
 `bun run serve -- --port <8850-8864>`, opened at `http://localhost:<port>`).
 
-1. **See the factory.** Open the home screen. The architecture map shows the loop's steps from
+1. **See the factory.** Open the Factory place (`/f/<factory>/map`). The architecture map shows the loop's steps from
    pick to release, the manager above them and the inputs and outputs around them. Open check-app:
    its prompt, its holdout verifier and how the holdout fence works are shown.
 2. **Watch a lap.** With the lanes panel open, insert a step event for a running lap

@@ -13,7 +13,7 @@ const BRAND = (
   <span className="flex items-center gap-2.5 text-base font-semibold text-[color:var(--v3-fg)]">
     <span
       aria-hidden
-      className="size-5 rounded-md bg-[linear-gradient(135deg,#50a1fd,#8b7cf3_60%,#c86ff0)]"
+      className="size-5 rounded-md bg-[linear-gradient(135deg,var(--v3-live),var(--v3-you)_60%,var(--v3-brand-end))]"
     />
     Mission Control
   </span>
@@ -118,7 +118,7 @@ function PhoneTop({
   );
 }
 
-function PhoneTabs({
+export function PhoneTabs({
   manager,
   onManager,
 }: {

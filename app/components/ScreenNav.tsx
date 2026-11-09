@@ -151,11 +151,7 @@ export function PlaceLinks({
               >
                 <Glyph place={place} />
                 {place.label}
-                <span
-                  className={
-                    layout === 'side' ? 'ml-auto' : 'whitespace-nowrap empty:hidden'
-                  }
-                >
+                <span className={layout === 'side' ? 'ml-auto' : 'whitespace-nowrap empty:hidden'}>
                   {count(place)}
                 </span>
               </Link>

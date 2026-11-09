@@ -6,7 +6,7 @@ import { NotFound } from './errors';
 import { FactoryProvider } from './live/FactoryProvider';
 import { type Live, LiveContext } from './live/LiveProvider';
 import { routesFromModules } from './routing';
-import { ForFactory } from './Shell';
+import { ForFactory, PhoneTabs } from './Shell';
 
 const Page = () => <main>page</main>;
 const routes = routesFromModules({
@@ -144,4 +144,29 @@ test('the status footer has the running line and the switcher, and no schedules 
   expect(header(html)).toContain('waiting for a slot');
   expect(html).toContain('data-factory-switcher');
   expect(html).not.toMatch(/schedules|main green|main health/i);
+});
+
+test('the phone tabs mark one place current, and none while the Manager is open', () => {
+  const tabs = (manager: boolean) => {
+    const router = createMemoryRouter(
+      [
+        {
+          path: '*',
+          element: (
+            <LiveContext.Provider value={ready}>
+              <FactoryProvider>
+                <PhoneTabs manager={manager} onManager={() => {}} />
+              </FactoryProvider>
+            </LiveContext.Provider>
+          ),
+        },
+      ],
+      { initialEntries: ['/f/mission-control/board'] },
+    );
+    return renderToStaticMarkup(<RouterProvider router={router} />);
+  };
+  expect(tabs(false).match(/aria-current/g)).toHaveLength(1);
+  expect(tabs(false)).toContain('aria-pressed="false"');
+  expect(tabs(true)).not.toContain('aria-current');
+  expect(tabs(true)).toContain('aria-pressed="true"');
 });

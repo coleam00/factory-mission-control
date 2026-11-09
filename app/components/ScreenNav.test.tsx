@@ -127,9 +127,7 @@ test('while the phone Manager is open no tab is current, and a tab’s count sta
     [
       {
         path: '*',
-        element: (
-          <PlaceLinks factory={FACTORY} layout="tabs" quiet count={() => <b>2 live</b>} />
-        ),
+        element: <PlaceLinks factory={FACTORY} layout="tabs" quiet count={() => <b>2 live</b>} />,
       },
     ],
     { initialEntries: [`/f/${FACTORY}`] },

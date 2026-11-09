@@ -15,7 +15,7 @@ import { PLACES, type PlacePath, placeAddress } from './lib/places';
 import { stepHref } from './lib/step-detail';
 import { useFactory } from './live/FactoryProvider';
 import { useLive } from './live/LiveProvider';
-import { FROM_PARAM, VIEW_PARAM } from './map/factory-map';
+import { AT_PARAM, MAP_PARAMS } from './map/factory-map';
 import { Shell } from './Shell';
 
 export interface RouteModule {
@@ -105,8 +105,8 @@ const lapsRunRedirect: LoaderFunction = ({ params: { factory = '', runId = '' } 
  * `from`; otherwise the factory's Attention.
  */
 export function homeAddressTarget(factory: string, search: URLSearchParams): string {
-  const oldMapLink = ['at', VIEW_PARAM, FROM_PARAM].some((name) => search.has(name));
-  return oldMapLink ? homeHref(factory, search.get('at'), search) : placeAddress(factory, '');
+  const oldMapLink = MAP_PARAMS.some((name) => search.has(name));
+  return oldMapLink ? homeHref(factory, search.get(AT_PARAM), search) : placeAddress(factory, '');
 }
 
 /**
