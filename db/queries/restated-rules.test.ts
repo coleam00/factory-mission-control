@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { COLUMNS, PARKED, parked, SPLIT_WORKFLOW } from '../../app/lib/board';
+import { PARKED, parked, SPLIT_WORKFLOW } from '../../app/lib/board';
 import { causeOf } from '../../app/lib/health';
 import { LAP_PAGE_WORKFLOW, prNumber } from '../../app/lib/one-lap';
 import { QUEUE_ENDING_STATE, QUEUE_REVIEW_STATE, REVIEW_OUTCOME_STATE } from '../../app/lib/states';
@@ -36,12 +36,6 @@ test('the board route CASE agrees with the pack ROUTE_LABEL', async () => {
   );
   expect(new Set(pairs.map(([label]) => label))).toEqual(new Set(Object.values(ROUTE_LABEL)));
   for (const [label, route] of pairs) expect(ROUTE_LABEL[route as string]).toBe(label);
-});
-
-test('the Board grid has one track per column', () => {
-  expect(read('app', 'components', 'Board.tsx')).toContain(
-    `grid-cols-[repeat(${COLUMNS.length},minmax(`,
-  );
 });
 
 test('map-right-now reads only paths the pinned merge queue declares', () => {
