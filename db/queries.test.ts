@@ -6,6 +6,7 @@ import type { FactorySwitcherRow } from '../app/components/FactorySwitcher';
 import type { AppCheckRow } from '../app/lib/app-check';
 import type { ArchDiffRow } from '../app/lib/arch-diff';
 import type { AttentionRow, DecideRow, UnstickRow } from '../app/lib/attention';
+import type { SweepRow } from '../app/lib/attention-page';
 import type { BoardRow } from '../app/lib/board';
 import type { FailureGroupRow } from '../app/lib/failures';
 import type { HealthRunRow, HealthStepRow, HealthWorkableRow } from '../app/lib/health';
@@ -109,6 +110,7 @@ const ROW_COLUMNS: Record<string, string[]> = {
     'repository',
     'console',
   ]),
+  'manager-sweep': columns<SweepRow>()(['swept_at']),
   'factory-switcher': columns<FactorySwitcherRow>()(['factory', 'running', 'is_default']),
   'health-runs': columns<HealthRunRow>()([
     'run_id',

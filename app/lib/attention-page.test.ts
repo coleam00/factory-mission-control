@@ -8,12 +8,16 @@ import {
   byQueue,
   decideCards,
   fixCards,
+  ownerCards,
   queueOf,
   releaseCommand,
   retriageCommand,
+  sweepLine,
   unstickCards,
+  unstickKey,
 } from './attention-page';
 import type { FailureGroupRow } from './failures';
+import type { OwnerQueueRow } from './owner-queue';
 
 const RUN = '5eed0005-0000-4000-8000-000000000001';
 const CONSOLE_RUN = `http://localhost:3090/console/r/${RUN}`;
@@ -178,6 +182,11 @@ test('a Fix card says the count, the inclusive UTC days, the step and the class'
 
 test('By queue holds exactly the cards By kind holds, and an unknown workflow lands in Other', () => {
   expect(queueOf('archon-merge-queue')).toBe('merge');
+  expect(queueOf('archon-loop', 'review')).toBe('merge');
+  expect(queueOf('archon-loop', 'ship/deliver/rounds/review')).toBe('build');
+  expect(queueOf('archon-build-queue', 'ask')).toBe('build');
+  expect(queueOf('archon-build-queue', 'no-such-step')).toBe('build');
+  expect(queueOf('factory-app-check')).toBe('app-check');
   expect(queueOf('something-new')).toBe('other');
   expect(queueOf(null)).toBe('other');
   const cards: AttentionCard[] = [
@@ -188,6 +197,72 @@ test('By queue holds exactly the cards By kind holds, and an unknown workflow la
   const keys = (groups: { cards: AttentionCard[] }[]) =>
     groups.flatMap((g) => g.cards.map((c) => c.key)).sort();
   expect(keys(byQueue(cards))).toEqual(keys(byKind(cards)));
-  expect(byQueue(cards).map((g) => g.queue)).toEqual(['intake', 'build', 'other']);
+  expect(byQueue(cards).map((g) => g.queue)).toEqual(['intake', 'build', 'merge', 'other']);
   expect(byKind(cards).map((g) => g.kind)).toEqual(['decide', 'unstick', 'fix']);
+});
+
+const question = (overrides: Partial<OwnerQueueRow> = {}): OwnerQueueRow => ({
+  kind: 'question',
+  issue_number: 12,
+  question_number: 1,
+  title: 'Which format?',
+  url: 'https://github.com/o/r/issues/12',
+  options: JSON.stringify([
+    { key: 'A', text: 'JSON' },
+    { key: 'B', text: 'YAML' },
+  ]),
+  recommendation: 'JSON is simpler.',
+  default_option: 'B',
+  default_at: new Date('2026-10-25T09:07:30Z'),
+  waiting_since: new Date('2026-10-24T09:00:00Z'),
+  approximate: false,
+  ...overrides,
+});
+
+test('an owner question recommends only its default tile, and says when the default applies', () => {
+  const [card] = ownerCards([question()]);
+  expect(card?.tiles.map((t) => [t.id, t.recommended])).toEqual([
+    ['A', false],
+    ['B', true],
+  ]);
+  expect(card?.note).toEqual({
+    lead: 'Default B applies 2026-10-25 09:07 UTC.',
+    rest: 'JSON is simpler.',
+  });
+  expect(card?.tiles.map((t) => t.href)).toEqual([
+    'https://github.com/o/r/issues/12',
+    'https://github.com/o/r/issues/12',
+  ]);
+});
+
+test('an owner question without a default says so and recommends no tile', () => {
+  const [card] = ownerCards([question({ default_option: null, default_at: null })]);
+  expect(card?.note.lead).toBe('No default.');
+  expect(card?.tiles.some((t) => t.recommended)).toBe(false);
+});
+
+test('sweepLine says how long ago the manager swept, and drops the clause when it never did', () => {
+  const now = Date.parse('2026-10-24T12:00:00Z');
+  expect(sweepLine('f', new Date('2026-10-24T08:48:00Z'), now)).toBe(
+    'f. The manager swept 3h 12m ago. The manager put its recommendation first on each.',
+  );
+  expect(sweepLine('f', null, now)).toBe('f. The manager put its recommendation first on each.');
+});
+
+test('an unstick card is keyed as unstickKey says, so the live phase finds it', () => {
+  const rows = [
+    unstick({}),
+    unstick({
+      kind: 'capacity',
+      number: null,
+      run_id: RUN,
+      action: 'resume',
+      workflow_name: 'archon-build-queue',
+    }),
+  ];
+  expect(
+    unstickCards(rows, 'f')
+      .map((c) => c.key)
+      .sort(),
+  ).toEqual(rows.map(unstickKey).sort());
 });

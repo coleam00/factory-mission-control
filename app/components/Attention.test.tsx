@@ -79,6 +79,7 @@ const render = (props: Partial<Parameters<typeof AttentionBody>[0]> = {}) =>
         owner={none}
         unstick={none}
         failures={none}
+        sweep={none}
         now={NOW}
         {...props}
       />
@@ -147,8 +148,39 @@ test('By queue draws the same cards under queue headers', () => {
   const headers = [
     ...html.matchAll(/<h2[^>]*>(Intake|Build|Merge|App check|Discoveries|Other)/g),
   ].map((m) => m[1]);
-  expect(headers).toEqual(['Intake', 'Build']);
+  expect(headers).toEqual(['Intake', 'Build', 'Merge']);
   const keys = (h: string) =>
     [...h.matchAll(/data-attention-item="([^"]+)"/g)].map((m) => m[1]).sort();
   expect(keys(html)).toEqual(keys(render(props)));
+});
+
+test('the recommendation span holds the text alone, so the separator is not read as part of it', () => {
+  const question: OwnerQueueRow = {
+    ...owner,
+    kind: 'question',
+    question_number: 2,
+    options: JSON.stringify([
+      { key: 'A', text: 'Ship it' },
+      { key: 'B', text: 'Hold' },
+    ]),
+    recommendation: 'Ship it: the fix is small.',
+    default_option: 'A',
+    default_at: new Date('2026-10-25T09:00:00Z'),
+  };
+  const html = render({ owner: ready([question]) });
+  expect(html).toContain('</b> <span data-recommendation="true">Ship it: the fix is small.</span>');
+});
+
+test('the head says when the manager swept, and leaves the clause out without a finished manager run', () => {
+  const swept = new Date(NOW - 12 * 60_000);
+  expect(render({ sweep: ready([{ swept_at: swept }]) })).toContain(
+    'f. The manager swept 12m ago. The manager put its recommendation first on each.',
+  );
+  for (const sweep of [
+    ready([{ swept_at: null }]),
+    ready([]),
+    { rows: [{ swept_at: swept }], state: 'error' } as const,
+  ]) {
+    expect(render({ sweep })).toContain('f. The manager put its recommendation first on each.');
+  }
 });

@@ -1,5 +1,10 @@
 import type { UnstickRow } from '../../app/lib/attention';
-import { retriageCommand, unstickCards } from '../../app/lib/attention-page';
+import {
+  ATTENTION_SOURCES,
+  retriageCommand,
+  unstickCards,
+  unstickKey,
+} from '../../app/lib/attention-page';
 import { openPage, type Page } from '../lib/cdp';
 import type { Row } from '../lib/db';
 import {
@@ -33,8 +38,8 @@ import {
   readyFailures,
 } from './timings';
 
-const QUERIES = ['decide', 'owner-queue', 'unstick', 'failure-groups'] as const;
-type PerQuery = Record<(typeof QUERIES)[number], number | null>;
+const QUERIES = Object.values(ATTENTION_SOURCES).map((s) => s.query);
+type PerQuery = Record<string, number | null>;
 
 interface AttentionTimings extends GroupTimings {
   branch: string | null;
@@ -199,9 +204,7 @@ export function unstickMismatches(
   );
   for (const row of rows) {
     if (row.action !== 'retriage' || row.number === null) continue;
-    const card = shown.find(
-      (s) => s.kind === 'unstick' && s.id === `unstick:${row.kind}:${row.number}:`,
-    );
+    const card = shown.find((s) => s.kind === 'unstick' && s.id === unstickKey(row));
     if (card === undefined) continue;
     same(
       `#${row.number} re-triage command`,
@@ -247,12 +250,7 @@ export function attentionPhase(ctx: LiveContext): LivePhase {
     ...emptyGroupTimings(QUERIES),
     labelToScreen: null,
     holdSeconds,
-    renewals: {
-      decide: null,
-      'owner-queue': null,
-      unstick: null,
-      'failure-groups': null,
-    },
+    renewals: Object.fromEntries(QUERIES.map((q) => [q, null])),
     afterHoldLabelToScreen: null,
     noReload: null,
     limits: LIMITS,

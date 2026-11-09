@@ -1,5 +1,5 @@
-import { type ReactElement, useState } from 'react';
-import { attentionCount } from '../lib/attention-page';
+import { type ReactElement, useCallback, useState } from 'react';
+import { ATTENTION_SOURCES, attentionCount } from '../lib/attention-page';
 import { stateColor } from '../lib/states';
 import { AWAITED, Feed, type Source } from '../live/Feed';
 
@@ -43,42 +43,46 @@ export function CountMark({
   );
 }
 
+type SourceKey = keyof typeof ATTENTION_SOURCES;
+
+/** One source's feed, with a callback that stays the same across renders so its report runs only on change. */
+function CountFeed({
+  id,
+  factory,
+  report,
+}: {
+  id: SourceKey;
+  factory: string;
+  report: (id: SourceKey, source: Source<object>) => void;
+}): ReactElement {
+  const { query } = ATTENTION_SOURCES[id];
+  const into = useCallback((source: Source<object>) => report(id, source), [id, report]);
+  return (
+    <Feed<object> query={query} name={`attention-count:${query}`} factory={factory} into={into} />
+  );
+}
+
 /**
- * The Attention tab's violet count: the rows of the four live queries the page itself reads, counted
- * by `attentionCount`, so the count is the page's cards by construction.
+ * The Attention tab's violet count: the rows of the live queries the page itself reads
+ * (`ATTENTION_SOURCES`), counted by `attentionCount`, so the count is the page's cards by construction.
  */
 export function AttentionCount({ factory }: { factory: string }): ReactElement {
-  const [decide, setDecide] = useState<Source<object>>(AWAITED);
-  const [owner, setOwner] = useState<Source<object>>(AWAITED);
-  const [unstick, setUnstick] = useState<Source<object>>(AWAITED);
-  const [failures, setFailures] = useState<Source<object>>(AWAITED);
+  const [sources, setSources] = useState<Record<SourceKey, Source<object>>>({
+    decide: AWAITED,
+    owner: AWAITED,
+    unstick: AWAITED,
+    failures: AWAITED,
+  });
+  const report = useCallback(
+    (id: SourceKey, source: Source<object>) => setSources((all) => ({ ...all, [id]: source })),
+    [],
+  );
   return (
     <>
-      <Feed<object>
-        query="decide"
-        name="attention-count:decide"
-        factory={factory}
-        into={setDecide}
-      />
-      <Feed<object>
-        query="owner-queue"
-        name="attention-count:owner-queue"
-        factory={factory}
-        into={setOwner}
-      />
-      <Feed<object>
-        query="unstick"
-        name="attention-count:unstick"
-        factory={factory}
-        into={setUnstick}
-      />
-      <Feed<object>
-        query="failure-groups"
-        name="attention-count:failure-groups"
-        factory={factory}
-        into={setFailures}
-      />
-      <CountMark sources={[decide, owner, unstick, failures]} />
+      {(Object.keys(ATTENTION_SOURCES) as SourceKey[]).map((id) => (
+        <CountFeed key={id} id={id} factory={factory} report={report} />
+      ))}
+      <CountMark sources={Object.values(sources)} />
     </>
   );
 }

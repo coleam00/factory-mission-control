@@ -1,6 +1,7 @@
 import { type ReactElement, type ReactNode, useState } from 'react';
 import {
   type Action,
+  ATTENTION_SOURCES,
   type AttentionCard,
   attentionCount,
   byKind,
@@ -8,6 +9,9 @@ import {
   decideCards,
   fixCards,
   ownerCards,
+  SWEEP_QUERY,
+  type SweepRow,
+  sweepLine,
   unstickCards,
 } from '../lib/attention-page';
 import type { DecideRow, UnstickRow } from '../lib/attention';
@@ -132,7 +136,12 @@ function CardView({ card, now }: { card: AttentionCard; now: number }): ReactEle
       <div className="col-start-2 mt-2">
         <ManagerNote>
           <b>{card.note.lead}</b>
-          {card.note.rest === '' ? null : <span data-recommendation> {card.note.rest}</span>}
+          {card.note.rest === '' ? null : (
+            <>
+              {' '}
+              <span data-recommendation>{card.note.rest}</span>
+            </>
+          )}
           {card.note.code === undefined ? null : (
             <code className="mt-1.5 block overflow-x-auto rounded-md bg-[var(--v3-sunk)] px-2.5 py-1.5 font-mono text-[length:var(--v3-t-meta)] text-[color:var(--v3-fg-2)]">
               {card.note.code}
@@ -210,19 +219,16 @@ function Group({
   );
 }
 
-/** What each source is, for the line that says its live data is unavailable. */
-const SOURCES = ['what is waiting on you', 'the owner queue', 'what stopped moving', 'failures'];
-
 function Head({
   count,
-  factory,
+  line,
   failed,
   view,
   onView,
   phone,
 }: {
   count: number | 'loading' | 'unavailable';
-  factory: string;
+  line: string;
   failed: readonly string[];
   view: View;
   onView: (view: View) => void;
@@ -244,7 +250,7 @@ function Head({
           {title}
         </h1>
         <p data-sweep className="m-0 max-w-[56ch] text-[color:var(--v3-fg-2)]">
-          {factory}. The manager put its recommendation first on each.
+          {line}
         </p>
         {failed.map((what) => (
           <p key={what} className="m-0 text-[length:var(--v3-t-meta)] text-[color:var(--v3-fg-2)]">
@@ -265,6 +271,7 @@ export function AttentionBody({
   owner,
   unstick,
   failures,
+  sweep,
   now: fixed,
   view: fixedView,
 }: {
@@ -273,6 +280,7 @@ export function AttentionBody({
   owner: Source<OwnerQueueRow>;
   unstick: Source<UnstickRow>;
   failures: Source<FailureGroupRow>;
+  sweep: Source<SweepRow>;
   now?: number;
   view?: View;
 }): ReactElement {
@@ -283,7 +291,16 @@ export function AttentionBody({
   const view = fixedView ?? chosen;
   const sources = [decide, owner, unstick, failures];
   const count = attentionCount(sources);
-  const failed = sources.flatMap((s, i) => (s.state === 'error' ? [SOURCES[i] ?? ''] : []));
+  const failed = (
+    [
+      [ATTENTION_SOURCES.decide, decide],
+      [ATTENTION_SOURCES.owner, owner],
+      [ATTENTION_SOURCES.unstick, unstick],
+      [ATTENTION_SOURCES.failures, failures],
+    ] as const
+  ).flatMap(([source, s]) => (s.state === 'error' ? [source.what] : []));
+  // The sweep clause is drawn only from a manager run read now: not through an outage.
+  const sweptAt = sweep.state === 'error' ? null : (sweep.rows?.[0]?.swept_at ?? null);
   // Rows kept through an outage are from before it: a failed source draws no cards.
   const cards: AttentionCard[] = [
     ...(decide.state === 'error' ? [] : decideCards(decide.rows ?? [], factory)),
@@ -305,7 +322,7 @@ export function AttentionBody({
     >
       <Head
         count={count}
-        factory={factory}
+        line={sweepLine(factory, sweptAt, now)}
         failed={failed}
         view={view}
         onView={setView}
@@ -322,18 +339,33 @@ export function Attention({ factory }: { factory: string }): ReactElement {
   const [owner, setOwner] = useState<Source<OwnerQueueRow>>(AWAITED);
   const [unstick, setUnstick] = useState<Source<UnstickRow>>(AWAITED);
   const [failures, setFailures] = useState<Source<FailureGroupRow>>(AWAITED);
+  const [sweep, setSweep] = useState<Source<SweepRow>>(AWAITED);
   return (
     <>
-      <Feed<DecideRow> query="decide" factory={factory} into={setDecide} />
-      <Feed<OwnerQueueRow> query="owner-queue" factory={factory} into={setOwner} />
-      <Feed<UnstickRow> query="unstick" factory={factory} into={setUnstick} />
-      <Feed<FailureGroupRow> query="failure-groups" factory={factory} into={setFailures} />
+      <Feed<DecideRow> query={ATTENTION_SOURCES.decide.query} factory={factory} into={setDecide} />
+      <Feed<OwnerQueueRow>
+        query={ATTENTION_SOURCES.owner.query}
+        factory={factory}
+        into={setOwner}
+      />
+      <Feed<UnstickRow>
+        query={ATTENTION_SOURCES.unstick.query}
+        factory={factory}
+        into={setUnstick}
+      />
+      <Feed<FailureGroupRow>
+        query={ATTENTION_SOURCES.failures.query}
+        factory={factory}
+        into={setFailures}
+      />
+      <Feed<SweepRow> query={SWEEP_QUERY} factory={factory} into={setSweep} />
       <AttentionBody
         factory={factory}
         decide={decide}
         owner={owner}
         unstick={unstick}
         failures={failures}
+        sweep={sweep}
       />
     </>
   );

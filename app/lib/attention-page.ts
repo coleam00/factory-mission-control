@@ -7,18 +7,22 @@
  * Clean up ("safe to clear") is not a group here: no live query names such an item yet.
  */
 import type { Source } from '../live/Feed';
+import { cardForStep, FACTORY_MAP } from '../map/factory-map';
 import {
   type DecideRow,
   attentionItems,
   attentionOrigin,
   attentionQuestion,
   recommendationReason,
+  UNSTICK_KINDS,
   type UnstickRow,
 } from './attention';
-import type { FailureGroupRow } from './failures';
+import type { FailureGroupRow, StopClass } from './failures';
 import { shortRunId } from './format';
+import { stepPath } from './lap-graph';
+import { since } from './laps';
 import { consoleUrl, hasLapPage, lapHref, workflowLabel } from './one-lap';
-import { type OwnerQueueRow, ownerQueue } from './owner-queue';
+import { type OwnerQueueRow, ownerQueue, waited } from './owner-queue';
 import type { State } from './states';
 import { workItemHref } from './work-item';
 
@@ -41,22 +45,29 @@ export const QUEUES: readonly { queue: AttentionQueue; name: string }[] = [
   { queue: 'other', name: 'Other' },
 ];
 
-const QUEUE_OF: Readonly<Record<string, AttentionQueue>> = {
-  'archon-intake': 'intake',
-  'archon-triage': 'intake',
-  'archon-split': 'intake',
-  'archon-backlog': 'intake',
-  'factory-backlog': 'intake',
-  'archon-build-queue': 'build',
-  'archon-loop': 'build',
-  'archon-merge-queue': 'merge',
-  'factory-app-check': 'app-check',
-  'archon-discoveries': 'discoveries',
+/** The queue a root card of the factory map belongs to; a card not listed (Manager, Staging, ...) is Other. */
+const QUEUE_OF_CARD: Readonly<Record<string, AttentionQueue>> = {
+  split: 'intake',
+  intake: 'intake',
+  order: 'build',
+  build: 'build',
+  review: 'build',
+  merge: 'merge',
+  app: 'app-check',
+  disc: 'discoveries',
 };
 
-/** The queue a workflow belongs to; one that is none of the five is Other. */
-export const queueOf = (workflow: string | null): AttentionQueue =>
-  (workflow === null ? undefined : QUEUE_OF[workflow]) ?? 'other';
+/**
+ * The queue the factory map gives a step: the card covering it, else (no step, or one no card
+ * covers) the first card covering the workflow at all. A workflow no card covers is Other.
+ */
+export function queueOf(workflow: string | null, step: string | null = null): AttentionQueue {
+  if (workflow === null) return 'other';
+  const card =
+    (step === null ? undefined : cardForStep(FACTORY_MAP, workflow, stepPath(step))) ??
+    FACTORY_MAP.cards.find((c) => c.covers.some((cover) => cover.workflow === workflow));
+  return QUEUE_OF_CARD[card?.id ?? ''] ?? 'other';
+}
 
 export type MetaPart = { mono: string } | { pill: string; state: State } | { text: string };
 
@@ -136,7 +147,7 @@ export function decideCards(rows: readonly DecideRow[], factory: string): Attent
     }
     const chosen = item.options.find((o) => o.id === recommended);
     const question = attentionQuestion(item.message);
-    const queue = queueOf(item.workflow_name);
+    const queue = queueOf(item.workflow_name, item.node_id);
     return {
       key: `decide:${item.run_id}`,
       kind: 'decide',
@@ -267,7 +278,10 @@ export function ownerCards(rows: readonly OwnerQueueRow[]): AttentionCard[] {
 }
 
 const closed = (waitsOn: string) => (waitsOn.includes(',') ? 'all have closed' : 'it has closed');
-const UNSTICK_ORDER: readonly UnstickRow['kind'][] = ['blocked', 'parked', 'capacity', 'claim'];
+
+/** A card's key, which the live phase reads back to find the card of a row. */
+export const unstickKey = (row: Pick<UnstickRow, 'kind' | 'number' | 'run_id'>): string =>
+  `unstick:${row.kind}:${row.number ?? ''}:${row.run_id ?? ''}`;
 
 /** Work that stopped moving. Re-triage and releasing a claim are copied commands; Resume opens the run in the console. */
 export function unstickCards(rows: readonly UnstickRow[], factory: string): AttentionCard[] {
@@ -275,11 +289,11 @@ export function unstickCards(rows: readonly UnstickRow[], factory: string): Atte
     .sort(
       (a, b) =>
         timeOf(a.since) - timeOf(b.since) ||
-        UNSTICK_ORDER.indexOf(a.kind) - UNSTICK_ORDER.indexOf(b.kind) ||
+        UNSTICK_KINDS.indexOf(a.kind) - UNSTICK_KINDS.indexOf(b.kind) ||
         (a.number ?? 0) - (b.number ?? 0),
     )
     .map((row): AttentionCard => {
-      const key = `unstick:${row.kind}:${row.number ?? ''}:${row.run_id ?? ''}`;
+      const key = unstickKey(row);
       const queue = row.workflow_name === null ? 'intake' : queueOf(row.workflow_name);
       const n = row.number === null ? null : `#${row.number}`;
       const run = row.run_id === null ? null : shortRunId(row.run_id);
@@ -313,9 +327,8 @@ export function unstickCards(rows: readonly UnstickRow[], factory: string): Atte
       } as const;
       const workflow: MetaPart[] = row.workflow_name === null ? [] : [{ mono: row.workflow_name }];
       const waits: MetaPart = { text: `waits on ${row.waits_on}` };
-      switch (row.kind) {
-        case 'blocked':
-        case 'parked': {
+      switch (row.action) {
+        case 'retriage': {
           const copy: Action[] =
             row.number === null
               ? []
@@ -344,7 +357,7 @@ export function unstickCards(rows: readonly UnstickRow[], factory: string): Atte
             actions: [...copy, ...open],
           };
         }
-        case 'capacity': {
+        case 'resume': {
           const resume: Action[] =
             row.run_id === null
               ? []
@@ -376,7 +389,7 @@ export function unstickCards(rows: readonly UnstickRow[], factory: string): Atte
             actions: [...resume, ...open],
           };
         }
-        default: {
+        case 'release_claim': {
           const release: Action[] =
             row.workflow_name === null
               ? []
@@ -399,11 +412,13 @@ export function unstickCards(rows: readonly UnstickRow[], factory: string): Atte
             actions: [...release, ...open],
           };
         }
+        default:
+          return row.action satisfies never;
       }
     });
 }
 
-const CLASS_NOTE: Readonly<Record<string, string>> = {
+const CLASS_NOTE: Readonly<Record<StopClass | 'mixed', string>> = {
   transient: 'It is transient: a retry usually passes.',
   environment: 'It is the environment, not the code.',
   config: 'It is configuration: a binding, a schedule or a credential.',
@@ -428,7 +443,7 @@ export function fixCards(rows: readonly FailureGroupRow[], factory: string): Att
     .map((g): AttentionCard => {
       const days =
         g.first_at === null || g.last_at === null ? 1 : utcDay(g.last_at) - utcDay(g.first_at) + 1;
-      const queue = queueOf(g.workflow_name);
+      const queue = queueOf(g.workflow_name, g.step_id);
       const label = workflowLabel(g.workflow_name);
       const run = hasLapPage(g.workflow_name)
         ? { href: lapHref(factory, g.latest_run_id), external: false }
@@ -453,7 +468,7 @@ export function fixCards(rows: readonly FailureGroupRow[], factory: string): Att
             g.failures === 1
               ? '1 failed run has this cause.'
               : `${g.failures} failed runs share this cause.`,
-          rest: (g.class === null ? undefined : CLASS_NOTE[g.class]) ?? 'It is not classified.',
+          rest: g.class === null ? 'It is not classified.' : CLASS_NOTE[g.class],
           ...(g.line === null ? {} : { code: g.line }),
         },
         tiles: [],
@@ -476,6 +491,35 @@ export function fixCards(rows: readonly FailureGroupRow[], factory: string): Att
         },
       };
     });
+}
+
+/**
+ * The four live queries the page and the nav badge both read: one table, so the cards, the count
+ * and the live phase cannot disagree about which sources make "what needs you".
+ */
+export const ATTENTION_SOURCES = {
+  decide: { query: 'decide', what: 'what is waiting on you' },
+  owner: { query: 'owner-queue', what: 'the owner queue' },
+  unstick: { query: 'unstick', what: 'what stopped moving' },
+  failures: { query: 'failure-groups', what: 'failures' },
+} as const;
+
+/** The query for the head's sweep clause; it is not an item source, so the count never reads it. */
+export const SWEEP_QUERY = 'manager-sweep';
+
+/** The one row of manager-sweep.sql: when the manager's last finished run completed; null when it has none. */
+export interface SweepRow {
+  swept_at: Date | null;
+}
+
+const HEAD_LINE = 'The manager put its recommendation first on each.';
+
+/** The head's line under the title. The sweep clause is left out when the factory has no finished manager run. */
+export function sweepLine(factory: string, sweptAt: Date | null, now: number): string {
+  const seconds = since(sweptAt, now);
+  return seconds === null
+    ? `${factory}. ${HEAD_LINE}`
+    : `${factory}. The manager swept ${waited(seconds)} ago. ${HEAD_LINE}`;
 }
 
 /**
