@@ -754,7 +754,9 @@ test('runs, home-map and health-workable hold the same item of a run with severa
     const laps = (await db.query(sqlOf('home-map'), ['f', ''])).filter((r) => r.kind === 'lap');
     expect(held(lanes)).toEqual(expected);
     expect(held(laps)).toEqual(expected);
-    const merged = (await db.query(sqlOf('home-map'), ['f', ''])).filter((r) => r.kind === 'merged');
+    const merged = (await db.query(sqlOf('home-map'), ['f', ''])).filter(
+      (r) => r.kind === 'merged',
+    );
     expect(held(merged)).toEqual(expected);
     for (const [c, r] of Object.entries(runs)) {
       const [lap] = await db.query(sqlOf('one-lap'), ['f', id(c)]);
