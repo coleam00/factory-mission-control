@@ -231,6 +231,10 @@ test('the handled sentence counts only the actions that went through', () => {
   expect(mixed).toContain('The manager handled 1 today: resumed 1 run.');
   const none = render({ handled: ready([refused]) });
   expect(none).toContain('None of the manager’s actions today went through.');
+  const pending = render({ handled: ready([unknown]) });
+  expect(pending).toContain('None of the manager’s actions today is confirmed yet.');
+  expect(pending).not.toContain('went through');
+  expect(pending).not.toContain('background:var(--v3-done)');
 });
 
 test('Ask manager on each kind of card carries that card’s run and work item', () => {

@@ -15,7 +15,7 @@ import {
   sweepLine,
   unstickCards,
 } from '../lib/attention-page';
-import type { AnswerRequest } from '../lib/actions';
+import { type AnswerRequest, TEXT_ANSWER_DETAIL } from '../lib/actions';
 import type { DecideRow, UnstickRow } from '../lib/attention';
 import type { FailureGroupRow } from '../lib/failures';
 import { since } from '../lib/laps';
@@ -123,7 +123,7 @@ function AnswerBox({
 }): ReactElement {
   const [text, setText] = useState('');
   const send = () => {
-    act.start({ ...request, text }, { item, label: 'your text' });
+    act.start({ ...request, text }, { item, label: TEXT_ANSWER_DETAIL });
     onClose();
   };
   return (
@@ -393,13 +393,16 @@ function Handled({
   const rows = source.state === 'error' ? [] : handledToday(source.rows ?? [], now);
   if (rows.length === 0) return null;
   const handled = rows.filter((row) => row.exit_code === 0);
+  const unconfirmed = rows.some((row) => row.exit_code === null);
   return (
     <div data-handled className="mt-[26px] border-t border-[color:var(--v3-line)] pt-3.5">
       <div className="flex flex-wrap items-center gap-2 text-[length:var(--v3-t-meta)] text-[color:var(--v3-fg-3)]">
-        <StateDot state="done" />
-        {handled.length === 0
-          ? 'None of the manager’s actions today went through.'
-          : `The manager handled ${handled.length} today: ${handledSummary(handled)}.`}
+        <StateDot state={handled.length > 0 ? 'done' : unconfirmed ? 'idle' : 'failed'} />
+        {handled.length > 0
+          ? `The manager handled ${handled.length} today: ${handledSummary(handled)}.`
+          : unconfirmed
+            ? 'None of the manager’s actions today is confirmed yet.'
+            : 'None of the manager’s actions today went through.'}
         <Button variant="text" aria-expanded={open} onClick={() => setOpen(!open)}>
           See them
         </Button>

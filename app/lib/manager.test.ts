@@ -196,7 +196,7 @@ test('the handled line counts today only, and says it in plural and singular', (
 
 test('an answer proposal label round-trips its choice, else it is the owner own words', () => {
   expect(answerChoice(answerLabel('Approve "now"'))).toBe('Approve "now"');
-  expect(answerChoice(TEXT_ANSWER_LABEL)).toBe('your text');
+  expect(answerChoice(TEXT_ANSWER_LABEL)).toBeNull();
 });
 
 test('Ask manager looks at the run and work item it was pressed on', () => {

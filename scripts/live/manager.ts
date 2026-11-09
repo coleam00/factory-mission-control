@@ -1,4 +1,5 @@
 import { openPage, type Page } from '../lib/cdp';
+import { headCount } from './attention';
 import {
   type LiveContext,
   type LiveOutput,
@@ -117,12 +118,7 @@ export function managerPhase(ctx: LiveContext): LivePhase {
         throw new Error('the Manager dock did not open on #manager');
       }
       await waitFor(page, `document.querySelector('main [data-attention-count]') !== null`);
-      const count = await page.evaluate<number | null>(
-        `(() => {
-          const el = document.querySelector('main [data-attention-count]');
-          return el === null ? null : Number(el.getAttribute('data-attention-count'));
-        })()`,
-      );
+      const count = await page.evaluate<number | null>(headCount);
       const shown = await page.evaluate<ShownPanel>(panelOnScreen);
       const mismatches = panelMismatches(shown, count, 'Attention', ATTENTION_QUESTIONS);
 

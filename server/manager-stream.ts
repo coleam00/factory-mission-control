@@ -6,7 +6,7 @@
  * A proposal is data only: the panel turns it into a button that goes through the action
  * endpoint (#521), whose inputs it carries. `answer`: the run, the option (or `text` for
  * "Something else") and the `occurrence` id. `resume`: the run, optionally `from_step`. This
- * file holds no secret and no server code, so the panel can `import type` from it.
+ * file holds no secret and no server code, so the panel can import from it.
  */
 import type { ActionRequest } from '../app/lib/actions';
 
@@ -64,8 +64,8 @@ export const MAX_MESSAGE_CHARS = 4000;
 /** The label of an answer proposal: the server writes it, the panel reads the choice back. */
 export const TEXT_ANSWER_LABEL = 'Answer with your text';
 export const answerLabel = (choice: string): string => `Answer "${choice}"`;
-export const answerChoice = (label: string): string =>
-  /^Answer "(.*)"$/s.exec(label)?.[1] ?? 'your text';
+export const answerChoice = (label: string): string | null =>
+  /^Answer "(.*)"$/s.exec(label)?.[1] ?? null;
 
 /** At most this many runs in one `runs` event. */
 export const MAX_RUNS = 8;
