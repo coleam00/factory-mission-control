@@ -215,3 +215,22 @@ test('where the URL names no listed factory the label invites a choice instead o
   expect(html).not.toMatch(/>-\s*<span/);
   expect(entries(html).map((e) => e.factory)).toEqual(['mission-control']);
 });
+
+test('the engine version shows as its first eight characters, and nothing without one', () => {
+  const html = (engine: string | null) =>
+    renderToStaticMarkup(
+      <MemoryRouter>
+        <FactorySwitcherBody
+          rows={[]}
+          state="ready"
+          current="mission-control"
+          hrefFor={(factory) => factoryPath('/f/mission-control/runs', factory)}
+          open
+          onToggle={() => {}}
+          engine={engine}
+        />
+      </MemoryRouter>,
+    );
+  expect(html('bbbb2222cccc')).toContain('· engine bbbb2222');
+  expect(html(null)).not.toContain('engine');
+});

@@ -6,14 +6,15 @@ import type { RealtimeClient } from '@neon/realtime/client';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { createMemoryRouter, RouterProvider, useParams } from 'react-router';
+import { PLACES } from './lib/places';
 import { FactoryProvider } from './live/FactoryProvider';
 import { type Live, LiveContext } from './live/LiveProvider';
+import Attention from './routes/f.$factory';
 import {
   appRoutes,
   factoryPath,
   HomeAddress,
   homeAddressTarget,
-  PLACES,
   REMOVED_SCREENS,
   type RouteModule,
   routePath,
@@ -161,6 +162,19 @@ test('/ keeps an old map link on the map, with its pin and view, and otherwise o
   expect(target('at=8e3e1cef')).toBe('/f/mc/map?at=8e3e1cef');
   expect(target('')).toBe('/f/mc');
   expect(target('order=demo')).toBe('/f/mc');
+});
+
+test('/f/<factory> leaves Attention for the map when the address is an old map link', () => {
+  const routes = appRoutes({ './routes/f.$factory.tsx': { default: Attention } });
+  const render = (from: string) =>
+    renderToStaticMarkup(
+      createElement(RouterProvider, {
+        router: createMemoryRouter(routes, { initialEntries: [from] }),
+      }),
+    );
+  // A redirect renders no page in the shell, Attention renders its own.
+  expect(render('/f/mc?view=build&at=8e3e1cef')).not.toContain('<main');
+  expect(render('/f/mc?order=demo')).toContain('<main');
 });
 
 test('/ says no factory is configured when the server is ready and serves none', () => {

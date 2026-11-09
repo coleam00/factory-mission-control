@@ -3,7 +3,7 @@ import { Link, useLocation } from 'react-router';
 import type { BoardRow } from '../lib/board';
 import { useFactory, useUrlFactory } from '../live/FactoryProvider';
 import { LivePanel } from '../live/LivePanel';
-import { type Place, PLACES, type PlacePath, placeHref } from '../routing';
+import { type Place, PLACES, type PlacePath, placeHref } from '../lib/places';
 import { DecisionsCount } from './DecisionsCount';
 import type { StatusStripRow } from './FactoryStrip';
 
@@ -62,7 +62,7 @@ export function NavCount({ attr, children }: { attr: string; children: ReactNode
   );
 }
 
-/** The Board's number of open work items, from the board query the Board screen reads. */
+/** The number of open work items, from the board query the Board screen reads. */
 function BoardCount({ factory }: { factory: string }): ReactElement {
   return (
     <LivePanel<Pick<BoardRow, 'kind' | 'state'>>
@@ -82,13 +82,13 @@ function BoardCount({ factory }: { factory: string }): ReactElement {
   );
 }
 
-/** The Runs count as the status strip's running count, so the nav and the footer agree. */
+/** The Runs count as the status strip's running count, written "<n> live", so the nav and the footer agree. */
 export function RunsCountBody({
   rows,
 }: {
   rows: readonly Pick<StatusStripRow, 'running'>[] | undefined;
 }): ReactElement {
-  return <NavCount attr="data-runs-count">{rows?.[0]?.running ?? ''}</NavCount>;
+  return <NavCount attr="data-runs-count">{rows?.[0] ? `${rows[0].running} live` : ''}</NavCount>;
 }
 
 function RunsCount({ factory }: { factory: string }): ReactElement {

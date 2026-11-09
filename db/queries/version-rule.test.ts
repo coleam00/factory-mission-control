@@ -42,7 +42,8 @@ test('every step query chooses its version as step-detail does', () => {
     .replace(WITH_ADDRESS_ORDER, 'CASE WHEN q.on_queues THEN');
 
   const differ = stepQueries.flatMap((name) => {
-    const expected = name === 'step-versions' || name === 'status-strip' ? withoutAddress : owner.version;
+    const expected =
+      name === 'step-versions' || name === 'status-strip' ? withoutAddress : owner.version;
     const got = parts(name, addressOf(name)).version;
     return got === expected ? [] : [[name, got]];
   });

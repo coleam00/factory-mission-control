@@ -19,7 +19,7 @@ version AS (
 SELECT
   -- The nav footer's facts for one factory: runs running, runs waiting for a slot, and the engine
   -- version: the Archon commit of the version the step screen shows without one in its address
-  -- (the rule above is step-detail.sql's; version-rule.test.ts holds it there). Null before any
+  -- (the rule above is step-detail.sql's and version-rule.test.ts holds it there). Null before any
   -- architecture is parsed.
   (SELECT count(*)::int FROM mc.laps WHERE factory = $1 AND status = 'running') AS running,
   (SELECT count(*)::int FROM mc.capacity_waits WHERE factory = $1) AS waiting,

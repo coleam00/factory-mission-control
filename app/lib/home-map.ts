@@ -1,4 +1,5 @@
 import dagre, { type EdgeLabel, type GraphLabel, type NodeLabel } from '@dagrejs/dagre';
+import { placeAddress } from './places';
 import { stepHref } from './step-detail';
 
 /**
@@ -192,7 +193,7 @@ export function homeHref(
   if (at) next.set('at', at);
   else next.delete('at');
   const query = next.toString();
-  const map = `/f/${encodeURIComponent(factory)}/map`;
+  const map = placeAddress(factory, 'map');
   return query === '' ? map : `${map}?${query}`;
 }
 

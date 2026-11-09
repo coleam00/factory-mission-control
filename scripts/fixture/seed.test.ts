@@ -154,8 +154,10 @@ test("the seed holds a second factory with one running lap, kept out of mission-
       [SECOND_FACTORY.name],
     ),
   ).toEqual([{ step_id: 'claim', status: 'running' }]);
+  // The current-version rule reads no factory filter, so the second factory shows the same engine.
+  const [mcStrip] = await db.query(strip, ['mission-control']);
   expect(await db.query(strip, [SECOND_FACTORY.name])).toEqual([
-    { running: 1, waiting: 0, engine: null },
+    { running: 1, waiting: 0, engine: mcStrip?.engine },
   ]);
   const [own] = await db.query(
     `SELECT count(*)::int AS running FROM mc.laps l

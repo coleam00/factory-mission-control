@@ -1,6 +1,7 @@
 # Viewing the factory map
 
-The home screen (`/f/<factory>`, and `/` for the selected factory) draws the factory map of PRD
+The Factory place (`/f/<factory>/map`; `/` and `/f/<factory>` forward an old map link's
+`at`, `view` and `from` to it) draws the factory map of PRD
 4.1, as `docs/design/v2/` designs it: one horizontal map with live counts on its cards.
 
 ## The drawing is data
@@ -220,7 +221,7 @@ of cards in the view. A card shows ⤢ only once its view exists; today Build's,
 Double-click, Enter on the selected card or the Open button zooms into the view. Breadcrumbs above
 the caption (the factory, then each opened view), the up control, a crumb, Esc (with nothing
 selected) and Backspace go up, and the card that opened the view flashes. The address is
-`/f/<factory>?view=<id>`: opening and going up each push a history entry, so the browser's back
+`/f/<factory>/map?view=<id>`: opening and going up each push a history entry, so the browser's back
 button goes up, and a link or reload opens straight into the view. An unknown `view` shows the
 home map.
 
