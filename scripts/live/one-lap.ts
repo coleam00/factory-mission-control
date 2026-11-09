@@ -1,5 +1,5 @@
 import { consoleUrl, prNumber, pullUrl } from '../../app/lib/one-lap';
-import { QUEUE_FACTORY, QUEUE_RUNS } from '../fixture/seed';
+import { QUEUE_FACTORY, QUEUE_PAGE_RUNS, QUEUE_RUNS } from '../fixture/seed';
 import { MARKER } from '../fixture/seed-report';
 import { openPage, type Page } from '../lib/cdp';
 import type { Db } from '../lib/db';
@@ -586,10 +586,17 @@ export function oneLapPhase(ctx: LiveContext): LivePhase {
       const reports: string[] = [];
       for (const [expected, shot] of [
         [
-          { run: QUEUE_RUNS.failedBuild, title: 'Build #485, round 2', failed: true },
+          {
+            run: QUEUE_RUNS.failedBuild,
+            title: `Build #${QUEUE_PAGE_RUNS.buildIssue}, round 2`,
+            failed: true,
+          },
           FILES.runFailedShot,
         ],
-        [{ run: QUEUE_RUNS.appCheck, title: 'App check, PR #421' }, FILES.runAppCheckShot],
+        [
+          { run: QUEUE_RUNS.appCheck, title: `App check, PR #${QUEUE_PAGE_RUNS.checkPr}` },
+          FILES.runAppCheckShot,
+        ],
         [{ run: QUEUE_RUNS.merged, title: 'Merge sweep' }, FILES.runSweepShot],
       ] as const) {
         const runPage = await openPage(deps.env);

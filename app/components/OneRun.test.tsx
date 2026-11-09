@@ -168,3 +168,10 @@ test('an address names a tab or opens the timeline', () => {
   expect(log).toContain(`data-link="console-tab"`);
   expect(log).not.toContain('data-timeline-step');
 });
+
+test('a finished run with a retried failure shows no error panel or resume', () => {
+  const retried = [step('build', { status: 'failed', error: 'boom' }), step('build'), step('land')];
+  const html = render({ lap: { ...lap, status: 'completed', stop_step: null }, rows: retried });
+  expect(html).not.toContain('data-error-panel');
+  expect(html).not.toContain('Resume from here');
+});

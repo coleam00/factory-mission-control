@@ -18,6 +18,7 @@ import {
 import {
   bodyOf,
   displayStep,
+  failedAttempt,
   managerRead,
   type Round,
   runCost,
@@ -203,6 +204,7 @@ export function RunView({
       <Tabs />
       {tab === 'timeline' ? (
         <RunTimeline
+          stopAttempt={lap.status === 'failed' ? failedAttempt(rows, lap.stop_step) : null}
           rows={rows}
           timeline={timeline}
           map={mapRows}
@@ -451,12 +453,14 @@ const seconds = (value: number | null) => (value === null ? undefined : formatEl
 const money = (value: number | null) => (value === null ? undefined : formatCost(value));
 
 function RunTimeline({
+  stopAttempt,
   rows,
   timeline,
   map,
   consoleHref,
   now,
 }: {
+  stopAttempt: StepAttemptRow | null;
   rows: readonly StepAttemptRow[];
   timeline: readonly TimelineEntry[];
   map: readonly LapMapRow[];
@@ -491,7 +495,7 @@ function RunTimeline({
         data-cost={cost?.toString()}
         data-skip-reason={reason ?? undefined}
       >
-        {row.status === 'failed' ? <FailedStep row={row} consoleHref={consoleHref} /> : null}
+        {row === stopAttempt ? <FailedStep row={row} consoleHref={consoleHref} /> : null}
       </TimelineRow>
     );
   };

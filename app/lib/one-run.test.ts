@@ -247,3 +247,9 @@ test('a pending run reads as not started, not as running', () => {
   expect(read).toBe('It has not started yet.');
   expect(read).not.toBe('It is running.');
 });
+
+test('a failed run with no failed step does not claim a step failed', () => {
+  const read = text(managerRead(lap({ status: 'failed', stop_step: null }), [], runTimeline([])));
+  expect(read).toStartWith('The run failed.');
+  expect(read).not.toContain('Everything before it succeeded');
+});

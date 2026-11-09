@@ -175,7 +175,7 @@ export function skipReason(
 }
 
 /** The run's latest failed attempt of `stepId`, else of any step. */
-function failedAttempt(rows: readonly StepAttemptRow[], stepId: string | null) {
+export function failedAttempt(rows: readonly StepAttemptRow[], stepId: string | null) {
   const failed = attemptsInRunOrder(rows).filter((row) => row.status === 'failed');
   return failed.filter((row) => row.step_id === stepId).at(-1) ?? failed.at(-1) ?? null;
 }
@@ -266,16 +266,19 @@ export function managerRead(
         loop?.kind === 'loop'
           ? loop.rounds.find((r) => failed && r.rows.includes(failed))
           : undefined;
-      const step = stepId === null ? 'A step' : displayStep(stepId);
+      const unlocated = stepId === null && failed === null;
       const parts: ReadPart[] = [
-        { text: step, bold: true },
+        {
+          text: stepId === null ? (unlocated ? 'The run' : 'A step') : displayStep(stepId),
+          bold: true,
+        },
         {
           text: ` failed${round === undefined ? '' : ` on round ${round.n}`}${line === null ? '.' : `: ${line}.`}`,
         },
       ];
       const ordered = attemptsInRunOrder(rows);
       const before = failed === null ? [] : ordered.slice(0, ordered.indexOf(failed));
-      if (!before.some((row) => row.status === 'failed')) {
+      if (!unlocated && !before.some((row) => row.status === 'failed')) {
         parts.push({ text: ' Everything before it succeeded.' });
       }
       let resumeStep: string | null = null;
