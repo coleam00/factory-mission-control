@@ -140,7 +140,5 @@ test('a mini card moves its state pill under the number instead of breaking it',
     },
     'pipeline',
   );
-  expect(html).toMatch(
-    /<span class="[^"]*\bflex-wrap\b[^"]*\bwhitespace-nowrap\b[^"]*">#?<!-- -->7|class="[^"]*flex-wrap[^"]*whitespace-nowrap/,
-  );
+  expect(html).toMatch(/class="[^"]*flex-wrap[^"]*whitespace-nowrap/);
 });
