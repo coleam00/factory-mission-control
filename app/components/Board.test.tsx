@@ -74,6 +74,38 @@ test('the Table renders every column with its caption under the header', () => {
   });
 });
 
+test('a failed chip renders the v3 failed color and a running chip pulses', () => {
+  const html = render(
+    {
+      ...empty,
+      columns: [
+        {
+          id: 'merged',
+          title: 'Merged',
+          role: 'test',
+          holder: 'test',
+          items: [
+            {
+              number: 1,
+              title: 'x',
+              chips: [
+                { kind: 'route', text: 'broke', state: 'failed' },
+                { kind: 'route', text: 'going', state: 'running', pulse: true },
+              ],
+              to: '/f/x/work/1',
+            },
+          ],
+        },
+      ],
+    },
+    'table',
+  );
+  const failed = html.match(/<span[^>]*color:var\(--v3-failed\)[^>]*>broke<\/span>/);
+  expect(failed).not.toBeNull();
+  const running = html.match(/<span[^>]*>(<span[^>]*animate-pulse[^>]*><\/span>)going<\/span>/);
+  expect(running).not.toBeNull();
+});
+
 const stage = (id: string, numbers: number[]) => ({
   ...(PIPELINE.find((h) => h.id === id) as (typeof PIPELINE)[number]),
   columns: undefined,

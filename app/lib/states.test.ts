@@ -122,3 +122,17 @@ test('an unknown value has no state', () => {
   expect(stateOf(RUN_STATE, 'toString')).toBeUndefined();
   expect(stateOf(RUN_STATE, null)).toBeUndefined();
 });
+
+test('every --v3 value app/styles.css declares matches the v3 design tokens', () => {
+  const declared = (file: string) =>
+    new Map(
+      [...readFileSync(file, 'utf8').matchAll(/(--v3-[\w-]+)\s*:\s*([^;]+);/g)].map((m) => [
+        m[1] ?? '',
+        (m[2] ?? '').trim().replace(/\s+/g, ' '),
+      ]),
+    );
+  const design = declared('docs/design/v3/tokens.css');
+  const app = declared('app/styles.css');
+  expect(app.size).toBeGreaterThan(0);
+  for (const [name, value] of app) expect([name, design.get(name)]).toEqual([name, value]);
+});
