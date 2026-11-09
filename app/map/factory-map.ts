@@ -336,7 +336,7 @@ export function viewPath(map: FactoryMap, id: string | null, from?: string | nul
   return [];
 }
 
-/** The address parameter that names the pinned card. */
+/** The address parameter that pins the map to a version. */
 export const AT_PARAM = 'at';
 
 /** The address parameter that names the open view. */
