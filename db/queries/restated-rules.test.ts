@@ -4,7 +4,14 @@ import { join } from 'node:path';
 import { BLOCKED_STAGES, FOUND_OUTCOMES, PARKED, parked } from '../../app/lib/board';
 import { STOP_CLASSES } from '../../app/lib/failures';
 import { causeOf } from '../../app/lib/health';
-import { APP_CHECK_WORKFLOW, prNumber, SPLIT_WORKFLOW } from '../../app/lib/one-lap';
+import {
+  APP_CHECK_WORKFLOW,
+  BUILD_QUEUE_WORKFLOW,
+  INTAKE_WORKFLOW,
+  OLD_LOOP_WORKFLOW,
+  prNumber,
+  SPLIT_WORKFLOW,
+} from '../../app/lib/one-lap';
 import { runsArgs } from '../../app/lib/runs';
 import { QUEUE_ENDING_STATE, QUEUE_REVIEW_STATE, REVIEW_OUTCOME_STATE } from '../../app/lib/states';
 import { ROUTE_OF_LABEL, WORK_ITEM_NUMBER } from '../../app/lib/work-item';
@@ -105,6 +112,17 @@ test('health-workable.sql excludes the workflows board.ts says hold no work item
   expect(
     [...sqlOf('health-workable').matchAll(/workflow_name <> '([^']*)'/g)].map((m) => m[1]),
   ).toEqual([SPLIT_WORKFLOW]);
+});
+
+test('work-item.sql and scorecard.sql name only the workflows one-lap.ts owns', () => {
+  const owned = new Set([OLD_LOOP_WORKFLOW, BUILD_QUEUE_WORKFLOW, INTAKE_WORKFLOW]);
+  for (const file of ['work-item.sql', 'scorecard.sql']) {
+    const named = [...read('db', 'queries', file).matchAll(/workflow_name\s*=\s*'([^']*)'/g)].map(
+      (m) => m[1] as string,
+    );
+    expect(named.length, file).toBeGreaterThan(0);
+    for (const name of named) expect(owned.has(name), `${file}: ${name}`).toBe(true);
+  }
 });
 
 test('mc.pr_number reads a step pr as prNumber does, a JSON object included', async () => {
