@@ -117,7 +117,7 @@ export function managerPhase(ctx: LiveContext): LivePhase {
       if (!(await waitFor(page, `document.querySelector('aside[data-manager="dock"]') !== null`))) {
         throw new Error('the Manager dock did not open on #manager');
       }
-      await waitFor(page, `document.querySelector('main [data-attention-count]') !== null`);
+      await waitFor(page, `${headCount} !== null`);
       const count = await page.evaluate<number | null>(headCount);
       const shown = await page.evaluate<ShownPanel>(panelOnScreen);
       const mismatches = panelMismatches(shown, count, 'Attention', ATTENTION_QUESTIONS);
