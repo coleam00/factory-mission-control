@@ -13,7 +13,7 @@ import {
   since,
   stepLabel,
 } from '../lib/laps';
-import { consoleUrl, hasLapPage, lapHref, workflowLabel } from '../lib/one-lap';
+import { consoleUrl, hasLapPage, lapHref, lapsHref, workflowLabel } from '../lib/one-lap';
 import { LivePanel, type PanelState } from '../live/LivePanel';
 import { laneMarks, stepPath } from '../lib/lap-graph';
 import { LAP_OUTCOME_STATE, STATE_NAME, stateColor, stateInk } from '../lib/states';
@@ -190,7 +190,7 @@ export function LaneList({
                   <Link
                     to={stepHref(factory, lane.workflow_name, stepPath(lane.step_id))}
                     state={stepOriginState({
-                      href: `/f/${encodeURIComponent(factory)}/laps`,
+                      href: lapsHref(factory),
                       label: 'Laps',
                     })}
                     data-step-link

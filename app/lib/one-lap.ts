@@ -21,6 +21,9 @@ export const shownDispositions = (lap: Pick<OneLapRow, 'dispositions' | 'hidden_
  */
 export const LAP_PAGE_WORKFLOW = 'archon-loop';
 
+/** The address of a factory's Laps list. */
+export const lapsHref = (factory: string): string => `/f/${encodeURIComponent(factory)}/laps`;
+
 /** The address of a run's lap page; the factory is encoded, the run id is not. */
 export const lapHref = (factory: string, runId: string): string =>
   `/f/${encodeURIComponent(factory)}/laps/${runId}`;
