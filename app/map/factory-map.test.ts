@@ -298,7 +298,7 @@ test('a deeper view with few cards is fitted no larger than the matching views a
 test('the views that matched their references keep their fit at every hero width', () => {
   for (const id of MATCHING) {
     const v = view(id);
-    for (let width = 701; width <= 2560; width += 7) {
+    for (let width = PHONE; width <= 2560; width += 7) {
       const frame = hero(width);
       const world = worldSize(v);
       expect(fitScale(world, frame, levelMax(FACTORY_MAP, v, frame))).toBe(fitScale(world, frame));
@@ -428,6 +428,9 @@ test('across hero widths a fit never cuts the floored map in height, and is unch
       if (before >= FIT_MIN) {
         expect(cam.k).toBe(before);
         expect(cam.x).toBe(Math.max(FIT_PAD, (w - world.width * before) / 2));
+        expect(cam.y).toBe(
+          Math.max(FIT_PAD, (frame.height - FIT_FOOT - world.height * before) / 2),
+        );
       }
     }
   }
@@ -448,4 +451,32 @@ test('below the phone width fit still fits the whole map under the floor', () =>
   const { k } = fitCamera(FACTORY_MAP, FACTORY_MAP, frame);
   expect(k).toBe(fitScale(root, frame, FIT_MAX, 0));
   expect(k).toBeLessThan(FIT_MIN);
+});
+
+test('below the phone width fit centres the root and a drill-down view at the scale that fits the frame', () => {
+  const frame = { width: PHONE - 1, height: 460 };
+  for (const level of [FACTORY_MAP as MapView, view('deploy')]) {
+    const world = worldSize(level);
+    const k = Math.min(
+      (frame.width - FIT_PAD * 2) / world.width,
+      (frame.height - FIT_PAD * 2 - FIT_FOOT) / world.height,
+      FIT_MAX,
+    );
+    expect(fitCamera(FACTORY_MAP, level, frame)).toEqual({
+      k,
+      x: Math.max(FIT_PAD, (frame.width - world.width * k) / 2),
+      y: Math.max(FIT_PAD, (frame.height - FIT_FOOT - world.height * k) / 2),
+    });
+  }
+});
+
+test('at the phone width a drill-down view is capped by levelMax and centred in the frame', () => {
+  const frame = hero(PHONE);
+  const level = view('deploy');
+  const world = worldSize(level);
+  const k = fitScale(world, frame, levelMax(FACTORY_MAP, level, frame));
+  const cam = fitCamera(FACTORY_MAP, level, frame);
+  expect(cam.k).toBe(Math.max(FIT_MIN, k));
+  expect(cam.x).toBe(Math.max(FIT_PAD, (frame.width - world.width * cam.k) / 2));
+  expect(cam.y).toBe(Math.max(FIT_PAD, (frame.height - FIT_FOOT - world.height * cam.k) / 2));
 });
