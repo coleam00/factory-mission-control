@@ -79,17 +79,19 @@ test("the map's type passes at the owner's least sizes and fails, naming it, und
     text: 11.5,
     kind: 10.3,
     label: 10.3,
-    frameWidth: 1392,
-    windowWidth: 1440,
+    frameWidth: 1176,
+    columnWidth: 1224,
   };
   expect(mapTypeFailures(fitted)).toEqual([]);
+  // The v3 shell at 1440: 216px nav, and with the Manager dock open 384px more.
+  expect(mapTypeFailures({ ...fitted, frameWidth: 792, columnWidth: 840 })).toEqual([]);
   expect(mapTypeFailures({ ...fitted, title: 8, text: 5 })).toEqual([
     "a map card's title renders 8.0px at 1440 fitted, under 14px",
     "a map card's text renders 5.0px at 1440 fitted, under 11px",
   ]);
   expect(mapTypeFailures({ ...fitted, label: Number.NaN })).toHaveLength(1);
-  expect(mapTypeFailures({ ...fitted, frameWidth: 1104 })).toEqual([
-    "the map's frame is 1104px wide in a 1440px window: it should span the window inside the gutters",
+  expect(mapTypeFailures({ ...fitted, frameWidth: 792 })).toEqual([
+    "the map's frame is 792px wide in a 1224px page column: it should span the column inside the gutters",
   ]);
 });
 
