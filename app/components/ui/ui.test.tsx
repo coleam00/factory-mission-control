@@ -168,7 +168,7 @@ test('a nested row hides its hint on a phone and a top-level row does not', () =
 
 test('a nested row draws its dot clear of its name', () => {
   const html = renderToStaticMarkup(<TimelineRow state="done" name="s" nested />);
-  const dotLeft = Number(html.match(/absolute top-3 flex left-\[(\d+)px\]/)?.[1]);
+  const dotLeft = Number(html.match(/absolute top-1\.5 flex [^"]*left-\[(\d+)px\]/)?.[1]);
   const textPad = Number(html.match(/pl-(\d+)/)?.[1]) * 4;
   expect(dotLeft + 8).toBeLessThanOrEqual(textPad);
 });
