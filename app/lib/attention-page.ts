@@ -23,7 +23,7 @@ import { stepPath } from './lap-graph';
 import { since } from './laps';
 import { consoleUrl, hasLapPage, lapHref, workflowLabel } from './one-lap';
 import { type OwnerQueueRow, ownerQueue, waited } from './owner-queue';
-import type { State } from './states';
+import { LAP_OUTCOME_STATE, STOP_CLASS_STATE, type State, UNSTICK_STATE } from './states';
 import { workItemHref } from './work-item';
 
 export type AttentionKind = 'decide' | 'unstick' | 'fix';
@@ -46,10 +46,9 @@ export const QUEUES: readonly { queue: AttentionQueue; name: string }[] = [
 ];
 
 /** The queue a root card of the factory map belongs to; a card not listed (Manager, Staging, ...) is Other. */
-const QUEUE_OF_CARD: Readonly<Record<string, AttentionQueue>> = {
+export const QUEUE_OF_CARD: Readonly<Record<string, AttentionQueue>> = {
   split: 'intake',
   intake: 'intake',
-  order: 'build',
   build: 'build',
   review: 'build',
   merge: 'merge',
@@ -235,7 +234,10 @@ export function ownerCards(rows: readonly OwnerQueueRow[]): AttentionCard[] {
             { pill: 'owner question', state: 'needs-you' },
             { text: `#${item.issue_number} · Q${item.question_number}` },
           ]
-        : [{ pill: 'needs-owner', state: 'needs-you' }, { text: `#${item.issue_number}` }],
+        : [
+            { pill: 'needs-owner', state: LAP_OUTCOME_STATE['needs-owner'] },
+            { text: `#${item.issue_number}` },
+          ],
       note: question
         ? {
             lead:
@@ -343,7 +345,7 @@ export function unstickCards(rows: readonly UnstickRow[], factory: string): Atte
           return {
             ...base,
             title: `${n} is ${row.kind} on ${row.waits_on}, and ${closed(row.waits_on)}`,
-            meta: [{ pill: row.kind, state: 'idle' }, waits],
+            meta: [{ pill: row.kind, state: UNSTICK_STATE[row.kind] }, waits],
             note:
               row.kind === 'blocked'
                 ? {
@@ -379,7 +381,7 @@ export function unstickCards(rows: readonly UnstickRow[], factory: string): Atte
                 : `${n} was answered, but its run is waiting for a slot`,
             meta: [
               ...workflow,
-              { pill: 'answered · waiting for capacity', state: 'needs-you' },
+              { pill: 'answered · waiting for capacity', state: UNSTICK_STATE.capacity },
               waits,
             ],
             note: {
@@ -404,7 +406,7 @@ export function unstickCards(rows: readonly UnstickRow[], factory: string): Atte
           return {
             ...base,
             title: `${n} is claimed by run ${run}, which has finished`,
-            meta: [...workflow, { pill: 'claimed', state: 'idle' }, waits],
+            meta: [...workflow, { pill: 'claimed', state: UNSTICK_STATE.claim }, waits],
             note: {
               lead: 'The run holding the claim has finished.',
               rest: 'A new run of its queue that names no item releases it.',
@@ -461,7 +463,7 @@ export function fixCards(rows: readonly FailureGroupRow[], factory: string): Att
         meta: [
           { mono: g.workflow_name },
           ...(g.step_id === null ? [] : [{ text: `step ${g.step_id}` }]),
-          { pill: g.class ?? 'unclassified', state: 'failed' },
+          { pill: g.class ?? 'unclassified', state: STOP_CLASS_STATE[g.class ?? 'unclassified'] },
         ],
         note: {
           lead:

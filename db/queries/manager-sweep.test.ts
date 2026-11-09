@@ -17,11 +17,12 @@ describe('the manager-sweep query', () => {
     status: string,
     completedAt: string | null,
     workflow = 'factory-manager',
+    factory = 'queue-factory',
   ) =>
     db.query(
       `INSERT INTO mc.laps (run_id, factory, workflow_name, status, started_at, completed_at)
-       VALUES ($1, 'queue-factory', $2, $3, '2026-10-24T08:00:00Z', $4)`,
-      [id, workflow, status, completedAt],
+       VALUES ($1, $5, $2, $3, '2026-10-24T08:00:00Z', $4)`,
+      [id, workflow, status, completedAt, factory],
     );
 
   test('answers with null when the factory has no finished manager run', async () => {
@@ -40,6 +41,13 @@ describe('the manager-sweep query', () => {
     await lap('5eed0009-0000-4000-8000-000000000003', 'completed', '2026-10-24T09:30:00Z');
     await lap('5eed0009-0000-4000-8000-000000000004', 'completed', '2026-10-24T10:15:00Z');
     await lap('5eed0009-0000-4000-8000-000000000005', 'failed', '2026-10-24T11:00:00Z');
+    await lap(
+      '5eed0009-0000-4000-8000-000000000006',
+      'completed',
+      '2026-10-24T12:00:00Z',
+      'factory-manager',
+      'other-factory',
+    );
     const rows = await db.query(SWEEP, ['queue-factory']);
     expect(rows.map((r) => new Date(String(r.swept_at)).toISOString())).toEqual([
       '2026-10-24T10:15:00.000Z',

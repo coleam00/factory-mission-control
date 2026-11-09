@@ -5,6 +5,8 @@
  * `stateWash` or `stateInk`, never by picking a token itself. Pure, no React.
  */
 import type { GateOutcome, MapRightNowRow } from '../map/live';
+import type { UnstickRow } from './attention';
+import type { StopClass } from './failures';
 import type { StepState } from './lap-graph';
 import type { Outcome } from './laps';
 import type { ReviewOutcome } from './review-outcome';
@@ -189,6 +191,25 @@ export const MAP_CHIP_STATE: Record<'here' | 'queued' | 'failing' | 'waiting' | 
   merged: 'done',
 };
 
+/** An Unstick card: work waiting on something else is idle, work waiting for a slot is waiting on the owner's answer. */
+export const UNSTICK_STATE: Record<UnstickRow['kind'], State> = {
+  blocked: 'idle',
+  parked: 'idle',
+  capacity: 'needs-you',
+  claim: 'idle',
+};
+
+/** A Fix card's cause: every stop class is a failure; a run with no stop record is unclassified. */
+export const STOP_CLASS_STATE: Record<StopClass | 'mixed' | 'unclassified', State> = {
+  transient: 'failed',
+  environment: 'failed',
+  config: 'failed',
+  code: 'failed',
+  input: 'failed',
+  mixed: 'failed',
+  unclassified: 'failed',
+};
+
 /** Every map above, named once, so the test can hold each to a declared state. */
 export const STATE_SOURCES: Record<string, Record<string, State>> = {
   RUN_STATE,
@@ -205,4 +226,6 @@ export const STATE_SOURCES: Record<string, Record<string, State>> = {
   GATE_OUTCOME_STATE,
   DEPLOY_STATE,
   MAP_CHIP_STATE,
+  UNSTICK_STATE,
+  STOP_CLASS_STATE,
 };

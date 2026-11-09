@@ -1,4 +1,4 @@
-import { type ReactElement, type ReactNode, useState } from 'react';
+import { type ReactElement, type ReactNode, useMemo, useState } from 'react';
 import {
   type Action,
   ATTENTION_SOURCES,
@@ -289,24 +289,23 @@ export function AttentionBody({
   const phone = usePhone();
   const [chosen, setView] = useState<View>('kind');
   const view = fixedView ?? chosen;
-  const sources = [decide, owner, unstick, failures];
-  const count = attentionCount(sources);
-  const failed = (
-    [
-      [ATTENTION_SOURCES.decide, decide],
-      [ATTENTION_SOURCES.owner, owner],
-      [ATTENTION_SOURCES.unstick, unstick],
-      [ATTENTION_SOURCES.failures, failures],
-    ] as const
-  ).flatMap(([source, s]) => (s.state === 'error' ? [source.what] : []));
+  const sources: Record<SourceKey, Source<object>> = { decide, owner, unstick, failures };
+  const count = attentionCount(Object.values(sources));
+  const failed = SOURCE_KEYS.flatMap((k) =>
+    sources[k].state === 'error' ? [ATTENTION_SOURCES[k].what] : [],
+  );
   // The sweep clause is drawn only from a manager run read now: not through an outage.
   const sweptAt = sweep.state === 'error' ? null : (sweep.rows?.[0]?.swept_at ?? null);
   // Rows kept through an outage are from before it: a failed source draws no cards.
+  const live = <R,>(
+    s: Source<R>,
+    build: (rows: readonly R[]) => AttentionCard[],
+  ): AttentionCard[] => (s.state === 'error' ? [] : build(s.rows ?? []));
   const cards: AttentionCard[] = [
-    ...(decide.state === 'error' ? [] : decideCards(decide.rows ?? [], factory)),
-    ...(owner.state === 'error' ? [] : ownerCards(owner.rows ?? [])),
-    ...(unstick.state === 'error' ? [] : unstickCards(unstick.rows ?? [], factory)),
-    ...(failures.state === 'error' ? [] : fixCards(failures.rows ?? [], factory)),
+    ...live(decide, (rows) => decideCards(rows, factory)),
+    ...live(owner, ownerCards),
+    ...live(unstick, (rows) => unstickCards(rows, factory)),
+    ...live(failures, (rows) => fixCards(rows, factory)),
   ];
   const groups: ReactNode =
     view === 'kind'
@@ -333,38 +332,37 @@ export function AttentionBody({
   );
 }
 
+type SourceKey = keyof typeof ATTENTION_SOURCES;
+const SOURCE_KEYS = Object.keys(ATTENTION_SOURCES) as SourceKey[];
+
 /** Attention (home): what needs the owner, grouped Decide, Unstick, Fix, each with its recommendation first. */
 export function Attention({ factory }: { factory: string }): ReactElement {
-  const [decide, setDecide] = useState<Source<DecideRow>>(AWAITED);
-  const [owner, setOwner] = useState<Source<OwnerQueueRow>>(AWAITED);
-  const [unstick, setUnstick] = useState<Source<UnstickRow>>(AWAITED);
-  const [failures, setFailures] = useState<Source<FailureGroupRow>>(AWAITED);
+  const [rows, setRows] = useState<{ [K in SourceKey]: Source<object> }>({
+    decide: AWAITED,
+    owner: AWAITED,
+    unstick: AWAITED,
+    failures: AWAITED,
+  });
   const [sweep, setSweep] = useState<Source<SweepRow>>(AWAITED);
+  const into = useMemo(
+    () =>
+      Object.fromEntries(
+        SOURCE_KEYS.map((k) => [k, (s: Source<object>) => setRows((r) => ({ ...r, [k]: s }))]),
+      ) as Record<SourceKey, (s: Source<object>) => void>,
+    [],
+  );
   return (
     <>
-      <Feed<DecideRow> query={ATTENTION_SOURCES.decide.query} factory={factory} into={setDecide} />
-      <Feed<OwnerQueueRow>
-        query={ATTENTION_SOURCES.owner.query}
-        factory={factory}
-        into={setOwner}
-      />
-      <Feed<UnstickRow>
-        query={ATTENTION_SOURCES.unstick.query}
-        factory={factory}
-        into={setUnstick}
-      />
-      <Feed<FailureGroupRow>
-        query={ATTENTION_SOURCES.failures.query}
-        factory={factory}
-        into={setFailures}
-      />
+      {SOURCE_KEYS.map((k) => (
+        <Feed key={k} query={ATTENTION_SOURCES[k].query} factory={factory} into={into[k]} />
+      ))}
       <Feed<SweepRow> query={SWEEP_QUERY} factory={factory} into={setSweep} />
       <AttentionBody
         factory={factory}
-        decide={decide}
-        owner={owner}
-        unstick={unstick}
-        failures={failures}
+        decide={rows.decide as Source<DecideRow>}
+        owner={rows.owner as Source<OwnerQueueRow>}
+        unstick={rows.unstick as Source<UnstickRow>}
+        failures={rows.failures as Source<FailureGroupRow>}
         sweep={sweep}
       />
     </>

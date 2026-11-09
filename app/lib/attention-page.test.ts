@@ -1,5 +1,6 @@
 import { expect, test } from 'bun:test';
 import type { Source } from '../live/Feed';
+import { FACTORY_MAP } from '../map/factory-map';
 import type { DecideRow, UnstickRow } from './attention';
 import {
   type AttentionCard,
@@ -9,6 +10,7 @@ import {
   decideCards,
   fixCards,
   ownerCards,
+  QUEUE_OF_CARD,
   queueOf,
   releaseCommand,
   retriageCommand,
@@ -169,6 +171,8 @@ test('a Fix card says the count, the inclusive UTC days, the step and the class'
   expect(card?.meta).toContainEqual({ pill: 'transient', state: 'failed' });
   expect(card?.note.rest).toBe('It is transient: a retry usually passes.');
   expect(card?.actions[0]).toMatchObject({ href: `/f/f/runs/${RUN}`, external: false });
+  const [queued] = fixCards([group({ workflow_name: 'archon-build-queue', step_id: 'ask' })], 'f');
+  expect(queued?.actions[0]).toMatchObject({ href: CONSOLE_RUN, external: true });
 
   const [bare] = fixCards([group({ step_id: null, class: null, failures: 1, line: null })], 'f');
   expect(bare?.title).toBe('Lap failed');
@@ -199,6 +203,16 @@ test('By queue holds exactly the cards By kind holds, and an unknown workflow la
   expect(keys(byQueue(cards))).toEqual(keys(byKind(cards)));
   expect(byQueue(cards).map((g) => g.queue)).toEqual(['intake', 'build', 'merge', 'other']);
   expect(byKind(cards).map((g) => g.kind)).toEqual(['decide', 'unstick', 'fix']);
+});
+
+test('By queue names real factory-map cards, and every card that covers a workflow has a queue or is listed as Other', () => {
+  const ids = FACTORY_MAP.cards.map((c) => c.id);
+  for (const id of Object.keys(QUEUE_OF_CARD)) expect(ids).toContain(id);
+  const otherByDesign = ['mgr', 'deploy'];
+  const unplaced = FACTORY_MAP.cards
+    .filter((c) => c.covers.length > 0 && !(c.id in QUEUE_OF_CARD))
+    .map((c) => c.id);
+  expect(unplaced).toEqual(otherByDesign);
 });
 
 const question = (overrides: Partial<OwnerQueueRow> = {}): OwnerQueueRow => ({
