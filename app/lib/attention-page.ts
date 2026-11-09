@@ -21,7 +21,7 @@ import type { FailureGroupRow, StopClass } from './failures';
 import { shortRunId } from './format';
 import { stepPath } from './lap-graph';
 import { since } from './laps';
-import { consoleUrl, lapHref, workflowLabel } from './one-lap';
+import { consoleUrl, INTAKE_WORKFLOW, lapHref, workflowLabel } from './one-lap';
 import { type OwnerQueueRow, ownerQueue, waited } from './owner-queue';
 import { LAP_OUTCOME_STATE, STOP_CLASS_STATE, type State, UNSTICK_STATE } from './states';
 import { workItemHref } from './work-item';
@@ -112,7 +112,7 @@ export interface AttentionCard {
 
 /** `gh` and `archon` as the queues' own procedure runs them (archon-cli skill, operate/queues.md). */
 export const retriageCommand = (repository: string, number: number): string =>
-  `gh issue edit ${number} --repo ${repository} --add-label archon-triage && archon workflow run archon-intake --input repo_host=github.com --input repo_path=${repository} --input number=${number} --input action=added --input label=archon-triage --input label_actor="$(gh api user --jq .login)" --detach`;
+  `gh issue edit ${number} --repo ${repository} --add-label archon-triage && archon workflow run ${INTAKE_WORKFLOW} --input repo_host=github.com --input repo_path=${repository} --input number=${number} --input action=added --input label=archon-triage --input label_actor="$(gh api user --jq .login)" --detach`;
 
 export const releaseCommand = (repository: string, workflow: string): string =>
   `archon workflow run ${workflow} --input repo_host=github.com --input repo_path=${repository} --detach`;
