@@ -243,6 +243,36 @@ describe('the allowlist', () => {
     expect(await rows()).toEqual([]);
   });
 
+  test('an action that cannot be recorded is refused and nothing is sent', async () => {
+    const db: Actions['db'] = {
+      ...fixture.db,
+      query: (sql, params) =>
+        sql.trimStart().startsWith('INSERT INTO mc.actions')
+          ? Promise.reject(new Error('insert failed'))
+          : fixture.db.query(sql, params),
+    };
+    const operators = new Map([
+      [
+        FACTORY,
+        {
+          who: 'cole',
+          command: [process.execPath, STUB],
+          cwd: scratch,
+          env: { MC_STUB_CLI_LOG: log },
+        },
+      ],
+    ]);
+    const application = createApp({
+      buildId: 'test',
+      distDir: scratch,
+      actions: { db, operators },
+    });
+    const response = await post(resume(FAILED_RUN), application);
+    expect(response.status).toBe(503);
+    expect(sent()).toEqual([]);
+    expect(await rows()).toEqual([]);
+  });
+
   test('a run id that is not a UUID is refused', async () => {
     expect((await post(resume('not-a-run'))).status).toBe(400);
   });

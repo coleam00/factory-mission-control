@@ -14,7 +14,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { isAbsolute, join } from 'node:path';
 import type { Hono } from 'hono';
-import type { ActionRequest, ActionResult, AnswerRequest, ResumeRequest } from '../app/lib/actions';
+import type { ActionBody, ActionRequest, ActionResult } from '../app/lib/actions';
 import { isSomethingElse, parseChoices, takesFreeText } from '../app/lib/attention';
 import { isRunId } from '../app/lib/one-lap';
 import { type Db, openDb } from '../scripts/lib/db';
@@ -90,14 +90,14 @@ const ANSWER_KEYS = Object.keys({
   option: true,
   text: true,
   undone: true,
-} satisfies Record<keyof AnswerRequest | 'undone', true>);
+} satisfies Record<keyof Extract<ActionBody, { action: 'answer' }>, true>);
 const RESUME_KEYS = Object.keys({
   factory: true,
   action: true,
   run_id: true,
   from_step: true,
   undone: true,
-} satisfies Record<keyof ResumeRequest | 'undone', true>);
+} satisfies Record<keyof Extract<ActionBody, { action: 'resume' }>, true>);
 
 const boundedString = (value: unknown, max: number): value is string =>
   typeof value === 'string' && value.length >= 1 && value.length <= max;
@@ -105,7 +105,7 @@ const nullOrBounded = (value: unknown, max: number): value is string | null =>
   value === null || boundedString(value, max);
 
 /** The strict allowlist: exactly the keys of one of the two actions, nothing else; a string is the refusal reason. */
-export function parseActionBody(body: unknown): (ActionRequest & { undone: boolean }) | string {
+export function parseActionBody(body: unknown): ActionBody | string {
   if (!isObject(body)) return 'the body must be a JSON object';
   const keys =
     body.action === 'answer' ? ANSWER_KEYS : body.action === 'resume' ? RESUME_KEYS : null;

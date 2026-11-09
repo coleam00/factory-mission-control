@@ -18,6 +18,9 @@ export type ActionRequest =
 export type AnswerRequest = Extract<ActionRequest, { action: 'answer' }>;
 export type ResumeRequest = Extract<ActionRequest, { action: 'resume' }>;
 
+/** What goes over the wire: the request plus whether the owner undid it. */
+export type ActionBody = ActionRequest & { undone: boolean };
+
 export type ActionResult = {
   id: number;
   sent: boolean;
@@ -40,14 +43,15 @@ export async function postAction(
   fetchImpl: Fetch = fetch,
 ): Promise<ActionResult | ActionError> {
   try {
+    const body: ActionBody = { ...request, undone };
     const response = await fetchImpl('/api/actions', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ ...request, undone }),
+      body: JSON.stringify(body),
     });
-    const body: unknown = await response.json();
-    if (response.ok) return body as ActionResult;
-    const error = (body as { error?: unknown } | null)?.error;
+    const reply: unknown = await response.json();
+    if (response.ok) return reply as ActionResult;
+    const error = (reply as { error?: unknown } | null)?.error;
     return { error: typeof error === 'string' ? error : `the server answered ${response.status}` };
   } catch (error) {
     return { error: error instanceof Error ? error.message : String(error), noReply: true };
