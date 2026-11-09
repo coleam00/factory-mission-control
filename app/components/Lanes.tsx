@@ -1,6 +1,7 @@
 import { type ReactElement, type ReactNode, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router';
 import { formatCost, formatElapsed, shortRunId } from '../lib/format';
+import { placeAddress } from '../lib/places';
 import {
   costOf,
   durationOf,
@@ -13,7 +14,7 @@ import {
   since,
   stepLabel,
 } from '../lib/laps';
-import { consoleUrl, hasLapPage, lapHref, lapsHref, workflowLabel } from '../lib/one-lap';
+import { consoleUrl, hasLapPage, lapHref, workflowLabel } from '../lib/one-lap';
 import { LivePanel, type PanelState } from '../live/LivePanel';
 import { laneMarks, stepPath } from '../lib/lap-graph';
 import { LAP_OUTCOME_STATE, STATE_NAME, stateColor, stateInk } from '../lib/states';
@@ -190,8 +191,8 @@ export function LaneList({
                   <Link
                     to={stepHref(factory, lane.workflow_name, stepPath(lane.step_id))}
                     state={stepOriginState({
-                      href: lapsHref(factory),
-                      label: 'Laps',
+                      href: placeAddress(factory, 'runs'),
+                      label: 'Runs',
                     })}
                     data-step-link
                     className="underline decoration-border-bright underline-offset-2 hover:decoration-text-primary"

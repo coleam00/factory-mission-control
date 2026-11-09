@@ -320,7 +320,7 @@ const ROW_COLUMNS: Record<string, string[]> = {
     'merged',
     'items',
   ]),
-  'status-strip': columns<StatusStripRow>()(['running']),
+  'status-strip': columns<StatusStripRow>()(['running', 'waiting', 'engine']),
   'step-detail': columns<StepRow>()([
     'workflow',
     'path',
@@ -509,6 +509,7 @@ describe('the rules the live queries restate, which they may not call a function
       'step-subagents': [0, 0, 1],
       'step-yaml': [0, 0, 1],
       'step-versions': [0, 0, 1],
+      'status-strip': [0, 0, 1],
     };
     const copies = [...queries];
     for (const [name, sql] of copies) {

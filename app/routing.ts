@@ -1,9 +1,21 @@
 import { type ComponentType, createElement } from 'react';
-import { Navigate, type RouteObject, useParams, useSearchParams } from 'react-router';
+import {
+  type LoaderFunction,
+  Navigate,
+  type RouteObject,
+  redirect,
+  useParams,
+  useSearchParams,
+} from 'react-router';
+import { EmptyState } from './components/EmptyState';
 import { NotFound, RouteError } from './errors';
-import { factoryHref } from './lib/home-map';
+import { homeHref } from './lib/home-map';
+import { lapHref } from './lib/one-lap';
+import { PLACES, type PlacePath, placeAddress } from './lib/places';
 import { stepHref } from './lib/step-detail';
 import { useFactory } from './live/FactoryProvider';
+import { useLive } from './live/LiveProvider';
+import { AT_PARAM, MAP_PARAMS } from './map/factory-map';
 import { Shell } from './Shell';
 
 export interface RouteModule {
@@ -42,70 +54,75 @@ export function routesFromModules(modules: Record<string, RouteModule>): RouteOb
   });
 }
 
-/** A factory screen the shell links to: its path after `/f/:factory/` and its link's name. */
-export interface FactoryScreen {
-  path: string;
-  label: string;
-}
+const RUN_PAGE = new RegExp(`^/f/[^/]+/${'runs' satisfies PlacePath}/[^/]+$`);
 
 /**
- * The factory screens among the routes: every `/f/:factory/...` path with no other parameter, so a
- * screen that needs a step or a lap is left out. Labels come from the path (`versions` is
- * "Versions"), so adding a route file adds its link with no edit to the shell.
+ * Where choosing `factory` goes from `pathname` and its `search`: the same place for it when
+ * `pathname` is one of `PLACES`, Runs from a run's page, a step's page as it is (the pinned version stays), otherwise its
+ * home, Attention (`/f/:factory`). A place's search names the old factory's items, so it is not kept.
  */
-export function factoryScreens(routes: readonly RouteObject[]): FactoryScreen[] {
-  const screens: FactoryScreen[] = [];
-  for (const { path } of routes) {
-    const rest = path?.match(/^\/f\/:factory\/(.+)$/)?.[1];
-    if (rest === undefined || rest.includes(':')) continue;
-    const label = rest
-      .split('/')
-      .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1))
-      .join(' ');
-    screens.push({ path: rest, label });
-  }
-  return screens.sort((a, b) => a.path.localeCompare(b.path));
-}
-
-/**
- * Where choosing `factory` goes from `pathname` and its `search`: the same screen for it when
- * `pathname` is one of `screens`, a step's page as it is (the pinned version stays), otherwise its home map (`/f/:factory`). A screen's search names the
- * old factory's items, so it is not kept.
- */
-export function factoryPath(
-  pathname: string,
-  factory: string,
-  screens: readonly FactoryScreen[],
-  search = '',
-): string {
-  const home = factoryHref(factory);
+export function factoryPath(pathname: string, factory: string, search = ''): string {
+  const home = placeAddress(factory, '');
+  if (RUN_PAGE.test(pathname)) return placeAddress(factory, 'runs');
   const step = pathname.match(/^\/f\/[^/]+\/(steps\/[^/]+\/[^/]+)$/)?.[1];
   if (step !== undefined) return `${home}/${step}${search}`;
   const rest = pathname.match(/^\/f\/[^/]+\/(.+)$/)?.[1];
-  if (rest === undefined || !screens.some((screen) => screen.path === rest)) return home;
+  const paths: readonly string[] = PLACES.map((place) => place.path);
+  if (rest === undefined || !paths.includes(rest)) return home;
   return `${home}/${rest}`;
 }
 
-/** Where each removed screen's address goes now, under the same factory. '' is the factory's map. */
-export const REMOVED_SCREENS: Readonly<Record<string, string>> = {
-  changes: '',
-  diff: '',
-  health: 'decisions',
+/**
+ * Where each removed screen's address goes now, under the same factory: a `PLACES` path, '' being
+ * Attention. `laps/:runId` is not here, it carries the run id (`lapsRunRedirect`).
+ */
+export const REMOVED_SCREENS: Readonly<Record<string, PlacePath>> = {
+  changes: 'map',
+  decisions: '',
+  diff: 'map',
+  health: '',
   issues: 'board',
-  ledger: 'decisions',
-  owner: 'decisions',
-  rewind: '',
-  scorecard: '',
+  ledger: '',
+  owner: '',
+  rewind: 'map',
+  scorecard: 'map',
   testing: 'board',
-  versions: '',
+  versions: 'map',
 };
 
-function RemovedScreen({ to }: { to: string }): ReturnType<typeof createElement> {
-  const factory = encodeURIComponent(useParams().factory ?? '');
-  return createElement(Navigate, {
-    to: `/f/${factory}${to === '' ? '' : `/${to}`}`,
-    replace: true,
-  });
+/** The redirect from a removed address to `to` (a `PLACES` path) under the same factory. */
+const redirectTo =
+  (to: PlacePath): LoaderFunction =>
+  ({ params: { factory = '' } }) =>
+    redirect(placeAddress(factory, to));
+
+/** `laps/:runId`, to the run's page, whose address `lapHref` alone writes. */
+const lapsRunRedirect: LoaderFunction = ({ params: { factory = '', runId = '' } }) =>
+  redirect(lapHref(factory, runId));
+
+/**
+ * Where `/` goes: the map, with them, when the address carries an old map link's `at`, `view` or
+ * `from`; otherwise the factory's Attention.
+ */
+export function homeAddressTarget(factory: string, search: URLSearchParams): string {
+  const oldMapLink = MAP_PARAMS.some((name) => search.has(name));
+  return oldMapLink ? homeHref(factory, search.get(AT_PARAM), search) : placeAddress(factory, '');
+}
+
+/**
+ * `/`, which named no factory: the Attention of the factory the switcher remembers, else the default
+ * one. A server that is ready and serves none has nowhere to go, so it says so (#215).
+ */
+export function HomeAddress(): ReturnType<typeof createElement> | null {
+  const factory = useFactory();
+  const live = useLive();
+  const [search] = useSearchParams();
+  if (factory === undefined) {
+    return live.status === 'ready' && live.factories.length === 0
+      ? createElement(EmptyState, { title: 'No factory is configured.' })
+      : null;
+  }
+  return createElement(Navigate, { to: homeAddressTarget(factory, search), replace: true });
 }
 
 /**
@@ -126,21 +143,24 @@ export function OldStepAddress(): ReturnType<typeof createElement> | null {
 const removedRoutes = (): RouteObject[] => [
   ...Object.entries(REMOVED_SCREENS).map(([from, to]) => ({
     path: `/f/:factory/${from}`,
-    element: createElement(RemovedScreen, { to }),
+    loader: redirectTo(to),
   })),
+  { path: '/f/:factory/laps', loader: redirectTo('runs') },
+  { path: '/f/:factory/laps/:runId', loader: lapsRunRedirect },
+  { path: '/', element: createElement(HomeAddress) },
   { path: '/steps/:workflow/:step', element: createElement(OldStepAddress) },
   { path: '/rewind', element: createElement(Navigate, { to: '/', replace: true }) },
 ];
 
 /**
- * The router's whole tree: the shell, linking every factory screen, around the directory's routes,
- * a not-found catch-all and an error state.
+ * The router's whole tree: the shell, with its fixed places, around the directory's routes, every
+ * old address's redirect, a not-found catch-all and an error state.
  */
 export function appRoutes(modules: Record<string, RouteModule>): RouteObject[] {
   const routes = routesFromModules(modules);
   return [
     {
-      element: createElement(Shell, { screens: factoryScreens(routes) }),
+      element: createElement(Shell),
       ErrorBoundary: RouteError,
       children: [...routes, ...removedRoutes(), { path: '*', Component: NotFound }],
     },

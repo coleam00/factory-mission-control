@@ -2,14 +2,20 @@ import { afterAll, expect, test } from 'bun:test';
 import { cpSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import type { RealtimeClient } from '@neon/realtime/client';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { createMemoryRouter, RouterProvider, useParams } from 'react-router';
+import { PLACES } from './lib/places';
+import { FactoryProvider } from './live/FactoryProvider';
+import { type Live, LiveContext } from './live/LiveProvider';
 import { globRoutes } from './route-files';
+import Attention from './routes/f.$factory';
 import {
   appRoutes,
   factoryPath,
-  factoryScreens,
+  HomeAddress,
+  homeAddressTarget,
   REMOVED_SCREENS,
   type RouteModule,
   routePath,
@@ -44,7 +50,7 @@ test('index serves /, a dotted name serves nested segments and $name is a parame
   expect(routePath('index')).toBe('/');
   expect(routePath('versions')).toBe('/versions');
   expect(routePath('f.$factory.versions')).toBe('/f/:factory/versions');
-  expect(routePath('f.$factory.laps.$run')).toBe('/f/:factory/laps/:run');
+  expect(routePath('f.$factory.runs.$run')).toBe('/f/:factory/runs/:run');
   expect(routePath('f.$factory.steps.$workflow.$step')).toBe('/f/:factory/steps/:workflow/:step');
   expect(() => routePath('f..versions')).toThrow('empty path segment');
   expect(() => routePath('f.$')).toThrow('empty path segment');
@@ -52,11 +58,10 @@ test('index serves /, a dotted name serves nested segments and $name is a parame
 
 test('a parameter route renders at its path and receives the parameter', () => {
   const routes = appRoutes({
-    './routes/index.tsx': { default: () => null },
     './routes/f.$factory.probe.tsx': { default: Probe },
   });
   const paths = routes[0]?.children?.map((r) => r.path) ?? [];
-  expect(paths.slice(0, 2)).toEqual(['/', '/f/:factory/probe']);
+  expect(paths[0]).toBe('/f/:factory/probe');
   expect(paths.at(-1)).toBe('*');
 
   const router = createMemoryRouter(routes, { initialEntries: ['/f/mission-control/probe'] });
@@ -74,58 +79,123 @@ test('two route files that map to the same path are refused', () => {
   ).not.toThrow();
 });
 
-test('choosing a factory keeps the screen, else goes to its home map', () => {
-  const screens = [
-    { path: 'laps', label: 'Laps' },
-    { path: 'versions', label: 'Versions' },
-  ];
-  for (const { path } of screens) {
-    expect(factoryPath(`/f/mission-control/${path}`, 'second-factory', screens)).toBe(
+test('choosing a factory keeps the place, else goes to its Attention', () => {
+  for (const { path } of PLACES.filter((place) => place.path !== '')) {
+    expect(factoryPath(`/f/mission-control/${path}`, 'second-factory')).toBe(
       `/f/second-factory/${path}`,
     );
   }
   for (const from of ['/', '/f/mission-control', '/f/a/nope', '/steps/archon-loop']) {
-    expect(factoryPath(from, 'second-factory', screens)).toBe('/f/second-factory');
+    expect(factoryPath(from, 'second-factory')).toBe('/f/second-factory');
   }
-  expect(factoryPath('/f/a/versions', 'a b/c', screens)).toBe('/f/a%20b%2Fc/versions');
+  expect(factoryPath('/f/a/runs/5eed0001', 'second-factory')).toBe('/f/second-factory/runs');
+  expect(factoryPath('/f/a/board', 'a b/c')).toBe('/f/a%20b%2Fc/board');
 });
 
 test("choosing a factory from a step's page stays on that step's page, at the same version", () => {
-  const screens = [{ path: 'laps', label: 'Laps' }];
+  expect(factoryPath('/f/mission-control/steps/archon-loop/check-app', 'second-factory')).toBe(
+    '/f/second-factory/steps/archon-loop/check-app',
+  );
   expect(
-    factoryPath('/f/mission-control/steps/archon-loop/check-app', 'second-factory', screens),
-  ).toBe('/f/second-factory/steps/archon-loop/check-app');
-  expect(
-    factoryPath(
-      '/f/mission-control/steps/archon-loop/review',
-      'second-factory',
-      screens,
-      '?at=8e3e1cef',
-    ),
+    factoryPath('/f/mission-control/steps/archon-loop/review', 'second-factory', '?at=8e3e1cef'),
   ).toBe('/f/second-factory/steps/archon-loop/review?at=8e3e1cef');
 });
 
 test("choosing a factory drops the old factory's search", () => {
-  const screens = [{ path: 'board', label: 'Board' }];
-  expect(factoryPath('/f/mission-control/board', 'second-factory', screens, '?order=demo')).toBe(
+  expect(factoryPath('/f/mission-control/board', 'second-factory', '?order=demo')).toBe(
     '/f/second-factory/board',
   );
 });
 
-test("a removed screen's address goes to the screen that replaced it, under the same factory", () => {
-  expect(REMOVED_SCREENS.owner).toBe('decisions');
-  expect(REMOVED_SCREENS.issues).toBe('board');
-  expect(REMOVED_SCREENS.scorecard).toBe('');
-  expect(REMOVED_SCREENS.rewind).toBe('');
-  for (const [from, to] of Object.entries(REMOVED_SCREENS)) {
-    const routes = appRoutes({ './routes/index.tsx': { default: () => null } })[0]?.children ?? [];
-    expect(routes.some((r) => r.path === `/f/:factory/${from}`)).toBe(true);
-    expect(['', 'board', 'decisions']).toContain(to);
-  }
-  const routes = appRoutes({ './routes/index.tsx': { default: () => null } })[0]?.children ?? [];
-  expect(routes.some((r) => r.path === '/steps/:workflow/:step')).toBe(true);
-  const screens = factoryScreens(
-    routesFromModules({ './routes/f.$factory.board.tsx': { default: () => null } }),
+/** Where an address lands once the redirects have run, in a router holding only `routes`. */
+async function landing(from: string): Promise<string> {
+  const router = createMemoryRouter(appRoutes({}), { initialEntries: ['/'] });
+  await router.navigate(from);
+  return router.state.location.pathname;
+}
+
+test('every old address lands where the v3 README says', async () => {
+  const landings: Record<string, string> = {
+    '/f/mc/decisions': '/f/mc',
+    '/f/mc/laps': '/f/mc/runs',
+    '/f/mc/laps/5eed0001-0000-4000-8000-000000000003':
+      '/f/mc/runs/5eed0001-0000-4000-8000-000000000003',
+    '/f/mc/health': '/f/mc',
+    '/f/mc/ledger': '/f/mc',
+    '/f/mc/owner': '/f/mc',
+    '/f/mc/issues': '/f/mc/board',
+    '/f/mc/testing': '/f/mc/board',
+    '/f/mc/changes': '/f/mc/map',
+    '/f/mc/diff': '/f/mc/map',
+    '/f/mc/rewind': '/f/mc/map',
+    '/f/mc/scorecard': '/f/mc/map',
+    '/f/mc/versions': '/f/mc/map',
+    '/f/a%20b/laps': '/f/a%20b/runs',
+  };
+  for (const [from, to] of Object.entries(landings)) expect(await landing(from)).toBe(to);
+});
+
+test('the places and the removed screens agree with the route files on disk', async () => {
+  const paths = routesFromModules(await globRoutes(join(import.meta.dir, 'routes'))).map(
+    (r) => r.path,
   );
-  expect(screens).toEqual([{ path: 'board', label: 'Board' }]);
+  for (const place of PLACES)
+    expect(paths).toContain(`/f/:factory${place.path && `/${place.path}`}`);
+  expect(paths).toContain('/f/:factory/runs/:runId');
+  for (const from of Object.keys(REMOVED_SCREENS))
+    expect(paths).not.toContain(`/f/:factory/${from}`);
+});
+
+test('every removed screen is a route that lands on a place', () => {
+  const routes = appRoutes({})[0]?.children ?? [];
+  for (const [from, to] of Object.entries(REMOVED_SCREENS)) {
+    expect(routes.some((r) => r.path === `/f/:factory/${from}`)).toBe(true);
+    expect(PLACES.map((place): string => place.path)).toContain(to);
+  }
+  expect(routes.some((r) => r.path === '/steps/:workflow/:step')).toBe(true);
+});
+
+test('/ keeps an old map link on the map, with its pin and view, and otherwise opens Attention', () => {
+  const target = (search: string) => homeAddressTarget('mc', new URLSearchParams(search));
+  expect(target('view=build&at=8e3e1cef&from=review')).toBe(
+    '/f/mc/map?view=build&at=8e3e1cef&from=review',
+  );
+  expect(target('view=build')).toBe('/f/mc/map?view=build');
+  expect(target('at=8e3e1cef')).toBe('/f/mc/map?at=8e3e1cef');
+  expect(target('')).toBe('/f/mc');
+  expect(target('order=demo')).toBe('/f/mc');
+});
+
+test('/f/<factory> leaves Attention for the map when the address is an old map link', () => {
+  const routes = appRoutes({ './routes/f.$factory.tsx': { default: Attention } });
+  const render = (from: string) =>
+    renderToStaticMarkup(
+      createElement(RouterProvider, {
+        router: createMemoryRouter(routes, { initialEntries: [from] }),
+      }),
+    );
+  // A redirect renders no page in the shell, Attention renders its own.
+  expect(render('/f/mc?view=build&at=8e3e1cef')).not.toContain('<main');
+  expect(render('/f/mc?order=demo')).toContain('<main');
+});
+
+test('/ says no factory is configured when the server is ready and serves none', () => {
+  const client = {} as RealtimeClient;
+  const none: Live = { status: 'ready', factories: [], client, homeClient: client, rewind: null };
+  const router = createMemoryRouter(
+    [
+      {
+        element: createElement(
+          LiveContext.Provider,
+          { value: none },
+          createElement(FactoryProvider, null, createElement(HomeAddress)),
+        ),
+        path: '/',
+      },
+    ],
+    { initialEntries: ['/'] },
+  );
+  expect(renderToStaticMarkup(createElement(RouterProvider, { router }))).toContain(
+    'No factory is configured.',
+  );
 });

@@ -4,6 +4,7 @@
  * browser. Pure, no React.
  */
 import { costOf, type Outcome, since } from './laps';
+import { placeAddress } from './places';
 
 /** One review disposition as `mc.step_output` keeps it: the line id it answers, or null. */
 export interface Disposition {
@@ -21,12 +22,9 @@ export const shownDispositions = (lap: Pick<OneLapRow, 'dispositions' | 'hidden_
  */
 export const LAP_PAGE_WORKFLOW = 'archon-loop';
 
-/** The address of a factory's Laps list. */
-export const lapsHref = (factory: string): string => `/f/${encodeURIComponent(factory)}/laps`;
-
 /** The address of a run's lap page; the factory is encoded, the run id is not. */
 export const lapHref = (factory: string, runId: string): string =>
-  `/f/${encodeURIComponent(factory)}/laps/${runId}`;
+  `${placeAddress(factory, 'runs')}/${runId}`;
 
 /** Whether a run of `workflow` has a lap page to open. */
 export const hasLapPage = (workflow: string | null): boolean => workflow === LAP_PAGE_WORKFLOW;

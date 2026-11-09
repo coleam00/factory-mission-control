@@ -136,7 +136,7 @@ export function homePhase(ctx: LiveContext): LivePhase {
       const page = await openPage(deps.env);
       homePage = page;
       await page.setViewport(MAP_READABLE.width);
-      await page.goto(`${base}/`);
+      await page.goto(`${base}/f/${factory}/map`);
       await page.evaluate('window.__mcNoReload = true');
       await observeHomePanels(page, panels);
       for (const panel of panels)
@@ -213,7 +213,7 @@ export function homePhase(ctx: LiveContext): LivePhase {
 
     async probe(designProbe) {
       const { base } = ctx;
-      designProbe(`${base}/`, FILES.probe);
+      designProbe(`${base}/f/${factory}/map`, FILES.probe);
     },
 
     async close() {

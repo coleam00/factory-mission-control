@@ -2,8 +2,9 @@ import { expect, test } from 'bun:test';
 import { join } from 'node:path';
 import { matchRoutes } from 'react-router';
 import { boardHref } from './lib/board';
-import { factoryHref, homeHref } from './lib/home-map';
-import { lapHref, lapsHref } from './lib/one-lap';
+import { homeHref } from './lib/home-map';
+import { lapHref } from './lib/one-lap';
+import { placeAddress } from './lib/places';
 import { stepHref } from './lib/step-detail';
 import { workItemHref } from './lib/work-item';
 import { globRoutes } from './route-files';
@@ -20,10 +21,10 @@ test('every page-address writer points at the route file meant to serve it', asy
     return files[index];
   };
 
-  expect(served(homeHref())).toBe('./routes/index.tsx');
-  expect(served(factoryHref('acme'))).toBe('./routes/f.$factory.tsx');
-  expect(served(lapsHref('acme'))).toBe('./routes/f.$factory.laps.tsx');
-  expect(served(lapHref('acme', 'run-1'))).toBe('./routes/f.$factory.laps.$runId.tsx');
+  expect(served(placeAddress('acme', ''))).toBe('./routes/f.$factory.tsx');
+  expect(served(homeHref('acme'))).toBe('./routes/f.$factory.map.tsx');
+  expect(served(placeAddress('acme', 'runs'))).toBe('./routes/f.$factory.runs.tsx');
+  expect(served(lapHref('acme', 'run-1'))).toBe('./routes/f.$factory.runs.$runId.tsx');
   expect(served(workItemHref('acme', 7))).toBe('./routes/f.$factory.work.$n.tsx');
   expect(served(boardHref('acme', 'order'))).toBe('./routes/f.$factory.board.tsx');
   expect(served(stepHref('acme', 'wf', 'a/b'))).toBe(

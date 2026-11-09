@@ -5,17 +5,15 @@ import { createMemoryRouter, RouterProvider } from 'react-router';
 import { NotFound } from './errors';
 import { FactoryProvider } from './live/FactoryProvider';
 import { type Live, LiveContext } from './live/LiveProvider';
-import Home from './routes/index';
 import { routesFromModules } from './routing';
-import { ForFactory } from './Shell';
+import { ForFactory, PhoneTabs } from './Shell';
 
+const Page = () => <main>page</main>;
 const routes = routesFromModules({
-  './routes/index.tsx': { default: Home },
-  './routes/f.$factory.tsx': { default: Home },
-  './routes/f.$factory.versions.tsx': { default: Home },
-  './routes/f.$factory.steps.$workflow.$step.tsx': { default: Home },
+  './routes/f.$factory.tsx': { default: Page },
+  './routes/f.$factory.board.tsx': { default: Page },
+  './routes/f.$factory.steps.$workflow.$step.tsx': { default: Page },
 });
-const SCREENS = [{ path: 'versions', label: 'Versions' }];
 const client = {} as RealtimeClient;
 const ready: Live = {
   status: 'ready',
@@ -33,7 +31,7 @@ function render(path: string, live: Live = ready): string {
         element: (
           <LiveContext.Provider value={live}>
             <FactoryProvider>
-              <ForFactory screens={SCREENS} />
+              <ForFactory />
             </FactoryProvider>
           </LiveContext.Provider>
         ),
@@ -52,13 +50,13 @@ const text = (html: string) =>
     .replace(/&#x27;/g, "'")
     .replace(/\s+/g, ' ')
     .trim();
-const header = (html: string) => text(html.match(/<header[\s\S]*<\/header>/)?.[0] ?? '');
+const header = (html: string) => text(html.match(/<nav[\s\S]*<\/nav>/)?.[0] ?? '');
 const main = (html: string) => text(html.match(/<main[\s\S]*<\/main>/)?.[0] ?? '');
 
 /** Nothing above or in the page reads as a real factory's identity or count (#119). */
 function expectNoFactoryIdentity(html: string): void {
   expect(header(html)).not.toContain('mission-control');
-  expect(html).not.toContain('Running now');
+  expect(html).not.toContain('waiting for a slot');
   expect(html).not.toContain('data-count');
   expect(html).not.toContain('Live data is unavailable.');
   expect(main(html)).not.toContain('Nothing is at this address.');
@@ -66,28 +64,28 @@ function expectNoFactoryIdentity(html: string): void {
 
 test('an address under an unknown key that no screen serves names the key, not a factory', () => {
   for (const path of [
-    '/f/nope/laps/example',
+    '/f/nope/runs/example',
     '/f/nope/steps/archon-loop/check-app',
     '/f/nope/anything',
     '/f/nope',
-    '/f/nope/versions',
+    '/f/nope/board',
   ]) {
     const html = render(path);
     expectNoFactoryIdentity(html);
     expect(header(html)).toContain('Unknown factory');
     expect(header(html)).not.toContain('nope');
-    expect(main(html)).toBe('No factory is named "nope". Go to mission-control\'s map');
+    expect(main(html)).toBe('No factory is named "nope". Go to mission-control\'s Attention');
   }
 });
 
 test('a key is named as typed, decoded from the address', () => {
-  const html = render('/f/Mission%20Control/laps/1');
+  const html = render('/f/Mission%20Control/runs/1');
   expectNoFactoryIdentity(html);
   expect(main(html)).toContain('No factory is named "Mission Control".');
 });
 
 test('the empty key names no factory and links home', () => {
-  for (const path of ['/f/', '/f//versions', '/f//laps/example']) {
+  for (const path of ['/f/', '/f//board', '/f//runs/example']) {
     const html = render(path);
     expectNoFactoryIdentity(html);
     expect(main(html)).toBe('No factory is named in this address. Go to home');
@@ -99,8 +97,8 @@ test("a factory removed from the server's file reads as unknown on its old addre
   const removed: Live = { ...ready, factories: ['mission-control'] };
   for (const path of [
     '/f/second-factory',
-    '/f/second-factory/versions',
-    '/f/second-factory/laps/7',
+    '/f/second-factory/board',
+    '/f/second-factory/runs/7',
     `/f/second-factory/scorecard?a=sha256:${'a1'.repeat(32)}`,
     `/f/second-factory/diff?a=sha256:${'a1'.repeat(32)}&b=sha256:${'b2'.repeat(32)}`,
   ]) {
@@ -115,7 +113,7 @@ test("a factory removed from the server's file reads as unknown on its old addre
 test("a real factory's not-found address keeps its identity; one outside /f/ is plain not-found", () => {
   const real = render('/f/mission-control/nothing-here');
   expect(header(real)).toContain('mission-control');
-  expect(real).toContain('Running now');
+  expect(real).toContain('waiting for a slot');
   expect(real).not.toContain('Unknown factory');
   expect(main(real)).toBe('Nothing is at this address. Go to home');
 
@@ -125,8 +123,50 @@ test("a real factory's not-found address keeps its identity; one outside /f/ is 
 });
 
 test('a real factory screen renders its strip, not the unknown page', () => {
-  const html = render('/f/second-factory/versions');
+  const html = render('/f/second-factory/board');
   expect(header(html)).toContain('second-factory');
-  expect(html).toContain('Running now');
+  expect(html).toContain('waiting for a slot');
   expect(html).not.toContain('data-unknown-factory');
+});
+
+test('the shell is the nav, the page and the docked Manager, with the Manager’s entry in the nav', () => {
+  const html = render('/f/mission-control');
+  expect(html).toContain('<nav aria-label="Places"');
+  expect(header(html)).toMatch(/Attention.*Factory.*Board.*Runs.*Manager ⌘J/);
+  expect(main(html)).toBe('page');
+  expect(html).toContain('data-manager="dock"');
+  expect(html).toContain('The Manager is not available yet.');
+  expect(html).not.toContain('<header');
+});
+
+test('the status footer has the running line and the switcher, and no schedules or main-health line', () => {
+  const html = render('/f/mission-control');
+  expect(header(html)).toContain('waiting for a slot');
+  expect(html).toContain('data-factory-switcher');
+  expect(html).not.toMatch(/schedules|main green|main health/i);
+});
+
+test('the phone tabs mark one place current, and none while the Manager is open', () => {
+  const tabs = (manager: boolean) => {
+    const router = createMemoryRouter(
+      [
+        {
+          path: '*',
+          element: (
+            <LiveContext.Provider value={ready}>
+              <FactoryProvider>
+                <PhoneTabs manager={manager} onManager={() => {}} />
+              </FactoryProvider>
+            </LiveContext.Provider>
+          ),
+        },
+      ],
+      { initialEntries: ['/f/mission-control/board'] },
+    );
+    return renderToStaticMarkup(<RouterProvider router={router} />);
+  };
+  expect(tabs(false).match(/aria-current/g)).toHaveLength(1);
+  expect(tabs(false)).toContain('aria-pressed="false"');
+  expect(tabs(true)).not.toContain('aria-current');
+  expect(tabs(true)).toContain('aria-pressed="true"');
 });

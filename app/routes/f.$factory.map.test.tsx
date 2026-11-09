@@ -9,7 +9,7 @@ import type { AppCheckRow } from '../lib/app-check';
 import type { StepRow } from '../lib/step-detail';
 import { FACTORY_MAP, workflowFile } from '../map/factory-map';
 import { type CardLive, cardLive, type HomeMapRow, type MapSources } from '../map/live';
-import { HomeMapBody, msToLocalMidnight } from './index';
+import { HomeMapBody, msToLocalMidnight } from './f.$factory.map';
 
 const REPO = join(import.meta.dir, '..', '..');
 
@@ -335,7 +335,7 @@ test('the map code names no step: what each card covers lives in factory-map.jso
   const ids = stepIds();
   expect(ids.has('check-app')).toBe(true);
   for (const file of [
-    'app/routes/index.tsx',
+    'app/routes/f.$factory.map.tsx',
     'app/components/FactoryMap.tsx',
     'app/components/MapDetails.tsx',
     'app/map/factory-map.ts',
@@ -452,7 +452,7 @@ test('Right now links a lap entry to its page and to its GitHub issue, and only 
     </MemoryRouter>,
   );
   expect(html).toContain('href="https://github.com/o/r/issues/7"');
-  expect(html).toContain('/f/here/laps/bbbbbbbb-2');
+  expect(html).toContain('/f/here/runs/bbbbbbbb-2');
   expect(html.match(/data-lap-issue/g)).toHaveLength(1);
 });
 
@@ -500,10 +500,10 @@ test('Right now links only a run with a lap page; a queue run and a merge-queue 
       />
     </MemoryRouter>,
   );
-  expect(html).toContain('/f/here/laps/loop-run');
-  expect(html).toContain('/f/here/laps/loop-merge');
-  expect(html).not.toContain('/laps/queue-run');
-  expect(html).not.toContain('/laps/queue-merge');
+  expect(html).toContain('/f/here/runs/loop-run');
+  expect(html).toContain('/f/here/runs/loop-merge');
+  expect(html).not.toContain('/runs/queue-run');
+  expect(html).not.toContain('/runs/queue-merge');
   expect(html).toContain('Queued');
   expect(html).toContain('href="https://github.com/o/r/issues/9"');
   expect(html).toContain('#5');

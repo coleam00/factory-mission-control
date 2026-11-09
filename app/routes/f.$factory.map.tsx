@@ -2,7 +2,7 @@ import { type ReactElement, type ReactNode, useEffect, useState } from 'react';
 import { useLocation, useSearchParams } from 'react-router';
 import { EmptyState } from '../components/EmptyState';
 import { FactoryMap } from '../components/FactoryMap';
-import { useFlow } from '../components/FlowToggle';
+import { FlowToggle, useFlow } from '../components/FlowToggle';
 import { StepVersionPickerBody } from '../components/StepVersionPicker';
 import { useMapPath } from '../components/useMapPath';
 import type { AttentionRow } from '../lib/attention';
@@ -190,15 +190,18 @@ export default function Home(): ReactElement {
             flow={flow}
             onDrawn={setDrawn}
             aside={
-              <StepVersionPickerBody
-                rows={versions.rows}
-                state={versions.state}
-                at={at}
-                href={(pin) => homeHref(pin, search)}
-                open={pickerOpen}
-                onToggle={setPickerOpen}
-                compact
-              />
+              <div className="flex flex-wrap items-center gap-3">
+                <StepVersionPickerBody
+                  rows={versions.rows}
+                  state={versions.state}
+                  at={at}
+                  href={(pin) => homeHref(factory ?? '', pin, search)}
+                  open={pickerOpen}
+                  onToggle={setPickerOpen}
+                  compact
+                />
+                <FlowToggle />
+              </div>
             }
             now={now}
             path={path}

@@ -1,10 +1,11 @@
 import type { ReactElement } from 'react';
-import { stateInk, stateWash } from '../lib/states';
+import { stateColor } from '../lib/states';
 import { LivePanel } from '../live/LivePanel';
 import { type Source, sourceOf } from './Decisions';
 
-const MARK = 'ml-1.5 rounded-full px-1.5 font-mono text-[11px] tabular-nums';
-const VIOLET = { color: stateInk('needs-you'), backgroundColor: stateWash('needs-you') };
+const MARK = 'ml-1.5 rounded-full px-1.5 font-mono font-medium text-[11px] tabular-nums';
+/** The mockup's `.nav .badge`: a solid violet chip with dark text. */
+const VIOLET = { color: 'var(--v3-bg)', backgroundColor: stateColor('needs-you') };
 
 /**
  * The count, or a violet "?" when either query is unavailable: rows kept through an outage are

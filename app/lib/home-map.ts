@@ -1,4 +1,5 @@
 import dagre, { type EdgeLabel, type GraphLabel, type NodeLabel } from '@dagrejs/dagre';
+import { placeAddress } from './places';
 import { stepHref } from './step-detail';
 
 /**
@@ -179,14 +180,12 @@ export function stepGraph(
   };
 }
 
-/** The address of a factory's home map; the factory is encoded. */
-export const factoryHref = (factory: string): string => `/f/${encodeURIComponent(factory)}`;
-
 /**
- * The home map's address at a version's pin, or at the current version for none. The rest of
+ * The factory map's address at a version's pin, or at the current version for none. The rest of
  * `search`, such as the open view, is kept.
  */
 export function homeHref(
+  factory: string,
   at?: string | null,
   search: URLSearchParams = new URLSearchParams(),
 ): string {
@@ -194,7 +193,8 @@ export function homeHref(
   if (at) next.set('at', at);
   else next.delete('at');
   const query = next.toString();
-  return query === '' ? '/' : `/?${query}`;
+  const map = placeAddress(factory, 'map');
+  return query === '' ? map : `${map}?${query}`;
 }
 
 export interface FoldedSteps {

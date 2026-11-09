@@ -7,10 +7,10 @@ import {
   RouterProvider,
   StaticRouterProvider,
 } from 'react-router';
-import Home from './routes/index';
+import Home from './routes/f.$factory.map';
 import { appRoutes, type RouteModule } from './routing';
 
-const modules: Record<string, RouteModule> = { './routes/index.tsx': { default: Home } };
+const modules: Record<string, RouteModule> = { './routes/f.$factory.map.tsx': { default: Home } };
 
 function render(path: string): string {
   const router = createMemoryRouter(appRoutes(modules), { initialEntries: [path] });
@@ -30,7 +30,7 @@ test('an unknown path renders the not-found empty state, not the developer error
   const html = render('/no-such-screen');
   expect(mainText(html)).toBe('Nothing is at this address. Go to home');
   expect(html).not.toContain('Unexpected Application Error');
-  expect(html).not.toContain('style=');
+  expect(html.match(/<main[\s\S]*<\/main>/)?.[0]).not.toContain('style=');
   expect(html).toContain('href="/"');
 });
 
@@ -55,9 +55,9 @@ test('a route that fails renders the error empty state', async () => {
     />,
   );
   expect(text(html)).toBe('This page failed to load. Go to home');
-  expect(html).not.toContain('style=');
+  expect(html.match(/<main[\s\S]*<\/main>/)?.[0]).not.toContain('style=');
 });
 
 test('registered routes still render through the error boundary', () => {
-  expect(mainText(render('/'))).toBe('Version - Loading the factory map.');
+  expect(mainText(render('/f/mission-control/map'))).toBe('Version - Loading the factory map.');
 });
