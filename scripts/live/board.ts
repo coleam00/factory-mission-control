@@ -76,6 +76,20 @@ const SHOWN_PIPELINE = `(() => {
   };
 })()`;
 
+const PILL_WIDTHS = [760, 1000, 1264, 1440];
+
+const PILL_FIT = `(() => [...document.querySelectorAll('[data-board-stage]')].flatMap((tile) => {
+  const box = tile.getBoundingClientRect();
+  return [...tile.querySelectorAll('p + div > span > span')].flatMap((pill) => {
+    const r = pill.getBoundingClientRect();
+    const wrapped = r.height > 24 || pill.firstElementChild.getClientRects().length > 1;
+    const outside = r.left < box.left - 0.5 || r.right > box.right + 0.5;
+    return wrapped || outside
+      ? [pill.textContent.trim() + ' (' + (wrapped ? 'wrapped' : 'outside its tile') + ')']
+      : [];
+  });
+}))()`;
+
 const FILES = liveOutputs({
   shot: 'board.png',
   probe: 'board-design-probe.json',
@@ -150,6 +164,18 @@ export function boardPhase(ctx: LiveContext): LivePhase {
       failures.push(
         `${where} found: screen ${JSON.stringify(screen.found)}, SQL ${JSON.stringify([filed, tracked, dropped])}`,
       );
+    return failures;
+  }
+
+  /** Each stage summary pill sits on one line, inside its tile, at every desktop width the Pipeline reflows at. */
+  async function pillFitFailures(page: Page, factory: string): Promise<string[]> {
+    const failures: string[] = [];
+    for (const width of PILL_WIDTHS) {
+      await page.setViewport(width);
+      const bad = await page.evaluate<string[]>(PILL_FIT);
+      failures.push(...bad.map((b) => `board ${factory} at ${width}px: stage pill ${b}`));
+    }
+    await page.setViewport(1440);
     return failures;
   }
 
@@ -257,6 +283,7 @@ export function boardPhase(ctx: LiveContext): LivePhase {
 
         await open(page, `/f/${QUEUE_FACTORY.name}/board`);
         failures.push(...(await pipelineMismatches(page, QUEUE_FACTORY.name)));
+        failures.push(...(await pillFitFailures(page, QUEUE_FACTORY.name)));
         await open(page, `/f/${QUEUE_FACTORY.name}/board?${VIEW_PARAM}=${TABLE_VIEW}`);
         const intake = await page.evaluate<boolean>(
           `document.querySelector('[data-board-column="intake"] [data-work-item="401"]') !== null`,

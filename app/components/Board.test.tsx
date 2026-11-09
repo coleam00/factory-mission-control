@@ -174,3 +174,17 @@ test('a mini card moves its state pill under the number instead of breaking it',
   );
   expect(html).toMatch(/class="[^"]*flex-wrap[^"]*whitespace-nowrap/);
 });
+
+test('a stage summary pill truncates on one line and carries its full text in a title', () => {
+  const html = render(
+    {
+      ...empty,
+      pipeline: PIPELINE.map((h) => ({
+        ...stage(h.id, [7]),
+        pills: [{ label: 'check failed' as const, state: 'failed' as const, count: 1 }],
+      })),
+    },
+    'pipeline',
+  );
+  expect(html).toMatch(/title="check failed 1"[^>]*><span class="truncate">check failed/);
+});
