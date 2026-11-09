@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { createMemoryRouter, RouterProvider } from 'react-router';
 import { lapHref } from '../lib/one-lap';
 import { RUNS_PAGE_SIZE, type RunRow, type RunsFilter, type RunsRow, runsView } from '../lib/runs';
-import { addressOf, filterOf, Pager, RunFilters, RunList } from './Runs';
+import { addressOf, filterOf, nextFilter, Pager, pageWithin, RunFilters, RunList } from './Runs';
 
 const render = (element: React.ReactElement): string =>
   renderToStaticMarkup(<RouterProvider router={createMemoryRouter([{ path: '/', element }])} />);
@@ -106,9 +106,17 @@ test('a page the address cannot read is page 1', () => {
 test('a filter change made from page 3 leaves the page out of the address', () => {
   const from = filterOf(new URLSearchParams('page=3&state=failed'));
   expect(from.page).toBe(3);
-  const query = addressOf({ ...from, page: 1, ...{ q: 'fix' } });
-  expect(query.has('page')).toBe(false);
-  expect(query.toString()).toBe('q=fix&state=failed');
+  expect(addressOf(nextFilter(from, { q: 'fix' })).toString()).toBe('q=fix&state=failed');
+  expect(addressOf(nextFilter(from, { state: 'done' })).has('page')).toBe(false);
+  expect(addressOf(nextFilter(from, { hideIdle: false })).has('page')).toBe(false);
+});
+
+test('a page past the last page of the chip lands on the last page', () => {
+  const counts = { all_count: 51 } as RunsRow;
+  expect(pageWithin(counts, filter({ page: 3 }))).toBe(2);
+  expect(pageWithin(counts, filter({ page: 2 }))).toBe(2);
+  expect(pageWithin({ all_count: 0 } as RunsRow, filter({ page: 3 }))).toBe(1);
+  expect(pageWithin(undefined, filter({ page: 3 }))).toBe(3);
 });
 
 function pager(total: number): string {

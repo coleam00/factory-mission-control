@@ -50,14 +50,31 @@ export function addressOf(to: RunsFilter): URLSearchParams {
   return query;
 }
 
+/** The filter a change leads to: any change starts again on the first page. */
+export function nextFilter(from: RunsFilter, next: Partial<RunsFilter>): RunsFilter {
+  return { ...from, page: 1, ...next };
+}
+
+/** The runs the active chip counts, 0 while the counts seal. */
+function chipTotal(counts: RunsRow | undefined, filter: RunsFilter): number {
+  const chip = RUN_CHIPS.find((c) => c.state === filter.state);
+  return counts && chip ? counts[chip.count] : 0;
+}
+
+/** The page the address asks for, held to the last page the active chip has. */
+export function pageWithin(counts: RunsRow | undefined, filter: RunsFilter): number {
+  if (counts === undefined) return filter.page;
+  const last = Math.max(1, Math.ceil(chipTotal(counts, filter) / RUNS_PAGE_SIZE));
+  return Math.min(filter.page, last);
+}
+
 /** Every run of the factory, newest first, one page of it, with the chips' counts from the same query. */
 export function Runs({ factory }: { factory: string | undefined }): ReactElement {
   const [params, setParams] = useSearchParams();
   const filter = filterOf(params);
   const [draft, setDraft] = useState(filter.q);
 
-  const change = (next: Partial<RunsFilter>) =>
-    setParams(addressOf({ ...filter, page: 1, ...next }));
+  const change = (next: Partial<RunsFilter>) => setParams(addressOf(nextFilter(filter, next)));
 
   // The address follows the box after a pause, so a run of keystrokes is one search.
   useEffect(() => setDraft(filter.q), [filter.q]);
@@ -80,6 +97,7 @@ export function Runs({ factory }: { factory: string | undefined }): ReactElement
               onDraft={setDraft}
               onChange={change}
             />
+            <KeepPageInRange counts={view?.counts} filter={filter} />
             <PanelBody rows={view?.runs} state={state} factory={factory} what="runs">
               {(runs, name) => (
                 <>
@@ -93,6 +111,22 @@ export function Runs({ factory }: { factory: string | undefined }): ReactElement
       }}
     </LivePanel>
   );
+}
+
+/** Moves the address off a page past the last, which the rows would show as empty under non-zero chips. */
+function KeepPageInRange({
+  counts,
+  filter,
+}: {
+  counts: RunsRow | undefined;
+  filter: RunsFilter;
+}): null {
+  const [, setParams] = useSearchParams();
+  const page = pageWithin(counts, filter);
+  useEffect(() => {
+    if (page !== filter.page) setParams(addressOf({ ...filter, page }), { replace: true });
+  });
+  return null;
 }
 
 /** The head: the title, the search, the chips with their counts and the idle-poll toggle. */
@@ -295,8 +329,7 @@ export function Pager({
   filter: RunsFilter;
   onChange: (next: Partial<RunsFilter>) => void;
 }): ReactElement | null {
-  const chip = RUN_CHIPS.find((c) => c.state === filter.state);
-  const total = counts && chip ? counts[chip.count] : 0;
+  const total = chipTotal(counts, filter);
   if (total <= RUNS_PAGE_SIZE) return null;
   const first = (filter.page - 1) * RUNS_PAGE_SIZE + 1;
   const last = Math.min(total, filter.page * RUNS_PAGE_SIZE);
