@@ -36,7 +36,11 @@ function record() {
   window.__requests = [];
   const note = (request: Request) => window.__requests.push(request);
   const open = XMLHttpRequest.prototype.open;
-  XMLHttpRequest.prototype.open = function (this: XMLHttpRequest, method: string, url: string | URL) {
+  XMLHttpRequest.prototype.open = function (
+    this: XMLHttpRequest,
+    method: string,
+    url: string | URL,
+  ) {
     note({ kind: 'xhr', url: String(url), method });
     return open.call(this, method, url, true);
   };
@@ -96,7 +100,7 @@ export function mount(url: string) {
             runs: [
               {
                 run_id: RUN,
-                workflow_name: 'archon-loop',
+                workflow_name: 'factory-manager',
                 status: 'failed',
                 started_at: '2026-11-09T06:00:00Z',
                 completed_at: null,

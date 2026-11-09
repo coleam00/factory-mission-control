@@ -47,7 +47,7 @@ const answer: ManagerReply = {
   runs: [
     {
       run_id: RUN,
-      workflow_name: 'archon-loop',
+      workflow_name: 'factory-manager',
       status: 'failed',
       started_at: '2026-11-09T08:00:00Z',
       completed_at: null,

@@ -78,7 +78,7 @@ const handledRow = (id: number, action: HandledRow['action'], sent_at: Date): Ha
   from_step: null,
   sent_at,
   exit_code: 0,
-  workflow_name: 'archon-loop',
+  workflow_name: 'factory-manager',
 });
 
 const none = ready<never>([]);
