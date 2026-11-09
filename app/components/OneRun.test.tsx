@@ -114,7 +114,7 @@ test('the head stays one row on a desktop, so the actions keep the top right bes
   const html = render();
   expect(html).toContain('min-[760px]:flex-nowrap');
   expect(html).toContain('flex shrink-0 gap-2');
-  expect(html).toContain('absolute top-3 flex left-0');
+  expect(html).toContain('absolute top-1.5 flex h-[1lh] items-center');
 });
 
 test("the manager's read comes from the stop record, and the primary action opens the console run", () => {
