@@ -33,9 +33,11 @@ export const paramsFor = (name: string, factory: string) =>
       ? [factory, '3']
       : STEP_PANELS.includes(name)
         ? [factory, ...CHECK_APP, '']
-        : LAP_PANELS.includes(name)
-          ? [factory, LAP_RUN]
-          : [factory];
+        : name === 'runs'
+          ? [factory, '', '', 'show', '0']
+          : LAP_PANELS.includes(name)
+            ? [factory, LAP_RUN]
+            : [factory];
 
 export const SEED = readFileSync(join(REPO_ROOT, 'fixtures', 'seed.sql'), 'utf8');
 

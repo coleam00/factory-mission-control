@@ -55,7 +55,7 @@ LEFT JOIN LATERAL (
 ) lp ON true
 LEFT JOIN LATERAL (
   -- Rounds so far: the item's runs that reached the ship step. The run's item is the one Laps, the map
-  -- and health read (lanes.sql, home-map.sql, health-workable.sql): its claim, else the facts step's item, else its number input.
+  -- and health read (runs.sql, home-map.sql, health-workable.sql): its claim, else the facts step's item, else its number input.
   SELECT count(*)::int AS rounds FROM mc.laps l
   WHERE l.factory = i.factory AND l.workflow_name IN ('archon-loop', 'archon-build-queue')
     AND i.number = coalesce(

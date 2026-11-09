@@ -17,7 +17,7 @@ import {
   type ProductDocumentRow,
   type WorkOrderRow,
 } from '../map/live';
-import { useNow } from './Lanes';
+import { useNow } from './panel';
 
 type Tab = 'about' | 'live' | 'behind';
 

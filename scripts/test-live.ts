@@ -14,9 +14,9 @@ import { resolveBranchName } from './lib/target';
 import { BOARD_OUTPUTS, boardPhase } from './live/board';
 import { DECISIONS_OUTPUTS, decisionsPhase } from './live/decisions';
 import { HOME_OUTPUTS, homePhase } from './live/home';
-import { LAPS_OUTPUTS, lapsPhase } from './live/laps';
 import { ONE_LAP_OUTPUTS, oneLapPhase } from './live/one-lap';
 import { QUEUE_MAP_OUTPUTS, QUEUE_MAP_VIEWS, queueMapPhase } from './live/queue-map';
+import { RUNS_OUTPUTS, runsPhase } from './live/runs';
 import {
   fixtureWrite,
   freePort,
@@ -101,11 +101,12 @@ export const SCREENS: readonly LiveScreen[] = [
     ],
   },
   {
-    phase: lapsPhase,
-    outputs: LAPS_OUTPUTS,
+    phase: runsPhase,
+    outputs: RUNS_OUTPUTS,
     help: [
-      'It checks the laps screen against the seed and times the same `fixture:write step` events to',
-      'their lanes before and after the hold.',
+      'It checks the runs screen against the seed (chips, first page, failed runs), turns an inserted idle',
+      'poll through the toggle, and times the same `fixture:write step` events to their rows before and',
+      'after the hold.',
     ],
   },
   {

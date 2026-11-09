@@ -22,7 +22,7 @@ import { type OwnerItem, type OwnerQueueRow, ownerQueue, waited } from '../lib/o
 import { LivePanel, type PanelState } from '../live/LivePanel';
 import { EmptyState } from './EmptyState';
 import { Failures, OverdueList, WaitingList, Workable } from './Health';
-import { LABEL, MONO, NONE, PanelBody, useNow, utcMinute } from './Lanes';
+import { LABEL, MONO, NONE, PanelBody, useNow, utcMinute } from './panel';
 import { RecommendedTag } from './ui/OptionTile';
 
 /** The mockup's wording (docs/design/v2/mockup.html), word for word. */

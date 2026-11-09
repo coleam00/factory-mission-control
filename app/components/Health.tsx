@@ -20,7 +20,7 @@ import { hasLapPage, lapHref } from '../lib/one-lap';
 import { waited } from '../lib/owner-queue';
 import { RUN_STATE, STATE_NAME, type State, stateColor, stateInk } from '../lib/states';
 import { LivePanel } from '../live/LivePanel';
-import { LABEL, MONO, NONE, PanelBody, useNow, utcMinute } from './Lanes';
+import { LABEL, MONO, NONE, PanelBody, useNow, utcMinute } from './panel';
 import { LiveDot } from './LiveDot';
 
 const LINK = `${MONO} shrink-0 text-text-secondary underline decoration-border-bright underline-offset-2 hover:decoration-text-primary`;

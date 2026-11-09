@@ -1,10 +1,10 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { RUNS_PAGE_SIZE } from '../../app/lib/runs';
 import { SECOND_FACTORY } from '../fixture/seed';
 import { openPage, type Page } from '../lib/cdp';
 import {
   freePort,
-  LANE,
   LIMITS,
   type LiveContext,
   type LiveOutput,
@@ -18,6 +18,7 @@ import {
   PANEL,
   pageWait,
   READY_WAIT_MS,
+  RUN_ROW,
   waitForHealth,
 } from './shared';
 import {
@@ -221,18 +222,26 @@ async function checkSwitcher(ctx: LiveContext): Promise<void> {
       if (screen !== 'runs') continue;
       await waitFor(
         page,
-        'the lanes were not ready',
-        `document.querySelector('[data-live="lanes"][data-state="ready"]') !== null`,
+        'the runs were not ready',
+        `document.querySelector('[data-live="runs"][data-state="ready"]') !== null`,
       );
-      const lanes = await page.evaluate<string[]>(
-        `[...document.querySelectorAll('${LANE}')].map((el) => el.getAttribute('data-lane')).sort()`,
+      const runs = await page.evaluate<string[]>(
+        `[...document.querySelectorAll('${RUN_ROW}')].map((el) => el.getAttribute('data-run'))`,
       );
-      const running = await db.query(
-        `SELECT run_id::text AS run FROM mc.laps
-          WHERE factory = $1 AND status = 'running' ORDER BY 1`,
+      // The page hides idle polls by default: newest first, as the screen orders them.
+      const newest = await db.query(
+        `SELECT l.run_id::text AS run FROM mc.laps l
+          WHERE l.factory = $1 AND NOT (l.status = 'completed' AND EXISTS (
+            SELECT 1 FROM mc.lap_steps f WHERE f.run_id = l.run_id AND f.step_id = 'facts'
+              AND f.output ->> 'path' = 'idle'))
+          ORDER BY l.started_at DESC NULLS FIRST, l.run_id DESC LIMIT ${RUNS_PAGE_SIZE}`,
         [second],
       );
-      check(`${second}'s lanes`, lanes, running.map((r) => String(r.run)).sort());
+      check(
+        `${second}'s runs`,
+        runs,
+        newest.map((r) => String(r.run)),
+      );
     }
 
     // Choosing a factory from a step's page stays on that step, in the chosen factory (#202).

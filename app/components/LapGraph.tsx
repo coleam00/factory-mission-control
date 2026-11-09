@@ -5,7 +5,6 @@ import { type Box, layoutSteps, openedBlocks, type StepNode, shownAs } from '../
 import {
   foldGraph,
   ranBlocks,
-  type LaneMark,
   type LapGraph,
   type LapStep,
   STATE_LABEL,
@@ -514,53 +513,5 @@ function PanelField({
       <dt className={LABEL}>{label}</dt>
       <dd className={`${MONO} text-text-primary [overflow-wrap:anywhere]`}>{children}</dd>
     </div>
-  );
-}
-
-/** A lane's row of the loop's top-level steps: how far through the loop the lap is. */
-export function LaneMarks({ marks }: { marks: readonly LaneMark[] }): ReactElement {
-  return (
-    <ol data-loop-marks className="flex flex-wrap items-center gap-x-0.5 gap-y-1.5">
-      {marks.map((mark, i) => {
-        const dim = mark.state === 'skipped' || mark.state === 'not-reached';
-        return (
-          <li
-            key={mark.step}
-            data-loop-mark={mark.step}
-            data-step-state={mark.state}
-            className="flex items-center gap-0.5"
-          >
-            {i === 0 ? null : (
-              <span
-                aria-hidden="true"
-                className={`h-px w-1.5 ${dim ? 'bg-border' : 'bg-text-secondary'}`}
-              />
-            )}
-            <span
-              className={`flex items-center gap-1 rounded-full border px-1.5 py-0.5 ${
-                dim ? 'opacity-55' : ''
-              } ${mark.state === 'skipped' ? 'border-dashed' : ''}`}
-              style={{
-                borderColor:
-                  mark.state === 'running' || mark.state === 'failed' || mark.state === 'finished'
-                    ? tint(markToken(mark.state), 50)
-                    : 'var(--border)',
-                background:
-                  mark.state === 'running' ? tint(STATE_COLOR.running, 14) : 'transparent',
-              }}
-            >
-              <StateMark state={mark.state} size={12} />
-              <span
-                className={`font-mono text-[11px] ${
-                  mark.state === 'running' ? 'text-text-primary' : 'text-text-secondary'
-                }`}
-              >
-                {mark.step}
-              </span>
-            </span>
-          </li>
-        );
-      })}
-    </ol>
   );
 }

@@ -375,8 +375,12 @@ test('a run that has just taken a work item is running on the Board, here on the
     expect(live?.queued?.map((i) => i.number)).toEqual([405, 410]);
 
     const laps = await run<{ issue_number: number | null; step_id: string }>(
-      'lanes',
+      'runs',
       'queue-factory',
+      '',
+      '',
+      'show',
+      '0',
     );
     expect(laps.find((l) => (l as unknown as { run_id: string }).run_id === runId)).toMatchObject({
       issue_number: 404,

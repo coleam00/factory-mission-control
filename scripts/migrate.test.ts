@@ -149,8 +149,13 @@ test.each(['default', 'override'])(
       const original = await createRun(FACTORIES[0].codebase);
       const pending = await createRun(added.codebase);
       await createRun('example/other');
-      const query = (name: string, factory: string) =>
-        db.query(readFileSync(join(REPO_ROOT, 'db', 'queries', `${name}.sql`), 'utf-8'), [factory]);
+      const query = (name: string, factory: string, ...more: string[]) =>
+        db.query(readFileSync(join(REPO_ROOT, 'db', 'queries', `${name}.sql`), 'utf-8'), [
+          factory,
+          ...more,
+        ]);
+      const runsOf = async (factory: string) =>
+        (await query('runs', factory, '', '', 'show', '0')).filter((r) => r.run_id !== null);
       const originalLaps = await db.query('SELECT * FROM mc.laps WHERE run_id = $1', [original]);
       const sourceRows = await db.query(
         'SELECT * FROM public.remote_agent_workflow_runs ORDER BY id',
@@ -167,7 +172,7 @@ test.each(['default', 'override'])(
       expect(await query('status-strip', added.name)).toEqual([
         { running: 0, waiting: 0, engine: null },
       ]);
-      expect(await query('lanes', added.name)).toEqual([]);
+      expect(await runsOf(added.name)).toEqual([]);
 
       writeFileSync(file, JSON.stringify({ factories: [...FACTORIES, added] }));
       expect(await main(argv, deps)).toBe(0);
@@ -182,9 +187,7 @@ test.each(['default', 'override'])(
       expect(await query('status-strip', added.name)).toEqual([
         { running: 1, waiting: 0, engine: null },
       ]);
-      expect(await query('lanes', added.name)).toEqual([
-        expect.objectContaining({ run_id: pending }),
-      ]);
+      expect(await runsOf(added.name)).toEqual([expect.objectContaining({ run_id: pending })]);
       expect(await db.query('SELECT * FROM mc.laps WHERE run_id = $1', [original])).toEqual(
         originalLaps,
       );

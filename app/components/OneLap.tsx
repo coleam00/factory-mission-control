@@ -32,7 +32,7 @@ import {
 } from '../lib/states';
 import { LivePanel, type PanelState } from '../live/LivePanel';
 import { LapGraphView, StepPanel } from './LapGraph';
-import { Field, LABEL, MONO, NONE, PanelBody, useNow, utcMinute } from './Lanes';
+import { Field, LABEL, MONO, NONE, PanelBody, useNow, utcMinute } from './panel';
 
 const CARD = 'rounded-[10px] border border-border bg-surface';
 const LINK = 'underline decoration-border-bright underline-offset-2 hover:decoration-text-primary';
