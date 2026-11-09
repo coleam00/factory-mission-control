@@ -33,20 +33,26 @@ export const hasLapPage = (workflow: string | null): boolean => workflow === LAP
  * Deliberately not `LAP_PAGE_WORKFLOW` (which runs have a lap page) nor `LAP_WORKFLOWS` (which
  * runs are laps): widening either must not change what counts as an old-loop run.
  */
-const OLD_LOOP_WORKFLOW = 'archon-loop';
+const OLD_LOOP_WORKFLOW = LAP_PAGE_WORKFLOW;
 
 /** Whether a run of `workflow` is an old-loop run. */
 export const isOldLoop = (workflow: string | null): boolean => workflow === OLD_LOOP_WORKFLOW;
 
+export const BUILD_QUEUE_WORKFLOW = 'archon-build-queue';
+export const INTAKE_WORKFLOW = 'archon-intake';
+/** The workflow that slices an item into children; it holds nothing (health-workable.sql restates this; restated-rules.test.ts binds the two). */
+export const SPLIT_WORKFLOW = 'archon-split';
+export const APP_CHECK_WORKFLOW = 'factory-app-check';
+
 /** What a running workflow is, in the map's words; an unknown one shows its own name. */
 const WORKFLOW_LABEL: Readonly<Record<string, string>> = {
   [LAP_PAGE_WORKFLOW]: 'Lap',
-  'archon-build-queue': 'Build',
+  [BUILD_QUEUE_WORKFLOW]: 'Build',
   'archon-merge-queue': 'Merge',
-  'archon-intake': 'Intake',
-  'archon-split': 'Split',
+  [INTAKE_WORKFLOW]: 'Intake',
+  [SPLIT_WORKFLOW]: 'Split',
   'archon-discoveries': 'Found by the factory',
-  'factory-app-check': 'App check',
+  [APP_CHECK_WORKFLOW]: 'App check',
   'factory-deploy': 'Staging',
   'factory-manager': 'Manager',
   'factory-backlog': 'Split',

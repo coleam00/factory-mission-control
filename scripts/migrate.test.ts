@@ -1,6 +1,7 @@
 import { afterEach, expect, test } from 'bun:test';
 import { cpSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { runsArgs } from '../app/lib/runs';
 import { archonDb, snapshot } from '../db/test-db';
 import factories from '../factories.json';
 import type { Db } from './lib/db';
@@ -155,7 +156,9 @@ test.each(['default', 'override'])(
           ...more,
         ]);
       const runsOf = async (factory: string) =>
-        (await query('runs', factory, '', '', 'show', '0', '50')).filter((r) => r.run_id !== null);
+        (
+          await query('runs', factory, ...runsArgs({ q: '', state: '', hideIdle: false, page: 1 }))
+        ).filter((r) => r.run_id !== null);
       const originalLaps = await db.query('SELECT * FROM mc.laps WHERE run_id = $1', [original]);
       const sourceRows = await db.query(
         'SELECT * FROM public.remote_agent_workflow_runs ORDER BY id',

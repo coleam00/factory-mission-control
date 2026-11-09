@@ -9,7 +9,7 @@ import { deepestStep } from '../map/live';
 import { formatCost, formatElapsed } from './format';
 import { stepPath } from './lap-graph';
 import { costOf, durationOf, stepLabel } from './laps';
-import { consoleUrl, hasLapPage, isOldLoop, lapHref } from './one-lap';
+import { consoleUrl, hasLapPage, INTAKE_WORKFLOW, isOldLoop, lapHref } from './one-lap';
 import { LAP_WORKFLOWS } from './scorecard';
 import type { StopClass } from './failures';
 import {
@@ -108,6 +108,10 @@ export const NO_REASON = 'No reason was recorded.';
 
 /** The question a stop line holds, without the wholly bold title its message starts with. */
 export const questionOf = (line: string): string => attentionTitle(line) ?? line;
+
+/** The line a run waiting on you shows: what it asks, or that it waits when it recorded no question. */
+export const needsYouLine = (stopLine: string | null): string =>
+  stopLine === null ? 'Waiting on you' : `Asking: ${questionOf(stopLine)}`;
 
 /** A failed run's stop: its record, else the failed step and the headline of its error. */
 function failedStop(row: WorkItemRow): TimelineEvent['stop'] {
@@ -316,7 +320,7 @@ function roundEvent(row: WorkItemRow, n: number, at: Date, base: Base): Timeline
       text: `${label}: waiting for your answer`,
       stop: {
         step: row.stop_step,
-        line: row.stop_line === null ? 'Waiting on you' : `Asking: ${questionOf(row.stop_line)}`,
+        line: needsYouLine(row.stop_line),
       },
     };
   if (row.completed_at === null)
@@ -507,7 +511,7 @@ export function workItemTimeline(rows: readonly WorkItemRow[], factory: string):
       events.push(...sweepEvents(row, base));
       continue;
     }
-    if (row.workflow === 'archon-intake') {
+    if (row.workflow === INTAKE_WORKFLOW) {
       const at = row.completed_at ?? row.started_at;
       if (at !== null) events.push(intakeEvent(row, at, base('intake')));
       continue;
