@@ -39,18 +39,20 @@ WHERE l.factory = $1 AND l.status = 'running'
     WHERE vr.factory = l.factory AND vr.digest = l.digest AND vr.pin_sha = $2))
 UNION ALL
 -- Each open pull request whose latest app check came out FAIL overall. A check names its pull
--- request by the step's projected pr_number (prNumber's rule, mc.pr_number).
+-- request by the step's projected pr_number (prNumber's rule, mc.pr_number). Every pull request's
+-- latest check is found in one pass over the factory's checks, as board.sql's checks do, not one
+-- pass over every lap step per open pull request (#569).
 SELECT 'failing', NULL, NULL, NULL, pr.number, pr.title, pr.url, NULL, NULL
 FROM mc.pull_requests pr
-JOIN LATERAL (
-  SELECT s.output ->> 'overall' AS overall
+JOIN (
+  SELECT DISTINCT ON (s.pr_number) s.pr_number, s.output ->> 'overall' AS overall
   FROM mc.lap_steps s
   JOIN mc.laps l ON l.run_id = s.run_id
-  WHERE l.factory = pr.factory AND s.step_id IN ('check-app', 'check')
+  WHERE l.factory = $1 AND s.step_id IN ('check-app', 'check')
     AND (s.step_id = 'check-app' OR l.workflow_name = 'factory-app-check')
-    AND s.pr_number = pr.number
-  ORDER BY s.started_at DESC NULLS LAST, s.run_id LIMIT 1
-) latest ON latest.overall = 'FAIL'
+    AND s.pr_number IS NOT NULL
+  ORDER BY s.pr_number, s.started_at DESC NULLS LAST, s.run_id
+) latest ON latest.pr_number = pr.number AND latest.overall = 'FAIL'
 WHERE pr.factory = $1 AND pr.state = 'open'
 UNION ALL
 -- Each run of the factory waiting on a person (the chip counts the factory as it stands, not a
@@ -70,14 +72,21 @@ WHERE f.name = $1
     WHERE l.factory = f.name AND l.workflow_name IN ('archon-intake', 'archon-build-queue'))
 UNION ALL
 -- Each lap of the factory whose land step merged, the newest 200, timed when that step finished
--- (the run goes on after it). The browser keeps those of its own local day.
+-- (the run goes on after it). The browser keeps those of its own local day. A run has one step of
+-- an id (the key is run_id, step_id), so the LIMIT 1 keeps every row and makes the database look
+-- the step up by that key for each lap rather than scan every lap step (#569). The record step
+-- below is found the same way.
 SELECT * FROM (
   SELECT 'merged', l.run_id, l.workflow_name, NULL::text[], c.issue_number, i.title, i.url,
     coalesce(land.completed_at, land.started_at + land.duration_ms * interval '1 millisecond'),
     NULL::text
   FROM mc.laps l
-  JOIN mc.lap_steps land ON land.run_id = l.run_id AND land.step_id = 'land'
-    AND land.status = 'completed' AND land.output ->> 'outcome' = 'merged'
+  JOIN LATERAL (
+    SELECT land.started_at, land.completed_at, land.duration_ms FROM mc.lap_steps land
+    WHERE land.run_id = l.run_id AND land.step_id = 'land'
+      AND land.status = 'completed' AND land.output ->> 'outcome' = 'merged'
+    LIMIT 1
+  ) land ON true
   LEFT JOIN LATERAL (
     SELECT c.issue_number FROM mc.claims c
     WHERE c.factory = l.factory AND c.run_id = l.run_id
@@ -97,8 +106,12 @@ SELECT * FROM (
     coalesce(rec.completed_at, rec.started_at + rec.duration_ms * interval '1 millisecond'),
     (rec.output -> 'merged')::text
   FROM mc.laps l
-  JOIN mc.lap_steps rec ON rec.run_id = l.run_id AND rec.step_id = 'record'
-    AND rec.status = 'completed' AND rec.output -> 'merged' IS NOT NULL
+  JOIN LATERAL (
+    SELECT rec.started_at, rec.completed_at, rec.duration_ms, rec.output FROM mc.lap_steps rec
+    WHERE rec.run_id = l.run_id AND rec.step_id = 'record'
+      AND rec.status = 'completed' AND rec.output -> 'merged' IS NOT NULL
+    LIMIT 1
+  ) rec ON true
   WHERE l.factory = $1
   ORDER BY 8 DESC NULLS LAST, l.run_id
   LIMIT 200
