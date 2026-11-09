@@ -69,3 +69,41 @@ test('every column renders its caption under the header', () => {
     expect(sections[i]).toMatch(new RegExp(`data-holder[^>]*>${c.holder}</p>`));
   });
 });
+
+test('a failed chip renders the v3 failed color and a running chip pulses', () => {
+  const html = render(
+    <BoardBody
+      view={{
+        orders: [],
+        columns: [
+          {
+            id: 'merged',
+            title: 'Merged',
+            role: 'test',
+            holder: 'test',
+            items: [
+              {
+                number: 1,
+                title: 'x',
+                chips: [
+                  { kind: 'route', text: 'broke', state: 'failed' },
+                  { kind: 'route', text: 'going', state: 'running', pulse: true },
+                ],
+                to: '/f/x/work/1',
+              },
+            ],
+          },
+        ],
+        notInOrder: 0,
+        older: 0,
+        olderHref: null,
+      }}
+      order={null}
+      onOrder={() => {}}
+    />,
+  );
+  const failed = html.match(/<span[^>]*color:var\(--v3-failed\)[^>]*>broke<\/span>/);
+  expect(failed).not.toBeNull();
+  const running = html.match(/<span[^>]*>(<span[^>]*animate-pulse[^>]*><\/span>)going<\/span>/);
+  expect(running).not.toBeNull();
+});

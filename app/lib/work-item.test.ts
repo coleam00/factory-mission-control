@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test';
+import { GATE_STATE, SWEEP_ACTION_STATE } from './states';
 import { NO_REASON, type WorkItemRow, workItemHeader, workItemTimeline } from './work-item';
 
 const RUN = '5eed0005-0000-4000-8000-000000000009';
@@ -299,4 +300,29 @@ test('an intake with two route labels reads the route the Board shows', () => {
     labels: ['archon-investigate', 'archon-ready'],
   });
   expect(texts([item, intake])).toEqual(['Filed', 'Intake: route deliver']);
+});
+
+test('every merge gate decision and sweep action the state owner names yields a timeline event', () => {
+  for (const decision of Object.keys(GATE_STATE))
+    expect(
+      workItemTimeline(
+        [item, row({ workflow: 'archon-loop', decision, decision_at: at('10:00'), reason: 'r' })],
+        'f',
+      ).filter((e) => e.kind === 'decision'),
+      `gate ${decision}`,
+    ).not.toHaveLength(0);
+  for (const action of Object.keys(SWEEP_ACTION_STATE))
+    expect(
+      workItemTimeline(
+        [
+          item,
+          sweep({
+            decisions: [{ number: 410, action, reason: 'r', brief: 'b' }],
+            asked_pr: '410',
+          }),
+        ],
+        'f',
+      ).filter((e) => e.kind === 'decision'),
+      `sweep ${action}`,
+    ).not.toHaveLength(0);
 });
