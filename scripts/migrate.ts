@@ -72,7 +72,7 @@ export function migrationNameProblems(names: readonly string[]): string[] {
     .filter((name) => !LEGACY_MIGRATIONS.has(name) && !TIMESTAMP_MIGRATION.test(name))
     .map(
       (name) =>
-        `${name} is not named <YYYYMMDDTHHMMZ>_<name>.sql (e.g. 20261109T1430Z_stop_line.sql)`,
+        `${name} is not named <YYYYMMDDTHHMMZ>_<name>.sql with <name> in lowercase a-z, 0-9 and _ (e.g. 20261109T1430Z_stop_line.sql)`,
     );
   const byPrefix = new Map<string, string[]>();
   for (const name of sql.filter((n) => TIMESTAMP_MIGRATION.test(n))) {

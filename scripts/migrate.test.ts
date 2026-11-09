@@ -366,6 +366,7 @@ test.each([
   '2026-11-09_x.sql',
   '20261109T1430_x.sql',
   '20261109T1430Z.sql',
+  '20261109T1430Z_StopLine.sql',
 ])('migration name %s is rejected', (name) => {
   const problems = migrationNameProblems([...LEGACY_MIGRATIONS, name]);
   expect(problems.length).toBeGreaterThan(0);
