@@ -255,7 +255,7 @@ export function ManagerPanelBody({
       data-manager={phone ? 'tab' : 'dock'}
       className={`flex min-h-0 min-w-0 flex-col bg-[var(--v3-panel)] ${
         phone
-          ? 'h-[calc(100vh-110px)] flex-1'
+          ? 'flex-1'
           : 'w-[var(--v3-manager-width)] shrink-0 border-l border-[color:var(--v3-line)]'
       }`}
     >

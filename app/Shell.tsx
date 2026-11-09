@@ -220,7 +220,9 @@ export function ForFactory(): ReactElement {
   );
   if (phone) {
     return (
-      <div className="flex min-h-screen flex-col bg-[var(--v3-bg)]">
+      <div
+        className={`flex flex-col bg-[var(--v3-bg)] ${phoneManager ? 'h-screen' : 'min-h-screen'}`}
+      >
         <PhoneTop unknownKey={unknownKey} onEngine={setEngine} />
         {phoneManager ? panel(() => setPhoneManager(false)) : content}
         {/* Mounted but hidden: the design draws no switcher on phone, yet it is the one publisher of the factory list. */}
