@@ -9,7 +9,7 @@ import type { AttentionRow } from '../lib/attention';
 import type { HealthRunRow, HealthStepRow, HealthWorkableRow } from '../lib/health';
 import { homeHref } from '../lib/home-map';
 import type { OwnerQueueRow } from '../lib/owner-queue';
-import type { StepRow, StepVersionRow } from '../lib/step-detail';
+import { AT_PARAM, type StepRow, type StepVersionRow } from '../lib/step-detail';
 import { useFactory } from '../live/FactoryProvider';
 import { AWAITED, Feed, type Source } from '../live/Feed';
 import { LivePanel, type PanelState } from '../live/LivePanel';
@@ -124,7 +124,7 @@ export function HomeMapBody({
 export default function Home(): ReactElement {
   const [search] = useSearchParams();
   const select = selectOnArrival(useLocation().state);
-  const at = search.get('at') || null;
+  const at = search.get(AT_PARAM) || null;
   const [path, onPath] = useMapPath(FACTORY_MAP);
   const factory = useFactory();
   const live = useLive();
