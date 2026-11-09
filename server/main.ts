@@ -3,6 +3,7 @@ import { join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { openDb } from '../scripts/lib/db';
 import { createNeonApi } from '../scripts/lib/neon';
+import { actionsFromEnv } from './actions';
 import { createApp } from './app';
 import { resolveBuildId } from './build-id';
 import { loadCheckEnv } from './check-env';
@@ -57,11 +58,20 @@ try {
   process.exit(1);
 }
 
+let actions: ReturnType<typeof actionsFromEnv>;
+try {
+  actions = actionsFromEnv(Bun.env, repoRoot);
+} catch (error) {
+  console.error(`operators: ${error instanceof Error ? error.message : error}`);
+  process.exit(1);
+}
+
 const app = createApp({
   buildId: resolveBuildId(Bun.env, repoRoot),
   distDir,
   live: liveFromEnv(Bun.env, repoRoot),
   manager,
+  actions,
 });
 const server = Bun.serve({ hostname: '127.0.0.1', port, fetch: app.fetch });
 console.log(`serving http://localhost:${server.port}`);

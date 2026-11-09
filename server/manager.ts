@@ -14,6 +14,7 @@ import { parseChoices } from '../app/lib/attention';
 import { isRunId, lapHref } from '../app/lib/one-lap';
 import { workItemHref } from '../app/lib/work-item';
 import { type Db, openDb } from '../scripts/lib/db';
+import { RESUME_FROM_SQL } from './actions';
 import type { Env } from './check-env';
 import { readFactoryNames } from './factories';
 import { MANAGER_LIMITS, readOnlyQuery } from './manager-sql';
@@ -306,7 +307,7 @@ Answer in short plain prose, naming runs by workflow and status. To give the own
 \`\`\`mc
 {"links":[{"kind":"run","id":"<run id>"},{"kind":"item","id":<issue number>}],"runs":["<run id>"],"proposals":[{"action":"answer","run_id":"<run id>","option":"<option id>"},{"action":"answer","run_id":"<run id>","text":"<free text>"},{"action":"resume","run_id":"<run id>","from_step":"<step id>"}]}
 \`\`\`
-Every field is optional. Propose an answer only for a run waiting on a question in mc.attention_items, using one of its option ids (or text for "Something else"). Propose a resume only for a ${RESUMABLE_STATUSES.join(' or ')} run; from_step is optional. A proposal is a button the owner presses; it does nothing until they do. At most ${MAX_RUNS} runs and ${MAX_PROPOSALS} proposals.`;
+Every field is optional. Propose an answer only for a run waiting on a question in mc.attention_items, using one of its option ids (or text for "Something else"). Propose a resume only for a ${RESUMABLE_STATUSES.join(' or ')} run; from_step is optional and, when given, must be the step that failed: Archon resumes a run from its failed step. A proposal is a button the owner presses; it does nothing until they do. At most ${MAX_RUNS} runs and ${MAX_PROPOSALS} proposals.`;
 }
 
 function renderConversation(messages: ChatRequest['messages']): string {
@@ -455,11 +456,7 @@ async function proposalEvent(
   );
   if (!lap) return undefined;
   if (raw.from_step !== undefined) {
-    const [step] = await lookup(
-      manager,
-      'SELECT 1 AS found FROM mc.lap_steps WHERE run_id::text = $1 AND step_id = $2',
-      [runId, raw.from_step],
-    );
+    const [step] = await lookup(manager, RESUME_FROM_SQL, [factory, runId, raw.from_step]);
     if (!step) return undefined;
   }
   return {
