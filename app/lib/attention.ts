@@ -142,21 +142,41 @@ export function attentionQuestion(message: string): string {
   return plain(body ?? message);
 }
 
+/**
+ * The pack's `**Recommendation: `<id>`** (<word> confidence). <why>` line, read as migration
+ * 0031's projector reads it: the choice from the first lead anywhere in the message, the
+ * confidence from the first lead followed by one lowercase word and " confidence" (not
+ * necessarily the same lead). db/projection.test.ts holds the two to the same messages.
+ */
+const RECOMMENDATION = /\*\*Recommendation: `([^`]+)`\*\*(?: \([a-z]+ confidence\))?/;
+const CONFIDENCE = /\*\*Recommendation: `[^`]+`\*\* \(([a-z]+) confidence\)/;
+
+/** The message's Recommendation line: its choice, its confidence word, and its reason (the rest of its paragraph). */
+export function parseRecommendation(
+  message: string,
+): { choice: string; confidence: string | null; reason: string } | null {
+  const match = RECOMMENDATION.exec(message);
+  if (match === null) return null;
+  const rest = message.slice(match.index + match[0].length).split(/\n\s*\n/)[0] ?? '';
+  return {
+    choice: match[1] ?? '',
+    confidence: CONFIDENCE.exec(message)?.[1] ?? null,
+    reason: plain(rest.replace(/^\./, '')),
+  };
+}
+
 /** The id the message's "Recommendation: <id>" line names, when it is one of the choices. */
 export function recommendedChoice(
   message: string,
   options: readonly Pick<AttentionOption, 'id'>[],
 ): string | null {
-  const id = /\*\*Recommendation: `([^`]+)`\*\*/.exec(message)?.[1];
+  const id = parseRecommendation(message)?.choice;
   return id !== undefined && options.some((option) => option.id === id) ? id : null;
 }
 
-/** The reason the "Recommendation" line gives, without its choice or its `(... confidence).` lead; '' when none. */
+/** The reason the Recommendation line gives: the rest of its paragraph after the choice and its confidence; '' when none. */
 export function recommendationReason(message: string): string {
-  const paragraph = paragraphs(message).find((p) => /^\*\*Recommendation: `[^`]+`\*\*/.test(p));
-  if (paragraph === undefined) return '';
-  const rest = paragraph.replace(/^\*\*Recommendation: `[^`]+`\*\*/, '');
-  return plain(rest.replace(/^\s*\([^)]*confidence\)\.?/, ''));
+  return parseRecommendation(message)?.reason ?? '';
 }
 
 /**

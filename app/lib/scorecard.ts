@@ -11,6 +11,7 @@
 
 import { formatNumber } from './format';
 import { mergedPulls, mergeItems } from './merge-queue';
+import { BUILD_QUEUE_WORKFLOW, LAP_PAGE_WORKFLOW } from './one-lap';
 
 /** A lap of this factory with a digest. */
 export interface LapRow {
@@ -79,8 +80,7 @@ const isRun = (row: ScorecardRow): row is LapRow =>
   !isVersion(row) && !isMerge(row) && !isAttempt(row);
 
 /** PRD 4.2: the workflows whose runs can be laps. `scorecard.sql` keeps only the build-queue runs on a work item. */
-const BUILD_QUEUE = 'archon-build-queue';
-export const LAP_WORKFLOWS: readonly string[] = ['archon-loop', BUILD_QUEUE];
+export const LAP_WORKFLOWS: readonly string[] = [LAP_PAGE_WORKFLOW, BUILD_QUEUE_WORKFLOW];
 
 export interface Lap {
   id: string;
@@ -137,7 +137,7 @@ function queueMergeCredits(rows: readonly ScorecardRow[]): Map<string, number[]>
   }
   const builds = rows
     .filter(isRun)
-    .filter((row) => row.workflow_name === BUILD_QUEUE && row.started_at !== null)
+    .filter((row) => row.workflow_name === BUILD_QUEUE_WORKFLOW && row.started_at !== null)
     .flatMap((row) => {
       const issue = positive(row.issue);
       return issue === null || row.started_at === null

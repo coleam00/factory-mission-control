@@ -1,6 +1,7 @@
 import type { UnstickRow } from '../../app/lib/attention';
 import {
   ATTENTION_SOURCES,
+  badgePanelName,
   retriageCommand,
   unstickCards,
   unstickKey,
@@ -83,7 +84,7 @@ const headCount = `(() => {
 })()`;
 
 /** The tab badge's own panels, named apart from the page's panels of the same queries. */
-const BADGE_PANELS = QUERIES.map((q) => `nav [data-live="attention-count:${q}"]`);
+const BADGE_PANELS = QUERIES.map((q) => `nav [data-live="${badgePanelName(q)}"]`);
 
 /** The Attention tab's count, or null when no count is drawn. */
 const tabCount = `(() => {
@@ -133,9 +134,34 @@ const PROJECTED_ATTENTION_SQL = `SELECT a.run_id::text AS run, f.console,
   FROM mc.attention_items a JOIN mc.factories f ON f.name = a.factory
   WHERE a.factory = $1 ORDER BY 1`;
 
-/** The failure signatures, read apart from failure-groups.sql. */
-const FAILED_SIGNATURES_SQL = `SELECT DISTINCT signature FROM mc.run_stops
-  WHERE factory = $1 AND status = 'failed' ORDER BY 1`;
+/**
+ * The signatures of unresolved failures, read apart from failure-groups.sql (the owner's ruling of
+ * 2026-11-09, issue #560): a failed run is resolved by a later completed run of its workflow on the same
+ * issue (claim, else facts step, else input) or, with no issue, the same PR, or by being 14 days older
+ * than the factory's latest stop.
+ */
+const FAILED_SIGNATURES_SQL = `WITH item AS (
+    SELECT l.run_id,
+      coalesce(
+        (SELECT c.issue_number FROM mc.claims c WHERE c.factory = l.factory AND c.run_id = l.run_id
+          ORDER BY c.claimed_at DESC NULLS LAST, c.issue_number LIMIT 1),
+        (SELECT (f.output -> 'item' ->> 'number')::int FROM mc.lap_steps f WHERE f.run_id = l.run_id AND f.step_id = 'facts'),
+        l.issue_number) AS issue,
+      (SELECT min(p.pr_number) FROM mc.lap_steps p WHERE p.run_id = l.run_id) AS pr
+    FROM mc.laps l WHERE l.factory = $1
+  ), stop AS (
+    SELECT s.signature, s.status, s.workflow_name, s.stopped_at, i.issue,
+      CASE WHEN i.issue IS NULL THEN i.pr END AS pr
+    FROM mc.run_stops s LEFT JOIN item i ON i.run_id = s.run_id WHERE s.factory = $1
+  )
+  SELECT DISTINCT f.signature FROM stop f
+  WHERE f.status = 'failed'
+    AND (f.stopped_at IS NULL OR (f.stopped_at AT TIME ZONE 'UTC')::date
+      > (SELECT max((x.stopped_at AT TIME ZONE 'UTC')::date) FROM stop x) - 14)
+    AND NOT EXISTS (
+      SELECT 1 FROM stop o WHERE o.status = 'completed' AND o.workflow_name = f.workflow_name
+        AND (o.issue = f.issue OR o.pr = f.pr) AND o.stopped_at > f.stopped_at)
+  ORDER BY 1`;
 
 const consoleOf = (console: unknown, run: string) =>
   `${String(console).replace(/\/+$/, '')}/console/r/${run}`;

@@ -5,6 +5,7 @@ import {
   attentionOrigin,
   attentionQuestion,
   attentionTitle,
+  parseRecommendation,
   recommendedChoice,
 } from './attention';
 
@@ -47,6 +48,21 @@ test('a plain message has no title and no recommendation, and its first paragrap
 
 test('a recommendation that is not one of the choices marks none', () => {
   expect(recommendedChoice(MESSAGE, [{ id: 'build' }])).toBeNull();
+});
+
+test("the reason is the rest of the Recommendation's paragraph, wherever the line sits", () => {
+  const midParagraph =
+    '**What it is.** Two screens. **Recommendation: `split`** (high confidence). Because.';
+  expect(parseRecommendation(midParagraph)?.reason).toBe('Because.');
+  const wide = parseRecommendation('**Recommendation: `split`** (very high confidence). Because.');
+  const later = '**Recommendation: `split`** (high confidence). Because.\n\nA later paragraph.';
+  expect(parseRecommendation(later)?.reason).toBe('Because.');
+  expect(wide?.confidence).toBeNull();
+  expect(wide?.reason).toBe('(very high confidence). Because.');
+  expect(parseRecommendation(MESSAGE)).toMatchObject({
+    confidence: 'high',
+    reason: expect.stringContaining('Two small changes land sooner.'),
+  });
 });
 
 test('the origin is the labels, or the workflow without its archon- lead', () => {

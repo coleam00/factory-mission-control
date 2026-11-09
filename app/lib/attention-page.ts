@@ -506,6 +506,9 @@ export const ATTENTION_SOURCES = {
   failures: { query: 'failure-groups', what: 'failures' },
 } as const;
 
+/** The nav badge's panel of one of those queries, named apart from the page's own panel of it. */
+export const badgePanelName = (query: string): string => `attention-count:${query}`;
+
 /** The query for the head's sweep clause; it is not an item source, so the count never reads it. */
 export const SWEEP_QUERY = 'manager-sweep';
 
@@ -514,14 +517,14 @@ export interface SweepRow {
   swept_at: Date | null;
 }
 
-const HEAD_LINE = 'The manager put its recommendation first on each.';
+const RECOMMENDATION = 'put its recommendation first on each.';
 
 /** The head's line under the title. The sweep clause is left out when the factory has no finished manager run. */
 export function sweepLine(factory: string, sweptAt: Date | null, now: number): string {
   const seconds = since(sweptAt, now);
   return seconds === null
-    ? `${factory}. ${HEAD_LINE}`
-    : `${factory}. The manager swept ${waited(seconds)} ago. ${HEAD_LINE}`;
+    ? `${factory}. The manager ${RECOMMENDATION}`
+    : `${factory}. The manager swept ${waited(seconds)} ago and ${RECOMMENDATION}`;
 }
 
 /**

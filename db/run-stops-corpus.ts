@@ -200,3 +200,52 @@ export const STOP_CORPUS: readonly (readonly [line: string, cls: StopClass, sour
     'issue #534 (the class rests on a word inside a path, which mc.stop_class keeps)',
   ],
 ];
+
+/**
+ * Texts a failed run's step can carry, each with the line mc.stop_line must show: the most specific
+ * failure message (issue #560), not the first line of a source excerpt.
+ */
+export const STOP_LINE_CORPUS: readonly (readonly [
+  text: string,
+  line: string | null,
+  source: string,
+])[] = [
+  [
+    "Script node 'prepare' failed [exit 1]: 28 | }\n29 | \n30 | main();\n     ^\nerror: git merge --no-edit failed\n      at main (/home/f/.archon/workflows/factory/app-check/scripts/prepare.ts:28:9)",
+    'error: git merge --no-edit failed',
+    'issue #560 (app-check prepare)',
+  ],
+  [
+    "Script node 'publish' failed [exit 1]: $ git push origin HEAD\nTo https://github.com/o/r.git\n ! [rejected]        HEAD -> b (fetch first)\nerror: failed to push some refs to 'https://github.com/o/r.git'",
+    "error: failed to push some refs to 'https://github.com/o/r.git'",
+    'issue #560 (the script header)',
+  ],
+  [
+    'Command failed: bun run check\nerror: Cannot find binding NEON_URL',
+    'error: Cannot find binding NEON_URL',
+    'rule 1 beats rule 2',
+  ],
+  [
+    "Waiting for the check\nNode 'review' failed: provider down\nmore",
+    "Node 'review' failed: provider down",
+    'rule 2: a command or node name before failed:',
+  ],
+  [
+    "Script node 'prepare' failed [exit 1]: 28 | }\n29 | foo",
+    "Script node 'prepare' failed [exit 1]: 28 | }",
+    'rule 3: failed [exit 1]: is not failed:',
+  ],
+  [
+    '\n  gh: HTTP 502: Bad Gateway\nsecond line',
+    'gh: HTTP 502: Bad Gateway',
+    'a leading blank line',
+  ],
+  [
+    'Command failed\r\n\tError: disk full\r\nat x',
+    'Error: disk full',
+    'CRLF with a tab-indented Error: line',
+  ],
+  ['failed: alone\nnext', 'failed: alone', 'no command before failed:'],
+  ['ERROR: shouted\nsecond', 'ERROR: shouted', 'only error: and Error: are rule 1'],
+  ['', null, 'empty text'],
+];
