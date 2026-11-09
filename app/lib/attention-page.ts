@@ -514,14 +514,14 @@ export interface SweepRow {
   swept_at: Date | null;
 }
 
-const HEAD_LINE = 'The manager put its recommendation first on each.';
+const RECOMMENDATION = 'put its recommendation first on each.';
 
 /** The head's line under the title. The sweep clause is left out when the factory has no finished manager run. */
 export function sweepLine(factory: string, sweptAt: Date | null, now: number): string {
   const seconds = since(sweptAt, now);
   return seconds === null
-    ? `${factory}. ${HEAD_LINE}`
-    : `${factory}. The manager swept ${waited(seconds)} ago. ${HEAD_LINE}`;
+    ? `${factory}. The manager ${RECOMMENDATION}`
+    : `${factory}. The manager swept ${waited(seconds)} ago and ${RECOMMENDATION}`;
 }
 
 /**

@@ -2,7 +2,7 @@ import { afterAll, beforeAll, expect, test } from 'bun:test';
 import { eventData } from '../scripts/fixture/write';
 import { runMigrations } from '../scripts/migrate';
 import { migratedDb } from './queries/test-seed';
-import { STOP_CORPUS } from './run-stops-corpus';
+import { STOP_CORPUS, STOP_LINE_CORPUS } from './run-stops-corpus';
 import { archonDb, migrationFiles, type TestDb } from './test-db';
 
 let db: TestDb;
@@ -21,6 +21,19 @@ test('mc.stop_class puts a corpus of real error lines in the expected classes', 
     got.push([line, row?.class, source]);
   }
   expect(got).toEqual(STOP_CORPUS.map(([line, cls, source]) => [line, cls, source]));
+});
+
+test('mc.stop_line picks an error: line, else a command’s failed: line, else the first line', async () => {
+  const got = [];
+  for (const [text, , source] of STOP_LINE_CORPUS) {
+    const [row] = await db.query('SELECT mc.stop_line($1) AS line', [text]);
+    got.push([text, row?.line, source]);
+  }
+  expect(got).toEqual(STOP_LINE_CORPUS.map(([text, line, source]) => [text, line, source]));
+  for (const [line] of STOP_CORPUS.filter(([l]) => !/[\r\n]/.test(l))) {
+    const [row] = await db.query('SELECT mc.stop_line($1) AS line', [line]);
+    expect(row?.line).toBe(line.trim());
+  }
 });
 
 test('mc.stop_signature ignores ids, numbers, paths and shas, and keeps steps and workflows apart', async () => {
@@ -127,6 +140,19 @@ test('a paused run’s stop record is the question it asks', async () => {
     line: '**Scope decision**',
     class: null,
   });
+
+  const withBody = await newRun('archon-build-queue', 'paused', {
+    wait: {
+      nodeId: 'ask',
+      kind: 'attention',
+      waitingSince: '2026-10-24T10:20:00.000Z',
+      message: '**Ship it?**\n- CI failed: lint',
+      pauseId: 'p2',
+      form: 'select',
+      options: [{ id: 'ship', label: 'Ship' }],
+    },
+  });
+  expect(await stopOf(withBody)).toMatchObject({ status: 'paused', line: '**Ship it?**' });
 });
 
 test('a run stop record that cannot be written never fails Archon’s write', async () => {
@@ -209,6 +235,70 @@ test('0031 gives runs that finished before it a stop record', async () => {
   }
 });
 
+test('0032 re-projects the stop line of runs that failed before it, and leaves a question’s line as it was', async () => {
+  const historical = await archonDb();
+  try {
+    await runMigrations({
+      files: migrationFiles.filter((f) => f.name < '0032_stop_line'),
+      db: historical,
+    });
+    const insert = async (status: string, metadata: object = {}) =>
+      String(
+        (
+          await historical.query(
+            `INSERT INTO public.remote_agent_workflow_runs (workflow_name, status, user_message, metadata, completed_at)
+             VALUES ('factory-app-check', $1::text, 'q', $2, CASE WHEN $1 IN ('running', 'paused') THEN NULL ELSE now() END)
+             RETURNING id`,
+            [status, JSON.stringify(metadata)],
+          )
+        )[0]?.id,
+      );
+    const failed = await insert('running');
+    await historical.query(
+      `INSERT INTO public.remote_agent_workflow_events (workflow_run_id, event_type, step_name, data)
+       VALUES ($1, 'node_failed', 'prepare', $2)`,
+      [
+        failed,
+        JSON.stringify(eventData('prepare', 'node_failed', NOW, STOP_LINE_CORPUS[0]?.[0] ?? '')),
+      ],
+    );
+    await historical.query(
+      `UPDATE public.remote_agent_workflow_runs SET status = 'failed', completed_at = now() WHERE id = $1`,
+      [failed],
+    );
+    const paused = await insert('paused', {
+      wait: {
+        nodeId: 'ask',
+        kind: 'attention',
+        waitingSince: '2026-10-24T10:20:00.000Z',
+        message: '**Ship it?**\n- CI failed: lint',
+        pauseId: 'p1',
+        form: 'select',
+        options: [{ id: 'ship', label: 'Ship' }],
+      },
+    });
+    const [old] = await historical.query('SELECT line FROM mc.run_stops WHERE run_id = $1', [
+      failed,
+    ]);
+    expect(old?.line).toBe("Script node 'prepare' failed [exit 1]: 28 | }");
+
+    await runMigrations({ files: migrationFiles, db: historical });
+    const [stop] = await historical.query(
+      `SELECT line, signature, mc.stop_signature(workflow_name, step_id, line) AS expected
+       FROM mc.run_stops WHERE run_id = $1`,
+      [failed],
+    );
+    expect(stop?.line).toBe('error: git merge --no-edit failed');
+    expect(stop?.signature).toBe(stop?.expected);
+    const [question] = await historical.query('SELECT line FROM mc.run_stops WHERE run_id = $1', [
+      paused,
+    ]);
+    expect(question?.line).toBe('**Ship it?**');
+  } finally {
+    await historical.close();
+  }
+});
+
 test('0031 records a run it cannot project in projection_errors and still finishes', async () => {
   const historical = await archonDb();
   try {
@@ -247,7 +337,7 @@ test('0031 records a run it cannot project in projection_errors and still finish
   }
 });
 
-test('applying 0031 a second time changes nothing', async () => {
+test('applying the run-stop migrations again changes nothing', async () => {
   const snapshot = async () => ({
     stops: await db.query('SELECT * FROM mc.run_stops ORDER BY run_id'),
     errors: await db.query(
@@ -259,7 +349,10 @@ test('applying 0031 a second time changes nothing', async () => {
   });
   const before = await snapshot();
   expect(before.stops.length).toBeGreaterThan(0);
-  const file = migrationFiles.find((f) => f.name.startsWith('0031_run_stops'));
-  await db.query(file?.sql ?? '');
+  for (const file of migrationFiles.filter((f) => f.name >= '0031_run_stops')) {
+    await db.query(file.sql);
+  }
   expect(await snapshot()).toEqual(before);
+  const [row] = await db.query('SELECT mc.stop_line($1) AS line', ['a: b\nerror: c']);
+  expect(row?.line).toBe('error: c');
 });

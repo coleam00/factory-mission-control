@@ -258,7 +258,7 @@ test('an owner question without a default says so and recommends no tile', () =>
 test('sweepLine says how long ago the manager swept, and drops the clause when it never did', () => {
   const now = Date.parse('2026-10-24T12:00:00Z');
   expect(sweepLine('f', new Date('2026-10-24T08:48:00Z'), now)).toBe(
-    'f. The manager swept 3h 12m ago. The manager put its recommendation first on each.',
+    'f. The manager swept 3h 12m ago and put its recommendation first on each.',
   );
   expect(sweepLine('f', null, now)).toBe('f. The manager put its recommendation first on each.');
 });

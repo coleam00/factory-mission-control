@@ -22,8 +22,9 @@ WITH base AS (
           WHERE o.run_id = l.run_id AND o.step_id IN ('pending', 'scope') AND o.status <> 'skipped')
     )) AS idle_poll,
     -- The work item a run holds: its claim, else its facts step's item, else its number input.
-    -- Restated in home-map.sql, health-workable.sql and board.sql's rounds (a live query may call no mc function),
-    -- db/queries/restated-rules.test.ts fails when they disagree.
+    -- Restated in home-map.sql, health-workable.sql, failure-groups.sql and board.sql's rounds, and in
+    -- scripts/live/attention.ts (a live query may call no mc function).
+    -- db/queries/restated-rules.test.ts fails when the SQL copies disagree, the live script is an independent oracle.
     coalesce(c.issue_number, (facts.output -> 'item' ->> 'number')::int, l.issue_number) AS issue_number,
     i.title AS issue_title, st.step_id AS stop_step, st.line AS stop_line
   FROM mc.laps l

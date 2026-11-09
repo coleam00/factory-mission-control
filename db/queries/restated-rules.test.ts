@@ -532,6 +532,79 @@ test('runs, home-map and health-workable resolve the same item for every source 
   }
 });
 
+test('failure-groups resolves a failure by a later run on the item every other screen holds', async () => {
+  const db = await migratedDb();
+  try {
+    await db.query(
+      `INSERT INTO mc.factories (name, repository, codebase, console) VALUES ('f', 'o/r', 'o/r', 'c')`,
+    );
+    for (let n = 1; n <= 3; n++) {
+      await db.query(
+        `INSERT INTO mc.issues (factory, number, title, state, url, created_at, updated_at)
+         VALUES ('f', $1, $2, 'open', 'u', now(), now())`,
+        [n, `t${n}`],
+      );
+    }
+    let k = 0;
+    const lap = async (
+      workflow: string,
+      status: 'failed' | 'completed',
+      day: string,
+      src: { claim?: number; facts?: number; input?: number },
+    ) => {
+      const id = `5eed0000-0000-4000-8000-${String(++k).padStart(12, '0')}`;
+      const at = `${day}T09:00:00Z`;
+      await db.query(
+        `INSERT INTO mc.laps (run_id, factory, workflow_name, status, started_at, completed_at, issue_number)
+         VALUES ($1, 'f', $2, $3, $4::timestamptz, $4::timestamptz, $5)`,
+        [id, workflow, status, at, src.input ?? null],
+      );
+      if (src.facts !== undefined) {
+        await db.query(
+          `INSERT INTO mc.lap_steps (run_id, step_id, status, started_at, output)
+           VALUES ($1, 'facts', 'completed', $2::timestamptz, $3)`,
+          [id, at, JSON.stringify({ item: { number: src.facts } })],
+        );
+      }
+      if (src.claim !== undefined) {
+        await db.query(
+          `INSERT INTO mc.claims (factory, issue_number, run_id, claimed_at, released_at)
+           VALUES ('f', $1, $2, $3::timestamptz, $3::timestamptz)`,
+          [src.claim, id, at],
+        );
+      }
+      if (status === 'failed') {
+        await db.query(
+          `INSERT INTO mc.lap_steps (run_id, step_id, status, completed_at, error)
+           VALUES ($1, 'prepare', 'failed', $2::timestamptz, $3)`,
+          [id, at, `error: ${workflow}`],
+        );
+      }
+    };
+    // The failed run holds claim 1, facts 2 and input 3 as listed; a later run completes on one item.
+    const cases = [
+      { workflow: 'claim-wins', src: { claim: 1, facts: 2, input: 3 }, done: 1, resolved: true },
+      { workflow: 'claim-only', src: { claim: 1, facts: 2, input: 3 }, done: 2, resolved: false },
+      { workflow: 'facts-wins', src: { facts: 2, input: 3 }, done: 2, resolved: true },
+      { workflow: 'facts-over-input', src: { facts: 2, input: 3 }, done: 3, resolved: false },
+      { workflow: 'input-only', src: { input: 3 }, done: 3, resolved: true },
+    ];
+    for (const c of cases) {
+      await lap(c.workflow, 'failed', '2026-10-20', c.src);
+      await lap(c.workflow, 'completed', '2026-10-21', { input: c.done });
+    }
+    const counted = (await db.query(sqlOf('failure-groups'), ['f'])).map((g) => g.workflow_name);
+    expect(counted.sort()).toEqual(
+      cases
+        .filter((c) => !c.resolved)
+        .map((c) => c.workflow)
+        .sort(),
+    );
+  } finally {
+    await db.close();
+  }
+}, 60_000);
+
 test('board rounds count a shipped run on the item every other screen holds', async () => {
   const db = await migratedDb();
   try {
@@ -621,8 +694,13 @@ test('board rounds count a shipped run on the item every other screen holds', as
   }
 }, 60_000);
 
+// The newest migration that replaces mc.project_run_stop is the projector Postgres runs.
+const projectorSql = () =>
+  migrationFiles.findLast((f) => /CREATE OR REPLACE FUNCTION mc\.project_run_stop/.test(f.sql))
+    ?.sql ?? '';
+
 test('mc.stop_class refines Health’s causes, agreeing with causeOf on every corpus line', async () => {
-  const sql = read('db', 'migrations', '0031_run_stops.sql');
+  const sql = projectorSql();
   // All three read "the run's latest failed step": the whole WHERE (bar the run-id correlation) and the
   // ORDER BY, copied because a live query cannot call the mc function. A pick whose WHERE is not exactly
   // `run_id = ... AND status = 'failed'` matches nothing and fails the test.
@@ -728,7 +806,9 @@ test('the runs queries read the pack idle value, round step address and app chec
 });
 
 test('the run-stop migration writes only classes and stopped statuses its CHECKs allow', () => {
+  // The class function and the table CHECK live in 0031; the guard is the live projector's.
   const sql = read('db', 'migrations', '0031_run_stops.sql');
+  const guardSql = projectorSql();
   const classFn = sql.match(/FUNCTION mc\.stop_class[\s\S]*?\$\$;/)?.[0] ?? '';
   const thens = [...classFn.matchAll(/THEN '([^']*)'/g)].map((m) => m[1] as string);
   expect(thens.length).toBeGreaterThan(0);
@@ -737,7 +817,7 @@ test('the run-stop migration writes only classes and stopped statuses its CHECKs
   const checked = quoted(
     sql.match(/status text NOT NULL CHECK \(status IN \(([^)]*)\)/)?.[1] ?? '',
   );
-  const guard = quoted(sql.match(/l\.status NOT IN \(([^)]*)\)/)?.[1] ?? '');
+  const guard = quoted(guardSql.match(/l\.status NOT IN \(([^)]*)\)/)?.[1] ?? '');
   expect(checked.length).toBeGreaterThan(0);
   expect(guard.sort()).toEqual(checked.sort());
 });
