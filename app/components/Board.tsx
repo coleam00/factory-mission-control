@@ -91,7 +91,7 @@ const MUTED_LINK =
 function MiniCard({ item }: { item: PipelineStage['items'][number] }): ReactElement {
   return (
     <Link to={item.to} data-work-item={item.number} className={TILE}>
-      <span className="flex items-center justify-between gap-2 font-mono text-[length:var(--v3-t-micro)] text-[color:var(--v3-fg-2)]">
+      <span className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1 whitespace-nowrap font-mono text-[length:var(--v3-t-micro)] text-[color:var(--v3-fg-2)]">
         #{item.number}
         <Pill compact state={BOARD_ITEM_STATE[item.status]} live={item.status === 'running'}>
           {item.status}

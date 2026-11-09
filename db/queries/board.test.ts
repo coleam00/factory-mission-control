@@ -398,3 +398,32 @@ test('a run that has just taken a work item is running on the Board, here on the
     await db.query('ROLLBACK');
   }
 });
+
+test('the board query stays fast when many runs have shipped', async () => {
+  await db.query('BEGIN');
+  try {
+    await db.query(`INSERT INTO mc.factories VALUES ('scale-factory','o/sf','o/sf','c')`);
+    await db.query(`INSERT INTO mc.issues (factory, number, title, state, url, created_at, updated_at)
+      SELECT 'scale-factory', n, 't' || n, 'open', 'u', now(), now() FROM generate_series(1, 200) n`);
+    await db.query(`INSERT INTO mc.laps (run_id, factory, workflow_name, status, started_at, issue_number)
+      SELECT ('00000000-0000-4000-9000-' || lpad(k::text, 12, '0'))::uuid, 'scale-factory',
+        'archon-loop', 'completed', now() - k * interval '1 minute', 1 + k % 200
+      FROM generate_series(1, 1000) k`);
+    await db.query(`INSERT INTO mc.lap_steps (run_id, step_id, status, started_at)
+      SELECT ('00000000-0000-4000-9000-' || lpad(k::text, 12, '0'))::uuid, s, 'completed', now()
+      FROM generate_series(1, 1000) k,
+        LATERAL (SELECT 'ship' AS s UNION ALL SELECT 'ship__n' || j FROM generate_series(1, 20) j) st`);
+    await db.query(`INSERT INTO mc.claims (factory, issue_number, run_id, claimed_at)
+      SELECT 'scale-factory', 1 + k % 200, ('00000000-0000-4000-9000-' || lpad(k::text, 12, '0'))::uuid, now()
+      FROM generate_series(1, 500) k`);
+    await db.query('ANALYZE');
+
+    const sql = queries.find(([n]) => n === 'board')?.[1] as string;
+    const plan = (await db.query(`EXPLAIN (ANALYZE, FORMAT JSON) ${sql}`, [
+      'scale-factory',
+    ])) as unknown as { 'QUERY PLAN': { 'Execution Time': number }[] }[];
+    expect(plan[0]['QUERY PLAN'][0]['Execution Time']).toBeLessThan(1000);
+  } finally {
+    await db.query('ROLLBACK');
+  }
+}, 60_000);
