@@ -75,6 +75,10 @@ export const takesFreeText = (form: string | null): boolean => form === 'message
 /** The longest answer text the action endpoint takes; the Attention textarea and the Manager's proposals stop at the same length. */
 export const ANSWER_TEXT_MAX = 2000;
 
+/** The one rule for answer text: 1 to ANSWER_TEXT_MAX characters. */
+export const isAnswerText = (text: unknown): text is string =>
+  typeof text === 'string' && text.length >= 1 && text.length <= ANSWER_TEXT_MAX;
+
 /**
  * Whether the owner's option or text answers the question, and which option the CLI is told to
  * choose: free text on a question without free-text form rides on its "Something else" option.

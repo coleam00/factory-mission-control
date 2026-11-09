@@ -15,7 +15,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { isAbsolute, join } from 'node:path';
 import type { Hono } from 'hono';
 import type { ActionBody, ActionRequest, ActionResult } from '../app/lib/actions';
-import { ANSWER_TEXT_MAX, parseChoices, resolveAnswer } from '../app/lib/attention';
+import { ANSWER_TEXT_MAX, isAnswerText, parseChoices, resolveAnswer } from '../app/lib/attention';
 import { isRunId } from '../app/lib/one-lap';
 import { type Db, openDb } from '../scripts/lib/db';
 import type { Env } from './check-env';
@@ -121,7 +121,7 @@ export function parseActionBody(body: unknown): ActionBody | string {
   }
   if (!boundedString(body.occurrence, 200)) return 'occurrence must be a string';
   if (!nullOrBounded(body.option, 200)) return 'option must be an option id or null';
-  if (!nullOrBounded(body.text, ANSWER_TEXT_MAX))
+  if (body.text !== null && !isAnswerText(body.text))
     return `text must be 1-${ANSWER_TEXT_MAX} characters or null`;
   if ((body.option === null) === (body.text === null)) return 'send exactly one of option and text';
   return {

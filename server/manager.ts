@@ -10,7 +10,7 @@ import {
 } from '@anthropic-ai/claude-agent-sdk';
 import type { Server } from 'bun';
 import type { Context, Hono } from 'hono';
-import { ANSWER_TEXT_MAX, parseChoices, resolveAnswer } from '../app/lib/attention';
+import { isAnswerText, parseChoices, resolveAnswer } from '../app/lib/attention';
 import { isRunId, lapHref } from '../app/lib/one-lap';
 import { workItemHref } from '../app/lib/work-item';
 import { type Db, openDb } from '../scripts/lib/db';
@@ -415,12 +415,7 @@ async function proposalEvent(
     const occurrence = String(row.occurrence_id);
     const options = parseChoices(String(row.options));
     const text = raw.option === undefined ? (raw.text ?? null) : null;
-    if (
-      raw.option === undefined &&
-      (text === null || text.length < 1 || text.length > ANSWER_TEXT_MAX)
-    ) {
-      return undefined;
-    }
+    if (raw.option === undefined && !isAnswerText(text)) return undefined;
     const option = raw.option ?? null;
     if ('error' in resolveAnswer({ form: String(row.form), options }, { option, text })) {
       return undefined;
