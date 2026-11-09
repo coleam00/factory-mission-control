@@ -191,7 +191,7 @@ export const MAP_CHIP_STATE: Record<'here' | 'queued' | 'failing' | 'waiting' | 
   merged: 'done',
 };
 
-/** An Unstick card: work waiting on something else is idle, work waiting for a slot is waiting on the owner's answer. */
+/** An Unstick card: work waiting on something else is idle, work waiting for a slot is Needs you because the owner resumes it once a slot frees. */
 export const UNSTICK_STATE: Record<UnstickRow['kind'], State> = {
   blocked: 'idle',
   parked: 'idle',
