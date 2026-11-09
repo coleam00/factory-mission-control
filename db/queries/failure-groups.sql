@@ -5,7 +5,8 @@ WITH f AS (
 ), last AS (SELECT max(f.stopped_day) AS day FROM f)
 SELECT g.signature, g.workflow_name, g.step_id,
   CASE WHEN g.classes > 1 THEN 'mixed' ELSE latest.class END AS class, g.failures, g.first_at, g.last_at,
-  latest.run_id AS latest_run_id, latest.line, last.day AS last_day, d.daily
+  latest.run_id AS latest_run_id, latest.line, last.day AS last_day, d.daily,
+  (SELECT console FROM mc.factories WHERE name = $1) AS console
 FROM (
   SELECT f.signature, min(f.workflow_name) AS workflow_name, min(f.step_id) AS step_id,
     count(DISTINCT coalesce(f.class, ''))::int AS classes, count(*)::int AS failures, min(f.stopped_at) AS first_at,

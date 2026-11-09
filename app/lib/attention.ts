@@ -1,11 +1,10 @@
 /**
- * The Decisions screen's attention items (PRD 4.9): `db/queries/attention-items.sql`'s rows as the
+ * The Attention page's attention items (PRD 4.9): `db/queries/attention-items.sql`'s rows as the
  * runs waiting on a person, longest-waiting first. Pure, no React; the browser's clock gives the
  * wait. Archon records the question as one message and no structured recommendation, so the title
  * and the question are read from the layout the pack's queues render. `db/queries/decide.sql` has
  * the recommendation, confidence, option descriptions, item number and occurrence id projected
- * (migration 0031); `recommendedChoice` stays for the Decisions screen and the map until the
- * Attention home replaces them.
+ * (migration 0031); `recommendedChoice` stays for the map.
  */
 
 /** One row of attention-items.sql. Timestamps are the database's; the browser computes elapsed times. */
@@ -55,6 +54,10 @@ export interface UnstickRow {
   waits_on: string;
   since: Date | null;
   action: (typeof UNSTICK_ACTIONS)[number];
+  /** The factory's `owner/repo`, for the command that moves the item. */
+  repository: string;
+  /** The factory's Archon console, for a run link. */
+  console: string;
 }
 
 export interface AttentionItem extends Omit<AttentionRow, 'options' | 'labels'> {
@@ -146,6 +149,14 @@ export function recommendedChoice(
 ): string | null {
   const id = /\*\*Recommendation: `([^`]+)`\*\*/.exec(message)?.[1];
   return id !== undefined && options.some((option) => option.id === id) ? id : null;
+}
+
+/** The reason the "Recommendation" line gives, without its choice or its `(... confidence).` lead; '' when none. */
+export function recommendationReason(message: string): string {
+  const paragraph = paragraphs(message).find((p) => /^\*\*Recommendation: `[^`]+`\*\*/.test(p));
+  if (paragraph === undefined) return '';
+  const rest = paragraph.replace(/^\*\*Recommendation: `[^`]+`\*\*/, '');
+  return plain(rest.replace(/^\s*\([^)]*confidence\)\.?/, ''));
 }
 
 /**

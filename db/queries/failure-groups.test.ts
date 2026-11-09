@@ -29,6 +29,11 @@ test('failure-groups returns the factory’s failures as groups with 14 daily co
     [FACTORY],
   );
   expect(groups.length).toBeGreaterThan(0);
+  const [{ console: factoryConsole } = { console: null }] = await db.query(
+    'SELECT console FROM mc.factories WHERE name = $1',
+    [FACTORY],
+  );
+  for (const g of groups) expect(g.console).toBe(factoryConsole);
   for (const g of groups) expect((g.daily as number[]).length).toBe(14);
   expect(groups.reduce((n, g) => n + Number(g.failures), 0)).toBe(Number(failed));
   const [{ inWindow } = { inWindow: 0 }] = await db.query(

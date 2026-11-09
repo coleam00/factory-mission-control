@@ -4,8 +4,7 @@ import type { Deps } from '../lib/cli';
 import type { Db, Row } from '../lib/db';
 import { screenAgainstSql, writeToScreen } from './shared';
 
-const OWNER = '[data-live="owner-queue"]';
-const ITEM = `${OWNER} [data-owner-item]`;
+const ITEM = 'main [data-owner-item]';
 
 export interface ShownOwnerItem {
   id: string | null;
@@ -27,19 +26,16 @@ export const itemsOnScreen = `[...document.querySelectorAll('${ITEM}')].map((li)
   href: li.querySelector('a[data-thread]')?.getAttribute('href') ?? null,
   options: [...li.querySelectorAll('[data-option]')].map((o) => ({
     key: o.getAttribute('data-option'),
-    text: o.children[1]?.textContent ?? '',
+    text: o.getAttribute('data-option-text') ?? '',
     isDefault: o.hasAttribute('data-default'),
   })),
   recommendation: li.querySelector('[data-recommendation]')?.textContent ?? null,
-  defaultOption: li.querySelector('[data-default-option]')?.textContent ?? null,
-  defaultAt: li.querySelector('[data-default-at]')?.getAttribute('data-default-at') ?? null,
+  defaultOption: li.getAttribute('data-default-option'),
+  defaultAt: li.getAttribute('data-default-at'),
   waitingSince: li.getAttribute('data-waiting-since'),
   approximate: li.hasAttribute('data-approximate'),
   waited: li.querySelector('[data-waited]')?.textContent ?? null,
 }))`;
-
-/** Controls that could send something: the owner screen has none, only links to GitHub. */
-export const controlsOnScreen = `[...document.querySelectorAll('main form, main button, main input, main select, main textarea')].map((el) => el.outerHTML.slice(0, 120))`;
 
 /** The seed's open needs-owner issues, read apart from db/queries/owner-queue.sql. */
 export const OPEN_NEEDS_OWNER_SQL = `SELECT i.number, i.title, i.url, i.updated_at, l.labeled_at
