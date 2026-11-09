@@ -3,6 +3,7 @@ import type { LapMapRow } from './lap-graph';
 import type { OneLapRow, StepAttemptRow } from './one-lap';
 import {
   managerRead,
+  collapseSkipped,
   resumeEstimate,
   runCost,
   runTimeline,
@@ -126,7 +127,7 @@ test('a skipped body step with no start stays in the round whose event it ended 
   expect(roundSizes(rows)).toEqual([3, 3]);
 });
 
-test('resuming re-runs the earlier round from the failed step on, else the step alone', () => {
+test('resuming re-runs the earlier round from the failed step on; with no earlier round there is no cost', () => {
   const rows = failedBuild();
   const failed = rows.find((r) => r.status === 'failed') as StepAttemptRow;
   expect(resumeEstimate(failed, rows, runTimeline(rows))).toEqual({
@@ -137,13 +138,11 @@ test('resuming re-runs the earlier round from the failed step on, else the step 
   const top = [step('build', { status: 'failed', cost_usd: '3' })];
   expect(resumeEstimate(top[0] as StepAttemptRow, top, runTimeline(top))).toEqual({
     step: 'build',
-    cost: 3,
+    cost: null,
   });
-  const free = [step('build', { status: 'failed', cost_usd: null })];
-  expect(resumeEstimate(free[0] as StepAttemptRow, free, runTimeline(free)).cost).toBeNull();
 });
 
-test('a skipped step says why: a failure before it, its map condition, its trigger rule, or nothing', () => {
+test('a skipped step says why: a failure before it, its map condition, its trigger rule, or nothing (null)', () => {
   const rows = failedBuild();
   expect(skipReason(rows.at(-1) as StepAttemptRow, rows, [])).toBe('upstream failed');
   const alone = [step('land', { status: 'skipped' })];
@@ -162,7 +161,17 @@ test('a skipped step says why: a failure before it, its map condition, its trigg
   expect(skipReason(row, alone, [node({ trigger_rule: 'all_success' })])).toBe(
     'trigger rule all_success',
   );
-  expect(skipReason(row, alone, [])).toBe('skipped');
+  expect(skipReason(row, alone, [])).toBeNull();
+});
+
+test('consecutive skipped items collapse into one group; others pass through', () => {
+  const kinds = ['ran', 'skip', 'skip', 'ran', 'skip'];
+  expect(collapseSkipped(kinds, (kind) => kind === 'skip')).toEqual([
+    'ran',
+    { skipped: ['skip', 'skip'] },
+    'ran',
+    { skipped: ['skip'] },
+  ]);
 });
 
 test('a run is titled for what it is', () => {
@@ -200,6 +209,10 @@ test("the manager's read of a failure names the step, the resume and whether it 
     resumeFrom: `${GROUP}.pr__prepare`,
     resumeCost: 2.25,
   });
+  const priced = [step('build', { status: 'failed', cost_usd: '0.4' })];
+  expect(text(managerRead(stopped, priced, runTimeline(priced)))).toContain(
+    ' Resume re-runs build and what follows. This',
+  );
   expect(text(managerRead({ ...stopped, stop_class: 'code' }, rows, timeline))).toEndWith(
     ' This is a code failure.',
   );

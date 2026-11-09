@@ -96,7 +96,7 @@ test('the head says what the run is, its state, workflow, pull request, time, co
   expect(html).toContain('href="https://github.com/coleam00/queue-factory/pull/496"');
   expect(html).toContain('data-run-cost="13.75"');
   expect(html).toContain('data-run-tokens="7000000"');
-  expect(html).toContain('1:53:00 · $13.75 · 7,000,000 tokens in');
+  expect(html).toContain('1h 53m · $13.75 · 7,000,000 tokens in');
   expect(html).toContain('href="/f/queue-factory/runs"');
 });
 
@@ -140,9 +140,18 @@ test('the timeline is the default tab: round 1 folded, round 2 open, the failure
   expect(html.match(/data-error-panel/g)).toHaveLength(1);
   expect(html).toContain(`>Resume from here</a>`);
   expect(html).toMatch(/<button[^>]*max-\[759\.98px\]:hidden[^>]*>Ask manager<\/button>/);
-  expect(html).toContain('data-skip-reason="upstream failed"');
-  expect(html).toContain('skipped: upstream failed');
+  expect(html).toContain('data-skipped-count="1"');
+  expect(html).toContain('1 skipped');
+  expect(html).not.toContain('skipped: ');
+  expect(html).not.toContain('data-timeline-step="ship__deliver__rounds.review__result"');
   expect(html).not.toContain('data-step-attempt');
+});
+
+test('an expanded skipped group names the recorded reason and never reads "skipped: skipped"', () => {
+  const html = render({ skippedOpen: true });
+  expect(html).toContain('data-timeline-step="ship__deliver__rounds.review__result"');
+  expect(html).toContain('upstream failed');
+  expect(html).not.toContain('skipped: ');
 });
 
 test('the Steps tab keeps the attempt rows and the run cost the live phase reads', () => {
