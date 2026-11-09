@@ -2,6 +2,8 @@
  * The work item page's rows, as `db/queries/work-item.sql` returns them, and the timeline the
  * browser makes of them: one event per fact, oldest first. Pure, no React.
  */
+import { attentionTitle } from './attention';
+import { errorHeadline } from './error-text';
 import { cardForStep, FACTORY_MAP } from '../map/factory-map';
 import { deepestStep } from '../map/live';
 import { formatCost, formatElapsed } from './format';
@@ -9,6 +11,7 @@ import { stepPath } from './lap-graph';
 import { costOf, durationOf, stepLabel } from './laps';
 import { consoleUrl, isOldLoop, lapHref } from './one-lap';
 import { LAP_WORKFLOWS } from './scorecard';
+import type { StopClass } from './failures';
 import {
   CHECK_OVERALL_STATE,
   GATE_STATE,
@@ -80,6 +83,10 @@ export interface WorkItemRow {
   title: string | null;
   url: string | null;
   console: string | null;
+  /** A run row's stop record (mc.run_stops): the step it stopped at, its line and class. */
+  stop_step: string | null;
+  stop_line: string | null;
+  stop_class: StopClass | null;
 }
 
 export interface SweepDecision {
@@ -99,6 +106,17 @@ export function workItemHref(factory: string, number: number): string {
 
 export const NO_REASON = 'No reason was recorded.';
 
+/** The question a stop line holds, without the wholly bold title its message starts with. */
+export const questionOf = (line: string): string => attentionTitle(line) ?? line;
+
+/** A failed run's stop: its record, else the failed step and the headline of its error. */
+function failedStop(row: WorkItemRow): TimelineEvent['stop'] {
+  return {
+    step: row.stop_step ?? row.failed_step,
+    line: row.stop_line ?? (row.error === null ? NO_REASON : errorHeadline(row.error).headline),
+  };
+}
+
 export type RunLink = { kind: 'lap'; to: string };
 
 export interface TimelineEvent {
@@ -111,6 +129,8 @@ export interface TimelineEvent {
   run: { id: string; link: RunLink } | null;
   /** The map card a running round is on now. */
   stage: string | null;
+  /** Rule 3: where a failed or asking run stopped and the line it left, else null. */
+  stop: { step: string | null; line: string } | null;
 }
 
 export interface WorkItemHeader {
@@ -199,7 +219,7 @@ export function workItemHeader(rows: readonly WorkItemRow[]): WorkItemHeader | n
 }
 
 /** "Round k: " numbered per workflow, oldest run first. */
-function roundNumbers(rows: readonly WorkItemRow[]): Map<string, number> {
+export function roundNumbers(rows: readonly WorkItemRow[]): Map<string, number> {
   const numbers = new Map<string, number>();
   const seen = new Map<string, number>();
   const rounds = rows
@@ -213,7 +233,7 @@ function roundNumbers(rows: readonly WorkItemRow[]): Map<string, number> {
   return numbers;
 }
 
-function stageOf(row: WorkItemRow): { id: string; title: string } | null {
+export function stageOf(row: WorkItemRow): { id: string; title: string } | null {
   const step = deepestStep(row.steps);
   if (step === undefined || row.workflow === null) return null;
   const card = cardForStep(FACTORY_MAP, row.workflow, stepPath(step));
@@ -226,7 +246,8 @@ function intakeEvent(row: WorkItemRow, at: Date, base: Base): TimelineEvent {
       ...base,
       at,
       tone: RUN_STATE.failed,
-      text: `Intake failed: ${row.error ?? NO_REASON}`,
+      text: 'Intake failed',
+      stop: failedStop(row),
     };
   if (row.status === 'cancelled')
     return { ...base, at, tone: RUN_STATE.cancelled, text: 'Intake cancelled' };
@@ -254,7 +275,7 @@ function intakeEvent(row: WorkItemRow, at: Date, base: Base): TimelineEvent {
   };
 }
 
-type Base = Pick<TimelineEvent, 'key' | 'kind' | 'detail' | 'run' | 'stage'>;
+type Base = Pick<TimelineEvent, 'key' | 'kind' | 'detail' | 'run' | 'stage' | 'stop'>;
 
 const NO_BASE = (kind: TimelineEvent['kind']): Base => ({
   key: '',
@@ -262,6 +283,7 @@ const NO_BASE = (kind: TimelineEvent['kind']): Base => ({
   detail: null,
   run: null,
   stage: null,
+  stop: null,
 });
 
 function roundEvent(row: WorkItemRow, n: number, at: Date, base: Base): TimelineEvent {
@@ -278,12 +300,22 @@ function roundEvent(row: WorkItemRow, n: number, at: Date, base: Base): Timeline
       tone: RUN_STATE.failed,
       text: `${label} failed${
         row.failed_step === null ? '' : ` in ${failedCard?.title ?? stepLabel(row.failed_step)}`
-      }: ${row.error ?? NO_REASON}`,
+      }`,
+      stop: failedStop(row),
     };
   if (row.status === 'cancelled')
     return { ...base, at, tone: RUN_STATE.cancelled, text: `${label}: cancelled` };
   if (row.waiting === true)
-    return { ...base, at, tone: 'needs-you', text: `${label}: waiting for your answer` };
+    return {
+      ...base,
+      at,
+      tone: 'needs-you',
+      text: `${label}: waiting for your answer`,
+      stop: {
+        step: row.stop_step,
+        line: row.stop_line === null ? 'Waiting on you' : `Asking: ${questionOf(row.stop_line)}`,
+      },
+    };
   if (row.completed_at === null)
     return {
       ...base,
@@ -455,6 +487,7 @@ export function workItemTimeline(rows: readonly WorkItemRow[], factory: string):
       detail: null,
       run: null,
       stage: null,
+      stop: null,
     });
   for (const row of rows) {
     if ((row.kind !== 'run' && row.kind !== 'sweep') || row.run_id === null) continue;
@@ -465,6 +498,7 @@ export function workItemTimeline(rows: readonly WorkItemRow[], factory: string):
       detail: null,
       run: link === null ? null : { id: row.run_id as string, link },
       stage: null,
+      stop: null,
     });
     if (row.kind === 'sweep') {
       events.push(...sweepEvents(row, base));

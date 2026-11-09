@@ -42,10 +42,6 @@ import { Timeline, TimelineRow } from './ui/Timeline';
 const LINK =
   'underline decoration-[color:var(--v3-line-2)] underline-offset-2 hover:text-[color:var(--v3-fg)]';
 
-/** Whether an address names a run id at all: Archon's run ids are UUIDs. */
-export const isRunId = (runId: string) =>
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(runId);
-
 /** The run an address names is not in this factory: the id as typed, and nothing under it. */
 export function NoRun({ runId }: { runId: string }): ReactElement {
   return (
@@ -486,14 +482,12 @@ function RunTimeline({
         nested={nested}
         time={reason === null ? seconds(elapsed) : `skipped: ${reason}`}
         cost={reason === null ? money(cost) : undefined}
-        attrs={{
-          'data-timeline-step': row.step_id,
-          'data-status': row.status,
-          'data-started': row.started_at?.toISOString(),
-          'data-duration-ms': row.duration_ms ?? undefined,
-          'data-cost': cost ?? undefined,
-          'data-skip-reason': reason ?? undefined,
-        }}
+        data-timeline-step={row.step_id}
+        data-status={row.status}
+        data-started={row.started_at?.toISOString()}
+        data-duration-ms={row.duration_ms?.toString()}
+        data-cost={cost?.toString()}
+        data-skip-reason={reason ?? undefined}
       >
         {row.status === 'failed' ? <FailedStep row={row} consoleHref={consoleHref} /> : null}
       </TimelineRow>
@@ -519,7 +513,7 @@ function RunTimeline({
             name={entry.group}
             hint={`loop · ${entry.rounds.length} ${entry.rounds.length === 1 ? 'round' : 'rounds'}`}
             time={seconds(span)}
-            attrs={{ 'data-loop': entry.group }}
+            data-loop={entry.group}
           />,
           ...entry.rounds.flatMap((round) =>
             round.failed || round.running || round.n === entry.rounds.length ? (
@@ -545,11 +539,9 @@ function FoldedRound({ round }: { round: Round }): ReactElement {
       hint={round.rows.map((row) => bodyOf(row.step_id)?.body ?? row.step_id).join(' → ')}
       time={seconds(round.durationMs === null ? null : round.durationMs / 1000)}
       cost={money(round.cost)}
-      attrs={{
-        'data-round': round.n,
-        'data-round-cost': round.cost ?? undefined,
-        'data-duration-ms': round.durationMs ?? undefined,
-      }}
+      data-round={String(round.n)}
+      data-round-cost={round.cost?.toString()}
+      data-duration-ms={round.durationMs?.toString()}
     />
   );
 }

@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, expect, test } from 'bun:test';
 import { NO_REASON, type WorkItemRow, workItemTimeline } from '../../app/lib/work-item';
+import { workItemNote } from '../../app/lib/work-item-note';
 import { QUEUE_RETURNED } from '../../scripts/fixture/seed';
 import { MARKER } from '../../scripts/fixture/seed-report';
 import type { Db } from '../../scripts/lib/db';
@@ -122,4 +123,20 @@ test("a build run's cost is its non-aggregate steps, not its loop roll-up on top
     );
     expect(rollup.c).toBe(1.5);
   }
+});
+
+test("a failed run's stop record reaches the page: mission-control #9 is failed, by configuration, with a stop line on every failed round", async () => {
+  const rows = await rowsOf(db, 'mission-control', 9);
+  const newest = rows
+    .filter((r) => r.kind === 'run')
+    .sort((a, b) => (b.started_at?.getTime() ?? 0) - (a.started_at?.getTime() ?? 0))[0];
+  expect(newest?.stop_class).toBe('config');
+  const note = workItemNote(rows, null, []);
+  expect(note?.state).toBe('failed');
+  expect(note?.parts.at(-1)?.text).toContain('It is configuration');
+  const failed = workItemTimeline(rows, 'mission-control').filter(
+    (e) => e.kind === 'round' && e.tone === 'failed',
+  );
+  expect(failed.length).toBeGreaterThan(0);
+  for (const e of failed) expect(e.stop).not.toBeNull();
 });

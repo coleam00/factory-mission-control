@@ -50,8 +50,8 @@ export type NoticeKind = Extract<ManagerEvent, { type: 'notice' }>['kind'];
 export type ProposalAction = Extract<ManagerEvent, { type: 'proposal' }>['action'];
 export type LinkKind = Extract<ManagerEvent, { type: 'link' }>['kind'];
 
-const LINK_KINDS: Record<LinkKind, true> = { run: true, item: true };
-const PROPOSAL_ACTIONS: Record<ProposalAction, true> = { answer: true, resume: true };
+export const LINK_KINDS: Record<LinkKind, true> = { run: true, item: true };
+export const PROPOSAL_ACTIONS: Record<ProposalAction, true> = { answer: true, resume: true };
 
 function isLinkKind(value: unknown): value is LinkKind {
   return typeof value === 'string' && Object.hasOwn(LINK_KINDS, value);
@@ -60,6 +60,17 @@ function isLinkKind(value: unknown): value is LinkKind {
 function isProposalAction(value: unknown): value is ProposalAction {
   return typeof value === 'string' && Object.hasOwn(PROPOSAL_ACTIONS, value);
 }
+
+export const PLACES = ['attention', 'factory', 'board', 'runs', 'run', 'work', 'step'] as const;
+
+export interface ChatRequest {
+  factory: string;
+  context: { place: (typeof PLACES)[number]; run?: string; item?: number };
+  messages: { role: 'owner' | 'manager'; text: string }[];
+}
+
+/** The statuses of a run the owner can resume: the prompt names them and the proposal check admits them. */
+export const RESUMABLE_STATUSES = ['failed', 'paused'] as const;
 
 /** At most this many runs in one `runs` event. */
 export const MAX_RUNS = 8;

@@ -1,6 +1,7 @@
 import type { ReactElement } from 'react';
 import { useParams } from 'react-router';
-import { isRunId, NoRun, OneRun } from '../components/OneRun';
+import { NoRun, OneRun } from '../components/OneRun';
+import { isRunId } from '../lib/one-lap';
 
 export default function Run(): ReactElement {
   const { factory, runId = '' } = useParams();

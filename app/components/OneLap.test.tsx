@@ -1,12 +1,12 @@
 import { expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { createMemoryRouter, RouterProvider } from 'react-router';
-import type { CheckLineRow, OneLapRow, StepAttemptRow } from '../lib/one-lap';
+import { type CheckLineRow, isRunId, type OneLapRow, type StepAttemptRow } from '../lib/one-lap';
 import Lap from '../routes/f.$factory.runs.$runId';
 import { type LapMapRow, lapGraph } from '../lib/lap-graph';
 import { StepPanel } from './LapGraph';
 import { CheckList, LapStepsBody, StepList } from './OneLap';
-import { isRunId, NoRun, RunView, type RunViewProps } from './OneRun';
+import { NoRun, RunView, type RunViewProps } from './OneRun';
 
 /** The run page on its Steps tab with no steps: the head and, for an old loop, review and gate. */
 function LapHeaderBody({

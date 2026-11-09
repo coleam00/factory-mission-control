@@ -1,9 +1,10 @@
 import { type ReactElement, useState } from 'react';
 import { Link } from 'react-router';
+import type { UnstickRow } from '../lib/attention';
 import { type BoardRow, type ItemOnBoard, itemOnBoard } from '../lib/board';
 import type { HealthWorkableRow } from '../lib/health';
 import type { OwnerQueueRow } from '../lib/owner-queue';
-import { stateColor } from '../lib/states';
+import { stateInk } from '../lib/states';
 import {
   type TimelineEvent,
   type WorkItemHeader,
@@ -11,13 +12,15 @@ import {
   workItemHeader,
   workItemTimeline,
 } from '../lib/work-item';
+import { type WorkItemNote, workItemNote } from '../lib/work-item-note';
 import { AWAITED, Feed, overall, type Source } from '../live/Feed';
 import type { HomeMapRow } from '../map/live';
 import { EmptyState } from './EmptyState';
-
-const GHOST =
-  'rounded-[6px] border border-border bg-surface px-2.5 py-1 text-[12px] text-text-primary hover:border-border-bright';
-const LINK = 'underline decoration-border-bright underline-offset-2 hover:decoration-text-primary';
+import { buttonClass } from './ui/Button';
+import { Card } from './ui/Card';
+import { ManagerNote } from './ui/ManagerNote';
+import { Pill } from './ui/StateDot';
+import { Timeline, TimelineRow } from './ui/Timeline';
 
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const clock = (at: Date) => at.toISOString().slice(11, 16);
@@ -31,119 +34,160 @@ function whenOf(at: Date, before: Date | null): string {
 
 export function NoWorkItem({ number }: { number: string }): ReactElement {
   return (
-    <p data-no-work-item className="text-sm text-text-secondary [overflow-wrap:anywhere]">
+    <p data-no-work-item className="text-sm text-[color:var(--v3-fg-2)] [overflow-wrap:anywhere]">
       No work item #{number} in this factory.
     </p>
   );
 }
 
+const RUN_LINK = 'text-[color:var(--v3-you-2)] hover:underline';
+
 function Row({ event, before }: { event: TimelineEvent; before: Date | null }): ReactElement {
-  const { run } = event;
+  const { run, stop } = event;
   return (
-    <li
+    <TimelineRow
+      prose
+      state={event.tone}
+      name={event.text}
+      time={whenOf(event.at, before)}
+      dateTime={event.at.toISOString()}
       data-event={event.kind}
       data-tone={event.tone}
       data-run={run?.id}
       data-stage={event.stage ?? undefined}
-      className="grid grid-cols-[86px_14px_1fr] items-baseline gap-x-3 py-1.5"
     >
-      <time
-        dateTime={event.at.toISOString()}
-        className="text-right font-mono text-[12px] text-text-secondary"
-      >
-        {whenOf(event.at, before)}
-      </time>
-      <span
-        aria-hidden="true"
-        className={`h-[9px] w-[9px] rounded-full ${
-          event.tone === 'running' ? 'motion-safe:animate-pulse' : ''
-        }`}
-        style={{ background: stateColor(event.tone) }}
-      />
-      <span className="min-w-0 text-[13px] text-text-primary [overflow-wrap:anywhere]">
-        {event.text}
-        {run === null ? null : (
-          <Link to={run.link.to} className={`ml-2 text-[12px] text-text-secondary ${LINK}`}>
-            Open the run
-          </Link>
-        )}
-        {event.detail === null || event.detail === '' ? null : (
-          <span className="block text-[12px] text-text-secondary">{event.detail}</span>
-        )}
-      </span>
-    </li>
+      {run === null ? null : (
+        <Link to={run.link.to} className={`text-[length:var(--v3-t-meta)] ${RUN_LINK}`}>
+          Open the run
+        </Link>
+      )}
+      {event.detail === null || event.detail === '' ? null : (
+        <div className="text-[length:var(--v3-t-meta)] text-[color:var(--v3-fg-2)]">
+          {event.detail}
+        </div>
+      )}
+      {stop === null ? null : (
+        <div
+          data-stop-line
+          className="text-[length:var(--v3-t-meta)] [overflow-wrap:anywhere]"
+          style={{ color: stateInk(event.tone) }}
+        >
+          {stop.step === null ? null : (
+            <>
+              <span className="font-mono">{stop.step}</span>
+              {' · '}
+            </>
+          )}
+          {stop.line}
+        </div>
+      )}
+    </TimelineRow>
   );
 }
 
-/** The work item once its rows have arrived: the header panel and the timeline under it. */
+/** The primary action: a console link until #521's endpoint can answer or resume in place. */
+function PrimaryLink({ action }: { action: NonNullable<WorkItemNote['action']> }): ReactElement {
+  return (
+    <a
+      href={action.href}
+      data-primary-action={action.kind}
+      data-action-run={action.runId}
+      data-action-step={action.step ?? undefined}
+      className={buttonClass('primary')}
+    >
+      {action.label}
+    </a>
+  );
+}
+
+/** The work item once its rows have arrived: the head, the Manager's note and the timeline. */
 export function WorkItemBody({
   header,
   events,
   board,
+  note,
 }: {
   header: WorkItemHeader;
   events: readonly TimelineEvent[];
   board: ItemOnBoard | null;
+  note: WorkItemNote | null;
 }): ReactElement {
   const column = board?.column ?? null;
   return (
-    <div className="rounded-[10px] border border-border bg-surface">
-      <div className="flex flex-wrap items-start gap-3 border-b border-border px-4 py-3">
-        <div className="min-w-0 flex-1">
-          <div className="font-mono text-[11px] font-semibold uppercase tracking-[0.05em] text-text-secondary">
+    <div className="grid gap-4">
+      <div className="flex flex-wrap items-start gap-3">
+        <div className="min-w-0 flex-1 basis-64">
+          <div className="font-mono text-[length:var(--v3-t-micro)] font-semibold uppercase tracking-[0.05em] text-[color:var(--v3-fg-2)]">
             work item #{header.number}
           </div>
-          <h1 className="text-[15px] font-semibold text-text-primary">{header.title}</h1>
-          <div className="mt-1.5 flex flex-wrap gap-1.5">
-            {column === null ? null : (
-              <span
-                data-column={column.id}
-                className="rounded-[5px] bg-surface-hover px-1.5 py-0.5 font-mono text-[11px]"
-                style={{
-                  color: column.role ? `var(--role-${column.role})` : 'var(--text-primary)',
-                }}
-              >
-                {column.title}
-              </span>
+          <h1 className="m-0 text-[length:var(--v3-t-title)] font-bold text-[color:var(--v3-fg)] [overflow-wrap:anywhere]">
+            {header.title}
+          </h1>
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {note === null ? null : (
+              <Pill state={note.state} data-item-state={note.state}>
+                {note.pill}
+              </Pill>
             )}
+            {column === null ? null : <Pill data-column={column.id}>{column.title}</Pill>}
             {(board?.workOrders ?? []).map((name) => (
-              <span
-                key={name}
-                data-chip="order"
-                className="rounded-[5px] bg-surface-hover px-1.5 py-0.5 font-mono text-[11px] text-text-secondary"
-              >
+              <Pill key={name} data-chip="order">
                 {name}
-              </span>
+              </Pill>
             ))}
           </div>
         </div>
-        <a href={header.issueUrl} className={GHOST}>
-          Issue
-        </a>
-        {board?.prUrl == null ? null : (
-          <a href={board.prUrl} className={GHOST}>
-            PR #{board.pr}
+        <div className="flex flex-wrap items-center gap-2">
+          {note?.action == null ? null : <PrimaryLink action={note.action} />}
+          <a href={header.issueUrl} className={buttonClass('secondary')}>
+            Issue
           </a>
-        )}
-        {header.latestRunHref === null ? null : (
-          <a href={header.latestRunHref} className={GHOST}>
-            Runs in console
-          </a>
-        )}
+          {board?.prUrl == null ? null : (
+            <a href={board.prUrl} className={buttonClass('secondary')}>
+              PR #{board.pr}
+            </a>
+          )}
+          {header.latestRunHref === null ? null : (
+            <a href={header.latestRunHref} className={buttonClass('secondary')}>
+              Runs in console
+            </a>
+          )}
+        </div>
       </div>
-      <ol data-timeline className="px-4 py-2">
-        {events.map((event, i) => (
-          <Row key={event.key} event={event} before={events[i - 1]?.at ?? null} />
-        ))}
-      </ol>
-      <p
-        data-timeline-gap
-        className="border-t border-border px-4 py-2 text-[12px] text-text-secondary"
-      >
-        This timeline does not hold app check lines for build-queue rounds, review verdicts past
-        each round's review and re-review, or owner answers on old-loop runs yet. A gap here does
-        not mean nothing happened.
-      </p>
+      {note === null ? null : (
+        <Card data-manager-note data-note-state={note.state} className="px-4 py-3">
+          <ManagerNote>
+            {note.parts.map((part, i) =>
+              part.bold ? (
+                // biome-ignore lint/suspicious/noArrayIndexKey: a note is a fixed sequence of parts
+                <b key={i} className={part.mono ? 'font-mono' : undefined}>
+                  {part.text}
+                </b>
+              ) : (
+                // biome-ignore lint/suspicious/noArrayIndexKey: a note is a fixed sequence of parts
+                <span key={i}>{part.text}</span>
+              ),
+            )}
+          </ManagerNote>
+        </Card>
+      )}
+      <Card>
+        <div data-timeline className="px-4 py-2">
+          <Timeline>
+            {events.map((event, i) => (
+              <Row key={event.key} event={event} before={events[i - 1]?.at ?? null} />
+            ))}
+          </Timeline>
+        </div>
+        <p
+          data-timeline-gap
+          className="m-0 border-t border-[color:var(--v3-line)] px-4 py-2 text-[length:var(--v3-t-meta)] text-[color:var(--v3-fg-2)]"
+        >
+          This timeline does not hold app check lines for build-queue rounds, review verdicts past
+          each round's review and re-review, or owner answers on old-loop runs yet. A gap here does
+          not mean nothing happened.
+        </p>
+      </Card>
     </div>
   );
 }
@@ -161,7 +205,15 @@ export function WorkItem({
   const [map, setMap] = useState<Source<HomeMapRow>>(AWAITED);
   const [workable, setWorkable] = useState<Source<HealthWorkableRow>>(AWAITED);
   const [owner, setOwner] = useState<Source<OwnerQueueRow>>(AWAITED);
-  const state = overall([item.state, board.state, map.state, workable.state, owner.state]);
+  const [stuck, setStuck] = useState<Source<UnstickRow>>(AWAITED);
+  const state = overall([
+    item.state,
+    board.state,
+    map.state,
+    workable.state,
+    owner.state,
+    stuck.state,
+  ]);
   const header = item.rows ? workItemHeader(item.rows) : null;
   const ready = state === 'ready' && item.rows !== undefined;
   const onBoard =
@@ -182,6 +234,7 @@ export function WorkItem({
       <Feed<HomeMapRow> query="home-map" factory={factory} args={['']} into={setMap} />
       <Feed<HealthWorkableRow> query="health-workable" factory={factory} into={setWorkable} />
       <Feed<OwnerQueueRow> query="owner-queue" factory={factory} into={setOwner} />
+      <Feed<UnstickRow> query="unstick" factory={factory} into={setStuck} />
       {state === 'error' ? (
         <EmptyState title="Live data is unavailable." />
       ) : !ready || item.rows === undefined ? (
@@ -193,6 +246,7 @@ export function WorkItem({
           header={header}
           events={workItemTimeline(item.rows, factory ?? '')}
           board={onBoard}
+          note={workItemNote(item.rows, onBoard, stuck.rows ?? [])}
         />
       )}
     </main>

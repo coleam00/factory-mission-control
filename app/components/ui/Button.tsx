@@ -8,9 +8,11 @@ const VARIANT = {
   text: 'border-[color:transparent] bg-transparent text-[color:var(--v3-fg-2)] hover:text-[color:var(--v3-fg)]',
 } as const;
 
-/** The look of a button, for a link that acts as one. */
-export const buttonClass = (variant: keyof typeof VARIANT) =>
-  `cursor-pointer rounded-[var(--v3-radius-control)] border px-3 py-1.5 text-[length:var(--v3-t-meta)] font-semibold ${VARIANT[variant]}`;
+const BASE =
+  'cursor-pointer rounded-[var(--v3-radius-control)] border px-3 py-1.5 text-[length:var(--v3-t-meta)] font-semibold';
+
+/** The button look for an element that is not a `<button>`, such as a console link. */
+export const buttonClass = (variant: keyof typeof VARIANT) => `${BASE} ${VARIANT[variant]}`;
 
 export function Button({
   variant,

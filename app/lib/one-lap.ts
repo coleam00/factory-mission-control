@@ -216,3 +216,7 @@ export function actionText(action: unknown): string | null {
   if (action === null || action === undefined) return null;
   return typeof action === 'string' ? action : JSON.stringify(action);
 }
+
+/** Whether an address names a run id at all: Archon's run ids are UUIDs. */
+export const isRunId = (runId: string) =>
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(runId);

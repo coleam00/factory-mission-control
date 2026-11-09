@@ -4,6 +4,7 @@ import { STATE_LABEL } from './lap-graph';
 import { OUTCOMES } from './laps';
 import { REVIEW_OUTCOMES } from './review-outcome';
 import {
+  BOARD_ITEM_STATE,
   CHECK_OVERALL_STATE,
   LAP_OUTCOME_STATE,
   REVIEW_OUTCOME_STATE,
@@ -109,6 +110,11 @@ test("the README's States examples hold", () => {
   expect(VERDICT_STATE.FAIL).toBe('failed');
   expect(VERDICT_STATE.INCOMPLETE).toBe('failed');
   expect(VERDICT_STATE.QUESTION).toBe('needs-you');
+  expect(BOARD_ITEM_STATE.parked).toBe('idle');
+  expect(BOARD_ITEM_STATE.blocked).toBe('idle');
+  expect(BOARD_ITEM_STATE.queued).toBe('idle');
+  expect(BOARD_ITEM_STATE.waiting).toBe('idle');
+  expect(BOARD_ITEM_STATE['needs you']).toBe('needs-you');
 });
 
 test('an unknown value has no state', () => {

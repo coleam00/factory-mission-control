@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import type { HTMLAttributes, ReactNode } from 'react';
 import type { State } from '../../lib/states';
 import { StateDot } from './StateDot';
 
@@ -11,47 +11,52 @@ export function Timeline({ children }: { children: ReactNode }) {
   );
 }
 
+type DataProps = { [K in `data-${string}`]?: string | undefined };
+
 export function TimelineRow({
   state,
   name,
   hint,
   time,
+  dateTime,
   cost,
   nested,
-  attrs,
+  prose,
   children,
+  ...data
 }: {
   state: State;
   name: string;
   hint?: string;
   time?: string;
+  /** The machine-readable instant of `time`; renders `time` in a `<time>` element. */
+  dateTime?: string;
   cost?: string;
   nested?: boolean;
-  /** Hooks for the live phase and tests to read the row's facts by. */
-  attrs?: Readonly<Record<`data-${string}`, string | number | undefined>>;
+  /** The name is a sentence, drawn in sans rather than as a step id in mono. */
+  prose?: boolean;
   /** What opens under the row, such as an `ErrorPanel` on a failed step. */
   children?: ReactNode;
-}) {
-  const facts = [time, cost].filter(Boolean).join(' · ');
+} & DataProps &
+  Omit<HTMLAttributes<HTMLLIElement>, 'children'>) {
+  const when = dateTime && time ? <time dateTime={dateTime}>{time}</time> : time;
   return (
-    <li {...attrs} className={`relative py-1.5 ${nested ? 'pl-11' : 'pl-5'}`}>
+    <li {...data} className={`relative py-1.5 ${nested ? 'pl-11' : 'pl-5'}`}>
       <span className={`absolute top-3 ${nested ? 'left-[39px]' : 'left-0'}`}>
         <StateDot state={state} />
       </span>
       <div className="flex items-baseline gap-2.5 text-[length:var(--v3-t-meta)]">
         <span
-          className={`font-mono ${state === 'idle' ? 'text-[color:var(--v3-fg-3)]' : 'text-[color:var(--v3-fg)]'}`}
+          className={`min-w-0 [overflow-wrap:anywhere] ${prose ? '' : 'font-mono'} ${state === 'idle' ? 'text-[color:var(--v3-fg-3)]' : 'text-[color:var(--v3-fg)]'}`}
         >
           {name}
         </span>
-        {hint ? (
-          <span
-            className={`text-[color:var(--v3-fg-3)] ${nested ? 'hidden min-[760px]:inline' : ''}`}
-          >
-            {hint}
-          </span>
-        ) : null}
-        <span className="ml-auto font-mono text-[color:var(--v3-fg-3)] tabular-nums">{facts}</span>
+        {hint ? <span className="text-[color:var(--v3-fg-3)]">{hint}</span> : null}
+        <span className="ml-auto shrink-0 font-mono text-[color:var(--v3-fg-3)] tabular-nums">
+          {when}
+          {when && cost ? ' · ' : null}
+          {cost}
+        </span>
       </div>
       {children}
     </li>

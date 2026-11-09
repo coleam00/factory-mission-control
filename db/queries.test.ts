@@ -6,7 +6,7 @@ import type { FactorySwitcherRow } from '../app/components/FactorySwitcher';
 import type { AppCheckRow } from '../app/lib/app-check';
 import type { ArchDiffRow } from '../app/lib/arch-diff';
 import type { AttentionRow, DecideRow, UnstickRow } from '../app/lib/attention';
-import type { BoardRow } from '../app/lib/board';
+import type { BoardRow, DiscoveryRow } from '../app/lib/board';
 import type { FailureGroupRow } from '../app/lib/failures';
 import type { HealthRunRow, HealthStepRow, HealthWorkableRow } from '../app/lib/health';
 import type { LapMapRow } from '../app/lib/lap-graph';
@@ -173,6 +173,9 @@ const ROW_COLUMNS: Record<string, string[]> = {
     'title',
     'url',
     'console',
+    'stop_step',
+    'stop_line',
+    'stop_class',
   ]),
   board: columns<BoardRow>()([
     'kind',
@@ -193,9 +196,11 @@ const ROW_COLUMNS: Record<string, string[]> = {
     'merge_at',
     'triage_at',
     'own_pr_at',
+    'stage',
     'repository',
     'merged_total',
   ]),
+  discoveries: columns<DiscoveryRow>()(['run_id', 'written', 'dropped']),
   'home-map': columns<HomeMapRow>()([
     'kind',
     'run_id',

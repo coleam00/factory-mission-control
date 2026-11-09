@@ -19,6 +19,7 @@ const event = (over: Partial<TimelineEvent>): TimelineEvent => ({
   detail: null,
   run: null,
   stage: null,
+  stop: null,
   ...over,
 });
 
@@ -34,6 +35,7 @@ test('the header links the issue, the pull request and the newest run, under the
     <WorkItemBody
       header={header}
       events={[]}
+      note={null}
       board={{
         column: { id: 'merged', title: 'Merged', role: 'test', holder: 'done' },
         pr: 410,
@@ -56,6 +58,7 @@ test('rows come in the order given, with their reason, and a lap row links its l
     <WorkItemBody
       header={header}
       board={null}
+      note={null}
       events={[
         event({
           key: 'a',
@@ -85,7 +88,42 @@ test('an address that is not a work item number names none, and asks no query', 
 });
 
 test('the timeline says what it does not hold yet, even with no events', () => {
-  const html = render(<WorkItemBody header={header} events={[]} board={null} />);
+  const html = render(<WorkItemBody header={header} events={[]} board={null} note={null} />);
   expect(html).toContain('data-timeline-gap');
   expect(html).toContain('A gap here does not mean nothing happened');
+});
+
+test('the Manager note leads, a failed row shows its stop line, and the primary action opens the console', () => {
+  const action = {
+    kind: 'resume' as const,
+    label: 'Resume from pr__prepare',
+    href: 'http://localhost:3090/console/r/abc',
+    runId: 'abc',
+    step: 'pr__prepare',
+  };
+  const html = render(
+    <WorkItemBody
+      header={header}
+      board={null}
+      note={{
+        state: 'failed',
+        pill: 'Failed',
+        parts: [{ text: 'Round 1 failed', bold: true }, { text: ' at ' }],
+        action,
+      }}
+      events={[
+        event({
+          tone: 'failed',
+          text: 'Round 1 failed in Review',
+          stop: { step: 'pr__prepare', line: '401 unauthorized' },
+        }),
+      ]}
+    />,
+  );
+  expect(html.indexOf('data-manager-note')).toBeLessThan(html.indexOf('data-timeline'));
+  expect(html).toContain('data-note-state="failed"');
+  expect(html).toMatch(/data-stop-line[^>]*>.*pr__prepare.*401 unauthorized/);
+  expect(html).toContain('data-primary-action="resume"');
+  expect(html).toContain('href="http://localhost:3090/console/r/abc"');
+  expect(html).toContain('Resume from pr__prepare');
 });
