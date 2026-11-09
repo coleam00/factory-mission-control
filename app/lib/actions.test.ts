@@ -92,6 +92,23 @@ describe('the Undo flow', () => {
   });
 });
 
+describe('an outcome the server never confirmed', () => {
+  test('no reply says it may have been sent', async () => {
+    const { flow, fire } = harness({ error: 'network down', noReply: true });
+    flow.start(request, context);
+    await fire();
+    expect(flow.getState()).toMatchObject({ ok: false });
+    expect((flow.getState() as { text: string }).text).toContain('may have been sent');
+  });
+
+  test('a CLI with no exit code says the outcome is unknown', async () => {
+    const { flow, fire } = harness({ ...ok(), ok: false, exit_code: null, summary: 'killed' });
+    flow.start(request, context);
+    await fire();
+    expect((flow.getState() as { text: string }).text).toStartWith('Unknown outcome');
+  });
+});
+
 test('the pending toast names the item and the choice, or the run and the step', () => {
   expect(pendingText(request, context)).toEqual({
     lead: 'Answered #363: ',

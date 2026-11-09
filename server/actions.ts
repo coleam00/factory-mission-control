@@ -173,9 +173,9 @@ export async function checkAgainstDb(db: Db, request: ActionRequest): Promise<Ch
   let option = request.option;
   const text: string[] = [];
   if (option !== null) {
-    if (!options.some((o) => o.id === option)) {
-      return { status: 409, error: 'that option is not offered' };
-    }
+    const offered = options.find((o) => o.id === option);
+    if (offered === undefined) return { status: 409, error: 'that option is not offered' };
+    if (isSomethingElse(offered)) return { status: 409, error: 'that option needs your text' };
   } else {
     text.push(`--text=${request.text}`);
     if (!takesFreeText(String(row.form))) {

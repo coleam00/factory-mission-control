@@ -156,6 +156,13 @@ describe('answer', () => {
     expect(await rows()).toEqual([]);
   });
 
+  test('the other option without text is refused and never sent', async () => {
+    const response = await post(answer(OTHER_OPTION_RUN, 'pause-o-1', { option: 'other' }));
+    expect(response.status).toBe(409);
+    expect(sent()).toEqual([]);
+    expect(await rows()).toEqual([]);
+  });
+
   test('text that looks like flags reaches the CLI as one --text element', async () => {
     const text = '--cwd=/etc --choose=no';
     await post(answer(MESSAGE_RUN, 'pause-m-1', { text }));
