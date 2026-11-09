@@ -242,7 +242,9 @@ export function boardPhase(ctx: LiveContext): LivePhase {
     await open(page, path);
     for (const width of [760, 800, 900, 1000, 1264, 1440]) {
       await page.setViewport(width);
-      const { bad, missing } = await page.evaluate<{ bad: string[]; missing: string[] }>(MINI_PILL_FIT);
+      const { bad, missing } = await page.evaluate<{ bad: string[]; missing: string[] }>(
+        MINI_PILL_FIT,
+      );
       for (const what of bad)
         failures.push(
           `board at ${width}px: pill outside its tile, wrapped, hard-clipped or unreadable: ${what}`,
