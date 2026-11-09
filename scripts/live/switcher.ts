@@ -155,6 +155,15 @@ async function checkSwitcher(ctx: LiveContext): Promise<void> {
       [...rows].sort(([a], [b]) => a.localeCompare(b));
     check('the factories on /', byName(shown), byName(listed));
     check('the first entry', shown[0]?.[0], factory);
+    // The footer's engine travels from the status strip to the switcher.
+    const [strip0] = await db.query(ctx.queries.get('status-strip') as string, [factory]);
+    check(
+      'the engine beside the switcher',
+      await page.evaluate<string | null>(
+        `document.querySelector('[data-engine]')?.textContent?.split('engine ')[1] ?? null`,
+      ),
+      strip0?.engine ? String(strip0.engine).slice(0, 8) : null,
+    );
     ctx.save(FILES.shot, await page.screenshot(1440));
 
     const before = listed.find(([name]) => name === second)?.[1] ?? 0;

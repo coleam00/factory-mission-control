@@ -31,7 +31,7 @@ strip, chips, flow and the tour work the same in a view.
 
 ## Size and readability (owner deviation from the mockup)
 
-The map is the home screen's hero. Its frame spans the window between the page gutters; the
+The map is the Factory place's hero. Its frame spans the window between the page gutters; the
 caption, legend and details strip stay in the app's column. The frame's height is the map's height
 at the scale that fits its width, plus its padding (at least 420px), so a fit leaves no empty band;
 the page scrolls below it. A deeper view is fitted no larger than the largest scale the matching views

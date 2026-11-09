@@ -54,13 +54,13 @@ export function routesFromModules(modules: Record<string, RouteModule>): RouteOb
   });
 }
 
+const RUN_PAGE = new RegExp(`^/f/[^/]+/${'runs' satisfies PlacePath}/[^/]+$`);
+
 /**
  * Where choosing `factory` goes from `pathname` and its `search`: the same place for it when
  * `pathname` is one of `PLACES`, Runs from a run's page, a step's page as it is (the pinned version stays), otherwise its
  * home, Attention (`/f/:factory`). A place's search names the old factory's items, so it is not kept.
  */
-const RUN_PAGE = new RegExp(`^/f/[^/]+/${'runs' satisfies PlacePath}/[^/]+$`);
-
 export function factoryPath(pathname: string, factory: string, search = ''): string {
   const home = placeAddress(factory, '');
   if (RUN_PAGE.test(pathname)) return placeAddress(factory, 'runs');
