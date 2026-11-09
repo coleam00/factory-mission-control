@@ -4,6 +4,7 @@ import { EmptyState } from '../components/EmptyState';
 import { StepVersionPicker } from '../components/StepVersionPicker';
 import { CARD as PANEL } from '../components/ui/Card';
 import {
+  AT_PARAM,
   dependents,
   isIncluded,
   joinParts,
@@ -486,7 +487,7 @@ function useStepOrigin(factory: string, workflow: string, path: string, at: stri
 export default function StepDetail(): ReactElement {
   const { factory: address = '', workflow = '', step = '' } = useParams();
   const [search] = useSearchParams();
-  const at = search.get('at') || null;
+  const at = search.get(AT_PARAM) || null;
   const factory = useFactory();
   const asked = `${factory} ${workflow} ${step} ${at ?? ''}`;
   const [known, setKnown] = useState<Found | undefined>();

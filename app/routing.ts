@@ -12,10 +12,10 @@ import { NotFound, RouteError } from './errors';
 import { homeHref } from './lib/home-map';
 import { lapHref } from './lib/one-lap';
 import { PLACES, type PlacePath, placeAddress, ROOT_ADDRESS } from './lib/places';
-import { stepHref } from './lib/step-detail';
+import { AT_PARAM, stepHref } from './lib/step-detail';
 import { useFactory } from './live/FactoryProvider';
 import { useLive } from './live/LiveProvider';
-import { AT_PARAM, MAP_PARAMS } from './map/factory-map';
+import { MAP_PARAMS } from './map/factory-map';
 import { Shell } from './Shell';
 
 export interface RouteModule {
@@ -135,7 +135,7 @@ export function OldStepAddress(): ReturnType<typeof createElement> | null {
   const factory = useFactory();
   if (factory === undefined) return null;
   return createElement(Navigate, {
-    to: stepHref(factory, workflow, step, search.get('at')),
+    to: stepHref(factory, workflow, step, search.get(AT_PARAM)),
     replace: true,
   });
 }
