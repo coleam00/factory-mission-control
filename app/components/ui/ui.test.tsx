@@ -133,12 +133,21 @@ const VARIANTS: [string, ReactElement][] = [
       Answered
     </Toast>,
   ],
+  [
+    'Toast result',
+    <Toast key="tr">Answered · sent</Toast>,
+  ],
 ];
 
 test.each(VARIANTS)('%s renders with v3 tokens only', (_name, element) => {
   const html = renderToStaticMarkup(element);
   expect(nonV3Colors(html)).toEqual([]);
   expect(html).toContain('--v3-');
+});
+
+test('a Toast shows Undo only when it has something to undo', () => {
+  expect(renderToStaticMarkup(<Toast onUndo={noop}>Answered</Toast>)).toContain('Undo');
+  expect(renderToStaticMarkup(<Toast>Answered</Toast>)).not.toContain('Undo');
 });
 
 test('Tabs marks the chosen tab selected, in the order the map tests read', () => {
