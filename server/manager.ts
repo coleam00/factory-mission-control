@@ -421,6 +421,7 @@ async function proposalEvent(
         option: choice.id,
         text: null,
         label: `Answer "${choice.label ?? choice.id}"`,
+        detail: choice.label ?? choice.id,
       };
     }
     if (raw.text === undefined || raw.text.length < 1 || raw.text.length > 2000) return undefined;

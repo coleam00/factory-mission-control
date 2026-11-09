@@ -116,6 +116,17 @@ export function mount(url: string) {
             run_id: RUN,
             from_step: null,
           },
+          {
+            type: 'proposal',
+            label: 'Answer "Ship it"',
+            detail: 'Ship it',
+            factory: 'x',
+            action: 'answer',
+            run_id: RUN,
+            occurrence: 'ask-1',
+            option: 'yes',
+            text: null,
+          },
           DONE,
         );
       }
@@ -170,7 +181,7 @@ const q = (selector: string) => document.querySelector<HTMLElement>(selector);
 export const clickSuggestion = (i: number) =>
   document.querySelectorAll<HTMLButtonElement>('[data-suggestion]')[i]?.click();
 
-export const clickProposal = () => q('button[data-proposal]')?.click();
+export const clickProposal = (action = 'resume') => q(`button[data-proposal="${action}"]`)?.click();
 
 export const clickUndo = () =>
   [...document.querySelectorAll<HTMLButtonElement>('[role="status"] button')]
@@ -183,6 +194,7 @@ export const shown = () => ({
   runLinks: [...document.querySelectorAll<HTMLElement>('[data-run-link]')].map(
     (a) => a.dataset.runLink,
   ),
+  toastDetail: q('[role="status"] b')?.textContent ?? null,
   undo: q('[role="status"]')?.textContent?.includes('Undo') ?? false,
   chip: q('[data-manager-context] span')?.textContent ?? null,
   surface: q('[data-manager]')?.dataset.manager ?? null,

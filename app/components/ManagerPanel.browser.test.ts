@@ -25,6 +25,7 @@ interface Seen {
   answer: string | null;
   runLinks: string[];
   undo: boolean;
+  toastDetail: string | null;
   chip: string | null;
   surface: string | null;
 }
@@ -85,6 +86,25 @@ test('the panel only talks to the dashboard server: briefing, a question and a p
     expect(request.kind, request.url).toBe('fetch');
     expect(request.url.startsWith('/api/'), request.url).toBe(true);
   }
+}, 30_000);
+
+test('answering with a proposed option names the option wording in the Undo toast', async () => {
+  await page.setViewport(1440);
+  const seen = await page.evaluate<Seen>(
+    `import('data:text/javascript;base64,${source}').then(async (m) => {
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      // The action flow is module state shared by every test here: wait out the previous test's toast.
+      await sleep(5500);
+      m.mount('/f/x');
+      await sleep(1200);
+      m.clickSuggestion(0);
+      await sleep(600);
+      m.clickProposal('answer');
+      await sleep(300);
+      return m.shown();
+    })`,
+  );
+  expect(seen.toastDetail).toBe('Ship it');
 }, 30_000);
 
 test('an address ending in #manager opens the phone tab, looking at the run on screen', async () => {

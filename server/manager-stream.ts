@@ -15,7 +15,12 @@ export type ManagerEvent =
   | { type: 'link'; kind: 'run'; id: string; label: string; href: string }
   | { type: 'link'; kind: 'item'; id: number; label: string; href: string }
   | { type: 'runs'; runs: RunSummary[] }
-  | ({ type: 'proposal'; label: string } & ActionRequest)
+  | ({
+      type: 'proposal';
+      label: string;
+      /** Answer by option only: the choice's wording, for the Undo toast. Never sent to the action endpoint. */
+      detail?: string;
+    } & ActionRequest)
   | {
       type: 'notice';
       kind: 'message-cap' | 'day-cap' | 'unavailable' | 'unstructured';

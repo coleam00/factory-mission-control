@@ -126,7 +126,7 @@ function Proposals({
   return (
     <div className="mb-2 flex flex-wrap gap-2">
       {proposals.map((proposal, i) => {
-        const { type: _type, label, ...request } = proposal;
+        const { type: _type, label, detail, ...request } = proposal;
         return enabled ? (
           <Button
             key={`${proposal.action}:${label}`}
@@ -136,7 +136,7 @@ function Proposals({
             onClick={() =>
               start(request, {
                 item: null,
-                label: proposal.action === 'answer' ? (proposal.option ?? TEXT_ANSWER_DETAIL) : '',
+                label: proposal.action === 'answer' ? (detail ?? TEXT_ANSWER_DETAIL) : '',
               })
             }
           >
