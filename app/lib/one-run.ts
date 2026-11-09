@@ -266,10 +266,9 @@ export function managerRead(
         loop?.kind === 'loop'
           ? loop.rounds.find((r) => failed && r.rows.includes(failed))
           : undefined;
-      const unlocated = stepId === null && failed === null;
       const parts: ReadPart[] = [
         {
-          text: stepId === null ? (unlocated ? 'The run' : 'A step') : displayStep(stepId),
+          text: stepId === null ? 'The run' : displayStep(stepId),
           bold: true,
         },
         {
@@ -278,7 +277,7 @@ export function managerRead(
       ];
       const ordered = attemptsInRunOrder(rows);
       const before = failed === null ? [] : ordered.slice(0, ordered.indexOf(failed));
-      if (!unlocated && !before.some((row) => row.status === 'failed')) {
+      if (stepId !== null && !before.some((row) => row.status === 'failed')) {
         parts.push({ text: ' Everything before it succeeded.' });
       }
       let resumeStep: string | null = null;

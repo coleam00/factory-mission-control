@@ -175,3 +175,12 @@ test('a finished run with a retried failure shows no error panel or resume', () 
   expect(html).not.toContain('data-error-panel');
   expect(html).not.toContain('Resume from here');
 });
+
+test('a failed run with an earlier retried failure shows one error panel and one resume, on the stop attempt', () => {
+  const html = render({
+    rows: [step('build', { status: 'failed', error: 'boom' }), step('build'), ...rows],
+  });
+  expect(html.match(/data-error-panel/g)).toHaveLength(1);
+  expect(html.match(/>Resume from here</g)).toHaveLength(1);
+  expect(html.indexOf('data-error-panel')).toBeGreaterThan(html.indexOf('pr__prepare'));
+});
