@@ -1,5 +1,5 @@
 import { afterEach, expect, test } from 'bun:test';
-import { cpSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { runsArgs } from '../app/lib/runs';
 import { archonDb, snapshot } from '../db/test-db';
@@ -355,7 +355,9 @@ test('a timestamp-named migration applies after every 00NN_ file, once', async (
 });
 
 test('every migration in db/migrations is a legacy 00NN_ file or the timestamp form, with no new shared prefix', () => {
-  expect(migrationNameProblems(readdirSync(migrationsDir(REPO_ROOT)))).toEqual([]);
+  const present = readMigrationFiles(migrationsDir(REPO_ROOT)).map((f) => f.name);
+  expect(migrationNameProblems(present)).toEqual([]);
+  expect([...LEGACY_MIGRATIONS].filter((name) => !present.includes(name))).toEqual([]);
 });
 
 test.each([

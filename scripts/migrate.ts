@@ -66,7 +66,7 @@ export const TIMESTAMP_MIGRATION = /^\d{8}T\d{4}Z_[a-z0-9_]+\.sql$/;
 
 /** Names that are neither legacy nor timestamp-form, and timestamp prefixes shared by more than one file. */
 export function migrationNameProblems(names: readonly string[]): string[] {
-  const sql = names.filter((name) => name.endsWith('.sql')).sort();
+  const sql = [...names].sort();
   const problems = sql
     .filter((name) => !LEGACY_MIGRATIONS.has(name) && !TIMESTAMP_MIGRATION.test(name))
     .map(
