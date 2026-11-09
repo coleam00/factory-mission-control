@@ -178,7 +178,11 @@ export function boardPhase(ctx: LiveContext): LivePhase {
           return s.overflowX !== 'visible' && e.scrollWidth > e.clientWidth + 0.5 && s.textOverflow !== 'ellipsis';
         });
         const lines = Math.round(r.height / (parseFloat(getComputedStyle(pill).lineHeight) || r.height));
-        return r.right > box.right + 0.5 || hardClipped || lines > 1 ? [tile.dataset.workItem + ' ' + p.textContent] : [];
+        const label = (pill.lastElementChild ?? pill).getBoundingClientRect();
+        const ts = getComputedStyle(tile);
+        const inner = box.width - parseFloat(ts.paddingLeft) - parseFloat(ts.paddingRight);
+        const unreadable = inner < 1 || label.width < 24;
+        return r.right > box.right + 0.5 || hardClipped || lines > 1 || unreadable ? [tile.dataset.workItem + ' ' + p.textContent] : [];
       });
     });
     const seen = (status) => tiles.some((t) => t.firstElementChild.textContent.includes(status));
@@ -189,12 +193,12 @@ export function boardPhase(ctx: LiveContext): LivePhase {
     const failures: string[] = [];
     await page.evaluate<boolean>(`(localStorage.setItem('mc.manager.open', 'open'), true)`);
     await open(page, path);
-    for (const width of [760, 1000, 1264, 1440]) {
+    for (const width of [760, 800, 900, 1000, 1264, 1440]) {
       await page.setViewport(width);
       const { bad, missing } = await page.evaluate<{ bad: string[]; missing: string[] }>(PILL_FIT);
       for (const what of bad)
         failures.push(
-          `board at ${width}px: pill outside its tile, wrapped or hard-clipped: ${what}`,
+          `board at ${width}px: pill outside its tile, wrapped, hard-clipped or unreadable: ${what}`,
         );
       for (const status of missing)
         failures.push(`board at ${width}px: no "${status}" tile to measure a pill on`);
