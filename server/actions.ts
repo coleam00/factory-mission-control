@@ -20,7 +20,7 @@ import { isRunId } from '../app/lib/one-lap';
 import { type Db, openDb } from '../scripts/lib/db';
 import type { Env } from './check-env';
 import { BASE_ENV_NAMES, pick } from './child-env';
-import { readFactoryNames } from './factories';
+import { isObject, readFactoryNames } from './factories';
 import { RESUMABLE_STATUSES } from './manager-stream';
 
 export interface Operator {
@@ -38,9 +38,6 @@ export interface Actions {
 
 const SPAWN_TIMEOUT_MS = 60_000;
 const SUMMARY_CHARS = 2000;
-
-const isObject = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);
 
 function operatorEntry(name: string, raw: unknown): Operator {
   const where = `operators.${name}`;
