@@ -5,7 +5,28 @@ import { type CheckLineRow, isRunId, type OneLapRow, type StepAttemptRow } from 
 import Lap from '../routes/f.$factory.runs.$runId';
 import { type LapMapRow, lapGraph } from '../lib/lap-graph';
 import { StepPanel } from './LapGraph';
-import { CheckList, LapFound, LapHeaderBody, LapStepsBody, StepList } from './OneLap';
+import { CheckList, LapStepsBody, StepList } from './OneLap';
+import { NoRun, RunView, type RunViewProps } from './OneRun';
+
+/** The run page on its Steps tab with no steps: the head and, for an old loop, review and gate. */
+function LapHeaderBody({
+  lap,
+  checks,
+  now,
+}: Pick<RunViewProps, 'checks' | 'now'> & { lap: OneLapRow }) {
+  return (
+    <RunView
+      lap={lap}
+      rows={[]}
+      map={{ rows: [], state: 'ready' }}
+      factory="f"
+      tab="steps"
+      checks={checks}
+      checksPanel={null}
+      now={now}
+    />
+  );
+}
 
 function render(element: React.ReactElement): string {
   const router = createMemoryRouter([{ path: '/', element }]);
@@ -17,6 +38,12 @@ const REASON = 'it changes .claude/settings.json, which only the owner changes';
 
 const refused: OneLapRow = {
   run_id: RUN,
+  workflow_name: 'archon-loop',
+  stop_status: null,
+  stop_step: null,
+  stop_line: null,
+  stop_class: null,
+  capacity_since: null,
   status: 'completed',
   started_at: new Date('2026-10-01T14:00:00Z'),
   completed_at: new Date('2026-10-01T15:00:00Z'),
@@ -98,7 +125,7 @@ test('the pull request a step names by URL links as its number', () => {
   const html = render(<LapHeaderBody lap={{ ...refused, pr_number: 103 }} now={0} />);
   expect(html).toContain('href="https://github.com/coleam00/factory-mission-control/pull/103"');
   expect(html).toContain('data-pr="103"');
-  expect(html).toContain('>#103</a>');
+  expect(html).toContain('>PR #103</a>');
 });
 
 test('a lap with no review or gate yet says so', () => {
@@ -153,6 +180,7 @@ const map: LapMapRow[] = [
 test('both attempts of a repeated review show, the running one with its time so far', () => {
   const html = render(
     <LapStepsBody
+      workflow="archon-loop"
       factory="x"
       map={{ rows: map, state: 'ready' }}
       rows={[
@@ -292,25 +320,12 @@ test('a lap address that is not a run id shows the id as typed and nothing under
   expect(html).not.toContain('No step has started yet.');
 });
 
-test('a well-formed id with no lap in this factory shows only the not-found line', () => {
+test('a well-formed id with no run in this factory shows only the not-found line', () => {
   const unknown = '5eed0001-0000-4000-8000-0000000000ff';
-  const html = render(
-    <LapFound lap={undefined} runId={unknown}>
-      <p>No step has started yet.</p>
-    </LapFound>,
-  );
+  const html = render(<NoRun runId={unknown} />);
   expect(html).toContain('data-no-lap');
   expect(html).toContain(unknown);
-  expect(html).not.toContain('No step has started yet.');
   expect(html).not.toContain('data-lap=');
-  const found = render(
-    <LapFound lap={refused} runId={RUN} now={0}>
-      <p>No step has started yet.</p>
-    </LapFound>,
-  );
-  expect(found).toContain(`data-lap="${RUN}"`);
-  expect(found).toContain('No step has started yet.');
-  expect(found).not.toContain('data-no-lap');
 });
 
 test('a value the lap never recorded reads in the secondary text, not the tertiary grey', () => {
@@ -323,6 +338,7 @@ test('each step of the map is a node marked by what happened to it, inner steps 
   const at = (minute: number) => new Date(Date.UTC(2026, 9, 25, 12, minute));
   const html = render(
     <LapStepsBody
+      workflow="archon-loop"
       factory="x"
       map={{ rows: map, state: 'ready' }}
       rows={[
@@ -354,6 +370,7 @@ test('each step of the map is a node marked by what happened to it, inner steps 
 test("a step the pin's map lacks is still drawn, after the step that ran before it", () => {
   const html = render(
     <LapStepsBody
+      workflow="archon-loop"
       factory="x"
       map={{ rows: map, state: 'ready' }}
       rows={[
@@ -371,6 +388,7 @@ test("a step the pin's map lacks is still drawn, after the step that ran before 
 test("with no map stored for any pin, the lap's own steps are drawn in the order they ran", () => {
   const html = render(
     <LapStepsBody
+      workflow="archon-loop"
       factory="x"
       map={{ rows: [], state: 'ready' }}
       rows={[
@@ -388,6 +406,7 @@ test("with no map stored for any pin, the lap's own steps are drawn in the order
 test('a block where no step ran is one box with its step count, its steps drawn once opened', () => {
   const html = render(
     <LapStepsBody
+      workflow="archon-loop"
       factory="x"
       map={{ rows: map, state: 'ready' }}
       rows={[
@@ -434,6 +453,7 @@ test("a step the lap's pin lacks has no definition link, at any pin; a step on t
       step({ step_id: 'newstep', started_at: new Date('2026-10-25T12:01:00Z') }),
     ],
     'x',
+    'archon-loop',
   );
   const panel = (path: string) =>
     render(<StepPanel lap={lap} path={path} now={0} onClose={() => {}} />);

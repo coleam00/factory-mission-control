@@ -3,7 +3,7 @@ import { Link, useLocation } from 'react-router';
 import type { AppCheckRow } from '../lib/app-check';
 import { boardHref, orderPanel, orderProgress } from '../lib/board';
 import { relativeTime } from '../lib/format';
-import { hasLapPage, lapHref } from '../lib/one-lap';
+import { lapHref } from '../lib/one-lap';
 import { stateColor } from '../lib/states';
 import { type StepRow, stepOriginState } from '../lib/step-detail';
 import { LivePanel } from '../live/LivePanel';
@@ -179,22 +179,12 @@ function ProductDocument({ document }: { document: ProductDocumentRow }): ReactE
 const time = (at: Date) =>
   at.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
 
-/** A run's name: a link to its lap page when it has one, otherwise the name plainly. */
-function RunName({
-  workflow,
-  href,
-  children,
-}: {
-  workflow: string | null;
-  href: string;
-  children: ReactNode;
-}): ReactElement {
-  return hasLapPage(workflow) ? (
+/** A run's name, linking to its page. */
+function RunName({ href, children }: { href: string; children: ReactNode }): ReactElement {
+  return (
     <Link to={href} className={LINK}>
       {children}
     </Link>
-  ) : (
-    <span>{children}</span>
   );
 }
 
@@ -221,7 +211,7 @@ export function RightNow({
     )),
     merged: (live?.merged ?? []).map((merge) => (
       <li key={`merged-${merge.run}-${merge.number ?? 'lap'}`} data-lap={merge.run}>
-        <RunName workflow={merge.workflow} href={lapHref(factory, merge.run)}>
+        <RunName href={lapHref(factory, merge.run)}>
           {merge.number === null ? (
             <span className="font-mono">lap {merge.run.slice(0, 8)}</span>
           ) : (
@@ -235,7 +225,7 @@ export function RightNow({
   const rows: ReactNode[] = [
     ...(live?.here ?? []).map((lap) => (
       <li key={`lap-${lap.run}`} data-lap={lap.run}>
-        <RunName workflow={lap.workflow} href={lapHref(factory, lap.run)}>
+        <RunName href={lapHref(factory, lap.run)}>
           {lap.issue ? (
             <>
               <span className="font-mono tabular-nums">#{lap.issue.number}</span>{' '}

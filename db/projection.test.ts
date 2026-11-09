@@ -516,7 +516,9 @@ test('0013 gives back the runs of a step the old key merged, and changes nothing
     expect(await errors()).toEqual([{ event_id: refused, sqlstate: '23514' }]);
     const migrated = await snapshot(historical);
     const [identity] = migrationFiles.filter((f) => f.name.startsWith('0013'));
+    const [eventTime] = migrationFiles.filter((f) => f.name.startsWith('0032'));
     await historical.query(identity?.sql ?? '');
+    await historical.query(eventTime?.sql ?? '');
     expect(await snapshot(historical)).toEqual(migrated);
   } finally {
     await historical.close();
@@ -578,6 +580,16 @@ test('a skipped step is a skipped row', async () => {
   expect(await db.query('SELECT step_id, status FROM mc.lap_steps')).toEqual([
     { step_id: 'land', status: 'skipped' },
   ]);
+});
+
+test('a skipped step without timing is dated by its event', async () => {
+  await db.query(
+    `INSERT INTO public.remote_agent_workflow_events (workflow_run_id, event_type, step_name, data, created_at)
+     VALUES ($1, 'node_skipped', 'land', $2, '2026-10-25T12:03:00Z')`,
+    [runId, JSON.stringify({ reason: 'when: false' })],
+  );
+  const [attempt] = await db.query('SELECT event_at::text AS event_at FROM mc.lap_step_attempts');
+  expect(new Date(String(attempt?.event_at)).toISOString()).toBe('2026-10-25T12:03:00.000Z');
 });
 
 test('the model is the one the provider resolved when Archon reports it', async () => {

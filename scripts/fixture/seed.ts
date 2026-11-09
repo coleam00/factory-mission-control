@@ -1571,6 +1571,25 @@ export const QUEUE_RUNS = {
   triaging: '5eed0005-0000-4000-8000-00000000000a',
   factsOnly: '5eed0005-0000-4000-8000-000000000015',
   capacity: '5eed0005-0000-4000-8000-000000000016',
+  failedBuild: '5eed0005-0000-4000-8000-000000000017',
+  appCheck: '5eed0005-0000-4000-8000-000000000018',
+} as const;
+
+/**
+ * Two runs for the run page (#518), on 20 and 21 October: a build of issue 485 that failed in round 2
+ * (pull request 496, a refused push, its review skipped), and a passed app check of the merged
+ * pull request 421. The merge sweep that page shows is QUEUE_RUNS.merged.
+ */
+export const QUEUE_PAGE_RUNS = {
+  buildIssue: 485,
+  buildPr: 'https://github.com/coleam00/queue-factory/pull/496',
+  buildError: [
+    "Script node 'pr__prepare' failed [exit 1]",
+    '$ git push --force-with-lease origin build/485-few-card',
+    ' ! [rejected]  build/485-few-card (stale info)',
+    'hint: the remote branch moved since round 2 started',
+  ].join('\n'),
+  checkPr: '421',
 } as const;
 
 /**
@@ -1949,6 +1968,150 @@ function queueFactorySql(): string[] {
     }),
     done(QUEUE_RUNS.factsOnly, 'facts', 3, claimed(412)),
     done(QUEUE_RUNS.factsOnly, 'ship', 5, { done: true }),
+    ...queuePageRunsSql(() => `5eedeeee-0000-4000-8000-2${String(++event).padStart(11, '0')}`),
+  ];
+}
+
+type StepKind = 'node_completed' | 'node_failed' | 'node_skipped';
+
+/** QUEUE_PAGE_RUNS: their events, with ids from the queue factory's one counter. */
+function queuePageRunsSql(nextId: () => string): string[] {
+  const p = QUEUE_PAGE_RUNS;
+  const clock =
+    (start: string): Clock =>
+    (minute) =>
+      new Date(Date.parse(start) + minute * 60_000).toISOString();
+  const step = (
+    run: string,
+    time: Clock,
+    kind: StepKind,
+    name: string,
+    minute: number,
+    seconds: number,
+    extra: Record<string, unknown> = {},
+    output?: Record<string, unknown>,
+  ) => {
+    const data = {
+      ...nodeBlock(name, 'script', name),
+      timing: { startedAt: time(minute), durationMs: seconds * 1000 },
+      duration_ms: seconds * 1000,
+      ...extra,
+      ...(output ? { structured_output: output } : {}),
+    };
+    const event = (type: string, created: string) =>
+      insert('remote_agent_workflow_events', {
+        id: nextId(),
+        workflow_run_id: run,
+        event_type: type,
+        step_name: name,
+        data: json(data),
+        created_at: created,
+      });
+    return event(kind, time(minute + seconds / 60));
+  };
+  const spent = (cost: number) => ({
+    cost_usd: cost,
+    tokens: { input: 2_400_000, output: 41_000, cacheRead: 0, cacheWrite: 0 },
+  });
+  const build = clock('2026-10-20T10:00:00.000Z');
+  const rounds = 'ship__deliver__rounds';
+  const check = clock('2026-10-21T10:00:00.000Z');
+  const runRow = (
+    id: string,
+    workflow: string,
+    status: string,
+    time: Clock,
+    minutes: number,
+    inputs: Record<string, unknown>,
+  ) =>
+    insert('remote_agent_workflow_runs', {
+      id,
+      workflow_name: workflow,
+      codebase_id: QUEUE_CODEBASE,
+      status,
+      user_message: `Run ${workflow} on ${QUEUE_FACTORY.repository}`,
+      metadata: json({ inputs, workflow_source: { digest: QUEUE_DIGEST_2 } }),
+      started_at: time(0),
+      completed_at: time(minutes),
+      last_activity_at: time(minutes),
+    });
+  return [
+    runRow(QUEUE_RUNS.failedBuild, 'archon-build-queue', 'failed', build, 113, {
+      number: String(p.buildIssue),
+    }),
+    // No structured output on facts: a build-queue lap is a run whose facts step names an item.
+    step(QUEUE_RUNS.failedBuild, build, 'node_completed', 'facts', 0, 4),
+    step(QUEUE_RUNS.failedBuild, build, 'node_completed', 'route', 1, 12, spent(0.03)),
+    step(QUEUE_RUNS.failedBuild, build, 'node_completed', 'ship__triage', 2, 100, spent(0.41)),
+    step(
+      QUEUE_RUNS.failedBuild,
+      build,
+      'node_completed',
+      `${rounds}.implement`,
+      5,
+      2400,
+      spent(5.1),
+    ),
+    step(
+      QUEUE_RUNS.failedBuild,
+      build,
+      'node_completed',
+      `${rounds}.pr__prepare`,
+      46,
+      60,
+      spent(0.55),
+    ),
+    step(
+      QUEUE_RUNS.failedBuild,
+      build,
+      'node_completed',
+      `${rounds}.review__result`,
+      48,
+      540,
+      spent(1.4),
+    ),
+    step(QUEUE_RUNS.failedBuild, build, 'node_completed', `${rounds}.round`, 58, 2, spent(0.15), {
+      pr_url: p.buildPr,
+    }),
+    step(
+      QUEUE_RUNS.failedBuild,
+      build,
+      'node_completed',
+      `${rounds}.implement`,
+      62,
+      2940,
+      spent(6.85),
+    ),
+    step(QUEUE_RUNS.failedBuild, build, 'node_failed', `${rounds}.pr__prepare`, 112, 41, {
+      ...spent(0.55),
+      error: p.buildError,
+    }),
+    step(QUEUE_RUNS.failedBuild, build, 'node_skipped', `${rounds}.review__result`, 112.7, 0, {
+      reason: 'upstream failed',
+    }),
+    runRow(QUEUE_RUNS.appCheck, 'factory-app-check', 'completed', check, 9, {}),
+    step(
+      QUEUE_RUNS.appCheck,
+      check,
+      'node_completed',
+      'select',
+      0,
+      5,
+      {},
+      { pr: p.checkPr, head: 'e1'.repeat(20) },
+    ),
+    step(QUEUE_RUNS.appCheck, check, 'node_completed', 'check', 1, 360, spent(2.1)),
+    step(QUEUE_RUNS.appCheck, check, 'node_completed', 'evidence', 7, 90, spent(0.6)),
+    step(
+      QUEUE_RUNS.appCheck,
+      check,
+      'node_completed',
+      'publish',
+      8.6,
+      20,
+      {},
+      { state: 'success' },
+    ),
   ];
 }
 
