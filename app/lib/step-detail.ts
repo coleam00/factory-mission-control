@@ -178,6 +178,14 @@ export interface NestingRow {
   kind: string;
 }
 
+/** The address parameter that pins a screen to a version. */
+export const AT_PARAM = 'at';
+
+/** Where every step's screen in `factory` lives. */
+export function stepsPrefix(factory: string): string {
+  return `/f/${encodeURIComponent(factory)}/steps/`;
+}
+
 /**
  * A step's screen in `factory`, at the version pinned `at` when one is given. A nested path's `/` is
  * encoded, and react-router decodes it back.
@@ -188,8 +196,8 @@ export function stepHref(
   path: string,
   at?: string | null,
 ): string {
-  const href = `/f/${encodeURIComponent(factory)}/steps/${encodeURIComponent(workflow)}/${encodeURIComponent(path)}`;
-  return at ? `${href}?at=${encodeURIComponent(at)}` : href;
+  const href = `${stepsPrefix(factory)}${encodeURIComponent(workflow)}/${encodeURIComponent(path)}`;
+  return at ? `${href}?${AT_PARAM}=${encodeURIComponent(at)}` : href;
 }
 
 /**

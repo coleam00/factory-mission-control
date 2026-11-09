@@ -4,7 +4,7 @@
  * no React.
  */
 import { placeAddress } from '../lib/places';
-import { placeOf, type StepOrigin, type StepRow, stepHref } from '../lib/step-detail';
+import { AT_PARAM, placeOf, type StepOrigin, type StepRow, stepHref } from '../lib/step-detail';
 import data from './factory-map.json';
 
 /** Who is acting on a card, which is its color (docs/design/v2/tokens.css). */
@@ -383,9 +383,6 @@ export function viewPath(map: FactoryMap, id: string | null, from?: string | nul
   return [];
 }
 
-/** The address parameter that pins the map to a version. */
-export const AT_PARAM = 'at';
-
 /** The address parameter that names the open view. */
 export const VIEW_PARAM = 'view';
 
@@ -449,7 +446,7 @@ export function mapOrigin(
   const chain = cardChain(map, workflow, path);
   const search = viewSearch(
     map,
-    new URLSearchParams(at ? { at } : {}),
+    new URLSearchParams(at ? { [AT_PARAM]: at } : {}),
     chain.slice(0, -1).flatMap((card) => (card.opens === undefined ? [] : [card.opens])),
   ).toString();
   const href = `${placeAddress(factory, 'map')}${search ? `?${search}` : ''}`;

@@ -1,6 +1,6 @@
 import dagre, { type EdgeLabel, type GraphLabel, type NodeLabel } from '@dagrejs/dagre';
 import { placeAddress } from './places';
-import { stepHref } from './step-detail';
+import { AT_PARAM, stepHref } from './step-detail';
 
 /**
  * A node of a workflow's expanded tree, as `db/queries/one-lap-map.sql` gives the loop's at a lap's
@@ -190,8 +190,8 @@ export function homeHref(
   search: URLSearchParams = new URLSearchParams(),
 ): string {
   const next = new URLSearchParams(search);
-  if (at) next.set('at', at);
-  else next.delete('at');
+  if (at) next.set(AT_PARAM, at);
+  else next.delete(AT_PARAM);
   const query = next.toString();
   const map = placeAddress(factory, 'map');
   return query === '' ? map : `${map}?${query}`;

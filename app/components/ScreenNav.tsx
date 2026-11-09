@@ -4,6 +4,7 @@ import type { BoardRow } from '../lib/board';
 import { useFactory, useUrlFactory } from '../live/FactoryProvider';
 import { LivePanel } from '../live/LivePanel';
 import { type Place, PLACES, type PlacePath, placeAddress } from '../lib/places';
+import { stepsPrefix } from '../lib/step-detail';
 import { AttentionCount } from './AttentionCount';
 import type { StatusStripRow } from './FactoryStrip';
 
@@ -38,7 +39,7 @@ export function Glyph({ place }: { place: Place }): ReactElement {
 export function currentPlace(pathname: string, factory: string, place: Place): boolean {
   const to = placeAddress(factory, place.path);
   if (pathname === to) return true;
-  if (place.path === 'map') return pathname.startsWith(`/f/${encodeURIComponent(factory)}/steps/`);
+  if (place.path === 'map') return pathname.startsWith(stepsPrefix(factory));
   return place.path === 'runs' && pathname.startsWith(`${to}/`);
 }
 
