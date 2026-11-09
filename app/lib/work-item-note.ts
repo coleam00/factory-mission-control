@@ -59,7 +59,7 @@ const COLUMN_NOTE: Record<
   parked: () => ({
     state: 'idle',
     pill: 'Parked',
-    parts: [bold('Parked.'), plain(' A parked item waits until it is re-triaged.')],
+    parts: [bold('Parked.'), plain(` ${UNSTICK_NOTE.parked.rest}`)],
   }),
   merged: () => ({ state: 'done', pill: 'Merged', parts: [bold('Merged.')] }),
 };
