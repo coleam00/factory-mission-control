@@ -33,7 +33,7 @@ export function Glyph({ place }: { place: Place }): ReactElement {
 
 /**
  * Which place `pathname` is in: the place's own address, a run's page (`.../runs/<run id>`) under
- * Runs, and a step's page (`.../steps/...`) under Factory, the map it opens from. At most one place
+ * Runs, and a step's page under Factory, the map it opens from. At most one place
  * matches any address.
  */
 export function currentPlace(pathname: string, factory: string, place: Place): boolean {
