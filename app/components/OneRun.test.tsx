@@ -34,6 +34,7 @@ const lap: OneLapRow = {
   stop_step: `${GROUP}.pr__prepare`,
   stop_line: "Script node 'pr__prepare' failed [exit 1]",
   stop_class: 'environment',
+  capacity_since: null,
 };
 
 let minute = 0;
@@ -97,6 +98,21 @@ test('the head says what the run is, its state, workflow, pull request, time, co
   expect(html).toContain('data-run-tokens="7000000"');
   expect(html).toContain('1:53:00 · $13.75 · 7,000,000 tokens in');
   expect(html).toContain('href="/f/queue-factory/runs"');
+});
+
+test('a run waiting for a slot shows that state, not "Needs you"', () => {
+  const html = render({
+    lap: { ...lap, status: 'paused', stop_step: 'ask', capacity_since: new Date(NOW) },
+  });
+  expect(html).toContain('>Waiting for a slot<');
+  expect(html).not.toContain('>Needs you<');
+  expect(html).toContain('waiting for a free slot');
+});
+
+test('the head stays one row on a desktop, so the actions keep the top right beside the Manager dock', () => {
+  const html = render();
+  expect(html).toContain('min-[760px]:flex-nowrap');
+  expect(html).toContain('flex shrink-0 gap-2');
 });
 
 test("the manager's read comes from the stop record, and the primary action opens the console run", () => {

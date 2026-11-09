@@ -76,6 +76,8 @@ export interface OneLapRow {
   stop_step: string | null;
   stop_line: string | null;
   stop_class: StopClass | null;
+  /** When the answered run began waiting for a free slot (`mc.capacity_waits`); null when it is not. */
+  capacity_since: Date | null;
 }
 
 /**

@@ -272,6 +272,7 @@ function Tabs(): ReactElement {
 function runPill(lap: OneLapRow): { state: State | undefined; name: string } {
   const outcome = isOldLoop(lap.workflow_name) ? lapOutcome(lap) : null;
   if (outcome !== null) return { state: LAP_OUTCOME_STATE[outcome], name: OUTCOME_LABEL[outcome] };
+  if (lap.capacity_since !== null) return { state: 'idle', name: 'Waiting for a slot' };
   const state = stateOf(RUN_STATE, lap.status);
   return {
     state,
@@ -348,8 +349,8 @@ function RunHead({
         </Link>{' '}
         › <span className="font-mono">{shortRunId(lap.run_id)}</span>
       </div>
-      <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3">
-        <div className="min-w-0">
+      <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3 min-[760px]:flex-nowrap">
+        <div className="min-w-0 min-[760px]:flex-1">
           <h1 className="m-0 text-[length:var(--v3-t-title)] leading-tight font-semibold text-[color:var(--v3-fg)] [overflow-wrap:anywhere]">
             <Title lap={lap} title={title} />
           </h1>
@@ -374,7 +375,7 @@ function RunHead({
             </span>
           </div>
         </div>
-        <div className="flex gap-2">
+        <div className="flex shrink-0 gap-2">
           {primary === null ? null : (
             <a data-action="primary" href={consoleHref} className={buttonClass('primary')}>
               {primary}

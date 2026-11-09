@@ -43,6 +43,7 @@ const refused: OneLapRow = {
   stop_step: null,
   stop_line: null,
   stop_class: null,
+  capacity_since: null,
   status: 'completed',
   started_at: new Date('2026-10-01T14:00:00Z'),
   completed_at: new Date('2026-10-01T15:00:00Z'),

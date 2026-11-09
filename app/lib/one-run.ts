@@ -302,6 +302,9 @@ export function managerRead(
       return { parts, stopClass, codeFailure, resumeStep, resumeCost };
     }
     case 'paused': {
+      if (lap.capacity_since !== null) {
+        return plain({ text: 'It has your answer and is waiting for a free slot to continue.' });
+      }
       const step = lap.stop_step === null ? 'The run' : displayStep(lap.stop_step);
       return plain(
         { text: step, bold: true },

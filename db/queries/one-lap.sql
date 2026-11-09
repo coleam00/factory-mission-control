@@ -16,7 +16,9 @@ SELECT l.run_id, l.workflow_name, l.status, l.started_at, l.completed_at, f.repo
   land.status AS gate_status, land.output ->> 'outcome' AS gate_outcome,
   land.output ->> 'reason' AS gate_reason,
   -- Why the run stopped (mc.run_stops, #513): the manager's read is written from it.
-  st.status AS stop_status, st.step_id AS stop_step, st.line AS stop_line, st.class AS stop_class
+  st.status AS stop_status, st.step_id AS stop_step, st.line AS stop_line, st.class AS stop_class,
+  -- Set while Archon holds the answered run for a free slot (mc.capacity_waits): it waits on no one.
+  cw.since AS capacity_since
 FROM mc.laps l
 JOIN mc.factories f ON f.name = l.factory
 LEFT JOIN LATERAL (
@@ -27,6 +29,7 @@ LEFT JOIN LATERAL (
 LEFT JOIN mc.lap_steps facts ON facts.run_id = l.run_id AND facts.step_id = 'facts'
 LEFT JOIN mc.issues i ON i.factory = l.factory AND i.number = coalesce(c.issue_number, (facts.output -> 'item' ->> 'number')::int, l.issue_number)
 LEFT JOIN mc.run_stops st ON st.run_id = l.run_id
+LEFT JOIN mc.capacity_waits cw ON cw.run_id = l.run_id
 LEFT JOIN mc.lap_steps p ON p.run_id = l.run_id AND p.step_id = 'pick'
 LEFT JOIN mc.lap_steps review ON review.run_id = l.run_id AND review.step_id = 'review'
 LEFT JOIN mc.lap_steps land ON land.run_id = l.run_id AND land.step_id = 'land'

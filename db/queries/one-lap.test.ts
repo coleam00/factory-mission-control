@@ -1,7 +1,12 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { attemptsInOrder, type StepAttemptRow, shownDispositions } from '../../app/lib/one-lap';
 import { runCost, runTimeline, stepCost } from '../../app/lib/one-run';
-import { QUEUE_PAGE_RUNS, QUEUE_RETURNED, QUEUE_RUNS } from '../../scripts/fixture/seed';
+import {
+  QUEUE_PAGE_RUNS,
+  QUEUE_RETURNED,
+  QUEUE_RUNS,
+  QUEUE_UNSTICK,
+} from '../../scripts/fixture/seed';
 import { seedLaps } from '../../scripts/fixture/seed-laps';
 import { eventData } from '../../scripts/fixture/write';
 import type { Db, Row } from '../../scripts/lib/db';
@@ -74,6 +79,7 @@ describe('one-lap on the seed', () => {
         stop_step: null,
         stop_line: null,
         stop_class: null,
+        capacity_since: null,
       },
     ]);
   });
@@ -343,6 +349,13 @@ describe('one-lap on the seed', () => {
       stop_line: "Script node 'pr__prepare' failed [exit 1]",
       stop_class: 'environment',
     });
+  });
+
+  test('a run in capacity_waits carries when it began waiting, and another run carries none', async () => {
+    const [waiting] = await queue('one-lap', QUEUE_RUNS.capacity);
+    expect(waiting.capacity_since).toEqual(new Date(QUEUE_UNSTICK.capacitySince));
+    const [failed] = await queue('one-lap', QUEUE_RUNS.failedBuild);
+    expect(failed.capacity_since).toBeNull();
   });
 
   test('the app check run names its pull request', async () => {

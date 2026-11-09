@@ -57,6 +57,7 @@ const lap = (over: Partial<OneLapRow> = {}): OneLapRow => ({
   stop_step: null,
   stop_line: null,
   stop_class: null,
+  capacity_since: null,
   ...over,
 });
 
@@ -187,6 +188,7 @@ test("the manager's read of a failure names the step, the resume and whether it 
     stop_step: `${GROUP}.pr__prepare`,
     stop_line: 'boom',
     stop_class: 'environment',
+    capacity_since: null,
   });
   const read = managerRead(stopped, rows, timeline);
   expect(text(read)).toBe(
@@ -214,6 +216,19 @@ test('a paused, finished, cancelled or running run is read in one sentence', () 
   expect(read({ status: 'completed' })).toBe('It finished.');
   expect(read({ status: 'cancelled' })).toBe('It was cancelled.');
   expect(read({ status: 'running' })).toBe('It is running ask now.');
+});
+
+test('an answered run waiting for a slot is not read as waiting on you', () => {
+  const rows = [step('ask', { status: 'running' })];
+  const waiting = lap({
+    status: 'paused',
+    stop_step: 'ask',
+    stop_line: 'Pick one',
+    capacity_since: new Date('2026-10-24T09:30:00Z'),
+  });
+  expect(text(managerRead(waiting, rows, runTimeline(rows)))).toBe(
+    'It has your answer and is waiting for a free slot to continue.',
+  );
 });
 
 test('a paused run reads the question, not its bold title markdown', () => {
