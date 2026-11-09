@@ -6,7 +6,7 @@
 import { FACTORY_MAP, type Role } from '../map/factory-map';
 import { type HomeMapRow, lapCard, onQueues, type WorkOrderRow } from '../map/live';
 import type { HealthWorkableRow } from './health';
-import { pullUrl } from './one-lap';
+import { pullUrl, SPLIT_WORKFLOW } from './one-lap';
 import type { OwnerQueueRow } from './owner-queue';
 import { BOARD_ITEM_STATE, CHECK_OVERALL_STATE, type State } from './states';
 import { workItemHref } from './work-item';
@@ -261,9 +261,6 @@ export interface BoardSources {
 
 const withinKeep = (at: Date | null, now: Date): at is Date =>
   at !== null && now.getTime() - at.getTime() < KEEP_MS;
-
-/** The workflow that slices an item into children; it holds nothing (health-workable.sql restates this; restated-rules.test.ts binds the two). */
-export const SPLIT_WORKFLOW = 'archon-split';
 
 /**
  * Every work item with a running run, and the furthest stage those runs are on. A run on a card

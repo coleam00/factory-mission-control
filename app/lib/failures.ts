@@ -1,7 +1,7 @@
 export const STOP_CLASSES = ['transient', 'environment', 'config', 'code', 'input'] as const;
 export type StopClass = (typeof STOP_CLASSES)[number];
 
-/** One row of failure-groups.sql: the failed runs sharing a signature (the Fix group's data, #516). */
+/** One row of failure-groups.sql: the unresolved failed runs sharing a signature (the Fix group's data, #516, #560). The counts and dates describe those runs only. */
 export interface FailureGroupRow {
   signature: string;
   workflow_name: string;
@@ -13,7 +13,7 @@ export interface FailureGroupRow {
   last_at: Date | null;
   latest_run_id: string;
   line: string | null;
-  /** The newest day with a failure; `daily` ends here. */
+  /** The newest UTC day any of the factory's runs stopped; `daily` ends here, and a failure on or before 14 days earlier is resolved. */
   last_day: Date;
   /** Failures per UTC day for the 14 days ending at `last_day`, oldest first. */
   daily: number[];
