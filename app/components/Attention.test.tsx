@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { MemoryRouter } from 'react-router';
 import type { DecideRow, UnstickRow } from '../lib/attention';
 import type { FailureGroupRow } from '../lib/failures';
+import type { HandledRow } from '../lib/manager';
 import type { OwnerQueueRow } from '../lib/owner-queue';
 import type { Source } from '../live/Feed';
 import { AttentionBody } from './Attention';
@@ -68,6 +69,17 @@ const failure: FailureGroupRow = {
   daily: [0, 1, 1],
   console: 'http://localhost:3090/',
 };
+
+const handledRow = (id: number, action: HandledRow['action'], sent_at: Date): HandledRow => ({
+  id,
+  action,
+  run_id: RUN,
+  option: null,
+  from_step: null,
+  sent_at,
+  exit_code: 0,
+  workflow_name: 'archon-loop',
+});
 
 const none = ready<never>([]);
 const render = (props: Partial<Parameters<typeof AttentionBody>[0]> = {}) =>
@@ -190,4 +202,21 @@ test('before the server says an operator exists, every tile and the Resume butto
   expect(html).not.toContain('data-answer-box');
   expect(html).toMatch(/<a [^>]*data-choice=/);
   expect(html).not.toMatch(/<button[^>]*data-choice=/);
+});
+
+test('every card offers Ask manager, and the handled line counts only the actions of today', () => {
+  const html = render({
+    decide: ready([decide]),
+    failures: ready([failure]),
+    handled: ready([
+      handledRow(1, 'resume', new Date(NOW - 60_000)),
+      handledRow(2, 'resume', new Date(NOW - 2 * 86_400_000)),
+    ]),
+  });
+  expect(html.match(/data-ask-manager/g)?.length).toBe(2);
+  expect(html).toContain('The manager handled 1 today: resumed 1 run.');
+  const failed = render({
+    handled: { rows: [handledRow(1, 'resume', new Date(NOW - 60_000))], state: 'error' },
+  });
+  expect(failed).not.toContain('data-handled');
 });
