@@ -169,7 +169,7 @@ test("the seed holds a second factory with one running lap, kept out of mission-
   expect(stripRow?.running).toEqual(own?.running);
 });
 
-test('the seed holds a queue factory: three running build-queue laps, two intake laps and two split laps by number input, four finished build-queue laps, one waiting, one merged', async () => {
+test('the seed holds a queue factory: three running build-queue laps, two intake laps and two split laps by number input, four finished build-queue laps, a failed one, a passed app check, one waiting, one merged', async () => {
   expect(await db.query('SELECT name FROM mc.factories ORDER BY name')).toEqual([
     { name: 'mission-control' },
     { name: QUEUE_FACTORY.name },
@@ -216,6 +216,12 @@ test('the seed holds a queue factory: three running build-queue laps, two intake
       workflow_name: 'archon-build-queue',
       status: 'completed',
       issue_number: null,
+      attention_open: false,
+    },
+    {
+      workflow_name: 'archon-build-queue',
+      status: 'failed',
+      issue_number: 485,
       attention_open: false,
     },
     {
@@ -294,6 +300,12 @@ test('the seed holds a queue factory: three running build-queue laps, two intake
       workflow_name: 'archon-split',
       status: 'running',
       issue_number: 410,
+      attention_open: false,
+    },
+    {
+      workflow_name: 'factory-app-check',
+      status: 'completed',
+      issue_number: null,
       attention_open: false,
     },
   ]);

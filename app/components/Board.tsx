@@ -93,9 +93,11 @@ function MiniCard({ item }: { item: PipelineStage['items'][number] }): ReactElem
     <Link to={item.to} data-work-item={item.number} className={TILE}>
       <span className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1 whitespace-nowrap font-mono text-[length:var(--v3-t-micro)] text-[color:var(--v3-fg-2)]">
         #{item.number}
-        <Pill compact state={BOARD_ITEM_STATE[item.status]} live={item.status === 'running'}>
-          {item.status}
-        </Pill>
+        <span className="flex max-w-full min-w-0 [&>span]:min-w-0" title={item.status}>
+          <Pill compact state={BOARD_ITEM_STATE[item.status]} live={item.status === 'running'}>
+            <span className="min-w-0 truncate">{item.status}</span>
+          </Pill>
+        </span>
       </span>
       <span className="mt-0.5 block text-[length:var(--v3-t-meta)] text-[color:var(--v3-fg)] [overflow-wrap:anywhere]">
         {item.title}
@@ -174,15 +176,17 @@ function Pipeline({
   const { filed, tracked, dropped } = view.found;
   return (
     <div className="space-y-2.5">
-      <div className="grid grid-cols-1 gap-2.5 min-[760px]:grid-cols-5">
-        {stages.map((stage) => (
-          <StageCard
-            key={stage.id}
-            stage={stage}
-            moreHref={moreHref}
-            older={stage.id === 'merged' ? older : null}
-          />
-        ))}
+      <div className="@container">
+        <div className="grid grid-cols-1 gap-2.5 min-[760px]:@min-[400px]:grid-cols-2 min-[760px]:@min-[640px]:grid-cols-5">
+          {stages.map((stage) => (
+            <StageCard
+              key={stage.id}
+              stage={stage}
+              moreHref={moreHref}
+              older={stage.id === 'merged' ? older : null}
+            />
+          ))}
+        </div>
       </div>
       <div className="grid grid-cols-1 gap-2.5 min-[760px]:grid-cols-2">
         <Card

@@ -213,6 +213,47 @@ export function boardPhase(ctx: LiveContext): LivePhase {
     );
   }
 
+  const MINI_PILL_FIT = `(() => {
+    const tiles = [...document.querySelectorAll('[data-board-stage] [data-work-item]')];
+    const bad = tiles.flatMap((tile) => {
+      const box = tile.getBoundingClientRect();
+      return [...tile.firstElementChild.children].flatMap((p) => {
+        const pill = p.firstElementChild ?? p;
+        const r = pill.getBoundingClientRect();
+        const hardClipped = [pill.lastElementChild ?? pill, pill, p].some((e) => {
+          const s = getComputedStyle(e);
+          return s.overflowX !== 'visible' && e.scrollWidth > e.clientWidth + 0.5 && s.textOverflow !== 'ellipsis';
+        });
+        const lines = Math.round(r.height / (parseFloat(getComputedStyle(pill).lineHeight) || r.height));
+        const label = (pill.lastElementChild ?? pill).getBoundingClientRect();
+        const ts = getComputedStyle(tile);
+        const inner = box.width - parseFloat(ts.paddingLeft) - parseFloat(ts.paddingRight);
+        const unreadable = inner < 1 || label.width < 24;
+        return r.right > box.right + 0.5 || hardClipped || lines > 1 || unreadable ? [tile.dataset.workItem + ' ' + p.textContent] : [];
+      });
+    });
+    const seen = (status) => tiles.some((t) => t.firstElementChild.textContent.includes(status));
+    return { bad, missing: ['running', 'check failed'].filter((s) => !seen(s)) };
+  })()`;
+
+  async function pillsOutsideTiles(page: Page): Promise<string[]> {
+    const failures: string[] = [];
+    await page.evaluate<boolean>(`(localStorage.setItem('mc.manager.open', 'open'), true)`);
+    await open(page, path);
+    for (const width of [760, 800, 900, 1000, 1264, 1440]) {
+      await page.setViewport(width);
+      const { bad, missing } = await page.evaluate<{ bad: string[]; missing: string[] }>(MINI_PILL_FIT);
+      for (const what of bad)
+        failures.push(
+          `board at ${width}px: pill outside its tile, wrapped, hard-clipped or unreadable: ${what}`,
+        );
+      for (const status of missing)
+        failures.push(`board at ${width}px: no "${status}" tile to measure a pill on`);
+    }
+    await page.setViewport(1440);
+    return failures;
+  }
+
   const open = async (page: Page, path: string) => {
     await page.goto(`${ctx.base}${path}`);
     await page.evaluate<boolean>(
@@ -252,6 +293,7 @@ export function boardPhase(ctx: LiveContext): LivePhase {
         ctx.save(FILES.shot, await page.screenshot(1440));
         failures.push(...(await pipelineMismatches(page, FACTORY)));
         failures.push(...(await pillFitFailures(page, FACTORY, pillsSeen)));
+        failures.push(...(await pillsOutsideTiles(page)));
         await open(page, table);
         failures.push(...(await mismatches(page, FACTORY, null)));
         const merged = await run<BoardRow>('board', FACTORY);

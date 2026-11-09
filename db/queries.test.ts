@@ -12,7 +12,6 @@ import type { FailureGroupRow } from '../app/lib/failures';
 import type { HealthRunRow, HealthStepRow, HealthWorkableRow } from '../app/lib/health';
 import type { LapMapRow } from '../app/lib/lap-graph';
 import type { CheckLineRow, OneLapRow, StepAttemptRow } from '../app/lib/one-lap';
-import { LAP_PAGE_WORKFLOW } from '../app/lib/one-lap';
 import type { OwnerQueueRow } from '../app/lib/owner-queue';
 import type { RewindBranchRow } from '../app/lib/rewind';
 import type { RunsRow } from '../app/lib/runs';
@@ -250,9 +249,11 @@ const ROW_COLUMNS: Record<string, string[]> = {
     'outcome',
     'error',
     'position',
+    'event_at',
   ]),
   'one-lap': columns<OneLapRow>()([
     'run_id',
+    'workflow_name',
     'status',
     'started_at',
     'completed_at',
@@ -272,6 +273,11 @@ const ROW_COLUMNS: Record<string, string[]> = {
     'gate_status',
     'gate_outcome',
     'gate_reason',
+    'stop_status',
+    'stop_step',
+    'stop_line',
+    'stop_class',
+    'capacity_since',
   ]),
   'owner-queue': columns<OwnerQueueRow>()([
     'kind',
@@ -572,28 +578,19 @@ describe('the rules the live queries restate, which they may not call a function
     }
   });
 
-  test("the lap page's workflow is the one LAP_PAGE_WORKFLOW names, in every one-lap query", () => {
+  test('no one-lap query names a workflow: each follows the run it is asked about', () => {
     const names = queries.map(([n]) => n).filter((n) => n.startsWith('one-lap'));
     expect(names.sort()).toEqual(['one-lap', 'one-lap-checks', 'one-lap-map', 'one-lap-steps']);
-    const expected: [string, number, number][] = [
-      ['one-lap', 1, 0],
-      ['one-lap-checks', 1, 0],
-      ['one-lap-map', 1, 1],
-      ['one-lap-steps', 3, 1],
-    ];
-    for (const [name, runFilters, stepFilters] of expected) {
+    for (const name of names) {
       const sql = query(name);
-      const run = [...sql.matchAll(/workflow_name = '([^']*)'/g)].map((m) => m[1]);
-      const step = [...sql.matchAll(/\bs\.workflow = '([^']*)'/g)].map((m) => m[1]);
-      expect([name, run, step]).toEqual([
+      expect([name, [...sql.matchAll(/workflow(_name)? = '/g)]]).toEqual([name, []]);
+      expect([name, [...sql.matchAll(/'archon-[a-z-]+'/g)]]).toEqual([name, []]);
+    }
+    for (const name of ['one-lap-map', 'one-lap-steps']) {
+      expect([
         name,
-        Array(runFilters).fill(LAP_PAGE_WORKFLOW),
-        Array(stepFilters).fill(LAP_PAGE_WORKFLOW),
-      ]);
-      expect([name, [...sql.matchAll(/'archon-[a-z-]+'/g)].map((m) => m[0])]).toEqual([
-        name,
-        Array(runFilters + stepFilters).fill(`'${LAP_PAGE_WORKFLOW}'`),
-      ]);
+        /workflow_name = s\.workflow|s\.workflow = v\.workflow_name/.test(query(name)),
+      ]).toEqual([name, true]);
     }
   });
 });

@@ -1,6 +1,7 @@
 import { type ReactElement, useCallback, useEffect, useState, useSyncExternalStore } from 'react';
 
 const OPEN_KEY = 'mc.manager.open';
+const OPEN_EVENT = 'mc:manager-open';
 
 /** Under this width there is no side nav and no docked panel: a top bar and a tab bar instead. */
 export const PHONE_QUERY = '(max-width: 759.98px)';
@@ -39,6 +40,9 @@ export function isManagerShortcut(
   return (event.metaKey || event.ctrlKey) && !event.altKey && event.key.toLowerCase() === 'j';
 }
 
+/** Opens the Manager dock from anywhere on the page. */
+export const openManager = () => window.dispatchEvent(new Event(OPEN_EVENT));
+
 /** The docked Manager's state, kept in the browser; ⌘J or Ctrl+J toggles it. */
 export function useManagerDock(): { open: boolean; toggle: () => void } {
   const [open, setOpen] = useState(() => readOpen(storage()));
@@ -46,6 +50,11 @@ export function useManagerDock(): { open: boolean; toggle: () => void } {
   useEffect(() => {
     writeOpen(storage(), open);
   }, [open]);
+  useEffect(() => {
+    const onOpen = () => setOpen(true);
+    window.addEventListener(OPEN_EVENT, onOpen);
+    return () => window.removeEventListener(OPEN_EVENT, onOpen);
+  }, []);
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (isManagerShortcut(event)) {

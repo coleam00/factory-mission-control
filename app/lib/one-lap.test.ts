@@ -8,7 +8,6 @@ import {
   checkLineFor,
   consoleUrl,
   lapHref,
-  lapCost,
   lapOutcome,
   type OneLapRow,
   prNumber,
@@ -72,14 +71,6 @@ test("an attempt with no start goes in the loop's order, a step the version lack
   ]);
 });
 
-test("the lap's cost sums every attempt, numeric strings and numbers alike", () => {
-  expect(lapCost([attempt({ cost_usd: '0.4213' }), attempt({ cost_usd: 0.4213 })])).toBeCloseTo(
-    0.8426,
-  );
-  expect(lapCost([attempt({ cost_usd: null }), attempt({ cost_usd: '1.2' })])).toBe(1.2);
-  expect(lapCost([attempt({ cost_usd: null })])).toBeNull();
-});
-
 test("the console link is the factory's console, /console/r/, and the run id", () => {
   expect(consoleUrl('http://localhost:3090', RUN)).toBe(`http://localhost:3090/console/r/${RUN}`);
   expect(consoleUrl('http://localhost:3090/', RUN)).toBe(`http://localhost:3090/console/r/${RUN}`);
@@ -125,6 +116,12 @@ test('a finished attempt takes its recorded duration; a running one its time so 
 
 const lap = (over: Partial<OneLapRow>): OneLapRow => ({
   run_id: RUN,
+  workflow_name: 'archon-loop',
+  stop_status: null,
+  stop_step: null,
+  stop_line: null,
+  stop_class: null,
+  capacity_since: null,
   status: 'completed',
   started_at: null,
   completed_at: null,

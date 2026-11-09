@@ -1,4 +1,5 @@
 import { consoleUrl, pullUrl } from '../../app/lib/one-lap';
+import { QUEUE_FACTORY, QUEUE_PAGE_RUNS, QUEUE_RUNS } from '../fixture/seed';
 import { MARKER } from '../fixture/seed-report';
 import { openPage, type Page } from '../lib/cdp';
 import type { Db } from '../lib/db';
@@ -134,15 +135,26 @@ const oneLapOnScreen = `(() => {
   };
 })()`;
 
-/** Opens `runId`'s lap page and waits until every one of its panels is `ready`. */
-async function openOneLap(page: Page, base: string, factory: string, runId: string): Promise<void> {
-  await page.goto(`${base}/f/${factory}/runs/${runId}`);
+/**
+ * Opens `runId`'s page on a tab and waits until its panels are `ready`: the Steps tab holds all
+ * four, the Timeline every one but the app check's.
+ */
+async function openOneLap(
+  page: Page,
+  base: string,
+  factory: string,
+  runId: string,
+  tab: 'steps' | 'timeline',
+): Promise<void> {
+  await page.goto(`${base}/f/${factory}/runs/${runId}${tab === 'steps' ? '?tab=steps' : ''}`);
   await page.evaluate('window.__mcNoReload = true');
+  const panels =
+    tab === 'steps' ? ONE_LAP_QUERIES : ONE_LAP_QUERIES.filter((q) => q !== 'one-lap-checks');
   const ready = await page.evaluate<boolean>(
     pageWait(
-      ONE_LAP_QUERIES.map(
-        (q) => `document.querySelector('[data-live="${q}"][data-state="ready"]') !== null`,
-      ).join(' && '),
+      panels
+        .map((q) => `document.querySelector('[data-live="${q}"][data-state="ready"]') !== null`)
+        .join(' && '),
       READY_WAIT_MS,
     ),
   );
@@ -158,7 +170,7 @@ function pageLapRule(sql: string, pattern: RegExp, name: string): string {
   return found[0];
 }
 
-/** The pull request lateral: which PR a lap shows. */
+/** The pull request lateral: which PR a run shows. */
 const pageLapPrJoin = (sql: string) =>
   pageLapRule(
     sql,
@@ -166,12 +178,20 @@ const pageLapPrJoin = (sql: string) =>
     'pr lateral',
   );
 
-/** The claim lateral (which claim, hence which issue, a lap shows) and the issue join that follows it. */
+/** The claim lateral, the facts step join and the issue join that follow it: which item a run shows. */
 const pageLapClaimJoin = (sql: string) =>
   pageLapRule(
     sql,
-    /^LEFT JOIN LATERAL \(\r?\n\s*SELECT c\.issue_number, c\.route FROM mc\.claims c[\s\S]*?^\) c ON true\r?\n.*mc\.issues i .*$/m,
+    /^LEFT JOIN LATERAL \(\r?\n\s*SELECT c\.issue_number, c\.route FROM mc\.claims c[\s\S]*?^\) c ON true\r?\n.*mc\.lap_steps facts .*\r?\n.*mc\.issues i .*$/m,
     'claim lateral',
+  );
+
+/** The item's number: the claim's, else the one the facts step names, else the lap's. */
+const pageLapIssue = (sql: string) =>
+  pageLapRule(
+    sql,
+    /coalesce\(c\.issue_number, \(facts\.output -> 'item' ->> 'number'\)::int, l\.issue_number\)/,
+    'issue expression',
   );
 
 /** The pick step join: the step whose route and depth a lap shows. */
@@ -184,7 +204,7 @@ const pageLapRoute = (sql: string) =>
 
 /**
  * A finished lap's screen against SQL over the seed's tables, not the screen's queries (except the issue, issue link,
- * route and PR columns, which run one-lap.sql's own claim, route and PR rules so the page and the check share one owner): each
+ * route and PR columns, which run one-lap.sql's own item, route and PR rules so the page and the check share one owner): each
  * step's single attempt, the lap's cost, its review, merge gate and app-check lines, its links,
  * and no holdout line or text anywhere on the page. The seed lap has holdout lines, so equal
  * lines prove the page leaves them out.
@@ -202,7 +222,7 @@ async function seedOneLapMismatches(
 
   const [lap] = await db.query(
     `SELECT f.repository, f.console,
-       c.issue_number AS issue, i.url AS issue_url,
+       ${pageLapIssue(oneLapSql)} AS issue, i.url AS issue_url,
        ${pageLapRoute(oneLapSql)} AS route, p.output ->> 'depth' AS depth,
        review.output ->> 'outcome' AS review, pr.pr_number,
        land.output ->> 'outcome' AS gate, land.output ->> 'reason' AS reason
@@ -364,10 +384,135 @@ async function seedOneLapMismatches(
   return { mismatches, report };
 }
 
+interface RunOnScreen {
+  title: string | null;
+  cost: number | null;
+  steps: {
+    step: string | null;
+    status: string | null;
+    started: string | null;
+    durationMs: number | null;
+    cost: number | null;
+  }[];
+  rounds: { round: number | null; cost: number | null }[];
+  errorPanels: number;
+  skipReasons: (string | null)[];
+  codeFailure: string | null;
+}
+
+const runOnScreen = `(() => {
+  const num = (el, name) => (el?.hasAttribute(name) ? Number(el.getAttribute(name)) : null);
+  const head = document.querySelector('[data-live="one-lap"] [data-lap]');
+  return {
+    title: head?.getAttribute('data-title') ?? null,
+    cost: num(head, 'data-run-cost'),
+    steps: [...document.querySelectorAll('[data-timeline-step]')].map((li) => ({
+      step: li.getAttribute('data-timeline-step'),
+      status: li.getAttribute('data-status'),
+      started: li.getAttribute('data-started'),
+      durationMs: num(li, 'data-duration-ms'),
+      cost: num(li, 'data-cost'),
+    })),
+    rounds: [...document.querySelectorAll('[data-round]')].map((li) => ({
+      round: num(li, 'data-round'),
+      cost: num(li, 'data-round-cost'),
+    })),
+    errorPanels: document.querySelectorAll('[data-error-panel]').length,
+    skipReasons: [...document.querySelectorAll('[data-skip-reason]')].map((li) => li.getAttribute('data-skip-reason')),
+    codeFailure: document.querySelector('[data-manager-read]')?.getAttribute('data-code-failure') ?? null,
+  };
+})()`;
+
+/** What a seed run's page should say: its title, and for the failed build the error and the read. */
+interface RunExpectation {
+  run: string;
+  title: string;
+  failed?: boolean;
+}
+
+/**
+ * A run's Timeline against SQL over its attempts: every step row's time and cost is its attempt's,
+ * the folded rounds and the steps beside them add up to the run's cost, and that is the head's.
+ */
+async function seedRunMismatches(
+  page: Page,
+  db: Db,
+  expected: RunExpectation,
+): Promise<{ mismatches: string[]; report: string }> {
+  const shown = await page.evaluate<RunOnScreen>(runOnScreen);
+  const mismatches: string[] = [];
+  if (shown.title !== expected.title) {
+    mismatches.push(`${expected.run}: the title is ${shown.title}, expected ${expected.title}`);
+  }
+  const attempts = await db.query(
+    `SELECT step_id, status, nullif(started_at, '-infinity') AS started, duration_ms, cost_usd
+     FROM mc.lap_step_attempts WHERE run_id = $1`,
+    [expected.run],
+  );
+  const near = (a: number | null, b: number | null) =>
+    a === b || (a !== null && b !== null && Math.abs(a - b) < 1e-9);
+  for (const row of shown.steps) {
+    const attempt = attempts.find(
+      (a) =>
+        a.step_id === row.step &&
+        (a.started instanceof Date ? a.started.toISOString() : null) === row.started,
+    );
+    if (attempt === undefined) {
+      mismatches.push(`${expected.run}: the timeline step ${row.step} has no attempt`);
+      continue;
+    }
+    const cost = attempt.cost_usd === null ? null : Number(attempt.cost_usd);
+    const durationMs = attempt.duration_ms === null ? null : Number(attempt.duration_ms);
+    if (!near(row.cost, cost) || row.durationMs !== durationMs) {
+      mismatches.push(
+        `${expected.run}: ${row.step} shows ${row.durationMs} ms and ${row.cost}, SQL ${durationMs} ms and ${cost}`,
+      );
+    }
+  }
+  const [{ total }] = await db.query(
+    'SELECT coalesce(sum(cost_usd), 0)::float8 AS total FROM mc.lap_step_attempts WHERE run_id = $1',
+    [expected.run],
+  );
+  const parts =
+    shown.steps.reduce((sum, s) => sum + (s.cost ?? 0), 0) +
+    shown.rounds.reduce((sum, r) => sum + (r.cost ?? 0), 0);
+  if (Math.abs((shown.cost ?? 0) - Number(total)) > 1e-9) {
+    mismatches.push(`${expected.run}: the head shows a cost of ${shown.cost}, SQL ${total}`);
+  }
+  if (Math.abs(parts - Number(total)) > 1e-9) {
+    mismatches.push(`${expected.run}: the timeline rows add up to ${parts}, SQL ${total}`);
+  }
+  if (expected.failed) {
+    if (shown.errorPanels !== 1) {
+      mismatches.push(`${expected.run}: ${shown.errorPanels} error panels, expected 1`);
+    }
+    if (shown.skipReasons.length === 0)
+      mismatches.push(`${expected.run}: no skipped step says why`);
+    if (shown.codeFailure !== 'no') {
+      mismatches.push(
+        `${expected.run}: the read's code failure is ${shown.codeFailure}, expected no`,
+      );
+    }
+  }
+  const report = [
+    `run ${expected.run} (${expected.title})`,
+    `  screen ${JSON.stringify(shown)}`,
+    `  SQL attempts ${JSON.stringify(attempts)}, cost ${total}`,
+    ...mismatches,
+    `mismatches: ${mismatches.length}`,
+  ].join('\n');
+  return { mismatches, report };
+}
+
 const FILES = liveOutputs({
   check: 'one-lap-check.txt',
   shot: 'one-lap.png',
   probe: 'one-lap-design-probe.json',
+  runCheck: 'one-run-check.txt',
+  runFailedShot: 'run-failed.png',
+  runAppCheckShot: 'run-app-check.png',
+  runSweepShot: 'run-merge-sweep.png',
+  runFailedProbe: 'run-failed-design-probe.json',
   refusedProbe: 'one-lap-refused-design-probe.json',
   timings: 'one-lap-timings.json',
 });
@@ -425,7 +570,7 @@ export function oneLapPhase(ctx: LiveContext): LivePhase {
       oneLapTimings.refusedRun = refusedRun;
       const refusedPage = await openPage(deps.env);
       try {
-        await openOneLap(refusedPage, base, factory, refusedRun);
+        await openOneLap(refusedPage, base, factory, refusedRun, 'steps');
         const oneLapSeed = await seedOneLapMismatches(
           refusedPage,
           db,
@@ -438,10 +583,38 @@ export function oneLapPhase(ctx: LiveContext): LivePhase {
       } finally {
         await refusedPage.close().catch(() => undefined);
       }
+      const reports: string[] = [];
+      for (const [expected, shot] of [
+        [
+          {
+            run: QUEUE_RUNS.failedBuild,
+            title: `Build #${QUEUE_PAGE_RUNS.buildIssue}, round 2`,
+            failed: true,
+          },
+          FILES.runFailedShot,
+        ],
+        [
+          { run: QUEUE_RUNS.appCheck, title: `App check, PR #${QUEUE_PAGE_RUNS.checkPr}` },
+          FILES.runAppCheckShot,
+        ],
+        [{ run: QUEUE_RUNS.merged, title: 'Merge sweep' }, FILES.runSweepShot],
+      ] as const) {
+        const runPage = await openPage(deps.env);
+        try {
+          await openOneLap(runPage, base, QUEUE_FACTORY.name, expected.run, 'timeline');
+          const checked = await seedRunMismatches(runPage, db, expected);
+          reports.push(checked.report);
+          ctx.failures.push(...checked.mismatches.map((m) => `one run against the seed: ${m}`));
+          ctx.save(shot, await runPage.screenshot(1440));
+        } finally {
+          await runPage.close().catch(() => undefined);
+        }
+      }
+      ctx.save(FILES.runCheck, `${reports.join('\n\n')}\n`);
       oneLapTimings.run = firstLap;
       const page = await openPage(deps.env);
       lapPage = page;
-      await openOneLap(page, base, factory, firstLap);
+      await openOneLap(page, base, factory, firstLap, 'steps');
       Object.assign(oneLapTimings, groupTimings(await measure(page, ONE_LAP_QUERIES)));
       const lapMarkers = await page.evaluate<number>(markersOnScreen);
       if (lapMarkers !== 0) {
@@ -497,6 +670,11 @@ export function oneLapPhase(ctx: LiveContext): LivePhase {
       ] as const) {
         designProbe(`${base}/f/${factory}/runs/${run}`, file, `the lap ${run}`);
       }
+      designProbe(
+        `${base}/f/${QUEUE_FACTORY.name}/runs/${QUEUE_RUNS.failedBuild}`,
+        FILES.runFailedProbe,
+        `the failed run ${QUEUE_RUNS.failedBuild}`,
+      );
     },
 
     async close() {

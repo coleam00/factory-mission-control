@@ -480,7 +480,7 @@ test('Right now says a skipped reviewer was not earned, naming the lap by issue 
   expect(render({ here: [] })).not.toContain('data-skipped');
 });
 
-test('Right now links only a run with a lap page; a queue run and a merge-queue merge show plainly', () => {
+test('Right now links every run to its run page', () => {
   const issue = { number: 9, title: 'Queued', url: 'https://github.com/o/r/issues/9' };
   const at = new Date();
   const html = renderToStaticMarkup(
@@ -502,8 +502,8 @@ test('Right now links only a run with a lap page; a queue run and a merge-queue 
   );
   expect(html).toContain('/f/here/runs/loop-run');
   expect(html).toContain('/f/here/runs/loop-merge');
-  expect(html).not.toContain('/runs/queue-run');
-  expect(html).not.toContain('/runs/queue-merge');
+  expect(html).toContain('/f/here/runs/queue-run');
+  expect(html).toContain('/f/here/runs/queue-merge');
   expect(html).toContain('Queued');
   expect(html).toContain('href="https://github.com/o/r/issues/9"');
   expect(html).toContain('#5');
