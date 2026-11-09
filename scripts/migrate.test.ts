@@ -6,7 +6,14 @@ import { archonDb, snapshot } from '../db/test-db';
 import factories from '../factories.json';
 import type { Db } from './lib/db';
 import { DATABASE_URL, recordingDeps, scratchRepo } from './lib/test-deps';
-import { main, migrationsDir, readMigrationFiles, runMigrations } from './migrate';
+import {
+  LEGACY_MIGRATIONS,
+  main,
+  migrationNameProblems,
+  migrationsDir,
+  readMigrationFiles,
+  runMigrations,
+} from './migrate';
 
 const REPO_ROOT = join(import.meta.dir, '..');
 const FACTORIES = factories.factories;
@@ -311,13 +318,7 @@ test.each([
   }
 });
 
-test('a second run over the same recorded state applies nothing', async () => {
-  const repoRoot = repo();
-  const dir = migrationsDir(repoRoot);
-  mkdirSync(dir, { recursive: true });
-  writeFileSync(join(dir, '0002_b.sql'), 'CREATE TABLE b (id int PRIMARY KEY);');
-  writeFileSync(join(dir, '0001_a.sql'), 'CREATE TABLE a (id int PRIMARY KEY);');
-
+function recordingDb(): { db: Db; statements: string[] } {
   const recorded = new Set<string>();
   const statements: string[] = [];
   const db: Db = {
@@ -334,7 +335,67 @@ test('a second run over the same recorded state applies nothing', async () => {
     },
     async close() {},
   };
+  return { db, statements };
+}
 
+test('a timestamp-named migration applies after every 00NN_ file, once', async () => {
+  const dir = migrationsDir(repo());
+  mkdirSync(dir, { recursive: true });
+  for (const name of ['20261109T1430Z_x.sql', '0032_lap_step_pr_url.sql', '0001_a.sql']) {
+    writeFileSync(join(dir, name), 'SELECT 1;');
+  }
+  const { db, statements } = recordingDb();
+  const files = readMigrationFiles(dir);
+  const order = ['0001_a.sql', '0032_lap_step_pr_url.sql', '20261109T1430Z_x.sql'];
+  expect(files.map((f) => f.name)).toEqual(order);
+  expect(await runMigrations({ files, db })).toEqual(order);
+  statements.length = 0;
+  expect(await runMigrations({ files, db })).toEqual([]);
+  expect(statements.some((sql) => sql.startsWith('INSERT'))).toBe(false);
+});
+
+test('every migration in db/migrations is a legacy 00NN_ file or the timestamp form, with no new shared prefix', () => {
+  const present = readMigrationFiles(migrationsDir(REPO_ROOT)).map((f) => f.name);
+  expect(migrationNameProblems(present)).toEqual([]);
+  expect([...LEGACY_MIGRATIONS].filter((name) => !present.includes(name))).toEqual([]);
+});
+
+test.each([
+  '0033_x.sql',
+  '0032_x.sql',
+  '2026-11-09_x.sql',
+  '20261109T1430_x.sql',
+  '20261109T1430Z.sql',
+  '20261109T1430Z_StopLine.sql',
+])('migration name %s is rejected', (name) => {
+  const problems = migrationNameProblems([...LEGACY_MIGRATIONS, name]);
+  expect(problems.length).toBeGreaterThan(0);
+  expect(problems[0]).toContain(name);
+});
+
+test('the timestamp form and the legacy duplicates pass', () => {
+  expect(migrationNameProblems([...LEGACY_MIGRATIONS])).toEqual([]);
+  expect(migrationNameProblems([...LEGACY_MIGRATIONS, '20261109T1430Z_x.sql'])).toEqual([]);
+});
+
+test('a shared timestamp prefix fails', () => {
+  const twoNew = migrationNameProblems([
+    ...LEGACY_MIGRATIONS,
+    '20261109T1430Z_a.sql',
+    '20261109T1430Z_b.sql',
+  ]);
+  expect(twoNew).toHaveLength(1);
+  expect(twoNew[0]).toContain('share the prefix 20261109T1430Z');
+});
+
+test('a second run over the same recorded state applies nothing', async () => {
+  const repoRoot = repo();
+  const dir = migrationsDir(repoRoot);
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, '0002_b.sql'), 'CREATE TABLE b (id int PRIMARY KEY);');
+  writeFileSync(join(dir, '0001_a.sql'), 'CREATE TABLE a (id int PRIMARY KEY);');
+
+  const { db, statements } = recordingDb();
   const files = readMigrationFiles(dir);
   expect(await runMigrations({ files, db })).toEqual(['0001_a.sql', '0002_b.sql']);
   statements.length = 0;

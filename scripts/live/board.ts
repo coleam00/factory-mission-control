@@ -76,6 +76,27 @@ const SHOWN_PIPELINE = `(() => {
   };
 })()`;
 
+const PILL_WIDTHS = [760, 1000, 1264, 1440];
+
+const PILL_STATUSES = ['running', 'check failed'];
+
+const PILL_FIT = `(() => {
+  const seen = [];
+  const bad = [...document.querySelectorAll('[data-board-stage]')].flatMap((tile) => {
+    const box = tile.getBoundingClientRect();
+    return [...tile.querySelectorAll('p + div > span > span')].flatMap((pill) => {
+      seen.push(pill.textContent.trim());
+      const r = pill.getBoundingClientRect();
+      const wrapped = r.height > 24 || pill.firstElementChild.getClientRects().length > 1;
+      const outside = r.left < box.left - 0.5 || r.right > box.right + 0.5;
+      return wrapped || outside
+        ? [pill.textContent.trim() + ' (' + (wrapped ? 'wrapped' : 'outside its tile') + ')']
+        : [];
+    });
+  });
+  return { seen, bad };
+})()`;
+
 const FILES = liveOutputs({
   shot: 'board.png',
   probe: 'board-design-probe.json',
@@ -153,6 +174,32 @@ export function boardPhase(ctx: LiveContext): LivePhase {
     return failures;
   }
 
+  /** Each stage summary pill sits on one line, inside its tile, at every desktop width the Pipeline reflows at. `seen` collects the pills inspected per width. */
+  async function pillFitFailures(
+    page: Page,
+    factory: string,
+    seen: Map<number, string[]>,
+  ): Promise<string[]> {
+    const failures: string[] = [];
+    for (const width of PILL_WIDTHS) {
+      await page.setViewport(width);
+      const fit = await page.evaluate<{ seen: string[]; bad: string[] }>(PILL_FIT);
+      seen.set(width, [...(seen.get(width) ?? []), ...fit.seen]);
+      failures.push(...fit.bad.map((b) => `board ${factory} at ${width}px: stage pill ${b}`));
+    }
+    await page.setViewport(1440);
+    return failures;
+  }
+
+  /** The probe passes only if it measured a running and a check-failed pill at every width. */
+  function pillCoverageFailures(seen: Map<number, string[]>): string[] {
+    return PILL_WIDTHS.flatMap((width) =>
+      PILL_STATUSES.filter(
+        (status) => !(seen.get(width) ?? []).some((label) => label.startsWith(`${status} `)),
+      ).map((status) => `board stage pills at ${width}px: no "${status}" pill was inspected`),
+    );
+  }
+
   async function mismatches(page: Page, factory: string, order: string | null) {
     const screen = await page.evaluate<Shown>(SHOWN);
     const sql = await recount(factory, order);
@@ -164,6 +211,49 @@ export function boardPhase(ctx: LiveContext): LivePhase {
             `${where} ${what}: screen ${JSON.stringify(screen[what])}, SQL ${JSON.stringify(sql[what])}`,
           ],
     );
+  }
+
+  const MINI_PILL_FIT = `(() => {
+    const tiles = [...document.querySelectorAll('[data-board-stage] [data-work-item]')];
+    const bad = tiles.flatMap((tile) => {
+      const box = tile.getBoundingClientRect();
+      return [...tile.firstElementChild.children].flatMap((p) => {
+        const pill = p.firstElementChild ?? p;
+        const r = pill.getBoundingClientRect();
+        const hardClipped = [pill.lastElementChild ?? pill, pill, p].some((e) => {
+          const s = getComputedStyle(e);
+          return s.overflowX !== 'visible' && e.scrollWidth > e.clientWidth + 0.5 && s.textOverflow !== 'ellipsis';
+        });
+        const lines = Math.round(r.height / (parseFloat(getComputedStyle(pill).lineHeight) || r.height));
+        const label = (pill.lastElementChild ?? pill).getBoundingClientRect();
+        const ts = getComputedStyle(tile);
+        const inner = box.width - parseFloat(ts.paddingLeft) - parseFloat(ts.paddingRight);
+        const unreadable = inner < 1 || label.width < 24;
+        return r.right > box.right + 0.5 || hardClipped || lines > 1 || unreadable ? [tile.dataset.workItem + ' ' + p.textContent] : [];
+      });
+    });
+    const seen = (status) => tiles.some((t) => t.firstElementChild.textContent.includes(status));
+    return { bad, missing: ['running', 'check failed'].filter((s) => !seen(s)) };
+  })()`;
+
+  async function pillsOutsideTiles(page: Page): Promise<string[]> {
+    const failures: string[] = [];
+    await page.evaluate<boolean>(`(localStorage.setItem('mc.manager.open', 'open'), true)`);
+    await open(page, path);
+    for (const width of [760, 800, 900, 1000, 1264, 1440]) {
+      await page.setViewport(width);
+      const { bad, missing } = await page.evaluate<{ bad: string[]; missing: string[] }>(
+        MINI_PILL_FIT,
+      );
+      for (const what of bad)
+        failures.push(
+          `board at ${width}px: pill outside its tile, wrapped, hard-clipped or unreadable: ${what}`,
+        );
+      for (const status of missing)
+        failures.push(`board at ${width}px: no "${status}" tile to measure a pill on`);
+    }
+    await page.setViewport(1440);
+    return failures;
   }
 
   const open = async (page: Page, path: string) => {
@@ -199,10 +289,13 @@ export function boardPhase(ctx: LiveContext): LivePhase {
       const { failures } = ctx;
       const page = await openPage(deps.env);
       try {
+        const pillsSeen = new Map<number, string[]>();
         await page.setViewport(1440);
         await open(page, path);
         ctx.save(FILES.shot, await page.screenshot(1440));
         failures.push(...(await pipelineMismatches(page, FACTORY)));
+        failures.push(...(await pillFitFailures(page, FACTORY, pillsSeen)));
+        failures.push(...(await pillsOutsideTiles(page)));
         await open(page, table);
         failures.push(...(await mismatches(page, FACTORY, null)));
         const merged = await run<BoardRow>('board', FACTORY);
@@ -257,6 +350,8 @@ export function boardPhase(ctx: LiveContext): LivePhase {
 
         await open(page, `/f/${QUEUE_FACTORY.name}/board`);
         failures.push(...(await pipelineMismatches(page, QUEUE_FACTORY.name)));
+        failures.push(...(await pillFitFailures(page, QUEUE_FACTORY.name, pillsSeen)));
+        failures.push(...pillCoverageFailures(pillsSeen));
         await open(page, `/f/${QUEUE_FACTORY.name}/board?${VIEW_PARAM}=${TABLE_VIEW}`);
         const intake = await page.evaluate<boolean>(
           `document.querySelector('[data-board-column="intake"] [data-work-item="401"]') !== null`,
