@@ -158,12 +158,26 @@ async function checkSwitcher(ctx: LiveContext): Promise<void> {
     check('the first entry', shown[0]?.[0], factory);
     // The footer's engine travels from the status strip to the switcher.
     const [strip0] = await db.query(ctx.queries.get('status-strip') as string, [factory]);
+    const expectedEngine = strip0?.engine ? String(strip0.engine).slice(0, 8) : null;
+    // The engine is reported by the status strip's own effect, so the switcher can be ready first.
+    // With no engine expected nothing renders, so wait for the strip to settle instead.
+    await (expectedEngine
+      ? waitFor(
+          page,
+          'the engine beside the switcher did not appear',
+          `document.querySelector('[data-engine]') !== null`,
+        )
+      : waitFor(
+          page,
+          'the status strip was not ready',
+          `document.querySelector('${PANEL}[data-state="ready"]') !== null`,
+        ));
     check(
       'the engine beside the switcher',
       await page.evaluate<string | null>(
         `document.querySelector('[data-engine]')?.textContent ?? null`,
       ),
-      strip0?.engine ? String(strip0.engine).slice(0, 8) : null,
+      expectedEngine,
     );
     ctx.save(FILES.shot, await page.screenshot(1440));
 
