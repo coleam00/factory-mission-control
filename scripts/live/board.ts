@@ -78,17 +78,24 @@ const SHOWN_PIPELINE = `(() => {
 
 const PILL_WIDTHS = [760, 1000, 1264, 1440];
 
-const PILL_FIT = `(() => [...document.querySelectorAll('[data-board-stage]')].flatMap((tile) => {
-  const box = tile.getBoundingClientRect();
-  return [...tile.querySelectorAll('p + div > span > span')].flatMap((pill) => {
-    const r = pill.getBoundingClientRect();
-    const wrapped = r.height > 24 || pill.firstElementChild.getClientRects().length > 1;
-    const outside = r.left < box.left - 0.5 || r.right > box.right + 0.5;
-    return wrapped || outside
-      ? [pill.textContent.trim() + ' (' + (wrapped ? 'wrapped' : 'outside its tile') + ')']
-      : [];
+const PILL_STATUSES = ['running', 'check failed'];
+
+const PILL_FIT = `(() => {
+  const seen = [];
+  const bad = [...document.querySelectorAll('[data-board-stage]')].flatMap((tile) => {
+    const box = tile.getBoundingClientRect();
+    return [...tile.querySelectorAll('p + div > span > span')].flatMap((pill) => {
+      seen.push(pill.textContent.trim());
+      const r = pill.getBoundingClientRect();
+      const wrapped = r.height > 24 || pill.firstElementChild.getClientRects().length > 1;
+      const outside = r.left < box.left - 0.5 || r.right > box.right + 0.5;
+      return wrapped || outside
+        ? [pill.textContent.trim() + ' (' + (wrapped ? 'wrapped' : 'outside its tile') + ')']
+        : [];
+    });
   });
-}))()`;
+  return { seen, bad };
+})()`;
 
 const FILES = liveOutputs({
   shot: 'board.png',
@@ -167,16 +174,30 @@ export function boardPhase(ctx: LiveContext): LivePhase {
     return failures;
   }
 
-  /** Each stage summary pill sits on one line, inside its tile, at every desktop width the Pipeline reflows at. */
-  async function pillFitFailures(page: Page, factory: string): Promise<string[]> {
+  /** Each stage summary pill sits on one line, inside its tile, at every desktop width the Pipeline reflows at. `seen` collects the pills inspected per width. */
+  async function pillFitFailures(
+    page: Page,
+    factory: string,
+    seen: Map<number, string[]>,
+  ): Promise<string[]> {
     const failures: string[] = [];
     for (const width of PILL_WIDTHS) {
       await page.setViewport(width);
-      const bad = await page.evaluate<string[]>(PILL_FIT);
-      failures.push(...bad.map((b) => `board ${factory} at ${width}px: stage pill ${b}`));
+      const fit = await page.evaluate<{ seen: string[]; bad: string[] }>(PILL_FIT);
+      seen.set(width, [...(seen.get(width) ?? []), ...fit.seen]);
+      failures.push(...fit.bad.map((b) => `board ${factory} at ${width}px: stage pill ${b}`));
     }
     await page.setViewport(1440);
     return failures;
+  }
+
+  /** The probe passes only if it measured a running and a check-failed pill at every width. */
+  function pillCoverageFailures(seen: Map<number, string[]>): string[] {
+    return PILL_WIDTHS.flatMap((width) =>
+      PILL_STATUSES.filter(
+        (status) => !(seen.get(width) ?? []).some((label) => label.startsWith(`${status} `)),
+      ).map((status) => `board stage pills at ${width}px: no "${status}" pill was inspected`),
+    );
   }
 
   async function mismatches(page: Page, factory: string, order: string | null) {
@@ -225,10 +246,12 @@ export function boardPhase(ctx: LiveContext): LivePhase {
       const { failures } = ctx;
       const page = await openPage(deps.env);
       try {
+        const pillsSeen = new Map<number, string[]>();
         await page.setViewport(1440);
         await open(page, path);
         ctx.save(FILES.shot, await page.screenshot(1440));
         failures.push(...(await pipelineMismatches(page, FACTORY)));
+        failures.push(...(await pillFitFailures(page, FACTORY, pillsSeen)));
         await open(page, table);
         failures.push(...(await mismatches(page, FACTORY, null)));
         const merged = await run<BoardRow>('board', FACTORY);
@@ -283,7 +306,8 @@ export function boardPhase(ctx: LiveContext): LivePhase {
 
         await open(page, `/f/${QUEUE_FACTORY.name}/board`);
         failures.push(...(await pipelineMismatches(page, QUEUE_FACTORY.name)));
-        failures.push(...(await pillFitFailures(page, QUEUE_FACTORY.name)));
+        failures.push(...(await pillFitFailures(page, QUEUE_FACTORY.name, pillsSeen)));
+        failures.push(...pillCoverageFailures(pillsSeen));
         await open(page, `/f/${QUEUE_FACTORY.name}/board?${VIEW_PARAM}=${TABLE_VIEW}`);
         const intake = await page.evaluate<boolean>(
           `document.querySelector('[data-board-column="intake"] [data-work-item="401"]') !== null`,
