@@ -30,7 +30,7 @@ SELECT
   coalesce(u.tokens_output, s.tokens_output) AS tokens_output,
   coalesce(u.tokens_cache_read, s.tokens_cache_read) AS tokens_cache_read,
   coalesce(u.tokens_cache_write, s.tokens_cache_write) AS tokens_cache_write,
-  a.cost_usd, a.outcome, s.error, o.position
+  a.cost_usd, a.outcome, s.error, o.position, a.event_at
 FROM mc.laps l
 JOIN mc.lap_step_attempts a ON a.run_id = l.run_id
 LEFT JOIN loop o ON o.step_id = a.step_id
@@ -41,7 +41,7 @@ WHERE l.factory = $1 AND l.run_id::text = $2
 UNION ALL
 SELECT s.step_id, s.status, s.started_at, s.duration_ms, s.model, s.tokens_input,
   s.tokens_output, s.tokens_cache_read, s.tokens_cache_write, s.cost_usd,
-  s.output ->> 'outcome', s.error, o.position
+  s.output ->> 'outcome', s.error, o.position, NULL::timestamptz
 FROM mc.laps l
 JOIN mc.lap_steps s ON s.run_id = l.run_id
 LEFT JOIN loop o ON o.step_id = s.step_id

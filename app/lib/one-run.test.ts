@@ -111,6 +111,20 @@ test('a body step that runs again starts a round, but a retry straight after its
   expect(roundSizes(retried)).toEqual([4]);
 });
 
+test('a skipped body step with no start stays in the round whose event it ended in', () => {
+  minute = 0;
+  const at = (m: number) => new Date(Date.UTC(2026, 9, 20, 11, m));
+  const rows = [
+    step(`${GROUP}.implement`),
+    step(`${GROUP}.pr__prepare`, { status: 'skipped', started_at: null, event_at: at(1) }),
+    step(`${GROUP}.review__result`),
+    step(`${GROUP}.implement`, { started_at: at(5) }),
+    step(`${GROUP}.pr__prepare`, { started_at: at(6) }),
+    step(`${GROUP}.review__result`, { started_at: at(7) }),
+  ];
+  expect(roundSizes(rows)).toEqual([3, 3]);
+});
+
 test('resuming re-runs the earlier round from the failed step on, else the step alone', () => {
   const rows = failedBuild();
   const failed = rows.find((r) => r.status === 'failed') as StepAttemptRow;

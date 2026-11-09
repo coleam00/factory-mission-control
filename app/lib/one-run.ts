@@ -3,11 +3,12 @@
  * title, why a skipped step was skipped, and the manager's read of a stopped run. One module, so
  * the head, the read and the timeline compute from the same rows. Pure, no React.
  */
+import type { StopClass } from './failures';
 import { formatCost } from './format';
 import { type LapMapRow, mapPathOf } from './lap-graph';
 import { costOf, OUTCOME_LABEL } from './laps';
 import {
-  attemptsInOrder,
+  attemptsInRunOrder,
   isOldLoop,
   lapOutcome,
   type OneLapRow,
@@ -115,7 +116,7 @@ export function runTimeline(rows: readonly StepAttemptRow[]): TimelineEntry[] {
     }
     return loop;
   };
-  for (const row of attemptsInOrder(rows)) {
+  for (const row of attemptsInRunOrder(rows)) {
     const body = bodyOf(row.step_id);
     if (body !== null) bodies.get(loopOf(body.group).group)?.push(row);
     else if (isAggregate(row, rows)) loopOf(row.step_id).row = row;
@@ -160,7 +161,7 @@ export function skipReason(
   scope: readonly StepAttemptRow[],
   map: readonly LapMapRow[],
 ): string {
-  const ordered = attemptsInOrder(scope);
+  const ordered = attemptsInRunOrder(scope);
   const at = ordered.indexOf(row);
   if (ordered.slice(0, Math.max(at, 0)).some((other) => other.status === 'failed')) {
     return 'upstream failed';
@@ -174,7 +175,7 @@ export function skipReason(
 
 /** The run's latest failed attempt of `stepId`, else of any step. */
 function failedAttempt(rows: readonly StepAttemptRow[], stepId: string | null) {
-  const failed = attemptsInOrder(rows).filter((row) => row.status === 'failed');
+  const failed = attemptsInRunOrder(rows).filter((row) => row.status === 'failed');
   return failed.filter((row) => row.step_id === stepId).at(-1) ?? failed.at(-1) ?? null;
 }
 
@@ -201,8 +202,6 @@ export function resumeEstimate(
   }
   return { step, cost: stepCost(failed, rows) };
 }
-
-export type StopClass = 'transient' | 'environment' | 'config' | 'code' | 'input';
 
 const NOT_CODE: Record<Exclude<StopClass, 'code'>, string> = {
   transient: 'it looks transient',
@@ -251,7 +250,7 @@ export function managerRead(
       const failed = failedAttempt(rows, lap.stop_step);
       const stepId = lap.stop_step ?? failed?.step_id ?? null;
       const line = lap.stop_line ?? firstLine(failed?.error ?? null);
-      const stopClass = (lap.stop_class ?? null) as StopClass | null;
+      const stopClass = lap.stop_class;
       const codeFailure = stopClass === null ? 'unknown' : stopClass === 'code' ? 'yes' : 'no';
       const loop = timeline.find(
         (entry) =>
@@ -268,7 +267,7 @@ export function managerRead(
           text: ` failed${round === undefined ? '' : ` on round ${round.n}`}${line === null ? '.' : `: ${line}.`}`,
         },
       ];
-      const ordered = attemptsInOrder(rows);
+      const ordered = attemptsInRunOrder(rows);
       const before = failed === null ? [] : ordered.slice(0, ordered.indexOf(failed));
       if (!before.some((row) => row.status === 'failed')) {
         parts.push({ text: ' Everything before it succeeded.' });

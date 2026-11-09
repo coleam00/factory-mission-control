@@ -253,6 +253,7 @@ const ROW_COLUMNS: Record<string, string[]> = {
     'outcome',
     'error',
     'position',
+    'event_at',
   ]),
   'one-lap': columns<OneLapRow>()([
     'run_id',

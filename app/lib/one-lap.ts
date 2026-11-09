@@ -3,6 +3,7 @@
  * `one-lap-checks.sql` return them, and the ordering, sums and links the queries leave to the
  * browser. Pure, no React.
  */
+import type { StopClass } from './failures';
 import { type Outcome, since } from './laps';
 import { placeAddress } from './places';
 
@@ -73,7 +74,7 @@ export interface OneLapRow {
   stop_status: string | null;
   stop_step: string | null;
   stop_line: string | null;
-  stop_class: string | null;
+  stop_class: StopClass | null;
 }
 
 /**
@@ -95,6 +96,8 @@ export interface StepAttemptRow {
   error: string | null;
   /** The step's place in the loop at the lap's pin; null for a step that version lacks. */
   position: number | null;
+  /** When the event that finished the attempt arrived; null for a step row with no attempt. */
+  event_at?: Date | null;
 }
 
 /** One app-check line: never its text. */
@@ -126,6 +129,21 @@ export function attemptsInOrder(rows: readonly StepAttemptRow[]): StepAttemptRow
     const pb = placeOf(b);
     return (pa === pb ? 0 : pa < pb ? -1 : 1) || a.step_id.localeCompare(b.step_id);
   });
+}
+
+/**
+ * By start, an attempt with no start (Archon's skip event carries no timing) by the event that
+ * finished it, so a skipped step stays in the round it was skipped in. Rows with neither go last
+ * as in `attemptsInOrder`.
+ */
+export function attemptsInRunOrder(rows: readonly StepAttemptRow[]): StepAttemptRow[] {
+  const at = (row: StepAttemptRow) => timeOf(row.started_at ?? row.event_at ?? null);
+  const dated = rows.filter((row) => !Number.isNaN(at(row)));
+  const undated = rows.filter((row) => Number.isNaN(at(row)));
+  return [
+    ...dated.sort((a, b) => at(a) - at(b) || a.step_id.localeCompare(b.step_id)),
+    ...attemptsInOrder(undated),
+  ];
 }
 
 export const linesInOrder = (rows: readonly CheckLineRow[]): CheckLineRow[] =>

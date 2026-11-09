@@ -487,7 +487,9 @@ test('0013 gives back the runs of a step the old key merged, and changes nothing
     expect(await errors()).toEqual([{ event_id: refused, sqlstate: '23514' }]);
     const migrated = await snapshot(historical);
     const [identity] = migrationFiles.filter((f) => f.name.startsWith('0013'));
+    const [eventTime] = migrationFiles.filter((f) => f.name.startsWith('0032'));
     await historical.query(identity?.sql ?? '');
+    await historical.query(eventTime?.sql ?? '');
     expect(await snapshot(historical)).toEqual(migrated);
   } finally {
     await historical.close();
