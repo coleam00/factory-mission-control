@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { runsArgs } from '../../app/lib/runs';
 import { seededDb } from '../../scripts/fixture/seed';
 import { REPO_ROOT } from '../../scripts/lib/cli';
 import type { Db } from '../../scripts/lib/db';
@@ -33,9 +34,11 @@ export const paramsFor = (name: string, factory: string) =>
       ? [factory, '3']
       : STEP_PANELS.includes(name)
         ? [factory, ...CHECK_APP, '']
-        : LAP_PANELS.includes(name)
-          ? [factory, LAP_RUN]
-          : [factory];
+        : name === 'runs'
+          ? [factory, ...runsArgs({ q: '', state: '', hideIdle: false, page: 1 })]
+          : LAP_PANELS.includes(name)
+            ? [factory, LAP_RUN]
+            : [factory];
 
 export const SEED = readFileSync(join(REPO_ROOT, 'fixtures', 'seed.sql'), 'utf8');
 

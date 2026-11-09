@@ -32,7 +32,7 @@ import {
 import { placeAddress } from '../lib/places';
 import { LAP_OUTCOME_STATE, RUN_STATE, STATE_NAME, type State, stateOf } from '../lib/states';
 import { LivePanel } from '../live/LivePanel';
-import { MONO, PanelBody, useNow } from './Lanes';
+import { MONO, PanelBody, useNow } from './panel';
 import { openManager } from './ManagerDock';
 import { CheckList, Gate, type Lifted, Lift, LapStepsBody, Review } from './OneLap';
 import { Button, buttonClass } from './ui/Button';

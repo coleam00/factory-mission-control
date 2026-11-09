@@ -19,7 +19,7 @@ import type { FailureGroupRow } from '../lib/failures';
 import { since } from '../lib/laps';
 import { type OwnerQueueRow, waited } from '../lib/owner-queue';
 import { AWAITED, Feed, type Source } from '../live/Feed';
-import { useNow } from './Lanes';
+import { useNow } from './panel';
 import { usePhone } from './ManagerDock';
 import { Button, buttonClass } from './ui/Button';
 import { Card } from './ui/Card';

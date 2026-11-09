@@ -11,10 +11,10 @@ import type { BoardRow, DiscoveryRow } from '../app/lib/board';
 import type { FailureGroupRow } from '../app/lib/failures';
 import type { HealthRunRow, HealthStepRow, HealthWorkableRow } from '../app/lib/health';
 import type { LapMapRow } from '../app/lib/lap-graph';
-import type { LaneRow, RecentLapRow } from '../app/lib/laps';
 import type { CheckLineRow, OneLapRow, StepAttemptRow } from '../app/lib/one-lap';
 import type { OwnerQueueRow } from '../app/lib/owner-queue';
 import type { RewindBranchRow } from '../app/lib/rewind';
+import type { RunsRow } from '../app/lib/runs';
 import type { ScorecardRow } from '../app/lib/scorecard';
 import type {
   NestingRow,
@@ -217,20 +217,6 @@ const ROW_COLUMNS: Record<string, string[]> = {
     'at',
     'prs',
   ]),
-  lanes: columns<LaneRow>()([
-    'run_id',
-    'workflow_name',
-    'console',
-    'started_at',
-    'issue_number',
-    'issue_title',
-    'route',
-    'depth',
-    'step_id',
-    'step_started_at',
-    'cost_usd',
-    'steps',
-  ]),
   'one-lap-checks': columns<CheckLineRow>()([
     'position',
     'line_id',
@@ -306,13 +292,29 @@ const ROW_COLUMNS: Record<string, string[]> = {
     'waiting_since',
     'approximate',
   ]),
-  'recent-laps': columns<RecentLapRow>()([
+  runs: columns<RunsRow>()([
+    'all_count',
+    'running_count',
+    'needs_you_count',
+    'failed_count',
+    'done_count',
+    'idle_count',
+    'idle_polls',
     'run_id',
+    'position',
+    'workflow_name',
     'status',
+    'state',
+    'idle_poll',
     'started_at',
     'completed_at',
     'issue_number',
-    'outcome',
+    'issue_title',
+    'stop_step',
+    'stop_line',
+    'round',
+    'step_id',
+    'pr_number',
     'cost_usd',
   ]),
   'rewind-branches': columns<RewindBranchRow>()(['name', 'parent', 'at', 'created_at']),

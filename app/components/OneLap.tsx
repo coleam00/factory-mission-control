@@ -26,7 +26,7 @@ import {
 import { runCost, stepCost } from '../lib/one-run';
 import type { PanelState } from '../live/LivePanel';
 import { LapGraphView, StepPanel } from './LapGraph';
-import { Field, LABEL, MONO, useNow } from './Lanes';
+import { Field, LABEL, MONO, useNow } from './panel';
 
 const CARD = 'rounded-[10px] border border-border bg-surface';
 const _LINK = 'underline decoration-border-bright underline-offset-2 hover:decoration-text-primary';
