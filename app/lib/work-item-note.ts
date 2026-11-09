@@ -153,7 +153,8 @@ export function workItemNote(
   const answerAction = (): PrimaryAction | null => {
     const row = act?.decide.find((r) => r.run_id === latest?.run_id);
     const chosen = parseChoices(row?.options ?? '[]').find((o) => o.id === row?.recommended);
-    if (act === undefined || row === undefined || chosen === undefined || isSomethingElse(chosen)) return null;
+    if (act === undefined || row === undefined || chosen === undefined || isSomethingElse(chosen))
+      return null;
     const label = chosen.label ?? chosen.id;
     return consoleOf(
       latest?.run_id ?? null,
