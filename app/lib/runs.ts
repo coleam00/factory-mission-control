@@ -146,3 +146,18 @@ export function stopLine(run: RunRow): string | null {
   }
   return null;
 }
+
+/** The last page number the query's offset can hold as a bigint without overflowing. */
+const MAX_PAGE = Math.floor(Number.MAX_SAFE_INTEGER / RUNS_PAGE_SIZE);
+
+/** Everything the page's address says about what to show; a value it cannot read falls back to the default. */
+export function filterOf(params: URLSearchParams): RunsFilter {
+  const state = params.get('state');
+  const page = Number.parseInt(params.get('page') ?? '', 10);
+  return {
+    q: params.get('q') ?? '',
+    state: STATES.find((s) => s === state) ?? '',
+    hideIdle: params.get('idle') !== 'show',
+    page: page >= 1 ? Math.min(page, MAX_PAGE) : 1,
+  };
+}

@@ -1,4 +1,4 @@
-import { useEffect, useState, useSyncExternalStore } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { createActionFlow, fetchEnabled, postAction } from '../lib/actions';
 import { Toast } from './ui/Toast';
 
@@ -18,6 +18,21 @@ export function useActionPending(): boolean {
     () => flow.getState().phase !== 'idle',
     () => false,
   );
+}
+
+/** Calls `onDone` with the result text once for each action that finishes, whoever started it. */
+export function useActionDone(onDone: (text: string) => void): void {
+  const last = useRef<string>('idle');
+  const latest = useRef(onDone);
+  latest.current = onDone;
+  useEffect(() => {
+    const stop = flow.subscribe(() => {
+      const state = flow.getState();
+      if (state.phase === 'done' && last.current !== 'done') latest.current(state.text);
+      last.current = state.phase;
+    });
+    return () => void stop();
+  }, []);
 }
 
 let enabled: Promise<string[]> | undefined;

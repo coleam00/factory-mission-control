@@ -41,6 +41,7 @@ const SPAWN_SITES: Record<string, string> = {
 
 const FETCH_SITES: Record<string, string> = {
   'app/lib/actions.ts': 'same-origin /api/',
+  'app/lib/manager.ts': 'same-origin /api/',
   'app/lib/rewind.ts': 'same-origin /api/',
   'app/live/LivePanel.tsx': 'same-origin /api/',
   'app/live/LiveProvider.tsx': 'same-origin /api/',

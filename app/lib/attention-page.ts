@@ -22,6 +22,7 @@ import {
 } from './attention';
 import type { FailureGroupRow, StopClass } from './failures';
 import { shortRunId } from './format';
+import { askAbout, type ManagerAsk } from './manager';
 import { stepPath } from './lap-graph';
 import { since } from './laps';
 import { consoleUrl, INTAKE_WORKFLOW, lapHref, workflowLabel } from './one-lap';
@@ -121,6 +122,8 @@ export interface AttentionCard {
   tiles: Tile[];
   confidence?: string;
   actions: Action[];
+  /** What "Ask manager" hands the panel: the run and work item this card is about. */
+  ask: ManagerAsk;
   /** Failures per day, oldest first (Fix). */
   daily?: number[];
   hooks: Hooks;
@@ -205,6 +208,7 @@ export function decideCards(rows: readonly DecideRow[], factory: string): Attent
             },
       tiles,
       ...(item.confidence === null ? {} : { confidence: `${item.confidence} confidence` }),
+      ask: askAbout(item.run_id, item.item_number),
       actions: [
         item.item_number === null
           ? {
@@ -295,6 +299,7 @@ export function ownerCards(rows: readonly OwnerQueueRow[]): AttentionCard[] {
         },
       })),
       actions,
+      ask: askAbout(null, item.issue_number),
       hooks: {
         'data-owner-item': item.id,
         'data-kind': item.kind,
@@ -353,6 +358,7 @@ export function unstickCards(rows: readonly UnstickRow[], factory: string): Atte
         dot: 'needs-you',
         age: { since: row.since },
         tiles: [] as Tile[],
+        ask: askAbout(row.run_id, row.number),
         hooks: {
           'data-attention-item': key,
           'data-attention-kind': 'unstick',
@@ -506,6 +512,7 @@ export function fixCards(rows: readonly FailureGroupRow[], factory: string): Att
           ...(g.line === null ? {} : { code: g.line }),
         },
         tiles: [],
+        ask: askAbout(g.latest_run_id, null),
         actions: [
           {
             type: 'link',

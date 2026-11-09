@@ -3,6 +3,7 @@ import { Link, useSearchParams } from 'react-router';
 import { formatCost, formatCount } from '../lib/format';
 import { lapHref } from '../lib/one-lap';
 import {
+  filterOf,
   RUN_CHIPS,
   RUNS_PAGE_SIZE,
   type RunRow,
@@ -14,7 +15,7 @@ import {
   subLine,
   took,
 } from '../lib/runs';
-import { STATES, stateInk } from '../lib/states';
+import { stateInk } from '../lib/states';
 import { LivePanel } from '../live/LivePanel';
 import { PanelBody, useNow } from './panel';
 import { Chip } from './ui/Chip';
@@ -26,22 +27,7 @@ const SEARCH_DEBOUNCE_MS = 300;
 const COLUMNS =
   'grid grid-cols-[minmax(0,1fr)_auto] min-[761px]:grid-cols-[minmax(0,1fr)_72px_72px_80px]';
 
-/** The last page number the query's offset can hold as a bigint without overflowing. */
-const MAX_PAGE = Math.floor(Number.MAX_SAFE_INTEGER / RUNS_PAGE_SIZE);
-
 const NUMBER = 'font-mono text-[length:var(--v3-t-meta)] tabular-nums text-right';
-
-/** Everything the page's address says about what to show; a value it cannot read falls back to the default. */
-export function filterOf(params: URLSearchParams): RunsFilter {
-  const state = params.get('state');
-  const page = Number.parseInt(params.get('page') ?? '', 10);
-  return {
-    q: params.get('q') ?? '',
-    state: STATES.find((s) => s === state) ?? '',
-    hideIdle: params.get('idle') !== 'show',
-    page: page >= 1 ? Math.min(page, MAX_PAGE) : 1,
-  };
-}
 
 /** The address that shows a filter; a value that is the default stays out of it. */
 export function addressOf(to: RunsFilter): URLSearchParams {

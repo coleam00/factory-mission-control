@@ -19,11 +19,20 @@ import type { AnswerRequest } from '../lib/actions';
 import type { DecideRow, UnstickRow } from '../lib/attention';
 import type { FailureGroupRow } from '../lib/failures';
 import { since } from '../lib/laps';
+import { lapHref } from '../lib/one-lap';
+import { shortRunId } from '../lib/format';
+import {
+  clock,
+  HANDLED_QUERY,
+  type HandledRow,
+  handledSummary,
+  handledToday,
+} from '../lib/manager';
 import { type OwnerQueueRow, waited } from '../lib/owner-queue';
 import { AWAITED, Feed, type Source } from '../live/Feed';
 import { useActionPending, useActionsEnabled, useStartAction } from './ActionToast';
 import { useNow } from './panel';
-import { usePhone } from './ManagerDock';
+import { openManager, usePhone, usePublishPlaceWhat } from './ManagerDock';
 import { Button, buttonClass } from './ui/Button';
 import { Card } from './ui/Card';
 import { ManagerNote } from './ui/ManagerNote';
@@ -264,29 +273,30 @@ function CardView({
           onClose={() => setWriting(undefined)}
         />
       )}
-      {card.actions.length === 0 && card.confidence === undefined ? null : (
-        <div className="col-start-2 mt-1.5 flex flex-wrap items-center gap-2">
-          {primary === undefined ? null : <ActionControl action={primary} act={act} />}
-          {rest.map((action) => (
-            <ActionControl
-              key={
-                action.type === 'copy'
-                  ? action.command
-                  : action.type === 'act'
-                    ? action.label
-                    : action.href
-              }
-              action={action}
-              act={act}
-            />
-          ))}
-          {card.confidence === undefined ? null : (
-            <span className="text-[length:var(--v3-t-meta)] text-[color:var(--v3-fg-3)]">
-              {card.confidence}
-            </span>
-          )}
-        </div>
-      )}
+      <div className="col-start-2 mt-1.5 flex flex-wrap items-center gap-2">
+        {primary === undefined ? null : <ActionControl action={primary} act={act} />}
+        {rest.map((action) => (
+          <ActionControl
+            key={
+              action.type === 'copy'
+                ? action.command
+                : action.type === 'act'
+                  ? action.label
+                  : action.href
+            }
+            action={action}
+            act={act}
+          />
+        ))}
+        <Button variant="text" data-ask-manager onClick={() => openManager(card.ask)}>
+          Ask manager
+        </Button>
+        {card.confidence === undefined ? null : (
+          <span className="text-[length:var(--v3-t-meta)] text-[color:var(--v3-fg-3)]">
+            {card.confidence}
+          </span>
+        )}
+      </div>
     </Card>
   );
 }
@@ -369,6 +379,59 @@ function Head({
   );
 }
 
+/** What the owner sent from the dashboard today, from `mc.actions`; nothing when there is none or the read failed. */
+function Handled({
+  factory,
+  source,
+  now,
+}: {
+  factory: string;
+  source: Source<HandledRow>;
+  now: number;
+}): ReactElement | null {
+  const [open, setOpen] = useState(false);
+  const rows = source.state === 'error' ? [] : handledToday(source.rows ?? [], now);
+  if (rows.length === 0) return null;
+  return (
+    <div data-handled className="mt-[26px] border-t border-[color:var(--v3-line)] pt-3.5">
+      <div className="flex flex-wrap items-center gap-2 text-[length:var(--v3-t-meta)] text-[color:var(--v3-fg-3)]">
+        <StateDot state="done" />
+        The manager handled {rows.length} today: {handledSummary(rows)}.
+        <Button variant="text" aria-expanded={open} onClick={() => setOpen(!open)}>
+          See them
+        </Button>
+      </div>
+      {open ? (
+        <ul className="m-0 mt-2 list-none p-0">
+          {rows.map((row) => (
+            <li
+              key={row.id}
+              className="flex flex-wrap items-center gap-x-2 py-1 text-[length:var(--v3-t-meta)] text-[color:var(--v3-fg-2)]"
+            >
+              <StateDot
+                state={row.exit_code === null ? 'idle' : row.exit_code === 0 ? 'done' : 'failed'}
+              />
+              {row.action === 'answer'
+                ? `Answered ${row.option ?? 'with your text'}`
+                : `Resumed${row.from_step === null ? '' : ` from ${row.from_step}`}`}
+              {row.workflow_name === null ? null : <span>{row.workflow_name}</span>}
+              <a
+                href={lapHref(factory, row.run_id)}
+                className="font-mono text-[color:var(--v3-you-2)] hover:underline"
+              >
+                {shortRunId(row.run_id)}
+              </a>
+              <span className="ml-auto font-mono text-[length:var(--v3-t-micro)] text-[color:var(--v3-fg-3)]">
+                {clock(row.sent_at)}
+              </span>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </div>
+  );
+}
+
 /** The page over its four sources; exported with a fixed clock and view for tests. */
 export function AttentionBody({
   factory,
@@ -377,6 +440,7 @@ export function AttentionBody({
   unstick,
   failures,
   sweep,
+  handled = AWAITED,
   now: fixed,
   view: fixedView,
 }: {
@@ -386,6 +450,7 @@ export function AttentionBody({
   unstick: Source<UnstickRow>;
   failures: Source<FailureGroupRow>;
   sweep: Source<SweepRow>;
+  handled?: Source<HandledRow>;
   now?: number;
   view?: View;
 }): ReactElement {
@@ -401,6 +466,9 @@ export function AttentionBody({
   const view = fixedView ?? chosen;
   const sources: Record<SourceKey, Source<object>> = { decide, owner, unstick, failures };
   const count = attentionCount(Object.values(sources));
+  usePublishPlaceWhat(
+    typeof count === 'number' ? (count === 1 ? '1 item' : `${count} items`) : undefined,
+  );
   const failed = SOURCE_KEYS.flatMap((k) =>
     sources[k].state === 'error' ? [ATTENTION_SOURCES[k].what] : [],
   );
@@ -440,6 +508,7 @@ export function AttentionBody({
         phone={phone}
       />
       {groups}
+      <Handled factory={factory} source={handled} now={now} />
     </section>
   );
 }
@@ -456,6 +525,7 @@ export function Attention({ factory }: { factory: string }): ReactElement {
     failures: AWAITED,
   });
   const [sweep, setSweep] = useState<Source<SweepRow>>(AWAITED);
+  const [handled, setHandled] = useState<Source<HandledRow>>(AWAITED);
   const into = useMemo(
     () =>
       Object.fromEntries(
@@ -469,6 +539,7 @@ export function Attention({ factory }: { factory: string }): ReactElement {
         <Feed key={k} query={ATTENTION_SOURCES[k].query} factory={factory} into={into[k]} />
       ))}
       <Feed<SweepRow> query={SWEEP_QUERY} factory={factory} into={setSweep} />
+      <Feed<HandledRow> query={HANDLED_QUERY} factory={factory} into={setHandled} />
       <AttentionBody
         factory={factory}
         decide={rows.decide as Source<DecideRow>}
@@ -476,6 +547,7 @@ export function Attention({ factory }: { factory: string }): ReactElement {
         unstick={rows.unstick as Source<UnstickRow>}
         failures={rows.failures as Source<FailureGroupRow>}
         sweep={sweep}
+        handled={handled}
       />
     </>
   );

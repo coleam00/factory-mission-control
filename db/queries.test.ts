@@ -11,6 +11,7 @@ import type { BoardRow, DiscoveryRow } from '../app/lib/board';
 import type { FailureGroupRow } from '../app/lib/failures';
 import type { HealthRunRow, HealthStepRow, HealthWorkableRow } from '../app/lib/health';
 import type { LapMapRow } from '../app/lib/lap-graph';
+import type { HandledRow } from '../app/lib/manager';
 import type { CheckLineRow, OneLapRow, StepAttemptRow } from '../app/lib/one-lap';
 import type { OwnerQueueRow } from '../app/lib/owner-queue';
 import type { RewindBranchRow } from '../app/lib/rewind';
@@ -108,6 +109,16 @@ const ROW_COLUMNS: Record<string, string[]> = {
     'action',
     'repository',
     'console',
+  ]),
+  handled: columns<HandledRow>()([
+    'id',
+    'action',
+    'run_id',
+    'option',
+    'from_step',
+    'sent_at',
+    'exit_code',
+    'workflow_name',
   ]),
   'manager-sweep': columns<SweepRow>()(['swept_at']),
   'factory-switcher': columns<FactorySwitcherRow>()(['factory', 'running', 'is_default']),
