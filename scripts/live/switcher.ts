@@ -160,7 +160,7 @@ async function checkSwitcher(ctx: LiveContext): Promise<void> {
     check(
       'the engine beside the switcher',
       await page.evaluate<string | null>(
-        `document.querySelector('[data-engine]')?.textContent?.split('engine ')[1] ?? null`,
+        `document.querySelector('[data-engine]')?.textContent?.replace(/^·\\s*/, '').trim() ?? null`,
       ),
       strip0?.engine ? String(strip0.engine).slice(0, 8) : null,
     );
