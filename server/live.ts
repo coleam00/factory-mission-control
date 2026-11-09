@@ -124,6 +124,21 @@ export function parameterCount(sql: string): number {
   return Math.max(0, ...[...sql.matchAll(/\$(\d+)/g)].map((m) => Number(m[1])));
 }
 
+/**
+ * The parameters for a sealed query: the factory, then `args` (absent means none), which must be
+ * strings and exactly the query's parameters after `$1`. Undefined when `args` do not fit.
+ */
+export function liveParams(sql: string, factory: string, args: unknown = []): string[] | undefined {
+  if (
+    !Array.isArray(args) ||
+    !args.every((arg) => typeof arg === 'string') ||
+    args.length !== parameterCount(sql) - 1
+  ) {
+    return undefined;
+  }
+  return [factory, ...args];
+}
+
 /** What `GET /api/live` answers and the page's boot script carries: no secret, no connection string. */
 export function liveConfig(live: Live) {
   return {
@@ -167,18 +182,12 @@ export function liveRoutes(app: Hono, live: Live | undefined): void {
     if (typeof factory !== 'string' || !live.factories.includes(factory)) {
       return c.json({ error: 'unknown factory' }, 400);
     }
-    const args = field(body, 'args') ?? [];
-    if (
-      !Array.isArray(args) ||
-      !args.every((arg) => typeof arg === 'string') ||
-      args.length !== parameterCount(sql) - 1
-    ) {
-      return c.json({ error: 'wrong arguments for this query' }, 400);
-    }
+    const params = liveParams(sql, factory, field(body, 'args'));
+    if (!params) return c.json({ error: 'wrong arguments for this query' }, 400);
     const branch = field(body, 'branch');
     if (branch !== undefined && branch !== 'home') return c.json({ error: 'unknown branch' }, 400);
     const rewind = branch === 'home' ? undefined : live.rewind;
-    const sealed = await (rewind ?? live.home).seal(sql, [factory, ...args]);
+    const sealed = await (rewind ?? live.home).seal(sql, params);
     return c.json({ ...sealed, rewind: rewind?.name ?? null });
   });
 
