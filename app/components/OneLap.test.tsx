@@ -99,7 +99,7 @@ test('the header links the console run, the pull request and the issue, and says
   expect(html).toContain('<span style="color:var(--v3-failed)">refused</span>');
   expect(html).toContain('data-line="B1"');
   expect(html).toContain('no line id');
-  expect(html).toContain('1:00:00');
+  expect(html).toContain('1h · - · -');
 });
 
 test('a disposition naming a hidden line does not render in the header', () => {
@@ -151,7 +151,7 @@ test('a lap with no review or gate yet says so', () => {
   expect(html).toContain('The review has not run.');
   expect(html).toContain('The merge gate has not run.');
   expect(html).toContain('Running');
-  expect(html).toContain('0:10:00');
+  expect(html).toContain('10m · - · -');
   expect(html).not.toContain('data-link="pr"');
 });
 

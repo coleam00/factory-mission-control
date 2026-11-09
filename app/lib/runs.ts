@@ -98,12 +98,12 @@ export function runsView(rows: readonly RunsRow[]): RunsView {
   return { counts: rows[0], runs };
 }
 
-/** `39s`, `46m`, `3h 12m`, `2d 4h`: two units at most. */
+/** `39s`, `1m 40s`, `46m`, `3h 12m`, `2d 4h`: two units at most. */
 export function formatTook(totalSeconds: number): string {
   const seconds = Math.max(0, Math.floor(totalSeconds));
   if (seconds < 60) return `${seconds}s`;
   const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes}m`;
+  if (minutes < 60) return seconds % 60 === 0 ? `${minutes}m` : `${minutes}m ${seconds % 60}s`;
   const hours = Math.floor(minutes / 60);
   if (hours < 24) return minutes % 60 === 0 ? `${hours}h` : `${hours}h ${minutes % 60}m`;
   const days = Math.floor(hours / 24);

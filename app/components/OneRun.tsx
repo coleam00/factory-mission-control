@@ -1,6 +1,6 @@
 import { type ReactElement, type ReactNode, useState } from 'react';
 import { Link, useSearchParams } from 'react-router';
-import { formatCost, formatCount, formatElapsed, shortRunId } from '../lib/format';
+import { formatCost, formatCount, shortRunId } from '../lib/format';
 import type { LapMapRow } from '../lib/lap-graph';
 import { durationOf, OUTCOME_LABEL, since } from '../lib/laps';
 import {
@@ -16,6 +16,7 @@ import {
 } from '../lib/one-lap';
 import {
   bodyOf,
+  collapseSkipped,
   displayStep,
   failedAttempt,
   managerRead,
@@ -30,6 +31,7 @@ import {
   waitsForSlot,
 } from '../lib/one-run';
 import { placeAddress } from '../lib/places';
+import { formatTook } from '../lib/runs';
 import {
   LAP_OUTCOME_STATE,
   RUN_STATE,
@@ -178,6 +180,8 @@ export interface RunViewProps {
   checksPanel: ReactNode;
   /** A fixed clock, for tests; the screen uses the browser's. */
   now?: number;
+  /** Render the skipped-step groups expanded, for tests that cannot click. */
+  skippedOpen?: boolean;
 }
 
 /** The run's page for a tab: head, the manager's read, the tabs and the one tab's body. */
@@ -190,6 +194,7 @@ export function RunView({
   checks,
   checksPanel,
   now: fixed,
+  skippedOpen = false,
 }: RunViewProps): ReactElement {
   const ticking = useNow();
   const now = fixed ?? ticking;
@@ -216,6 +221,7 @@ export function RunView({
           map={mapRows}
           consoleHref={consoleHref}
           now={now}
+          skippedOpen={skippedOpen}
         />
       ) : tab === 'steps' ? (
         <div className="grid gap-8">
@@ -378,7 +384,7 @@ function RunHead({
             )}
             ·
             <span data-duration className="tabular-nums">
-              {seconds === null ? 'not recorded' : formatElapsed(seconds)} ·{' '}
+              {seconds === null ? 'not recorded' : formatTook(seconds)} ·{' '}
               {cost === null ? '-' : formatCost(cost)} ·{' '}
               {tokens === null ? '-' : `${formatCount(tokens)} tokens in`}
             </span>
@@ -449,7 +455,7 @@ function ManagerRead({
 const stateOfAttempt = (row: StepAttemptRow): State =>
   stateOf(STEP_STATUS_STATE, row.status) ?? 'idle';
 
-const seconds = (value: number | null) => (value === null ? undefined : formatElapsed(value));
+const seconds = (value: number | null) => (value === null ? undefined : formatTook(value));
 const money = (value: number | null) => (value === null ? undefined : formatCost(value));
 
 function RunTimeline({
@@ -459,6 +465,7 @@ function RunTimeline({
   map,
   consoleHref,
   now,
+  skippedOpen,
 }: {
   stopAttempt: StepAttemptRow | null;
   rows: readonly StepAttemptRow[];
@@ -466,43 +473,74 @@ function RunTimeline({
   map: readonly LapMapRow[];
   consoleHref: string;
   now: number;
+  skippedOpen: boolean;
 }): ReactElement {
   if (timeline.length === 0) {
     return <p className="text-sm text-text-secondary">No step has started yet.</p>;
   }
   const top = timeline.flatMap((entry) => (entry.kind === 'step' ? [entry.row] : []));
-  const step = (
-    row: StepAttemptRow,
-    name: string,
-    scope: readonly StepAttemptRow[],
-    nested: boolean,
-  ) => {
+  const step = (row: StepAttemptRow, name: string, nested: boolean, why?: string | null) => {
+    const skipped = row.status === 'skipped';
     const elapsed = attemptSeconds(row, now);
     const cost = stepCost(row, rows);
-    const reason = row.status === 'skipped' ? skipReason(row, scope, map) : null;
     return (
       <TimelineRow
         key={`${row.step_id} ${row.started_at?.toISOString() ?? row.status}`}
         state={stateOfAttempt(row)}
         name={name}
+        hint={why ?? undefined}
         nested={nested}
-        time={reason === null ? seconds(elapsed) : `skipped: ${reason}`}
-        cost={reason === null ? money(cost) : undefined}
+        time={skipped ? undefined : seconds(elapsed)}
+        cost={skipped ? undefined : money(cost)}
         data-timeline-step={row.step_id}
         data-status={row.status}
         data-started={row.started_at?.toISOString()}
         data-duration-ms={row.duration_ms?.toString()}
         data-cost={cost?.toString()}
-        data-skip-reason={reason ?? undefined}
       >
         {row === stopAttempt ? <FailedStep row={row} consoleHref={consoleHref} /> : null}
       </TimelineRow>
     );
   };
+  const steps = (
+    list: readonly StepAttemptRow[],
+    scope: readonly StepAttemptRow[],
+    name: (row: StepAttemptRow) => string,
+    nested: boolean,
+  ) =>
+    collapseSkipped(list, (row) => row.status === 'skipped').map((item) =>
+      'skipped' in item ? (
+        <SkippedSteps
+          key={`skipped ${item.skipped[0]?.step_id}`}
+          nested={nested}
+          initiallyOpen={skippedOpen}
+        >
+          {item.skipped.map((row) => step(row, name(row), nested, skipReason(row, scope, map)))}
+        </SkippedSteps>
+      ) : (
+        step(item, name(item), nested)
+      ),
+    );
   return (
     <Timeline>
-      {timeline.map((entry) => {
-        if (entry.kind === 'step') return step(entry.row, entry.row.step_id, top, false);
+      {collapseSkipped(
+        timeline,
+        (entry) => entry.kind === 'step' && entry.row.status === 'skipped',
+      ).map((group) => {
+        if ('skipped' in group) {
+          const rows = group.skipped.flatMap((entry) => (entry.kind === 'step' ? [entry.row] : []));
+          return (
+            <SkippedSteps
+              key={`skipped ${rows[0]?.step_id}`}
+              nested={false}
+              initiallyOpen={skippedOpen}
+            >
+              {rows.map((row) => step(row, row.step_id, false, skipReason(row, top, map)))}
+            </SkippedSteps>
+          );
+        }
+        const entry = group;
+        if (entry.kind === 'step') return step(entry.row, entry.row.step_id, false);
         const ownSeconds = entry.row === null ? null : attemptSeconds(entry.row, now);
         const roundMs = entry.rounds.map((r) => r.durationMs).filter((ms) => ms !== null);
         const span =
@@ -523,8 +561,11 @@ function RunTimeline({
           />,
           ...entry.rounds.flatMap((round) =>
             round.failed || round.running || round.n === entry.rounds.length ? (
-              round.rows.map((row) =>
-                step(row, `round ${round.n} · ${displayStep(row.step_id)}`, round.rows, true),
+              steps(
+                round.rows,
+                round.rows,
+                (row) => `round ${round.n} · ${displayStep(row.step_id)}`,
+                true,
               )
             ) : (
               <FoldedRound key={`${entry.group} ${round.n}`} round={round} />
@@ -533,6 +574,42 @@ function RunTimeline({
         ];
       })}
     </Timeline>
+  );
+}
+
+/** Consecutive skipped steps as one muted row that opens to the steps and their recorded reasons. */
+function SkippedSteps({
+  nested,
+  initiallyOpen,
+  children,
+}: {
+  nested: boolean;
+  initiallyOpen: boolean;
+  children: ReactNode[];
+}): ReactElement {
+  const [open, setOpen] = useState(initiallyOpen);
+  const toggle = () => setOpen((was) => !was);
+  return (
+    <>
+      <TimelineRow
+        state="idle"
+        nested={nested}
+        prose
+        name={`${children.length} skipped`}
+        role="button"
+        tabIndex={0}
+        aria-expanded={open}
+        onClick={toggle}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            toggle();
+          }
+        }}
+        data-skipped-count={String(children.length)}
+      />
+      {open ? children : null}
+    </>
   );
 }
 
