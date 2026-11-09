@@ -360,7 +360,7 @@ test('every migration in db/migrations is a legacy 00NN_ file or the timestamp f
 
 test.each([
   '0033_x.sql',
-  '0032_stop_line.sql',
+  '0032_x.sql',
   '2026-11-09_x.sql',
   '20261109T1430_x.sql',
   '20261109T1430Z.sql',

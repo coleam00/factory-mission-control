@@ -58,6 +58,7 @@ export const LEGACY_MIGRATIONS: ReadonlySet<string> = new Set([
   '0031_attention_data.sql',
   '0031_run_stops.sql',
   '0032_lap_step_pr_url.sql',
+  '0032_stop_line.sql',
 ]);
 
 /** A new migration's name: `<YYYYMMDDTHHMMZ>_<name>.sql`, e.g. `20261109T1430Z_stop_line.sql`. */
