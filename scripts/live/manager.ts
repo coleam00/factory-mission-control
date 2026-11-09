@@ -69,6 +69,16 @@ const panelOnScreen = `(() => ({
   suggestions: [...document.querySelectorAll('aside[data-manager] [data-suggestion]')].map((b) => b.textContent),
 }))()`;
 
+/** The phone Manager tab fills the viewport exactly: the page does not scroll and the input ends above the tab bar. */
+const phoneFit = `(() => {
+  const input = document.querySelector('aside[data-manager="tab"] textarea')?.getBoundingClientRect();
+  const bar = document.querySelector('nav[aria-label="Places"]')?.getBoundingClientRect();
+  return {
+    scrolls: document.documentElement.scrollHeight > window.innerHeight,
+    inputAboveBar: input !== undefined && bar !== undefined && input.bottom <= bar.top,
+  };
+})()`;
+
 const chipNow = `document.querySelector('aside[data-manager] [data-manager-context] span')?.textContent ?? null`;
 
 /** A message of `kind` has ended, or its notices say why it will not. */
@@ -176,6 +186,9 @@ export function managerPhase(ctx: LiveContext): LivePhase {
       if (!(await waitFor(page, `document.querySelector('aside[data-manager="tab"]') !== null`))) {
         mismatches.push('the Manager tab did not open on #manager at 390');
       }
+      const fit = await page.evaluate<{ scrolls: boolean; inputAboveBar: boolean }>(phoneFit);
+      if (fit.scrolls) mismatches.push('the Manager tab scrolls the page at 390');
+      if (!fit.inputAboveBar) mismatches.push('the Manager input is not above the tab bar at 390');
       ctx.save(FILES.phone, await page.screenshot(390));
       failures.push(...mismatches.map((m) => `manager panel: ${m}`));
       report.push(...mismatches, `mismatches: ${mismatches.length}`);
