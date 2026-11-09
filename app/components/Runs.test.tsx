@@ -117,6 +117,7 @@ test('a page past the last page of the chip lands on the last page', () => {
   expect(pageWithin(counts, filter({ page: 2 }))).toBe(2);
   expect(pageWithin({ all_count: 0 } as RunsRow, filter({ page: 3 }))).toBe(1);
   expect(pageWithin(undefined, filter({ page: 3 }))).toBe(3);
+  expect(pageWithin({ all_count: 100, failed_count: 3 } as RunsRow, filter({ state: 'failed', page: 2 }))).toBe(1);
 });
 
 function pager(total: number): string {
