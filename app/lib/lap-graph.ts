@@ -25,6 +25,8 @@ export interface LapMapRow {
   depends_on: string[] | null;
   when_condition?: string | null;
   trigger_rule?: string | null;
+  /** The round a loop stops itself at, when the pinned map holds it. */
+  round_cap?: number | null;
 }
 
 /** What happened to a step in this lap. */

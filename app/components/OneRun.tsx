@@ -207,6 +207,7 @@ export function RunView({
         lap={lap}
         rows={rows}
         timeline={timeline}
+        map={mapRows}
         factory={factory}
         consoleHref={consoleHref}
         now={now}
@@ -319,6 +320,7 @@ function RunHead({
   lap,
   rows,
   timeline,
+  map,
   factory,
   consoleHref,
   now,
@@ -326,11 +328,12 @@ function RunHead({
   lap: OneLapRow;
   rows: readonly StepAttemptRow[];
   timeline: readonly TimelineEntry[];
+  map: readonly LapMapRow[];
   factory: string;
   consoleHref: string;
   now: number;
 }): ReactElement {
-  const title = runTitle(lap, timeline);
+  const title = runTitle(lap, timeline, map);
   const pill = runPill(lap);
   const pr = lap.pr_number;
   const cost = runCost(rows);

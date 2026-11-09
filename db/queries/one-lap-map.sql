@@ -18,13 +18,13 @@ version AS (
 ),
 steps AS (
   SELECT s.path, s.parent_path, s.position, s.step_id, s.kind, s.depends_on,
-    s.when_condition, s.trigger_rule
+    s.when_condition, s.trigger_rule, s.round_cap
   FROM mc.arch_steps s
   JOIN version v ON v.archon_sha = s.archon_sha AND v.factory_sha = s.factory_sha
   JOIN lap ON lap.workflow_name = s.workflow
 )
 -- Every node of the workflow's expanded tree, and each opens its own place in it.
 SELECT v.pin, s.path, s.parent_path, s.position, s.step_id, s.kind, s.depends_on,
-  s.when_condition, s.trigger_rule
+  s.when_condition, s.trigger_rule, s.round_cap
 FROM steps s
 CROSS JOIN version v

@@ -1,6 +1,7 @@
 import { expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { createMemoryRouter, RouterProvider } from 'react-router';
+import type { LapMapRow } from '../lib/lap-graph';
 import type { OneLapRow, StepAttemptRow } from '../lib/one-lap';
 import { RunView, type TabKey, tabOf } from './OneRun';
 
@@ -86,6 +87,25 @@ function render(view: Partial<Parameters<typeof RunView>[0]> & { tab?: TabKey } 
   const router = createMemoryRouter([{ path: '/', element }]);
   return renderToStaticMarkup(<RouterProvider router={router} />);
 }
+
+test('the head titles the round with the cap the pinned map holds, and without it when none is stored', () => {
+  const loop = (round_cap: number | null): LapMapRow => ({
+    pin: 'p',
+    path: 'ship/deliver/rounds',
+    parent_path: 'ship/deliver',
+    position: 1,
+    step_id: 'rounds',
+    kind: 'loop_group',
+    depends_on: [],
+    round_cap,
+  });
+  expect(render({ map: { rows: [loop(3)], state: 'ready' } })).toContain(
+    'data-title="Build #485, round 2 of 3"',
+  );
+  expect(render({ map: { rows: [loop(null)], state: 'ready' } })).toContain(
+    'data-title="Build #485, round 2"',
+  );
+});
 
 test('the head says what the run is, its state, workflow, pull request, time, cost and tokens', () => {
   const html = render();

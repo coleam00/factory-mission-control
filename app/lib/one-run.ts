@@ -132,22 +132,34 @@ export function runTimeline(rows: readonly StepAttemptRow[]): TimelineEntry[] {
 /** The loop's body name for a step in a loop, else its id. */
 export const displayStep = (stepId: string): string => bodyOf(stepId)?.body ?? stepId;
 
-/** The latest round of the run's longest loop; null when no step ran in a loop. */
-const latestRound = (timeline: readonly TimelineEntry[]): number | null => {
-  let rounds = 0;
-  for (const entry of timeline)
-    if (entry.kind === 'loop') rounds = Math.max(rounds, entry.rounds.length);
-  return rounds === 0 ? null : rounds;
+/** The run's longest loop and its latest round; null when no step ran in a loop. */
+const longestLoop = (
+  timeline: readonly TimelineEntry[],
+): { group: string; round: number } | null => {
+  let longest: { group: string; round: number } | null = null;
+  for (const entry of timeline) {
+    if (entry.kind === 'loop' && entry.rounds.length > (longest?.round ?? 0)) {
+      longest = { group: entry.group, round: entry.rounds.length };
+    }
+  }
+  return longest;
 };
 
-/** The run as a title: what it is, not its id. */
-export function runTitle(lap: OneLapRow, timeline: readonly TimelineEntry[]): string {
+/** The run as a title: what it is, not its id; a build's round carries the cap its pinned map holds. */
+export function runTitle(
+  lap: OneLapRow,
+  timeline: readonly TimelineEntry[],
+  map: readonly LapMapRow[] = [],
+): string {
   const issue = lap.issue_number === null ? '' : ` #${lap.issue_number}`;
   const pr = lap.pr_number;
   switch (lap.workflow_name) {
     case BUILD_QUEUE_WORKFLOW: {
-      const round = latestRound(timeline);
-      return `Build${issue}${round === null ? '' : `, round ${round}`}`;
+      const loop = longestLoop(timeline);
+      if (loop === null) return `Build${issue}`;
+      const path = mapPathOf(loop.group, new Set(map.map((r) => r.path)));
+      const cap = map.find((r) => r.path === path)?.round_cap;
+      return `Build${issue}, round ${loop.round}${cap == null ? '' : ` of ${cap}`}`;
     }
     case APP_CHECK_WORKFLOW:
       return pr === null ? 'App check' : `App check, PR #${pr}`;

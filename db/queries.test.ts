@@ -234,6 +234,7 @@ const ROW_COLUMNS: Record<string, string[]> = {
     'depends_on',
     'when_condition',
     'trigger_rule',
+    'round_cap',
   ]),
   'one-lap-steps': columns<StepAttemptRow>()([
     'step_id',

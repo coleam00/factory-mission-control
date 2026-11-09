@@ -233,22 +233,22 @@ describe('arch-diff on the seed', () => {
       if (!row) throw new Error(`no ${table} row in V2 that the seed leaves unchanged`);
       const columns = (
         await db.query(
-          `SELECT column_name FROM information_schema.columns
+          `SELECT column_name, data_type FROM information_schema.columns
            WHERE table_schema = 'mc' AND table_name = $1 ORDER BY ordinal_position`,
           [table],
         )
       )
-        .map((c) => String(c.column_name))
-        .filter((c) => !['archon_sha', 'factory_sha', ...key, ...ignored].includes(c));
+        .map((c) => ({ name: String(c.column_name), integer: c.data_type === 'integer' }))
+        .filter((c) => !['archon_sha', 'factory_sha', ...key, ...ignored].includes(c.name));
       expect(columns.length).toBeGreaterThan(0);
 
       const unlisted: string[] = [];
-      for (const column of columns) {
+      for (const { name: column, integer } of columns) {
         const rollback = new Error('rollback');
         await db
           .transaction(async (tx) => {
             await tx.query(
-              `UPDATE mc.${table} SET ${column} = coalesce(${column}, '') || '~'
+              `UPDATE mc.${table} SET ${column} = ${integer ? `coalesce(${column}, 0) + 1` : `coalesce(${column}, '') || '~'`}
                WHERE archon_sha = $1 AND factory_sha = $2
                  AND ${key.map((c, i) => `${c} = $${i + 3}`).join(' AND ')}`,
               [version.archon_sha, version.factory_sha, ...key.map((c) => row[c])],

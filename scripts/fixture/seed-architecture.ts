@@ -132,6 +132,7 @@ function steps(workflow: string, all: Step[], parent: string | null, out: SqlRow
       trigger_rule: step.triggerRule,
       include: step.include,
       child_workflow: step.childWorkflow,
+      round_cap: step.roundCap,
       command: step.command,
       command_file: step.commandFile,
       script: step.script,

@@ -44,6 +44,8 @@ export interface Step {
   include: string | null;
   /** The workflow a `workflow:` node runs, by name as written; Archon resolves it at execution. */
   childWorkflow: string | null;
+  /** The round a loop group's own script stops it at (`const ROUND_CAP = n`); null when none is found. */
+  roundCap: number | null;
   command: string | null;
   commandFile: string | null;
   commandText: string | null;
@@ -256,6 +258,7 @@ export function parsePack(packDir: string, templateDir: string, pathPrefix = '')
   const commandText = new Map(commands.map((c) => [c.path, c.text]));
 
   const scripts: TextFile[] = [];
+  const scriptText = new Map<string, string>();
   const sharedDocs: TextFile[] = [];
   for (const entry of list(packDir)) {
     const root = join(packDir, entry);
@@ -264,6 +267,7 @@ export function parsePack(packDir: string, templateDir: string, pathPrefix = '')
     for (const path of files) {
       const file = { path: `${pathPrefix}${slash(relative(packDir, path))}`, text: readText(path) };
       (path.endsWith('.md') ? sharedDocs : scripts).push(file);
+      scriptText.set(file.path, file.text);
     }
   }
 
@@ -328,6 +332,7 @@ export function parsePack(packDir: string, templateDir: string, pathPrefix = '')
 
       const include = str(node.include);
       let children: Step[] = [];
+      let roundCap: number | null = null;
       let description = comment;
       if (include) {
         const included = byName.get(include);
@@ -342,6 +347,7 @@ export function parsePack(packDir: string, templateDir: string, pathPrefix = '')
       } else if (kind === 'loop_group') {
         const group = node.loop_group as Node;
         children = expand(source, group.nodes, `${path}/`, stack, edges, cursor);
+        roundCap = roundCapOf(children.map((child) => scriptText.get(child.scriptFile ?? '')));
       }
 
       steps.push({
@@ -355,6 +361,7 @@ export function parsePack(packDir: string, templateDir: string, pathPrefix = '')
         triggerRule: str(node.trigger_rule),
         include,
         childWorkflow: str(node.workflow),
+        roundCap,
         command,
         commandFile,
         commandText: commandFile ? (commandText.get(commandFile) ?? null) : null,
@@ -401,6 +408,19 @@ export function parsePack(packDir: string, templateDir: string, pathPrefix = '')
     scripts,
     hooks,
   };
+}
+
+/**
+ * The round a loop stops itself at, from the `const ROUND_CAP = n` in its body's scripts. The loop's
+ * `max_iterations` is one above it, so it is not the round the run ends at.
+ */
+function roundCapOf(bodies: (string | undefined)[]): number | null {
+  for (const text of bodies) {
+    const cap =
+      text === undefined ? null : /^const ROUND_CAP\s*=\s*(\d+)\s*;?\s*$/m.exec(text)?.[1];
+    if (cap) return Number(cap);
+  }
+  return null;
 }
 
 /** The agent names in a hook's `*_AGENTS = {...}` set, in the order the file lists them. */
