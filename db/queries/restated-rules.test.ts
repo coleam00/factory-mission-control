@@ -8,6 +8,7 @@ import {
   parked,
   SPLIT_WORKFLOW,
 } from '../../app/lib/board';
+import { STOP_CLASSES } from '../../app/lib/failures';
 import { causeOf } from '../../app/lib/health';
 import { prNumber } from '../../app/lib/one-lap';
 import { QUEUE_ENDING_STATE, QUEUE_REVIEW_STATE, REVIEW_OUTCOME_STATE } from '../../app/lib/states';
@@ -526,7 +527,7 @@ test('board rounds count a shipped run on the item every other screen holds', as
     await db.query(
       `INSERT INTO mc.factories (name, repository, codebase, console) VALUES ('f', 'o/r', 'o/r', 'c')`,
     );
-    for (let n = 1; n <= 6; n++) {
+    for (let n = 1; n <= 8; n++) {
       await db.query(
         `INSERT INTO mc.issues (factory, number, title, state, url, created_at, updated_at)
          VALUES ('f', $1, $2, 'open', 'u', now(), now())`,
@@ -543,6 +544,8 @@ test('board rounds count a shipped run on the item every other screen holds', as
       { claim: null, facts: 5, input: 6, ship: true },
       { claim: 1, facts: null, input: null, ship: false },
       { claim: 2, facts: null, input: null, ship: true, workflow: 'other' },
+      // Holds two issues: the newest claim (8) is where every screen holds it, not the older 7.
+      { claim: null, facts: null, input: null, ship: true },
     ];
     for (const [k, r] of runs.entries()) {
       const c = k + 1;
@@ -572,6 +575,16 @@ test('board rounds count a shipped run on the item every other screen holds', as
         );
       }
     }
+    for (const [n, age] of [
+      [7, '2 hours'],
+      [8, '1 hour'],
+    ] as const) {
+      await db.query(
+        `INSERT INTO mc.claims (factory, issue_number, run_id, claimed_at, released_at)
+         VALUES ('f', $1, $2, now() - $3::interval, now())`,
+        [n, id(8), age],
+      );
+    }
     const rounds = Object.fromEntries(
       (await db.query(sqlOf('board'), ['f']))
         .filter((r) => r.number !== null)
@@ -586,9 +599,9 @@ test('board rounds count a shipped run on the item every other screen holds', as
         owned[n] = (owned[n] ?? 0) + 1;
       }
     }
-    const expected = Object.fromEntries([1, 2, 3, 4, 5, 6].map((n) => [n, owned[n] ?? 0]));
+    const expected = Object.fromEntries([1, 2, 3, 4, 5, 6, 7, 8].map((n) => [n, owned[n] ?? 0]));
     expect(rounds).toEqual(expected);
-    expect(Object.values(expected).reduce((a, b) => a + b, 0)).toBe(5);
+    expect(Object.values(expected).reduce((a, b) => a + b, 0)).toBe(6);
   } finally {
     await db.close();
   }
@@ -596,14 +609,24 @@ test('board rounds count a shipped run on the item every other screen holds', as
 
 test('mc.stop_class refines Health’s causes, agreeing with causeOf on every corpus line', async () => {
   const sql = read('db', 'migrations', '0031_run_stops.sql');
-  // Both read "the run's latest failed step"; a live query cannot call the mc function, so the pick is copied.
+  // All three read "the run's latest failed step": the whole WHERE (bar the run-id correlation) and the
+  // ORDER BY, copied because a live query cannot call the mc function. A pick whose WHERE is not exactly
+  // `run_id = ... AND status = 'failed'` matches nothing and fails the test.
   const failedStepPick = (text: string, alias: string) =>
     text
-      .match(new RegExp(`ORDER BY ${alias}\\.completed_at[^;]*?LIMIT 1`))?.[0]
-      .replaceAll(`${alias}.`, '');
-  const healthPick = failedStepPick(read('db', 'queries', 'health-runs.sql'), 'ls');
-  expect(healthPick).toBeDefined();
-  expect(failedStepPick(sql, 's')).toBe(healthPick);
+      .match(/WHERE (\w+)\.run_id = [\w.]+ AND \1\.status = 'failed'\s+ORDER BY[^;]*?LIMIT 1/g)
+      ?.find((pick) => pick.startsWith(`WHERE ${alias}.`))
+      ?.replace(/run_id = [\w.]+/, 'run_id = RUN')
+      .replaceAll(`${alias}.`, '')
+      .replace(/\s+/g, ' ');
+  const picks = [
+    failedStepPick(sql, 's'),
+    failedStepPick(read('db', 'queries', 'health-runs.sql'), 'ls'),
+    failedStepPick(read('db', 'queries', 'work-item.sql'), 'ls'),
+  ];
+  expect(picks[0]).toBeDefined();
+  expect(picks[1]).toBe(picks[0]);
+  expect(picks[2]).toBe(picks[0]);
   const db = await migratedDb();
   try {
     const seen = new Set<string>();
@@ -630,4 +653,19 @@ test('mc.stop_class refines Health’s causes, agreeing with causeOf on every co
   } finally {
     await db.close();
   }
+});
+
+test('the run-stop migration writes only classes and stopped statuses its CHECKs allow', () => {
+  const sql = read('db', 'migrations', '0031_run_stops.sql');
+  const classFn = sql.match(/FUNCTION mc\.stop_class[\s\S]*?\$\$;/)?.[0] ?? '';
+  const thens = [...classFn.matchAll(/THEN '([^']*)'/g)].map((m) => m[1] as string);
+  expect(thens.length).toBeGreaterThan(0);
+  expect([...new Set(thens)].sort()).toEqual([...STOP_CLASSES].sort());
+
+  const checked = quoted(
+    sql.match(/status text NOT NULL CHECK \(status IN \(([^)]*)\)/)?.[1] ?? '',
+  );
+  const guard = quoted(sql.match(/l\.status NOT IN \(([^)]*)\)/)?.[1] ?? '');
+  expect(checked.length).toBeGreaterThan(0);
+  expect(guard.sort()).toEqual(checked.sort());
 });

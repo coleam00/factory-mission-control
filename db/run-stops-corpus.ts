@@ -194,4 +194,9 @@ export const STOP_CORPUS: readonly (readonly [line: string, cls: StopClass, sour
     'environment',
     'review R12 (a uuid before the code word in an ENOENT path)',
   ],
+  [
+    'cannot open /w/worktrees/run-1/out.log',
+    'environment',
+    'issue #534 (the class rests on a word inside a path, which mc.stop_class keeps)',
+  ],
 ];

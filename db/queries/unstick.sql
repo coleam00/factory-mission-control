@@ -1,5 +1,5 @@
 SELECT 'blocked'::text AS kind, i.number, NULL::uuid AS run_id, NULL::text AS workflow_name,
-  b.waits_on, b.since, 'retriage'::text AS action
+  b.waits_on, b.since, 'retriage'::text AS action, f.repository, f.console
 -- Work that stopped moving, with what it waits on, since when, and the one action that moves it.
 -- `since` is when it became movable, not when it was first stuck. Four kinds, each keyed by $1.
 -- Blocked: an open issue the queues stopped (stage 'blocked') whose every `Depends on` is closed or merged.
@@ -27,7 +27,7 @@ CROSS JOIN LATERAL (
 WHERE i.factory = $1 AND i.state = 'open' AND b.n > 0 AND b.gone = b.n
 UNION ALL
 -- Parked: an open issue parked as the Board reads it whose ruling names only items that are closed or merged.
-SELECT 'parked', i.number, NULL, NULL, b.waits_on, b.since, 'retriage'
+SELECT 'parked', i.number, NULL, NULL, b.waits_on, b.since, 'retriage', f.repository, f.console
 FROM mc.issues i
 JOIN mc.factories f ON f.name = i.factory
 JOIN mc.work_item_states w ON w.project_key = f.codebase AND w.number = i.number
@@ -59,13 +59,15 @@ WHERE i.factory = $1 AND i.state = 'open' AND b.n > 0 AND b.gone = b.n AND (
 )
 UNION ALL
 -- Capacity: an answered run Archon could not continue for want of a slot (migration 0031).
-SELECT 'capacity', c.item_number, c.run_id, c.workflow_name, 'a free slot', c.since, 'resume'
+SELECT 'capacity', c.item_number, c.run_id, c.workflow_name, 'a free slot', c.since, 'resume',
+  f.repository, f.console
 FROM mc.capacity_waits c
+JOIN mc.factories f ON f.name = c.factory
 WHERE c.factory = $1
 UNION ALL
 -- Claim: a work item claimed by a run in a status the pack's queues release (`claimDisposition`).
 SELECT 'claim', w.number, l.run_id, l.workflow_name, 'a claim held by a finished run', l.completed_at,
-  'release_claim'
+  'release_claim', f.repository, f.console
 FROM mc.work_item_states w
 JOIN mc.factories f ON f.codebase = w.project_key AND f.name = $1
 JOIN mc.laps l ON l.run_id = w.claim_run_id AND l.status IN ('completed', 'failed', 'cancelled')

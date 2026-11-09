@@ -30,15 +30,18 @@ export function Feed<Row>({
   query,
   factory,
   args,
+  name,
   into,
 }: {
   query: string;
   factory: string | undefined;
   args?: readonly string[];
+  /** The panel's name where a second reader of the query must not be taken for the first (`LivePanel`). */
+  name?: string;
   into: (source: Source<Row>) => void;
 }): ReactElement {
   return (
-    <LivePanel<Row> query={query} factory={factory} args={args}>
+    <LivePanel<Row> query={query} name={name} factory={factory} args={args}>
       {(rows, state) => <Report rows={rows} state={state} into={into} />}
     </LivePanel>
   );

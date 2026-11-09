@@ -74,6 +74,38 @@ test('the Table renders every column with its caption under the header', () => {
   });
 });
 
+test('a failed chip renders the v3 failed color and a running chip pulses', () => {
+  const html = render(
+    {
+      ...empty,
+      columns: [
+        {
+          id: 'merged',
+          title: 'Merged',
+          role: 'test',
+          holder: 'test',
+          items: [
+            {
+              number: 1,
+              title: 'x',
+              chips: [
+                { kind: 'route', text: 'broke', state: 'failed' },
+                { kind: 'route', text: 'going', state: 'running', pulse: true },
+              ],
+              to: '/f/x/work/1',
+            },
+          ],
+        },
+      ],
+    },
+    'table',
+  );
+  const failed = html.match(/<span[^>]*color:var\(--v3-failed\)[^>]*>broke<\/span>/);
+  expect(failed).not.toBeNull();
+  const running = html.match(/<span[^>]*>(<span[^>]*animate-pulse[^>]*><\/span>)going<\/span>/);
+  expect(running).not.toBeNull();
+});
+
 const stage = (id: string, numbers: number[]) => ({
   ...(PIPELINE.find((h) => h.id === id) as (typeof PIPELINE)[number]),
   columns: undefined,
@@ -115,4 +147,30 @@ test('the Pipeline shows at most three mini cards and a more-in-Table link', () 
   expect(html.match(/data-work-item=/g)).toHaveLength(MINI_CARDS);
   expect(html).toContain('data-count="5"');
   expect(html).toMatch(/href="\/\?view=table"[^>]*>2 more in Table/);
+});
+
+test('a mini card moves its state pill under the number instead of breaking it', () => {
+  const html = render(
+    {
+      ...empty,
+      pipeline: PIPELINE.map(({ columns: _, ...spec }, i) => ({
+        ...spec,
+        items:
+          i === 0
+            ? [
+                {
+                  number: 7,
+                  title: 't',
+                  status: 'check failed' as const,
+                  chips: [],
+                  to: '/f/x/work/7',
+                },
+              ]
+            : [],
+        pills: [],
+      })),
+    },
+    'pipeline',
+  );
+  expect(html).toMatch(/class="[^"]*flex-wrap[^"]*whitespace-nowrap/);
 });

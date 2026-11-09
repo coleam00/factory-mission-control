@@ -79,6 +79,8 @@ const unstick = (over: Partial<UnstickRow>): UnstickRow => ({
   waits_on: 'a slot',
   since: at('10:00'),
   action: 'resume',
+  repository: 'o/r',
+  console: CONSOLE,
   ...over,
 });
 

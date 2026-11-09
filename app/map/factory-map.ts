@@ -153,26 +153,47 @@ export const FIT_FOOT = 48;
 export const MIN_FRAME = 420;
 /** The largest scale a fit uses. */
 export const FIT_MAX = 1.15;
+/** Below this width the map opens as the phone mockup draws it, and Fit fits the whole map. */
+export const PHONE = 701;
+
+/**
+ * The map's type in map units, larger than the mockup's so that fitted, a card's title renders at
+ * least `MAP_TYPE_FLOOR.title` px, its text `.text` px and the labels `.label` px.
+ */
+export const MAP_TYPE = { kind: 18, title: 25, text: 20, chip: 15, label: 18 } as const;
+/** The least rendered size in px of each map type (owner, PR #326 review; ruling on #549). */
+export const MAP_TYPE_FLOOR = { title: 14, text: 11, kind: 10, label: 10 } as const;
+/** The least scale a fit uses: the least at which every type meets its floor (ruling on #549). */
+export const FIT_MIN = Math.max(
+  ...(Object.keys(MAP_TYPE_FLOOR) as (keyof typeof MAP_TYPE_FLOOR)[]).map(
+    (key) => MAP_TYPE_FLOOR[key] / MAP_TYPE[key],
+  ),
+);
 
 /**
  * The frame's height for a `width` of at least the phone's: the map's height at the scale that
- * fits its width, so a fit leaves no empty bands (owner, PR #326 review, acceptance 10).
+ * fits its width, never below `FIT_MIN`, so a fit leaves no empty bands (owner, PR #326 review,
+ * acceptance 10) and shows the floored map whole in height.
  */
 export function heroFrameHeight(world: { width: number; height: number }, width: number): number {
-  const k = Math.min((width - FIT_PAD * 2) / world.width, FIT_MAX);
+  const k = fitScale(world, { width, height: Number.POSITIVE_INFINITY });
   return Math.max(MIN_FRAME, Math.ceil(world.height * k + FIT_PAD * 2 + FIT_FOOT));
 }
 
-/** The scale that fits `world` in `frame`, up to `max`, as the Fit control fits it. */
+/** The scale that fits `world` in `frame`, up to `max` and never below `min`, the type floor. */
 export function fitScale(
   world: { width: number; height: number },
   frame: { width: number; height: number },
   max = FIT_MAX,
+  min = FIT_MIN,
 ): number {
-  return Math.min(
-    (frame.width - FIT_PAD * 2) / world.width,
-    (frame.height - FIT_PAD * 2 - FIT_FOOT) / world.height,
-    max,
+  return Math.max(
+    min,
+    Math.min(
+      (frame.width - FIT_PAD * 2) / world.width,
+      (frame.height - FIT_PAD * 2 - FIT_FOOT) / world.height,
+      max,
+    ),
   );
 }
 
@@ -191,6 +212,32 @@ export function levelMax(
     fitScale(worldSize(map.views?.[id] as MapView), frame),
   );
   return Math.max(...fits);
+}
+
+/**
+ * The Fit control's camera: the whole level, centred, as large as the frame allows. From phone
+ * width up a deeper view is no larger than `levelMax` and no level is below the type floor; a level
+ * wider than the frame at the floor starts at its left edge, where every level's main line begins
+ * (ruling on #549).
+ */
+export function fitCamera(
+  map: FactoryMap,
+  level: MapView,
+  frame: { width: number; height: number },
+): { k: number; x: number; y: number } {
+  const world = worldSize(level);
+  const phone = frame.width < PHONE;
+  const k = fitScale(
+    world,
+    frame,
+    phone ? FIT_MAX : levelMax(map, level, frame),
+    phone ? 0 : FIT_MIN,
+  );
+  return {
+    k,
+    x: Math.max(FIT_PAD, (frame.width - world.width * k) / 2),
+    y: Math.max(FIT_PAD, (frame.height - FIT_FOOT - world.height * k) / 2),
+  };
 }
 
 const cardById = (map: MapView, id: string): Card => {
