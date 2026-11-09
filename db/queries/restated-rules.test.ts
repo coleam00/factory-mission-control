@@ -523,7 +523,7 @@ test('board rounds count a shipped run on the item every other screen holds', as
     await db.query(
       `INSERT INTO mc.factories (name, repository, codebase, console) VALUES ('f', 'o/r', 'o/r', 'c')`,
     );
-    for (let n = 1; n <= 6; n++) {
+    for (let n = 1; n <= 8; n++) {
       await db.query(
         `INSERT INTO mc.issues (factory, number, title, state, url, created_at, updated_at)
          VALUES ('f', $1, $2, 'open', 'u', now(), now())`,
@@ -540,6 +540,8 @@ test('board rounds count a shipped run on the item every other screen holds', as
       { claim: null, facts: 5, input: 6, ship: true },
       { claim: 1, facts: null, input: null, ship: false },
       { claim: 2, facts: null, input: null, ship: true, workflow: 'other' },
+      // Holds two issues: the newest claim (8) is where every screen holds it, not the older 7.
+      { claim: null, facts: null, input: null, ship: true },
     ];
     for (const [k, r] of runs.entries()) {
       const c = k + 1;
@@ -569,6 +571,13 @@ test('board rounds count a shipped run on the item every other screen holds', as
         );
       }
     }
+    for (const [n, age] of [[7, '2 hours'], [8, '1 hour']] as const) {
+      await db.query(
+        `INSERT INTO mc.claims (factory, issue_number, run_id, claimed_at, released_at)
+         VALUES ('f', $1, $2, now() - $3::interval, now())`,
+        [n, id(8), age],
+      );
+    }
     const rounds = Object.fromEntries(
       (await db.query(sqlOf('board'), ['f']))
         .filter((r) => r.number !== null)
@@ -583,9 +592,9 @@ test('board rounds count a shipped run on the item every other screen holds', as
         owned[n] = (owned[n] ?? 0) + 1;
       }
     }
-    const expected = Object.fromEntries([1, 2, 3, 4, 5, 6].map((n) => [n, owned[n] ?? 0]));
+    const expected = Object.fromEntries([1, 2, 3, 4, 5, 6, 7, 8].map((n) => [n, owned[n] ?? 0]));
     expect(rounds).toEqual(expected);
-    expect(Object.values(expected).reduce((a, b) => a + b, 0)).toBe(5);
+    expect(Object.values(expected).reduce((a, b) => a + b, 0)).toBe(6);
   } finally {
     await db.close();
   }
