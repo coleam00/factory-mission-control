@@ -225,6 +225,8 @@ export interface ManagerRead {
   /** Whether the stop is a code failure; unknown when its error matches no known cause. */
   codeFailure: 'yes' | 'no' | 'unknown';
   resumeStep: string | null;
+  /** The failed step's own id, what a resume names; `resumeStep` is how the page spells it. */
+  resumeFrom: string | null;
   resumeCost: number | null;
 }
 
@@ -238,6 +240,7 @@ const NO_STOP = {
   stopClass: null,
   codeFailure: 'unknown',
   resumeStep: null,
+  resumeFrom: null,
   resumeCost: null,
 } as const;
 
@@ -283,10 +286,12 @@ export function managerRead(
         parts.push({ text: ' Everything before it succeeded.' });
       }
       let resumeStep: string | null = null;
+      let resumeFrom: string | null = null;
       let resumeCost: number | null = null;
       if (failed !== null) {
         const estimate = resumeEstimate(failed, rows, timeline);
         resumeStep = estimate.step;
+        resumeFrom = failed.step_id;
         resumeCost = estimate.cost;
         parts.push(
           { text: ' ' },
@@ -308,7 +313,7 @@ export function managerRead(
               ? ' This is a code failure.'
               : ` This is not a code failure: ${NOT_CODE[stopClass]}.`,
       });
-      return { parts, stopClass, codeFailure, resumeStep, resumeCost };
+      return { parts, stopClass, codeFailure, resumeStep, resumeFrom, resumeCost };
     }
     case 'paused': {
       if (waitsForSlot(lap)) {
