@@ -63,7 +63,7 @@ export const LEGACY_MIGRATIONS: ReadonlySet<string> = new Set([
 /** A new migration's name: `<YYYYMMDDTHHMMZ>_<name>.sql`, e.g. `20261109T1430Z_stop_line.sql`. */
 export const TIMESTAMP_MIGRATION = /^\d{8}T\d{4}Z_[a-z0-9_]+\.sql$/;
 
-/** Names that are neither legacy nor timestamp-form, and prefixes shared by files that are not all legacy. */
+/** Names that are neither legacy nor timestamp-form, and timestamp prefixes shared by more than one file. */
 export function migrationNameProblems(names: readonly string[]): string[] {
   const sql = names.filter((name) => name.endsWith('.sql')).sort();
   const problems = sql
@@ -73,14 +73,12 @@ export function migrationNameProblems(names: readonly string[]): string[] {
         `${name} is not named <YYYYMMDDTHHMMZ>_<name>.sql (e.g. 20261109T1430Z_stop_line.sql)`,
     );
   const byPrefix = new Map<string, string[]>();
-  for (const name of sql) {
-    const prefix = name.includes('_') ? name.slice(0, name.indexOf('_')) : name;
+  for (const name of sql.filter((n) => TIMESTAMP_MIGRATION.test(n))) {
+    const prefix = name.slice(0, name.indexOf('_'));
     byPrefix.set(prefix, [...(byPrefix.get(prefix) ?? []), name]);
   }
   for (const [prefix, group] of byPrefix) {
-    if (group.length > 1 && group.some((name) => !LEGACY_MIGRATIONS.has(name))) {
-      problems.push(`${group.join(', ')} share the prefix ${prefix}`);
-    }
+    if (group.length > 1) problems.push(`${group.join(', ')} share the prefix ${prefix}`);
   }
   return problems;
 }

@@ -372,7 +372,7 @@ test('the timestamp form and the legacy duplicates pass', () => {
   expect(migrationNameProblems([...LEGACY_MIGRATIONS, '20261109T1430Z_x.sql'])).toEqual([]);
 });
 
-test('a shared prefix fails, among new files and against a legacy prefix', () => {
+test('a shared timestamp prefix fails', () => {
   const twoNew = migrationNameProblems([
     ...LEGACY_MIGRATIONS,
     '20261109T1430Z_a.sql',
@@ -380,9 +380,6 @@ test('a shared prefix fails, among new files and against a legacy prefix', () =>
   ]);
   expect(twoNew).toHaveLength(1);
   expect(twoNew[0]).toContain('share the prefix 20261109T1430Z');
-  expect(migrationNameProblems([...LEGACY_MIGRATIONS, '0031_x.sql'])).toContainEqual(
-    expect.stringContaining('share the prefix 0031'),
-  );
 });
 
 test('a second run over the same recorded state applies nothing', async () => {
