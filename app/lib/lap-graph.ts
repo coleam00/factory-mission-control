@@ -227,47 +227,6 @@ export const LANE_STEPS = [
   'release',
 ] as const;
 
-export interface LaneMark {
-  step: string;
-  state: StepState;
-}
-
-/**
- * A running lap's row of marks from lanes.sql's `steps` (`<step id> <status>`, oldest first): a
- * top-level step is running while it or any step under it runs. A top-level step the list does not
- * name that the lap ran is added at the end.
- */
-export function laneMarks(steps: readonly string[] | null): LaneMark[] {
-  const states = new Map<string, StepState[]>();
-  const extra: string[] = [];
-  for (const entry of steps ?? []) {
-    const [id, status] = entry.split(' ');
-    const top = id.split('__')[0];
-    const mark = top === 'build' || top === 'ship' ? 'build/ship' : top;
-    if (!(LANE_STEPS as readonly string[]).includes(mark) && !extra.includes(mark))
-      extra.push(mark);
-    states.set(mark, [...(states.get(mark) ?? []), stateOfStatus(status ?? '')]);
-  }
-  const marks: LaneMark[] = [...LANE_STEPS, ...extra].map((step) => {
-    const seen = states.get(step) ?? [];
-    const state: StepState = seen.includes('running')
-      ? 'running'
-      : seen.includes('failed')
-        ? 'failed'
-        : seen.includes('finished')
-          ? 'finished'
-          : seen.length > 0 && seen.every((s) => s === 'skipped')
-            ? 'skipped'
-            : 'not-reached';
-    return { step, state };
-  });
-  // A step the lap went past without running (a later one has run) is skipped, not ahead.
-  const last = marks.findLastIndex((m) => m.state !== 'not-reached');
-  return marks.map((m, i) =>
-    i < last && m.state === 'not-reached' ? { ...m, state: 'skipped' } : m,
-  );
-}
-
 /**
  * The blocks a lap opens with: each top-level include or loop group the lap ran (running, failed
  * or done), so ship's own steps branch beside the spine; one it did not run stays one box.

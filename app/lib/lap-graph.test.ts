@@ -1,13 +1,5 @@
 import { expect, test } from 'bun:test';
-import {
-  foldGraph,
-  type LapMapRow,
-  LANE_STEPS,
-  lapGraph,
-  laneMarks,
-  pathOf,
-  ranBlocks,
-} from './lap-graph';
+import { foldGraph, type LapMapRow, lapGraph, pathOf, ranBlocks } from './lap-graph';
 import type { StepAttemptRow } from './one-lap';
 
 const row = (path: string, position: number, over: Partial<LapMapRow> = {}): LapMapRow => {
@@ -69,24 +61,6 @@ test('every step the lap ran is a node, on the map or beside it, with its own at
   expect(lap.graph.edges).toContainEqual({ from: 'ship/intel', to: 'ship/new' });
 });
 
-test("a lane's marks follow the loop's top-level steps, build and ship as one", () => {
-  const marks = laneMarks(['pick completed', 'claim completed', 'build running', 'tally skipped']);
-  expect(marks.map((m) => m.step)).toEqual([...LANE_STEPS, 'tally']);
-  expect(Object.fromEntries(marks.map((m) => [m.step, m.state]))).toMatchObject({
-    pick: 'finished',
-    claim: 'finished',
-    'build/ship': 'running',
-    // Passed: tally, the last step the lap ran, comes after them all.
-    subject: 'skipped',
-    tally: 'skipped',
-  });
-  expect(laneMarks(null).every((m) => m.state === 'not-reached')).toBe(true);
-  expect(laneMarks(['ship__deliver__implement failed'])[2]).toEqual({
-    step: 'build/ship',
-    state: 'failed',
-  });
-});
-
 test('a step the lap passed without running is skipped, with all inside it; one ahead is not reached', () => {
   const map = [
     row('pick', 1),
@@ -101,23 +75,6 @@ test('a step the lap passed without running is skipped, with all inside it; one 
   expect(lap.steps.get('ship/intel')?.state).toBe('skipped');
   expect(lap.steps.get('land')?.state).toBe('not-reached');
   expect(lap.steps.get('subject')?.state).toBe('finished');
-});
-
-test('a lane mark the lap went past is skipped; one ahead of it is not reached', () => {
-  const marks = Object.fromEntries(
-    laneMarks([
-      'pick completed',
-      'claim completed',
-      'build completed',
-      'subject completed',
-      'check-app running',
-    ]).map((m) => [m.step, m.state]),
-  );
-  expect(marks).toMatchObject({
-    briefs: 'skipped',
-    'check-app': 'running',
-    evidence: 'not-reached',
-  });
 });
 
 test('every block folds into one box saying how it stands in the lap, until opened', () => {

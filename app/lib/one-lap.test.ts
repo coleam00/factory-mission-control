@@ -147,7 +147,7 @@ const lap = (over: Partial<OneLapRow>): OneLapRow => ({
   ...over,
 });
 
-test("a lap's outcome reads as recent-laps.sql's CASE: failure, gate, review, then route none", () => {
+test("a lap's outcome reads as the scorecard defines it: failure, gate, review, then route none", () => {
   const cases: [Partial<OneLapRow>, ReturnType<typeof lapOutcome>][] = [
     [{ status: 'running', gate_outcome: 'merged' }, null],
     [{ status: 'failed', gate_outcome: 'merged' }, 'failed'],

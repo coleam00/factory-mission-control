@@ -22,7 +22,7 @@ export async function tableCounts(tx: Tx): Promise<{ table: string; rows: number
   return counts;
 }
 
-/** A lap's outcome, by the first rule that matches (the recent-laps outcomes, PRD 4.3). */
+/** A lap's outcome, by the first rule that matches (the outcomes of PRD 4.3). */
 const LAP_OUTCOMES = `
   SELECT l.run_id, CASE
     WHEN l.status = 'failed' THEN 'failed'

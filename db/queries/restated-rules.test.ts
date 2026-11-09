@@ -10,7 +10,8 @@ import {
 } from '../../app/lib/board';
 import { STOP_CLASSES } from '../../app/lib/failures';
 import { causeOf } from '../../app/lib/health';
-import { LAP_PAGE_WORKFLOW, prNumber } from '../../app/lib/one-lap';
+import { prNumber } from '../../app/lib/one-lap';
+import { runsArgs } from '../../app/lib/runs';
 import { QUEUE_ENDING_STATE, QUEUE_REVIEW_STATE, REVIEW_OUTCOME_STATE } from '../../app/lib/states';
 import { ROUTE_OF_LABEL, WORK_ITEM_NUMBER } from '../../app/lib/work-item';
 import { runMigrations } from '../../scripts/migrate';
@@ -103,18 +104,6 @@ test('map-right-now reads only paths the pinned merge queue declares', () => {
       expect(Object.keys(at.properties), `${step}.${walked.join('.')} is declared`).toContain(key);
       at = at.properties[key] as { properties?: Record<string, unknown> };
     }
-  }
-});
-
-test('the queries behind a link to the lap page filter on LAP_PAGE_WORKFLOW', () => {
-  const archonLiterals = (name: string) =>
-    [...sqlOf(name).matchAll(/'(archon-[a-z-]+)'/g)].map((m) => m[1]);
-  for (const name of ['recent-laps']) {
-    expect([
-      name,
-      [...sqlOf(name).matchAll(/workflow_name = '([^']*)'/g)].map((m) => m[1]),
-    ]).toEqual([name, [LAP_PAGE_WORKFLOW]]);
-    expect([name, archonLiterals(name)]).toEqual([name, [LAP_PAGE_WORKFLOW]]);
   }
 });
 
@@ -438,7 +427,7 @@ test('the work item address guard accepts the numbers mc.run_issue_number reads'
   }
 }, 60_000);
 
-test('lanes, home-map and health-workable resolve the same item for every source of it', async () => {
+test('runs, home-map and health-workable resolve the same item for every source of it', async () => {
   const db = await migratedDb();
   try {
     await db.query(
@@ -502,7 +491,12 @@ test('lanes, home-map and health-workable resolve the same item for every source
     const expectedTitles = Object.fromEntries(
       Object.entries(expected).map(([k, v]) => [k, v === null ? null : `t${v}`]),
     );
-    const lanes = await db.query(sqlOf('lanes'), ['f']);
+    const lanes = (
+      await db.query(sqlOf('runs'), [
+        'f',
+        ...runsArgs({ q: '', state: '', hideIdle: false, page: 1 }),
+      ])
+    ).filter((r) => r.status === 'running');
     const laps = (await db.query(sqlOf('home-map'), ['f', ''])).filter((r) => r.kind === 'lap');
     expect(held(lanes)).toEqual(expected);
     expect(held(laps)).toEqual(expected);
@@ -587,9 +581,12 @@ test('board rounds count a shipped run on the item every other screen holds', as
         .filter((r) => r.number !== null)
         .map((r) => [r.number as number, r.rounds]),
     );
-    // The owner's answer: lanes.sql holds each (running) run on an item; a shipped loop/queue run is a round there.
+    // The owner's answer: runs.sql holds each (running) run on an item; a shipped loop/queue run is a round there.
     const owned: Record<number, number> = {};
-    for (const row of await db.query(sqlOf('lanes'), ['f'])) {
+    for (const row of await db.query(sqlOf('runs'), [
+      'f',
+      ...runsArgs({ q: '', state: '', hideIdle: false, page: 1 }),
+    ])) {
       const run = runs[Number(String(row.run_id).slice(-1)) - 1];
       if (run?.ship && run.workflow === undefined && row.issue_number !== null) {
         const n = row.issue_number as number;
@@ -650,6 +647,24 @@ test('mc.stop_class refines Health’s causes, agreeing with causeOf on every co
   } finally {
     await db.close();
   }
+});
+
+test('the runs idle-poll rule names app-check steps the workflow gates on a selected check', () => {
+  const workflow = read('.archon', 'workflows', 'factory', 'app-check', 'factory-app-check.yaml');
+  const steps = new Map(
+    workflow
+      .replaceAll('\r\n', '\n')
+      .split(/^ {2}- id: /m)
+      .slice(1)
+      .map((block) => [block.split('\n')[0], block] as const),
+  );
+  const rule = sqlOf('runs').match(/o\.step_id IN \(([^)]*)\)/);
+  expect(rule).not.toBeNull();
+  expect(steps.has('select')).toBe(true);
+  for (const id of quoted(rule?.[1] ?? '')) {
+    expect(steps.get(id)).toContain('when: "$select.output.found == true"');
+  }
+  expect(quoted(rule?.[1] ?? '').length).toBeGreaterThan(0);
 });
 
 test('the run-stop migration writes only classes and stopped statuses its CHECKs allow', () => {
