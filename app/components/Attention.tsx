@@ -1,4 +1,5 @@
 import { type ReactElement, type ReactNode, useMemo, useState } from 'react';
+import { Link } from 'react-router';
 import {
   type Action,
   ATTENTION_SOURCES,
@@ -415,12 +416,12 @@ function Handled({
                 ? `Answered ${row.option ?? 'with your text'}`
                 : `Resumed${row.from_step === null ? '' : ` from ${row.from_step}`}`}
               {row.workflow_name === null ? null : <span>{row.workflow_name}</span>}
-              <a
-                href={lapHref(factory, row.run_id)}
+              <Link
+                to={lapHref(factory, row.run_id)}
                 className="font-mono text-[color:var(--v3-you-2)] hover:underline"
               >
                 {shortRunId(row.run_id)}
-              </a>
+              </Link>
               <span className="ml-auto font-mono text-[length:var(--v3-t-micro)] text-[color:var(--v3-fg-3)]">
                 {clock(row.sent_at)}
               </span>

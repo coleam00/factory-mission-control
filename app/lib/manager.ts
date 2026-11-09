@@ -11,6 +11,7 @@ import {
   type ManagerEvent,
   type RunSummary,
 } from '../../server/manager-stream';
+export { MAX_MESSAGE_CHARS };
 import type { ActionRequest } from './actions';
 import { shortRunId } from './format';
 import { ORDER_PARAM, TABLE_VIEW, VIEW_PARAM } from './board';

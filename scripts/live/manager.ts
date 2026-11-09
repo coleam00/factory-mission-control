@@ -79,7 +79,8 @@ const lastMessage = (kind: string) => `(() => {
   const all = [...document.querySelectorAll('aside[data-manager] [data-message="${kind}"]')];
   const el = all[all.length - 1];
   return el === undefined ? null : {
-    text: el.textContent,
+    text: [...el.children].filter((c, i) => i > 0 && !c.hasAttribute('data-notice')).map((c) => c.textContent).join(' '),
+    notices: [...el.querySelectorAll('[data-notice]')].map((n) => n.textContent),
     state: el.getAttribute('data-manager-state'),
     runs: [...el.querySelectorAll('[data-run-link]')].map((a) => a.getAttribute('data-run-link')),
     proposals: [...el.querySelectorAll('[data-proposal]')].map((b) => b.textContent),
@@ -87,7 +88,9 @@ const lastMessage = (kind: string) => `(() => {
 })()`;
 
 interface ShownMessage {
+  /** The message without its heading line and its notices. */
   text: string;
+  notices: string[];
   state: string;
   runs: string[];
   proposals: string[];
@@ -127,8 +130,8 @@ export function managerPhase(ctx: LiveContext): LivePhase {
       report.push(`briefing: ${JSON.stringify(briefing)}`);
       if (briefing === null || briefing.text.trim() === '') {
         mismatches.push('the briefing is blank');
-      } else if (/could not be reached|not set up|cost cap|unavailable/i.test(briefing.text)) {
-        mismatches.push(`the briefing is a notice: ${briefing.text}`);
+      } else if (briefing.notices.length > 0) {
+        mismatches.push(`the briefing carries a notice: ${briefing.notices.join(' ')}`);
       }
       ctx.save(FILES.shot, await page.screenshot(1440));
 

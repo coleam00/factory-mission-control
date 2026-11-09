@@ -90,7 +90,10 @@ test('the panel only talks to the dashboard server: briefing, a question and a p
 
 test('answering with a proposed option names the option wording in the Undo toast', async () => {
   await page.setViewport(1440);
-  const seen = await page.evaluate<Seen>(
+  const result = await page.evaluate<{
+    seen: Seen;
+    requests: { url: string; method?: string; body?: string }[];
+  }>(
     `import('data:text/javascript;base64,${source}').then(async (m) => {
       const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
       // The action flow is module state shared by every test here: wait out the previous test's toast.
@@ -101,10 +104,24 @@ test('answering with a proposed option names the option wording in the Undo toas
       await sleep(600);
       m.clickProposal('answer');
       await sleep(300);
-      return m.shown();
+      const seen = m.shown();
+      m.clickUndo();
+      await sleep(600);
+      return { seen, requests: m.requests() };
     })`,
   );
-  expect(seen.toastDetail).toBe('Ship it');
+  expect(result.seen.toastDetail).toBe('Ship it');
+  // The endpoint refuses unknown keys: the proposal's `type`, `label` and `detail` must not ride along.
+  const sent = result.requests.find((r) => r.url === '/api/actions' && r.method === 'POST');
+  expect(JSON.parse(sent?.body ?? '{}')).toEqual({
+    factory: 'x',
+    action: 'answer',
+    run_id: RUN,
+    occurrence: 'ask-1',
+    option: 'yes',
+    text: null,
+    undone: true,
+  });
 }, 30_000);
 
 test('an address ending in #manager opens the phone tab, looking at the run on screen', async () => {

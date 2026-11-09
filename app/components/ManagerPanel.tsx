@@ -1,8 +1,10 @@
 import { type ReactElement, type ReactNode, useEffect, useRef, useState } from 'react';
+import { Link } from 'react-router';
 import { TEXT_ANSWER_DETAIL } from '../lib/actions';
 import { clock, shortRunId } from '../lib/format';
 import {
   linkify,
+  MAX_MESSAGE_CHARS,
   type ManagerLink,
   type ManagerMessage,
   type ManagerPlace,
@@ -34,13 +36,13 @@ function inline(text: string): ReactNode[] {
 
 function ItemLink({ link }: { link: ManagerLink }): ReactElement {
   return (
-    <a
-      href={link.href}
+    <Link
+      to={link.href}
       data-run-link={link.kind === 'run' ? link.id : undefined}
       className={`font-mono [overflow-wrap:anywhere] ${LINK}`}
     >
       {link.kind === 'run' ? shortRunId(link.id) : link.label}
-    </a>
+    </Link>
   );
 }
 
@@ -95,13 +97,13 @@ function RunList({ runs }: { runs: ManagerReply['runs'] }): ReactElement | null 
           <span className="min-w-0 truncate text-[length:var(--v3-t-meta)] text-[color:var(--v3-fg-2)]">
             {run.workflow_name}
           </span>
-          <a
-            href={run.href}
+          <Link
+            to={run.href}
             data-run-link={run.run_id}
             className={`font-mono text-[length:var(--v3-t-meta)] ${LINK}`}
           >
             {shortRunId(run.run_id)}
-          </a>
+          </Link>
           <span className="ml-auto font-mono text-[length:var(--v3-t-micro)] text-[color:var(--v3-fg-3)]">
             {clock(run.completed_at ?? run.started_at)}
           </span>
@@ -127,9 +129,10 @@ function Proposals({
     <div className="mb-2 flex flex-wrap gap-2">
       {proposals.map((proposal, i) => {
         const { type: _type, label, detail, ...request } = proposal;
+        const key = `${proposal.action}:${proposal.run_id}:${label}`;
         return enabled ? (
           <Button
-            key={`${proposal.action}:${label}`}
+            key={key}
             variant={i === 0 ? 'primary' : 'secondary'}
             disabled={pending}
             data-proposal={proposal.action}
@@ -140,16 +143,16 @@ function Proposals({
               })
             }
           >
-            {label}
+            {proposal.action === 'resume' ? `${label} ${shortRunId(proposal.run_id)}` : label}
           </Button>
         ) : (
-          <a
-            key={`${proposal.action}:${label}`}
-            href={lapHref(factory, proposal.run_id)}
+          <Link
+            key={key}
+            to={lapHref(factory, proposal.run_id)}
             className={buttonClass('secondary')}
           >
             Open run {shortRunId(proposal.run_id)}
-          </a>
+          </Link>
         );
       })}
     </div>
@@ -200,6 +203,7 @@ function Message({
       {message.notices.map((notice) => (
         <p
           key={notice}
+          data-notice
           className="m-0 mb-1 text-[length:var(--v3-t-meta)] text-[color:var(--v3-fg-3)]"
         >
           {notice}
@@ -321,7 +325,7 @@ export function ManagerPanelBody({
             <textarea
               aria-label="Ask the Manager"
               placeholder="Ask about any run, or tell me what to do"
-              maxLength={4000}
+              maxLength={MAX_MESSAGE_CHARS}
               rows={2}
               value={draft}
               onChange={(event) => onDraft(event.target.value)}

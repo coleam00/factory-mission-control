@@ -12,6 +12,7 @@ import {
   type ManagerContext,
   type ManagerLink,
   type ManagerMessage,
+  MAX_MESSAGE_CHARS,
   managerPlace,
   postBriefing,
   postChat,
@@ -126,9 +127,9 @@ test('the history never exceeds the server limits, ends with the owner, and leav
   );
   expect(sent).toHaveLength(20);
   expect(sent.at(-1)).toEqual({ role: 'owner', text: 'next' });
-  expect(sent.every((m) => m.text.length <= 4000 && m.text !== 'Undone. Nothing was sent.')).toBe(
-    true,
-  );
+  expect(
+    sent.every((m) => m.text.length <= MAX_MESSAGE_CHARS && m.text !== 'Undone. Nothing was sent.'),
+  ).toBe(true);
 });
 
 test('a stream builds one reply, and a stream cut before done says so', () => {

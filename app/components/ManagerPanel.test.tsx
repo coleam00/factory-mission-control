@@ -1,5 +1,6 @@
 import { expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
+import { MemoryRouter } from 'react-router';
 import { managerPlace, type ManagerMessage, type ManagerReply, reply } from '../lib/manager';
 import { ManagerPanelBody } from './ManagerPanel';
 
@@ -8,14 +9,16 @@ const place = managerPlace('/f/x', new URLSearchParams(), '7 items');
 
 const render = (messages: ManagerMessage[], enabled = true, factory: string | null = 'x') =>
   renderToStaticMarkup(
-    <ManagerPanelBody
-      phone={false}
-      onClose={() => {}}
-      chat={{ messages, busy: false }}
-      place={place}
-      factory={factory ?? undefined}
-      enabled={enabled}
-    />,
+    <MemoryRouter>
+      <ManagerPanelBody
+        phone={false}
+        onClose={() => {}}
+        chat={{ messages, busy: false }}
+        place={place}
+        factory={factory ?? undefined}
+        enabled={enabled}
+      />
+    </MemoryRouter>,
   );
 
 test('the panel has the head, the chip, the suggestions, the box and Send the design binds', () => {
