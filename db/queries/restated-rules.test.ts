@@ -570,13 +570,15 @@ test('board rounds count a shipped run on the item every other screen holds', as
 
 test('mc.stop_class refines Health’s causes, agreeing with causeOf on every corpus line', async () => {
   const sql = read('db', 'migrations', '0031_run_stops.sql');
-  // All three read "the run's latest failed step": the WHERE filter and the ORDER BY, copied because a
-  // live query cannot call the mc function.
+  // All three read "the run's latest failed step": the whole WHERE (bar the run-id correlation) and the
+  // ORDER BY, copied because a live query cannot call the mc function. A pick whose WHERE is not exactly
+  // `run_id = ... AND status = 'failed'` matches nothing and fails the test.
   const failedStepPick = (text: string, alias: string) =>
     text
-      .match(/(\w+)\.status = 'failed'\s+ORDER BY[^;]*?LIMIT 1/g)
-      ?.find((pick) => pick.startsWith(`${alias}.`))
-      ?.replaceAll(`${alias}.`, '')
+      .match(/WHERE (\w+)\.run_id = [\w.]+ AND \1\.status = 'failed'\s+ORDER BY[^;]*?LIMIT 1/g)
+      ?.find((pick) => pick.startsWith(`WHERE ${alias}.`))
+      ?.replace(/run_id = [\w.]+/, 'run_id = RUN')
+      .replaceAll(`${alias}.`, '')
       .replace(/\s+/g, ' ');
   const picks = [
     failedStepPick(sql, 's'),
