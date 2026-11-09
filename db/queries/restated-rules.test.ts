@@ -571,7 +571,10 @@ test('board rounds count a shipped run on the item every other screen holds', as
         );
       }
     }
-    for (const [n, age] of [[7, '2 hours'], [8, '1 hour']] as const) {
+    for (const [n, age] of [
+      [7, '2 hours'],
+      [8, '1 hour'],
+    ] as const) {
       await db.query(
         `INSERT INTO mc.claims (factory, issue_number, run_id, claimed_at, released_at)
          VALUES ('f', $1, $2, now() - $3::interval, now())`,
