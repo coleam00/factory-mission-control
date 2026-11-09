@@ -528,11 +528,19 @@ function RunTimeline({
         (entry) => entry.kind === 'step' && entry.row.status === 'skipped',
       ).map((group) => {
         if ('skipped' in group) {
-          const list = group.skipped.flatMap((entry) => (entry.kind === 'step' ? [entry.row] : []));
-          return steps(list, top, (row) => row.step_id, false);
+          const rows = group.skipped.flatMap((entry) => (entry.kind === 'step' ? [entry.row] : []));
+          return (
+            <SkippedSteps
+              key={`skipped ${rows[0]?.step_id}`}
+              nested={false}
+              initiallyOpen={skippedOpen}
+            >
+              {rows.map((row) => step(row, row.step_id, false, skipReason(row, top, map)))}
+            </SkippedSteps>
+          );
         }
         const entry = group;
-        if (entry.kind === 'step') return steps([entry.row], top, (row) => row.step_id, false);
+        if (entry.kind === 'step') return step(entry.row, entry.row.step_id, false);
         const ownSeconds = entry.row === null ? null : attemptSeconds(entry.row, now);
         const roundMs = entry.rounds.map((r) => r.durationMs).filter((ms) => ms !== null);
         const span =
