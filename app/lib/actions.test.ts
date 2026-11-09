@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import {
   type ActionRequest,
+  type ActionError,
   type ActionResult,
   createActionFlow,
   pendingText,
@@ -18,7 +19,7 @@ const request: ActionRequest = {
 };
 const context = { item: 363, label: 'Rename to 0029, then merge' };
 
-function harness(result: ActionResult | { error: string } = ok()) {
+function harness(result: ActionResult | ActionError = ok()) {
   const posts: boolean[] = [];
   const timers = new Map<number, { fn: () => void; ms: number }>();
   let next = 0;
