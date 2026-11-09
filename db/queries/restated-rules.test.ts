@@ -589,9 +589,15 @@ test('mc.stop_class refines Health’s causes, agreeing with causeOf on every co
     }
     expect(seen).toEqual(new Set(['usage-limit', 'authentication', 'infrastructure']));
 
-    const past = `${'x'.repeat(8000)} HTTP 429`;
-    expect(causeOf(past)).toBe('other');
-    expect((await db.query('SELECT mc.stop_class($1) AS class', [past]))[0]?.class).toBeNull();
+    // Emoji are two UTF-16 units but one character: the cut must fall on characters, as left() does.
+    for (const filler of ['x', '😀']) {
+      const near = `${filler.repeat(7990)} HTTP 429`;
+      const past = `${filler.repeat(8000)} HTTP 429`;
+      expect(causeOf(near)).toBe('usage-limit');
+      expect((await db.query('SELECT mc.stop_class($1) AS class', [near]))[0]?.class).toBe('transient');
+      expect(causeOf(past)).toBe('other');
+      expect((await db.query('SELECT mc.stop_class($1) AS class', [past]))[0]?.class).toBeNull();
+    }
   } finally {
     await db.close();
   }

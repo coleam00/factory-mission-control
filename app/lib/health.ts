@@ -83,7 +83,10 @@ const CAUSE_PATTERNS: [Exclude<Cause, 'other'>, RegExp][] = [
 
 export function causeOf(error: string | null): Cause {
   if (error === null) return 'other';
-  const text = error.slice(0, STOP_CLASS_READS).replace(REFERENCE, ' ');
+  const text = Array.from(error.slice(0, 2 * STOP_CLASS_READS))
+    .slice(0, STOP_CLASS_READS)
+    .join('')
+    .replace(REFERENCE, ' ');
   return CAUSE_PATTERNS.find(([, pattern]) => pattern.test(text))?.[0] ?? 'other';
 }
 
