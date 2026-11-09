@@ -155,7 +155,7 @@ test.each(['default', 'override'])(
           ...more,
         ]);
       const runsOf = async (factory: string) =>
-        (await query('runs', factory, '', '', 'show', '0')).filter((r) => r.run_id !== null);
+        (await query('runs', factory, '', '', 'show', '0', '50')).filter((r) => r.run_id !== null);
       const originalLaps = await db.query('SELECT * FROM mc.laps WHERE run_id = $1', [original]);
       const sourceRows = await db.query(
         'SELECT * FROM public.remote_agent_workflow_runs ORDER BY id',

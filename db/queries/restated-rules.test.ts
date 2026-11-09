@@ -598,3 +598,21 @@ test('mc.stop_class refines Health’s causes, agreeing with causeOf except on r
     await db.close();
   }
 });
+
+test('the runs idle-poll rule names app-check steps the workflow gates on a selected check', () => {
+  const workflow = read('.archon', 'workflows', 'factory', 'app-check', 'factory-app-check.yaml');
+  const steps = new Map(
+    workflow
+      .replaceAll('\r\n', '\n')
+      .split(/^ {2}- id: /m)
+      .slice(1)
+      .map((block) => [block.split('\n')[0], block] as const),
+  );
+  const rule = sqlOf('runs').match(/o\.step_id IN \(([^)]*)\)/);
+  expect(rule).not.toBeNull();
+  expect(steps.has('select')).toBe(true);
+  for (const id of quoted(rule?.[1] ?? '')) {
+    expect(steps.get(id)).toContain('when: "$select.output.found == true"');
+  }
+  expect(quoted(rule?.[1] ?? '').length).toBeGreaterThan(0);
+});
