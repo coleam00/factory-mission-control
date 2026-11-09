@@ -135,9 +135,13 @@ function StageCard({
       {stage.pills.length > 0 ? (
         <div className="flex flex-wrap gap-1">
           {stage.pills.map((pill) => (
-            <Pill compact key={pill.label} state={pill.state}>
-              {pill.label} {pill.count}
-            </Pill>
+            <span key={pill.label} className="flex min-w-0 max-w-full [&>span]:min-w-0">
+              <Pill compact state={pill.state} title={`${pill.label} ${pill.count}`}>
+                <span className="truncate">
+                  {pill.label} {pill.count}
+                </span>
+              </Pill>
+            </span>
           ))}
         </div>
       ) : null}
