@@ -140,7 +140,7 @@ export function FactorySwitcherBody({
           <span className="whitespace-nowrap">{current ?? 'Choose a factory'}</span>
           <span aria-hidden="true">▾</span>
           {engine ? (
-            <span data-engine title={`engine ${engine}`} className="whitespace-nowrap">
+            <span data-engine className="whitespace-nowrap">
               · {engine.slice(0, 8)}
             </span>
           ) : null}
