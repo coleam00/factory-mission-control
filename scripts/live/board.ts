@@ -166,23 +166,31 @@ export function boardPhase(ctx: LiveContext): LivePhase {
     );
   }
 
-  const PILL_FIT = `(() => [...document.querySelectorAll('[data-board-stage] [data-work-item]')].flatMap((tile) => {
-    const pills = [...tile.firstElementChild.children];
-    const box = tile.getBoundingClientRect();
-    return pills.flatMap((p) => {
-      const r = p.getBoundingClientRect();
-      const lines = Math.round(r.height / (parseFloat(getComputedStyle(p).lineHeight) || r.height));
-      return r.right > box.right + 0.5 || lines > 1 ? [tile.dataset.workItem + ' ' + p.textContent] : [];
+  const PILL_FIT = `(() => {
+    const tiles = [...document.querySelectorAll('[data-board-stage] [data-work-item]')];
+    const bad = tiles.flatMap((tile) => {
+      const box = tile.getBoundingClientRect();
+      return [...tile.firstElementChild.children].flatMap((p) => {
+        const r = p.getBoundingClientRect();
+        const lines = Math.round(r.height / (parseFloat(getComputedStyle(p).lineHeight) || r.height));
+        return r.right > box.right + 0.5 || lines > 1 ? [tile.dataset.workItem + ' ' + p.textContent] : [];
+      });
     });
-  }))()`;
+    const seen = (status) => tiles.some((t) => t.firstElementChild.textContent.includes(status));
+    return { bad, missing: ['running', 'check failed'].filter((s) => !seen(s)) };
+  })()`;
 
   async function pillsOutsideTiles(page: Page): Promise<string[]> {
     const failures: string[] = [];
+    await page.evaluate<boolean>(`(localStorage.setItem('mc.manager.open', 'open'), true)`);
+    await open(page, path);
     for (const width of [760, 1000, 1264, 1440]) {
       await page.setViewport(width);
-      const bad = await page.evaluate<string[]>(PILL_FIT);
+      const { bad, missing } = await page.evaluate<{ bad: string[]; missing: string[] }>(PILL_FIT);
       for (const what of bad)
         failures.push(`board at ${width}px: pill outside its tile or wrapped: ${what}`);
+      for (const status of missing)
+        failures.push(`board at ${width}px: no "${status}" tile to measure a pill on`);
     }
     await page.setViewport(1440);
     return failures;
