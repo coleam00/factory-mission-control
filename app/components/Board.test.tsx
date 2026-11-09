@@ -173,4 +173,6 @@ test('a mini card moves its state pill under the number instead of breaking it',
     'pipeline',
   );
   expect(html).toMatch(/class="[^"]*flex-wrap[^"]*whitespace-nowrap/);
+  expect(html).toMatch(/class="[^"]*min-w-0[^"]*" title="check failed"/);
+  expect(html).toMatch(/<span class="min-w-0 truncate">check failed<\/span>/);
 });
