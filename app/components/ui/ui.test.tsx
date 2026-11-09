@@ -157,6 +157,15 @@ test('Tabs marks the chosen tab selected, in the order the map tests read', () =
   expect(html).toContain('aria-selected="false" data-tab="a"');
 });
 
+test('a nested row hides its hint on a phone and a top-level row does not', () => {
+  const hintClass = (nested: boolean) =>
+    renderToStaticMarkup(<TimelineRow state="done" name="s" hint="a hint" nested={nested} />).match(
+      /<span class="([^"]*)">a hint<\/span>/,
+    )?.[1];
+  expect(hintClass(true)).toContain('hidden min-[760px]:inline');
+  expect(hintClass(false)).not.toContain('hidden');
+});
+
 test('every component the folder exports is rendered above', async () => {
   const names = new Set(VARIANTS.map(([name]) => name.split(' ')[0]));
   const files = readdirSync('app/components/ui').filter(

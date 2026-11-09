@@ -51,7 +51,13 @@ export function TimelineRow({
         >
           {name}
         </span>
-        {hint ? <span className="text-[color:var(--v3-fg-3)]">{hint}</span> : null}
+        {hint ? (
+          <span
+            className={`text-[color:var(--v3-fg-3)] ${nested ? 'hidden min-[760px]:inline' : ''}`}
+          >
+            {hint}
+          </span>
+        ) : null}
         <span className="ml-auto shrink-0 font-mono text-[color:var(--v3-fg-3)] tabular-nums">
           {when}
           {when && cost ? ' · ' : null}
