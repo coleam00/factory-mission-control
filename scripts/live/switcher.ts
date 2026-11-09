@@ -42,7 +42,7 @@ const entriesOnScreen = `[...document.querySelectorAll('${SWITCHER} [data-factor
   li.getAttribute('data-factory-entry'), Number(li.getAttribute('data-running'))])`;
 const stripNames = (factory: string) =>
   `document.querySelector('${PANEL}[data-state="ready"] span')?.textContent === ${JSON.stringify(factory)}`;
-// The name is the pill's own text; the caret beside it is a child span (#297).
+// The pill's first child span holds the factory name; the engine version follows it (#297).
 const switcherNames = (factory: string) =>
   `document.querySelector('${SWITCHER} summary span:last-child')?.firstChild?.textContent === ${JSON.stringify(factory)}`;
 const RUNNING_SQL = `SELECT f.name, (SELECT count(*)::int FROM mc.laps l
@@ -160,7 +160,7 @@ async function checkSwitcher(ctx: LiveContext): Promise<void> {
     check(
       'the engine beside the switcher',
       await page.evaluate<string | null>(
-        `document.querySelector('[data-engine]')?.textContent?.split('engine ')[1] ?? null`,
+        `document.querySelector('[data-engine]')?.textContent ?? null`,
       ),
       strip0?.engine ? String(strip0.engine).slice(0, 8) : null,
     );

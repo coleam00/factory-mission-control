@@ -50,6 +50,13 @@ function CountFor({ place, factory }: { place: Place; factory: string }): ReactN
   return null;
 }
 
+/** The phone's tabs keep Attention's badge and no other count, so every label sits on one baseline. */
+function countIn(layout: 'side' | 'tabs', place: Place, factory: string): ReactNode {
+  return layout === 'tabs' && place.path !== '' ? null : (
+    <CountFor place={place} factory={factory} />
+  );
+}
+
 /** A place's count: mono, `--v3-fg-2` so it keeps 4.5:1 on the current place's raised background. */
 export function NavCount({ attr, children }: { attr: string; children: ReactNode }): ReactElement {
   return (
@@ -113,7 +120,7 @@ export function PlaceLinks({
   layout,
   onNavigate,
   quiet = false,
-  count = (place) => <CountFor place={place} factory={factory ?? ''} />,
+  count = (place) => countIn(layout, place, factory ?? ''),
 }: {
   factory: string | undefined;
   layout: 'side' | 'tabs';
@@ -121,7 +128,7 @@ export function PlaceLinks({
   onNavigate?: () => void;
   /** No place is marked current, because the phone's Manager holds the highlight. */
   quiet?: boolean;
-  /** What follows a place's name; the live counts by default. */
+  /** What follows a place's name; by default the live counts, on the phone's tabs only Attention's. */
   count?: (place: Place) => ReactNode;
 }): ReactElement {
   const { pathname } = useLocation();
@@ -144,14 +151,18 @@ export function PlaceLinks({
                           ? 'bg-[var(--v3-raised)] font-medium text-[color:var(--v3-fg)]'
                           : 'text-[color:var(--v3-fg-2)]'
                       }`
-                    : `grid justify-items-center gap-[3px] text-[11px] ${
+                    : `relative grid justify-items-center gap-[3px] text-[11px] ${
                         current ? 'text-[color:var(--v3-fg)]' : 'text-[color:var(--v3-fg-3)]'
                       }`
                 }
               >
                 <Glyph place={place} />
                 {place.label}
-                <span className={layout === 'side' ? 'ml-auto' : 'whitespace-nowrap empty:hidden'}>
+                <span
+                  className={
+                    layout === 'side' ? 'ml-auto' : 'absolute left-1/2 top-0 ml-2 whitespace-nowrap'
+                  }
+                >
                   {count(place)}
                 </span>
               </Link>
