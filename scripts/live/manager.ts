@@ -130,6 +130,8 @@ export function managerPhase(ctx: LiveContext): LivePhase {
       report.push(`briefing: ${JSON.stringify(briefing)}`);
       if (briefing === null || briefing.text.trim() === '') {
         mismatches.push('the briefing is blank');
+      } else if (briefing.state !== 'done') {
+        mismatches.push(`the briefing did not finish (${briefing.state}): ${briefing.text}`);
       } else if (briefing.notices.length > 0) {
         mismatches.push(`the briefing carries a notice: ${briefing.notices.join(' ')}`);
       }

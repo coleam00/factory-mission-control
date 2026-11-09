@@ -129,7 +129,12 @@ function Proposals({
     <div className="mb-2 flex flex-wrap gap-2">
       {proposals.map((proposal, i) => {
         const { type: _type, label, detail, ...request } = proposal;
-        const key = `${proposal.action}:${proposal.run_id}:${label}`;
+        // Positional: the model may repeat an identical proposal, and nothing reorders them.
+        const key = `${i}:${proposal.action}:${proposal.run_id}:${label}`;
+        const named =
+          proposal.action === 'answer' && proposal.text !== null
+            ? `Answer “${proposal.text.length > 40 ? `${proposal.text.slice(0, 40)}…` : proposal.text}”`
+            : label;
         return enabled ? (
           <Button
             key={key}
@@ -143,7 +148,7 @@ function Proposals({
               })
             }
           >
-            {proposal.action === 'resume' ? `${label} ${shortRunId(proposal.run_id)}` : label}
+            {`${named} ${shortRunId(proposal.run_id)}`}
           </Button>
         ) : (
           <Link

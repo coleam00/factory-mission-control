@@ -74,6 +74,50 @@ test('a run list draws one row per run, and a proposal is a button only when the
   expect(html.match(/data-run-row=/g)).toHaveLength(1);
   expect(html).toContain(`data-run-link="${RUN}"`);
   expect(html).toMatch(/<button[^>]*data-proposal="resume"[^>]*>Resume 5eed0001<\/button>/);
+  const OTHER = '5eed0002-0000-4000-8000-0000000000b2';
+  const answers: ManagerReply = {
+    ...answer,
+    proposals: [
+      {
+        type: 'proposal',
+        factory: 'x',
+        action: 'answer',
+        run_id: RUN,
+        occurrence: 'o1',
+        option: 'yes',
+        text: null,
+        label: 'Answer "Yes"',
+        detail: 'Yes',
+      },
+      {
+        type: 'proposal',
+        factory: 'x',
+        action: 'answer',
+        run_id: OTHER,
+        occurrence: 'o2',
+        option: 'yes',
+        text: null,
+        label: 'Answer "Yes"',
+        detail: 'Yes',
+      },
+      {
+        type: 'proposal',
+        factory: 'x',
+        action: 'answer',
+        run_id: RUN,
+        occurrence: 'o1',
+        option: null,
+        text: 'ship it',
+        label: 'Answer with your text',
+      },
+    ],
+  };
+  const buttons = render([answers]).match(/<button[^>]*data-proposal[^>]*>[^<]*<\/button>/g) ?? [];
+  expect(buttons.map((b) => b.replace(/<[^>]*>/g, ''))).toEqual([
+    'Answer &quot;Yes&quot; 5eed0001',
+    'Answer &quot;Yes&quot; 5eed0002',
+    'Answer “ship it” 5eed0001',
+  ]);
   const without = render([answer], false);
   expect(without).not.toContain('data-proposal');
   expect(without).toContain('Open run 5eed0001');
