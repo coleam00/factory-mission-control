@@ -182,5 +182,8 @@ test('a failed run with an earlier retried failure shows one error panel and one
   });
   expect(html.match(/data-error-panel/g)).toHaveLength(1);
   expect(html.match(/>Resume from here</g)).toHaveLength(1);
-  expect(html.indexOf('data-error-panel')).toBeGreaterThan(html.indexOf('pr__prepare'));
+  const panel = html.indexOf('data-error-panel');
+  expect(html.slice(html.lastIndexOf('data-timeline-step=', panel))).toStartWith(
+    'data-timeline-step="ship__deliver__rounds.pr__prepare" data-status="failed"',
+  );
 });
