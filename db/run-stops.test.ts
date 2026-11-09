@@ -140,6 +140,19 @@ test('a paused run’s stop record is the question it asks', async () => {
     line: '**Scope decision**',
     class: null,
   });
+
+  const withBody = await newRun('archon-build-queue', 'paused', {
+    wait: {
+      nodeId: 'ask',
+      kind: 'attention',
+      waitingSince: '2026-10-24T10:20:00.000Z',
+      message: '**Ship it?**\n- CI failed: lint',
+      pauseId: 'p2',
+      form: 'select',
+      options: [{ id: 'ship', label: 'Ship' }],
+    },
+  });
+  expect(await stopOf(withBody)).toMatchObject({ status: 'paused', line: '**Ship it?**' });
 });
 
 test('a run stop record that cannot be written never fails Archon’s write', async () => {

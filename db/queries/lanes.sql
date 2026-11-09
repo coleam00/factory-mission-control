@@ -12,8 +12,9 @@ LEFT JOIN LATERAL (
   ORDER BY c.claimed_at DESC NULLS LAST, c.issue_number LIMIT 1
 ) c ON true
 -- The work item a running run holds: its claim, else its facts step's item, else its number input.
--- Restated in home-map.sql, health-workable.sql and board.sql's rounds (a live query may call no mc function),
--- db/queries/restated-rules.test.ts fails when they disagree.
+-- Restated in home-map.sql, health-workable.sql, failure-groups.sql and board.sql's rounds, and in
+-- scripts/live/attention.ts (a live query may call no mc function).
+-- db/queries/restated-rules.test.ts fails when the SQL copies disagree, the live script is an independent oracle.
 LEFT JOIN mc.lap_steps facts ON facts.run_id = l.run_id AND facts.step_id = 'facts'
 LEFT JOIN mc.issues i ON i.factory = l.factory
   AND i.number = coalesce(c.issue_number, (facts.output -> 'item' ->> 'number')::int, l.issue_number)

@@ -104,6 +104,9 @@ test('failure-groups counts a failed run until a later run of its workflow on it
   // g: a success that finished before the failure resolves nothing
   await lap('build', 'completed', '2026-10-10', { issue: 6 });
   await lap('build', 'failed', '2026-10-20', { issue: 6, error: 'error: case g' });
+  // i: exactly 14 days before the latest stop is outside the sparkline window and resolved; 13 days is counted
+  await lap('build', 'failed', '2026-10-11', { issue: 7, error: 'error: case i14' });
+  await lap('build', 'failed', '2026-10-12', { issue: 8, error: 'error: case i13' });
   // h: a run with no item is resolved by age alone
   await lap('noitem', 'failed', '2026-10-20', { error: 'error: case h' });
   await lap('noitem', 'completed', '2026-10-22');
@@ -114,6 +117,7 @@ test('failure-groups counts a failed run until a later run of its workflow on it
     'error: case f',
     'error: case g',
     'error: case h',
+    'error: case i13',
   ]);
   const b = groups.find((g) => g.line === 'error: case b');
   expect(b?.failures).toBe(2);
