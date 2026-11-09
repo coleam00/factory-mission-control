@@ -143,3 +143,19 @@ test('while the phone Manager is open no tab is current, and a tab’s count is 
   expect(html).not.toContain('aria-current');
   expect(html).toContain('absolute left-1/2 top-0');
 });
+
+test('by default the phone tabs render no Runs or Board count and the side nav renders both', () => {
+  const html = (layout: 'side' | 'tabs') =>
+    renderToStaticMarkup(
+      <RouterProvider
+        router={createMemoryRouter(
+          [{ path: '*', element: <PlaceLinks factory={FACTORY} layout={layout} /> }],
+          { initialEntries: ['/'] },
+        )}
+      />,
+    );
+  for (const attr of ['data-runs-count', 'data-board-count']) {
+    expect(html('tabs')).not.toContain(attr);
+    expect(html('side')).toContain(attr);
+  }
+});
