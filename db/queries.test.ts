@@ -174,6 +174,9 @@ const ROW_COLUMNS: Record<string, string[]> = {
     'title',
     'url',
     'console',
+    'stop_step',
+    'stop_line',
+    'stop_class',
   ]),
   board: columns<BoardRow>()([
     'kind',
