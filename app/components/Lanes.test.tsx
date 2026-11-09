@@ -140,7 +140,7 @@ test("a lane's row of loop steps checks what is done, pulses what runs, dims the
   expect(mark('release')).toBe('not-reached');
 });
 
-test('a queue run says what it is and where it is, and links its console, not a lap page', () => {
+test('a queue run says what it is and where it is, and links its run page', () => {
   const html = render(
     <LaneList
       rows={[
@@ -162,8 +162,7 @@ test('a queue run says what it is and where it is, and links its console, not a 
   );
   expect(html).toContain('href="/f/alpha/work/11"');
   expect(html).toContain('#11');
-  expect(html).toContain(`https://console.example/console/r/${RUN}`);
-  expect(html).not.toContain(`/f/alpha/runs/${RUN}`);
+  expect(html).toContain(`href="/f/alpha/runs/${RUN}"`);
   expect(html).not.toContain('Route');
   expect(html).not.toContain('data-loop-mark');
 });

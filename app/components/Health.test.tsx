@@ -38,7 +38,7 @@ test('pending and paused runs show their wait by the browser clock and open thei
   expect(html).toContain('href="/f/mission-control/runs/5eed0003-0000-4000-8000-00000000000c"');
 });
 
-test('a paused run of another workflow has no lap page to open', () => {
+test('a paused run of another workflow links to its run page', () => {
   const html = render(
     <WaitingList
       rows={[
@@ -48,18 +48,18 @@ test('a paused run of another workflow has no lap page to open', () => {
       now={NOW}
     />,
   );
-  expect(html).not.toContain('data-lap-link');
+  expect(html).toContain('data-lap-link');
   expect(html).toContain('archon-build-queue');
 });
 
-test('a failed run of another workflow has no lap page to open', () => {
+test('a failed run of another workflow links to its run page', () => {
   const html = render(
     <Failures
       rows={[run({ run_id: 'q', workflow_name: 'archon-build-queue', failed_step: 'build' })]}
       factory="mission-control"
     />,
   );
-  expect(html).not.toContain('data-lap-link');
+  expect(html).toContain('href="/f/mission-control/runs/q"');
   expect(html).toContain('data-failed-lap="q"');
 });
 
@@ -120,7 +120,7 @@ test('an overdue step shows how long it has run against its p90', () => {
   expect(html).toContain('data-p90="true">0:20:00<');
 });
 
-test('an overdue step of another workflow has no lap page to open', () => {
+test('an overdue step of another workflow links to its run page', () => {
   const step = (kind: 'completion' | 'running', run_id: string, at: Date): HealthStepRow => ({
     kind,
     run_id,
@@ -142,7 +142,7 @@ test('an overdue step of another workflow has no lap page to open', () => {
     />,
   );
   expect(html).toContain('data-overdue-step="build" data-run="live"');
-  expect(html).not.toContain('data-lap-link');
+  expect(html).toContain('href="/f/mission-control/runs/live"');
 });
 
 test('workable issues are counted against running laps, each linking to GitHub', () => {

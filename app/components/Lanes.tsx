@@ -14,7 +14,7 @@ import {
   since,
   stepLabel,
 } from '../lib/laps';
-import { consoleUrl, hasLapPage, lapHref, workflowLabel } from '../lib/one-lap';
+import { isOldLoop, lapHref, workflowLabel } from '../lib/one-lap';
 import { LivePanel, type PanelState } from '../live/LivePanel';
 import { laneMarks, stepPath } from '../lib/lap-graph';
 import { LAP_OUTCOME_STATE, STATE_NAME, stateColor, stateInk } from '../lib/states';
@@ -104,7 +104,7 @@ export function LaneList({
     <ol className="grid gap-3">
       {sorted.map((lane) => {
         const onStep = since(lane.step_started_at, now);
-        const loop = hasLapPage(lane.workflow_name);
+        const loop = isOldLoop(lane.workflow_name);
         return (
           <li
             key={lane.run_id}
@@ -161,25 +161,13 @@ export function LaneList({
                   </span>
                 )}
               </span>
-              {loop ? (
-                <Link
-                  to={lapHref(factory, lane.run_id)}
-                  data-lap-link
-                  className={`${MONO} text-text-secondary underline decoration-border-bright underline-offset-2 hover:decoration-text-primary`}
-                >
-                  {shortRunId(lane.run_id)}
-                </Link>
-              ) : lane.console === null ? (
-                <span className={`${MONO} text-text-secondary`}>{shortRunId(lane.run_id)}</span>
-              ) : (
-                <a
-                  href={consoleUrl(lane.console, lane.run_id)}
-                  data-console
-                  className={`${MONO} text-text-secondary underline decoration-border-bright underline-offset-2`}
-                >
-                  {shortRunId(lane.run_id)}
-                </a>
-              )}
+              <Link
+                to={lapHref(factory, lane.run_id)}
+                data-lap-link
+                className={`${MONO} text-text-secondary underline decoration-border-bright underline-offset-2 hover:decoration-text-primary`}
+              >
+                {shortRunId(lane.run_id)}
+              </Link>
             </div>
             <dl className="mt-3 grid grid-cols-2 gap-x-[18px] gap-y-2 sm:grid-cols-5">
               {loop ? <Field label="Route">{lane.route ?? NONE}</Field> : null}

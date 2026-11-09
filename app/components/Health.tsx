@@ -16,7 +16,7 @@ import {
   workable,
 } from '../lib/health';
 import { since, stepLabel } from '../lib/laps';
-import { hasLapPage, lapHref } from '../lib/one-lap';
+import { lapHref } from '../lib/one-lap';
 import { waited } from '../lib/owner-queue';
 import { RUN_STATE, STATE_NAME, type State, stateColor, stateInk } from '../lib/states';
 import { LivePanel } from '../live/LivePanel';
@@ -45,21 +45,6 @@ function LapLink({ factory, runId }: { factory: string; runId: string }): ReactE
     <Link to={lapHref(factory, runId)} data-lap-link className={LINK}>
       {shortRunId(runId)}
     </Link>
-  );
-}
-
-/** A run's id: a link to its lap page when it has one (`hasLapPage`). */
-function RunLink({
-  factory,
-  run,
-}: {
-  factory: string;
-  run: { run_id: string; workflow_name: string };
-}): ReactElement {
-  return hasLapPage(run.workflow_name) ? (
-    <LapLink factory={factory} runId={run.run_id} />
-  ) : (
-    <span className={`${MONO} text-text-secondary`}>{shortRunId(run.run_id)}</span>
   );
 }
 
@@ -209,7 +194,7 @@ export function WaitingList({
                   )}
                 </span>
                 <span className="sm:text-right">
-                  <RunLink factory={factory} run={run} />
+                  <LapLink factory={factory} runId={run.run_id} />
                 </span>
               </li>
             );
@@ -296,7 +281,7 @@ function FailedRow({ lap, factory }: { lap: FailedLap; factory: string }): React
       <span className={`${MONO} min-w-0 truncate text-text-secondary`}>
         {ended === null ? NONE : utcMinute(ended)}
       </span>
-      <RunLink factory={factory} run={lap} />
+      <LapLink factory={factory} runId={lap.run_id} />
     </li>
   );
 }
@@ -386,7 +371,7 @@ export function OverdueList({
                 <span className="font-mono text-[15px] font-semibold tabular-nums text-text-primary">
                   {Math.floor(ratios[index] ?? 0)}× p90
                 </span>
-                <RunLink factory={factory} run={step} />
+                <LapLink factory={factory} runId={step.run_id} />
               </div>
               <div className="mt-3">
                 <OverdueScale ratio={ratios[index] ?? 1} top={top} />

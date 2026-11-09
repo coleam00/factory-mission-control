@@ -227,7 +227,7 @@ test('a sweep ask shows as asked only on the pull request the record step raised
   expect(texts([item, asked(411)])).toEqual(['Filed']);
 });
 
-test('old-loop rounds link to their lap page, every other run to the console', () => {
+test('every run links to its run page', () => {
   const loop = row({ workflow: 'archon-loop', run_id: RUN });
   const queue = row({ run_id: '5eed0005-0000-4000-8000-00000000000b' });
   const links = workItemTimeline([item, loop, queue], 'f').flatMap((e) =>
@@ -235,10 +235,7 @@ test('old-loop rounds link to their lap page, every other run to the console', (
   );
   expect(links).toEqual([
     { kind: 'lap', to: `/f/f/runs/${RUN}` },
-    {
-      kind: 'console',
-      href: 'http://localhost:3090/console/r/5eed0005-0000-4000-8000-00000000000b',
-    },
+    { kind: 'lap', to: '/f/f/runs/5eed0005-0000-4000-8000-00000000000b' },
   ]);
 });
 

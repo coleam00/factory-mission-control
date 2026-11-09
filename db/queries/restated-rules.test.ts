@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { COLUMNS, PARKED, parked, SPLIT_WORKFLOW } from '../../app/lib/board';
 import { causeOf } from '../../app/lib/health';
-import { LAP_PAGE_WORKFLOW, prNumber } from '../../app/lib/one-lap';
+import { prNumber } from '../../app/lib/one-lap';
 import { QUEUE_ENDING_STATE, QUEUE_REVIEW_STATE, REVIEW_OUTCOME_STATE } from '../../app/lib/states';
 import { ROUTE_OF_LABEL, WORK_ITEM_NUMBER } from '../../app/lib/work-item';
 import { runMigrations } from '../../scripts/migrate';
@@ -102,18 +102,6 @@ test('map-right-now reads only paths the pinned merge queue declares', () => {
       expect(Object.keys(at.properties), `${step}.${walked.join('.')} is declared`).toContain(key);
       at = at.properties[key] as { properties?: Record<string, unknown> };
     }
-  }
-});
-
-test('the queries behind a link to the lap page filter on LAP_PAGE_WORKFLOW', () => {
-  const archonLiterals = (name: string) =>
-    [...sqlOf(name).matchAll(/'(archon-[a-z-]+)'/g)].map((m) => m[1]);
-  for (const name of ['recent-laps']) {
-    expect([
-      name,
-      [...sqlOf(name).matchAll(/workflow_name = '([^']*)'/g)].map((m) => m[1]),
-    ]).toEqual([name, [LAP_PAGE_WORKFLOW]]);
-    expect([name, archonLiterals(name)]).toEqual([name, [LAP_PAGE_WORKFLOW]]);
   }
 });
 
@@ -483,6 +471,21 @@ test('lanes, home-map and health-workable resolve the same item for every source
     expect(held(laps)).toEqual(expected);
     expect(titled(lanes, 'issue_title')).toEqual(expectedTitles);
     expect(titled(laps, 'title')).toEqual(expectedTitles);
+    // The run page names the same item, and has no status filter: the completed run 7 is on it too.
+    const page = await Promise.all(
+      Object.keys(runs).map(
+        async (c) =>
+          ((await db.query(sqlOf('one-lap'), ['f', id(c)]))[0] ?? {}) as Record<string, unknown>,
+      ),
+    );
+    expect(Object.fromEntries(page.map((r) => [r.run_id, r.issue_number ?? null]))).toEqual({
+      ...expected,
+      [id('7')]: 7,
+    });
+    expect(Object.fromEntries(page.map((r) => [r.run_id, r.issue_title ?? null]))).toEqual({
+      ...expectedTitles,
+      [id('7')]: 't7',
+    });
     const workable = (await db.query(sqlOf('health-workable'), ['f']))
       .flatMap((r) => (r.kind === 'issue' ? [r.issue_number as number] : []))
       .sort();

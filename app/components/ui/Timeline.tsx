@@ -18,6 +18,7 @@ export function TimelineRow({
   time,
   cost,
   nested,
+  attrs,
   children,
 }: {
   state: State;
@@ -26,12 +27,14 @@ export function TimelineRow({
   time?: string;
   cost?: string;
   nested?: boolean;
+  /** Hooks for the live phase and tests to read the row's facts by. */
+  attrs?: Readonly<Record<`data-${string}`, string | number | undefined>>;
   /** What opens under the row, such as an `ErrorPanel` on a failed step. */
   children?: ReactNode;
 }) {
   const facts = [time, cost].filter(Boolean).join(' · ');
   return (
-    <li className={`relative py-1.5 ${nested ? 'pl-11' : 'pl-5'}`}>
+    <li {...attrs} className={`relative py-1.5 ${nested ? 'pl-11' : 'pl-5'}`}>
       <span className={`absolute top-3 ${nested ? 'left-[39px]' : 'left-0'}`}>
         <StateDot state={state} />
       </span>
@@ -41,7 +44,13 @@ export function TimelineRow({
         >
           {name}
         </span>
-        {hint ? <span className="text-[color:var(--v3-fg-3)]">{hint}</span> : null}
+        {hint ? (
+          <span
+            className={`text-[color:var(--v3-fg-3)] ${nested ? 'hidden min-[760px]:inline' : ''}`}
+          >
+            {hint}
+          </span>
+        ) : null}
         <span className="ml-auto font-mono text-[color:var(--v3-fg-3)] tabular-nums">{facts}</span>
       </div>
       {children}

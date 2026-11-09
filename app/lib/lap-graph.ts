@@ -12,7 +12,7 @@ import {
   stepsCount,
   topBlocks,
 } from './home-map';
-import { LAP_PAGE_WORKFLOW, type StepAttemptRow } from './one-lap';
+import type { StepAttemptRow } from './one-lap';
 
 /** A row of `db/queries/one-lap-map.sql`: one node of the loop's expanded tree at the lap's pin. */
 export interface LapMapRow {
@@ -101,9 +101,10 @@ export function lapGraph(
   map: readonly LapMapRow[],
   attempts: readonly StepAttemptRow[],
   factory: string,
+  workflow: string,
 ): LapGraph {
   const rows: StepTreeRow[] = map.map((r) => ({
-    workflow: LAP_PAGE_WORKFLOW,
+    workflow,
     path: r.path,
     parent_path: r.parent_path,
     position: r.position,
@@ -138,7 +139,7 @@ export function lapGraph(
         const previous = lastStarted.get(parent);
         position += 1;
         rows.push({
-          workflow: LAP_PAGE_WORKFLOW,
+          workflow,
           path,
           parent_path: parent,
           position,

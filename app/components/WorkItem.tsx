@@ -62,14 +62,10 @@ function Row({ event, before }: { event: TimelineEvent; before: Date | null }): 
       />
       <span className="min-w-0 text-[13px] text-text-primary [overflow-wrap:anywhere]">
         {event.text}
-        {run === null ? null : run.link.kind === 'lap' ? (
+        {run === null ? null : (
           <Link to={run.link.to} className={`ml-2 text-[12px] text-text-secondary ${LINK}`}>
-            Open the lap
-          </Link>
-        ) : (
-          <a href={run.link.href} className={`ml-2 text-[12px] text-text-secondary ${LINK}`}>
             Open the run
-          </a>
+          </Link>
         )}
         {event.detail === null || event.detail === '' ? null : (
           <span className="block text-[12px] text-text-secondary">{event.detail}</span>
