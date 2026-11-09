@@ -1,5 +1,5 @@
 import { type ReactElement, useCallback, useState } from 'react';
-import { ATTENTION_SOURCES, attentionCount } from '../lib/attention-page';
+import { ATTENTION_SOURCES, attentionCount, badgePanelName } from '../lib/attention-page';
 import { stateColor } from '../lib/states';
 import { AWAITED, Feed, type Source } from '../live/Feed';
 
@@ -57,9 +57,7 @@ function CountFeed({
 }): ReactElement {
   const { query } = ATTENTION_SOURCES[id];
   const into = useCallback((source: Source<object>) => report(id, source), [id, report]);
-  return (
-    <Feed<object> query={query} name={`attention-count:${query}`} factory={factory} into={into} />
-  );
+  return <Feed<object> query={query} name={badgePanelName(query)} factory={factory} into={into} />;
 }
 
 /**

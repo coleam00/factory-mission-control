@@ -1,6 +1,7 @@
 import { expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { createMemoryRouter, RouterProvider } from 'react-router';
+import { ATTENTION_SOURCES, badgePanelName } from '../lib/attention-page';
 import { PLACES } from '../lib/places';
 import { currentPlace, PlaceLinks, RunsCountBody } from './ScreenNav';
 
@@ -151,5 +152,5 @@ test('by default the phone tabs render no Runs or Board count and the side nav r
     expect(html('tabs')).not.toContain(attr);
     expect(html('side')).toContain(attr);
   }
-  expect(html('tabs')).toContain('attention-count:decide');
+  expect(html('tabs')).toContain(badgePanelName(ATTENTION_SOURCES.decide.query));
 });

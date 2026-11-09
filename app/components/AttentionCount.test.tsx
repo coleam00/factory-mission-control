@@ -1,6 +1,7 @@
 import { expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 import type { Source } from '../live/Feed';
+import { ATTENTION_SOURCES, badgePanelName } from '../lib/attention-page';
 import { AttentionCount, CountMark } from './AttentionCount';
 
 const ready = (n: number): Source<object> => ({
@@ -11,8 +12,9 @@ const loading: Source<object> = { rows: undefined, state: 'loading' };
 
 test("the badge's panels are named apart from the page's panels of the same queries", () => {
   const html = renderToStaticMarkup(<AttentionCount factory="f" />);
-  for (const q of ['decide', 'owner-queue', 'unstick', 'failure-groups']) {
-    expect(html).toContain(`data-live="attention-count:${q}"`);
+  for (const q of Object.values(ATTENTION_SOURCES).map((s) => s.query)) {
+    expect(badgePanelName(q)).not.toBe(q);
+    expect(html).toContain(`data-live="${badgePanelName(q)}"`);
     expect(html).not.toContain(`data-live="${q}"`);
   }
 });
