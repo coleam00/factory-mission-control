@@ -50,7 +50,7 @@ test('every step the lap ran is a node, on the map or beside it, with its own at
     attempt('ship__new', 2, 'running'),
     attempt('review', 3, 'skipped'),
   ];
-  const lap = lapGraph(map, attempts, 'x');
+  const lap = lapGraph(map, attempts, 'x', 'archon-loop');
   for (const a of attempts) expect(lap.steps.get(pathOf(a.step_id))?.attempts).toContain(a);
   expect(lap.steps.get('ship/new')).toMatchObject({ state: 'running', offMap: true });
   // The include's box: running while a step inside it runs.
@@ -70,7 +70,12 @@ test('a step the lap passed without running is skipped, with all inside it; one 
     row('subject', 5, { depends_on: ['build', 'ship'] }),
     row('land', 6, { depends_on: ['subject'] }),
   ];
-  const lap = lapGraph(map, [attempt('pick', 0), attempt('build', 1), attempt('subject', 2)], 'x');
+  const lap = lapGraph(
+    map,
+    [attempt('pick', 0), attempt('build', 1), attempt('subject', 2)],
+    'x',
+    'archon-loop',
+  );
   expect(lap.steps.get('ship')?.state).toBe('skipped');
   expect(lap.steps.get('ship/intel')?.state).toBe('skipped');
   expect(lap.steps.get('land')?.state).toBe('not-reached');
@@ -92,6 +97,7 @@ test('every block folds into one box saying how it stands in the lap, until open
     map,
     [attempt('pick', 0), attempt('build', 1), attempt('deploy__verify', 2, 'running')],
     'x',
+    'archon-loop',
   );
   const { graph, folded, hidden } = foldGraph(simple, new Set());
   // A block where steps ran folds too: the loop opens as its top-level steps only.
@@ -127,10 +133,16 @@ test('every block folds into one box saying how it stands in the lap, until open
       attempt('ship__deliver__implement', 2, 'running'),
     ],
     'x',
+    'archon-loop',
   );
   const shown = foldGraph(complex, new Set());
   expect(notes(shown.graph, 'ship')).toEqual(['running: deliver/implement', '1 of 3 done']);
-  const failed = lapGraph(map, [attempt('pick', 0), attempt('ship__intel', 1, 'failed')], 'x');
+  const failed = lapGraph(
+    map,
+    [attempt('pick', 0), attempt('ship__intel', 1, 'failed')],
+    'x',
+    'archon-loop',
+  );
   expect(notes(foldGraph(failed, new Set()).graph, 'ship')).toEqual([
     'failed: intel',
     '0 of 3 done',
@@ -154,6 +166,7 @@ test("a loop group's body steps, named <group>.<step> on every iteration, mark t
       attempt('ship__rounds.review__scope', 3, 'running'),
     ],
     'x',
+    'archon-loop',
   );
   // No duplicate nodes: the graph is the pinned map.
   expect(lap.graph.steps.map((s) => s.id)).toEqual(map.map((r) => r.path));
@@ -179,6 +192,7 @@ test("a loop group Archon skipped, as a simple lap skips ship's rounds, skips it
     map,
     [attempt('pick', 0), attempt('ship__rounds', 1, 'skipped'), attempt('land', 2)],
     'x',
+    'archon-loop',
   );
   for (const path of ['ship', 'ship/rounds', 'ship/rounds/implement', 'ship/rounds/review/scope']) {
     expect(lap.steps.get(path)?.state).toBe('skipped');
@@ -188,6 +202,7 @@ test("a loop group Archon skipped, as a simple lap skips ship's rounds, skips it
     map,
     [attempt('pick', 0), attempt('ship__rounds.implement', 1, 'running')],
     'x',
+    'archon-loop',
   );
   expect(running.steps.get('ship/rounds/review/scope')?.state).toBe('not-reached');
 });
@@ -215,6 +230,7 @@ test("a lap opens each top-level block it ran, ship's own steps on the fork's li
       attempt('ship__deliver__implement', 2, 'running'),
     ],
     'x',
+    'archon-loop',
   );
   expect(ranBlocks(complex)).toEqual(['ship']);
   const { folded } = foldGraph(complex, new Set(ranBlocks(complex)));
@@ -226,6 +242,7 @@ test("a lap opens each top-level block it ran, ship's own steps on the fork's li
     map,
     [attempt('claim', 0), attempt('build', 1), attempt('subject', 2)],
     'x',
+    'archon-loop',
   );
   expect(ranBlocks(simple)).toEqual([]);
   expect(simple.steps.get('ship')?.state).toBe('skipped');
@@ -234,11 +251,22 @@ test("a lap opens each top-level block it ran, ship's own steps on the fork's li
 
 test("step links open each step at the lap's pin, and at the current version when there is none", () => {
   const attempts = [attempt('pick', 0), attempt('extra', 1)];
-  const pinned = lapGraph([row('pick', 1, { pin: 'old1234' })], attempts, 'x');
+  const pinned = lapGraph([row('pick', 1, { pin: 'old1234' })], attempts, 'x', 'archon-loop');
   expect(pinned.graph.steps.map((s) => s.href)).toEqual([
     '/f/x/steps/archon-loop/pick?at=old1234',
     '/f/x/steps/archon-loop/extra?at=old1234',
   ]);
-  const unpinned = lapGraph([], attempts, 'x');
+  const unpinned = lapGraph([], attempts, 'x', 'archon-loop');
   expect(unpinned.graph.steps.every((s) => !s.href?.includes('?at='))).toBe(true);
+});
+
+test('a step completed in one round and skipped undated in the next ends skipped, the skip its last attempt', () => {
+  const skip: StepAttemptRow = {
+    ...attempt('pick', 9, 'skipped'),
+    started_at: null,
+    event_at: new Date(Date.UTC(2026, 9, 25, 12, 9)),
+  };
+  const lap = lapGraph([row('pick', 1)], [attempt('pick', 1), skip], 'x', 'archon-build-queue');
+  expect(lap.steps.get('pick')?.state).toBe('skipped');
+  expect(lap.steps.get('pick')?.attempts.at(-1)).toBe(skip);
 });

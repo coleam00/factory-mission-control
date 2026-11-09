@@ -76,6 +76,7 @@ test("a lap's step definition link opens the step with the lap as its origin", (
       },
     ],
     'x',
+    'archon-loop',
   );
   links.length = 0;
   at(<StepPanel lap={lap} path="review" now={0} onClose={() => {}} />, '/f/x/runs/abc');

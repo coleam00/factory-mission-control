@@ -1,10 +1,12 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { attemptsInOrder, type StepAttemptRow, shownDispositions } from '../../app/lib/one-lap';
+import { runCost, runTimeline, stepCost } from '../../app/lib/one-run';
 import {
-  attemptsInOrder,
-  hasLapPage,
-  type StepAttemptRow,
-  shownDispositions,
-} from '../../app/lib/one-lap';
+  QUEUE_PAGE_RUNS,
+  QUEUE_RETURNED,
+  QUEUE_RUNS,
+  QUEUE_UNSTICK,
+} from '../../scripts/fixture/seed';
 import { seedLaps } from '../../scripts/fixture/seed-laps';
 import { eventData } from '../../scripts/fixture/write';
 import type { Db, Row } from '../../scripts/lib/db';
@@ -53,6 +55,7 @@ describe('one-lap on the seed', () => {
     expect(await lap('one-lap', LAP_RUN)).toEqual([
       {
         run_id: LAP_RUN,
+        workflow_name: 'archon-loop',
         status: 'completed',
         started_at: new Date('2026-10-01T14:00:00Z'),
         completed_at: new Date('2026-10-01T15:00:00Z'),
@@ -72,6 +75,11 @@ describe('one-lap on the seed', () => {
         gate_status: 'completed',
         gate_outcome: 'refused',
         gate_reason: 'it changes .claude/settings.json, which only the owner changes',
+        stop_status: 'completed',
+        stop_step: null,
+        stop_line: null,
+        stop_class: null,
+        capacity_since: null,
       },
     ]);
   });
@@ -308,8 +316,8 @@ describe('one-lap on the seed', () => {
     expect(await errors()).toEqual(before);
   });
 
-  test('a run has a lap page exactly when the owner says so: every running and merged run on the map', async () => {
-    const seen: boolean[] = [];
+  test('every lap and merged run on the map opens its page', async () => {
+    let seen = 0;
     for (const factory of ['mission-control', 'second-factory', 'queue-factory']) {
       const map = await db.query(queries.find(([n]) => n === 'home-map')?.[1] as string, [
         factory,
@@ -317,15 +325,86 @@ describe('one-lap on the seed', () => {
       ]);
       for (const row of map.filter((r) => r.kind === 'lap' || r.kind === 'merged')) {
         if (row.run_id === null) continue;
-        const drawn = (await lap('one-lap', String(row.run_id), factory)).length === 1;
-        expect([row.run_id, hasLapPage(row.workflow as string | null)]).toEqual([
+        expect([row.run_id, (await lap('one-lap', String(row.run_id), factory)).length]).toEqual([
           row.run_id,
-          drawn,
+          1,
         ]);
-        seen.push(drawn);
+        seen++;
       }
     }
-    expect(seen).toContain(true);
-    expect(seen).toContain(false);
+    expect(seen).toBeGreaterThan(0);
+  });
+
+  const queue = (name: string, runId: string) => lap(name, runId, 'queue-factory');
+
+  test('the failed build-queue run opens with its workflow, item, pull request and stop record', async () => {
+    const [run] = await queue('one-lap', QUEUE_RUNS.failedBuild);
+    expect(run).toMatchObject({
+      workflow_name: 'archon-build-queue',
+      status: 'failed',
+      issue_number: QUEUE_PAGE_RUNS.buildIssue,
+      pr_number: 496,
+      stop_status: 'failed',
+      stop_step: 'ship__deliver__rounds.pr__prepare',
+      stop_line: "Script node 'pr__prepare' failed [exit 1]",
+      stop_class: 'environment',
+    });
+  });
+
+  test('a run in capacity_waits carries when it began waiting, and another run carries none', async () => {
+    const [waiting] = await queue('one-lap', QUEUE_RUNS.capacity);
+    expect(waiting.capacity_since).toEqual(new Date(QUEUE_UNSTICK.capacitySince));
+    const [failed] = await queue('one-lap', QUEUE_RUNS.failedBuild);
+    expect(failed.capacity_since).toBeNull();
+  });
+
+  test('the app check run names its pull request', async () => {
+    const [run] = await queue('one-lap', QUEUE_RUNS.appCheck);
+    expect(run).toMatchObject({
+      workflow_name: 'factory-app-check',
+      pr_number: Number(QUEUE_PAGE_RUNS.checkPr),
+    });
+  });
+
+  test("a run's cost is the sum of its step costs, a loop's roll-up left out", async () => {
+    const rows = (await queue(
+      'one-lap-steps',
+      QUEUE_RETURNED.first,
+    )) as unknown as StepAttemptRow[];
+    const [attempts] = await db.query(
+      'SELECT sum(cost_usd) AS cost FROM mc.lap_step_attempts WHERE run_id = $1',
+      [QUEUE_RETURNED.first],
+    );
+    const group = rows.find((r) => r.step_id === 'ship__deliver__rounds');
+    // mc.lap_steps still holds the loop's roll-up, which the page must not count again.
+    const [rollUp] = await db.query(
+      'SELECT cost_usd FROM mc.lap_steps WHERE run_id = $1 AND step_id = $2',
+      [QUEUE_RETURNED.first, 'ship__deliver__rounds'],
+    );
+    expect(Number(rollUp?.cost_usd)).toBe(1.5);
+    expect(stepCost(group as StepAttemptRow, rows)).toBeNull();
+    expect(runCost(rows)).toBeCloseTo(Number(attempts?.cost), 6);
+    expect(runCost(rows)).toBeCloseTo(2.2, 6);
+  });
+
+  test('the failed build run is two rounds, its review skipped for the failure upstream', async () => {
+    const rows = (await queue(
+      'one-lap-steps',
+      QUEUE_RUNS.failedBuild,
+    )) as unknown as StepAttemptRow[];
+    const timeline = runTimeline(rows);
+    const loop = timeline.find((e) => e.kind === 'loop');
+    expect(loop?.kind === 'loop' ? loop.rounds.map((r) => r.failed) : []).toEqual([false, true]);
+    expect(rows.find((r) => r.status === 'failed')?.error).toBe(QUEUE_PAGE_RUNS.buildError);
+    expect(rows.filter((r) => r.status === 'skipped').map((r) => r.step_id)).toEqual([
+      'ship__deliver__rounds.review__result',
+    ]);
+    const steps = timeline.flatMap((e) =>
+      e.kind === 'step' ? [e.row] : e.rounds.flatMap((r) => r.rows),
+    );
+    expect(steps.reduce((sum, r) => sum + (stepCost(r, rows) ?? 0), 0)).toBeCloseTo(
+      runCost(rows) ?? Number.NaN,
+      6,
+    );
   });
 });

@@ -157,6 +157,22 @@ test('Tabs marks the chosen tab selected, in the order the map tests read', () =
   expect(html).toContain('aria-selected="false" data-tab="a"');
 });
 
+test('a nested row hides its hint on a phone and a top-level row does not', () => {
+  const hintClass = (nested: boolean) =>
+    renderToStaticMarkup(<TimelineRow state="done" name="s" hint="a hint" nested={nested} />).match(
+      /<span class="([^"]*)">a hint<\/span>/,
+    )?.[1];
+  expect(hintClass(true)).toContain('hidden min-[760px]:inline');
+  expect(hintClass(false)).not.toContain('hidden');
+});
+
+test('a nested row draws its dot clear of its name', () => {
+  const html = renderToStaticMarkup(<TimelineRow state="done" name="s" nested />);
+  const dotLeft = Number(html.match(/absolute top-1\.5 flex [^"]*left-\[(\d+)px\]/)?.[1]);
+  const textPad = Number(html.match(/pl-(\d+)/)?.[1]) * 4;
+  expect(dotLeft + 8).toBeLessThanOrEqual(textPad);
+});
+
 test('every component the folder exports is rendered above', async () => {
   const names = new Set(VARIANTS.map(([name]) => name.split(' ')[0]));
   const files = readdirSync('app/components/ui').filter(
@@ -238,4 +254,15 @@ test('a recommended OptionTile paints its consequence in fg-2, a plain one in fg
   expect(recommended).toContain('--v3-fg-2');
   expect(recommended).not.toContain('--v3-fg-3');
   expect(plain).toContain('--v3-fg-3');
+});
+
+test('a TimelineRow dot sits in a box as tall as the time line, nested or not', () => {
+  for (const nested of [false, true]) {
+    const html = renderToStaticMarkup(
+      <TimelineRow state="done" name="step" time="2m" nested={nested} />,
+    );
+    expect(html).toMatch(
+      /<span class="absolute top-1\.5 flex h-\[1lh\] items-center text-\[length:var\(--v3-t-meta\)\] left-/,
+    );
+  }
 });

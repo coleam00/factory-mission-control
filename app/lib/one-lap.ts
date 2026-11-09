@@ -3,8 +3,10 @@
  * `one-lap-checks.sql` return them, and the ordering, sums and links the queries leave to the
  * browser. Pure, no React.
  */
-import { costOf, type Outcome, since } from './laps';
+import type { StopClass } from './failures';
+import { type Outcome, since } from './laps';
 import { placeAddress } from './places';
+import type { RUN_STATE } from './states';
 
 /** One review disposition as `mc.step_output` keeps it: the line id it answers, or null. */
 export interface Disposition {
@@ -16,24 +18,16 @@ export interface Disposition {
 export const shownDispositions = (lap: Pick<OneLapRow, 'dispositions' | 'hidden_lines'>) =>
   (lap.dispositions ?? []).filter((d) => d.line === null || !lap.hidden_lines.includes(d.line));
 
-/**
- * The one workflow whose runs have a lap page: `db/queries/one-lap*.sql` filter on it (#395).
- */
-export const LAP_PAGE_WORKFLOW = 'archon-loop';
-
 /** The address of a run's lap page; the factory is encoded, the run id is not. */
 export const lapHref = (factory: string, runId: string): string =>
   `${placeAddress(factory, 'runs')}/${runId}`;
 
-/** Whether a run of `workflow` has a lap page to open. */
-export const hasLapPage = (workflow: string | null): boolean => workflow === LAP_PAGE_WORKFLOW;
-
 /**
  * The pack's old loop, whose runs carry route, depth, the old review outcomes and the merge gate.
- * Deliberately not `LAP_PAGE_WORKFLOW` (which runs have a lap page) nor `LAP_WORKFLOWS` (which
- * runs are laps): widening either must not change what counts as an old-loop run.
+ * Deliberately not `LAP_WORKFLOWS` (which runs are laps): widening it must not change what counts
+ * as an old-loop run.
  */
-const OLD_LOOP_WORKFLOW = 'archon-loop';
+export const OLD_LOOP_WORKFLOW = 'archon-loop';
 
 /** Whether a run of `workflow` is an old-loop run. */
 export const isOldLoop = (workflow: string | null): boolean => workflow === OLD_LOOP_WORKFLOW;
@@ -43,12 +37,13 @@ export const INTAKE_WORKFLOW = 'archon-intake';
 /** The workflow that slices an item into children; it holds nothing (health-workable.sql restates this; restated-rules.test.ts binds the two). */
 export const SPLIT_WORKFLOW = 'archon-split';
 export const APP_CHECK_WORKFLOW = 'factory-app-check';
+export const MERGE_QUEUE_WORKFLOW = 'archon-merge-queue';
 
 /** What a running workflow is, in the map's words; an unknown one shows its own name. */
 const WORKFLOW_LABEL: Readonly<Record<string, string>> = {
-  [LAP_PAGE_WORKFLOW]: 'Lap',
+  [OLD_LOOP_WORKFLOW]: 'Lap',
   [BUILD_QUEUE_WORKFLOW]: 'Build',
-  'archon-merge-queue': 'Merge',
+  [MERGE_QUEUE_WORKFLOW]: 'Merge',
   [INTAKE_WORKFLOW]: 'Intake',
   [SPLIT_WORKFLOW]: 'Split',
   'archon-discoveries': 'Found by the factory',
@@ -59,10 +54,11 @@ const WORKFLOW_LABEL: Readonly<Record<string, string>> = {
 };
 export const workflowLabel = (workflow: string): string => WORKFLOW_LABEL[workflow] ?? workflow;
 
-/** The lap itself: its claim, route and depth, its review and its merge gate. */
+/** The run itself: its workflow, item, stop record and, for an old loop, route, review and merge gate. */
 export interface OneLapRow {
   run_id: string;
-  status: string;
+  workflow_name: string;
+  status: keyof typeof RUN_STATE;
   started_at: Date | null;
   completed_at: Date | null;
   repository: string;
@@ -82,6 +78,13 @@ export interface OneLapRow {
   gate_status: string | null;
   gate_outcome: string | null;
   gate_reason: string | null;
+  /** The run's stop record (`mc.run_stops`); null while the run has none. */
+  stop_status: string | null;
+  stop_step: string | null;
+  stop_line: string | null;
+  stop_class: StopClass | null;
+  /** When the answered run began waiting for a free slot (`mc.capacity_waits`); null when it is not. */
+  capacity_since: Date | null;
 }
 
 /**
@@ -103,6 +106,8 @@ export interface StepAttemptRow {
   error: string | null;
   /** The step's place in the loop at the lap's pin; null for a step that version lacks. */
   position: number | null;
+  /** When the event that finished the attempt arrived; null for a step row with no attempt. */
+  event_at?: Date | null;
 }
 
 /** One app-check line: never its text. */
@@ -136,6 +141,21 @@ export function attemptsInOrder(rows: readonly StepAttemptRow[]): StepAttemptRow
   });
 }
 
+/**
+ * By start, an attempt with no start (Archon's skip event carries no timing) by the event that
+ * finished it, so a skipped step stays in the round it was skipped in. Rows with neither go last
+ * as in `attemptsInOrder`.
+ */
+export function attemptsInRunOrder(rows: readonly StepAttemptRow[]): StepAttemptRow[] {
+  const at = (row: StepAttemptRow) => timeOf(row.started_at ?? row.event_at ?? null);
+  const dated = rows.filter((row) => !Number.isNaN(at(row)));
+  const undated = rows.filter((row) => Number.isNaN(at(row)));
+  return [
+    ...dated.sort((a, b) => at(a) - at(b) || a.step_id.localeCompare(b.step_id)),
+    ...attemptsInOrder(undated),
+  ];
+}
+
 export const linesInOrder = (rows: readonly CheckLineRow[]): CheckLineRow[] =>
   [...rows].sort((a, b) => a.position - b.position);
 
@@ -147,12 +167,6 @@ export function checkLineFor(
   if (line === null) return null;
   const matches = rows.filter((row) => row.line_id === line);
   return matches.length === 1 ? (matches[0] ?? null) : null;
-}
-
-/** The lap's cost: every attempt's, a repeated step's earlier runs included. Null when none has one. */
-export function lapCost(rows: readonly StepAttemptRow[]): number | null {
-  const costs = rows.map((row) => costOf(row.cost_usd)).filter((cost) => cost !== null);
-  return costs.length === 0 ? null : costs.reduce((sum, cost) => sum + cost, 0);
 }
 
 /** Seconds an attempt took, or has taken so far while it runs; null when not recorded. */

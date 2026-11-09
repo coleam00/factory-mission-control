@@ -1,8 +1,8 @@
 WITH lap AS (
-  SELECT l.started_at FROM mc.laps l
-  WHERE l.factory = $1 AND l.run_id::text = $2 AND l.workflow_name = 'archon-loop'
+  SELECT l.started_at, l.workflow_name FROM mc.laps l
+  WHERE l.factory = $1 AND l.run_id::text = $2
 ),
--- The loop at the lap's own pin: the newest pin with stored architecture committed before the lap
+-- The run's workflow at the run's own pin: the newest pin with stored architecture committed before the lap
 -- started (a lap not started yet takes the newest). A lap older than every stored architecture
 -- (north-star's first laps) takes the oldest, and the steps that map lacks are drawn beside it.
 version AS (
@@ -21,9 +21,9 @@ steps AS (
     s.when_condition, s.trigger_rule
   FROM mc.arch_steps s
   JOIN version v ON v.archon_sha = s.archon_sha AND v.factory_sha = s.factory_sha
-  WHERE s.workflow = 'archon-loop'
+  JOIN lap ON lap.workflow_name = s.workflow
 )
--- Every node of the loop's expanded tree, and each opens its own place in archon-loop.
+-- Every node of the workflow's expanded tree, and each opens its own place in it.
 SELECT v.pin, s.path, s.parent_path, s.position, s.step_id, s.kind, s.depends_on,
   s.when_condition, s.trigger_rule
 FROM steps s

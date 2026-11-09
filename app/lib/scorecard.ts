@@ -11,7 +11,7 @@
 
 import { formatNumber } from './format';
 import { mergedPulls, mergeItems } from './merge-queue';
-import { BUILD_QUEUE_WORKFLOW, LAP_PAGE_WORKFLOW } from './one-lap';
+import { BUILD_QUEUE_WORKFLOW, OLD_LOOP_WORKFLOW } from './one-lap';
 
 /** A lap of this factory with a digest. */
 export interface LapRow {
@@ -80,7 +80,7 @@ const isRun = (row: ScorecardRow): row is LapRow =>
   !isVersion(row) && !isMerge(row) && !isAttempt(row);
 
 /** PRD 4.2: the workflows whose runs can be laps. `scorecard.sql` keeps only the build-queue runs on a work item. */
-export const LAP_WORKFLOWS: readonly string[] = [LAP_PAGE_WORKFLOW, BUILD_QUEUE_WORKFLOW];
+export const LAP_WORKFLOWS: readonly string[] = [OLD_LOOP_WORKFLOW, BUILD_QUEUE_WORKFLOW];
 
 export interface Lap {
   id: string;
