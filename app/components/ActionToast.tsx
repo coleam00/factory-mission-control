@@ -13,7 +13,11 @@ export const useStartAction = () => flow.start;
 
 /** True while a toast is open: the other action buttons wait, one action at a time. */
 export function useActionPending(): boolean {
-  return useSyncExternalStore(flow.subscribe, () => flow.getState().phase !== 'idle');
+  return useSyncExternalStore(
+    flow.subscribe,
+    () => flow.getState().phase !== 'idle',
+    () => false,
+  );
 }
 
 let enabled: Promise<string[]> | undefined;
@@ -33,7 +37,7 @@ export function useActionsEnabled(factory: string): boolean {
 }
 
 export function ActionToastHost() {
-  const state = useSyncExternalStore(flow.subscribe, flow.getState);
+  const state = useSyncExternalStore(flow.subscribe, flow.getState, flow.getState);
   if (state.phase === 'pending') {
     return (
       <Toast onUndo={() => void flow.undo()}>

@@ -118,6 +118,40 @@ test('a question marks the recommended option only when it is one of the options
   expect(own?.tiles.map((t) => t.label)).toEqual(['Something else']);
 });
 
+test('each option tile answers with its row occurrence, and every tile keeps its console link', () => {
+  const [card] = decideCards([decide()], 'f');
+  const split = card?.tiles.find((t) => t.id === 'split');
+  expect(split?.answer).toEqual({
+    request: {
+      factory: 'f',
+      action: 'answer',
+      run_id: RUN,
+      occurrence: 'p1',
+      option: 'split',
+      text: null,
+    },
+    item: 15,
+  });
+  expect(card?.tiles.every((t) => t.href === CONSOLE_RUN)).toBe(true);
+});
+
+test('"Something else" opens the text box only where the server can send text', () => {
+  const tileFor = (row: DecideRow) =>
+    decideCards([row], 'f')[0]?.tiles.find((t) => t.label === 'Something else');
+  // No declared option, a select form: the synthetic tile stays a console link.
+  expect(tileFor(decide())?.somethingElse).toBeUndefined();
+  // No declared option, a message form: the text alone is the answer.
+  expect(
+    tileFor(decide({ form: 'message', options: '[]', recommended: null }))?.somethingElse,
+  ).toMatchObject({ request: { option: null, text: null } });
+  // A declared "Something else" option carries the text and is not an option answer.
+  const declared = tileFor(
+    decide({ options: JSON.stringify([{ id: 'other', label: 'Something else' }]) }),
+  );
+  expect(declared?.somethingElse).toBeDefined();
+  expect(declared?.answer).toBeUndefined();
+});
+
 test('each unstick kind leads with its own primary action', () => {
   const cards = unstickCards(
     [
@@ -153,10 +187,10 @@ test('each unstick kind leads with its own primary action', () => {
     command: retriageCommand('owner/repo', 8),
   });
   expect(first('capacity')).toMatchObject({
-    type: 'link',
+    type: 'act',
     variant: 'primary',
-    href: CONSOLE_RUN,
-    external: true,
+    request: { factory: 'f', action: 'resume', run_id: RUN, from_step: null },
+    fallback: { href: CONSOLE_RUN, external: true },
   });
   expect(first('claim')).toMatchObject({
     type: 'copy',
