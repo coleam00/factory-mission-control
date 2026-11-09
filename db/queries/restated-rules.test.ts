@@ -567,7 +567,7 @@ test('board rounds count a shipped run on the item every other screen holds', as
   }
 }, 60_000);
 
-test('mc.stop_class refines Health’s causes, agreeing with causeOf except on reference numbers', async () => {
+test('mc.stop_class refines Health’s causes, agreeing with causeOf on every corpus line', async () => {
   const sql = read('db', 'migrations', '0031_run_stops.sql');
   // Both read "the run's latest failed step"; a live query cannot call the mc function, so the pick is copied.
   const failedStepPick = (text: string, alias: string) =>
@@ -580,23 +580,26 @@ test('mc.stop_class refines Health’s causes, agreeing with causeOf except on r
   const db = await migratedDb();
   try {
     const seen = new Set<string>();
-    // causeOf reads a PR or issue number as a status code; stop_class does not.
-    const referenceNumbers = new Set([
-      '3 tests failed on PR #401',
-      'No issue matched #1401',
-      'git merge --no-edit failed on pulls/1429',
-      '3 tests failed, see #401 status',
-      'git merge --no-edit failed on pulls/429 status check',
-      'git merge --no-edit failed with HTTP 4290',
-    ]);
     for (const line of STOP_CORPUS.map(([l]) => l)) {
       const cause = causeOf(line);
-      if (cause === 'other' || referenceNumbers.has(line)) continue;
+      if (cause === 'other') continue;
       seen.add(cause);
       const [row] = await db.query('SELECT mc.stop_class($1) AS class', [line]);
       expect(row?.class).toBe(cause === 'authentication' ? 'config' : 'transient');
     }
     expect(seen).toEqual(new Set(['usage-limit', 'authentication', 'infrastructure']));
+
+    // Emoji are two UTF-16 units but one character: the cut must fall on characters, as left() does.
+    for (const filler of ['x', '😀']) {
+      const near = `${filler.repeat(7990)} HTTP 429`;
+      const past = `${filler.repeat(8000)} HTTP 429`;
+      expect(causeOf(near)).toBe('usage-limit');
+      expect((await db.query('SELECT mc.stop_class($1) AS class', [near]))[0]?.class).toBe(
+        'transient',
+      );
+      expect(causeOf(past)).toBe('other');
+      expect((await db.query('SELECT mc.stop_class($1) AS class', [past]))[0]?.class).toBeNull();
+    }
   } finally {
     await db.close();
   }
