@@ -7,8 +7,8 @@ the app served from a check branch loaded with the seed (`bun run fixture:branch
 1. **See the factory.** Open the Factory place (`/f/<factory>/map`). The architecture map shows the loop's steps from
    pick to release, the manager above them and the inputs and outputs around them. Open check-app:
    its prompt, its holdout verifier and how the holdout fence works are shown.
-2. **Watch a lap.** With the lanes panel open, insert a step event for a running lap
-   (`bun run fixture:write step`). Within 5 seconds, without a reload, the lap's lane shows the new
+2. **Watch a lap.** With the Runs screen open (`/f/<factory>/runs`), insert a step event for a running run
+   (`bun run fixture:write step`). Within 5 seconds, without a reload, the run's row shows the new
    step.
 3. **Judge a change.** On the version strip, pick two versions. Their scorecards appear side by side
    with each number's lap count, and a difference on fewer than 10 laps is labelled not yet

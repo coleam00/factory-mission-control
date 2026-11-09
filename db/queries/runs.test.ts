@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { type RunsRow, runsArgs, runsView } from '../../app/lib/runs';
+import { RUNS_PAGE_SIZE, type RunsRow, runsArgs, runsView } from '../../app/lib/runs';
 import { RUN_STATE, STATES, type State } from '../../app/lib/states';
 import { SEED_CODEBASE } from '../../scripts/fixture/seed';
 import type { Db } from '../../scripts/lib/db';
@@ -36,7 +36,7 @@ async function allRuns(tx: Reader, factory: string, state: State | '', hideIdle:
   for (let n = 1; ; n++) {
     const view = runsView(await page(tx, factory, { state, hideIdle, page: n }));
     runs.push(...view.runs);
-    if (view.runs.length < 50) return runs;
+    if (view.runs.length < RUNS_PAGE_SIZE) return runs;
   }
 }
 
@@ -188,6 +188,8 @@ describe('the runs query on rows it inserts', () => {
         ['select', 'completed'],
         ['pending', 'skipped'],
         ['scope', 'skipped'],
+        ['finalize', 'completed'],
+        ['cleanup', 'completed'],
       ]);
       const failedFacts = await lap(tx, 'archon-merge-queue', 'failed', [
         ['facts', 'completed', { path: 'idle' }],
@@ -284,7 +286,7 @@ describe('the runs query on rows it inserts', () => {
       expect(zebras.runs.map((r) => r.run_id)).not.toContain(idle);
     }));
 
-  test('pages hold 50 runs, newest first, and a page past the end still carries the counts', () =>
+  test('pages hold a page of runs, newest first, and a page past the end still carries the counts', () =>
     inRollback(async (tx) => {
       const total = (await page(tx, FACTORY, { hideIdle: false }))[0]?.all_count ?? 0;
       const ids: string[] = [];
@@ -298,10 +300,14 @@ describe('the runs query on rows it inserts', () => {
       const first = await page(tx, FACTORY, { hideIdle: false });
       const second = await page(tx, FACTORY, { hideIdle: false, page: 2 });
       const last = await page(tx, FACTORY, { hideIdle: false, page: 3 });
-      expect(first.map((r) => r.position)).toEqual(Array.from({ length: 50 }, (_, i) => i + 1));
-      expect(first.map((r) => r.run_id)).toEqual(ids.toReversed().slice(0, 50));
-      expect(second.map((r) => r.run_id)).toEqual(ids.toReversed().slice(50, 100));
-      expect(last.length).toBe(Math.min(50, total + 20));
+      expect(first.map((r) => r.position)).toEqual(
+        Array.from({ length: RUNS_PAGE_SIZE }, (_, i) => i + 1),
+      );
+      expect(first.map((r) => r.run_id)).toEqual(ids.toReversed().slice(0, RUNS_PAGE_SIZE));
+      expect(second.map((r) => r.run_id)).toEqual(
+        ids.toReversed().slice(RUNS_PAGE_SIZE, 2 * RUNS_PAGE_SIZE),
+      );
+      expect(last.length).toBe(Math.min(RUNS_PAGE_SIZE, total + 20));
       const past = await page(tx, FACTORY, { hideIdle: false, page: 40 });
       expect(past).toHaveLength(1);
       expect(past[0]).toMatchObject({ run_id: null, all_count: total + 120 });

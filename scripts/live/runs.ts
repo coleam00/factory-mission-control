@@ -1,4 +1,4 @@
-import { RUN_CHIPS, RUNS_PAGE_SIZE } from '../../app/lib/runs';
+import { RUN_CHIPS, RUNS_PAGE_SIZE, runsArgs } from '../../app/lib/runs';
 import { RUN_STATE, type State, stateOf } from '../../app/lib/states';
 import { openPage, type Page } from '../lib/cdp';
 import type { Db } from '../lib/db';
@@ -82,6 +82,23 @@ const stateCounts = (rows: readonly { status: string; n: number }[]) => {
   return counts;
 };
 
+/** The screen's own query, run straight against the database: the first page of `factory`'s runs, and its idle polls. */
+export async function runsQueryPage(
+  db: Db,
+  queries: ReadonlyMap<string, string>,
+  factory: string,
+  hideIdle: boolean,
+) {
+  const rows = await db.query(queries.get('runs') as string, [
+    factory,
+    ...runsArgs({ q: '', state: '', hideIdle, page: 1 }),
+  ]);
+  return {
+    runs: rows.filter((r) => r.run_id !== null).map((r) => String(r.run_id)),
+    idlePolls: Number(rows[0]?.idle_polls ?? 0),
+  };
+}
+
 /**
  * The runs screen against SQL over the seed's tables (not the screen's query), read before any run
  * is inserted: the chips, their sum, the first page's runs and every failed run's step and error.
@@ -89,6 +106,7 @@ const stateCounts = (rows: readonly { status: string; n: number }[]) => {
 async function seedRunsMismatches(
   page: Page,
   db: Db,
+  queries: ReadonlyMap<string, string>,
   factory: string,
 ): Promise<{ mismatches: string[]; report: string }> {
   const shown = await page.evaluate<RunsOnScreen>(runsOnScreen);
@@ -105,12 +123,8 @@ async function seedRunsMismatches(
     (chip) =>
       [chip.label, chip.state === '' ? all : (byState.get(chip.state) ?? 0)] as [string, number],
   );
-  const idle = await db.query(
-    `SELECT count(*)::int AS n FROM mc.lap_steps s JOIN mc.laps l USING (run_id)
-      WHERE l.factory = $1 AND s.step_id = 'facts' AND s.output ->> 'path' = 'idle'`,
-    [factory],
-  );
-  if (Number(idle[0]?.n) !== 0) mismatches.push(`the seed has ${idle[0]?.n} idle polls, not 0`);
+  const idle = (await runsQueryPage(db, queries, factory, false)).idlePolls;
+  if (idle !== 0) mismatches.push(`the seed has ${idle} idle polls, not 0`);
   same('chips', shown.chips, chipsSql);
   same(
     'the chips add up to All',
@@ -222,7 +236,7 @@ export function runsPhase(ctx: LiveContext): LivePhase {
         );
       }
       Object.assign(timings, groupTimings(await measure(page, RUNS_QUERIES)));
-      const seed = await seedRunsMismatches(page, db, factory);
+      const seed = await seedRunsMismatches(page, db, ctx.queries, factory);
       ctx.save(FILES.check, `${seed.report}\n`);
       ctx.failures.push(...seed.mismatches.map((m) => `runs screen against the seed: ${m}`));
       ctx.save(FILES.shot, await page.screenshot(1440));

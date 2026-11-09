@@ -2,6 +2,7 @@ import { expect, test } from 'bun:test';
 import {
   formatTook,
   type RunRow,
+  RUNS_PAGE_SIZE,
   runsArgs,
   runsView,
   type RunsRow,
@@ -85,12 +86,19 @@ test('the stop line is the error of a failed run and the question of a paused on
 });
 
 test('the arguments hide idle polls and count pages from 0', () => {
-  expect(runsArgs({ q: '', state: '', hideIdle: true, page: 1 })).toEqual(['', '', 'hide', '0']);
+  expect(runsArgs({ q: '', state: '', hideIdle: true, page: 1 })).toEqual([
+    '',
+    '',
+    'hide',
+    '0',
+    String(RUNS_PAGE_SIZE),
+  ]);
   expect(runsArgs({ q: 'a', state: 'failed', hideIdle: false, page: 3 })).toEqual([
     'a',
     'failed',
     'show',
     '2',
+    String(RUNS_PAGE_SIZE),
   ]);
 });
 

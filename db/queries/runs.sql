@@ -2,7 +2,7 @@ WITH base AS (
   -- The Runs screen: one page of a factory's runs, newest first, with every chip's count and the idle-poll
   -- count repeated on each row, so the rows and the counts come from one query (#517).
   -- $2 search ('' for none), $3 chip (a state name, '' for All), $4 'hide' or 'show' for idle polls,
-  -- $5 the 0-based page, 50 rows to a page. A page past the end returns one row with no run, so the counts arrive.
+  -- $5 the 0-based page, $6 the rows to a page (RUNS_PAGE_SIZE). A page past the end returns one row with no run, so the counts arrive.
   -- A live query may call no mc function and Realtime refuses a stable one, so the search joins text with
   -- `||` and `::text` casts only (concat_ws and int || text are stable).
   SELECT l.run_id, l.workflow_name, l.status, l.started_at, l.completed_at,
@@ -11,14 +11,15 @@ WITH base AS (
       WHEN 'failed' THEN 'failed' WHEN 'completed' THEN 'done' ELSE 'idle' END AS state,
     -- An idle poll is a completed run that found nothing to do: its facts step says path idle (any queue
     -- workflow), or it is an app check that selected nothing. factory-app-check keeps no step output, so
-    -- a check that selected nothing is the one whose steps other than config and select all skipped.
+    -- a check that selected nothing is the one whose select completed and whose `pending` and `scope`
+    -- steps, gated on `$select.output.found`, skipped. Its finalize and cleanup are all_done and always complete.
     (l.status = 'completed' AND (
       coalesce(facts.output ->> 'path' = 'idle', false)
       OR l.workflow_name = 'factory-app-check'
         AND EXISTS (SELECT 1 FROM mc.lap_steps sel
           WHERE sel.run_id = l.run_id AND sel.step_id = 'select' AND sel.status = 'completed')
         AND NOT EXISTS (SELECT 1 FROM mc.lap_steps o
-          WHERE o.run_id = l.run_id AND o.step_id NOT IN ('config', 'select') AND o.status <> 'skipped')
+          WHERE o.run_id = l.run_id AND o.step_id IN ('pending', 'scope') AND o.status <> 'skipped')
     )) AS idle_poll,
     -- The work item a run holds: its claim, else its facts step's item, else its number input.
     -- Restated in home-map.sql, health-workable.sql and board.sql's rounds (a live query may call no mc function),
@@ -57,7 +58,7 @@ WITH base AS (
   FROM matched m WHERE $3 = '' OR m.state = $3
 ), page AS (
   SELECT * FROM numbered
-  WHERE position > $5::int * 50 AND position <= ($5::int + 1) * 50
+  WHERE position > $5::bigint * $6::bigint AND position <= ($5::bigint + 1) * $6::bigint
 )
 SELECT counts.all_count, counts.running_count, counts.needs_you_count, counts.failed_count,
   counts.done_count, counts.idle_count, counts.idle_polls,

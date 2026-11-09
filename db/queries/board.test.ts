@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { type BoardRow, boardView } from '../../app/lib/board';
 import type { HealthWorkableRow } from '../../app/lib/health';
 import type { OwnerQueueRow } from '../../app/lib/owner-queue';
+import { runsArgs } from '../../app/lib/runs';
 import { FACTORY_MAP } from '../../app/map/factory-map';
 import { cardLive, type HomeMapRow, type WorkOrderRow } from '../../app/map/live';
 import { QUEUE_PARKED, QUEUE_UNSTICK } from '../../scripts/fixture/seed';
@@ -377,10 +378,7 @@ test('a run that has just taken a work item is running on the Board, here on the
     const laps = await run<{ issue_number: number | null; step_id: string }>(
       'runs',
       'queue-factory',
-      '',
-      '',
-      'show',
-      '0',
+      ...runsArgs({ q: '', state: '', hideIdle: false, page: 1 }),
     );
     expect(laps.find((l) => (l as unknown as { run_id: string }).run_id === runId)).toMatchObject({
       issue_number: 404,

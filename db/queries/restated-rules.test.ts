@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { COLUMNS, PARKED, parked, SPLIT_WORKFLOW } from '../../app/lib/board';
 import { causeOf } from '../../app/lib/health';
 import { prNumber } from '../../app/lib/one-lap';
+import { runsArgs } from '../../app/lib/runs';
 import { QUEUE_ENDING_STATE, QUEUE_REVIEW_STATE, REVIEW_OUTCOME_STATE } from '../../app/lib/states';
 import { ROUTE_OF_LABEL, WORK_ITEM_NUMBER } from '../../app/lib/work-item';
 import { runMigrations } from '../../scripts/migrate';
@@ -465,9 +466,12 @@ test('runs, home-map and health-workable resolve the same item for every source 
     const expectedTitles = Object.fromEntries(
       Object.entries(expected).map(([k, v]) => [k, v === null ? null : `t${v}`]),
     );
-    const lanes = (await db.query(sqlOf('runs'), ['f', '', '', 'show', '0'])).filter(
-      (r) => r.status === 'running',
-    );
+    const lanes = (
+      await db.query(sqlOf('runs'), [
+        'f',
+        ...runsArgs({ q: '', state: '', hideIdle: false, page: 1 }),
+      ])
+    ).filter((r) => r.status === 'running');
     const laps = (await db.query(sqlOf('home-map'), ['f', ''])).filter((r) => r.kind === 'lap');
     expect(held(lanes)).toEqual(expected);
     expect(held(laps)).toEqual(expected);
@@ -542,7 +546,10 @@ test('board rounds count a shipped run on the item every other screen holds', as
     );
     // The owner's answer: runs.sql holds each (running) run on an item; a shipped loop/queue run is a round there.
     const owned: Record<number, number> = {};
-    for (const row of await db.query(sqlOf('runs'), ['f', '', '', 'show', '0'])) {
+    for (const row of await db.query(sqlOf('runs'), [
+      'f',
+      ...runsArgs({ q: '', state: '', hideIdle: false, page: 1 }),
+    ])) {
       const run = runs[Number(String(row.run_id).slice(-1)) - 1];
       if (run?.ship && run.workflow === undefined && row.issue_number !== null) {
         const n = row.issue_number as number;

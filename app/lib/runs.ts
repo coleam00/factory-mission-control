@@ -69,6 +69,7 @@ export const runsArgs = ({ q, state, hideIdle, page }: RunsFilter): string[] => 
   state,
   hideIdle ? 'hide' : 'show',
   String(page - 1),
+  String(RUNS_PAGE_SIZE),
 ];
 
 /** A run of the page: the row the query returns when a run is on it. */
