@@ -37,12 +37,13 @@ export const INTAKE_WORKFLOW = 'archon-intake';
 /** The workflow that slices an item into children; it holds nothing (health-workable.sql restates this; restated-rules.test.ts binds the two). */
 export const SPLIT_WORKFLOW = 'archon-split';
 export const APP_CHECK_WORKFLOW = 'factory-app-check';
+export const MERGE_QUEUE_WORKFLOW = 'archon-merge-queue';
 
 /** What a running workflow is, in the map's words; an unknown one shows its own name. */
 const WORKFLOW_LABEL: Readonly<Record<string, string>> = {
   [OLD_LOOP_WORKFLOW]: 'Lap',
   [BUILD_QUEUE_WORKFLOW]: 'Build',
-  'archon-merge-queue': 'Merge',
+  [MERGE_QUEUE_WORKFLOW]: 'Merge',
   [INTAKE_WORKFLOW]: 'Intake',
   [SPLIT_WORKFLOW]: 'Split',
   'archon-discoveries': 'Found by the factory',

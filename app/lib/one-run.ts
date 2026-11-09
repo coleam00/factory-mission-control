@@ -9,9 +9,12 @@ import { type LapMapRow, mapPathOf } from './lap-graph';
 import { costOf, OUTCOME_LABEL } from './laps';
 import { questionOf } from './work-item';
 import {
+  APP_CHECK_WORKFLOW,
   attemptsInRunOrder,
+  BUILD_QUEUE_WORKFLOW,
   isOldLoop,
   lapOutcome,
+  MERGE_QUEUE_WORKFLOW,
   type OneLapRow,
   type StepAttemptRow,
   workflowLabel,
@@ -142,13 +145,13 @@ export function runTitle(lap: OneLapRow, timeline: readonly TimelineEntry[]): st
   const issue = lap.issue_number === null ? '' : ` #${lap.issue_number}`;
   const pr = lap.pr_number;
   switch (lap.workflow_name) {
-    case 'archon-build-queue': {
+    case BUILD_QUEUE_WORKFLOW: {
       const round = latestRound(timeline);
       return `Build${issue}${round === null ? '' : `, round ${round}`}`;
     }
-    case 'factory-app-check':
+    case APP_CHECK_WORKFLOW:
       return pr === null ? 'App check' : `App check, PR #${pr}`;
-    case 'archon-merge-queue':
+    case MERGE_QUEUE_WORKFLOW:
       return 'Merge sweep';
     default:
       return `${workflowLabel(lap.workflow_name)}${issue || (pr === null ? '' : `, PR #${pr}`)}`;
