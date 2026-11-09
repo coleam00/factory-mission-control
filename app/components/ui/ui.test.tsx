@@ -239,3 +239,14 @@ test('a recommended OptionTile paints its consequence in fg-2, a plain one in fg
   expect(recommended).not.toContain('--v3-fg-3');
   expect(plain).toContain('--v3-fg-3');
 });
+
+test('a TimelineRow dot sits in a box as tall as the time line, nested or not', () => {
+  for (const nested of [false, true]) {
+    const html = renderToStaticMarkup(
+      <TimelineRow state="done" name="step" time="2m" nested={nested} />,
+    );
+    expect(html).toMatch(
+      /<span class="absolute top-1\.5 flex h-\[1lh\] items-center text-\[length:var\(--v3-t-meta\)\] left-/,
+    );
+  }
+});
