@@ -166,6 +166,28 @@ export function boardPhase(ctx: LiveContext): LivePhase {
     );
   }
 
+  const PILL_FIT = `(() => [...document.querySelectorAll('[data-board-stage] [data-work-item]')].flatMap((tile) => {
+    const pills = [...tile.firstElementChild.children];
+    const box = tile.getBoundingClientRect();
+    return pills.flatMap((p) => {
+      const r = p.getBoundingClientRect();
+      const lines = Math.round(r.height / (parseFloat(getComputedStyle(p).lineHeight) || r.height));
+      return r.right > box.right + 0.5 || lines > 1 ? [tile.dataset.workItem + ' ' + p.textContent] : [];
+    });
+  }))()`;
+
+  async function pillsOutsideTiles(page: Page): Promise<string[]> {
+    const failures: string[] = [];
+    for (const width of [760, 1000, 1264, 1440]) {
+      await page.setViewport(width);
+      const bad = await page.evaluate<string[]>(PILL_FIT);
+      for (const what of bad)
+        failures.push(`board at ${width}px: pill outside its tile or wrapped: ${what}`);
+    }
+    await page.setViewport(1440);
+    return failures;
+  }
+
   const open = async (page: Page, path: string) => {
     await page.goto(`${ctx.base}${path}`);
     await page.evaluate<boolean>(
@@ -203,6 +225,7 @@ export function boardPhase(ctx: LiveContext): LivePhase {
         await open(page, path);
         ctx.save(FILES.shot, await page.screenshot(1440));
         failures.push(...(await pipelineMismatches(page, FACTORY)));
+        failures.push(...(await pillsOutsideTiles(page)));
         await open(page, table);
         failures.push(...(await mismatches(page, FACTORY, null)));
         const merged = await run<BoardRow>('board', FACTORY);

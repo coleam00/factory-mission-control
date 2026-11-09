@@ -170,15 +170,17 @@ function Pipeline({
   const { filed, tracked, dropped } = view.found;
   return (
     <div className="space-y-2.5">
-      <div className="grid grid-cols-1 gap-2.5 min-[760px]:grid-cols-5">
-        {stages.map((stage) => (
-          <StageCard
-            key={stage.id}
-            stage={stage}
-            moreHref={moreHref}
-            older={stage.id === 'merged' ? older : null}
-          />
-        ))}
+      <div className="@container">
+        <div className="grid grid-cols-1 gap-2.5 min-[760px]:grid-cols-2 @min-[720px]:grid-cols-5">
+          {stages.map((stage) => (
+            <StageCard
+              key={stage.id}
+              stage={stage}
+              moreHref={moreHref}
+              older={stage.id === 'merged' ? older : null}
+            />
+          ))}
+        </div>
       </div>
       <div className="grid grid-cols-1 gap-2.5 min-[760px]:grid-cols-2">
         <Card
