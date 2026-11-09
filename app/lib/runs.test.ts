@@ -39,11 +39,12 @@ const run = (over: Partial<RunRow> = {}): RunRow => ({
 });
 
 test('a duration reads in at most two units', () => {
-  expect([0, 39, 59.9, 60, 2760, 11520, 11580, 90000, 86400].map(formatTook)).toEqual([
+  expect([0, 39, 59.9, 60, 100, 2760, 11520, 11580, 90000, 86400].map(formatTook)).toEqual([
     '0s',
     '39s',
     '59s',
     '1m',
+    '1m 40s',
     '46m',
     '3h 12m',
     '3h 13m',

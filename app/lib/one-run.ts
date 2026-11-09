@@ -158,12 +158,12 @@ export function runTitle(lap: OneLapRow, timeline: readonly TimelineEntry[]): st
   }
 }
 
-/** Why a skipped step did not run, from the steps around it and the stored map. */
+/** Why a skipped step did not run, from the steps around it and the stored map; null when none is recorded. */
 export function skipReason(
   row: StepAttemptRow,
   scope: readonly StepAttemptRow[],
   map: readonly LapMapRow[],
-): string {
+): string | null {
   const ordered = attemptsInRunOrder(scope);
   const at = ordered.indexOf(row);
   if (ordered.slice(0, Math.max(at, 0)).some((other) => other.status === 'failed')) {
@@ -173,7 +173,23 @@ export function skipReason(
   const node = map.find((r) => r.path === mapPathOf(row.step_id, known));
   if (node?.when_condition) return `when: ${node.when_condition}`;
   if (node?.trigger_rule) return `trigger rule ${node.trigger_rule}`;
-  return 'skipped';
+  return null;
+}
+
+/** Consecutive items that satisfy `skipped`, gathered into one `{ skipped }` group; the rest pass through. */
+export function collapseSkipped<T>(
+  items: readonly T[],
+  skipped: (item: T) => boolean,
+): (T | { skipped: T[] })[] {
+  const out: (T | { skipped: T[] })[] = [];
+  for (const item of items) {
+    const last = out.at(-1);
+    if (!skipped(item)) out.push(item);
+    else if (last !== undefined && typeof last === 'object' && last !== null && 'skipped' in last) {
+      (last as { skipped: T[] }).skipped.push(item);
+    } else out.push({ skipped: [item] });
+  }
+  return out;
 }
 
 /** The run's latest failed attempt of `stepId`, else of any step. */
@@ -291,12 +307,9 @@ export function managerRead(
         parts.push(
           { text: ' ' },
           { text: 'Resume', bold: true },
-          { text: ` re-runs ${estimate.step} and what follows, ` },
+          { text: ` re-runs ${estimate.step} and what follows` },
           {
-            text:
-              estimate.cost === null
-                ? 'but this run has no cost for them yet.'
-                : `for about ${formatCost(estimate.cost)}.`,
+            text: estimate.cost === null ? '.' : `, for about ${formatCost(estimate.cost)}.`,
           },
         );
       }
