@@ -2,7 +2,7 @@ import { expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { createMemoryRouter, RouterProvider } from 'react-router';
 import { PLACES } from '../routing';
-import { currentPlace, PlaceLinks } from './ScreenNav';
+import { currentPlace, PlaceLinks, RunsCountBody } from './ScreenNav';
 
 const FACTORY = 'mission-control';
 
@@ -112,4 +112,12 @@ test('following a place’s link moves the router there', async () => {
       .filter((l) => l.current)
       .map((l) => l.name),
   ).toEqual(['Runs']);
+});
+
+test('the Runs count is the status strip’s running count, empty until it is known', () => {
+  const html = (rows: Parameters<typeof RunsCountBody>[0]['rows']) =>
+    renderToStaticMarkup(<RunsCountBody rows={rows} />);
+  expect(html([{ running: 2 }])).toMatch(/data-runs-count[^>]*>2<\/span>/);
+  expect(html([{ running: 0 }])).toMatch(/data-runs-count[^>]*>0<\/span>/);
+  expect(html(undefined)).toMatch(/data-runs-count[^>]*><\/span>/);
 });

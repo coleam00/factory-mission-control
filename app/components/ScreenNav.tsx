@@ -5,6 +5,7 @@ import { useFactory, useUrlFactory } from '../live/FactoryProvider';
 import { LivePanel } from '../live/LivePanel';
 import { type Place, PLACES, type PlacePath, placeHref } from '../routing';
 import { DecisionsCount } from './DecisionsCount';
+import type { StatusStripRow } from './FactoryStrip';
 
 /** The places' glyphs, 16 px, from the v3 mockup. */
 const ICON: Record<PlacePath, ReactElement> = {
@@ -45,7 +46,20 @@ export function currentPlace(pathname: string, factory: string, place: Place): b
 function CountFor({ place, factory }: { place: Place; factory: string }): ReactNode {
   if (place.path === '') return <DecisionsCount factory={factory} />;
   if (place.path === 'board') return <BoardCount factory={factory} />;
+  if (place.path === 'runs') return <RunsCount factory={factory} />;
   return null;
+}
+
+/** A place's count: mono, `--v3-fg-2` so it keeps 4.5:1 on the current place's raised background. */
+export function NavCount({ attr, children }: { attr: string; children: ReactNode }): ReactElement {
+  return (
+    <span
+      {...{ [attr]: '' }}
+      className="font-mono text-[length:var(--v3-t-micro)] text-[color:var(--v3-fg-2)] tabular-nums"
+    >
+      {children}
+    </span>
+  );
 }
 
 /** The Board's number of open work items, from the board query the Board screen reads. */
@@ -58,15 +72,34 @@ function BoardCount({ factory }: { factory: string }): ReactElement {
       className="inline"
     >
       {(rows) => (
-        <span
-          data-board-count
-          className="font-mono text-[length:var(--v3-t-micro)] text-[color:var(--v3-fg-3)] tabular-nums"
-        >
+        <NavCount attr="data-board-count">
           {rows === undefined
             ? ''
             : rows.filter((row) => row.kind === 'item' && row.state === 'open').length}
-        </span>
+        </NavCount>
       )}
+    </LivePanel>
+  );
+}
+
+/** The Runs count as the status strip's running count, so the nav and the footer agree. */
+export function RunsCountBody({
+  rows,
+}: {
+  rows: readonly Pick<StatusStripRow, 'running'>[] | undefined;
+}): ReactElement {
+  return <NavCount attr="data-runs-count">{rows?.[0]?.running ?? ''}</NavCount>;
+}
+
+function RunsCount({ factory }: { factory: string }): ReactElement {
+  return (
+    <LivePanel<StatusStripRow>
+      query="status-strip"
+      name="runs-count:status-strip"
+      factory={factory}
+      className="inline"
+    >
+      {(rows) => <RunsCountBody rows={rows} />}
     </LivePanel>
   );
 }
