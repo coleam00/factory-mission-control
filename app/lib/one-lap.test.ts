@@ -135,7 +135,7 @@ const lap = (over: Partial<OneLapRow>): OneLapRow => ({
   issue_url: null,
   route: 'simple',
   depth: null,
-  pr: null,
+  pr_number: null,
   review_status: null,
   review_outcome: null,
   review_delivers: null,

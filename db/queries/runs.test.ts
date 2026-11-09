@@ -177,6 +177,19 @@ describe('the runs query on rows it inserts', () => {
       );
     }));
 
+  test('a build-queue run whose pull request only its round names shows that PR', () =>
+    inRollback(async (tx) => {
+      const id = await lap(tx, 'archon-build-queue', 'completed', [
+        [
+          'ship__deliver__rounds.round',
+          'completed',
+          { round: 1, pr_url: 'https://github.com/o/r/pull/565' },
+        ],
+      ]);
+      const row = (await allRuns(tx, FACTORY, '', false)).find((r) => r.run_id === id);
+      expect(row?.pr_number).toBe(565);
+    }));
+
   test('hiding idle polls takes out exactly the idle number, and no failed run or other check is one', () =>
     inRollback(async (tx) => {
       const before = await page(tx, FACTORY, { hideIdle: false });

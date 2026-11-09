@@ -63,7 +63,7 @@ describe('one-lap on the seed', () => {
         issue_url: 'https://github.com/coleam00/factory-mission-control/issues/3',
         route: 'simple',
         depth: 'normal',
-        pr: '#103',
+        pr_number: 103,
         review_status: 'completed',
         review_outcome: 'merge',
         review_delivers: 'all',

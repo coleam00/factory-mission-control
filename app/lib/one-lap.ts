@@ -66,7 +66,7 @@ export interface OneLapRow {
   issue_url: string | null;
   route: string | null;
   depth: string | null;
-  pr: string | null;
+  pr_number: number | null;
   review_status: string | null;
   review_outcome: string | null;
   review_delivers: string | null;
