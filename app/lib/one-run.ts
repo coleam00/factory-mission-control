@@ -315,6 +315,8 @@ export function managerRead(
     }
     case 'cancelled':
       return plain({ text: 'It was cancelled.' });
+    case 'pending':
+      return plain({ text: 'It has not started yet.' });
     default: {
       const current = rows.filter((row) => row.status === 'running').at(-1);
       return current === undefined

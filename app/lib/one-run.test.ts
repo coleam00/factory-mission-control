@@ -215,3 +215,9 @@ test('a paused, finished, cancelled or running run is read in one sentence', () 
   expect(read({ status: 'cancelled' })).toBe('It was cancelled.');
   expect(read({ status: 'running' })).toBe('It is running ask now.');
 });
+
+test('a pending run reads as not started, not as running', () => {
+  const read = text(managerRead(lap({ status: 'pending' }), [], runTimeline([])));
+  expect(read).toBe('It has not started yet.');
+  expect(read).not.toBe('It is running.');
+});
