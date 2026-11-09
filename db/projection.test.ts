@@ -559,9 +559,7 @@ test('a skipped step without timing is dated by its event', async () => {
      VALUES ($1, 'node_skipped', 'land', $2, '2026-10-25T12:03:00Z')`,
     [runId, JSON.stringify({ reason: 'when: false' })],
   );
-  const [attempt] = await db.query(
-    'SELECT event_at::text AS event_at FROM mc.lap_step_attempts',
-  );
+  const [attempt] = await db.query('SELECT event_at::text AS event_at FROM mc.lap_step_attempts');
   expect(new Date(String(attempt?.event_at)).toISOString()).toBe('2026-10-25T12:03:00.000Z');
 });
 
