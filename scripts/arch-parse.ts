@@ -35,7 +35,7 @@ export const ARCH_TABLES = [
   'arch_subagents',
   'arch_hooks',
 ] as const;
-type ArchTable = (typeof ARCH_TABLES)[number];
+export type ArchTable = (typeof ARCH_TABLES)[number];
 
 const USAGE =
   'usage: bun run arch:parse <archon-sha> <factory-sha> [--archon-path <dir holding sdlc/>] [--factory-path <template dir>] [--package-path <factory package dir>] | bun run arch:parse:main ... (the owner, at a terminal)';

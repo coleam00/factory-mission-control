@@ -10,7 +10,7 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { type PackVersion, parseVersion } from '../../parsers/pack';
-import { archRows } from '../arch-parse';
+import { ARCH_TABLES, type ArchTable, archRows } from '../arch-parse';
 import { insert, lit, type SqlRow } from './sql';
 
 type Edit = { file: string } & ({ find: string; replace: string } | { append: string });
@@ -116,22 +116,25 @@ export function parseVersions(repoRoot: string): { v1: PackVersion; v2: PackVers
 /** One architecture table: its rows without the version key, and the columns that key a row. */
 type Table = { name: string; key: string[]; rows: SqlRow[] };
 
+/** A table added to ARCH_TABLES fails to compile here until its key is named. */
+const TABLE_KEYS: Record<ArchTable, string[]> = {
+  arch_workflows: ['name'],
+  arch_steps: ['workflow', 'path'],
+  arch_edges: ['workflow', 'from_path', 'to_path'],
+  arch_texts: ['path'],
+  arch_scripts: ['path'],
+  arch_subagents: ['workflow', 'step_path', 'name'],
+  arch_hooks: ['path'],
+};
+
 /** The mc.arch_* rows of one parsed version, as production's writer builds them. */
 function tables(version: PackVersion): Table[] {
   const rows = archRows(version);
-  return [
-    { name: 'mc.arch_workflows', key: ['name'], rows: rows.arch_workflows },
-    { name: 'mc.arch_steps', key: ['workflow', 'path'], rows: rows.arch_steps },
-    { name: 'mc.arch_edges', key: ['workflow', 'from_path', 'to_path'], rows: rows.arch_edges },
-    { name: 'mc.arch_texts', key: ['path'], rows: rows.arch_texts },
-    { name: 'mc.arch_scripts', key: ['path'], rows: rows.arch_scripts },
-    {
-      name: 'mc.arch_subagents',
-      key: ['workflow', 'step_path', 'name'],
-      rows: rows.arch_subagents,
-    },
-    { name: 'mc.arch_hooks', key: ['path'], rows: rows.arch_hooks },
-  ];
+  return ARCH_TABLES.map((name) => ({
+    name: `mc.${name}`,
+    key: TABLE_KEYS[name],
+    rows: rows[name],
+  }));
 }
 
 export type ArchKey = { archon_sha: string; factory_sha: string; parsed_at: string };
