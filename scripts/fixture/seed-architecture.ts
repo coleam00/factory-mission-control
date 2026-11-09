@@ -116,37 +116,6 @@ export function parseVersions(repoRoot: string): { v1: PackVersion; v2: PackVers
 /** One architecture table: its rows without the version key, and the columns that key a row. */
 type Table = { name: string; key: string[]; rows: SqlRow[] };
 
-function steps(workflow: string, all: Step[], parent: string | null, out: SqlRow[]): void {
-  for (const step of all) {
-    out.push({
-      workflow,
-      path: step.path,
-      parent_path: parent,
-      position: out.length,
-      step_id: step.id,
-      kind: step.kind,
-      description: step.description,
-      model: step.model,
-      when_condition: step.when,
-      depends_on: step.dependsOn,
-      trigger_rule: step.triggerRule,
-      include: step.include,
-      child_workflow: step.childWorkflow,
-      round_cap: step.roundCap,
-      command: step.command,
-      command_file: step.commandFile,
-      script: step.script,
-      script_file: step.scriptFile,
-      runtime: step.runtime,
-      bash: step.bash,
-      prompt: step.prompt,
-      defined_in: step.definedIn,
-      file: step.file,
-    });
-    steps(workflow, step.steps, step.path, out);
-  }
-}
-
 function subagents(workflow: string, all: Step[], out: SqlRow[]): void {
   for (const step of all) {
     for (const agent of step.agents) {
@@ -163,15 +132,12 @@ function subagents(workflow: string, all: Step[], out: SqlRow[]): void {
   }
 }
 
-/** The mc.arch_* rows of one parsed version (the mapping is this seed's, until 12 item 9's job). */
+/** The mc.arch_* rows of one parsed version (mc.arch_steps comes from arch-parse's mapping; the other tables are mapped here). */
 function tables(version: PackVersion): Table[] {
-  const stepRows: SqlRow[] = [];
+  const stepRows = archRows(version).arch_steps as SqlRow[];
   const subagentRows: SqlRow[] = [];
   const edgeRows = new Map<string, SqlRow>();
   for (const workflow of version.workflows) {
-    const own: SqlRow[] = [];
-    steps(workflow.name, workflow.steps, null, own);
-    stepRows.push(...own);
     subagents(workflow.name, workflow.steps, subagentRows);
     for (const edge of workflow.edges) {
       edgeRows.set(JSON.stringify([workflow.name, edge.from, edge.to]), {
