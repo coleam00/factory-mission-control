@@ -79,7 +79,21 @@ const phoneFit = `(() => {
   };
 })()`;
 
-const chipNow = `document.querySelector('aside[data-manager] [data-manager-context] span')?.textContent ?? null`;
+/**
+ * A reloaded page holds no answers, and a column shorter than the viewport lays out the same under
+ * `h-screen` and `min-h-screen`. Fill the conversation scroller past its height so the fit
+ * measurement can tell them apart; reports whether the scroller now overflows.
+ */
+const overflowConversation = `(() => {
+  const scroller = document.querySelector('aside[data-manager="tab"] [data-manager-context]')?.parentElement;
+  if (!scroller) return false;
+  const filler = document.createElement('div');
+  filler.style.height = window.innerHeight * 2 + 'px';
+  scroller.appendChild(filler);
+  return scroller.scrollHeight > scroller.clientHeight;
+})()`;
+
+const chipNow =`document.querySelector('aside[data-manager] [data-manager-context] span')?.textContent ?? null`;
 
 /** A message of `kind` has ended, or its notices say why it will not. */
 const messageEnded = (kind: string) =>
@@ -185,6 +199,9 @@ export function managerPhase(ctx: LiveContext): LivePhase {
       await page.goto(url());
       if (!(await waitFor(page, `document.querySelector('aside[data-manager="tab"]') !== null`))) {
         mismatches.push('the Manager tab did not open on #manager at 390');
+      }
+      if (!(await page.evaluate<boolean>(overflowConversation))) {
+        mismatches.push('the Manager conversation could not be made to overflow at 390, so the fit was not measured');
       }
       const fit = await page.evaluate<{ scrolls: boolean; inputAboveBar: boolean }>(phoneFit);
       if (fit.scrolls) mismatches.push('the Manager tab scrolls the page at 390');
