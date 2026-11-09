@@ -21,8 +21,11 @@ import { readFactoryNames } from './factories';
 import { MANAGER_LIMITS, readOnlyQuery } from './manager-sql';
 import {
   AnswerSplitter,
+  answerLabel,
   type ChatRequest,
   encodeEvent,
+  MAX_MESSAGE_CHARS,
+  MAX_MESSAGES,
   MAX_PROPOSALS,
   MAX_RUNS,
   type ManagerEvent,
@@ -32,6 +35,7 @@ import {
   type RawStructure,
   RESUMABLE_STATUSES,
   type RunSummary,
+  TEXT_ANSWER_LABEL,
 } from './manager-stream';
 import { READ_TOOL_NAMES, TOOL_SERVER } from './manager-tools';
 
@@ -142,9 +146,6 @@ function spentToday(manager: Manager): number {
   if (manager.spend.day !== today) manager.spend = { day: today, usd: 0 };
   return manager.spend.usd;
 }
-
-const MAX_MESSAGES = 20;
-const MAX_MESSAGE_CHARS = 4000;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -421,11 +422,11 @@ async function proposalEvent(
         occurrence,
         option: choice.id,
         text: null,
-        label: `Answer "${choice.label ?? choice.id}"`,
+        label: answerLabel(choice.label ?? choice.id),
       };
     }
     if (raw.text === undefined || raw.text.length < 1 || raw.text.length > 2000) return undefined;
-    return { ...base, occurrence, option: null, text: raw.text, label: 'Answer with your text' };
+    return { ...base, occurrence, option: null, text: raw.text, label: TEXT_ANSWER_LABEL };
   }
   if (raw.action !== 'resume') {
     const unknown: never = raw.action;

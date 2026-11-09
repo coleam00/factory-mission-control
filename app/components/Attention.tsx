@@ -392,11 +392,14 @@ function Handled({
   const [open, setOpen] = useState(false);
   const rows = source.state === 'error' ? [] : handledToday(source.rows ?? [], now);
   if (rows.length === 0) return null;
+  const handled = rows.filter((row) => row.exit_code === 0);
   return (
     <div data-handled className="mt-[26px] border-t border-[color:var(--v3-line)] pt-3.5">
       <div className="flex flex-wrap items-center gap-2 text-[length:var(--v3-t-meta)] text-[color:var(--v3-fg-3)]">
         <StateDot state="done" />
-        The manager handled {rows.length} today: {handledSummary(rows)}.
+        {handled.length === 0
+          ? 'None of the manager’s actions today went through.'
+          : `The manager handled ${handled.length} today: ${handledSummary(handled)}.`}
         <Button variant="text" aria-expanded={open} onClick={() => setOpen(!open)}>
           See them
         </Button>

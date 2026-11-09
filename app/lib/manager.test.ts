@@ -1,22 +1,32 @@
 import { expect, test } from 'bun:test';
-import type { ManagerEvent } from '../../server/manager-stream';
+import {
+  answerChoice,
+  answerLabel,
+  type ManagerEvent,
+  TEXT_ANSWER_LABEL,
+} from '../../server/manager-stream';
 import {
   applyEvent,
+  askAbout,
   endWithout,
   type HandledRow,
   handledSummary,
   handledToday,
   historyFor,
   linkify,
+  type ManagerContext,
   type ManagerLink,
   type ManagerMessage,
   managerPlace,
   postBriefing,
   postChat,
-  proposalChoice,
   readEvents,
   reply,
 } from './manager';
+import { lapHref } from './one-lap';
+import { PLACES, placeAddress } from './places';
+import { stepHref } from './step-detail';
+import { workItemHref } from './work-item';
 
 const RUN = '5eed0001-0000-4000-8000-0000000000a1';
 const place = (path: string, query = '', what?: string) =>
@@ -184,7 +194,37 @@ test('the handled line counts today only, and says it in plural and singular', (
   expect(handledSummary(today.slice(0, 1))).toBe('resumed 1 run');
 });
 
-test('an answer proposal quotes its choice, else it is the owner own words', () => {
-  expect(proposalChoice('Answer "Approve"')).toBe('Approve');
-  expect(proposalChoice('Answer with your text')).toBe('your text');
+test('an answer proposal label round-trips its choice, else it is the owner own words', () => {
+  expect(answerChoice(answerLabel('Approve "now"'))).toBe('Approve "now"');
+  expect(answerChoice(TEXT_ANSWER_LABEL)).toBe('your text');
+});
+
+test('Ask manager looks at the run and work item it was pressed on', () => {
+  expect(askAbout(RUN, 15)).toEqual({
+    context: { place: 'attention', run: RUN, item: 15 },
+    chip: 'Attention · #15',
+  });
+  expect(askAbout(RUN, null)).toEqual({
+    context: { place: 'attention', run: RUN },
+    chip: 'Attention · run 5eed0001',
+  });
+  expect(askAbout(null, null)).toEqual({ context: { place: 'attention' }, chip: 'Attention' });
+});
+
+test('every address the app writes is read back as the place it names', () => {
+  const factory = 'my factory';
+  const at = (href: string) =>
+    managerPlace(href.split('?')[0] ?? href, new URLSearchParams(), undefined);
+  for (const { path } of PLACES) {
+    const expected: ManagerContext['place'] = {
+      '': 'attention',
+      map: 'factory',
+      board: 'board',
+      runs: 'runs',
+    }[path] as ManagerContext['place'];
+    expect(at(placeAddress(factory, path)).context.place).toBe(expected);
+  }
+  expect(at(lapHref(factory, RUN)).context).toEqual({ place: 'run', run: RUN });
+  expect(at(workItemHref(factory, 42)).context).toEqual({ place: 'work', item: 42 });
+  expect(at(stepHref(factory, 'archon-loop', 'review one')).context).toEqual({ place: 'step' });
 });

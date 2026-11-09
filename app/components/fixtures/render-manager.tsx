@@ -63,7 +63,7 @@ function record() {
   return note;
 }
 
-let current: { unmount: () => void } | undefined;
+let current: { unmount: () => void; go: (url: string) => void } | undefined;
 
 /** Mounts the real shell over a fake dashboard server at `url`. */
 export function mount(url: string) {
@@ -84,7 +84,7 @@ export function mount(url: string) {
       if (target === '/api/actions' && init?.method === 'POST') {
         return Response.json({ id: 1, sent: false, ok: null, exit_code: null, summary: '' });
       }
-      if (target === '/api/actions') return Response.json({ factories: ['x'] });
+      if (target === '/api/actions') return Response.json({ factories: ['x', 'y'] });
       if (target === '/api/manager/briefing') {
         return lines(
           { type: 'text', text: 'Quiet night.' },
@@ -132,7 +132,7 @@ export function mount(url: string) {
   window.__MC_LIVE__ = {
     url: 'wss://test/',
     home: 'wss://test/',
-    factories: ['x'],
+    factories: ['x', 'y'],
     rewind: null,
     protocol: 'neon.realtime.v1',
     early: [JSON.stringify({ type: 'ready' })],
@@ -155,6 +155,7 @@ export function mount(url: string) {
   const root = createRoot(container);
   root.render(<RouterProvider router={router} />);
   current = {
+    go: (to) => void router.navigate(to),
     unmount() {
       root.unmount();
       container.remove();
@@ -186,5 +187,7 @@ export const shown = () => ({
   chip: q('[data-manager-context] span')?.textContent ?? null,
   surface: q('[data-manager]')?.dataset.manager ?? null,
 });
+
+export const go = (url: string) => current?.go(url);
 
 export const requests = () => window.__requests;

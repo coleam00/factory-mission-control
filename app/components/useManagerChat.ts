@@ -38,32 +38,41 @@ export function useManagerChat(factory: string | undefined, visible: boolean): M
     abort.current?.abort();
     abort.current = undefined;
     briefed.current = undefined;
+    history.current = [];
     setMessages([]);
     setBusy(false);
     return () => abort.current?.abort();
   }, [factory]);
 
   /** Streams `outcome` into the reply at `index`, whatever way it ends. */
-  const stream = useCallback(async (index: number, start: Promise<Outcome>) => {
-    const update = (change: (m: ManagerReply) => ManagerReply) =>
-      setMessages((all) =>
-        all.map((m, i) => (i === index && m.role === 'manager' ? change(m) : m)),
-      );
-    try {
-      const outcome = await start;
-      if ('failure' in outcome) return update((m) => failed(m, outcome.failure));
+  const stream = useCallback(
+    async (index: number, start: Promise<Outcome>, signal: AbortSignal) => {
+      const update = (change: (m: ManagerReply) => ManagerReply) => {
+        if (signal.aborted) return;
+        setMessages((all) =>
+          all.map((m, i) => (i === index && m.role === 'manager' ? change(m) : m)),
+        );
+      };
       try {
-        for await (const event of outcome.events) update((m) => applyEvent(m, event));
-      } finally {
-        update(endWithout);
+        const outcome = await start;
+        if ('failure' in outcome) return update((m) => failed(m, outcome.failure));
+        try {
+          for await (const event of outcome.events) update((m) => applyEvent(m, event));
+        } finally {
+          update(endWithout);
+        }
+      } catch (error) {
+        if ((error as { name?: string }).name === 'AbortError') return;
+        update((m) =>
+          failed(
+            m,
+            'The Manager could not be reached. Check that the dashboard server is running.',
+          ),
+        );
       }
-    } catch (error) {
-      if ((error as { name?: string }).name === 'AbortError') return;
-      update((m) =>
-        failed(m, 'The Manager could not be reached. Check that the dashboard server is running.'),
-      );
-    }
-  }, []);
+    },
+    [],
+  );
 
   useEffect(() => {
     if (!visible || factory === undefined || briefed.current === factory) return;
@@ -73,7 +82,7 @@ export function useManagerChat(factory: string | undefined, visible: boolean): M
     const index = history.current.length;
     setMessages((all) => [...all, reply('briefing')]);
     setBusy(true);
-    void stream(index, postBriefing(factory, controller.signal)).finally(() => {
+    void stream(index, postBriefing(factory, controller.signal), controller.signal).finally(() => {
       if (abort.current === controller) setBusy(false);
     });
   }, [visible, factory, stream]);
@@ -87,11 +96,13 @@ export function useManagerChat(factory: string | undefined, visible: boolean): M
       const index = history.current.length + 1;
       setMessages((all) => [...all, { role: 'owner', text: question }, reply('answer')]);
       setBusy(true);
-      void stream(index, postChat({ factory, context, messages: sent }, controller.signal)).finally(
-        () => {
-          if (abort.current === controller) setBusy(false);
-        },
-      );
+      void stream(
+        index,
+        postChat({ factory, context, messages: sent }, controller.signal),
+        controller.signal,
+      ).finally(() => {
+        if (abort.current === controller) setBusy(false);
+      });
     },
     [factory, busy, stream],
   );

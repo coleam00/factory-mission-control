@@ -118,7 +118,10 @@ export function managerPhase(ctx: LiveContext): LivePhase {
       }
       await waitFor(page, `document.querySelector('main [data-attention-count]') !== null`);
       const count = await page.evaluate<number | null>(
-        `Number(document.querySelector('main [data-attention-count]')?.getAttribute('data-attention-count') ?? NaN) || null`,
+        `(() => {
+          const el = document.querySelector('main [data-attention-count]');
+          return el === null ? null : Number(el.getAttribute('data-attention-count'));
+        })()`,
       );
       const shown = await page.evaluate<ShownPanel>(panelOnScreen);
       const mismatches = panelMismatches(shown, count, 'Attention', ATTENTION_QUESTIONS);

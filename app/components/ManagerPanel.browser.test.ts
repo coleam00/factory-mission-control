@@ -63,6 +63,15 @@ test('the panel only talks to the dashboard server: briefing, a question and a p
 
   const bodies = result.requests.map((r) => `${r.method ?? ''} ${r.url} ${r.body ?? ''}`);
   expect(bodies.some((b) => b.includes('/api/manager/briefing'))).toBe(true);
+  // The server refuses any key the action endpoint does not name, so the proposal's own `type` and `label` must not ride along.
+  const sent = result.requests.find((r) => r.url === '/api/actions' && r.method === 'POST');
+  expect(JSON.parse(sent?.body ?? '{}')).toEqual({
+    factory: 'x',
+    action: 'resume',
+    run_id: RUN,
+    from_step: null,
+    undone: true,
+  });
   const chat = result.requests.find((r) => r.url === '/api/manager/chat');
   expect(JSON.parse(chat?.body ?? '{}').context.place).toBe('attention');
   expect(
@@ -90,4 +99,23 @@ test('an address ending in #manager opens the phone tab, looking at the run on s
   );
   expect(seen.surface).toBe('tab');
   expect(seen.chip).toBe('Run 5eed0001');
+}, 30_000);
+
+test('switching factory with the panel open gives the new factory its own briefing', async () => {
+  await page.setViewport(1440);
+  const result = await page.evaluate<{ briefing: string | null; briefed: string[] }>(
+    `import('data:text/javascript;base64,${source}').then(async (m) => {
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      m.mount('/f/x');
+      await sleep(1200);
+      m.go('/f/y');
+      await sleep(1200);
+      return {
+        briefing: m.shown().briefing,
+        briefed: m.requests().filter((r) => r.url === '/api/manager/briefing').map((r) => r.body),
+      };
+    })`,
+  );
+  expect(result.briefing).toContain('Quiet night.');
+  expect(result.briefed).toEqual(['{"factory":"x"}', '{"factory":"y"}']);
 }, 30_000);

@@ -1,4 +1,5 @@
 import { type ReactElement, type ReactNode, useEffect, useRef, useState } from 'react';
+import { answerChoice } from '../../server/manager-stream';
 import { shortRunId } from '../lib/format';
 import {
   clock,
@@ -8,7 +9,6 @@ import {
   type ManagerPlace,
   type ManagerProposal,
   type ManagerReply,
-  proposalChoice,
 } from '../lib/manager';
 import { lapHref } from '../lib/one-lap';
 import { RUN_STATE, stateOf } from '../lib/states';
@@ -137,7 +137,7 @@ function Proposals({
             onClick={() =>
               start(request, {
                 item: null,
-                label: proposal.action === 'answer' ? proposalChoice(label) : '',
+                label: proposal.action === 'answer' ? answerChoice(label) : '',
               })
             }
           >

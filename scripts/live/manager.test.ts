@@ -13,6 +13,11 @@ test('a panel that matches the design and the page count has no mismatch', () =>
   expect(panelMismatches(shown, 7, 'Attention', QUESTIONS)).toEqual([]);
 });
 
+test('a quiet factory, with no items, is chip "Attention · 0 items"', () => {
+  const quiet = { ...shown, chip: 'Attention · 0 items' };
+  expect(panelMismatches(quiet, 0, 'Attention', QUESTIONS)).toEqual([]);
+});
+
 test('a wrong chip, copy or suggestion set is a mismatch', () => {
   const wrong = { ...shown, chip: 'Attention', placeholder: 'Ask', suggestions: [QUESTIONS[0]] };
   expect(panelMismatches(wrong, 7, 'Attention', QUESTIONS)).toHaveLength(3);

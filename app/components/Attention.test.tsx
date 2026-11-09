@@ -1,6 +1,7 @@
 import { expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { MemoryRouter } from 'react-router';
+import { decideCards, fixCards, ownerCards, unstickCards } from '../lib/attention-page';
 import type { DecideRow, UnstickRow } from '../lib/attention';
 import type { FailureGroupRow } from '../lib/failures';
 import type { HandledRow } from '../lib/manager';
@@ -219,4 +220,26 @@ test('every card offers Ask manager, and the handled line counts only the action
     handled: { rows: [handledRow(1, 'resume', new Date(NOW - 60_000))], state: 'error' },
   });
   expect(failed).not.toContain('data-handled');
+});
+
+test('the handled sentence counts only the actions that went through', () => {
+  const refused = { ...handledRow(2, 'resume', new Date(NOW - 30_000)), exit_code: 1 };
+  const unknown = { ...handledRow(3, 'resume', new Date(NOW - 20_000)), exit_code: null };
+  const mixed = render({
+    handled: ready([handledRow(1, 'resume', new Date(NOW - 60_000)), refused, unknown]),
+  });
+  expect(mixed).toContain('The manager handled 1 today: resumed 1 run.');
+  const none = render({ handled: ready([refused]) });
+  expect(none).toContain('None of the manager’s actions today went through.');
+});
+
+test('Ask manager on each kind of card carries that card’s run and work item', () => {
+  expect(decideCards([decide], 'f')[0]?.ask.context).toEqual({
+    place: 'attention',
+    run: RUN,
+    item: 15,
+  });
+  expect(ownerCards([owner])[0]?.ask.context).toEqual({ place: 'attention', item: 17 });
+  expect(unstickCards([stuck], 'f')[0]?.ask.context).toEqual({ place: 'attention', item: 7 });
+  expect(fixCards([failure], 'f')[0]?.ask.context).toEqual({ place: 'attention', run: RUN });
 });

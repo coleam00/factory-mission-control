@@ -4,7 +4,14 @@
  * request functions; the panel only draws what this returns. Only `/api/...` is called: the model
  * and its credentials stay on the dashboard server.
  */
-import type { ChatRequest, ManagerEvent, RunSummary } from '../../server/manager-stream';
+import {
+  type ChatRequest,
+  MAX_MESSAGE_CHARS,
+  MAX_MESSAGES,
+  type ManagerEvent,
+  type RunSummary,
+} from '../../server/manager-stream';
+import type { ActionRequest } from './actions';
 import { shortRunId } from './format';
 import { ORDER_PARAM, TABLE_VIEW, VIEW_PARAM } from './board';
 import { isRunId } from './one-lap';
@@ -257,9 +264,6 @@ export const failed = (message: ManagerReply, why: string): ManagerReply => ({
   notices: [...message.notices, why],
 });
 
-const MAX_MESSAGES = 20;
-const MAX_TEXT = 4000;
-
 /** What the server may be sent: at most its limits, ending with the new question. */
 export function historyFor(
   messages: readonly ManagerMessage[],
@@ -268,9 +272,9 @@ export function historyFor(
   const kept = messages.flatMap((m) =>
     m.text === '' || (m.role === 'manager' && m.kind === 'action')
       ? []
-      : [{ role: m.role, text: m.text.slice(0, MAX_TEXT) }],
+      : [{ role: m.role, text: m.text.slice(0, MAX_MESSAGE_CHARS) }],
   );
-  return [...kept, { role: 'owner' as const, text: question.slice(0, MAX_TEXT) }].slice(
+  return [...kept, { role: 'owner' as const, text: question.slice(0, MAX_MESSAGE_CHARS) }].slice(
     -MAX_MESSAGES,
   );
 }
@@ -325,7 +329,7 @@ export const HANDLED_QUERY = 'handled';
 /** A row of `db/queries/handled.sql`: an action the owner sent from the dashboard. */
 export interface HandledRow {
   id: number;
-  action: 'answer' | 'resume';
+  action: ActionRequest['action'];
   run_id: string;
   option: string | null;
   from_step: string | null;
@@ -343,18 +347,13 @@ export function handledToday(rows: readonly HandledRow[], now: number): HandledR
 /** "answered 1 question, resumed 2 runs": the answer part first, a part with none left out. */
 export function handledSummary(rows: readonly HandledRow[]): string {
   const answers = rows.filter((r) => r.action === 'answer').length;
-  const resumes = rows.length - answers;
+  const resumes = rows.filter((r) => r.action === 'resume').length;
   return [
     answers === 0 ? null : `answered ${answers} ${answers === 1 ? 'question' : 'questions'}`,
     resumes === 0 ? null : `resumed ${resumes} ${resumes === 1 ? 'run' : 'runs'}`,
   ]
     .filter((part) => part !== null)
     .join(', ');
-}
-
-/** The choice an answer proposal's label quotes, else the owner's own words. */
-export function proposalChoice(label: string): string {
-  return /^Answer "(.*)"$/s.exec(label)?.[1] ?? 'your text';
 }
 
 /** HH:MM in the viewer's time zone; empty when there is no time. */
