@@ -9,6 +9,12 @@ const V1 = '8e3e1cefaf1e1b7955789d6a43a81b6c2dbd7082';
 const V2 = '5ffd60c6c6e591487f2fbb5ec67ccc8fc55ca915';
 const V3 = '58c5f774e1bbe57c80c85ee91df8d44075664232';
 
+type PlanNode = { [key: string]: unknown; Plans?: PlanNode[] };
+const lapStepScans = (node: PlanNode): PlanNode[] => [
+  ...(node['Relation Name'] === 'lap_steps' ? [node] : []),
+  ...(node.Plans ?? []).flatMap(lapStepScans),
+];
+
 describe('home-map on the seed', () => {
   let db: Db;
   const rows = async (factory = 'mission-control', pin = '') =>
@@ -214,8 +220,16 @@ describe('home-map on the seed', () => {
       const plan = (await db.query(`EXPLAIN (ANALYZE, FORMAT JSON) ${sql}`, [
         'scale-factory',
         '',
-      ])) as unknown as { 'QUERY PLAN': { 'Execution Time': number }[] }[];
+      ])) as unknown as { 'QUERY PLAN': { 'Execution Time': number; Plan: PlanNode }[] }[];
       expect(plan[0]['QUERY PLAN'][0]['Execution Time']).toBeLessThan(500);
+      // The probes look the step up by its key for each lap; a plain join reads every lap step instead.
+      const keyed = (step: string) =>
+        lapStepScans(plan[0]['QUERY PLAN'][0].Plan).some(
+          (n) =>
+            n['Node Type'] === 'Index Scan' &&
+            String(n['Index Cond']).includes(`(step_id = '${step}'::text)`),
+        );
+      expect([keyed('land'), keyed('record')]).toEqual([true, true]);
     } finally {
       await db.query('ROLLBACK');
     }
@@ -233,6 +247,29 @@ describe('home-map on the seed', () => {
     const failing = (await rows()).filter((r) => r.kind === 'failing').map((r) => r.number);
     expect(failing).toEqual(recount.map((r) => r.number as number));
     expect(failing).toEqual([109]);
+  });
+
+  test("another factory's FAIL check on a pull request number open here does not fail it", async () => {
+    await db.query('BEGIN');
+    try {
+      await db.query(
+        `INSERT INTO mc.pull_requests (factory, number, title, state, head_sha, url, created_at, updated_at)
+          VALUES ('mission-control', 9001, 'p', 'open', 'h', 'u', now(), now())`,
+      );
+      await db.query(
+        `INSERT INTO mc.laps (run_id, factory, workflow_name, status, started_at)
+          VALUES ('00000000-0000-4000-9000-0000000000f1', 'second-factory', 'archon-loop', 'completed', now())`,
+      );
+      await db.query(
+        `INSERT INTO mc.lap_steps (run_id, step_id, status, started_at, output)
+          VALUES ('00000000-0000-4000-9000-0000000000f1', 'check-app', 'completed', now(), '{"pr":9001,"overall":"FAIL"}')`,
+      );
+      const failing = (await rows()).filter((r) => r.kind === 'failing').map((r) => r.number);
+      expect(failing).not.toContain(9001);
+      expect((await rows('second-factory')).filter((r) => r.kind === 'failing')).toEqual([]);
+    } finally {
+      await db.query('ROLLBACK');
+    }
   });
 
   test('a later passing check takes a pull request off failing', async () => {
