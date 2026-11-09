@@ -15,7 +15,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { isAbsolute, join } from 'node:path';
 import type { Hono } from 'hono';
 import type { ActionBody, ActionRequest, ActionResult } from '../app/lib/actions';
-import { isSomethingElse, parseChoices, takesFreeText } from '../app/lib/attention';
+import { ANSWER_TEXT_MAX, parseChoices, resolveAnswer } from '../app/lib/attention';
 import { isRunId } from '../app/lib/one-lap';
 import { type Db, openDb } from '../scripts/lib/db';
 import type { Env } from './check-env';
@@ -121,7 +121,8 @@ export function parseActionBody(body: unknown): ActionBody | string {
   }
   if (!boundedString(body.occurrence, 200)) return 'occurrence must be a string';
   if (!nullOrBounded(body.option, 200)) return 'option must be an option id or null';
-  if (!nullOrBounded(body.text, 2000)) return 'text must be 1-2000 characters or null';
+  if (!nullOrBounded(body.text, ANSWER_TEXT_MAX))
+    return `text must be 1-${ANSWER_TEXT_MAX} characters or null`;
   if ((body.option === null) === (body.text === null)) return 'send exactly one of option and text';
   return {
     ...common,
@@ -131,6 +132,11 @@ export function parseActionBody(body: unknown): ActionBody | string {
     text: body.text,
   };
 }
+
+/** A row when the run is in a status Archon can resume. */
+export const RESUMABLE_RUN_SQL = `SELECT 1 AS found FROM mc.laps
+  WHERE factory = $1 AND run_id::text = $2
+    AND status IN (${RESUMABLE_STATUSES.map((status) => `'${status}'`).join(', ')})`;
 
 /** A row when the run failed and `$3` is the step Archon re-runs: its stop step or a failed step. */
 export const RESUME_FROM_SQL = `SELECT 1 AS found FROM mc.laps l
@@ -143,11 +149,7 @@ type Checked = { argvTail: string[]; option: string | null } | { status: 409; er
 /** Checks a request against the database; the argv is built from its row, not from the request. */
 export async function checkAgainstDb(db: Db, request: ActionRequest): Promise<Checked> {
   if (request.action === 'resume') {
-    const statuses = RESUMABLE_STATUSES.map((status) => `'${status}'`).join(', ');
-    const [lap] = await db.query(
-      `SELECT 1 AS found FROM mc.laps WHERE factory = $1 AND run_id::text = $2 AND status IN (${statuses})`,
-      [request.factory, request.run_id],
-    );
+    const [lap] = await db.query(RESUMABLE_RUN_SQL, [request.factory, request.run_id]);
     if (!lap) return { status: 409, error: 'the run is not failed or paused' };
     if (request.from_step !== null) {
       const [step] = await db.query(RESUME_FROM_SQL, [
@@ -166,20 +168,13 @@ export async function checkAgainstDb(db: Db, request: ActionRequest): Promise<Ch
   if (!row || row.occurrence_id !== request.occurrence) {
     return { status: 409, error: 'the question is no longer open' };
   }
-  const options = parseChoices(String(row.options));
-  let option = request.option;
-  const text: string[] = [];
-  if (option !== null) {
-    const offered = options.find((o) => o.id === option);
-    if (offered === undefined) return { status: 409, error: 'that option is not offered' };
-    if (isSomethingElse(offered)) return { status: 409, error: 'that option needs your text' };
-  } else {
-    text.push(`--text=${request.text}`);
-    if (!takesFreeText(String(row.form))) {
-      option = options.find(isSomethingElse)?.id ?? null;
-      if (option === null) return { status: 409, error: 'this question takes no free text' };
-    }
-  }
+  const resolved = resolveAnswer(
+    { form: String(row.form), options: parseChoices(String(row.options)) },
+    request,
+  );
+  if ('error' in resolved) return { status: 409, error: resolved.error };
+  const option = resolved.option;
+  const text = request.text === null ? [] : [`--text=${request.text}`];
   return {
     argvTail: [
       'workflow',

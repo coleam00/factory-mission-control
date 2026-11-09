@@ -16,7 +16,7 @@ import {
   unstickCards,
 } from '../lib/attention-page';
 import type { AnswerRequest } from '../lib/actions';
-import type { DecideRow, UnstickRow } from '../lib/attention';
+import { ANSWER_TEXT_MAX, type DecideRow, type UnstickRow } from '../lib/attention';
 import type { FailureGroupRow } from '../lib/failures';
 import { since } from '../lib/laps';
 import { type OwnerQueueRow, waited } from '../lib/owner-queue';
@@ -122,7 +122,7 @@ function AnswerBox({
       <textarea
         aria-label="Your answer"
         value={text}
-        maxLength={2000}
+        maxLength={ANSWER_TEXT_MAX}
         onChange={(event) => setText(event.target.value)}
         className="min-h-[72px] w-full rounded-lg border border-[color:var(--v3-line)] bg-[var(--v3-sunk)] p-2 text-[length:var(--v3-t-meta)] text-[color:var(--v3-fg)]"
       />
