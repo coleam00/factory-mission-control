@@ -112,12 +112,15 @@ export function PlaceLinks({
   factory,
   layout,
   onNavigate,
+  quiet = false,
   count = (place) => <CountFor place={place} factory={factory ?? ''} />,
 }: {
   factory: string | undefined;
   layout: 'side' | 'tabs';
   /** Called when a place's link is followed. */
   onNavigate?: () => void;
+  /** No place is marked current, because the phone's Manager holds the highlight. */
+  quiet?: boolean;
   /** What follows a place's name; the live counts by default. */
   count?: (place: Place) => ReactNode;
 }): ReactElement {
@@ -127,7 +130,7 @@ export function PlaceLinks({
       {factory === undefined
         ? null
         : PLACES.map((place) => {
-            const current = currentPlace(pathname, factory, place);
+            const current = !quiet && currentPlace(pathname, factory, place);
             return (
               <Link
                 key={place.path}
@@ -141,7 +144,7 @@ export function PlaceLinks({
                           ? 'bg-[var(--v3-raised)] font-medium text-[color:var(--v3-fg)]'
                           : 'text-[color:var(--v3-fg-2)]'
                       }`
-                    : `relative grid justify-items-center gap-[3px] text-[11px] ${
+                    : `grid justify-items-center gap-[3px] text-[11px] ${
                         current ? 'text-[color:var(--v3-fg)]' : 'text-[color:var(--v3-fg-3)]'
                       }`
                 }
@@ -150,7 +153,7 @@ export function PlaceLinks({
                 {place.label}
                 <span
                   className={
-                    layout === 'side' ? 'ml-auto' : 'absolute -top-0.5 left-[calc(50%+4px)]'
+                    layout === 'side' ? 'ml-auto' : 'whitespace-nowrap empty:hidden'
                   }
                 >
                   {count(place)}
@@ -166,9 +169,11 @@ export function PlaceLinks({
 export function ScreenNav({
   layout,
   onNavigate,
+  quiet,
 }: {
   layout: 'side' | 'tabs';
   onNavigate?: () => void;
+  quiet?: boolean;
 }): ReactElement {
   const factory = useFactory();
   const { view } = useUrlFactory();
@@ -177,6 +182,7 @@ export function ScreenNav({
       factory={view === 'unknown' ? undefined : factory}
       layout={layout}
       onNavigate={onNavigate}
+      quiet={quiet}
     />
   );
 }

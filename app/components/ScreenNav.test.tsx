@@ -121,3 +121,20 @@ test('the Runs count is the status strip’s running count, empty until it is kn
   expect(html([{ running: 0 }])).toMatch(/data-runs-count[^>]*>0 live<\/span>/);
   expect(html(undefined)).toMatch(/data-runs-count[^>]*><\/span>/);
 });
+
+test('while the phone Manager is open no tab is current, and a tab’s count stays in the tab’s flow', () => {
+  const router = createMemoryRouter(
+    [
+      {
+        path: '*',
+        element: (
+          <PlaceLinks factory={FACTORY} layout="tabs" quiet count={() => <b>2 live</b>} />
+        ),
+      },
+    ],
+    { initialEntries: [`/f/${FACTORY}`] },
+  );
+  const html = renderToStaticMarkup(<RouterProvider router={router} />);
+  expect(html).not.toContain('aria-current');
+  expect(html).not.toContain('absolute');
+});

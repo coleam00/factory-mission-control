@@ -234,3 +234,7 @@ test('the engine version shows as its first eight characters, and nothing withou
   expect(html('bbbb2222cccc')).toContain('· engine bbbb2222');
   expect(html(null)).not.toContain('engine');
 });
+
+test('the factory name never wraps mid-word beside its caret', () => {
+  expect(render([], 'ready')).toMatch(/whitespace-nowrap">mission-control<\/span>/);
+});

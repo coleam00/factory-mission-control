@@ -130,7 +130,7 @@ function PhoneTabs({
       aria-label="Places"
       className="sticky bottom-0 grid grid-cols-5 border-t border-[color:var(--v3-line)] bg-[var(--v3-bg)] pt-1.5 pb-[calc(6px+env(safe-area-inset-bottom,0px))]"
     >
-      <ScreenNav layout="tabs" onNavigate={() => onManager(false)} />
+      <ScreenNav layout="tabs" onNavigate={() => onManager(false)} quiet={manager} />
       <button
         type="button"
         aria-pressed={manager}
