@@ -5,12 +5,16 @@ WITH lap AS (
 -- The run's workflow at the run's own pin: the newest pin with stored architecture committed before the lap
 -- started (a lap not started yet takes the newest). A lap older than every stored architecture
 -- (north-star's first laps) takes the oldest, and the steps that map lacks are drawn beside it.
+-- Only a version that holds the lap's workflow can draw it: the queue pack's build workflow lives
+-- in its own version, which no pin names, so it is the only candidate and its pin is null.
 version AS (
   SELECT a.archon_sha, a.factory_sha, p.sha AS pin
   FROM lap
-  CROSS JOIN mc.pins p
-  JOIN mc.arch_versions a ON a.archon_sha = p.archon_sha
-  ORDER BY p.committed_at <= coalesce(lap.started_at, 'infinity'::timestamptz) DESC,
+  CROSS JOIN mc.arch_versions a
+  LEFT JOIN mc.pins p ON p.archon_sha = a.archon_sha
+  WHERE EXISTS (SELECT 1 FROM mc.arch_steps s
+    WHERE s.archon_sha = a.archon_sha AND s.factory_sha = a.factory_sha AND s.workflow = lap.workflow_name)
+  ORDER BY p.committed_at <= coalesce(lap.started_at, 'infinity'::timestamptz) DESC NULLS LAST,
     CASE WHEN p.committed_at <= coalesce(lap.started_at, 'infinity'::timestamptz)
       THEN p.committed_at END DESC NULLS LAST,
     p.committed_at, a.parsed_at DESC

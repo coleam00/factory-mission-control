@@ -1,14 +1,16 @@
 WITH
--- The loop at the lap's own pin, as one-lap-map.sql picks it: each step's place in the loop
+-- The loop at the lap's own pin, as one-lap-map.sql picks it (only a version holding the lap's workflow, pinned or not): each step's place in the loop
 -- (Archon names a nested step by its path joined with `__`), so the browser lists the steps that
 -- never started in the loop's order, after those that ran (#191).
 version AS (
   SELECT a.archon_sha, a.factory_sha, l.workflow_name
   FROM mc.laps l
-  CROSS JOIN mc.pins p
-  JOIN mc.arch_versions a ON a.archon_sha = p.archon_sha
+  CROSS JOIN mc.arch_versions a
+  LEFT JOIN mc.pins p ON p.archon_sha = a.archon_sha
   WHERE l.factory = $1 AND l.run_id::text = $2
-  ORDER BY p.committed_at <= coalesce(l.started_at, 'infinity'::timestamptz) DESC,
+    AND EXISTS (SELECT 1 FROM mc.arch_steps s
+      WHERE s.archon_sha = a.archon_sha AND s.factory_sha = a.factory_sha AND s.workflow = l.workflow_name)
+  ORDER BY p.committed_at <= coalesce(l.started_at, 'infinity'::timestamptz) DESC NULLS LAST,
     CASE WHEN p.committed_at <= coalesce(l.started_at, 'infinity'::timestamptz)
       THEN p.committed_at END DESC NULLS LAST,
     p.committed_at, a.parsed_at DESC

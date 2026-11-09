@@ -9,8 +9,7 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { BUILD_QUEUE_WORKFLOW } from '../../app/lib/one-lap';
-import { type PackVersion, parsePack, parseVersion, type Step } from '../../parsers/pack';
+import { type PackVersion, parseVersion, type Step, type Workflow } from '../../parsers/pack';
 import { archRows } from '../arch-parse';
 import { insert, lit, type SqlRow } from './sql';
 
@@ -63,18 +62,17 @@ export const V2_EDITS: Edit[] = [
   },
 ];
 
-/**
- * The queue pack's build workflow is seeded from its own pack with the deliver loop's cap at 3:
- * the failed build in the App check stopped after "round 2 of 3", and the cap in its pinned map
- * must come from parsing the script, never from a seed row.
- */
-/** The queue pack's texts are stored under this prefix, so they never collide with the sdlc pack's. */
-const QUEUE_PACK_DIR = 'queue/';
-const QUEUE_ROUND_EDIT: Edit = {
-  file: 'deliver/scripts/round.ts',
-  find: 'const ROUND_CAP = 4;',
-  replace: 'const ROUND_CAP = 3;',
-};
+/** The workflows the seeded queue factory's runs name; their included blocks come with them. */
+const QUEUE_WORKFLOWS = [
+  'archon-build-queue',
+  'archon-intake',
+  'archon-merge-queue',
+  'archon-split',
+  'factory-app-check',
+];
+
+/** The queue pack's own version: its Archon commit is recorded short, so the key pads it to a full sha. */
+export const QUEUE_ARCHON = `57c857402${'0'.repeat(31)}`;
 
 /** Copies `from` to `to` with CRLF made LF, so a Windows checkout parses what CI parses. */
 function copyLf(from: string, to: string): void {
@@ -102,11 +100,37 @@ function applyEdit(sdlc: string, edit: Edit): void {
   );
 }
 
+/** `all` cut to `names` and the workflows their steps include or run as children, however deep. */
+function workflowsReaching(all: Workflow[], names: string[]): Workflow[] {
+  const byName = new Map(all.map((w) => [w.name, w]));
+  const kept = new Map<string, Workflow>();
+  const visit = (name: string): void => {
+    const workflow = byName.get(name);
+    if (!workflow) throw new Error(`the queue pack has no ${name}`);
+    if (kept.has(name)) return;
+    kept.set(name, workflow);
+    const walk = (steps: Step[]): void => {
+      for (const step of steps) {
+        for (const next of [step.include, step.childWorkflow]) if (next) visit(next);
+        walk(step.steps);
+      }
+    };
+    walk(workflow.steps);
+  };
+  for (const name of names) visit(name);
+  return [...kept.values()];
+}
+
 /**
  * V1, parsed from `fixtures/pack/sdlc`, the factory package `fixtures/pack/queue/factory` and
- * `fixtures/factory-template/`, and V2, V1 with V2_EDITS. Both are keyed by the package's commit.
+ * `fixtures/factory-template/`, and V2, V1 with V2_EDITS; both are keyed by the package's commit.
+ * The queue version is `fixtures/pack/queue/sdlc` and its factory package, cut to QUEUE_WORKFLOWS, as the queue factory runs it.
  */
-export function parseVersions(repoRoot: string): { v1: PackVersion; v2: PackVersion } {
+export function parseVersions(repoRoot: string): {
+  v1: PackVersion;
+  v2: PackVersion;
+  queue: PackVersion;
+} {
   const scratch = mkdtempSync(join(tmpdir(), 'mc-seed-'));
   try {
     const parse = (name: string, edit: boolean) => {
@@ -115,25 +139,26 @@ export function parseVersions(repoRoot: string): { v1: PackVersion; v2: PackVers
       copyLf(join(repoRoot, 'fixtures', 'factory-template'), join(dir, 'factory-template'));
       const sdlc = join(dir, 'pack', 'sdlc');
       if (edit) for (const change of V2_EDITS) applyEdit(sdlc, change);
-      const queueSdlc = join(dir, 'pack', 'queue', 'sdlc');
-      applyEdit(queueSdlc, QUEUE_ROUND_EDIT);
-      const queue = parsePack(queueSdlc, join(dir, 'factory-template'), QUEUE_PACK_DIR);
-      const build = queue.workflows.find((w) => w.name === BUILD_QUEUE_WORKFLOW);
-      if (!build) throw new Error(`the queue pack has no ${BUILD_QUEUE_WORKFLOW}`);
-      const version = parseVersion(
-        sdlc,
-        join(dir, 'pack', 'queue', 'factory'),
-        join(dir, 'factory-template'),
-      );
       return {
-        ...version,
-        workflows: [...version.workflows, build],
-        commands: [...version.commands, ...queue.commands],
-        sharedDocs: [...version.sharedDocs, ...queue.sharedDocs],
-        scripts: [...version.scripts, ...queue.scripts],
+        dir,
+        version: parseVersion(
+          sdlc,
+          join(dir, 'pack', 'queue', 'factory'),
+          join(dir, 'factory-template'),
+        ),
       };
     };
-    return { v1: parse('v1', false), v2: parse('v2', true) };
+    const first = parse('v1', false);
+    const queue = parseVersion(
+      join(first.dir, 'pack', 'queue', 'sdlc'),
+      join(first.dir, 'pack', 'queue', 'factory'),
+      join(first.dir, 'factory-template'),
+    );
+    return {
+      v1: first.version,
+      v2: parse('v2', true).version,
+      queue: { ...queue, workflows: workflowsReaching(queue.workflows, QUEUE_WORKFLOWS) },
+    };
   } finally {
     rmSync(scratch, { recursive: true, force: true });
   }
@@ -224,10 +249,11 @@ const keyOf = (table: Table, row: SqlRow) => JSON.stringify(table.key.map((colum
 const versionMatch = (key: ArchKey) =>
   `archon_sha = ${lit(key.archon_sha)} AND factory_sha = ${lit(key.factory_sha)}`;
 
-/** V1's rows in full, then V2's as a copy of V1's with the rows V2_EDITS changed replaced. */
+/** V1's rows in full, then V2's as a copy of V1's with the rows V2_EDITS changed replaced, then the queue version's rows in full. */
 export function architectureSql(
   v1: { version: PackVersion; key: ArchKey },
   v2: { version: PackVersion; key: ArchKey },
+  queue: { version: PackVersion; key: ArchKey },
 ): string[] {
   const versionKey = ({ archon_sha, factory_sha }: ArchKey) => ({ archon_sha, factory_sha });
   const out = [insert('mc.arch_versions', v1.key)];
@@ -259,6 +285,16 @@ export function architectureSql(
       if (oldRows.get(key) === JSON.stringify(row)) continue;
       out.push(insert(table.name, { ...versionKey(v2.key), ...row }));
     }
+  }
+
+  out.push(
+    '',
+    `-- The queue pack's own version: the queue factory's workflows and the blocks they include.`,
+  );
+  out.push(insert('mc.arch_versions', queue.key));
+  for (const table of tables(queue.version)) {
+    for (const row of table.rows)
+      out.push(insert(table.name, { ...versionKey(queue.key), ...row }));
   }
   return out;
 }

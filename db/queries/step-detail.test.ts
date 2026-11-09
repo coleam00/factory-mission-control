@@ -422,7 +422,7 @@ describe('step places of included blocks on the seed', () => {
     );
     expect(placeOf(steps, 'archon-deliver-block', 'implement')).toBeUndefined();
     expect(isIncluded(steps, 'archon-implement')).toBe(true);
-    expect(placesOf(steps, 'archon-implement', 'implement')).toContainEqual({
+    expect(placesOf(steps, 'archon-implement', 'implement')[0]).toEqual({
       workflow: 'archon-loop',
       path: 'ship/deliver/rounds/implement/implement',
     });
@@ -515,11 +515,7 @@ describe('step places of included blocks on the seed', () => {
            ON v.archon_sha = s.archon_sha AND v.factory_sha = s.factory_sha`,
         [version],
       )) as unknown as StepRow[];
-      // The queue pack's archon-build-queue is seeded beside the sdlc pack but declares its
-      // blocks in its own pack, so this declared-rows walk is scoped to the sdlc workflows.
-      const topLevel = stored.filter(
-        (row) => !isIncluded(steps, row.workflow) && row.workflow !== 'archon-build-queue',
-      );
+      const topLevel = stored.filter((row) => !isIncluded(steps, row.workflow));
       expect(topLevel.length).toBeGreaterThan(100);
       const wrong = topLevel.filter((row) => {
         const found = placeOf(steps, row.workflow, row.path)?.step;
@@ -543,8 +539,6 @@ describe('step places of included blocks on the seed', () => {
     const steps = await stepsAt('');
     const places = placesOf(steps, 'archon-review-block', 'code');
     expect(places).toEqual([
-      { workflow: 'archon-build-queue', path: 'ship/deliver/rounds/review/code' },
-      { workflow: 'archon-build-queue', path: 'ship/deliver/rounds/rereview/code' },
       { workflow: 'archon-loop', path: 'ship/deliver/rounds/review/code' },
       { workflow: 'archon-loop', path: 'ship/deliver/rounds/rereview/code' },
     ]);
@@ -552,7 +546,7 @@ describe('step places of included blocks on the seed', () => {
       const around = placeOf(steps, place.workflow, place.path)?.around ?? [];
       return around.at(-1)?.row.depends_on;
     });
-    expect(inputs).toEqual([['pr'], ['reshape'], ['pr'], ['reshape']]);
+    expect(inputs).toEqual([['pr'], ['reshape']]);
   });
 
   test("deliver's place lists both occurrences of implement, each opening its own place", async () => {

@@ -16,7 +16,7 @@ import type { StepAttemptRow } from './one-lap';
 
 /** A row of `db/queries/one-lap-map.sql`: one node of the loop's expanded tree at the lap's pin. */
 export interface LapMapRow {
-  pin: string;
+  pin: string | null;
   path: string;
   parent_path: string | null;
   position: number;

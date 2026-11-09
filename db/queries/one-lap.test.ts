@@ -1,4 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { attemptsInOrder, type StepAttemptRow, shownDispositions } from '../../app/lib/one-lap';
 import { runCost, runTimeline, stepCost } from '../../app/lib/one-run';
 import {
@@ -408,30 +410,38 @@ describe('one-lap on the seed', () => {
     );
   });
 
-  test('each seeded version caps the build loop at 3, the deliver loop at 4, and the build texts resolve', async () => {
-    const cap = (workflow: string) =>
-      db.query(
-        `SELECT archon_sha, round_cap FROM mc.arch_steps
-         WHERE workflow = $1 AND path = 'ship/deliver/rounds' ORDER BY archon_sha`,
-        [workflow],
-      );
-    const queue = await cap('archon-build-queue');
-    const loop = await cap('archon-loop');
-    expect(queue.length).toBeGreaterThanOrEqual(2);
-    expect(queue.map((r) => r.round_cap)).toEqual(queue.map(() => 3));
-    expect(loop.map((r) => r.round_cap)).toEqual(loop.map(() => 4));
-    const unresolved = await db.query(
-      `SELECT s.archon_sha, s.path, coalesce(s.script_file, s.command_file) AS file
+  test("the failed build's map holds the deliver loop's cap of 4 from the queue pack's own version", async () => {
+    const rows = await lap('one-lap-map', QUEUE_RUNS.failedBuild, 'queue-factory');
+    expect(rows.find((r) => r.path === 'ship/deliver/rounds')?.round_cap).toBe(4);
+  });
+
+  test("every build-queue step's script and command resolves to its own version's file", async () => {
+    const queueRoot = join(import.meta.dir, '../../fixtures/pack/queue/sdlc');
+    const steps = await db.query(
+      `SELECT s.archon_sha, s.factory_sha, s.path, s.script_file, s.command_file
        FROM mc.arch_steps s
        WHERE s.workflow = 'archon-build-queue'
-         AND (s.script_file IS NOT NULL OR s.command_file IS NOT NULL)
-         AND NOT EXISTS (
-           SELECT 1 FROM mc.arch_scripts x
-           WHERE x.archon_sha = s.archon_sha AND x.factory_sha = s.factory_sha AND x.path = s.script_file)
-         AND NOT EXISTS (
-           SELECT 1 FROM mc.arch_texts t
-           WHERE t.archon_sha = s.archon_sha AND t.factory_sha = s.factory_sha AND t.path = s.command_file)`,
+         AND (s.script_file IS NOT NULL OR s.command_file IS NOT NULL)`,
     );
-    expect(unresolved).toEqual([]);
+    expect(steps.length).toBeGreaterThan(0);
+    const notFound: string[] = [];
+    const mismatch: string[] = [];
+    for (const step of steps) {
+      const isScript = step.script_file !== null;
+      const file = String(isScript ? step.script_file : step.command_file);
+      const [found] = await db.query(
+        `SELECT text FROM mc.${isScript ? 'arch_scripts' : 'arch_texts'}
+         WHERE archon_sha = $1 AND factory_sha = $2 AND path = $3`,
+        [step.archon_sha, step.factory_sha, file],
+      );
+      if (!found) notFound.push(`${step.path}: ${file}`);
+      else if (
+        found.text !== readFileSync(join(queueRoot, file), 'utf8').replaceAll('\r\n', '\n')
+      ) {
+        mismatch.push(`${step.path}: ${file}`);
+      }
+    }
+    expect(notFound).toEqual([]);
+    expect(mismatch).toEqual([]);
   });
 });
