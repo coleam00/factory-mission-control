@@ -5,6 +5,7 @@ import {
   type ActionResult,
   createActionFlow,
   pendingText,
+  postAction,
   UNDO_MS,
 } from './actions';
 
@@ -100,6 +101,16 @@ describe('an outcome the server never confirmed', () => {
     await fire();
     expect(flow.getState()).toMatchObject({ ok: false });
     expect((flow.getState() as { text: string }).text).toContain('may have been sent');
+  });
+
+  test('a transport failure from postAction carries noReply', async () => {
+    const failing = (async () => {
+      throw new Error('network down');
+    }) as unknown as typeof fetch;
+    expect(await postAction(request, false, failing)).toEqual({
+      error: 'network down',
+      noReply: true,
+    });
   });
 
   test('a CLI with no exit code says the outcome is unknown', async () => {

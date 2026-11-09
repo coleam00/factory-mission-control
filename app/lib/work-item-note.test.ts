@@ -277,6 +277,20 @@ test('a question with no usable recommendation stays the console link', () => {
   }
 });
 
+test('a recommended Something else option stays the console link', () => {
+  const decide = [
+    decideRow({
+      options: JSON.stringify([
+        { id: 'split', label: 'Split it' },
+        { id: 'other', label: 'Something else' },
+      ]),
+      recommended: 'other',
+    }),
+  ];
+  const note = workItemNote([item(), waitingRun()], null, [], { decide, factory: 'f' });
+  expect(note?.action).toMatchObject({ label: 'Answer the question', request: null });
+});
+
 test('resuming names the failed step, or none for a run waiting for a slot', () => {
   const failed = workItemNote([item(), failedRun], null, [], { decide: [], factory: 'f' });
   expect(failed?.action?.request).toEqual({
