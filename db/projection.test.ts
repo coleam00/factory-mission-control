@@ -2627,6 +2627,7 @@ test('the projector and parseRecommendation read the same Recommendation line', 
     '**Recommendation: `split`** (very high confidence). Because.',
     '**Recommendation: `split`**. Because.',
     '**Recommendation: `nope`** (high confidence). Because.',
+    '**Recommendation: `split`**. A.\n\n**Recommendation: `build`** (high confidence). B.',
     'Which lap next?',
   ];
   const seen: unknown[] = [];

@@ -55,6 +55,8 @@ test("the reason is the rest of the Recommendation's paragraph, wherever the lin
     '**What it is.** Two screens. **Recommendation: `split`** (high confidence). Because.';
   expect(parseRecommendation(midParagraph)?.reason).toBe('Because.');
   const wide = parseRecommendation('**Recommendation: `split`** (very high confidence). Because.');
+  const later = '**Recommendation: `split`** (high confidence). Because.\n\nA later paragraph.';
+  expect(parseRecommendation(later)?.reason).toBe('Because.');
   expect(wide?.confidence).toBeNull();
   expect(wide?.reason).toBe('(very high confidence). Because.');
   expect(parseRecommendation(MESSAGE)).toMatchObject({

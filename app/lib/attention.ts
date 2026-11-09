@@ -144,10 +144,12 @@ export function attentionQuestion(message: string): string {
 
 /**
  * The pack's `**Recommendation: `<id>`** (<word> confidence). <why>` line, read as migration
- * 0031's projector reads it: the first such lead anywhere in the message, its confidence one
- * lowercase word after one space. db/projection.test.ts holds the two to the same messages.
+ * 0031's projector reads it: the choice from the first lead anywhere in the message, the
+ * confidence from the first lead followed by one lowercase word and " confidence" (not
+ * necessarily the same lead). db/projection.test.ts holds the two to the same messages.
  */
-const RECOMMENDATION = /\*\*Recommendation: `([^`]+)`\*\*(?: \(([a-z]+) confidence\))?/;
+const RECOMMENDATION = /\*\*Recommendation: `([^`]+)`\*\*(?: \([a-z]+ confidence\))?/;
+const CONFIDENCE = /\*\*Recommendation: `[^`]+`\*\* \(([a-z]+) confidence\)/;
 
 /** The message's Recommendation line: its choice, its confidence word, and its reason (the rest of its paragraph). */
 export function parseRecommendation(
@@ -158,7 +160,7 @@ export function parseRecommendation(
   const rest = message.slice(match.index + match[0].length).split(/\n\s*\n/)[0] ?? '';
   return {
     choice: match[1] ?? '',
-    confidence: match[2] ?? null,
+    confidence: CONFIDENCE.exec(message)?.[1] ?? null,
     reason: plain(rest.replace(/^\./, '')),
   };
 }
