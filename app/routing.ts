@@ -11,7 +11,7 @@ import { EmptyState } from './components/EmptyState';
 import { NotFound, RouteError } from './errors';
 import { homeHref } from './lib/home-map';
 import { lapHref } from './lib/one-lap';
-import { PLACES, type PlacePath, placeAddress } from './lib/places';
+import { PLACES, type PlacePath, placeAddress, ROOT_ADDRESS } from './lib/places';
 import { stepHref } from './lib/step-detail';
 import { useFactory } from './live/FactoryProvider';
 import { useLive } from './live/LiveProvider';
@@ -147,9 +147,9 @@ const removedRoutes = (): RouteObject[] => [
   })),
   { path: '/f/:factory/laps', loader: redirectTo('runs') },
   { path: '/f/:factory/laps/:runId', loader: lapsRunRedirect },
-  { path: '/', element: createElement(HomeAddress) },
+  { path: ROOT_ADDRESS, element: createElement(HomeAddress) },
   { path: '/steps/:workflow/:step', element: createElement(OldStepAddress) },
-  { path: '/rewind', element: createElement(Navigate, { to: '/', replace: true }) },
+  { path: '/rewind', element: createElement(Navigate, { to: ROOT_ADDRESS, replace: true }) },
 ];
 
 /**
