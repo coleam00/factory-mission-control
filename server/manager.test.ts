@@ -615,13 +615,15 @@ describe('the prompt’s example block', () => {
     expect<string[]>([...new Set(parsed.links.map((link) => link.kind))].sort()).toEqual(
       Object.keys(LINK_KINDS).sort(),
     );
-    expect<string[]>([...new Set(parsed.proposals.map((proposal) => proposal.action))].sort()).toEqual(
-      Object.keys(PROPOSAL_ACTIONS).sort(),
-    );
+    expect<string[]>(
+      [...new Set(parsed.proposals.map((proposal) => proposal.action))].sort(),
+    ).toEqual(Object.keys(PROPOSAL_ACTIONS).sort());
     expect(parsed.runs).toHaveLength(1);
-    expect(parsed.proposals.some((proposal) => proposal.option !== undefined)).toBe(true);
-    expect(parsed.proposals.some((proposal) => proposal.text !== undefined)).toBe(true);
-    expect(parsed.proposals.some((proposal) => proposal.from_step !== undefined)).toBe(true);
+    for (const key of Object.keys(parsed.proposals[0])) {
+      expect(
+        parsed.proposals.some((proposal) => proposal[key as keyof typeof proposal] !== undefined),
+      ).toBe(true);
+    }
   });
 });
 
