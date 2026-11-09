@@ -23,6 +23,7 @@ version AS (
 -- Each node in the workflow that declares it. A step an include expands is the same definition
 -- again, so the browser finds the step at any place from these rows (`placeOf`, step-detail.ts).
 SELECT
+  v.pin,
   s.workflow,
   s.path,
   s.parent_path,

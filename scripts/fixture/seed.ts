@@ -20,7 +20,7 @@ import { failing, type Main, noArguments, runCli } from '../lib/cli';
 import type { Db } from '../lib/db';
 import { pgliteDb } from '../lib/pglite';
 import { migrationsDir, readMigrationFiles, runMigrations } from '../migrate';
-import { architectureSql, parseVersions, QUEUE_ARCHON, V2_EDITS } from './seed-architecture';
+import { architectureSql, parseVersions, queueArchonSha, V2_EDITS } from './seed-architecture';
 import { MARKER, scorecard } from './seed-report';
 import { insert, json, type SqlRow } from './sql';
 import { attentionWait, FACTORY, nodeBlock, REPOSITORY, WORKFLOW } from './write';
@@ -2387,7 +2387,7 @@ export function buildSeed(repoRoot: string): string {
     ...architectureSql(
       { version: v1, key: archKey(v1.archonCommit, '2026-10-01T00:00:00Z') },
       { version: v2, key: archKey(V2_ARCHON, '2026-10-10T00:00:00Z') },
-      { version: queue, key: archKey(QUEUE_ARCHON, '2026-09-01T00:00:00Z') },
+      { version: queue, key: archKey(queueArchonSha(queue), '2026-09-01T00:00:00Z') },
     ),
     '',
     '-- A rewind `bun run rewind:create` registered whose Neon branch is gone: no branch has its',

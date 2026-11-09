@@ -65,3 +65,30 @@ test("the live check's current version is the one step-versions marks current", 
     await db.close();
   }
 });
+
+// The two one-lap queries draw one lap's version apart: one-lap-steps lists the steps of the version
+// one-lap-map draws the map from, so the choice (the gate, the holder test, the order) must not drift.
+const lapQueue = (name: string) => {
+  const text = normalized(sql(name));
+  const start = text.indexOf('queues AS (');
+  return {
+    queues: text.slice(start, text.indexOf('), version AS (')),
+    holds: text.slice(
+      text.indexOf('EXISTS (SELECT 1 FROM mc.arch_steps'),
+      text.indexOf(' ORDER BY'),
+    ),
+    order: text
+      .slice(text.indexOf(' ORDER BY'), text.indexOf(' LIMIT 1'))
+      .replaceAll('l.started_at', 'lap.started_at'),
+  };
+};
+
+test("the one-lap queries' queues test is step-detail's, and both choose a lap's version alike", () => {
+  const map = lapQueue('one-lap-map');
+  const steps = lapQueue('one-lap-steps');
+  expect(`WITH ${map.queues}`).toBe(owner.queues);
+  expect(`WITH ${steps.queues}`).toBe(owner.queues);
+  expect(map.order).toContain('(q.on_queues AND p.sha IS NULL) DESC');
+  expect(steps.order).toBe(map.order);
+  expect(steps.holds.replaceAll('l.workflow_name', 'lap.workflow_name')).toBe(map.holds);
+});

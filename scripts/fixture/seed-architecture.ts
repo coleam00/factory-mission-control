@@ -71,8 +71,11 @@ const QUEUE_WORKFLOWS = [
   'factory-app-check',
 ];
 
-/** The queue pack's own version: its Archon commit is recorded short, so the key pads it to a full sha. */
-export const QUEUE_ARCHON = `57c857402${'0'.repeat(31)}`;
+/** The key of the queue pack's own version: its Archon commit is recorded short, so it pads to a full sha. */
+export function queueArchonSha(queue: { archonCommit: string | null }): string {
+  if (!queue.archonCommit) throw new Error('the queue pack names no Archon commit');
+  return queue.archonCommit.padEnd(40, '0');
+}
 
 /** Copies `from` to `to` with CRLF made LF, so a Windows checkout parses what CI parses. */
 function copyLf(from: string, to: string): void {

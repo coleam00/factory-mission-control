@@ -11,12 +11,14 @@ import {
   type StepRow,
   stepHref,
   stepVersions,
+  mapAt,
   versionName,
 } from './step-detail';
 
 function step(path: string, fields: Partial<StepRow> = {}): StepRow {
   const parent = path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : null;
   return {
+    pin: 'p1',
     workflow: 'wf',
     path,
     parent_path: parent,
@@ -223,4 +225,11 @@ test('the Kind fact names the child workflow a workflow: node runs', () => {
   });
   expect(kindLabel(node)).toBe('workflow archon-metrics-test-value-judge');
   expect(kindLabel(step('c', { kind: 'command' }))).toBe('command');
+});
+
+test('the map link of a step screen drops an address that is not a pin: the map resolves pins only', () => {
+  expect(mapAt('a'.repeat(40), { pin: null })).toBeNull();
+  expect(mapAt('p1', { pin: 'p1' })).toBe('p1');
+  expect(mapAt('p1', undefined)).toBe('p1');
+  expect(mapAt(null, { pin: null })).toBeNull();
 });

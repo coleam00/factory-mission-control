@@ -9,6 +9,7 @@ import {
   isIncluded,
   joinParts,
   kindLabel,
+  mapAt,
   type NestingRow,
   nesting,
   type PartRow,
@@ -499,7 +500,12 @@ export default function StepDetail(): ReactElement {
     address,
     at,
   };
-  const origin = useStepOrigin(address, workflow, step, at);
+  const origin = useStepOrigin(
+    address,
+    workflow,
+    step,
+    mapAt(at, known?.asked === asked ? known.step : undefined),
+  );
   return (
     <main className="mx-auto max-w-6xl px-6 py-8">
       <nav

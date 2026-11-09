@@ -454,6 +454,18 @@ describe('one-lap on the seed', () => {
     expect(detail?.workflow).toBe('archon-build-queue');
   });
 
+  test('every workflow a queue-factory lap ran has steps at the queue version, so no lap draws another pack', async () => {
+    const [held] = await db.query(
+      `SELECT array_agg(DISTINCT l.workflow_name) AS missing
+       FROM mc.laps l
+       WHERE l.factory = 'queue-factory' AND NOT EXISTS (
+         SELECT 1 FROM mc.arch_steps s
+         JOIN mc.arch_versions a ON a.archon_sha = s.archon_sha AND a.factory_sha = s.factory_sha
+         WHERE s.workflow = l.workflow_name AND NOT EXISTS (SELECT 1 FROM mc.pins p WHERE p.archon_sha = a.archon_sha))`,
+    );
+    expect(held?.missing ?? null).toBeNull();
+  });
+
   test("a queue factory's merge-queue map holds facts and sweep", async () => {
     const rows = await lap('one-lap-map', QUEUE_RUNS.merged, 'queue-factory');
     expect(rows.map((r) => r.step_id)).toEqual(expect.arrayContaining(['facts', 'sweep']));

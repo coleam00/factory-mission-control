@@ -2,15 +2,22 @@ WITH
 -- The loop at the lap's own pin, as one-lap-map.sql picks it (only a version holding the lap's workflow, pinned or not): each step's place in the loop
 -- (Archon names a nested step by its path joined with `__`), so the browser lists the steps that
 -- never started in the loop's order, after those that ran (#191).
+queues AS (
+  -- A factory on the queues has run a workflow only the queue pack has (home-map.sql's queues
+  -- row). Copied from step-detail.sql, which owns it, and version-rule.test.ts fails a copy that differs.
+  SELECT EXISTS (SELECT 1 FROM mc.laps l
+    WHERE l.factory = $1 AND l.workflow_name IN ('archon-intake', 'archon-build-queue')) AS on_queues
+),
 version AS (
   SELECT a.archon_sha, a.factory_sha, l.workflow_name
   FROM mc.laps l
+  CROSS JOIN queues q
   CROSS JOIN mc.arch_versions a
   LEFT JOIN mc.pins p ON p.archon_sha = a.archon_sha
   WHERE l.factory = $1 AND l.run_id::text = $2
     AND EXISTS (SELECT 1 FROM mc.arch_steps s
       WHERE s.archon_sha = a.archon_sha AND s.factory_sha = a.factory_sha AND s.workflow = l.workflow_name)
-  ORDER BY (p.sha IS NULL) DESC,
+  ORDER BY (q.on_queues AND p.sha IS NULL) DESC,
     p.committed_at <= coalesce(l.started_at, 'infinity'::timestamptz) DESC NULLS LAST,
     CASE WHEN p.committed_at <= coalesce(l.started_at, 'infinity'::timestamptz)
       THEN p.committed_at END DESC NULLS LAST,
