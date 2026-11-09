@@ -5007,6 +5007,385 @@ nodes:
         autonomy: { type: string, enum: [supervised, standard, autonomous] }
       required: [config, policies, triggers, autonomy]
 ');
+INSERT INTO mc.arch_workflows (archon_sha, factory_sha, name, description, model, file, yaml) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'The build queue: takes intake''s triaged work items to a reviewed, ready pull
+request and stops only for decisions that belong to a person. Each run claims the
+best waiting item with intake''s claim, or the one the number input names. One
+agent routes it (and proves a bug''s symptom first) and launches archon-ship from a
+brief, or marks a pull request already reviewed Ready and green ready without
+another round; one agent answers how that round ended, asking before a change grows past
+twice the size budget for its triage size; and at the round cap, a latest review with a
+blocking finding the review before it lacked asks the scope question instead of running
+another. A bug needs evidence that it happened in real use before its first round. A clear case acts on its own. Anything unclear pauses as one
+attention item whose answer is a declared choice; the ruling is written into the
+issue body as a dated "Current scope" section. Every decision is recorded on the
+item''s work item.
+
+Use when: a trigger binding the operator installed starts it (see the SDLC pack
+README, "Build queue").
+NOT for: triaging an item (archon-intake), delivering one item by hand
+(archon-ship), or merging (archon-merge-queue).
+', NULL, 'build-queue/archon-build-queue.yaml', 'name: archon-build-queue
+description: |
+  The build queue: takes intake''s triaged work items to a reviewed, ready pull
+  request and stops only for decisions that belong to a person. Each run claims the
+  best waiting item with intake''s claim, or the one the number input names. One
+  agent routes it (and proves a bug''s symptom first) and launches archon-ship from a
+  brief, or marks a pull request already reviewed Ready and green ready without
+  another round; one agent answers how that round ended, asking before a change grows past
+  twice the size budget for its triage size; and at the round cap, a latest review with a
+  blocking finding the review before it lacked asks the scope question instead of running
+  another. A bug needs evidence that it happened in real use before its first round. A clear case acts on its own. Anything unclear pauses as one
+  attention item whose answer is a declared choice; the ruling is written into the
+  issue body as a dated "Current scope" section. Every decision is recorded on the
+  item''s work item.
+
+  Use when: a trigger binding the operator installed starts it (see the SDLC pack
+  README, "Build queue").
+  NOT for: triaging an item (archon-intake), delivering one item by hand
+  (archon-ship), or merging (archon-merge-queue).
+
+requires: [github]
+
+inputs:
+  repo_host:
+    description: The forge host of the repository whose work items the queue builds.
+  repo_path:
+    description: The owner/name path of that repository.
+  number:
+    default: ""
+    description: >-
+      The issue to build. Empty claims the waiting item that sorts first. A number
+      claims that item, and refuses the run with the reason when it cannot: it has no
+      work item, another run holds it, or it does not wait for the build queue.
+  retriage_as:
+    default: ""
+    description: >-
+      The maintainer login a blocked item''s re-triage is requested as. Set, a run that
+      names no item also revisits the blocked items: one agent judges which no longer
+      look blocked, and those get archon-triage and an intake run with that label
+      event. Empty revisits nothing.
+  round_limit:
+    default: "2"
+    description: >-
+      After this many rounds since the item''s scope last changed, the answer to a round
+      that ends wanting another also judges whether the rounds converge.
+
+returns: apply
+
+nodes:
+  # Claims the item and writes the issue''s body to build/issue.md, so every agent
+  # reads the same text.
+  - id: facts
+    script: facts
+    runtime: bun
+    output_format:
+      type: object
+      properties:
+        path: { type: string, enum: [idle, closed, route] }
+        item:
+          type: [object, ''null'']
+          properties:
+            repo:
+              type: object
+              properties:
+                host: { type: string }
+                path: { type: string }
+              required: [host, path]
+            number: { type: integer }
+          required: [repo, number]
+        url: { type: string }
+        # The item''s work item, as the queue read it at pickup, its history reports
+        # as plain run id and path references: null for an item no pickup recorded.
+        record: { type: [object, ''null''] }
+        # What the next launch starts from: the answer to the last stop, or empty.
+        brief: { type: string }
+        # The rounds before this run''s, from the work item.
+        rounds: { type: array, items: { type: object } }
+        # Whether this run''s round reaches round_limit rounds since the scope changed.
+        at_cap: { type: boolean }
+        policy_defaults: { type: string }
+        # The item''s pull request as the forge reports it now: the latest round''s that
+        # recorded one, or the one triage routed it to continue; else null.
+        pull_request: { type: [object, ''null''] }
+        # The number of that pull request when a round may continue it: it is open and
+        # its head is in the item''s repository. Null otherwise. Route decides whether
+        # the round does.
+        continues: { type: [integer, ''null''] }
+        # The branch the round opens its pull request from when route continues none: a
+        # new build/<issue>-<slug>-<run>. Empty with no item.
+        branch: { type: string }
+      required: [path, item, url, record, brief, rounds, at_cap, policy_defaults, pull_request, continues, branch]
+
+  # Routes the item and writes the brief the round starts from. The prompt names the
+  # playwright-cli skill for a bug that needs a browser. It is not a `skills:` entry:
+  # that would refuse the whole run under a provider that cannot load named skills,
+  # and the provider is the user''s choice.
+  - id: route
+    command: route
+    depends_on: [facts]
+    when: "$facts.output.path == ''route''"
+    model: large
+    mutates_checkout: false
+    with:
+      policy_defaults: "$facts.output.policy_defaults"
+      url: "$facts.output.url"
+      record: { from: "$facts.output.record" }
+      brief: "$facts.output.brief"
+      pull_request: { from: "$facts.output.pull_request" }
+      continues: "$facts.output.continues"
+    output_format:
+      type: object
+      properties:
+        decision: { type: string, enum: [launch, ask, ready] }
+        # On launch, the number of the pull request the round continues: the candidate
+        # facts reports, or null when the issue''s dated scope or a recorded answer
+        # supersedes it and the round starts fresh from the new branch. Null otherwise.
+        continues: { type: [integer, ''null''] }
+        # On ready, the full head SHA the pull request is already reviewed Ready and
+        # green at; apply takes it out of draft only while its head is still this
+        # commit. Null otherwise.
+        ready_head: { type: [string, ''null''] }
+        # The brief archon-ship starts from on launch; on ask, the brief a continue
+        # choice launches.
+        brief: { type: string, pattern: ''\S'' }
+        reason: { type: string, pattern: ''\S'' }
+        attention: &attention
+          type: [object, ''null'']
+          additionalProperties: false
+          properties:
+            what: { type: string, pattern: ''\S'' }
+            why: { type: string, pattern: ''\S'' }
+            recommendation:
+              type: object
+              additionalProperties: false
+              properties:
+                choice: { type: string }
+                why: { type: string, pattern: ''\S'' }
+                evidence: { type: string, pattern: ''\S'' }
+                confidence: { type: string, enum: [low, medium, high] }
+                would_change: { type: string, pattern: ''\S'' }
+              required: [choice, why, evidence, confidence, would_change]
+            choices:
+              type: array
+              minItems: 1
+              items:
+                type: object
+                additionalProperties: false
+                properties:
+                  id: { type: string, pattern: ''^[a-z0-9]+(-[a-z0-9]+)*$'' }
+                  label: { type: string, pattern: ''\S'' }
+                  does: { type: string, pattern: ''\S'' }
+                  effect: { type: string, enum: [continue, ready, park] }
+                  ruling: { type: string }
+                required: [id, label, does, effect, ruling]
+            if_unanswered: { type: string, pattern: ''\S'' }
+            links: { type: array, items: { type: string } }
+          required: [what, why, recommendation, choices, if_unanswered, links]
+      required: [decision, continues, ready_head, brief, reason, attention]
+
+  # A round that continues a pull request (route''s declaration) starts from that pull
+  # request''s head, not from the branch the run''s checkout was cut from, so its publish
+  # fast-forwards. A fresh round stays on the base, and refuses when it is not on it.
+  - id: checkout
+    script: checkout
+    runtime: bun
+    depends_on: [facts, route]
+    when: "$route.output.decision == ''launch''"
+    with:
+      item: { from: "$facts.output.item" }
+      pull_request: { from: "$facts.output.pull_request" }
+      candidate: "$facts.output.continues"
+      continues: "$route.output.continues"
+    output_format:
+      type: object
+      properties:
+        head: { type: [string, ''null''] }
+        # The commit the continued pull request''s review comment names at the round''s
+        # start; null on a fresh round or when it has no trusted review. Checkout refuses
+        # a pull request with more than one.
+        reviewed: { type: [string, ''null''] }
+        # What ship continues: the number, `none` when the item has a pull request
+        # the round does not continue, or null when it has none and ship''s triage
+        # decides.
+        pull_request:
+          anyOf:
+            - { type: integer, minimum: 1 }
+            - { type: string, enum: [none] }
+            - { type: ''null'' }
+      required: [head, reviewed, pull_request]
+
+  - id: ship
+    include: archon-ship-block
+    depends_on: [facts, route, checkout]
+    when: "$route.output.decision == ''launch''"
+    with:
+      target: "$route.output.brief"
+      pull_request: "$checkout.output.pull_request"
+      branch: "$facts.output.branch"
+
+  - id: answer
+    command: answer
+    depends_on: [facts, checkout, ship]
+    trigger_rule: none_failed_min_one_success
+    when: "$facts.output.path == ''route'' && $route.output.decision == ''launch''"
+    model: large
+    mutates_checkout: false
+    with:
+      policy_defaults: "$facts.output.policy_defaults"
+      url: "$facts.output.url"
+      record: { from: "$facts.output.record" }
+      rounds: { from: "$facts.output.rounds" }
+      ending: { from: "$ship.output", if_skipped: null }
+      reviewed: "$checkout.output.reviewed"
+      at_cap: "$facts.output.at_cap"
+    output_format:
+      type: object
+      properties:
+        decision: { type: string, enum: [done, continue, ask] }
+        # What the next round starts from on continue; on ask, what a continue
+        # choice launches. Empty on done.
+        brief: { type: string }
+        # The pull request whose head the checkout''s unpushed commits go to; null
+        # pushes nothing.
+        push:
+          type: [object, ''null'']
+          properties:
+            repo:
+              type: object
+              properties:
+                host: { type: string }
+                path: { type: string }
+              required: [host, path]
+            number: { type: integer, minimum: 1 }
+          required: [repo, number]
+        reason: { type: string, pattern: ''\S'' }
+        # On ask, what the question is about, as the agent judged it: `scope` for the
+        # contract''s shape or the rounds'' trend, `stop` for anything else. Ignored on
+        # done and continue. Not nullable: Codex''s constrained decoding could not emit
+        # `null` from an enum and padded whitespace until max_output_tokens.
+        ask_class: { type: string, enum: [stop, scope] }
+        attention: *attention
+      required: [decision, brief, push, reason, ask_class, attention]
+
+  # Checks the decision, performs the writes it declared and reads each one back:
+  # the push, then the work item.
+  - id: apply
+    script: apply
+    runtime: bun
+    depends_on: [facts, route, answer]
+    trigger_rule: none_failed_min_one_success
+    with:
+      path: "$facts.output.path"
+      item: { from: "$facts.output.item" }
+      pull_request: { from: "$facts.output.pull_request" }
+      route: { from: "$route.output", if_skipped: null }
+      ending: { from: "$ship.output", if_skipped: null }
+      answer: { from: "$answer.output", if_skipped: null }
+    output_format:
+      type: object
+      properties:
+        decision: { type: string, enum: [idle, parked, ready, continue, asked, launch] }
+        summary: { type: string }
+        # The attention message; empty when nothing is asked.
+        attention: { type: string }
+        options:
+          type: array
+          items:
+            type: object
+            properties:
+              id: { type: string }
+              label: { type: string }
+            required: [id, label]
+        class: { type: string, enum: ['''', route, stop, scope] }
+        # What the answer node needs: the attention item, the brief a continue choice
+        # launches and which decision asked; null when nothing is asked.
+        asked: { type: [object, ''null''] }
+      required: [decision, summary, attention, options, class, asked]
+
+  # A paused run gives its resource slot back, so the next scheduled run can work
+  # another item while this one waits.
+  - id: ask
+    depends_on: [apply]
+    when: "$apply.output.attention != ''''"
+    wait:
+      attention: "$apply.output.attention"
+      form: select
+      options: "$apply.output.options"
+      labels:
+        build: "$apply.output.class"
+
+  - id: ruling
+    script: ruling
+    runtime: bun
+    depends_on: [facts, apply, ask]
+    with:
+      item: { from: "$facts.output.item" }
+      asked: { from: "$apply.output.asked" }
+      choice: "$ask.output.decision"
+      text: "$ask.output.text"
+    output_format:
+      type: object
+      properties:
+        decision: { type: string, enum: [continue, ready, park] }
+        section: { type: string }
+        summary: { type: string }
+      required: [decision, section, summary]
+
+  # Revisit pickup is independent of item pickup: an unresolved PR create must
+  # not suppress revisits of other items.
+  - id: blocked
+    script: blocked
+    runtime: bun
+    output_format:
+      type: object
+      properties:
+        blocked:
+          type: array
+          items:
+            type: object
+            properties:
+              number: { type: integer, minimum: 1 }
+              summary: { type: string }
+            required: [number, summary]
+        blocked_count: { type: integer }
+      required: [blocked, blocked_count]
+
+  - id: revisit
+    command: revisit
+    depends_on: [blocked]
+    when: "$blocked.output.blocked_count > 0"
+    model: medium
+    mutates_checkout: false
+    with:
+      blocked: { from: "$blocked.output.blocked" }
+    output_format:
+      type: object
+      properties:
+        retriage:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            properties:
+              number: { type: integer, minimum: 1 }
+              reason: { type: string, pattern: ''\S'' }
+            required: [number, reason]
+      required: [retriage]
+
+  - id: retriage
+    script: retriage
+    runtime: bun
+    depends_on: [blocked, revisit]
+    with:
+      blocked: { from: "$blocked.output.blocked" }
+      retriage: { from: "$revisit.output.retriage" }
+    output_format:
+      type: object
+      properties:
+        retriaged: { type: array, items: { type: integer } }
+        summary: { type: string }
+      required: [retriaged, summary]
+');
 INSERT INTO mc.arch_steps (archon_sha, factory_sha, workflow, path, parent_path, position, step_id, kind, description, model, when_condition, depends_on, trigger_rule, include, child_workflow, round_cap, command, command_file, script, script_file, runtime, bash, prompt, defined_in, file) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-backlog', 'read-prd', NULL, 0, 'read-prd', 'script', NULL, NULL, NULL, '{}'::text[], NULL, NULL, NULL, NULL, NULL, NULL, 'read-prd', 'backlog/scripts/read-prd.py', 'uv', NULL, NULL, 'archon-backlog', 'backlog/archon-backlog.yaml');
 INSERT INTO mc.arch_steps (archon_sha, factory_sha, workflow, path, parent_path, position, step_id, kind, description, model, when_condition, depends_on, trigger_rule, include, child_workflow, round_cap, command, command_file, script, script_file, runtime, bash, prompt, defined_in, file) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-backlog', 'slice', NULL, 1, 'slice', 'command', 'The one judgment node. Large tier: slicing a product into the right first
 ticket is planning, not routine work.', 'large', NULL, ARRAY['read-prd']::text[], NULL, NULL, NULL, NULL, 'slice-backlog', 'backlog/commands/slice-backlog.md', NULL, NULL, NULL, NULL, NULL, 'archon-backlog', 'backlog/archon-backlog.yaml');
@@ -6310,6 +6689,360 @@ INSERT INTO mc.arch_steps (archon_sha, factory_sha, workflow, path, parent_path,
 INSERT INTO mc.arch_steps (archon_sha, factory_sha, workflow, path, parent_path, position, step_id, kind, description, model, when_condition, depends_on, trigger_rule, include, child_workflow, round_cap, command, command_file, script, script_file, runtime, bash, prompt, defined_in, file) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'factory-deploy', 'verify', NULL, 2, 'verify', 'script', NULL, NULL, NULL, ARRAY['deploy']::text[], NULL, NULL, NULL, NULL, NULL, NULL, 'verify', '.archon/workflows/factory/deploy/scripts/verify.ts', 'bun', NULL, NULL, 'factory-deploy', '.archon/workflows/factory/deploy/factory-deploy.yaml');
 INSERT INTO mc.arch_steps (archon_sha, factory_sha, workflow, path, parent_path, position, step_id, kind, description, model, when_condition, depends_on, trigger_rule, include, child_workflow, round_cap, command, command_file, script, script_file, runtime, bash, prompt, defined_in, file) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'factory-manager', 'manage', NULL, 0, 'manage', 'command', NULL, '@factory-manager medium', NULL, '{}'::text[], NULL, NULL, NULL, NULL, 'manage', '.archon/workflows/factory/manager/commands/manage.md', NULL, NULL, NULL, NULL, NULL, 'factory-manager', '.archon/workflows/factory/manager/factory-manager.yaml');
 INSERT INTO mc.arch_steps (archon_sha, factory_sha, workflow, path, parent_path, position, step_id, kind, description, model, when_condition, depends_on, trigger_rule, include, child_workflow, round_cap, command, command_file, script, script_file, runtime, bash, prompt, defined_in, file) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'factory-setup', 'apply', NULL, 0, 'apply', 'script', NULL, NULL, NULL, '{}'::text[], NULL, NULL, NULL, NULL, NULL, NULL, 'apply', '.archon/workflows/factory/setup/scripts/apply.ts', 'bun', NULL, NULL, 'factory-setup', '.archon/workflows/factory/setup/factory-setup.yaml');
+INSERT INTO mc.arch_steps (archon_sha, factory_sha, workflow, path, parent_path, position, step_id, kind, description, model, when_condition, depends_on, trigger_rule, include, child_workflow, round_cap, command, command_file, script, script_file, runtime, bash, prompt, defined_in, file) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'facts', NULL, 0, 'facts', 'script', 'Claims the item and writes the issue''s body to build/issue.md, so every agent
+reads the same text.', NULL, NULL, '{}'::text[], NULL, NULL, NULL, NULL, NULL, NULL, 'facts', 'build-queue/scripts/facts.ts', 'bun', NULL, NULL, 'archon-build-queue', 'build-queue/archon-build-queue.yaml');
+INSERT INTO mc.arch_steps (archon_sha, factory_sha, workflow, path, parent_path, position, step_id, kind, description, model, when_condition, depends_on, trigger_rule, include, child_workflow, round_cap, command, command_file, script, script_file, runtime, bash, prompt, defined_in, file) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'route', NULL, 1, 'route', 'command', 'Routes the item and writes the brief the round starts from. The prompt names the
+playwright-cli skill for a bug that needs a browser. It is not a `skills:` entry:
+that would refuse the whole run under a provider that cannot load named skills,
+and the provider is the user''s choice.', 'large', '$facts.output.path == ''route''', ARRAY['facts']::text[], NULL, NULL, NULL, NULL, 'route', 'build-queue/commands/route.md', NULL, NULL, NULL, NULL, NULL, 'archon-build-queue', 'build-queue/archon-build-queue.yaml');
+INSERT INTO mc.arch_steps (archon_sha, factory_sha, workflow, path, parent_path, position, step_id, kind, description, model, when_condition, depends_on, trigger_rule, include, child_workflow, round_cap, command, command_file, script, script_file, runtime, bash, prompt, defined_in, file) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'checkout', NULL, 2, 'checkout', 'script', 'A round that continues a pull request (route''s declaration) starts from that pull
+request''s head, not from the branch the run''s checkout was cut from, so its publish
+fast-forwards. A fresh round stays on the base, and refuses when it is not on it.', NULL, '$route.output.decision == ''launch''', ARRAY['facts', 'route']::text[], NULL, NULL, NULL, NULL, NULL, NULL, 'checkout', 'build-queue/scripts/checkout.ts', 'bun', NULL, NULL, 'archon-build-queue', 'build-queue/archon-build-queue.yaml');
+INSERT INTO mc.arch_steps (archon_sha, factory_sha, workflow, path, parent_path, position, step_id, kind, description, model, when_condition, depends_on, trigger_rule, include, child_workflow, round_cap, command, command_file, script, script_file, runtime, bash, prompt, defined_in, file) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship', NULL, 3, 'ship', 'include', 'Ground an issue or request against the current repository before spending on
+it, then take the least speculative path: investigate an unknown cause, plan
+an undecided shape, deliver an implementation-ready work order, or stop when
+no work remains. Actionable paths converge on the reviewed delivery tail.
+One governed run, one artifact store, no inherited issue assumptions.
+
+The graph of archon-ship, as a building block for a workflow that composes the
+stage and owns what follows its ending. It never pauses for a person: run
+archon-ship, which adds that pause, by hand.
+', NULL, '$route.output.decision == ''launch''', ARRAY['facts', 'route', 'checkout']::text[], NULL, 'archon-ship-block', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 'archon-build-queue', 'build-queue/archon-build-queue.yaml');
+INSERT INTO mc.arch_steps (archon_sha, factory_sha, workflow, path, parent_path, position, step_id, kind, description, model, when_condition, depends_on, trigger_rule, include, child_workflow, round_cap, command, command_file, script, script_file, runtime, bash, prompt, defined_in, file) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/forge', 'ship', 4, 'forge', 'script', 'Refuses the run before any agent spends when the selected forge source cannot
+act: no plugin for the host, no usable credential, or an unauthenticated gh.', NULL, NULL, '{}'::text[], NULL, NULL, NULL, NULL, NULL, NULL, 'forge-check', 'ship/scripts/forge-check.ts', 'bun', NULL, NULL, 'archon-ship-block', 'ship/archon-ship-block.yaml');
+INSERT INTO mc.arch_steps (archon_sha, factory_sha, workflow, path, parent_path, position, step_id, kind, description, model, when_condition, depends_on, trigger_rule, include, child_workflow, round_cap, command, command_file, script, script_file, runtime, bash, prompt, defined_in, file) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/triage', 'ship', 5, 'triage', 'include', 'The source is history, not a work order. Triage checks it against current
+code and direction before deciding which kind of reasoning is still owed.', NULL, NULL, ARRAY['forge']::text[], NULL, 'archon-triage-block', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 'archon-ship-block', 'ship/archon-ship-block.yaml');
+INSERT INTO mc.arch_steps (archon_sha, factory_sha, workflow, path, parent_path, position, step_id, kind, description, model, when_condition, depends_on, trigger_rule, include, child_workflow, round_cap, command, command_file, script, script_file, runtime, bash, prompt, defined_in, file) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/triage/policy', 'ship/triage', 6, 'policy', 'script', 'The directory of the pack''s default policy documents in this run''s captured
+source, the same in a source checkout and a binary install. The prompt names the
+policy file it needs and reads the default, then the project''s own on top.', NULL, NULL, '{}'::text[], NULL, NULL, NULL, NULL, NULL, NULL, 'policy', 'triage/scripts/policy.ts', 'bun', NULL, NULL, 'archon-triage-block', 'triage/archon-triage-block.yaml');
+INSERT INTO mc.arch_steps (archon_sha, factory_sha, workflow, path, parent_path, position, step_id, kind, description, model, when_condition, depends_on, trigger_rule, include, child_workflow, round_cap, command, command_file, script, script_file, runtime, bash, prompt, defined_in, file) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/triage/triage', 'ship/triage', 7, 'triage', 'command', NULL, '@triage medium', NULL, ARRAY['policy']::text[], NULL, NULL, NULL, NULL, 'triage', 'triage/commands/triage.md', NULL, NULL, NULL, NULL, NULL, 'archon-triage-block', 'triage/archon-triage-block.yaml');
+INSERT INTO mc.arch_steps (archon_sha, factory_sha, workflow, path, parent_path, position, step_id, kind, description, model, when_condition, depends_on, trigger_rule, include, child_workflow, round_cap, command, command_file, script, script_file, runtime, bash, prompt, defined_in, file) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/triage/verdict', 'ship/triage', 8, 'verdict', 'script', 'The prompt judges; this boundary flattens the decision into the fields every
+caller reads, checks what a schema cannot (blockers are qualified URLs) and
+backstops the rest, and
+derives the pack''s labels here rather than
+chosen by the model: one state label and one type label, plus a size label
+while the item can still be worked. Each field''s own type and vocabulary were certified on the
+node above. Labels are written only under publish, after the item''s identity
+is verified on the tracker, and read back before the node reports them.', NULL, NULL, ARRAY['triage']::text[], NULL, NULL, NULL, NULL, NULL, NULL, 'verdict', 'triage/scripts/verdict.ts', 'bun', NULL, NULL, 'archon-triage-block', 'triage/archon-triage-block.yaml');
+INSERT INTO mc.arch_steps (archon_sha, factory_sha, workflow, path, parent_path, position, step_id, kind, description, model, when_condition, depends_on, trigger_rule, include, child_workflow, round_cap, command, command_file, script, script_file, runtime, bash, prompt, defined_in, file) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/inv', 'ship', 9, 'inv', 'include', 'Establish the proven causal chain for a bug, unexplained behavior, or open
+question — to the root cause whose fix prevents the symptom, never the first
+plausible explanation — and write an evidence-backed report a fixer or
+planner can act on without repeating the work. Advisory: it reads,
+reproduces, and reports — the repository is left exactly as it was found.
+
+Use when: the cause is not yet known — "investigate this issue", "why does
+this fail", "root-cause this before we fix it".
+NOT for: deciding how to build the fix (plan), or building it (implement).
+', NULL, '$triage.output.route == ''investigate''', ARRAY['triage']::text[], NULL, 'archon-investigate', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 'archon-ship-block', 'ship/archon-ship-block.yaml');
+INSERT INTO mc.arch_steps (archon_sha, factory_sha, workflow, path, parent_path, position, step_id, kind, description, model, when_condition, depends_on, trigger_rule, include, child_workflow, round_cap, command, command_file, script, script_file, runtime, bash, prompt, defined_in, file) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/inv/investigate', 'ship/inv', 10, 'investigate', 'command', 'Inconclusive is a valid outcome, not a failure: the gaps named honestly beat a
+confident guess. Consumers gate on the verdict before building on the chain.', '@investigator medium', NULL, '{}'::text[], NULL, NULL, NULL, NULL, 'investigate', 'investigate/commands/investigate.md', NULL, NULL, NULL, NULL, NULL, 'archon-investigate', 'investigate/archon-investigate.yaml');
+INSERT INTO mc.arch_steps (archon_sha, factory_sha, workflow, path, parent_path, position, step_id, kind, description, model, when_condition, depends_on, trigger_rule, include, child_workflow, round_cap, command, command_file, script, script_file, runtime, bash, prompt, defined_in, file) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/inv/verdict', 'ship/inv', 11, 'verdict', 'script', NULL, NULL, NULL, ARRAY['investigate']::text[], NULL, NULL, NULL, NULL, NULL, NULL, 'verdict', 'investigate/scripts/verdict.ts', 'bun', NULL, NULL, 'archon-investigate', 'investigate/archon-investigate.yaml');
+INSERT INTO mc.arch_steps (archon_sha, factory_sha, workflow, path, parent_path, position, step_id, kind, description, model, when_condition, depends_on, trigger_rule, include, child_workflow, round_cap, command, command_file, script, script_file, runtime, bash, prompt, defined_in, file) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/intel', 'ship', 12, 'intel', 'command', 'Usage data for the planner, when the item could turn on it. The node names no
+MCP server, so it runs on every provider and in a repository with no MCP
+config; until one is named here it judges relevance and reports that no
+source is connected when data would have mattered.', 'medium', '$triage.output.route == ''plan''', ARRAY['triage']::text[], NULL, NULL, NULL, NULL, 'intel', 'ship/commands/intel.md', NULL, NULL, NULL, NULL, NULL, 'archon-ship-block', 'ship/archon-ship-block.yaml');
+INSERT INTO mc.arch_steps (archon_sha, factory_sha, workflow, path, parent_path, position, step_id, kind, description, model, when_condition, depends_on, trigger_rule, include, child_workflow, round_cap, command, command_file, script, script_file, runtime, bash, prompt, defined_in, file) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/planned', 'ship', 13, 'planned', 'include', 'The planner makes the design calls. Calls it cannot make itself come back as
+open questions, which stop the run before delivery.', NULL, '$triage.output.route == ''plan''', ARRAY['triage', 'intel']::text[], NULL, 'archon-plan-block', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 'archon-ship-block', 'ship/archon-ship-block.yaml');
+INSERT INTO mc.arch_steps (archon_sha, factory_sha, workflow, path, parent_path, position, step_id, kind, description, model, when_condition, depends_on, trigger_rule, include, child_workflow, round_cap, command, command_file, script, script_file, runtime, bash, prompt, defined_in, file) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/planned/policy', 'ship/planned', 14, 'policy', 'script', 'The directory of the pack''s default policy documents in this run''s captured
+source, the same in a source checkout and a binary install. The prompt names the
+policy file it needs and reads the default, then the project''s own on top.', NULL, NULL, '{}'::text[], NULL, NULL, NULL, NULL, NULL, NULL, 'policy', 'plan/scripts/policy.ts', 'bun', NULL, NULL, 'archon-plan-block', 'plan/archon-plan-block.yaml');
+INSERT INTO mc.arch_steps (archon_sha, factory_sha, workflow, path, parent_path, position, step_id, kind, description, model, when_condition, depends_on, trigger_rule, include, child_workflow, round_cap, command, command_file, script, script_file, runtime, bash, prompt, defined_in, file) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/planned/plan', 'ship/planned', 15, 'plan', 'command', 'Open questions are a valid outcome, not a failure: the calls only a person can
+make, named, beat a plan built on guesses. Whether the plan is ready is the
+planner''s judgment; consumers gate on $plan.output.ready and relay
+$plan.output.open_questions either way. A schema cannot tie the two without a
+root union, which the providers'' structured output rejects, so the prompt
+holds the rule: not ready always names at least one question.', '@planner large', NULL, ARRAY['policy']::text[], NULL, NULL, NULL, NULL, 'plan', 'plan/commands/plan.md', NULL, NULL, NULL, NULL, NULL, 'archon-plan-block', 'plan/archon-plan-block.yaml');
+INSERT INTO mc.arch_steps (archon_sha, factory_sha, workflow, path, parent_path, position, step_id, kind, description, model, when_condition, depends_on, trigger_rule, include, child_workflow, round_cap, command, command_file, script, script_file, runtime, bash, prompt, defined_in, file) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/continues', 'ship', 16, 'continues', 'script', 'The pull request delivery continues has one owner: the caller''s number or `none`
+when it resolved one, else triage''s `continue` route. Two different answers
+refuse before delivery spends.', NULL, NULL, ARRAY['triage']::text[], NULL, NULL, NULL, NULL, NULL, NULL, 'continues', 'ship/scripts/continues.ts', 'bun', NULL, NULL, 'archon-ship-block', 'ship/archon-ship-block.yaml');
+INSERT INTO mc.arch_steps (archon_sha, factory_sha, workflow, path, parent_path, position, step_id, kind, description, model, when_condition, depends_on, trigger_rule, include, child_workflow, round_cap, command, command_file, script, script_file, runtime, bash, prompt, defined_in, file) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/deliver', 'ship', 17, 'deliver', 'include', 'The delivery tail, autonomous on its green path. Capped rounds of implement
+(focused checks only; CI is the full validation), draft PR, and a review at the
+depth its risk earns. Once a review passes, simplify judges the structure once,
+the implementer adopts or declines its findings, a light review checks what
+that changed, and one CI agent marks the PR ready on green. Open review findings,
+an unresolved review thread from anyone, a CI red the change caused, or a conflict
+with the base send the work back to implement for another round, which merges
+the base on a conflict and judges each thread; the round then answers and
+resolves the threads it settled. Every other ending is not ready, with
+its reason. A red PR never stays ready, nor one with an open thread. Threads are
+read through gh; on the forge source the report records them as not checked. Each
+round''s pr step publishes description content the round prepared before its
+review reads the PR, and the description is corrected and linked once the
+rounds end; the report relays discoveries to the operator on every ending,
+a failure included. There is no in-run approval
+gate — the human gate is PR review and merge on the forge, outside the run.
+
+The graph of archon-deliver, as a building block for a workflow that composes the
+stage and owns what follows its ending. It never pauses for a person: run
+archon-deliver, which adds that pause, by hand.
+', NULL, '$triage.output.route == ''deliver'' || $triage.output.route == ''continue'' || $triage.output.route == ''investigate'' && $inv.output.verdict == ''rooted'' || $triage.output.route == ''plan'' && $planned.output.ready == true', ARRAY['triage', 'continues', 'inv', 'planned']::text[], 'none_failed_min_one_success', 'archon-deliver-block', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 'archon-ship-block', 'ship/archon-ship-block.yaml');
+INSERT INTO mc.arch_steps (archon_sha, factory_sha, workflow, path, parent_path, position, step_id, kind, description, model, when_condition, depends_on, trigger_rule, include, child_workflow, round_cap, command, command_file, script, script_file, runtime, bash, prompt, defined_in, file) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/deliver/forge', 'ship/deliver', 18, 'forge', 'script', 'Refuses the run before any agent spends when the selected forge source cannot
+act: no plugin for the host, no usable credential, or an unauthenticated gh.', NULL, NULL, '{}'::text[], NULL, NULL, NULL, NULL, NULL, NULL, 'forge-check', 'deliver/scripts/forge-check.ts', 'bun', NULL, NULL, 'archon-deliver-block', 'deliver/archon-deliver-block.yaml');
+INSERT INTO mc.arch_steps (archon_sha, factory_sha, workflow, path, parent_path, position, step_id, kind, description, model, when_condition, depends_on, trigger_rule, include, child_workflow, round_cap, command, command_file, script, script_file, runtime, bash, prompt, defined_in, file) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/deliver/rounds', 'ship/deliver', 19, 'rounds', 'loop_group', 'One round: implement → draft PR → review → (simplify → reshape → rereview) →
+settle-threads → CI → threads. Open review findings, an unresolved review thread, or a red CI the change
+caused, start another round. Each
+round''s implementer is a fresh agent that reads the previous round''s review
+report and ci.md, and each later round''s review reads only its delta. The pr step runs every round, so every round''s commits are
+pushed before the review reads the pull request''s remote head.', NULL, NULL, ARRAY['forge']::text[], NULL, NULL, NULL, 3, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 'archon-deliver-block', 'deliver/archon-deliver-block.yaml');
+INSERT INTO mc.arch_steps (archon_sha, factory_sha, workflow, path, parent_path, position, step_id, kind, description, model, when_condition, depends_on, trigger_rule, include, child_workflow, round_cap, command, command_file, script, script_file, runtime, bash, prompt, defined_in, file) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/deliver/rounds/implement', 'ship/deliver/rounds', 20, 'implement', 'include', 'Implement a change and keep working until it is complete and the focused checks
+on what it changed pass. Commits as it goes; opens no PR. The input is anything intent-shaped:
+a plan (path or inline), review findings, a CI failure to fix, or a plain
+description of what to build.
+
+Use when: the work is already decided and needs building — "implement this plan",
+"apply these review findings", "build what this describes", "fix this CI failure".
+NOT for: deciding what to build, reviewing changes, or opening a PR.
+', NULL, NULL, '{}'::text[], NULL, 'archon-implement', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 'archon-deliver-block', 'deliver/archon-deliver-block.yaml');
+INSERT INTO mc.arch_steps (archon_sha, factory_sha, workflow, path, parent_path, position, step_id, kind, description, model, when_condition, depends_on, trigger_rule, include, child_workflow, round_cap, command, command_file, script, script_file, runtime, bash, prompt, defined_in, file) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/deliver/rounds/implement/implement', 'ship/deliver/rounds/implement', 21, 'implement', 'loop', 'Run success ≠ green. The loop completes on `done`, which deliberately includes
+a definitive blocked decline (green: false) — so a completed run''s status never
+certifies the work. Consumers read $implement.output.green; compositions gate on
+it deterministically before spending or shipping (deliver''s pr step does), and the
+workflow''s outcome_field records it as the run''s authored outcome.
+Each turn is a fresh session: work that continues past a seam is carried by its
+commits and implementation.md, never by a conversation that grows with the work.', '@implementer large', NULL, '{}'::text[], NULL, NULL, NULL, NULL, 'implement', 'implement/commands/implement.md', NULL, NULL, NULL, NULL, NULL, 'archon-implement', 'implement/archon-implement.yaml');
+INSERT INTO mc.arch_steps (archon_sha, factory_sha, workflow, path, parent_path, position, step_id, kind, description, model, when_condition, depends_on, trigger_rule, include, child_workflow, round_cap, command, command_file, script, script_file, runtime, bash, prompt, defined_in, file) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/deliver/rounds/pr', 'ship/deliver/rounds', 22, 'pr', 'include', 'Red the change did not cause still goes to review; CI judges it again.', NULL, '$implement.output.green == true || $implement.output.red_cause == ''inherited'' || $implement.output.red_cause == ''environment''', ARRAY['implement']::text[], NULL, 'archon-pr', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 'archon-deliver-block', 'deliver/archon-deliver-block.yaml');
+INSERT INTO mc.arch_steps (archon_sha, factory_sha, workflow, path, parent_path, position, step_id, kind, description, model, when_condition, depends_on, trigger_rule, include, child_workflow, round_cap, command, command_file, script, script_file, runtime, bash, prompt, defined_in, file) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/deliver/rounds/pr/forge', 'ship/deliver/rounds/pr', 23, 'forge', 'script', 'Refuses the run before the agent spends when the selected forge source cannot
+act: no plugin for the host, no usable credential, or an unauthenticated gh.', NULL, NULL, '{}'::text[], NULL, NULL, NULL, NULL, NULL, NULL, 'forge-check', 'pr/scripts/forge-check.ts', 'bun', NULL, NULL, 'archon-pr', 'pr/archon-pr.yaml');
+INSERT INTO mc.arch_steps (archon_sha, factory_sha, workflow, path, parent_path, position, step_id, kind, description, model, when_condition, depends_on, trigger_rule, include, child_workflow, round_cap, command, command_file, script, script_file, runtime, bash, prompt, defined_in, file) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/deliver/rounds/pr/prepare', 'ship/deliver/rounds/pr', 24, 'prepare', 'command', 'The agent judges: which repository the work is proposed to, the base, whether
+the run continues an existing pull request, and what the title and body say.
+It performs no push and no forge write.', 'medium', NULL, ARRAY['forge']::text[], NULL, NULL, NULL, NULL, 'pr', 'pr/commands/pr.md', NULL, NULL, NULL, NULL, NULL, 'archon-pr', 'pr/archon-pr.yaml');
+INSERT INTO mc.arch_steps (archon_sha, factory_sha, workflow, path, parent_path, position, step_id, kind, description, model, when_condition, depends_on, trigger_rule, include, child_workflow, round_cap, command, command_file, script, script_file, runtime, bash, prompt, defined_in, file) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/deliver/rounds/pr/publish', 'ship/deliver/rounds/pr', 25, 'publish', 'script', 'The durable ownership record for every later public action in delivery and
+inbound forge event. It pushes the branch, then opens the pull request, or
+reuses the one this work already has; consumers use this qualified identity,
+never gh''s ambient branch lookup.', NULL, NULL, ARRAY['prepare']::text[], NULL, NULL, NULL, NULL, NULL, NULL, 'publish-pr', 'pr/scripts/publish-pr.ts', 'bun', NULL, NULL, 'archon-pr', 'pr/archon-pr.yaml');
+INSERT INTO mc.arch_steps (archon_sha, factory_sha, workflow, path, parent_path, position, step_id, kind, description, model, when_condition, depends_on, trigger_rule, include, child_workflow, round_cap, command, command_file, script, script_file, runtime, bash, prompt, defined_in, file) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/deliver/rounds/review', 'ship/deliver/rounds', 26, 'review', 'include', 'Review a change through parallel specialist lenses and produce one evidence-based
+verdict. On every round but a light one, a quick route agent picks the lenses
+the change earns — seams, code, tests, errors, docs — with seams on unless the
+change clearly touches no type, contract, state or boundary. Reviews the requested
+PR; empty scope selects the current branch''s open PR first, otherwise the working
+diff. Every round also holds the change to the accepted contract: each stated
+acceptance item, invariant, and steering
+constraint is met with cited evidence or raised as a blocking finding. Given a
+part assignment, items that only later parts own are deferred, not unmet.
+Advisory and read-only: it judges, it never edits. Given the previous round''s
+report, the general code reviewer, plus every lens the route agent selects for
+a finding the previous round left open or for the delta''s area, reviews only
+the correction delta since the reviewed commit, leaving out code a merge of the
+base brought in, and judges whether each prior finding was resolved or validly
+declined (`light` runs the general code reviewer alone, for a CI fix); one
+continuation reviewer carries the prior findings forward.
+
+When the checkout matches the PR head, the final synthesized report is posted
+to it as one canonical comment, edited in place on re-review (on `gh`, a write that landed but returned a retryable response (5xx, or a rate limit) or no response can leave a second one; the next upsert then refuses: inspect both and delete one). A head mismatch
+stops before review and returns the exact rerun command. For a same-repository
+PR, advance any clean existing worktree to its head, then use its head branch.
+For a fork PR, fetch its head first, then use a fresh review branch with
+`--from <PR head SHA>`.
+
+The graph of archon-review, as a building block for a workflow that composes the
+stage and owns what follows its ending. It never pauses for a person: run
+archon-review, which adds that pause, by hand.
+', NULL, NULL, ARRAY['pr']::text[], NULL, 'archon-review-block', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 'archon-deliver-block', 'deliver/archon-deliver-block.yaml');
+INSERT INTO mc.arch_steps (archon_sha, factory_sha, workflow, path, parent_path, position, step_id, kind, description, model, when_condition, depends_on, trigger_rule, include, child_workflow, round_cap, command, command_file, script, script_file, runtime, bash, prompt, defined_in, file) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/deliver/rounds/review/policy', 'ship/deliver/rounds/review', 27, 'policy', 'script', 'The directory of the pack''s default policy documents in this run''s captured
+source, the same in a source checkout and a binary install. Synthesis names the
+policy file it needs and reads the default, then the project''s own on top.', NULL, NULL, '{}'::text[], NULL, NULL, NULL, NULL, NULL, NULL, 'policy', 'review/scripts/policy.ts', 'bun', NULL, NULL, 'archon-review-block', 'review/archon-review-block.yaml');
+INSERT INTO mc.arch_steps (archon_sha, factory_sha, workflow, path, parent_path, position, step_id, kind, description, model, when_condition, depends_on, trigger_rule, include, child_workflow, round_cap, command, command_file, script, script_file, runtime, bash, prompt, defined_in, file) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/deliver/rounds/review/mode', 'ship/deliver/rounds/review', 28, 'mode', 'script', 'After scope accepts the checkout, fixes what this round reviews: whether it
+continues a previous round, the commit under review (the checkout''s HEAD as
+the engine observed it), and, on a continuation, the previous round''s
+reviewed commit, which the head must descend from. A caller''s pull-request
+record names the PR, never the commit: its head revision goes stale with
+every push after the PR opens. publish refuses a report about any other
+commit. The node also turns the input into the routable fact the lenses gate
+on: an include''s inputs are substituted as text at load time and cannot be
+compared in a `when:`. For the same reason it carries the part assignment, so
+synthesis reads a value certified against its schema, not raw text.', NULL, '$scope.output.head_matches == true', ARRAY['scope']::text[], NULL, NULL, NULL, NULL, NULL, NULL, 'review-round', 'review/scripts/review-round.ts', 'bun', NULL, NULL, 'archon-review-block', 'review/archon-review-block.yaml');
+INSERT INTO mc.arch_steps (archon_sha, factory_sha, workflow, path, parent_path, position, step_id, kind, description, model, when_condition, depends_on, trigger_rule, include, child_workflow, round_cap, command, command_file, script, script_file, runtime, bash, prompt, defined_in, file) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/deliver/rounds/review/review-dir', 'ship/deliver/rounds/review', 29, 'review-dir', 'bash', 'Every review node writes under review/, and a fresh run''s artifacts directory
+has none. Agents told to create it have skipped that step, so the declared
+scope.md pointer failed and took the whole delivery run down with it.', NULL, NULL, '{}'::text[], NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 'mkdir -p "$ARTIFACTS_DIR/review"', NULL, 'archon-review-block', 'review/archon-review-block.yaml');
+INSERT INTO mc.arch_steps (archon_sha, factory_sha, workflow, path, parent_path, position, step_id, kind, description, model, when_condition, depends_on, trigger_rule, include, child_workflow, round_cap, command, command_file, script, script_file, runtime, bash, prompt, defined_in, file) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/deliver/rounds/review/scope', 'ship/deliver/rounds/review', 30, 'scope', 'command', NULL, '@reviewer medium', NULL, ARRAY['review-dir']::text[], NULL, NULL, NULL, NULL, 'review-scope', 'review/commands/review-scope.md', NULL, NULL, NULL, NULL, NULL, 'archon-review-block', 'review/archon-review-block.yaml');
+INSERT INTO mc.arch_steps (archon_sha, factory_sha, workflow, path, parent_path, position, step_id, kind, description, model, when_condition, depends_on, trigger_rule, include, child_workflow, round_cap, command, command_file, script, script_file, runtime, bash, prompt, defined_in, file) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/deliver/rounds/review/route', 'ship/deliver/rounds/review', 31, 'route', 'command', 'After scope checks the head, a small model reads the diff
+summary and the work order and answers, with seams on by default. Every round
+but a light one routes; on a continuation route adds to the code lens every lens
+whose finding the previous report leaves open or whose area the delta touches.', 'small', '$scope.output.head_matches == true && $mode.output.light == false', ARRAY['mode', 'scope']::text[], NULL, NULL, NULL, NULL, 'route-review', 'review/commands/route-review.md', NULL, NULL, NULL, NULL, NULL, 'archon-review-block', 'review/archon-review-block.yaml');
+INSERT INTO mc.arch_steps (archon_sha, factory_sha, workflow, path, parent_path, position, step_id, kind, description, model, when_condition, depends_on, trigger_rule, include, child_workflow, round_cap, command, command_file, script, script_file, runtime, bash, prompt, defined_in, file) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/deliver/rounds/review/seams', 'ship/deliver/rounds/review', 32, 'seams', 'command', '── Lenses ────────────────────────────────────────────────────────
+Every reviewer is read-only by the engine''s check, not only by its prompt:
+lenses run in parallel in one checkout, so a reviewer that edits it can
+mislead the others. `&&` binds tighter than `||` and short-circuits, so a
+light round, which skips the route node, never reads it.', '@review-seams @reviewer medium', '$scope.output.head_matches == true && $mode.output.light == false && $route.output.seams == true || $scope.output.head_matches == true && $mode.output.seams == true', ARRAY['scope', 'route']::text[], 'none_failed_min_one_success', NULL, NULL, NULL, 'review-seams', 'review/commands/review-seams.md', NULL, NULL, NULL, NULL, NULL, 'archon-review-block', 'review/archon-review-block.yaml');
+INSERT INTO mc.arch_steps (archon_sha, factory_sha, workflow, path, parent_path, position, step_id, kind, description, model, when_condition, depends_on, trigger_rule, include, child_workflow, round_cap, command, command_file, script, script_file, runtime, bash, prompt, defined_in, file) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/deliver/rounds/review/code', 'ship/deliver/rounds/review', 33, 'code', 'command', NULL, '@review-code @reviewer large', '$scope.output.head_matches == true && $mode.output.light == false && $route.output.code == true || $scope.output.head_matches == true && $mode.output.code == true', ARRAY['scope', 'route']::text[], 'none_failed_min_one_success', NULL, NULL, NULL, 'review-code', 'review/commands/review-code.md', NULL, NULL, NULL, NULL, NULL, 'archon-review-block', 'review/archon-review-block.yaml');
+INSERT INTO mc.arch_steps (archon_sha, factory_sha, workflow, path, parent_path, position, step_id, kind, description, model, when_condition, depends_on, trigger_rule, include, child_workflow, round_cap, command, command_file, script, script_file, runtime, bash, prompt, defined_in, file) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/deliver/rounds/review/tests', 'ship/deliver/rounds/review', 34, 'tests', 'command', NULL, '@review-tests @reviewer medium', '$scope.output.head_matches == true && $mode.output.light == false && $route.output.tests == true || $scope.output.head_matches == true && $mode.output.tests == true', ARRAY['scope', 'route']::text[], 'none_failed_min_one_success', NULL, NULL, NULL, 'review-tests', 'review/commands/review-tests.md', NULL, NULL, NULL, NULL, NULL, 'archon-review-block', 'review/archon-review-block.yaml');
+INSERT INTO mc.arch_steps (archon_sha, factory_sha, workflow, path, parent_path, position, step_id, kind, description, model, when_condition, depends_on, trigger_rule, include, child_workflow, round_cap, command, command_file, script, script_file, runtime, bash, prompt, defined_in, file) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/deliver/rounds/review/errors', 'ship/deliver/rounds/review', 35, 'errors', 'command', NULL, '@review-errors @reviewer medium', '$scope.output.head_matches == true && $mode.output.light == false && $route.output.errors == true || $scope.output.head_matches == true && $mode.output.errors == true', ARRAY['scope', 'route']::text[], 'none_failed_min_one_success', NULL, NULL, NULL, 'review-errors', 'review/commands/review-errors.md', NULL, NULL, NULL, NULL, NULL, 'archon-review-block', 'review/archon-review-block.yaml');
+INSERT INTO mc.arch_steps (archon_sha, factory_sha, workflow, path, parent_path, position, step_id, kind, description, model, when_condition, depends_on, trigger_rule, include, child_workflow, round_cap, command, command_file, script, script_file, runtime, bash, prompt, defined_in, file) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/deliver/rounds/review/docs', 'ship/deliver/rounds/review', 36, 'docs', 'command', NULL, '@review-docs @reviewer medium', '$scope.output.head_matches == true && $mode.output.light == false && $route.output.docs == true || $scope.output.head_matches == true && $mode.output.docs == true', ARRAY['scope', 'route']::text[], 'none_failed_min_one_success', NULL, NULL, NULL, 'review-docs', 'review/commands/review-docs.md', NULL, NULL, NULL, NULL, NULL, 'archon-review-block', 'review/archon-review-block.yaml');
+INSERT INTO mc.arch_steps (archon_sha, factory_sha, workflow, path, parent_path, position, step_id, kind, description, model, when_condition, depends_on, trigger_rule, include, child_workflow, round_cap, command, command_file, script, script_file, runtime, bash, prompt, defined_in, file) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/deliver/rounds/review/review-complete', 'ship/deliver/rounds/review', 37, 'review-complete', 'bash', 'all_done lets this barrier settle after unselected lenses, or a lens whose
+retries were exhausted. The deciding
+agent can then tolerate specialist failures without also tolerating a failed
+mode/scope preflight: synthesize separately requires both to have succeeded.', NULL, '$scope.output.head_matches == true', ARRAY['scope', 'route', 'seams', 'code', 'tests', 'errors', 'docs']::text[], 'all_done', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 'true', NULL, 'archon-review-block', 'review/archon-review-block.yaml');
+INSERT INTO mc.arch_steps (archon_sha, factory_sha, workflow, path, parent_path, position, step_id, kind, description, model, when_condition, depends_on, trigger_rule, include, child_workflow, round_cap, command, command_file, script, script_file, runtime, bash, prompt, defined_in, file) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/deliver/rounds/review/synthesize', 'ship/deliver/rounds/review', 38, 'synthesize', 'command', 'A failed specialist (a provider stream dying mid-review, say) must not kill
+the review: synthesize detects the missing completion for a selected lens and
+forces ready:false naming the gap, so degradation is disclosed, never silent,
+and the next round is the retry. `ready` is a real boolean — the load-bearing field a composing
+loop terminates on. Every round receives this round''s lens files; a
+continuation also receives the complete prior report and correction delta.
+
+The deciding agent and the lenses start fresh and carry earlier rounds through
+the prior report, not a resumed session: a loop body cannot resume a session
+from its own earlier iteration, and session resume is not portable across the
+bundle''s supported providers (Claude Code, Codex, and Pi).
+
+Adversarial per-finding verification happens inside this node''s prompt. A
+separate verify stage between the lenses and this node is now expressible and
+would not change either side''s contract — the findings files are the declared
+boundary — but nothing has measured it as better than the in-prompt pass, so
+it stays here until something does.', '@reviewer medium', '$scope.output.head_matches == true', ARRAY['policy', 'mode', 'scope', 'review-complete']::text[], NULL, NULL, NULL, NULL, 'review-synthesize', 'review/commands/review-synthesize.md', NULL, NULL, NULL, NULL, NULL, 'archon-review-block', 'review/archon-review-block.yaml');
+INSERT INTO mc.arch_steps (archon_sha, factory_sha, workflow, path, parent_path, position, step_id, kind, description, model, when_condition, depends_on, trigger_rule, include, child_workflow, round_cap, command, command_file, script, script_file, runtime, bash, prompt, defined_in, file) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/deliver/rounds/review/publish', 'ship/deliver/rounds/review', 39, 'publish', 'script', 'The reviewer judges and writes the report; this node owns the one public
+write, so every round edits the same marked comment instead of appending
+another, through whichever forge source the run selected (on `gh`, a landed
+write that returned a retryable response (5xx, or a rate limit) or no response can leave a second one, and the next
+upsert refuses). The verdict passes
+through unchanged: publication is not what makes a review true.', NULL, '$scope.output.head_matches == true', ARRAY['synthesize']::text[], NULL, NULL, NULL, NULL, NULL, NULL, 'publish-review', 'review/scripts/publish-review.ts', 'bun', NULL, NULL, 'archon-review-block', 'review/archon-review-block.yaml');
+INSERT INTO mc.arch_steps (archon_sha, factory_sha, workflow, path, parent_path, position, step_id, kind, description, model, when_condition, depends_on, trigger_rule, include, child_workflow, round_cap, command, command_file, script, script_file, runtime, bash, prompt, defined_in, file) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/deliver/rounds/review/result', 'ship/deliver/rounds/review', 40, 'result', 'script', 'Standalone runs show the first completed sink, so the verdict precedes cleanup.', NULL, NULL, ARRAY['scope', 'publish']::text[], 'none_failed_min_one_success', NULL, NULL, NULL, NULL, NULL, 'const verdict = JSON.parse(process.env.INPUTS_VERDICT);
+const report = JSON.parse(process.env.INPUTS_SCOPE_REPORT);
+console.log(JSON.stringify(JSON.parse(process.env.INPUTS_HEAD_MATCHES) ? verdict : {
+  ready: false, action: "ask",
+  findings_summary: require("node:fs").readFileSync(require("node:path").join(process.env.ARTIFACTS_DIR, report.path), "utf8"),
+  report, discoveries: [], contract_left: ["PR head mismatch prevented contract review."]
+}));
+', NULL, 'bun', NULL, NULL, 'archon-review-block', 'review/archon-review-block.yaml');
+INSERT INTO mc.arch_steps (archon_sha, factory_sha, workflow, path, parent_path, position, step_id, kind, description, model, when_condition, depends_on, trigger_rule, include, child_workflow, round_cap, command, command_file, script, script_file, runtime, bash, prompt, defined_in, file) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/deliver/rounds/review/prune-scratch', 'ship/deliver/rounds/review', 41, 'prune-scratch', 'script', 'Reviewers'' scratch worktrees are removed by the workflow once every lens and
+the deciding agent have settled, whether they succeeded or failed.', NULL, NULL, ARRAY['synthesize']::text[], 'all_done', NULL, NULL, NULL, NULL, NULL, 'prune-scratch', 'review/scripts/prune-scratch.ts', 'bun', NULL, NULL, 'archon-review-block', 'review/archon-review-block.yaml');
+INSERT INTO mc.arch_steps (archon_sha, factory_sha, workflow, path, parent_path, position, step_id, kind, description, model, when_condition, depends_on, trigger_rule, include, child_workflow, round_cap, command, command_file, script, script_file, runtime, bash, prompt, defined_in, file) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/deliver/rounds/simplify', 'ship/deliver/rounds', 42, 'simplify', 'include', 'After a review passes, before CI. Once per run: a later round finds the
+earlier shape.md and declares no findings (see simplify.md).', NULL, '$review.output.ready == true', ARRAY['review']::text[], NULL, 'archon-simplify', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 'archon-deliver-block', 'deliver/archon-deliver-block.yaml');
+INSERT INTO mc.arch_steps (archon_sha, factory_sha, workflow, path, parent_path, position, step_id, kind, description, model, when_condition, depends_on, trigger_rule, include, child_workflow, round_cap, command, command_file, script, script_file, runtime, bash, prompt, defined_in, file) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/deliver/rounds/simplify/simplify', 'ship/deliver/rounds/simplify', 43, 'simplify', 'command', NULL, '@review-simplify @reviewer medium', NULL, '{}'::text[], NULL, NULL, NULL, NULL, 'simplify', 'simplify/commands/simplify.md', NULL, NULL, NULL, NULL, NULL, 'archon-simplify', 'simplify/archon-simplify.yaml');
+INSERT INTO mc.arch_steps (archon_sha, factory_sha, workflow, path, parent_path, position, step_id, kind, description, model, when_condition, depends_on, trigger_rule, include, child_workflow, round_cap, command, command_file, script, script_file, runtime, bash, prompt, defined_in, file) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/deliver/rounds/simplify/prune-scratch', 'ship/deliver/rounds/simplify', 44, 'prune-scratch', 'script', 'Scratch worktrees the lens tried mutations in are removed by the workflow,
+whether the lens succeeded or failed.', NULL, NULL, ARRAY['simplify']::text[], 'all_done', NULL, NULL, NULL, NULL, NULL, 'prune-scratch', 'simplify/scripts/prune-scratch.ts', 'bun', NULL, NULL, 'archon-simplify', 'simplify/archon-simplify.yaml');
+INSERT INTO mc.arch_steps (archon_sha, factory_sha, workflow, path, parent_path, position, step_id, kind, description, model, when_condition, depends_on, trigger_rule, include, child_workflow, round_cap, command, command_file, script, script_file, runtime, bash, prompt, defined_in, file) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/deliver/rounds/reshape', 'ship/deliver/rounds', 45, 'reshape', 'include', 'Implement a change and keep working until it is complete and the focused checks
+on what it changed pass. Commits as it goes; opens no PR. The input is anything intent-shaped:
+a plan (path or inline), review findings, a CI failure to fix, or a plain
+description of what to build.
+
+Use when: the work is already decided and needs building — "implement this plan",
+"apply these review findings", "build what this describes", "fix this CI failure".
+NOT for: deciding what to build, reviewing changes, or opening a PR.
+', NULL, '$simplify.output.findings == true', ARRAY['simplify']::text[], NULL, 'archon-implement', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 'archon-deliver-block', 'deliver/archon-deliver-block.yaml');
+INSERT INTO mc.arch_steps (archon_sha, factory_sha, workflow, path, parent_path, position, step_id, kind, description, model, when_condition, depends_on, trigger_rule, include, child_workflow, round_cap, command, command_file, script, script_file, runtime, bash, prompt, defined_in, file) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/deliver/rounds/reshape/implement', 'ship/deliver/rounds/reshape', 46, 'implement', 'loop', 'Run success ≠ green. The loop completes on `done`, which deliberately includes
+a definitive blocked decline (green: false) — so a completed run''s status never
+certifies the work. Consumers read $implement.output.green; compositions gate on
+it deterministically before spending or shipping (deliver''s pr step does), and the
+workflow''s outcome_field records it as the run''s authored outcome.
+Each turn is a fresh session: work that continues past a seam is carried by its
+commits and implementation.md, never by a conversation that grows with the work.', '@implementer large', NULL, '{}'::text[], NULL, NULL, NULL, NULL, 'implement', 'implement/commands/implement.md', NULL, NULL, NULL, NULL, NULL, 'archon-implement', 'implement/archon-implement.yaml');
+INSERT INTO mc.arch_steps (archon_sha, factory_sha, workflow, path, parent_path, position, step_id, kind, description, model, when_condition, depends_on, trigger_rule, include, child_workflow, round_cap, command, command_file, script, script_file, runtime, bash, prompt, defined_in, file) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/deliver/rounds/rereview', 'ship/deliver/rounds', 47, 'rereview', 'include', 'Reshape commits after review passed, so its delta is reviewed before CI, by
+the light review a CI fix gets: the code lens alone, on the delta.', NULL, NULL, ARRAY['reshape']::text[], NULL, 'archon-review-block', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 'archon-deliver-block', 'deliver/archon-deliver-block.yaml');
+INSERT INTO mc.arch_steps (archon_sha, factory_sha, workflow, path, parent_path, position, step_id, kind, description, model, when_condition, depends_on, trigger_rule, include, child_workflow, round_cap, command, command_file, script, script_file, runtime, bash, prompt, defined_in, file) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/deliver/rounds/rereview/policy', 'ship/deliver/rounds/rereview', 48, 'policy', 'script', 'The directory of the pack''s default policy documents in this run''s captured
+source, the same in a source checkout and a binary install. Synthesis names the
+policy file it needs and reads the default, then the project''s own on top.', NULL, NULL, '{}'::text[], NULL, NULL, NULL, NULL, NULL, NULL, 'policy', 'review/scripts/policy.ts', 'bun', NULL, NULL, 'archon-review-block', 'review/archon-review-block.yaml');
+INSERT INTO mc.arch_steps (archon_sha, factory_sha, workflow, path, parent_path, position, step_id, kind, description, model, when_condition, depends_on, trigger_rule, include, child_workflow, round_cap, command, command_file, script, script_file, runtime, bash, prompt, defined_in, file) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/deliver/rounds/rereview/mode', 'ship/deliver/rounds/rereview', 49, 'mode', 'script', 'After scope accepts the checkout, fixes what this round reviews: whether it
+continues a previous round, the commit under review (the checkout''s HEAD as
+the engine observed it), and, on a continuation, the previous round''s
+reviewed commit, which the head must descend from. A caller''s pull-request
+record names the PR, never the commit: its head revision goes stale with
+every push after the PR opens. publish refuses a report about any other
+commit. The node also turns the input into the routable fact the lenses gate
+on: an include''s inputs are substituted as text at load time and cannot be
+compared in a `when:`. For the same reason it carries the part assignment, so
+synthesis reads a value certified against its schema, not raw text.', NULL, '$scope.output.head_matches == true', ARRAY['scope']::text[], NULL, NULL, NULL, NULL, NULL, NULL, 'review-round', 'review/scripts/review-round.ts', 'bun', NULL, NULL, 'archon-review-block', 'review/archon-review-block.yaml');
+INSERT INTO mc.arch_steps (archon_sha, factory_sha, workflow, path, parent_path, position, step_id, kind, description, model, when_condition, depends_on, trigger_rule, include, child_workflow, round_cap, command, command_file, script, script_file, runtime, bash, prompt, defined_in, file) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/deliver/rounds/rereview/review-dir', 'ship/deliver/rounds/rereview', 50, 'review-dir', 'bash', 'Every review node writes under review/, and a fresh run''s artifacts directory
+has none. Agents told to create it have skipped that step, so the declared
+scope.md pointer failed and took the whole delivery run down with it.', NULL, NULL, '{}'::text[], NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 'mkdir -p "$ARTIFACTS_DIR/review"', NULL, 'archon-review-block', 'review/archon-review-block.yaml');
+INSERT INTO mc.arch_steps (archon_sha, factory_sha, workflow, path, parent_path, position, step_id, kind, description, model, when_condition, depends_on, trigger_rule, include, child_workflow, round_cap, command, command_file, script, script_file, runtime, bash, prompt, defined_in, file) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/deliver/rounds/rereview/scope', 'ship/deliver/rounds/rereview', 51, 'scope', 'command', NULL, '@reviewer medium', NULL, ARRAY['review-dir']::text[], NULL, NULL, NULL, NULL, 'review-scope', 'review/commands/review-scope.md', NULL, NULL, NULL, NULL, NULL, 'archon-review-block', 'review/archon-review-block.yaml');
+INSERT INTO mc.arch_steps (archon_sha, factory_sha, workflow, path, parent_path, position, step_id, kind, description, model, when_condition, depends_on, trigger_rule, include, child_workflow, round_cap, command, command_file, script, script_file, runtime, bash, prompt, defined_in, file) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/deliver/rounds/rereview/route', 'ship/deliver/rounds/rereview', 52, 'route', 'command', 'After scope checks the head, a small model reads the diff
+summary and the work order and answers, with seams on by default. Every round
+but a light one routes; on a continuation route adds to the code lens every lens
+whose finding the previous report leaves open or whose area the delta touches.', 'small', '$scope.output.head_matches == true && $mode.output.light == false', ARRAY['mode', 'scope']::text[], NULL, NULL, NULL, NULL, 'route-review', 'review/commands/route-review.md', NULL, NULL, NULL, NULL, NULL, 'archon-review-block', 'review/archon-review-block.yaml');
+INSERT INTO mc.arch_steps (archon_sha, factory_sha, workflow, path, parent_path, position, step_id, kind, description, model, when_condition, depends_on, trigger_rule, include, child_workflow, round_cap, command, command_file, script, script_file, runtime, bash, prompt, defined_in, file) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/deliver/rounds/rereview/seams', 'ship/deliver/rounds/rereview', 53, 'seams', 'command', '── Lenses ────────────────────────────────────────────────────────
+Every reviewer is read-only by the engine''s check, not only by its prompt:
+lenses run in parallel in one checkout, so a reviewer that edits it can
+mislead the others. `&&` binds tighter than `||` and short-circuits, so a
+light round, which skips the route node, never reads it.', '@review-seams @reviewer medium', '$scope.output.head_matches == true && $mode.output.light == false && $route.output.seams == true || $scope.output.head_matches == true && $mode.output.seams == true', ARRAY['scope', 'route']::text[], 'none_failed_min_one_success', NULL, NULL, NULL, 'review-seams', 'review/commands/review-seams.md', NULL, NULL, NULL, NULL, NULL, 'archon-review-block', 'review/archon-review-block.yaml');
+INSERT INTO mc.arch_steps (archon_sha, factory_sha, workflow, path, parent_path, position, step_id, kind, description, model, when_condition, depends_on, trigger_rule, include, child_workflow, round_cap, command, command_file, script, script_file, runtime, bash, prompt, defined_in, file) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/deliver/rounds/rereview/code', 'ship/deliver/rounds/rereview', 54, 'code', 'command', NULL, '@review-code @reviewer large', '$scope.output.head_matches == true && $mode.output.light == false && $route.output.code == true || $scope.output.head_matches == true && $mode.output.code == true', ARRAY['scope', 'route']::text[], 'none_failed_min_one_success', NULL, NULL, NULL, 'review-code', 'review/commands/review-code.md', NULL, NULL, NULL, NULL, NULL, 'archon-review-block', 'review/archon-review-block.yaml');
+INSERT INTO mc.arch_steps (archon_sha, factory_sha, workflow, path, parent_path, position, step_id, kind, description, model, when_condition, depends_on, trigger_rule, include, child_workflow, round_cap, command, command_file, script, script_file, runtime, bash, prompt, defined_in, file) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/deliver/rounds/rereview/tests', 'ship/deliver/rounds/rereview', 55, 'tests', 'command', NULL, '@review-tests @reviewer medium', '$scope.output.head_matches == true && $mode.output.light == false && $route.output.tests == true || $scope.output.head_matches == true && $mode.output.tests == true', ARRAY['scope', 'route']::text[], 'none_failed_min_one_success', NULL, NULL, NULL, 'review-tests', 'review/commands/review-tests.md', NULL, NULL, NULL, NULL, NULL, 'archon-review-block', 'review/archon-review-block.yaml');
+INSERT INTO mc.arch_steps (archon_sha, factory_sha, workflow, path, parent_path, position, step_id, kind, description, model, when_condition, depends_on, trigger_rule, include, child_workflow, round_cap, command, command_file, script, script_file, runtime, bash, prompt, defined_in, file) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/deliver/rounds/rereview/errors', 'ship/deliver/rounds/rereview', 56, 'errors', 'command', NULL, '@review-errors @reviewer medium', '$scope.output.head_matches == true && $mode.output.light == false && $route.output.errors == true || $scope.output.head_matches == true && $mode.output.errors == true', ARRAY['scope', 'route']::text[], 'none_failed_min_one_success', NULL, NULL, NULL, 'review-errors', 'review/commands/review-errors.md', NULL, NULL, NULL, NULL, NULL, 'archon-review-block', 'review/archon-review-block.yaml');
+INSERT INTO mc.arch_steps (archon_sha, factory_sha, workflow, path, parent_path, position, step_id, kind, description, model, when_condition, depends_on, trigger_rule, include, child_workflow, round_cap, command, command_file, script, script_file, runtime, bash, prompt, defined_in, file) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/deliver/rounds/rereview/docs', 'ship/deliver/rounds/rereview', 57, 'docs', 'command', NULL, '@review-docs @reviewer medium', '$scope.output.head_matches == true && $mode.output.light == false && $route.output.docs == true || $scope.output.head_matches == true && $mode.output.docs == true', ARRAY['scope', 'route']::text[], 'none_failed_min_one_success', NULL, NULL, NULL, 'review-docs', 'review/commands/review-docs.md', NULL, NULL, NULL, NULL, NULL, 'archon-review-block', 'review/archon-review-block.yaml');
+INSERT INTO mc.arch_steps (archon_sha, factory_sha, workflow, path, parent_path, position, step_id, kind, description, model, when_condition, depends_on, trigger_rule, include, child_workflow, round_cap, command, command_file, script, script_file, runtime, bash, prompt, defined_in, file) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/deliver/rounds/rereview/review-complete', 'ship/deliver/rounds/rereview', 58, 'review-complete', 'bash', 'all_done lets this barrier settle after unselected lenses, or a lens whose
+retries were exhausted. The deciding
+agent can then tolerate specialist failures without also tolerating a failed
+mode/scope preflight: synthesize separately requires both to have succeeded.', NULL, '$scope.output.head_matches == true', ARRAY['scope', 'route', 'seams', 'code', 'tests', 'errors', 'docs']::text[], 'all_done', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 'true', NULL, 'archon-review-block', 'review/archon-review-block.yaml');
+INSERT INTO mc.arch_steps (archon_sha, factory_sha, workflow, path, parent_path, position, step_id, kind, description, model, when_condition, depends_on, trigger_rule, include, child_workflow, round_cap, command, command_file, script, script_file, runtime, bash, prompt, defined_in, file) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/deliver/rounds/rereview/synthesize', 'ship/deliver/rounds/rereview', 59, 'synthesize', 'command', 'A failed specialist (a provider stream dying mid-review, say) must not kill
+the review: synthesize detects the missing completion for a selected lens and
+forces ready:false naming the gap, so degradation is disclosed, never silent,
+and the next round is the retry. `ready` is a real boolean — the load-bearing field a composing
+loop terminates on. Every round receives this round''s lens files; a
+continuation also receives the complete prior report and correction delta.
+
+The deciding agent and the lenses start fresh and carry earlier rounds through
+the prior report, not a resumed session: a loop body cannot resume a session
+from its own earlier iteration, and session resume is not portable across the
+bundle''s supported providers (Claude Code, Codex, and Pi).
+
+Adversarial per-finding verification happens inside this node''s prompt. A
+separate verify stage between the lenses and this node is now expressible and
+would not change either side''s contract — the findings files are the declared
+boundary — but nothing has measured it as better than the in-prompt pass, so
+it stays here until something does.', '@reviewer medium', '$scope.output.head_matches == true', ARRAY['policy', 'mode', 'scope', 'review-complete']::text[], NULL, NULL, NULL, NULL, 'review-synthesize', 'review/commands/review-synthesize.md', NULL, NULL, NULL, NULL, NULL, 'archon-review-block', 'review/archon-review-block.yaml');
+INSERT INTO mc.arch_steps (archon_sha, factory_sha, workflow, path, parent_path, position, step_id, kind, description, model, when_condition, depends_on, trigger_rule, include, child_workflow, round_cap, command, command_file, script, script_file, runtime, bash, prompt, defined_in, file) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/deliver/rounds/rereview/publish', 'ship/deliver/rounds/rereview', 60, 'publish', 'script', 'The reviewer judges and writes the report; this node owns the one public
+write, so every round edits the same marked comment instead of appending
+another, through whichever forge source the run selected (on `gh`, a landed
+write that returned a retryable response (5xx, or a rate limit) or no response can leave a second one, and the next
+upsert refuses). The verdict passes
+through unchanged: publication is not what makes a review true.', NULL, '$scope.output.head_matches == true', ARRAY['synthesize']::text[], NULL, NULL, NULL, NULL, NULL, NULL, 'publish-review', 'review/scripts/publish-review.ts', 'bun', NULL, NULL, 'archon-review-block', 'review/archon-review-block.yaml');
+INSERT INTO mc.arch_steps (archon_sha, factory_sha, workflow, path, parent_path, position, step_id, kind, description, model, when_condition, depends_on, trigger_rule, include, child_workflow, round_cap, command, command_file, script, script_file, runtime, bash, prompt, defined_in, file) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/deliver/rounds/rereview/result', 'ship/deliver/rounds/rereview', 61, 'result', 'script', 'Standalone runs show the first completed sink, so the verdict precedes cleanup.', NULL, NULL, ARRAY['scope', 'publish']::text[], 'none_failed_min_one_success', NULL, NULL, NULL, NULL, NULL, 'const verdict = JSON.parse(process.env.INPUTS_VERDICT);
+const report = JSON.parse(process.env.INPUTS_SCOPE_REPORT);
+console.log(JSON.stringify(JSON.parse(process.env.INPUTS_HEAD_MATCHES) ? verdict : {
+  ready: false, action: "ask",
+  findings_summary: require("node:fs").readFileSync(require("node:path").join(process.env.ARTIFACTS_DIR, report.path), "utf8"),
+  report, discoveries: [], contract_left: ["PR head mismatch prevented contract review."]
+}));
+', NULL, 'bun', NULL, NULL, 'archon-review-block', 'review/archon-review-block.yaml');
+INSERT INTO mc.arch_steps (archon_sha, factory_sha, workflow, path, parent_path, position, step_id, kind, description, model, when_condition, depends_on, trigger_rule, include, child_workflow, round_cap, command, command_file, script, script_file, runtime, bash, prompt, defined_in, file) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/deliver/rounds/rereview/prune-scratch', 'ship/deliver/rounds/rereview', 62, 'prune-scratch', 'script', 'Reviewers'' scratch worktrees are removed by the workflow once every lens and
+the deciding agent have settled, whether they succeeded or failed.', NULL, NULL, ARRAY['synthesize']::text[], 'all_done', NULL, NULL, NULL, NULL, NULL, 'prune-scratch', 'review/scripts/prune-scratch.ts', 'bun', NULL, NULL, 'archon-review-block', 'review/archon-review-block.yaml');
+INSERT INTO mc.arch_steps (archon_sha, factory_sha, workflow, path, parent_path, position, step_id, kind, description, model, when_condition, depends_on, trigger_rule, include, child_workflow, round_cap, command, command_file, script, script_file, runtime, bash, prompt, defined_in, file) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/deliver/rounds/settle-threads', 'ship/deliver/rounds', 63, 'settle-threads', 'command', 'Review threads are work too, whoever opened them. This round''s implementer
+judged the threads the previous round read; this agent checks each
+disposition at the head and writes the reply each settled thread gets.', 'medium', '$LOOP_PREV.threads.output.open > 0', ARRAY['pr', 'review', 'rereview']::text[], 'none_failed_min_one_success', NULL, NULL, NULL, 'settle-threads', 'deliver/commands/settle-threads.md', NULL, NULL, NULL, NULL, NULL, 'archon-deliver-block', 'deliver/archon-deliver-block.yaml');
+INSERT INTO mc.arch_steps (archon_sha, factory_sha, workflow, path, parent_path, position, step_id, kind, description, model, when_condition, depends_on, trigger_rule, include, child_workflow, round_cap, command, command_file, script, script_file, runtime, bash, prompt, defined_in, file) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/deliver/rounds/ci', 'ship/deliver/rounds', 64, 'ci', 'command', 'CI is the project''s full validation: implementers run only focused checks.
+Fresh: CI reads the PR, not simplify''s or reshape''s conversation.', 'medium', '$review.output.ready == true && $simplify.output.findings == false || $review.output.ready == true && $simplify.output.findings == true && $rereview.output.ready == true', ARRAY['review', 'simplify', 'rereview', 'settle-threads']::text[], 'none_failed_min_one_success', NULL, NULL, NULL, 'ci', 'deliver/commands/ci.md', NULL, NULL, NULL, NULL, NULL, 'archon-deliver-block', 'deliver/archon-deliver-block.yaml');
+INSERT INTO mc.arch_steps (archon_sha, factory_sha, workflow, path, parent_path, position, step_id, kind, description, model, when_condition, depends_on, trigger_rule, include, child_workflow, round_cap, command, command_file, script, script_file, runtime, bash, prompt, defined_in, file) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/deliver/rounds/threads', 'ship/deliver/rounds', 65, 'threads', 'script', 'Posts and resolves settle-threads'' answers, then reads what is still open,
+after CI so threads posted during the round count.', NULL, NULL, ARRAY['pr', 'review', 'rereview', 'ci', 'settle-threads']::text[], 'none_failed_min_one_success', NULL, NULL, NULL, NULL, NULL, 'threads', 'deliver/scripts/threads.ts', 'bun', NULL, NULL, 'archon-deliver-block', 'deliver/archon-deliver-block.yaml');
+INSERT INTO mc.arch_steps (archon_sha, factory_sha, workflow, path, parent_path, position, step_id, kind, description, model, when_condition, depends_on, trigger_rule, include, child_workflow, round_cap, command, command_file, script, script_file, runtime, bash, prompt, defined_in, file) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/deliver/rounds/round', 'ship/deliver/rounds', 66, 'round', 'script', '`until_bash` and the loop''s output cannot read a skipped node, so this joins
+the round''s verdicts into the value the loop decides on.', NULL, NULL, ARRAY['implement', 'pr', 'review', 'rereview', 'ci', 'threads']::text[], 'all_done', NULL, NULL, NULL, NULL, NULL, 'round', 'deliver/scripts/round.ts', 'bun', NULL, NULL, 'archon-deliver-block', 'deliver/archon-deliver-block.yaml');
+INSERT INTO mc.arch_steps (archon_sha, factory_sha, workflow, path, parent_path, position, step_id, kind, description, model, when_condition, depends_on, trigger_rule, include, child_workflow, round_cap, command, command_file, script, script_file, runtime, bash, prompt, defined_in, file) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/deliver/update-pr-body', 'ship/deliver', 67, 'update-pr-body', 'command', 'Corrections and the base merge can falsify claims the description made when the
+draft opened, and an implementer can pass red the description must disclose. One
+agent reads the live description and the final diff, and edits only what is no
+longer true. It also links the issue: closing only when the latest review left
+nothing open and no dated ruling on the issue keeps it open. It runs once the
+rounds have ended, never per round;
+content a round prepared for the description is that round''s pr step''s write.', 'medium', '$rounds.output.pr_url != ''''', ARRAY['rounds']::text[], NULL, NULL, NULL, NULL, 'update-pr-body', 'deliver/commands/update-pr-body.md', NULL, NULL, NULL, NULL, NULL, 'archon-deliver-block', 'deliver/archon-deliver-block.yaml');
+INSERT INTO mc.arch_steps (archon_sha, factory_sha, workflow, path, parent_path, position, step_id, kind, description, model, when_condition, depends_on, trigger_rule, include, child_workflow, round_cap, command, command_file, script, script_file, runtime, bash, prompt, defined_in, file) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/deliver/outcome', 'ship/deliver', 68, 'outcome', 'script', 'Composes the success-path report (scripts/outcome.ts): ready with the pull
+request''s URL, or not ready with why. `report` relays it.', NULL, NULL, ARRAY['rounds', 'update-pr-body']::text[], 'none_failed_min_one_success', NULL, NULL, NULL, NULL, NULL, 'outcome', 'deliver/scripts/outcome.ts', 'bun', NULL, NULL, 'archon-deliver-block', 'deliver/archon-deliver-block.yaml');
+INSERT INTO mc.arch_steps (archon_sha, factory_sha, workflow, path, parent_path, position, step_id, kind, description, model, when_condition, depends_on, trigger_rule, include, child_workflow, round_cap, command, command_file, script, script_file, runtime, bash, prompt, defined_in, file) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/deliver/report', 'ship/deliver', 69, 'report', 'script', 'The workflow''s terminal report on every ending. A node failure skips `outcome`
+(never fails it), so `all_done` still runs this node and the binding reads null.
+`always_run` because it reads discoveries its dependency edge does not carry.', NULL, NULL, ARRAY['outcome']::text[], 'all_done', NULL, NULL, NULL, NULL, NULL, 'report', 'deliver/scripts/report.ts', 'bun', NULL, NULL, 'archon-deliver-block', 'deliver/archon-deliver-block.yaml');
+INSERT INTO mc.arch_steps (archon_sha, factory_sha, workflow, path, parent_path, position, step_id, kind, description, model, when_condition, depends_on, trigger_rule, include, child_workflow, round_cap, command, command_file, script, script_file, runtime, bash, prompt, defined_in, file) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/outcome', 'ship', 70, 'outcome', 'script', 'The result of every legitimate ending, relayed by `report`. Negative advisory verdicts
+complete with the report that explains them; a delivery is reported from the
+deliver branch''s own outcome, ready or not (bound with if_skipped, so a skipped
+branch arrives as null) — see scripts/outcome.ts.
+
+The advisory producers are bound with if_skipped: a route that never ran them
+reads null. Two dependencies carry the whole graph. `deliver` depends on triage,
+inv and planned, so nothing this node reports on can settle after it. `triage` is named because
+none_failed_min_one_success needs one completed dependency, and on the no_action
+route `deliver` is the skipped one.
+
+A failed delivery reaches this node through deliver''s report (`reason: failed`
+or `pr_create_unresolved`) and is relayed like any other not-ready delivery. A
+failure before delivery skips this node, and `report` answers.', NULL, NULL, ARRAY['triage', 'deliver']::text[], 'none_failed_min_one_success', NULL, NULL, NULL, NULL, NULL, 'outcome', 'ship/scripts/outcome.ts', 'bun', NULL, NULL, 'archon-ship-block', 'ship/archon-ship-block.yaml');
+INSERT INTO mc.arch_steps (archon_sha, factory_sha, workflow, path, parent_path, position, step_id, kind, description, model, when_condition, depends_on, trigger_rule, include, child_workflow, round_cap, command, command_file, script, script_file, runtime, bash, prompt, defined_in, file) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/report', 'ship', 71, 'report', 'script', 'The workflow''s terminal report on every ending. A node failure skips `outcome`
+(never fails it), so `all_done` still runs this node and the binding reads null.
+`always_run` because it reads discoveries its dependency edge does not carry.', NULL, NULL, ARRAY['outcome']::text[], 'all_done', NULL, NULL, NULL, NULL, NULL, 'report', 'ship/scripts/report.ts', 'bun', NULL, NULL, 'archon-ship-block', 'ship/archon-ship-block.yaml');
+INSERT INTO mc.arch_steps (archon_sha, factory_sha, workflow, path, parent_path, position, step_id, kind, description, model, when_condition, depends_on, trigger_rule, include, child_workflow, round_cap, command, command_file, script, script_file, runtime, bash, prompt, defined_in, file) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'answer', NULL, 72, 'answer', 'command', NULL, 'large', '$facts.output.path == ''route'' && $route.output.decision == ''launch''', ARRAY['facts', 'checkout', 'ship']::text[], 'none_failed_min_one_success', NULL, NULL, NULL, 'answer', 'build-queue/commands/answer.md', NULL, NULL, NULL, NULL, NULL, 'archon-build-queue', 'build-queue/archon-build-queue.yaml');
+INSERT INTO mc.arch_steps (archon_sha, factory_sha, workflow, path, parent_path, position, step_id, kind, description, model, when_condition, depends_on, trigger_rule, include, child_workflow, round_cap, command, command_file, script, script_file, runtime, bash, prompt, defined_in, file) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'apply', NULL, 73, 'apply', 'script', 'Checks the decision, performs the writes it declared and reads each one back:
+the push, then the work item.', NULL, NULL, ARRAY['facts', 'route', 'answer']::text[], 'none_failed_min_one_success', NULL, NULL, NULL, NULL, NULL, 'apply', 'build-queue/scripts/apply.ts', 'bun', NULL, NULL, 'archon-build-queue', 'build-queue/archon-build-queue.yaml');
+INSERT INTO mc.arch_steps (archon_sha, factory_sha, workflow, path, parent_path, position, step_id, kind, description, model, when_condition, depends_on, trigger_rule, include, child_workflow, round_cap, command, command_file, script, script_file, runtime, bash, prompt, defined_in, file) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ask', NULL, 74, 'ask', 'wait', 'A paused run gives its resource slot back, so the next scheduled run can work
+another item while this one waits.', NULL, '$apply.output.attention != ''''', ARRAY['apply']::text[], NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 'archon-build-queue', 'build-queue/archon-build-queue.yaml');
+INSERT INTO mc.arch_steps (archon_sha, factory_sha, workflow, path, parent_path, position, step_id, kind, description, model, when_condition, depends_on, trigger_rule, include, child_workflow, round_cap, command, command_file, script, script_file, runtime, bash, prompt, defined_in, file) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ruling', NULL, 75, 'ruling', 'script', NULL, NULL, NULL, ARRAY['facts', 'apply', 'ask']::text[], NULL, NULL, NULL, NULL, NULL, NULL, 'ruling', 'build-queue/scripts/ruling.ts', 'bun', NULL, NULL, 'archon-build-queue', 'build-queue/archon-build-queue.yaml');
+INSERT INTO mc.arch_steps (archon_sha, factory_sha, workflow, path, parent_path, position, step_id, kind, description, model, when_condition, depends_on, trigger_rule, include, child_workflow, round_cap, command, command_file, script, script_file, runtime, bash, prompt, defined_in, file) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'blocked', NULL, 76, 'blocked', 'script', 'Revisit pickup is independent of item pickup: an unresolved PR create must
+not suppress revisits of other items.', NULL, NULL, '{}'::text[], NULL, NULL, NULL, NULL, NULL, NULL, 'blocked', 'build-queue/scripts/blocked.ts', 'bun', NULL, NULL, 'archon-build-queue', 'build-queue/archon-build-queue.yaml');
+INSERT INTO mc.arch_steps (archon_sha, factory_sha, workflow, path, parent_path, position, step_id, kind, description, model, when_condition, depends_on, trigger_rule, include, child_workflow, round_cap, command, command_file, script, script_file, runtime, bash, prompt, defined_in, file) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'revisit', NULL, 77, 'revisit', 'command', NULL, 'medium', '$blocked.output.blocked_count > 0', ARRAY['blocked']::text[], NULL, NULL, NULL, NULL, 'revisit', 'build-queue/commands/revisit.md', NULL, NULL, NULL, NULL, NULL, 'archon-build-queue', 'build-queue/archon-build-queue.yaml');
+INSERT INTO mc.arch_steps (archon_sha, factory_sha, workflow, path, parent_path, position, step_id, kind, description, model, when_condition, depends_on, trigger_rule, include, child_workflow, round_cap, command, command_file, script, script_file, runtime, bash, prompt, defined_in, file) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'retriage', NULL, 78, 'retriage', 'script', NULL, NULL, NULL, ARRAY['blocked', 'revisit']::text[], NULL, NULL, NULL, NULL, NULL, NULL, 'retriage', 'build-queue/scripts/retriage.ts', 'bun', NULL, NULL, 'archon-build-queue', 'build-queue/archon-build-queue.yaml');
 INSERT INTO mc.arch_edges (archon_sha, factory_sha, workflow, from_path, to_path) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-backlog', 'read-prd', 'slice');
 INSERT INTO mc.arch_edges (archon_sha, factory_sha, workflow, from_path, to_path) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-backlog', 'slice', 'check');
 INSERT INTO mc.arch_edges (archon_sha, factory_sha, workflow, from_path, to_path) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-backlog', 'check', 'authorize');
@@ -6799,6 +7532,131 @@ INSERT INTO mc.arch_edges (archon_sha, factory_sha, workflow, from_path, to_path
 INSERT INTO mc.arch_edges (archon_sha, factory_sha, workflow, from_path, to_path) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'factory-backlog', 'check', 'publish');
 INSERT INTO mc.arch_edges (archon_sha, factory_sha, workflow, from_path, to_path) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'factory-deploy', 'preflight', 'deploy');
 INSERT INTO mc.arch_edges (archon_sha, factory_sha, workflow, from_path, to_path) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'factory-deploy', 'deploy', 'verify');
+INSERT INTO mc.arch_edges (archon_sha, factory_sha, workflow, from_path, to_path) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'facts', 'route');
+INSERT INTO mc.arch_edges (archon_sha, factory_sha, workflow, from_path, to_path) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'facts', 'checkout');
+INSERT INTO mc.arch_edges (archon_sha, factory_sha, workflow, from_path, to_path) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'route', 'checkout');
+INSERT INTO mc.arch_edges (archon_sha, factory_sha, workflow, from_path, to_path) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'facts', 'ship');
+INSERT INTO mc.arch_edges (archon_sha, factory_sha, workflow, from_path, to_path) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'route', 'ship');
+INSERT INTO mc.arch_edges (archon_sha, factory_sha, workflow, from_path, to_path) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'checkout', 'ship');
+INSERT INTO mc.arch_edges (archon_sha, factory_sha, workflow, from_path, to_path) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/forge', 'ship/triage');
+INSERT INTO mc.arch_edges (archon_sha, factory_sha, workflow, from_path, to_path) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/triage/policy', 'ship/triage/triage');
+INSERT INTO mc.arch_edges (archon_sha, factory_sha, workflow, from_path, to_path) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/triage/triage', 'ship/triage/verdict');
+INSERT INTO mc.arch_edges (archon_sha, factory_sha, workflow, from_path, to_path) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/triage', 'ship/inv');
+INSERT INTO mc.arch_edges (archon_sha, factory_sha, workflow, from_path, to_path) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/inv/investigate', 'ship/inv/verdict');
+INSERT INTO mc.arch_edges (archon_sha, factory_sha, workflow, from_path, to_path) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/triage', 'ship/intel');
+INSERT INTO mc.arch_edges (archon_sha, factory_sha, workflow, from_path, to_path) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/triage', 'ship/planned');
+INSERT INTO mc.arch_edges (archon_sha, factory_sha, workflow, from_path, to_path) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/intel', 'ship/planned');
+INSERT INTO mc.arch_edges (archon_sha, factory_sha, workflow, from_path, to_path) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/planned/policy', 'ship/planned/plan');
+INSERT INTO mc.arch_edges (archon_sha, factory_sha, workflow, from_path, to_path) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/triage', 'ship/continues');
+INSERT INTO mc.arch_edges (archon_sha, factory_sha, workflow, from_path, to_path) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/triage', 'ship/deliver');
+INSERT INTO mc.arch_edges (archon_sha, factory_sha, workflow, from_path, to_path) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/continues', 'ship/deliver');
+INSERT INTO mc.arch_edges (archon_sha, factory_sha, workflow, from_path, to_path) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/inv', 'ship/deliver');
+INSERT INTO mc.arch_edges (archon_sha, factory_sha, workflow, from_path, to_path) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/planned', 'ship/deliver');
+INSERT INTO mc.arch_edges (archon_sha, factory_sha, workflow, from_path, to_path) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/deliver/forge', 'ship/deliver/rounds');
+INSERT INTO mc.arch_edges (archon_sha, factory_sha, workflow, from_path, to_path) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/deliver/rounds/implement', 'ship/deliver/rounds/pr');
+INSERT INTO mc.arch_edges (archon_sha, factory_sha, workflow, from_path, to_path) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/deliver/rounds/pr/forge', 'ship/deliver/rounds/pr/prepare');
+INSERT INTO mc.arch_edges (archon_sha, factory_sha, workflow, from_path, to_path) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/deliver/rounds/pr/prepare', 'ship/deliver/rounds/pr/publish');
+INSERT INTO mc.arch_edges (archon_sha, factory_sha, workflow, from_path, to_path) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/deliver/rounds/pr', 'ship/deliver/rounds/review');
+INSERT INTO mc.arch_edges (archon_sha, factory_sha, workflow, from_path, to_path) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/deliver/rounds/review/scope', 'ship/deliver/rounds/review/mode');
+INSERT INTO mc.arch_edges (archon_sha, factory_sha, workflow, from_path, to_path) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/deliver/rounds/review/review-dir', 'ship/deliver/rounds/review/scope');
+INSERT INTO mc.arch_edges (archon_sha, factory_sha, workflow, from_path, to_path) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/deliver/rounds/review/mode', 'ship/deliver/rounds/review/route');
+INSERT INTO mc.arch_edges (archon_sha, factory_sha, workflow, from_path, to_path) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/deliver/rounds/review/scope', 'ship/deliver/rounds/review/route');
+INSERT INTO mc.arch_edges (archon_sha, factory_sha, workflow, from_path, to_path) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/deliver/rounds/review/scope', 'ship/deliver/rounds/review/seams');
+INSERT INTO mc.arch_edges (archon_sha, factory_sha, workflow, from_path, to_path) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/deliver/rounds/review/route', 'ship/deliver/rounds/review/seams');
+INSERT INTO mc.arch_edges (archon_sha, factory_sha, workflow, from_path, to_path) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/deliver/rounds/review/scope', 'ship/deliver/rounds/review/code');
+INSERT INTO mc.arch_edges (archon_sha, factory_sha, workflow, from_path, to_path) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/deliver/rounds/review/route', 'ship/deliver/rounds/review/code');
+INSERT INTO mc.arch_edges (archon_sha, factory_sha, workflow, from_path, to_path) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/deliver/rounds/review/scope', 'ship/deliver/rounds/review/tests');
+INSERT INTO mc.arch_edges (archon_sha, factory_sha, workflow, from_path, to_path) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/deliver/rounds/review/route', 'ship/deliver/rounds/review/tests');
+INSERT INTO mc.arch_edges (archon_sha, factory_sha, workflow, from_path, to_path) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/deliver/rounds/review/scope', 'ship/deliver/rounds/review/errors');
+INSERT INTO mc.arch_edges (archon_sha, factory_sha, workflow, from_path, to_path) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/deliver/rounds/review/route', 'ship/deliver/rounds/review/errors');
+INSERT INTO mc.arch_edges (archon_sha, factory_sha, workflow, from_path, to_path) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/deliver/rounds/review/scope', 'ship/deliver/rounds/review/docs');
+INSERT INTO mc.arch_edges (archon_sha, factory_sha, workflow, from_path, to_path) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/deliver/rounds/review/route', 'ship/deliver/rounds/review/docs');
+INSERT INTO mc.arch_edges (archon_sha, factory_sha, workflow, from_path, to_path) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/deliver/rounds/review/scope', 'ship/deliver/rounds/review/review-complete');
+INSERT INTO mc.arch_edges (archon_sha, factory_sha, workflow, from_path, to_path) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/deliver/rounds/review/route', 'ship/deliver/rounds/review/review-complete');
+INSERT INTO mc.arch_edges (archon_sha, factory_sha, workflow, from_path, to_path) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/deliver/rounds/review/seams', 'ship/deliver/rounds/review/review-complete');
+INSERT INTO mc.arch_edges (archon_sha, factory_sha, workflow, from_path, to_path) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/deliver/rounds/review/code', 'ship/deliver/rounds/review/review-complete');
+INSERT INTO mc.arch_edges (archon_sha, factory_sha, workflow, from_path, to_path) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/deliver/rounds/review/tests', 'ship/deliver/rounds/review/review-complete');
+INSERT INTO mc.arch_edges (archon_sha, factory_sha, workflow, from_path, to_path) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/deliver/rounds/review/errors', 'ship/deliver/rounds/review/review-complete');
+INSERT INTO mc.arch_edges (archon_sha, factory_sha, workflow, from_path, to_path) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/deliver/rounds/review/docs', 'ship/deliver/rounds/review/review-complete');
+INSERT INTO mc.arch_edges (archon_sha, factory_sha, workflow, from_path, to_path) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/deliver/rounds/review/policy', 'ship/deliver/rounds/review/synthesize');
+INSERT INTO mc.arch_edges (archon_sha, factory_sha, workflow, from_path, to_path) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/deliver/rounds/review/mode', 'ship/deliver/rounds/review/synthesize');
+INSERT INTO mc.arch_edges (archon_sha, factory_sha, workflow, from_path, to_path) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/deliver/rounds/review/scope', 'ship/deliver/rounds/review/synthesize');
+INSERT INTO mc.arch_edges (archon_sha, factory_sha, workflow, from_path, to_path) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/deliver/rounds/review/review-complete', 'ship/deliver/rounds/review/synthesize');
+INSERT INTO mc.arch_edges (archon_sha, factory_sha, workflow, from_path, to_path) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/deliver/rounds/review/synthesize', 'ship/deliver/rounds/review/publish');
+INSERT INTO mc.arch_edges (archon_sha, factory_sha, workflow, from_path, to_path) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/deliver/rounds/review/scope', 'ship/deliver/rounds/review/result');
+INSERT INTO mc.arch_edges (archon_sha, factory_sha, workflow, from_path, to_path) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/deliver/rounds/review/publish', 'ship/deliver/rounds/review/result');
+INSERT INTO mc.arch_edges (archon_sha, factory_sha, workflow, from_path, to_path) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/deliver/rounds/review/synthesize', 'ship/deliver/rounds/review/prune-scratch');
+INSERT INTO mc.arch_edges (archon_sha, factory_sha, workflow, from_path, to_path) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/deliver/rounds/review', 'ship/deliver/rounds/simplify');
+INSERT INTO mc.arch_edges (archon_sha, factory_sha, workflow, from_path, to_path) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/deliver/rounds/simplify/simplify', 'ship/deliver/rounds/simplify/prune-scratch');
+INSERT INTO mc.arch_edges (archon_sha, factory_sha, workflow, from_path, to_path) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/deliver/rounds/simplify', 'ship/deliver/rounds/reshape');
+INSERT INTO mc.arch_edges (archon_sha, factory_sha, workflow, from_path, to_path) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/deliver/rounds/reshape', 'ship/deliver/rounds/rereview');
+INSERT INTO mc.arch_edges (archon_sha, factory_sha, workflow, from_path, to_path) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/deliver/rounds/rereview/scope', 'ship/deliver/rounds/rereview/mode');
+INSERT INTO mc.arch_edges (archon_sha, factory_sha, workflow, from_path, to_path) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/deliver/rounds/rereview/review-dir', 'ship/deliver/rounds/rereview/scope');
+INSERT INTO mc.arch_edges (archon_sha, factory_sha, workflow, from_path, to_path) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/deliver/rounds/rereview/mode', 'ship/deliver/rounds/rereview/route');
+INSERT INTO mc.arch_edges (archon_sha, factory_sha, workflow, from_path, to_path) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/deliver/rounds/rereview/scope', 'ship/deliver/rounds/rereview/route');
+INSERT INTO mc.arch_edges (archon_sha, factory_sha, workflow, from_path, to_path) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/deliver/rounds/rereview/scope', 'ship/deliver/rounds/rereview/seams');
+INSERT INTO mc.arch_edges (archon_sha, factory_sha, workflow, from_path, to_path) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/deliver/rounds/rereview/route', 'ship/deliver/rounds/rereview/seams');
+INSERT INTO mc.arch_edges (archon_sha, factory_sha, workflow, from_path, to_path) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/deliver/rounds/rereview/scope', 'ship/deliver/rounds/rereview/code');
+INSERT INTO mc.arch_edges (archon_sha, factory_sha, workflow, from_path, to_path) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/deliver/rounds/rereview/route', 'ship/deliver/rounds/rereview/code');
+INSERT INTO mc.arch_edges (archon_sha, factory_sha, workflow, from_path, to_path) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/deliver/rounds/rereview/scope', 'ship/deliver/rounds/rereview/tests');
+INSERT INTO mc.arch_edges (archon_sha, factory_sha, workflow, from_path, to_path) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/deliver/rounds/rereview/route', 'ship/deliver/rounds/rereview/tests');
+INSERT INTO mc.arch_edges (archon_sha, factory_sha, workflow, from_path, to_path) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/deliver/rounds/rereview/scope', 'ship/deliver/rounds/rereview/errors');
+INSERT INTO mc.arch_edges (archon_sha, factory_sha, workflow, from_path, to_path) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/deliver/rounds/rereview/route', 'ship/deliver/rounds/rereview/errors');
+INSERT INTO mc.arch_edges (archon_sha, factory_sha, workflow, from_path, to_path) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/deliver/rounds/rereview/scope', 'ship/deliver/rounds/rereview/docs');
+INSERT INTO mc.arch_edges (archon_sha, factory_sha, workflow, from_path, to_path) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/deliver/rounds/rereview/route', 'ship/deliver/rounds/rereview/docs');
+INSERT INTO mc.arch_edges (archon_sha, factory_sha, workflow, from_path, to_path) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/deliver/rounds/rereview/scope', 'ship/deliver/rounds/rereview/review-complete');
+INSERT INTO mc.arch_edges (archon_sha, factory_sha, workflow, from_path, to_path) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/deliver/rounds/rereview/route', 'ship/deliver/rounds/rereview/review-complete');
+INSERT INTO mc.arch_edges (archon_sha, factory_sha, workflow, from_path, to_path) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/deliver/rounds/rereview/seams', 'ship/deliver/rounds/rereview/review-complete');
+INSERT INTO mc.arch_edges (archon_sha, factory_sha, workflow, from_path, to_path) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/deliver/rounds/rereview/code', 'ship/deliver/rounds/rereview/review-complete');
+INSERT INTO mc.arch_edges (archon_sha, factory_sha, workflow, from_path, to_path) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/deliver/rounds/rereview/tests', 'ship/deliver/rounds/rereview/review-complete');
+INSERT INTO mc.arch_edges (archon_sha, factory_sha, workflow, from_path, to_path) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/deliver/rounds/rereview/errors', 'ship/deliver/rounds/rereview/review-complete');
+INSERT INTO mc.arch_edges (archon_sha, factory_sha, workflow, from_path, to_path) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/deliver/rounds/rereview/docs', 'ship/deliver/rounds/rereview/review-complete');
+INSERT INTO mc.arch_edges (archon_sha, factory_sha, workflow, from_path, to_path) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/deliver/rounds/rereview/policy', 'ship/deliver/rounds/rereview/synthesize');
+INSERT INTO mc.arch_edges (archon_sha, factory_sha, workflow, from_path, to_path) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/deliver/rounds/rereview/mode', 'ship/deliver/rounds/rereview/synthesize');
+INSERT INTO mc.arch_edges (archon_sha, factory_sha, workflow, from_path, to_path) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/deliver/rounds/rereview/scope', 'ship/deliver/rounds/rereview/synthesize');
+INSERT INTO mc.arch_edges (archon_sha, factory_sha, workflow, from_path, to_path) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/deliver/rounds/rereview/review-complete', 'ship/deliver/rounds/rereview/synthesize');
+INSERT INTO mc.arch_edges (archon_sha, factory_sha, workflow, from_path, to_path) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/deliver/rounds/rereview/synthesize', 'ship/deliver/rounds/rereview/publish');
+INSERT INTO mc.arch_edges (archon_sha, factory_sha, workflow, from_path, to_path) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/deliver/rounds/rereview/scope', 'ship/deliver/rounds/rereview/result');
+INSERT INTO mc.arch_edges (archon_sha, factory_sha, workflow, from_path, to_path) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/deliver/rounds/rereview/publish', 'ship/deliver/rounds/rereview/result');
+INSERT INTO mc.arch_edges (archon_sha, factory_sha, workflow, from_path, to_path) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/deliver/rounds/rereview/synthesize', 'ship/deliver/rounds/rereview/prune-scratch');
+INSERT INTO mc.arch_edges (archon_sha, factory_sha, workflow, from_path, to_path) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/deliver/rounds/pr', 'ship/deliver/rounds/settle-threads');
+INSERT INTO mc.arch_edges (archon_sha, factory_sha, workflow, from_path, to_path) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/deliver/rounds/review', 'ship/deliver/rounds/settle-threads');
+INSERT INTO mc.arch_edges (archon_sha, factory_sha, workflow, from_path, to_path) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/deliver/rounds/rereview', 'ship/deliver/rounds/settle-threads');
+INSERT INTO mc.arch_edges (archon_sha, factory_sha, workflow, from_path, to_path) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/deliver/rounds/review', 'ship/deliver/rounds/ci');
+INSERT INTO mc.arch_edges (archon_sha, factory_sha, workflow, from_path, to_path) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/deliver/rounds/simplify', 'ship/deliver/rounds/ci');
+INSERT INTO mc.arch_edges (archon_sha, factory_sha, workflow, from_path, to_path) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/deliver/rounds/rereview', 'ship/deliver/rounds/ci');
+INSERT INTO mc.arch_edges (archon_sha, factory_sha, workflow, from_path, to_path) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/deliver/rounds/settle-threads', 'ship/deliver/rounds/ci');
+INSERT INTO mc.arch_edges (archon_sha, factory_sha, workflow, from_path, to_path) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/deliver/rounds/pr', 'ship/deliver/rounds/threads');
+INSERT INTO mc.arch_edges (archon_sha, factory_sha, workflow, from_path, to_path) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/deliver/rounds/review', 'ship/deliver/rounds/threads');
+INSERT INTO mc.arch_edges (archon_sha, factory_sha, workflow, from_path, to_path) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/deliver/rounds/rereview', 'ship/deliver/rounds/threads');
+INSERT INTO mc.arch_edges (archon_sha, factory_sha, workflow, from_path, to_path) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/deliver/rounds/ci', 'ship/deliver/rounds/threads');
+INSERT INTO mc.arch_edges (archon_sha, factory_sha, workflow, from_path, to_path) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/deliver/rounds/settle-threads', 'ship/deliver/rounds/threads');
+INSERT INTO mc.arch_edges (archon_sha, factory_sha, workflow, from_path, to_path) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/deliver/rounds/implement', 'ship/deliver/rounds/round');
+INSERT INTO mc.arch_edges (archon_sha, factory_sha, workflow, from_path, to_path) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/deliver/rounds/pr', 'ship/deliver/rounds/round');
+INSERT INTO mc.arch_edges (archon_sha, factory_sha, workflow, from_path, to_path) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/deliver/rounds/review', 'ship/deliver/rounds/round');
+INSERT INTO mc.arch_edges (archon_sha, factory_sha, workflow, from_path, to_path) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/deliver/rounds/rereview', 'ship/deliver/rounds/round');
+INSERT INTO mc.arch_edges (archon_sha, factory_sha, workflow, from_path, to_path) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/deliver/rounds/ci', 'ship/deliver/rounds/round');
+INSERT INTO mc.arch_edges (archon_sha, factory_sha, workflow, from_path, to_path) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/deliver/rounds/threads', 'ship/deliver/rounds/round');
+INSERT INTO mc.arch_edges (archon_sha, factory_sha, workflow, from_path, to_path) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/deliver/rounds', 'ship/deliver/update-pr-body');
+INSERT INTO mc.arch_edges (archon_sha, factory_sha, workflow, from_path, to_path) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/deliver/rounds', 'ship/deliver/outcome');
+INSERT INTO mc.arch_edges (archon_sha, factory_sha, workflow, from_path, to_path) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/deliver/update-pr-body', 'ship/deliver/outcome');
+INSERT INTO mc.arch_edges (archon_sha, factory_sha, workflow, from_path, to_path) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/deliver/outcome', 'ship/deliver/report');
+INSERT INTO mc.arch_edges (archon_sha, factory_sha, workflow, from_path, to_path) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/triage', 'ship/outcome');
+INSERT INTO mc.arch_edges (archon_sha, factory_sha, workflow, from_path, to_path) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/deliver', 'ship/outcome');
+INSERT INTO mc.arch_edges (archon_sha, factory_sha, workflow, from_path, to_path) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship/outcome', 'ship/report');
+INSERT INTO mc.arch_edges (archon_sha, factory_sha, workflow, from_path, to_path) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'facts', 'answer');
+INSERT INTO mc.arch_edges (archon_sha, factory_sha, workflow, from_path, to_path) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'checkout', 'answer');
+INSERT INTO mc.arch_edges (archon_sha, factory_sha, workflow, from_path, to_path) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ship', 'answer');
+INSERT INTO mc.arch_edges (archon_sha, factory_sha, workflow, from_path, to_path) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'facts', 'apply');
+INSERT INTO mc.arch_edges (archon_sha, factory_sha, workflow, from_path, to_path) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'route', 'apply');
+INSERT INTO mc.arch_edges (archon_sha, factory_sha, workflow, from_path, to_path) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'answer', 'apply');
+INSERT INTO mc.arch_edges (archon_sha, factory_sha, workflow, from_path, to_path) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'apply', 'ask');
+INSERT INTO mc.arch_edges (archon_sha, factory_sha, workflow, from_path, to_path) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'facts', 'ruling');
+INSERT INTO mc.arch_edges (archon_sha, factory_sha, workflow, from_path, to_path) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'apply', 'ruling');
+INSERT INTO mc.arch_edges (archon_sha, factory_sha, workflow, from_path, to_path) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'ask', 'ruling');
+INSERT INTO mc.arch_edges (archon_sha, factory_sha, workflow, from_path, to_path) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'blocked', 'revisit');
+INSERT INTO mc.arch_edges (archon_sha, factory_sha, workflow, from_path, to_path) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'blocked', 'retriage');
+INSERT INTO mc.arch_edges (archon_sha, factory_sha, workflow, from_path, to_path) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'archon-build-queue', 'revisit', 'retriage');
 INSERT INTO mc.arch_texts (archon_sha, factory_sha, path, text) VALUES ('abd85896e7971c9ac5199ed7e87973f27130250f', '6311108f789119a8a1a6a7c77ece21ca3a75c3e8', 'backlog/commands/publish-backlog.md', '# Publish the backlog as GitHub issues
 
 Mode: $INPUTS.mode

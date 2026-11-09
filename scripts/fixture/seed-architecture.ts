@@ -9,7 +9,7 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { type PackVersion, parseVersion, type Step } from '../../parsers/pack';
+import { type PackVersion, parsePack, parseVersion, type Step } from '../../parsers/pack';
 import { archRows } from '../arch-parse';
 import { insert, lit, type SqlRow } from './sql';
 
@@ -62,6 +62,18 @@ export const V2_EDITS: Edit[] = [
   },
 ];
 
+/**
+ * The queue pack's build workflow is seeded from its own pack with the deliver loop's cap at 3:
+ * the failed build in the App check stopped after "round 2 of 3", and the cap in its pinned map
+ * must come from parsing the script, never from a seed row.
+ */
+const BUILD_QUEUE_WORKFLOW = 'archon-build-queue';
+const QUEUE_ROUND_EDIT: Edit = {
+  file: 'deliver/scripts/round.ts',
+  find: 'const ROUND_CAP = 4;',
+  replace: 'const ROUND_CAP = 3;',
+};
+
 /** Copies `from` to `to` with CRLF made LF, so a Windows checkout parses what CI parses. */
 function copyLf(from: string, to: string): void {
   mkdirSync(to, { recursive: true });
@@ -101,11 +113,18 @@ export function parseVersions(repoRoot: string): { v1: PackVersion; v2: PackVers
       copyLf(join(repoRoot, 'fixtures', 'factory-template'), join(dir, 'factory-template'));
       const sdlc = join(dir, 'pack', 'sdlc');
       if (edit) for (const change of V2_EDITS) applyEdit(sdlc, change);
-      return parseVersion(
+      const queueSdlc = join(dir, 'pack', 'queue', 'sdlc');
+      applyEdit(queueSdlc, QUEUE_ROUND_EDIT);
+      const build = parsePack(queueSdlc, join(dir, 'factory-template')).workflows.find(
+        (w) => w.name === BUILD_QUEUE_WORKFLOW,
+      );
+      if (!build) throw new Error(`the queue pack has no ${BUILD_QUEUE_WORKFLOW}`);
+      const version = parseVersion(
         sdlc,
         join(dir, 'pack', 'queue', 'factory'),
         join(dir, 'factory-template'),
       );
+      return { ...version, workflows: [...version.workflows, build] };
     };
     return { v1: parse('v1', false), v2: parse('v2', true) };
   } finally {
