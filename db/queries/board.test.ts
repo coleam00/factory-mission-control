@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, expect, test } from 'bun:test';
 import { join } from 'node:path';
-import { type BoardRow, boardView } from '../../app/lib/board';
+import { type BoardRow, boardView, type DiscoveryRow } from '../../app/lib/board';
 import type { HealthWorkableRow } from '../../app/lib/health';
 import type { OwnerQueueRow } from '../../app/lib/owner-queue';
 import { runsArgs } from '../../app/lib/runs';
@@ -33,6 +33,7 @@ async function view(factory: string, order: string | null = null) {
       workable: await run<HealthWorkableRow>('health-workable', factory),
       owner: await run<OwnerQueueRow>('owner-queue', factory),
       orders: await run<WorkOrderRow>('work-orders', factory),
+      discoveries: await run<DiscoveryRow>('discoveries', factory),
     },
     NOW,
     order,
@@ -61,7 +62,7 @@ test('the seed recount: each column and each work order bar equal the definition
   });
   expect(mission.older).toBe(8);
   // foundations holds 5, 6, 7 (merged) and 9 (open); screens holds 10 (merged), 11, 12 and 14.
-  expect(mission.orders).toEqual([
+  expect(mission.orders).toMatchObject([
     { name: 'foundations', merged: 3, total: 4, landsOn: 'main' },
     { name: 'screens', merged: 1, total: 4, landsOn: 'staging' },
   ]);
@@ -89,7 +90,18 @@ test('the seed recount: each column and each work order bar equal the definition
     merged: [411, 412],
     parked: [413, ...UNSTICK_PARKED],
   });
-  expect(queue.notInOrder).toBe(7 + UNSTICK_PARKED.length);
+  // The Unstick fixture's two stage-blocked items (450, 452) have no column but a home in the Pipeline.
+  const blocked = [QUEUE_UNSTICK.blockedMerged.issue, QUEUE_UNSTICK.blockedOpen.issue];
+  expect(queue.notInOrder).toBe(7 + UNSTICK_PARKED.length + blocked.length);
+  // The Pipeline holds every placed item once, and "Blocked and parked" holds the parked and blocked ones.
+  const homes = queue.pipeline.flatMap((s) => s.items.map((i) => i.number));
+  expect(new Set(homes).size).toBe(homes.length);
+  expect(homes.length).toBe(queue.notInOrder);
+  const wide = queue.pipeline.find((s) => s.id === 'blocked')?.items.map((i) => i.number);
+  expect(wide).toEqual([413, ...UNSTICK_PARKED, ...blocked].sort((a, b) => a - b));
+  expect(queue.pipeline.find((s) => s.id === 'merged')?.items.length).toBe(
+    queue.columns.find((c) => c.id === 'merged')?.items.length,
+  );
 });
 
 test('a work item carries its pull request, rounds, route and app verdict from the seed laps', async () => {

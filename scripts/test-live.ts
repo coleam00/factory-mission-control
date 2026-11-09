@@ -85,7 +85,7 @@ export const SCREENS: readonly LiveScreen[] = [
     phase: boardPhase,
     outputs: BOARD_OUTPUTS,
     help: [
-      'It checks the board against a recount of the seed, times `fixture:write label --label',
+      'It checks the board, Pipeline and Table, against a recount of the seed, times `fixture:write label --label',
       'work-order:demo --issue <a card on the board>` to its panel, the same label on #4 (delivered',
       "by a merged pull request that says Refs) to that panel's merged count and a build step on the",
       "queue factory's work item 401 to its Build column, and checks `?order=demo`.",

@@ -18,6 +18,9 @@ import {
   type WorkOrderRow,
 } from '../map/live';
 import { useNow } from './panel';
+import { Button } from './ui/Button';
+import { Card as CardPanel } from './ui/Card';
+import { Tabs } from './ui/Tabs';
 
 type Tab = 'about' | 'live' | 'behind';
 
@@ -27,10 +30,10 @@ const TABS: { tab: Tab; label: string }[] = [
   { tab: 'behind', label: 'Behind the scenes' },
 ];
 
-const LABEL = 'font-mono text-[11px] uppercase tracking-[0.08em] text-text-secondary';
-const LINK = 'text-[color:var(--accent-bright)] hover:underline';
+const LABEL = 'font-mono text-[11px] uppercase tracking-[0.08em] text-[color:var(--v3-fg-2)]';
+const LINK = 'text-[color:var(--v3-you-2)] hover:underline';
 const CHIP =
-  'ml-1.5 whitespace-nowrap rounded-[5px] bg-surface-elevated px-1.5 py-px font-mono text-[10.5px] text-text-secondary';
+  'ml-1.5 whitespace-nowrap rounded-[5px] bg-[var(--v3-raised)] px-1.5 py-px font-mono text-[10.5px] text-[color:var(--v3-fg-2)]';
 
 /** The card's own words, in one tab: when it runs, what it does, how it works. */
 const ABOUT: { key: 'when' | 'what' | 'how'; label: string }[] = [
@@ -114,7 +117,7 @@ function Gate({ outcome }: { outcome: GateOutcome }): ReactElement {
         #{outcome.number}
       </a>
       <span className={CHIP}>{outcome.outcome}</span>
-      <span className="ml-1.5 text-text-secondary">{outcome.reason}</span>
+      <span className="ml-1.5 text-[color:var(--v3-fg-2)]">{outcome.reason}</span>
     </li>
   );
 }
@@ -162,7 +165,7 @@ function ProductDocument({ document }: { document: ProductDocumentRow }): ReactE
         aria-valuemin={0}
         aria-valuemax={total}
         aria-valuenow={merged}
-        className="h-1.5 overflow-hidden rounded-full bg-surface-inset"
+        className="h-1.5 overflow-hidden rounded-full bg-[var(--v3-sunk)]"
       >
         <div
           className="h-full rounded-full"
@@ -261,7 +264,7 @@ export function RightNow({
       </li>
     )),
     ...(live?.unavailable ?? []).map((chip) => (
-      <li key={`unavailable-${chip}`} className="text-text-secondary">
+      <li key={`unavailable-${chip}`} className="text-[color:var(--v3-fg-2)]">
         The {chip} count is unavailable.
       </li>
     )),
@@ -270,7 +273,7 @@ export function RightNow({
     ...chipRows.waiting,
     ...(live?.healthUnavailable
       ? [
-          <li key="health-unavailable" className="text-text-secondary">
+          <li key="health-unavailable" className="text-[color:var(--v3-fg-2)]">
             The factory's health is unavailable.
           </li>,
         ]
@@ -293,14 +296,14 @@ export function RightNow({
     )),
     ...(live?.documents?.length === 0
       ? [
-          <li key="no-documents" className="text-text-secondary">
+          <li key="no-documents" className="text-[color:var(--v3-fg-2)]">
             No product document is open.
           </li>,
         ]
       : []),
     ...chipRows.merged,
     ...(live?.listsUnavailable ?? []).map((list) => (
-      <li key={`unavailable-list-${list}`} className="text-text-secondary">
+      <li key={`unavailable-list-${list}`} className="text-[color:var(--v3-fg-2)]">
         {UNAVAILABLE[list]}
       </li>
     )),
@@ -309,7 +312,7 @@ export function RightNow({
     )) ?? []),
     ...(live?.gate?.length === 0
       ? [
-          <li key="gate-none" className="text-text-secondary">
+          <li key="gate-none" className="text-[color:var(--v3-fg-2)]">
             No gate decision is recorded for this factory yet.
           </li>,
         ]
@@ -323,7 +326,7 @@ export function RightNow({
     )),
   ];
   return rows.length === 0 ? (
-    <p className="text-text-secondary">Nothing on this step right now.</p>
+    <p className="text-[color:var(--v3-fg-2)]">Nothing on this step right now.</p>
   ) : (
     <ul className="grid gap-[5px]">{rows}</ul>
   );
@@ -334,7 +337,7 @@ const count = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : 
 /** The open pull requests the app check has looked at: its latest verdict, and its lines by kind. */
 export function AppCheckList({ rows }: { rows: readonly AppCheckRow[] }): ReactElement {
   return rows.length === 0 ? (
-    <p className="text-text-secondary">No open pull request has been checked.</p>
+    <p className="text-[color:var(--v3-fg-2)]">No open pull request has been checked.</p>
   ) : (
     <ul className="grid gap-[5px]">
       {rows.map((row) => (
@@ -365,7 +368,7 @@ function AppChecks({ factory }: { factory: string }): ReactElement {
         <>
           <p className={LABEL}>Pull requests under check</p>
           {rows === undefined || state !== 'ready' ? (
-            <p className="text-text-secondary">
+            <p className="text-[color:var(--v3-fg-2)]">
               {state === 'error' ? 'The pull requests under check are unavailable.' : 'Loading.'}
             </p>
           ) : (
@@ -396,13 +399,17 @@ export function Behind({
 }): ReactElement {
   const { pathname, search } = useLocation();
   if (card.covers.length === 0) {
-    return <p className="text-text-secondary">This card runs no workflow step.</p>;
+    return <p className="text-[color:var(--v3-fg-2)]">This card runs no workflow step.</p>;
   }
-  if (failed) return <p className="text-text-secondary">The pinned steps are unavailable.</p>;
-  if (steps === undefined) return <p className="text-text-secondary">Loading the pinned steps.</p>;
+  if (failed)
+    return <p className="text-[color:var(--v3-fg-2)]">The pinned steps are unavailable.</p>;
+  if (steps === undefined)
+    return <p className="text-[color:var(--v3-fg-2)]">Loading the pinned steps.</p>;
   const links = pinnedStepLinks(card, factory, at, steps);
   if (links.length === 0) {
-    return <p className="text-text-secondary">This version has none of this card's steps.</p>;
+    return (
+      <p className="text-[color:var(--v3-fg-2)]">This version has none of this card's steps.</p>
+    );
   }
   const workflows = [...new Set(links.map((l) => l.workflow))];
   const covered = card.covers
@@ -412,7 +419,7 @@ export function Behind({
     <>
       {workflows.map((workflow) => (
         <div key={workflow} data-behind-workflow={workflow} className="grid gap-1.5">
-          <div className="font-mono text-[12px] text-text-secondary">
+          <div className="font-mono text-[12px] text-[color:var(--v3-fg-2)]">
             {workflow}
             <span data-workflow-file className="ml-2">
               {workflowFile(steps, workflow)}
@@ -435,7 +442,7 @@ export function Behind({
                   >
                     {link.step}
                   </Link>
-                  <span className="text-text-secondary">
+                  <span className="text-[color:var(--v3-fg-2)]">
                     {link.model === null ? 'no model' : `model ${link.model}`}
                   </span>
                 </li>
@@ -494,54 +501,33 @@ export function MapDetails({
       aria-label={`${card.title} details`}
       className={`${className} mt-3.5`}
     >
-      <div className="rounded-xl border border-border bg-surface">
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-2.5 border-b border-border px-4 py-3.5">
+      <CardPanel>
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2.5 border-b border-[color:var(--v3-line)] px-4 py-3.5">
           <div>
             <div className={LABEL}>{card.kind}</div>
-            <h2 className="m-0 text-[17px] font-semibold text-text-primary">{card.title}</h2>
+            <h2 className="m-0 text-[17px] font-semibold text-[color:var(--v3-fg)]">
+              {card.title}
+            </h2>
           </div>
           <span className="flex-1" />
           {open ? (
-            <button
-              type="button"
-              data-open-view
-              onClick={open.onOpen}
-              className="cursor-pointer rounded-[7px] border border-border bg-surface-elevated px-3 py-1.5 text-[13px] font-semibold text-text-primary hover:bg-surface-hover"
-            >
+            <Button variant="secondary" data-open-view onClick={open.onOpen}>
               ⤢ Open {open.title} · {open.steps} steps
-            </button>
+            </Button>
           ) : null}
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Close details"
-            className="cursor-pointer rounded-[7px] border border-border bg-surface-elevated px-3 py-1.5 text-[13px] font-semibold text-text-primary hover:bg-surface-hover"
-          >
+          <Button variant="secondary" onClick={onClose} aria-label="Close details">
             ✕
-          </button>
+          </Button>
         </div>
-        <div role="tablist" className="flex gap-0.5 overflow-x-auto border-b border-border px-2.5">
-          {tabs.map((t) => (
-            <button
-              key={t.tab}
-              type="button"
-              role="tab"
-              aria-selected={t.tab === tab}
-              data-tab={t.tab}
-              onClick={() => setChosen(t.tab)}
-              className={`cursor-pointer whitespace-nowrap border-b-2 px-2.5 py-[9px] text-sm ${
-                t.tab === tab
-                  ? 'border-[color:var(--accent)] text-text-primary'
-                  : 'border-transparent text-text-secondary hover:text-text-primary'
-              }`}
-            >
-              {t.label}
-            </button>
-          ))}
-        </div>
+        <Tabs
+          label={`${card.title} tabs`}
+          tabs={tabs.map((t) => ({ value: t.tab, label: t.label }))}
+          value={tab}
+          onChange={setChosen}
+        />
         <div
           role="tabpanel"
-          className="grid max-w-[96ch] gap-2.5 px-4 pt-3.5 pb-[18px] text-sm text-text-primary"
+          className="grid max-w-[96ch] gap-2.5 px-4 pt-3.5 pb-[18px] text-sm text-[color:var(--v3-fg)]"
         >
           {tab === 'live' ? (
             <>
@@ -554,7 +540,7 @@ export function MapDetails({
             <About details={details} />
           )}
         </div>
-      </div>
+      </CardPanel>
     </section>
   );
 }

@@ -4,6 +4,7 @@ import { STATE_LABEL } from './lap-graph';
 import { OUTCOMES } from './laps';
 import { REVIEW_OUTCOMES } from './review-outcome';
 import {
+  BOARD_ITEM_STATE,
   CHECK_OVERALL_STATE,
   LAP_OUTCOME_STATE,
   REVIEW_OUTCOME_STATE,
@@ -109,10 +110,29 @@ test("the README's States examples hold", () => {
   expect(VERDICT_STATE.FAIL).toBe('failed');
   expect(VERDICT_STATE.INCOMPLETE).toBe('failed');
   expect(VERDICT_STATE.QUESTION).toBe('needs-you');
+  expect(BOARD_ITEM_STATE.parked).toBe('idle');
+  expect(BOARD_ITEM_STATE.blocked).toBe('idle');
+  expect(BOARD_ITEM_STATE.queued).toBe('idle');
+  expect(BOARD_ITEM_STATE.waiting).toBe('idle');
+  expect(BOARD_ITEM_STATE['needs you']).toBe('needs-you');
 });
 
 test('an unknown value has no state', () => {
   expect(stateOf(RUN_STATE, 'paused')).toBe('needs-you');
   expect(stateOf(RUN_STATE, 'toString')).toBeUndefined();
   expect(stateOf(RUN_STATE, null)).toBeUndefined();
+});
+
+test('every --v3 value app/styles.css declares matches the v3 design tokens', () => {
+  const declared = (file: string) =>
+    new Map(
+      [...readFileSync(file, 'utf8').matchAll(/(--v3-[\w-]+)\s*:\s*([^;]+);/g)].map((m) => [
+        m[1] ?? '',
+        (m[2] ?? '').trim().replace(/\s+/g, ' '),
+      ]),
+    );
+  const design = declared('docs/design/v3/tokens.css');
+  const app = declared('app/styles.css');
+  expect(app.size).toBeGreaterThan(0);
+  for (const [name, value] of app) expect([name, design.get(name)]).toEqual([name, value]);
 });

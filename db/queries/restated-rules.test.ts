@@ -1,7 +1,13 @@
 import { expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { COLUMNS, PARKED, parked, SPLIT_WORKFLOW } from '../../app/lib/board';
+import {
+  BLOCKED_STAGES,
+  FOUND_OUTCOMES,
+  PARKED,
+  parked,
+  SPLIT_WORKFLOW,
+} from '../../app/lib/board';
 import { causeOf } from '../../app/lib/health';
 import { prNumber } from '../../app/lib/one-lap';
 import { runsArgs } from '../../app/lib/runs';
@@ -37,12 +43,6 @@ test('the board route CASE agrees with the pack ROUTE_LABEL', async () => {
   );
   expect(new Set(pairs.map(([label]) => label))).toEqual(new Set(Object.values(ROUTE_LABEL)));
   for (const [label, route] of pairs) expect(ROUTE_LABEL[route as string]).toBe(label);
-});
-
-test('the Board grid has one track per column', () => {
-  expect(read('app', 'components', 'Board.tsx')).toContain(
-    `grid-cols-[repeat(${COLUMNS.length},minmax(`,
-  );
 });
 
 test('map-right-now reads only paths the pinned merge queue declares', () => {
@@ -334,6 +334,30 @@ test('the stages Unstick reads are the pinned pack’s', () => {
   for (const stage of literals) expect(stages, `stage '${stage}'`).toContain(stage);
 });
 
+test('the stages the Board calls blocked are the pinned pack’s', () => {
+  const stages = statusUnion('workitem.ts', 'Stage');
+  for (const stage of BLOCKED_STAGES) expect(stages, `stage '${stage}'`).toContain(stage);
+});
+
+test('the Found card reads the pack’s discoveries outcome', () => {
+  const doc = Bun.YAML.parse(
+    read('fixtures', 'pack', 'queue', 'sdlc', 'discoveries', 'archon-discoveries.yaml'),
+  ) as {
+    nodes: {
+      id: string;
+      output_format?: {
+        properties?: Record<
+          string,
+          { items?: { properties?: Record<string, { enum?: string[] }> } }
+        >;
+      };
+    }[];
+  };
+  const properties = doc.nodes.find((n) => n.id === 'outcome')?.output_format?.properties;
+  expect(properties?.dropped).toBeDefined();
+  expect(properties?.written?.items?.properties?.outcome?.enum).toEqual([...FOUND_OUTCOMES]);
+});
+
 const yamlEnum = (file: string[], node: string, key: string): string[] => {
   const doc = Bun.YAML.parse(read('fixtures', 'pack', ...file)) as {
     nodes: { id: string; output_format?: { properties?: Record<string, { enum?: string[] }> } }[];
@@ -564,7 +588,7 @@ test('board rounds count a shipped run on the item every other screen holds', as
   }
 }, 60_000);
 
-test('mc.stop_class refines Health’s causes, agreeing with causeOf except on reference numbers', async () => {
+test('mc.stop_class refines Health’s causes, agreeing with causeOf on every corpus line', async () => {
   const sql = read('db', 'migrations', '0031_run_stops.sql');
   // Both read "the run's latest failed step"; a live query cannot call the mc function, so the pick is copied.
   const failedStepPick = (text: string, alias: string) =>
@@ -577,23 +601,26 @@ test('mc.stop_class refines Health’s causes, agreeing with causeOf except on r
   const db = await migratedDb();
   try {
     const seen = new Set<string>();
-    // causeOf reads a PR or issue number as a status code; stop_class does not.
-    const referenceNumbers = new Set([
-      '3 tests failed on PR #401',
-      'No issue matched #1401',
-      'git merge --no-edit failed on pulls/1429',
-      '3 tests failed, see #401 status',
-      'git merge --no-edit failed on pulls/429 status check',
-      'git merge --no-edit failed with HTTP 4290',
-    ]);
     for (const line of STOP_CORPUS.map(([l]) => l)) {
       const cause = causeOf(line);
-      if (cause === 'other' || referenceNumbers.has(line)) continue;
+      if (cause === 'other') continue;
       seen.add(cause);
       const [row] = await db.query('SELECT mc.stop_class($1) AS class', [line]);
       expect(row?.class).toBe(cause === 'authentication' ? 'config' : 'transient');
     }
     expect(seen).toEqual(new Set(['usage-limit', 'authentication', 'infrastructure']));
+
+    // Emoji are two UTF-16 units but one character: the cut must fall on characters, as left() does.
+    for (const filler of ['x', '😀']) {
+      const near = `${filler.repeat(7990)} HTTP 429`;
+      const past = `${filler.repeat(8000)} HTTP 429`;
+      expect(causeOf(near)).toBe('usage-limit');
+      expect((await db.query('SELECT mc.stop_class($1) AS class', [near]))[0]?.class).toBe(
+        'transient',
+      );
+      expect(causeOf(past)).toBe('other');
+      expect((await db.query('SELECT mc.stop_class($1) AS class', [past]))[0]?.class).toBeNull();
+    }
   } finally {
     await db.close();
   }

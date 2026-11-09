@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test';
+import { GATE_STATE, SWEEP_ACTION_STATE } from './states';
 import { NO_REASON, type WorkItemRow, workItemHeader, workItemTimeline } from './work-item';
 
 const RUN = '5eed0005-0000-4000-8000-000000000009';
@@ -44,6 +45,9 @@ const row = (over: Partial<WorkItemRow>): WorkItemRow => ({
   title: null,
   url: null,
   console: null,
+  stop_step: null,
+  stop_line: null,
+  stop_class: null,
   ...over,
 });
 
@@ -182,13 +186,44 @@ test('a build-queue round colors its ending and its review by the state map', ()
   expect(tones({ review: 'correct', review_at: at('09:03') })).toContain('done');
 });
 
-test('a failed round names its card and error', () => {
+test('a failed round names its card, and its error is its stop line', () => {
   const failed = row({
     status: 'failed',
     failed_step: 'ship__deliver__rounds.review__policy',
     error: 'boom',
   });
-  expect(texts([item, failed])).toContain('Round 1 failed in Review: boom');
+  const [event] = workItemTimeline([item, failed], 'f').filter((e) => e.kind === 'round');
+  expect(event?.text).toBe('Round 1 failed in Review');
+  expect(event?.stop).toEqual({ step: 'ship__deliver__rounds.review__policy', line: 'boom' });
+});
+
+test('a stop record wins over the run error, and a long error gives its headline', () => {
+  const stopOf = (over: Partial<WorkItemRow>) =>
+    workItemTimeline([item, row({ status: 'failed', ...over })], 'f').find(
+      (e) => e.kind === 'round',
+    )?.stop;
+  expect(
+    stopOf({ failed_step: 'a', error: 'boom', stop_step: 'b', stop_line: '401 unauthorized' }),
+  ).toEqual({ step: 'b', line: '401 unauthorized' });
+  expect(
+    stopOf({ failed_step: 'a', error: 'node failed\nerror: disk full\n  at x (y:1)' }),
+  ).toEqual({
+    step: 'a',
+    line: 'disk full',
+  });
+  expect(stopOf({})).toEqual({ step: null, line: NO_REASON });
+});
+
+test('a round waiting on you asks its question, or says it waits, and a done round has no stop', () => {
+  const stopOf = (over: Partial<WorkItemRow>) =>
+    workItemTimeline([item, row(over)], 'f').find((e) => e.kind === 'round')?.stop;
+  const waiting = { waiting: true, completed_at: null, status: 'running', stop_step: 'ask' };
+  expect(stopOf({ ...waiting, stop_line: '**Build queue, issue 15: scope decision**' })).toEqual({
+    step: 'ask',
+    line: 'Asking: Build queue, issue 15: scope decision',
+  });
+  expect(stopOf(waiting)).toEqual({ step: 'ask', line: 'Waiting on you' });
+  expect(stopOf({})).toBeNull();
 });
 
 test('the app check reads its tally by kind and verdict, with a tone from the overall', () => {
@@ -299,4 +334,29 @@ test('an intake with two route labels reads the route the Board shows', () => {
     labels: ['archon-investigate', 'archon-ready'],
   });
   expect(texts([item, intake])).toEqual(['Filed', 'Intake: route deliver']);
+});
+
+test('every merge gate decision and sweep action the state owner names yields a timeline event', () => {
+  for (const decision of Object.keys(GATE_STATE))
+    expect(
+      workItemTimeline(
+        [item, row({ workflow: 'archon-loop', decision, decision_at: at('10:00'), reason: 'r' })],
+        'f',
+      ).filter((e) => e.kind === 'decision'),
+      `gate ${decision}`,
+    ).not.toHaveLength(0);
+  for (const action of Object.keys(SWEEP_ACTION_STATE))
+    expect(
+      workItemTimeline(
+        [
+          item,
+          sweep({
+            decisions: [{ number: 410, action, reason: 'r', brief: 'b' }],
+            asked_pr: '410',
+          }),
+        ],
+        'f',
+      ).filter((e) => e.kind === 'decision'),
+      `sweep ${action}`,
+    ).not.toHaveLength(0);
 });

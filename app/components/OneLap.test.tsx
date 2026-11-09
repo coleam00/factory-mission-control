@@ -1,11 +1,11 @@
 import { expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { createMemoryRouter, RouterProvider } from 'react-router';
-import type { CheckLineRow, OneLapRow, StepAttemptRow } from '../lib/one-lap';
+import { type CheckLineRow, isRunId, type OneLapRow, type StepAttemptRow } from '../lib/one-lap';
 import Lap from '../routes/f.$factory.runs.$runId';
 import { type LapMapRow, lapGraph } from '../lib/lap-graph';
 import { StepPanel } from './LapGraph';
-import { CheckList, isRunId, LapFound, LapHeaderBody, LapStepsBody, StepList } from './OneLap';
+import { CheckList, LapFound, LapHeaderBody, LapStepsBody, StepList } from './OneLap';
 
 function render(element: React.ReactElement): string {
   const router = createMemoryRouter([{ path: '/', element }]);

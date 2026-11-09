@@ -50,10 +50,6 @@ function None({ children = 'none' }: { children?: ReactNode }): ReactElement {
   return <span className="text-text-secondary">{children}</span>;
 }
 
-/** Whether an address names a run id at all: Archon's run ids are UUIDs. */
-export const isRunId = (runId: string) =>
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(runId);
-
 /** The lap an address names is not in this factory: the id as typed, and nothing under it. */
 export function NoLap({ runId }: { runId: string }): ReactElement {
   return (
