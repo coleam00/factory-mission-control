@@ -2,7 +2,7 @@ import { expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { createMemoryRouter, RouterProvider } from 'react-router';
 import { PLACES } from '../lib/places';
-import { countIn, currentPlace, PlaceLinks, RunsCountBody } from './ScreenNav';
+import { currentPlace, PlaceLinks, RunsCountBody } from './ScreenNav';
 
 const FACTORY = 'mission-control';
 
@@ -48,13 +48,6 @@ test('the phone tabs hold the same places', () => {
   expect(links(navAt('/', FACTORY, 'tabs').html()).map((l) => l.href)).toEqual(
     links(navAt('/').html()).map((l) => l.href),
   );
-});
-
-test('the phone tabs keep only Attention’s count, the side nav asks for every place’s', () => {
-  const shown = (layout: 'side' | 'tabs') =>
-    PLACES.filter((place) => countIn(layout, place, FACTORY) !== null).map((p) => p.label);
-  expect(shown('tabs')).toEqual(['Attention']);
-  expect(shown('side')).toEqual(['Attention', 'Factory', 'Board', 'Runs']);
 });
 
 test('the factory in the address is encoded', () => {
@@ -158,4 +151,5 @@ test('by default the phone tabs render no Runs or Board count and the side nav r
     expect(html('tabs')).not.toContain(attr);
     expect(html('side')).toContain(attr);
   }
+  expect(html('tabs')).toContain('decisions-count:attention-items');
 });

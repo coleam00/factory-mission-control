@@ -51,7 +51,7 @@ function CountFor({ place, factory }: { place: Place; factory: string }): ReactN
 }
 
 /** The phone's tabs keep Attention's badge and no other count, so every label sits on one baseline. */
-export function countIn(layout: 'side' | 'tabs', place: Place, factory: string): ReactNode {
+function countIn(layout: 'side' | 'tabs', place: Place, factory: string): ReactNode {
   return layout === 'tabs' && place.path !== '' ? null : (
     <CountFor place={place} factory={factory} />
   );
