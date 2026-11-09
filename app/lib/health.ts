@@ -55,21 +55,32 @@ export const CAUSE_LABEL: Record<Cause, string> = {
   other: 'Other',
 };
 
+/** The PR and issue references mc.stop_class removes before matching: their digits are not statuses. */
+const REFERENCE = /(#|\b(?:pulls?|issues?)\/|\bPRs? ?#?)[0-9]+/gi;
+
 /**
- * The PRD's patterns, tried in order: the first that matches the error text names its cause.
- * mc.stop_class (migration 0031) refines these causes: usage-limit and infrastructure are transient,
- * authentication is config. It counts a bare 401 or 429 only as an HTTP status, never inside a PR or issue
- * reference, so it can disagree with causeOf there. restated-rules.test.ts holds the two together.
+ * mc.stop_class's PRD 4.8 arms (migration 0031), tried in order on the error with PR and issue references
+ * removed: the first that matches names the cause. A bare 401 or 429 counts only as an HTTP status. Archon's
+ * "usage or credit limit" comes last, as in the SQL. Usage-limit and infrastructure are transient and
+ * authentication is config; restated-rules.test.ts fails when the two disagree on a corpus line.
  */
 const CAUSE_PATTERNS: [Exclude<Cause, 'other'>, RegExp][] = [
-  ['usage-limit', /usage limit|429/i],
-  ['authentication', /401|unauthor/i],
+  [
+    'usage-limit',
+    /usage limit|\b(?:http|status|error)[ :]*(?:code[ :]*)?429\b|\b429 (?:status|too many)/i,
+  ],
+  [
+    'authentication',
+    /\b(?:http|status|error)[ :]*(?:code[ :]*)?401\b|\b401 (?:status|oauth|unauthor)|unauthor/i,
+  ],
   ['infrastructure', /ECONN|ETIMEDOUT|fetch failed/i],
+  ['usage-limit', /usage or credit limit/i],
 ];
 
 export function causeOf(error: string | null): Cause {
   if (error === null) return 'other';
-  return CAUSE_PATTERNS.find(([, pattern]) => pattern.test(error))?.[0] ?? 'other';
+  const text = error.replace(REFERENCE, ' ');
+  return CAUSE_PATTERNS.find(([, pattern]) => pattern.test(text))?.[0] ?? 'other';
 }
 
 export interface WaitingRun extends HealthRunRow {

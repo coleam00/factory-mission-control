@@ -27,6 +27,18 @@ test.each<[string | null, Cause]>([
   ['read ETIMEDOUT', 'infrastructure'],
   // The first pattern that matches decides.
   ['fetch failed: 429 Too Many Requests', 'usage-limit'],
+  [
+    "Node 'check-app' failed: the provider's usage or credit limit is used up (resets 2026-10-19T20:00:00.000Z).",
+    'usage-limit',
+  ],
+  ['3 tests failed on PR #401', 'other'],
+  ['git merge --no-edit failed on pulls/1429', 'other'],
+  ['git merge --no-edit failed with HTTP 4290', 'other'],
+  [
+    "Node 'deliver__review__tests' failed: SDK returned error — 429 status code (no body)",
+    'usage-limit',
+  ],
+  ['gh: Bad credentials (HTTP 401)', 'authentication'],
   [null, 'other'],
 ])('%p is %p', (error, cause) => {
   expect(causeOf(error)).toBe(cause);
@@ -118,7 +130,7 @@ const run = (overrides: Partial<HealthRunRow>): HealthRunRow => ({
 
 test('failed laps are failed runs and runs with a failed step, newest first, each with its cause', () => {
   const rows = [
-    run({ run_id: 'a', failed_step: 'build', error: '429', failed_at: new Date(1000) }),
+    run({ run_id: 'a', failed_step: 'build', error: 'HTTP 429', failed_at: new Date(1000) }),
     run({ run_id: 'b', status: 'pending' }),
     run({
       run_id: 'c',
