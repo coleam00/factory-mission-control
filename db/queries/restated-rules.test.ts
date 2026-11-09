@@ -180,6 +180,46 @@ test('mc.pr_number reads a step pr as prNumber does, a JSON object included', as
   }
 }, 60_000);
 
+test('a version no pin names is the newest parsed before the lap started, in both one-lap queries', async () => {
+  const db = await migratedDb();
+  try {
+    await db.query(
+      `INSERT INTO mc.factories (name, repository, codebase, console) VALUES ('f', 'o/r', 'o/r', 'c')`,
+    );
+    const runId = '5eed0000-0000-4000-8000-000000000009';
+    await db.query(
+      `INSERT INTO mc.laps (run_id, factory, workflow_name, status, started_at)
+       VALUES ($1, 'f', 'archon-build-queue', 'completed', '2026-10-20')`,
+      [runId],
+    );
+    await db.query(
+      `INSERT INTO mc.lap_steps (run_id, step_id, status, started_at) VALUES ($1, 'x', 'completed', now())`,
+      [runId],
+    );
+    // Position names the version chosen: the re-parse after the lap must not retitle it.
+    for (const [sha, parsed, position] of [
+      ['u1', '2026-09-01', 1],
+      ['u2', '2026-12-01', 2],
+    ] as const) {
+      await db.query(
+        `INSERT INTO mc.arch_versions (archon_sha, factory_sha, parsed_at) VALUES ($1, 'fs', $2)`,
+        [sha, parsed],
+      );
+      await db.query(
+        `INSERT INTO mc.arch_steps (archon_sha, factory_sha, workflow, path, position, step_id, kind, defined_in, file)
+         VALUES ($1, 'fs', 'archon-build-queue', 'x', $2, 'x', 'command', 'archon-build-queue', 'f')`,
+        [sha, position],
+      );
+    }
+    for (const name of ['one-lap-steps', 'one-lap-map']) {
+      const rows = await db.query(sqlOf(name), ['f', runId]);
+      expect([name, rows.map((r) => r.position)]).toEqual([name, [1]]);
+    }
+  } finally {
+    await db.close();
+  }
+}, 60_000);
+
 test('mc.lap_steps.pr_number reads a step pr, else its pr_url', async () => {
   const pull = (n: number) => `https://github.com/o/r/pull/${n}`;
   const outputs: [object, number | null][] = [

@@ -13,7 +13,7 @@ version AS (
   ORDER BY p.committed_at <= coalesce(l.started_at, 'infinity'::timestamptz) DESC NULLS LAST,
     CASE WHEN p.committed_at <= coalesce(l.started_at, 'infinity'::timestamptz)
       THEN p.committed_at END DESC NULLS LAST,
-    p.committed_at, a.parsed_at DESC
+    p.committed_at, a.parsed_at <= coalesce(l.started_at, 'infinity'::timestamptz) DESC, a.parsed_at DESC
   LIMIT 1
 ),
 loop AS (

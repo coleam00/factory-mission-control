@@ -91,8 +91,10 @@ export interface LapStep {
 export interface LapGraph {
   graph: StepGraph;
   steps: Map<string, LapStep>;
-  /** The pin whose map this is, null when no architecture is stored for any pin. */
+  /** The pin whose map this is, null when no pin names it: no map is stored, or the queue pack's own version. */
   pin: string | null;
+  /** Whether a stored map draws this lap. */
+  mapped: boolean;
 }
 
 /**
@@ -213,7 +215,7 @@ export function lapGraph(
       step.state = 'skipped';
     }
   }
-  return { graph, steps, pin: map[0]?.pin ?? null };
+  return { graph, steps, pin: map[0]?.pin ?? null, mapped: map.length > 0 };
 }
 
 /** The loop's top-level steps a lane shows, in loop order; build and ship are one mark. */
