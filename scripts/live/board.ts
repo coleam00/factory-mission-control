@@ -173,8 +173,10 @@ export function boardPhase(ctx: LiveContext): LivePhase {
       return [...tile.firstElementChild.children].flatMap((p) => {
         const pill = p.firstElementChild ?? p;
         const r = pill.getBoundingClientRect();
-        const label = pill.lastElementChild ?? pill;
-        const hardClipped = label.scrollWidth > label.clientWidth + 0.5 && getComputedStyle(label).textOverflow !== 'ellipsis';
+        const hardClipped = [pill.lastElementChild ?? pill, pill, p].some((e) => {
+          const s = getComputedStyle(e);
+          return s.overflowX !== 'visible' && e.scrollWidth > e.clientWidth + 0.5 && s.textOverflow !== 'ellipsis';
+        });
         const lines = Math.round(r.height / (parseFloat(getComputedStyle(pill).lineHeight) || r.height));
         return r.right > box.right + 0.5 || hardClipped || lines > 1 ? [tile.dataset.workItem + ' ' + p.textContent] : [];
       });
