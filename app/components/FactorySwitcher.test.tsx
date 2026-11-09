@@ -231,10 +231,10 @@ test('the engine version shows as its first eight characters, and nothing withou
         />
       </MemoryRouter>,
     );
-  expect(html('bbbb2222cccc')).toContain('· bbbb2222');
+  expect(html('bbbb2222cccc')).toContain('>bbbb2222<');
   expect(html(null)).not.toContain('data-engine');
 });
 
-test('the factory name truncates on one line beside its caret', () => {
+test('the factory name truncates on one line beside the engine version', () => {
   expect(render([], 'ready')).toMatch(/truncate">mission-control<\/span>/);
 });
