@@ -522,6 +522,21 @@ test('runs, home-map and health-workable resolve the same item for every source 
     expect(held(laps)).toEqual(expected);
     expect(titled(lanes, 'issue_title')).toEqual(expectedTitles);
     expect(titled(laps, 'title')).toEqual(expectedTitles);
+    // The run page names the same item, and has no status filter: the completed run 7 is on it too.
+    const page = await Promise.all(
+      Object.keys(runs).map(
+        async (c) =>
+          ((await db.query(sqlOf('one-lap'), ['f', id(c)]))[0] ?? {}) as Record<string, unknown>,
+      ),
+    );
+    expect(Object.fromEntries(page.map((r) => [r.run_id, r.issue_number ?? null]))).toEqual({
+      ...expected,
+      [id('7')]: 7,
+    });
+    expect(Object.fromEntries(page.map((r) => [r.run_id, r.issue_title ?? null]))).toEqual({
+      ...expectedTitles,
+      [id('7')]: 't7',
+    });
     const workable = (await db.query(sqlOf('health-workable'), ['f']))
       .flatMap((r) => (r.kind === 'issue' ? [r.issue_number as number] : []))
       .sort();

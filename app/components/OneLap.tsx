@@ -1,27 +1,21 @@
 import { type ReactElement, type ReactNode, useEffect, useMemo, useState } from 'react';
-import { formatCost, formatCount, formatElapsed, shortRunId } from '../lib/format';
-import { costOf, durationOf, OUTCOME_LABEL, since, stepLabel } from '../lib/laps';
+import { formatCost, formatCount, formatElapsed } from '../lib/format';
+import { stepLabel } from '../lib/laps';
 import {
   actionText,
   attemptSeconds,
   attemptsInOrder,
   type CheckLineRow,
   checkLineFor,
-  consoleUrl,
-  lapCost,
-  lapOutcome,
   linesInOrder,
   type OneLapRow,
-  pullUrl,
   shownDispositions,
   type StepAttemptRow,
 } from '../lib/one-lap';
 import { type LapMapRow, lapGraph } from '../lib/lap-graph';
 import {
   GATE_STATE,
-  LAP_OUTCOME_STATE,
   REVIEW_OUTCOME_STATE,
-  STATE_NAME,
   type State,
   STEP_STATUS_STATE,
   stateColor,
@@ -29,12 +23,13 @@ import {
   stateOf,
   VERDICT_STATE,
 } from '../lib/states';
-import { LivePanel, type PanelState } from '../live/LivePanel';
+import { runCost, stepCost } from '../lib/one-run';
+import type { PanelState } from '../live/LivePanel';
 import { LapGraphView, StepPanel } from './LapGraph';
-import { Field, LABEL, MONO, NONE, PanelBody, useNow, utcMinute } from './panel';
+import { Field, LABEL, MONO, useNow } from './panel';
 
 const CARD = 'rounded-[10px] border border-border bg-surface';
-const LINK = 'underline decoration-border-bright underline-offset-2 hover:decoration-text-primary';
+const _LINK = 'underline decoration-border-bright underline-offset-2 hover:decoration-text-primary';
 const TAG = 'font-mono text-[11px] font-semibold uppercase tracking-[0.05em]';
 
 /** `2026-10-24 10:00:30 UTC`: a step's start, to the second, the same for every viewer. */
@@ -45,183 +40,11 @@ const inkOf = (state: State | undefined) =>
   state === undefined ? undefined : { color: stateInk(state) };
 
 /** A value the lap never recorded. The console's tertiary grey is below 4.5:1 on a surface. */
-function None({ children = 'none' }: { children?: ReactNode }): ReactElement {
+export function None({ children = 'none' }: { children?: ReactNode }): ReactElement {
   return <span className="text-text-secondary">{children}</span>;
 }
 
-/** The lap an address names is not in this factory: the id as typed, and nothing under it. */
-export function NoLap({ runId }: { runId: string }): ReactElement {
-  return (
-    <p data-no-lap className="text-sm text-text-secondary [overflow-wrap:anywhere]">
-      No lap <span className={`${MONO} text-text-primary`}>{runId}</span> in this factory.
-    </p>
-  );
-}
-
-/**
- * The lap: its header, and its steps and app check under it. Those are asked for only once the
- * lap's row is found, so an id with no lap here shows the not-found line and nothing else. The
- * app check's lines come back up so the review can say which line each disposition answers.
- */
-export function OneLap({
-  factory,
-  runId,
-}: {
-  factory: string | undefined;
-  runId: string;
-}): ReactElement {
-  const [checks, setChecks] = useState<Lifted<CheckLineRow>>({ rows: undefined, state: 'loading' });
-  const known = checks.state === 'ready' ? checks.rows : undefined;
-  return (
-    <LivePanel<OneLapRow> query="one-lap" factory={factory} args={[runId]}>
-      {(rows, state) => (
-        <PanelBody rows={rows} state={state} factory={factory} what="the lap">
-          {(loaded) => (
-            <LapFound lap={loaded[0]} runId={runId} checks={known}>
-              <LapSteps factory={factory} runId={runId} />
-              <LapChecks factory={factory} runId={runId} onRows={setChecks} />
-            </LapFound>
-          )}
-        </PanelBody>
-      )}
-    </LivePanel>
-  );
-}
-
-/** The lap's header and the panels under it, or only the not-found line when there is no lap. */
-export function LapFound({
-  lap,
-  runId,
-  checks,
-  children,
-  now,
-}: {
-  lap: OneLapRow | undefined;
-  runId: string;
-  /** The lap's app-check lines, once they have loaded. */
-  checks?: readonly CheckLineRow[];
-  children: ReactNode;
-  /** A fixed clock, for tests; the screen uses the browser's. */
-  now?: number;
-}): ReactElement {
-  if (lap === undefined) return <NoLap runId={runId} />;
-  return (
-    <div className="grid gap-8">
-      <LapHeaderBody lap={lap} checks={checks} now={now} />
-      {children}
-    </div>
-  );
-}
-
-export function LapHeaderBody({
-  lap,
-  checks,
-  now: fixed,
-}: {
-  lap: OneLapRow;
-  /** The lap's app-check lines, once they have loaded; until then no disposition is matched. */
-  checks?: readonly CheckLineRow[];
-  /** A fixed clock, for tests; the screen uses the browser's. */
-  now?: number;
-}): ReactElement {
-  const ticking = useNow();
-  const now = fixed ?? ticking;
-  const outcome = lapOutcome(lap);
-  const running = lap.status === 'running';
-  const state = running ? 'running' : outcome === null ? undefined : LAP_OUTCOME_STATE[outcome];
-  const color = state && stateColor(state);
-  const text = state && stateInk(state);
-  const label = running
-    ? STATE_NAME.running
-    : outcome === null
-      ? lap.status
-      : OUTCOME_LABEL[outcome];
-  const seconds = running ? since(lap.started_at, now) : durationOf(lap);
-  const pr = lap.pr_number;
-  return (
-    <div
-      data-lap={lap.run_id}
-      data-status={lap.status}
-      data-outcome={outcome ?? undefined}
-      data-route={lap.route ?? undefined}
-      data-depth={lap.depth ?? undefined}
-      data-issue={lap.issue_number ?? undefined}
-      data-pr={pr ?? undefined}
-      className="grid gap-6"
-    >
-      <div className={`${CARD} grid gap-4 py-[15px] pr-[18px] pl-[22px]`}>
-        <div className="flex flex-wrap items-center gap-x-[18px] gap-y-2">
-          <h1 className="flex items-center gap-[9px]">
-            <span
-              aria-hidden="true"
-              className="h-2 w-2 shrink-0 rounded-full bg-text-tertiary"
-              style={color === undefined ? undefined : { backgroundColor: color }}
-            />
-            <span
-              className={`${TAG} text-text-secondary`}
-              style={text === undefined ? undefined : { color: text }}
-            >
-              {label}
-            </span>
-            <span className={`${MONO} text-text-primary`}>Lap {shortRunId(lap.run_id)}</span>
-          </h1>
-          <span className="flex min-w-0 flex-1 items-baseline gap-2.5">
-            {lap.issue_number === null ? (
-              <span className={`${MONO} text-text-secondary`}>No issue claimed</span>
-            ) : lap.issue_url === null ? (
-              <span className={`${MONO} font-bold text-text-primary`}>#{lap.issue_number}</span>
-            ) : (
-              <a
-                data-link="issue"
-                href={lap.issue_url}
-                className={`${MONO} shrink-0 font-bold text-text-primary ${LINK}`}
-              >
-                #{lap.issue_number}
-              </a>
-            )}
-            {lap.issue_title === null ? null : (
-              <span className="min-w-0 truncate text-[12.5px] text-text-secondary">
-                {lap.issue_title}
-              </span>
-            )}
-          </span>
-        </div>
-        <dl className="grid grid-cols-2 gap-x-[18px] gap-y-2 sm:grid-cols-5">
-          <Field label="Route">{lap.route ?? NONE}</Field>
-          <Field label="Depth">{lap.depth ?? NONE}</Field>
-          <Field label="Started">
-            {lap.started_at === null ? NONE : utcMinute(lap.started_at)}
-          </Field>
-          <Field label={running ? 'Running for' : 'Duration'}>
-            <span data-duration>{seconds === null ? NONE : formatElapsed(seconds)}</span>
-          </Field>
-          <Field label="Pull request">
-            {pr === null ? (
-              NONE
-            ) : (
-              <a data-link="pr" href={pullUrl(lap.repository, pr)} className={LINK}>
-                #{pr}
-              </a>
-            )}
-          </Field>
-        </dl>
-        <a
-          data-link="console"
-          href={consoleUrl(lap.console, lap.run_id)}
-          className={`${MONO} w-fit text-text-secondary ${LINK}`}
-        >
-          The full run in the Archon console
-        </a>
-      </div>
-      <div className="grid gap-6 sm:grid-cols-2">
-        <Review lap={lap} checks={checks} />
-        <Gate lap={lap} />
-      </div>
-    </div>
-  );
-}
-
-function Review({
+export function Review({
   lap,
   checks,
 }: {
@@ -284,7 +107,7 @@ function Review({
   );
 }
 
-function Gate({ lap }: { lap: OneLapRow }): ReactElement {
+export function Gate({ lap }: { lap: OneLapRow }): ReactElement {
   const outcome = lap.gate_outcome;
   return (
     <section
@@ -334,64 +157,30 @@ export function Lift<Row>({
   return null;
 }
 
-/**
- * Every step of the loop at the lap's pin, drawn as the map draws it and marked by what happened
- * to it in this lap; a step opens its runs in the side panel. The lap's map and its steps are two
- * panels subscribed side by side.
- */
-export function LapSteps({
-  factory,
-  runId,
-}: {
-  factory: string | undefined;
-  runId: string;
-}): ReactElement {
-  const [map, setMap] = useState<Lifted<LapMapRow>>({ rows: undefined, state: 'loading' });
-  return (
-    <>
-      <LivePanel<LapMapRow>
-        query="one-lap-map"
-        factory={factory}
-        args={[runId]}
-        className="contents"
-      >
-        {(rows, state) => <Lift rows={rows} state={state} onChange={setMap} />}
-      </LivePanel>
-      <LivePanel<StepAttemptRow> query="one-lap-steps" factory={factory} args={[runId]}>
-        {(rows, state) => (
-          <>
-            <h2 className={`${LABEL} mb-3`}>Steps</h2>
-            <PanelBody rows={rows} state={state} factory={factory} what="the steps">
-              {(loaded) => <LapStepsBody rows={loaded} map={map} factory={factory ?? ''} />}
-            </PanelBody>
-          </>
-        )}
-      </LivePanel>
-    </>
-  );
-}
-
 /** The graph with its side panel, then every attempt as a row, folded away. */
 export function LapStepsBody({
   rows,
   map,
   factory,
+  workflow,
   now: fixed,
 }: {
   rows: readonly StepAttemptRow[];
   factory: string;
+  /** The run's workflow, whose map the graph is drawn from. */
+  workflow: string;
   map: Lifted<LapMapRow>;
   /** A fixed clock, for tests; the screen uses the browser's. */
   now?: number;
 }): ReactElement {
   const ticking = useNow();
   const now = fixed ?? ticking;
-  const total = lapCost(rows);
+  const total = runCost(rows);
   // Until a map arrives the graph waits; a map that cannot load leaves the lap's own steps.
   const mapRows = map.state === 'error' ? [] : map.rows;
   const lap = useMemo(
-    () => (mapRows === undefined ? undefined : lapGraph(mapRows, rows, factory)),
-    [mapRows, rows, factory],
+    () => (mapRows === undefined ? undefined : lapGraph(mapRows, rows, factory, workflow)),
+    [mapRows, rows, factory, workflow],
   );
   // undefined: follow the step running now; null: the panel was closed.
   const [picked, setPicked] = useState<string | null | undefined>(undefined);
@@ -401,7 +190,7 @@ export function LapStepsBody({
     <div className="grid gap-4">
       <p className={`${MONO} flex flex-wrap gap-x-5 gap-y-1 text-text-secondary`}>
         <span>
-          Lap cost{' '}
+          Run cost{' '}
           <span data-lap-cost={total ?? 0} className="text-text-primary">
             {formatCost(total ?? 0)}
           </span>
@@ -457,7 +246,7 @@ export function StepList({
       <ol className={`${CARD} overflow-hidden`}>
         {sorted.map((attempt) => {
           const seconds = attemptSeconds(attempt, now);
-          const cost = costOf(attempt.cost_usd);
+          const cost = stepCost(attempt, rows);
           const status = stateOf(STEP_STATUS_STATE, attempt.status);
           const cache =
             attempt.tokens_cache_read === null && attempt.tokens_cache_write === null
@@ -521,41 +310,6 @@ export function StepList({
         })}
       </ol>
     </div>
-  );
-}
-
-/**
- * The lap's app-check lines: the report's line id, kind, verdict and evidence count.
- */
-export function LapChecks({
-  factory,
-  runId,
-  onRows,
-}: {
-  factory: string | undefined;
-  runId: string;
-  onRows: (lifted: Lifted<CheckLineRow>) => void;
-}): ReactElement {
-  return (
-    <LivePanel<CheckLineRow> query="one-lap-checks" factory={factory} args={[runId]}>
-      {(rows, state) => (
-        <>
-          <Lift rows={rows} state={state} onChange={onRows} />
-          <h2 className={`${LABEL} mb-3`}>App check</h2>
-          <PanelBody rows={rows} state={state} factory={factory} what="the app check">
-            {(loaded) =>
-              loaded.length === 0 ? (
-                <p className="text-sm text-text-secondary">
-                  No app check has reported on this lap.
-                </p>
-              ) : (
-                <CheckList rows={loaded} />
-              )
-            }
-          </PanelBody>
-        </>
-      )}
-    </LivePanel>
   );
 }
 

@@ -56,14 +56,10 @@ function Row({ event, before }: { event: TimelineEvent; before: Date | null }): 
       data-run={run?.id}
       data-stage={event.stage ?? undefined}
     >
-      {run === null ? null : run.link.kind === 'lap' ? (
+      {run === null ? null : (
         <Link to={run.link.to} className={`text-[length:var(--v3-t-meta)] ${RUN_LINK}`}>
-          Open the lap
-        </Link>
-      ) : (
-        <a href={run.link.href} className={`text-[length:var(--v3-t-meta)] ${RUN_LINK}`}>
           Open the run
-        </a>
+        </Link>
       )}
       {event.detail === null || event.detail === '' ? null : (
         <div className="text-[length:var(--v3-t-meta)] text-[color:var(--v3-fg-2)]">

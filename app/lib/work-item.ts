@@ -9,7 +9,7 @@ import { deepestStep } from '../map/live';
 import { formatCost, formatElapsed } from './format';
 import { stepPath } from './lap-graph';
 import { costOf, durationOf, stepLabel } from './laps';
-import { consoleUrl, hasLapPage, INTAKE_WORKFLOW, isOldLoop, lapHref } from './one-lap';
+import { consoleUrl, INTAKE_WORKFLOW, isOldLoop, lapHref } from './one-lap';
 import { LAP_WORKFLOWS } from './scorecard';
 import type { StopClass } from './failures';
 import {
@@ -121,7 +121,7 @@ function failedStop(row: WorkItemRow): TimelineEvent['stop'] {
   };
 }
 
-export type RunLink = { kind: 'lap'; to: string } | { kind: 'console'; href: string };
+export type RunLink = { kind: 'lap'; to: string };
 
 export interface TimelineEvent {
   key: string;
@@ -187,11 +187,8 @@ const QUEUE_REVIEW_TEXT = {
   ask: 'asks you',
 } as const satisfies Record<keyof typeof QUEUE_REVIEW_STATE, string>;
 
-const runLink = (row: WorkItemRow, factory: string, console: string | null): RunLink | null => {
-  if (row.run_id === null) return null;
-  if (hasLapPage(row.workflow)) return { kind: 'lap', to: lapHref(factory, row.run_id) };
-  return console === null ? null : { kind: 'console', href: consoleUrl(console, row.run_id) };
-};
+const runLink = (row: WorkItemRow, factory: string): RunLink | null =>
+  row.run_id === null ? null : { kind: 'lap', to: lapHref(factory, row.run_id) };
 
 const deliveries = (n: number) => `${n} ${n === 1 ? 'delivery' : 'deliveries'}`;
 
@@ -498,7 +495,7 @@ export function workItemTimeline(rows: readonly WorkItemRow[], factory: string):
     });
   for (const row of rows) {
     if ((row.kind !== 'run' && row.kind !== 'sweep') || row.run_id === null) continue;
-    const link = runLink(row, factory, item.console);
+    const link = runLink(row, factory);
     const base = (kind: TimelineEvent['kind']): Base => ({
       key: `${kind}-${row.kind}-${row.run_id}-${row.pr ?? ''}`,
       kind,

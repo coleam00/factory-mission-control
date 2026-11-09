@@ -5,5 +5,5 @@ SELECT
   a.position, a.line_id, a.kind, a.verdict, a.evidence_count
 FROM mc.laps l
 JOIN mc.app_check_lines a ON a.run_id = l.run_id
-WHERE l.factory = $1 AND l.run_id::text = $2 AND l.workflow_name = 'archon-loop'
+WHERE l.factory = $1 AND l.run_id::text = $2
   AND a.kind <> 'holdout'

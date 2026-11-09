@@ -1,13 +1,19 @@
 import { createRoot } from 'react-dom/client';
 import { createMemoryRouter, RouterProvider } from 'react-router';
-import type { CheckLineRow, OneLapRow } from '../../lib/one-lap';
-import { OneLap } from '../OneLap';
+import { type CheckLineRow, OLD_LOOP_WORKFLOW, type OneLapRow } from '../../lib/one-lap';
+import { OneRun } from '../OneRun';
 import { delivered, type PanelState } from './delivered-panel';
 
 const RUN = '5eed0001-0000-4000-8000-000000000001';
 
 const lap: OneLapRow = {
   run_id: RUN,
+  workflow_name: OLD_LOOP_WORKFLOW,
+  stop_status: null,
+  stop_step: null,
+  stop_line: null,
+  stop_class: null,
+  capacity_since: null,
   status: 'completed',
   started_at: new Date('2026-10-01T14:00:00Z'),
   completed_at: new Date('2026-10-01T15:00:00Z'),
@@ -65,7 +71,12 @@ export async function renderOneLap(checks: PanelState) {
   document.body.append(container);
   const root = createRoot(container);
   try {
-    const router = createMemoryRouter([{ path: '/', element: <OneLap factory="f" runId={RUN} /> }]);
+    const router = createMemoryRouter(
+      [{ path: '/', element: <OneRun factory="f" runId={RUN} /> }],
+      {
+        initialEntries: ['/?tab=steps'],
+      },
+    );
     root.render(<RouterProvider router={router} />);
     // The app check's rows reach the review card one effect after the panel draws them; a
     // card that never marks its dispositions is read once the wait is over.
