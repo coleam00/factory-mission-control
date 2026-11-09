@@ -58,6 +58,10 @@ test('a row opens its run, and shows - for a took or cost it does not have', () 
   expect(html).not.toContain('$');
 });
 
+test('a run with no round, step or PR still shows its item on the narrow row', () => {
+  expect(list([run({ issue_number: 42 })])).toContain('>#42</span></span>');
+});
+
 test('an empty page says so, differently for a search', () => {
   expect(list([])).toContain('No runs yet.');
   expect(list([], true)).toContain('No run matches.');
@@ -101,6 +105,12 @@ test('a page the address cannot read is page 1', () => {
   expect(filterOf(new URLSearchParams('page=0')).page).toBe(1);
   expect(filterOf(new URLSearchParams('page=abc')).page).toBe(1);
   expect(filterOf(new URLSearchParams('page=3')).page).toBe(3);
+});
+
+test('a page past the query offset range is held to the last page the offset can hold', () => {
+  const page = filterOf(new URLSearchParams('page=99999999999999999999')).page;
+  expect(page * RUNS_PAGE_SIZE).toBeLessThanOrEqual(Number.MAX_SAFE_INTEGER);
+  expect(page).toBeGreaterThan(1);
 });
 
 test('a filter change made from page 3 leaves the page out of the address', () => {

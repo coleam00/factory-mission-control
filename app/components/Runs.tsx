@@ -26,6 +26,9 @@ const SEARCH_DEBOUNCE_MS = 300;
 const COLUMNS =
   'grid grid-cols-[minmax(0,1fr)_auto] min-[761px]:grid-cols-[minmax(0,1fr)_72px_72px_80px]';
 
+/** The last page number the query's offset can hold as a bigint without overflowing. */
+const MAX_PAGE = Math.floor(Number.MAX_SAFE_INTEGER / RUNS_PAGE_SIZE);
+
 const NUMBER = 'font-mono text-[length:var(--v3-t-meta)] tabular-nums text-right';
 
 /** Everything the page's address says about what to show; a value it cannot read falls back to the default. */
@@ -36,7 +39,7 @@ export function filterOf(params: URLSearchParams): RunsFilter {
     q: params.get('q') ?? '',
     state: STATES.find((s) => s === state) ?? '',
     hideIdle: params.get('idle') !== 'show',
-    page: page >= 1 ? page : 1,
+    page: page >= 1 ? Math.min(page, MAX_PAGE) : 1,
   };
 }
 
@@ -291,10 +294,10 @@ function RunItem({
             <span className="block font-mono text-[length:var(--v3-t-body)] font-bold text-[color:var(--v3-fg)] [overflow-wrap:anywhere]">
               {run.workflow_name}
             </span>
-            {sub === '' ? null : (
+            {sub === '' && item === '-' ? null : (
               <span className="block font-mono text-[length:var(--v3-t-micro)] text-[color:var(--v3-fg-3)] [overflow-wrap:anywhere]">
                 {sub}
-                <span className="min-[761px]:hidden">{` · ${item}`}</span>
+                <span className="min-[761px]:hidden">{sub === '' ? item : ` · ${item}`}</span>
               </span>
             )}
             {stop === null ? null : (

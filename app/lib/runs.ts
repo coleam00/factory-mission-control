@@ -2,7 +2,7 @@
  * The Runs screen's rows, as `db/queries/runs.sql` returns them, and the text the browser writes
  * from them. Pure, no React.
  */
-import type { State } from './states';
+import { STATES, type State } from './states';
 
 export const RUNS_PAGE_SIZE = 50;
 
@@ -43,14 +43,18 @@ type CountColumn = keyof Pick<
   'all_count' | 'running_count' | 'needs_you_count' | 'failed_count' | 'done_count' | 'idle_count'
 >;
 
+const STATE_CHIPS: Record<State, { label: string; count: CountColumn }> = {
+  running: { label: 'Running', count: 'running_count' },
+  'needs-you': { label: 'Needs you', count: 'needs_you_count' },
+  failed: { label: 'Failed', count: 'failed_count' },
+  done: { label: 'Done', count: 'done_count' },
+  idle: { label: 'Cancelled', count: 'idle_count' },
+};
+
 /** The six chips in order. `state` is the chip's filter, '' for All; the idle state's chip is Cancelled. */
 export const RUN_CHIPS: readonly { state: State | ''; label: string; count: CountColumn }[] = [
   { state: '', label: 'All', count: 'all_count' },
-  { state: 'running', label: 'Running', count: 'running_count' },
-  { state: 'needs-you', label: 'Needs you', count: 'needs_you_count' },
-  { state: 'failed', label: 'Failed', count: 'failed_count' },
-  { state: 'done', label: 'Done', count: 'done_count' },
-  { state: 'idle', label: 'Cancelled', count: 'idle_count' },
+  ...STATES.map((state) => ({ state, ...STATE_CHIPS[state] })),
 ];
 
 export interface RunsFilter {
