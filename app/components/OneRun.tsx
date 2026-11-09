@@ -30,7 +30,14 @@ import {
   waitsForSlot,
 } from '../lib/one-run';
 import { placeAddress } from '../lib/places';
-import { LAP_OUTCOME_STATE, RUN_STATE, STATE_NAME, STEP_STATUS_STATE, type State, stateOf } from '../lib/states';
+import {
+  LAP_OUTCOME_STATE,
+  RUN_STATE,
+  STATE_NAME,
+  STEP_STATUS_STATE,
+  type State,
+  stateOf,
+} from '../lib/states';
 import { LivePanel } from '../live/LivePanel';
 import { MONO, PanelBody, useNow } from './panel';
 import { openManager } from './ManagerDock';
