@@ -44,8 +44,8 @@ test('the proof locks every mc table a projection function reads or writes, each
   await db.close();
 });
 
-// A revoked table fails any statement that touches it, read or write, as a lock does, and a held
-// row refuses writes to it. Privileges do not stop a foreign-key check or cascade (they run as the
+// A revoked table fails any statement that touches it, read or write, as a lock does; a row lock
+// is emulated by revoking its whole table, which is enough while no case writes other rows of it. Privileges do not stop a foreign-key check or cascade (they run as the
 // table owner), which a live lock would block; the live run proves those.
 test('each case leaves the projection errors it declares when its held tables fail as a lock does', async () => {
   const db = await migrated();
@@ -57,21 +57,6 @@ test('each case leaves the projection errors it declares when its held tables fa
   await db.query(`GRANT USAGE ON SCHEMA mc TO archon_writer;
     GRANT ALL ON ALL TABLES IN SCHEMA public, mc TO archon_writer;
     GRANT ALL ON ALL SEQUENCES IN SCHEMA public, mc TO archon_writer`);
-  await db.query(`CREATE SCHEMA held;
-    CREATE TABLE held.rows (tbl text, row jsonb);
-    GRANT USAGE ON SCHEMA held TO archon_writer;
-    GRANT SELECT ON held.rows TO archon_writer;
-    CREATE FUNCTION held.refuse() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN
-      IF EXISTS (SELECT 1 FROM held.rows h WHERE h.tbl = TG_TABLE_NAME AND h.row = to_jsonb(OLD)) THEN
-        RAISE EXCEPTION 'row held' USING ERRCODE = '55P03';
-      END IF;
-      RETURN CASE TG_OP WHEN 'DELETE' THEN OLD ELSE NEW END;
-    END $$`);
-  for (const table of PROJECTION_TABLES)
-    await db.query(
-      `CREATE TRIGGER zz_held BEFORE UPDATE OR DELETE ON mc.${table}
-       FOR EACH ROW EXECUTE FUNCTION held.refuse()`,
-    );
   const [run] = await db.query(
     `INSERT INTO remote_agent_workflow_runs (workflow_name, status, user_message, metadata)
      VALUES ($1, 'running', 'lock wait check', '{}'::jsonb) RETURNING id`,
@@ -84,21 +69,15 @@ test('each case leaves the projection errors it declares when its held tables fa
   const results: [string, number][] = [];
   for (const check of CASES) {
     const lock = check.lock;
-    const held = lock?.mode === 'table' ? lock.tables.map((table) => `mc.${table}`).join(', ') : '';
-    if (lock?.mode === 'table') await db.query(`REVOKE ALL ON ${held} FROM archon_writer`);
-    if (lock?.mode === 'row')
-      await db.query(
-        `INSERT INTO held.rows SELECT '${lock.table}', to_jsonb(t) FROM mc.${lock.table} t WHERE ${lock.where}`,
-        [runId],
-      );
+    const held = lock ? `mc.${lock.mode === 'table' ? lock.tables.join(', mc.') : lock.table}` : '';
+    if (lock) await db.query(`REVOKE ALL ON ${held} FROM archon_writer`);
     const before = await errorCount();
     await db.transaction(async (tx) => {
       await tx.query('SET LOCAL ROLE archon_writer', []);
       await check.write(tx, runId);
     });
     const added = (await errorCount()) - before;
-    if (lock?.mode === 'table') await db.query(`GRANT ALL ON ${held} TO archon_writer`);
-    await db.query('DELETE FROM held.rows');
+    if (lock) await db.query(`GRANT ALL ON ${held} TO archon_writer`);
     results.push([check.name, added]);
   }
   expect(results).toEqual(CASES.map((c) => [c.name, c.errors]));
