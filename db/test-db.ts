@@ -61,7 +61,11 @@ export interface TestDb extends Db {
 
 /** An in-memory Postgres behind the scripts' `Db`, for tests that need real SQL and no network. */
 export function testDb(): TestDb {
-  const pg = new PGlite();
+  return testDbOn(new PGlite());
+}
+
+/** `testDb` over a PGlite the caller owns, for a test that also puts it behind a socket. */
+export function testDbOn(pg: PGlite): TestDb {
   return {
     ...txOn(pg),
     async transaction(fn) {

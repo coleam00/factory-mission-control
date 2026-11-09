@@ -7,7 +7,7 @@ How this repository is built. The product is `docs/mission-control.prd.md`; this
 | Path | What lives there |
 |---|---|
 | `app/` | The browser app: React 19, Vite 6, Tailwind v4, react-router 7. One file per screen under `app/routes/`, registered from the directory; a file's name encodes its path (`.` separates segments, `$name` is a parameter: `f.$factory.versions.tsx` serves `/f/:factory/versions`, #73). |
-| `server/` | Bun + Hono: serves the built app, `/api/health`, `/api/build-id`, and the sealing API for live queries. At start on a `check-*` branch it loads the factories file it serves into `mc.factories`, as `migrate -- --configured-factories` does, and fails to start if that fails; it never writes `main` or a `rewind-*` branch. |
+| `server/` | Bun + Hono: serves the built app, `/api/health`, `/api/build-id`, and the sealing API for live queries. `/api/manager/*` is the Manager: a streaming chat and a daily briefing from a Claude agent with read-only tools. At start on a `check-*` branch it loads the factories file it serves into `mc.factories`, as `migrate -- --configured-factories` does, and fails to start if that fails; it never writes `main` or a `rewind-*` branch. |
 | `db/migrations/` | Numbered SQL files, applied in order by `bun run migrate`; each idempotent. A merged migration is never edited (main has applied it and never re-runs it): change it with a new, higher-numbered file. |
 | `db/queries/` | Every live query, one file each, named for the panel that reads it. |
 | `function/` | The Neon Function that receives GitHub webhooks (Hono, TypeScript). |
@@ -41,6 +41,10 @@ How this repository is built. The product is `docs/mission-control.prd.md`; this
 - Configuration by environment only: `MC_DATABASE_URL`, `NEON_REALTIME_SECRET`, `NEON_API_KEY`,
   `NEON_PROJECT_ID`, and optionally `MC_FACTORIES_FILE` (a factories file served instead of
   `factories.json`; checks use it to add a fixture-only factory, a real install leaves it unset).
+  The Manager adds `MC_MANAGER_MODEL`, `MC_MANAGER_EFFORT`, `MC_MANAGER_MESSAGE_USD` and
+  `MC_MANAGER_DAY_USD` (all optional, with defaults) and runs on the owner's Claude subscription:
+  `CLAUDE_CODE_OAUTH_TOKEN`, or the machine's Claude login, set on the server. `ANTHROPIC_API_KEY`
+  is optional and used only when set. With none of them the endpoint says which credential is missing.
   Never `DATABASE_URL`. Never commit a secret; `.mc-check.env` is gitignored.
 - Serve on `127.0.0.1:<port>`, open as `http://localhost:<port>`, ports 8850-8864 only.
 - Holdout scenario text from Archon's old rows never enters the dashboard's tables or screens. The factory no longer uses holdouts.

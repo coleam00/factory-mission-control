@@ -29,7 +29,7 @@ afterAll(() => db.close());
 
 beforeEach(async () => {
   await db.query(`TRUNCATE public.remote_agent_workflow_runs, public.remote_agent_codebases CASCADE;
-    TRUNCATE mc.laps, mc.lap_steps, mc.attention_items, mc.lap_step_attempts, mc.app_check_lines, mc.projection_errors,
+    TRUNCATE mc.laps, mc.lap_steps, mc.attention_items, mc.run_stops, mc.lap_step_attempts, mc.app_check_lines, mc.projection_errors,
       mc.factories, mc.versions, mc.pins, mc.work_item_states, mc.work_item_blockers, mc.capacity_waits, public.remote_agent_state_revisions`);
   runId = await newRun();
 });
@@ -696,6 +696,8 @@ test('every projection function stops a lock wait after 100 ms, and only inside 
       'project_attention_item',
       'project_queue_app_check',
       'project_run',
+      'project_run_stop',
+      'project_run_stop_trigger',
       'project_step_event',
       'project_version',
       'project_work_item_state',
