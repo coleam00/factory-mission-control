@@ -3,7 +3,13 @@ import type { Options, SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import { lapHref } from '../app/lib/one-lap';
 import { snapshot } from '../db/test-db';
 import { createApp } from './app';
-import { type AgentRunner, createManager, type Manager, managerSettings } from './manager';
+import {
+  type AgentRunner,
+  CREDENTIAL_NAMES,
+  createManager,
+  type Manager,
+  managerSettings,
+} from './manager';
 import {
   ELSEWHERE_FAILED,
   ELSEWHERE_WAITING,
@@ -14,7 +20,14 @@ import {
   startManagerDb,
   WAITING_RUN,
 } from './manager-fixture';
-import { MAX_PROPOSALS, MAX_RUNS, type ManagerEvent, parseBlock } from './manager-stream';
+import {
+  LINK_KINDS,
+  MAX_PROPOSALS,
+  MAX_RUNS,
+  type ManagerEvent,
+  PROPOSAL_ACTIONS,
+  parseBlock,
+} from './manager-stream';
 
 // Each answer that calls a tool starts a `bun` subprocess, which takes seconds on Windows.
 setDefaultTimeout(30_000);
@@ -428,10 +441,10 @@ describe('a run that does not succeed', () => {
     const failing = () => model(async () => [start, result(0, 'error_during_execution')]);
     const log = spyOn(console, 'error').mockImplementation(() => {});
     try {
-      delete process.env.CLAUDE_CODE_OAUTH_TOKEN;
-      delete process.env.ANTHROPIC_API_KEY;
+      for (const name of CREDENTIAL_NAMES) delete process.env[name];
       const without = await chat(managerOf(failing()));
-      expect(await without.text()).toContain('CLAUDE_CODE_OAUTH_TOKEN');
+      const text = await without.text();
+      for (const name of CREDENTIAL_NAMES) expect(text).toContain(name);
       // Runs that never reach the model spend nothing, so they never fill the day cap.
       const never = managerOf(
         model(async () => []),
@@ -447,7 +460,7 @@ describe('a run that does not succeed', () => {
       expect(await withToken.text()).not.toContain('CLAUDE_CODE_OAUTH_TOKEN');
     } finally {
       log.mockRestore();
-      for (const name of ['CLAUDE_CODE_OAUTH_TOKEN', 'ANTHROPIC_API_KEY']) {
+      for (const name of CREDENTIAL_NAMES) {
         if (kept[name] === undefined) delete process.env[name];
         else process.env[name] = kept[name];
       }
@@ -599,9 +612,11 @@ describe('the prompt’s example block', () => {
     const prompt = played.options[0].systemPrompt as string;
     const block = prompt.match(/```mc\n([\s\S]*?)\n```/)?.[1] ?? '';
     const parsed = parseBlock(block.replace('<issue number>', '7'));
-    expect(new Set(parsed.links.map((link) => link.kind))).toEqual(new Set(['run', 'item']));
-    expect(new Set(parsed.proposals.map((proposal) => proposal.action))).toEqual(
-      new Set(['answer', 'resume']),
+    expect<string[]>([...new Set(parsed.links.map((link) => link.kind))].sort()).toEqual(
+      Object.keys(LINK_KINDS).sort(),
+    );
+    expect<string[]>([...new Set(parsed.proposals.map((proposal) => proposal.action))].sort()).toEqual(
+      Object.keys(PROPOSAL_ACTIONS).sort(),
     );
     expect(parsed.runs).toHaveLength(1);
     expect(parsed.proposals.some((proposal) => proposal.option !== undefined)).toBe(true);

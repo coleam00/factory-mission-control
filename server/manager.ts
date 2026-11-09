@@ -184,7 +184,7 @@ export function parseChat(body: unknown, factories: string[]): ChatRequest | str
   };
 }
 
-/** Every one must also be in `SECRETS` of `app/bundle.test.ts`, which scans the browser bundle for it. */
+/** Every one must also be in `SECRETS` of `app/bundle.test.ts`, which scans the browser bundle for it, and the `unavailable` notice names them (its test checks each). */
 export const CREDENTIAL_NAMES = ['ANTHROPIC_API_KEY', 'CLAUDE_CODE_OAUTH_TOKEN'] as const;
 
 const PASSED_TO_CLI = [
