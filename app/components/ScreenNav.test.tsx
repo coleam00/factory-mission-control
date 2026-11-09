@@ -129,7 +129,7 @@ test('the Runs count is the status strip’s running count, empty until it is kn
   expect(html(undefined)).toMatch(/data-runs-count[^>]*><\/span>/);
 });
 
-test('while the phone Manager is open no tab is current, and a tab’s count stays in the tab’s flow', () => {
+test('while the phone Manager is open no tab is current, and a tab’s count is overlaid so it adds no flow height', () => {
   const router = createMemoryRouter(
     [
       {
@@ -141,5 +141,5 @@ test('while the phone Manager is open no tab is current, and a tab’s count sta
   );
   const html = renderToStaticMarkup(<RouterProvider router={router} />);
   expect(html).not.toContain('aria-current');
-  expect(html).not.toContain('absolute');
+  expect(html).toContain('absolute left-1/2 top-0');
 });

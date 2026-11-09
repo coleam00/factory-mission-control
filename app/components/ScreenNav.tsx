@@ -151,14 +151,18 @@ export function PlaceLinks({
                           ? 'bg-[var(--v3-raised)] font-medium text-[color:var(--v3-fg)]'
                           : 'text-[color:var(--v3-fg-2)]'
                       }`
-                    : `grid justify-items-center gap-[3px] text-[11px] ${
+                    : `relative grid justify-items-center gap-[3px] text-[11px] ${
                         current ? 'text-[color:var(--v3-fg)]' : 'text-[color:var(--v3-fg-3)]'
                       }`
                 }
               >
                 <Glyph place={place} />
                 {place.label}
-                <span className={layout === 'side' ? 'ml-auto' : 'whitespace-nowrap empty:hidden'}>
+                <span
+                  className={
+                    layout === 'side' ? 'ml-auto' : 'absolute left-1/2 top-0 ml-2 whitespace-nowrap'
+                  }
+                >
                   {count(place)}
                 </span>
               </Link>

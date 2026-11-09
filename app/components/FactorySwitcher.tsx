@@ -134,13 +134,13 @@ export function FactorySwitcherBody({
       onToggle={(event) => onToggle(event.currentTarget.open)}
       className="relative"
     >
-      <summary className="flex cursor-pointer items-center gap-3">
+      <summary className="flex min-w-0 cursor-pointer items-center gap-3">
         <span className="sr-only">Factory</span>
-        <span className="inline-flex w-full items-center gap-1.5 rounded-md border border-[color:var(--v3-line)] px-2 py-1 font-mono text-[length:var(--v3-t-micro)] text-[color:var(--v3-fg-3)]">
-          <span className="whitespace-nowrap">{current ?? 'Choose a factory'}</span>
+        <span className="inline-flex w-full min-w-0 items-center gap-1.5 rounded-md border border-[color:var(--v3-line)] px-2 py-1 font-mono text-[length:var(--v3-t-micro)] text-[color:var(--v3-fg-3)]">
+          <span className="min-w-0 truncate">{current ?? 'Choose a factory'}</span>
           <span aria-hidden="true">▾</span>
           {engine ? (
-            <span data-engine className="whitespace-nowrap">
+            <span data-engine className="shrink-0 whitespace-nowrap">
               · {engine.slice(0, 8)}
             </span>
           ) : null}
