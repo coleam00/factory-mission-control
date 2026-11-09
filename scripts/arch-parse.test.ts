@@ -225,6 +225,15 @@ test('every row the job builds names exactly its table columns', async () => {
   }
 });
 
+test('a repeated depends_on entry is one arch_edges row', () => {
+  const pack = parsePack(join(PACK, 'sdlc'), TEMPLATE);
+  const once = archRows(pack).arch_edges;
+  const [workflow] = pack.workflows.filter((w) => w.edges.length > 0);
+  expect(workflow).toBeDefined();
+  workflow?.edges.push(...(workflow?.edges ?? []));
+  expect(archRows(pack).arch_edges).toEqual(once);
+});
+
 test.each([[[]], [[ARCHON_SHA]], [['not-a-sha', FACTORY_SHA]]])(
   'exits 2 with usage for %j before touching Neon',
   async (argv) => {
