@@ -1,10 +1,11 @@
 import type { ReactElement } from 'react';
 import { isRouteErrorResponse, Link, useRouteError } from 'react-router';
 import { EmptyState } from './components/EmptyState';
+import { ROOT_ADDRESS } from './lib/places';
 
 function HomeLink(): ReactElement {
   return (
-    <Link to="/" className="text-sm text-accent hover:text-accent-hover">
+    <Link to={ROOT_ADDRESS} className="text-sm text-accent hover:text-accent-hover">
       Go to home
     </Link>
   );
