@@ -4,7 +4,7 @@ import type { BoardRow } from '../lib/board';
 import { useFactory, useUrlFactory } from '../live/FactoryProvider';
 import { LivePanel } from '../live/LivePanel';
 import { type Place, PLACES, type PlacePath, placeAddress } from '../lib/places';
-import { DecisionsCount } from './DecisionsCount';
+import { AttentionCount } from './AttentionCount';
 import type { StatusStripRow } from './FactoryStrip';
 
 /** The places' glyphs, 16 px, from the v3 mockup. */
@@ -44,7 +44,7 @@ export function currentPlace(pathname: string, factory: string, place: Place): b
 
 /** The count that follows a place's name, none where the place has no live count. */
 function CountFor({ place, factory }: { place: Place; factory: string }): ReactNode {
-  if (place.path === '') return <DecisionsCount factory={factory} />;
+  if (place.path === '') return <AttentionCount factory={factory} />;
   if (place.path === 'board') return <BoardCount factory={factory} />;
   if (place.path === 'runs') return <RunsCount factory={factory} />;
   return null;

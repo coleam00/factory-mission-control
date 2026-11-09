@@ -11,8 +11,8 @@ import { QUEUE_FACTORY, SECOND_FACTORY } from './fixture/seed';
 import { type Deps, failing, guardedDatabaseUrl, type Main, runCli } from './lib/cli';
 import { machineLockPath, withMachineLock } from './lib/machine-lock';
 import { resolveBranchName } from './lib/target';
+import { ATTENTION_OUTPUTS, attentionPhase } from './live/attention';
 import { BOARD_OUTPUTS, boardPhase } from './live/board';
-import { DECISIONS_OUTPUTS, decisionsPhase } from './live/decisions';
 import { HOME_OUTPUTS, homePhase } from './live/home';
 import { LAPS_OUTPUTS, lapsPhase } from './live/laps';
 import { ONE_LAP_OUTPUTS, oneLapPhase } from './live/one-lap';
@@ -47,7 +47,7 @@ interface LiveScreen {
 
 /**
  * The runner first, then every phase in the order of every write against every read that judges
- * it: the laps screen and the lap open before the strip's first insert, and the Decisions screen
+ * it: the laps screen and the lap open before the strip's first insert, and the Attention page
  * removes its own labels as soon as it has timed them.
  */
 export const SCREENS: readonly LiveScreen[] = [
@@ -85,7 +85,7 @@ export const SCREENS: readonly LiveScreen[] = [
     phase: boardPhase,
     outputs: BOARD_OUTPUTS,
     help: [
-      'It checks the board against a recount of the seed, times `fixture:write label --label',
+      'It checks the board, Pipeline and Table, against a recount of the seed, times `fixture:write label --label',
       'work-order:demo --issue <a card on the board>` to its panel, the same label on #4 (delivered',
       "by a merged pull request that says Refs) to that panel's merged count and a build step on the",
       "queue factory's work item 401 to its Build column, and checks `?order=demo`.",
@@ -127,12 +127,12 @@ export const SCREENS: readonly LiveScreen[] = [
     ],
   },
   {
-    phase: decisionsPhase,
-    outputs: DECISIONS_OUTPUTS,
+    phase: attentionPhase,
+    outputs: ATTENTION_OUTPUTS,
     help: [
-      "It checks the decisions screen against the seed's attention items, open owner items and health,",
-      'and the tab count against the items shown, and times `fixture:write label` to it before and',
-      'after the hold.',
+      "It checks the attention page against the seed's open questions, owner items, stuck work and",
+      'failure signatures, the head and the tab count against the cards shown, and times',
+      '`fixture:write label` to it before and after the hold.',
     ],
   },
   {

@@ -21,6 +21,35 @@ WITH items AS (
     ORDER BY i.closed_at DESC NULLS LAST, i.number DESC
     LIMIT 200
   ) closed
+),
+-- Each of the factory's loop and queue runs that reached the ship step, once, with the item it holds:
+-- its claim, else the facts step's item, else its number input (lanes.sql, home-map.sql, health-workable.sql).
+claim AS (
+  SELECT DISTINCT ON (c.run_id) c.run_id, c.issue_number FROM mc.claims c
+  WHERE c.factory = $1
+  ORDER BY c.run_id, c.claimed_at DESC NULLS LAST, c.issue_number
+),
+rounds AS (
+  SELECT coalesce(c.issue_number, (f.output -> 'item' ->> 'number')::int, l.issue_number) AS number,
+    count(*)::int AS rounds
+  FROM mc.laps l
+  LEFT JOIN claim c ON c.run_id = l.run_id
+  LEFT JOIN mc.lap_steps f ON f.run_id = l.run_id AND f.step_id = 'facts'
+  WHERE l.factory = $1 AND l.workflow_name IN ('archon-loop', 'archon-build-queue')
+    AND EXISTS (
+      SELECT 1 FROM mc.lap_steps s
+      WHERE s.run_id = l.run_id AND (s.step_id = 'ship' OR starts_with(s.step_id, 'ship__')))
+  GROUP BY 1
+),
+-- Each pull request's latest app check verdict, once.
+checks AS (
+  SELECT DISTINCT ON (s.pr_number) s.pr_number, s.output ->> 'overall' AS overall
+  FROM mc.lap_steps s
+  JOIN mc.laps l ON l.run_id = s.run_id
+  WHERE l.factory = $1 AND s.step_id IN ('check-app', 'check')
+    AND (s.step_id = 'check-app' OR l.workflow_name = 'factory-app-check')
+    AND s.pr_number IS NOT NULL
+  ORDER BY s.pr_number, s.started_at DESC NULLS LAST, s.run_id
 )
 SELECT 'item' AS kind, i.number, i.title, i.url, i.state, i.closed_at,
   -- Every work order it carries, by name, as work-orders.sql counts an issue in each of them.
@@ -31,7 +60,7 @@ SELECT 'item' AS kind, i.number, i.title, i.url, i.state, i.closed_at,
   coalesce(rd.rounds, 0) AS rounds,
   ac.overall AS app_check,
   pr.number AS pr, pr.open AS pr_open,
-  st.build_status, st.build_at, st.merge_status, st.merge_at, st.triage_at, st.own_pr_at,
+  st.build_status, st.build_at, st.merge_status, st.merge_at, st.triage_at, st.own_pr_at, st.stage,
   NULL::text AS repository, NULL::integer AS merged_total
 FROM items i
 LEFT JOIN LATERAL (
@@ -53,21 +82,7 @@ LEFT JOIN LATERAL (
   WHERE c.factory = i.factory AND c.issue_number = i.number
   ORDER BY c.claimed_at DESC NULLS LAST, c.run_id LIMIT 1
 ) lp ON true
-LEFT JOIN LATERAL (
-  -- Rounds so far: the item's runs that reached the ship step. The run's item is the one Laps, the map
-  -- and health read (lanes.sql, home-map.sql, health-workable.sql): its claim, else the facts step's item, else its number input.
-  SELECT count(*)::int AS rounds FROM mc.laps l
-  WHERE l.factory = i.factory AND l.workflow_name IN ('archon-loop', 'archon-build-queue')
-    AND i.number = coalesce(
-      (SELECT c.issue_number FROM mc.claims c WHERE c.factory = l.factory AND c.run_id = l.run_id
-        ORDER BY c.claimed_at DESC NULLS LAST, c.issue_number LIMIT 1),
-      (SELECT (f.output -> 'item' ->> 'number')::int FROM mc.lap_steps f
-        WHERE f.run_id = l.run_id AND f.step_id = 'facts'),
-      l.issue_number)
-    AND EXISTS (
-      SELECT 1 FROM mc.lap_steps s
-      WHERE s.run_id = l.run_id AND (s.step_id = 'ship' OR starts_with(s.step_id, 'ship__')))
-) rd ON true
+LEFT JOIN rounds rd ON rd.number = i.number
 LEFT JOIN LATERAL (
   -- The open pull request that closes the item (the lowest), else the merged one (the highest).
   SELECT p.number, p.state = 'open' AS open
@@ -78,20 +93,10 @@ LEFT JOIN LATERAL (
   ORDER BY (p.state = 'open') DESC, CASE WHEN p.state = 'open' THEN -p.number ELSE p.number END DESC
   LIMIT 1
 ) pr ON true
-LEFT JOIN LATERAL (
-  -- That pull request's latest app check verdict, as the map's failing chip reads it,
-  -- matched by the step's projected pr_number.
-  SELECT s.output ->> 'overall' AS overall
-  FROM mc.lap_steps s
-  JOIN mc.laps l ON l.run_id = s.run_id
-  WHERE l.factory = i.factory AND s.step_id IN ('check-app', 'check') AND pr.number IS NOT NULL
-    AND (s.step_id = 'check-app' OR l.workflow_name = 'factory-app-check')
-    AND s.pr_number = pr.number
-  ORDER BY s.started_at DESC NULLS LAST, s.run_id LIMIT 1
-) ac ON true
+LEFT JOIN checks ac ON ac.pr_number = pr.number
 LEFT JOIN LATERAL (
   -- The queues' own state for the item (Archon's work/<n> document), as the Board's parked rule reads it.
-  SELECT w.build_status, w.build_at, w.merge_status, w.merge_at, w.triage_at, w.own_pr_at
+  SELECT w.build_status, w.build_at, w.merge_status, w.merge_at, w.triage_at, w.own_pr_at, w.stage
   FROM mc.work_item_states w
   JOIN mc.factories f ON f.codebase = w.project_key
   WHERE f.name = i.factory AND w.number = i.number
@@ -100,7 +105,7 @@ UNION ALL
 -- One row for the factory: where "N older" points, and how many work items a merged pull
 -- request closed or named with `Refs` in all, of which only the newest 200 are above.
 SELECT 'factory', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
-  NULL, NULL, NULL, NULL, NULL, NULL,
+  NULL, NULL, NULL, NULL, NULL, NULL, NULL,
   f.repository,
   (SELECT count(*)::int FROM mc.issues i
    WHERE i.factory = f.name AND i.state = 'closed' AND coalesce(i.close_reason, 'completed') NOT IN ('not_planned', 'duplicate') AND (EXISTS (

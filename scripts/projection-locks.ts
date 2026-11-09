@@ -14,12 +14,18 @@ export const BOUND_MS = 400;
 /** Archon's write gets a statement timeout, so a wait the projection does not stop ends as a failure. */
 const ARCHON_STATEMENT_TIMEOUT = '5s';
 
+type Lock =
+  | { mode: 'table'; tables: string[] }
+  | { mode: 'row'; table: string; column: string; where: string };
+
 type Case = {
   name: string;
   /** What a second session holds, in an open transaction, while Archon writes. */
-  hold?: string;
+  lock?: Lock;
   /** The projection errors Archon's write should leave: one when the projection gave up. */
   errors: number;
+  /** A table of Archon's the write goes through; where it is absent no projection trigger exists, so the case is skipped. */
+  needs?: string;
   write: (tx: Tx, runId: string) => Promise<unknown>;
 };
 
@@ -72,104 +78,187 @@ const loopRun = (daysBefore: number) => (tx: Tx, runId: string) =>
     [loopDigest(runId), daysBefore, WORKFLOW],
   );
 
-const exclusive = (...tables: string[]) =>
-  `LOCK TABLE ${tables.map((table) => `mc.${table}`).join(', ')} IN ACCESS EXCLUSIVE MODE`;
+/** A fresh run Archon's write moves to `update`, so the triggers on its UPDATE run. */
+const updatedRun = (update: string) => async (tx: Tx) => {
+  const [run] = await tx.query(
+    `INSERT INTO remote_agent_workflow_runs (workflow_name, status, user_message, metadata)
+     VALUES ('projection-locks', 'running', 'lock wait check', '{}'::jsonb) RETURNING id`,
+  );
+  await tx.query(`UPDATE remote_agent_workflow_runs SET ${update} WHERE id = $1`, [run?.id]);
+};
+
+const stoppedRun = updatedRun(`status = 'failed', completed_at = now()`);
+
+/** An answered capacity wait: the projection writes mc.capacity_waits for it. */
+const capacityWaitRun = updatedRun(
+  `status = 'paused', metadata = jsonb_build_object(
+     'wait', jsonb_build_object('kind', 'attention', 'answer', 'wait', 'message', 'capacity'),
+     'capacity_wait', jsonb_build_object('since', now()))`,
+);
+
+/** The work item every state case writes, one revision above the last. */
+const WORK_PROJECT = 'projection-locks';
+const WORK_NAME = 'work/999999999';
+const parkedOn =
+  '{"facts":{"build":{"status":"parked","at":"T","decisions":[{"reason":"waits on #7"}]}}}';
+
+const WORK_STATE_TABLE = 'remote_agent_state_revisions';
+
+const workState = (tx: Tx) =>
+  tx.query(
+    `INSERT INTO ${WORK_STATE_TABLE} (project_key, name, revision, value, operation, writer_kind)
+     SELECT $1, $2, coalesce(max(revision), 0) + 1, $3, 'put', 'run'
+     FROM ${WORK_STATE_TABLE} WHERE project_key = $1 AND name = $2`,
+    [WORK_PROJECT, WORK_NAME, parkedOn],
+  );
+
+const exclusive = (...tables: string[]): Lock => ({ mode: 'table', tables });
+
+const rowLock = (table: string, column: string, where: string): Lock => ({
+  mode: 'row',
+  table,
+  column,
+  where,
+});
+
+/** The SQL a second session runs to take `lock`: ACCESS EXCLUSIVE on tables, or an uncommitted no-op UPDATE of rows. */
+export const holdSql = (lock: Lock): string =>
+  lock.mode === 'table'
+    ? `LOCK TABLE ${lock.tables.map((table) => `mc.${table}`).join(', ')} IN ACCESS EXCLUSIVE MODE`
+    : `UPDATE mc.${lock.table} SET ${lock.column} = ${lock.column} WHERE ${lock.where}`;
+
+/**
+ * Every mc table a projection function reads or writes in Archon's transaction. The all-tables
+ * case locks this list; projection-locks.test.ts fails when it differs from the mc tables the mc
+ * functions reference.
+ */
+export const PROJECTION_TABLES = [
+  'laps',
+  'lap_steps',
+  'lap_step_attempts',
+  'lap_step_attempt_usage',
+  'app_check_lines',
+  'attention_items',
+  'run_stops',
+  'capacity_waits',
+  'work_item_states',
+  'work_item_blockers',
+  'factories',
+  'versions',
+  'pins',
+  'projection_errors',
+];
 
 export const CASES: Case[] = [
   { name: 'no lock: node_completed', errors: 0, write: stepEvent('pick') },
   {
     name: 'ACCESS EXCLUSIVE mc.lap_steps: node_completed',
-    hold: exclusive('lap_steps'),
+    lock: exclusive('lap_steps'),
     errors: 1,
     write: stepEvent('pick'),
   },
   {
     name: 'uncommitted UPDATE of the same mc.lap_steps row: node_completed',
-    hold: `UPDATE mc.lap_steps SET error = error WHERE run_id = $1 AND step_id = 'pick'`,
+    lock: rowLock('lap_steps', 'error', "run_id = $1 AND step_id = 'pick'"),
     errors: 1,
     write: stepEvent('pick'),
   },
   {
     name: 'ACCESS EXCLUSIVE mc.lap_step_attempts: node_completed',
-    hold: exclusive('lap_step_attempts'),
+    lock: exclusive('lap_step_attempts'),
     errors: 1,
     write: stepEvent('pick'),
   },
   {
     name: 'ACCESS EXCLUSIVE mc.lap_step_attempt_usage: node_completed',
-    hold: exclusive('lap_step_attempt_usage'),
+    lock: exclusive('lap_step_attempt_usage'),
     errors: 1,
     write: stepEvent('pick'),
   },
   {
     name: 'ACCESS EXCLUSIVE mc.app_check_lines: check-app node_completed',
-    hold: exclusive('app_check_lines'),
+    lock: exclusive('app_check_lines'),
     errors: 1,
     write: stepEvent('check-app'),
   },
   {
     name: 'ACCESS EXCLUSIVE mc.laps: run status UPDATE',
-    hold: exclusive('laps'),
+    lock: exclusive('laps'),
     errors: 1,
     write: newStatus,
   },
   {
     name: 'ACCESS EXCLUSIVE mc.attention_items: run status UPDATE',
-    hold: exclusive('attention_items'),
+    lock: exclusive('attention_items'),
     errors: 1,
     write: newStatus,
   },
   {
     name: 'uncommitted UPDATE of the same mc.laps row: run status UPDATE',
-    hold: 'UPDATE mc.laps SET status = status WHERE run_id = $1',
+    lock: rowLock('laps', 'status', 'run_id = $1'),
     errors: 1,
     write: newStatus,
   },
   {
     name: 'ACCESS EXCLUSIVE mc.factories: run INSERT',
-    hold: exclusive('factories'),
+    lock: exclusive('factories'),
     errors: 1,
     write: newRun,
   },
   {
     name: 'ACCESS EXCLUSIVE mc.lap_steps and mc.projection_errors: node_completed',
-    hold: exclusive('lap_steps', 'projection_errors'),
+    lock: exclusive('lap_steps', 'projection_errors'),
     errors: 0,
     write: stepEvent('pick'),
   },
   {
     name: 'ACCESS EXCLUSIVE on every mc table the projection writes: provider_event',
-    hold: exclusive(
-      'laps',
-      'lap_steps',
-      'lap_step_attempts',
-      'lap_step_attempt_usage',
-      'app_check_lines',
-      'attention_items',
-      'factories',
-      'versions',
-      'pins',
-      'projection_errors',
-    ),
+    lock: exclusive(...PROJECTION_TABLES),
     errors: 0,
     write: providerEvent,
+  },
+  {
+    name: 'ACCESS EXCLUSIVE mc.run_stops: run INSERT then finished as failed (two waits)',
+    lock: exclusive('run_stops'),
+    errors: 2,
+    write: stoppedRun,
+  },
+  {
+    name: 'ACCESS EXCLUSIVE mc.capacity_waits: answered capacity wait',
+    lock: exclusive('capacity_waits'),
+    errors: 1,
+    write: capacityWaitRun,
+  },
+  {
+    name: 'ACCESS EXCLUSIVE mc.work_item_states: work item state revision',
+    lock: exclusive('work_item_states'),
+    errors: 1,
+    needs: WORK_STATE_TABLE,
+    write: workState,
+  },
+  {
+    name: 'ACCESS EXCLUSIVE mc.work_item_blockers: work item state revision',
+    lock: exclusive('work_item_blockers'),
+    errors: 1,
+    needs: WORK_STATE_TABLE,
+    write: workState,
   },
   { name: 'no lock: archon-loop run INSERT with a new digest', errors: 0, write: loopRun(0) },
   {
     name: "ACCESS EXCLUSIVE mc.versions: archon-loop run INSERT that moves its version's first run",
-    hold: exclusive('versions'),
+    lock: exclusive('versions'),
     errors: 1,
     write: loopRun(1),
   },
   {
     name: "uncommitted UPDATE of the same mc.versions row: archon-loop run INSERT that moves its version's first run",
-    hold: `UPDATE mc.versions SET pin_sha = pin_sha WHERE digest = 'projection-locks:' || $1::text`,
+    lock: rowLock('versions', 'pin_sha', "digest = 'projection-locks:' || $1::text"),
     errors: 1,
     write: loopRun(2),
   },
   {
     name: "ACCESS EXCLUSIVE mc.pins: archon-loop run INSERT that moves its version's first run",
-    hold: exclusive('pins'),
+    lock: exclusive('pins'),
     errors: 1,
     write: loopRun(3),
   },
@@ -252,7 +341,7 @@ async function versionProblems(db: Db, factory: string, runId: string): Promise<
   return problems;
 }
 
-const LAP_LOCK = 'UPDATE mc.laps SET status = status WHERE run_id = $1';
+const LAP_LOCK = holdSql(rowLock('laps', 'status', 'run_id = $1'));
 
 const finishRun = (tx: Tx, runId: string) =>
   tx.query(
@@ -321,7 +410,7 @@ async function startProblems(archon: Db, holder: Db, bound: number): Promise<str
     (await archon.query('SELECT status FROM mc.laps WHERE run_id = $1', [runId]))[0];
   const problems: string[] = [];
   const before = (await errorStates(archon)).length;
-  const release = await holdLock(holder, exclusive('laps'), '');
+  const release = await holdLock(holder, holdSql(exclusive('laps')), '');
   try {
     const result = await archonWrite(archon, '', start);
     if (result.error) problems.push(`Archon's write failed: ${result.error}`);
@@ -394,14 +483,29 @@ export const main: Main = async (argv, deps) => {
       );
 
       let unlocked = 0;
+      let skipped = 0;
       const failures: string[] = [];
       for (const check of CASES) {
+        if (check.needs) {
+          const [found] = await archon.query('SELECT to_regclass($1) IS NOT NULL AS present', [
+            `public.${check.needs}`,
+          ]);
+          if (found?.present !== true) {
+            skipped++;
+            deps.out(
+              `SKIP | ${check.name} | public.${check.needs} is absent on this branch, so no projection trigger exists on that path`,
+            );
+            continue;
+          }
+        }
         const before = (await errorStates(archon)).length;
-        const release = check.hold ? await holdLock(holder, check.hold, runId) : async () => {};
+        const release = check.lock
+          ? await holdLock(holder, holdSql(check.lock), runId)
+          : async () => {};
         const result = await archonWrite(archon, runId, check.write);
         await release();
         const added = (await errorStates(archon)).slice(before);
-        if (!check.hold) unlocked = result.elapsed;
+        if (!check.lock) unlocked = result.elapsed;
 
         const problems: string[] = [];
         if (result.error) problems.push(`Archon's write failed: ${result.error}`);
@@ -431,9 +535,9 @@ export const main: Main = async (argv, deps) => {
       const started = await startProblems(archon, holder, unlocked + BOUND_MS);
       if (started.length > 0) failures.push(startCheck);
       deps.out(`${started.length === 0 ? 'PASS' : `FAIL (${started.join('; ')})`} | ${startCheck}`);
-      const checks = CASES.length + 3;
+      const checks = CASES.length + 3 - skipped;
       if (failures.length > 0) throw new Error(`${failures.length} of ${checks} checks failed`);
-      deps.out(`all ${checks} checks passed`);
+      deps.out(`all ${checks} checks passed${skipped ? `, ${skipped} skipped` : ''}`);
     } finally {
       await Promise.all([archon.close(), holder.close()]);
     }

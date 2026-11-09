@@ -19,12 +19,10 @@ import {
   type Chip,
   cardWidth,
   FIT_FOOT,
-  FIT_MAX,
-  FIT_PAD,
-  fitScale,
+  fitCamera,
   heroFrameHeight,
-  levelMax,
   levelOf,
+  MAP_TYPE,
   MIN_FRAME,
   type FactoryMap as FactoryMapData,
   type Line,
@@ -35,6 +33,7 @@ import {
   neighbours,
   openerOf,
   type Point,
+  PHONE,
   pathOf,
   type Role,
   tourPoints,
@@ -46,10 +45,10 @@ import type { CardLive } from '../map/live';
 import { MapDetails } from './MapDetails';
 
 const ROLE_COLOR: Record<Role, string> = {
-  source: 'var(--role-source)',
-  agent: 'var(--role-agent)',
-  test: 'var(--role-test)',
-  person: 'var(--role-person)',
+  source: 'var(--v3-role-source)',
+  agent: 'var(--v3-role-agent)',
+  test: 'var(--v3-role-test)',
+  person: 'var(--v3-role-person)',
 };
 
 /** A color over transparent, so every rendered color stays a token (harness/design-probe.js). */
@@ -57,9 +56,9 @@ const over = (color: string, amount: string) =>
   `color-mix(in srgb, ${color} ${amount}, transparent)`;
 
 const LINE_COLOR: Record<LineStyle, string> = {
-  flow: 'var(--text-tertiary)',
-  loop: 'var(--text-tertiary)',
-  ask: 'var(--role-person)',
+  flow: 'var(--v3-fg-3)',
+  loop: 'var(--v3-fg-3)',
+  ask: 'var(--v3-role-person)',
 };
 const LINE_DASH: Record<LineStyle, string | undefined> = {
   flow: undefined,
@@ -67,20 +66,14 @@ const LINE_DASH: Record<LineStyle, string | undefined> = {
   ask: '3 4',
 };
 
-/**
- * The map's type in map units, larger than the mockup's so that at 1440 wide, fitted, a card's
- * title renders at least 14px, its text 11px and the labels 10px (owner, PR #326 review).
- */
-export const MAP_TYPE = { kind: 18, title: 25, text: 20, chip: 15, label: 18 } as const;
 /** A wire label's Geist Mono advance per character, 0.6em, rounded up. */
 const LABEL_CHAR_W = Math.ceil(MAP_TYPE.label * 0.6);
 const MIN_ZOOM = 0.1;
 const MAX_ZOOM = 2.4;
 /**
- * Below this width the map opens as refs/40-home-phone.png draws it: the line at a readable scale,
+ * Below `PHONE` the map opens as refs/40-home-phone.png draws it: the line at a readable scale,
  * centred between Review and App check, the rest a pan away. Fit still fits the whole map.
  */
-const PHONE = 701;
 const PHONE_SCALE = 0.42;
 const PHONE_FRAME = 460;
 
@@ -192,7 +185,7 @@ const typing = (target: EventTarget | null) =>
   (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName));
 
 /** The stacked edge behind a card that opens a deeper view, in map units. */
-const STACK = '8px 8px 0 -2px var(--surface-elevated), 8px 8px 0 0 var(--border-bright)';
+const STACK = '8px 8px 0 -2px var(--v3-panel), 8px 8px 0 0 var(--v3-line-2)';
 
 /** Joins view ids into one key; ids may contain `/` (`build/deliver`), so not that. */
 const PATH_SEP = '\n';
@@ -223,7 +216,7 @@ const CHIP_WORD: Record<Chip, string> = {
   orders: 'open',
 };
 
-const NEUTRAL_CHIP = 'bg-surface-hover text-text-primary';
+const NEUTRAL_CHIP = 'bg-[var(--v3-raised)] text-[color:var(--v3-fg)]';
 
 interface ChipLook {
   chip: string;
@@ -250,7 +243,11 @@ function chipsOf(live: CardLive | undefined): ChipLook[] {
   add('here', live.here.length, 'here', MAP_CHIP_STATE.here);
   for (const chip of CHIPS) {
     if (live.unavailable?.includes(chip)) {
-      chips.push({ chip, text: `? ${chip}`, className: 'bg-surface-hover text-text-secondary' });
+      chips.push({
+        chip,
+        text: `? ${chip}`,
+        className: 'bg-[var(--v3-raised)] text-[color:var(--v3-fg-2)]',
+      });
     } else {
       add(
         chip,
@@ -317,29 +314,28 @@ function MapCard({
       onPointerDown={(event) => event.stopPropagation()}
       onKeyDown={onKey}
       data-selected={state === 'selected' || undefined}
-      className={`absolute cursor-pointer select-none rounded-[16px] border-2 bg-surface-elevated pt-3 pr-3 pb-3 pl-4 transition-[opacity,box-shadow,border-color] duration-200 ${
+      className={`absolute cursor-pointer select-none rounded-[16px] border-2 bg-[var(--v3-panel)] pt-3 pr-3 pb-3 pl-4 transition-[opacity,box-shadow,border-color] duration-200 ${
         state === 'selected'
           ? ''
-          : 'hover:border-[color:var(--text-primary)] hover:shadow-[0_0_0_3px_var(--text-secondary)]'
+          : 'hover:border-[color:var(--v3-fg)] hover:shadow-[0_0_0_3px_var(--v3-fg-2)]'
       } ${state === 'dim' ? 'opacity-30 focus-visible:opacity-100' : ''} ${
-        state === 'selected' ? 'shadow-[0_0_0_7px_var(--accent)]' : ''
+        state === 'selected' ? 'shadow-[0_0_0_7px_var(--v3-fg-2)]' : ''
       }`}
       style={{
         left: card.x,
         top: card.y,
         width: cardWidth(map, card),
         height: map.cardSize.height,
-        borderColor:
-          state === 'selected' ? 'var(--surface)' : over(color, 'var(--card-border-tint)'),
+        borderColor: state === 'selected' ? 'var(--v3-bg)' : over(color, 'var(--card-border-tint)'),
         ...(card.opens === undefined
           ? {}
-          : { boxShadow: state === 'selected' ? `0 0 0 7px var(--accent), ${STACK}` : STACK }),
+          : { boxShadow: state === 'selected' ? `0 0 0 7px var(--v3-fg-2), ${STACK}` : STACK }),
       }}
     >
       {card.opens === undefined ? null : (
         <span
           aria-hidden="true"
-          className="absolute top-2.5 right-3 font-mono text-text-secondary"
+          className="absolute top-2.5 right-3 font-mono text-[color:var(--v3-fg-2)]"
           style={{ fontSize: MAP_TYPE.chip }}
         >
           ⤢
@@ -365,14 +361,14 @@ function MapCard({
         </span>
         <span
           data-card-title
-          className="mt-1 font-semibold leading-[1.15] text-text-primary"
+          className="mt-1 font-semibold leading-[1.15] text-[color:var(--v3-fg)]"
           style={{ fontSize: MAP_TYPE.title }}
         >
           {card.title}
         </span>
         <span
           data-card-text
-          className="mt-1.5 leading-[1.3] text-text-secondary"
+          className="mt-1.5 leading-[1.3] text-[color:var(--v3-fg-2)]"
           style={{ fontSize: MAP_TYPE.text }}
         >
           {card.text}
@@ -436,7 +432,7 @@ function Wire({
           data-flow
           d={d}
           fill="none"
-          stroke="var(--accent)"
+          stroke="var(--v3-fg-2)"
           strokeWidth={3}
           strokeDasharray="8 64"
           opacity={0.55}
@@ -458,7 +454,7 @@ function WireLabel({ text, at }: { text: string; at: Point }): ReactElement {
         width={width}
         height={height}
         rx={5}
-        fill="var(--surface)"
+        fill="var(--v3-bg)"
       />
       <text
         x={at[0]}
@@ -467,7 +463,7 @@ function WireLabel({ text, at }: { text: string; at: Point }): ReactElement {
         textAnchor="middle"
         className="font-mono"
         fontSize={MAP_TYPE.label}
-        fill="var(--text-secondary)"
+        fill="var(--v3-fg-2)"
       >
         {text}
       </text>
@@ -479,7 +475,7 @@ function WireLabel({ text, at }: { text: string; at: Point }): ReactElement {
 const COLUMN = 'mx-auto w-full max-w-6xl px-6';
 
 const CONTROL =
-  'cursor-pointer rounded-md px-[9px] py-1 font-mono text-[12px] text-text-secondary hover:bg-surface-elevated hover:text-text-primary disabled:cursor-default disabled:hover:bg-transparent disabled:hover:text-text-secondary';
+  'cursor-pointer rounded-md px-[9px] py-1 font-mono text-[12px] text-[color:var(--v3-fg-2)] hover:bg-[var(--v3-raised)] hover:text-[color:var(--v3-fg)] disabled:cursor-default disabled:hover:bg-transparent disabled:hover:text-[color:var(--v3-fg-2)]';
 
 /**
  * The factory map (PRD 4.1): the owner's drawing with live chips on its cards, a camera that pans,
@@ -551,19 +547,12 @@ export function FactoryMap({
     return () => onDrawn?.(false);
   }, [onDrawn]);
 
-  /** The whole map in the frame, centred, as large as the frame allows; from phone width up, a deeper view no larger than `levelMax`. */
+  /** The Fit camera: see `fitCamera`. */
   const fit = useCallback(() => {
     const el = stage.current;
     if (!el) return;
-    const { level, world } = levelRef.current;
     const frame = { width: el.clientWidth, height: el.clientHeight };
-    const { width, height } = frame;
-    const k = fitScale(world, frame, width >= PHONE ? levelMax(map, level, frame) : FIT_MAX);
-    setCam({
-      k,
-      x: (width - world.width * k) / 2,
-      y: Math.max(FIT_PAD, (height - FIT_FOOT - world.height * k) / 2),
-    });
+    setCam(fitCamera(map, levelRef.current.level, frame));
     setPlaced(true);
   }, [map]);
 
@@ -794,7 +783,7 @@ export function FactoryMap({
         >
           {crumbs.map((crumb, i) => (
             <span key={crumb.id ?? 'root'} className="flex items-center gap-1">
-              {i > 0 ? <span className="text-text-secondary">›</span> : null}
+              {i > 0 ? <span className="text-[color:var(--v3-fg-2)]">›</span> : null}
               <button
                 type="button"
                 data-crumb={crumb.id ?? 'root'}
@@ -803,8 +792,8 @@ export function FactoryMap({
                 onClick={() => onPath(path.slice(0, i))}
                 className={`rounded-md px-2 py-0.5 ${
                   i === path.length
-                    ? 'bg-surface-elevated text-text-primary'
-                    : 'cursor-pointer text-text-secondary hover:bg-surface-elevated hover:text-text-primary'
+                    ? 'bg-[var(--v3-raised)] text-[color:var(--v3-fg)]'
+                    : 'cursor-pointer text-[color:var(--v3-fg-2)] hover:bg-[var(--v3-raised)] hover:text-[color:var(--v3-fg)]'
                 }`}
               >
                 {crumb.title}
@@ -814,7 +803,7 @@ export function FactoryMap({
         </nav>
         {aside}
       </div>
-      <p data-map-caption className={`${COLUMN} mb-3 text-sm text-text-secondary`}>
+      <p data-map-caption className={`${COLUMN} mb-3 text-sm text-[color:var(--v3-fg-2)]`}>
         {level.caption}
       </p>
       <section
@@ -830,12 +819,12 @@ export function FactoryMap({
         onPointerCancel={() => {
           drag.current = null;
         }}
-        className="relative mx-3 cursor-grab touch-none overflow-hidden rounded-xl border border-border bg-surface active:cursor-grabbing min-[701px]:mx-6"
+        className="relative mx-3 cursor-grab touch-none overflow-hidden rounded-xl border border-[color:var(--v3-line)] bg-[var(--v3-bg)] active:cursor-grabbing min-[701px]:mx-6"
         style={{
           height: frameHeight,
           // The one gradient on a surface the owner allows: the map frame's dot grid (#307).
           backgroundImage:
-            'radial-gradient(color-mix(in srgb, var(--text-tertiary) 28%, transparent) 1px, transparent 1.5px)',
+            'radial-gradient(color-mix(in srgb, var(--v3-fg-3) 28%, transparent) 1px, transparent 1.5px)',
           backgroundSize: '22px 22px',
         }}
       >
@@ -891,7 +880,7 @@ export function FactoryMap({
                 r={9}
                 cx={-20}
                 cy={-20}
-                fill="var(--running)"
+                fill={stateColor('running')}
                 className="motion-reduce:hidden"
               />
             ) : null}
@@ -899,7 +888,7 @@ export function FactoryMap({
           {level.group ? (
             <div
               data-map-group
-              className="pointer-events-none absolute rounded-[14px] border border-dashed border-[color:var(--border-bright)]"
+              className="pointer-events-none absolute rounded-[14px] border border-dashed border-[color:var(--v3-line-2)]"
               style={{
                 left: level.group.x,
                 top: level.group.y,
@@ -909,7 +898,7 @@ export function FactoryMap({
             >
               <span
                 data-group-label
-                className="absolute right-5 bg-surface px-2 font-mono uppercase leading-none tracking-[0.06em] text-text-secondary"
+                className="absolute right-5 bg-[var(--v3-bg)] px-2 font-mono uppercase leading-none tracking-[0.06em] text-[color:var(--v3-fg-2)]"
                 style={{ fontSize: MAP_TYPE.label, top: -MAP_TYPE.label / 2 - 1 }}
               >
                 {level.group.label}
@@ -938,13 +927,13 @@ export function FactoryMap({
             />
           ))}
         </div>
-        <div className="pointer-events-none absolute bottom-3 left-3 hidden rounded-lg border border-border bg-surface px-[9px] py-[5px] font-mono text-[11px] text-text-secondary min-[701px]:block">
+        <div className="pointer-events-none absolute bottom-3 left-3 hidden rounded-lg border border-[color:var(--v3-line)] bg-[var(--v3-panel)] px-[9px] py-[5px] font-mono text-[11px] text-[color:var(--v3-fg-2)] min-[701px]:block">
           drag = move · scroll = zoom · click = details · double-click ⤢ = open · Esc = up
         </div>
         <div
           data-map-controls
           onPointerDown={(event) => event.stopPropagation()}
-          className="absolute right-3 bottom-3 flex gap-1 rounded-[9px] border border-border bg-surface p-1"
+          className="absolute right-3 bottom-3 flex gap-1 rounded-[9px] border border-[color:var(--v3-line)] bg-[var(--v3-panel)] p-1"
         >
           <button
             type="button"
@@ -982,7 +971,7 @@ export function FactoryMap({
       </section>
       <ul
         data-map-legend
-        className={`${COLUMN} mt-2.5 flex flex-wrap gap-x-[18px] gap-y-2 text-[12px] text-text-secondary`}
+        className={`${COLUMN} mt-2.5 flex flex-wrap gap-x-[18px] gap-y-2 text-[12px] text-[color:var(--v3-fg-2)]`}
       >
         {map.legend.map((entry) => (
           <li key={entry.role} className="flex items-center">

@@ -11,7 +11,7 @@ import {
 import type { Server } from 'bun';
 import type { Context, Hono } from 'hono';
 import { parseChoices } from '../app/lib/attention';
-import { lapHref } from '../app/lib/one-lap';
+import { isRunId, lapHref } from '../app/lib/one-lap';
 import { workItemHref } from '../app/lib/work-item';
 import { type Db, openDb } from '../scripts/lib/db';
 import type { Env } from './check-env';
@@ -19,13 +19,16 @@ import { readFactoryNames } from './factories';
 import { MANAGER_LIMITS, readOnlyQuery } from './manager-sql';
 import {
   AnswerSplitter,
+  type ChatRequest,
   encodeEvent,
   MAX_PROPOSALS,
   MAX_RUNS,
   type ManagerEvent,
   type NoticeKind,
+  PLACES,
   parseBlock,
   type RawStructure,
+  RESUMABLE_STATUSES,
   type RunSummary,
 } from './manager-stream';
 import { READ_TOOL_NAMES, TOOL_SERVER } from './manager-tools';
@@ -138,15 +141,6 @@ function spentToday(manager: Manager): number {
   return manager.spend.usd;
 }
 
-export const PLACES = ['attention', 'factory', 'board', 'runs', 'run', 'work', 'step'] as const;
-
-export interface ChatRequest {
-  factory: string;
-  context: { place: (typeof PLACES)[number]; run?: string; item?: number };
-  messages: { role: 'owner' | 'manager'; text: string }[];
-}
-
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const MAX_MESSAGES = 20;
 const MAX_MESSAGE_CHARS = 4000;
 
@@ -164,8 +158,7 @@ export function parseChat(body: unknown, factories: string[]): ChatRequest | str
   if (typeof place !== 'string' || !(PLACES as readonly string[]).includes(place)) {
     return 'unknown place';
   }
-  if (run !== undefined && (typeof run !== 'string' || !UUID.test(run)))
-    return 'run must be a UUID';
+  if (run !== undefined && (typeof run !== 'string' || !isRunId(run))) return 'run must be a UUID';
   if (item !== undefined && (typeof item !== 'number' || !Number.isInteger(item) || item < 1)) {
     return 'item must be a positive integer';
   }
@@ -191,6 +184,9 @@ export function parseChat(body: unknown, factories: string[]): ChatRequest | str
   };
 }
 
+/** Every one must also be in `SECRETS` of `app/bundle.test.ts`, which scans the browser bundle for it, and the `unavailable` notice names them (its test checks each). */
+export const CREDENTIAL_NAMES = ['ANTHROPIC_API_KEY', 'CLAUDE_CODE_OAUTH_TOKEN'] as const;
+
 const PASSED_TO_CLI = [
   'PATH',
   'HOME',
@@ -200,8 +196,7 @@ const PASSED_TO_CLI = [
   'TMP',
   'APPDATA',
   'LOCALAPPDATA',
-  'ANTHROPIC_API_KEY',
-  'CLAUDE_CODE_OAUTH_TOKEN',
+  ...CREDENTIAL_NAMES,
 ];
 
 function pick(env: NodeJS.ProcessEnv, names: string[]): Record<string, string> {
@@ -215,7 +210,7 @@ function pick(env: NodeJS.ProcessEnv, names: string[]): Record<string, string> {
 
 /** The machine's own Claude login is not in the environment, so this can only say "none set". */
 function hasCredential(env: NodeJS.ProcessEnv): boolean {
-  return Boolean(env.CLAUDE_CODE_OAUTH_TOKEN || env.ANTHROPIC_API_KEY);
+  return CREDENTIAL_NAMES.some((name) => Boolean(env[name]));
 }
 
 const canUseTool: SdkCanUseTool = async (name, input) =>
@@ -311,7 +306,7 @@ Answer in short plain prose, naming runs by workflow and status. To give the own
 \`\`\`mc
 {"links":[{"kind":"run","id":"<run id>"},{"kind":"item","id":<issue number>}],"runs":["<run id>"],"proposals":[{"action":"answer","run_id":"<run id>","option":"<option id>"},{"action":"answer","run_id":"<run id>","text":"<free text>"},{"action":"resume","run_id":"<run id>","from_step":"<step id>"}]}
 \`\`\`
-Every field is optional. Propose an answer only for a run waiting on a question in mc.attention_items, using one of its option ids (or text for "Something else"). Propose a resume only for a failed or paused run; from_step is optional. A proposal is a button the owner presses; it does nothing until they do. At most ${MAX_RUNS} runs and ${MAX_PROPOSALS} proposals.`;
+Every field is optional. Propose an answer only for a run waiting on a question in mc.attention_items, using one of its option ids (or text for "Something else"). Propose a resume only for a ${RESUMABLE_STATUSES.join(' or ')} run; from_step is optional. A proposal is a button the owner presses; it does nothing until they do. At most ${MAX_RUNS} runs and ${MAX_PROPOSALS} proposals.`;
 }
 
 function renderConversation(messages: ChatRequest['messages']): string {
@@ -352,7 +347,7 @@ async function runSummaries(
   factory: string,
   ids: string[],
 ): Promise<RunSummary[]> {
-  const valid = [...new Set(ids.filter((id) => UUID.test(id)).map((id) => id.toLowerCase()))];
+  const valid = [...new Set(ids.filter((id) => isRunId(id)).map((id) => id.toLowerCase()))];
   if (valid.length === 0) return [];
   const rows = await lookup(
     manager,
@@ -423,7 +418,7 @@ async function proposalEvent(
   factory: string,
   raw: RawStructure['proposals'][number],
 ): Promise<ManagerEvent | undefined> {
-  if (!UUID.test(raw.run_id)) return undefined;
+  if (!isRunId(raw.run_id)) return undefined;
   const runId = raw.run_id.toLowerCase();
   if (raw.action === 'answer') {
     const [row] = await lookup(
@@ -455,7 +450,7 @@ async function proposalEvent(
   }
   const [lap] = await lookup(
     manager,
-    "SELECT 1 AS found FROM mc.laps WHERE factory = $1 AND run_id::text = $2 AND status IN ('failed', 'paused')",
+    `SELECT 1 AS found FROM mc.laps WHERE factory = $1 AND run_id::text = $2 AND status IN (${RESUMABLE_STATUSES.map((status) => `'${status}'`).join(', ')})`,
     [factory, runId],
   );
   if (!lap) return undefined;

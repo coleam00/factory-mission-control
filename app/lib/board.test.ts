@@ -5,9 +5,13 @@ import {
   type BoardSources,
   boardView,
   COLUMNS,
+  found,
   itemOnBoard,
   KEEP_MS,
   nextChange,
+  orderLine,
+  orderTarget,
+  PIPELINE,
   parked,
 } from './board';
 import type { OwnerQueueRow } from './owner-queue';
@@ -34,6 +38,7 @@ const item = (number: number, over: Partial<BoardRow> = {}): BoardRow => ({
   merge_at: null,
   triage_at: null,
   own_pr_at: null,
+  stage: null,
   repository: null,
   merged_total: null,
   ...over,
@@ -81,7 +86,16 @@ const ORDER = (over: Partial<WorkOrderRow> = {}): WorkOrderRow => ({
 
 const view = (over: Partial<BoardSources>, order: string | null = null) =>
   boardView(
-    { factory: 'f', board: [], map: [], workable: [], owner: [], orders: [], ...over },
+    {
+      factory: 'f',
+      board: [],
+      map: [],
+      workable: [],
+      owner: [],
+      orders: [],
+      discoveries: [],
+      ...over,
+    },
     NOW,
     order,
   );
@@ -351,4 +365,135 @@ test('every column carries the caption the reference draws', () => {
     ['merged', 'done'],
     ['parked', 'you'],
   ]);
+});
+
+const home = (v: ReturnType<typeof view>, id: string) =>
+  v.pipeline.find((s) => s.id === id)?.items.map((i) => i.number);
+
+test('every work item has exactly one home, and each stage holds its items', () => {
+  const v = view({
+    board: [
+      item(1), // queued
+      item(2), // intake
+      item(3), // build
+      item(4), // review
+      item(5), // app
+      item(6), // merge
+      item(7), // decision
+      item(8, { state: 'closed', closed_at: daysAgo(1) }), // merged
+      item(9, { build_status: 'parked' }), // parked
+      item(10, { stage: 'blocked' }), // blocked
+      item(11, { stage: 'needs_contract' }), // needs a contract
+      item(12, { stage: 'blocked' }), // blocked but workable: stays Planned
+      item(13), // no home
+    ],
+    map: [
+      lap(2, 'archon-intake', ['triage']),
+      lap(3, 'archon-build-queue', [BUILD]),
+      lap(4, 'archon-build-queue', [REVIEW]),
+      lap(5, 'factory-app-check', ['check-app']),
+      lap(6, 'archon-merge-queue', ['merge']),
+      row('waiting', 7),
+    ],
+    workable: [workable(1), workable(12)],
+  });
+  expect(v.pipeline.map((s) => s.id)).toEqual(PIPELINE.map((s) => s.id));
+  expect(home(v, 'planned')).toEqual([1, 12]);
+  expect(home(v, 'intake')).toEqual([2]);
+  expect(home(v, 'build')?.sort((a, b) => a - b)).toEqual([3, 4]);
+  expect(home(v, 'merged')).toEqual([8]);
+  expect(home(v, 'blocked')?.sort((a, b) => a - b)).toEqual([7, 9, 10, 11]);
+  const placed = v.pipeline.flatMap((s) => s.items.map((i) => i.number));
+  expect(new Set(placed).size).toBe(placed.length);
+  expect(placed).not.toContain(13);
+  // The Table's nine columns are untouched by a blocked item.
+  expect(
+    v.columns.flatMap((c) => c.items.map((i) => i.number)).sort((a, b) => a - b),
+  ).not.toContain(10);
+});
+
+test('the fold maps every Table column to exactly one home', () => {
+  for (const { id } of COLUMNS) {
+    expect([id, PIPELINE.filter((h) => h.columns.includes(id)).length]).toEqual([id, 1]);
+  }
+});
+
+test('Merged and Parked numbers are the Table columns', () => {
+  const v = view({
+    board: [
+      item(1, { state: 'closed', closed_at: daysAgo(1) }),
+      item(2, { state: 'closed', closed_at: daysAgo(9) }),
+      item(3, { build_status: 'parked' }),
+      item(4, { stage: 'blocked' }),
+      factoryRow({ merged_total: 4 }),
+    ],
+  });
+  expect(home(v, 'merged')).toEqual(column(v, 'merged'));
+  expect(v.older).toBe(3);
+  expect(v.pipeline.find((s) => s.id === 'blocked')?.pills).toEqual([
+    { label: 'parked', state: 'idle', count: 1 },
+    { label: 'blocked', state: 'idle', count: 1 },
+  ]);
+  expect(column(v, 'parked')).toEqual([3]);
+});
+
+test('an item reads its status, pills come in state order, and cards list needs-you first', () => {
+  const v = view({
+    board: [
+      item(1, { pr: 9, pr_open: true }),
+      item(2, { pr: 8, pr_open: true, app_check: 'FAIL' }),
+      item(3),
+      item(4),
+    ],
+    map: [lap(3, 'archon-build-queue', [BUILD]), row('waiting', 4)],
+  });
+  const build = v.pipeline.find((s) => s.id === 'build');
+  expect(build?.items.map((i) => [i.number, i.status])).toEqual([
+    [2, 'check failed'],
+    [3, 'running'],
+    [1, 'waiting'],
+  ]);
+  expect(build?.pills.map((p) => [p.label, p.state, p.count])).toEqual([
+    ['check failed', 'failed', 1],
+    ['running', 'running', 1],
+    ['waiting', 'idle', 1],
+  ]);
+  expect(v.pipeline.find((s) => s.id === 'blocked')?.items.map((i) => i.status)).toEqual([
+    'needs you',
+  ]);
+});
+
+test('a work order line counts building and needs you over every item, whatever the filter', () => {
+  const board = [
+    item(1, { work_orders: ['screens'] }),
+    item(2, { work_orders: ['screens'] }),
+    item(3, { work_orders: ['other'] }),
+  ];
+  const v = view(
+    {
+      board,
+      map: [lap(1, 'archon-build-queue', [BUILD]), row('waiting', 2)],
+      orders: [ORDER(), ORDER({ name: 'other' })],
+    },
+    'other',
+  );
+  const screens = v.orders.find((o) => o.name === 'screens');
+  expect(screens && orderLine(screens)).toBe('1 of 4 merged · 1 building · 1 needs you');
+  const other = v.orders.find((o) => o.name === 'other');
+  expect(other && orderLine(other)).toBe('1 of 4 merged');
+  expect(orderTarget({ name: 'x', merged: 0, total: 1, landsOn: null })).toBe('work order');
+  expect(orderTarget({ name: 'x', merged: 0, total: 1, landsOn: 'staging' })).toBe(
+    'work order · lands on staging',
+  );
+});
+
+test('found counts filed, tracked and dropped, and ignores what is not a list', () => {
+  const written = JSON.stringify([{ outcome: 'file' }, { outcome: 'track' }, { outcome: 'file' }]);
+  expect(
+    found([
+      { run_id: 'a', written, dropped: JSON.stringify([{}, {}]) },
+      { run_id: 'b', written: null, dropped: null },
+      { run_id: 'c', written: '"text"', dropped: '{"a":1}' },
+    ]),
+  ).toEqual({ filed: 2, tracked: 1, dropped: 2 });
 });

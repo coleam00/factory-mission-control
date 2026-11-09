@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, expect, test } from 'bun:test';
 import { join } from 'node:path';
-import { type BoardRow, boardView } from '../../app/lib/board';
+import { type BoardRow, boardView, type DiscoveryRow } from '../../app/lib/board';
 import type { HealthWorkableRow } from '../../app/lib/health';
 import type { OwnerQueueRow } from '../../app/lib/owner-queue';
 import { FACTORY_MAP } from '../../app/map/factory-map';
@@ -32,6 +32,7 @@ async function view(factory: string, order: string | null = null) {
       workable: await run<HealthWorkableRow>('health-workable', factory),
       owner: await run<OwnerQueueRow>('owner-queue', factory),
       orders: await run<WorkOrderRow>('work-orders', factory),
+      discoveries: await run<DiscoveryRow>('discoveries', factory),
     },
     NOW,
     order,
@@ -60,7 +61,7 @@ test('the seed recount: each column and each work order bar equal the definition
   });
   expect(mission.older).toBe(8);
   // foundations holds 5, 6, 7 (merged) and 9 (open); screens holds 10 (merged), 11, 12 and 14.
-  expect(mission.orders).toEqual([
+  expect(mission.orders).toMatchObject([
     { name: 'foundations', merged: 3, total: 4, landsOn: 'main' },
     { name: 'screens', merged: 1, total: 4, landsOn: 'staging' },
   ]);
@@ -88,7 +89,18 @@ test('the seed recount: each column and each work order bar equal the definition
     merged: [411, 412],
     parked: [413, ...UNSTICK_PARKED],
   });
-  expect(queue.notInOrder).toBe(7 + UNSTICK_PARKED.length);
+  // The Unstick fixture's two stage-blocked items (450, 452) have no column but a home in the Pipeline.
+  const blocked = [QUEUE_UNSTICK.blockedMerged.issue, QUEUE_UNSTICK.blockedOpen.issue];
+  expect(queue.notInOrder).toBe(7 + UNSTICK_PARKED.length + blocked.length);
+  // The Pipeline holds every placed item once, and "Blocked and parked" holds the parked and blocked ones.
+  const homes = queue.pipeline.flatMap((s) => s.items.map((i) => i.number));
+  expect(new Set(homes).size).toBe(homes.length);
+  expect(homes.length).toBe(queue.notInOrder);
+  const wide = queue.pipeline.find((s) => s.id === 'blocked')?.items.map((i) => i.number);
+  expect(wide).toEqual([413, ...UNSTICK_PARKED, ...blocked].sort((a, b) => a - b));
+  expect(queue.pipeline.find((s) => s.id === 'merged')?.items.length).toBe(
+    queue.columns.find((c) => c.id === 'merged')?.items.length,
+  );
 });
 
 test('a work item carries its pull request, rounds, route and app verdict from the seed laps', async () => {
@@ -386,3 +398,32 @@ test('a run that has just taken a work item is running on the Board, here on the
     await db.query('ROLLBACK');
   }
 });
+
+test('the board query stays fast when many runs have shipped', async () => {
+  await db.query('BEGIN');
+  try {
+    await db.query(`INSERT INTO mc.factories VALUES ('scale-factory','o/sf','o/sf','c')`);
+    await db.query(`INSERT INTO mc.issues (factory, number, title, state, url, created_at, updated_at)
+      SELECT 'scale-factory', n, 't' || n, 'open', 'u', now(), now() FROM generate_series(1, 200) n`);
+    await db.query(`INSERT INTO mc.laps (run_id, factory, workflow_name, status, started_at, issue_number)
+      SELECT ('00000000-0000-4000-9000-' || lpad(k::text, 12, '0'))::uuid, 'scale-factory',
+        'archon-loop', 'completed', now() - k * interval '1 minute', 1 + k % 200
+      FROM generate_series(1, 1000) k`);
+    await db.query(`INSERT INTO mc.lap_steps (run_id, step_id, status, started_at)
+      SELECT ('00000000-0000-4000-9000-' || lpad(k::text, 12, '0'))::uuid, s, 'completed', now()
+      FROM generate_series(1, 1000) k,
+        LATERAL (SELECT 'ship' AS s UNION ALL SELECT 'ship__n' || j FROM generate_series(1, 20) j) st`);
+    await db.query(`INSERT INTO mc.claims (factory, issue_number, run_id, claimed_at)
+      SELECT 'scale-factory', 1 + k % 200, ('00000000-0000-4000-9000-' || lpad(k::text, 12, '0'))::uuid, now()
+      FROM generate_series(1, 500) k`);
+    await db.query('ANALYZE');
+
+    const sql = queries.find(([n]) => n === 'board')?.[1] as string;
+    const plan = (await db.query(`EXPLAIN (ANALYZE, FORMAT JSON) ${sql}`, [
+      'scale-factory',
+    ])) as unknown as { 'QUERY PLAN': { 'Execution Time': number }[] }[];
+    expect(plan[0]['QUERY PLAN'][0]['Execution Time']).toBeLessThan(1000);
+  } finally {
+    await db.query('ROLLBACK');
+  }
+}, 60_000);

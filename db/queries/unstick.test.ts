@@ -22,6 +22,14 @@ describe('the unstick query on the seed', () => {
     const rows = await db.query(UNSTICK, ['queue-factory']);
     const u = QUEUE_UNSTICK;
     const found = rows.map((r) => r as unknown as UnstickRow);
+    const [factory] = await db.query(
+      'SELECT repository, console FROM mc.factories WHERE name = $1',
+      ['queue-factory'],
+    );
+    for (const r of found) {
+      expect(r.repository).toBe(String(factory?.repository));
+      expect(r.console).toBe(String(factory?.console));
+    }
     expect(new Set(found.map((r) => r.kind))).toEqual(new Set(UNSTICK_KINDS));
     expect(new Set(found.map((r) => r.action))).toEqual(new Set(UNSTICK_ACTIONS));
     expect(
