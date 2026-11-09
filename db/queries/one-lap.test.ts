@@ -407,4 +407,31 @@ describe('one-lap on the seed', () => {
       6,
     );
   });
+
+  test('each seeded version caps the build loop at 3, the deliver loop at 4, and the build texts resolve', async () => {
+    const cap = (workflow: string) =>
+      db.query(
+        `SELECT archon_sha, round_cap FROM mc.arch_steps
+         WHERE workflow = $1 AND path = 'ship/deliver/rounds' ORDER BY archon_sha`,
+        [workflow],
+      );
+    const queue = await cap('archon-build-queue');
+    const loop = await cap('archon-loop');
+    expect(queue.length).toBeGreaterThanOrEqual(2);
+    expect(queue.map((r) => r.round_cap)).toEqual(queue.map(() => 3));
+    expect(loop.map((r) => r.round_cap)).toEqual(loop.map(() => 4));
+    const unresolved = await db.query(
+      `SELECT s.archon_sha, s.path, coalesce(s.script_file, s.command_file) AS file
+       FROM mc.arch_steps s
+       WHERE s.workflow = 'archon-build-queue'
+         AND (s.script_file IS NOT NULL OR s.command_file IS NOT NULL)
+         AND NOT EXISTS (
+           SELECT 1 FROM mc.arch_scripts x
+           WHERE x.archon_sha = s.archon_sha AND x.factory_sha = s.factory_sha AND x.path = s.script_file)
+         AND NOT EXISTS (
+           SELECT 1 FROM mc.arch_texts t
+           WHERE t.archon_sha = s.archon_sha AND t.factory_sha = s.factory_sha AND t.path = s.command_file)`,
+    );
+    expect(unresolved).toEqual([]);
+  });
 });

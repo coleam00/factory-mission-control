@@ -9,6 +9,7 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { BUILD_QUEUE_WORKFLOW } from '../../app/lib/one-lap';
 import { type PackVersion, parsePack, parseVersion, type Step } from '../../parsers/pack';
 import { archRows } from '../arch-parse';
 import { insert, lit, type SqlRow } from './sql';
@@ -67,7 +68,8 @@ export const V2_EDITS: Edit[] = [
  * the failed build in the App check stopped after "round 2 of 3", and the cap in its pinned map
  * must come from parsing the script, never from a seed row.
  */
-const BUILD_QUEUE_WORKFLOW = 'archon-build-queue';
+/** The queue pack's texts are stored under this prefix, so they never collide with the sdlc pack's. */
+const QUEUE_PACK_DIR = 'queue/';
 const QUEUE_ROUND_EDIT: Edit = {
   file: 'deliver/scripts/round.ts',
   find: 'const ROUND_CAP = 4;',
@@ -115,16 +117,21 @@ export function parseVersions(repoRoot: string): { v1: PackVersion; v2: PackVers
       if (edit) for (const change of V2_EDITS) applyEdit(sdlc, change);
       const queueSdlc = join(dir, 'pack', 'queue', 'sdlc');
       applyEdit(queueSdlc, QUEUE_ROUND_EDIT);
-      const build = parsePack(queueSdlc, join(dir, 'factory-template')).workflows.find(
-        (w) => w.name === BUILD_QUEUE_WORKFLOW,
-      );
+      const queue = parsePack(queueSdlc, join(dir, 'factory-template'), QUEUE_PACK_DIR);
+      const build = queue.workflows.find((w) => w.name === BUILD_QUEUE_WORKFLOW);
       if (!build) throw new Error(`the queue pack has no ${BUILD_QUEUE_WORKFLOW}`);
       const version = parseVersion(
         sdlc,
         join(dir, 'pack', 'queue', 'factory'),
         join(dir, 'factory-template'),
       );
-      return { ...version, workflows: [...version.workflows, build] };
+      return {
+        ...version,
+        workflows: [...version.workflows, build],
+        commands: [...version.commands, ...queue.commands],
+        sharedDocs: [...version.sharedDocs, ...queue.sharedDocs],
+        scripts: [...version.scripts, ...queue.scripts],
+      };
     };
     return { v1: parse('v1', false), v2: parse('v2', true) };
   } finally {
