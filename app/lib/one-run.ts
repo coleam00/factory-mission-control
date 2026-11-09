@@ -199,9 +199,9 @@ export function failedAttempt(rows: readonly StepAttemptRow[], stepId: string | 
 }
 
 /**
- * What resuming a failed step runs again, and its rough cost from this run's attempts. In a loop
- * that has run the step before, that is the earlier round from the step onward; otherwise the
- * step on its own.
+ * What resuming a failed step runs again, and its rough cost from this run's earlier rounds: in a
+ * loop that has run the step before, the earlier round from the step onward. With no earlier round
+ * there is nothing to estimate from, so the cost is null.
  */
 export function resumeEstimate(
   failed: StepAttemptRow,
@@ -219,7 +219,7 @@ export function resumeEstimate(
       return { step, cost: sumOf(earlier.rows.slice(from).map((row) => stepCost(row, rows))) };
     }
   }
-  return { step, cost: stepCost(failed, rows) };
+  return { step, cost: null };
 }
 
 const NOT_CODE: Record<Exclude<StopClass, 'code'>, string> = {

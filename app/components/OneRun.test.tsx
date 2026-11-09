@@ -147,6 +147,13 @@ test('the timeline is the default tab: round 1 folded, round 2 open, the failure
   expect(html).not.toContain('data-step-attempt');
 });
 
+test('an expanded skipped group names the recorded reason and never reads "skipped: skipped"', () => {
+  const html = render({ skippedOpen: true });
+  expect(html).toContain('data-timeline-step="ship__deliver__rounds.review__result"');
+  expect(html).toContain('upstream failed');
+  expect(html).not.toContain('skipped: ');
+});
+
 test('the Steps tab keeps the attempt rows and the run cost the live phase reads', () => {
   const html = render({ tab: 'steps' });
   expect(html.match(/data-step-attempt/g)).toHaveLength(rows.length);

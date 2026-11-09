@@ -180,6 +180,8 @@ export interface RunViewProps {
   checksPanel: ReactNode;
   /** A fixed clock, for tests; the screen uses the browser's. */
   now?: number;
+  /** Render the skipped-step groups expanded, for tests that cannot click. */
+  skippedOpen?: boolean;
 }
 
 /** The run's page for a tab: head, the manager's read, the tabs and the one tab's body. */
@@ -192,6 +194,7 @@ export function RunView({
   checks,
   checksPanel,
   now: fixed,
+  skippedOpen = false,
 }: RunViewProps): ReactElement {
   const ticking = useNow();
   const now = fixed ?? ticking;
@@ -218,6 +221,7 @@ export function RunView({
           map={mapRows}
           consoleHref={consoleHref}
           now={now}
+          skippedOpen={skippedOpen}
         />
       ) : tab === 'steps' ? (
         <div className="grid gap-8">
@@ -461,6 +465,7 @@ function RunTimeline({
   map,
   consoleHref,
   now,
+  skippedOpen,
 }: {
   stopAttempt: StepAttemptRow | null;
   rows: readonly StepAttemptRow[];
@@ -468,6 +473,7 @@ function RunTimeline({
   map: readonly LapMapRow[];
   consoleHref: string;
   now: number;
+  skippedOpen: boolean;
 }): ReactElement {
   if (timeline.length === 0) {
     return <p className="text-sm text-text-secondary">No step has started yet.</p>;
@@ -504,7 +510,11 @@ function RunTimeline({
   ) =>
     collapseSkipped(list, (row) => row.status === 'skipped').map((item) =>
       'skipped' in item ? (
-        <SkippedSteps key={`skipped ${item.skipped[0]?.step_id}`} nested={nested}>
+        <SkippedSteps
+          key={`skipped ${item.skipped[0]?.step_id}`}
+          nested={nested}
+          initiallyOpen={skippedOpen}
+        >
           {item.skipped.map((row) => step(row, name(row), nested, skipReason(row, scope, map)))}
         </SkippedSteps>
       ) : (
@@ -562,12 +572,14 @@ function RunTimeline({
 /** Consecutive skipped steps as one muted row that opens to the steps and their recorded reasons. */
 function SkippedSteps({
   nested,
+  initiallyOpen,
   children,
 }: {
   nested: boolean;
+  initiallyOpen: boolean;
   children: ReactNode[];
 }): ReactElement {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(initiallyOpen);
   const toggle = () => setOpen((was) => !was);
   return (
     <>

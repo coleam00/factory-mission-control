@@ -127,7 +127,7 @@ test('a skipped body step with no start stays in the round whose event it ended 
   expect(roundSizes(rows)).toEqual([3, 3]);
 });
 
-test('resuming re-runs the earlier round from the failed step on, else the step alone', () => {
+test('resuming re-runs the earlier round from the failed step on; with no earlier round there is no cost', () => {
   const rows = failedBuild();
   const failed = rows.find((r) => r.status === 'failed') as StepAttemptRow;
   expect(resumeEstimate(failed, rows, runTimeline(rows))).toEqual({
@@ -138,10 +138,8 @@ test('resuming re-runs the earlier round from the failed step on, else the step 
   const top = [step('build', { status: 'failed', cost_usd: '3' })];
   expect(resumeEstimate(top[0] as StepAttemptRow, top, runTimeline(top))).toEqual({
     step: 'build',
-    cost: 3,
+    cost: null,
   });
-  const free = [step('build', { status: 'failed', cost_usd: null })];
-  expect(resumeEstimate(free[0] as StepAttemptRow, free, runTimeline(free)).cost).toBeNull();
 });
 
 test('a skipped step says why: a failure before it, its map condition, its trigger rule, or nothing (null)', () => {
@@ -206,8 +204,8 @@ test("the manager's read of a failure names the step, the resume and whether it 
     'pr__prepare failed on round 2: boom. Everything before it succeeded. Resume re-runs pr__prepare and what follows, for about $2.25. This is not a code failure: the environment refused it.',
   );
   expect(read).toMatchObject({ codeFailure: 'no', resumeStep: 'pr__prepare', resumeCost: 2.25 });
-  const unpriced = [step('build', { status: 'failed', cost_usd: null })];
-  expect(text(managerRead(stopped, unpriced, runTimeline(unpriced)))).toContain(
+  const priced = [step('build', { status: 'failed', cost_usd: '0.4' })];
+  expect(text(managerRead(stopped, priced, runTimeline(priced)))).toContain(
     ' Resume re-runs build and what follows. This',
   );
   expect(text(managerRead({ ...stopped, stop_class: 'code' }, rows, timeline))).toEndWith(
