@@ -179,6 +179,9 @@ export function stepGraph(
   };
 }
 
+/** The address of a factory's home map; the factory is encoded. */
+export const factoryHref = (factory: string): string => `/f/${encodeURIComponent(factory)}`;
+
 /**
  * The home map's address at a version's pin, or at the current version for none. The rest of
  * `search`, such as the open view, is kept.

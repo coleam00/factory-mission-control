@@ -1,6 +1,7 @@
 import { type ComponentType, createElement } from 'react';
 import { Navigate, type RouteObject, useParams, useSearchParams } from 'react-router';
 import { NotFound, RouteError } from './errors';
+import { factoryHref } from './lib/home-map';
 import { stepHref } from './lib/step-detail';
 import { useFactory } from './live/FactoryProvider';
 import { Shell } from './Shell';
@@ -77,7 +78,7 @@ export function factoryPath(
   screens: readonly FactoryScreen[],
   search = '',
 ): string {
-  const home = `/f/${encodeURIComponent(factory)}`;
+  const home = factoryHref(factory);
   const step = pathname.match(/^\/f\/[^/]+\/(steps\/[^/]+\/[^/]+)$/)?.[1];
   if (step !== undefined) return `${home}/${step}${search}`;
   const rest = pathname.match(/^\/f\/[^/]+\/(.+)$/)?.[1];

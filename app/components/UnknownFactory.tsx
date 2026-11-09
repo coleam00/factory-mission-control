@@ -1,5 +1,6 @@
 import type { ReactElement } from 'react';
 import { Link } from 'react-router';
+import { factoryHref, homeHref } from '../lib/home-map';
 import { EmptyState } from './EmptyState';
 
 /**
@@ -17,7 +18,7 @@ export function UnknownFactory({
   fallback: string | undefined;
 }): ReactElement {
   const map = factory === '' ? undefined : fallback;
-  const home = map === undefined ? '/' : `/f/${encodeURIComponent(map)}`;
+  const home = map === undefined ? homeHref() : factoryHref(map);
   return (
     <main
       data-unknown-factory={factory}

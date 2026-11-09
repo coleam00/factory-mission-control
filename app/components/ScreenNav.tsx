@@ -1,5 +1,6 @@
 import type { ReactElement, ReactNode } from 'react';
 import { Link, useLocation, useParams } from 'react-router';
+import { factoryHref, homeHref } from '../lib/home-map';
 import { useFactory } from '../live/FactoryProvider';
 import type { FactoryScreen } from '../routing';
 import { DecisionsCount } from './DecisionsCount';
@@ -62,7 +63,7 @@ export function ScreenNavBody({
   badge?: (path: string) => ReactNode;
 }): ReactElement {
   const inUrl = useParams().factory;
-  const home = inUrl === undefined ? '/' : `/f/${encodeURIComponent(inUrl)}`;
+  const home = inUrl === undefined ? homeHref() : factoryHref(inUrl);
   return (
     <nav aria-label="Screens" className="flex flex-wrap items-center gap-1">
       <ScreenLink to={home} label="Factory" kind="map" />

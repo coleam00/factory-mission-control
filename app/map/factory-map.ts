@@ -3,6 +3,7 @@
  * read here. Its coverage is held to the pinned pack by `bun run map:check` (invariant 6). Pure,
  * no React.
  */
+import { factoryHref } from '../lib/home-map';
 import { placeOf, type StepOrigin, type StepRow, stepHref } from '../lib/step-detail';
 import data from './factory-map.json';
 
@@ -398,7 +399,7 @@ export function mapOrigin(
     new URLSearchParams(at ? { at } : {}),
     chain.slice(0, -1).flatMap((card) => (card.opens === undefined ? [] : [card.opens])),
   ).toString();
-  const href = `/f/${encodeURIComponent(factory)}${search ? `?${search}` : ''}`;
+  const href = `${factoryHref(factory)}${search ? `?${search}` : ''}`;
   const deepest = chain.at(-1);
   return deepest === undefined
     ? { href, label: 'Factory' }
