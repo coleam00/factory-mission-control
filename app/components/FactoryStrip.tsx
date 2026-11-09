@@ -9,7 +9,7 @@ import { StateDot } from './ui/StateDot';
 export interface StatusStripRow {
   running: number;
   waiting: number;
-  /** The Archon commit of the newest pin the factory's laps ran under; null before any is known. */
+  /** The Archon commit of the factory's current version, by the step screen's rule; null before any is parsed. */
   engine: string | null;
 }
 

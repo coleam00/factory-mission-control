@@ -7,11 +7,13 @@ import {
   useParams,
   useSearchParams,
 } from 'react-router';
+import { EmptyState } from './components/EmptyState';
 import { NotFound, RouteError } from './errors';
 import { homeHref } from './lib/home-map';
 import { lapHref } from './lib/one-lap';
 import { stepHref } from './lib/step-detail';
 import { useFactory } from './live/FactoryProvider';
+import { useLive } from './live/LiveProvider';
 import { FROM_PARAM, VIEW_PARAM } from './map/factory-map';
 import { Shell } from './Shell';
 
@@ -127,11 +129,19 @@ export function homeAddressTarget(factory: string, search: URLSearchParams): str
     : `/f/${encodeURIComponent(factory)}`;
 }
 
-/** `/`, which named no factory: the Attention of the factory the switcher remembers, else the default one. */
+/**
+ * `/`, which named no factory: the Attention of the factory the switcher remembers, else the default
+ * one. A server that is ready and serves none has nowhere to go, so it says so (#215).
+ */
 export function HomeAddress(): ReturnType<typeof createElement> | null {
   const factory = useFactory();
+  const live = useLive();
   const [search] = useSearchParams();
-  if (factory === undefined) return null;
+  if (factory === undefined) {
+    return live.status === 'ready' && live.factories.length === 0
+      ? createElement(EmptyState, { title: 'No factory is configured.' })
+      : null;
+  }
   return createElement(Navigate, { to: homeAddressTarget(factory, search), replace: true });
 }
 

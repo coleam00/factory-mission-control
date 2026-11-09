@@ -18,11 +18,14 @@ function parts(name: string, address: string) {
   };
 }
 
-const stepQueries = queries.map(([n]) => n).filter((n) => n.startsWith('step-'));
+// status-strip names the engine of the same current version, so it is held to the rule too.
+const stepQueries = queries
+  .map(([n]) => n)
+  .filter((n) => n.startsWith('step-') || n === 'status-strip');
 const addressOf = (name: string) => (name === 'step-detail' ? '$2' : '$4');
 const owner = parts('step-detail', '$2');
 
-// step-versions takes no address: the '' case, written out.
+// step-versions and status-strip take no address: the '' case, written out.
 const WITH_ADDRESS = "CASE WHEN $V = '' THEN q.on_queues OR p.sha IS NOT NULL ELSE p.sha = $V END";
 const WITH_ADDRESS_ORDER = "CASE WHEN $V = '' AND q.on_queues THEN";
 
@@ -39,7 +42,7 @@ test('every step query chooses its version as step-detail does', () => {
     .replace(WITH_ADDRESS_ORDER, 'CASE WHEN q.on_queues THEN');
 
   const differ = stepQueries.flatMap((name) => {
-    const expected = name === 'step-versions' ? withoutAddress : owner.version;
+    const expected = name === 'step-versions' || name === 'status-strip' ? withoutAddress : owner.version;
     const got = parts(name, addressOf(name)).version;
     return got === expected ? [] : [[name, got]];
   });

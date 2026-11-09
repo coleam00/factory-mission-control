@@ -2,12 +2,16 @@ import { afterAll, expect, test } from 'bun:test';
 import { cpSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import type { RealtimeClient } from '@neon/realtime/client';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { createMemoryRouter, RouterProvider, useParams } from 'react-router';
+import { FactoryProvider } from './live/FactoryProvider';
+import { type Live, LiveContext } from './live/LiveProvider';
 import {
   appRoutes,
   factoryPath,
+  HomeAddress,
   homeAddressTarget,
   PLACES,
   REMOVED_SCREENS,
@@ -157,4 +161,25 @@ test('/ keeps an old map link on the map, with its pin and view, and otherwise o
   expect(target('at=8e3e1cef')).toBe('/f/mc/map?at=8e3e1cef');
   expect(target('')).toBe('/f/mc');
   expect(target('order=demo')).toBe('/f/mc');
+});
+
+test('/ says no factory is configured when the server is ready and serves none', () => {
+  const client = {} as RealtimeClient;
+  const none: Live = { status: 'ready', factories: [], client, homeClient: client, rewind: null };
+  const router = createMemoryRouter(
+    [
+      {
+        element: createElement(
+          LiveContext.Provider,
+          { value: none },
+          createElement(FactoryProvider, null, createElement(HomeAddress)),
+        ),
+        path: '/',
+      },
+    ],
+    { initialEntries: ['/'] },
+  );
+  expect(renderToStaticMarkup(createElement(RouterProvider, { router }))).toContain(
+    'No factory is configured.',
+  );
 });
