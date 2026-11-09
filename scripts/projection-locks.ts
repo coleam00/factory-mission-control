@@ -198,9 +198,9 @@ export const CASES: Case[] = [
     write: providerEvent,
   },
   {
-    name: 'ACCESS EXCLUSIVE mc.run_stops: run finished as failed',
+    name: 'ACCESS EXCLUSIVE mc.run_stops: run INSERT then finished as failed (two waits)',
     hold: exclusive('run_stops'),
-    errors: 1,
+    errors: 2,
     write: stoppedRun,
   },
   {
