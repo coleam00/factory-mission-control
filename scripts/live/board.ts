@@ -171,9 +171,11 @@ export function boardPhase(ctx: LiveContext): LivePhase {
     const bad = tiles.flatMap((tile) => {
       const box = tile.getBoundingClientRect();
       return [...tile.firstElementChild.children].flatMap((p) => {
-        const r = p.getBoundingClientRect();
-        const lines = Math.round(r.height / (parseFloat(getComputedStyle(p).lineHeight) || r.height));
-        return r.right > box.right + 0.5 || lines > 1 ? [tile.dataset.workItem + ' ' + p.textContent] : [];
+        const pill = p.firstElementChild ?? p;
+        const r = pill.getBoundingClientRect();
+        const clipped = getComputedStyle(p).overflowX === 'hidden' && p.getBoundingClientRect().right <= box.right + 0.5;
+        const lines = Math.round(r.height / (parseFloat(getComputedStyle(pill).lineHeight) || r.height));
+        return (r.right > box.right + 0.5 && !clipped) || lines > 1 ? [tile.dataset.workItem + ' ' + p.textContent] : [];
       });
     });
     const seen = (status) => tiles.some((t) => t.firstElementChild.textContent.includes(status));
