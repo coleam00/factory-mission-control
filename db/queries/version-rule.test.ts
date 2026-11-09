@@ -26,7 +26,8 @@ const addressOf = (name: string) => (name === 'step-detail' ? '$2' : '$4');
 const owner = parts('step-detail', '$2');
 
 // step-versions and status-strip take no address: the '' case, written out.
-const WITH_ADDRESS = "CASE WHEN $V = '' THEN q.on_queues OR p.sha IS NOT NULL ELSE p.sha = $V END";
+const WITH_ADDRESS =
+  "CASE WHEN $V = '' THEN q.on_queues OR p.sha IS NOT NULL ELSE (p.sha = $V OR a.archon_sha = $V) END";
 const WITH_ADDRESS_ORDER = "CASE WHEN $V = '' AND q.on_queues THEN";
 
 test("every step query's queues test is step-detail's", () => {

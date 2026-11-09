@@ -91,6 +91,7 @@ function render(view: Partial<Parameters<typeof RunView>[0]> & { tab?: TabKey } 
 test('the head titles the round with the cap the pinned map holds, and without it when none is stored', () => {
   const loop = (round_cap: number | null): LapMapRow => ({
     pin: 'p',
+    archon_sha: 'a1',
     path: 'ship/deliver/rounds',
     parent_path: 'ship/deliver',
     position: 1,

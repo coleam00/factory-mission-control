@@ -181,11 +181,15 @@ ${'x'.repeat(5000)}`;
       new Map([['archon-loop', `a1 ${long}`]]),
     );
 
-    // A pin with no architecture, an archon sha, a prefix of a pin, a made-up value, and a known
+    // A pin's archon sha names that version, as its pin does.
+    expect(await db.query(sql('step-detail'), ['mission-control', 'a1'])).toEqual(
+      await db.query(sql('step-detail'), ['mission-control', 'p1']),
+    );
+
+    // A pin with no architecture, a prefix of a pin, a made-up value, and a known
     // pin for a factory the dashboard does not show.
     for (const [factory, version] of [
       ['mission-control', 'p3'],
-      ['mission-control', 'a1'],
       ['mission-control', 'p'],
       ['mission-control', 'nope'],
       ['other', 'p1'],

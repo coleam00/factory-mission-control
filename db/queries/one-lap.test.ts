@@ -415,13 +415,17 @@ describe('one-lap on the seed', () => {
     expect(rows.find((r) => r.path === 'ship/deliver/rounds')?.round_cap).toBe(4);
   });
 
-  test("every build-queue step's script and command resolves to its own version's file", async () => {
+  test("every build-queue step page's Prompt and Scripts resolve to its own version's file, at the address the run page links", async () => {
     const queueRoot = join(import.meta.dir, '../../fixtures/pack/queue/sdlc');
+    const [first] = await queue('one-lap-map', QUEUE_RUNS.failedBuild);
+    expect(first?.pin).toBeNull();
+    const at = String(first?.archon_sha);
     const steps = await db.query(
-      `SELECT s.archon_sha, s.factory_sha, s.path, s.script_file, s.command_file
+      `SELECT s.path, s.script_file, s.command_file
        FROM mc.arch_steps s
-       WHERE s.workflow = 'archon-build-queue'
+       WHERE s.workflow = 'archon-build-queue' AND s.archon_sha = $1
          AND (s.script_file IS NOT NULL OR s.command_file IS NOT NULL)`,
+      [at],
     );
     expect(steps.length).toBeGreaterThan(0);
     const notFound: string[] = [];
@@ -429,19 +433,29 @@ describe('one-lap on the seed', () => {
     for (const step of steps) {
       const isScript = step.script_file !== null;
       const file = String(isScript ? step.script_file : step.command_file);
-      const [found] = await db.query(
-        `SELECT text FROM mc.${isScript ? 'arch_scripts' : 'arch_texts'}
-         WHERE archon_sha = $1 AND factory_sha = $2 AND path = $3`,
-        [step.archon_sha, step.factory_sha, file],
-      );
-      if (!found) notFound.push(`${step.path}: ${file}`);
-      else if (
-        found.text !== readFileSync(join(queueRoot, file), 'utf8').replaceAll('\r\n', '\n')
-      ) {
+      const chunks = await db.query(sqlOf(isScript ? 'step-scripts' : 'step-prompt'), [
+        'queue-factory',
+        'archon-build-queue',
+        step.path,
+        at,
+      ]);
+      const text = chunks
+        .filter((c) => c.path === file)
+        .sort((a, b) => Number(a.part) - Number(b.part))
+        .map((c) => c.chunk)
+        .join('');
+      if (text === '') notFound.push(`${step.path}: ${file}`);
+      else if (text !== readFileSync(join(queueRoot, file), 'utf8').replaceAll('\r\n', '\n'))
         mismatch.push(`${step.path}: ${file}`);
-      }
     }
     expect(notFound).toEqual([]);
     expect(mismatch).toEqual([]);
+    const [detail] = await db.query(sqlOf('step-detail'), ['queue-factory', at]);
+    expect(detail?.workflow).toBe('archon-build-queue');
+  });
+
+  test("a queue factory's merge-queue map holds facts and sweep", async () => {
+    const rows = await lap('one-lap-map', QUEUE_RUNS.merged, 'queue-factory');
+    expect(rows.map((r) => r.step_id)).toEqual(expect.arrayContaining(['facts', 'sweep']));
   });
 });

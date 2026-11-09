@@ -148,6 +148,7 @@ test('a skipped step says why: a failure before it, its map condition, its trigg
   const alone = [step('land', { status: 'skipped' })];
   const node = (over: Partial<LapMapRow>): LapMapRow => ({
     pin: 'p',
+    archon_sha: 'a1',
     path: 'land',
     parent_path: null,
     position: 1,
@@ -177,6 +178,7 @@ test('consecutive skipped items collapse into one group; others pass through', (
 test("a build's round carries the cap its pinned map holds, and none when the map holds none", () => {
   const loop = (round_cap: number | null): LapMapRow => ({
     pin: 'p',
+    archon_sha: 'a1',
     path: 'ship/deliver/rounds',
     parent_path: 'ship/deliver',
     position: 1,

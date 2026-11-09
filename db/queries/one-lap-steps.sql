@@ -10,10 +10,14 @@ version AS (
   WHERE l.factory = $1 AND l.run_id::text = $2
     AND EXISTS (SELECT 1 FROM mc.arch_steps s
       WHERE s.archon_sha = a.archon_sha AND s.factory_sha = a.factory_sha AND s.workflow = l.workflow_name)
-  ORDER BY p.committed_at <= coalesce(l.started_at, 'infinity'::timestamptz) DESC NULLS LAST,
+  ORDER BY (p.sha IS NULL) DESC,
+    p.committed_at <= coalesce(l.started_at, 'infinity'::timestamptz) DESC NULLS LAST,
     CASE WHEN p.committed_at <= coalesce(l.started_at, 'infinity'::timestamptz)
       THEN p.committed_at END DESC NULLS LAST,
-    p.committed_at, a.parsed_at <= coalesce(l.started_at, 'infinity'::timestamptz) DESC, a.parsed_at DESC
+    p.committed_at, a.parsed_at <= coalesce(l.started_at, 'infinity'::timestamptz) DESC,
+    CASE WHEN a.parsed_at <= coalesce(l.started_at, 'infinity'::timestamptz)
+      THEN a.parsed_at END DESC NULLS LAST,
+    a.parsed_at
   LIMIT 1
 ),
 loop AS (

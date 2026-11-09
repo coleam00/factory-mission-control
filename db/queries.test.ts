@@ -226,6 +226,7 @@ const ROW_COLUMNS: Record<string, string[]> = {
   ]),
   'one-lap-map': columns<LapMapRow>()([
     'pin',
+    'archon_sha',
     'path',
     'parent_path',
     'position',

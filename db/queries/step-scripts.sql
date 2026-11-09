@@ -5,7 +5,7 @@ WITH queues AS (
     WHERE l.factory = $1 AND l.workflow_name IN ('archon-intake', 'archon-build-queue')) AS on_queues
 ),
 version AS (
-  -- The version the address names by its pin, $4, or for '' the current version: on a factory on
+  -- The version the address names by its pin or its archon_sha (the unpinned queue pack), $4, or for '' the current version: on a factory on
   -- the queues the architecture parsed last, pinned or not, on any other the architecture of the
   -- newest pin that has any.
   SELECT a.archon_sha, a.factory_sha, a.parsed_at, p.sha AS pin
@@ -13,7 +13,7 @@ version AS (
   JOIN mc.factories f ON f.name = $1
   CROSS JOIN queues q
   LEFT JOIN mc.pins p ON p.archon_sha = a.archon_sha
-  WHERE CASE WHEN $4 = '' THEN q.on_queues OR p.sha IS NOT NULL ELSE p.sha = $4 END
+  WHERE CASE WHEN $4 = '' THEN q.on_queues OR p.sha IS NOT NULL ELSE (p.sha = $4 OR a.archon_sha = $4) END
   ORDER BY CASE WHEN $4 = '' AND q.on_queues THEN a.parsed_at END DESC NULLS LAST,
     p.committed_at DESC NULLS LAST, a.parsed_at DESC
   LIMIT 1

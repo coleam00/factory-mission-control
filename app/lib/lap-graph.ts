@@ -17,6 +17,8 @@ import type { StepAttemptRow } from './one-lap';
 /** A row of `db/queries/one-lap-map.sql`: one node of the loop's expanded tree at the lap's pin. */
 export interface LapMapRow {
   pin: string | null;
+  /** The drawn version's architecture, the address of a version no pin names. */
+  archon_sha: string;
   path: string;
   parent_path: string | null;
   position: number;
@@ -159,7 +161,7 @@ export function lapGraph(
     }
   }
 
-  const graph = stepGraph(rows, factory, map[0]?.pin ?? null);
+  const graph = stepGraph(rows, factory, map[0]?.pin ?? map[0]?.archon_sha ?? null);
   const children = graph.clusters;
   // Every iteration of a loop's step is an attempt of its one node, oldest first.
   const own = new Map<string, StepAttemptRow[]>();

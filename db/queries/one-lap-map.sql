@@ -6,7 +6,8 @@ WITH lap AS (
 -- started (a lap not started yet takes the newest). A lap older than every stored architecture
 -- (north-star's first laps) takes the oldest, and the steps that map lacks are drawn beside it.
 -- Only a version that holds the lap's workflow can draw it: the queue pack's build workflow lives
--- in its own version, which no pin names, so it is the only candidate and its pin is null.
+-- in its own version, which no pin names, so its pin is null and the step pages address it by archon_sha.
+-- A version no pin names is preferred over a pinned one, and among those the newest parsed before the lap started wins, else the oldest.
 version AS (
   SELECT a.archon_sha, a.factory_sha, p.sha AS pin
   FROM lap
@@ -14,10 +15,14 @@ version AS (
   LEFT JOIN mc.pins p ON p.archon_sha = a.archon_sha
   WHERE EXISTS (SELECT 1 FROM mc.arch_steps s
     WHERE s.archon_sha = a.archon_sha AND s.factory_sha = a.factory_sha AND s.workflow = lap.workflow_name)
-  ORDER BY p.committed_at <= coalesce(lap.started_at, 'infinity'::timestamptz) DESC NULLS LAST,
+  ORDER BY (p.sha IS NULL) DESC,
+    p.committed_at <= coalesce(lap.started_at, 'infinity'::timestamptz) DESC NULLS LAST,
     CASE WHEN p.committed_at <= coalesce(lap.started_at, 'infinity'::timestamptz)
       THEN p.committed_at END DESC NULLS LAST,
-    p.committed_at, a.parsed_at <= coalesce(lap.started_at, 'infinity'::timestamptz) DESC, a.parsed_at DESC
+    p.committed_at, a.parsed_at <= coalesce(lap.started_at, 'infinity'::timestamptz) DESC,
+    CASE WHEN a.parsed_at <= coalesce(lap.started_at, 'infinity'::timestamptz)
+      THEN a.parsed_at END DESC NULLS LAST,
+    a.parsed_at
   LIMIT 1
 ),
 steps AS (
@@ -28,7 +33,7 @@ steps AS (
   JOIN lap ON lap.workflow_name = s.workflow
 )
 -- Every node of the workflow's expanded tree, and each opens its own place in it.
-SELECT v.pin, s.path, s.parent_path, s.position, s.step_id, s.kind, s.depends_on,
+SELECT v.pin, v.archon_sha, s.path, s.parent_path, s.position, s.step_id, s.kind, s.depends_on,
   s.when_condition, s.trigger_rule, s.round_cap
 FROM steps s
 CROSS JOIN version v
