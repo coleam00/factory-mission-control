@@ -73,7 +73,7 @@ test('a run list draws one row per run, and a proposal is a button only when the
   const html = render([answer]);
   expect(html.match(/data-run-row=/g)).toHaveLength(1);
   expect(html).toContain(`data-run-link="${RUN}"`);
-  expect(html).toMatch(/<button[^>]*data-proposal="resume"[^>]*>Resume<\/button>/);
+  expect(html).toMatch(/<button[^>]*data-proposal="resume"[^>]*>Resume 5eed0001<\/button>/);
   const without = render([answer], false);
   expect(without).not.toContain('data-proposal');
   expect(without).toContain('Open run 5eed0001');
