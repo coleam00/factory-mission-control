@@ -81,6 +81,7 @@ const ROW_COLUMNS: Record<string, string[]> = {
     'line',
     'last_day',
     'daily',
+    'console',
   ]),
   decide: columns<DecideRow>()([
     'run_id',
@@ -105,6 +106,8 @@ const ROW_COLUMNS: Record<string, string[]> = {
     'waits_on',
     'since',
     'action',
+    'repository',
+    'console',
   ]),
   'factory-switcher': columns<FactorySwitcherRow>()(['factory', 'running', 'is_default']),
   'health-runs': columns<HealthRunRow>()([

@@ -17,4 +17,6 @@ export interface FailureGroupRow {
   last_day: Date;
   /** Failures per UTC day for the 14 days ending at `last_day`, oldest first. */
   daily: number[];
+  /** The factory's Archon console, for the latest run's link. */
+  console: string;
 }
