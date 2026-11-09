@@ -1,3 +1,4 @@
+import { placeAddress } from './places';
 import { recorded } from './version-strip';
 
 /** One row of `db/queries/step-detail.sql`: a node of a workflow's expanded tree. */
@@ -183,7 +184,7 @@ export const AT_PARAM = 'at';
 
 /** Where every step's screen in `factory` lives. */
 export function stepsPrefix(factory: string): string {
-  return `/f/${encodeURIComponent(factory)}/steps/`;
+  return `${placeAddress(factory, '')}/steps/`;
 }
 
 /**
