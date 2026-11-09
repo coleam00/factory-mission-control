@@ -7,7 +7,7 @@ import type { UnstickRow } from './attention';
 import type { ColumnId, ItemOnBoard } from './board';
 import { shortRunId } from './format';
 import { CLASS_NOTE, UNSTICK_NOTE } from './manager-notes';
-import { consoleUrl, workflowLabel } from './one-lap';
+import { consoleUrl, INTAKE_WORKFLOW, workflowLabel } from './one-lap';
 import type { State } from './states';
 import { questionOf, roundNumbers, stageOf, type WorkItemRow, workItemTimeline } from './work-item';
 
@@ -82,7 +82,7 @@ const oldestFirst = (a: UnstickRow, b: UnstickRow) =>
   (b.since?.getTime() ?? Number.POSITIVE_INFINITY);
 
 function runLabel(run: WorkItemRow, rows: readonly WorkItemRow[]): string {
-  if (run.workflow === 'archon-intake') return 'Intake';
+  if (run.workflow === INTAKE_WORKFLOW) return 'Intake';
   const n = roundNumbers(rows).get(run.run_id ?? '');
   return n === undefined ? workflowLabel(run.workflow ?? 'The run') : `Round ${n}`;
 }

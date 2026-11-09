@@ -1,16 +1,10 @@
 import { expect, test } from 'bun:test';
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import {
-  BLOCKED_STAGES,
-  FOUND_OUTCOMES,
-  PARKED,
-  parked,
-  SPLIT_WORKFLOW,
-} from '../../app/lib/board';
+import { BLOCKED_STAGES, FOUND_OUTCOMES, PARKED, parked } from '../../app/lib/board';
 import { STOP_CLASSES } from '../../app/lib/failures';
 import { causeOf } from '../../app/lib/health';
-import { prNumber } from '../../app/lib/one-lap';
+import { APP_CHECK_WORKFLOW, prNumber, SPLIT_WORKFLOW } from '../../app/lib/one-lap';
 import { runsArgs } from '../../app/lib/runs';
 import { QUEUE_ENDING_STATE, QUEUE_REVIEW_STATE, REVIEW_OUTCOME_STATE } from '../../app/lib/states';
 import { ROUTE_OF_LABEL, WORK_ITEM_NUMBER } from '../../app/lib/work-item';
@@ -691,6 +685,46 @@ test('the runs idle-poll rule names app-check steps the workflow gates on a sele
     expect(steps.get(id)).toContain('when: "$select.output.found == true"');
   }
   expect(quoted(rule?.[1] ?? '').length).toBeGreaterThan(0);
+});
+
+test('the runs queries read the pack idle value, round step address and app check name as the pack spells them', () => {
+  const pack = (...path: string[]) => read('fixtures', 'pack', 'queue', 'sdlc', ...path);
+  const idle = sqlOf('runs').match(/'path' = '([^']*)'/)?.[1] ?? '';
+  // runs.sql joins the `facts` step of every queue workflow, so every pack that has one is bound.
+  const packRoot = join(root, 'fixtures', 'pack', 'queue', 'sdlc');
+  let withFacts = 0;
+  for (const { name: dir } of readdirSync(packRoot, { withFileTypes: true }).filter((e) =>
+    e.isDirectory(),
+  )) {
+    for (const file of readdirSync(join(packRoot, dir)).filter((f) => f.endsWith('.yaml'))) {
+      const facts = pack(dir, file)
+        .replaceAll('\r\n', '\n')
+        .match(/^ {2}- id: facts\n[\s\S]*?path: \{ type: string, enum: \[([^\]]*)\] \}/m)?.[1];
+      if (facts === undefined) continue;
+      withFacts += 1;
+      expect({ file, idle: facts.split(',').map((v) => v.trim()) }).toEqual({
+        file,
+        idle: expect.arrayContaining([idle]),
+      });
+    }
+  }
+  expect(withFacts).toBe(5);
+
+  // The round step's address: the build queue's `ship` > the ship block's `deliver` > the deliver
+  // block's loop `rounds` > its `round` step, joined the way mc.lap_steps writes it.
+  const ids = (file: string[], pattern: RegExp) =>
+    pack(...file)
+      .replaceAll('\r\n', '\n')
+      .match(pattern)?.[1];
+  const address = `${ids(['build-queue', 'archon-build-queue.yaml'], /^ {2}- id: (ship)$/m)}__${ids(['ship', 'archon-ship-block.yaml'], /^ {2}- id: (deliver)$/m)}__${ids(['deliver', 'archon-deliver-block.yaml'], /^ {2}- id: (rounds)$/m)}.${ids(['deliver', 'archon-deliver-block.yaml'], /^ {8}- id: (round)$/m)}`;
+  for (const name of ['runs', 'work-item']) {
+    expect(quoted(sqlOf(name).match(/step_id = '([^']*round)'/)?.[0] ?? '')).toEqual([address]);
+  }
+
+  const appCheck = read('.archon', 'workflows', 'factory', 'app-check', 'factory-app-check.yaml');
+  const checkName = appCheck.match(/^name: (\S+)/m)?.[1];
+  expect(sqlOf('runs')).toContain(`l.workflow_name = '${checkName}'`);
+  expect(APP_CHECK_WORKFLOW).toBe(checkName as string);
 });
 
 test('the run-stop migration writes only classes and stopped statuses its CHECKs allow', () => {
