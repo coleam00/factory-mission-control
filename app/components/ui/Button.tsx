@@ -11,7 +11,7 @@ const VARIANT = {
 const BASE =
   'cursor-pointer rounded-[var(--v3-radius-control)] border px-3 py-1.5 text-[length:var(--v3-t-meta)] font-semibold';
 
-/** The classes of a button, for a link that must look like one. */
+/** The button look for an element that is not a `<button>`, such as a console link. */
 export const buttonClass = (variant: keyof typeof VARIANT) => `${BASE} ${VARIANT[variant]}`;
 
 export function Button({

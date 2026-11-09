@@ -1,71 +1,118 @@
 import { expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { createMemoryRouter, RouterProvider } from 'react-router';
-import type { BoardView } from '../lib/board';
-import { COLUMNS } from '../lib/board';
+import { type BoardView, COLUMNS, MINI_CARDS, PIPELINE } from '../lib/board';
 import { BoardBody } from './Board';
 
 const longTitle = '.archon/workflows/factory-build-queue-with-an-unbroken-path-token.yaml';
 
 const longChip = 'factory-build-queue-with-an-unbroken-order-name-token';
 
-const view: BoardView = {
+const empty: BoardView = {
   orders: [],
-  columns: [
-    {
-      id: 'merged',
-      title: 'Merged',
-      role: 'test',
-      holder: 'test',
-      items: [
-        {
-          number: 441,
-          title: longTitle,
-          chips: [{ kind: 'order', text: longChip }],
-          to: '/f/x/work/441',
-        },
-      ],
-    },
-  ],
+  columns: COLUMNS.map((c) => ({ ...c, items: [] })),
+  pipeline: PIPELINE.map(({ columns: _, ...spec }) => ({ ...spec, items: [], pills: [] })),
+  found: { filed: 0, tracked: 0, dropped: 0 },
   notInOrder: 0,
   older: 0,
   olderHref: null,
 };
 
-test('a card title and an order chip with long unbroken tokens wrap inside their card', () => {
+function render(view: BoardView, mode: 'pipeline' | 'table'): string {
   const router = createMemoryRouter([
-    { path: '/', element: <BoardBody view={view} order={null} onOrder={() => {}} /> },
+    {
+      path: '/',
+      element: (
+        <BoardBody
+          view={view}
+          mode={mode}
+          order={null}
+          onOrder={() => {}}
+          tableHref="?view=table"
+        />
+      ),
+    },
   ]);
-  const html = renderToStaticMarkup(<RouterProvider router={router} />);
+  return renderToStaticMarkup(<RouterProvider router={router} />);
+}
+
+test('a card title and an order chip with long unbroken tokens wrap inside their card', () => {
+  const html = render(
+    {
+      ...empty,
+      columns: [
+        {
+          id: 'merged',
+          title: 'Merged',
+          role: 'test',
+          holder: 'test',
+          items: [
+            {
+              number: 441,
+              title: longTitle,
+              chips: [{ kind: 'order', text: longChip }],
+              to: '/f/x/work/441',
+            },
+          ],
+        },
+      ],
+    },
+    'table',
+  );
   const title = html.match(/<span class="([^"]*)">\.archon\/workflows/);
   expect(title?.[1]).toContain('[overflow-wrap:anywhere]');
   const chip = html.match(/<span data-chip="order" class="([^"]*)"/);
   expect(chip?.[1]).toContain('[overflow-wrap:anywhere]');
 });
 
-function render(element: React.ReactElement): string {
-  const router = createMemoryRouter([{ path: '/', element }]);
-  return renderToStaticMarkup(<RouterProvider router={router} />);
-}
-
-test('every column renders its caption under the header', () => {
-  const html = render(
-    <BoardBody
-      view={{
-        orders: [],
-        columns: COLUMNS.map((c) => ({ ...c, items: [] })),
-        notInOrder: 0,
-        older: 0,
-        olderHref: null,
-      }}
-      order={null}
-      onOrder={() => {}}
-    />,
-  );
-  const sections = html.split('data-board-column=').slice(1);
+test('the Table renders every column with its caption under the header', () => {
+  const sections = render(empty, 'table').split('data-board-column=').slice(1);
   expect(sections).toHaveLength(COLUMNS.length);
   COLUMNS.forEach((c, i) => {
     expect(sections[i]).toContain(`"${c.id}"`);
     expect(sections[i]).toMatch(new RegExp(`data-holder[^>]*>${c.holder}</p>`));
   });
+});
+
+const stage = (id: string, numbers: number[]) => ({
+  ...(PIPELINE.find((h) => h.id === id) as (typeof PIPELINE)[number]),
+  columns: undefined,
+  items: numbers.map((number) => ({
+    number,
+    title: `Item ${number}`,
+    chips: [],
+    to: `/f/x/work/${number}`,
+    status: 'waiting' as const,
+  })),
+  pills:
+    numbers.length > 0
+      ? [{ label: 'waiting' as const, state: 'idle' as const, count: numbers.length }]
+      : [],
+});
+
+test('the Pipeline renders the five stages in order, then Blocked and parked, each with its count and a link to the work item', () => {
+  const view: BoardView = {
+    ...empty,
+    pipeline: PIPELINE.map((h) => stage(h.id, h.id === 'build' ? [7] : [])),
+  };
+  const html = render(view, 'pipeline');
+  const ids = [...html.matchAll(/data-board-stage="(\w+)"/g)].map((m) => m[1]);
+  expect(ids).toEqual(['intake', 'planned', 'build', 'merge', 'merged', 'blocked']);
+  expect(html).toContain('data-count="1"');
+  expect(html).toMatch(
+    /<a[^>]*href="\/f\/x\/work\/7"[^>]*data-work-item="7"|data-work-item="7"[^>]*href="\/f\/x\/work\/7"/,
+  );
+  expect(html).toContain('data-found');
+});
+
+test('the Pipeline shows at most three mini cards and a more-in-Table link', () => {
+  const numbers = Array.from({ length: MINI_CARDS + 2 }, (_, i) => i + 1);
+  const view: BoardView = {
+    ...empty,
+    pipeline: PIPELINE.map((h) => stage(h.id, h.id === 'build' ? numbers : [])),
+  };
+  const html = render(view, 'pipeline');
+  expect(html.match(/data-work-item=/g)).toHaveLength(MINI_CARDS);
+  expect(html).toContain('data-count="5"');
+  expect(html).toMatch(/href="\/\?view=table"[^>]*>2 more in Table/);
 });

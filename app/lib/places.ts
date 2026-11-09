@@ -15,6 +15,9 @@ export const PLACES = [
 /** A place's path after `/f/:factory`: '' is Attention. */
 export type PlacePath = (typeof PLACES)[number]['path'];
 
+/** The app root, which the home redirect serves. */
+export const ROOT_ADDRESS = '/';
+
 /** The address of the place at `path` for `factory`: the one writer of a place's segment. */
 export const placeAddress = (factory: string, path: PlacePath): string =>
   `/f/${encodeURIComponent(factory)}${path === '' ? '' : `/${path}`}`;

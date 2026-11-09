@@ -1,9 +1,9 @@
 import { expect, test } from 'bun:test';
-import { readdirSync, readFileSync } from 'node:fs';
+import { readdirSync } from 'node:fs';
 import type { ReactElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { STATES } from '../../lib/states';
-import { Button } from './Button';
+import { Button, buttonClass } from './Button';
 import { Card } from './Card';
 import { Chip } from './Chip';
 import { ErrorPanel } from './ErrorPanel';
@@ -12,53 +12,12 @@ import { OptionTile, RecommendedTag } from './OptionTile';
 import { Segmented } from './Segmented';
 import { Sparkline } from './Sparkline';
 import { Pill, StateDot } from './StateDot';
+import { Tabs } from './Tabs';
 import { Timeline, TimelineRow } from './Timeline';
 import { Toast } from './Toast';
+import { nonV3Colors } from './v3-colors';
 
 const noop = () => {};
-
-// The `--color-*` names the theme turns into utilities (`bg-error`, `text-text-primary`).
-const THEME_COLORS = [
-  ...(readFileSync('app/styles.css', 'utf8').split('@theme inline')[1] ?? '').matchAll(
-    /--color-([\w-]+):/g,
-  ),
-].map((m) => m[1] ?? '');
-// The `--v3-*` names the stylesheet declares; a name outside it renders no color.
-const V3_TOKENS = new Set(
-  [...readFileSync('app/styles.css', 'utf8').matchAll(/(--v3-[\w-]+):/g)].map((m) => m[1] ?? ''),
-);
-const PALETTE =
-  'red|orange|amber|yellow|lime|green|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose|slate|gray|zinc|neutral|stone';
-const COLOR_UTILITY =
-  '(?:bg|text|border(?:-[trblxy])?|outline|ring|fill|stroke|decoration|shadow|accent|caret|divide|from|via|to)';
-
-/** The colors in rendered markup that do not come from a `--v3-*` token. */
-function nonV3Colors(html: string): string[] {
-  const found: string[] = [];
-  const attrs = [...html.matchAll(/\b(?:class|style)="([^"]*)"/g)].map((m) => m[1] ?? '');
-  for (const attr of attrs) {
-    for (const m of attr.matchAll(/var\((--[\w-]+)/g))
-      if (!V3_TOKENS.has(m[1] ?? '')) found.push(m[0]);
-    for (const m of attr.matchAll(/#[0-9a-f]{3,8}\b|\b(?:rgba?|hsla?|oklch|oklab)\(/gi))
-      found.push(m[0]);
-    for (const cls of attr.split(/\s+/)) {
-      const theme = new RegExp(`^${COLOR_UTILITY}-(${THEME_COLORS.join('|')})(?:/\\d+)?$`);
-      const palette = new RegExp(
-        `^${COLOR_UTILITY}-(?:(?:${PALETTE})-\\d+|black|white)(?:/\\d+)?$`,
-      );
-      if (theme.test(cls) || palette.test(cls)) found.push(cls);
-    }
-    // A border width with no v3 color falls back to the global `border-border`.
-    const classes = attr.split(/\s+/);
-    const width = classes.some((c) => /^border(?:-[trblxy])?(?:-\d+)?$/.test(c));
-    const colored = classes.some((c) => {
-      const token = c.match(/^border-\[color:(?:var\((--[\w-]+)\)|transparent)\]$/);
-      return token !== null && (token[1] === undefined || V3_TOKENS.has(token[1]));
-    });
-    if (width && !colored) found.push(`border without a v3 color: ${attr}`);
-  }
-  return found;
-}
 
 const VARIANTS: [string, ReactElement][] = [
   ...(['primary', 'secondary', 'text'] as const).map((variant): [string, ReactElement] => [
@@ -128,6 +87,36 @@ const VARIANTS: [string, ReactElement][] = [
     </Timeline>,
   ],
   ['TimelineRow', <TimelineRow key="row" state="running" name="step" />],
+  [
+    'TimelineRow prose',
+    <TimelineRow
+      key="pr"
+      prose
+      state="failed"
+      name="Round 1 failed"
+      time="2m"
+      dateTime="2026-01-01T00:00:00Z"
+    />,
+  ],
+  [
+    'Tabs',
+    <Tabs
+      key="tabs"
+      label="Details"
+      value="b"
+      onChange={noop}
+      tabs={[
+        { value: 'a', label: 'A' },
+        { value: 'b', label: 'B' },
+      ]}
+    />,
+  ],
+  [
+    'Button class on a link',
+    <a key="bl" href="/x" className={buttonClass('primary')}>
+      Resume
+    </a>,
+  ],
   ['ErrorPanel', <ErrorPanel key="e" title="Failed" error="boom" />],
   [
     'ErrorPanel with actions',
@@ -150,6 +139,22 @@ test.each(VARIANTS)('%s renders with v3 tokens only', (_name, element) => {
   const html = renderToStaticMarkup(element);
   expect(nonV3Colors(html)).toEqual([]);
   expect(html).toContain('--v3-');
+});
+
+test('Tabs marks the chosen tab selected, in the order the map tests read', () => {
+  const html = renderToStaticMarkup(
+    <Tabs
+      label="Details"
+      value="b"
+      onChange={noop}
+      tabs={[
+        { value: 'a', label: 'A' },
+        { value: 'b', label: 'B' },
+      ]}
+    />,
+  );
+  expect(html).toContain('aria-selected="true" data-tab="b"');
+  expect(html).toContain('aria-selected="false" data-tab="a"');
 });
 
 test('every component the folder exports is rendered above', async () => {

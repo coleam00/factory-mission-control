@@ -210,6 +210,21 @@ export const STOP_CLASS_STATE: Record<StopClass | 'mixed' | 'unclassified', Stat
   unclassified: 'failed',
 };
 
+/** A work item's status on the Board: what the item is doing, which is not always where it sits. */
+export const BOARD_ITEM_STATE: Record<
+  'needs you' | 'parked' | 'blocked' | 'merged' | 'running' | 'check failed' | 'queued' | 'waiting',
+  State
+> = {
+  'needs you': 'needs-you',
+  parked: 'idle',
+  blocked: 'idle',
+  merged: 'done',
+  running: 'running',
+  'check failed': 'failed',
+  queued: 'idle',
+  waiting: 'idle',
+};
+
 /** Every map above, named once, so the test can hold each to a declared state. */
 export const STATE_SOURCES: Record<string, Record<string, State>> = {
   RUN_STATE,
@@ -228,4 +243,5 @@ export const STATE_SOURCES: Record<string, Record<string, State>> = {
   MAP_CHIP_STATE,
   UNSTICK_STATE,
   STOP_CLASS_STATE,
+  BOARD_ITEM_STATE,
 };

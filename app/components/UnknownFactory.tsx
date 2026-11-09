@@ -1,6 +1,6 @@
 import type { ReactElement } from 'react';
 import { Link } from 'react-router';
-import { placeAddress } from '../lib/places';
+import { placeAddress, ROOT_ADDRESS } from '../lib/places';
 import { EmptyState } from './EmptyState';
 
 /**
@@ -18,7 +18,7 @@ export function UnknownFactory({
   fallback: string | undefined;
 }): ReactElement {
   const target = factory === '' ? undefined : fallback;
-  const home = target === undefined ? '/' : placeAddress(target, '');
+  const home = target === undefined ? ROOT_ADDRESS : placeAddress(target, '');
   return (
     <main
       data-unknown-factory={factory}
