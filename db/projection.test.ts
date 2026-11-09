@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, beforeEach, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { recommendedChoice } from '../app/lib/attention';
+import { parseRecommendation, recommendedChoice } from '../app/lib/attention';
 import { FACTORY_MAP } from '../app/map/factory-map';
 import { holdoutId } from '../parsers/metrics';
 import { eventData, structuredOutputFor } from '../scripts/fixture/write';
@@ -2618,6 +2618,32 @@ test('an attention item records the rendered recommendation, confidence, descrip
     { id: 'build', label: 'Build', description: 'One change.' },
   ]);
   expect(recommendedChoice(message, ATTN_OPTIONS)).toBe('split');
+});
+
+test('the projector and parseRecommendation read the same Recommendation line', async () => {
+  const messages = [
+    await renderedAttention('Build queue, issue 15: scope decision'),
+    '**What it is.** Two screens. **Recommendation: `split`** (high confidence). Because.',
+    '**Recommendation: `split`** (very high confidence). Because.',
+    '**Recommendation: `split`**. Because.',
+    '**Recommendation: `nope`** (high confidence). Because.',
+    'Which lap next?',
+  ];
+  const seen: unknown[] = [];
+  for (const message of messages) {
+    await db.query('TRUNCATE mc.attention_items, public.remote_agent_workflow_runs CASCADE');
+    await pausedRun({ ...ATTN_WAIT, message, options: ATTN_OPTIONS });
+    const p = parseRecommendation(message);
+    const offered = p !== null && ATTN_OPTIONS.some((o) => o.id === p.choice);
+    const [item] = await decideFields();
+    expect(item).toMatchObject({
+      recommended: offered ? p.choice : null,
+      confidence: offered ? p.confidence : null,
+    });
+    seen.push([item?.recommended, item?.confidence]);
+  }
+  expect(seen[1]).toEqual(['split', 'high']);
+  expect(seen[2]).toEqual(['split', null]);
 });
 
 test('an attention item without a recommendation or pause id still has its occurrence and item', async () => {

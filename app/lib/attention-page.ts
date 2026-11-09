@@ -506,6 +506,9 @@ export const ATTENTION_SOURCES = {
   failures: { query: 'failure-groups', what: 'failures' },
 } as const;
 
+/** The nav badge's panel of one of those queries, named apart from the page's own panel of it. */
+export const badgePanelName = (query: string): string => `attention-count:${query}`;
+
 /** The query for the head's sweep clause; it is not an item source, so the count never reads it. */
 export const SWEEP_QUERY = 'manager-sweep';
 

@@ -1,6 +1,7 @@
 import type { UnstickRow } from '../../app/lib/attention';
 import {
   ATTENTION_SOURCES,
+  badgePanelName,
   retriageCommand,
   unstickCards,
   unstickKey,
@@ -83,7 +84,7 @@ const headCount = `(() => {
 })()`;
 
 /** The tab badge's own panels, named apart from the page's panels of the same queries. */
-const BADGE_PANELS = QUERIES.map((q) => `nav [data-live="attention-count:${q}"]`);
+const BADGE_PANELS = QUERIES.map((q) => `nav [data-live="${badgePanelName(q)}"]`);
 
 /** The Attention tab's count, or null when no count is drawn. */
 const tabCount = `(() => {
