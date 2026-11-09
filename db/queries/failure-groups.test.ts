@@ -122,6 +122,8 @@ test('failure-groups counts a failed run until a later run of its workflow on it
   const b = groups.find((g) => g.line === 'error: case b');
   expect(b?.failures).toBe(2);
   expect(b?.latest_run_id).toBe(latestB);
+  // i14 and i13 share one signature group: a wrongly counted 14-day run shows only in the count
+  expect(groups.find((g) => g.line === 'error: case i13')?.failures).toBe(1);
 });
 
 test('failure-groups orders daily oldest first and names the newest failure as the latest run', async () => {
