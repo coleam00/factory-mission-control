@@ -21,7 +21,7 @@ import type { FailureGroupRow, StopClass } from './failures';
 import { shortRunId } from './format';
 import { stepPath } from './lap-graph';
 import { since } from './laps';
-import { consoleUrl, hasLapPage, lapHref, workflowLabel } from './one-lap';
+import { consoleUrl, lapHref, workflowLabel } from './one-lap';
 import { type OwnerQueueRow, ownerQueue, waited } from './owner-queue';
 import { LAP_OUTCOME_STATE, STOP_CLASS_STATE, type State, UNSTICK_STATE } from './states';
 import { workItemHref } from './work-item';
@@ -447,9 +447,7 @@ export function fixCards(rows: readonly FailureGroupRow[], factory: string): Att
         g.first_at === null || g.last_at === null ? 1 : utcDay(g.last_at) - utcDay(g.first_at) + 1;
       const queue = queueOf(g.workflow_name, g.step_id);
       const label = workflowLabel(g.workflow_name);
-      const run = hasLapPage(g.workflow_name)
-        ? { href: lapHref(factory, g.latest_run_id), external: false }
-        : { href: consoleUrl(g.console, g.latest_run_id), external: true };
+      const run = { href: lapHref(factory, g.latest_run_id), external: false };
       return {
         key: `fix:${g.signature}`,
         kind: 'fix',

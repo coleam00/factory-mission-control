@@ -172,7 +172,7 @@ test('a Fix card says the count, the inclusive UTC days, the step and the class'
   expect(card?.note.rest).toBe('It is transient: a retry usually passes.');
   expect(card?.actions[0]).toMatchObject({ href: `/f/f/runs/${RUN}`, external: false });
   const [queued] = fixCards([group({ workflow_name: 'archon-build-queue', step_id: 'ask' })], 'f');
-  expect(queued?.actions[0]).toMatchObject({ href: CONSOLE_RUN, external: true });
+  expect(queued?.actions[0]).toMatchObject({ href: `/f/f/runs/${RUN}`, external: false });
 
   const [bare] = fixCards([group({ step_id: null, class: null, failures: 1, line: null })], 'f');
   expect(bare?.title).toBe('Lap failed');
