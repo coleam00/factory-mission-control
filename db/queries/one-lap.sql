@@ -25,8 +25,7 @@ LEFT JOIN LATERAL (
   ORDER BY c.claimed_at DESC NULLS LAST, c.issue_number LIMIT 1
 ) c ON true
 LEFT JOIN mc.lap_steps facts ON facts.run_id = l.run_id AND facts.step_id = 'facts'
-LEFT JOIN mc.issues i ON i.factory = l.factory
-  AND i.number = coalesce(c.issue_number, (facts.output -> 'item' ->> 'number')::int, l.issue_number)
+LEFT JOIN mc.issues i ON i.factory = l.factory AND i.number = coalesce(c.issue_number, (facts.output -> 'item' ->> 'number')::int, l.issue_number)
 LEFT JOIN mc.run_stops st ON st.run_id = l.run_id
 LEFT JOIN mc.lap_steps p ON p.run_id = l.run_id AND p.step_id = 'pick'
 LEFT JOIN mc.lap_steps review ON review.run_id = l.run_id AND review.step_id = 'review'

@@ -8,6 +8,7 @@ import {
   type CheckLineRow,
   consoleUrl,
   isOldLoop,
+  issueUrl,
   lapOutcome,
   type OneLapRow,
   prNumber,
@@ -286,11 +287,15 @@ function runPill(lap: OneLapRow): { state: State | undefined; name: string } {
 function Title({ lap, title }: { lap: OneLapRow; title: string }): ReactElement {
   const tag = lap.issue_number === null ? '' : `#${lap.issue_number}`;
   const at = tag === '' ? -1 : title.indexOf(tag);
-  if (at < 0 || lap.issue_url === null) return <>{title}</>;
+  if (at < 0) return <>{title}</>;
   return (
     <>
       {title.slice(0, at)}
-      <a data-link="issue" href={lap.issue_url} className={LINK}>
+      <a
+        data-link="issue"
+        href={lap.issue_url ?? issueUrl(lap.repository, lap.issue_number as number)}
+        className={LINK}
+      >
         {tag}
       </a>
       {title.slice(at + tag.length)}
