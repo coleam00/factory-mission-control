@@ -525,6 +525,7 @@ function RunTimeline({
         cost={skipped ? undefined : money(cost)}
         data-timeline-step={row.step_id}
         data-status={row.status}
+        data-skip-reason={skipped ? (why ?? undefined) : undefined}
         data-started={row.started_at?.toISOString()}
         data-duration-ms={row.duration_ms?.toString()}
         data-cost={cost?.toString()}
