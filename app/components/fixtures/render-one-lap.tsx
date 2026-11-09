@@ -18,7 +18,7 @@ const lap: OneLapRow = {
   issue_url: null,
   route: 'simple',
   depth: 'normal',
-  pr: '#102',
+  pr_number: 102,
   review_status: 'completed',
   review_outcome: 'sent-back',
   review_delivers: 'part',

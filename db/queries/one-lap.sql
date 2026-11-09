@@ -2,7 +2,7 @@ SELECT l.run_id, l.status, l.started_at, l.completed_at, f.repository, f.console
   c.issue_number, i.title AS issue_title, i.url AS issue_url,
   -- The pick step's route, or else the one the lap's claim comment records.
   coalesce(p.output ->> 'route', c.route) AS route, p.output ->> 'depth' AS depth,
-  pr.pr,
+  pr.pr_number,
   -- The review's outcome and dispositions (PRD 4.6), and the gate's: a refusal is the land step's
   -- output with outcome refused, its reason the reason text (PRD 4.2).
   review.status AS review_status, review.output ->> 'outcome' AS review_outcome,
@@ -24,10 +24,10 @@ LEFT JOIN mc.issues i ON i.factory = l.factory AND i.number = c.issue_number
 LEFT JOIN mc.lap_steps p ON p.run_id = l.run_id AND p.step_id = 'pick'
 LEFT JOIN mc.lap_steps review ON review.run_id = l.run_id AND review.step_id = 'review'
 LEFT JOIN mc.lap_steps land ON land.run_id = l.run_id AND land.step_id = 'land'
--- The pull request the lap's newest step names: subject, check-app and review each carry it.
+-- The pull request the lap's newest step names (its projected pr_number): subject, check-app and review each carry it.
 LEFT JOIN LATERAL (
-  SELECT s.output ->> 'pr' AS pr FROM mc.lap_steps s
-  WHERE s.run_id = l.run_id AND s.output ->> 'pr' <> ''
+  SELECT s.pr_number FROM mc.lap_steps s
+  WHERE s.run_id = l.run_id AND s.pr_number IS NOT NULL
   ORDER BY s.started_at DESC NULLS LAST, s.step_id LIMIT 1
 ) pr ON true
 -- A run id compared as text: a malformed one in the address is no lap, not a failed query.

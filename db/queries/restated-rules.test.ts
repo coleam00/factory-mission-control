@@ -168,7 +168,7 @@ test('mc.pr_number reads a step pr as prNumber does, a JSON object included', as
   }
 }, 60_000);
 
-test('mc.lap_steps.pr_number is the run page rule: a step pr, else its pr_url', async () => {
+test('mc.lap_steps.pr_number reads a step pr, else its pr_url', async () => {
   const pull = (n: number) => `https://github.com/o/r/pull/${n}`;
   const outputs: [object, number | null][] = [
     [{ pr: '#7' }, 7],

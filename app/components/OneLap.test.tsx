@@ -27,7 +27,7 @@ const refused: OneLapRow = {
   issue_url: 'https://github.com/coleam00/factory-mission-control/issues/3',
   route: 'simple',
   depth: 'normal',
-  pr: '#103',
+  pr_number: 103,
   review_status: 'completed',
   review_outcome: 'merge',
   review_delivers: 'all',
@@ -95,12 +95,7 @@ test('a disposition naming a hidden line does not render in the header', () => {
 });
 
 test('the pull request a step names by URL links as its number', () => {
-  const html = render(
-    <LapHeaderBody
-      lap={{ ...refused, pr: 'https://github.com/coleam00/factory-mission-control/pull/103' }}
-      now={0}
-    />,
-  );
+  const html = render(<LapHeaderBody lap={{ ...refused, pr_number: 103 }} now={0} />);
   expect(html).toContain('href="https://github.com/coleam00/factory-mission-control/pull/103"');
   expect(html).toContain('data-pr="103"');
   expect(html).toContain('>#103</a>');
@@ -113,7 +108,7 @@ test('a lap with no review or gate yet says so', () => {
         ...refused,
         status: 'running',
         completed_at: null,
-        pr: null,
+        pr_number: null,
         review_status: null,
         review_outcome: null,
         review_delivers: null,

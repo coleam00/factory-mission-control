@@ -12,7 +12,6 @@ import {
   lapOutcome,
   linesInOrder,
   type OneLapRow,
-  prNumber,
   pullUrl,
   shownDispositions,
   type StepAttemptRow,
@@ -138,7 +137,7 @@ export function LapHeaderBody({
       ? lap.status
       : OUTCOME_LABEL[outcome];
   const seconds = running ? since(lap.started_at, now) : durationOf(lap);
-  const pr = prNumber(lap.pr);
+  const pr = lap.pr_number;
   return (
     <div
       data-lap={lap.run_id}
