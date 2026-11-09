@@ -821,3 +821,154 @@ test('the run-stop migration writes only classes and stopped statuses its CHECKs
   expect(checked.length).toBeGreaterThan(0);
   expect(guard.sort()).toEqual(checked.sort());
 });
+
+test('runs, home-map and health-workable hold the same item of a run with several claims', async () => {
+  const db = await migratedDb();
+  try {
+    await db.query(
+      `INSERT INTO mc.factories (name, repository, codebase, console) VALUES ('f', 'o/r', 'o/r', 'c')`,
+    );
+    for (let n = 1; n <= 7; n++) {
+      await db.query(
+        `INSERT INTO mc.issues (factory, number, title, state, url, created_at, updated_at)
+         VALUES ('f', $1, $2, 'open', 'u', now(), now())`,
+        [n, `t${n}`],
+      );
+    }
+    const id = (c: string) => `5eed0000-0000-4000-8000-00000000000${c}`;
+    // Per run: [issue, claimed_at] claims, and the issue the newest holds.
+    const runs = {
+      // The later claim wins whatever its number: DESC on claimed_at.
+      '1': {
+        claims: [
+          [2, '2026-01-01'],
+          [1, '2026-01-02'],
+        ],
+        holds: 1,
+      },
+      // A tie on claimed_at falls to the lower number.
+      '2': {
+        claims: [
+          [4, '2026-01-01'],
+          [3, '2026-01-01'],
+        ],
+        holds: 3,
+      },
+      // A claim with no claimed_at is the oldest, though it has the lower number.
+      '3': {
+        claims: [
+          [5, null],
+          [6, '2026-01-01'],
+        ],
+        holds: 6,
+      },
+    } as const;
+    for (const [c, r] of Object.entries(runs)) {
+      await db.query(
+        `INSERT INTO mc.laps (run_id, factory, workflow_name, status, started_at)
+         VALUES ($1, 'f', 'archon-loop', 'running', now())`,
+        [id(c)],
+      );
+      await db.query(
+        `INSERT INTO mc.lap_steps (run_id, step_id, status, output, started_at, completed_at)
+         VALUES ($1, 'land', 'completed', '{"outcome":"merged"}', now(), now())`,
+        [id(c)],
+      );
+      for (const [issue, at] of r.claims) {
+        await db.query(
+          `INSERT INTO mc.claims (factory, issue_number, run_id, claimed_at, released_at)
+           VALUES ('f', $1, $2, $3, now())`,
+          [issue, id(c), at],
+        );
+      }
+    }
+    const expected = Object.fromEntries(Object.entries(runs).map(([c, r]) => [id(c), r.holds]));
+    const held = (rows: Record<string, unknown>[]) =>
+      Object.fromEntries(rows.map((r) => [r.run_id as string, r.issue_number ?? r.number ?? null]));
+    const lanes = (
+      await db.query(sqlOf('runs'), [
+        'f',
+        ...runsArgs({ q: '', state: '', hideIdle: false, page: 1 }),
+      ])
+    ).filter((r) => r.status === 'running');
+    const laps = (await db.query(sqlOf('home-map'), ['f', ''])).filter((r) => r.kind === 'lap');
+    expect(held(lanes)).toEqual(expected);
+    expect(held(laps)).toEqual(expected);
+    const merged = (await db.query(sqlOf('home-map'), ['f', ''])).filter(
+      (r) => r.kind === 'merged',
+    );
+    expect(held(merged)).toEqual(expected);
+    for (const [c, r] of Object.entries(runs)) {
+      const [lap] = await db.query(sqlOf('one-lap'), ['f', id(c)]);
+      expect([c, lap?.issue_number]).toEqual([c, r.holds]);
+    }
+    const workable = (await db.query(sqlOf('health-workable'), ['f']))
+      .flatMap((r) => (r.kind === 'issue' ? [r.issue_number as number] : []))
+      .sort();
+    // Only the newest claim of each run holds its item; the other claims' items stay workable.
+    expect(workable).toEqual([2, 4, 5, 7]);
+  } finally {
+    await db.close();
+  }
+});
+
+test('one-lap-steps and one-lap-map choose the same architecture for a lap', async () => {
+  const db = await migratedDb();
+  try {
+    await db.query(
+      `INSERT INTO mc.factories (name, repository, codebase, console) VALUES ('f', 'o/r', 'o/r', 'c')`,
+    );
+    // Each version places step x at its own position, so the position names the version a query chose.
+    // v3 and v4 are pins committed at the same moment: the one parsed last wins.
+    const versions = [
+      { pin: 'p1', at: '2026-01-01', parsed: '2026-06-01', position: 1 },
+      { pin: 'p2', at: '2026-02-01', parsed: '2026-06-01', position: 2 },
+      { pin: 'p3', at: '2026-03-01', parsed: '2026-06-01', position: 3 },
+      { pin: 'p4', at: '2026-03-01', parsed: '2026-06-02', position: 4 },
+    ];
+    for (const v of versions) {
+      await db.query(
+        `INSERT INTO mc.pins (sha, archon_sha, reason, committed_at) VALUES ($1, $1, 'r', $2)`,
+        [v.pin, v.at],
+      );
+      await db.query(
+        `INSERT INTO mc.arch_versions (archon_sha, factory_sha, parsed_at) VALUES ($1, 'fs', $2)`,
+        [v.pin, v.parsed],
+      );
+      await db.query(
+        `INSERT INTO mc.arch_steps (archon_sha, factory_sha, workflow, path, position, step_id, kind, defined_in, file)
+         VALUES ($1, 'fs', 'archon-loop', 'x', $2, 'x', 'command', 'archon-loop', 'f')`,
+        [v.pin, v.position],
+      );
+    }
+    // A pin whose architecture is not stored is never chosen.
+    await db.query(
+      `INSERT INTO mc.pins (sha, archon_sha, reason, committed_at) VALUES ('p5', 'p5', 'r', '2026-04-01')`,
+    );
+    const laps = {
+      // Straddles the pins: the newest pin committed before it starts.
+      '1': { startedAt: '2026-02-15', position: 2 },
+      // Older than every pin: the oldest.
+      '2': { startedAt: '2025-12-01', position: 1 },
+      // Not started yet: the newest, and of two committed together the one parsed last.
+      '3': { startedAt: null, position: 4 },
+    } as const;
+    for (const [c, l] of Object.entries(laps)) {
+      const runId = `5eed0000-0000-4000-8000-00000000000${c}`;
+      await db.query(
+        `INSERT INTO mc.laps (run_id, factory, workflow_name, status, started_at)
+         VALUES ($1, 'f', 'archon-loop', 'running', $2)`,
+        [runId, l.startedAt],
+      );
+      await db.query(
+        `INSERT INTO mc.lap_steps (run_id, step_id, status, started_at) VALUES ($1, 'x', 'completed', now())`,
+        [runId],
+      );
+      const inSteps = (await db.query(sqlOf('one-lap-steps'), ['f', runId])).map((r) => r.position);
+      const inMap = (await db.query(sqlOf('one-lap-map'), ['f', runId])).map((r) => r.position);
+      expect([c, inSteps, inMap]).toEqual([c, [l.position], [l.position]]);
+    }
+  } finally {
+    await db.close();
+  }
+}, 60_000);
