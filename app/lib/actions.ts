@@ -15,6 +15,9 @@ export type ActionRequest =
     }
   | { factory: string; action: 'resume'; run_id: string; from_step: string | null };
 
+/** What the toast says an answer typed by the owner was. */
+export const TEXT_ANSWER_DETAIL = 'your text';
+
 export type AnswerRequest = Extract<ActionRequest, { action: 'answer' }>;
 export type ResumeRequest = Extract<ActionRequest, { action: 'resume' }>;
 

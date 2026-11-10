@@ -18,7 +18,7 @@ const VERSION_ROW: HomeMapRow = {
 };
 
 /** A socket that answers every subscribe with `home-map`'s one version row, and no rows otherwise. */
-class Socket implements WebSocketLike {
+export class Socket implements WebSocketLike {
   readyState = 1;
   private listeners: ((event: { data: unknown }) => void)[] = [];
 

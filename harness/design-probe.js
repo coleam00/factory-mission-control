@@ -540,12 +540,21 @@ async function pageChecks(tokenLayers, settle) {
   return { failures, tokenColors: palette.size, loading };
 }
 
+async function navigateAndLoad(cdp, session, url) {
+  const loaded = cdp.once('Page.loadEventFired', session);
+  loaded.catch(() => {});
+  await cdp.send('Page.navigate', { url }, session);
+  await loaded;
+}
+
+/** A URL with a fragment is reached from about:blank: re-navigating to the same address would be a same-document change that never fires a load event. */
 async function probeAt(cdp, session, url, width, tokenLayers) {
   await cdp.send(
     'Emulation.setDeviceMetricsOverride',
     { width, height: HEIGHT, deviceScaleFactor: 1, mobile: false },
     session,
   );
+  if (url.includes('#')) await navigateAndLoad(cdp, session, 'about:blank');
   const loaded = cdp.once('Page.loadEventFired', session);
   loaded.catch(() => {});
   const { errorText } = await cdp.send('Page.navigate', { url }, session);

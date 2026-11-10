@@ -23,6 +23,8 @@ import {
   AnswerSplitter,
   type ChatRequest,
   encodeEvent,
+  MAX_MESSAGE_CHARS,
+  MAX_MESSAGES,
   MAX_PROPOSALS,
   MAX_RUNS,
   type ManagerEvent,
@@ -142,9 +144,6 @@ function spentToday(manager: Manager): number {
   if (manager.spend.day !== today) manager.spend = { day: today, usd: 0 };
   return manager.spend.usd;
 }
-
-const MAX_MESSAGES = 20;
-const MAX_MESSAGE_CHARS = 4000;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -428,6 +427,7 @@ async function proposalEvent(
         option,
         text: null,
         label: `Answer "${choice?.label ?? option}"`,
+        detail: choice?.label ?? option,
       };
     }
     return { ...base, occurrence, option: null, text, label: 'Answer with your text' };

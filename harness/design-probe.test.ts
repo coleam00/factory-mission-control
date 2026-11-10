@@ -251,3 +251,10 @@ test('a profile that stays locked after the browser exits is a warning on stderr
   }
   expect(warnings.some((line) => line.includes('could not remove'))).toBe(true);
 }, 60_000);
+
+test('a URL with a fragment is probed at every width, not stuck on a same-document navigation', async () => {
+  const report = await probe(new URL('/clean.html#manager', server.url).href);
+
+  expect(report.widths.length).toBeGreaterThan(1);
+  expect(report.failureCount).toBe(0);
+}, 60_000);

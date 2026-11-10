@@ -2,7 +2,7 @@ import { type ReactElement, type ReactNode, useState } from 'react';
 import { Link, useLocation } from 'react-router';
 import type { AppCheckRow } from '../lib/app-check';
 import { boardHref, orderPanel, orderProgress } from '../lib/board';
-import { relativeTime } from '../lib/format';
+import { clock, relativeTime } from '../lib/format';
 import { lapHref } from '../lib/one-lap';
 import { stateColor } from '../lib/states';
 import { type StepRow, stepOriginState } from '../lib/step-detail';
@@ -176,9 +176,6 @@ function ProductDocument({ document }: { document: ProductDocumentRow }): ReactE
   );
 }
 
-const time = (at: Date) =>
-  at.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
-
 /** A run's name, linking to its page. */
 function RunName({ href, children }: { href: string; children: ReactNode }): ReactElement {
   return (
@@ -218,7 +215,7 @@ export function RightNow({
             <span className="font-mono tabular-nums">#{merge.number}</span>
           )}
         </RunName>
-        <span className={CHIP}>merged {time(merge.at)}</span>
+        <span className={CHIP}>merged {clock(merge.at)}</span>
       </li>
     )),
   };

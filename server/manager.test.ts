@@ -213,6 +213,7 @@ describe('the chat endpoint against a stubbed model', () => {
         option: 'yes',
         text: null,
         label: 'Answer "Ship it"',
+        detail: 'Ship it',
       },
       {
         type: 'proposal',

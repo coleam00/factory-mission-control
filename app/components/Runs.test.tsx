@@ -2,8 +2,15 @@ import { expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { createMemoryRouter, RouterProvider } from 'react-router';
 import { lapHref } from '../lib/one-lap';
-import { RUNS_PAGE_SIZE, type RunRow, type RunsFilter, type RunsRow, runsView } from '../lib/runs';
-import { addressOf, filterOf, nextFilter, Pager, pageWithin, RunFilters, RunList } from './Runs';
+import {
+  filterOf,
+  RUNS_PAGE_SIZE,
+  type RunRow,
+  type RunsFilter,
+  type RunsRow,
+  runsView,
+} from '../lib/runs';
+import { addressOf, nextFilter, Pager, pageWithin, RunFilters, RunList } from './Runs';
 
 const render = (element: React.ReactElement): string =>
   renderToStaticMarkup(<RouterProvider router={createMemoryRouter([{ path: '/', element }])} />);

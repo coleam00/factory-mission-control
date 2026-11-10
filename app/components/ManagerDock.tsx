@@ -1,4 +1,6 @@
-import { type ReactElement, useCallback, useEffect, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useState, useSyncExternalStore } from 'react';
+import { useLocation } from 'react-router';
+import type { ManagerAsk } from '../lib/manager';
 
 const OPEN_KEY = 'mc.manager.open';
 const OPEN_EVENT = 'mc:manager-open';
@@ -40,12 +42,57 @@ export function isManagerShortcut(
   return (event.metaKey || event.ctrlKey) && !event.altKey && event.key.toLowerCase() === 'j';
 }
 
-/** Opens the Manager dock from anywhere on the page. */
-export const openManager = () => window.dispatchEvent(new Event(OPEN_EVENT));
+/** Opens the Manager from anywhere on the page, looking at `ask` when it is given. */
+export const openManager = (ask?: ManagerAsk) =>
+  window.dispatchEvent(new CustomEvent<ManagerAsk | null>(OPEN_EVENT, { detail: ask ?? null }));
+
+/** Whether the address asks for the Manager open: `#manager` on any place. */
+export const wantsManager = (): boolean =>
+  typeof window !== 'undefined' && window.location.hash === '#manager';
+
+/** Runs `onAsk` for each press of an "Ask manager" button (`null` for a bare open). */
+export function useManagerAsks(onAsk: (ask: ManagerAsk | null) => void): void {
+  useEffect(() => {
+    const listen = (event: Event) => onAsk((event as CustomEvent<ManagerAsk | null>).detail);
+    window.addEventListener(OPEN_EVENT, listen);
+    return () => window.removeEventListener(OPEN_EVENT, listen);
+  }, [onAsk]);
+}
+
+/** What the page shows that its address cannot say, such as Attention's count, for the Manager's chip. */
+let placeWhat: { pathname: string; what: string } | undefined;
+const whatListeners = new Set<() => void>();
+
+const setPlaceWhat = (next: typeof placeWhat) => {
+  placeWhat = next;
+  for (const listener of whatListeners) listener();
+};
+
+export function usePlaceWhat(pathname: string): string | undefined {
+  const what = useSyncExternalStore(
+    (notify) => {
+      whatListeners.add(notify);
+      return () => whatListeners.delete(notify);
+    },
+    () => (placeWhat?.pathname === pathname ? placeWhat.what : undefined),
+    () => undefined,
+  );
+  return what;
+}
+
+/** A page publishes what it shows for the Manager's chip; it is withdrawn when the page unmounts. */
+export function usePublishPlaceWhat(what: string | undefined): void {
+  const { pathname } = useLocation();
+  useEffect(() => {
+    if (what === undefined) return;
+    setPlaceWhat({ pathname, what });
+    return () => setPlaceWhat(undefined);
+  }, [pathname, what]);
+}
 
 /** The docked Manager's state, kept in the browser; ⌘J or Ctrl+J toggles it. */
 export function useManagerDock(): { open: boolean; toggle: () => void } {
-  const [open, setOpen] = useState(() => readOpen(storage()));
+  const [open, setOpen] = useState(() => readOpen(storage()) || wantsManager());
   const toggle = useCallback(() => setOpen((was) => !was), []);
   useEffect(() => {
     writeOpen(storage(), open);
@@ -78,43 +125,5 @@ export function usePhone(): boolean {
     },
     () => window.matchMedia(PHONE_QUERY).matches,
     () => false,
-  );
-}
-
-/** The Manager's panel: a docked column on the desktop, the whole screen on the phone. */
-export function ManagerPanel({
-  onClose,
-  phone = false,
-}: {
-  onClose: () => void;
-  phone?: boolean;
-}): ReactElement {
-  return (
-    <aside
-      aria-label="Manager"
-      data-manager={phone ? 'tab' : 'dock'}
-      className={`flex min-h-0 flex-col bg-[var(--v3-panel)] ${
-        phone
-          ? 'min-h-[calc(100vh-110px)] flex-1'
-          : 'w-[var(--v3-manager-width)] shrink-0 border-l border-[color:var(--v3-line)]'
-      }`}
-    >
-      <div className="flex items-center gap-2.5 border-b border-[color:var(--v3-line)] px-4 py-3.5">
-        <b className="text-[14.5px] text-[color:var(--v3-fg)]">Manager</b>
-        {phone ? null : (
-          <button
-            type="button"
-            aria-label="Close the Manager"
-            onClick={onClose}
-            className="ml-auto cursor-pointer text-lg text-[color:var(--v3-fg-3)] hover:text-[color:var(--v3-fg)]"
-          >
-            ×
-          </button>
-        )}
-      </div>
-      <p className="px-4 py-3.5 text-[length:var(--v3-t-meta)] text-[color:var(--v3-fg-3)]">
-        The Manager is not available yet.
-      </p>
-    </aside>
   );
 }
