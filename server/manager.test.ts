@@ -618,13 +618,17 @@ describe('the briefing', () => {
       expect((await ask())[0]).toEqual({ type: 'text', text: `${line}\n\n` });
       expect(played.prompts[0]).toContain(line);
 
+      expect((await ask())[0]).toEqual({ type: 'text', text: `${line}\n\n` });
+      expect(played.prompts).toHaveLength(1);
+
       await fixture.direct.query(
         `INSERT INTO mc.capacity_waits (run_id, factory, workflow_name, item_number, since) VALUES ('${run(13)}', '${F}', 'archon-build', 9, now())`,
       );
-      expect((await ask())[0]).toMatchObject({
-        text: expect.stringContaining('6 things need you'),
-      });
-      expect(played.prompts).toHaveLength(1);
+      const changed = await ask();
+      expect(changed[0]).toMatchObject({ text: expect.stringContaining('6 things need you') });
+      expect(changed.at(-1)).toMatchObject({ type: 'done', cached: false });
+      expect(played.prompts).toHaveLength(2);
+      expect(played.prompts[1]).toContain('6 things need you');
     } finally {
       await fixture.direct.query(
         `DELETE FROM mc.capacity_waits WHERE factory = '${F}';

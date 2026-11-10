@@ -91,6 +91,8 @@ interface CachedBriefing {
   day: string;
   events: ManagerEvent[];
   generatedAt: string;
+  /** The Attention tally the body was written against; the body is only true while it holds. */
+  tally: AttentionTally | null;
 }
 
 /** The Manager's state lives in this process: a restart resets the day's spend and the briefings. */
@@ -704,9 +706,23 @@ async function generateBriefing(manager: Manager, factory: string, tally: Attent
   const { ok, cost } = await produce(manager, request, new AbortController().signal, (event) =>
     events.push(event),
   );
-  const briefing = { day: dayOf(manager.now()), events, generatedAt: manager.now().toISOString() };
+  const briefing = {
+    day: dayOf(manager.now()),
+    events,
+    generatedAt: manager.now().toISOString(),
+    tally,
+  };
   if (ok) manager.briefings.set(factory, briefing);
   return { briefing, cost };
+}
+
+/** A null on either side never matches: a body written without a count, or asked without one, cannot be vouched for. */
+function sameTally(a: AttentionTally | null, b: AttentionTally | null): boolean {
+  return (
+    a !== null &&
+    b !== null &&
+    (Object.keys(a) as (keyof AttentionTally)[]).every((k) => a[k] === b[k])
+  );
 }
 
 /** A briefing is shared by whoever asks, so one asker leaving does not stop its generation. */
@@ -718,7 +734,12 @@ export function briefing(manager: Manager, factory: string, refresh: boolean): R
       if (tally) emit({ type: 'text', text: `${attentionLine(tally)}\n\n` });
     };
     const cached = manager.briefings.get(factory);
-    if (!refresh && cached && cached.day === dayOf(manager.now())) {
+    if (
+      !refresh &&
+      cached &&
+      cached.day === dayOf(manager.now()) &&
+      sameTally(cached.tally, tally)
+    ) {
       countLine();
       for (const event of cached.events) emit(event);
       emit(done(manager, 0, { generated_at: cached.generatedAt, cached: true }));
