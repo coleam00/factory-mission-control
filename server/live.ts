@@ -40,6 +40,9 @@ export interface Live {
   rewindBranches?: () => Promise<string[]>;
 }
 
+/** The one directory of sealed queries, for the page, the Manager's tools and the briefing alike. */
+export const LIVE_QUERIES_DIR = join(import.meta.dir, '..', 'db', 'queries');
+
 export function loadLiveQueries(dir: string): Map<string, string> {
   const queries = new Map<string, string>();
   for (const file of readdirSync(dir).filter((f) => f.endsWith('.sql'))) {
@@ -112,7 +115,7 @@ export function liveFromEnv(env: Env, repoRoot: string): Live | undefined {
   const api = apiKey && projectId ? createNeonApi({ apiKey, projectId }) : undefined;
   return {
     factories: factoryNames(env, repoRoot),
-    queries: loadLiveQueries(join(repoRoot, 'db', 'queries')),
+    queries: loadLiveQueries(LIVE_QUERIES_DIR),
     home: sealerFor(realtimeUrlFor(databaseUrl), secret, db),
     openRewind: api ? rewindOpener(api, db, rewindListed(databaseUrl)) : undefined,
     rewindBranches: api ? () => rewindBranchNames(api) : undefined,

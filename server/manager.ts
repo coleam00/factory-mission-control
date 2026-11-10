@@ -12,6 +12,7 @@ import type { Server } from 'bun';
 import type { Context, Hono } from 'hono';
 import { isAnswerText, resolveAnswer } from '../app/lib/attention';
 import { ATTENTION_SOURCES, type AttentionKind, KINDS } from '../app/lib/attention-page';
+import { type Inline, parseMessage } from '../app/lib/manager-markdown';
 import { isRunId, lapHref } from '../app/lib/one-lap';
 import { workItemHref } from '../app/lib/work-item';
 import { type Db, openDb } from '../scripts/lib/db';
@@ -19,7 +20,7 @@ import { OPEN_QUESTION_SQL, openQuestionOf, RESUMABLE_RUN_SQL, RESUME_FROM_SQL }
 import type { Env } from './check-env';
 import { BASE_ENV_NAMES, pick } from './child-env';
 import { readFactoryNames } from './factories';
-import { loadLiveQueries } from './live';
+import { LIVE_QUERIES_DIR, loadLiveQueries } from './live';
 import { MANAGER_LIMITS, readOnlyQuery } from './manager-sql';
 import {
   AnswerSplitter,
@@ -710,7 +711,7 @@ async function attentionTally(
   factory: string,
 ): Promise<{ tally: AttentionTally; rows: AttentionRows } | null> {
   try {
-    attentionQueries ??= loadLiveQueries(join(import.meta.dir, '..', 'db', 'queries'));
+    attentionQueries ??= loadLiveQueries(LIVE_QUERIES_DIR);
     const queries = attentionQueries;
     const keys = Object.keys(ATTENTION_SOURCES) as (keyof typeof ATTENTION_SOURCES)[];
     const source = (key: keyof typeof ATTENTION_SOURCES): string =>
@@ -790,19 +791,42 @@ export function briefingQuestion(
     ? ` These are the Attention rows, by source, that the line was counted from; name the items from them instead of querying for them, and never copy or paraphrase the line: ${JSON.stringify(rows)}`
     : '';
   const counted = tally
-    ? ` The briefing already opens with this line, counted from the Attention page's own rows: "${attentionLine(tally)}" That line is the only count of what waits on the owner. State no number of Attention items, open questions, paused runs or failures yourself, and never say the rows or the opening line disagree, miss something or may be incomplete; name the individual runs and issues instead.${listing}`
+    ? ` The briefing already opens with this line, counted from the Attention page's own rows: "${attentionLine(tally)}" That line is the only count of what waits on the owner. State no number of Attention items, open questions, paused runs, failures or merged runs yourself, and never say the rows or the opening line disagree, miss something or may be incomplete; name the individual runs and issues instead.${listing}`
     : " The Attention page's count could not be read: do not say how many things wait on the owner.";
   return BRIEFING_QUESTION + counted;
 }
 
 type AttentionRead = { tally: AttentionTally; rows: AttentionRows };
 
-/** The whole numbers in a text, split on whitespace so `#12` and run ids are not counts. */
+const LEADING = '(';
+const TRAILING = '.,;:)';
+
+/** A word with the punctuation a count can sit in dropped, so `(12` reads as 12 while `#12` stays a reference. */
+function trimmed(word: string): string {
+  let start = 0;
+  let end = word.length;
+  while (start < end && LEADING.includes(word[start])) start++;
+  while (end > start && TRAILING.includes(word[end - 1])) end--;
+  return word.slice(start, end);
+}
+
+const isDigits = (word: string): boolean =>
+  word.length > 0 && [...word].every((c) => c >= '0' && c <= '9');
+
+function leaves(nodes: Inline[]): string[] {
+  return nodes.flatMap((n) =>
+    n.type === 'bold' ? leaves(n.children) : n.type === 'link' ? [] : [n.text],
+  );
+}
+
+/** The whole numbers a reader sees in a text: the panel's own parse, so markup, list markers and ids are not counts. */
 const bareNumbers = (text: string): number[] =>
-  text
-    .split(/\s+/)
-    .map((word) => word.replace(/[.,;:)]+$/, ''))
-    .filter((word) => /^\d+$/.test(word))
+  parseMessage(text, [])
+    .blocks.flatMap((b) => (b.type === 'paragraph' ? [b.inlines] : b.items))
+    .flatMap(leaves)
+    .flatMap((leaf) => leaf.split(/\s+/))
+    .map(trimmed)
+    .filter(isDigits)
     .map(Number);
 
 /** Why the model's prose cannot sit under the count line: it states a number the line does not. */
@@ -838,7 +862,8 @@ async function generateBriefing(manager: Manager, factory: string, read: Attenti
     const fault = ok && read ? briefingFault(text, read.tally) : null;
     if (attempt === 1 && (fault || (rejected && !ok))) {
       events = [];
-      ok = true;
+      // `ok` stays as the attempt left it: a failed run is not kept, so the next ask tries again.
+      if (!fault) console.warn('manager: briefing second attempt failed; showing the count line');
     }
     if (!fault) break;
     rejected = true;

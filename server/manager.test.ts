@@ -687,7 +687,9 @@ describe('the briefing', () => {
           ['live_query', { name: 'attention-items' }],
           ['live_query', { name: 'home-map' }],
         ]);
-        return [start, delta(replies[calls++] ?? ''), result(0.01)];
+        const reply = replies[calls++];
+        if (reply === undefined) return [start, result(0, 'error_during_execution')];
+        return [start, delta(reply), result(0.01)];
       });
       const manager = createManager({
         db: fixture.direct,
@@ -727,6 +729,23 @@ describe('the briefing', () => {
 
 `);
       expect(played.prompts).toHaveLength(4);
+
+      // A bad count followed by a failed second run shows the count line alone and is not kept.
+      const warn = spyOn(console, 'warn').mockImplementation(() => {});
+      try {
+        replies.push('The page lists 9 things.');
+        const failed = await ask(true);
+        expect(text(failed)).toBe(`${line}
+
+`);
+        expect(failed.some((e) => e.type === 'notice')).toBe(false);
+        expect(played.prompts).toHaveLength(6);
+        replies.length = 6;
+        replies.push('The archon-build run is waiting on capacity.');
+        expect(text(await ask(true))).toContain('waiting on capacity');
+      } finally {
+        warn.mockRestore();
+      }
     } finally {
       await fixture.direct.query(
         `DELETE FROM mc.capacity_waits WHERE factory = '${F}'; DELETE FROM mc.factories WHERE name = '${F}'`,
@@ -990,6 +1009,14 @@ describe('the briefing question with a run paused and other Attention rows', () 
     const tally = { decide: 1, owner: 3, unstick: 0, failures: 0, failureRuns: 0 };
     expect(briefingFault('Run #12 is paused; 4 things need you.', tally)).toBeNull();
     expect(briefingFault('3 owner questions wait.', tally)).toContain('count of 3');
+  });
+
+  test('reads the numbers the panel shows, not the markdown around them', () => {
+    const tally = { decide: 0, owner: 2, unstick: 1, failures: 3, failureRuns: 12 };
+    expect(briefingFault('12 failures. Run #522 and 3 causes.', tally)).toBeNull();
+    expect(briefingFault('1. Answer #522.\n2. Retry.\n3. Check.\n4. Wait.', tally)).toBeNull();
+    expect(briefingFault('**28** things need you.', tally)).toContain('count of 28');
+    expect(briefingFault('(5 owner questions)', tally)).toContain('count of 5');
   });
 });
 

@@ -1,7 +1,6 @@
-import { join } from 'node:path';
 import { ATTENTION_SOURCES } from '../app/lib/attention-page';
 import { type Db, openDb } from '../scripts/lib/db';
-import { liveParams, loadLiveQueries, parameterCount } from './live';
+import { LIVE_QUERIES_DIR, liveParams, loadLiveQueries, parameterCount } from './live';
 import {
   adHocSelect,
   MANAGER_LIMITS,
@@ -180,7 +179,7 @@ if (import.meta.main) {
     console.error('MC_DATABASE_URL and MC_MANAGER_FACTORY are required');
     process.exit(1);
   }
-  const all = loadLiveQueries(join(import.meta.dir, '..', 'db', 'queries'));
+  const all = loadLiveQueries(LIVE_QUERIES_DIR);
   const briefing = process.env[BRIEFING_ENV] === '1';
   await serveStdio(
     {
