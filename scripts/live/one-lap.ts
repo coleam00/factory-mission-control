@@ -400,6 +400,12 @@ interface RunOnScreen {
   codeFailure: string | null;
 }
 
+/** Skipped steps are collapsed by default; the owner opens a group to read why, so the probe does too. */
+const openSkippedGroups = `(() => {
+  for (const group of document.querySelectorAll('[data-skipped-count][aria-expanded="false"]')) group.click();
+  return ${pageWait(`document.querySelector('[data-skipped-count][aria-expanded="false"]') === null`, 2000)};
+})()`;
+
 const runOnScreen = `(() => {
   const num = (el, name) => (el?.hasAttribute(name) ? Number(el.getAttribute(name)) : null);
   const head = document.querySelector('[data-live="one-lap"] [data-lap]');
@@ -439,6 +445,7 @@ async function seedRunMismatches(
   db: Db,
   expected: RunExpectation,
 ): Promise<{ mismatches: string[]; report: string }> {
+  await page.evaluate(openSkippedGroups);
   const shown = await page.evaluate<RunOnScreen>(runOnScreen);
   const mismatches: string[] = [];
   if (shown.title !== expected.title) {

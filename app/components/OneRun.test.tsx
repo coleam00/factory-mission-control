@@ -151,6 +151,7 @@ test('an expanded skipped group names the recorded reason and never reads "skipp
   const html = render({ skippedOpen: true });
   expect(html).toContain('data-timeline-step="ship__deliver__rounds.review__result"');
   expect(html).toContain('upstream failed');
+  expect(html).toMatch(/data-skip-reason="[^"]*upstream failed/);
   expect(html).not.toContain('skipped: ');
 });
 
