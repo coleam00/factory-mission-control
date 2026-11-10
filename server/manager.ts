@@ -377,7 +377,7 @@ async function linkEvents(manager: Manager, factory: string, links: RawStructure
     if (!Number.isInteger(number) || number < 1) continue;
     const [row] = await lookup(
       manager,
-      'SELECT title FROM mc.issues WHERE factory = $1 AND number = $2::int',
+      'SELECT number FROM mc.issues WHERE factory = $1 AND number = $2::int',
       [factory, number],
     );
     if (row) {
@@ -385,7 +385,6 @@ async function linkEvents(manager: Manager, factory: string, links: RawStructure
         type: 'link',
         kind: 'item',
         id: number,
-        label: `#${number} ${row.title}`,
         href: workItemHref(factory, number),
       });
     }
@@ -714,9 +713,13 @@ async function generateBriefing(manager: Manager, factory: string, tally: Attent
 export function briefing(manager: Manager, factory: string, refresh: boolean): Response {
   return ndjson(async (emit) => {
     const tally = await attentionTally(manager, factory);
-    if (tally) emit({ type: 'text', text: `${attentionLine(tally)}\n\n` });
+    // Emitted with the prose, not before it: any event ends the panel's wait text.
+    const countLine = () => {
+      if (tally) emit({ type: 'text', text: `${attentionLine(tally)}\n\n` });
+    };
     const cached = manager.briefings.get(factory);
     if (!refresh && cached && cached.day === dayOf(manager.now())) {
+      countLine();
       for (const event of cached.events) emit(event);
       emit(done(manager, 0, { generated_at: cached.generatedAt, cached: true }));
       return;
@@ -731,6 +734,7 @@ export function briefing(manager: Manager, factory: string, refresh: boolean): R
       );
     }
     const { briefing: made, cost } = await pending;
+    countLine();
     for (const event of made.events) emit(event);
     emit(done(manager, cost, { generated_at: made.generatedAt, cached: false }));
   });

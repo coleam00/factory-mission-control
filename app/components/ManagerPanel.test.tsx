@@ -128,9 +128,7 @@ test('bold that opens in one list item and closes in the next shows no ** and st
   const html = render([
     {
       ...reply('briefing', text, 'done'),
-      links: [
-        { type: 'link', kind: 'item', id: 522, label: '#522 A long title', href: '/f/x/work/522' },
-      ],
+      links: [{ type: 'link', kind: 'item', id: 522, href: '/f/x/work/522' }],
     },
   ]);
   expect(html).not.toContain('**');
@@ -148,7 +146,6 @@ test('an issue link reads #N and not the title', () => {
           type: 'link',
           kind: 'item',
           id: 514,
-          label: '#514 Manager backend',
           href: '/f/x/work/514',
         },
       ],

@@ -6,7 +6,6 @@ const item = (id: number): ManagerLink => ({
   type: 'link',
   kind: 'item',
   id,
-  label: `#${id} Some title`,
   href: `/f/x/work/${id}`,
 });
 

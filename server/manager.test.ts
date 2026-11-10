@@ -201,7 +201,7 @@ describe('the chat endpoint against a stubbed model', () => {
     expect(got[0]).toEqual({ type: 'text', text: 'Two things need you.\n' });
     expect(got.filter((e) => e.type === 'link')).toMatchObject([
       { kind: 'run', id: FAILED_RUN, href: lapHref(FACTORY, FAILED_RUN) },
-      { kind: 'item', id: 514, label: '#514 Manager backend', href: `/f/${FACTORY}/work/514` },
+      { kind: 'item', id: 514, href: `/f/${FACTORY}/work/514` },
     ]);
     const runs = got.find((e) => e.type === 'runs');
     expect(runs?.type === 'runs' && runs.runs.map((r) => r.run_id)).toEqual([
@@ -634,6 +634,36 @@ describe('the briefing', () => {
          DELETE FROM mc.factories WHERE name = '${F}'`,
       );
     }
+  });
+
+  test('sends nothing, the count line included, while the model is still writing', async () => {
+    clock = new Date('2026-11-08T10:00:00');
+    let release = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const played = model(async () => {
+      await gate;
+      return [start, delta('fine'), result(0.01)];
+    });
+    const response = await createApp({
+      buildId: 't',
+      distDir: '.',
+      manager: managerOf(played),
+    }).request('/api/manager/briefing', {
+      method: 'POST',
+      body: JSON.stringify({ factory: FACTORY }),
+    });
+    const reader = (response.body as ReadableStream<Uint8Array>).getReader();
+    const first = reader.read();
+    const early = await Promise.race([
+      first.then(() => 'chunk'),
+      new Promise((resolve) => setTimeout(() => resolve('silent'), 300)),
+    ]);
+    release();
+    await first;
+    await reader.cancel();
+    expect(early).toBe('silent');
   });
 
   test('the line names each group by its count', () => {
