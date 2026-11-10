@@ -66,12 +66,22 @@ export const PLACES = ['attention', 'factory', 'board', 'runs', 'run', 'work', '
 
 export interface ChatRequest {
   factory: string;
-  context: { place: (typeof PLACES)[number]; run?: string; item?: number };
+  context: {
+    place: (typeof PLACES)[number];
+    run?: string;
+    item?: number;
+    workflow?: string;
+    step?: string;
+    order?: string;
+  };
   messages: { role: 'owner' | 'manager'; text: string }[];
 }
 
 /** The statuses of a run the owner can resume: the prompt names them and the proposal check admits them. */
 export const RESUMABLE_STATUSES = ['failed', 'paused'] as const;
+
+/** The longest workflow, step or work-order name the context carries; the panel sends no longer. */
+export const MAX_NAME_CHARS = 100;
 
 /** The longest conversation and message the chat endpoint accepts; the panel trims to the same. */
 export const MAX_MESSAGES = 20;

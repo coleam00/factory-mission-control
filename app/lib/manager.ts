@@ -80,7 +80,7 @@ export function managerPlace(
           ? 'table'
           : 'pipeline';
       return {
-        context: { place: 'board' },
+        context: order ? { place: 'board', order } : { place: 'board' },
         chip: `Board · ${what}`,
         questions: ['What is the work order waiting on?', 'Which items are blocked?'],
       };
@@ -118,7 +118,7 @@ export function managerPlace(
     case 'steps': {
       const step = decoded(second);
       return {
-        context: { place: 'step' },
+        context: { place: 'step', workflow: decoded(first), step },
         chip: `Step ${step}`,
         questions: [`How often does ${step} fail?`, `What does ${step} cost per run?`],
       };

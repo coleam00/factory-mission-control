@@ -25,6 +25,7 @@ import {
   encodeEvent,
   MAX_MESSAGE_CHARS,
   MAX_MESSAGES,
+  MAX_NAME_CHARS,
   MAX_PROPOSALS,
   MAX_RUNS,
   type ManagerEvent,
@@ -149,19 +150,38 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+const CONTEXT_KEYS = ['place', 'run', 'item', 'workflow', 'step', 'order'];
+
+/** A name from the owner's address: free text, so no line breaks or other control characters can reach the prompt. */
+function isName(value: unknown): value is string {
+  return (
+    typeof value === 'string' &&
+    value.length >= 1 &&
+    value.length <= MAX_NAME_CHARS &&
+    ![...value].some((c) => c.charCodeAt(0) < 32 || c.charCodeAt(0) === 127)
+  );
+}
+
 /** The request, or the reason it is refused. */
 export function parseChat(body: unknown, factories: string[]): ChatRequest | string {
   if (!isRecord(body)) return 'expected a JSON object';
   const { factory, context, messages } = body;
   if (typeof factory !== 'string' || !factories.includes(factory)) return 'unknown factory';
   if (!isRecord(context)) return 'context is required';
-  const { place, run, item } = context;
+  const unknown = Object.keys(context).find((key) => !CONTEXT_KEYS.includes(key));
+  if (unknown !== undefined) return `unknown context field ${JSON.stringify(unknown)}`;
+  const { place, run, item, workflow, step, order } = context;
   if (typeof place !== 'string' || !(PLACES as readonly string[]).includes(place)) {
     return 'unknown place';
   }
   if (run !== undefined && (typeof run !== 'string' || !isRunId(run))) return 'run must be a UUID';
   if (item !== undefined && (typeof item !== 'number' || !Number.isInteger(item) || item < 1)) {
     return 'item must be a positive integer';
+  }
+  for (const [key, value] of Object.entries({ workflow, step, order })) {
+    if (value !== undefined && !isName(value)) {
+      return `${key} must be a name of at most ${MAX_NAME_CHARS} characters`;
+    }
   }
   if (!Array.isArray(messages) || messages.length < 1 || messages.length > MAX_MESSAGES) {
     return `messages must hold 1 to ${MAX_MESSAGES} entries`;
@@ -180,7 +200,14 @@ export function parseChat(body: unknown, factories: string[]): ChatRequest | str
     return 'the last message is the owner’s';
   return {
     factory,
-    context: { place: place as ChatRequest['context']['place'], run, item },
+    context: {
+      place: place as ChatRequest['context']['place'],
+      run,
+      item,
+      workflow,
+      step,
+      order,
+    } as ChatRequest['context'],
     messages: messages as ChatRequest['messages'],
   };
 }
@@ -272,8 +299,16 @@ function describeSchema(manager: Manager): Promise<string> {
 function systemPrompt(manager: Manager, request: ChatRequest, schema: string): string {
   const now = manager.now();
   const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-  const { place, run, item } = request.context;
-  const viewing = [run && `run ${run}`, item && `work item #${item}`].filter(Boolean).join(', ');
+  const { place, run, item, workflow, step, order } = request.context;
+  const viewing = [
+    run && `run ${run}`,
+    item && `work item #${item}`,
+    step &&
+      `step ${JSON.stringify(step)}${workflow ? ` of workflow ${JSON.stringify(workflow)}` : ''}`,
+    order && `work order ${JSON.stringify(order)}`,
+  ]
+    .filter(Boolean)
+    .join(', ');
   return `You are the Manager of the factory "${request.factory}". You watch every run and queue for its owner and answer what they ask, from the factory's data only.
 Today is ${dayOf(now)} (${zone}); a day runs midnight to midnight in that timezone. The owner is on the ${place} page${viewing ? `, looking at ${viewing}` : ''}.
 

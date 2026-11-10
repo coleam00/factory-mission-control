@@ -608,6 +608,22 @@ describe('the briefing', () => {
   });
 });
 
+describe('the viewing line', () => {
+  test('names the step, workflow and work order the request carries', async () => {
+    for (const [context, line] of [
+      [
+        { place: 'step', workflow: 'archon-loop', step: 'review one' },
+        'looking at step "review one" of workflow "archon-loop"',
+      ],
+      [{ place: 'board', order: 'v3' }, 'looking at work order "v3"'],
+    ] as const) {
+      const played = model(async () => [start, delta('fine'), result(0.01)]);
+      await (await chat(managerOf(played), { context })).text();
+      expect(played.options[0].systemPrompt as string).toContain(line);
+    }
+  });
+});
+
 describe('the prompt’s example block', () => {
   test('parses into every link kind and proposal action the parser accepts', async () => {
     const played = model(async () => [start, delta('fine'), result(0.01)]);
@@ -698,6 +714,10 @@ describe('request validation', () => {
     ['an unknown factory', { factory: 'nope' }],
     ['a bad place', { context: { place: 'moon' } }],
     ['a bad run', { context: { place: 'run', run: 'x' } }],
+    ['an unknown context field', { context: { place: 'step', phase: 'x' } }],
+    ['a step with a line break', { context: { place: 'step', step: 'a\nb' } }],
+    ['an over-long order', { context: { place: 'board', order: 'x'.repeat(101) } }],
+    ['a non-string workflow', { context: { place: 'step', workflow: 7 } }],
     ['no messages', { messages: [] }],
     ['a last message from the manager', { messages: [{ role: 'manager', text: 'hi' }] }],
   ])('%s is a 400', async (_name, body) => {
