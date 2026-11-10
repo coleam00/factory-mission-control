@@ -672,10 +672,7 @@ describe('the briefing', () => {
        INSERT INTO mc.capacity_waits (run_id, factory, workflow_name, item_number, since) VALUES ('${waiting}', '${F}', 'archon-build', 7, now())`,
     );
     try {
-      const replies = [
-        'The page lists 9 things.',
-        'The archon-build run is waiting on capacity.',
-      ];
+      const replies = ['The page lists 9 things.', 'The archon-build run is waiting on capacity.'];
       let calls = 0;
       let attempts: unknown[] = [];
       const played = model(async (options) => {
@@ -711,7 +708,13 @@ describe('the briefing', () => {
 
       // No ad hoc SELECT and no Attention query reaches the model, so it can only use the rows it was handed.
       const regenerated = await ask();
-      expect(attempts.map((r) => (r as { isError?: boolean }).isError)).toEqual([true, true, true, true, true]);
+      expect(attempts.map((r) => (r as { isError?: boolean }).isError)).toEqual([
+        true,
+        true,
+        true,
+        true,
+        true,
+      ]);
       expect(played.options[0]?.allowedTools).toEqual(['mcp__mc__live_query']);
 
       // A reply that states another count is regenerated once; a clean second reply is shown.

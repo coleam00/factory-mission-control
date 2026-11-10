@@ -112,7 +112,13 @@ export function parseMessage(
         blocks.push({ type: 'paragraph', inlines: nodes });
       } else {
         const item = lists[0].items[lists[0].items.length - 1];
-        if (before) push(item, before.trim() ? { type: 'text', text: before, marker: true } : { type: 'text', text: before });
+        if (before)
+          push(
+            item,
+            before.trim()
+              ? { type: 'text', text: before, marker: true }
+              : { type: 'text', text: before },
+          );
         for (const n of nodes) push(item, n);
         before = '\n\n';
       }
