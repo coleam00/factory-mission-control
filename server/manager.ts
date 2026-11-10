@@ -11,7 +11,7 @@ import {
 import type { Server } from 'bun';
 import type { Context, Hono } from 'hono';
 import { isAnswerText, parseChoices, resolveAnswer } from '../app/lib/attention';
-import { ATTENTION_SOURCES } from '../app/lib/attention-page';
+import { ATTENTION_SOURCES, type AttentionKind, KINDS } from '../app/lib/attention-page';
 import { isRunId, lapHref } from '../app/lib/one-lap';
 import { workItemHref } from '../app/lib/work-item';
 import { type Db, openDb } from '../scripts/lib/db';
@@ -670,11 +670,19 @@ type SourceKey = keyof typeof ATTENTION_SOURCES;
 const SOURCE_KEYS = Object.keys(ATTENTION_SOURCES) as SourceKey[];
 
 /** The rows the page puts under one group header: the sources whose cards carry that kind. */
-const inGroup = (t: AttentionTally, kind: (typeof ATTENTION_SOURCES)[SourceKey]['kind']): number =>
+const inGroup = (t: AttentionTally, kind: AttentionKind): number =>
   SOURCE_KEYS.filter((key) => ATTENTION_SOURCES[key].kind === kind).reduce(
     (sum, key) => sum + t[key],
     0,
   );
+
+/** How the briefing's line words each group's count; the groups and their order come from the page's `KINDS`. */
+const GROUP_PHRASE: Record<AttentionKind, (n: number, t: AttentionTally) => string> = {
+  decide: (n) => `${n} to decide`,
+  unstick: (n) => `${n} to unstick`,
+  fix: (n, t) =>
+    `${n} to fix (${plural(t.failureRuns, 'failure', 'failures')} in ${plural(t.failures, 'cause', 'causes')})`,
+};
 
 /** The briefing's first line: each Attention group by the count its header shows, so the total matches the page. */
 export function attentionLine(t: AttentionTally): string {
@@ -686,15 +694,9 @@ export function attentionLine(t: AttentionTally): string {
       : t.owner > 0
         ? 'No run is paused on a question. '
         : 'No question is waiting. ';
-  const decide = inGroup(t, 'decide');
-  const unstick = inGroup(t, 'unstick');
-  const fix = inGroup(t, 'fix');
-  const parts = [
-    decide > 0 && `${decide} to decide`,
-    unstick > 0 && `${unstick} to unstick`,
-    fix > 0 &&
-      `${fix} to fix (${plural(t.failureRuns, 'failure', 'failures')} in ${plural(fix, 'cause', 'causes')})`,
-  ].filter(Boolean);
+  const parts = KINDS.map(({ kind }) => ({ kind, n: inGroup(t, kind) }))
+    .filter(({ n }) => n > 0)
+    .map(({ kind, n }) => GROUP_PHRASE[kind](n, t));
   return `${lead}${plural(total, 'thing needs', 'things need')} you: ${parts.join(', ')}.`;
 }
 
