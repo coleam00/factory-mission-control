@@ -715,6 +715,7 @@ describe('request validation', () => {
     ['a bad place', { context: { place: 'moon' } }],
     ['a bad run', { context: { place: 'run', run: 'x' } }],
     ['an unknown context field', { context: { place: 'step', phase: 'x' } }],
+    ['a prototype-named context field', { context: { place: 'run', constructor: 'x' } }],
     ['a step with a line break', { context: { place: 'step', step: 'a\nb' } }],
     ['an over-long order', { context: { place: 'board', order: 'x'.repeat(101) } }],
     ['a non-string workflow', { context: { place: 'step', workflow: 7 } }],

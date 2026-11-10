@@ -69,6 +69,8 @@ test('an address that names no run or item still names its place, and sends no i
     workflow: 'wf',
   });
   expect(place('/f/x/steps/wf/a%0Ab').context).toEqual({ place: 'step', workflow: 'wf' });
+  expect(place('/f/x/board', `order=${'x'.repeat(101)}`).context).toEqual({ place: 'board' });
+  expect(place(`/f/x/steps/${'w'.repeat(101)}/s`).context).toEqual({ place: 'step', step: 's' });
 });
 
 const stream = (...chunks: string[]) =>

@@ -175,7 +175,7 @@ export function parseChat(body: unknown, factories: string[]): ChatRequest | str
   const { factory, context, messages } = body;
   if (typeof factory !== 'string' || !factories.includes(factory)) return 'unknown factory';
   if (!isRecord(context)) return 'context is required';
-  const unknown = Object.keys(context).find((key) => !(key in CONTEXT_KEYS));
+  const unknown = Object.keys(context).find((key) => !Object.hasOwn(CONTEXT_KEYS, key));
   if (unknown !== undefined) return `unknown context field ${JSON.stringify(unknown)}`;
   const { place, run, item, workflow, step, order } = context;
   if (typeof place !== 'string' || !(PLACES as readonly string[]).includes(place)) {
