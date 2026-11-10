@@ -702,9 +702,8 @@ export type AttentionRows = Record<keyof typeof ATTENTION_SOURCES, unknown[]>;
 let attentionQueries: Map<string, string> | undefined;
 
 /**
- * The row counts of the four queries the Attention page sums, in one statement so the parts add up.
- * Counting inside SQL keeps `readOnlyQuery`'s row cap from undercounting. Null when any of them
- * fails, as the page then shows no number either.
+ * The rows of the four queries the Attention page sums, read in one statement so the parts add up,
+ * and the counts taken from them. Null when any of them fails, as the page then shows no number either.
  */
 async function attentionTally(
   manager: Manager,
@@ -714,27 +713,21 @@ async function attentionTally(
     attentionQueries ??= loadLiveQueries(LIVE_QUERIES_DIR);
     const queries = attentionQueries;
     const keys = Object.keys(ATTENTION_SOURCES) as (keyof typeof ATTENTION_SOURCES)[];
-    const source = (key: keyof typeof ATTENTION_SOURCES): string =>
-      `\n${queries.get(ATTENTION_SOURCES[key].query)}\n`;
-    const counts = keys.map(
-      (key) => `(SELECT count(*) FROM (${source(key)}) AS s)::int AS "${key}"`,
-    );
     const listed = keys.map(
       (key) =>
-        `(SELECT coalesce(json_agg(l ORDER BY l::text), '[]'::json) FROM (${source(key)}) AS l) AS "rows_${key}"`,
+        `(SELECT coalesce(json_agg(l ORDER BY l::text), '[]'::json) FROM (\n${queries.get(ATTENTION_SOURCES[key].query)}\n) AS l) AS "${key}"`,
     );
-    const sql = `SELECT
-  ${counts.join(',\n  ')},
-  (SELECT coalesce(sum(g.failures), 0) FROM (${source('failures')}) AS g)::int AS "failureRuns",
-  ${listed.join(',\n  ')}`;
-    const { rows } = await readOnlyQuery(manager.db, sql, [factory], MANAGER_LIMITS);
-    const row = rows[0] as Record<string, unknown>;
-    const tally = { failureRuns: row.failureRuns } as AttentionTally;
-    const listing = {} as AttentionRows;
-    for (const key of keys) {
-      tally[key] = row[key] as number;
-      listing[key] = row[`rows_${key}`] as unknown[];
-    }
+    const { rows } = await readOnlyQuery(
+      manager.db,
+      `SELECT\n  ${listed.join(',\n  ')}`,
+      [factory],
+      MANAGER_LIMITS,
+    );
+    const listing = rows[0] as AttentionRows;
+    const tally = { failureRuns: 0 } as AttentionTally;
+    for (const key of keys) tally[key] = listing[key].length;
+    for (const group of listing.failures as { failures: number }[])
+      tally.failureRuns += group.failures;
     return { tally, rows: listing };
   } catch (err) {
     console.error(`manager: attention count failed: ${err instanceof Error ? err.message : err}`);
@@ -799,7 +792,8 @@ export function briefingQuestion(
 type AttentionRead = { tally: AttentionTally; rows: AttentionRows };
 
 const isDigit = (c: string | undefined): boolean => c !== undefined && c >= '0' && c <= '9';
-const isLetter = (c: string | undefined): boolean => c !== undefined && c.toLowerCase() !== c.toUpperCase();
+const isLetter = (c: string | undefined): boolean =>
+  c !== undefined && c.toLowerCase() !== c.toUpperCase();
 
 /** Each maximal digit run is a count unless it is part of an id: after `#`, or touching a letter. */
 function countsIn(leaf: string): number[] {
@@ -809,7 +803,8 @@ function countsIn(leaf: string): number[] {
     let end = i;
     while (isDigit(leaf[end])) end++;
     const before = leaf[i - 1];
-    if (before !== '#' && !isLetter(before) && !isLetter(leaf[end])) found.push(Number(leaf.slice(i, end)));
+    if (before !== '#' && !isLetter(before) && !isLetter(leaf[end]))
+      found.push(Number(leaf.slice(i, end)));
     i = end;
   }
   return found;
