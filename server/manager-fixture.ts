@@ -12,6 +12,8 @@ export const ELSEWHERE = 'other-factory';
 export const ELSEWHERE_FAILED = '5eed0001-0000-4000-8000-0000000000b1';
 export const ELSEWHERE_WAITING = '5eed0001-0000-4000-8000-0000000000b2';
 export const WAITING_RUN = '5eed0001-0000-4000-8000-0000000000a3';
+/** Waits on a select question that has a "Something else" option, so it takes text. */
+export const TEXT_RUN = '5eed0001-0000-4000-8000-0000000000a4';
 
 export interface ManagerDb {
   /** Bun's client over a socket, as the server and the tool subprocess open it. */
@@ -63,6 +65,8 @@ export async function startManagerDb(): Promise<ManagerDb> {
      INSERT INTO mc.attention_items (run_id, factory, workflow_name, node_id, waiting_since, form, options, labels, message, occurrence_id)
        VALUES ('${WAITING_RUN}', '${FACTORY}', 'archon-loop', 'ask', now(), 'choice',
          '[{"id":"yes","label":"Ship it"},{"id":"no"}]', '{"yes":"scope"}', 'Ship?', 'pause-ask-1'),
+              ('${TEXT_RUN}', '${FACTORY}', 'archon-loop', 'ask', now(), 'select',
+         '[{"id":"yes","label":"Ship it"},{"id":"other","label":"Something else"}]', '{}', 'Ship how?', 'pause-ask-3'),
               ('${ELSEWHERE_WAITING}', '${ELSEWHERE}', 'archon-loop', 'ask', now(), 'choice',
          '[{"id":"yes"}]', '{}', 'Elsewhere?', 'pause-ask-2');`,
   );

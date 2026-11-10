@@ -10,11 +10,11 @@ import {
 } from '@anthropic-ai/claude-agent-sdk';
 import type { Server } from 'bun';
 import type { Context, Hono } from 'hono';
-import { parseChoices } from '../app/lib/attention';
+import { isAnswerText, parseChoices, resolveAnswer } from '../app/lib/attention';
 import { isRunId, lapHref } from '../app/lib/one-lap';
 import { workItemHref } from '../app/lib/work-item';
 import { type Db, openDb } from '../scripts/lib/db';
-import { RESUME_FROM_SQL } from './actions';
+import { RESUMABLE_RUN_SQL, RESUME_FROM_SQL } from './actions';
 import type { Env } from './check-env';
 import { BASE_ENV_NAMES, pick } from './child-env';
 import { readFactoryNames } from './factories';
@@ -405,37 +405,38 @@ async function proposalEvent(
   if (raw.action === 'answer') {
     const [row] = await lookup(
       manager,
-      `SELECT occurrence_id, options::text AS options
+      `SELECT form, occurrence_id, options::text AS options
          FROM mc.attention_items WHERE factory = $1 AND run_id::text = $2`,
       [factory, runId],
     );
     if (!row || row.occurrence_id === null) return undefined;
     const base = { type: 'proposal', action: 'answer', factory, run_id: runId } as const;
     const occurrence = String(row.occurrence_id);
-    if (raw.option !== undefined) {
-      const choice = parseChoices(String(row.options)).find((o) => o.id === raw.option);
-      if (!choice) return undefined;
+    const options = parseChoices(String(row.options));
+    const text = raw.option === undefined ? (raw.text ?? null) : null;
+    if (raw.option === undefined && !isAnswerText(text)) return undefined;
+    const option = raw.option ?? null;
+    if ('error' in resolveAnswer({ form: String(row.form), options }, { option, text })) {
+      return undefined;
+    }
+    if (option !== null) {
+      const choice = options.find((o) => o.id === option);
       return {
         ...base,
         occurrence,
-        option: choice.id,
+        option,
         text: null,
-        label: `Answer "${choice.label ?? choice.id}"`,
-        detail: choice.label ?? choice.id,
+        label: `Answer "${choice?.label ?? option}"`,
+        detail: choice?.label ?? option,
       };
     }
-    if (raw.text === undefined || raw.text.length < 1 || raw.text.length > 2000) return undefined;
-    return { ...base, occurrence, option: null, text: raw.text, label: 'Answer with your text' };
+    return { ...base, occurrence, option: null, text, label: 'Answer with your text' };
   }
   if (raw.action !== 'resume') {
     const unknown: never = raw.action;
     throw new Error(`unknown proposal action ${unknown}`);
   }
-  const [lap] = await lookup(
-    manager,
-    `SELECT 1 AS found FROM mc.laps WHERE factory = $1 AND run_id::text = $2 AND status IN (${RESUMABLE_STATUSES.map((status) => `'${status}'`).join(', ')})`,
-    [factory, runId],
-  );
+  const [lap] = await lookup(manager, RESUMABLE_RUN_SQL, [factory, runId]);
   if (!lap) return undefined;
   if (raw.from_step !== undefined) {
     const [step] = await lookup(manager, RESUME_FROM_SQL, [factory, runId, raw.from_step]);

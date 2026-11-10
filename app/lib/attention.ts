@@ -72,6 +72,34 @@ export const isSomethingElse = (option: { id: string; label: string | null }): b
 /** A free-text question takes text with no option to carry it. */
 export const takesFreeText = (form: string | null): boolean => form === 'message';
 
+/** The longest answer text the action endpoint takes; the Attention textarea and the Manager's proposals stop at the same length. */
+export const ANSWER_TEXT_MAX = 2000;
+
+/** The one rule for answer text: 1 to ANSWER_TEXT_MAX characters. */
+export const isAnswerText = (text: unknown): text is string =>
+  typeof text === 'string' && text.length >= 1 && text.length <= ANSWER_TEXT_MAX;
+
+/**
+ * Whether the owner's option or text answers the question, and which option the CLI is told to
+ * choose: free text on a question without free-text form rides on its "Something else" option.
+ * The action endpoint and the Manager's proposals both decide with this; `error` is the endpoint's 409.
+ */
+export function resolveAnswer(
+  question: { form: string | null; options: AttentionOption[] },
+  answer: { option: string | null; text: string | null },
+): { option: string | null } | { error: string } {
+  if (answer.option !== null) {
+    const offered = question.options.find((o) => o.id === answer.option);
+    if (offered === undefined) return { error: 'that option is not offered' };
+    if (isSomethingElse(offered)) return { error: 'that option needs your text' };
+    return { option: offered.id };
+  }
+  if (takesFreeText(question.form)) return { option: null };
+  const other = question.options.find(isSomethingElse);
+  if (other === undefined) return { error: 'this question takes no free text' };
+  return { option: other.id };
+}
+
 /** The choices, in order; an unreadable value is no choices rather than a broken screen. */
 export function parseChoices(text: string): AttentionOption[] {
   try {
