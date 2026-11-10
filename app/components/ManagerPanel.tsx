@@ -1,5 +1,6 @@
 import { type ReactElement, type ReactNode, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router';
+import { proposalRequest } from '../../server/manager-stream';
 import { TEXT_ANSWER_DETAIL } from '../lib/actions';
 import { clock, shortRunId } from '../lib/format';
 import {
@@ -128,7 +129,7 @@ function Proposals({
   return (
     <div className="mb-2 flex flex-wrap gap-2">
       {proposals.map((proposal, i) => {
-        const { type: _type, label, detail, ...request } = proposal;
+        const { label, detail } = proposal;
         // Positional: the model may repeat an identical proposal, and nothing reorders them.
         const key = `${i}:${proposal.action}:${proposal.run_id}:${label}`;
         const named =
@@ -142,7 +143,7 @@ function Proposals({
             disabled={pending}
             data-proposal={proposal.action}
             onClick={() =>
-              start(request, {
+              start(proposalRequest(proposal), {
                 item: null,
                 label: proposal.action === 'answer' ? (detail ?? TEXT_ANSWER_DETAIL) : '',
               })

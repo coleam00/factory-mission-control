@@ -7,7 +7,8 @@ import type { FailureGroupRow } from '../lib/failures';
 import type { HandledRow } from '../lib/manager';
 import type { OwnerQueueRow } from '../lib/owner-queue';
 import type { Source } from '../live/Feed';
-import { AttentionBody } from './Attention';
+import type { Action } from '../lib/attention-page';
+import { ActionControl, AttentionBody } from './Attention';
 
 const NOW = Date.parse('2026-10-24T12:00:00Z');
 const RUN = '5eed0005-0000-4000-8000-000000000001';
@@ -246,4 +247,25 @@ test('Ask manager on each kind of card carries that card’s run and work item',
   expect(ownerCards([owner])[0]?.ask.context).toEqual({ place: 'attention', item: 17 });
   expect(unstickCards([stuck], 'f')[0]?.ask.context).toEqual({ place: 'attention', item: 7 });
   expect(fixCards([failure], 'f')[0]?.ask.context).toEqual({ place: 'attention', run: RUN });
+});
+
+test('a console link opens in a new tab, and an in-app link stays in the dashboard tab', () => {
+  const link = (external: boolean): Action => ({
+    type: 'link',
+    variant: 'secondary',
+    label: 'Go',
+    href: '/x',
+    external,
+    hooks: {},
+  });
+  const act = { enabled: false, pending: false, start: () => {} };
+  const draw = (external: boolean) =>
+    renderToStaticMarkup(
+      <MemoryRouter>
+        <ActionControl action={link(external)} act={act} />
+      </MemoryRouter>,
+    );
+  expect(draw(true)).toContain('target="_blank"');
+  expect(draw(true)).toContain('rel="noreferrer"');
+  expect(draw(false)).not.toContain('target=');
 });
