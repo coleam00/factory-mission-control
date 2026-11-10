@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, setDefaultTimeout, spyOn, test } from 'bun:test';
 import { join } from 'node:path';
 import type { Options, SDKMessage } from '@anthropic-ai/claude-agent-sdk';
+import { ANSWER_TEXT_MAX } from '../app/lib/attention';
 import { ATTENTION_SOURCES, attentionCount } from '../app/lib/attention-page';
 import { lapHref } from '../app/lib/one-lap';
 import { snapshot } from '../db/test-db';
@@ -23,6 +24,7 @@ import {
   type ManagerDb,
   OTHER_RUN,
   startManagerDb,
+  TEXT_RUN,
   WAITING_RUN,
 } from './manager-fixture';
 import {
@@ -62,7 +64,7 @@ const STRUCTURE = {
     { action: 'answer', run_id: WAITING_RUN, option: 'maybe' },
     { action: 'resume', run_id: ghost },
     { action: 'answer', run_id: WAITING_RUN, option: 'yes' },
-    { action: 'answer', run_id: WAITING_RUN, text: 'Something else' },
+    { action: 'answer', run_id: TEXT_RUN, text: 'Something else' },
     { action: 'resume', run_id: FAILED_RUN, from_step: 'implement' },
   ],
 };
@@ -222,8 +224,8 @@ describe('the chat endpoint against a stubbed model', () => {
         type: 'proposal',
         action: 'answer',
         factory: FACTORY,
-        run_id: WAITING_RUN,
-        occurrence: 'pause-ask-1',
+        run_id: TEXT_RUN,
+        occurrence: 'pause-ask-3',
         option: null,
         text: 'Something else',
         label: 'Answer with your text',
@@ -838,6 +840,31 @@ describe('the settings', () => {
   });
 });
 
+describe('a proposal the action endpoint would refuse', () => {
+  test('is dropped: a bare Something else, text on a choice question, text over the cap', async () => {
+    const structure = {
+      proposals: [
+        { action: 'answer', run_id: TEXT_RUN, option: 'other' },
+        { action: 'answer', run_id: WAITING_RUN, text: 'my own words' },
+        { action: 'answer', run_id: TEXT_RUN, text: 'x'.repeat(ANSWER_TEXT_MAX + 1) },
+        { action: 'answer', run_id: TEXT_RUN, text: 'x'.repeat(ANSWER_TEXT_MAX) },
+      ],
+    };
+    const played = model(async () => [
+      start,
+      delta(`${FENCE}mc
+${JSON.stringify(structure)}
+${FENCE}
+`),
+      result(0.01),
+    ]);
+    const got = await events(await chat(managerOf(played)));
+    expect(got.filter((e) => e.type === 'proposal')).toMatchObject([
+      { run_id: TEXT_RUN, option: null, text: 'x'.repeat(ANSWER_TEXT_MAX) },
+    ]);
+  });
+});
+
 describe('the caps on one answer', () => {
   const EXTRA = Array.from(
     { length: MAX_RUNS + 1 },
@@ -855,7 +882,7 @@ describe('the caps on one answer', () => {
         proposals: [
           { action: 'answer', run_id: WAITING_RUN, option: 'yes' },
           { action: 'answer', run_id: WAITING_RUN, option: 'no' },
-          { action: 'answer', run_id: WAITING_RUN, text: 'Something else' },
+          { action: 'answer', run_id: TEXT_RUN, text: 'Something else' },
           { action: 'resume', run_id: FAILED_RUN },
         ],
       };

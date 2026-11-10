@@ -57,7 +57,7 @@ test('the tool server offers exactly the two read tools and refuses a write', as
   const offered = byId.get(2)?.tools.map((t: { name: string }) => `mcp__mc__${t.name}`);
   expect(offered).toEqual(READ_TOOL_NAMES);
   const rows = JSON.parse(byId.get(3)?.content[0]?.text ?? '{}').rows;
-  expect(rows.map((r: { message: string }) => r.message)).toEqual(['Ship?']);
+  expect(rows.map((r: { message: string }) => r.message)).toEqual(['Ship?', 'Ship how?']);
   for (const id of [4, 5, 6, 7]) expect(byId.get(id)?.isError).toBe(true);
   expect(await snapshot(fixture.direct)).toEqual(before);
 }, 30_000);
