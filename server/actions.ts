@@ -144,6 +144,10 @@ export const RESUME_FROM_SQL = `SELECT 1 AS found FROM mc.laps l
     AND ($3 IN (SELECT s.step_id FROM mc.run_stops s WHERE s.run_id = l.run_id)
       OR $3 IN (SELECT s.step_id FROM mc.lap_steps s WHERE s.run_id = l.run_id AND s.status = 'failed'))`;
 
+/** The open question of a run: its form, choices and occurrence. */
+export const OPEN_QUESTION_SQL = `SELECT form, options::text AS options, occurrence_id
+  FROM mc.attention_items WHERE factory = $1 AND run_id::text = $2`;
+
 type Checked = { argvTail: string[]; option: string | null } | { status: 409; error: string };
 
 /** Checks a request against the database; the argv is built from its row, not from the request. */
@@ -161,10 +165,7 @@ export async function checkAgainstDb(db: Db, request: ActionRequest): Promise<Ch
     }
     return { argvTail: ['workflow', 'resume', request.run_id, '--detach', '--json'], option: null };
   }
-  const [row] = await db.query(
-    'SELECT form, options::text AS options, occurrence_id FROM mc.attention_items WHERE factory = $1 AND run_id::text = $2',
-    [request.factory, request.run_id],
-  );
+  const [row] = await db.query(OPEN_QUESTION_SQL, [request.factory, request.run_id]);
   if (!row || row.occurrence_id !== request.occurrence) {
     return { status: 409, error: 'the question is no longer open' };
   }

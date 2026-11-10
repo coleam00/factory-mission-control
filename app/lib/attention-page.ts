@@ -14,9 +14,8 @@ import {
   attentionItems,
   attentionOrigin,
   attentionQuestion,
-  isSomethingElse,
   recommendationReason,
-  takesFreeText,
+  resolveAnswer,
   UNSTICK_KINDS,
   type UnstickRow,
 } from './attention';
@@ -143,6 +142,9 @@ export function decideCards(rows: readonly DecideRow[], factory: string): Attent
       ? item.recommended
       : null;
     const link = consoleUrl(item.console, item.run_id);
+    const question = { form: item.form, options: item.options };
+    const resolves = (option: string | null) =>
+      !('error' in resolveAnswer(question, { option, text: null }));
     const asked: AnswerRequest = {
       factory,
       action: 'answer',
@@ -154,7 +156,7 @@ export function decideCards(rows: readonly DecideRow[], factory: string): Attent
     const tiles: Tile[] = item.options.map((o) => {
       const label = o.label ?? o.id;
       // "Something else" takes the owner's text; any other option is the answer itself.
-      const place = isSomethingElse(o)
+      const place = !resolves(o.id)
         ? { somethingElse: { request: asked, item: item.item_number } }
         : { answer: { request: { ...asked, option: o.id }, item: item.item_number } };
       return {
@@ -167,7 +169,7 @@ export function decideCards(rows: readonly DecideRow[], factory: string): Attent
         hooks: { 'data-choice': o.id },
       };
     });
-    if (!item.options.some(isSomethingElse)) {
+    if (item.options.every((o) => resolves(o.id))) {
       tiles.push({
         id: 'something-else',
         label: 'Something else',
@@ -175,21 +177,19 @@ export function decideCards(rows: readonly DecideRow[], factory: string): Attent
         recommended: false,
         href: link,
         // Only a free-text question takes text without a declared option to carry it.
-        ...(takesFreeText(item.form)
-          ? { somethingElse: { request: asked, item: item.item_number } }
-          : {}),
+        ...(resolves(null) ? { somethingElse: { request: asked, item: item.item_number } } : {}),
         hooks: { 'data-choice': 'something-else', 'data-something-else': '' },
       });
     }
     const chosen = item.options.find((o) => o.id === recommended);
-    const question = attentionQuestion(item.message);
+    const heading = attentionQuestion(item.message);
     const queue = queueOf(item.workflow_name, item.node_id);
     return {
       key: `decide:${item.run_id}`,
       kind: 'decide',
       queue,
       dot: 'needs-you',
-      title: item.item_number === null ? question : `#${item.item_number}: ${question}`,
+      title: item.item_number === null ? heading : `#${item.item_number}: ${heading}`,
       age: { since: item.waiting_since },
       meta: [
         { mono: item.workflow_name },
