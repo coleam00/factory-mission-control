@@ -15,7 +15,13 @@ import { existsSync, readFileSync } from 'node:fs';
 import { isAbsolute, join } from 'node:path';
 import type { Hono } from 'hono';
 import type { ActionBody, ActionRequest, ActionResult } from '../app/lib/actions';
-import { ANSWER_TEXT_MAX, isAnswerText, parseChoices, resolveAnswer } from '../app/lib/attention';
+import {
+  ANSWER_TEXT_MAX,
+  type AttentionOption,
+  isAnswerText,
+  parseChoices,
+  resolveAnswer,
+} from '../app/lib/attention';
 import { isRunId } from '../app/lib/one-lap';
 import { type Db, openDb } from '../scripts/lib/db';
 import type { Env } from './check-env';
@@ -148,6 +154,19 @@ export const RESUME_FROM_SQL = `SELECT 1 AS found FROM mc.laps l
 export const OPEN_QUESTION_SQL = `SELECT form, options::text AS options, occurrence_id
   FROM mc.attention_items WHERE factory = $1 AND run_id::text = $2`;
 
+/** An `OPEN_QUESTION_SQL` row as the answer rule takes it; `occurrence` is null when the row has none. */
+export function openQuestionOf(row: Record<string, unknown>): {
+  form: string;
+  options: AttentionOption[];
+  occurrence: string | null;
+} {
+  return {
+    form: String(row.form),
+    options: parseChoices(String(row.options)),
+    occurrence: row.occurrence_id === null ? null : String(row.occurrence_id),
+  };
+}
+
 type Checked = { argvTail: string[]; option: string | null } | { status: 409; error: string };
 
 /** Checks a request against the database; the argv is built from its row, not from the request. */
@@ -166,13 +185,11 @@ export async function checkAgainstDb(db: Db, request: ActionRequest): Promise<Ch
     return { argvTail: ['workflow', 'resume', request.run_id, '--detach', '--json'], option: null };
   }
   const [row] = await db.query(OPEN_QUESTION_SQL, [request.factory, request.run_id]);
-  if (!row || row.occurrence_id !== request.occurrence) {
+  const question = row === undefined ? undefined : openQuestionOf(row);
+  if (question === undefined || question.occurrence !== request.occurrence) {
     return { status: 409, error: 'the question is no longer open' };
   }
-  const resolved = resolveAnswer(
-    { form: String(row.form), options: parseChoices(String(row.options)) },
-    request,
-  );
+  const resolved = resolveAnswer(question, request);
   if ('error' in resolved) return { status: 409, error: resolved.error };
   const option = resolved.option;
   const text = request.text === null ? [] : [`--text=${request.text}`];
@@ -181,7 +198,7 @@ export async function checkAgainstDb(db: Db, request: ActionRequest): Promise<Ch
       'workflow',
       'answer',
       request.run_id,
-      `--occurrence=${row.occurrence_id}`,
+      `--occurrence=${question.occurrence}`,
       ...(option === null ? [] : [`--choose=${option}`]),
       ...text,
       '--json',

@@ -10,11 +10,11 @@ import {
 } from '@anthropic-ai/claude-agent-sdk';
 import type { Server } from 'bun';
 import type { Context, Hono } from 'hono';
-import { isAnswerText, parseChoices, resolveAnswer } from '../app/lib/attention';
+import { isAnswerText, resolveAnswer } from '../app/lib/attention';
 import { isRunId, lapHref } from '../app/lib/one-lap';
 import { workItemHref } from '../app/lib/work-item';
 import { type Db, openDb } from '../scripts/lib/db';
-import { OPEN_QUESTION_SQL, RESUMABLE_RUN_SQL, RESUME_FROM_SQL } from './actions';
+import { OPEN_QUESTION_SQL, openQuestionOf, RESUMABLE_RUN_SQL, RESUME_FROM_SQL } from './actions';
 import type { Env } from './check-env';
 import { BASE_ENV_NAMES, pick } from './child-env';
 import { readFactoryNames } from './factories';
@@ -409,7 +409,6 @@ async function linkEvents(manager: Manager, factory: string, links: RawStructure
       type: 'link',
       kind: 'run',
       id: run.run_id,
-      label: `${run.workflow_name} ${run.run_id.slice(0, 8)}`,
       href: run.href,
     });
   }
@@ -447,14 +446,14 @@ async function proposalEvent(
   const runId = raw.run_id.toLowerCase();
   if (raw.action === 'answer') {
     const [row] = await lookup(manager, OPEN_QUESTION_SQL, [factory, runId]);
-    if (!row || row.occurrence_id === null) return undefined;
+    const question = row === undefined ? undefined : openQuestionOf(row);
+    if (question === undefined || question.occurrence === null) return undefined;
     const base = { type: 'proposal', action: 'answer', factory, run_id: runId } as const;
-    const occurrence = String(row.occurrence_id);
-    const options = parseChoices(String(row.options));
+    const { occurrence, options } = question;
     const text = raw.option === undefined ? (raw.text ?? null) : null;
     if (raw.option === undefined && !isAnswerText(text)) return undefined;
     const option = raw.option ?? null;
-    if ('error' in resolveAnswer({ form: String(row.form), options }, { option, text })) {
+    if ('error' in resolveAnswer(question, { option, text })) {
       return undefined;
     }
     if (option !== null) {

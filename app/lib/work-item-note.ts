@@ -4,7 +4,7 @@
  * give the same note. Pure, no React.
  */
 import type { ActionRequest } from './actions';
-import { type DecideRow, isSomethingElse, parseChoices, type UnstickRow } from './attention';
+import { type DecideRow, parseChoices, resolveAnswer, type UnstickRow } from './attention';
 import type { ColumnId, ItemOnBoard } from './board';
 import { shortRunId } from './format';
 import { CLASS_NOTE, UNSTICK_NOTE } from './manager-notes';
@@ -152,8 +152,10 @@ export function workItemNote(
   // The Manager's recommendation, when the open question has one: the primary answers with it.
   const answerAction = (): PrimaryAction | null => {
     const row = act?.decide.find((r) => r.run_id === latest?.run_id);
-    const chosen = parseChoices(row?.options ?? '[]').find((o) => o.id === row?.recommended);
-    if (act === undefined || row === undefined || chosen === undefined || isSomethingElse(chosen))
+    const options = parseChoices(row?.options ?? '[]');
+    const chosen = options.find((o) => o.id === row?.recommended);
+    if (act === undefined || row === undefined || chosen === undefined) return null;
+    if ('error' in resolveAnswer({ form: row.form, options }, { option: chosen.id, text: null }))
       return null;
     const label = chosen.label ?? chosen.id;
     return consoleOf(
