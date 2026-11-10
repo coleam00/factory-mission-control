@@ -17,12 +17,12 @@ import { parseHoldoutsLine, parseMetricsLine } from '../../parsers/metrics';
 import type { PackVersion, Step } from '../../parsers/pack';
 import type { FactoryEntry } from '../../server/factories';
 import { failing, type Main, noArguments, runCli } from '../lib/cli';
-import type { Db } from '../lib/db';
+import type { Db, SqlRow } from '../lib/db';
 import { pgliteDb } from '../lib/pglite';
 import { migrationsDir, readMigrationFiles, runMigrations } from '../migrate';
 import { architectureSql, parseVersions, queueArchonSha, V2_EDITS } from './seed-architecture';
 import { MARKER, scorecard } from './seed-report';
-import { insert, json, type SqlRow } from './sql';
+import { insert, json } from './sql';
 import { attentionWait, FACTORY, nodeBlock, REPOSITORY, WORKFLOW } from './write';
 
 // Builds fixtures/seed.sql: the rows every panel is built against (PRD 12 item 3). Archon's rows

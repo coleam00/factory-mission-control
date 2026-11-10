@@ -5,6 +5,7 @@ import type { CheckLine } from '../fixtures/pack/sdlc/.shared/merge-gate';
 import { REVIEW_OUTCOMES, type Review } from '../parsers/comments';
 import { VERDICT_OUTCOMES } from '../parsers/commits';
 import { HOLDOUT_VERDICTS } from '../parsers/metrics';
+import { TABLE_KEYS } from '../scripts/fixture/seed-architecture';
 import type { Db, Row } from '../scripts/lib/db';
 import { runMigrations } from '../scripts/migrate';
 import { archonDb, migrationFiles as files } from './test-db';
@@ -46,6 +47,22 @@ test('applies every migration once and none on a second run', async () => {
   expect(firstRun).toEqual(files.map((file) => file.name));
   expect(await runMigrations({ files, db })).toEqual([]);
   for (const file of files) await db.query(file.sql);
+});
+
+test("keys each mc.arch_* table as the fixture seed's TABLE_KEYS say", async () => {
+  const declared = await db.query(`
+    SELECT c.relname AS name,
+      array_agg(a.attname::text ORDER BY array_position(i.indkey::int2[], a.attnum)) AS key
+    FROM pg_index i JOIN pg_class c ON c.oid = i.indrelid
+      JOIN pg_namespace n ON n.oid = c.relnamespace
+      JOIN pg_attribute a ON a.attrelid = c.oid AND a.attnum = ANY (i.indkey)
+    WHERE n.nspname = 'mc' AND starts_with(c.relname, 'arch_') AND i.indisprimary
+    GROUP BY c.relname ORDER BY c.relname`);
+  const expected = Object.entries(TABLE_KEYS)
+    .map(([name, key]) => ({ name, key: ['archon_sha', 'factory_sha', ...key] }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+  // arch_versions holds the version key itself, not rows seeded under one.
+  expect(declared.filter((table) => table.name !== 'arch_versions')).toEqual(expected);
 });
 
 test('gives every table in mc a primary key, one table per family', async () => {
