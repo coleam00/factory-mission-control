@@ -127,10 +127,10 @@ const MASKED = /[\uE000-\uF8FF]/;
 /** Inline forms outside the subset reduced to their text: links and images to their label, autolinks to the URL, HTML tags away. */
 const plainForms = (text: string): string =>
   text
-    .replace(/!?\[([^\]\n]*)\]\([^)\s]*\)/g, '$1')
+    .replace(/!?\[([^\]\n]*)\]\([^)\n]*\)/g, '$1')
     .replace(/<([a-z][a-z0-9+.-]*:[^\s<>]*)>/gi, '$1')
     .replace(/<br\s*\/?>/gi, ' ')
-    .replace(/<\/?[a-z][^>\n]*>/gi, '');
+    .replace(/<\/?[a-z][^>\n\uE000-\uF8FF]*>/gi, '');
 
 function tokens(raw: string): Token[] {
   const slots: Token[] = [];
@@ -139,9 +139,9 @@ function tokens(raw: string): Token[] {
     return slotChar(slots.length - 1);
   };
   const prose = (text: string): string =>
-    plainForms(
-      text.replace(/\\([!-/:-@[-`{-~])/g, (_, c: string) => slot({ type: 'text', text: c })),
-    ).replace(BOLD_MARK, (mark) => (mark === '***' ? `${BOLD_CHAR}*` : BOLD_CHAR));
+    text.replace(/\\([!-/:-@[-`{-~])|[\uE000-\uF8FF]/g, (glyph, c?: string) =>
+      slot({ type: 'text', text: c ?? glyph }),
+    );
   let masked = '';
   let at = 0;
   const fence = /`+/g;
@@ -152,7 +152,10 @@ function tokens(raw: string): Token[] {
     const found = close.exec(raw);
     masked += prose(raw.slice(at, open.index));
     if (found) {
-      masked += slot({ type: 'code', text: raw.slice(fence.lastIndex, found.index) });
+      masked += slot({
+        type: 'code',
+        text: raw.slice(fence.lastIndex, found.index),
+      });
       at = found.index + size;
     } else {
       at = fence.lastIndex;
@@ -161,7 +164,10 @@ function tokens(raw: string): Token[] {
   }
   masked += prose(raw.slice(at));
   const out: Token[] = [];
-  for (const piece of unStyle(masked).split(new RegExp(`(${MASKED.source})`))) {
+  const styled = unStyle(
+    plainForms(masked).replace(BOLD_MARK, (mark) => (mark === '***' ? `${BOLD_CHAR}*` : BOLD_CHAR)),
+  );
+  for (const piece of styled.split(new RegExp(`(${MASKED.source})`))) {
     if (piece === '') continue;
     if (piece === BOLD_CHAR) out.push({ type: 'bold' });
     else if (MASKED.test(piece)) out.push(slots[piece.charCodeAt(0) - 0xe001]);
@@ -225,7 +231,10 @@ export function parseMessage(
   const remaining = [...links];
   const blocks = units(text).map((unit): Block => {
     if (unit.kind === 'paragraph') {
-      return { type: 'paragraph', inlines: linked(inlines(unit.lines.join('\n')), remaining) };
+      return {
+        type: 'paragraph',
+        inlines: linked(inlines(unit.lines.join('\n')), remaining),
+      };
     }
     return {
       type: 'list',

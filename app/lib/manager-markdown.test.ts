@@ -107,6 +107,27 @@ test.each<[string, string, Inline['type'][]]>([
   expect(kinds(inl)).toEqual(shape);
 });
 
+test.each<[string, string, Inline['type'][]]>([
+  ['[`server/manager.ts`](https://x.test/f) end', 'server/manager.ts end', ['code', 'text']],
+  ['[a `c` b](u) end', 'a c b end', ['text', 'code', 'text']],
+  ['[`a`](u) and [`b`](v)', 'a and b', ['code', 'text', 'code']],
+  ['![`img`](u) end', 'img end', ['code', 'text']],
+  ['[x](u `c`) end', 'x end', ['text']],
+  ['<https://x.test/`a`> end', 'https://x.test/a end', ['text', 'code', 'text']],
+  ['__`c`__ end', 'c end', ['bold', 'text']],
+  ['__x `c`__ end', 'x c end', ['bold', 'text']],
+  ['a __`c` b__ end', 'a c b end', ['text', 'bold', 'text']],
+])('%s leaves no markup around a code span', (text, shown, shape) => {
+  const inl = inlinesOf(parseMessage(text, []).blocks[0]);
+  expect(flat(inl)).toBe(shown);
+  expect(kinds(inl)).toEqual(shape);
+});
+
+test('private-use glyphs in a reply stay as typed', () => {
+  const text = 'a  b  c  `x`  d';
+  expect(flat(inlinesOf(parseMessage(text, []).blocks[0]))).toBe(text.replaceAll('`', ''));
+});
+
 test('step ids, products and a stray ** stay readable', () => {
   const { blocks } = parseMessage('pr__prepare took 2 * 3 s ** end', []);
   expect(flat(inlinesOf(blocks[0]))).toBe('pr__prepare took 2 * 3 s  end');
