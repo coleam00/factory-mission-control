@@ -23,8 +23,10 @@ import {
   AnswerSplitter,
   type ChatRequest,
   encodeEvent,
+  isName,
   MAX_MESSAGE_CHARS,
   MAX_MESSAGES,
+  MAX_NAME_CHARS,
   MAX_PROPOSALS,
   MAX_RUNS,
   type ManagerEvent,
@@ -149,13 +151,33 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+/** Every key of the context; the record form makes tsc refuse a field added to the interface and not listed here. */
+const CONTEXT_KEYS: Record<keyof ChatRequest['context'], true> = {
+  place: true,
+  run: true,
+  item: true,
+  workflow: true,
+  step: true,
+  order: true,
+};
+
+/** The name under `key`, absent, or the reason it is refused. */
+function nameField(key: string, value: unknown): { name?: string } | string {
+  if (value === undefined) return {};
+  return isName(value)
+    ? { name: value }
+    : `${key} must be a name of at most ${MAX_NAME_CHARS} characters`;
+}
+
 /** The request, or the reason it is refused. */
 export function parseChat(body: unknown, factories: string[]): ChatRequest | string {
   if (!isRecord(body)) return 'expected a JSON object';
   const { factory, context, messages } = body;
   if (typeof factory !== 'string' || !factories.includes(factory)) return 'unknown factory';
   if (!isRecord(context)) return 'context is required';
-  const { place, run, item } = context;
+  const unknown = Object.keys(context).find((key) => !Object.hasOwn(CONTEXT_KEYS, key));
+  if (unknown !== undefined) return `unknown context field ${JSON.stringify(unknown)}`;
+  const { place, run, item, workflow, step, order } = context;
   if (typeof place !== 'string' || !(PLACES as readonly string[]).includes(place)) {
     return 'unknown place';
   }
@@ -163,6 +185,12 @@ export function parseChat(body: unknown, factories: string[]): ChatRequest | str
   if (item !== undefined && (typeof item !== 'number' || !Number.isInteger(item) || item < 1)) {
     return 'item must be a positive integer';
   }
+  const workflowName = nameField('workflow', workflow);
+  if (typeof workflowName === 'string') return workflowName;
+  const stepName = nameField('step', step);
+  if (typeof stepName === 'string') return stepName;
+  const orderName = nameField('order', order);
+  if (typeof orderName === 'string') return orderName;
   if (!Array.isArray(messages) || messages.length < 1 || messages.length > MAX_MESSAGES) {
     return `messages must hold 1 to ${MAX_MESSAGES} entries`;
   }
@@ -180,7 +208,14 @@ export function parseChat(body: unknown, factories: string[]): ChatRequest | str
     return 'the last message is the owner’s';
   return {
     factory,
-    context: { place: place as ChatRequest['context']['place'], run, item },
+    context: {
+      place: place as ChatRequest['context']['place'],
+      run,
+      item,
+      workflow: workflowName.name,
+      step: stepName.name,
+      order: orderName.name,
+    },
     messages: messages as ChatRequest['messages'],
   };
 }
@@ -272,8 +307,16 @@ function describeSchema(manager: Manager): Promise<string> {
 function systemPrompt(manager: Manager, request: ChatRequest, schema: string): string {
   const now = manager.now();
   const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-  const { place, run, item } = request.context;
-  const viewing = [run && `run ${run}`, item && `work item #${item}`].filter(Boolean).join(', ');
+  const { place, run, item, workflow, step, order } = request.context;
+  const viewing = [
+    run && `run ${run}`,
+    item && `work item #${item}`,
+    step &&
+      `step ${JSON.stringify(step)}${workflow ? ` of workflow ${JSON.stringify(workflow)}` : ''}`,
+    order && `work order ${JSON.stringify(order)}`,
+  ]
+    .filter(Boolean)
+    .join(', ');
   return `You are the Manager of the factory "${request.factory}". You watch every run and queue for its owner and answer what they ask, from the factory's data only.
 Today is ${dayOf(now)} (${zone}); a day runs midnight to midnight in that timezone. The owner is on the ${place} page${viewing ? `, looking at ${viewing}` : ''}.
 

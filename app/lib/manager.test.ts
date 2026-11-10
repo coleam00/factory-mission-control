@@ -38,7 +38,11 @@ test('each address gives the context the Manager is asked with and the chip that
   expect(place('/f/x/map')).toMatchObject({ context: { place: 'factory' }, chip: 'Factory map' });
   expect(place('/f/x/board').chip).toBe('Board · pipeline');
   expect(place('/f/x/board', 'view=table').chip).toBe('Board · table');
-  expect(place('/f/x/board', 'order=v3').chip).toBe('Board · work order v3');
+  expect(place('/f/x/board', 'order=v3')).toMatchObject({
+    context: { place: 'board', order: 'v3' },
+    chip: 'Board · work order v3',
+  });
+  expect(place('/f/x/board', 'view=table').context).toEqual({ place: 'board' });
   expect(place('/f/x/runs')).toMatchObject({ context: { place: 'runs' }, chip: 'Runs · all' });
   expect(place('/f/x/runs', 'state=failed').chip).toBe('Runs · failed');
   expect(place(`/f/x/runs/${RUN.toUpperCase()}`)).toMatchObject({
@@ -51,7 +55,7 @@ test('each address gives the context the Manager is asked with and the chip that
     chip: 'Work item #42',
   });
   expect(place('/f/x/steps/archon-loop/review%20one')).toMatchObject({
-    context: { place: 'step' },
+    context: { place: 'step', workflow: 'archon-loop', step: 'review one' },
     chip: 'Step review one',
   });
 });
@@ -59,6 +63,14 @@ test('each address gives the context the Manager is asked with and the chip that
 test('an address that names no run or item still names its place, and sends no id', () => {
   expect(place('/f/x/runs/not-a-uuid').context).toEqual({ place: 'run' });
   expect(place('/f/x/work/abc').context).toEqual({ place: 'work' });
+  expect(place('/f/x/steps/wf').context).toEqual({ place: 'step', workflow: 'wf' });
+  expect(place(`/f/x/steps/wf/${'s'.repeat(101)}`).context).toEqual({
+    place: 'step',
+    workflow: 'wf',
+  });
+  expect(place('/f/x/steps/wf/a%0Ab').context).toEqual({ place: 'step', workflow: 'wf' });
+  expect(place('/f/x/board', `order=${'x'.repeat(101)}`).context).toEqual({ place: 'board' });
+  expect(place(`/f/x/steps/${'w'.repeat(101)}/s`).context).toEqual({ place: 'step', step: 's' });
 });
 
 const stream = (...chunks: string[]) =>
@@ -217,5 +229,9 @@ test('every address the app writes is read back as the place it names', () => {
   }
   expect(at(lapHref(factory, RUN)).context).toEqual({ place: 'run', run: RUN });
   expect(at(workItemHref(factory, 42)).context).toEqual({ place: 'work', item: 42 });
-  expect(at(stepHref(factory, 'archon-loop', 'review one')).context).toEqual({ place: 'step' });
+  expect(at(stepHref(factory, 'archon-loop', 'review one')).context).toEqual({
+    place: 'step',
+    workflow: 'archon-loop',
+    step: 'review one',
+  });
 });
