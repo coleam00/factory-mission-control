@@ -74,6 +74,20 @@ test('what is outside the subset is plain text, without its markers', () => {
   ]);
 });
 
+test.each<[string, string, Inline['type'][]]>([
+  ['***x*** end', 'x end', ['bold', 'text']],
+  ['___x___ end', 'x end', ['bold', 'text']],
+  ['__bold__ end', 'bold end', ['bold', 'text']],
+  ['an _it_ end', 'an it end', ['text']],
+  ['a ~~gone~~ end', 'a gone end', ['text']],
+  ['![img](http://x.test) end', 'img end', ['text']],
+  ['snake_case and my_var_name', 'snake_case and my_var_name', ['text']],
+])('%s leaves no markup', (text, shown, shape) => {
+  const inl = inlinesOf(parseMessage(text, []).blocks[0]);
+  expect(flat(inl)).toBe(shown);
+  expect(kinds(inl)).toEqual(shape);
+});
+
 test('step ids, products and a stray ** stay readable', () => {
   const { blocks } = parseMessage('pr__prepare took 2 * 3 s ** end', []);
   expect(flat(inlinesOf(blocks[0]))).toBe('pr__prepare took 2 * 3 s  end');

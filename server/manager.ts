@@ -634,14 +634,10 @@ export function answer(manager: Manager, request: ChatRequest, signal: AbortSign
 const BRIEFING_QUESTION =
   "Write today's briefing: what merged, what failed (count a run by the day it failed, completed_at, not the day it started), what waits on the owner, and the one or two things that matter most.";
 
-/** What the Attention header counts, split by its groups: a decide card per decide or owner row. */
-export interface AttentionTally {
-  decide: number;
-  owner: number;
-  unstick: number;
-  causes: number;
-  failures: number;
-}
+/** What the Attention header counts: the row count of each source, and the runs behind the failure causes. */
+export type AttentionTally = Record<keyof typeof ATTENTION_SOURCES, number> & {
+  failureRuns: number;
+};
 
 let attentionQueries: Map<string, string> | undefined;
 
@@ -652,14 +648,13 @@ let attentionQueries: Map<string, string> | undefined;
  */
 async function attentionTally(manager: Manager, factory: string): Promise<AttentionTally | null> {
   attentionQueries ??= loadLiveQueries(join(import.meta.dir, '..', 'db', 'queries'));
+  const keys = Object.keys(ATTENTION_SOURCES) as (keyof typeof ATTENTION_SOURCES)[];
   const source = (key: keyof typeof ATTENTION_SOURCES): string =>
     `\n${attentionQueries?.get(ATTENTION_SOURCES[key].query)}\n`;
+  const counts = keys.map((key) => `(SELECT count(*) FROM (${source(key)}) AS s)::int AS ${key}`);
   const sql = `SELECT
-  (SELECT count(*) FROM (${source('decide')}) AS d)::int AS decide,
-  (SELECT count(*) FROM (${source('owner')}) AS o)::int AS owner,
-  (SELECT count(*) FROM (${source('unstick')}) AS u)::int AS unstick,
-  (SELECT count(*) FROM (${source('failures')}) AS g)::int AS causes,
-  (SELECT coalesce(sum(g.failures), 0) FROM (${source('failures')}) AS g)::int AS failures`;
+  ${counts.join(',\n  ')},
+  (SELECT coalesce(sum(g.failures), 0) FROM (${source('failures')}) AS g)::int AS "failureRuns"`;
   try {
     const { rows } = await readOnlyQuery(manager.db, sql, [factory], MANAGER_LIMITS);
     return rows[0] as unknown as AttentionTally;
@@ -673,7 +668,10 @@ const plural = (n: number, one: string, many: string): string => `${n} ${n === 1
 
 /** The briefing's first line: each Attention group by the count its group shows, so the total matches the header. */
 export function attentionLine(t: AttentionTally): string {
-  const total = t.decide + t.owner + t.unstick + t.causes;
+  const total = (Object.keys(ATTENTION_SOURCES) as (keyof typeof ATTENTION_SOURCES)[]).reduce(
+    (sum, key) => sum + t[key],
+    0,
+  );
   if (total === 0) return 'Nothing needs you.';
   const lead =
     t.decide > 0
@@ -684,8 +682,8 @@ export function attentionLine(t: AttentionTally): string {
   const parts = [
     t.decide + t.owner > 0 ? `${t.decide + t.owner} to decide` : '',
     t.unstick > 0 ? `${t.unstick} to unstick` : '',
-    t.causes > 0
-      ? `${t.causes} to fix (${plural(t.failures, 'failure', 'failures')} in ${plural(t.causes, 'cause', 'causes')})`
+    t.failures > 0
+      ? `${t.failures} to fix (${plural(t.failureRuns, 'failure', 'failures')} in ${plural(t.failures, 'cause', 'causes')})`
       : '',
   ].filter(Boolean);
   return `${lead}${plural(total, 'thing needs', 'things need')} you: ${parts.join(', ')}.`;

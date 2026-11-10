@@ -106,18 +106,24 @@ function units(text: string): Unit[] {
 
 type Token = { type: 'text'; text: string } | { type: 'code'; text: string } | { type: 'bold' };
 
-/** A single `*x*` is emphasis the panel does not draw; `2 * 3` is prose and stays. */
-const unItalic = (text: string): string =>
-  text.replace(/(?<![*\w])\*(?=\S)([^*\n]+?)(?<=\S)\*(?!\*)/g, '$1');
+/** Emphasis, strikethrough: drawn as nothing. `2 * 3`, `snake_case` and a lone `~` are prose and stay. */
+const unStyle = (text: string): string =>
+  text
+    .replace(/(?<![*\w])\*(?=\S)([^*\n]+?)(?<=\S)\*(?!\*)/g, '$1')
+    .replace(/(?<!\w)_(?=\S)([^_\n]+?)(?<=\S)_(?!\w)/g, '$1')
+    .replace(/~~(?=\S)([^~\n]+?)(?<=\S)~~/g, '$1');
 
-/** Text between code spans, with markdown links reduced to their label and `**` as a token. */
+/** `***` is bold around italic; `__` is bold only at a word edge, so `__init__x` stays prose. */
+const BOLD_MARK = /\*\*\*|\*\*|(?<!\w)__(?=\S)|(?<=\S)__(?!\w)/;
+
+/** Text between code spans, with markdown links and images reduced to their label and bold marks as tokens. */
 function proseTokens(text: string): Token[] {
-  const flat = text.replace(/\[([^\]\n]*)\]\([^)\s]*\)/g, '$1');
+  const flat = text.replace(/!?\[([^\]\n]*)\]\([^)\s]*\)/g, '$1');
   return flat
-    .split('**')
+    .split(BOLD_MARK)
     .flatMap((part, i): Token[] => [
       ...(i > 0 ? [{ type: 'bold' } as const] : []),
-      ...(part === '' ? [] : [{ type: 'text', text: unItalic(part) } as const]),
+      ...(part === '' ? [] : [{ type: 'text', text: unStyle(part) } as const]),
     ]);
 }
 
@@ -148,7 +154,7 @@ const startsSpace = (t: Token | undefined): boolean =>
 const endsSpace = (t: Token | undefined): boolean =>
   t === undefined || (t.type === 'text' && /\s$/.test(t.text)) || t.type === 'bold';
 
-/** Pairs `**` left to right; a bold never nests, and a `**` left unpaired is dropped. */
+/** Pairs bold marks left to right; a bold never nests, and a mark left unpaired is dropped. */
 function inlines(raw: string): Inline[] {
   const toks = tokens(raw);
   const out: Inline[] = [];

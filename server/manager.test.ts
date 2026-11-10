@@ -639,12 +639,12 @@ describe('the briefing', () => {
       decide: 0,
       owner: 0,
       unstick: 0,
-      causes: 0,
       failures: 0,
+      failureRuns: 0,
       ...t,
     });
     expect(attentionLine(tally({}))).toBe('Nothing needs you.');
-    expect(attentionLine(tally({ unstick: 2, causes: 1, failures: 1 }))).toBe(
+    expect(attentionLine(tally({ unstick: 2, failures: 1, failureRuns: 1 }))).toBe(
       'No question is waiting. 3 things need you: 2 to unstick, 1 to fix (1 failure in 1 cause).',
     );
     expect(attentionLine(tally({ decide: 1 }))).toBe(
@@ -775,6 +775,30 @@ describe('a structure lookup that fails', () => {
       kind: 'unstructured',
       text: expect.stringContaining('links and buttons'),
     });
+  });
+});
+
+describe('a briefing whose count cannot be read', () => {
+  test('states no count rather than "Nothing needs you"', async () => {
+    const log = spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const failing = Object.create(fixture.direct);
+      failing.transaction = async () => {
+        throw new Error('statement timeout');
+      };
+      const played = model(async () => [start, delta('fine'), result(0.01)]);
+      const manager = { ...managerOf(played), db: failing };
+      const res = await createApp({ buildId: 't', distDir: '.', manager }).request(
+        '/api/manager/briefing',
+        { method: 'POST', body: JSON.stringify({ factory: FACTORY, refresh: true }) },
+      );
+      const got = await events(res);
+      expect(got[0]).toMatchObject({ type: 'text', text: 'fine' });
+      expect(JSON.stringify(got)).not.toContain('need you');
+      expect(played.prompts[0]).toContain('could not be read');
+    } finally {
+      log.mockRestore();
+    }
   });
 });
 
