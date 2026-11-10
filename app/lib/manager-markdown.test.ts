@@ -91,7 +91,7 @@ const itemText = (b: Block) =>
 test('a nested list stays inside its item, in reading order', () => {
   const { blocks } = parseMessage('- a\n  - b\n- c', []);
   expect(blocks).toHaveLength(1);
-  expect(itemText(blocks[0])).toEqual(['a\n\n  - b', 'c']);
+  expect(itemText(blocks[0])).toEqual(['a\n  - b', 'c']);
 });
 
 test('two paragraphs in one item do not run together', () => {
