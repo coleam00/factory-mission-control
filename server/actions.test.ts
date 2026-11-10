@@ -2,6 +2,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:tes
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
+import { ANSWER_TEXT_MAX } from '../app/lib/attention';
 import { type Actions, loadOperators, parseActionBody } from './actions';
 import { createApp } from './app';
 import { FACTORY, FAILED_RUN, OTHER_RUN, startManagerDb, WAITING_RUN } from './manager-fixture';
@@ -275,6 +276,13 @@ describe('the allowlist', () => {
 
   test('a run id that is not a UUID is refused', async () => {
     expect((await post(resume('not-a-run'))).status).toBe(400);
+  });
+
+  test('answer text is 1 to ANSWER_TEXT_MAX characters', () => {
+    const text = (value: string) => parseActionBody(answer(WAITING_RUN, 'occ', { text: value }));
+    expect(typeof text('')).toBe('string');
+    expect(typeof text('x'.repeat(ANSWER_TEXT_MAX + 1))).toBe('string');
+    expect(text('x'.repeat(ANSWER_TEXT_MAX))).toMatchObject({ action: 'answer' });
   });
 
   test('parseActionBody accepts only the two shapes', () => {

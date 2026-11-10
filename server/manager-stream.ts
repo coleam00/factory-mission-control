@@ -36,7 +36,24 @@ export type ManagerEvent =
       cached?: boolean;
     };
 
+type KeysOfEach<T> = T extends unknown ? keyof T : never;
+type EnvelopeKeys = Exclude<KeysOfEach<Proposal>, KeysOfEach<ActionRequest>>;
+/** Compiles only while the envelope keys (`type`, `label`, `detail`) are exactly the ones `proposalRequest` strips. */
+const ENVELOPE_KEYS_ARE_STRIPPED: [EnvelopeKeys] extends ['type' | 'label' | 'detail']
+  ? ['type' | 'label' | 'detail'] extends [EnvelopeKeys]
+    ? true
+    : never
+  : never = true;
+void ENVELOPE_KEYS_ARE_STRIPPED;
+
+/** The request the action endpoint takes, with the envelope stripped. */
+export function proposalRequest(proposal: Proposal): ActionRequest {
+  const { type: _type, label: _label, detail: _detail, ...request } = proposal;
+  return request;
+}
+
 export type NoticeKind = Extract<ManagerEvent, { type: 'notice' }>['kind'];
+type Proposal = Extract<ManagerEvent, { type: 'proposal' }>;
 export type ProposalAction = Extract<ManagerEvent, { type: 'proposal' }>['action'];
 export type LinkKind = Extract<ManagerEvent, { type: 'link' }>['kind'];
 

@@ -11,6 +11,7 @@ import {
   type ManagerProposal,
   type ManagerReply,
 } from '../lib/manager';
+import { proposalRequest } from '../../server/manager-stream';
 import { lapHref } from '../lib/one-lap';
 import { RUN_STATE, stateOf } from '../lib/states';
 import { useActionPending, useActionsEnabled, useStartAction } from './ActionToast';
@@ -128,7 +129,8 @@ function Proposals({
   return (
     <div className="mb-2 flex flex-wrap gap-2">
       {proposals.map((proposal, i) => {
-        const { type: _type, label, detail, ...request } = proposal;
+        const { label, detail } = proposal;
+        const request = proposalRequest(proposal);
         // Positional: the model may repeat an identical proposal, and nothing reorders them.
         const key = `${i}:${proposal.action}:${proposal.run_id}:${label}`;
         const named =
