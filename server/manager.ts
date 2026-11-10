@@ -693,15 +693,24 @@ export function attentionLine(t: AttentionTally): string {
   return `${lead}${plural(total, 'thing needs', 'things need')} you: ${parts.join(', ')}.`;
 }
 
+/**
+ * The question the model answers for the briefing. The opening line already carries every count,
+ * so the model is told to state none: a count of its own, from its own reading of the rows, is
+ * the one that can disagree with the page.
+ */
+export function briefingQuestion(tally: AttentionTally | null): string {
+  const counted = tally
+    ? ` The briefing already opens with this line, counted from the Attention page's own rows: "${attentionLine(tally)}" That line is the only count of what waits on the owner. State no number of Attention items, open questions, paused runs or failures yourself, and never say the rows or the opening line disagree, miss something or may be incomplete; name the individual runs and issues instead.`
+    : " The Attention page's count could not be read: do not say how many things wait on the owner.";
+  return BRIEFING_QUESTION + counted;
+}
+
 async function generateBriefing(manager: Manager, factory: string, tally: AttentionTally | null) {
   const events: ManagerEvent[] = [];
-  const counted = tally
-    ? ` The briefing already opens with this line, counted from the Attention page's own rows: "${attentionLine(tally)}" Do not restate or recount it. What waits on the owner is those Attention items, not a separate count of open questions.`
-    : " The Attention page's count could not be read: do not say how many things wait on the owner.";
   const request: ChatRequest = {
     factory,
     context: { place: 'attention' },
-    messages: [{ role: 'owner', text: BRIEFING_QUESTION + counted }],
+    messages: [{ role: 'owner', text: briefingQuestion(tally) }],
   };
   const { ok, cost } = await produce(manager, request, new AbortController().signal, (event) =>
     events.push(event),

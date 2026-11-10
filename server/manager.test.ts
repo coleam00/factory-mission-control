@@ -11,6 +11,7 @@ import {
   type AgentRunner,
   type AttentionTally,
   attentionLine,
+  briefingQuestion,
   CREDENTIAL_NAMES,
   createManager,
   type Manager,
@@ -862,6 +863,17 @@ describe('a structure lookup that fails', () => {
       kind: 'unstructured',
       text: expect.stringContaining('links and buttons'),
     });
+  });
+});
+
+describe('the briefing question with a run paused and other Attention rows', () => {
+  test('hands the model the opening line and forbids a count or a mismatch claim of its own', () => {
+    const tally = { decide: 1, owner: 3, unstick: 0, failures: 0, failureRuns: 0 };
+    const question = briefingQuestion(tally);
+    expect(question).toContain(attentionLine(tally));
+    expect(question).toContain('4 things need you');
+    expect(question).toContain('State no number of Attention items');
+    expect(question).toContain('never say the rows or the opening line disagree');
   });
 });
 
