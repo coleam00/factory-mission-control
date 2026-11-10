@@ -211,7 +211,6 @@ const ROW_COLUMNS: Record<string, string[]> = {
     'merge_status',
     'merge_at',
     'triage_at',
-    'own_pr_at',
     'stage',
     'repository',
     'merged_total',

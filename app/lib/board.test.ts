@@ -37,7 +37,6 @@ const item = (number: number, over: Partial<BoardRow> = {}): BoardRow => ({
   merge_status: null,
   merge_at: null,
   triage_at: null,
-  own_pr_at: null,
   stage: null,
   repository: null,
   merged_total: null,
@@ -333,7 +332,7 @@ test('itemOnBoard names Parked for a parked item', () => {
   expect(itemOnBoard(sources, 1)?.column?.id).toBe('parked');
 });
 
-test('parked: a merge park holds until a triage or renewed readiness, an own pull request until nothing the state holds', () => {
+test('parked: a merge park holds until a triage or renewed build readiness', () => {
   const none = { ...item(1) };
   const merge = {
     ...none,
@@ -346,10 +345,18 @@ test('parked: a merge park holds until a triage or renewed readiness, an own pul
   expect(parked(merge)).toBe(true);
   expect(parked({ ...merge, triage_at: T(5) })).toBe(false);
   expect(parked({ ...merge, build_at: T(4) })).toBe(false);
-  const own = { ...none, own_pr_at: T(1), merge_status: 'parked', merge_at: T(2) };
-  expect(parked(own)).toBe(true);
-  expect(parked({ ...own, own_pr_at: T(3) })).toBe(true);
   expect(parked({ ...merge, merge_status: 'waiting' })).toBe(false);
+});
+
+test('parked: an old own_pr_at renews nothing; only a ready build status does', () => {
+  const merge = { ...item(1), merge_status: 'parked', merge_at: T(2) };
+  // A row the removed own-PR lane wrote still holds own_pr_at, after the park.
+  const noBuild = { ...merge, own_pr_at: T(3) };
+  const asking = { ...noBuild, build_status: 'asking', build_at: T(1) };
+  expect(parked(noBuild)).toBe(true);
+  expect(parked(asking)).toBe(true);
+  expect(parked({ ...asking, build_status: 'ready' })).toBe(true);
+  expect(parked({ ...asking, build_status: 'ready', build_at: T(4) })).toBe(false);
 });
 
 // Captions are the reference's (mockup `COLS`); Review and App check name the workflow that runs them.

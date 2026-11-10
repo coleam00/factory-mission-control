@@ -29,13 +29,12 @@ export interface BoardRow {
   /** The open pull request that closes it, else the merged one. */
   pr: number | null;
   pr_open: boolean | null;
-  /** The queues' work-item state, the six fields the Parked rule reads; null without a state. */
+  /** The queues' work-item state, the five fields the Parked rule reads; null without a state. */
   build_status: string | null;
   build_at: string | null;
   merge_status: string | null;
   merge_at: string | null;
   triage_at: string | null;
-  own_pr_at: string | null;
   /** The queue's work-item stage (new, needs_maintainer, a route, needs_contract, blocked, close); null without a state. */
   stage: string | null;
   /** The factory row: its repository and its work items a pull request merged. */
@@ -312,7 +311,7 @@ interface Facts {
 
 type WorkItemState = Pick<
   BoardRow,
-  'build_status' | 'build_at' | 'merge_status' | 'merge_at' | 'triage_at' | 'own_pr_at'
+  'build_status' | 'build_at' | 'merge_status' | 'merge_at' | 'triage_at'
 >;
 
 /** Whether `at` is a later ISO instant than `than`; compared as text, as the queues compare them. */
@@ -331,10 +330,7 @@ export const PARKED = 'parked';
 export function parked(state: WorkItemState): boolean {
   if (state.build_status === PARKED) return !later(state.triage_at, state.build_at);
   if (state.merge_status !== PARKED || later(state.triage_at, state.merge_at)) return false;
-  // An own pull request is renewed only by a new head, which the state does not hold.
-  if (state.build_status === null && state.own_pr_at !== null) return true;
-  const readyAt = state.build_status === 'ready' ? state.build_at : state.own_pr_at;
-  return !later(readyAt, state.merge_at);
+  return !(state.build_status === 'ready' && later(state.build_at, state.merge_at));
 }
 
 /** The column that holds an open work item right now; the first rule that matches wins. */
