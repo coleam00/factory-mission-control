@@ -77,7 +77,7 @@ interface Act {
   pending: boolean;
 }
 
-function ActionControl({ action, act }: { action: Action; act: Act }): ReactElement {
+export function ActionControl({ action, act }: { action: Action; act: Act }): ReactElement {
   if (action.type === 'copy') return <CopyButton {...action} />;
   if (action.type === 'act' && act.enabled) {
     return (
@@ -92,11 +92,19 @@ function ActionControl({ action, act }: { action: Action; act: Act }): ReactElem
     );
   }
   const { href, external } = action.type === 'act' ? action.fallback : action;
+  if (!external) {
+    return (
+      <Link {...action.hooks} to={href} className={buttonClass(action.variant)}>
+        {action.label}
+      </Link>
+    );
+  }
   return (
     <a
       {...action.hooks}
       href={href}
-      {...(external ? { target: '_blank', rel: 'noreferrer' } : {})}
+      target="_blank"
+      rel="noreferrer"
       className={buttonClass(action.variant)}
     >
       {action.label}

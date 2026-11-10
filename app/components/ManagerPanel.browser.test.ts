@@ -156,3 +156,26 @@ test('switching factory with the panel open gives the new factory its own briefi
   expect(result.briefing).toContain('Quiet night.');
   expect(result.briefed).toEqual(['{"factory":"x"}', '{"factory":"y"}']);
 }, 30_000);
+
+test('Open run on an Attention card is a route change: the Manager conversation and the document survive', async () => {
+  await page.setViewport(1440);
+  const result = await page.evaluate<{ marker: boolean; before: Seen; after: Seen; path: string }>(
+    `import('data:text/javascript;base64,${source}').then(async (m) => {
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      m.mount('/f/x');
+      await sleep(1200);
+      m.clickSuggestion(0);
+      await sleep(600);
+      const before = m.shown();
+      window.__survived = true;
+      m.clickOpenRun();
+      await sleep(600);
+      return { marker: window.__survived === true, before, after: m.shown(), path: m.path() };
+    })`,
+  );
+  expect(result.path).toBe(`/f/x/runs/${RUN}`);
+  expect(result.marker).toBe(true);
+  expect(result.before.answer).toBe('done');
+  expect(result.after.answer).toBe('done');
+  expect(result.after.chip).toBe('Run 5eed0001');
+}, 30_000);

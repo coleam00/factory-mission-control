@@ -1,6 +1,7 @@
 import { createRoot } from 'react-dom/client';
 import { createMemoryRouter, RouterProvider } from 'react-router';
 import { Shell } from '../../Shell';
+import { ActionControl } from '../Attention';
 import { Socket } from './render-flow';
 
 const RUN = '5eed0001-0000-4000-8000-0000000000a1';
@@ -63,7 +64,7 @@ function record() {
   return note;
 }
 
-let current: { unmount: () => void; go: (url: string) => void } | undefined;
+let current: { unmount: () => void; go: (url: string) => void; path: () => string } | undefined;
 
 /** Mounts the real shell over a fake dashboard server at `url`. */
 export function mount(url: string) {
@@ -154,7 +155,22 @@ export function mount(url: string) {
       {
         element: <Shell />,
         children: [
-          { path: '/f/:factory', element: <p>Attention</p> },
+          {
+            path: '/f/:factory',
+            element: (
+              <ActionControl
+                action={{
+                  type: 'link',
+                  variant: 'secondary',
+                  label: `Open run ${RUN.slice(0, 8)}`,
+                  href: `/f/x/runs/${RUN}`,
+                  external: false,
+                  hooks: {},
+                }}
+                act={{ enabled: false, start: () => {}, pending: false }}
+              />
+            ),
+          },
           { path: '/f/:factory/runs/:runId', element: <p>Run</p> },
         ],
       },
@@ -167,6 +183,7 @@ export function mount(url: string) {
   root.render(<RouterProvider router={router} />);
   current = {
     go: (to) => void router.navigate(to),
+    path: () => router.state.location.pathname,
     unmount() {
       root.unmount();
       container.remove();
@@ -200,6 +217,13 @@ export const shown = () => ({
   surface: q('[data-manager]')?.dataset.manager ?? null,
 });
 
+export const clickOpenRun = () =>
+  [...document.querySelectorAll<HTMLAnchorElement>('main a, a')]
+    .find((a) => a.textContent?.startsWith('Open run'))
+    ?.click();
+
 export const go = (url: string) => current?.go(url);
 
 export const requests = () => window.__requests;
+
+export const path = () => current?.path();
