@@ -39,7 +39,7 @@ import {
   RESUMABLE_STATUSES,
   type RunSummary,
 } from './manager-stream';
-import { READ_TOOL_NAMES, TOOL_SERVER } from './manager-tools';
+import { BRIEFING_ENV, BRIEFING_TOOL_NAMES, READ_TOOL_NAMES, TOOL_SERVER } from './manager-tools';
 
 // A Record over the SDK's own type: the compiler fails on a level added or removed there.
 const EFFORT_SET: Record<EffortLevel, true> = {
@@ -234,10 +234,12 @@ function hasCredential(env: NodeJS.ProcessEnv): boolean {
   return CREDENTIAL_NAMES.some((name) => Boolean(env[name]));
 }
 
-const canUseTool: SdkCanUseTool = async (name, input) =>
-  READ_TOOL_NAMES.includes(name)
-    ? { behavior: 'allow', updatedInput: input }
-    : { behavior: 'deny', message: `${name} is not a Manager tool` };
+const canUse =
+  (allowed: string[]): SdkCanUseTool =>
+  async (name, input) =>
+    allowed.includes(name)
+      ? { behavior: 'allow', updatedInput: input }
+      : { behavior: 'deny', message: `${name} is not a Manager tool` };
 
 /**
  * The agent run's options. No built-in tool exists at all (`tools: []`); the two MCP tools are the
@@ -252,15 +254,18 @@ export function buildOptions(
     systemPrompt: string;
     maxBudgetUsd: number;
     abortController: AbortController;
+    /** The briefing run: no ad hoc SELECT and no Attention query, since it is handed those rows. */
+    briefing?: boolean;
   },
   env: NodeJS.ProcessEnv = process.env,
 ): Options {
+  const allowed = extra.briefing ? BRIEFING_TOOL_NAMES : READ_TOOL_NAMES;
   return {
     cwd: extra.cwd,
     tools: [],
-    allowedTools: READ_TOOL_NAMES,
+    allowedTools: allowed,
     permissionMode: 'dontAsk',
-    canUseTool,
+    canUseTool: canUse(allowed),
     mcpServers: {
       [TOOL_SERVER]: {
         type: 'stdio',
@@ -270,6 +275,7 @@ export function buildOptions(
           ...pick(env, ['PATH', 'SYSTEMROOT', 'TEMP', 'TMP']),
           MC_DATABASE_URL: manager.databaseUrl,
           MC_MANAGER_FACTORY: request.factory,
+          ...(extra.briefing ? { [BRIEFING_ENV]: '1' } : {}),
         },
       },
     },
@@ -308,7 +314,12 @@ function describeSchema(manager: Manager): Promise<string> {
   return manager.schema;
 }
 
-function systemPrompt(manager: Manager, request: ChatRequest, schema: string): string {
+function systemPrompt(
+  manager: Manager,
+  request: ChatRequest,
+  schema: string,
+  briefing: boolean,
+): string {
   const now = manager.now();
   const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
   const { place, run, item, workflow, step, order } = request.context;
@@ -324,7 +335,11 @@ function systemPrompt(manager: Manager, request: ChatRequest, schema: string): s
   return `You are the Manager of the factory "${request.factory}". You watch every run and queue for its owner and answer what they ask, from the factory's data only.
 Today is ${dayOf(now)} (${zone}); a day runs midnight to midnight in that timezone. The owner is on the ${place} page${viewing ? `, looking at ${viewing}` : ''}.
 
-Tools: live_query runs one of the dashboard's named queries for this factory; select runs one SELECT over the mc schema (at most ${MANAGER_LIMITS.rowCap} rows, ${MANAGER_LIMITS.timeoutMs / 1000}s). Both only read. You cannot change anything, and you must never say that you did.
+${
+  briefing
+    ? "Tool: live_query runs one of the dashboard's named queries for this factory (the Attention queries are not offered: you are given those rows). It only reads."
+    : `Tools: live_query runs one of the dashboard's named queries for this factory; select runs one SELECT over the mc schema (at most ${MANAGER_LIMITS.rowCap} rows, ${MANAGER_LIMITS.timeoutMs / 1000}s). Both only read.`
+} You cannot change anything, and you must never say that you did.
 Never show holdout scenario text.
 A run failed on the day its mc.laps.completed_at falls, whatever day it started: for "failed today", filter on completed_at, never started_at, and include runs that started on an earlier day. The database session may run in another timezone, so convert first: (completed_at AT TIME ZONE '${zone}')::date = DATE '${dayOf(now)}'.
 
@@ -523,6 +538,7 @@ async function produce(
   request: ChatRequest,
   signal: AbortSignal,
   emit: Emit,
+  briefing = false,
 ): Promise<Outcome> {
   const left = manager.settings.dayCapUsd - spentToday(manager);
   if (left <= 0) {
@@ -554,7 +570,7 @@ async function produce(
   try {
     cwd = mkdtempSync(join(tmpdir(), 'mc-manager-'));
     const prompt = renderConversation(request.messages);
-    const system = systemPrompt(manager, request, await describeSchema(manager));
+    const system = systemPrompt(manager, request, await describeSchema(manager), briefing);
     const messages = manager.run({
       prompt,
       options: buildOptions(manager, request, {
@@ -562,6 +578,7 @@ async function produce(
         systemPrompt: system,
         maxBudgetUsd,
         abortController,
+        briefing,
       }),
     });
     for await (const message of messages) {
@@ -778,20 +795,71 @@ export function briefingQuestion(
   return BRIEFING_QUESTION + counted;
 }
 
-async function generateBriefing(
-  manager: Manager,
-  factory: string,
-  read: { tally: AttentionTally; rows: AttentionRows } | null,
-) {
-  const events: ManagerEvent[] = [];
+type AttentionRead = { tally: AttentionTally; rows: AttentionRows };
+
+const MISSING_DATA =
+  /\b(?:no rows|returned nothing|(?:data|rows?|results?) (?:is|are) (?:missing|unavailable|incomplete)|(?:missing|unavailable|incomplete) (?:data|rows?|results?)|(?:could not|couldn't|unable to) (?:read|query|find|see|retrieve))\b/i;
+const COUNT_CLAIM =
+  /\b(\d+)\s+(?:things?|items?|open questions?|questions?|paused runs?|failures?|causes?)\b/gi;
+
+/** The numbers the opening line itself states: the briefing's prose may repeat those and no others. */
+function statedCounts(t: AttentionTally): Set<number> {
+  const groups = KINDS.map(({ kind }) => inGroup(t, kind));
+  const total = SOURCE_KEYS.reduce((sum, key) => sum + t[key], 0);
+  return new Set([total, t.failureRuns, ...groups, ...SOURCE_KEYS.map((key) => t[key])]);
+}
+
+/** Why the model's prose cannot sit under the count line, or null when it can. */
+function briefingFault(text: string, read: AttentionRead): string | null {
+  const total = SOURCE_KEYS.reduce((sum, key) => sum + read.tally[key], 0);
+  if (total === 0) return null;
+  if (MISSING_DATA.test(text)) return 'it says data is missing while the page has rows';
+  const allowed = statedCounts(read.tally);
+  for (const match of text.matchAll(COUNT_CLAIM)) {
+    if (!allowed.has(Number(match[1])))
+      return `it states a count of ${match[1]} the page does not show`;
+  }
+  return null;
+}
+
+/** What the page's rows are, plain: the last resort when the model's prose keeps contradicting them. */
+function fallbackBody(rows: AttentionRows): string {
+  const label = (row: unknown): string => {
+    const r = row as Record<string, unknown>;
+    const name = r.title ?? r.question ?? r.signature ?? r.workflow_name ?? r.kind;
+    const ref = r.run_id ?? r.issue_number ?? r.number ?? null;
+    return `- ${String(name)}${ref === null ? '' : ` (${ref})`}`;
+  };
+  return SOURCE_KEYS.flatMap((key) => rows[key].map(label)).join('\n');
+}
+
+async function generateBriefing(manager: Manager, factory: string, read: AttentionRead | null) {
   const request: ChatRequest = {
     factory,
     context: { place: 'attention' },
     messages: [{ role: 'owner', text: briefingQuestion(read?.tally ?? null, read?.rows ?? null) }],
   };
-  const { ok, cost } = await produce(manager, request, new AbortController().signal, (event) =>
-    events.push(event),
-  );
+  let events: ManagerEvent[] = [];
+  let ok = false;
+  let cost = 0;
+  // The model may contradict the rows it was handed: try once more, then say what the rows are.
+  for (let attempt = 0; attempt < 2; attempt++) {
+    events = [];
+    const outcome = await produce(
+      manager,
+      request,
+      new AbortController().signal,
+      (event) => events.push(event),
+      true,
+    );
+    ok = outcome.ok;
+    cost += outcome.cost;
+    const text = events.flatMap((e) => (e.type === 'text' ? [e.text] : [])).join('');
+    const fault = ok && read ? briefingFault(text, read) : null;
+    if (!fault) break;
+    console.warn(`manager: briefing rejected (attempt ${attempt + 1}): ${fault}`);
+    if (attempt === 1 && read) events = [{ type: 'text', text: fallbackBody(read.rows) }];
+  }
   const briefing = {
     day: dayOf(manager.now()),
     events,
@@ -802,8 +870,7 @@ async function generateBriefing(
   return { briefing, cost };
 }
 
-const basisOf = (read: { tally: AttentionTally; rows: AttentionRows } | null): string | null =>
-  read && JSON.stringify(read);
+const basisOf = (read: AttentionRead | null): string | null => read && JSON.stringify(read);
 
 /** A briefing is shared by whoever asks, so one asker leaving does not stop its generation. */
 export function briefing(manager: Manager, factory: string, refresh: boolean): Response {

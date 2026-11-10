@@ -645,18 +645,91 @@ describe('the briefing', () => {
       expect(played.prompts[2]).toContain(run(14));
 
       // Rewriting a row without changing it can move it in a scan; the page is unchanged, so the prose holds.
+      await fixture.direct.query('SET enable_indexscan = off; SET enable_bitmapscan = off');
       await fixture.direct.query(
         `UPDATE mc.capacity_waits SET since = since WHERE run_id = '${run(12)}'`,
       );
       expect((await ask()).at(-1)).toMatchObject({ type: 'done', cached: true });
       expect(played.prompts).toHaveLength(3);
     } finally {
+      await fixture.direct.query('RESET enable_indexscan; RESET enable_bitmapscan');
       await fixture.direct.query(
         `DELETE FROM mc.capacity_waits WHERE factory = '${F}';
          DELETE FROM mc.run_stops WHERE factory = '${F}';
          DELETE FROM mc.issue_labels WHERE factory = '${F}';
          DELETE FROM mc.issues WHERE factory = '${F}';
          DELETE FROM mc.factories WHERE name = '${F}'`,
+      );
+    }
+  });
+
+  test('the briefing model has no Attention tool, and prose that contradicts the rows is replaced', async () => {
+    clock = new Date('2026-11-08T10:00:00');
+    const F = 'checked';
+    const waiting = '5eed0009-0000-4000-8000-000000000031';
+    await fixture.direct.query(
+      `INSERT INTO mc.factories (name, repository, codebase, console) VALUES ('${F}', 'o/b', 'o/b', 'http://localhost:3092');
+       INSERT INTO mc.capacity_waits (run_id, factory, workflow_name, item_number, since) VALUES ('${waiting}', '${F}', 'archon-build', 7, now())`,
+    );
+    try {
+      const replies = [
+        'My queries returned no rows for this factory.',
+        'The archon-build run is waiting on capacity.',
+      ];
+      let calls = 0;
+      let attempts: unknown[] = [];
+      const played = model(async (options) => {
+        attempts = await callTools(options, [
+          ['select', { sql: 'SELECT 1' }],
+          ['live_query', { name: 'decide' }],
+          ['live_query', { name: 'unstick' }],
+        ]);
+        return [start, delta(replies[calls++] ?? ''), result(0.01)];
+      });
+      const manager = createManager({
+        db: fixture.direct,
+        databaseUrl: fixture.url,
+        factories: [F],
+        settings: managerSettings({}),
+        run: played.run,
+        now: () => clock,
+      });
+      const ask = async (refresh?: boolean) =>
+        events(
+          await createApp({ buildId: 't', distDir: '.', manager }).request(
+            '/api/manager/briefing',
+            { method: 'POST', body: JSON.stringify({ factory: F, refresh }) },
+          ),
+        );
+      const line = 'No question is waiting. 1 thing needs you: 1 to unstick.';
+      const text = (list: Awaited<ReturnType<typeof ask>>) =>
+        list.map((e) => (e.type === 'text' ? e.text : '')).join('');
+
+      // No ad hoc SELECT and no Attention query reaches the model, so it can only use the rows it was handed.
+      const regenerated = await ask();
+      expect(attempts.map((r) => (r as { isError?: boolean }).isError)).toEqual([true, true, true]);
+      expect(played.options[0]?.allowedTools).toEqual(['mcp__mc__live_query']);
+
+      // A reply that claims missing data is regenerated once; a clean second reply is shown.
+      expect(played.prompts).toHaveLength(2);
+      expect(text(regenerated)).toStartWith(`${line}
+
+`);
+      expect(text(regenerated)).not.toContain('no rows');
+      expect(text(regenerated)).toContain('waiting on capacity');
+
+      // A reply that keeps contradicting the rows falls back to the rows themselves.
+      replies.push('The page lists 9 things.', 'My queries returned no rows.');
+      const fallback = text(await ask(true));
+      expect(fallback).toStartWith(`${line}
+
+`);
+      expect(fallback).toContain(waiting);
+      expect(fallback).not.toContain('9 things');
+      expect(played.prompts).toHaveLength(4);
+    } finally {
+      await fixture.direct.query(
+        `DELETE FROM mc.capacity_waits WHERE factory = '${F}'; DELETE FROM mc.factories WHERE name = '${F}'`,
       );
     }
   });
