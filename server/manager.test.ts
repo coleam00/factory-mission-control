@@ -643,6 +643,13 @@ describe('the briefing', () => {
       expect((await ask()).at(-1)).toMatchObject({ type: 'done', cached: false });
       expect(played.prompts).toHaveLength(3);
       expect(played.prompts[2]).toContain(run(14));
+
+      // Rewriting a row without changing it can move it in a scan; the page is unchanged, so the prose holds.
+      await fixture.direct.query(
+        `UPDATE mc.capacity_waits SET since = since WHERE run_id = '${run(12)}'`,
+      );
+      expect((await ask()).at(-1)).toMatchObject({ type: 'done', cached: true });
+      expect(played.prompts).toHaveLength(3);
     } finally {
       await fixture.direct.query(
         `DELETE FROM mc.capacity_waits WHERE factory = '${F}';

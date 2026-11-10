@@ -703,7 +703,7 @@ async function attentionTally(
     );
     const listed = keys.map(
       (key) =>
-        `(SELECT coalesce(json_agg(l), '[]'::json) FROM (${source(key)}) AS l) AS "rows_${key}"`,
+        `(SELECT coalesce(json_agg(l ORDER BY l::text), '[]'::json) FROM (${source(key)}) AS l) AS "rows_${key}"`,
     );
     const sql = `SELECT
   ${counts.join(',\n  ')},
