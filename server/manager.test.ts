@@ -888,6 +888,18 @@ describe('the briefing', () => {
     }
   });
 
+  test('the cap counts top-level blocks: nested items and continuations stay with their item', async () => {
+    clock = new Date('2026-11-08T10:00:00');
+    const nested = 'Two failed.\n\n- build failed\n  - retry failed\n- docs waits on you';
+    const ask = briefingOf(managerOf(model(async () => [start, delta(nested), result(0.01)])));
+    const text = (await ask()).flatMap((e) => ('text' in e && e.type === 'text' ? [e.text] : []));
+    expect(text.join('').split('\n\n').slice(1)).toEqual([
+      'Two failed.',
+      '- build failed\n  - retry failed',
+      '- docs waits on you',
+    ]);
+  });
+
   test('two askers at once share one generation', async () => {
     clock = new Date('2026-11-08T10:00:00');
     const played = model(async () => {

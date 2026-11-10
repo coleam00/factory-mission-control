@@ -819,13 +819,21 @@ export function briefingFault(text: string, tally: AttentionTally): string | nul
 /** The briefing is 4 blocks: the server's count line, then at most this many of the model's. */
 export const BRIEFING_PROSE_BLOCKS = 3;
 
-/** A block is a paragraph or one list item; the prose keeps its first `BRIEFING_PROSE_BLOCKS`. */
+/** A block is a paragraph or one top-level list item; indented lines stay with the block above them. */
 export function capBriefingProse(text: string): string {
-  const blocks = text
-    .split(/\n\s*\n/)
-    .flatMap((paragraph) => paragraph.split(/\n(?=\s*(?:[-*+]|\d+[.)])\s)/))
-    .map((block) => block.trim())
-    .filter((block) => block !== '');
+  const blocks: string[] = [];
+  let gap = false;
+  for (const line of text.split('\n')) {
+    if (line.trim() === '') {
+      gap = true;
+      continue;
+    }
+    const indented = /^\s/.test(line);
+    const opens = !indented && (gap || /^(?:[-*+]|\d+[.)])\s/.test(line));
+    if (blocks.length === 0 || opens) blocks.push(line.trimEnd());
+    else blocks[blocks.length - 1] += `${gap ? '\n\n' : '\n'}${line.trimEnd()}`;
+    gap = false;
+  }
   return blocks.slice(0, BRIEFING_PROSE_BLOCKS).join('\n\n');
 }
 

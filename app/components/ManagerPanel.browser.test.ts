@@ -28,6 +28,7 @@ interface Seen {
   toastDetail: string | null;
   chip: string | null;
   surface: string | null;
+  scroll: { top: number; room: number } | null;
 }
 
 const RUN = '5eed0001-0000-4000-8000-0000000000a1';
@@ -122,6 +123,25 @@ test('answering with a proposed option names the option wording in the Undo toas
     text: null,
     undone: true,
   });
+}, 30_000);
+
+test('the panel opens at the top of a long briefing and follows once the owner has asked', async () => {
+  await page.setViewport(1440);
+  const result = await page.evaluate<{ opened: Seen; asked: Seen }>(
+    `import('data:text/javascript;base64,${source}').then(async (m) => {
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      await sleep(5500);
+      m.mount('/f/x');
+      await sleep(1200);
+      const opened = m.shown();
+      m.clickSuggestion(0);
+      await sleep(600);
+      return { opened, asked: m.shown() };
+    })`,
+  );
+  expect(result.opened.scroll?.room).toBeGreaterThan(0);
+  expect(result.opened.scroll?.top).toBe(0);
+  expect(result.asked.scroll?.top).toBeGreaterThan(0);
 }, 30_000);
 
 test('an address ending in #manager opens the phone tab, looking at the run on screen', async () => {
