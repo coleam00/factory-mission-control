@@ -13,6 +13,7 @@ import {
   briefingFault,
   briefingQuestion,
   CREDENTIAL_NAMES,
+  capBriefingProse,
   createManager,
   type Manager,
   managerSettings,
@@ -898,6 +899,16 @@ describe('the briefing', () => {
       '- build failed\n  - retry failed',
       '- docs waits on you',
     ]);
+  });
+
+  test('the cap counts indented lists and paragraphs the panel renders as their own blocks', () => {
+    expect(
+      capBriefingProse('Two failed.\n  - a\n  - b\n  - c\n  - d\n  - e').split('\n\n'),
+    ).toHaveLength(3);
+    expect(capBriefingProse('  - a\n  - b\n  - c\n  - d\n  - e').split('\n\n')).toHaveLength(3);
+    expect(
+      capBriefingProse('Quiet.\n\n  two\n\n  three\n\n  four\n\n  five').split('\n\n'),
+    ).toHaveLength(3);
   });
 
   test('two askers at once share one generation', async () => {

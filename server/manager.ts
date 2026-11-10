@@ -12,6 +12,7 @@ import type { Server } from 'bun';
 import type { Context, Hono } from 'hono';
 import { isAnswerText, resolveAnswer } from '../app/lib/attention';
 import { ATTENTION_SOURCES, type AttentionKind, KINDS } from '../app/lib/attention-page';
+import { topLevelBlocks } from '../app/lib/manager-markdown';
 import { isRunId, lapHref } from '../app/lib/one-lap';
 import { workItemHref } from '../app/lib/work-item';
 import { type Db, openDb } from '../scripts/lib/db';
@@ -819,22 +820,9 @@ export function briefingFault(text: string, tally: AttentionTally): string | nul
 /** The briefing is 4 blocks: the server's count line, then at most this many of the model's. */
 export const BRIEFING_PROSE_BLOCKS = 3;
 
-/** A block is a paragraph or one top-level list item; indented lines stay with the block above them. */
+/** Blocks are the panel's own: its markdown parser decides where one ends. */
 export function capBriefingProse(text: string): string {
-  const blocks: string[] = [];
-  let gap = false;
-  for (const line of text.split('\n')) {
-    if (line.trim() === '') {
-      gap = true;
-      continue;
-    }
-    const indented = /^\s/.test(line);
-    const opens = !indented && (gap || /^(?:[-*+]|\d+[.)])\s/.test(line));
-    if (blocks.length === 0 || opens) blocks.push(line.trimEnd());
-    else blocks[blocks.length - 1] += `${gap ? '\n\n' : '\n'}${line.trimEnd()}`;
-    gap = false;
-  }
-  return blocks.slice(0, BRIEFING_PROSE_BLOCKS).join('\n\n');
+  return topLevelBlocks(text).slice(0, BRIEFING_PROSE_BLOCKS).join('\n\n');
 }
 
 function capBriefingEvents(events: ManagerEvent[]): ManagerEvent[] {
