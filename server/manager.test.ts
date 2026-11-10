@@ -1,12 +1,11 @@
 import { afterAll, beforeAll, describe, expect, setDefaultTimeout, spyOn, test } from 'bun:test';
-import { join } from 'node:path';
 import type { Options, SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import { ANSWER_TEXT_MAX } from '../app/lib/attention';
 import { ATTENTION_SOURCES, attentionCount } from '../app/lib/attention-page';
 import { lapHref } from '../app/lib/one-lap';
 import { snapshot } from '../db/test-db';
 import { createApp } from './app';
-import { loadLiveQueries } from './live';
+import { LIVE_QUERIES_DIR, loadLiveQueries } from './live';
 import {
   type AgentRunner,
   type AttentionTally,
@@ -591,7 +590,7 @@ describe('the briefing', () => {
          ('${run(23)}', '${F}', 'archon-merge', 'failed', 'gate', 'nope', 'config', 'sig-b', now())`,
     );
     try {
-      const queries = loadLiveQueries(join(import.meta.dir, '..', 'db', 'queries'));
+      const queries = loadLiveQueries(LIVE_QUERIES_DIR);
       const sources = await Promise.all(
         Object.values(ATTENTION_SOURCES).map(async ({ query }) => ({
           state: 'ready' as const,
@@ -730,7 +729,11 @@ describe('the briefing', () => {
 `);
       expect(played.prompts).toHaveLength(4);
 
-      // A bad count followed by a failed second run shows the count line alone and is not kept.
+      // A clean refresh is the kept briefing; a bad count then a failed second run shows the count
+      // line alone but does not replace it, so the next plain ask still serves the clean prose.
+      replies.push('The archon-build run is waiting on capacity.');
+      expect(text(await ask(true))).toContain('waiting on capacity');
+      expect(played.prompts).toHaveLength(5);
       const warn = spyOn(console, 'warn').mockImplementation(() => {});
       try {
         replies.push('The page lists 9 things.');
@@ -739,10 +742,10 @@ describe('the briefing', () => {
 
 `);
         expect(failed.some((e) => e.type === 'notice')).toBe(false);
-        expect(played.prompts).toHaveLength(6);
-        replies.length = 6;
-        replies.push('The archon-build run is waiting on capacity.');
-        expect(text(await ask(true))).toContain('waiting on capacity');
+        expect(played.prompts).toHaveLength(7);
+        expect(failed.at(-1)).toMatchObject({ type: 'done', cached: false });
+        expect(text(await ask())).toContain('waiting on capacity');
+        expect(played.prompts).toHaveLength(7);
       } finally {
         warn.mockRestore();
       }
@@ -1017,6 +1020,10 @@ describe('the briefing question with a run paused and other Attention rows', () 
     expect(briefingFault('1. Answer #522.\n2. Retry.\n3. Check.\n4. Wait.', tally)).toBeNull();
     expect(briefingFault('**28** things need you.', tally)).toContain('count of 28');
     expect(briefingFault('(5 owner questions)', tally)).toContain('count of 5');
+    const nested = ['- Answer first', '  1. a', '  2. b', '  3. c', '  4. d'].join('\n');
+    expect(briefingFault(nested, tally)).toBeNull();
+    for (const joined of ['"28" things', '28! things', '~28 things', '28+ items', '28-item list'])
+      expect(briefingFault(joined, tally)).toContain('count of 28');
   });
 });
 

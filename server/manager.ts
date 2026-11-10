@@ -798,24 +798,30 @@ export function briefingQuestion(
 
 type AttentionRead = { tally: AttentionTally; rows: AttentionRows };
 
-const LEADING = '(';
-const TRAILING = '.,;:)';
+const isDigit = (c: string | undefined): boolean => c !== undefined && c >= '0' && c <= '9';
+const isLetter = (c: string | undefined): boolean => c !== undefined && c.toLowerCase() !== c.toUpperCase();
 
-/** A word with the punctuation a count can sit in dropped, so `(12` reads as 12 while `#12` stays a reference. */
-function trimmed(word: string): string {
-  let start = 0;
-  let end = word.length;
-  while (start < end && LEADING.includes(word[start])) start++;
-  while (end > start && TRAILING.includes(word[end - 1])) end--;
-  return word.slice(start, end);
+/** Each maximal digit run is a count unless it is part of an id: after `#`, or touching a letter. */
+function countsIn(leaf: string): number[] {
+  const found: number[] = [];
+  for (let i = 0; i < leaf.length; i++) {
+    if (!isDigit(leaf[i])) continue;
+    let end = i;
+    while (isDigit(leaf[end])) end++;
+    const before = leaf[i - 1];
+    if (before !== '#' && !isLetter(before) && !isLetter(leaf[end])) found.push(Number(leaf.slice(i, end)));
+    i = end;
+  }
+  return found;
 }
-
-const isDigits = (word: string): boolean =>
-  word.length > 0 && [...word].every((c) => c >= '0' && c <= '9');
 
 function leaves(nodes: Inline[]): string[] {
   return nodes.flatMap((n) =>
-    n.type === 'bold' ? leaves(n.children) : n.type === 'link' ? [] : [n.text],
+    n.type === 'bold'
+      ? leaves(n.children)
+      : n.type === 'link' || (n.type === 'text' && n.marker)
+        ? []
+        : [n.text],
   );
 }
 
@@ -824,10 +830,7 @@ const bareNumbers = (text: string): number[] =>
   parseMessage(text, [])
     .blocks.flatMap((b) => (b.type === 'paragraph' ? [b.inlines] : b.items))
     .flatMap(leaves)
-    .flatMap((leaf) => leaf.split(/\s+/))
-    .map(trimmed)
-    .filter(isDigits)
-    .map(Number);
+    .flatMap(countsIn);
 
 /** Why the model's prose cannot sit under the count line: it states a number the line does not. */
 export function briefingFault(text: string, tally: AttentionTally): string | null {

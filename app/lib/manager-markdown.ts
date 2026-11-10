@@ -7,7 +7,7 @@ import { linkify, type ManagerLink } from './manager';
  * off, so headings, quotes, fences, tables, raw HTML and the rest come out as plain text.
  */
 export type Inline =
-  | { type: 'text'; text: string; literal?: true }
+  | { type: 'text'; text: string; literal?: true; marker?: true }
   | { type: 'bold'; children: Inline[] }
   | { type: 'code'; text: string }
   | { type: 'link'; link: ManagerLink };
@@ -23,7 +23,13 @@ type Token = ReturnType<typeof md.parse>[number];
 
 const push = (into: Inline[], node: Inline) => {
   const last = into[into.length - 1];
-  if (node.type === 'text' && last?.type === 'text' && last.literal === node.literal)
+  if (
+    node.type === 'text' &&
+    last?.type === 'text' &&
+    last.literal === node.literal &&
+    !last.marker &&
+    !node.marker
+  )
     last.text += node.text;
   else into.push(node);
 };
@@ -106,7 +112,7 @@ export function parseMessage(
         blocks.push({ type: 'paragraph', inlines: nodes });
       } else {
         const item = lists[0].items[lists[0].items.length - 1];
-        if (before) push(item, { type: 'text', text: before });
+        if (before) push(item, before.trim() ? { type: 'text', text: before, marker: true } : { type: 'text', text: before });
         for (const n of nodes) push(item, n);
         before = '\n\n';
       }
