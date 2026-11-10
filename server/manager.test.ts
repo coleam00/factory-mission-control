@@ -1,10 +1,15 @@
 import { afterAll, beforeAll, describe, expect, setDefaultTimeout, spyOn, test } from 'bun:test';
+import { join } from 'node:path';
 import type { Options, SDKMessage } from '@anthropic-ai/claude-agent-sdk';
+import { ATTENTION_SOURCES, attentionCount } from '../app/lib/attention-page';
 import { lapHref } from '../app/lib/one-lap';
 import { snapshot } from '../db/test-db';
 import { createApp } from './app';
+import { loadLiveQueries } from './live';
 import {
   type AgentRunner,
+  type AttentionTally,
+  attentionLine,
   CREDENTIAL_NAMES,
   createManager,
   type Manager,
@@ -565,6 +570,88 @@ describe('the briefing', () => {
       }),
     );
 
+  test('opens with the count Attention shows, from the same rows', async () => {
+    clock = new Date('2026-11-08T10:00:00');
+    const F = 'briefed';
+    const run = (n: number) => `5eed0009-0000-4000-8000-0000000000${n}`;
+    await fixture.direct.query(
+      `INSERT INTO mc.factories (name, repository, codebase, console) VALUES ('${F}', 'o/b', 'o/b', 'http://localhost:3092');
+       INSERT INTO mc.issues (factory, number, title, state, url, created_at, updated_at)
+         VALUES ('${F}', 9, 'Ask the owner', 'open', 'https://github.com/o/b/issues/9', now(), now());
+       INSERT INTO mc.issue_labels (factory, issue_number, label) VALUES ('${F}', 9, 'needs-owner');
+       INSERT INTO mc.capacity_waits (run_id, factory, workflow_name, item_number, since) VALUES
+         ('${run(11)}', '${F}', 'archon-build', 7, now()), ('${run(12)}', '${F}', 'archon-build', 8, now());
+       INSERT INTO mc.run_stops (run_id, factory, workflow_name, status, step_id, line, class, signature, stopped_at) VALUES
+         ('${run(21)}', '${F}', 'archon-build', 'failed', 'implement', 'boom', 'code', 'sig-a', now()),
+         ('${run(22)}', '${F}', 'archon-build', 'failed', 'implement', 'boom', 'code', 'sig-a', now()),
+         ('${run(23)}', '${F}', 'archon-merge', 'failed', 'gate', 'nope', 'config', 'sig-b', now())`,
+    );
+    try {
+      const queries = loadLiveQueries(join(import.meta.dir, '..', 'db', 'queries'));
+      const sources = await Promise.all(
+        Object.values(ATTENTION_SOURCES).map(async ({ query }) => ({
+          state: 'ready' as const,
+          rows: await fixture.direct.query(queries.get(query) ?? '', [F]),
+        })),
+      );
+      const count = attentionCount(sources);
+      expect(count).toBe(5);
+      const played = model(async () => [start, delta('fine'), result(0.01)]);
+      const manager = createManager({
+        db: fixture.direct,
+        databaseUrl: fixture.url,
+        factories: [F],
+        settings: managerSettings({}),
+        run: played.run,
+        now: () => clock,
+      });
+      const ask = async () =>
+        events(
+          await createApp({ buildId: 't', distDir: '.', manager }).request(
+            '/api/manager/briefing',
+            { method: 'POST', body: JSON.stringify({ factory: F }) },
+          ),
+        );
+      const line = `No run is paused on a question. ${count} things need you: 1 to decide, 2 to unstick, 2 to fix (3 failures in 2 causes).`;
+      expect((await ask())[0]).toEqual({ type: 'text', text: `${line}\n\n` });
+      expect(played.prompts[0]).toContain(line);
+
+      await fixture.direct.query(
+        `INSERT INTO mc.capacity_waits (run_id, factory, workflow_name, item_number, since) VALUES ('${run(13)}', '${F}', 'archon-build', 9, now())`,
+      );
+      expect((await ask())[0]).toMatchObject({
+        text: expect.stringContaining('6 things need you'),
+      });
+      expect(played.prompts).toHaveLength(1);
+    } finally {
+      await fixture.direct.query(
+        `DELETE FROM mc.capacity_waits WHERE factory = '${F}';
+         DELETE FROM mc.run_stops WHERE factory = '${F}';
+         DELETE FROM mc.issue_labels WHERE factory = '${F}';
+         DELETE FROM mc.issues WHERE factory = '${F}';
+         DELETE FROM mc.factories WHERE name = '${F}'`,
+      );
+    }
+  });
+
+  test('the line names each group by its count', () => {
+    const tally = (t: Partial<AttentionTally>): AttentionTally => ({
+      decide: 0,
+      owner: 0,
+      unstick: 0,
+      causes: 0,
+      failures: 0,
+      ...t,
+    });
+    expect(attentionLine(tally({}))).toBe('Nothing needs you.');
+    expect(attentionLine(tally({ unstick: 2, causes: 1, failures: 1 }))).toBe(
+      'No question is waiting. 3 things need you: 2 to unstick, 1 to fix (1 failure in 1 cause).',
+    );
+    expect(attentionLine(tally({ decide: 1 }))).toBe(
+      '1 run is paused on your answer. 1 thing needs you: 1 to decide.',
+    );
+  });
+
   test('a failed briefing is not kept for the day', async () => {
     clock = new Date('2026-11-08T10:00:00');
     const log = spyOn(console, 'error').mockImplementation(() => {});
@@ -575,7 +662,7 @@ describe('the briefing', () => {
     });
     const ask = briefingOf(managerOf(played));
     try {
-      expect((await ask()).map((e) => e.type)).toEqual(['notice', 'done']);
+      expect((await ask()).map((e) => e.type)).toEqual(['text', 'notice', 'done']);
     } finally {
       log.mockRestore();
     }

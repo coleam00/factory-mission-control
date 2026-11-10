@@ -1,9 +1,8 @@
-import { type ReactElement, type ReactNode, useEffect, useRef, useState } from 'react';
+import { type ReactElement, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router';
 import { TEXT_ANSWER_DETAIL } from '../lib/actions';
 import { clock, shortRunId } from '../lib/format';
 import {
-  linkify,
   MAX_MESSAGE_CHARS,
   type ManagerLink,
   type ManagerMessage,
@@ -11,6 +10,7 @@ import {
   type ManagerProposal,
   type ManagerReply,
 } from '../lib/manager';
+import { type Block, type Inline, parseMessage } from '../lib/manager-markdown';
 import { lapHref } from '../lib/one-lap';
 import { RUN_STATE, stateOf } from '../lib/states';
 import { useActionPending, useActionsEnabled, useStartAction } from './ActionToast';
@@ -22,18 +22,6 @@ const BRIEFING_WAIT = "Writing today's briefing.";
 const NO_FACTORY = 'This address names no factory, so the Manager has nothing to look at.';
 const LINK = 'text-[color:var(--v3-you-2)] hover:underline';
 
-/** `**bold**` inside one line of prose; React nodes only, never markup from the model. */
-function inline(text: string): ReactNode[] {
-  return text.split(/(\*\*[^*]+\*\*)/).map((part, i) =>
-    part.startsWith('**') && part.endsWith('**') && part.length > 4 ? (
-      // biome-ignore lint/suspicious/noArrayIndexKey: the parts are positional and never reorder
-      <b key={i}>{part.slice(2, -2)}</b>
-    ) : (
-      part
-    ),
-  );
-}
-
 function ItemLink({ link }: { link: ManagerLink }): ReactElement {
   return (
     <Link
@@ -41,37 +29,72 @@ function ItemLink({ link }: { link: ManagerLink }): ReactElement {
       data-run-link={link.kind === 'run' ? link.id : undefined}
       className={`font-mono [overflow-wrap:anywhere] ${LINK}`}
     >
-      {link.kind === 'run' ? shortRunId(link.id) : link.label}
+      {link.kind === 'run' ? shortRunId(link.id) : `#${link.id}`}
     </Link>
   );
 }
 
-/** The prose in paragraphs and bullets, with each link where the prose names it. */
-function Prose({ message }: { message: ManagerReply }): ReactElement {
-  const { segments, rest } = linkify(message.text, message.links);
-  // Paragraphs break at blank lines; single newlines and bullet markers show as written.
-  const blocks: ReactNode[][] = [[]];
-  let key = 0;
-  for (const segment of segments) {
-    if (typeof segment !== 'string') {
-      blocks[blocks.length - 1].push(<ItemLink key={key++} link={segment} />);
-      continue;
-    }
-    segment.split(/\n{2,}/).forEach((paragraph, i) => {
-      if (i > 0) blocks.push([]);
-      for (const node of inline(paragraph)) {
-        blocks[blocks.length - 1].push(<span key={key++}>{node}</span>);
-      }
-    });
-  }
+const CODE =
+  'rounded bg-[var(--v3-sunk)] px-1 font-mono text-[length:var(--v3-t-meta)] [overflow-wrap:anywhere]';
+const BLOCK = 'whitespace-pre-line [overflow-wrap:anywhere]';
+
+/** The parsed inlines as React nodes, never as markup from the model. */
+function Inlines({ nodes }: { nodes: Inline[] }): ReactElement {
   return (
     <>
-      {blocks.map((block, i) => (
-        // biome-ignore lint/suspicious/noArrayIndexKey: blocks are positional and never reorder
-        <p key={i} className="m-0 mb-2 whitespace-pre-line [overflow-wrap:anywhere]">
-          {block}
-        </p>
-      ))}
+      {nodes.map((node, i) => {
+        const key = i;
+        if (node.type === 'text') return <span key={key}>{node.text}</span>;
+        if (node.type === 'code')
+          return (
+            <code key={key} className={CODE}>
+              {node.text}
+            </code>
+          );
+        if (node.type === 'bold')
+          return (
+            <b key={key}>
+              <Inlines nodes={node.children} />
+            </b>
+          );
+        return <ItemLink key={key} link={node.link} />;
+      })}
+    </>
+  );
+}
+
+function ListBlock({ block }: { block: Extract<Block, { type: 'list' }> }): ReactElement {
+  const items = block.items.map((item, i) => (
+    // biome-ignore lint/suspicious/noArrayIndexKey: items are positional and never reorder
+    <li key={i} className={`mb-1 ${BLOCK}`}>
+      <Inlines nodes={item} />
+    </li>
+  ));
+  return block.ordered ? (
+    <ol start={block.start} className="m-0 mb-2 list-decimal pl-5">
+      {items}
+    </ol>
+  ) : (
+    <ul className="m-0 mb-2 list-disc pl-5">{items}</ul>
+  );
+}
+
+/** The prose in paragraphs and lists, with each link where the prose names it. */
+function Prose({ message }: { message: ManagerReply }): ReactElement {
+  const { blocks, rest } = parseMessage(message.text, message.links);
+  return (
+    <>
+      {blocks.map((block, i) =>
+        block.type === 'paragraph' ? (
+          // biome-ignore lint/suspicious/noArrayIndexKey: blocks are positional and never reorder
+          <p key={i} className={`m-0 mb-2 ${BLOCK}`}>
+            <Inlines nodes={block.inlines} />
+          </p>
+        ) : (
+          // biome-ignore lint/suspicious/noArrayIndexKey: blocks are positional and never reorder
+          <ListBlock key={i} block={block} />
+        ),
+      )}
       {rest.length === 0 ? null : (
         <p className="m-0 mb-2 flex flex-wrap gap-x-3 gap-y-1">
           {rest.map((link) => (

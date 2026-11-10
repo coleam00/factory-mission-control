@@ -11,6 +11,7 @@ import {
 import type { Server } from 'bun';
 import type { Context, Hono } from 'hono';
 import { parseChoices } from '../app/lib/attention';
+import { ATTENTION_SOURCES } from '../app/lib/attention-page';
 import { isRunId, lapHref } from '../app/lib/one-lap';
 import { workItemHref } from '../app/lib/work-item';
 import { type Db, openDb } from '../scripts/lib/db';
@@ -18,6 +19,7 @@ import { RESUME_FROM_SQL } from './actions';
 import type { Env } from './check-env';
 import { BASE_ENV_NAMES, pick } from './child-env';
 import { readFactoryNames } from './factories';
+import { loadLiveQueries } from './live';
 import { MANAGER_LIMITS, readOnlyQuery } from './manager-sql';
 import {
   AnswerSplitter,
@@ -632,12 +634,72 @@ export function answer(manager: Manager, request: ChatRequest, signal: AbortSign
 const BRIEFING_QUESTION =
   "Write today's briefing: what merged, what failed (count a run by the day it failed, completed_at, not the day it started), what waits on the owner, and the one or two things that matter most.";
 
-async function generateBriefing(manager: Manager, factory: string) {
+/** What the Attention header counts, split by its groups: a decide card per decide or owner row. */
+export interface AttentionTally {
+  decide: number;
+  owner: number;
+  unstick: number;
+  causes: number;
+  failures: number;
+}
+
+let attentionQueries: Map<string, string> | undefined;
+
+/**
+ * The row counts of the four queries the Attention page sums, in one statement so the parts add up.
+ * Counting inside SQL keeps `readOnlyQuery`'s row cap from undercounting. Null when any of them
+ * fails, as the page then shows no number either.
+ */
+async function attentionTally(manager: Manager, factory: string): Promise<AttentionTally | null> {
+  attentionQueries ??= loadLiveQueries(join(import.meta.dir, '..', 'db', 'queries'));
+  const source = (key: keyof typeof ATTENTION_SOURCES): string =>
+    `\n${attentionQueries?.get(ATTENTION_SOURCES[key].query)}\n`;
+  const sql = `SELECT
+  (SELECT count(*) FROM (${source('decide')}) AS d)::int AS decide,
+  (SELECT count(*) FROM (${source('owner')}) AS o)::int AS owner,
+  (SELECT count(*) FROM (${source('unstick')}) AS u)::int AS unstick,
+  (SELECT count(*) FROM (${source('failures')}) AS g)::int AS causes,
+  (SELECT coalesce(sum(g.failures), 0) FROM (${source('failures')}) AS g)::int AS failures`;
+  try {
+    const { rows } = await readOnlyQuery(manager.db, sql, [factory], MANAGER_LIMITS);
+    return rows[0] as unknown as AttentionTally;
+  } catch (err) {
+    console.error(`manager: attention count failed: ${err instanceof Error ? err.message : err}`);
+    return null;
+  }
+}
+
+const plural = (n: number, one: string, many: string): string => `${n} ${n === 1 ? one : many}`;
+
+/** The briefing's first line: each Attention group by the count its group shows, so the total matches the header. */
+export function attentionLine(t: AttentionTally): string {
+  const total = t.decide + t.owner + t.unstick + t.causes;
+  if (total === 0) return 'Nothing needs you.';
+  const lead =
+    t.decide > 0
+      ? `${plural(t.decide, 'run is', 'runs are')} paused on your answer. `
+      : t.owner > 0
+        ? 'No run is paused on a question. '
+        : 'No question is waiting. ';
+  const parts = [
+    t.decide + t.owner > 0 ? `${t.decide + t.owner} to decide` : '',
+    t.unstick > 0 ? `${t.unstick} to unstick` : '',
+    t.causes > 0
+      ? `${t.causes} to fix (${plural(t.failures, 'failure', 'failures')} in ${plural(t.causes, 'cause', 'causes')})`
+      : '',
+  ].filter(Boolean);
+  return `${lead}${plural(total, 'thing needs', 'things need')} you: ${parts.join(', ')}.`;
+}
+
+async function generateBriefing(manager: Manager, factory: string, tally: AttentionTally | null) {
   const events: ManagerEvent[] = [];
+  const counted = tally
+    ? ` The briefing already opens with this line, counted from the Attention page's own rows: "${attentionLine(tally)}" Do not restate or recount it. What waits on the owner is those Attention items, not a separate count of open questions.`
+    : " The Attention page's count could not be read: do not say how many things wait on the owner.";
   const request: ChatRequest = {
     factory,
     context: { place: 'attention' },
-    messages: [{ role: 'owner', text: BRIEFING_QUESTION }],
+    messages: [{ role: 'owner', text: BRIEFING_QUESTION + counted }],
   };
   const { ok, cost } = await produce(manager, request, new AbortController().signal, (event) =>
     events.push(event),
@@ -650,6 +712,8 @@ async function generateBriefing(manager: Manager, factory: string) {
 /** A briefing is shared by whoever asks, so one asker leaving does not stop its generation. */
 export function briefing(manager: Manager, factory: string, refresh: boolean): Response {
   return ndjson(async (emit) => {
+    const tally = await attentionTally(manager, factory);
+    if (tally) emit({ type: 'text', text: `${attentionLine(tally)}\n\n` });
     const cached = manager.briefings.get(factory);
     if (!refresh && cached && cached.day === dayOf(manager.now())) {
       for (const event of cached.events) emit(event);
@@ -658,7 +722,7 @@ export function briefing(manager: Manager, factory: string, refresh: boolean): R
     }
     let pending = manager.generating.get(factory);
     if (!pending) {
-      pending = generateBriefing(manager, factory);
+      pending = generateBriefing(manager, factory, tally);
       manager.generating.set(factory, pending);
       pending.then(
         () => manager.generating.delete(factory),
