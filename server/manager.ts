@@ -93,8 +93,8 @@ interface CachedBriefing {
   day: string;
   events: ManagerEvent[];
   generatedAt: string;
-  /** The Attention tally the body was written against; the body is only true while it holds. */
-  tally: AttentionTally | null;
+  /** The Attention read (counts and rows) the body was written against; the body names those rows, so it is only served while the page still shows them. */
+  basis: string | null;
 }
 
 /** The Manager's state lives in this process: a restart resets the day's spend and the briefings. */
@@ -678,11 +678,8 @@ export type AttentionTally = Record<keyof typeof ATTENTION_SOURCES, number> & {
   failureRuns: number;
 };
 
-/** The first rows of each Attention source, as the page lists them. */
+/** The rows of each Attention source, the ones the count line is built from. */
 export type AttentionRows = Record<keyof typeof ATTENTION_SOURCES, unknown[]>;
-
-/** Rows handed to the model per source: enough to name the items, bounded so a long queue stays a short prompt. */
-const ROWS_PER_SOURCE = 15;
 
 let attentionQueries: Map<string, string> | undefined;
 
@@ -706,7 +703,7 @@ async function attentionTally(
     );
     const listed = keys.map(
       (key) =>
-        `(SELECT coalesce(json_agg(l), '[]'::json) FROM (SELECT * FROM (${source(key)}) AS q LIMIT ${ROWS_PER_SOURCE}) AS l) AS "rows_${key}"`,
+        `(SELECT coalesce(json_agg(l), '[]'::json) FROM (${source(key)}) AS l) AS "rows_${key}"`,
     );
     const sql = `SELECT
   ${counts.join(',\n  ')},
@@ -786,12 +783,11 @@ async function generateBriefing(
   factory: string,
   read: { tally: AttentionTally; rows: AttentionRows } | null,
 ) {
-  const tally = read?.tally ?? null;
   const events: ManagerEvent[] = [];
   const request: ChatRequest = {
     factory,
     context: { place: 'attention' },
-    messages: [{ role: 'owner', text: briefingQuestion(tally, read?.rows ?? null) }],
+    messages: [{ role: 'owner', text: briefingQuestion(read?.tally ?? null, read?.rows ?? null) }],
   };
   const { ok, cost } = await produce(manager, request, new AbortController().signal, (event) =>
     events.push(event),
@@ -800,26 +796,21 @@ async function generateBriefing(
     day: dayOf(manager.now()),
     events,
     generatedAt: manager.now().toISOString(),
-    tally,
+    basis: basisOf(read),
   };
   if (ok) manager.briefings.set(factory, briefing);
   return { briefing, cost };
 }
 
-/** A null on either side never matches: a body written without a count, or asked without one, cannot be vouched for. */
-function sameTally(a: AttentionTally | null, b: AttentionTally | null): boolean {
-  return (
-    a !== null &&
-    b !== null &&
-    (Object.keys(a) as (keyof AttentionTally)[]).every((k) => a[k] === b[k])
-  );
-}
+const basisOf = (read: { tally: AttentionTally; rows: AttentionRows } | null): string | null =>
+  read && JSON.stringify(read);
 
 /** A briefing is shared by whoever asks, so one asker leaving does not stop its generation. */
 export function briefing(manager: Manager, factory: string, refresh: boolean): Response {
   return ndjson(async (emit) => {
     const read = await attentionTally(manager, factory);
     const tally = read?.tally ?? null;
+    const basis = basisOf(read);
     // Emitted with the prose, not before it: any event ends the panel's wait text.
     const countLine = () => {
       if (tally) emit({ type: 'text', text: `${attentionLine(tally)}\n\n` });
@@ -829,7 +820,8 @@ export function briefing(manager: Manager, factory: string, refresh: boolean): R
       !refresh &&
       cached &&
       cached.day === dayOf(manager.now()) &&
-      sameTally(cached.tally, tally)
+      cached.basis !== null &&
+      cached.basis === basis
     ) {
       countLine();
       for (const event of cached.events) emit(event);
@@ -846,8 +838,8 @@ export function briefing(manager: Manager, factory: string, refresh: boolean): R
       );
     }
     let { briefing: made, cost } = await pending;
-    // Joined a generation written against another count: its prose would sit under this asker's line.
-    if (made.tally ? !sameTally(made.tally, tally) : tally !== null) {
+    // Joined a generation written against other rows: its prose would sit under this asker's line.
+    if (made.basis !== basis) {
       ({ briefing: made, cost } = await generateBriefing(manager, factory, read));
     }
     countLine();

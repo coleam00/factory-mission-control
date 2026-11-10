@@ -634,6 +634,15 @@ describe('the briefing', () => {
       expect(changed.at(-1)).toMatchObject({ type: 'done', cached: false });
       expect(played.prompts).toHaveLength(2);
       expect(played.prompts[1]).toContain('6 things need you');
+
+      // One row leaves and another arrives: the counts hold, but the prose names a row that is gone.
+      await fixture.direct.query(
+        `DELETE FROM mc.capacity_waits WHERE run_id = '${run(11)}';
+         INSERT INTO mc.capacity_waits (run_id, factory, workflow_name, item_number, since) VALUES ('${run(14)}', '${F}', 'archon-build', 10, now())`,
+      );
+      expect((await ask()).at(-1)).toMatchObject({ type: 'done', cached: false });
+      expect(played.prompts).toHaveLength(3);
+      expect(played.prompts[2]).toContain(run(14));
     } finally {
       await fixture.direct.query(
         `DELETE FROM mc.capacity_waits WHERE factory = '${F}';
