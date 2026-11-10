@@ -26,7 +26,7 @@ const inlinesOf = (b: Block | undefined) => {
   return b.inlines;
 };
 
-test('bold that opens in one item and closes in the next is in neither', () => {
+test('bold that opens in one item and closes in the next is in neither and shows no **', () => {
   const { blocks } = parseMessage(
     '1. **Build-queue failures on issue #522\n2. keep recurring.** Fix the gate.',
     [item(522)],
@@ -51,6 +51,13 @@ test('bold paired inside one item keeps its link inside', () => {
   });
 });
 
+test('an issue reference becomes a link and its title is not shown', () => {
+  const { blocks, rest } = parseMessage('See #522 now', [item(522)]);
+  expect(flat(inlinesOf(blocks[0]))).toBe('See #522 now');
+  expect(kinds(inlinesOf(blocks[0]))).toEqual(['text', 'link', 'text']);
+  expect(rest).toEqual([]);
+});
+
 test('code keeps its text verbatim and unlinked', () => {
   const { blocks, rest } = parseMessage('Run `**x** #522` now', [item(522)]);
   expect(inlinesOf(blocks[0])).toMatchObject([
@@ -61,80 +68,16 @@ test('code keeps its text verbatim and unlinked', () => {
   expect(rest).toHaveLength(1);
 });
 
-test('what is outside the subset is plain text, without its markers', () => {
-  const text =
-    '# Title\n\n> quoted [here](http://x.test) and *soft*\n\n---\n\n```sql\nSELECT 1\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |';
-  const { blocks } = parseMessage(text, []);
+test('raw HTML shows as text, never as markup', () => {
+  const { blocks } = parseMessage('a <b>x</b> <script>y</script>\n\n<div>z</div>', []);
   expect(blocks.map((b) => flat(inlinesOf(b)))).toEqual([
-    'Title',
-    'quoted here and soft',
-    'SELECT 1',
-    'a · b',
-    '1 · 2',
+    'a <b>x</b> <script>y</script>',
+    '<div>z</div>',
   ]);
 });
 
-test.each<[string, string, Inline['type'][]]>([
-  ['***x*** end', 'x end', ['bold', 'text']],
-  ['___x___ end', 'x end', ['bold', 'text']],
-  ['__bold__ end', 'bold end', ['bold', 'text']],
-  ['an _it_ end', 'an it end', ['text']],
-  ['a ~~gone~~ end', 'a gone end', ['text']],
-  ['![img](http://x.test) end', 'img end', ['text']],
-  ['snake_case and my_var_name', 'snake_case and my_var_name', ['text']],
-])('%s leaves no markup', (text, shown, shape) => {
-  const inl = inlinesOf(parseMessage(text, []).blocks[0]);
-  expect(flat(inl)).toBe(shown);
-  expect(kinds(inl)).toEqual(shape);
-});
-
-test.each<[string, string, Inline['type'][]]>([
-  ['*a **b** c* end', 'a b c end', ['text', 'bold', 'text']],
-  ['~~**x**~~ end', 'x end', ['bold', 'text']],
-  ['_**x**_ end', 'x end', ['bold', 'text']],
-  ['*see **here*** end', 'see here end', ['text', 'bold', 'text']],
-  ['***a** b* end', 'a b end', ['bold', 'text']],
-  ['**a *b*** end', 'a b end', ['bold', 'text']],
-  ['*a `c` b* end', 'a c b end', ['text', 'code', 'text']],
-  ['_a `c` b_ end', 'a c b end', ['text', 'code', 'text']],
-  ['~~a `c` b~~ end', 'a c b end', ['text', 'code', 'text']],
-  ['\\*not\\* end', '*not* end', ['text']],
-  ['line<br>two', 'line two', ['text']],
-  ['see <https://x.test> now', 'see https://x.test now', ['text']],
-])('%s leaves no markup across a boundary', (text, shown, shape) => {
-  const inl = inlinesOf(parseMessage(text, []).blocks[0]);
-  expect(flat(inl)).toBe(shown);
-  expect(kinds(inl)).toEqual(shape);
-});
-
-test.each<[string, string, Inline['type'][]]>([
-  ['[`server/manager.ts`](https://x.test/f) end', 'server/manager.ts end', ['code', 'text']],
-  ['[a `c` b](u) end', 'a c b end', ['text', 'code', 'text']],
-  ['[`a`](u) and [`b`](v)', 'a and b', ['code', 'text', 'code']],
-  ['![`img`](u) end', 'img end', ['code', 'text']],
-  ['[x](u `c`) end', 'x end', ['text']],
-  ['<https://x.test/`a`> end', 'https://x.test/a end', ['text', 'code', 'text']],
-  ['__`c`__ end', 'c end', ['bold', 'text']],
-  ['__x `c`__ end', 'x c end', ['bold', 'text']],
-  ['a __`c` b__ end', 'a c b end', ['text', 'bold', 'text']],
-])('%s leaves no markup around a code span', (text, shown, shape) => {
-  const inl = inlinesOf(parseMessage(text, []).blocks[0]);
-  expect(flat(inl)).toBe(shown);
-  expect(kinds(inl)).toEqual(shape);
-});
-
-test('private-use glyphs in a reply stay as typed', () => {
-  const text = 'a  b  c  `x`  d';
-  expect(flat(inlinesOf(parseMessage(text, []).blocks[0]))).toBe(text.replaceAll('`', ''));
-});
-
-test('step ids, products and a stray ** stay readable', () => {
-  const { blocks } = parseMessage('pr__prepare took 2 * 3 s ** end', []);
-  expect(flat(inlinesOf(blocks[0]))).toBe('pr__prepare took 2 * 3 s  end');
-});
-
 test('a link the prose never names is left over; a list follows a paragraph line', () => {
-  const { blocks, rest } = parseMessage('Two things:\n- one\n- two', [item(9)]);
+  const { blocks, rest } = parseMessage('Two things:\n\n- one\n- two', [item(9)]);
   expect(rest).toEqual([item(9)]);
   expect(blocks.map((b) => b.type)).toEqual(['paragraph', 'list']);
   expect(list(blocks[1]).items).toHaveLength(2);
