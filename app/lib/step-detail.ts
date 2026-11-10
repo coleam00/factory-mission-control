@@ -292,7 +292,7 @@ export function stepVersions(rows: readonly StepVersionRow[]): StepVersion[] {
  * addressed by an Archon commit links the map by the row's own pin, or without one when it has none.
  */
 export function mapAt(at: string | null, found: Pick<StepRow, 'pin'> | undefined): string | null {
-  return found ? found.pin : at;
+  return at === null || found === undefined ? at : found.pin;
 }
 
 /** The version the step screen shows, in a sentence: the one pinned `at`, else the current one. */

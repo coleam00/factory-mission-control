@@ -232,5 +232,6 @@ test('the map link of a step screen drops an address that is not a pin: the map 
   expect(mapAt('p1', { pin: 'p1' })).toBe('p1');
   expect(mapAt('p1', undefined)).toBe('p1');
   expect(mapAt(null, { pin: null })).toBeNull();
+  expect(mapAt(null, { pin: 'p1' })).toBeNull();
   expect(mapAt('b'.repeat(40), { pin: 'p1' })).toBe('p1');
 });
