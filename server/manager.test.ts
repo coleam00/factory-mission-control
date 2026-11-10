@@ -1015,6 +1015,10 @@ describe('the briefing question with a run paused and other Attention rows', () 
     const tally = { decide: 1, owner: 3, unstick: 0, failures: 0, failureRuns: 0 };
     expect(briefingFault('Run #12 is paused; 4 things need you.', tally)).toBeNull();
     expect(briefingFault('**28** things need you.', tally)).toContain('count of 28');
+    expect(briefingFault('__28__ things need you.', tally)).toContain('count of 28');
+    expect(briefingFault('_28_ things need you.', tally)).toContain('count of 28');
+    expect(briefingFault('`28` things need you.', tally)).toContain('count of 28');
+    expect(briefingFault('Right now nothing needs you.', tally)).toContain('count of 0');
     expect(briefingFault('1 thing needs you.', tally)).toContain('count of 1');
     expect(briefingFault('Nothing needs you.', tally)).toContain('count of 0');
     const none = { decide: 0, owner: 0, unstick: 0, failures: 0, failureRuns: 0 };
