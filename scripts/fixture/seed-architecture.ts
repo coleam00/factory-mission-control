@@ -11,7 +11,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { type PackVersion, parseVersion } from '../../parsers/pack';
 import { ARCH_TABLES, type ArchTable, archRows } from '../arch-parse';
-import { insert, lit, type SqlRow } from './sql';
+import type { SqlRow } from '../lib/db';
+import { insert, lit } from './sql';
 
 type Edit = { file: string } & ({ find: string; replace: string } | { append: string });
 
@@ -117,7 +118,7 @@ export function parseVersions(repoRoot: string): { v1: PackVersion; v2: PackVers
 type Table = { name: string; key: string[]; rows: SqlRow[] };
 
 /** A table added to ARCH_TABLES fails to compile here until its key is named. */
-const TABLE_KEYS: Record<ArchTable, string[]> = {
+export const TABLE_KEYS: Record<ArchTable, string[]> = {
   arch_workflows: ['name'],
   arch_steps: ['workflow', 'path'],
   arch_edges: ['workflow', 'from_path', 'to_path'],

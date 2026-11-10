@@ -2,6 +2,13 @@ import { SQL } from 'bun';
 
 export type Row = Record<string, unknown>;
 
+/** A value for a jsonb column, as opposed to a text[] one. */
+export type Json = { json: unknown };
+
+export type Literal = null | string | number | readonly string[] | Json;
+
+export type SqlRow = Record<string, Literal>;
+
 export interface Tx {
   /**
    * A parameter cast to `::jsonb` binds by its JS shape on Bun's client (`openDb`): an object as a
