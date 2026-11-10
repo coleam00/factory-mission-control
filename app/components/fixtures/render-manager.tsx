@@ -95,7 +95,7 @@ export function mount(url: string) {
       if (target === '/api/manager/chat') {
         return lines(
           { type: 'text', text: `Run ${RUN.slice(0, 8)} stopped at implement.` },
-          { type: 'link', kind: 'run', id: RUN, label: 'run', href: `/f/x/runs/${RUN}` },
+          { type: 'link', kind: 'run', id: RUN, href: `/f/x/runs/${RUN}` },
           {
             type: 'runs',
             runs: [

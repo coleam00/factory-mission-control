@@ -46,7 +46,7 @@ test('the panel is never blank: a briefing being written, a notice and an unknow
 
 const answer: ManagerReply = {
   ...reply('answer', `Run ${RUN.slice(0, 8)} failed at implement.`, 'done'),
-  links: [{ type: 'link', kind: 'run', id: RUN, label: 'run', href: `/f/x/runs/${RUN}` }],
+  links: [{ type: 'link', kind: 'run', id: RUN, href: `/f/x/runs/${RUN}` }],
   runs: [
     {
       run_id: RUN,

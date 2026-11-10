@@ -12,7 +12,7 @@ import type { ActionRequest } from '../app/lib/actions';
 
 export type ManagerEvent =
   | { type: 'text'; text: string }
-  | { type: 'link'; kind: 'run'; id: string; label: string; href: string }
+  | { type: 'link'; kind: 'run'; id: string; href: string }
   | { type: 'link'; kind: 'item'; id: number; href: string }
   | { type: 'runs'; runs: RunSummary[] }
   | ({
@@ -66,12 +66,32 @@ export const PLACES = ['attention', 'factory', 'board', 'runs', 'run', 'work', '
 
 export interface ChatRequest {
   factory: string;
-  context: { place: (typeof PLACES)[number]; run?: string; item?: number };
+  context: {
+    place: (typeof PLACES)[number];
+    run?: string;
+    item?: number;
+    workflow?: string;
+    step?: string;
+    order?: string;
+  };
   messages: { role: 'owner' | 'manager'; text: string }[];
 }
 
 /** The statuses of a run the owner can resume: the prompt names them and the proposal check admits them. */
 export const RESUMABLE_STATUSES = ['failed', 'paused'] as const;
+
+/** The longest workflow, step or work-order name the context carries. */
+export const MAX_NAME_CHARS = 100;
+
+/** A name from the owner's address: free text, so no line breaks or other control characters can reach the prompt. */
+export function isName(value: unknown): value is string {
+  return (
+    typeof value === 'string' &&
+    value.length >= 1 &&
+    value.length <= MAX_NAME_CHARS &&
+    ![...value].some((c) => c.charCodeAt(0) < 32 || c.charCodeAt(0) === 127)
+  );
+}
 
 /** The longest conversation and message the chat endpoint accepts; the panel trims to the same. */
 export const MAX_MESSAGES = 20;
