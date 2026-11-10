@@ -122,3 +122,36 @@ test('a run list draws one row per run, and a proposal is a button only when the
   expect(without).not.toContain('data-proposal');
   expect(without).toContain('Open run 5eed0001');
 });
+
+test('bold that opens in one list item and closes in the next shows no ** and stays out of both', () => {
+  const text = '1. **Build-queue failures on issue #522\n2. keep recurring.** Fix the gate.';
+  const html = render([
+    {
+      ...reply('briefing', text, 'done'),
+      links: [{ type: 'link', kind: 'item', id: 522, href: '/f/x/work/522' }],
+    },
+  ]);
+  expect(html).not.toContain('**');
+  expect(html).toContain('<ol');
+  expect(html.match(/<li/g)).toHaveLength(2);
+  expect(html).not.toContain('<b>');
+});
+
+test('an issue link reads #N and not the title', () => {
+  const html = render([
+    {
+      ...reply('answer', 'See #514.', 'done'),
+      links: [
+        {
+          type: 'link',
+          kind: 'item',
+          id: 514,
+          href: '/f/x/work/514',
+        },
+      ],
+    },
+  ]);
+  expect(html).toContain('href="/f/x/work/514"');
+  expect(html).toContain('>#514</a>');
+  expect(html).not.toContain('Manager backend');
+});

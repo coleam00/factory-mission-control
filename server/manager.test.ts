@@ -1,11 +1,17 @@
 import { afterAll, beforeAll, describe, expect, setDefaultTimeout, spyOn, test } from 'bun:test';
 import type { Options, SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import { ANSWER_TEXT_MAX } from '../app/lib/attention';
+import { ATTENTION_SOURCES, attentionCount } from '../app/lib/attention-page';
 import { lapHref } from '../app/lib/one-lap';
 import { snapshot } from '../db/test-db';
 import { createApp } from './app';
+import { LIVE_QUERIES_DIR, loadLiveQueries } from './live';
 import {
   type AgentRunner,
+  type AttentionTally,
+  attentionLine,
+  briefingFault,
+  briefingQuestion,
   CREDENTIAL_NAMES,
   createManager,
   type Manager,
@@ -196,7 +202,7 @@ describe('the chat endpoint against a stubbed model', () => {
     expect(got[0]).toEqual({ type: 'text', text: 'Two things need you.\n' });
     expect(got.filter((e) => e.type === 'link')).toMatchObject([
       { kind: 'run', id: FAILED_RUN, href: lapHref(FACTORY, FAILED_RUN) },
-      { kind: 'item', id: 514, label: '#514 Manager backend', href: `/f/${FACTORY}/work/514` },
+      { kind: 'item', id: 514, href: `/f/${FACTORY}/work/514` },
     ]);
     const runs = got.find((e) => e.type === 'runs');
     expect(runs?.type === 'runs' && runs.runs.map((r) => r.run_id)).toEqual([
@@ -567,6 +573,291 @@ describe('the briefing', () => {
       }),
     );
 
+  test('opens with the count Attention shows, from the same rows', async () => {
+    clock = new Date('2026-11-08T10:00:00');
+    const F = 'briefed';
+    const run = (n: number) => `5eed0009-0000-4000-8000-0000000000${n}`;
+    await fixture.direct.query(
+      `INSERT INTO mc.factories (name, repository, codebase, console) VALUES ('${F}', 'o/b', 'o/b', 'http://localhost:3092');
+       INSERT INTO mc.issues (factory, number, title, state, url, created_at, updated_at)
+         VALUES ('${F}', 9, 'Ask the owner', 'open', 'https://github.com/o/b/issues/9', now(), now());
+       INSERT INTO mc.issue_labels (factory, issue_number, label) VALUES ('${F}', 9, 'needs-owner');
+       INSERT INTO mc.capacity_waits (run_id, factory, workflow_name, item_number, since) VALUES
+         ('${run(11)}', '${F}', 'archon-build', 7, now()), ('${run(12)}', '${F}', 'archon-build', 8, now());
+       INSERT INTO mc.run_stops (run_id, factory, workflow_name, status, step_id, line, class, signature, stopped_at) VALUES
+         ('${run(21)}', '${F}', 'archon-build', 'failed', 'implement', 'boom', 'code', 'sig-a', now()),
+         ('${run(22)}', '${F}', 'archon-build', 'failed', 'implement', 'boom', 'code', 'sig-a', now()),
+         ('${run(23)}', '${F}', 'archon-merge', 'failed', 'gate', 'nope', 'config', 'sig-b', now())`,
+    );
+    try {
+      const queries = loadLiveQueries(LIVE_QUERIES_DIR);
+      const sources = await Promise.all(
+        Object.values(ATTENTION_SOURCES).map(async ({ query }) => ({
+          state: 'ready' as const,
+          rows: await fixture.direct.query(queries.get(query) ?? '', [F]),
+        })),
+      );
+      const count = attentionCount(sources);
+      expect(count).toBe(5);
+      const played = model(async () => [start, delta('fine'), result(0.01)]);
+      const manager = createManager({
+        db: fixture.direct,
+        databaseUrl: fixture.url,
+        factories: [F],
+        settings: managerSettings({}),
+        run: played.run,
+        now: () => clock,
+      });
+      const ask = async () =>
+        events(
+          await createApp({ buildId: 't', distDir: '.', manager }).request(
+            '/api/manager/briefing',
+            { method: 'POST', body: JSON.stringify({ factory: F }) },
+          ),
+        );
+      const line = `No run is paused on a question. ${count} things need you: 1 to decide, 2 to unstick, 2 to fix (3 failures in 2 causes).`;
+      expect((await ask())[0]).toEqual({ type: 'text', text: `${line}\n\n` });
+      expect(played.prompts[0]).toContain(line);
+      // The first generation is handed the rows the line was counted from, not left to query for them.
+      expect(played.prompts[0]).toContain('Ask the owner');
+      expect(played.prompts[0]).toContain(run(11));
+      expect(played.prompts[0]).toContain(run(23));
+
+      expect((await ask())[0]).toEqual({ type: 'text', text: `${line}\n\n` });
+      expect(played.prompts).toHaveLength(1);
+
+      await fixture.direct.query(
+        `INSERT INTO mc.capacity_waits (run_id, factory, workflow_name, item_number, since) VALUES ('${run(13)}', '${F}', 'archon-build', 9, now())`,
+      );
+      const changed = await ask();
+      expect(changed[0]).toMatchObject({ text: expect.stringContaining('6 things need you') });
+      expect(changed.at(-1)).toMatchObject({ type: 'done', cached: false });
+      expect(played.prompts).toHaveLength(2);
+      expect(played.prompts[1]).toContain('6 things need you');
+
+      // One row leaves and another arrives: the counts hold, but the prose names a row that is gone.
+      await fixture.direct.query(
+        `DELETE FROM mc.capacity_waits WHERE run_id = '${run(11)}';
+         INSERT INTO mc.capacity_waits (run_id, factory, workflow_name, item_number, since) VALUES ('${run(14)}', '${F}', 'archon-build', 10, now())`,
+      );
+      expect((await ask()).at(-1)).toMatchObject({ type: 'done', cached: false });
+      expect(played.prompts).toHaveLength(3);
+      expect(played.prompts[2]).toContain(run(14));
+
+      // Rewriting a row without changing it can move it in a scan; the page is unchanged, so the prose holds.
+      await fixture.direct.query('SET enable_indexscan = off; SET enable_bitmapscan = off');
+      await fixture.direct.query(
+        `UPDATE mc.capacity_waits SET since = since WHERE run_id = '${run(12)}'`,
+      );
+      expect((await ask()).at(-1)).toMatchObject({ type: 'done', cached: true });
+      expect(played.prompts).toHaveLength(3);
+    } finally {
+      await fixture.direct.query('RESET enable_indexscan; RESET enable_bitmapscan');
+      await fixture.direct.query(
+        `DELETE FROM mc.capacity_waits WHERE factory = '${F}';
+         DELETE FROM mc.run_stops WHERE factory = '${F}';
+         DELETE FROM mc.issue_labels WHERE factory = '${F}';
+         DELETE FROM mc.issues WHERE factory = '${F}';
+         DELETE FROM mc.factories WHERE name = '${F}'`,
+      );
+    }
+  });
+
+  test('the briefing model has no Attention tool, and prose that states another count is replaced', async () => {
+    clock = new Date('2026-11-08T10:00:00');
+    const F = 'checked';
+    const waiting = '5eed0009-0000-4000-8000-000000000031';
+    await fixture.direct.query(
+      `INSERT INTO mc.factories (name, repository, codebase, console) VALUES ('${F}', 'o/b', 'o/b', 'http://localhost:3092');
+       INSERT INTO mc.capacity_waits (run_id, factory, workflow_name, item_number, since) VALUES ('${waiting}', '${F}', 'archon-build', 7, now())`,
+    );
+    try {
+      const replies = ['9 things need you.', 'The archon-build run is waiting on capacity.'];
+      let calls = 0;
+      let attempts: unknown[] = [];
+      const played = model(async (options) => {
+        attempts = await callTools(options, [
+          ['select', { sql: 'SELECT 1' }],
+          ['live_query', { name: 'decide' }],
+          ['live_query', { name: 'unstick' }],
+          ['live_query', { name: 'attention-items' }],
+          ['live_query', { name: 'home-map' }],
+        ]);
+        const reply = replies[calls++];
+        if (reply === undefined) return [start, result(0, 'error_during_execution')];
+        return [start, delta(reply), result(0.01)];
+      });
+      const manager = createManager({
+        db: fixture.direct,
+        databaseUrl: fixture.url,
+        factories: [F],
+        settings: managerSettings({}),
+        run: played.run,
+        now: () => clock,
+      });
+      const ask = async (refresh?: boolean) =>
+        events(
+          await createApp({ buildId: 't', distDir: '.', manager }).request(
+            '/api/manager/briefing',
+            { method: 'POST', body: JSON.stringify({ factory: F, refresh }) },
+          ),
+        );
+      const line = 'No question is waiting. 1 thing needs you: 1 to unstick.';
+      const text = (list: Awaited<ReturnType<typeof ask>>) =>
+        list.map((e) => (e.type === 'text' ? e.text : '')).join('');
+
+      // No ad hoc SELECT and no Attention query reaches the model, so it can only use the rows it was handed.
+      const regenerated = await ask();
+      expect(attempts.map((r) => (r as { isError?: boolean }).isError)).toEqual([
+        true,
+        true,
+        true,
+        true,
+        true,
+      ]);
+      expect(played.options[0]?.allowedTools).toEqual(['mcp__mc__live_query']);
+
+      // A reply that states another count is regenerated once; a clean second reply is shown.
+      expect(played.prompts).toHaveLength(2);
+      expect(text(regenerated)).toStartWith(`${line}
+
+`);
+      expect(text(regenerated)).not.toContain('9 things');
+      expect(text(regenerated)).toContain('waiting on capacity');
+
+      // A reply that keeps contradicting the count falls back to the count line alone.
+      replies.push('9 things need you.', '8 things need you.');
+      expect(text(await ask(true))).toBe(`${line}
+
+`);
+      expect(played.prompts).toHaveLength(4);
+
+      // A clean refresh is the kept briefing; a bad count then a failed second run shows the count
+      // line alone but does not replace it, so the next plain ask still serves the clean prose.
+      replies.push('The archon-build run is waiting on capacity.');
+      expect(text(await ask(true))).toContain('waiting on capacity');
+      expect(played.prompts).toHaveLength(5);
+      const warn = spyOn(console, 'warn').mockImplementation(() => {});
+      try {
+        replies.push('9 things need you.');
+        const failed = await ask(true);
+        expect(text(failed)).toBe(`${line}
+
+`);
+        expect(failed.some((e) => e.type === 'notice')).toBe(false);
+        expect(played.prompts).toHaveLength(7);
+        expect(failed.at(-1)).toMatchObject({ type: 'done', cached: false });
+        expect(text(await ask())).toContain('waiting on capacity');
+        expect(played.prompts).toHaveLength(7);
+      } finally {
+        warn.mockRestore();
+      }
+    } finally {
+      await fixture.direct.query(
+        `DELETE FROM mc.capacity_waits WHERE factory = '${F}'; DELETE FROM mc.factories WHERE name = '${F}'`,
+      );
+    }
+  });
+
+  test('a request that joins a briefing written against another count gets prose for its own', async () => {
+    clock = new Date('2026-11-08T10:00:00');
+    const F = 'joined';
+    const wait = (n: number) =>
+      `INSERT INTO mc.capacity_waits (run_id, factory, workflow_name, item_number, since) VALUES ('5eed0009-0000-4000-8000-0000000000${n}', '${F}', 'archon-build', ${n}, now())`;
+    await fixture.direct.query(
+      `INSERT INTO mc.factories (name, repository, codebase, console) VALUES ('${F}', 'o/b', 'o/b', 'http://localhost:3092');
+       ${wait(11)}`,
+    );
+    try {
+      let release = () => {};
+      const gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const played = model(async () => {
+        await gate;
+        return [start, delta('fine'), result(0.01)];
+      });
+      const manager = createManager({
+        db: fixture.direct,
+        databaseUrl: fixture.url,
+        factories: [F],
+        settings: managerSettings({}),
+        run: played.run,
+        now: () => clock,
+      });
+      const ask = async () =>
+        events(
+          await createApp({ buildId: 't', distDir: '.', manager }).request(
+            '/api/manager/briefing',
+            { method: 'POST', body: JSON.stringify({ factory: F }) },
+          ),
+        );
+      const first = ask();
+      while (played.prompts.length === 0) await new Promise((r) => setTimeout(r, 10));
+      await fixture.direct.query(wait(12));
+      const second = ask();
+      await new Promise((r) => setTimeout(r, 300));
+      release();
+      const [a, b] = await Promise.all([first, second]);
+      expect(a[0]).toMatchObject({ text: expect.stringContaining('1 thing needs you') });
+      expect(b[0]).toMatchObject({ text: expect.stringContaining('2 things need you') });
+      expect(played.prompts).toHaveLength(2);
+      expect(played.prompts[1]).toContain('2 things need you');
+    } finally {
+      await fixture.direct.query(
+        `DELETE FROM mc.capacity_waits WHERE factory = '${F}'; DELETE FROM mc.factories WHERE name = '${F}'`,
+      );
+    }
+  });
+
+  test('sends nothing, the count line included, while the model is still writing', async () => {
+    clock = new Date('2026-11-08T10:00:00');
+    let release = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const played = model(async () => {
+      await gate;
+      return [start, delta('fine'), result(0.01)];
+    });
+    const response = await createApp({
+      buildId: 't',
+      distDir: '.',
+      manager: managerOf(played),
+    }).request('/api/manager/briefing', {
+      method: 'POST',
+      body: JSON.stringify({ factory: FACTORY }),
+    });
+    const reader = (response.body as ReadableStream<Uint8Array>).getReader();
+    const first = reader.read();
+    const early = await Promise.race([
+      first.then(() => 'chunk'),
+      new Promise((resolve) => setTimeout(() => resolve('silent'), 300)),
+    ]);
+    release();
+    await first;
+    await reader.cancel();
+    expect(early).toBe('silent');
+  });
+
+  test('the line names each group by its count', () => {
+    const tally = (t: Partial<AttentionTally>): AttentionTally => ({
+      decide: 0,
+      owner: 0,
+      unstick: 0,
+      failures: 0,
+      failureRuns: 0,
+      ...t,
+    });
+    expect(attentionLine(tally({}))).toBe('Nothing needs you.');
+    expect(attentionLine(tally({ unstick: 2, failures: 1, failureRuns: 1 }))).toBe(
+      'No question is waiting. 3 things need you: 2 to unstick, 1 to fix (1 failure in 1 cause).',
+    );
+    expect(attentionLine(tally({ decide: 1 }))).toBe(
+      '1 run is paused on your answer. 1 thing needs you: 1 to decide.',
+    );
+  });
+
   test('a failed briefing is not kept for the day', async () => {
     clock = new Date('2026-11-08T10:00:00');
     const log = spyOn(console, 'error').mockImplementation(() => {});
@@ -577,7 +868,7 @@ describe('the briefing', () => {
     });
     const ask = briefingOf(managerOf(played));
     try {
-      expect((await ask()).map((e) => e.type)).toEqual(['notice', 'done']);
+      expect((await ask()).map((e) => e.type)).toEqual(['text', 'notice', 'done']);
     } finally {
       log.mockRestore();
     }
@@ -706,6 +997,94 @@ describe('a structure lookup that fails', () => {
       kind: 'unstructured',
       text: expect.stringContaining('links and buttons'),
     });
+  });
+});
+
+describe('the briefing question with a run paused and other Attention rows', () => {
+  test('hands the model the opening line and forbids a count or a mismatch claim of its own', () => {
+    const tally = { decide: 1, owner: 3, unstick: 0, failures: 0, failureRuns: 0 };
+    const question = briefingQuestion(tally);
+    expect(question).toContain(attentionLine(tally));
+    expect(question).toContain('4 things need you');
+    expect(question).toContain('State no number of Attention items');
+    expect(question).toContain('never say the rows or the opening line disagree');
+    expect(question).not.toContain('count a run');
+  });
+
+  test('rejects a count sentence that states a total the line does not', () => {
+    const tally = { decide: 1, owner: 3, unstick: 0, failures: 0, failureRuns: 0 };
+    expect(briefingFault('Run #12 is paused; 4 things need you.', tally)).toBeNull();
+    expect(briefingFault('**28** things need you.', tally)).toContain('count of 28');
+    expect(briefingFault('__28__ things need you.', tally)).toContain('count of 28');
+    expect(briefingFault('_28_ things need you.', tally)).toContain('count of 28');
+    expect(briefingFault('`28` things need you.', tally)).toContain('count of 28');
+    expect(briefingFault('Right now nothing needs you.', tally)).toContain('count of 0');
+    expect(briefingFault('1 thing needs you.', tally)).toContain('count of 1');
+    expect(briefingFault('Nothing needs you.', tally)).toContain('count of 0');
+    const none = { decide: 0, owner: 0, unstick: 0, failures: 0, failureRuns: 0 };
+    expect(briefingFault('Nothing needs you.', none)).toBeNull();
+    expect(briefingFault('2 things need you.', none)).toContain('count of 2');
+  });
+
+  test('ignores every number that is not the count sentence', () => {
+    const tally = { decide: 1, owner: 3, unstick: 0, failures: 0, failureRuns: 0 };
+    const prose =
+      'On 2026-11-10 at 01:10 run 0c95c843 (PR #606) cost $1.10; since Oct 10, 28 owner questions came and 4 things need you.';
+    expect(briefingFault(prose, tally)).toBeNull();
+  });
+});
+
+describe('a briefing whose count cannot be read', () => {
+  test('states no count rather than "Nothing needs you"', async () => {
+    const log = spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const failing = Object.create(fixture.direct);
+      failing.transaction = async () => {
+        throw new Error('statement timeout');
+      };
+      const played = model(async () => [start, delta('fine'), result(0.01)]);
+      const manager = { ...managerOf(played), db: failing };
+      const res = await createApp({ buildId: 't', distDir: '.', manager }).request(
+        '/api/manager/briefing',
+        { method: 'POST', body: JSON.stringify({ factory: FACTORY, refresh: true }) },
+      );
+      const got = await events(res);
+      expect(got[0]).toMatchObject({ type: 'text', text: 'fine' });
+      expect(JSON.stringify(got)).not.toContain('need you');
+      expect(played.prompts[0]).toContain('could not be read');
+    } finally {
+      log.mockRestore();
+    }
+  });
+
+  test('never replays a cached body across a count that was or is unreadable', async () => {
+    const log = spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const failing = Object.create(fixture.direct);
+      failing.transaction = async () => {
+        throw new Error('statement timeout');
+      };
+      const played = model(async () => [start, delta('fine'), result(0.01)]);
+      const manager = managerOf(played);
+      const ask = async (db: Manager['db']) => {
+        const res = await createApp({
+          buildId: 't',
+          distDir: '.',
+          manager: { ...manager, db },
+        }).request('/api/manager/briefing', {
+          method: 'POST',
+          body: JSON.stringify({ factory: FACTORY }),
+        });
+        return (await events(res)).at(-1);
+      };
+      await ask(fixture.direct);
+      expect(await ask(failing)).toMatchObject({ cached: false });
+      expect(await ask(failing)).toMatchObject({ cached: false });
+      expect(await ask(fixture.direct)).toMatchObject({ cached: false });
+      expect(played.prompts).toHaveLength(4);
+    } finally {
+      log.mockRestore();
+    }
   });
 });
 

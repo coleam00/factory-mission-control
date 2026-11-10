@@ -11,6 +11,7 @@ import {
 import type { Server } from 'bun';
 import type { Context, Hono } from 'hono';
 import { isAnswerText, resolveAnswer } from '../app/lib/attention';
+import { ATTENTION_SOURCES, type AttentionKind, KINDS } from '../app/lib/attention-page';
 import { isRunId, lapHref } from '../app/lib/one-lap';
 import { workItemHref } from '../app/lib/work-item';
 import { type Db, openDb } from '../scripts/lib/db';
@@ -18,6 +19,7 @@ import { OPEN_QUESTION_SQL, openQuestionOf, RESUMABLE_RUN_SQL, RESUME_FROM_SQL }
 import type { Env } from './check-env';
 import { BASE_ENV_NAMES, pick } from './child-env';
 import { readFactoryNames } from './factories';
+import { LIVE_QUERIES_DIR, loadLiveQueries } from './live';
 import { MANAGER_LIMITS, readOnlyQuery } from './manager-sql';
 import {
   AnswerSplitter,
@@ -37,7 +39,7 @@ import {
   RESUMABLE_STATUSES,
   type RunSummary,
 } from './manager-stream';
-import { READ_TOOL_NAMES, TOOL_SERVER } from './manager-tools';
+import { BRIEFING_ENV, BRIEFING_TOOL_NAMES, READ_TOOL_NAMES, TOOL_SERVER } from './manager-tools';
 
 // A Record over the SDK's own type: the compiler fails on a level added or removed there.
 const EFFORT_SET: Record<EffortLevel, true> = {
@@ -91,6 +93,8 @@ interface CachedBriefing {
   day: string;
   events: ManagerEvent[];
   generatedAt: string;
+  /** The Attention read (counts and rows) the body was written against; the body names those rows, so it is only served while the page still shows them. */
+  basis: string | null;
 }
 
 /** The Manager's state lives in this process: a restart resets the day's spend and the briefings. */
@@ -230,10 +234,12 @@ function hasCredential(env: NodeJS.ProcessEnv): boolean {
   return CREDENTIAL_NAMES.some((name) => Boolean(env[name]));
 }
 
-const canUseTool: SdkCanUseTool = async (name, input) =>
-  READ_TOOL_NAMES.includes(name)
-    ? { behavior: 'allow', updatedInput: input }
-    : { behavior: 'deny', message: `${name} is not a Manager tool` };
+const canUse =
+  (allowed: string[]): SdkCanUseTool =>
+  async (name, input) =>
+    allowed.includes(name)
+      ? { behavior: 'allow', updatedInput: input }
+      : { behavior: 'deny', message: `${name} is not a Manager tool` };
 
 /**
  * The agent run's options. No built-in tool exists at all (`tools: []`); the two MCP tools are the
@@ -248,15 +254,18 @@ export function buildOptions(
     systemPrompt: string;
     maxBudgetUsd: number;
     abortController: AbortController;
+    /** The briefing run: no ad hoc SELECT and no Attention query, since it is handed those rows. */
+    briefing?: boolean;
   },
   env: NodeJS.ProcessEnv = process.env,
 ): Options {
+  const allowed = extra.briefing ? BRIEFING_TOOL_NAMES : READ_TOOL_NAMES;
   return {
     cwd: extra.cwd,
     tools: [],
-    allowedTools: READ_TOOL_NAMES,
+    allowedTools: allowed,
     permissionMode: 'dontAsk',
-    canUseTool,
+    canUseTool: canUse(allowed),
     mcpServers: {
       [TOOL_SERVER]: {
         type: 'stdio',
@@ -266,6 +275,7 @@ export function buildOptions(
           ...pick(env, ['PATH', 'SYSTEMROOT', 'TEMP', 'TMP']),
           MC_DATABASE_URL: manager.databaseUrl,
           MC_MANAGER_FACTORY: request.factory,
+          ...(extra.briefing ? { [BRIEFING_ENV]: '1' } : {}),
         },
       },
     },
@@ -304,7 +314,12 @@ function describeSchema(manager: Manager): Promise<string> {
   return manager.schema;
 }
 
-function systemPrompt(manager: Manager, request: ChatRequest, schema: string): string {
+function systemPrompt(
+  manager: Manager,
+  request: ChatRequest,
+  schema: string,
+  briefing: boolean,
+): string {
   const now = manager.now();
   const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
   const { place, run, item, workflow, step, order } = request.context;
@@ -320,7 +335,11 @@ function systemPrompt(manager: Manager, request: ChatRequest, schema: string): s
   return `You are the Manager of the factory "${request.factory}". You watch every run and queue for its owner and answer what they ask, from the factory's data only.
 Today is ${dayOf(now)} (${zone}); a day runs midnight to midnight in that timezone. The owner is on the ${place} page${viewing ? `, looking at ${viewing}` : ''}.
 
-Tools: live_query runs one of the dashboard's named queries for this factory; select runs one SELECT over the mc schema (at most ${MANAGER_LIMITS.rowCap} rows, ${MANAGER_LIMITS.timeoutMs / 1000}s). Both only read. You cannot change anything, and you must never say that you did.
+${
+  briefing
+    ? "Tool: live_query runs one of the dashboard's named queries for this factory (the Attention queries are not offered: you are given those rows). It only reads."
+    : `Tools: live_query runs one of the dashboard's named queries for this factory; select runs one SELECT over the mc schema (at most ${MANAGER_LIMITS.rowCap} rows, ${MANAGER_LIMITS.timeoutMs / 1000}s). Both only read.`
+} You cannot change anything, and you must never say that you did.
 Never show holdout scenario text.
 A run failed on the day its mc.laps.completed_at falls, whatever day it started: for "failed today", filter on completed_at, never started_at, and include runs that started on an earlier day. The database session may run in another timezone, so convert first: (completed_at AT TIME ZONE '${zone}')::date = DATE '${dayOf(now)}'.
 
@@ -417,7 +436,7 @@ async function linkEvents(manager: Manager, factory: string, links: RawStructure
     if (!Number.isInteger(number) || number < 1) continue;
     const [row] = await lookup(
       manager,
-      'SELECT title FROM mc.issues WHERE factory = $1 AND number = $2::int',
+      'SELECT number FROM mc.issues WHERE factory = $1 AND number = $2::int',
       [factory, number],
     );
     if (row) {
@@ -425,7 +444,6 @@ async function linkEvents(manager: Manager, factory: string, links: RawStructure
         type: 'link',
         kind: 'item',
         id: number,
-        label: `#${number} ${row.title}`,
         href: workItemHref(factory, number),
       });
     }
@@ -520,6 +538,7 @@ async function produce(
   request: ChatRequest,
   signal: AbortSignal,
   emit: Emit,
+  briefing = false,
 ): Promise<Outcome> {
   const left = manager.settings.dayCapUsd - spentToday(manager);
   if (left <= 0) {
@@ -551,7 +570,7 @@ async function produce(
   try {
     cwd = mkdtempSync(join(tmpdir(), 'mc-manager-'));
     const prompt = renderConversation(request.messages);
-    const system = systemPrompt(manager, request, await describeSchema(manager));
+    const system = systemPrompt(manager, request, await describeSchema(manager), briefing);
     const messages = manager.run({
       prompt,
       options: buildOptions(manager, request, {
@@ -559,6 +578,7 @@ async function produce(
         systemPrompt: system,
         maxBudgetUsd,
         abortController,
+        briefing,
       }),
     });
     for await (const message of messages) {
@@ -668,42 +688,217 @@ export function answer(manager: Manager, request: ChatRequest, signal: AbortSign
 }
 
 const BRIEFING_QUESTION =
-  "Write today's briefing: what merged, what failed (count a run by the day it failed, completed_at, not the day it started), what waits on the owner, and the one or two things that matter most.";
+  "Write today's briefing: what merged, what failed (judge a run by the day it failed, completed_at, not the day it started), what waits on the owner, and the one or two things that matter most.";
 
-async function generateBriefing(manager: Manager, factory: string) {
-  const events: ManagerEvent[] = [];
+/** What the Attention header counts: the row count of each source, and the runs behind the failure causes. */
+export type AttentionTally = Record<keyof typeof ATTENTION_SOURCES, number> & {
+  failureRuns: number;
+};
+
+/** The rows of each Attention source, the ones the count line is built from. */
+export type AttentionRows = Record<keyof typeof ATTENTION_SOURCES, unknown[]>;
+
+let attentionQueries: Map<string, string> | undefined;
+
+/**
+ * The rows of the four queries the Attention page sums, read in one statement so the parts add up,
+ * and the counts taken from them. Null when any of them fails, as the page then shows no number either.
+ */
+async function attentionTally(
+  manager: Manager,
+  factory: string,
+): Promise<{ tally: AttentionTally; rows: AttentionRows } | null> {
+  try {
+    attentionQueries ??= loadLiveQueries(LIVE_QUERIES_DIR);
+    const queries = attentionQueries;
+    const keys = Object.keys(ATTENTION_SOURCES) as (keyof typeof ATTENTION_SOURCES)[];
+    const listed = keys.map(
+      (key) =>
+        `(SELECT coalesce(json_agg(l ORDER BY l::text), '[]'::json) FROM (\n${queries.get(ATTENTION_SOURCES[key].query)}\n) AS l) AS "${key}"`,
+    );
+    const { rows } = await readOnlyQuery(
+      manager.db,
+      `SELECT\n  ${listed.join(',\n  ')}`,
+      [factory],
+      MANAGER_LIMITS,
+    );
+    const listing = rows[0] as AttentionRows;
+    const tally = { failureRuns: 0 } as AttentionTally;
+    for (const key of keys) tally[key] = listing[key].length;
+    for (const group of listing.failures as { failures: number }[])
+      tally.failureRuns += group.failures;
+    return { tally, rows: listing };
+  } catch (err) {
+    console.error(`manager: attention count failed: ${err instanceof Error ? err.message : err}`);
+    return null;
+  }
+}
+
+const plural = (n: number, one: string, many: string): string => `${n} ${n === 1 ? one : many}`;
+
+type SourceKey = keyof typeof ATTENTION_SOURCES;
+const SOURCE_KEYS = Object.keys(ATTENTION_SOURCES) as SourceKey[];
+
+/** The rows the page puts under one group header: the sources whose cards carry that kind. */
+const inGroup = (t: AttentionTally, kind: AttentionKind): number =>
+  SOURCE_KEYS.filter((key) => ATTENTION_SOURCES[key].kind === kind).reduce(
+    (sum, key) => sum + t[key],
+    0,
+  );
+
+/** How the briefing's line words each group's count; the groups and their order come from the page's `KINDS`. */
+const GROUP_PHRASE: Record<AttentionKind, (n: number, t: AttentionTally) => string> = {
+  decide: (n) => `${n} to decide`,
+  unstick: (n) => `${n} to unstick`,
+  fix: (n, t) =>
+    `${n} to fix (${plural(t.failureRuns, 'failure', 'failures')} in ${plural(t.failures, 'cause', 'causes')})`,
+};
+
+/** The briefing's first line: each Attention group by the count its header shows, so the total matches the page. */
+export function attentionLine(t: AttentionTally): string {
+  const total = SOURCE_KEYS.reduce((sum, key) => sum + t[key], 0);
+  if (total === 0) return 'Nothing needs you.';
+  const lead =
+    t.decide > 0
+      ? `${plural(t.decide, 'run is', 'runs are')} paused on your answer. `
+      : t.owner > 0
+        ? 'No run is paused on a question. '
+        : 'No question is waiting. ';
+  const parts = KINDS.map(({ kind }) => ({ kind, n: inGroup(t, kind) }))
+    .filter(({ n }) => n > 0)
+    .map(({ kind, n }) => GROUP_PHRASE[kind](n, t));
+  return `${lead}${plural(total, 'thing needs', 'things need')} you: ${parts.join(', ')}.`;
+}
+
+/**
+ * The question the model answers for the briefing. The opening line already carries every count,
+ * so the model is told to state none: a count of its own, from its own reading of the rows, is
+ * the one that can disagree with the page.
+ */
+export function briefingQuestion(
+  tally: AttentionTally | null,
+  rows: AttentionRows | null = null,
+): string {
+  const listing = rows
+    ? ` These are the Attention rows, by source, that the line was counted from; name the items from them instead of querying for them, and never copy or paraphrase the line: ${JSON.stringify(rows)}`
+    : '';
+  const counted = tally
+    ? ` The briefing already opens with this line, counted from the Attention page's own rows: "${attentionLine(tally)}" That line is the only count of what waits on the owner. State no number of Attention items, open questions, paused runs, failures or merged runs yourself, and never say the rows or the opening line disagree, miss something or may be incomplete; name the individual runs and issues instead.${listing}`
+    : " The Attention page's count could not be read: do not say how many things wait on the owner.";
+  return BRIEFING_QUESTION + counted;
+}
+
+type AttentionRead = { tally: AttentionTally; rows: AttentionRows };
+
+/** The count sentence's own words, as `attentionLine` writes them: the number sits just before. */
+const COUNT_TAILS = [' thing needs you', ' things need you'];
+const NOTHING_WAITS = 'nothing needs you';
+
+/** The totals a text states in the count sentence's form, and only those: any other number in it is not a count. */
+function statedTotals(text: string): number[] {
+  // The panel renders emphasis and code spans, so the marks around a count are not part of what the owner reads.
+  const plain = ['*', '_', '`'].reduce((s, mark) => s.split(mark).join(''), text.toLowerCase());
+  const totals = plain.includes(NOTHING_WAITS) ? [0] : [];
+  for (const tail of COUNT_TAILS) {
+    for (let at = plain.indexOf(tail); at >= 0; at = plain.indexOf(tail, at + 1)) {
+      let start = at;
+      while (start > 0 && plain[start - 1] >= '0' && plain[start - 1] <= '9') start--;
+      if (start < at) totals.push(Number(plain.slice(start, at)));
+    }
+  }
+  return totals;
+}
+
+/** Why the model's prose cannot sit under the count line: its count sentence states a total the line does not. */
+export function briefingFault(text: string, tally: AttentionTally): string | null {
+  const allowed = statedTotals(attentionLine(tally));
+  const stray = statedTotals(text).find((n) => !allowed.includes(n));
+  return stray === undefined ? null : `it states a count of ${stray} the page does not show`;
+}
+
+async function generateBriefing(manager: Manager, factory: string, read: AttentionRead | null) {
   const request: ChatRequest = {
     factory,
     context: { place: 'attention' },
-    messages: [{ role: 'owner', text: BRIEFING_QUESTION }],
+    messages: [{ role: 'owner', text: briefingQuestion(read?.tally ?? null, read?.rows ?? null) }],
   };
-  const { ok, cost } = await produce(manager, request, new AbortController().signal, (event) =>
-    events.push(event),
-  );
-  const briefing = { day: dayOf(manager.now()), events, generatedAt: manager.now().toISOString() };
+  let events: ManagerEvent[] = [];
+  let ok = false;
+  let cost = 0;
+  let rejected = false;
+  // The model may contradict the count line: try once more, then show the count line alone.
+  for (let attempt = 0; attempt < 2; attempt++) {
+    events = [];
+    const outcome = await produce(
+      manager,
+      request,
+      new AbortController().signal,
+      (event) => events.push(event),
+      true,
+    );
+    ok = outcome.ok;
+    cost += outcome.cost;
+    const text = events.flatMap((e) => (e.type === 'text' ? [e.text] : [])).join('');
+    const fault = ok && read ? briefingFault(text, read.tally) : null;
+    if (attempt === 1 && (fault || (rejected && !ok))) {
+      events = [];
+      // `ok` stays as the attempt left it: a failed run is not kept, so the next ask tries again.
+      if (!fault) console.warn('manager: briefing second attempt failed; showing the count line');
+    }
+    if (!fault) break;
+    rejected = true;
+    console.warn(`manager: briefing rejected (attempt ${attempt + 1}): ${fault}`);
+  }
+  const briefing = {
+    day: dayOf(manager.now()),
+    events,
+    generatedAt: manager.now().toISOString(),
+    basis: basisOf(read),
+  };
   if (ok) manager.briefings.set(factory, briefing);
   return { briefing, cost };
 }
 
+const basisOf = (read: AttentionRead | null): string | null => read && JSON.stringify(read);
+
 /** A briefing is shared by whoever asks, so one asker leaving does not stop its generation. */
 export function briefing(manager: Manager, factory: string, refresh: boolean): Response {
   return ndjson(async (emit) => {
+    const read = await attentionTally(manager, factory);
+    const tally = read?.tally ?? null;
+    const basis = basisOf(read);
+    // Emitted with the prose, not before it: any event ends the panel's wait text.
+    const countLine = () => {
+      if (tally) emit({ type: 'text', text: `${attentionLine(tally)}\n\n` });
+    };
     const cached = manager.briefings.get(factory);
-    if (!refresh && cached && cached.day === dayOf(manager.now())) {
+    if (
+      !refresh &&
+      cached &&
+      cached.day === dayOf(manager.now()) &&
+      cached.basis !== null &&
+      cached.basis === basis
+    ) {
+      countLine();
       for (const event of cached.events) emit(event);
       emit(done(manager, 0, { generated_at: cached.generatedAt, cached: true }));
       return;
     }
     let pending = manager.generating.get(factory);
     if (!pending) {
-      pending = generateBriefing(manager, factory);
+      pending = generateBriefing(manager, factory, read);
       manager.generating.set(factory, pending);
       pending.then(
         () => manager.generating.delete(factory),
         () => manager.generating.delete(factory),
       );
     }
-    const { briefing: made, cost } = await pending;
+    let { briefing: made, cost } = await pending;
+    // Joined a generation written against other rows: its prose would sit under this asker's line.
+    if (made.basis !== basis) {
+      ({ briefing: made, cost } = await generateBriefing(manager, factory, read));
+    }
+    countLine();
     for (const event of made.events) emit(event);
     emit(done(manager, cost, { generated_at: made.generatedAt, cached: false }));
   });

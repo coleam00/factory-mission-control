@@ -166,8 +166,8 @@ test('a stream builds one reply, and a stream cut before done says so', () => {
 
 test('links go where the prose names them, and an unnamed link is left over', () => {
   const run: ManagerLink = { type: 'link', kind: 'run', id: RUN, href: '/r' };
-  const item: ManagerLink = { type: 'link', kind: 'item', id: 514, label: '#514', href: '/w' };
-  const other: ManagerLink = { ...item, id: 9, label: '#9' };
+  const item: ManagerLink = { type: 'link', kind: 'item', id: 514, href: '/w' };
+  const other: ManagerLink = { ...item, id: 9 };
   const { segments, rest } = linkify('See #514 and run 5eed0001 now. #5140 is unrelated.', [
     item,
     run,
