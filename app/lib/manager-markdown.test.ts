@@ -88,6 +88,25 @@ test.each<[string, string, Inline['type'][]]>([
   expect(kinds(inl)).toEqual(shape);
 });
 
+test.each<[string, string, Inline['type'][]]>([
+  ['*a **b** c* end', 'a b c end', ['text', 'bold', 'text']],
+  ['~~**x**~~ end', 'x end', ['bold', 'text']],
+  ['_**x**_ end', 'x end', ['bold', 'text']],
+  ['*see **here*** end', 'see here end', ['text', 'bold', 'text']],
+  ['***a** b* end', 'a b end', ['bold', 'text']],
+  ['**a *b*** end', 'a b end', ['bold', 'text']],
+  ['*a `c` b* end', 'a c b end', ['text', 'code', 'text']],
+  ['_a `c` b_ end', 'a c b end', ['text', 'code', 'text']],
+  ['~~a `c` b~~ end', 'a c b end', ['text', 'code', 'text']],
+  ['\\*not\\* end', '*not* end', ['text']],
+  ['line<br>two', 'line two', ['text']],
+  ['see <https://x.test> now', 'see https://x.test now', ['text']],
+])('%s leaves no markup across a boundary', (text, shown, shape) => {
+  const inl = inlinesOf(parseMessage(text, []).blocks[0]);
+  expect(flat(inl)).toBe(shown);
+  expect(kinds(inl)).toEqual(shape);
+});
+
 test('step ids, products and a stray ** stay readable', () => {
   const { blocks } = parseMessage('pr__prepare took 2 * 3 s ** end', []);
   expect(flat(inlinesOf(blocks[0]))).toBe('pr__prepare took 2 * 3 s  end');

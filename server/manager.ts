@@ -651,7 +651,7 @@ async function attentionTally(manager: Manager, factory: string): Promise<Attent
   const keys = Object.keys(ATTENTION_SOURCES) as (keyof typeof ATTENTION_SOURCES)[];
   const source = (key: keyof typeof ATTENTION_SOURCES): string =>
     `\n${attentionQueries?.get(ATTENTION_SOURCES[key].query)}\n`;
-  const counts = keys.map((key) => `(SELECT count(*) FROM (${source(key)}) AS s)::int AS ${key}`);
+  const counts = keys.map((key) => `(SELECT count(*) FROM (${source(key)}) AS s)::int AS "${key}"`);
   const sql = `SELECT
   ${counts.join(',\n  ')},
   (SELECT coalesce(sum(g.failures), 0) FROM (${source('failures')}) AS g)::int AS "failureRuns"`;
@@ -666,6 +666,17 @@ async function attentionTally(manager: Manager, factory: string): Promise<Attent
 
 const plural = (n: number, one: string, many: string): string => `${n} ${n === 1 ? one : many}`;
 
+/** One phrase per Attention source, so a source added to `ATTENTION_SOURCES` fails to compile until it has one. `owner` is counted with `decide`, as its group is. */
+const ATTENTION_PHRASES: Record<keyof typeof ATTENTION_SOURCES, (t: AttentionTally) => string> = {
+  decide: (t) => (t.decide + t.owner > 0 ? `${t.decide + t.owner} to decide` : ''),
+  owner: () => '',
+  unstick: (t) => (t.unstick > 0 ? `${t.unstick} to unstick` : ''),
+  failures: (t) =>
+    t.failures > 0
+      ? `${t.failures} to fix (${plural(t.failureRuns, 'failure', 'failures')} in ${plural(t.failures, 'cause', 'causes')})`
+      : '',
+};
+
 /** The briefing's first line: each Attention group by the count its group shows, so the total matches the header. */
 export function attentionLine(t: AttentionTally): string {
   const total = (Object.keys(ATTENTION_SOURCES) as (keyof typeof ATTENTION_SOURCES)[]).reduce(
@@ -679,13 +690,9 @@ export function attentionLine(t: AttentionTally): string {
       : t.owner > 0
         ? 'No run is paused on a question. '
         : 'No question is waiting. ';
-  const parts = [
-    t.decide + t.owner > 0 ? `${t.decide + t.owner} to decide` : '',
-    t.unstick > 0 ? `${t.unstick} to unstick` : '',
-    t.failures > 0
-      ? `${t.failures} to fix (${plural(t.failureRuns, 'failure', 'failures')} in ${plural(t.failures, 'cause', 'causes')})`
-      : '',
-  ].filter(Boolean);
+  const parts = (Object.keys(ATTENTION_PHRASES) as (keyof typeof ATTENTION_SOURCES)[])
+    .map((key) => ATTENTION_PHRASES[key](t))
+    .filter(Boolean);
   return `${lead}${plural(total, 'thing needs', 'things need')} you: ${parts.join(', ')}.`;
 }
 

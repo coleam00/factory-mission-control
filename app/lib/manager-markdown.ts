@@ -106,7 +106,10 @@ function units(text: string): Unit[] {
 
 type Token = { type: 'text'; text: string } | { type: 'code'; text: string } | { type: 'bold' };
 
-/** Emphasis, strikethrough: drawn as nothing. `2 * 3`, `snake_case` and a lone `~` are prose and stay. */
+/**
+ * Emphasis and strikethrough: drawn as nothing. `2 * 3`, `snake_case` and a lone `~` are prose and stay.
+ * Runs over the whole inline run, bold marks and code spans already masked, so a pair they cut is still a pair.
+ */
 const unStyle = (text: string): string =>
   text
     .replace(/(?<![*\w])\*(?=\S)([^*\n]+?)(?<=\S)\*(?!\*)/g, '$1')
@@ -114,21 +117,32 @@ const unStyle = (text: string): string =>
     .replace(/~~(?=\S)([^~\n]+?)(?<=\S)~~/g, '$1');
 
 /** `***` is bold around italic; `__` is bold only at a word edge, so `__init__x` stays prose. */
-const BOLD_MARK = /\*\*\*|\*\*|(?<!\w)__(?=\S)|(?<=\S)__(?!\w)/;
+const BOLD_MARK = /\*\*\*|\*\*|(?<!\w)__(?=\S)|(?<=\S)__(?!\w)/g;
 
-/** Text between code spans, with markdown links and images reduced to their label and bold marks as tokens. */
-function proseTokens(text: string): Token[] {
-  const flat = text.replace(/!?\[([^\]\n]*)\]\([^)\s]*\)/g, '$1');
-  return flat
-    .split(BOLD_MARK)
-    .flatMap((part, i): Token[] => [
-      ...(i > 0 ? [{ type: 'bold' } as const] : []),
-      ...(part === '' ? [] : [{ type: 'text', text: unStyle(part) } as const]),
-    ]);
-}
+/** Private-use stand-ins that keep a mark or an already-final span out of the emphasis rules. */
+const BOLD_CHAR = '\uE000';
+const slotChar = (i: number): string => String.fromCharCode(0xe001 + i);
+const MASKED = /[\uE000-\uF8FF]/;
+
+/** Inline forms outside the subset reduced to their text: links and images to their label, autolinks to the URL, HTML tags away. */
+const plainForms = (text: string): string =>
+  text
+    .replace(/!?\[([^\]\n]*)\]\([^)\s]*\)/g, '$1')
+    .replace(/<([a-z][a-z0-9+.-]*:[^\s<>]*)>/gi, '$1')
+    .replace(/<br\s*\/?>/gi, ' ')
+    .replace(/<\/?[a-z][^>\n]*>/gi, '');
 
 function tokens(raw: string): Token[] {
-  const out: Token[] = [];
+  const slots: Token[] = [];
+  const slot = (token: Token): string => {
+    slots.push(token);
+    return slotChar(slots.length - 1);
+  };
+  const prose = (text: string): string =>
+    plainForms(
+      text.replace(/\\([!-/:-@[-`{-~])/g, (_, c: string) => slot({ type: 'text', text: c })),
+    ).replace(BOLD_MARK, (mark) => (mark === '***' ? `${BOLD_CHAR}*` : BOLD_CHAR));
+  let masked = '';
   let at = 0;
   const fence = /`+/g;
   for (let open = fence.exec(raw); open; open = fence.exec(raw)) {
@@ -136,16 +150,23 @@ function tokens(raw: string): Token[] {
     const close = new RegExp(`(?<!\`)\`{${size}}(?!\`)`, 'g');
     close.lastIndex = fence.lastIndex;
     const found = close.exec(raw);
-    out.push(...proseTokens(raw.slice(at, open.index)));
+    masked += prose(raw.slice(at, open.index));
     if (found) {
-      out.push({ type: 'code', text: raw.slice(fence.lastIndex, found.index) });
+      masked += slot({ type: 'code', text: raw.slice(fence.lastIndex, found.index) });
       at = found.index + size;
     } else {
       at = fence.lastIndex;
     }
     fence.lastIndex = at;
   }
-  out.push(...proseTokens(raw.slice(at)));
+  masked += prose(raw.slice(at));
+  const out: Token[] = [];
+  for (const piece of unStyle(masked).split(new RegExp(`(${MASKED.source})`))) {
+    if (piece === '') continue;
+    if (piece === BOLD_CHAR) out.push({ type: 'bold' });
+    else if (MASKED.test(piece)) out.push(slots[piece.charCodeAt(0) - 0xe001]);
+    else out.push({ type: 'text', text: piece });
+  }
   return out;
 }
 
