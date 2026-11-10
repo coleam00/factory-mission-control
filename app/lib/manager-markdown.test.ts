@@ -82,3 +82,27 @@ test('a link the prose never names is left over; a list follows a paragraph line
   expect(blocks.map((b) => b.type)).toEqual(['paragraph', 'list']);
   expect(list(blocks[1]).items).toHaveLength(2);
 });
+
+const itemText = (b: Block) =>
+  b.type === 'list'
+    ? b.items.map((i) => i.map((n) => (n.type === 'text' ? n.text : '')).join(''))
+    : [];
+
+test('a nested list stays inside its item, in reading order', () => {
+  const { blocks } = parseMessage('- a\n  - b\n- c', []);
+  expect(blocks).toHaveLength(1);
+  expect(itemText(blocks[0])).toEqual(['a\n\n  - b', 'c']);
+});
+
+test('two paragraphs in one item do not run together', () => {
+  const { blocks } = parseMessage('- first para\n\n  second para\n- c', []);
+  expect(itemText(blocks[0])[0]).toBe('first para\n\nsecond para');
+});
+
+test('a reference inside a model-written link stays text and stays unnamed', () => {
+  const link = { kind: 'item', id: '522', href: '/i/522' } as unknown as ManagerLink;
+  const { blocks, rest } = parseMessage('See [the fix #522](https://e.com) now', [link]);
+  const p = blocks[0] as Extract<Block, { type: 'paragraph' }>;
+  expect(p.inlines.some((n) => n.type === 'link')).toBe(false);
+  expect(rest).toEqual([link]);
+});

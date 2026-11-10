@@ -7,7 +7,7 @@ import { linkify, type ManagerLink } from './manager';
  * off, so headings, quotes, fences, tables, raw HTML and the rest come out as plain text.
  */
 export type Inline =
-  | { type: 'text'; text: string }
+  | { type: 'text'; text: string; literal?: true }
   | { type: 'bold'; children: Inline[] }
   | { type: 'code'; text: string }
   | { type: 'link'; link: ManagerLink };
@@ -23,7 +23,8 @@ type Token = ReturnType<typeof md.parse>[number];
 
 const push = (into: Inline[], node: Inline) => {
   const last = into[into.length - 1];
-  if (node.type === 'text' && last?.type === 'text') last.text += node.text;
+  if (node.type === 'text' && last?.type === 'text' && last.literal === node.literal)
+    last.text += node.text;
   else into.push(node);
 };
 
@@ -31,6 +32,7 @@ const push = (into: Inline[], node: Inline) => {
 function inlines(children: Token[]): Inline[] {
   const root: Inline[] = [];
   const stack: Inline[][] = [root];
+  let inLink = 0;
   for (const t of children) {
     const into = stack[stack.length - 1];
     if (t.type === 'strong_open') {
@@ -41,8 +43,13 @@ function inlines(children: Token[]): Inline[] {
       stack.pop();
     } else if (t.type === 'code_inline') {
       into.push({ type: 'code', text: t.content });
+    } else if (t.type === 'link_open') {
+      inLink++;
+    } else if (t.type === 'link_close') {
+      inLink--;
     } else if (t.type === 'text') {
-      push(into, { type: 'text', text: t.content.replaceAll('**', '') });
+      const text = t.content.replaceAll('**', '');
+      push(into, inLink > 0 ? { type: 'text', text, literal: true } : { type: 'text', text });
     } else if (t.type === 'softbreak' || t.type === 'hardbreak') {
       push(into, { type: 'text', text: '\n' });
     }
@@ -50,11 +57,11 @@ function inlines(children: Token[]): Inline[] {
   return root.filter((n) => n.type !== 'bold' || n.children.length > 0);
 }
 
-/** Each text leaf with the links it names put in place; `remaining` is the links still unnamed. */
+/** Each text leaf with the links it names put in place (text inside a model-written link is left as it is); `remaining` is the links still unnamed. */
 function linked(nodes: Inline[], remaining: ManagerLink[]): Inline[] {
   return nodes.flatMap((node): Inline[] => {
     if (node.type === 'bold') return [{ type: 'bold', children: linked(node.children, remaining) }];
-    if (node.type !== 'text') return [node];
+    if (node.type !== 'text' || node.literal) return [node];
     const { segments, rest } = linkify(node.text, remaining);
     remaining.splice(0, remaining.length, ...rest);
     return segments.map(
@@ -71,25 +78,38 @@ export function parseMessage(
   const remaining = [...links];
   const blocks: Block[] = [];
   const lists: Extract<Block, { type: 'list' }>[] = [];
+  // What goes before the next inline in the open top-level item: a nested item's marker, or a paragraph gap.
+  let before = '';
   for (const t of md.parse(text, {})) {
     if (t.type === 'bullet_list_open' || t.type === 'ordered_list_open') {
-      const list: Extract<Block, { type: 'list' }> = {
-        type: 'list',
-        ordered: t.type === 'ordered_list_open',
-        start: Number(t.attrGet('start') ?? 1),
-        items: [],
-      };
+      const ordered = t.type === 'ordered_list_open';
+      const start = Number(t.attrGet('start') ?? 1);
+      const list: Extract<Block, { type: 'list' }> = { type: 'list', ordered, start, items: [] };
+      if (lists.length === 0) blocks.push(list);
       lists.push(list);
-      blocks.push(list);
     } else if (t.type === 'bullet_list_close' || t.type === 'ordered_list_close') {
       lists.pop();
     } else if (t.type === 'list_item_open') {
-      lists[lists.length - 1].items.push([]);
+      const list = lists[lists.length - 1];
+      if (lists.length === 1) {
+        list.items.push([]);
+        before = '';
+      } else {
+        // A nested list reads as marked lines inside its parent item, in the order written.
+        const n = list.start + list.items.length;
+        list.items.push([]);
+        before = `\n${'  '.repeat(lists.length - 1)}${list.ordered ? `${n}.` : '-'} `;
+      }
     } else if (t.type === 'inline') {
       const nodes = linked(inlines(t.children ?? []), remaining);
-      const list = lists[lists.length - 1];
-      if (!list) blocks.push({ type: 'paragraph', inlines: nodes });
-      else for (const n of nodes) push(list.items[list.items.length - 1], n);
+      if (lists.length === 0) {
+        blocks.push({ type: 'paragraph', inlines: nodes });
+      } else {
+        const item = lists[0].items[lists[0].items.length - 1];
+        if (before) push(item, { type: 'text', text: before });
+        for (const n of nodes) push(item, n);
+        before = '\n\n';
+      }
     }
   }
   return { blocks, rest: remaining };
