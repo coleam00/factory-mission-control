@@ -12,7 +12,7 @@ import type { ActionRequest } from '../app/lib/actions';
 
 export type ManagerEvent =
   | { type: 'text'; text: string }
-  | { type: 'link'; kind: 'run'; id: string; label: string; href: string }
+  | { type: 'link'; kind: 'run'; id: string; href: string }
   | { type: 'link'; kind: 'item'; id: number; label: string; href: string }
   | { type: 'runs'; runs: RunSummary[] }
   | ({
