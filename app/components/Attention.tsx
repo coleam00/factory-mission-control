@@ -11,14 +11,17 @@ import {
   ownerCards,
   SWEEP_QUERY,
   type SweepRow,
+  type Tile,
   sweepLine,
   unstickCards,
 } from '../lib/attention-page';
+import type { AnswerRequest } from '../lib/actions';
 import type { DecideRow, UnstickRow } from '../lib/attention';
 import type { FailureGroupRow } from '../lib/failures';
 import { since } from '../lib/laps';
 import { type OwnerQueueRow, waited } from '../lib/owner-queue';
 import { AWAITED, Feed, type Source } from '../live/Feed';
+import { useActionPending, useActionsEnabled, useStartAction } from './ActionToast';
 import { useNow } from './panel';
 import { usePhone } from './ManagerDock';
 import { Button, buttonClass } from './ui/Button';
@@ -63,17 +66,75 @@ function CopyButton({
   );
 }
 
-function ActionControl({ action }: { action: Action }): ReactElement {
+/** Whether the server holds an operator for this factory, and the one flow every action starts. */
+interface Act {
+  enabled: boolean;
+  start: ReturnType<typeof useStartAction>;
+  pending: boolean;
+}
+
+function ActionControl({ action, act }: { action: Action; act: Act }): ReactElement {
   if (action.type === 'copy') return <CopyButton {...action} />;
+  if (action.type === 'act' && act.enabled) {
+    return (
+      <Button
+        variant={action.variant}
+        disabled={act.pending}
+        {...action.hooks}
+        onClick={() => act.start(action.request, { item: null, label: '' })}
+      >
+        {action.label}
+      </Button>
+    );
+  }
+  const { href, external } = action.type === 'act' ? action.fallback : action;
   return (
     <a
       {...action.hooks}
-      href={action.href}
-      {...(action.external ? { target: '_blank', rel: 'noreferrer' } : {})}
+      href={href}
+      {...(external ? { target: '_blank', rel: 'noreferrer' } : {})}
       className={buttonClass(action.variant)}
     >
       {action.label}
     </a>
+  );
+}
+
+/** The inline box that takes the owner's own words for "Something else". */
+function AnswerBox({
+  request,
+  item,
+  act,
+  onClose,
+}: {
+  request: AnswerRequest;
+  item: number | null;
+  act: Act;
+  onClose: () => void;
+}): ReactElement {
+  const [text, setText] = useState('');
+  const send = () => {
+    act.start({ ...request, text }, { item, label: 'your text' });
+    onClose();
+  };
+  return (
+    <div data-answer-box className="col-start-2 mt-1.5 flex flex-col items-start gap-2">
+      <textarea
+        aria-label="Your answer"
+        value={text}
+        maxLength={2000}
+        onChange={(event) => setText(event.target.value)}
+        className="min-h-[72px] w-full rounded-lg border border-[color:var(--v3-line)] bg-[var(--v3-sunk)] p-2 text-[length:var(--v3-t-meta)] text-[color:var(--v3-fg)]"
+      />
+      <div className="flex gap-2">
+        <Button variant="primary" disabled={act.pending || text.trim() === ''} onClick={send}>
+          Send answer
+        </Button>
+        <Button variant="text" onClick={onClose}>
+          Cancel
+        </Button>
+      </div>
+    </div>
   );
 }
 
@@ -116,8 +177,17 @@ function Meta({ card }: { card: AttentionCard }): ReactElement {
 }
 
 /** One card, its parts in the README's order: dot, title, age, meta line, the manager's note, options or actions. */
-function CardView({ card, now }: { card: AttentionCard; now: number }): ReactElement {
+function CardView({
+  card,
+  now,
+  act,
+}: {
+  card: AttentionCard;
+  now: number;
+  act: Act;
+}): ReactElement {
   const [primary, ...rest] = card.actions;
+  const [writing, setWriting] = useState<Tile['somethingElse']>();
   return (
     <Card
       {...card.hooks}
@@ -156,25 +226,58 @@ function CardView({ card, now }: { card: AttentionCard; now: number }): ReactEle
       )}
       {card.tiles.length === 0 ? null : (
         <div className="col-start-2 mt-1.5 flex flex-wrap gap-2">
-          {card.tiles.map((tile) => (
-            <OptionTile
-              key={tile.id}
-              {...tile.hooks}
-              label={tile.label}
-              {...(tile.consequence === undefined ? {} : { consequence: tile.consequence })}
-              recommended={tile.recommended}
-              {...(tile.href === null ? {} : { href: tile.href })}
-            />
-          ))}
+          {card.tiles.map((tile) => {
+            const here = act.enabled ? (tile.answer ?? tile.somethingElse) : undefined;
+            const where =
+              here !== undefined
+                ? {
+                    disabled: act.pending,
+                    onClick: () =>
+                      tile.answer
+                        ? act.start(tile.answer.request, {
+                            item: tile.answer.item,
+                            label: tile.label,
+                          })
+                        : setWriting(tile.somethingElse),
+                  }
+                : tile.href === null
+                  ? {}
+                  : { href: tile.href };
+            return (
+              <OptionTile
+                key={tile.id}
+                {...tile.hooks}
+                label={tile.label}
+                {...(tile.consequence === undefined ? {} : { consequence: tile.consequence })}
+                recommended={tile.recommended}
+                {...where}
+              />
+            );
+          })}
         </div>
+      )}
+      {writing === undefined || !act.enabled ? null : (
+        <AnswerBox
+          request={writing.request}
+          item={writing.item}
+          act={act}
+          onClose={() => setWriting(undefined)}
+        />
       )}
       {card.actions.length === 0 && card.confidence === undefined ? null : (
         <div className="col-start-2 mt-1.5 flex flex-wrap items-center gap-2">
-          {primary === undefined ? null : <ActionControl action={primary} />}
+          {primary === undefined ? null : <ActionControl action={primary} act={act} />}
           {rest.map((action) => (
             <ActionControl
-              key={action.type === 'copy' ? action.command : action.href}
+              key={
+                action.type === 'copy'
+                  ? action.command
+                  : action.type === 'act'
+                    ? action.label
+                    : action.href
+              }
               action={action}
+              act={act}
             />
           ))}
           {card.confidence === undefined ? null : (
@@ -193,11 +296,13 @@ function Group({
   why,
   cards,
   now,
+  act,
 }: {
   name: string;
   why?: string;
   cards: readonly AttentionCard[];
   now: number;
+  act: Act;
 }): ReactElement {
   return (
     <section className="mb-6">
@@ -213,7 +318,7 @@ function Group({
         )}
       </h2>
       {cards.map((card) => (
-        <CardView key={card.key} card={card} now={now} />
+        <CardView key={card.key} card={card} now={now} act={act} />
       ))}
     </section>
   );
@@ -287,6 +392,11 @@ export function AttentionBody({
   const ticking = useNow();
   const now = fixed ?? ticking;
   const phone = usePhone();
+  const act: Act = {
+    enabled: useActionsEnabled(factory),
+    start: useStartAction(),
+    pending: useActionPending(),
+  };
   const [chosen, setView] = useState<View>('kind');
   const view = fixedView ?? chosen;
   const sources: Record<SourceKey, Source<object>> = { decide, owner, unstick, failures };
@@ -310,9 +420,11 @@ export function AttentionBody({
   const groups: ReactNode =
     view === 'kind'
       ? byKind(cards).map((g) => (
-          <Group key={g.kind} name={g.name} why={g.why} cards={g.cards} now={now} />
+          <Group key={g.kind} name={g.name} why={g.why} cards={g.cards} now={now} act={act} />
         ))
-      : byQueue(cards).map((g) => <Group key={g.queue} name={g.name} cards={g.cards} now={now} />);
+      : byQueue(cards).map((g) => (
+          <Group key={g.queue} name={g.name} cards={g.cards} now={now} act={act} />
+        ));
   return (
     <section
       data-attention

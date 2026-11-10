@@ -10,7 +10,7 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { type PackVersion, parseVersion, type Step, type Workflow } from '../../parsers/pack';
-import { archRows } from '../arch-parse';
+import { ARCH_TABLES, type ArchTable, archRows } from '../arch-parse';
 import { insert, lit, type SqlRow } from './sql';
 
 type Edit = { file: string } & ({ find: string; replace: string } | { append: string });
@@ -170,79 +170,25 @@ export function parseVersions(repoRoot: string): {
 /** One architecture table: its rows without the version key, and the columns that key a row. */
 type Table = { name: string; key: string[]; rows: SqlRow[] };
 
-function subagents(workflow: string, all: Step[], out: SqlRow[]): void {
-  for (const step of all) {
-    for (const agent of step.agents) {
-      out.push({
-        workflow,
-        step_path: step.path,
-        name: agent.name,
-        description: agent.description,
-        prompt: agent.prompt,
-        instruction_file: agent.instructionFile,
-      });
-    }
-    subagents(workflow, step.steps, out);
-  }
-}
+/** A table added to ARCH_TABLES fails to compile here until its key is named. */
+const TABLE_KEYS: Record<ArchTable, string[]> = {
+  arch_workflows: ['name'],
+  arch_steps: ['workflow', 'path'],
+  arch_edges: ['workflow', 'from_path', 'to_path'],
+  arch_texts: ['path'],
+  arch_scripts: ['path'],
+  arch_subagents: ['workflow', 'step_path', 'name'],
+  arch_hooks: ['path'],
+};
 
-/** The mc.arch_* rows of one parsed version (mc.arch_steps comes from arch-parse's mapping; the other tables are mapped here). */
+/** The mc.arch_* rows of one parsed version, as production's writer builds them. */
 function tables(version: PackVersion): Table[] {
-  const stepRows = archRows(version).arch_steps as SqlRow[];
-  const subagentRows: SqlRow[] = [];
-  const edgeRows = new Map<string, SqlRow>();
-  for (const workflow of version.workflows) {
-    subagents(workflow.name, workflow.steps, subagentRows);
-    for (const edge of workflow.edges) {
-      edgeRows.set(JSON.stringify([workflow.name, edge.from, edge.to]), {
-        workflow: workflow.name,
-        from_path: edge.from,
-        to_path: edge.to,
-      });
-    }
-  }
-  return [
-    {
-      name: 'mc.arch_workflows',
-      key: ['name'],
-      rows: version.workflows.map((w) => ({
-        name: w.name,
-        description: w.description,
-        model: w.model,
-        file: w.file,
-        yaml: w.yaml,
-      })),
-    },
-    { name: 'mc.arch_steps', key: ['workflow', 'path'], rows: stepRows },
-    {
-      name: 'mc.arch_edges',
-      key: ['workflow', 'from_path', 'to_path'],
-      rows: [...edgeRows.values()],
-    },
-    {
-      name: 'mc.arch_texts',
-      key: ['path'],
-      rows: archRows(version).arch_texts.map((t) => ({
-        path: String(t.path),
-        text: String(t.text),
-      })),
-    },
-    {
-      name: 'mc.arch_scripts',
-      key: ['path'],
-      rows: version.scripts.map((s) => ({ path: s.path, text: s.text })),
-    },
-    { name: 'mc.arch_subagents', key: ['workflow', 'step_path', 'name'], rows: subagentRows },
-    {
-      name: 'mc.arch_hooks',
-      key: ['path'],
-      rows: version.hooks.map((h) => ({
-        path: h.path,
-        text: h.text,
-        admitted_agents: h.admittedAgents,
-      })),
-    },
-  ];
+  const rows = archRows(version);
+  return ARCH_TABLES.map((name) => ({
+    name: `mc.${name}`,
+    key: TABLE_KEYS[name],
+    rows: rows[name],
+  }));
 }
 
 export type ArchKey = { archon_sha: string; factory_sha: string; parsed_at: string };

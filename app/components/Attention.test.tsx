@@ -184,3 +184,10 @@ test('the head says when the manager swept, and leaves the clause out without a 
     expect(render({ sweep })).toContain('f. The manager put its recommendation first on each.');
   }
 });
+
+test('before the server says an operator exists, every tile and the Resume button stay console links', () => {
+  const html = render({ decide: ready([decide]), unstick: ready([stuck]) });
+  expect(html).not.toContain('data-answer-box');
+  expect(html).toMatch(/<a [^>]*data-choice=/);
+  expect(html).not.toMatch(/<button[^>]*data-choice=/);
+});

@@ -1348,6 +1348,22 @@ function versionsSql(versions: VersionSpec[]): string[] {
   const decisions = parseDecisions(decisionsText(versions));
   if (decisions.errors.length > 0) throw new Error(JSON.stringify(decisions.errors));
   for (const d of decisions.entries) out.push(insert('mc.decisions', { ...d }));
+
+  out.push('', "-- The dashboard's own record of one resume it sent (mc.actions).");
+  out.push(
+    insert('mc.actions', {
+      factory: FACTORY,
+      who: 'cole',
+      action: 'resume',
+      run_id: '5eed0000-0000-4000-8000-0000000000a1',
+      from_step: 'implement',
+      recorded_at: '2026-10-09T18:00:00Z',
+      undone: 'false',
+      sent_at: '2026-10-09T18:00:05Z',
+      exit_code: 0,
+      output: 'resumed',
+    }),
+  );
   return out;
 }
 

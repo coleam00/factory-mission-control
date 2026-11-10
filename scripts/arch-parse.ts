@@ -9,8 +9,9 @@ import {
   parseVersion,
   type Step,
 } from '../parsers/pack';
+import type { SqlRow } from './fixture/sql';
 import { type Deps, failing, guardedDatabaseUrl, type Main, runCli } from './lib/cli';
-import type { Row, Tx } from './lib/db';
+import type { Tx } from './lib/db';
 import { type RemoteDirectory, readDirectoryAt } from './lib/github';
 
 // The architecture job (PRD 11.4): one version's pack, factory package and factory template hooks
@@ -34,7 +35,7 @@ export const ARCH_TABLES = [
   'arch_subagents',
   'arch_hooks',
 ] as const;
-type ArchTable = (typeof ARCH_TABLES)[number];
+export type ArchTable = (typeof ARCH_TABLES)[number];
 
 const USAGE =
   'usage: bun run arch:parse <archon-sha> <factory-sha> [--archon-path <dir holding sdlc/>] [--factory-path <template dir>] [--package-path <factory package dir>] | bun run arch:parse:main ... (the owner, at a terminal)';
@@ -47,10 +48,15 @@ interface Version {
   pack: PackVersion;
 }
 
-type ArchRows = Record<ArchTable, Row[]>;
+type ArchRows = Record<ArchTable, SqlRow[]>;
 
 /** Each workflow's expanded tree in parser order: a step, then its children, then its next sibling. */
-function stepRows(workflow: string, steps: Step[], parent: string | null, into: Row[]): Row[] {
+function stepRows(
+  workflow: string,
+  steps: Step[],
+  parent: string | null,
+  into: SqlRow[],
+): SqlRow[] {
   for (const step of steps) {
     into.push({
       workflow,
@@ -82,7 +88,7 @@ function stepRows(workflow: string, steps: Step[], parent: string | null, into: 
   return into;
 }
 
-function subagentRows(workflow: string, steps: Step[]): Row[] {
+function subagentRows(workflow: string, steps: Step[]): SqlRow[] {
   return steps.flatMap((step) => [
     ...step.agents.map((agent) => ({
       workflow,
@@ -96,6 +102,12 @@ function subagentRows(workflow: string, steps: Step[]): Row[] {
   ]);
 }
 
+/** One row per distinct edge: `mc.arch_edges` keys a row by workflow and both paths, so a repeated `depends_on` entry is one edge. */
+function edgeRows(workflow: string, edges: { from: string; to: string }[]): SqlRow[] {
+  const distinct = new Map(edges.map((e) => [JSON.stringify([e.from, e.to]), e]));
+  return [...distinct.values()].map((e) => ({ workflow, from_path: e.from, to_path: e.to }));
+}
+
 export function archRows(pack: PackVersion): ArchRows {
   const { workflows } = pack;
   return {
@@ -107,9 +119,7 @@ export function archRows(pack: PackVersion): ArchRows {
       yaml: w.yaml,
     })),
     arch_steps: workflows.flatMap((w) => stepRows(w.name, w.steps, null, [])),
-    arch_edges: workflows.flatMap((w) =>
-      w.edges.map((e) => ({ workflow: w.name, from_path: e.from, to_path: e.to })),
-    ),
+    arch_edges: workflows.flatMap((w) => edgeRows(w.name, w.edges)),
     arch_texts: [...pack.commands, ...pack.sharedDocs].map((c) => ({ path: c.path, text: c.text })),
     arch_scripts: pack.scripts.map((s) => ({ path: s.path, text: s.text })),
     arch_subagents: workflows.flatMap((w) => subagentRows(w.name, w.steps)),

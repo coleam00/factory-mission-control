@@ -100,6 +100,8 @@ test('the Manager note leads, a failed row shows its stop line, and the primary 
     href: 'http://localhost:3090/console/r/abc',
     runId: 'abc',
     step: 'pr__prepare',
+    request: null,
+    toast: { item: null, label: '' },
   };
   const html = render(
     <WorkItemBody
