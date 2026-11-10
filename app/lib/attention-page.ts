@@ -186,7 +186,7 @@ export function decideCards(rows: readonly DecideRow[], factory: string): Attent
     const queue = queueOf(item.workflow_name, item.node_id);
     return {
       key: `decide:${item.run_id}`,
-      kind: 'decide',
+      kind: ATTENTION_SOURCES.decide.kind,
       queue,
       dot: 'needs-you',
       title: item.item_number === null ? heading : `#${item.item_number}: ${heading}`,
@@ -262,7 +262,7 @@ export function ownerCards(rows: readonly OwnerQueueRow[]): AttentionCard[] {
           ];
     return {
       key: `owner:${item.id}`,
-      kind: 'decide',
+      kind: ATTENTION_SOURCES.owner.kind,
       queue: 'build',
       dot: 'needs-you',
       title: item.title,
@@ -353,7 +353,7 @@ export function unstickCards(rows: readonly UnstickRow[], factory: string): Atte
             ];
       const base = {
         key,
-        kind: 'unstick',
+        kind: ATTENTION_SOURCES.unstick.kind,
         queue,
         dot: 'needs-you',
         age: { since: row.since },
@@ -490,7 +490,7 @@ export function fixCards(rows: readonly FailureGroupRow[], factory: string): Att
       const run = { href: lapHref(factory, g.latest_run_id), external: false };
       return {
         key: `fix:${g.signature}`,
-        kind: 'fix',
+        kind: ATTENTION_SOURCES.failures.kind,
         queue,
         dot: 'failed',
         title: g.step_id === null ? `${label} failed` : `${label} failed at ${g.step_id}`,
@@ -539,10 +539,10 @@ export function fixCards(rows: readonly FailureGroupRow[], factory: string): Att
  * and the live phase cannot disagree about which sources make "what needs you".
  */
 export const ATTENTION_SOURCES = {
-  decide: { query: 'decide', what: 'what is waiting on you' },
-  owner: { query: 'owner-queue', what: 'the owner queue' },
-  unstick: { query: 'unstick', what: 'what stopped moving' },
-  failures: { query: 'failure-groups', what: 'failures' },
+  decide: { query: 'decide', kind: 'decide', what: 'what is waiting on you' },
+  owner: { query: 'owner-queue', kind: 'decide', what: 'the owner queue' },
+  unstick: { query: 'unstick', kind: 'unstick', what: 'what stopped moving' },
+  failures: { query: 'failure-groups', kind: 'fix', what: 'failures' },
 } as const;
 
 /** The nav badge's panel of one of those queries, named apart from the page's own panel of it. */

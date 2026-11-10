@@ -874,6 +874,7 @@ describe('the briefing question with a run paused and other Attention rows', () 
     expect(question).toContain('4 things need you');
     expect(question).toContain('State no number of Attention items');
     expect(question).toContain('never say the rows or the opening line disagree');
+    expect(question).not.toContain('count a run');
   });
 });
 

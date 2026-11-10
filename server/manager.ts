@@ -629,7 +629,7 @@ export function answer(manager: Manager, request: ChatRequest, signal: AbortSign
 }
 
 const BRIEFING_QUESTION =
-  "Write today's briefing: what merged, what failed (count a run by the day it failed, completed_at, not the day it started), what waits on the owner, and the one or two things that matter most.";
+  "Write today's briefing: what merged, what failed (judge a run by the day it failed, completed_at, not the day it started), what waits on the owner, and the one or two things that matter most.";
 
 /** What the Attention header counts: the row count of each source, and the runs behind the failure causes. */
 export type AttentionTally = Record<keyof typeof ATTENTION_SOURCES, number> & {
@@ -644,15 +644,18 @@ let attentionQueries: Map<string, string> | undefined;
  * fails, as the page then shows no number either.
  */
 async function attentionTally(manager: Manager, factory: string): Promise<AttentionTally | null> {
-  attentionQueries ??= loadLiveQueries(join(import.meta.dir, '..', 'db', 'queries'));
-  const keys = Object.keys(ATTENTION_SOURCES) as (keyof typeof ATTENTION_SOURCES)[];
-  const source = (key: keyof typeof ATTENTION_SOURCES): string =>
-    `\n${attentionQueries?.get(ATTENTION_SOURCES[key].query)}\n`;
-  const counts = keys.map((key) => `(SELECT count(*) FROM (${source(key)}) AS s)::int AS "${key}"`);
-  const sql = `SELECT
+  try {
+    attentionQueries ??= loadLiveQueries(join(import.meta.dir, '..', 'db', 'queries'));
+    const queries = attentionQueries;
+    const keys = Object.keys(ATTENTION_SOURCES) as (keyof typeof ATTENTION_SOURCES)[];
+    const source = (key: keyof typeof ATTENTION_SOURCES): string =>
+      `\n${queries.get(ATTENTION_SOURCES[key].query)}\n`;
+    const counts = keys.map(
+      (key) => `(SELECT count(*) FROM (${source(key)}) AS s)::int AS "${key}"`,
+    );
+    const sql = `SELECT
   ${counts.join(',\n  ')},
   (SELECT coalesce(sum(g.failures), 0) FROM (${source('failures')}) AS g)::int AS "failureRuns"`;
-  try {
     const { rows } = await readOnlyQuery(manager.db, sql, [factory], MANAGER_LIMITS);
     return rows[0] as unknown as AttentionTally;
   } catch (err) {
@@ -663,23 +666,19 @@ async function attentionTally(manager: Manager, factory: string): Promise<Attent
 
 const plural = (n: number, one: string, many: string): string => `${n} ${n === 1 ? one : many}`;
 
-/** One phrase per Attention source, so a source added to `ATTENTION_SOURCES` fails to compile until it has one. `owner` is counted with `decide`, as its group is. */
-const ATTENTION_PHRASES: Record<keyof typeof ATTENTION_SOURCES, (t: AttentionTally) => string> = {
-  decide: (t) => (t.decide + t.owner > 0 ? `${t.decide + t.owner} to decide` : ''),
-  owner: () => '',
-  unstick: (t) => (t.unstick > 0 ? `${t.unstick} to unstick` : ''),
-  failures: (t) =>
-    t.failures > 0
-      ? `${t.failures} to fix (${plural(t.failureRuns, 'failure', 'failures')} in ${plural(t.failures, 'cause', 'causes')})`
-      : '',
-};
+type SourceKey = keyof typeof ATTENTION_SOURCES;
+const SOURCE_KEYS = Object.keys(ATTENTION_SOURCES) as SourceKey[];
 
-/** The briefing's first line: each Attention group by the count its group shows, so the total matches the header. */
-export function attentionLine(t: AttentionTally): string {
-  const total = (Object.keys(ATTENTION_SOURCES) as (keyof typeof ATTENTION_SOURCES)[]).reduce(
+/** The rows the page puts under one group header: the sources whose cards carry that kind. */
+const inGroup = (t: AttentionTally, kind: (typeof ATTENTION_SOURCES)[SourceKey]['kind']): number =>
+  SOURCE_KEYS.filter((key) => ATTENTION_SOURCES[key].kind === kind).reduce(
     (sum, key) => sum + t[key],
     0,
   );
+
+/** The briefing's first line: each Attention group by the count its header shows, so the total matches the page. */
+export function attentionLine(t: AttentionTally): string {
+  const total = SOURCE_KEYS.reduce((sum, key) => sum + t[key], 0);
   if (total === 0) return 'Nothing needs you.';
   const lead =
     t.decide > 0
@@ -687,9 +686,15 @@ export function attentionLine(t: AttentionTally): string {
       : t.owner > 0
         ? 'No run is paused on a question. '
         : 'No question is waiting. ';
-  const parts = (Object.keys(ATTENTION_PHRASES) as (keyof typeof ATTENTION_SOURCES)[])
-    .map((key) => ATTENTION_PHRASES[key](t))
-    .filter(Boolean);
+  const decide = inGroup(t, 'decide');
+  const unstick = inGroup(t, 'unstick');
+  const fix = inGroup(t, 'fix');
+  const parts = [
+    decide > 0 && `${decide} to decide`,
+    unstick > 0 && `${unstick} to unstick`,
+    fix > 0 &&
+      `${fix} to fix (${plural(t.failureRuns, 'failure', 'failures')} in ${plural(fix, 'cause', 'causes')})`,
+  ].filter(Boolean);
   return `${lead}${plural(total, 'thing needs', 'things need')} you: ${parts.join(', ')}.`;
 }
 
