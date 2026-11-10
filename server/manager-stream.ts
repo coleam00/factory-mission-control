@@ -37,19 +37,13 @@ export type ManagerEvent =
     };
 
 type KeysOfEach<T> = T extends unknown ? keyof T : never;
-type EnvelopeKeys = Exclude<KeysOfEach<Proposal>, KeysOfEach<ActionRequest>>;
-/** Compiles only while the envelope keys (`type`, `label`, `detail`) are exactly the ones `proposalRequest` strips. */
-const ENVELOPE_KEYS_ARE_STRIPPED: [EnvelopeKeys] extends ['type' | 'label' | 'detail']
-  ? ['type' | 'label' | 'detail'] extends [EnvelopeKeys]
-    ? true
-    : never
-  : never = true;
-void ENVELOPE_KEYS_ARE_STRIPPED;
-
-/** The request the action endpoint takes, with the envelope stripped. */
+/** The request the action endpoint takes, with the envelope stripped. The type check fails to compile when a key the endpoint does not accept is left in the rest object. */
 export function proposalRequest(proposal: Proposal): ActionRequest {
   const { type: _type, label: _label, detail: _detail, ...request } = proposal;
-  return request;
+  const exact: [Exclude<KeysOfEach<typeof request>, KeysOfEach<ActionRequest>>] extends [never]
+    ? typeof request
+    : never = request;
+  return exact;
 }
 
 export type NoticeKind = Extract<ManagerEvent, { type: 'notice' }>['kind'];
