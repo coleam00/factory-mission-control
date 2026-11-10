@@ -218,7 +218,7 @@ export const shown = () => ({
 });
 
 export const clickOpenRun = () =>
-  [...document.querySelectorAll<HTMLAnchorElement>('main a, a')]
+  [...document.querySelectorAll<HTMLAnchorElement>('a')]
     .find((a) => a.textContent?.startsWith('Open run'))
     ?.click();
 

@@ -10,20 +10,17 @@
  */
 import type { ActionRequest } from '../app/lib/actions';
 
-/** What a proposal carries on top of the action request it will send. */
-type ProposalEnvelope = {
-  type: 'proposal';
-  label: string;
-  /** Answer by option only: the choice's wording, for the Undo toast. Never sent to the action endpoint. */
-  detail?: string;
-};
-
 export type ManagerEvent =
   | { type: 'text'; text: string }
   | { type: 'link'; kind: 'run'; id: string; label: string; href: string }
   | { type: 'link'; kind: 'item'; id: number; label: string; href: string }
   | { type: 'runs'; runs: RunSummary[] }
-  | (ProposalEnvelope & ActionRequest)
+  | ({
+      type: 'proposal';
+      label: string;
+      /** Answer by option only: the choice's wording, for the Undo toast. Never sent to the action endpoint. */
+      detail?: string;
+    } & ActionRequest)
   | {
       type: 'notice';
       kind: 'message-cap' | 'day-cap' | 'unavailable' | 'unstructured';
@@ -42,22 +39,6 @@ export type ManagerEvent =
 export type NoticeKind = Extract<ManagerEvent, { type: 'notice' }>['kind'];
 export type ProposalAction = Extract<ManagerEvent, { type: 'proposal' }>['action'];
 export type LinkKind = Extract<ManagerEvent, { type: 'link' }>['kind'];
-
-/** Complete by type: a new envelope key is a compile error here until it is listed. */
-const PROPOSAL_ENVELOPE_KEYS: Record<keyof ProposalEnvelope, true> = {
-  type: true,
-  label: true,
-  detail: true,
-};
-
-/** The request a proposal button sends: the proposal without its envelope. */
-export function proposalRequest(
-  proposal: Extract<ManagerEvent, { type: 'proposal' }>,
-): ActionRequest {
-  return Object.fromEntries(
-    Object.entries(proposal).filter(([key]) => !Object.hasOwn(PROPOSAL_ENVELOPE_KEYS, key)),
-  ) as ActionRequest;
-}
 
 export const LINK_KINDS: Record<LinkKind, true> = { run: true, item: true };
 export const PROPOSAL_ACTIONS: Record<ProposalAction, true> = { answer: true, resume: true };
