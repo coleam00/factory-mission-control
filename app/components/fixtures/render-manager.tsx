@@ -88,7 +88,7 @@ export function mount(url: string) {
       if (target === '/api/actions') return Response.json({ factories: ['x', 'y'] });
       if (target === '/api/manager/briefing') {
         return lines(
-          { type: 'text', text: 'Quiet night.' },
+          { type: 'text', text: `Quiet night.${'\n\nFiller line.'.repeat(60)}` },
           { ...DONE, generated_at: '2026-11-09T07:30:00Z' },
         );
       }
@@ -177,6 +177,11 @@ export function mount(url: string) {
     ],
     { initialEntries: [url] },
   );
+  // The fixture loads no stylesheet; give the panel the few rules that bound its scroller.
+  const style = document.createElement('style');
+  style.textContent =
+    '.h-screen{height:100vh}.flex{display:flex}.flex-col{flex-direction:column}.min-h-0{min-height:0}.min-w-0{min-width:0}.flex-1{flex:1 1 0%}.overflow-y-auto{overflow-y:auto}';
+  document.head.append(style);
   const container = document.createElement('div');
   document.body.append(container);
   const root = createRoot(container);
@@ -187,6 +192,7 @@ export function mount(url: string) {
     unmount() {
       root.unmount();
       container.remove();
+      style.remove();
       window.fetch = originalFetch;
       delete window.__MC_LIVE__;
     },
@@ -215,6 +221,10 @@ export const shown = () => ({
   undo: q('[role="status"]')?.textContent?.includes('Undo') ?? false,
   chip: q('[data-manager-context] span')?.textContent ?? null,
   surface: q('[data-manager]')?.dataset.manager ?? null,
+  scroll: (() => {
+    const box = q('[data-manager] .overflow-y-auto');
+    return box ? { top: box.scrollTop, room: box.scrollHeight - box.clientHeight } : null;
+  })(),
 });
 
 export const clickOpenRun = () =>

@@ -13,6 +13,7 @@ import {
   briefingFault,
   briefingQuestion,
   CREDENTIAL_NAMES,
+  capBriefingProse,
   createManager,
   type Manager,
   managerSettings,
@@ -874,6 +875,45 @@ describe('the briefing', () => {
     }
     expect((await ask()).at(-1)).toMatchObject({ cached: false });
     expect((await ask()).at(-1)).toMatchObject({ cached: true });
+  });
+
+  test('a long model answer is cut to three blocks under the count line, fresh and replayed', async () => {
+    clock = new Date('2026-11-08T10:00:00');
+    const long = 'One.\n\n- two\n- three\n- four\n\nFive.';
+    const ask = briefingOf(managerOf(model(async () => [start, delta(long), result(0.01)])));
+    const shown = (events: { type: string }[]) =>
+      events.flatMap((e) => ('text' in e && e.type === 'text' ? [e.text] : [])).join('');
+    for (const got of [await ask(), await ask()]) {
+      const prose = shown(got).split('\n\n').slice(1);
+      expect(prose).toEqual(['One.', '- two', '- three']);
+    }
+  });
+
+  test('the cap counts top-level blocks: nested items and continuations stay with their item', async () => {
+    clock = new Date('2026-11-08T10:00:00');
+    const nested = 'Two failed.\n\n- build failed\n  - retry failed\n- docs waits on you';
+    const ask = briefingOf(managerOf(model(async () => [start, delta(nested), result(0.01)])));
+    const text = (await ask()).flatMap((e) => ('text' in e && e.type === 'text' ? [e.text] : []));
+    expect(text.join('').split('\n\n').slice(1)).toEqual([
+      'Two failed.',
+      '- build failed\n  - retry failed',
+      '- docs waits on you',
+    ]);
+  });
+
+  test('the cap counts indented lists and paragraphs the panel renders as their own blocks', () => {
+    expect(
+      capBriefingProse('Two failed.\n  - a\n  - b\n  - c\n  - d\n  - e').split('\n\n'),
+    ).toHaveLength(3);
+    expect(capBriefingProse('  - a\n  - b\n  - c\n  - d\n  - e').split('\n\n')).toHaveLength(3);
+    expect(
+      capBriefingProse('Quiet.\n\n  two\n\n  three\n\n  four\n\n  five').split('\n\n'),
+    ).toHaveLength(3);
+  });
+
+  test('the cap takes its block boundaries from the text the panel parses, bare \\r breaks included', () => {
+    expect(capBriefingProse('a\r\rb\r\rc\r\rd\r\re').split('\n\n')).toHaveLength(3);
+    expect(capBriefingProse('a\r\n\r\nb\r\n\r\nc\r\n\r\nd\r\n\r\ne').split('\n\n')).toHaveLength(3);
   });
 
   test('two askers at once share one generation', async () => {

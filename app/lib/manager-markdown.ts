@@ -77,6 +77,22 @@ function linked(nodes: Inline[], remaining: ManagerLink[]): Inline[] {
   });
 }
 
+/** The source of each unit the panel shows as its own block: a top-level paragraph or a top-level list item, nested lines kept inside. */
+export function topLevelBlocks(text: string): string[] {
+  // markdown-it numbers lines after turning \r\n and bare \r into \n, so slice the same text it parsed.
+  const normalized = text.replace(/\r\n?/g, '\n');
+  const lines = normalized.split('\n');
+  return md
+    .parse(normalized, {})
+    .filter(
+      (t) =>
+        t.map &&
+        ((t.type === 'paragraph_open' && t.level === 0) ||
+          (t.type === 'list_item_open' && t.level === 1)),
+    )
+    .map((t) => lines.slice(t.map![0], t.map![1]).join('\n').trimEnd());
+}
+
 export function parseMessage(
   text: string,
   links: readonly ManagerLink[],

@@ -267,10 +267,11 @@ export function ManagerPanelBody({
 }): ReactElement {
   const end = useRef<HTMLDivElement>(null);
   const last = chat.messages[chat.messages.length - 1];
-  // biome-ignore lint/correctness/useExhaustiveDependencies: scroll again whenever the last line changes
+  const asked = chat.messages.some((m) => m.role === 'owner');
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the briefing opens at the top; follow the last line once the owner has sent a message
   useEffect(() => {
-    end.current?.scrollIntoView?.({ block: 'end' });
-  }, [chat.messages.length, last]);
+    if (asked) end.current?.scrollIntoView?.({ block: 'end' });
+  }, [asked, chat.messages.length, last]);
   const send = () => {
     if (draft.trim() !== '' && !chat.busy) onSend(draft.trim());
   };
