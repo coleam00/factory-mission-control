@@ -640,6 +640,57 @@ describe('the briefing', () => {
     }
   });
 
+  test('a request that joins a briefing written against another count gets prose for its own', async () => {
+    clock = new Date('2026-11-08T10:00:00');
+    const F = 'joined';
+    const wait = (n: number) =>
+      `INSERT INTO mc.capacity_waits (run_id, factory, workflow_name, item_number, since) VALUES ('5eed0009-0000-4000-8000-0000000000${n}', '${F}', 'archon-build', ${n}, now())`;
+    await fixture.direct.query(
+      `INSERT INTO mc.factories (name, repository, codebase, console) VALUES ('${F}', 'o/b', 'o/b', 'http://localhost:3092');
+       ${wait(11)}`,
+    );
+    try {
+      let release = () => {};
+      const gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const played = model(async () => {
+        await gate;
+        return [start, delta('fine'), result(0.01)];
+      });
+      const manager = createManager({
+        db: fixture.direct,
+        databaseUrl: fixture.url,
+        factories: [F],
+        settings: managerSettings({}),
+        run: played.run,
+        now: () => clock,
+      });
+      const ask = async () =>
+        events(
+          await createApp({ buildId: 't', distDir: '.', manager }).request(
+            '/api/manager/briefing',
+            { method: 'POST', body: JSON.stringify({ factory: F }) },
+          ),
+        );
+      const first = ask();
+      while (played.prompts.length === 0) await new Promise((r) => setTimeout(r, 10));
+      await fixture.direct.query(wait(12));
+      const second = ask();
+      await new Promise((r) => setTimeout(r, 300));
+      release();
+      const [a, b] = await Promise.all([first, second]);
+      expect(a[0]).toMatchObject({ text: expect.stringContaining('1 thing needs you') });
+      expect(b[0]).toMatchObject({ text: expect.stringContaining('2 things need you') });
+      expect(played.prompts).toHaveLength(2);
+      expect(played.prompts[1]).toContain('2 things need you');
+    } finally {
+      await fixture.direct.query(
+        `DELETE FROM mc.capacity_waits WHERE factory = '${F}'; DELETE FROM mc.factories WHERE name = '${F}'`,
+      );
+    }
+  });
+
   test('sends nothing, the count line included, while the model is still writing', async () => {
     clock = new Date('2026-11-08T10:00:00');
     let release = () => {};
@@ -832,6 +883,36 @@ describe('a briefing whose count cannot be read', () => {
       expect(got[0]).toMatchObject({ type: 'text', text: 'fine' });
       expect(JSON.stringify(got)).not.toContain('need you');
       expect(played.prompts[0]).toContain('could not be read');
+    } finally {
+      log.mockRestore();
+    }
+  });
+
+  test('never replays a cached body across a count that was or is unreadable', async () => {
+    const log = spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const failing = Object.create(fixture.direct);
+      failing.transaction = async () => {
+        throw new Error('statement timeout');
+      };
+      const played = model(async () => [start, delta('fine'), result(0.01)]);
+      const manager = managerOf(played);
+      const ask = async (db: Manager['db']) => {
+        const res = await createApp({
+          buildId: 't',
+          distDir: '.',
+          manager: { ...manager, db },
+        }).request('/api/manager/briefing', {
+          method: 'POST',
+          body: JSON.stringify({ factory: FACTORY }),
+        });
+        return (await events(res)).at(-1);
+      };
+      await ask(fixture.direct);
+      expect(await ask(failing)).toMatchObject({ cached: false });
+      expect(await ask(failing)).toMatchObject({ cached: false });
+      expect(await ask(fixture.direct)).toMatchObject({ cached: false });
+      expect(played.prompts).toHaveLength(4);
     } finally {
       log.mockRestore();
     }

@@ -754,7 +754,11 @@ export function briefing(manager: Manager, factory: string, refresh: boolean): R
         () => manager.generating.delete(factory),
       );
     }
-    const { briefing: made, cost } = await pending;
+    let { briefing: made, cost } = await pending;
+    // Joined a generation written against another count: its prose would sit under this asker's line.
+    if (made.tally ? !sameTally(made.tally, tally) : tally !== null) {
+      ({ briefing: made, cost } = await generateBriefing(manager, factory, tally));
+    }
     countLine();
     for (const event of made.events) emit(event);
     emit(done(manager, cost, { generated_at: made.generatedAt, cached: false }));
