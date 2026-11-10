@@ -876,6 +876,18 @@ describe('the briefing', () => {
     expect((await ask()).at(-1)).toMatchObject({ cached: true });
   });
 
+  test('a long model answer is cut to three blocks under the count line, fresh and replayed', async () => {
+    clock = new Date('2026-11-08T10:00:00');
+    const long = 'One.\n\n- two\n- three\n- four\n\nFive.';
+    const ask = briefingOf(managerOf(model(async () => [start, delta(long), result(0.01)])));
+    const shown = (events: { type: string }[]) =>
+      events.flatMap((e) => ('text' in e && e.type === 'text' ? [e.text] : [])).join('');
+    for (const got of [await ask(), await ask()]) {
+      const prose = shown(got).split('\n\n').slice(1);
+      expect(prose).toEqual(['One.', '- two', '- three']);
+    }
+  });
+
   test('two askers at once share one generation', async () => {
     clock = new Date('2026-11-08T10:00:00');
     const played = model(async () => {

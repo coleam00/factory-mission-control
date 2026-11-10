@@ -688,7 +688,7 @@ export function answer(manager: Manager, request: ChatRequest, signal: AbortSign
 }
 
 const BRIEFING_QUESTION =
-  "Write today's briefing: what merged, what failed (judge a run by the day it failed, completed_at, not the day it started), what waits on the owner, and the one or two things that matter most.";
+  "Write today's briefing: what merged, what failed (judge a run by the day it failed, completed_at, not the day it started), what waits on the owner, and the one or two things that matter most. At most three short blocks (a paragraph or a bullet each).";
 
 /** What the Attention header counts: the row count of each source, and the runs behind the failure causes. */
 export type AttentionTally = Record<keyof typeof ATTENTION_SOURCES, number> & {
@@ -816,6 +816,29 @@ export function briefingFault(text: string, tally: AttentionTally): string | nul
   return stray === undefined ? null : `it states a count of ${stray} the page does not show`;
 }
 
+/** The briefing is 4 blocks: the server's count line, then at most this many of the model's. */
+export const BRIEFING_PROSE_BLOCKS = 3;
+
+/** A block is a paragraph or one list item; the prose keeps its first `BRIEFING_PROSE_BLOCKS`. */
+export function capBriefingProse(text: string): string {
+  const blocks = text
+    .split(/\n\s*\n/)
+    .flatMap((paragraph) => paragraph.split(/\n(?=\s*(?:[-*+]|\d+[.)])\s)/))
+    .map((block) => block.trim())
+    .filter((block) => block !== '');
+  return blocks.slice(0, BRIEFING_PROSE_BLOCKS).join('\n\n');
+}
+
+function capBriefingEvents(events: ManagerEvent[]): ManagerEvent[] {
+  const text = events.flatMap((e) => (e.type === 'text' ? [e.text] : [])).join('');
+  const capped: ManagerEvent = { type: 'text', text: capBriefingProse(text) };
+  const at = events.findIndex((e) => e.type === 'text');
+  if (at < 0) return events;
+  return events.flatMap((e, i): ManagerEvent[] =>
+    e.type !== 'text' ? [e] : i === at ? [capped] : [],
+  );
+}
+
 async function generateBriefing(manager: Manager, factory: string, read: AttentionRead | null) {
   const request: ChatRequest = {
     factory,
@@ -845,6 +868,7 @@ async function generateBriefing(manager: Manager, factory: string, read: Attenti
       // `ok` stays as the attempt left it: a failed run is not kept, so the next ask tries again.
       if (!fault) console.warn('manager: briefing second attempt failed; showing the count line');
     }
+    if (!fault) events = capBriefingEvents(events);
     if (!fault) break;
     rejected = true;
     console.warn(`manager: briefing rejected (attempt ${attempt + 1}): ${fault}`);
