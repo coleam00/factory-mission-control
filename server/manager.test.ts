@@ -672,7 +672,7 @@ describe('the briefing', () => {
        INSERT INTO mc.capacity_waits (run_id, factory, workflow_name, item_number, since) VALUES ('${waiting}', '${F}', 'archon-build', 7, now())`,
     );
     try {
-      const replies = ['The page lists 9 things.', 'The archon-build run is waiting on capacity.'];
+      const replies = ['9 things need you.', 'The archon-build run is waiting on capacity.'];
       let calls = 0;
       let attempts: unknown[] = [];
       const played = model(async (options) => {
@@ -726,7 +726,7 @@ describe('the briefing', () => {
       expect(text(regenerated)).toContain('waiting on capacity');
 
       // A reply that keeps contradicting the count falls back to the count line alone.
-      replies.push('The page lists 9 things.', 'It is 8 items.');
+      replies.push('9 things need you.', '8 things need you.');
       expect(text(await ask(true))).toBe(`${line}
 
 `);
@@ -739,7 +739,7 @@ describe('the briefing', () => {
       expect(played.prompts).toHaveLength(5);
       const warn = spyOn(console, 'warn').mockImplementation(() => {});
       try {
-        replies.push('The page lists 9 things.');
+        replies.push('9 things need you.');
         const failed = await ask(true);
         expect(text(failed)).toBe(`${line}
 
@@ -1011,22 +1011,22 @@ describe('the briefing question with a run paused and other Attention rows', () 
     expect(question).not.toContain('count a run');
   });
 
-  test('allows the numbers the opening line states and no others', () => {
+  test('rejects a count sentence that states a total the line does not', () => {
     const tally = { decide: 1, owner: 3, unstick: 0, failures: 0, failureRuns: 0 };
     expect(briefingFault('Run #12 is paused; 4 things need you.', tally)).toBeNull();
-    expect(briefingFault('3 owner questions wait.', tally)).toContain('count of 3');
+    expect(briefingFault('**28** things need you.', tally)).toContain('count of 28');
+    expect(briefingFault('1 thing needs you.', tally)).toContain('count of 1');
+    expect(briefingFault('Nothing needs you.', tally)).toContain('count of 0');
+    const none = { decide: 0, owner: 0, unstick: 0, failures: 0, failureRuns: 0 };
+    expect(briefingFault('Nothing needs you.', none)).toBeNull();
+    expect(briefingFault('2 things need you.', none)).toContain('count of 2');
   });
 
-  test('reads the numbers the panel shows, not the markdown around them', () => {
-    const tally = { decide: 0, owner: 2, unstick: 1, failures: 3, failureRuns: 12 };
-    expect(briefingFault('12 failures. Run #522 and 3 causes.', tally)).toBeNull();
-    expect(briefingFault('1. Answer #522.\n2. Retry.\n3. Check.\n4. Wait.', tally)).toBeNull();
-    expect(briefingFault('**28** things need you.', tally)).toContain('count of 28');
-    expect(briefingFault('(5 owner questions)', tally)).toContain('count of 5');
-    const nested = ['- Answer first', '  1. a', '  2. b', '  3. c', '  4. d'].join('\n');
-    expect(briefingFault(nested, tally)).toBeNull();
-    for (const joined of ['"28" things', '28! things', '~28 things', '28+ items', '28-item list'])
-      expect(briefingFault(joined, tally)).toContain('count of 28');
+  test('ignores every number that is not the count sentence', () => {
+    const tally = { decide: 1, owner: 3, unstick: 0, failures: 0, failureRuns: 0 };
+    const prose =
+      'On 2026-11-10 at 01:10 run 0c95c843 (PR #606) cost $1.10; since Oct 10, 28 owner questions came and 4 things need you.';
+    expect(briefingFault(prose, tally)).toBeNull();
   });
 });
 

@@ -12,7 +12,6 @@ import type { Server } from 'bun';
 import type { Context, Hono } from 'hono';
 import { isAnswerText, resolveAnswer } from '../app/lib/attention';
 import { ATTENTION_SOURCES, type AttentionKind, KINDS } from '../app/lib/attention-page';
-import { type Inline, parseMessage } from '../app/lib/manager-markdown';
 import { isRunId, lapHref } from '../app/lib/one-lap';
 import { workItemHref } from '../app/lib/work-item';
 import { type Db, openDb } from '../scripts/lib/db';
@@ -791,46 +790,28 @@ export function briefingQuestion(
 
 type AttentionRead = { tally: AttentionTally; rows: AttentionRows };
 
-const isDigit = (c: string | undefined): boolean => c !== undefined && c >= '0' && c <= '9';
-const isLetter = (c: string | undefined): boolean =>
-  c !== undefined && c.toLowerCase() !== c.toUpperCase();
+/** The count sentence's own words, as `attentionLine` writes them: the number sits just before. */
+const COUNT_TAILS = [' thing needs you', ' things need you'];
+const NOTHING_WAITS = 'Nothing needs you';
 
-/** Each maximal digit run is a count unless it is part of an id: after `#`, or touching a letter. */
-function countsIn(leaf: string): number[] {
-  const found: number[] = [];
-  for (let i = 0; i < leaf.length; i++) {
-    if (!isDigit(leaf[i])) continue;
-    let end = i;
-    while (isDigit(leaf[end])) end++;
-    const before = leaf[i - 1];
-    if (before !== '#' && !isLetter(before) && !isLetter(leaf[end]))
-      found.push(Number(leaf.slice(i, end)));
-    i = end;
+/** The totals a text states in the count sentence's form, and only those: any other number in it is not a count. */
+function statedTotals(text: string): number[] {
+  const plain = text.split('*').join('');
+  const totals = plain.includes(NOTHING_WAITS) ? [0] : [];
+  for (const tail of COUNT_TAILS) {
+    for (let at = plain.indexOf(tail); at >= 0; at = plain.indexOf(tail, at + 1)) {
+      let start = at;
+      while (start > 0 && plain[start - 1] >= '0' && plain[start - 1] <= '9') start--;
+      if (start < at) totals.push(Number(plain.slice(start, at)));
+    }
   }
-  return found;
+  return totals;
 }
 
-function leaves(nodes: Inline[]): string[] {
-  return nodes.flatMap((n) =>
-    n.type === 'bold'
-      ? leaves(n.children)
-      : n.type === 'link' || (n.type === 'text' && n.marker)
-        ? []
-        : [n.text],
-  );
-}
-
-/** The whole numbers a reader sees in a text: the panel's own parse, so markup, list markers and ids are not counts. */
-const bareNumbers = (text: string): number[] =>
-  parseMessage(text, [])
-    .blocks.flatMap((b) => (b.type === 'paragraph' ? [b.inlines] : b.items))
-    .flatMap(leaves)
-    .flatMap(countsIn);
-
-/** Why the model's prose cannot sit under the count line: it states a number the line does not. */
+/** Why the model's prose cannot sit under the count line: its count sentence states a total the line does not. */
 export function briefingFault(text: string, tally: AttentionTally): string | null {
-  const allowed = new Set(bareNumbers(attentionLine(tally)));
-  const stray = bareNumbers(text).find((n) => !allowed.has(n));
+  const allowed = statedTotals(attentionLine(tally));
+  const stray = statedTotals(text).find((n) => !allowed.includes(n));
   return stray === undefined ? null : `it states a count of ${stray} the page does not show`;
 }
 
