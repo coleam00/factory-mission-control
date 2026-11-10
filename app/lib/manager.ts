@@ -6,6 +6,7 @@
  */
 import {
   type ChatRequest,
+  isName,
   MAX_MESSAGE_CHARS,
   MAX_MESSAGES,
   type ManagerEvent,
@@ -80,7 +81,7 @@ export function managerPlace(
           ? 'table'
           : 'pipeline';
       return {
-        context: order ? { place: 'board', order } : { place: 'board' },
+        context: isName(order) ? { place: 'board', order } : { place: 'board' },
         chip: `Board · ${what}`,
         questions: ['What is the work order waiting on?', 'Which items are blocked?'],
       };
@@ -116,9 +117,14 @@ export function managerPlace(
       };
     }
     case 'steps': {
+      const workflow = decoded(first);
       const step = decoded(second);
       return {
-        context: { place: 'step', workflow: decoded(first), step },
+        context: {
+          place: 'step',
+          ...(isName(workflow) && { workflow }),
+          ...(isName(step) && { step }),
+        },
         chip: `Step ${step}`,
         questions: [`How often does ${step} fail?`, `What does ${step} cost per run?`],
       };

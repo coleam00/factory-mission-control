@@ -23,6 +23,7 @@ import {
   AnswerSplitter,
   type ChatRequest,
   encodeEvent,
+  isName,
   MAX_MESSAGE_CHARS,
   MAX_MESSAGES,
   MAX_NAME_CHARS,
@@ -150,16 +151,22 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-const CONTEXT_KEYS = ['place', 'run', 'item', 'workflow', 'step', 'order'];
+/** Every key of the context; the record form makes tsc refuse a field added to the interface and not listed here. */
+const CONTEXT_KEYS: Record<keyof ChatRequest['context'], true> = {
+  place: true,
+  run: true,
+  item: true,
+  workflow: true,
+  step: true,
+  order: true,
+};
 
-/** A name from the owner's address: free text, so no line breaks or other control characters can reach the prompt. */
-function isName(value: unknown): value is string {
-  return (
-    typeof value === 'string' &&
-    value.length >= 1 &&
-    value.length <= MAX_NAME_CHARS &&
-    ![...value].some((c) => c.charCodeAt(0) < 32 || c.charCodeAt(0) === 127)
-  );
+/** The name under `key`, absent, or the reason it is refused. */
+function nameField(key: string, value: unknown): { name?: string } | string {
+  if (value === undefined) return {};
+  return isName(value)
+    ? { name: value }
+    : `${key} must be a name of at most ${MAX_NAME_CHARS} characters`;
 }
 
 /** The request, or the reason it is refused. */
@@ -168,7 +175,7 @@ export function parseChat(body: unknown, factories: string[]): ChatRequest | str
   const { factory, context, messages } = body;
   if (typeof factory !== 'string' || !factories.includes(factory)) return 'unknown factory';
   if (!isRecord(context)) return 'context is required';
-  const unknown = Object.keys(context).find((key) => !CONTEXT_KEYS.includes(key));
+  const unknown = Object.keys(context).find((key) => !(key in CONTEXT_KEYS));
   if (unknown !== undefined) return `unknown context field ${JSON.stringify(unknown)}`;
   const { place, run, item, workflow, step, order } = context;
   if (typeof place !== 'string' || !(PLACES as readonly string[]).includes(place)) {
@@ -178,11 +185,12 @@ export function parseChat(body: unknown, factories: string[]): ChatRequest | str
   if (item !== undefined && (typeof item !== 'number' || !Number.isInteger(item) || item < 1)) {
     return 'item must be a positive integer';
   }
-  for (const [key, value] of Object.entries({ workflow, step, order })) {
-    if (value !== undefined && !isName(value)) {
-      return `${key} must be a name of at most ${MAX_NAME_CHARS} characters`;
-    }
-  }
+  const workflowName = nameField('workflow', workflow);
+  if (typeof workflowName === 'string') return workflowName;
+  const stepName = nameField('step', step);
+  if (typeof stepName === 'string') return stepName;
+  const orderName = nameField('order', order);
+  if (typeof orderName === 'string') return orderName;
   if (!Array.isArray(messages) || messages.length < 1 || messages.length > MAX_MESSAGES) {
     return `messages must hold 1 to ${MAX_MESSAGES} entries`;
   }
@@ -204,10 +212,10 @@ export function parseChat(body: unknown, factories: string[]): ChatRequest | str
       place: place as ChatRequest['context']['place'],
       run,
       item,
-      workflow,
-      step,
-      order,
-    } as ChatRequest['context'],
+      workflow: workflowName.name,
+      step: stepName.name,
+      order: orderName.name,
+    },
     messages: messages as ChatRequest['messages'],
   };
 }

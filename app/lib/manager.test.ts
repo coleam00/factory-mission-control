@@ -63,6 +63,12 @@ test('each address gives the context the Manager is asked with and the chip that
 test('an address that names no run or item still names its place, and sends no id', () => {
   expect(place('/f/x/runs/not-a-uuid').context).toEqual({ place: 'run' });
   expect(place('/f/x/work/abc').context).toEqual({ place: 'work' });
+  expect(place('/f/x/steps/wf').context).toEqual({ place: 'step', workflow: 'wf' });
+  expect(place(`/f/x/steps/wf/${'s'.repeat(101)}`).context).toEqual({
+    place: 'step',
+    workflow: 'wf',
+  });
+  expect(place('/f/x/steps/wf/a%0Ab').context).toEqual({ place: 'step', workflow: 'wf' });
 });
 
 const stream = (...chunks: string[]) =>
