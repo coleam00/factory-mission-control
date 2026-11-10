@@ -30,7 +30,7 @@ SELECT v.digest, 'step', s.workflow, NULL,
   array_agg(s.path || E'\t' || left(md5(s.kind || E'\n' || coalesce(s.description, '') || E'\n'
     || coalesce(s.model, '') || E'\n' || coalesce(s.when_condition, '') || E'\n'
     || coalesce(s.trigger_rule, '') || E'\n' || coalesce(s.include, '') || E'\n'
-    || coalesce(s.child_workflow, '') || E'\n'
+    || coalesce(s.child_workflow, '') || E'\n' || coalesce(s.round_cap::text, '') || E'\n'
     || coalesce(s.command, '') || E'\n' || coalesce(s.command_file, '') || E'\n'
     || coalesce(s.script, '') || E'\n' || coalesce(s.script_file, '') || E'\n'
     || coalesce(s.runtime, '') || E'\n' || coalesce(s.bash, '') || E'\n'

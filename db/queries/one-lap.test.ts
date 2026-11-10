@@ -1,4 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { attemptsInOrder, type StepAttemptRow, shownDispositions } from '../../app/lib/one-lap';
 import { runCost, runTimeline, stepCost } from '../../app/lib/one-run';
 import {
@@ -406,5 +408,138 @@ describe('one-lap on the seed', () => {
       runCost(rows) ?? Number.NaN,
       6,
     );
+  });
+
+  test("the failed build's map holds the deliver loop's cap of 4 from the queue pack's own version", async () => {
+    const rows = await lap('one-lap-map', QUEUE_RUNS.failedBuild, 'queue-factory');
+    expect(rows.find((r) => r.path === 'ship/deliver/rounds')?.round_cap).toBe(4);
+  });
+
+  test("every build-queue step page's Prompt and Scripts resolve to its own version's file, at the address the run page links", async () => {
+    const queueRoot = join(import.meta.dir, '../../fixtures/pack/queue/sdlc');
+    const [first] = await queue('one-lap-map', QUEUE_RUNS.failedBuild);
+    expect(first?.pin).toBeNull();
+    const at = String(first?.archon_sha);
+    const steps = await db.query(
+      `SELECT s.path, s.script_file, s.command_file
+       FROM mc.arch_steps s
+       WHERE s.workflow = 'archon-build-queue' AND s.archon_sha = $1
+         AND (s.script_file IS NOT NULL OR s.command_file IS NOT NULL)`,
+      [at],
+    );
+    expect(steps.length).toBeGreaterThan(0);
+    const notFound: string[] = [];
+    const mismatch: string[] = [];
+    for (const step of steps) {
+      const isScript = step.script_file !== null;
+      const file = String(isScript ? step.script_file : step.command_file);
+      const chunks = await db.query(sqlOf(isScript ? 'step-scripts' : 'step-prompt'), [
+        'queue-factory',
+        'archon-build-queue',
+        step.path,
+        at,
+      ]);
+      const text = chunks
+        .filter((c) => c.path === file)
+        .sort((a, b) => Number(a.part) - Number(b.part))
+        .map((c) => c.chunk)
+        .join('');
+      if (text === '') notFound.push(`${step.path}: ${file}`);
+      else if (text !== readFileSync(join(queueRoot, file), 'utf8').replaceAll('\r\n', '\n'))
+        mismatch.push(`${step.path}: ${file}`);
+    }
+    expect(notFound).toEqual([]);
+    expect(mismatch).toEqual([]);
+    const [detail] = await db.query(sqlOf('step-detail'), ['queue-factory', at]);
+    expect(detail?.workflow).toBe('archon-build-queue');
+  });
+
+  test('every workflow a queue-factory lap ran has steps at the queue version, so no lap draws another pack', async () => {
+    const [held] = await db.query(
+      `SELECT array_agg(DISTINCT l.workflow_name) AS missing
+       FROM mc.laps l
+       WHERE l.factory = 'queue-factory' AND NOT EXISTS (
+         SELECT 1 FROM mc.arch_steps s
+         JOIN mc.arch_versions a ON a.archon_sha = s.archon_sha AND a.factory_sha = s.factory_sha
+         WHERE s.workflow = l.workflow_name AND NOT EXISTS (SELECT 1 FROM mc.pins p WHERE p.archon_sha = a.archon_sha))`,
+    );
+    expect(held?.missing ?? null).toBeNull();
+  });
+
+  test("a queue factory's merge-queue map holds facts and sweep", async () => {
+    const rows = await lap('one-lap-map', QUEUE_RUNS.merged, 'queue-factory');
+    expect(rows.map((r) => r.step_id)).toEqual(expect.arrayContaining(['facts', 'sweep']));
+  });
+  // A copy of one version's steps under a new factory_sha (and workflow), as a parse of its own.
+  const parseOf = async (
+    from: { archon: string; workflow: string },
+    to: { factory: string; workflow: string; parsedAt: string; archon?: string },
+  ) => {
+    await db.query(
+      `INSERT INTO mc.arch_versions (archon_sha, factory_sha, parsed_at) VALUES ($1, $2, $3)`,
+      [to.archon ?? from.archon, to.factory, to.parsedAt],
+    );
+    await db.query(
+      `CREATE TEMP TABLE copy AS SELECT * FROM mc.arch_steps WHERE archon_sha = $1 AND workflow = $2`,
+      [from.archon, from.workflow],
+    );
+    await db.query(`UPDATE copy SET archon_sha = $1, factory_sha = $2, workflow = $3`, [
+      to.archon ?? from.archon,
+      to.factory,
+      to.workflow,
+    ]);
+    await db.query(`INSERT INTO mc.arch_steps SELECT * FROM copy`);
+    await db.query(`DROP TABLE copy`);
+  };
+  const lapOf = (runId: string, factory: string, workflow: string, startedAt: string) =>
+    db.query(
+      `INSERT INTO mc.laps (run_id, factory, workflow_name, status, started_at) VALUES ($1, $2, $3, 'completed', $4)`,
+      [runId, factory, workflow, startedAt],
+    );
+
+  test('a version no pin names is drawn only on a factory on the queues', async () => {
+    const loop = { archon: 'abd85896e7971c9ac5199ed7e87973f27130250f', workflow: 'archon-loop' };
+    await parseOf(loop, {
+      factory: 'unpinned-parse',
+      workflow: 'unpinned-only',
+      parsedAt: '2026-01-01T00:00:00Z',
+      archon: 'beef000000000000000000000000000000000001',
+    });
+    const plain = '5eed0001-0000-4000-8000-0000000000a1';
+    const queued = '5eed0001-0000-4000-8000-0000000000a2';
+    await lapOf(plain, 'plain-factory', 'unpinned-only', '2026-10-01T00:00:00Z');
+    await lapOf(queued, 'queued-factory', 'unpinned-only', '2026-10-01T00:00:00Z');
+    await lapOf(
+      '5eed0001-0000-4000-8000-0000000000a3',
+      'queued-factory',
+      'archon-intake',
+      '2026-10-01T00:00:00Z',
+    );
+    for (const name of ['one-lap-map', 'one-lap-steps']) {
+      const rows = (runId: string, factory: string) => db.query(sqlOf(name), [factory, runId]);
+      expect(await rows(plain, 'plain-factory')).toEqual([]);
+    }
+    expect((await lap('one-lap-map', queued, 'queued-factory')).length).toBeGreaterThan(0);
+  });
+
+  test('the map and the steps resolve a lap to the same newest parse of its pin, even one parsed after the lap', async () => {
+    const archon = 'abd85896e7971c9ac5199ed7e87973f27130250f';
+    await parseOf(
+      { archon, workflow: 'archon-loop' },
+      { factory: 'newest-parse', workflow: 'archon-loop', parsedAt: '2099-01-01T00:00:00Z' },
+    );
+    await db.query(
+      `UPDATE mc.arch_steps SET path = 'zz-newest', step_id = 'zz-newest', parent_path = NULL, position = 999 WHERE factory_sha = 'newest-parse' AND path = 'ship/intel'`,
+    );
+    const run = '5eed0001-0000-4000-8000-0000000000b1';
+    await lapOf(run, 'mission-control', 'archon-loop', '2026-10-01T00:00:00Z');
+    await db.query(
+      `INSERT INTO mc.lap_steps (run_id, step_id, status) VALUES ($1, 'zz-newest', 'completed')`,
+      [run],
+    );
+    const mapped = await lap('one-lap-map', run);
+    expect(mapped.map((r) => r.path)).toContain('zz-newest');
+    const listed = await lap('one-lap-steps', run);
+    expect(listed.find((r) => r.step_id === 'zz-newest')?.position).toBe(999);
   });
 });

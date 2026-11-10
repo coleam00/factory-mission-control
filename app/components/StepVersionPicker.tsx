@@ -64,7 +64,7 @@ export function StepVersionPickerBody({
 }: {
   rows: readonly StepVersionRow[] | undefined;
   state: PanelState;
-  /** The pin the address names, or null for the current version. */
+  /** The step address: a pin sha or an Archon commit (archon_sha), or null for the current version. */
   at: string | null;
   /** The screen's address at a version's pin, or at the current version for null. */
   href: (at: string | null) => string;

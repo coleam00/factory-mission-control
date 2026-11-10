@@ -16,7 +16,9 @@ import type { StepAttemptRow } from './one-lap';
 
 /** A row of `db/queries/one-lap-map.sql`: one node of the loop's expanded tree at the lap's pin. */
 export interface LapMapRow {
-  pin: string;
+  pin: string | null;
+  /** The drawn version's architecture, the address of a version no pin names. */
+  archon_sha: string;
   path: string;
   parent_path: string | null;
   position: number;
@@ -25,6 +27,8 @@ export interface LapMapRow {
   depends_on: string[] | null;
   when_condition?: string | null;
   trigger_rule?: string | null;
+  /** The round a loop stops itself at, when the pinned map holds it. */
+  round_cap?: number | null;
 }
 
 /** What happened to a step in this lap. */
@@ -89,8 +93,10 @@ export interface LapStep {
 export interface LapGraph {
   graph: StepGraph;
   steps: Map<string, LapStep>;
-  /** The pin whose map this is, null when no architecture is stored for any pin. */
+  /** The pin whose map this is, null when no pin names it: no map is stored, or the queue pack's own version. */
   pin: string | null;
+  /** Whether a stored map draws this lap. */
+  mapped: boolean;
 }
 
 /**
@@ -155,7 +161,7 @@ export function lapGraph(
     }
   }
 
-  const graph = stepGraph(rows, factory, map[0]?.pin ?? null);
+  const graph = stepGraph(rows, factory, map[0]?.pin ?? map[0]?.archon_sha ?? null);
   const children = graph.clusters;
   // Every iteration of a loop's step is an attempt of its one node, oldest first.
   const own = new Map<string, StepAttemptRow[]>();
@@ -211,7 +217,7 @@ export function lapGraph(
       step.state = 'skipped';
     }
   }
-  return { graph, steps, pin: map[0]?.pin ?? null };
+  return { graph, steps, pin: map[0]?.pin ?? null, mapped: map.length > 0 };
 }
 
 /** The loop's top-level steps a lane shows, in loop order; build and ship are one mark. */

@@ -198,9 +198,11 @@ export function LapStepsBody({
         {rows.length === 0 ? <span>No step has started yet.</span> : null}
         {lap === undefined ? null : (
           <span data-lap-pin={lap.pin ?? undefined}>
-            {lap.pin === null
+            {!lap.mapped
               ? 'No map is stored for any pin: the steps the lap ran, in the order they started.'
-              : `The loop at pin ${lap.pin.slice(0, 7)}`}
+              : lap.pin === null
+                ? "The loop at the queue pack's own version"
+                : `The loop at pin ${lap.pin.slice(0, 7)}`}
           </span>
         )}
       </p>

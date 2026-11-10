@@ -3,6 +3,8 @@ import { recorded } from './version-strip';
 
 /** One row of `db/queries/step-detail.sql`: a node of a workflow's expanded tree. */
 export interface StepRow {
+  /** The pin of the version the row is from, null for a version no pin names (the queue pack's). */
+  pin: string | null;
   workflow: string;
   path: string;
   parent_path: string | null;
@@ -283,6 +285,14 @@ export function stepVersions(rows: readonly StepVersionRow[]): StepVersion[] {
       reason: recorded(row.reason),
       current: row.is_current,
     }));
+}
+
+/**
+ * The version the map link of a step screen carries: the map resolves only a pin, so a screen
+ * addressed by an Archon commit links the map by the row's own pin, or without one when it has none.
+ */
+export function mapAt(at: string | null, found: Pick<StepRow, 'pin'> | undefined): string | null {
+  return at === null || found === undefined ? at : found.pin;
 }
 
 /** The version the step screen shows, in a sentence: the one pinned `at`, else the current one. */

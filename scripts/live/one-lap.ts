@@ -595,7 +595,7 @@ export function oneLapPhase(ctx: LiveContext): LivePhase {
         [
           {
             run: QUEUE_RUNS.failedBuild,
-            title: `Build #${QUEUE_PAGE_RUNS.buildIssue}, round 2`,
+            title: `Build #${QUEUE_PAGE_RUNS.buildIssue}, round 2 of 4`,
             failed: true,
           },
           FILES.runFailedShot,

@@ -26,7 +26,7 @@ CROSS JOIN version v
 WHERE EXISTS (SELECT 1 FROM mc.arch_versions a WHERE a.archon_sha = p.archon_sha)
 UNION ALL
 -- On a factory on the queues, the current version when no pin names its Archon commit: by that
--- commit, dated when it was parsed. It opens only as the current version, never by address.
+-- commit, dated when it was parsed. It opens by its archon_sha as the step address.
 SELECT v.archon_sha, NULL, v.parsed_at, true
 FROM version v
 WHERE v.pin IS NULL

@@ -86,7 +86,9 @@ test('V1 pins every trailer, V2 only a measure, V3 none', async () => {
 test("V2's architecture is V1's with one step added, one removed, one prompt and one subagent changed", async () => {
   const diff = await db.query(
     `WITH v AS (
-       SELECT archon_sha, factory_sha, row_number() OVER (ORDER BY parsed_at) AS n FROM mc.arch_versions
+       SELECT archon_sha, factory_sha, row_number() OVER (ORDER BY parsed_at) AS n FROM mc.arch_versions v
+       WHERE EXISTS (SELECT 1 FROM mc.arch_workflows w WHERE w.archon_sha = v.archon_sha
+         AND w.factory_sha = v.factory_sha AND w.name = 'archon-loop')
      ), v1 AS (SELECT * FROM v WHERE n = 1), v2 AS (SELECT * FROM v WHERE n = 2),
      steps AS (
        SELECT s.workflow, s.step_id, s.path, v1.n IS NOT NULL AS in_v1 FROM mc.arch_steps s

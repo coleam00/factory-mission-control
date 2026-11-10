@@ -237,6 +237,7 @@ const ROW_COLUMNS: Record<string, string[]> = {
   ]),
   'one-lap-map': columns<LapMapRow>()([
     'pin',
+    'archon_sha',
     'path',
     'parent_path',
     'position',
@@ -245,6 +246,7 @@ const ROW_COLUMNS: Record<string, string[]> = {
     'depends_on',
     'when_condition',
     'trigger_rule',
+    'round_cap',
   ]),
   'one-lap-steps': columns<StepAttemptRow>()([
     'step_id',
@@ -351,6 +353,7 @@ const ROW_COLUMNS: Record<string, string[]> = {
   ]),
   'status-strip': columns<StatusStripRow>()(['running', 'waiting', 'engine']),
   'step-detail': columns<StepRow>()([
+    'pin',
     'workflow',
     'path',
     'parent_path',
@@ -532,6 +535,8 @@ describe('the rules the live queries restate, which they may not call a function
       // Exception: the lap rule narrowed to one item ($2) rather than any item, and the route join that
       // reads a build-queue run's own routing step.
       'work-item': [0, 0, 0, 2],
+      'one-lap-map': [0, 0, 1],
+      'one-lap-steps': [0, 0, 1],
       'step-detail': [0, 0, 1],
       'step-nesting': [0, 0, 1],
       'step-prompt': [0, 0, 1],
@@ -595,7 +600,9 @@ describe('the rules the live queries restate, which they may not call a function
     for (const name of names) {
       const sql = query(name);
       expect([name, [...sql.matchAll(/workflow(_name)? = '/g)]]).toEqual([name, []]);
-      expect([name, [...sql.matchAll(/'archon-[a-z-]+'/g)]]).toEqual([name, []]);
+      // The queues CTE is step-detail's rule, copied and held equal by version-rule.test.ts.
+      const queueGate = sql.replace(/queues AS \([\s\S]*?\) AS on_queues\s*\),/, '');
+      expect([name, [...queueGate.matchAll(/'archon-[a-z-]+'/g)]]).toEqual([name, []]);
     }
     for (const name of ['one-lap-map', 'one-lap-steps']) {
       expect([
