@@ -1,9 +1,4 @@
-/** A value for a jsonb column, as opposed to a text[] one. */
-export type Json = { json: unknown };
-
-export type Literal = null | string | number | readonly string[] | Json;
-
-export type SqlRow = Record<string, Literal>;
+import type { Json, Literal, SqlRow } from '../lib/db';
 
 export const json = (value: unknown): Json => ({ json: value });
 

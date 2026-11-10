@@ -98,6 +98,7 @@ class Socket implements WebSocketLike {
 /** A step row of the workflow `archon-loop`, its prompt naming the version it was read at. */
 function stepRow(path: string, prompt: string, fields: Partial<StepRow> = {}): StepRow {
   return {
+    pin: 'p1',
     workflow: 'archon-loop',
     path,
     parent_path: null,

@@ -50,6 +50,7 @@ test("a lap's step definition link opens the step with the lap as its origin", (
     [
       {
         pin: 'v1',
+        archon_sha: 'a1',
         path: 'review',
         parent_path: null,
         position: 1,

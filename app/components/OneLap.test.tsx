@@ -160,6 +160,7 @@ const mapRow = (path: string, position: number, over: Partial<LapMapRow> = {}): 
   const parts = path.split('/');
   return {
     pin: '5ffd60c6c6e591487f2fbb5ec67ccc8fc55ca915',
+    archon_sha: 'a1',
     path,
     parent_path: parts.length === 1 ? null : parts.slice(0, -1).join('/'),
     position,
@@ -461,4 +462,15 @@ test("a step the lap's pin lacks has no definition link, at any pin; a step on t
   expect(off).toContain('not on the map');
   expect(off).not.toContain('href=');
   expect(panel(map[0].step_id)).toContain('?at=v-oldest');
+});
+
+test('a drawn map with no pin links its steps at the version archon_sha', () => {
+  const lap = lapGraph(
+    [{ ...map[0], pin: null, archon_sha: 'queue-arch' }],
+    [step({ step_id: map[0].step_id, started_at: new Date('2026-10-25T12:00:00Z') })],
+    'x',
+    'archon-loop',
+  );
+  const html = render(<StepPanel lap={lap} path={map[0].step_id} now={0} onClose={() => {}} />);
+  expect(html).toContain('?at=queue-arch');
 });

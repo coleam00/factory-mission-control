@@ -148,6 +148,7 @@ test('a skipped step says why: a failure before it, its map condition, its trigg
   const alone = [step('land', { status: 'skipped' })];
   const node = (over: Partial<LapMapRow>): LapMapRow => ({
     pin: 'p',
+    archon_sha: 'a1',
     path: 'land',
     parent_path: null,
     position: 1,
@@ -172,6 +173,24 @@ test('consecutive skipped items collapse into one group; others pass through', (
     'ran',
     { skipped: ['skip'] },
   ]);
+});
+
+test("a build's round carries the cap its pinned map holds, and none when the map holds none", () => {
+  const loop = (round_cap: number | null): LapMapRow => ({
+    pin: 'p',
+    archon_sha: 'a1',
+    path: 'ship/deliver/rounds',
+    parent_path: 'ship/deliver',
+    position: 1,
+    step_id: 'rounds',
+    kind: 'loop_group',
+    depends_on: [],
+    round_cap,
+  });
+  const timeline = runTimeline(failedBuild());
+  expect(runTitle(lap(), timeline, [loop(3)])).toBe('Build #485, round 2 of 3');
+  expect(runTitle(lap(), timeline, [loop(null)])).toBe('Build #485, round 2');
+  expect(runTitle(lap(), timeline, [])).toBe('Build #485, round 2');
 });
 
 test('a run is titled for what it is', () => {

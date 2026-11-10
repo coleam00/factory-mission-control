@@ -36,7 +36,18 @@ export type ManagerEvent =
       cached?: boolean;
     };
 
+type KeysOfEach<T> = T extends unknown ? keyof T : never;
+/** The request the action endpoint takes, with the envelope stripped. The type check fails to compile when a key the endpoint does not accept is left in the rest object. */
+export function proposalRequest(proposal: Proposal): ActionRequest {
+  const { type: _type, label: _label, detail: _detail, ...request } = proposal;
+  const exact: [Exclude<KeysOfEach<typeof request>, KeysOfEach<ActionRequest>>] extends [never]
+    ? typeof request
+    : never = request;
+  return exact;
+}
+
 export type NoticeKind = Extract<ManagerEvent, { type: 'notice' }>['kind'];
+type Proposal = Extract<ManagerEvent, { type: 'proposal' }>;
 export type ProposalAction = Extract<ManagerEvent, { type: 'proposal' }>['action'];
 export type LinkKind = Extract<ManagerEvent, { type: 'link' }>['kind'];
 

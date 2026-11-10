@@ -15,7 +15,7 @@ import { ATTENTION_SOURCES } from '../app/lib/attention-page';
 import { isRunId, lapHref } from '../app/lib/one-lap';
 import { workItemHref } from '../app/lib/work-item';
 import { type Db, openDb } from '../scripts/lib/db';
-import { RESUMABLE_RUN_SQL, RESUME_FROM_SQL } from './actions';
+import { OPEN_QUESTION_SQL, RESUMABLE_RUN_SQL, RESUME_FROM_SQL } from './actions';
 import type { Env } from './check-env';
 import { BASE_ENV_NAMES, pick } from './child-env';
 import { readFactoryNames } from './factories';
@@ -405,12 +405,7 @@ async function proposalEvent(
   if (!isRunId(raw.run_id)) return undefined;
   const runId = raw.run_id.toLowerCase();
   if (raw.action === 'answer') {
-    const [row] = await lookup(
-      manager,
-      `SELECT form, occurrence_id, options::text AS options
-         FROM mc.attention_items WHERE factory = $1 AND run_id::text = $2`,
-      [factory, runId],
-    );
+    const [row] = await lookup(manager, OPEN_QUESTION_SQL, [factory, runId]);
     if (!row || row.occurrence_id === null) return undefined;
     const base = { type: 'proposal', action: 'answer', factory, run_id: runId } as const;
     const occurrence = String(row.occurrence_id);

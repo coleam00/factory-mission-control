@@ -278,6 +278,24 @@ describe('sub-workflow nodes', () => {
   });
 });
 
+describe('a loop group stops at the ROUND_CAP its pinned script holds', () => {
+  const queue = parsePack(join(repoRoot, 'fixtures', 'pack', 'queue', 'sdlc'), templateDir);
+  const rows = archRows(queue).arch_steps.filter((r) => r.workflow === 'archon-build-queue');
+  const capOf = (path: string) => rows.find((r) => r.path === path)?.round_cap;
+
+  test('the deliver loop stores the cap and not its max_iterations', () => {
+    expect(capOf('ship/deliver/rounds')).toBe(4);
+  });
+
+  test('a step whose scripts name no cap stores null', () => {
+    expect(rows.length).toBeGreaterThan(1);
+    expect(rows.filter((r) => r.round_cap !== null).map((r) => r.path)).toEqual([
+      'ship/deliver/rounds',
+    ]);
+    expect(capOf('ship/deliver')).toBeNull();
+  });
+});
+
 describe('a version holds the loop pack and the factory package', () => {
   const queueDir = join(repoRoot, 'fixtures', 'pack', 'queue');
   const version = parseVersion(packDir, join(queueDir, 'factory'), templateDir);

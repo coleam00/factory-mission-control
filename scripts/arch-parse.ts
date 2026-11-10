@@ -9,9 +9,8 @@ import {
   parseVersion,
   type Step,
 } from '../parsers/pack';
-import type { SqlRow } from './fixture/sql';
 import { type Deps, failing, guardedDatabaseUrl, type Main, runCli } from './lib/cli';
-import type { Tx } from './lib/db';
+import type { SqlRow, Tx } from './lib/db';
 import { type RemoteDirectory, readDirectoryAt } from './lib/github';
 
 // The architecture job (PRD 11.4): one version's pack, factory package and factory template hooks
@@ -72,6 +71,7 @@ function stepRows(
       trigger_rule: step.triggerRule,
       include: step.include,
       child_workflow: step.childWorkflow,
+      round_cap: step.roundCap,
       command: step.command,
       command_file: step.commandFile,
       script: step.script,

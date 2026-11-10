@@ -6,6 +6,7 @@ const row = (path: string, position: number, over: Partial<LapMapRow> = {}): Lap
   const parts = path.split('/');
   return {
     pin: 'abc1234',
+    archon_sha: 'a1',
     path,
     parent_path: parts.length === 1 ? null : parts.slice(0, -1).join('/'),
     position,
