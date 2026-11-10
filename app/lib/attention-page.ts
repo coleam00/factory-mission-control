@@ -230,7 +230,7 @@ export function decideCards(rows: readonly DecideRow[], factory: string): Attent
       ],
       hooks: {
         'data-attention-item': item.run_id,
-        'data-attention-kind': 'decide',
+        'data-attention-kind': ATTENTION_SOURCES.decide.kind,
         'data-attention-queue': queue,
         'data-waiting-since': item.waiting_since.toISOString(),
         'data-console': link,
@@ -311,7 +311,7 @@ export function ownerCards(rows: readonly OwnerQueueRow[]): AttentionCard[] {
         'data-approximate': item.approximate ? 'true' : undefined,
         'data-default-option': item.default_option ?? undefined,
         'data-default-at': item.default_at?.toISOString(),
-        'data-attention-kind': 'decide',
+        'data-attention-kind': ATTENTION_SOURCES.owner.kind,
         'data-attention-queue': 'build',
       },
     };
@@ -361,7 +361,7 @@ export function unstickCards(rows: readonly UnstickRow[], factory: string): Atte
         ask: askAbout(row.run_id, row.number),
         hooks: {
           'data-attention-item': key,
-          'data-attention-kind': 'unstick',
+          'data-attention-kind': ATTENTION_SOURCES.unstick.kind,
           'data-attention-queue': queue,
           'data-unstick-kind': row.kind,
           'data-number': row.number === null ? undefined : String(row.number),
@@ -525,7 +525,7 @@ export function fixCards(rows: readonly FailureGroupRow[], factory: string): Att
         daily: g.daily,
         hooks: {
           'data-attention-item': g.signature,
-          'data-attention-kind': 'fix',
+          'data-attention-kind': ATTENTION_SOURCES.failures.kind,
           'data-attention-queue': queue,
           'data-latest-run': g.latest_run_id,
           'data-failures': String(g.failures),
