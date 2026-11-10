@@ -191,7 +191,7 @@ describe('scorecard on the seed', () => {
         SELECT DISTINCT ON (pr) pr, issue, at FROM (
           SELECT (m.value)::int AS pr,
             (SELECT (i -> 'item' ->> 'number')::int FROM jsonb_array_elements(f.output -> 'items') i
-              WHERE (i -> 'pr' ->> 'number')::int = (m.value)::int AND i ->> 'own_pr' <> 'true') AS issue,
+              WHERE (i -> 'pr' ->> 'number')::int = (m.value)::int) AS issue,
             rec.completed_at AS at
           FROM mc.laps l
           JOIN mc.lap_steps rec ON rec.run_id = l.run_id AND rec.step_id = 'record'
@@ -232,7 +232,7 @@ describe('scorecard on the seed', () => {
           [JSON.stringify({ workflow_source: { digest: QUEUE_DIGEST_2 } })],
         )) as { id: string }[];
         const events: [string, unknown][] = [
-          ['facts', { items: [{ item: { number: 404 }, pr: { number: 904 }, own_pr: false }] }],
+          ['facts', { items: [{ item: { number: 404 }, pr: { number: 904 } }] }],
           ['record', { merged: [904] }],
         ];
         for (const [step, structured_output] of events) {

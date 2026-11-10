@@ -54,8 +54,7 @@ WHERE i.factory = $1 AND i.state = 'open' AND b.n > 0 AND b.gone = b.n AND (
   w.build_status = 'parked' AND NOT coalesce(w.triage_at > w.build_at, false)
   OR w.build_status IS DISTINCT FROM 'parked' AND w.merge_status = 'parked'
     AND NOT coalesce(w.triage_at > w.merge_at, false)
-    AND (w.build_status IS NULL AND w.own_pr_at IS NOT NULL
-      OR NOT coalesce(CASE WHEN w.build_status = 'ready' THEN w.build_at ELSE w.own_pr_at END > w.merge_at, false))
+    AND NOT coalesce(w.build_status = 'ready' AND w.build_at > w.merge_at, false)
 )
 UNION ALL
 -- Capacity: an answered run Archon could not continue for want of a slot (migration 0031).

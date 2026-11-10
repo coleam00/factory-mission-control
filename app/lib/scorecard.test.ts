@@ -341,11 +341,7 @@ describe('queue merges (#393)', () => {
     merged: typeof merged === 'string' ? merged : JSON.stringify(merged),
     items: typeof items === 'string' || items === null ? items : JSON.stringify(items),
   });
-  const item = (issue: number, pr: number, own_pr = false) => ({
-    item: { number: issue },
-    pr: { number: pr },
-    own_pr,
-  });
+  const item = (issue: number, pr: number) => ({ item: { number: issue }, pr: { number: pr } });
   const card = (rows: ScorecardRow[], digest = V) => scorecard(versionLaps(rows, digest));
 
   test('a merged pull request counts a merge on the build lap of its issue, with its cost', () => {
@@ -384,11 +380,11 @@ describe('queue merges (#393)', () => {
     expect(card(all, W).merges.value).toBe(0);
   });
 
-  test('a pull request with no item, an own pull request, or no lap before the merge counts nowhere', () => {
+  test('a pull request with no item or no lap before the merge counts nowhere', () => {
     const rows = [
       ...build('a', '2026-10-01T00:00:00Z', 7),
       ...build('late', '2026-10-20T00:00:00Z', 8),
-      mergeRun('m', [70, 71, 80], [item(7, 71, true), item(8, 80)]),
+      mergeRun('m', [70, 80], [item(8, 80)]),
     ];
     expect(card(rows).merges.value).toBe(0);
   });

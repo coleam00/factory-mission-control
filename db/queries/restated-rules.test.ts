@@ -371,7 +371,14 @@ test('the Board’s parked rule agrees with the pickups of the pinned build and 
         [i + 1],
       );
       const state = row as unknown as Parameters<typeof parked>[0];
-      const f = d.facts as Record<string, { status?: string; at: string } | undefined>;
+      // The pack the factory runs no longer writes or reads `own_pr` (Archon #5391); an old row's
+      // own_pr_at stays in the state and decides nothing.
+      const { own_pr, ...facts } = d.facts as Record<string, unknown>;
+      expect(row?.own_pr_at ?? null, JSON.stringify(d.facts)).toBe(
+        (own_pr as { at: string } | undefined)?.at ?? null,
+      );
+      const current = { ...d, facts };
+      const f = facts as Record<string, { status?: string; at: string } | undefined>;
       const parkedAt =
         f.build?.status === 'parked'
           ? f.build.at
@@ -384,7 +391,8 @@ test('the Board’s parked rule agrees with the pickups of the pinned build and 
         triagedAt !== null &&
         parkedAt !== null &&
         triagedAt > parkedAt;
-      const expected = !retriaged && parkedAt !== null && !buildWaits(d) && !mergeWaits(d);
+      const expected =
+        !retriaged && parkedAt !== null && !buildWaits(current) && !mergeWaits(current);
       expect(parked(state), JSON.stringify(d.facts)).toBe(expected);
       expect(!workable.has(i + 1), JSON.stringify(d.facts)).toBe(expected);
     }
@@ -420,7 +428,7 @@ test('the parked status is the pinned pack’s, in parked() and in health-workab
   );
 });
 
-const PARKED_RULE = /w\.build_status = 'parked'[\s\S]*?w\.merge_at, false\)\)/;
+const PARKED_RULE = /w\.build_status = 'parked'[\s\S]*?w\.build_at > w\.merge_at, false\)/;
 const squashed = (text: string) => text.replace(/\s+/g, ' ').trim();
 
 test('the Unstick parked rule is health-workable’s, verbatim', () => {
