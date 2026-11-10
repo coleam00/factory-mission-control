@@ -7,7 +7,7 @@ WITH lap AS (
 -- (north-star's first laps) takes the oldest, and the steps that map lacks are drawn beside it.
 -- Only a version that holds the lap's workflow can draw it: the queue pack's build workflow lives
 -- in its own version, which no pin names, so its pin is null and the step pages address it by archon_sha.
--- A version no pin names is drawn only on a factory on the queues, and there it is preferred over a pinned one; among versions of one pin the newest parse wins, as on the step pages.
+-- A version no pin names is drawn only on a factory on the queues, and there it is preferred over a pinned one, and among the rest the newest parse wins, as on the step pages.
 queues AS (
   -- A factory on the queues has run a workflow only the queue pack has (home-map.sql's queues
   -- row). Copied from step-detail.sql, which owns it, and version-rule.test.ts fails a copy that differs.
