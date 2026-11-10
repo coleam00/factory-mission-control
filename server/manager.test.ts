@@ -11,6 +11,7 @@ import {
   type AgentRunner,
   type AttentionTally,
   attentionLine,
+  briefingFault,
   briefingQuestion,
   CREDENTIAL_NAMES,
   createManager,
@@ -663,7 +664,7 @@ describe('the briefing', () => {
     }
   });
 
-  test('the briefing model has no Attention tool, and prose that contradicts the rows is replaced', async () => {
+  test('the briefing model has no Attention tool, and prose that states another count is replaced', async () => {
     clock = new Date('2026-11-08T10:00:00');
     const F = 'checked';
     const waiting = '5eed0009-0000-4000-8000-000000000031';
@@ -673,7 +674,7 @@ describe('the briefing', () => {
     );
     try {
       const replies = [
-        'My queries returned no rows for this factory.',
+        'The page lists 9 things.',
         'The archon-build run is waiting on capacity.',
       ];
       let calls = 0;
@@ -683,6 +684,8 @@ describe('the briefing', () => {
           ['select', { sql: 'SELECT 1' }],
           ['live_query', { name: 'decide' }],
           ['live_query', { name: 'unstick' }],
+          ['live_query', { name: 'attention-items' }],
+          ['live_query', { name: 'home-map' }],
         ]);
         return [start, delta(replies[calls++] ?? ''), result(0.01)];
       });
@@ -707,25 +710,22 @@ describe('the briefing', () => {
 
       // No ad hoc SELECT and no Attention query reaches the model, so it can only use the rows it was handed.
       const regenerated = await ask();
-      expect(attempts.map((r) => (r as { isError?: boolean }).isError)).toEqual([true, true, true]);
+      expect(attempts.map((r) => (r as { isError?: boolean }).isError)).toEqual([true, true, true, true, true]);
       expect(played.options[0]?.allowedTools).toEqual(['mcp__mc__live_query']);
 
-      // A reply that claims missing data is regenerated once; a clean second reply is shown.
+      // A reply that states another count is regenerated once; a clean second reply is shown.
       expect(played.prompts).toHaveLength(2);
       expect(text(regenerated)).toStartWith(`${line}
 
 `);
-      expect(text(regenerated)).not.toContain('no rows');
+      expect(text(regenerated)).not.toContain('9 things');
       expect(text(regenerated)).toContain('waiting on capacity');
 
-      // A reply that keeps contradicting the rows falls back to the rows themselves.
-      replies.push('The page lists 9 things.', 'My queries returned no rows.');
-      const fallback = text(await ask(true));
-      expect(fallback).toStartWith(`${line}
+      // A reply that keeps contradicting the count falls back to the count line alone.
+      replies.push('The page lists 9 things.', 'It is 8 items.');
+      expect(text(await ask(true))).toBe(`${line}
 
 `);
-      expect(fallback).toContain(waiting);
-      expect(fallback).not.toContain('9 things');
       expect(played.prompts).toHaveLength(4);
     } finally {
       await fixture.direct.query(
@@ -984,6 +984,12 @@ describe('the briefing question with a run paused and other Attention rows', () 
     expect(question).toContain('State no number of Attention items');
     expect(question).toContain('never say the rows or the opening line disagree');
     expect(question).not.toContain('count a run');
+  });
+
+  test('allows the numbers the opening line states and no others', () => {
+    const tally = { decide: 1, owner: 3, unstick: 0, failures: 0, failureRuns: 0 };
+    expect(briefingFault('Run #12 is paused; 4 things need you.', tally)).toBeNull();
+    expect(briefingFault('3 owner questions wait.', tally)).toContain('count of 3');
   });
 });
 

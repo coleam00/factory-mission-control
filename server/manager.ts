@@ -797,40 +797,19 @@ export function briefingQuestion(
 
 type AttentionRead = { tally: AttentionTally; rows: AttentionRows };
 
-const MISSING_DATA =
-  /\b(?:no rows|returned nothing|(?:data|rows?|results?) (?:is|are) (?:missing|unavailable|incomplete)|(?:missing|unavailable|incomplete) (?:data|rows?|results?)|(?:could not|couldn't|unable to) (?:read|query|find|see|retrieve))\b/i;
-const COUNT_CLAIM =
-  /\b(\d+)\s+(?:things?|items?|open questions?|questions?|paused runs?|failures?|causes?)\b/gi;
+/** The whole numbers in a text, split on whitespace so `#12` and run ids are not counts. */
+const bareNumbers = (text: string): number[] =>
+  text
+    .split(/\s+/)
+    .map((word) => word.replace(/[.,;:)]+$/, ''))
+    .filter((word) => /^\d+$/.test(word))
+    .map(Number);
 
-/** The numbers the opening line itself states: the briefing's prose may repeat those and no others. */
-function statedCounts(t: AttentionTally): Set<number> {
-  const groups = KINDS.map(({ kind }) => inGroup(t, kind));
-  const total = SOURCE_KEYS.reduce((sum, key) => sum + t[key], 0);
-  return new Set([total, t.failureRuns, ...groups, ...SOURCE_KEYS.map((key) => t[key])]);
-}
-
-/** Why the model's prose cannot sit under the count line, or null when it can. */
-function briefingFault(text: string, read: AttentionRead): string | null {
-  const total = SOURCE_KEYS.reduce((sum, key) => sum + read.tally[key], 0);
-  if (total === 0) return null;
-  if (MISSING_DATA.test(text)) return 'it says data is missing while the page has rows';
-  const allowed = statedCounts(read.tally);
-  for (const match of text.matchAll(COUNT_CLAIM)) {
-    if (!allowed.has(Number(match[1])))
-      return `it states a count of ${match[1]} the page does not show`;
-  }
-  return null;
-}
-
-/** What the page's rows are, plain: the last resort when the model's prose keeps contradicting them. */
-function fallbackBody(rows: AttentionRows): string {
-  const label = (row: unknown): string => {
-    const r = row as Record<string, unknown>;
-    const name = r.title ?? r.question ?? r.signature ?? r.workflow_name ?? r.kind;
-    const ref = r.run_id ?? r.issue_number ?? r.number ?? null;
-    return `- ${String(name)}${ref === null ? '' : ` (${ref})`}`;
-  };
-  return SOURCE_KEYS.flatMap((key) => rows[key].map(label)).join('\n');
+/** Why the model's prose cannot sit under the count line: it states a number the line does not. */
+export function briefingFault(text: string, tally: AttentionTally): string | null {
+  const allowed = new Set(bareNumbers(attentionLine(tally)));
+  const stray = bareNumbers(text).find((n) => !allowed.has(n));
+  return stray === undefined ? null : `it states a count of ${stray} the page does not show`;
 }
 
 async function generateBriefing(manager: Manager, factory: string, read: AttentionRead | null) {
@@ -842,7 +821,8 @@ async function generateBriefing(manager: Manager, factory: string, read: Attenti
   let events: ManagerEvent[] = [];
   let ok = false;
   let cost = 0;
-  // The model may contradict the rows it was handed: try once more, then say what the rows are.
+  let rejected = false;
+  // The model may contradict the count line: try once more, then show the count line alone.
   for (let attempt = 0; attempt < 2; attempt++) {
     events = [];
     const outcome = await produce(
@@ -855,10 +835,14 @@ async function generateBriefing(manager: Manager, factory: string, read: Attenti
     ok = outcome.ok;
     cost += outcome.cost;
     const text = events.flatMap((e) => (e.type === 'text' ? [e.text] : [])).join('');
-    const fault = ok && read ? briefingFault(text, read) : null;
+    const fault = ok && read ? briefingFault(text, read.tally) : null;
+    if (attempt === 1 && (fault || (rejected && !ok))) {
+      events = [];
+      ok = true;
+    }
     if (!fault) break;
+    rejected = true;
     console.warn(`manager: briefing rejected (attempt ${attempt + 1}): ${fault}`);
-    if (attempt === 1 && read) events = [{ type: 'text', text: fallbackBody(read.rows) }];
   }
   const briefing = {
     day: dayOf(manager.now()),

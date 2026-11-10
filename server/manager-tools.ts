@@ -27,9 +27,13 @@ export const BRIEFING_TOOL_NAMES = [LIVE_QUERY_TOOL].map(qualified);
 /** Set in the tool server's environment for the briefing run. */
 export const BRIEFING_ENV = 'MC_MANAGER_BRIEFING';
 
-/** The named queries the briefing run may not run: the Attention page's own sources. */
+/** The named queries the briefing run may not run: the Attention page's own sources and the two other readers of Attention items and open questions. */
 export const withheldFromBriefing = (queries: Map<string, string>): Map<string, string> => {
-  const withheld = new Set<string>(Object.values(ATTENTION_SOURCES).map((source) => source.query));
+  const withheld = new Set<string>([
+    'attention-items',
+    'home-map',
+    ...Object.values(ATTENTION_SOURCES).map((source) => source.query),
+  ]);
   return new Map([...queries].filter(([name]) => !withheld.has(name)));
 };
 
