@@ -618,6 +618,10 @@ describe('the briefing', () => {
       const line = `No run is paused on a question. ${count} things need you: 1 to decide, 2 to unstick, 2 to fix (3 failures in 2 causes).`;
       expect((await ask())[0]).toEqual({ type: 'text', text: `${line}\n\n` });
       expect(played.prompts[0]).toContain(line);
+      // The first generation is handed the rows the line was counted from, not left to query for them.
+      expect(played.prompts[0]).toContain('Ask the owner');
+      expect(played.prompts[0]).toContain(run(11));
+      expect(played.prompts[0]).toContain(run(23));
 
       expect((await ask())[0]).toEqual({ type: 'text', text: `${line}\n\n` });
       expect(played.prompts).toHaveLength(1);

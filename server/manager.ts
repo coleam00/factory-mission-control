@@ -678,6 +678,12 @@ export type AttentionTally = Record<keyof typeof ATTENTION_SOURCES, number> & {
   failureRuns: number;
 };
 
+/** The first rows of each Attention source, as the page lists them. */
+export type AttentionRows = Record<keyof typeof ATTENTION_SOURCES, unknown[]>;
+
+/** Rows handed to the model per source: enough to name the items, bounded so a long queue stays a short prompt. */
+const ROWS_PER_SOURCE = 15;
+
 let attentionQueries: Map<string, string> | undefined;
 
 /**
@@ -685,7 +691,10 @@ let attentionQueries: Map<string, string> | undefined;
  * Counting inside SQL keeps `readOnlyQuery`'s row cap from undercounting. Null when any of them
  * fails, as the page then shows no number either.
  */
-async function attentionTally(manager: Manager, factory: string): Promise<AttentionTally | null> {
+async function attentionTally(
+  manager: Manager,
+  factory: string,
+): Promise<{ tally: AttentionTally; rows: AttentionRows } | null> {
   try {
     attentionQueries ??= loadLiveQueries(join(import.meta.dir, '..', 'db', 'queries'));
     const queries = attentionQueries;
@@ -695,11 +704,23 @@ async function attentionTally(manager: Manager, factory: string): Promise<Attent
     const counts = keys.map(
       (key) => `(SELECT count(*) FROM (${source(key)}) AS s)::int AS "${key}"`,
     );
+    const listed = keys.map(
+      (key) =>
+        `(SELECT coalesce(json_agg(l), '[]'::json) FROM (SELECT * FROM (${source(key)}) AS q LIMIT ${ROWS_PER_SOURCE}) AS l) AS "rows_${key}"`,
+    );
     const sql = `SELECT
   ${counts.join(',\n  ')},
-  (SELECT coalesce(sum(g.failures), 0) FROM (${source('failures')}) AS g)::int AS "failureRuns"`;
+  (SELECT coalesce(sum(g.failures), 0) FROM (${source('failures')}) AS g)::int AS "failureRuns",
+  ${listed.join(',\n  ')}`;
     const { rows } = await readOnlyQuery(manager.db, sql, [factory], MANAGER_LIMITS);
-    return rows[0] as unknown as AttentionTally;
+    const row = rows[0] as Record<string, unknown>;
+    const tally = { failureRuns: row.failureRuns } as AttentionTally;
+    const listing = {} as AttentionRows;
+    for (const key of keys) {
+      tally[key] = row[key] as number;
+      listing[key] = row[`rows_${key}`] as unknown[];
+    }
+    return { tally, rows: listing };
   } catch (err) {
     console.error(`manager: attention count failed: ${err instanceof Error ? err.message : err}`);
     return null;
@@ -747,19 +768,30 @@ export function attentionLine(t: AttentionTally): string {
  * so the model is told to state none: a count of its own, from its own reading of the rows, is
  * the one that can disagree with the page.
  */
-export function briefingQuestion(tally: AttentionTally | null): string {
+export function briefingQuestion(
+  tally: AttentionTally | null,
+  rows: AttentionRows | null = null,
+): string {
+  const listing = rows
+    ? ` These are the Attention rows, by source, that the line was counted from; name the items from them instead of querying for them, and never copy or paraphrase the line: ${JSON.stringify(rows)}`
+    : '';
   const counted = tally
-    ? ` The briefing already opens with this line, counted from the Attention page's own rows: "${attentionLine(tally)}" That line is the only count of what waits on the owner. State no number of Attention items, open questions, paused runs or failures yourself, and never say the rows or the opening line disagree, miss something or may be incomplete; name the individual runs and issues instead.`
+    ? ` The briefing already opens with this line, counted from the Attention page's own rows: "${attentionLine(tally)}" That line is the only count of what waits on the owner. State no number of Attention items, open questions, paused runs or failures yourself, and never say the rows or the opening line disagree, miss something or may be incomplete; name the individual runs and issues instead.${listing}`
     : " The Attention page's count could not be read: do not say how many things wait on the owner.";
   return BRIEFING_QUESTION + counted;
 }
 
-async function generateBriefing(manager: Manager, factory: string, tally: AttentionTally | null) {
+async function generateBriefing(
+  manager: Manager,
+  factory: string,
+  read: { tally: AttentionTally; rows: AttentionRows } | null,
+) {
+  const tally = read?.tally ?? null;
   const events: ManagerEvent[] = [];
   const request: ChatRequest = {
     factory,
     context: { place: 'attention' },
-    messages: [{ role: 'owner', text: briefingQuestion(tally) }],
+    messages: [{ role: 'owner', text: briefingQuestion(tally, read?.rows ?? null) }],
   };
   const { ok, cost } = await produce(manager, request, new AbortController().signal, (event) =>
     events.push(event),
@@ -786,7 +818,8 @@ function sameTally(a: AttentionTally | null, b: AttentionTally | null): boolean 
 /** A briefing is shared by whoever asks, so one asker leaving does not stop its generation. */
 export function briefing(manager: Manager, factory: string, refresh: boolean): Response {
   return ndjson(async (emit) => {
-    const tally = await attentionTally(manager, factory);
+    const read = await attentionTally(manager, factory);
+    const tally = read?.tally ?? null;
     // Emitted with the prose, not before it: any event ends the panel's wait text.
     const countLine = () => {
       if (tally) emit({ type: 'text', text: `${attentionLine(tally)}\n\n` });
@@ -805,7 +838,7 @@ export function briefing(manager: Manager, factory: string, refresh: boolean): R
     }
     let pending = manager.generating.get(factory);
     if (!pending) {
-      pending = generateBriefing(manager, factory, tally);
+      pending = generateBriefing(manager, factory, read);
       manager.generating.set(factory, pending);
       pending.then(
         () => manager.generating.delete(factory),
@@ -815,7 +848,7 @@ export function briefing(manager: Manager, factory: string, refresh: boolean): R
     let { briefing: made, cost } = await pending;
     // Joined a generation written against another count: its prose would sit under this asker's line.
     if (made.tally ? !sameTally(made.tally, tally) : tally !== null) {
-      ({ briefing: made, cost } = await generateBriefing(manager, factory, tally));
+      ({ briefing: made, cost } = await generateBriefing(manager, factory, read));
     }
     countLine();
     for (const event of made.events) emit(event);
