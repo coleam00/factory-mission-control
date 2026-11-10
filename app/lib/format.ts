@@ -125,3 +125,12 @@ export function formatProjectLocator(project: {
   }
   return '';
 }
+
+/** HH:MM in the viewer's time zone; empty when there is no time. */
+export function clock(at: string | Date | null | undefined): string {
+  if (at === null || at === undefined) return '';
+  const date = new Date(at);
+  return Number.isNaN(date.getTime())
+    ? ''
+    : date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+}

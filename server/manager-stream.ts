@@ -6,7 +6,7 @@
  * A proposal is data only: the panel turns it into a button that goes through the action
  * endpoint (#521), whose inputs it carries. `answer`: the run, the option (or `text` for
  * "Something else") and the `occurrence` id. `resume`: the run, optionally `from_step`. This
- * file holds no secret and no server code, so the panel can `import type` from it.
+ * file holds no secret and no server code, so the panel can import from it.
  */
 import type { ActionRequest } from '../app/lib/actions';
 
@@ -15,7 +15,12 @@ export type ManagerEvent =
   | { type: 'link'; kind: 'run'; id: string; label: string; href: string }
   | { type: 'link'; kind: 'item'; id: number; label: string; href: string }
   | { type: 'runs'; runs: RunSummary[] }
-  | ({ type: 'proposal'; label: string } & ActionRequest)
+  | ({
+      type: 'proposal';
+      label: string;
+      /** Answer by option only: the choice's wording, for the Undo toast. Never sent to the action endpoint. */
+      detail?: string;
+    } & ActionRequest)
   | {
       type: 'notice';
       kind: 'message-cap' | 'day-cap' | 'unavailable' | 'unstructured';
@@ -56,6 +61,10 @@ export interface ChatRequest {
 
 /** The statuses of a run the owner can resume: the prompt names them and the proposal check admits them. */
 export const RESUMABLE_STATUSES = ['failed', 'paused'] as const;
+
+/** The longest conversation and message the chat endpoint accepts; the panel trims to the same. */
+export const MAX_MESSAGES = 20;
+export const MAX_MESSAGE_CHARS = 4000;
 
 /** At most this many runs in one `runs` event. */
 export const MAX_RUNS = 8;

@@ -135,7 +135,8 @@ test('the shell is the nav, the page and the docked Manager, with the Manager’
   expect(header(html)).toMatch(/Attention.*Factory.*Board.*Runs.*Manager ⌘J/);
   expect(main(html)).toBe('page');
   expect(html).toContain('data-manager="dock"');
-  expect(html).toContain('The Manager is not available yet.');
+  expect(html).toContain('Watches every run and queue for you');
+  expect(html).toContain('placeholder="Ask about any run, or tell me what to do"');
   expect(html).not.toContain('<header');
 });
 

@@ -1,12 +1,21 @@
-import { Fragment, type ReactElement, useState } from 'react';
-import { Outlet } from 'react-router';
+import { Fragment, type ReactElement, useCallback, useRef, useState } from 'react';
+import { Outlet, useLocation, useSearchParams } from 'react-router';
 import { ActionToastHost } from './components/ActionToast';
 import { FactoryStrip, FactoryStripBody, RewindIndicator } from './components/FactoryStrip';
 import { FactorySwitcher } from './components/FactorySwitcher';
 import { FlowProvider } from './components/FlowToggle';
-import { ManagerPanel, useManagerDock, usePhone } from './components/ManagerDock';
+import {
+  useManagerAsks,
+  useManagerDock,
+  usePhone,
+  usePlaceWhat,
+  wantsManager,
+} from './components/ManagerDock';
+import { ManagerPanel } from './components/ManagerPanel';
 import { ScreenNav } from './components/ScreenNav';
 import { UnknownFactory } from './components/UnknownFactory';
+import { useManagerChat } from './components/useManagerChat';
+import { type ManagerAsk, managerPlace } from './lib/manager';
 import { FactoryProvider, useFactory, useUrlFactory } from './live/FactoryProvider';
 import { LiveProvider, useLive } from './live/LiveProvider';
 
@@ -157,9 +166,37 @@ export function ForFactory(): ReactElement {
   const live = useLive();
   const dock = useManagerDock();
   const phone = usePhone();
-  const [phoneManager, setPhoneManager] = useState(false);
+  const [phoneManager, setPhoneManager] = useState(wantsManager);
+  const location = useLocation();
+  const [search] = useSearchParams();
+  const [asked, setAsked] = useState<{ path: string; ask: ManagerAsk } | null>(null);
+  const pathname = useRef(location.pathname);
+  pathname.current = location.pathname;
+  // An "Ask manager" press names the item it was pressed on; it holds until the address changes.
+  useManagerAsks(
+    useCallback((ask: ManagerAsk | null) => {
+      setAsked(ask === null ? null : { path: pathname.current, ask });
+      setPhoneManager(true);
+    }, []),
+  );
+  const base = managerPlace(location.pathname, search, usePlaceWhat(location.pathname));
+  const place =
+    asked?.path === location.pathname
+      ? { ...base, context: asked.ask.context, chip: asked.ask.chip }
+      : base;
   const [engine, setEngine] = useState<string | null | undefined>();
   const unknownKey = inUrl.key !== undefined && inUrl.view === 'unknown' ? inUrl.key : undefined;
+  const managedFactory = unknownKey === undefined && factory !== '' ? factory : undefined;
+  const chat = useManagerChat(managedFactory, phone ? phoneManager : dock.open);
+  const panel = (onClose: () => void) => (
+    <ManagerPanel
+      phone={phone}
+      onClose={onClose}
+      chat={chat}
+      place={place}
+      factory={managedFactory}
+    />
+  );
   const page =
     unknownKey === undefined ? (
       <Fragment key={factory}>
@@ -183,9 +220,11 @@ export function ForFactory(): ReactElement {
   );
   if (phone) {
     return (
-      <div className="flex min-h-screen flex-col bg-[var(--v3-bg)]">
+      <div
+        className={`flex flex-col bg-[var(--v3-bg)] ${phoneManager ? 'h-screen' : 'min-h-screen'}`}
+      >
         <PhoneTop unknownKey={unknownKey} onEngine={setEngine} />
-        {phoneManager ? <ManagerPanel phone onClose={() => setPhoneManager(false)} /> : content}
+        {phoneManager ? panel(() => setPhoneManager(false)) : content}
         {/* Mounted but hidden: the design draws no switcher on phone, yet it is the one publisher of the factory list. */}
         <div hidden>{switcher}</div>
         <PhoneTabs manager={phoneManager} onManager={setPhoneManager} />
@@ -202,7 +241,7 @@ export function ForFactory(): ReactElement {
         onManager={dock.toggle}
       />
       {content}
-      {dock.open ? <ManagerPanel onClose={dock.toggle} /> : null}
+      {dock.open ? panel(dock.toggle) : null}
     </div>
   );
 }

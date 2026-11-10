@@ -14,6 +14,7 @@ import { resolveBranchName } from './lib/target';
 import { ATTENTION_OUTPUTS, attentionPhase } from './live/attention';
 import { BOARD_OUTPUTS, boardPhase } from './live/board';
 import { HOME_OUTPUTS, homePhase } from './live/home';
+import { MANAGER_OUTPUTS, managerPhase } from './live/manager';
 import { ONE_LAP_OUTPUTS, oneLapPhase } from './live/one-lap';
 import { QUEUE_MAP_OUTPUTS, QUEUE_MAP_VIEWS, queueMapPhase } from './live/queue-map';
 import { RUNS_OUTPUTS, runsPhase } from './live/runs';
@@ -134,6 +135,17 @@ export const SCREENS: readonly LiveScreen[] = [
       "It checks the attention page against the seed's open questions, owner items, stuck work and",
       'failure signatures, the head and the tab count against the cards shown, and times',
       '`fixture:write label` to it before and after the hold.',
+    ],
+  },
+  {
+    phase: managerPhase,
+    outputs: MANAGER_OUTPUTS,
+    help: [
+      'It opens the Manager panel on /f/<factory>#manager and checks its head, its chip and the',
+      "attention set's suggested questions against the page's count, waits for the day's briefing,",
+      'follows the chip to Runs and to a run, asks the first suggested question there and checks',
+      'every run id in the answer against the factory runs, and opens the Manager tab at 390. This',
+      'asks the configured model one question, so it spends model budget.',
     ],
   },
   {

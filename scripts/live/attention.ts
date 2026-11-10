@@ -78,7 +78,7 @@ const cardsOnScreen = `[...document.querySelectorAll('main [data-attention-item]
 
 /** Every card on the page, owner items included, and the number the head says. */
 const cardCount = `document.querySelectorAll('main [data-attention-kind]').length`;
-const headCount = `(() => {
+export const headCount = `(() => {
   const el = document.querySelector('main [data-attention-count]');
   return el === null ? null : Number(el.getAttribute('data-attention-count'));
 })()`;
