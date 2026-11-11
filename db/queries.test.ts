@@ -67,6 +67,7 @@ const ROW_COLUMNS: Record<string, string[]> = {
     'form',
     'options',
     'labels',
+    'recommended',
     'message',
     'console',
   ]),

@@ -11,7 +11,6 @@ import {
   attentionOrigin,
   attentionTitle,
   attentionItems as parseAttention,
-  recommendedChoice,
 } from '../lib/attention';
 import { formatElapsed } from '../lib/format';
 import {
@@ -533,8 +532,7 @@ const asked = (ask: Asks, item: AttentionItem): boolean =>
   (ask.value === undefined || item.labels[ask.label] === ask.value);
 
 function question(item: AttentionItem): MapItem {
-  const recommended = recommendedChoice(item.message, item.options);
-  const option = item.options.find((o) => o.id === recommended);
+  const option = item.options.find((o) => o.id === item.recommended);
   return {
     key: `attention-${item.run_id}`,
     number: null,

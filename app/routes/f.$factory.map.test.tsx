@@ -706,6 +706,7 @@ test('the Manager view draws the open attention items the route is fed as a coun
         form: 'select',
         options: '[]',
         labels: JSON.stringify({ build: 'scope' }),
+        recommended: null,
         message: '**A question**',
         console: 'http://archon.test',
       },

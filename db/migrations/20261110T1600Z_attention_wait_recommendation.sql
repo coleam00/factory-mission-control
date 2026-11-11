@@ -1,11 +1,11 @@
 -- Attention reads the recommendation and the options' effects Archon now stores as data (Archon
 -- #5367): `metadata.wait.recommendation` `{option, why, confidence?}` and each option's `does` and
 -- `value`. mc.project_attention_item takes `recommended`, `confidence` and the new
--- `recommendation_why` from `recommendation` when its option is one of the offered options, and an
--- option's `description` from its non-empty `does`; for each field the wait lacks, 0031's reading of
--- the message's Recommendation and choice lines stays the fallback (waits recorded before the
--- upgrade). `recommendation_why` is null without a structured recommendation; the browser then reads
--- the reason from the message. `does` and `value` are not stored: `does` is `description`, `value`
+-- `recommendation_why` together from `recommendation` when its option is one of the offered options
+-- (`confidence` is null when it has none); otherwise 0031's reading of the message's Recommendation
+-- line stays (waits recorded before the upgrade). An option's `description` comes from its non-empty
+-- `does`, else per option from its choice line. `recommendation_why` is null without a structured
+-- recommendation; the browser then reads the reason from the message. `does` and `value` are not stored: `does` is `description`, `value`
 -- is opaque and never shown. This supersedes 0031's "Archon's wait carries none of these".
 -- Read-only like 0031 (errors into mc.projection_errors, lock_timeout 100 ms). Idempotent: the
 -- backfill reprojects what Archon already stored.

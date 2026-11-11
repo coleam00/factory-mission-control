@@ -383,7 +383,12 @@ test('a run of the old loop on build counts on Build and Deliver', () => {
 const MANAGER_VIEW = FACTORY_MAP.views?.manager?.cards ?? [];
 const OTHER = new Date('2026-11-05T12:00:00Z');
 
-const asking = (run: string, labels: Record<string, string>, message = '**A question**') => ({
+const asking = (
+  run: string,
+  labels: Record<string, string>,
+  message = '**A question**',
+  recommended: string | null = null,
+) => ({
   run_id: run,
   workflow_name: 'archon-build-queue',
   node_id: 'ask',
@@ -391,6 +396,7 @@ const asking = (run: string, labels: Record<string, string>, message = '**A ques
   form: 'select',
   options: '[{"id":"ship","label":"Ship it"},{"id":"stop","label":"Stop"}]',
   labels: JSON.stringify(labels),
+  recommended,
   message,
   console: 'http://archon.test',
 });
@@ -407,7 +413,7 @@ test("the Manager view's question cards each count the open items their label na
         asking('r4', { discoveries: 'question' }),
         asking('r5', { stage: 'archon-triage' }),
         asking('r6', { stage: 'archon-review' }),
-        asking('r7', {}, '**Other**\n\n**Recommendation: `stop`**'),
+        asking('r7', {}, '**Other**', 'stop'),
       ],
     },
     OTHER,

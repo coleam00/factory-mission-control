@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, beforeEach, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { parseRecommendation, recommendedChoice } from '../app/lib/attention';
+import { parseRecommendation } from '../app/lib/attention';
 import { FACTORY_MAP } from '../app/map/factory-map';
 import { holdoutId } from '../parsers/metrics';
 import { eventData, structuredOutputFor } from '../scripts/fixture/write';
@@ -2659,7 +2659,6 @@ test('an attention item records the rendered recommendation, confidence, descrip
     { id: 'split', label: 'Split (in two)', description: 'Two issues.' },
     { id: 'build', label: 'Build', description: 'One change.' },
   ]);
-  expect(recommendedChoice(message, ATTN_OPTIONS)).toBe('split');
 });
 
 const STRUCTURED = {
@@ -2696,6 +2695,31 @@ test('a structured wait’s recommendation, why, confidence and does win over a 
     recommended: 'approve',
     confidence: null,
     recommendation_why: 'Safe.',
+  });
+});
+
+test('a structured recommendation naming an option that is not offered leaves the message reading', async () => {
+  await pausedRun({
+    ...STRUCTURED,
+    recommendation: { option: 'ghost', why: 'Nobody offered this.', confidence: 'low' },
+  });
+  expect((await decideFields())[0]).toMatchObject({
+    recommended: 'split',
+    confidence: 'high',
+    recommendation_why: null,
+  });
+});
+
+test('a blank does leaves the option description as its choice line', async () => {
+  await pausedRun({
+    ...STRUCTURED,
+    options: [{ id: 'split', label: 'Split (in two)', does: '  ' }, ...STRUCTURED.options.slice(1)],
+  });
+  const [item] = await decideFields();
+  expect(JSON.parse(String(item?.options))[0]).toEqual({
+    id: 'split',
+    label: 'Split (in two)',
+    description: 'Stale text.',
   });
 });
 

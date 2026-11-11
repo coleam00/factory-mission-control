@@ -5,7 +5,7 @@
  * the recommendation and each option's effect on the wait (#5367); `db/queries/decide.sql` has them
  * projected with the confidence, item number and occurrence id (migrations 0031 and
  * 20261110T1600Z), reading the wait's fields first. The message parsers here are the fallback for
- * waits recorded before that; `recommendedChoice` stays for the map.
+ * waits recorded before that.
  */
 
 /** One row of attention-items.sql. Timestamps are the database's; the browser computes elapsed times. */
@@ -19,6 +19,8 @@ export interface AttentionRow {
   options: string;
   /** Archon's labels as JSON text: `{"build":"scope"}`. */
   labels: string;
+  /** The recommended option's id as projected (migration 20261110T1600Z), null when none. */
+  recommended: string | null;
   message: string;
   /** The factory's Archon console, for the run link. */
   console: string;
@@ -35,7 +37,6 @@ export interface AttentionOption {
 export interface DecideRow extends AttentionRow {
   /** Archon's occurrence of the wait: its pause id, else `legacy:<step>`. What an answer names. */
   occurrence_id: string;
-  recommended: string | null;
   confidence: string | null;
   /** Archon's `recommendation.why`; null for a wait recorded before Archon stored it. */
   recommendation_why: string | null;
@@ -204,15 +205,6 @@ export function parseRecommendation(
     confidence: CONFIDENCE.exec(message)?.[1] ?? null,
     reason: plain(rest.replace(/^\./, '')),
   };
-}
-
-/** The id the message's "Recommendation: <id>" line names, when it is one of the choices. */
-export function recommendedChoice(
-  message: string,
-  options: readonly Pick<AttentionOption, 'id'>[],
-): string | null {
-  const id = parseRecommendation(message)?.choice;
-  return id !== undefined && options.some((option) => option.id === id) ? id : null;
 }
 
 /** The reason the Recommendation line gives: the rest of its paragraph after the choice and its confidence; '' when none. */
