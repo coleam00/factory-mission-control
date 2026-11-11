@@ -755,10 +755,14 @@ const GROUP_PHRASE: Record<AttentionKind, (n: number, t: AttentionTally) => stri
     `${n} to fix (${plural(t.failureRuns, 'failure', 'failures')} in ${plural(t.failures, 'cause', 'causes')})`,
 };
 
+/** The count sentence's words: `attentionLine` writes them and `statedTotals` reads them. */
+const NOTHING_NEEDS_YOU = 'Nothing needs you';
+const COUNT_WORDS = { one: 'thing needs', many: 'things need' };
+
 /** The briefing's first line: each Attention group by the count its header shows, so the total matches the page. */
 export function attentionLine(t: AttentionTally): string {
   const total = SOURCE_KEYS.reduce((sum, key) => sum + t[key], 0);
-  if (total === 0) return 'Nothing needs you.';
+  if (total === 0) return `${NOTHING_NEEDS_YOU}.`;
   const lead =
     t.decide > 0
       ? `${plural(t.decide, 'run is', 'runs are')} paused on your answer. `
@@ -768,7 +772,7 @@ export function attentionLine(t: AttentionTally): string {
   const parts = KINDS.map(({ kind }) => ({ kind, n: inGroup(t, kind) }))
     .filter(({ n }) => n > 0)
     .map(({ kind, n }) => GROUP_PHRASE[kind](n, t));
-  return `${lead}${plural(total, 'thing needs', 'things need')} you: ${parts.join(', ')}.`;
+  return `${lead}${plural(total, COUNT_WORDS.one, COUNT_WORDS.many)} you: ${parts.join(', ')}.`;
 }
 
 /**
@@ -791,9 +795,9 @@ export function briefingQuestion(
 
 type AttentionRead = { tally: AttentionTally; rows: AttentionRows };
 
-/** The count sentence's own words, as `attentionLine` writes them: the number sits just before. */
-const COUNT_TAILS = [' thing needs you', ' things need you'];
-const NOTHING_WAITS = 'nothing needs you';
+/** The number sits just before each tail. */
+const COUNT_TAILS = [` ${COUNT_WORDS.one} you`, ` ${COUNT_WORDS.many} you`];
+const NOTHING_WAITS = NOTHING_NEEDS_YOU.toLowerCase();
 /** "Nothing needs your answer" is about open questions, which the count line words as "No run is paused on a question". */
 const NOTHING_ASKED = 'nothing needs your answer';
 /** How a sentence about questions alone may end after the phrase. Anything else may go on to speak for everything. */
