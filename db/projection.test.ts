@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, beforeEach, expect, test } from 'bun:test';
+import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { parseRecommendation } from '../app/lib/attention';
@@ -29,7 +29,7 @@ afterAll(() => db.close());
 
 beforeEach(async () => {
   await db.query(`TRUNCATE public.remote_agent_workflow_runs, public.remote_agent_codebases CASCADE;
-    TRUNCATE mc.laps, mc.lap_steps, mc.attention_items, mc.run_stops, mc.lap_step_attempts, mc.app_check_lines, mc.projection_errors,
+    TRUNCATE mc.laps, mc.lap_steps, mc.attention_items, mc.run_stops, mc.metric_records, mc.lap_step_attempts, mc.app_check_lines, mc.projection_errors,
       mc.factories, mc.versions, mc.pins, mc.work_item_states, mc.work_item_blockers, mc.capacity_waits, public.remote_agent_state_revisions`);
   runId = await newRun();
 });
@@ -729,12 +729,15 @@ test('every projection function stops a lock wait after 100 ms, and only inside 
     JOIN pg_namespace n ON n.oid = p.pronamespace JOIN pg_language l ON l.oid = p.prolang
     WHERE n.nspname = 'mc' AND l.lanname = 'plpgsql' ORDER BY p.proname`);
   expect(functions).toEqual([
+    { proname: 'drop_metric_records_trigger', proconfig: ['lock_timeout=100ms'] },
     // It relabels versions in the transaction that writes a pin, never in Archon's, so it waits.
     { proname: 'label_versions', proconfig: null },
     ...[
       'project_app_check_lines',
       'project_attention',
       'project_attention_item',
+      'project_metric_records',
+      'project_metric_records_trigger',
       'project_queue_app_check',
       'project_run',
       'project_run_stop',
@@ -2932,4 +2935,105 @@ test('0031 fills the new columns and tables for runs and documents stored before
   } finally {
     await historical.close();
   }
+});
+
+const metric = (subject: string | null, value: number, extra: Record<string, unknown> = {}) => ({
+  name: 'sdlc.review_rounds',
+  kind: 'score',
+  unit: 'rounds',
+  subject,
+  value,
+  ...extra,
+});
+const metricEvent = (
+  event: 'node_completed' | 'node_failed',
+  data: Record<string, unknown>,
+  step = 'prs',
+) => insertEvent(event, step, { type: 'script', ...data });
+const metricRows = () =>
+  db.query('SELECT subject, value, step_id FROM mc.metric_records ORDER BY subject');
+
+describe('metric records (#630)', () => {
+  test('a node_completed writes one row per record, and a later one at the same step replaces them', async () => {
+    await metricEvent('node_completed', {
+      structured_output: { metrics: [metric('pr#1', 3), metric('pr#2', 5)] },
+    });
+    expect(await metricRows()).toEqual([
+      { subject: 'pr#1', value: 3, step_id: 'prs' },
+      { subject: 'pr#2', value: 5, step_id: 'prs' },
+    ]);
+    await metricEvent('node_completed', { structured_output: { metrics: [metric('pr#2', 4)] } });
+    expect(await metricRows()).toEqual([{ subject: 'pr#2', value: 4, step_id: 'prs' }]);
+  });
+
+  test('a later node_failed at the same position removes the run’s rows, another step keeps its own', async () => {
+    await metricEvent('node_completed', { structured_output: { metrics: [metric('pr#1', 3)] } });
+    await metricEvent(
+      'node_completed',
+      { structured_output: { metrics: [metric('pr#2', 2)] } },
+      'other',
+    );
+    await metricEvent('node_failed', {});
+    expect(await metricRows()).toEqual([{ subject: 'pr#2', value: 2, step_id: 'other' }]);
+  });
+
+  test('a relaying node’s metrics are not records', async () => {
+    await metricEvent('node_completed', {
+      type: 'workflow',
+      structured_output: { metrics: [metric('pr#1', 3)] },
+    });
+    expect(await metricRows()).toEqual([]);
+  });
+
+  test('one malformed record refuses the whole event and records no error', async () => {
+    await metricEvent('node_completed', {
+      structured_output: {
+        metrics: [metric('pr#1', 3), { ...metric('pr#2', 1), name: 'Bad Name' }],
+      },
+    });
+    expect(await metricRows()).toEqual([]);
+    expect(await db.query('SELECT 1 FROM mc.projection_errors')).toEqual([]);
+  });
+
+  test('a node_completed without metrics on a run with no rows writes nothing', async () => {
+    await metricEvent('node_completed', { structured_output: { verdict: 'ok' } });
+    expect(await metricRows()).toEqual([]);
+    expect(await db.query('SELECT 1 FROM mc.projection_errors')).toEqual([]);
+  });
+
+  test('deleting the Archon run deletes its rows', async () => {
+    await metricEvent('node_completed', { structured_output: { metrics: [metric('pr#1', 3)] } });
+    await db.query('DELETE FROM public.remote_agent_workflow_runs WHERE id = $1', [runId]);
+    expect(await metricRows()).toEqual([]);
+  });
+
+  test('20261111T1300Z projects metric events stored before it, and changes nothing run again', async () => {
+    const historical = await archonDb();
+    try {
+      const name = '20261111T1300Z_metric_records';
+      await runMigrations({ files: migrationFiles.filter((f) => f.name < name), db: historical });
+      const [run] = await historical.query(
+        `INSERT INTO public.remote_agent_workflow_runs (workflow_name, status, user_message)
+         VALUES ('archon-metrics-prs', 'completed', 'metrics') RETURNING id`,
+      );
+      await historical.query(
+        `INSERT INTO public.remote_agent_workflow_events (workflow_run_id, event_type, step_name, data)
+         VALUES ($1, 'node_completed', 'prs', $2)`,
+        [
+          run?.id,
+          JSON.stringify({ type: 'script', structured_output: { metrics: [metric('pr#1', 3)] } }),
+        ],
+      );
+      await runMigrations({ files: migrationFiles, db: historical });
+      expect(await historical.query('SELECT subject, value FROM mc.metric_records')).toEqual([
+        { subject: 'pr#1', value: 3 },
+      ]);
+      const before = await snapshot(historical);
+      const [file] = migrationFiles.filter((f) => f.name.startsWith(name));
+      await historical.query(file?.sql ?? '');
+      expect(await snapshot(historical)).toEqual(before);
+    } finally {
+      await historical.close();
+    }
+  });
 });

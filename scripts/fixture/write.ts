@@ -2,12 +2,13 @@ import { parseArgs } from 'node:util';
 import type { StepKind } from '../../parsers/pack';
 import { failing, guardedDatabaseUrl, type Main, runCli } from '../lib/cli';
 import type { Row, Tx } from '../lib/db';
+import { metricRecordsFixture } from './metric-records';
 
 const EVENTS = ['node_started', 'node_completed', 'node_failed'] as const;
 type StepEvent = (typeof EVENTS)[number];
 
 const USAGE =
-  'usage: bun run fixture:write step [--run <id>] [--step <step id>] [--event node_started|node_completed|node_failed] [--error <text>] | attention --run <id> | label [--label <name>] [--issue <number>] | retriage --issue <number> | comment | issue | pin | verdict [--pin <sha prefix>] | decision';
+  'usage: bun run fixture:write step [--run <id>] [--step <step id>] [--event node_started|node_completed|node_failed] [--error <text>] | attention --run <id> | label [--label <name>] [--issue <number>] | retriage --issue <number> | metrics | comment | issue | pin | verdict [--pin <sha prefix>] | decision';
 
 export const WORKFLOW = 'archon-loop';
 export const FACTORY = 'mission-control';
@@ -371,6 +372,44 @@ async function retriage(tx: Tx, issue: number, at: Date): Promise<string> {
   return `work item #${issue}: re-triaged`;
 }
 
+/**
+ * Writes one completed `archon-metrics-prs` run on the factory's codebase, its `prs` node carrying
+ * the records of metricRecordsFixture, as Archon does; the projection trigger fills mc.metric_records.
+ * Fails unless a row was added.
+ */
+export async function writeMetrics(tx: Tx, at: Date): Promise<string> {
+  const before = await rowCount(tx, 'mc.metric_records');
+  const [run] = await tx.query(
+    `INSERT INTO remote_agent_workflow_runs
+       (workflow_name, codebase_id, status, user_message, started_at, completed_at)
+     SELECT 'archon-metrics-prs', c.id, 'completed', $2::text, $3::timestamptz, $3::timestamptz
+     FROM remote_agent_codebases c WHERE c.name = $1 RETURNING id`,
+    [REPOSITORY, `Record the SDLC metrics of ${REPOSITORY}`, at.toISOString()],
+  );
+  if (!run) throw new Error(`no codebase named ${REPOSITORY}, so no metrics run was written`);
+  for (const event of ['node_started', 'node_completed'] as const) {
+    const [inserted] = await tx.query(
+      `INSERT INTO remote_agent_workflow_events (workflow_run_id, event_type, step_name, data)
+       VALUES ($1, $2, 'prs', $3::jsonb) RETURNING jsonb_typeof(data) AS stored`,
+      [
+        run.id,
+        event,
+        {
+          type: 'script',
+          ...(event === 'node_completed' && {
+            structured_output: { metrics: metricRecordsFixture(at) },
+          }),
+        },
+      ],
+    );
+    requireObject('the event data', inserted);
+  }
+  const after = await rowCount(tx, 'mc.metric_records');
+  const report = `mc.metric_records rows: ${before} -> ${after}`;
+  if (after <= before) throw new Error(`${report}, none added`);
+  return report;
+}
+
 export const main: Main = async (argv, deps) => {
   let parsed: Cli;
   try {
@@ -388,6 +427,7 @@ export const main: Main = async (argv, deps) => {
         else if (parsed.kind === 'attention')
           report = await pauseOnAttention(tx, parsed.run, deps.now());
         else if (parsed.kind === 'retriage') report = await retriage(tx, parsed.issue, deps.now());
+        else if (parsed.kind === 'metrics') report = await writeMetrics(tx, deps.now());
         else report = await writeRow(tx, parsed.kind, deps.now(), parsed);
       });
       deps.out(report);
@@ -400,7 +440,8 @@ export const main: Main = async (argv, deps) => {
 type StepCli = { kind: 'step'; step: string; event: StepEvent; run?: string; error?: string };
 type AttentionCli = { kind: 'attention'; run: string };
 type RetriageCli = { kind: 'retriage'; issue: number };
-type Cli = StepCli | AttentionCli | RetriageCli | ({ kind: RowKindName } & RowOptions);
+type MetricsCli = { kind: 'metrics' };
+type Cli = StepCli | AttentionCli | RetriageCli | MetricsCli | ({ kind: RowKindName } & RowOptions);
 
 function parseCli(argv: string[]): Cli {
   const { values, positionals } = parseArgs({
@@ -430,6 +471,10 @@ function parseCli(argv: string[]): Cli {
       throw new Error('retriage needs --issue <number>');
     if (Object.keys(others).length > 0) throw new Error('retriage takes only --issue');
     return { kind, issue: Number(issue) };
+  }
+  if (kind === 'metrics') {
+    if (Object.keys(values).length > 0) throw new Error('metrics takes no option');
+    return { kind };
   }
   if (isRowKind(kind)) {
     const { pin, label, issue: issueText, ...stepOnly } = values;
