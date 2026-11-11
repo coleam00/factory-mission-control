@@ -2,6 +2,7 @@ import { type ReactElement, type ReactNode, useEffect, useState } from 'react';
 import { useLocation, useSearchParams } from 'react-router';
 import { EmptyState } from '../components/EmptyState';
 import { FactoryMap } from '../components/FactoryMap';
+import { FactoryScorecard } from '../components/FactoryScorecard';
 import { FlowToggle, useFlow } from '../components/FlowToggle';
 import { StepVersionPickerBody } from '../components/StepVersionPicker';
 import { useMapPath } from '../components/useMapPath';
@@ -209,6 +210,11 @@ export default function Home(): ReactElement {
           />
         )}
       </LivePanel>
+      {path.length === 0 && at === null ? (
+        <div className={`${COLUMN} mt-6`}>
+          <FactoryScorecard factory={factory} />
+        </div>
+      ) : null}
     </main>
   );
 }
