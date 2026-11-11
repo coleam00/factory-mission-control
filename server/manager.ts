@@ -22,6 +22,7 @@ import type { Env } from './check-env';
 import { BASE_ENV_NAMES, pick } from './child-env';
 import { readFactoryNames } from './factories';
 import { LIVE_QUERIES_DIR, loadLiveQueries } from './live';
+import { type DayDigest, readDayDigest } from './manager-day';
 import { MANAGER_LIMITS, readOnlyQuery } from './manager-sql';
 import {
   AnswerSplitter,
@@ -146,6 +147,9 @@ function dayOf(date: Date): string {
   const pad = (n: number) => String(n).padStart(2, '0');
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 }
+
+/** The server's zone, the one the system prompt and the day digest both name. */
+const serverZone = (): string => Intl.DateTimeFormat().resolvedOptions().timeZone;
 
 function spentToday(manager: Manager): number {
   const today = dayOf(manager.now());
@@ -323,7 +327,7 @@ function systemPrompt(
   briefing: boolean,
 ): string {
   const now = manager.now();
-  const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const zone = serverZone();
   const { place, run, item, workflow, step, order } = request.context;
   const viewing = [
     run && `run ${run}`,
@@ -758,10 +762,14 @@ const GROUP_PHRASE: Record<AttentionKind, (n: number, t: AttentionTally) => stri
     `${n} to fix (${plural(t.failureRuns, 'failure', 'failures')} in ${plural(t.failures, 'cause', 'causes')})`,
 };
 
+/** The count sentence's words: `attentionLine` writes them and `statedTotals` reads them. */
+const NOTHING_NEEDS_YOU = 'Nothing needs you';
+const COUNT_WORDS = { one: 'thing needs', many: 'things need' };
+
 /** The briefing's first line: each Attention group by the count its header shows, so the total matches the page. */
 export function attentionLine(t: AttentionTally): string {
   const total = SOURCE_KEYS.reduce((sum, key) => sum + t[key], 0);
-  if (total === 0) return 'Nothing needs you.';
+  if (total === 0) return `${NOTHING_NEEDS_YOU}.`;
   const lead =
     t.decide > 0
       ? `${plural(t.decide, 'run is', 'runs are')} paused on your answer. `
@@ -771,7 +779,13 @@ export function attentionLine(t: AttentionTally): string {
   const parts = KINDS.map(({ kind }) => ({ kind, n: inGroup(t, kind) }))
     .filter(({ n }) => n > 0)
     .map(({ kind, n }) => GROUP_PHRASE[kind](n, t));
-  return `${lead}${plural(total, 'thing needs', 'things need')} you: ${parts.join(', ')}.`;
+  return `${lead}${plural(total, COUNT_WORDS.one, COUNT_WORDS.many)} you: ${parts.join(', ')}.`;
+}
+
+function daySentence(day: DayDigest | null): string {
+  if (!day)
+    return " Today's merged pull requests and failed runs could not be read: say so in one sentence and do not guess them.";
+  return ` Today's merged pull requests and runs by workflow and outcome were read for you from the factory's data, a run on the day its completed_at falls: name the merged pull requests by number and title from them instead of querying for them. The briefing already lists any failure causes of the day as a paragraph of its own: do not list, regroup or count them, and do not restate the count line: write at most two short blocks. Where and_more is above 0, more merged pull requests were not listed: say there were others, without a number. The numbers in them are for your judgment: state none of them. These are today's failures, not the Attention failures, which are the causes still unresolved: do not add or compare them. ${JSON.stringify({ day: day.day, merged: day.merged, runs: day.runs })}`;
 }
 
 /**
@@ -782,6 +796,7 @@ export function attentionLine(t: AttentionTally): string {
 export function briefingQuestion(
   tally: AttentionTally | null,
   rows: AttentionRows | null = null,
+  day: DayDigest | null = null,
 ): string {
   const listing = rows
     ? ` These are the Attention rows, by source, that the line was counted from; name the items from them instead of querying for them, and never copy or paraphrase the line: ${JSON.stringify(rows)}`
@@ -789,20 +804,50 @@ export function briefingQuestion(
   const counted = tally
     ? ` The briefing already opens with this line, counted from the Attention page's own rows: "${attentionLine(tally)}" That line is the only count of what waits on the owner. State no number of Attention items, open questions, paused runs, failures or merged runs yourself, and never say the rows or the opening line disagree, miss something or may be incomplete; name the individual runs and issues instead.${listing}`
     : " The Attention page's count could not be read: do not say how many things wait on the owner.";
-  return BRIEFING_QUESTION + counted;
+  return BRIEFING_QUESTION + daySentence(day) + counted;
 }
 
 type AttentionRead = { tally: AttentionTally; rows: AttentionRows };
 
-/** The count sentence's own words, as `attentionLine` writes them: the number sits just before. */
-const COUNT_TAILS = [' thing needs you', ' things need you'];
-const NOTHING_WAITS = 'nothing needs you';
+/** The number sits just before each tail. */
+const COUNT_TAILS = [` ${COUNT_WORDS.one} you`, ` ${COUNT_WORDS.many} you`];
+const NOTHING_WAITS = NOTHING_NEEDS_YOU.toLowerCase();
+/** "Nothing needs your answer" is about open questions, which the count line words as "No run is paused on a question". */
+const NOTHING_ASKED = 'nothing needs your answer';
+/** How a sentence about questions alone may end after the phrase. Anything else may go on to speak for everything. */
+const ASKED_TIMES = [' today', ' right now', ' at the moment', ' now'];
+const ASKED_ENDS = ['.', '!', '?'];
 
-/** The totals a text states in the count sentence's form, and only those: any other number in it is not a count. */
-function statedTotals(text: string): number[] {
+/** A mark ends the sentence only when the end of text or whitespace follows it: "..." and "?!" run on. */
+function endsAtQuestions(after: string): boolean {
+  const time = ASKED_TIMES.find((t) => after.startsWith(t)) ?? '';
+  const end = after.slice(time.length);
+  if (end === '') return true;
+  const mark = ASKED_ENDS.find((e) => end.startsWith(e));
+  if (mark === undefined) return false;
+  const next = end.charAt(1);
+  return next === '' || next === ' ' || next === '\n' || next === '\r' || next === '\t';
+}
+
+/** `plain` with each "nothing needs your answer" that provably stops at questions removed. */
+function withoutNothingAsked(plain: string): string {
+  const [first, ...rest] = plain.split(NOTHING_ASKED);
+  return rest.reduce(
+    (out, part) => out + (endsAtQuestions(part) ? '' : NOTHING_ASKED) + part,
+    first,
+  );
+}
+
+/**
+ * The totals a text states in the count sentence's form, and only those: any other number in it is not a count.
+ * With `questionsOnly` (no run is paused on the owner's answer), "nothing needs your answer" is no total of 0.
+ */
+function statedTotals(text: string, questionsOnly = false): number[] {
   // The panel renders emphasis and code spans, so the marks around a count are not part of what the owner reads.
   const plain = ['*', '_', '`'].reduce((s, mark) => s.split(mark).join(''), text.toLowerCase());
-  const totals = plain.includes(NOTHING_WAITS) ? [0] : [];
+  const totals = (questionsOnly ? withoutNothingAsked(plain) : plain).includes(NOTHING_WAITS)
+    ? [0]
+    : [];
   for (const tail of COUNT_TAILS) {
     for (let at = plain.indexOf(tail); at >= 0; at = plain.indexOf(tail, at + 1)) {
       let start = at;
@@ -816,7 +861,7 @@ function statedTotals(text: string): number[] {
 /** Why the model's prose cannot sit under the count line: its count sentence states a total the line does not. */
 export function briefingFault(text: string, tally: AttentionTally): string | null {
   const allowed = statedTotals(attentionLine(tally));
-  const stray = statedTotals(text).find((n) => !allowed.includes(n));
+  const stray = statedTotals(text, tally.decide === 0).find((n) => !allowed.includes(n));
   return stray === undefined ? null : `it states a count of ${stray} the page does not show`;
 }
 
@@ -824,31 +869,73 @@ export function briefingFault(text: string, tally: AttentionTally): string | nul
 export const BRIEFING_PROSE_BLOCKS = 3;
 
 /** Blocks are the panel's own: its markdown parser decides where one ends. */
-export function capBriefingProse(text: string): string {
-  return topLevelBlocks(text).slice(0, BRIEFING_PROSE_BLOCKS).join('\n\n');
+export function capBriefingProse(text: string, blocks = BRIEFING_PROSE_BLOCKS): string {
+  return topLevelBlocks(text).slice(0, blocks).join('\n\n');
 }
 
-function capBriefingEvents(events: ManagerEvent[]): ManagerEvent[] {
-  const text = events.flatMap((e) => (e.type === 'text' ? [e.text] : [])).join('');
-  const capped: ManagerEvent = { type: 'text', text: capBriefingProse(text) };
+/**
+ * The day's failure causes as one paragraph, written from the digest so each cause is named once
+ * and, where the digest says more exist, the paragraph says so. The panel counts every list item as
+ * a block of its own, so a list would spend the briefing's four blocks on one section.
+ */
+export function failureCausesBlock(day: DayDigest): string | null {
+  const { items, and_more } = day.failure_causes;
+  if (items.length === 0) return null;
+  const named = items.map(
+    (c) =>
+      `${c.cause.replace(/\s+/g, ' ')} (${c.workflow}${c.step ? `, step ${c.step}` : ''}; ${plural(c.runs, 'run', 'runs')}, e.g. ${c.example_run})`,
+  );
+  if (and_more > 0) named.push(`and ${plural(and_more, 'more cause', 'more causes')} not listed`);
+  return `Failure causes today: ${named.join('; ')}.`;
+}
+
+/** A model block that restates the count line is the line twice: drop it. */
+const withoutCountLine = (text: string, line: string): string =>
+  topLevelBlocks(text)
+    .filter((block) => !block.includes(line))
+    .join('\n\n');
+
+function capBriefingEvents(
+  events: ManagerEvent[],
+  line: string | null,
+  causes: string | null,
+): ManagerEvent[] {
+  const raw = events.flatMap((e) => (e.type === 'text' ? [e.text] : [])).join('');
+  const prose = capBriefingProse(
+    line ? withoutCountLine(raw, line) : raw,
+    BRIEFING_PROSE_BLOCKS - (causes ? 1 : 0),
+  );
+  const capped: ManagerEvent = {
+    type: 'text',
+    text: [causes, prose].filter((b) => b).join('\n\n'),
+  };
   const at = events.findIndex((e) => e.type === 'text');
-  if (at < 0) return events;
+  if (at < 0) return causes ? [capped, ...events] : events;
   return events.flatMap((e, i): ManagerEvent[] =>
     e.type !== 'text' ? [e] : i === at ? [capped] : [],
   );
 }
 
 async function generateBriefing(manager: Manager, factory: string, read: AttentionRead | null) {
+  const day = await readDayDigest(manager.db, factory, dayOf(manager.now()), serverZone()).catch(
+    (err) => {
+      console.error(`manager: day read failed: ${err instanceof Error ? err.message : err}`);
+      return null;
+    },
+  );
+  const causes = day && failureCausesBlock(day);
   const request: ChatRequest = {
     factory,
     context: { place: 'attention' },
-    messages: [{ role: 'owner', text: briefingQuestion(read?.tally ?? null, read?.rows ?? null) }],
+    messages: [
+      { role: 'owner', text: briefingQuestion(read?.tally ?? null, read?.rows ?? null, day) },
+    ],
   };
   let events: ManagerEvent[] = [];
   let ok = false;
   let cost = 0;
   let rejected = false;
-  // The model may contradict the count line: try once more, then show the count line alone.
+  // The model may contradict the count line: try once more, then show the count line and the server's cause paragraph.
   for (let attempt = 0; attempt < 2; attempt++) {
     events = [];
     const outcome = await produce(
@@ -862,12 +949,15 @@ async function generateBriefing(manager: Manager, factory: string, read: Attenti
     cost += outcome.cost;
     const text = events.flatMap((e) => (e.type === 'text' ? [e.text] : [])).join('');
     const fault = ok && read ? briefingFault(text, read.tally) : null;
-    if (attempt === 1 && (fault || (rejected && !ok))) {
+    const last = attempt === 1;
+    if (last && (fault || (rejected && !ok))) {
       events = [];
       // `ok` stays as the attempt left it: a failed run is not kept, so the next ask tries again.
       if (!fault) console.warn('manager: briefing second attempt failed; showing the count line');
     }
-    if (!fault) events = capBriefingEvents(events);
+    // The fallback still carries the server's cause paragraph: only the model's prose is dropped.
+    if (!fault || last)
+      events = capBriefingEvents(events, read && attentionLine(read.tally), causes);
     if (!fault) break;
     rejected = true;
     console.warn(`manager: briefing rejected (attempt ${attempt + 1}): ${fault}`);
@@ -878,7 +968,8 @@ async function generateBriefing(manager: Manager, factory: string, read: Attenti
     generatedAt: manager.now().toISOString(),
     basis: basisOf(read),
   };
-  if (ok) manager.briefings.set(factory, briefing);
+  // Without the day's digest the briefing is degraded: kept out of the cache so the next ask reads the day again.
+  if (ok && day) manager.briefings.set(factory, briefing);
   return { briefing, cost };
 }
 

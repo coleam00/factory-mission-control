@@ -2158,7 +2158,7 @@ function queuePageRunsSql(nextId: () => string): string[] {
     // No structured output on facts: a build-queue lap is a run whose facts step names an item.
     step(QUEUE_RUNS.failedBuild, build, 'node_completed', 'facts', 0, 4),
     step(QUEUE_RUNS.failedBuild, build, 'node_completed', 'route', 1, 12, spent(0.03)),
-    step(QUEUE_RUNS.failedBuild, build, 'node_completed', 'ship__triage', 2, 100, spent(0.41)),
+    step(QUEUE_RUNS.failedBuild, build, 'node_completed', 'ship__intel', 2, 100, spent(0.41)),
     step(
       QUEUE_RUNS.failedBuild,
       build,
@@ -2181,7 +2181,7 @@ function queuePageRunsSql(nextId: () => string): string[] {
       QUEUE_RUNS.failedBuild,
       build,
       'node_completed',
-      `${rounds}.review__result`,
+      `${rounds}.review__publish`,
       48,
       540,
       spent(1.4),
@@ -2202,7 +2202,7 @@ function queuePageRunsSql(nextId: () => string): string[] {
       ...spent(0.55),
       error: p.buildError,
     }),
-    step(QUEUE_RUNS.failedBuild, build, 'node_skipped', `${rounds}.review__result`, 112.7, 0, {
+    step(QUEUE_RUNS.failedBuild, build, 'node_skipped', `${rounds}.review__publish`, 112.7, 0, {
       reason: 'upstream failed',
     }),
     runRow(QUEUE_RUNS.appCheck, 'factory-app-check', 'completed', check, 9, {}),
@@ -2298,7 +2298,7 @@ function queueReturnedSql(h: {
     ),
     h.done(
       id,
-      'ship__deliver__rounds.review__result',
+      'ship__deliver__rounds.review__publish',
       4,
       {
         ready: true,

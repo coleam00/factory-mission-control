@@ -55,10 +55,10 @@ export const QUEUE_MAP_OUTPUTS: readonly LiveOutput[] = [
 export const BUILD_STEP = 'ship__deliver__rounds.implement__implement';
 /** A running merge-queue run the phase adds: a sweep on it counts on Merge and its view's Sweep. */
 export const MERGE_SWEEP_RUN = '5eed0005-0000-4000-8000-0000000000a1';
-const REVIEW_STEP = 'ship__deliver__rounds.review__policy';
+const REVIEW_STEP = 'ship__deliver__rounds.review__mode';
 const REVIEW_CODE_STEP = 'ship__deliver__rounds.review__code';
-const REREVIEW_TESTS_STEP = 'ship__deliver__rounds.rereview__tests';
-const WRITTEN_STEPS = [BUILD_STEP, REVIEW_STEP, REVIEW_CODE_STEP, REREVIEW_TESTS_STEP];
+const REVIEW_TESTS_STEP = 'ship__deliver__rounds.review__tests';
+const WRITTEN_STEPS = [BUILD_STEP, REVIEW_STEP, REVIEW_CODE_STEP, REVIEW_TESTS_STEP];
 const WAITING = `${MAP} [data-card="mgr"] [data-chip="waiting"]`;
 
 const viewStage = (id: string) => `[data-map-stage][data-view="${id}"][data-placed]`;
@@ -303,7 +303,7 @@ export function queueMapPhase(ctx: LiveContext): LivePhase {
         ms.tests = await writeToScreen(
           reviewView,
           deps,
-          [...startStep(REREVIEW_TESTS_STEP), '--event', 'node_started'],
+          [...startStep(REVIEW_TESTS_STEP), '--event', 'node_started'],
           `${liveCountOf('r-l3')} === '1'`,
         );
 
@@ -385,7 +385,7 @@ export function queueMapPhase(ctx: LiveContext): LivePhase {
         ms.scope,
       ),
       ...lateWrite('a build-queue run on review/code', `${name}'s Review view Code`, ms.code),
-      ...lateWrite('a build-queue run on rereview/tests', `${name}'s Review view Tests`, ms.tests),
+      ...lateWrite('a build-queue run on review/tests', `${name}'s Review view Tests`, ms.tests),
       ...lateWrite('a merge-queue run on sweep', `${name}'s Merge`, ms.merge),
       ...lateWrite('a merge-queue run on sweep', `${name}'s Merge view Sweep`, ms.sweep),
       ...lateWrite('an intake run on triage', `${name}'s Intake`, ms.intake),

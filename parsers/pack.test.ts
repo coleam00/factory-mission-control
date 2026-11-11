@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { execFileSync } from 'node:child_process';
 import {
   cpSync,
   existsSync,
@@ -18,6 +19,24 @@ const repoRoot = resolve(import.meta.dir, '..');
 const packDir = join(repoRoot, 'fixtures', 'pack', 'sdlc');
 const templateDir = join(repoRoot, 'fixtures', 'factory-template');
 const parsed = parsePack(packDir, templateDir);
+
+/** Every file under `root` by relative path, line endings normalized; empty when `root` is absent. */
+function files(root: string): Map<string, string> {
+  const found = new Map<string, string>();
+  const walk = (dir: string): void => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const path = join(dir, entry.name);
+      if (entry.isDirectory()) walk(path);
+      else
+        found.set(
+          relative(root, path).replaceAll('\\', '/'),
+          readFileSync(path, 'utf8').replaceAll('\r\n', '\n'),
+        );
+    }
+  };
+  if (existsSync(root)) walk(root);
+  return found;
+}
 
 function workflow(name: string): Workflow {
   const found = parsed.workflows.find((w) => w.name === name);
@@ -278,21 +297,26 @@ describe('sub-workflow nodes', () => {
   });
 });
 
-describe('a loop group stops at the ROUND_CAP its pinned script holds', () => {
+describe('a loop group stores the round its pinned pack stops it at', () => {
   const queue = parsePack(join(repoRoot, 'fixtures', 'pack', 'queue', 'sdlc'), templateDir);
   const rows = archRows(queue).arch_steps.filter((r) => r.workflow === 'archon-build-queue');
   const capOf = (path: string) => rows.find((r) => r.path === path)?.round_cap;
 
-  test('the deliver loop stores the cap and not its max_iterations', () => {
+  test('the queue pack stores the deliver loop max_iterations, which it holds no ROUND_CAP beside', () => {
     expect(capOf('ship/deliver/rounds')).toBe(4);
   });
 
-  test('a step whose scripts name no cap stores null', () => {
+  test('a step that is not a loop stores null', () => {
     expect(rows.length).toBeGreaterThan(1);
     expect(rows.filter((r) => r.round_cap !== null).map((r) => r.path)).toEqual([
       'ship/deliver/rounds',
     ]);
     expect(capOf('ship/deliver')).toBeNull();
+  });
+
+  test('the loop pack stores its ROUND_CAP and not the max_iterations above it', () => {
+    const loopRows = archRows(parsed).arch_steps.filter((r) => r.workflow === 'archon-loop');
+    expect(loopRows.find((r) => r.path === 'ship/deliver/rounds')?.round_cap).toBe(4);
   });
 });
 
@@ -331,22 +355,6 @@ describe('a version holds the loop pack and the factory package', () => {
   });
 
   test('keeps the factory snapshot identical to the package it copies', () => {
-    const files = (root: string): Map<string, string> => {
-      const found = new Map<string, string>();
-      const walk = (dir: string): void => {
-        for (const entry of readdirSync(dir, { withFileTypes: true })) {
-          const path = join(dir, entry.name);
-          if (entry.isDirectory()) walk(path);
-          else
-            found.set(
-              relative(root, path).replaceAll('\\', '/'),
-              readFileSync(path, 'utf8').replaceAll('\r\n', '\n'),
-            );
-        }
-      };
-      if (existsSync(root)) walk(root);
-      return found;
-    };
     const snapshot = files(join(queueDir, 'factory'));
     const source = files(join(repoRoot, FACTORY_PACKAGE_DIR));
     const differing = [...new Set([...snapshot.keys(), ...source.keys()])]
@@ -359,6 +367,34 @@ describe('a version holds the loop pack and the factory package', () => {
     ).toEqual([]);
     expect(source.size).toBeGreaterThan(0);
   });
+
+  test.skipIf(!process.env.MC_ARCHON_DIR)(
+    'keeps the sdlc snapshot identical to the Archon checkout the factory runs',
+    () => {
+      const archonDir = process.env.MC_ARCHON_DIR ?? '';
+      const head = execFileSync('git', ['-C', archonDir, 'rev-parse', 'HEAD'], {
+        encoding: 'utf8',
+      }).trim();
+      const recopy =
+        `Re-copy it: empty fixtures/pack/queue/sdlc, run git -C ${archonDir} -c core.autocrlf=false -c core.eol=lf ` +
+        `archive ${head} .archon/workflows/sdlc | tar -x --strip-components=3 -C fixtures/pack/queue/sdlc, ` +
+        `and write ${head} to fixtures/pack/queue/ARCHON_COMMIT.`;
+      expect(
+        readFileSync(join(queueDir, 'ARCHON_COMMIT'), 'utf8').trim(),
+        `fixtures/pack/queue/ARCHON_COMMIT is not the HEAD of ${archonDir}. ${recopy}`,
+      ).toBe(head);
+      const snapshot = files(join(queueDir, 'sdlc'));
+      const source = files(join(archonDir, '.archon', 'workflows', 'sdlc'));
+      const differing = [...new Set([...snapshot.keys(), ...source.keys()])]
+        .filter((path) => snapshot.get(path) !== source.get(path))
+        .sort();
+      expect(
+        differing,
+        `fixtures/pack/queue/sdlc differs from ${archonDir} in: ${differing.join(', ')}. ${recopy}`,
+      ).toEqual([]);
+      expect(source.size).toBeGreaterThan(0);
+    },
+  );
 
   test('refuses a package workflow that reuses a loop pack workflow name', () => {
     const copy = mkdtempSync(join(tmpdir(), 'pack-dup-'));

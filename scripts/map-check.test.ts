@@ -104,14 +104,14 @@ describe('map:check', () => {
         manager: {
           ...view,
           cards: view.cards.map((c) =>
-            c.id === 'u-c' ? { ...c, asks: { label: 'stage', value: 'archon-triag' } } : c,
+            c.id === 'u-d' ? { ...c, asks: { label: 'discoveries', value: 'questoin' } } : c,
           ),
         },
       },
     };
     expect(check(map)).toEqual([
       expect.stringContaining(
-        'asks label stage with value "archon-triag", which the queue pack never sets',
+        'asks label discoveries with value "questoin", which the queue pack never sets',
       ),
     ]);
   });
@@ -297,7 +297,9 @@ describe('map:check', () => {
       buildCard(cards, 'b-push', (c) => ({
         ...c,
         covers: c.covers.map((cover) =>
-          cover.workflow === 'archon-build-queue' ? { ...cover, steps: [] } : cover,
+          cover.workflow === 'archon-build-queue'
+            ? { ...cover, steps: cover.steps.filter((id) => id !== 'apply') }
+            : cover,
         ),
       })),
     );
@@ -536,22 +538,24 @@ describe('the picks seam of the home map', () => {
   };
 
   test('the lens steps its SQL selects are the review-lens nodes of the review block', () => {
-    const block = workflow('archon-review-block');
+    const block = workflow('archon-review');
     const nodes = (
       Bun.YAML.parse(block.yaml) as {
         nodes: {
           id: string;
-          output_type?: string;
+          when?: string;
           output_format?: { properties?: Record<string, { type?: string }>; required?: string[] };
         }[];
       }
     ).nodes;
-    const lenses = nodes.filter((n) => n.output_type === 'review-lens').map((n) => n.id);
+    const lenses = nodes
+      .filter((n) => n.when === `$mode.output.${n.id} == true || $route.output.${n.id} == true`)
+      .map((n) => n.id);
     // The SQL rewrites a lens id with '__[a-z]+$', so every lens id must be lowercase letters.
     expect(lenses.every((id) => /^[a-z]+$/.test(id))).toBe(true);
     const selected = /review__\(([^)]+)\)\$/.exec(sql)?.[1].split('|');
     expect(selected?.slice().sort()).toEqual(lenses.sort());
-    expect(block.steps[0]?.id).toBe('policy');
+    expect(block.steps[0]?.id).toBe('mode');
     // The SQL reads route's output keyed by lens id, as a boolean.
     const route = nodes.find((n) => n.id === 'route')?.output_format;
     for (const id of lenses) {

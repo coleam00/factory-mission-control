@@ -1,4 +1,4 @@
-import { Fragment, type ReactElement, useCallback, useRef, useState } from 'react';
+import { Fragment, type ReactElement, type ReactNode, useCallback, useRef, useState } from 'react';
 import { Outlet, useLocation, useSearchParams } from 'react-router';
 import { ActionToastHost } from './components/ActionToast';
 import { FactoryStrip, FactoryStripBody, RewindIndicator } from './components/FactoryStrip';
@@ -156,6 +156,17 @@ export function PhoneTabs({
   );
 }
 
+/** Mounted but hidden while the Manager is open: unmounting the page would withdraw what it published, such as a run's status. */
+export function PhoneContent({
+  manager,
+  children,
+}: {
+  manager: boolean;
+  children: ReactNode;
+}): ReactElement {
+  return <div className={manager ? 'hidden' : 'contents'}>{children}</div>;
+}
+
 /**
  * Keyed by the current factory, so a switch remounts the strip and the screen: no panel keeps
  * the previous factory's rows, and no screen keeps its selection.
@@ -224,7 +235,8 @@ export function ForFactory(): ReactElement {
         className={`flex flex-col bg-[var(--v3-bg)] ${phoneManager ? 'h-screen' : 'min-h-screen'}`}
       >
         <PhoneTop unknownKey={unknownKey} onEngine={setEngine} />
-        {phoneManager ? panel(() => setPhoneManager(false)) : content}
+        {phoneManager ? panel(() => setPhoneManager(false)) : null}
+        <PhoneContent manager={phoneManager}>{content}</PhoneContent>
         {/* Mounted but hidden: the design draws no switcher on phone, yet it is the one publisher of the factory list. */}
         <div hidden>{switcher}</div>
         <PhoneTabs manager={phoneManager} onManager={setPhoneManager} />

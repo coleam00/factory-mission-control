@@ -7,7 +7,7 @@
  * so a name declared anywhere else is a copy that can drift.
  */
 
-import { forgeSource, invokeForge, readRepositoryLabels, type QualifiedPr } from './forge.ts';
+import { invokeForge, readRepositoryLabels, type QualifiedPr } from './forge.ts';
 import { viewIssue } from './issue.ts';
 
 interface LabelSpec {
@@ -24,7 +24,7 @@ export const PACK_LABELS = {
   },
   'archon-split': {
     color: 'BFDADC',
-    description: 'Triage: ready; a PRD or a bundle of tasks to split into issues',
+    description: 'Triage: ready; a large item to split into issues, because one work item would not work',
   },
   'archon-prd': {
     color: '006B75',
@@ -66,25 +66,10 @@ export const PACK_LABELS = {
 
 export type PackLabel = keyof typeof PACK_LABELS;
 
+export const PACK_LABEL_NAMES = Object.keys(PACK_LABELS) as PackLabel[];
+
 export function isPackLabel(name: string): name is PackLabel {
   return Object.hasOwn(PACK_LABELS, name);
-}
-
-// Labels an earlier version of the pack wrote. A write removes them from the item
-// and never creates them, so re-triaging an item clears its old size label, and
-// intake's next write on an item clears archon-issue, the investigate route's old name.
-const RETIRED_LABELS = ['archon-small', 'archon-risky', 'archon-large', 'archon-issue'] as const;
-
-/** A label the pack owns on an item: one it writes now, or one it retired. */
-export type OwnedLabel = PackLabel | (typeof RETIRED_LABELS)[number];
-
-export const OWNED_LABEL_NAMES: readonly OwnedLabel[] = [
-  ...(Object.keys(PACK_LABELS) as PackLabel[]),
-  ...RETIRED_LABELS,
-];
-
-export function isOwnedLabel(name: string): name is OwnedLabel {
-  return (OWNED_LABEL_NAMES as readonly string[]).includes(name);
 }
 
 export type Contract = 'READY' | 'NEEDS_CONTRACT_WORK' | 'BLOCKED' | 'NO_ACTION';
@@ -95,8 +80,8 @@ export type Route = 'investigate' | 'plan' | 'deliver' | 'continue' | 'split';
 // Exactly one state label per item. A READY item's label names the route the run
 // takes on it: archon-ready delivers (a new pull request, or the open one it
 // continues), archon-plan plans then delivers, archon-investigate investigates
-// then delivers, and archon-split files the issues a PRD or a bundle of tasks splits
-// into.
+// then delivers, and archon-split files the issues a large item splits into when
+// building it as one work item would not work.
 export const STATE_LABEL = {
   NEEDS_CONTRACT_WORK: 'archon-needs-contract',
   BLOCKED: 'archon-blocked',
@@ -157,21 +142,6 @@ export function wantedLabels(verdict: LabelVerdict, type: WorkType, size: Size):
   return wanted;
 }
 
-function gh(...args: string[]): string {
-  const result = Bun.spawnSync(['gh', ...args], { stdout: 'pipe', stderr: 'pipe' });
-  if (result.exitCode !== 0) {
-    throw new Error(`gh ${args.slice(0, 3).join(' ')} failed: ${result.stderr.toString().trim()}`);
-  }
-  return result.stdout.toString();
-}
-
-function ghRepositoryLabels(repository: string): Set<string> {
-  const rows = JSON.parse(
-    gh('label', 'list', '--repo', repository, '--limit', '500', '--json', 'name')
-  ) as { name: string }[];
-  return new Set(rows.map(row => row.name));
-}
-
 /**
  * Add and remove labels on an issue as a delta, then read the result back.
  *
@@ -183,55 +153,11 @@ function ghRepositoryLabels(repository: string): Set<string> {
 export function writeLabels(
   item: QualifiedPr,
   add: readonly string[],
-  remove: readonly OwnedLabel[]
+  remove: readonly PackLabel[]
 ): string[] {
-  return forgeSource() === 'forge' ? forgeWrite(item, add, remove) : ghWrite(item, add, remove);
-}
-
-function ghWrite(item: QualifiedPr, add: readonly string[], remove: readonly OwnedLabel[]): string[] {
-  const repository = `${item.repo.host}/${item.repo.path}`;
-  const current = new Set(viewIssue(item).labels);
-  const present = ghRepositoryLabels(repository);
-  for (const name of add) {
-    if (!present.has(name) && isPackLabel(name)) {
-      const { color, description } = PACK_LABELS[name];
-      // --force: parallel intakes on a fresh repository race to create the same pack label,
-      // and a plain create fails the loser with "already exists".
-      gh('label', 'create', name, '--repo', repository, '--color', color, '--description', description, '--force');
-      present.add(name);
-    }
-  }
-  const applied = [...new Set(add.filter(name => present.has(name)))].sort();
-  const toAdd = applied.filter(name => !current.has(name));
-  const removing = new Set<string>(remove);
-  const stale = [...current].filter(name => removing.has(name)).sort();
   // Single add and remove operations, never a whole-set write, so labels another
-  // writer adds concurrently survive.
-  if (toAdd.length > 0 || stale.length > 0) {
-    const args = ['issue', 'edit', String(item.number), '--repo', repository];
-    for (const name of toAdd) args.push('--add-label', name);
-    for (const name of stale) args.push('--remove-label', name);
-    gh(...args);
-  }
-  const after = new Set(viewIssue(item).labels);
-  const missing = applied.filter(name => !after.has(name));
-  const lingering = stale.filter(name => after.has(name));
-  if (missing.length > 0 || lingering.length > 0) {
-    throw new Error(
-      `label read-back disagrees: missing=${JSON.stringify(missing)} lingering=${JSON.stringify(lingering)}`
-    );
-  }
-  return applied;
-}
-
-// Single add and remove operations, as on the gh path, so labels another writer adds
-// concurrently survive. Each forge write reads itself back, and a write that does not
-// fails with its outcome, so there is nothing left to re-check here.
-function forgeWrite(
-  item: QualifiedPr,
-  add: readonly string[],
-  remove: readonly OwnedLabel[]
-): string[] {
+  // writer adds concurrently survive. Each forge write reads itself back, and a write
+  // that does not fails with its outcome, so there is nothing left to re-check here.
   const current = new Set(viewIssue(item).labels);
   const present = new Set(readRepositoryLabels(item.repo));
   for (const name of add) {

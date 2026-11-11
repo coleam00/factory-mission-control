@@ -234,7 +234,12 @@
             "ruling",
             "blocked",
             "revisit",
-            "retriage"
+            "retriage",
+            "start",
+            "interpret",
+            "pick",
+            "handoff",
+            "order"
           ],
           "pack": "queue"
         }
@@ -257,7 +262,7 @@
       "role": "agent",
       "kind": "review",
       "title": "Review",
-      "text": "Up to five reviewers read the change",
+      "text": "Up to six reviewers read the change",
       "x": 1072,
       "y": 542,
       "covers": [
@@ -268,14 +273,14 @@
         },
         {
           "workflow": "archon-build-queue",
-          "steps": ["ship/deliver/rounds/review", "ship/deliver/rounds/rereview"],
+          "steps": ["ship/deliver/rounds/review"],
           "pack": "queue"
         }
       ],
       "details": {
         "when": ["Every time Build pushes a change to the PR."],
         "what": [
-          "A quick agent picks the reviewers this change earns. Up to five each read the change for one thing: how parts fit together, correctness, tests, error handling, docs.",
+          "A quick agent picks the reviewers this change earns. Up to six each read the change for one thing: how parts fit together, correctness, tests, error handling, docs, what a user sees.",
           "One agent combines what they found into a single comment: Ready, or a list of fixes."
         ],
         "how": [
@@ -351,7 +356,7 @@
         },
         {
           "workflow": "archon-merge-queue",
-          "steps": ["facts", "sweep", "record", "retriage", "ask", "ruling"],
+          "steps": ["facts", "sweep", "record", "retriage", "ask", "ruling", "drain"],
           "pack": "queue"
         }
       ],
@@ -585,8 +590,8 @@
                 "revisit",
                 "retriage",
                 "ship",
-                "ship/forge",
-                "ship/triage"
+                "start",
+                "interpret"
               ]
             },
             {
@@ -596,7 +601,10 @@
             }
           ],
           "details": {
-            "what": ["Checks the contract, reproduces the bug"]
+            "what": [
+              "Checks the contract, reproduces the bug",
+              "Or a person names the work in the run's message, and one agent reads it."
+            ]
           }
         },
         {
@@ -710,7 +718,7 @@
             {
               "pack": "queue",
               "workflow": "archon-build-queue",
-              "steps": ["apply"]
+              "steps": ["apply", "order", "handoff"]
             },
             {
               "pack": "loop",
@@ -734,7 +742,7 @@
             {
               "pack": "queue",
               "workflow": "archon-build-queue",
-              "steps": ["ask", "ruling"]
+              "steps": ["ask", "ruling", "pick"]
             }
           ],
           "details": {
@@ -822,7 +830,7 @@
       "tour": ["b-brief", "b-del", "b-dec", "b-push", "b-next"]
     },
     "build/deliver": {
-      "caption": "The inner loop. Each delivery round implements or fixes, publishes a draft PR, and runs the review. A Ready review gets one simplify pass and a light re-review, then CI. Findings send it back to Implement, up to 4 rounds in all.",
+      "caption": "The inner loop. Each delivery round implements or fixes, publishes a draft PR, and runs the review. A simplify pass runs beside the review; a Ready review with nothing to simplify goes to CI, which hands the PR off ready. Findings send it back to Implement, up to 4 rounds in all.",
       "cardSize": {
         "width": 260,
         "height": 200
@@ -845,8 +853,7 @@
                 "ship/continues",
                 "ship/deliver",
                 "ship/deliver/rounds",
-                "ship/deliver/rounds/implement",
-                "ship/deliver/rounds/reshape"
+                "ship/deliver/rounds/implement"
               ]
             },
             {
@@ -1030,7 +1037,7 @@
       "tour": ["d-impl", "d-pr", "d-rev", "d-simp", "d-ci", "d-out"]
     },
     "review": {
-      "caption": "A quick agent picks the reviewers this change earns, up to five, each reading through one lens, side by side. A synthesis agent merges what they found into one PR comment. That comment's Ready verdict at the PR's head is what the merge gate trusts.",
+      "caption": "A quick agent picks the reviewers this change earns, up to six, each reading through one lens, side by side. A synthesis agent merges what they found into one PR comment. Three verifiers check each blocking finding before the verdict. That comment's Ready verdict at the PR's head is what the merge gate trusts.",
       "cardSize": {
         "width": 260,
         "height": 150
@@ -1066,15 +1073,9 @@
               "workflow": "archon-build-queue",
               "steps": [
                 "ship/deliver/rounds/review",
-                "ship/deliver/rounds/review/policy",
                 "ship/deliver/rounds/review/mode",
                 "ship/deliver/rounds/review/review-dir",
-                "ship/deliver/rounds/review/scope",
-                "ship/deliver/rounds/rereview",
-                "ship/deliver/rounds/rereview/policy",
-                "ship/deliver/rounds/rereview/mode",
-                "ship/deliver/rounds/rereview/review-dir",
-                "ship/deliver/rounds/rereview/scope"
+                "ship/deliver/rounds/review/scope"
               ]
             }
           ],
@@ -1099,7 +1100,7 @@
             {
               "pack": "queue",
               "workflow": "archon-build-queue",
-              "steps": ["ship/deliver/rounds/review/route", "ship/deliver/rounds/rereview/route"]
+              "steps": ["ship/deliver/rounds/review/route"]
             }
           ],
           "details": {
@@ -1123,7 +1124,7 @@
             {
               "pack": "queue",
               "workflow": "archon-build-queue",
-              "steps": ["ship/deliver/rounds/review/seams", "ship/deliver/rounds/rereview/seams"]
+              "steps": ["ship/deliver/rounds/review/seams"]
             }
           ],
           "details": {
@@ -1147,7 +1148,7 @@
             {
               "pack": "queue",
               "workflow": "archon-build-queue",
-              "steps": ["ship/deliver/rounds/review/code", "ship/deliver/rounds/rereview/code"]
+              "steps": ["ship/deliver/rounds/review/code"]
             }
           ],
           "details": {
@@ -1171,7 +1172,7 @@
             {
               "pack": "queue",
               "workflow": "archon-build-queue",
-              "steps": ["ship/deliver/rounds/review/tests", "ship/deliver/rounds/rereview/tests"]
+              "steps": ["ship/deliver/rounds/review/tests"]
             }
           ],
           "details": {
@@ -1195,7 +1196,7 @@
             {
               "pack": "queue",
               "workflow": "archon-build-queue",
-              "steps": ["ship/deliver/rounds/review/errors", "ship/deliver/rounds/rereview/errors"]
+              "steps": ["ship/deliver/rounds/review/errors"]
             }
           ],
           "details": {
@@ -1219,11 +1220,30 @@
             {
               "pack": "queue",
               "workflow": "archon-build-queue",
-              "steps": ["ship/deliver/rounds/review/docs", "ship/deliver/rounds/rereview/docs"]
+              "steps": ["ship/deliver/rounds/review/docs"]
             }
           ],
           "details": {
             "what": ["What a reader needs"]
+          }
+        },
+        {
+          "id": "r-l6",
+          "role": "agent",
+          "kind": "lens",
+          "title": "UX",
+          "text": "What a user sees",
+          "x": 688,
+          "y": 850,
+          "covers": [
+            {
+              "pack": "queue",
+              "workflow": "archon-build-queue",
+              "steps": ["ship/deliver/rounds/review/ux"]
+            }
+          ],
+          "details": {
+            "what": ["What a user sees"]
           }
         },
         {
@@ -1251,8 +1271,10 @@
               "steps": [
                 "ship/deliver/rounds/review/review-complete",
                 "ship/deliver/rounds/review/synthesize",
-                "ship/deliver/rounds/rereview/review-complete",
-                "ship/deliver/rounds/rereview/synthesize"
+                "ship/deliver/rounds/review/verify-1",
+                "ship/deliver/rounds/review/verify-2",
+                "ship/deliver/rounds/review/verify-3",
+                "ship/deliver/rounds/review/settle"
               ]
             }
           ],
@@ -1286,11 +1308,7 @@
               "workflow": "archon-build-queue",
               "steps": [
                 "ship/deliver/rounds/review/publish",
-                "ship/deliver/rounds/review/result",
-                "ship/deliver/rounds/review/prune-scratch",
-                "ship/deliver/rounds/rereview/publish",
-                "ship/deliver/rounds/rereview/result",
-                "ship/deliver/rounds/rereview/prune-scratch"
+                "ship/deliver/rounds/review/prune-scratch"
               ]
             }
           ],
@@ -1336,6 +1354,12 @@
           "route": [[604, 415], [646, 415], [646, 755], [688, 755]]
         },
         {
+          "from": "r-route",
+          "to": "r-l6",
+          "style": "flow",
+          "route": [[604, 415], [646, 415], [646, 925], [688, 925]]
+        },
+        {
           "from": "r-l1",
           "to": "r-syn",
           "style": "flow",
@@ -1364,6 +1388,12 @@
           "to": "r-syn",
           "style": "flow",
           "route": [[948, 755], [990, 755], [990, 415], [1032, 415]]
+        },
+        {
+          "from": "r-l6",
+          "to": "r-syn",
+          "style": "flow",
+          "route": [[948, 925], [990, 925], [990, 415], [1032, 415]]
         },
         {
           "from": "r-syn",
@@ -1928,6 +1958,7 @@
               "It refuses a PR that is behind the default branch, unless the forge says it merges cleanly.",
               "It refuses unless a maintainer's review verdict says Ready, for exactly the PR's head.",
               "It refuses unless CI at the PR's head is green: a failing or unfinished check holds it.",
+              "It refuses, where the project trusts its own validation instead of forge CI, unless a passing validation is recorded at the PR's head.",
               "It refuses while the default branch's CI is red.",
               "A merge the forge accepts but that does not read back merged at that head fails the gate."
             ]
@@ -1945,7 +1976,7 @@
             {
               "pack": "queue",
               "workflow": "archon-merge-queue",
-              "steps": ["record", "retriage"]
+              "steps": ["record", "retriage", "drain"]
             },
             {
               "pack": "loop",
@@ -2333,10 +2364,6 @@
           "text": "What should it do, and how do we know it works?",
           "x": 0,
           "y": 0,
-          "asks": {
-            "label": "stage",
-            "value": "archon-triage"
-          },
           "covers": [],
           "details": {
             "when": ["Whenever the factory reaches a decision it should not make alone."],

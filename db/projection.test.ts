@@ -2613,27 +2613,46 @@ test('0028 projects the latest revision of each stored work item, and nothing ch
   await historical.close();
 });
 
-const renderedAttention = async (title: string, recommended = 'split') => {
-  const { renderAttention } = await import(
-    join(import.meta.dir, '../fixtures/pack/queue/sdlc/.shared/queue.ts')
-  );
-  return renderAttention(title, {
-    what: 'Two screens in one change.',
-    why: 'Hard to review.',
-    recommendation: {
-      choice: recommended,
-      why: 'Smaller changes land sooner.',
-      evidence: 'No shared component.',
-      confidence: 'high',
-      would_change: 'A shared change.',
-    },
-    choices: [
-      { id: 'split', label: 'Split (in two)', does: 'Two issues.' },
-      { id: 'build', label: 'Build', does: 'One change.' },
-    ],
-    if_unanswered: 'It waits.',
-    links: ['https://example.test/1'],
-  }) as string;
+const ATTENTION = {
+  what: 'Two screens in one change.',
+  why: 'Hard to review.',
+  recommendation: {
+    choice: 'split',
+    why: 'Smaller changes land sooner.',
+    evidence: 'No shared component.',
+    confidence: 'high',
+    would_change: 'A shared change.',
+  },
+  choices: [
+    { id: 'split', label: 'Split (in two)', does: 'Two issues.' },
+    { id: 'build', label: 'Build', does: 'One change.' },
+  ],
+  if_unanswered: 'It waits.',
+  links: ['https://example.test/1'],
+};
+
+// The message layout Archon 57c857402 rendered; waits stored before the upgrade still carry it.
+const renderedAttention = (title: string, recommended = 'split'): string => {
+  const { recommendation } = ATTENTION;
+  return [
+    `**${title}**`,
+    '',
+    `**What it is.** ${ATTENTION.what}`,
+    '',
+    `**Why it matters.** ${ATTENTION.why}`,
+    '',
+    `**Recommendation: \`${recommended}\`** (${recommendation.confidence} confidence). ${recommendation.why}`,
+    `Evidence: ${recommendation.evidence}`,
+    `What would change it: ${recommendation.would_change}`,
+    '',
+    '**Choices.**',
+    ...ATTENTION.choices.map((choice) => `- \`${choice.id}\` (${choice.label}): ${choice.does}`),
+    '',
+    `**If nobody answers.** ${ATTENTION.if_unanswered}`,
+    '',
+    '**Evidence links.**',
+    ...ATTENTION.links.map((link) => `- ${link}`),
+  ].join('\n');
 };
 
 const ATTN_OPTIONS = [
@@ -2648,7 +2667,7 @@ const decideFields = () =>
   );
 
 test('an attention item records the rendered recommendation, confidence, descriptions, item and occurrence', async () => {
-  const message = await renderedAttention('Build queue, issue 15: scope decision');
+  const message = renderedAttention('Build queue, issue 15: scope decision');
   await pausedRun({ ...ATTN_WAIT, message, options: ATTN_OPTIONS });
   const [item] = await decideFields();
   expect(item).toMatchObject({
@@ -2674,6 +2693,27 @@ const STRUCTURED = {
   message:
     '**Build queue, issue 15: scope decision**\n\n**Recommendation: `split`** (high confidence). Old.\n\n**Choices.**\n- `split` (Split (in two)): Stale text.',
 };
+
+test('a wait the pinned pack’s attentionWait writes projects its recommendation, why, confidence and each choice’s does', async () => {
+  const { attentionWait } = await import(
+    join(import.meta.dir, '../fixtures/pack/queue/sdlc/.shared/queue.ts')
+  );
+  await pausedRun({
+    ...ATTN_WAIT,
+    ...attentionWait('Build queue, issue 15: scope decision', ATTENTION),
+  });
+  const [item] = await decideFields();
+  expect(item).toMatchObject({
+    item_number: 15,
+    recommended: 'split',
+    confidence: 'high',
+    recommendation_why: 'Smaller changes land sooner.',
+  });
+  expect(JSON.parse(String(item?.options))).toEqual([
+    { id: 'split', label: 'Split (in two)', description: 'Two issues.' },
+    { id: 'build', label: 'Build', description: 'One change.' },
+  ]);
+});
 
 test('a structured wait’s recommendation, why, confidence and does win over a reworded message', async () => {
   await pausedRun(STRUCTURED);
@@ -2756,7 +2796,7 @@ test('20261110T1600Z reprojects waits stored before it, and changes nothing run 
 
 test('the projector and parseRecommendation read the same Recommendation line', async () => {
   const messages = [
-    await renderedAttention('Build queue, issue 15: scope decision'),
+    renderedAttention('Build queue, issue 15: scope decision'),
     '**What it is.** Two screens. **Recommendation: `split`** (high confidence). Because.',
     '**Recommendation: `split`** (very high confidence). Because.',
     '**Recommendation: `split`**. Because.',
@@ -2783,7 +2823,7 @@ test('the projector and parseRecommendation read the same Recommendation line', 
 
 test('an attention item without a recommendation or pause id still has its occurrence and item', async () => {
   const { pauseId: _pause, ...legacy } = ATTN_WAIT;
-  const unoffered = await renderedAttention('Build queue, issue 15: scope decision', 'nope');
+  const unoffered = renderedAttention('Build queue, issue 15: scope decision', 'nope');
   await pausedRun({ ...legacy, message: unoffered, options: ATTN_OPTIONS });
   const [item] = await decideFields();
   expect(item).toMatchObject({ occurrence_id: 'legacy:ask', recommended: null, confidence: null });
@@ -2800,7 +2840,7 @@ test('an attention item without a recommendation or pause id still has its occur
 });
 
 test('an attention item’s number is the merge title’s PR, else the run’s number input', async () => {
-  const merge = await renderedAttention('Merge queue, PR 16: merge decision');
+  const merge = renderedAttention('Merge queue, PR 16: merge decision');
   await pausedRun({ ...ATTN_WAIT, message: merge, options: ATTN_OPTIONS });
   expect((await decideFields())[0]?.item_number).toBe(16);
 

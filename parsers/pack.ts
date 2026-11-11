@@ -44,7 +44,7 @@ export interface Step {
   include: string | null;
   /** The workflow a `workflow:` node runs, by name as written; Archon resolves it at execution. */
   childWorkflow: string | null;
-  /** The round a loop group's own script stops it at (`const ROUND_CAP = n`); null when none is found. */
+  /** The round a loop group stops at: its script's `const ROUND_CAP = n`, else its `max_iterations`; null when neither is found. */
   roundCap: number | null;
   command: string | null;
   commandFile: string | null;
@@ -347,7 +347,9 @@ export function parsePack(packDir: string, templateDir: string, pathPrefix = '')
       } else if (kind === 'loop_group') {
         const group = node.loop_group as Node;
         children = expand(source, group.nodes, `${path}/`, stack, edges, cursor);
-        roundCap = roundCapOf(children.map((child) => scriptText.get(child.scriptFile ?? '')));
+        roundCap =
+          roundCapOf(children.map((child) => scriptText.get(child.scriptFile ?? ''))) ??
+          maxIterationsOf(group);
       }
 
       steps.push({
@@ -411,8 +413,9 @@ export function parsePack(packDir: string, templateDir: string, pathPrefix = '')
 }
 
 /**
- * The round a loop stops itself at, from the `const ROUND_CAP = n` in its body's scripts. The loop's
- * `max_iterations` is one above it, so it is not the round the run ends at.
+ * The round a loop stops itself at, from the `const ROUND_CAP = n` in its body's scripts. A pack that
+ * has one sets the loop's `max_iterations` one above it, so that is not the round the run ends at.
+ * A pack without one stops at `max_iterations` itself (`maxIterationsOf`).
  */
 function roundCapOf(bodies: (string | undefined)[]): number | null {
   for (const text of bodies) {
@@ -421,6 +424,12 @@ function roundCapOf(bodies: (string | undefined)[]): number | null {
     if (cap) return Number(cap);
   }
   return null;
+}
+
+/** A loop group's `max_iterations`: the round it stops at when its scripts hold no `ROUND_CAP`. */
+function maxIterationsOf(group: Node): number | null {
+  const n = group.max_iterations;
+  return typeof n === 'number' && Number.isInteger(n) && n > 0 ? n : null;
 }
 
 /** The agent names in a hook's `*_AGENTS = {...}` set, in the order the file lists them. */

@@ -17,6 +17,7 @@ import type { ActionRequest } from './actions';
 import { shortRunId } from './format';
 import { ORDER_PARAM, TABLE_VIEW, VIEW_PARAM } from './board';
 import { isRunId } from './one-lap';
+import type { RUN_STATE } from './states';
 import { filterOf, RUN_CHIPS } from './runs';
 
 export type ManagerContext = ChatRequest['context'];
@@ -53,16 +54,37 @@ const decoded = (segment: string): string => {
   }
 };
 
-/** The place an address is, what the Manager is told about it, and what is worth asking there. */
+const STOPPED_RUN = (short: string) => [`Why did ${short} stop?`, `Is it safe to resume ${short}?`];
+const LIVE_RUN = (short: string) => [
+  `What is ${short} doing now?`,
+  `What has ${short} cost so far?`,
+];
+
+const RUN_QUESTIONS: Record<keyof typeof RUN_STATE, (short: string) => string[]> = {
+  completed: (short) => [`What did ${short} change?`, `What did ${short} cost, and why?`],
+  failed: STOPPED_RUN,
+  cancelled: STOPPED_RUN,
+  paused: STOPPED_RUN,
+  running: LIVE_RUN,
+  pending: LIVE_RUN,
+};
+
+/** A run's questions follow the state its page published; before it loads, none assumes a stop. */
+const runQuestions = (short: string, status: string | undefined): string[] =>
+  status !== undefined && Object.hasOwn(RUN_QUESTIONS, status)
+    ? RUN_QUESTIONS[status as keyof typeof RUN_QUESTIONS](short)
+    : [`What is ${short} about?`];
+
+/** The place an address is, what the Manager is told about it, and what is worth asking there; `published` is what the page shows that its address cannot say. */
 export function managerPlace(
   pathname: string,
   search: URLSearchParams,
-  attentionWhat?: string,
+  published?: string,
 ): ManagerPlace {
   const [, , , place = '', first = '', second = ''] = pathname.split('/');
   const attention: ManagerPlace = {
     context: { place: 'attention' },
-    chip: attentionWhat === undefined ? 'Attention' : `Attention · ${attentionWhat}`,
+    chip: published === undefined ? 'Attention' : `Attention · ${published}`,
     questions: ATTENTION_QUESTIONS,
   };
   if (!pathname.startsWith('/f/')) return attention;
@@ -109,7 +131,7 @@ export function managerPlace(
       return {
         context: isRunId(id) ? { place: 'run', run: id } : { place: 'run' },
         chip: `Run ${short}`,
-        questions: [`Why did ${short} stop?`, `Is it safe to resume ${short}?`],
+        questions: runQuestions(short, published),
       };
     }
     case 'work': {

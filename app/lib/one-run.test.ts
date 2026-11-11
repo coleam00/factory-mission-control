@@ -59,6 +59,7 @@ const lap = (over: Partial<OneLapRow> = {}): OneLapRow => ({
   stop_line: null,
   stop_class: null,
   capacity_since: null,
+  pr_state: null,
   ...over,
 });
 
@@ -217,6 +218,7 @@ test("the manager's read of a failure names the step, the resume and whether it 
     stop_line: 'boom',
     stop_class: 'environment',
     capacity_since: null,
+    pr_state: null,
   });
   const read = managerRead(stopped, rows, timeline);
   expect(text(read)).toBe(
@@ -250,9 +252,36 @@ test('a paused, finished, cancelled or running run is read in one sentence', () 
   expect(read({ status: 'paused', stop_step: 'ask', stop_line: 'Pick one' })).toBe(
     'ask is waiting on you: Pick one.',
   );
-  expect(read({ status: 'completed' })).toBe('It finished.');
+  expect(read({ status: 'completed' })).toBe('It finished work on #485, for $1.00.');
   expect(read({ status: 'cancelled' })).toBe('It was cancelled.');
   expect(read({ status: 'running' })).toBe('It is running ask now.');
+});
+
+test('a finished run names its item, PR and its state, rounds and cost, and leaves out what is not recorded', () => {
+  const rows = failedBuild();
+  const timeline = runTimeline(rows);
+  const read = (over: Partial<OneLapRow>) =>
+    text(managerRead(lap({ status: 'completed', ...over }), rows, timeline));
+  const named = { issue_title: 'Fix it', pr_number: 12 };
+  const delivered = 'It finished work on #485 (Fix it) in 2 rounds, for $13.75.';
+  expect(read({ ...named, pr_state: 'merged' })).toBe(`${delivered} PR #12 is merged.`);
+  expect(read({ ...named, pr_state: 'open' })).toBe(`${delivered} PR #12 is open.`);
+  expect(read({ ...named, pr_state: 'closed' })).toBe(
+    `${delivered} PR #12 was closed without merging.`,
+  );
+  expect(read({ ...named, pr_state: null })).toBe(`${delivered} PR #12.`);
+  expect(read({ issue_number: null })).toBe('It finished in 2 rounds, for $13.75.');
+  const bare = [step('ask', { cost_usd: null })];
+  expect(
+    text(managerRead(lap({ status: 'completed', issue_number: null }), bare, runTimeline(bare))),
+  ).toBe('It finished.');
+  const oldLoop = { workflow_name: 'archon-loop', ...named, pr_state: 'merged' as const };
+  expect(read({ ...oldLoop, gate_outcome: 'merged' })).toMatch(
+    /^It finished work on #485 \(Fix it\) in 2 rounds, for \$13\.75: .+\. PR #12 is merged\.$/,
+  );
+  expect(read({ workflow_name: 'archon-loop', issue_number: null })).toBe(
+    'It finished in 2 rounds, for $13.75.',
+  );
 });
 
 test('an answered run waiting for a slot is not read as waiting on you', () => {

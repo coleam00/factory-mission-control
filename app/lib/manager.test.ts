@@ -56,7 +56,7 @@ test('each address gives the context the Manager is asked with and the chip that
   expect(place(`/f/x/runs/${RUN.toUpperCase()}`)).toMatchObject({
     context: { place: 'run', run: RUN },
     chip: 'Run 5eed0001',
-    questions: ['Why did 5eed0001 stop?', 'Is it safe to resume 5eed0001?'],
+    questions: ['What is 5eed0001 about?'],
   });
   expect(place('/f/x/work/42')).toMatchObject({
     context: { place: 'work', item: 42 },
@@ -242,4 +242,27 @@ test('every address the app writes is read back as the place it names', () => {
     workflow: 'archon-loop',
     step: 'review one',
   });
+});
+
+test("a run's questions follow its state, and stop or resume is asked only of a stopped run", () => {
+  const questions = (state?: string) => place(`/f/x/runs/${RUN}`, '', state).questions;
+  expect(questions('completed')).toEqual([
+    'What did 5eed0001 change?',
+    'What did 5eed0001 cost, and why?',
+  ]);
+  for (const stopped of ['failed', 'paused', 'cancelled']) {
+    expect(questions(stopped)).toEqual([
+      'Why did 5eed0001 stop?',
+      'Is it safe to resume 5eed0001?',
+    ]);
+  }
+  for (const live of ['running', 'pending']) {
+    expect(questions(live)).toEqual([
+      'What is 5eed0001 doing now?',
+      'What has 5eed0001 cost so far?',
+    ]);
+  }
+  for (const other of ['completed', 'running', 'pending', undefined, 'toString']) {
+    expect(questions(other).join(' ')).not.toMatch(/stop|resume/);
+  }
 });

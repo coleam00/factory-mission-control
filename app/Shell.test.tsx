@@ -6,7 +6,7 @@ import { NotFound } from './errors';
 import { FactoryProvider } from './live/FactoryProvider';
 import { type Live, LiveContext } from './live/LiveProvider';
 import { routesFromModules } from './routing';
-import { ForFactory, PhoneTabs } from './Shell';
+import { ForFactory, PhoneContent, PhoneTabs } from './Shell';
 
 const Page = () => <main>page</main>;
 const routes = routesFromModules({
@@ -170,4 +170,15 @@ test('the phone tabs mark one place current, and none while the Manager is open'
   expect(tabs(false)).toContain('aria-pressed="false"');
   expect(tabs(true)).not.toContain('aria-current');
   expect(tabs(true)).toContain('aria-pressed="true"');
+});
+
+test('the phone keeps the page mounted but hidden while the Manager is open', () => {
+  const html = (manager: boolean) =>
+    renderToStaticMarkup(
+      <PhoneContent manager={manager}>
+        <main>page</main>
+      </PhoneContent>,
+    );
+  expect(html(true)).toBe('<div class="hidden"><main>page</main></div>');
+  expect(html(false)).toBe('<div class="contents"><main>page</main></div>');
 });

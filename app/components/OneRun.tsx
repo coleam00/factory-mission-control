@@ -43,7 +43,7 @@ import {
 } from '../lib/states';
 import { LivePanel } from '../live/LivePanel';
 import { MONO, PanelBody, useNow } from './panel';
-import { openManager } from './ManagerDock';
+import { openManager, usePublishPlaceWhat } from './ManagerDock';
 import { CheckList, Gate, type Lifted, Lift, LapStepsBody, Review } from './OneLap';
 import { Button, buttonClass } from './ui/Button';
 import { ErrorPanel } from './ui/ErrorPanel';
@@ -197,6 +197,7 @@ export function RunView({
   now: fixed,
   skippedOpen = false,
 }: RunViewProps): ReactElement {
+  usePublishPlaceWhat(lap.status);
   const ticking = useNow();
   const now = fixed ?? ticking;
   const timeline = runTimeline(rows);
