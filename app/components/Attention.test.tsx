@@ -3,12 +3,12 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { MemoryRouter } from 'react-router';
 import { decideCards, fixCards, ownerCards, unstickCards } from '../lib/attention-page';
 import type { DecideRow, UnstickRow } from '../lib/attention';
-import type { FailureGroupRow } from '../lib/failures';
+import type { FailureGroupRow, RetriedRunRow } from '../lib/failures';
 import type { HandledRow } from '../lib/manager';
 import type { OwnerQueueRow } from '../lib/owner-queue';
 import type { Source } from '../live/Feed';
 import type { Action } from '../lib/attention-page';
-import { ActionControl, AttentionBody } from './Attention';
+import { ActionControl, AttentionBody, RetriedRuns } from './Attention';
 
 const NOW = Date.parse('2026-10-24T12:00:00Z');
 const RUN = '5eed0005-0000-4000-8000-000000000001';
@@ -269,4 +269,36 @@ test('a console link opens in a new tab, and an in-app link stays in the dashboa
   expect(draw(true)).toContain('target="_blank"');
   expect(draw(true)).toContain('rel="noreferrer"');
   expect(draw(false)).not.toContain('target=');
+});
+
+const retriedRow = (id: number, line: string | null): RetriedRunRow => ({
+  run_id: `5eed0000-0000-4000-8000-${String(id).padStart(12, '0')}`,
+  workflow_name: 'archon-merge-queue',
+  step_id: 'facts',
+  line,
+  stopped_at: new Date(NOW - id * 60_000),
+});
+
+test('retried blips are one muted line that opens their list, and the head counts only cards', () => {
+  const rows = [
+    retriedRow(1, "Couldn't connect to compute node"),
+    retriedRow(2, null),
+    retriedRow(3, 'x'),
+  ];
+  const html = render({ failures: ready([failure]), retried: ready(rows) });
+  expect(html).toContain('data-attention-count="1"');
+  expect(html).toContain('1 thing needs you');
+  expect(html).toContain('3 runs hit a passing database or GitHub error today and were retried.');
+  expect(html).toContain('data-retried');
+  expect(html).toMatch(/aria-expanded="false"[^>]*>See them/);
+  expect(render({ retried: { rows, state: 'error' } })).not.toContain('data-retried');
+  expect(render({ retried: ready([]) })).not.toContain('data-retried');
+
+  const list = renderToStaticMarkup(
+    <MemoryRouter>
+      <RetriedRuns factory="f" rows={rows} />
+    </MemoryRouter>,
+  );
+  expect(list).toContain('compute node');
+  expect(list.match(/href="\/f\/f\/runs\//g)?.length).toBe(3);
 });

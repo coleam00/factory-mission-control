@@ -15,6 +15,7 @@ import {
 import { runsArgs } from '../../app/lib/runs';
 import { QUEUE_ENDING_STATE, QUEUE_REVIEW_STATE, REVIEW_OUTCOME_STATE } from '../../app/lib/states';
 import { ROUTE_OF_LABEL, WORK_ITEM_NUMBER } from '../../app/lib/work-item';
+import { FAILED_SIGNATURES_SQL } from '../../scripts/live/attention';
 import { runMigrations } from '../../scripts/migrate';
 import { STOP_CORPUS } from '../run-stops-corpus';
 import { archonDb, migrationFiles } from '../test-db';
@@ -930,10 +931,13 @@ test('the runs queries read the pack idle value, round step address and app chec
 });
 
 test('the run-stop migration writes only classes and stopped statuses its CHECKs allow', () => {
-  // The class function and the table CHECK live in 0031; the guard is the live projector's.
+  // The table CHECK lives in 0031, the class function in the newest migration that replaces it; the guard is the live projector's.
   const sql = read('db', 'migrations', '0031_run_stops.sql');
   const guardSql = projectorSql();
-  const classFn = sql.match(/FUNCTION mc\.stop_class[\s\S]*?\$\$;/)?.[0] ?? '';
+  const classSql =
+    migrationFiles.findLast((f) => /CREATE OR REPLACE FUNCTION mc\.stop_class/.test(f.sql))?.sql ??
+    '';
+  const classFn = classSql.match(/FUNCTION mc\.stop_class[\s\S]*?\$\$;/)?.[0] ?? '';
   const thens = [...classFn.matchAll(/THEN '([^']*)'/g)].map((m) => m[1] as string);
   expect(thens.length).toBeGreaterThan(0);
   expect([...new Set(thens)].sort()).toEqual([...STOP_CLASSES].sort());
@@ -1092,6 +1096,49 @@ test('one-lap-steps and one-lap-map choose the same architecture for a lap', asy
       const inMap = (await db.query(sqlOf('one-lap-map'), ['f', runId])).map((r) => r.position);
       expect([c, inSteps, inMap]).toEqual([c, [l.position], [l.position]]);
     }
+  } finally {
+    await db.close();
+  }
+}, 60_000);
+
+test('the retried rule reads the same in failure-groups, retried-runs and the live Attention check', async () => {
+  const db = await migratedDb();
+  try {
+    await db.query(
+      `INSERT INTO mc.factories (name, repository, codebase, console) VALUES ('f', 'o/r', 'o/r', 'c')`,
+    );
+    let n = 0;
+    const lap = async (workflow: string, status: string, at: string, error?: string) => {
+      const id = `5eed0000-0000-4000-8000-${String(++n).padStart(12, '0')}`;
+      await db.query(
+        `INSERT INTO mc.laps (run_id, factory, workflow_name, status, started_at, completed_at)
+         VALUES ($1, 'f', $2, $3, $4::timestamptz, $4::timestamptz)`,
+        [id, workflow, status, at],
+      );
+      if (error !== undefined) {
+        await db.query(
+          `INSERT INTO mc.lap_steps (run_id, step_id, status, completed_at, error)
+           VALUES ($1, 'facts', 'failed', $2::timestamptz, $3)`,
+          [id, at, error],
+        );
+      }
+      return id;
+    };
+    const blip = "Couldn't connect to compute node";
+    const first = await lap('ticks', 'failed', '2026-10-24T08:00:00Z', blip);
+    const second = await lap('ticks', 'failed', '2026-10-24T08:20:00Z', blip);
+    await lap('ticks', 'completed', '2026-10-24T08:30:00Z');
+    await lap('stuck', 'failed', '2026-10-24T09:00:00Z', blip);
+    await lap('steady', 'failed', '2026-10-24T07:00:00Z', 'error: type check failed');
+    await lap('steady', 'completed', '2026-10-24T07:30:00Z');
+
+    const sqlOf = (name: string) => queries.find(([q]) => q === name)?.[1] as string;
+    const cards = (await db.query(sqlOf('failure-groups'), ['f'])).map((g) => g.signature).sort();
+    const live = (await db.query(FAILED_SIGNATURES_SQL, ['f'])).map((r) => r.signature).sort();
+    expect(cards).toEqual(live);
+    expect(cards).toHaveLength(2);
+    const retried = await db.query(sqlOf('retried-runs'), ['f']);
+    expect(retried.map((r) => r.run_id)).toEqual([second, first]);
   } finally {
     await db.close();
   }

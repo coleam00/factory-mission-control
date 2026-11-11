@@ -1,7 +1,7 @@
 export const STOP_CLASSES = ['transient', 'environment', 'config', 'code', 'input'] as const;
 export type StopClass = (typeof STOP_CLASSES)[number];
 
-/** One row of failure-groups.sql: the unresolved failed runs sharing a signature (the Fix group's data, #516, #560). The counts and dates describe those runs only. */
+/** One row of failure-groups.sql: the unresolved failed runs sharing a signature (the Fix group's data, #516, #560). The counts and dates describe those runs only; a transient failure that a later run of its workflow retried is not counted (#628). */
 export interface FailureGroupRow {
   signature: string;
   workflow_name: string;
@@ -19,4 +19,13 @@ export interface FailureGroupRow {
   daily: number[];
   /** The factory's Archon console, for the latest run's link. */
   console: string;
+}
+
+/** One row of retried-runs.sql: a transient failure that a later completed run of its workflow followed, on the factory's latest stop day (#628). */
+export interface RetriedRunRow {
+  run_id: string;
+  workflow_name: string;
+  step_id: string | null;
+  line: string | null;
+  stopped_at: Date;
 }

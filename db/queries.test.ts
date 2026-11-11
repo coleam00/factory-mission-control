@@ -8,7 +8,7 @@ import type { ArchDiffRow } from '../app/lib/arch-diff';
 import type { AttentionRow, DecideRow, UnstickRow } from '../app/lib/attention';
 import type { SweepRow } from '../app/lib/attention-page';
 import type { BoardRow, DiscoveryRow } from '../app/lib/board';
-import type { FailureGroupRow } from '../app/lib/failures';
+import type { FailureGroupRow, RetriedRunRow } from '../app/lib/failures';
 import type { HealthRunRow, HealthStepRow, HealthWorkableRow } from '../app/lib/health';
 import type { LapMapRow } from '../app/lib/lap-graph';
 import type { HandledRow } from '../app/lib/manager';
@@ -84,6 +84,13 @@ const ROW_COLUMNS: Record<string, string[]> = {
     'last_day',
     'daily',
     'console',
+  ]),
+  'retried-runs': columns<RetriedRunRow>()([
+    'run_id',
+    'workflow_name',
+    'step_id',
+    'line',
+    'stopped_at',
   ]),
   decide: columns<DecideRow>()([
     'run_id',

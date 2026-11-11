@@ -63,6 +63,17 @@ export const STOP_CORPUS: readonly (readonly [line: string, cls: StopClass, sour
   ],
   ['Error: connect ETIMEDOUT 140.82.112.3:443', 'transient', 'PRD 4.8 (infrastructure)'],
   [
+    "Failed to get workflow run status: Couldn't connect to compute node",
+    'transient',
+    'issue #628 (owner check 2026-11-10)',
+  ],
+  ['error: out of memory', 'transient', 'issue #628 (owner check 2026-11-10)'],
+  [
+    'Could not persist node_completed for facts: Couldn’t connect to compute node',
+    'transient',
+    'issue #628 (a curly apostrophe)',
+  ],
+  [
     "Node 'pick' failed: provider reported auth: Failed to authenticate. API Error: 401 OAuth access token has expired. Re-authenticate to continue.",
     'config',
     'archon log',

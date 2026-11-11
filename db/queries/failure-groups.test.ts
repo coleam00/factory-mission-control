@@ -167,3 +167,54 @@ test('failure-groups shows the latest run’s class, or mixed when the group’s
     'sig-c': 'mixed',
   });
 });
+
+test('a transient failure that a later run of its workflow retried is the muted line, not a card; one not retried, and a non-transient failure, stay cards', async () => {
+  const factory = 'blip-proof';
+  let n = 0;
+  const lap = async (
+    workflow: string,
+    status: 'completed' | 'failed',
+    at: string,
+    opts: { issue?: number; error?: string } = {},
+  ) => {
+    const id = `dddddddd-0000-4000-8000-${String(++n).padStart(12, '0')}`;
+    await db.query(
+      `INSERT INTO mc.laps (run_id, factory, workflow_name, status, started_at, completed_at, issue_number)
+       VALUES ($1, $2, $3, $4, $5::timestamptz, $5::timestamptz, $6)`,
+      [id, factory, workflow, status, at, opts.issue ?? null],
+    );
+    if (opts.error !== undefined) {
+      await db.query(
+        `INSERT INTO mc.lap_steps (run_id, step_id, status, completed_at, error)
+         VALUES ($1, 'prepare', 'failed', $2::timestamptz, $3)`,
+        [id, at, opts.error],
+      );
+    }
+    return id;
+  };
+  const day = '2026-10-24';
+  const a = await lap('ticks', 'failed', `${day}T08:00:00Z`, {
+    error: "Couldn't connect to compute node",
+  });
+  await lap('ticks', 'completed', `${day}T08:10:00Z`);
+  const b = await lap('ticks', 'failed', `${day}T08:20:00Z`, { error: 'error: out of memory' });
+  await lap('ticks', 'completed', `${day}T08:30:00Z`);
+  await lap('stuck', 'failed', `${day}T09:00:00Z`, { error: 'gh: HTTP 502: Bad Gateway' });
+  const d = await lap('build', 'failed', `${day}T07:00:00Z`, {
+    issue: 9,
+    error: 'deadlock detected',
+  });
+  await lap('build', 'completed', `${day}T07:45:00Z`, { issue: 10 });
+  await lap('steady', 'failed', `${day}T07:30:00Z`, { error: 'error: type check failed' });
+  await lap('steady', 'completed', `${day}T07:50:00Z`);
+  await lap('ticks', 'failed', '2026-10-22T08:00:00Z', { error: 'error: out of memory' });
+  await lap('ticks', 'completed', '2026-10-22T08:10:00Z');
+
+  const groups = await db.query(sql, [factory]);
+  expect(groups.map((g) => g.workflow_name).sort()).toEqual(['steady', 'stuck']);
+  expect(groups.find((g) => g.workflow_name === 'stuck')?.class).toBe('transient');
+
+  const retried = queries.find(([name]) => name === 'retried-runs')?.[1] as string;
+  expect((await db.query(retried, [factory])).map((r) => r.run_id)).toEqual([b, a, d]);
+  expect(await db.query(retried, ['resolve-proof'])).toEqual([]);
+});
