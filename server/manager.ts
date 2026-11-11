@@ -894,7 +894,8 @@ async function generateBriefing(manager: Manager, factory: string, read: Attenti
     generatedAt: manager.now().toISOString(),
     basis: basisOf(read),
   };
-  if (ok) manager.briefings.set(factory, briefing);
+  // Without the day's digest the briefing is degraded: kept out of the cache so the next ask reads the day again.
+  if (ok && day) manager.briefings.set(factory, briefing);
   return { briefing, cost };
 }
 

@@ -4,6 +4,7 @@ import { ANSWER_TEXT_MAX } from '../app/lib/attention';
 import { ATTENTION_SOURCES, attentionCount } from '../app/lib/attention-page';
 import { lapHref } from '../app/lib/one-lap';
 import { snapshot } from '../db/test-db';
+import type { Db } from '../scripts/lib/db';
 import { createApp } from './app';
 import { LIVE_QUERIES_DIR, loadLiveQueries } from './live';
 import {
@@ -1109,10 +1110,10 @@ describe('a busy day', () => {
     const F = 'busier';
     await seedFactory(F);
     try {
-      await merge(F, DAY_MERGED_CAP + 3, `repeat('T', 256)`, '2026-11-08T09:00:00');
+      await merge(F, DAY_MERGED_CAP + 3, `repeat('T', 256)`, '2026-11-08T09:00:00Z');
       await fixture.direct.query(
         `INSERT INTO mc.laps (run_id, factory, workflow_name, status, started_at, completed_at)
-         SELECT gen_random_uuid(), '${F}', 'archon-build', 'failed', '${local('2026-11-08T07:00:00')}', '${local('2026-11-08T08:00:00')}'::timestamptz + (g || ' seconds')::interval
+         SELECT gen_random_uuid(), '${F}', 'archon-build', 'failed', '${local('2026-11-08T07:00:00Z')}', '${local('2026-11-08T08:00:00Z')}'::timestamptz + (g || ' seconds')::interval
          FROM generate_series(1, ${DAY_CAUSES_CAP + 2}) g`,
       );
       await fixture.direct.query(
@@ -1132,6 +1133,38 @@ describe('a busy day', () => {
     } finally {
       await clean(F);
     }
+  });
+});
+
+describe('a briefing whose day read fails', () => {
+  test('still prompts the model, says the day could not be read, and is not kept', async () => {
+    clock = new Date('2026-11-08T10:00:00');
+    const failing = Object.create(fixture.direct);
+    failing.transaction = (fn: (tx: Db) => Promise<void>) =>
+      fixture.direct.transaction((tx) =>
+        fn({
+          ...tx,
+          query: (sql: string, params?: unknown[]) => {
+            if (sql.includes('merged_total')) throw new Error('statement timeout');
+            return tx.query(sql, params);
+          },
+        } as Db),
+      );
+    const played = model(async () => [start, delta('fine'), result(0.01)]);
+    const manager = { ...managerOf(played), db: failing };
+    const ask = async () => {
+      const res = await createApp({ buildId: 't', distDir: '.', manager }).request(
+        '/api/manager/briefing',
+        { method: 'POST', body: JSON.stringify({ factory: FACTORY }) },
+      );
+      return events(res);
+    };
+    const first = await ask();
+    expect(first.at(-1)?.type).toBe('done');
+    expect(played.prompts[0]).toContain('could not be read');
+    const second = await ask();
+    expect(played.prompts).toHaveLength(2);
+    expect(second.at(-1)).not.toMatchObject({ cached: true });
   });
 });
 
@@ -1242,8 +1275,9 @@ describe('a briefing whose count cannot be read', () => {
       await ask(fixture.direct);
       expect(await ask(failing)).toMatchObject({ cached: false });
       expect(await ask(failing)).toMatchObject({ cached: false });
-      expect(await ask(fixture.direct)).toMatchObject({ cached: false });
-      expect(played.prompts).toHaveLength(4);
+      // The unreadable asks leave the first, complete briefing in place; it still matches the count.
+      expect(await ask(fixture.direct)).toMatchObject({ cached: true });
+      expect(played.prompts).toHaveLength(3);
     } finally {
       log.mockRestore();
     }
