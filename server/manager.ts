@@ -800,7 +800,7 @@ const NOTHING_ASKED = 'nothing needs your answer';
 const ASKED_TIMES = [' today', ' right now', ' at the moment', ' now'];
 const ASKED_ENDS = ['.', '!', '?'];
 
-/** A mark ends the sentence only when text or whitespace follows it: "..." and "?!" run on. */
+/** A mark ends the sentence only when the end of text or whitespace follows it: "..." and "?!" run on. */
 function endsAtQuestions(after: string): boolean {
   const time = ASKED_TIMES.find((t) => after.startsWith(t)) ?? '';
   const end = after.slice(time.length);
