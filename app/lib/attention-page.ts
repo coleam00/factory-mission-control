@@ -204,7 +204,7 @@ export function decideCards(rows: readonly DecideRow[], factory: string): Attent
             }
           : {
               lead: `Recommends ${chosen.label ?? chosen.id}.`,
-              rest: recommendationReason(item.message),
+              rest: item.recommendation_why ?? recommendationReason(item.message),
             },
       tiles,
       ...(item.confidence === null ? {} : { confidence: `${item.confidence} confidence` }),

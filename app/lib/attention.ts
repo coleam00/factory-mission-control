@@ -1,10 +1,11 @@
 /**
  * The Attention page's attention items (PRD 4.9): `db/queries/attention-items.sql`'s rows as the
  * runs waiting on a person, longest-waiting first. Pure, no React; the browser's clock gives the
- * wait. Archon records the question as one message and no structured recommendation, so the title
- * and the question are read from the layout the pack's queues render. `db/queries/decide.sql` has
- * the recommendation, confidence, option descriptions, item number and occurrence id projected
- * (migration 0031); `recommendedChoice` stays for the map.
+ * wait. The title and the question are read from the layout the pack's queues render. Archon stores
+ * the recommendation and each option's effect on the wait (#5367); `db/queries/decide.sql` has them
+ * projected with the confidence, item number and occurrence id (migrations 0031 and
+ * 20261110T1600Z), reading the wait's fields first. The message parsers here are the fallback for
+ * waits recorded before that; `recommendedChoice` stays for the map.
  */
 
 /** One row of attention-items.sql. Timestamps are the database's; the browser computes elapsed times. */
@@ -26,7 +27,7 @@ export interface AttentionRow {
 export interface AttentionOption {
   id: string;
   label: string | null;
-  /** The choice line's text after its label, when the message has one. */
+  /** The option's `does`, else the choice line's text after its label, when the message has one. */
   description: string | null;
 }
 
@@ -36,11 +37,16 @@ export interface DecideRow extends AttentionRow {
   occurrence_id: string;
   recommended: string | null;
   confidence: string | null;
+  /** Archon's `recommendation.why`; null for a wait recorded before Archon stored it. */
+  recommendation_why: string | null;
   item_number: number | null;
 }
 
 export type DecideItem = AttentionItem &
-  Pick<DecideRow, 'occurrence_id' | 'recommended' | 'confidence' | 'item_number'>;
+  Pick<
+    DecideRow,
+    'occurrence_id' | 'recommended' | 'confidence' | 'recommendation_why' | 'item_number'
+  >;
 
 export const UNSTICK_KINDS = ['blocked', 'parked', 'capacity', 'claim'] as const;
 export const UNSTICK_ACTIONS = ['retriage', 'resume', 'release_claim'] as const;
@@ -186,7 +192,7 @@ export function attentionQuestion(message: string): string {
 const RECOMMENDATION = /\*\*Recommendation: `([^`]+)`\*\*(?: \([a-z]+ confidence\))?/;
 const CONFIDENCE = /\*\*Recommendation: `[^`]+`\*\* \(([a-z]+) confidence\)/;
 
-/** The message's Recommendation line: its choice, its confidence word, and its reason (the rest of its paragraph). */
+/** The message's Recommendation line, the fallback for a wait with no structured `recommendation`: its choice, its confidence word, and its reason (the rest of its paragraph). */
 export function parseRecommendation(
   message: string,
 ): { choice: string; confidence: string | null; reason: string } | null {

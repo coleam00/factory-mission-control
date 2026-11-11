@@ -236,6 +236,7 @@ const decideRow = (over: Partial<DecideRow> = {}): DecideRow => ({
   labels: '{}',
   recommended: 'split',
   confidence: 'high',
+  recommendation_why: null,
   item_number: 7,
   message: 'Which?',
   console: CONSOLE,

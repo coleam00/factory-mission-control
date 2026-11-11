@@ -95,6 +95,7 @@ const ROW_COLUMNS: Record<string, string[]> = {
     'labels',
     'recommended',
     'confidence',
+    'recommendation_why',
     'item_number',
     'message',
     'console',
