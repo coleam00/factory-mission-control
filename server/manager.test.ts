@@ -1252,7 +1252,39 @@ describe('a briefing whose count cannot be read', () => {
     }
   });
 
-  test('never replays a cached body across a count that was or is unreadable', async () => {
+  test('never replays a briefing written while its count was unreadable', async () => {
+    const log = spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      // Only the Attention read fails; the day read succeeds, so the briefing is cached with no basis.
+      const failing = Object.create(fixture.direct);
+      failing.transaction = (fn: (tx: Db) => Promise<void>) =>
+        fixture.direct.transaction((tx) =>
+          fn({
+            ...tx,
+            query: (sql: string, params?: unknown[]) => {
+              if (sql.includes('AS "unstick"')) throw new Error('statement timeout');
+              return tx.query(sql, params);
+            },
+          } as Db),
+        );
+      const played = model(async () => [start, delta('fine'), result(0.01)]);
+      const manager = { ...managerOf(played), db: failing };
+      const ask = async () => {
+        const res = await createApp({ buildId: 't', distDir: '.', manager }).request(
+          '/api/manager/briefing',
+          { method: 'POST', body: JSON.stringify({ factory: FACTORY }) },
+        );
+        return (await events(res)).at(-1);
+      };
+      expect(await ask()).toMatchObject({ cached: false });
+      expect(await ask()).toMatchObject({ cached: false });
+      expect(played.prompts).toHaveLength(2);
+    } finally {
+      log.mockRestore();
+    }
+  });
+
+  test('replays the first complete briefing across unreadable asks while its count still matches', async () => {
     const log = spyOn(console, 'error').mockImplementation(() => {});
     try {
       const failing = Object.create(fixture.direct);
@@ -1275,7 +1307,6 @@ describe('a briefing whose count cannot be read', () => {
       await ask(fixture.direct);
       expect(await ask(failing)).toMatchObject({ cached: false });
       expect(await ask(failing)).toMatchObject({ cached: false });
-      // The unreadable asks leave the first, complete briefing in place; it still matches the count.
       expect(await ask(fixture.direct)).toMatchObject({ cached: true });
       expect(played.prompts).toHaveLength(3);
     } finally {
