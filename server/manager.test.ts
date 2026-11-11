@@ -1229,3 +1229,14 @@ describe('the caps on one answer', () => {
     }
   });
 });
+
+describe('how the factory is doing', () => {
+  test('the prompt sends the Manager to the scorecard query, with the UTC date after today, and the too-few rule', async () => {
+    clock = new Date('2026-11-11T23:30:00Z');
+    const played = model(async () => [start, delta('fine'), result(0.01)]);
+    await (await chat(managerOf(played))).text();
+    const prompt = played.options[0].systemPrompt as string;
+    expect(prompt).toContain('live_query factory-scorecard with args ["2026-11-12"]');
+    expect(prompt).toContain('at least 10 records');
+  });
+});

@@ -373,20 +373,20 @@ async function retriage(tx: Tx, issue: number, at: Date): Promise<string> {
 }
 
 /**
- * Writes one completed `archon-metrics-prs` run on the factory's codebase, its `prs` node carrying
+ * Writes one completed `archon-metrics-prs` run on the codebase (the factory's repository by default), its `prs` node carrying
  * the records of metricRecordsFixture, as Archon does; the projection trigger fills mc.metric_records.
  * Fails unless a row was added.
  */
-export async function writeMetrics(tx: Tx, at: Date): Promise<string> {
+export async function writeMetrics(tx: Tx, at: Date, codebase = REPOSITORY): Promise<string> {
   const before = await rowCount(tx, 'mc.metric_records');
   const [run] = await tx.query(
     `INSERT INTO remote_agent_workflow_runs
        (workflow_name, codebase_id, status, user_message, started_at, completed_at)
      SELECT 'archon-metrics-prs', c.id, 'completed', $2::text, $3::timestamptz, $3::timestamptz
      FROM remote_agent_codebases c WHERE c.name = $1 RETURNING id`,
-    [REPOSITORY, `Record the SDLC metrics of ${REPOSITORY}`, at.toISOString()],
+    [codebase, `Record the SDLC metrics of ${codebase}`, at.toISOString()],
   );
-  if (!run) throw new Error(`no codebase named ${REPOSITORY}, so no metrics run was written`);
+  if (!run) throw new Error(`no codebase named ${codebase}, so no metrics run was written`);
   for (const event of ['node_started', 'node_completed'] as const) {
     const [inserted] = await tx.query(
       `INSERT INTO remote_agent_workflow_events (workflow_run_id, event_type, step_name, data)

@@ -35,7 +35,15 @@ test('each address gives the context the Manager is asked with and the chip that
     questions: ['What failed overnight?', 'What did today cost?', 'What is stuck?'],
   });
   expect(place('/f/x').chip).toBe('Attention');
-  expect(place('/f/x/map')).toMatchObject({ context: { place: 'factory' }, chip: 'Factory map' });
+  expect(place('/f/x/map')).toMatchObject({
+    context: { place: 'factory' },
+    chip: 'Factory map',
+    questions: [
+      'How is the factory doing?',
+      'Where is work piling up?',
+      'Which step costs the most?',
+    ],
+  });
   expect(place('/f/x/board').chip).toBe('Board · pipeline');
   expect(place('/f/x/board', 'view=table').chip).toBe('Board · table');
   expect(place('/f/x/board', 'order=v3')).toMatchObject({

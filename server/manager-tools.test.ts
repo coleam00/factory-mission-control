@@ -1,6 +1,9 @@
 import { afterAll, beforeAll, expect, test } from 'bun:test';
 import { join } from 'node:path';
+import { scorecardUntil } from '../app/lib/factory-scorecard';
+import { queries } from '../db/queries/test-seed';
 import { snapshot } from '../db/test-db';
+import { writeMetrics } from '../scripts/fixture/write';
 import { FACTORY, type ManagerDb, startManagerDb } from './manager-fixture';
 import { READ_TOOL_NAMES } from './manager-tools';
 
@@ -60,4 +63,30 @@ test('the tool server offers exactly the two read tools and refuses a write', as
   expect(rows.map((r: { message: string }) => r.message)).toEqual(['Ship?', 'Ship how?']);
   for (const id of [4, 5, 6, 7]) expect(byId.get(id)?.isError).toBe(true);
   expect(await snapshot(fixture.direct)).toEqual(before);
+}, 30_000);
+
+test('live_query factory-scorecard answers the rows the Factory page reads, from the same query and date', async () => {
+  const sql = queries.find(([name]) => name === 'factory-scorecard')?.[1] as string;
+  const now = new Date('2026-11-11T12:00:00Z');
+  await fixture.direct.query(`INSERT INTO public.remote_agent_codebases (name) VALUES ('o/r')`);
+  await fixture.direct.transaction(async (tx) => void (await writeMetrics(tx, now, 'o/r')));
+  try {
+    const [, answer] = await session([
+      { jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-06-18' } },
+      { jsonrpc: '2.0', method: 'notifications/initialized' },
+      call(3, 'live_query', { name: 'factory-scorecard', args: [scorecardUntil(now)] }),
+    ]);
+    const asked = JSON.parse(answer?.result.content[0]?.text ?? '{}').rows;
+    const direct = await fixture.direct.query(sql, [FACTORY, scorecardUntil(now)]);
+    expect(asked.length).toBeGreaterThan(0);
+    expect(asked).toEqual(JSON.parse(JSON.stringify(direct)));
+  } finally {
+    await fixture.direct.query(
+      `DELETE FROM mc.laps WHERE run_id IN (SELECT id FROM public.remote_agent_workflow_runs WHERE workflow_name = 'archon-metrics-prs')`,
+    );
+    await fixture.direct.query(
+      `DELETE FROM public.remote_agent_workflow_runs WHERE workflow_name = 'archon-metrics-prs'`,
+    );
+    await fixture.direct.query(`DELETE FROM public.remote_agent_codebases WHERE name = 'o/r'`);
+  }
 }, 30_000);
