@@ -48,7 +48,7 @@ export const pathOf = (stepId: string) => stepId.split('__').join('/');
 /**
  * A step's path from Archon's step id. Archon names a nested step by its path joined with `__`
  * (`ship__deliver__rounds__review`), and a loop group's body step `<group>.<step>` on every
- * iteration (`ship__deliver__rounds.review__policy`, lap-graph.ts), so both separate segments.
+ * iteration (`ship__deliver__rounds.review__mode`, lap-graph.ts), so both separate segments.
  * `mapPathOf` builds on it; `bun run map:check` holds that no pinned path of a covered workflow
  * holds a dot.
  */

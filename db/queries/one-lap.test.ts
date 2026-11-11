@@ -418,7 +418,7 @@ describe('one-lap on the seed', () => {
     expect(loop?.kind === 'loop' ? loop.rounds.map((r) => r.failed) : []).toEqual([false, true]);
     expect(rows.find((r) => r.status === 'failed')?.error).toBe(QUEUE_PAGE_RUNS.buildError);
     expect(rows.filter((r) => r.status === 'skipped').map((r) => r.step_id)).toEqual([
-      'ship__deliver__rounds.review__result',
+      'ship__deliver__rounds.review__publish',
     ]);
     const steps = timeline.flatMap((e) =>
       e.kind === 'step' ? [e.row] : e.rounds.flatMap((r) => r.rows),
@@ -469,8 +469,8 @@ describe('one-lap on the seed', () => {
     }
     expect(notFound).toEqual([]);
     expect(mismatch).toEqual([]);
-    const [detail] = await db.query(sqlOf('step-detail'), ['queue-factory', at]);
-    expect(detail?.workflow).toBe('archon-build-queue');
+    const details = await db.query(sqlOf('step-detail'), ['queue-factory', at]);
+    expect(details.map((d) => d.workflow)).toContain('archon-build-queue');
   });
 
   test('every workflow a queue-factory lap ran has steps at the queue version, so no lap draws another pack', async () => {

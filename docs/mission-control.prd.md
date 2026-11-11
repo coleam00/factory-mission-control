@@ -111,7 +111,7 @@ its own entries in the same file:
 | Intake | `archon-intake` (every step) |
 | Work order | nothing yet: the primitive is being built. Live counts come from labels (below) |
 | Build | `archon-build-queue` every step except the review below |
-| Review | under `archon-build-queue`: `ship/deliver/rounds/review` and `ship/deliver/rounds/rereview`, with every step under them |
+| Review | under `archon-build-queue`: `ship/deliver/rounds/review`, with every step under them |
 | App check | `factory-app-check` (every step) |
 | Merge | `archon-merge-queue` (every step) |
 | Staging | `factory-deploy` (every step) |

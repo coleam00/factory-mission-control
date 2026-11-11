@@ -16,7 +16,7 @@ Change what the map says there; the React components (`app/components/FactoryMap
 
 A card's `covers` lists, per workflow, the steps it covers. Each entry covers that step and every
 step under it; a step under two entries belongs to the deeper one, so Build covers `ship` and
-Review the two review rounds inside it. Each entry's step link opens that step's place in the
+Review the review round inside it. Each entry's step link opens that step's place in the
 covered workflow. Each entry names its `pack`: `loop` for the old `archon-loop` pack
 (`fixtures/pack/sdlc`), `queue` for Archon's queue workflows and the factory package
 (`fixtures/pack/queue`). A live row carries only a workflow name, so counting ignores `pack`; the
@@ -97,8 +97,12 @@ label no wait declares, a value that is not a string, or, for a label the pack s
 Labels fed from workflow output, such as `build` and `merge`, take any value unchecked.
 
 The queue pack is the snapshot `fixtures/pack/queue/`: `sdlc/` is `.archon/workflows/sdlc` of
-coleam00/Archon and `factory/` is `.archon/workflows/factory` of coleam00/ai-software-factory, at
-the commits this factory runs, with `ARCHON_COMMIT` and `FACTORY_COMMIT` beside them. The
+the Archon checkout the factory runs and `factory/` is `.archon/workflows/factory` of
+coleam00/ai-software-factory, at the commits this factory runs, with `ARCHON_COMMIT` (the
+checkout's full HEAD sha, published or not) and `FACTORY_COMMIT` beside them. With `MC_ARCHON_DIR`
+set to that checkout, `bun test parsers/pack.test.ts` fails when `sdlc/` or `ARCHON_COMMIT` differ
+from it and prints the re-copy command; with it unset the check is skipped, since `bun run check`
+runs without a network or a second checkout. The
 architecture job and the seed store `factory/` too, under `.archon/workflows/factory/` paths, so
 its steps have screens beside the pack's.
 
@@ -114,8 +118,8 @@ factory's issues with their counts, from the mirrored label data; it writes noth
 - A run's issue is its claim comment's issue on the old loop, and on the queues its `number` input
   (a pull request's number, when the run's `kind` input says so, is no issue).
 - "<n> here" on any card: a run counts once, on the card covering its deepest running step (the
-  newest of those as deep). A loop group's iteration of a step (`rounds.review__policy`) counts as
-  that step (`rounds/review/policy`). A card with runs on it carries `data-live-count` above 0.
+  newest of those as deep). A loop group's iteration of a step (`rounds.review__mode`) counts as
+  that step (`rounds/review/mode`). A card with runs on it carries `data-live-count` above 0.
 - "<n> queued" on Build: the workable issues, as Health counts them.
 - "<n> open" on Work order: the work orders with an open issue, nothing when there are none. Right now
   lists each as the Board counts it, "<merged> of <total> merged", with its `lands-on:<target>` label when
@@ -150,9 +154,8 @@ root counts on no card of the Build view, and also shows on the Deliver view's R
 In the Review view a lens the router skipped for the round a run is in has no count for it, and the
 lens card's Right now says that run's change did not earn the reviewer. It reads the skipped lens
 steps of a round whose `route` step completed with `false` for that lens (the `home-map` query's
-`picks` rows, which keep only steps that finished since the round's `policy` step last started) and
-says nothing for a lens that ran, a round not yet at its lenses, or a round the router never ran (a
-light round, a rereview, a refused round).
+`picks` rows, which keep only steps that finished since the round's `mode` step last started) and
+says nothing for a lens that ran, a round not yet at its lenses, or a round the router never ran.
 
 ## Right now in the Merge and Staging views
 
@@ -241,8 +244,8 @@ type scale. It adds three live queries to the home map's: `attention-items`, and
 trunk up from the Manager, as the reference draws them.
 
 - A question card counts the open Archon attention items its `asks` names, by their labels:
-  `stage: archon-triage` (a stopped triage) to Work item is unclear, `build:` to
-  Build is stuck, `merge:` to Risky merge, `discoveries:` to Is this a real problem?. An item no
+  `build:` to Build is stuck, `merge:` to Risky merge, `discoveries:` to Is this a real problem?. Work item is unclear counts nothing on the queues, since
+  triage labels an unclear item `archon-needs-contract` instead of pausing. An item no
   card names counts on the Manager card. A failed query shows `? waiting`, never a count.
 - The Manager's Right now lists every open question with its recommended choice, then the
   factory's health by the Health screen's own definitions (`app/lib/health.ts`): runs pending or

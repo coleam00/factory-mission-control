@@ -47,8 +47,8 @@ SELECT 'run', r.run_id, r.workflow_name, r.status, r.started_at, r.completed_at,
   s.steps, fl.step_id, fl.error,
   pick.output ->> 'route', pick.output ->> 'depth', outcome.output -> 'labels',
   rnd.output ->> 'round',
-  coalesce(rv.output ->> 'outcome', vr.output ->> 'action'),
-  coalesce(rv.completed_at, vr.completed_at), rr.output ->> 'action', rr.completed_at,
+  coalesce(rv.output ->> 'outcome', vr.output ->> 'action', vp.output ->> 'action'),
+  coalesce(rv.completed_at, vr.completed_at, vp.completed_at), rr.output ->> 'action', rr.completed_at,
   chk.output ->> 'overall', chk.completed_at,
   coalesce(land.output ->> 'outcome', apply.output ->> 'decision'),
   coalesce(land.output ->> 'reason', answer.output ->> 'reason', route.output ->> 'reason'),
@@ -75,6 +75,8 @@ LEFT JOIN mc.lap_steps outcome ON outcome.run_id = r.run_id AND outcome.step_id 
 LEFT JOIN mc.lap_steps rnd ON rnd.run_id = r.run_id AND rnd.step_id = 'ship__deliver__rounds.round'
 LEFT JOIN mc.lap_steps vr ON vr.run_id = r.run_id AND vr.status = 'completed'
   AND vr.step_id = 'ship__deliver__rounds.review__result'
+LEFT JOIN mc.lap_steps vp ON vp.run_id = r.run_id AND vp.status = 'completed'
+  AND vp.step_id = 'ship__deliver__rounds.review__publish'
 LEFT JOIN mc.lap_steps rr ON rr.run_id = r.run_id AND rr.status = 'completed'
   AND rr.step_id = 'ship__deliver__rounds.rereview__result'
 LEFT JOIN mc.lap_steps route ON route.run_id = r.run_id AND route.step_id = 'route'

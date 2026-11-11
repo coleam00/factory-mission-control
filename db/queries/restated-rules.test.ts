@@ -438,10 +438,17 @@ test('the Unstick parked rule is health-workable’s, verbatim', () => {
   expect(squashed(rule('unstick'))).toBe(squashed(rule('health-workable')));
 });
 
+// The pack releases a claim when the engine reports its lease ended (`claimEnded`), a rule the
+// engine owns: the snapshot's README is where it states which run statuses keep the claim.
 test('a claim is stale in Unstick for exactly the run statuses the pinned pack releases', async () => {
-  const { claimDisposition } = await pack('queue', 'sdlc', '.shared', 'state.ts');
+  const { claimEnded } = await pack('queue', 'sdlc', '.shared', 'state.ts');
+  expect(typeof claimEnded).toBe('function');
+  const readme = squashed(read('fixtures', 'pack', 'queue', 'sdlc', 'README.md'));
+  const held = /A claim whose run is ([a-z, ]+?),? or ([a-z]+) is never released/.exec(readme);
+  expect(held, 'the pack README no longer states which runs keep a claim').not.toBeNull();
+  const kept = [...(held?.[1] ?? '').split(','), held?.[2] ?? ''].map((s) => s.trim());
   const released = ['pending', 'running', 'paused', 'completed', 'failed', 'cancelled'].filter(
-    (status) => claimDisposition(status) === 'release',
+    (status) => !kept.includes(status),
   );
   const list = /l\.status IN \(([^)]*)\)/.exec(sqlOf('unstick'))?.[1] ?? '';
   expect(quoted(list).sort()).toEqual(released.sort());
@@ -514,17 +521,14 @@ test('the work item page words every build-queue ending, or the pack leaves it u
     'decision',
   );
   const unworded = decisions.filter((d) => !(d in QUEUE_ENDING_STATE));
-  // `idle` and `launch` end no delivery round: a new decision fails here until it is worded or listed.
-  expect(unworded.sort()).toEqual(['idle', 'launch']);
+  // `idle`, `order` and `handoff` pick no item (apply.ts `noItemSummary`) and `launch` throws, so
+  // none ends a delivery round: a new decision fails here until it is worded or listed.
+  expect(unworded.sort()).toEqual(['handoff', 'idle', 'launch', 'order']);
   expect(Object.keys(QUEUE_ENDING_STATE).every((d) => decisions.includes(d))).toBe(true);
 });
 
 test('the work item page words exactly the build-queue review actions', () => {
-  const actions = yamlEnum(
-    ['queue', 'sdlc', 'review', 'archon-review-block.yaml'],
-    'synthesize',
-    'action',
-  );
+  const actions = yamlEnum(['queue', 'sdlc', 'review', 'archon-review.yaml'], 'publish', 'action');
   expect(Object.keys(QUEUE_REVIEW_STATE).sort()).toEqual([...actions].sort());
 });
 
@@ -919,10 +923,14 @@ test('the runs queries read the pack idle value, round step address and app chec
     pack(...file)
       .replaceAll('\r\n', '\n')
       .match(pattern)?.[1];
-  const address = `${ids(['build-queue', 'archon-build-queue.yaml'], /^ {2}- id: (ship)$/m)}__${ids(['ship', 'archon-ship-block.yaml'], /^ {2}- id: (deliver)$/m)}__${ids(['deliver', 'archon-deliver-block.yaml'], /^ {2}- id: (rounds)$/m)}.${ids(['deliver', 'archon-deliver-block.yaml'], /^ {8}- id: (round)$/m)}`;
+  const address = `${ids(['build-queue', 'archon-build-queue.yaml'], /^ {2}- id: (ship)$/m)}__${ids(['build-route', 'archon-build.yaml'], /^ {2}- id: (deliver)$/m)}__${ids(['deliver', 'archon-deliver.yaml'], /^ {2}- id: (rounds)$/m)}.${ids(['deliver', 'archon-deliver.yaml'], /^ {8}- id: (round)$/m)}`;
   for (const name of ['runs', 'work-item']) {
     expect(quoted(sqlOf(name).match(/step_id = '([^']*round)'/)?.[0] ?? '')).toEqual([address]);
   }
+  // The page reads the review block's verdict from the step its `returns:` names.
+  const returns = ids(['review', 'archon-review.yaml'], /^returns: (\S+)$/m);
+  expect(returns).toBeDefined();
+  expect(sqlOf('work-item')).toContain(`ship__deliver__rounds.review__${returns}`);
 
   const appCheck = read('.archon', 'workflows', 'factory', 'app-check', 'factory-app-check.yaml');
   const checkName = appCheck.match(/^name: (\S+)/m)?.[1];

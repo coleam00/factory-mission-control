@@ -190,7 +190,7 @@ test("App check's steps open their screens, check-app's among them; Review's ope
     '/f/x/steps/archon-loop/ship%2Fdeliver%2Frounds%2Freview?at=abc',
   );
   expect(hrefs('review', 'abc')).toContain(
-    '/f/x/steps/archon-build-queue/ship%2Fdeliver%2Frounds%2Frereview?at=abc',
+    '/f/x/steps/archon-build-queue/ship%2Fdeliver%2Frounds%2Freview?at=abc',
   );
 });
 

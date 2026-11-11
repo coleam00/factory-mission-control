@@ -38,6 +38,13 @@ function packTuple(file: string, name: string): string[] {
   return sorted([...list.matchAll(/'([^']+)'/g)].map((m) => m[1] ?? ''));
 }
 
+/** The decisions the build queue's `apply` step declares, the enum that starts with `idle`. */
+function applyDecisions(): string[] {
+  const text = readFileSync('fixtures/pack/queue/sdlc/build-queue/archon-build-queue.yaml', 'utf8');
+  const list = text.match(/decision: \{ type: string, enum: \[(idle[^\]]*)\]/)?.[1] ?? '';
+  return sorted(list.split(',').map((v) => v.trim()));
+}
+
 /** The quoted words in the first capture group of `pattern` over a file. */
 function quoted(file: string, pattern: RegExp): string[] {
   const list = readFileSync(file, 'utf8').match(pattern)?.[1] ?? '';
@@ -73,15 +80,15 @@ test('a map holds exactly the values its source reads, so a new value fails here
     quoted('db/migrations/0005_laps.sql', /status IN \(([^)]+)\)/),
   );
   const reviewActions = readFileSync(
-    'fixtures/pack/queue/sdlc/review/archon-review-block.yaml',
+    'fixtures/pack/queue/sdlc/review/archon-review.yaml',
     'utf8',
   ).match(/action:\s+type: string\s+enum: \[([^\]]+)\]/)?.[1];
   expect(sorted(Object.keys(QUEUE_REVIEW_STATE))).toEqual(
     sorted((reviewActions ?? '').split(',').map((v) => v.trim())),
   );
-  // 'idle' picks no item and 'launch' throws in apply.ts before a row is written, so neither is an ending.
+  // 'idle', 'order' and 'handoff' pick no item and 'launch' throws in apply.ts before a row is written, so none is an ending.
   expect(sorted(Object.keys(QUEUE_ENDING_STATE))).toEqual(
-    packTuple('build.ts', 'APPLY_DECISIONS').filter((d) => d !== 'idle' && d !== 'launch'),
+    applyDecisions().filter((d) => !['idle', 'order', 'handoff', 'launch'].includes(d)),
   );
   expect(sorted(Object.keys(SWEEP_ACTION_STATE))).toEqual(packTuple('merge.ts', 'SWEEP_ACTIONS'));
   expect(sorted(Object.keys(CHECK_OVERALL_STATE))).toEqual(

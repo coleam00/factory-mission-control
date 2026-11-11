@@ -3,10 +3,11 @@
  *
  * The preceding nodes judged the target and the text and proved the merged tree; this
  * node owns publication, including the push and PR writes, and proves each landed,
- * through whichever source the run selected. When its caller allows it, it also
- * writes the description section the run prepared: between its own markers, keeping
- * every other byte of the description, and read back like every other write. The push comes first and refuses on any failure (./.shared/push.ts), so a
- * pull request is never created for a head the remote does not have.
+ * through the forge plugin. When its caller allows it, it also writes the description
+ * section the run prepared: between its own markers, keeping every other byte of the
+ * description, and read back like every other write. The push comes first and refuses
+ * on any failure (./.shared/push.ts), so a pull request is never created for a head
+ * the remote does not have.
  *
  * Whether this work already has a pull request is decided here, not in a prompt: an
  * open pull request for the recorded head IS the pull request, and a second one is
@@ -36,9 +37,7 @@ import { join } from 'node:path';
 import { encodePrPublicationRecord, PR_CREATE_RECORD, DESCRIPTION_SECTION, createPr, editPrBody, findOpenPrByHead, viewPr } from '../../.shared/pr.ts';
 import {
   ForgeOperationError,
-  forgeSource,
   record,
-  type ForgeSource,
   type PrRecord,
   type QualifiedPr,
 } from '../../.shared/forge.ts';
@@ -49,82 +48,7 @@ type Repo = QualifiedPr['repo'];
 
 const { start: SECTION_START, end: SECTION_END } = DESCRIPTION_SECTION;
 
-type MarkdownRange = [number, number];
-
-function isInside(ranges: readonly MarkdownRange[], at: number): boolean {
-  return ranges.some(([from, to]) => at >= from && at < to);
-}
-
-function appendFencedCodeRanges(markdown: string, ranges: MarkdownRange[]): void {
-  const fence = /^ {0,3}(`{3,}|~{3,})[^\n]*(?:\n|$)/gm;
-  let open: RegExpExecArray | null;
-  while ((open = fence.exec(markdown)) !== null) {
-    const mark = open[1] ?? '```';
-    const close = new RegExp(`^ {0,3}${mark.startsWith('`') ? '`' : '~'}{${mark.length},}[ \\t]*$`, 'gm');
-    close.lastIndex = fence.lastIndex;
-    const end = close.exec(markdown);
-    const stop = end === null ? markdown.length : end.index + end[0].length;
-    ranges.push([open.index, stop]);
-    fence.lastIndex = stop;
-  }
-}
-
-function appendIndentedCodeRanges(markdown: string, ranges: MarkdownRange[]): void {
-  // Indented code: a run of lines indented four or more that starts the text or follows a
-  // blank line or an HTML comment line (a paragraph line would absorb it instead).
-  const indented = /(?:^|\n(?:[ \t]*|[^\n]*-->[ \t]*)\n)((?:(?: {4}|\t)[^\n]*(?:\n|$))+)/g;
-  let block: RegExpExecArray | null;
-  while ((block = indented.exec(markdown)) !== null) {
-    const from = block.index + block[0].length - (block[1]?.length ?? 0);
-    if (!isInside(ranges, from)) ranges.push([from, block.index + block[0].length]);
-  }
-}
-
-function appendHtmlCodeRanges(markdown: string, ranges: MarkdownRange[]): void {
-  // Raw HTML containers whose comments are not the document's (an unclosed one runs to the end).
-  const container = /<(code|pre|script|style|textarea|table|thead|tbody|tr|td|th)\b[^>]*>/gi;
-  let tag: RegExpExecArray | null;
-  while ((tag = container.exec(markdown)) !== null) {
-    if (isInside(ranges, tag.index)) continue;
-    const close = markdown.toLowerCase().indexOf(`</${(tag[1] ?? '').toLowerCase()}>`, container.lastIndex);
-    const stop = close === -1 ? markdown.length : close + (tag[1]?.length ?? 0) + 3;
-    ranges.push([tag.index, stop]);
-    container.lastIndex = stop;
-  }
-}
-
-function appendInlineCodeRanges(markdown: string, ranges: MarkdownRange[]): void {
-  const inline = /(`+)(?!`)[\s\S]*?(?<!`)\1(?!`)/g;
-  let span: RegExpExecArray | null;
-  while ((span = inline.exec(markdown)) !== null) {
-    const at = span.index;
-    if (!isInside(ranges, at)) ranges.push([at, at + span[0].length]);
-  }
-}
-
-/**
- * Where the markdown holds code blocks and spans. Used only when this Bun has no
- * Markdown renderer (before 1.4).
- */
-function codeRanges(markdown: string): MarkdownRange[] {
-  const ranges: MarkdownRange[] = [];
-  appendFencedCodeRanges(markdown, ranges);
-  appendIndentedCodeRanges(markdown, ranges);
-  appendHtmlCodeRanges(markdown, ranges);
-  appendInlineCodeRanges(markdown, ranges);
-  return ranges;
-}
-
 async function descriptionMarkers(markdown: string): Promise<{ marker: string; at: number }[]> {
-  if (typeof (Bun as { markdown?: { html?: unknown } }).markdown?.html !== 'function') {
-    const code = codeRanges(markdown);
-    const found: { marker: string; at: number }[] = [];
-    for (const match of markdown.matchAll(new RegExp(Object.values(DESCRIPTION_SECTION).join('|'), 'g'))) {
-      const at = match.index ?? 0;
-      if (!code.some(([from, to]) => at >= from && at < to)) found.push({ marker: match[0], at });
-    }
-    return found;
-  }
   const candidates: { marker: string; at: number; token: string }[] = [];
   const tagged = markdown.replace(
     new RegExp(Object.values(DESCRIPTION_SECTION).join('|'), 'g'),
@@ -211,15 +135,15 @@ async function preparedSection(artifacts: string): Promise<string | undefined> {
   return section;
 }
 
-async function applyDescription(pr: PrRecord, section: string, source: ForgeSource): Promise<void> {
+async function applyDescription(pr: PrRecord, section: string): Promise<void> {
   const ref = { repo: pr.repo, number: pr.number };
-  const live = viewPr(ref, source).body;
+  const live = viewPr(ref).body;
   const body = await withDescriptionSection(live, section);
   if (body === live) {
     note(`publish-pr: ${pr.url}'s description section is already current.`);
     return;
   }
-  editPrBody(ref, body, source);
+  editPrBody(ref, body);
 }
 
 /**
@@ -256,7 +180,6 @@ function recordPublishedPr(claimPath: string, pr: PrRecord, required: boolean): 
 }
 
 function publish(hasDescription: boolean): PrRecord {
-  const source = forgeSource();
   const repo = JSON.parse(text(process.env.INPUTS_REPO)) as Repo;
   const headRepo = JSON.parse(text(process.env.INPUTS_HEAD_REPO)) as Repo;
   const existing = nullableJson(process.env.INPUTS_EXISTING) as number | null;
@@ -276,7 +199,7 @@ function publish(hasDescription: boolean): PrRecord {
   if (existing !== null && named === null && branch) {
     note(`publish-pr: the caller selected ${branch}; pull request ${String(existing)} is reused only if it has that head.`);
   } else if (existing !== null) {
-    const view = viewPr({ repo, number: existing }, source);
+    const view = viewPr({ repo, number: existing });
     const prHeadRepo = view.pr.head_repo;
     if (view.pr.state !== 'open') {
       throw new Error(`pull request ${String(existing)} is ${view.pr.state}; nothing is pushed`);
@@ -287,7 +210,7 @@ function publish(hasDescription: boolean): PrRecord {
     const pushed = pushHead({ repo, head_repo: prHeadRepo, head: view.pr.head });
     // The run continues a named pull request: its draft state belongs to its author,
     // and its description changes only by the section publish() applies when allowed.
-    const pr = awaitHead(() => viewPr({ repo, number: existing }, source).pr, pushed);
+    const pr = awaitHead(() => viewPr({ repo, number: existing }).pr, pushed);
     recordPublishedPr(join(artifacts, PR_CREATE_RECORD), pr, hasDescription);
     return pr;
   }
@@ -295,10 +218,10 @@ function publish(hasDescription: boolean): PrRecord {
   const head = branch || text(process.env.INPUTS_HEAD);
   const headRevision = pushHead({ repo, head_repo: headRepo, head });
 
-  const open = findOpenPrByHead(repo, headRepo, head, source);
+  const open = findOpenPrByHead(repo, headRepo, head);
   if (open) {
     note(`publish-pr: ${open.pr.url} already has this head, so no pull request was opened.`);
-    const pr = awaitHead(() => viewPr({ repo, number: open.pr.number }, source).pr, headRevision, open.pr);
+    const pr = awaitHead(() => viewPr({ repo, number: open.pr.number }).pr, headRevision, open.pr);
     recordPublishedPr(join(artifacts, PR_CREATE_RECORD), pr, hasDescription);
     return pr;
   }
@@ -342,8 +265,7 @@ function publish(hasDescription: boolean): PrRecord {
         title: text(process.env.INPUTS_TITLE),
         bodyPath,
         draft: trimmed(process.env.INPUTS_DRAFT) === 'true',
-      },
-      source
+      }
     );
     recordPublishedPr(claimPath, pr, true);
     return pr;
@@ -362,7 +284,7 @@ async function publishWithDescription(): Promise<PrRecord> {
   const section = await preparedSection(artifactsDir());
   const pr = publish(section !== undefined);
   // The edit does not move the head, so the head-verified record stays the output.
-  if (section !== undefined) await applyDescription(pr, section, forgeSource());
+  if (section !== undefined) await applyDescription(pr, section);
   return pr;
 }
 
