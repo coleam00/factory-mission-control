@@ -3010,10 +3010,11 @@ describe('metric records (#630)', () => {
     },
   );
 
-  test('a record without a subject is still valid', async () => {
+  test('a record without a subject key is refused, as Archon refuses it', async () => {
     const { subject: _omitted, ...subjectless } = metric('pr#1', 3) as Record<string, unknown>;
     await metricEvent('node_completed', { structured_output: { metrics: [subjectless] } });
-    expect(await metricRows()).toEqual([{ subject: null, value: 3, step_id: 'prs' }]);
+    expect(await metricRows()).toEqual([]);
+    expect(await db.query('SELECT 1 FROM mc.projection_errors')).toEqual([]);
   });
 
   test('a node_completed without metrics on a run with no rows writes nothing', async () => {

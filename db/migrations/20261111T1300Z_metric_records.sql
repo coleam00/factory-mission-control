@@ -4,7 +4,10 @@
 -- here, verbatim, one row per record, as every other Archon fact is.
 -- This applies rule 1 of Archon's `queryMetrics` (packages/workflows/src/metrics.ts): only the latest
 -- terminal event of each node position (step name and loop path) counts, completions of relaying node
--- types are skipped, and an event with any malformed record is refused whole. Rules 2, 4 and 5 (a
+-- types are skipped, and an event with any malformed record is refused whole. "Malformed" here is the
+-- shape this table stores (an object with name, kind, unit, value and subject, a known-key set, a
+-- parseable `at`); the bounds on name and subject length, the unit pattern, and the checks on
+-- `calibrates`, `runs` and `instrument` are left to Archon's write-time validateMetricRecords. Rules 2, 4 and 5 (a
 -- name's first record fixes its definition, a re-run replaces earlier records, windows by `at`) are
 -- applied by db/queries/factory-scorecard.sql, which reads these rows.
 -- Like 0006's functions the writers never raise and wait at most 100 ms for a lock: they run in
@@ -42,7 +45,7 @@ LANGUAGE sql IMMUTABLE AS $$
     AND jsonb_typeof(r->'value') = 'number'
     AND (r->>'kind' <> 'count' OR (r->>'value')::double precision >= 0)
     AND jsonb_typeof(r->'unit') = 'string'
-    AND coalesce(jsonb_typeof(r->'subject'), 'null') IN ('string', 'null')
+    AND r ? 'subject' AND jsonb_typeof(r->'subject') IN ('string', 'null')
     AND (NOT r ? 'at' OR (jsonb_typeof(r->'at') = 'string'
       AND r->>'at' ~ '(Z|[+-][0-9]{2}:?[0-9]{2})$' AND pg_input_is_valid(r->>'at', 'timestamptz')))
     AND NOT EXISTS (SELECT 1 FROM jsonb_object_keys(r) k
