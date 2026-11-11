@@ -38,7 +38,7 @@ Name the design decisions the work actually contains, choose, and record why —
 
 ## Calls that belong to a person
 
-Settle every call you can. Before declaring any call a person's, check whether something already decides it: the work order's invariants and steering, the tracked item's comments, a project document, or a ruling in the SDLC policy files this decision names, at `.archon/sdlc/policy/`, falling back to the pack's defaults. This decision names `rulings.md`; the pack's defaults are in `$INPUTS.policy_defaults`. Read the default first, then the project's file when it exists: the project's file adds to the default, and where the two conflict, the project's line wins. When one of them picks an option, the call is settled: cite it and proceed. An option a project document forbids is not an option.
+Settle every call you can. Before declaring any call a person's, check whether something already decides it: the work order's invariants and steering, the tracked item's comments, a project document, or a ruling in the SDLC policy files this decision names, at `.archon/sdlc/policy/`, falling back to the pack's defaults. This decision names `rulings.md`; the pack's defaults are in `$PACK_DIR/.shared/policy/`. Read the default first, then the project's file when it exists: the project's file adds to the default, and where the two conflict, the project's line wins. When one of them picks an option, the call is settled: cite it and proceed. An option a project document forbids is not an option.
 
 A call is a person's only when one of these holds, and you name which:
 
@@ -65,7 +65,7 @@ Write `$ARTIFACTS_DIR/plan.md`:
 - **Approach** — the chosen design, the alternatives rejected with reasons, and for each design call what settled it.
 - **Steps** — ordered, each independently verifiable, anchored to stable text anchors (a named function, a described test block) — never raw line numbers, which drift on every preceding edit.
 - **Contract coverage** — every acceptance item, invariant and steering constraint the work order states, each with the steps that deliver or keep it. An item no step covers is not a gap to leave: it is the blocking question above, because the plan would deliver less than the stated outcome.
-- **Validation** — which of the project's own gates prove the work, and the new tests to write: focused and behavior-proving, only where a plausible regression would cost a user something. Not everything needs a test: each planned test names the acceptance outcome or real failure mode it protects, and code without one gets none. Plan no guard, check, or test for a failure no supported path reaches.
+- **Validation** — which of the project's own gates prove the work, and the new tests to write: focused and behavior-proving, only where a plausible regression would cost a user something. Many changes need none. Plan no guard, check, or test for a failure no supported path reaches.
 - **Risks and rollback** — blast radius, what could go wrong, and how the change reverts.
 - **Contract additions** — each addition to a shipped surface the plan makes without a person: what it adds and why every existing value keeps its meaning. The pull request body flags each one as a contract addition.
 - **Out of scope** — what this plan deliberately does not do, so the implementer does not helpfully do it. Only work outside the contract belongs here. A contract item you believe can't or shouldn't be done is never out of scope: stop and ask, with the reason.

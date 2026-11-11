@@ -10,14 +10,14 @@
 
 import { type Closure, type ClosePlan, planClose } from '../../.shared/close.ts';
 import { parseQualifiedPr, type QualifiedPr } from '../../.shared/forge.ts';
-import { emit, nullableJson, refuse, text, trimmed } from '../../.shared/io.ts';
+import { emit, nullableJson, refuse, text, trimmed, workflowRunId } from '../../.shared/io.ts';
 import { viewIssue } from '../../.shared/issue.ts';
 import { idleSummary, stuckItems } from '../../.shared/stuck.ts';
 import {
   type Contract,
   type LabelVerdict,
-  isOwnedLabel,
-  type OwnedLabel,
+  isPackLabel,
+  type PackLabel,
   type Route,
   wantedLabels,
   writeLabels,
@@ -80,7 +80,7 @@ function leftToMaintainer(triage: TriageResult, refused: string): TriageResult {
     closure: null,
     labels: [
       ...wantedLabels(verdict, triage.type.value, triage.size.value),
-      ...triage.labels.filter(name => !isOwnedLabel(name)),
+      ...triage.labels.filter(name => !isPackLabel(name)),
     ],
     summary: `${triage.summary} The close was refused: ${refused}; a maintainer decides.`,
   };
@@ -95,7 +95,7 @@ function labelDelta(
   decision: IntakeDecision,
   triage: TriageResult | null,
   bodyMoved: boolean
-): { add: readonly string[]; remove: OwnedLabel[] } | null {
+): { add: readonly string[]; remove: PackLabel[] } | null {
   if (decision.path === 'closed') return null;
   const add: readonly string[] =
     decision.path === 'triage' && !bodyMoved && triage !== null
@@ -108,7 +108,7 @@ function labelDelta(
   return {
     add,
     remove: decision.labels
-      .filter(isOwnedLabel)
+      .filter(isPackLabel)
       .filter(name => !add.includes(name) && !requested.has(name)),
   };
 }
@@ -132,9 +132,7 @@ function main(): void {
     });
     return;
   }
-  const runId = text(process.env.WORKFLOW_ID);
-  if (runId === '')
-    throw new Error('WORKFLOW_ID is not set; the engine supplies it to every exec node');
+  const runId = workflowRunId();
   const item = parseQualifiedPr(process.env.INPUTS_ITEM);
   const decision = nullableJson(process.env.INPUTS_DECISION) as IntakeDecision;
   const triage = triageResult();
