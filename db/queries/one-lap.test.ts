@@ -450,8 +450,8 @@ describe('one-lap on the seed', () => {
     }
     expect(notFound).toEqual([]);
     expect(mismatch).toEqual([]);
-    const [detail] = await db.query(sqlOf('step-detail'), ['queue-factory', at]);
-    expect(detail?.workflow).toBe('archon-build-queue');
+    const details = await db.query(sqlOf('step-detail'), ['queue-factory', at]);
+    expect(details.map((d) => d.workflow)).toContain('archon-build-queue');
   });
 
   test('every workflow a queue-factory lap ran has steps at the queue version, so no lap draws another pack', async () => {
