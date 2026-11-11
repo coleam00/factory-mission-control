@@ -2995,6 +2995,27 @@ describe('metric records (#630)', () => {
     expect(await db.query('SELECT 1 FROM mc.projection_errors')).toEqual([]);
   });
 
+  test.each(['unit', 'value'])(
+    'a record missing %s refuses only its own event, with no projection error',
+    async (key) => {
+      await metricEvent('node_completed', { structured_output: { metrics: [metric('pr#1', 3)] } });
+      const { [key]: _omitted, ...incomplete } = metric('pr#2', 1) as Record<string, unknown>;
+      await metricEvent(
+        'node_completed',
+        { structured_output: { metrics: [incomplete] } },
+        'other',
+      );
+      expect(await metricRows()).toEqual([{ subject: 'pr#1', value: 3, step_id: 'prs' }]);
+      expect(await db.query('SELECT 1 FROM mc.projection_errors')).toEqual([]);
+    },
+  );
+
+  test('a record without a subject is still valid', async () => {
+    const { subject: _omitted, ...subjectless } = metric('pr#1', 3) as Record<string, unknown>;
+    await metricEvent('node_completed', { structured_output: { metrics: [subjectless] } });
+    expect(await metricRows()).toEqual([{ subject: null, value: 3, step_id: 'prs' }]);
+  });
+
   test('a node_completed without metrics on a run with no rows writes nothing', async () => {
     await metricEvent('node_completed', { structured_output: { verdict: 'ok' } });
     expect(await metricRows()).toEqual([]);

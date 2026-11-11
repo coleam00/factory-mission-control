@@ -35,17 +35,19 @@ COMMENT ON TABLE mc.metric_records IS
 
 CREATE OR REPLACE FUNCTION mc.metric_record_valid(r jsonb) RETURNS boolean
 LANGUAGE sql IMMUTABLE AS $$
-  SELECT jsonb_typeof(r) = 'object'
+  SELECT coalesce(
+    jsonb_typeof(r) = 'object'
     AND coalesce(r->>'name' ~ '^[a-z0-9_]+(\.[a-z0-9_]+)*$', false)
     AND coalesce(r->>'kind' IN ('count', 'score'), false)
     AND jsonb_typeof(r->'value') = 'number'
     AND (r->>'kind' <> 'count' OR (r->>'value')::double precision >= 0)
     AND jsonb_typeof(r->'unit') = 'string'
-    AND jsonb_typeof(r->'subject') IN ('string', 'null')
+    AND coalesce(jsonb_typeof(r->'subject'), 'null') IN ('string', 'null')
     AND (NOT r ? 'at' OR (jsonb_typeof(r->'at') = 'string'
       AND r->>'at' ~ '(Z|[+-][0-9]{2}:?[0-9]{2})$' AND pg_input_is_valid(r->>'at', 'timestamptz')))
     AND NOT EXISTS (SELECT 1 FROM jsonb_object_keys(r) k
-      WHERE k NOT IN ('name', 'kind', 'unit', 'subject', 'at', 'runs', 'instrument', 'instrument_node', 'value', 'calibrates'))
+      WHERE k NOT IN ('name', 'kind', 'unit', 'subject', 'at', 'runs', 'instrument', 'instrument_node', 'value', 'calibrates')),
+    false)
 $$;
 
 CREATE OR REPLACE FUNCTION mc.project_metric_records(p_run_id uuid)
