@@ -794,12 +794,14 @@ type AttentionRead = { tally: AttentionTally; rows: AttentionRows };
 /** The count sentence's own words, as `attentionLine` writes them: the number sits just before. */
 const COUNT_TAILS = [' thing needs you', ' things need you'];
 const NOTHING_WAITS = 'nothing needs you';
+/** "Nothing needs your answer" is about open questions, which the count line also words ("No run is paused on a question"); it is no total of 0. */
+const NOTHING_ASKED = 'nothing needs your answer';
 
 /** The totals a text states in the count sentence's form, and only those: any other number in it is not a count. */
 function statedTotals(text: string): number[] {
   // The panel renders emphasis and code spans, so the marks around a count are not part of what the owner reads.
   const plain = ['*', '_', '`'].reduce((s, mark) => s.split(mark).join(''), text.toLowerCase());
-  const totals = plain.includes(NOTHING_WAITS) ? [0] : [];
+  const totals = plain.split(NOTHING_ASKED).join('').includes(NOTHING_WAITS) ? [0] : [];
   for (const tail of COUNT_TAILS) {
     for (let at = plain.indexOf(tail); at >= 0; at = plain.indexOf(tail, at + 1)) {
       let start = at;
