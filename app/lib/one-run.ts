@@ -1,6 +1,6 @@
 /**
  * What the run page works out from a run's rows: costs without a loop's roll-up, loop rounds, the
- * title, why a skipped step was skipped, and the manager's read of a stopped run. One module, so
+ * title, why a skipped step was skipped, and the manager's read of a stopped or finished run. One module, so
  * the head, the read and the timeline compute from the same rows. Pure, no React.
  */
 import type { StopClass } from './failures';
@@ -277,6 +277,38 @@ export function waitsForSlot(lap: OneLapRow): boolean {
   return lap.status === 'paused' && lap.capacity_since !== null;
 }
 
+const PR_STATE_TEXT = {
+  merged: ' is merged.',
+  open: ' is open.',
+  closed: ' was closed without merging.',
+} as const;
+
+/** What a finished run delivered, from its own record: each clause is left out when nothing is recorded for it. */
+function finishedRead(
+  lap: OneLapRow,
+  rows: readonly StepAttemptRow[],
+  timeline: readonly TimelineEntry[],
+): ReadPart[] {
+  const rounds = longestLoop(timeline)?.round ?? 0;
+  const cost = runCost(rows);
+  const item =
+    lap.issue_number === null
+      ? ''
+      : ` work on #${lap.issue_number}${lap.issue_title === null ? '' : ` (${lap.issue_title})`}`;
+  const took = rounds === 0 ? '' : ` in ${rounds} ${rounds === 1 ? 'round' : 'rounds'}`;
+  const spent =
+    cost === null ? '' : `${item === '' && took === '' ? '' : ','} for ${formatCost(cost)}`;
+  const parts: ReadPart[] = [{ text: `It finished${item}${took}${spent}.` }];
+  if (lap.pr_number !== null) {
+    parts.push(
+      { text: ' ' },
+      { text: `PR #${lap.pr_number}`, bold: true },
+      { text: lap.pr_state === null ? '.' : PR_STATE_TEXT[lap.pr_state] },
+    );
+  }
+  return parts;
+}
+
 /** The manager's read of a run, written from its stop record and rows by fixed templates. */
 export function managerRead(
   lap: OneLapRow,
@@ -353,10 +385,13 @@ export function managerRead(
       );
     }
     case 'completed': {
-      const outcome = isOldLoop(lap.workflow_name) ? lapOutcome(lap) : null;
-      return plain({
-        text: `It finished${outcome === null ? '' : `: ${OUTCOME_LABEL[outcome]}`}.`,
-      });
+      if (isOldLoop(lap.workflow_name)) {
+        const outcome = lapOutcome(lap);
+        return plain({
+          text: `It finished${outcome === null ? '' : `: ${OUTCOME_LABEL[outcome]}`}.`,
+        });
+      }
+      return plain(...finishedRead(lap, rows, timeline));
     }
     case 'cancelled':
       return plain({ text: 'It was cancelled.' });

@@ -85,6 +85,8 @@ export interface OneLapRow {
   stop_class: StopClass | null;
   /** When the answered run began waiting for a free slot (`mc.capacity_waits`); null when it is not. */
   capacity_since: Date | null;
+  /** The run's pull request in the GitHub mirror (`mc.pull_requests`); null when it names none or the mirror lacks it. */
+  pr_state: 'open' | 'merged' | 'closed' | null;
 }
 
 /**

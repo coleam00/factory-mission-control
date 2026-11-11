@@ -122,6 +122,7 @@ const lap = (over: Partial<OneLapRow>): OneLapRow => ({
   stop_line: null,
   stop_class: null,
   capacity_since: null,
+  pr_state: null,
   status: 'completed',
   started_at: null,
   completed_at: null,

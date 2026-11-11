@@ -59,7 +59,7 @@ export function useManagerAsks(onAsk: (ask: ManagerAsk | null) => void): void {
   }, [onAsk]);
 }
 
-/** What the page shows that its address cannot say, such as Attention's count, for the Manager's chip. */
+/** What the page shows that its address cannot say, such as Attention's count or a run's status, for the Manager's chip and questions. */
 let placeWhat: { pathname: string; what: string } | undefined;
 const whatListeners = new Set<() => void>();
 
@@ -80,7 +80,7 @@ export function usePlaceWhat(pathname: string): string | undefined {
   return what;
 }
 
-/** A page publishes what it shows for the Manager's chip; it is withdrawn when the page unmounts. */
+/** A page publishes what it shows for the Manager's chip and questions; it is withdrawn when the page unmounts. */
 export function usePublishPlaceWhat(what: string | undefined): void {
   const { pathname } = useLocation();
   useEffect(() => {

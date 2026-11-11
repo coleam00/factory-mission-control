@@ -43,7 +43,7 @@ import {
 } from '../lib/states';
 import { LivePanel } from '../live/LivePanel';
 import { MONO, PanelBody, useNow } from './panel';
-import { openManager } from './ManagerDock';
+import { openManager, usePublishPlaceWhat } from './ManagerDock';
 import { CheckList, Gate, type Lifted, Lift, LapStepsBody, Review } from './OneLap';
 import { Button, buttonClass } from './ui/Button';
 import { ErrorPanel } from './ui/ErrorPanel';
@@ -112,6 +112,7 @@ function RunPanels({
   runId: string;
 }): ReactElement {
   const [params] = useSearchParams();
+  usePublishPlaceWhat(lap.status);
   const [map, setMap] = useState<Lifted<LapMapRow>>({ rows: undefined, state: 'loading' });
   const [checks, setChecks] = useState<Lifted<CheckLineRow>>({ rows: undefined, state: 'loading' });
   return (

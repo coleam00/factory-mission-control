@@ -36,6 +36,7 @@ const lap: OneLapRow = {
   stop_line: "Script node 'pr__prepare' failed [exit 1]",
   stop_class: 'environment',
   capacity_since: null,
+  pr_state: null,
 };
 
 let minute = 0;
