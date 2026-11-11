@@ -15,6 +15,7 @@ import {
   briefingQuestion,
   CREDENTIAL_NAMES,
   capBriefingProse,
+  failureCausesBlock,
   createManager,
   type Manager,
   managerSettings,
@@ -872,7 +873,7 @@ describe('the briefing', () => {
     });
     const ask = briefingOf(managerOf(played));
     try {
-      expect((await ask()).map((e) => e.type)).toEqual(['text', 'notice', 'done']);
+      expect((await ask()).map((e) => e.type)).toEqual(['text', 'text', 'notice', 'done']);
     } finally {
       log.mockRestore();
     }
@@ -880,15 +881,16 @@ describe('the briefing', () => {
     expect((await ask()).at(-1)).toMatchObject({ cached: true });
   });
 
-  test('a long model answer is cut to three blocks under the count line, fresh and replayed', async () => {
+  test('a long model answer is cut to two blocks under the count line and the cause list, fresh and replayed', async () => {
     clock = new Date('2026-11-08T10:00:00');
     const long = 'One.\n\n- two\n- three\n- four\n\nFive.';
     const ask = briefingOf(managerOf(model(async () => [start, delta(long), result(0.01)])));
     const shown = (events: { type: string }[]) =>
       events.flatMap((e) => ('text' in e && e.type === 'text' ? [e.text] : [])).join('');
     for (const got of [await ask(), await ask()]) {
-      const prose = shown(got).split('\n\n').slice(1);
-      expect(prose).toEqual(['One.', '- two', '- three']);
+      const [, causes, ...prose] = shown(got).split('\n\n');
+      expect(causes).toMatch(/^Failure causes today: .*archon-loop/);
+      expect(prose).toEqual(['One.', '- two']);
     }
   });
 
@@ -897,10 +899,9 @@ describe('the briefing', () => {
     const nested = 'Two failed.\n\n- build failed\n  - retry failed\n- docs waits on you';
     const ask = briefingOf(managerOf(model(async () => [start, delta(nested), result(0.01)])));
     const text = (await ask()).flatMap((e) => ('text' in e && e.type === 'text' ? [e.text] : []));
-    expect(text.join('').split('\n\n').slice(1)).toEqual([
+    expect(text.join('').split('\n\n').slice(2)).toEqual([
       'Two failed.',
       '- build failed\n  - retry failed',
-      '- docs waits on you',
     ]);
   });
 
@@ -1089,13 +1090,19 @@ describe('a busy day', () => {
         '/api/manager/briefing',
         { method: 'POST', body: JSON.stringify({ factory: F, refresh: true }) },
       );
-      await briefed.text();
+      const shown = (await events(briefed))
+        .flatMap((e) => (e.type === 'text' ? [e.text] : []))
+        .join('');
       const prompt = played.prompts[0];
       expect(prompt.length).toBeLessThan(MAX_RESULT_CHARS);
       for (let n = 701; n <= 715; n++) {
         expect(prompt).toContain(`"number":${n},"title":"Merged work ${n}"`);
       }
       for (let k = 0; k < 5; k++) expect(prompt).toContain(`cause-${k} `);
+      const listed = shown.split('\n\n').filter((b) => b.startsWith('Failure causes today:'));
+      expect(listed).toHaveLength(1);
+      for (let k = 0; k < 5; k++) expect(shown.split(`cause-${k} `).length).toBe(2);
+      expect(shown.split('overnight cause').length).toBe(2);
       expect(prompt).toContain('overnight cause');
       expect(prompt).toContain(OVERNIGHT);
       expect(prompt).not.toContain('"number":700');
@@ -1454,5 +1461,31 @@ describe('the caps on one answer', () => {
     } finally {
       await fixture.direct.query(`DELETE FROM mc.laps WHERE run_id IN ('${EXTRA.join("','")}')`);
     }
+  });
+});
+
+describe('failureCausesBlock', () => {
+  const cause = (n: number) => ({
+    cause: `cause ${n}`,
+    workflow: n % 2 ? 'archon-build' : 'archon-merge',
+    step: n % 3 ? 'implement' : null,
+    class: null,
+    runs: n,
+    example_run: `run-${n}`,
+  });
+  const day = (n: number, and_more: number): DayDigest => ({
+    day: '2026-11-08',
+    merged: { items: [], and_more: 0 },
+    runs: { items: [], and_more: 0 },
+    failure_causes: { items: Array.from({ length: n }, (_, i) => cause(i + 1)), and_more },
+  });
+
+  test('is one paragraph naming each cause once, and says where the digest lists no more', () => {
+    expect(failureCausesBlock(day(0, 0))).toBeNull();
+    const block = failureCausesBlock(day(6, 2)) ?? '';
+    for (let n = 1; n <= 6; n++) expect(block.split(`cause ${n} (`)).toHaveLength(2);
+    expect(block).not.toContain('\n');
+    expect(block.endsWith('and 2 more causes not listed.')).toBe(true);
+    expect(capBriefingProse(block, 1)).toBe(block);
   });
 });

@@ -779,10 +779,10 @@ export function attentionLine(t: AttentionTally): string {
   return `${lead}${plural(total, COUNT_WORDS.one, COUNT_WORDS.many)} you: ${parts.join(', ')}.`;
 }
 
-function daySentence(day: DayDigest | null): string {
+function daySentence(day: DayDigest | null, causesListed: boolean): string {
   if (!day)
     return " Today's merged pull requests and failed runs could not be read: say so in one sentence and do not guess them.";
-  return ` Today's merged pull requests, runs by workflow and outcome, and failures grouped by cause (each with one example run) were read for you from the factory's data, a run on the day its completed_at falls: name the merged pull requests by number and title and the failure causes from them instead of querying for them. Where and_more is above 0, more were not listed: say there were others, without a number. The numbers in them are for your judgment: state none of them. These are today's failures, not the Attention failures, which are the causes still unresolved: do not add or compare them. ${JSON.stringify(day)}`;
+  return ` Today's merged pull requests, runs by workflow and outcome, and failures grouped by cause (each with one example run) were read for you from the factory's data, a run on the day its completed_at falls: name the merged pull requests by number and title from them instead of querying for them.${causesListed ? ' The briefing already lists every failure cause as a paragraph of its own: do not list or regroup the causes and do not restate the count line: write at most two short blocks.' : ' Name the failure causes from them.'} Where and_more is above 0, more were not listed: say there were others, without a number. The numbers in them are for your judgment: state none of them. These are today's failures, not the Attention failures, which are the causes still unresolved: do not add or compare them. ${JSON.stringify(day)}`;
 }
 
 /**
@@ -794,6 +794,7 @@ export function briefingQuestion(
   tally: AttentionTally | null,
   rows: AttentionRows | null = null,
   day: DayDigest | null = null,
+  causesListed = false,
 ): string {
   const listing = rows
     ? ` These are the Attention rows, by source, that the line was counted from; name the items from them instead of querying for them, and never copy or paraphrase the line: ${JSON.stringify(rows)}`
@@ -801,7 +802,7 @@ export function briefingQuestion(
   const counted = tally
     ? ` The briefing already opens with this line, counted from the Attention page's own rows: "${attentionLine(tally)}" That line is the only count of what waits on the owner. State no number of Attention items, open questions, paused runs, failures or merged runs yourself, and never say the rows or the opening line disagree, miss something or may be incomplete; name the individual runs and issues instead.${listing}`
     : " The Attention page's count could not be read: do not say how many things wait on the owner.";
-  return BRIEFING_QUESTION + daySentence(day) + counted;
+  return BRIEFING_QUESTION + daySentence(day, causesListed) + counted;
 }
 
 type AttentionRead = { tally: AttentionTally; rows: AttentionRows };
@@ -866,15 +867,48 @@ export function briefingFault(text: string, tally: AttentionTally): string | nul
 export const BRIEFING_PROSE_BLOCKS = 3;
 
 /** Blocks are the panel's own: its markdown parser decides where one ends. */
-export function capBriefingProse(text: string): string {
-  return topLevelBlocks(text).slice(0, BRIEFING_PROSE_BLOCKS).join('\n\n');
+export function capBriefingProse(text: string, blocks = BRIEFING_PROSE_BLOCKS): string {
+  return topLevelBlocks(text).slice(0, blocks).join('\n\n');
 }
 
-function capBriefingEvents(events: ManagerEvent[]): ManagerEvent[] {
-  const text = events.flatMap((e) => (e.type === 'text' ? [e.text] : [])).join('');
-  const capped: ManagerEvent = { type: 'text', text: capBriefingProse(text) };
+/**
+ * The day's failure causes as one paragraph, written from the digest so each cause is named once
+ * and, where the digest says more exist, the paragraph says so. The panel counts every list item as
+ * a block of its own, so a list would spend the briefing's four blocks on one section.
+ */
+export function failureCausesBlock(day: DayDigest): string | null {
+  const { items, and_more } = day.failure_causes;
+  if (items.length === 0) return null;
+  const named = items.map(
+    (c) =>
+      `${c.cause.replace(/\s+/g, ' ')} (${c.workflow}${c.step ? `, step ${c.step}` : ''}; ${plural(c.runs, 'run', 'runs')}, e.g. ${c.example_run})`,
+  );
+  if (and_more > 0) named.push(`and ${plural(and_more, 'more cause', 'more causes')} not listed`);
+  return `Failure causes today: ${named.join('; ')}.`;
+}
+
+/** A model block that restates the count line is the line twice: drop it. */
+const withoutCountLine = (text: string, line: string): string =>
+  topLevelBlocks(text)
+    .filter((block) => !block.includes(line))
+    .join('\n\n');
+
+function capBriefingEvents(
+  events: ManagerEvent[],
+  line: string | null,
+  causes: string | null,
+): ManagerEvent[] {
+  const raw = events.flatMap((e) => (e.type === 'text' ? [e.text] : [])).join('');
+  const prose = capBriefingProse(
+    line ? withoutCountLine(raw, line) : raw,
+    BRIEFING_PROSE_BLOCKS - (causes ? 1 : 0),
+  );
+  const capped: ManagerEvent = {
+    type: 'text',
+    text: [causes, prose].filter((b) => b).join('\n\n'),
+  };
   const at = events.findIndex((e) => e.type === 'text');
-  if (at < 0) return events;
+  if (at < 0) return causes ? [capped, ...events] : events;
   return events.flatMap((e, i): ManagerEvent[] =>
     e.type !== 'text' ? [e] : i === at ? [capped] : [],
   );
@@ -887,11 +921,12 @@ async function generateBriefing(manager: Manager, factory: string, read: Attenti
       return null;
     },
   );
+  const causes = day && failureCausesBlock(day);
   const request: ChatRequest = {
     factory,
     context: { place: 'attention' },
     messages: [
-      { role: 'owner', text: briefingQuestion(read?.tally ?? null, read?.rows ?? null, day) },
+      { role: 'owner', text: briefingQuestion(read?.tally ?? null, read?.rows ?? null, day, causes !== null) },
     ],
   };
   let events: ManagerEvent[] = [];
@@ -917,7 +952,8 @@ async function generateBriefing(manager: Manager, factory: string, read: Attenti
       // `ok` stays as the attempt left it: a failed run is not kept, so the next ask tries again.
       if (!fault) console.warn('manager: briefing second attempt failed; showing the count line');
     }
-    if (!fault) events = capBriefingEvents(events);
+    if (!fault)
+      events = capBriefingEvents(events, read && attentionLine(read.tally), causes);
     if (!fault) break;
     rejected = true;
     console.warn(`manager: briefing rejected (attempt ${attempt + 1}): ${fault}`);
