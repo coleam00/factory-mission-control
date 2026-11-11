@@ -1,5 +1,9 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { type FactoryScorecardRow, scorecardMeasures } from '../../app/lib/factory-scorecard';
+import {
+  type FactoryScorecardRow,
+  MEASURES,
+  scorecardMeasures,
+} from '../../app/lib/factory-scorecard';
 import { type MetricRecord, metricRecordsFixture } from '../../scripts/fixture/metric-records';
 import { REPOSITORY, writeMetrics } from '../../scripts/fixture/write';
 import type { Db } from '../../scripts/lib/db';
@@ -215,4 +219,20 @@ test('the fixture is relative to now and never in the future', () => {
   const records = metricRecordsFixture(NOW);
   expect(records).toHaveLength(106 * 8 + 106 * 4 + 11 * 2);
   expect(records.every((r) => new Date(r.at) < NOW)).toBe(true);
+});
+
+describe('factory-scorecard and MEASURES', () => {
+  test('the query admits exactly the names MEASURES declares, and routes only those that say routes', async () => {
+    const at = '2026-11-11T11:00:00Z';
+    const names = MEASURES.flatMap((m) => [m.name, `${m.name}.route_x`]);
+    await metricsRun(
+      REPOSITORY,
+      [...names, 'sdlc.not_a_measure', 'sdlc.not_a_measure.route_x'].map((name) =>
+        record(name, 1, { subject: name, at }),
+      ),
+    );
+    expect((await scorecard()).map((r) => r.name)).toEqual(
+      MEASURES.flatMap((m) => (m.routes ? [m.name, `${m.name}.route_x`] : [m.name])).sort(),
+    );
+  });
 });

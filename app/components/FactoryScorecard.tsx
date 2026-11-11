@@ -9,6 +9,7 @@ import {
   type ScorecardWindow,
   scorecardMeasures,
   scorecardUntil,
+  TOO_FEW_BELOW,
 } from '../lib/factory-scorecard';
 import { LivePanel, type PanelState } from '../live/LivePanel';
 import { Card } from './ui/Card';
@@ -84,7 +85,8 @@ export function FactoryScorecardBody({
         <>
           <p className={`mb-3 mt-0 ${NOTE}`}>
             From Archon’s metric records, by UTC day, beside the period before. n is how many
-            records each number rests on.
+            records each number rests on. Indented rows split a measure by route. A change needs{' '}
+            {TOO_FEW_BELOW} records in both periods.
           </p>
           <table className="w-full table-fixed border-collapse text-left text-[length:var(--v3-t-meta)]">
             <thead>

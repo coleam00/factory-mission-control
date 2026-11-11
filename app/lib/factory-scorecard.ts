@@ -40,6 +40,7 @@ export type MeasureFormat = 'count' | 'percent' | 'whole-percent' | 'decimal' | 
 export type Measure = {
   name: string;
   label: string;
+  /** The kind of an empty period; a row's recorded kind wins. */
   kind: 'count' | 'score';
   format: MeasureFormat;
   /** Whether Archon also records it per route, as `<name>.<route>`. */
@@ -136,9 +137,10 @@ export type ScorecardMeasure = Measure &
 
 function compare(
   row: FactoryScorecardRow | undefined,
-  kind: Measure['kind'],
+  fallbackKind: Measure['kind'],
   window: ScorecardWindow,
 ): Comparison {
+  const kind = row?.kind ?? fallbackKind;
   const pick = (value: number | null) => value ?? (kind === 'count' ? 0 : null);
   const now = pick(row ? (window === '7' ? row.value_7 : row.value_30) : null);
   const before = pick(row ? (window === '7' ? row.value_7_before : row.value_30_before) : null);
