@@ -932,7 +932,7 @@ async function generateBriefing(manager: Manager, factory: string, read: Attenti
   let ok = false;
   let cost = 0;
   let rejected = false;
-  // The model may contradict the count line: try once more, then show the count line alone.
+  // The model may contradict the count line: try once more, then show the count line and the server's cause paragraph.
   for (let attempt = 0; attempt < 2; attempt++) {
     events = [];
     const outcome = await produce(
