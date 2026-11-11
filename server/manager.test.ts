@@ -1074,6 +1074,14 @@ describe('the briefing question with a run paused and other Attention rows', () 
     ).toBeNull();
     expect(briefingFault('Nothing needs your attention right now.', tally)).toContain('count of 0');
     expect(briefingFault('Nothing needs you.', tally)).toContain('count of 0');
+    expect(briefingFault('Nothing needs your answer or attention today.', tally)).toContain(
+      'count of 0',
+    );
+    expect(briefingFault('Nothing needs your answer or your attention.', tally)).toContain(
+      'count of 0',
+    );
+    const asked = { decide: 1, owner: 2, unstick: 0, failures: 0, failureRuns: 0 };
+    expect(briefingFault('Nothing needs your answer right now.', asked)).toContain('count of 0');
   });
 
   test('ignores every number that is not the count sentence', () => {

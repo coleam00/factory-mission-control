@@ -794,14 +794,31 @@ type AttentionRead = { tally: AttentionTally; rows: AttentionRows };
 /** The count sentence's own words, as `attentionLine` writes them: the number sits just before. */
 const COUNT_TAILS = [' thing needs you', ' things need you'];
 const NOTHING_WAITS = 'nothing needs you';
-/** "Nothing needs your answer" is about open questions, which the count line also words ("No run is paused on a question"); it is no total of 0. */
+/** "Nothing needs your answer" is about open questions, which the count line words as "No run is paused on a question". */
 const NOTHING_ASKED = 'nothing needs your answer';
+/** What follows the phrase when it goes on to a further object ("your answer or attention"): then it speaks for everything. */
+const ASKED_CONTINUES = [' or ', ' and '];
 
-/** The totals a text states in the count sentence's form, and only those: any other number in it is not a count. */
-function statedTotals(text: string): number[] {
+/** `plain` with each "nothing needs your answer" that stops at questions removed. */
+function withoutNothingAsked(plain: string): string {
+  const [first, ...rest] = plain.split(NOTHING_ASKED);
+  return rest.reduce(
+    (out, part) =>
+      out + (ASKED_CONTINUES.some((w) => part.startsWith(w)) ? NOTHING_ASKED : '') + part,
+    first,
+  );
+}
+
+/**
+ * The totals a text states in the count sentence's form, and only those: any other number in it is not a count.
+ * With `questionsOnly` (no run is paused on the owner's answer), "nothing needs your answer" is no total of 0.
+ */
+function statedTotals(text: string, questionsOnly = false): number[] {
   // The panel renders emphasis and code spans, so the marks around a count are not part of what the owner reads.
   const plain = ['*', '_', '`'].reduce((s, mark) => s.split(mark).join(''), text.toLowerCase());
-  const totals = plain.split(NOTHING_ASKED).join('').includes(NOTHING_WAITS) ? [0] : [];
+  const totals = (questionsOnly ? withoutNothingAsked(plain) : plain).includes(NOTHING_WAITS)
+    ? [0]
+    : [];
   for (const tail of COUNT_TAILS) {
     for (let at = plain.indexOf(tail); at >= 0; at = plain.indexOf(tail, at + 1)) {
       let start = at;
@@ -815,7 +832,7 @@ function statedTotals(text: string): number[] {
 /** Why the model's prose cannot sit under the count line: its count sentence states a total the line does not. */
 export function briefingFault(text: string, tally: AttentionTally): string | null {
   const allowed = statedTotals(attentionLine(tally));
-  const stray = statedTotals(text).find((n) => !allowed.includes(n));
+  const stray = statedTotals(text, tally.decide === 0).find((n) => !allowed.includes(n));
   return stray === undefined ? null : `it states a count of ${stray} the page does not show`;
 }
 
