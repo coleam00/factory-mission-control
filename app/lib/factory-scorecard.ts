@@ -1,3 +1,5 @@
+import { formatFixed } from './format';
+
 /** A row of the `factory-scorecard` live query: one metric name, its value and sample size in each window. */
 export type FactoryScorecardRow = {
   name: string;
@@ -174,8 +176,6 @@ export function scorecardMeasures(
   });
 }
 
-const fixed = (value: number, digits: number): string => value.toFixed(digits);
-
 /** A period's value in the measure's unit; a score with no records is `-`. */
 export function formatValue(format: MeasureFormat, value: number | null): string {
   if (value === null) return '-';
@@ -183,13 +183,13 @@ export function formatValue(format: MeasureFormat, value: number | null): string
     case 'count':
       return String(Math.round(value));
     case 'percent':
-      return `${fixed(value * 100, 1)}%`;
+      return `${formatFixed(value * 100, 1)}%`;
     case 'whole-percent':
-      return `${fixed(value * 100, 0)}%`;
+      return `${formatFixed(value * 100, 0)}%`;
     case 'decimal':
-      return fixed(value, 1);
+      return formatFixed(value, 1);
     case 'hours':
-      return `${fixed(value, value < 10 ? 1 : 0)} h`;
+      return `${formatFixed(value, value < 10 ? 1 : 0)} h`;
   }
 }
 
@@ -205,7 +205,7 @@ export function formatChange(format: MeasureFormat, change: number): string {
           : format === 'count'
             ? [change, 0, '']
             : [change, 1, ''];
-  const text = fixed(Math.abs(scaled), digits);
+  const text = formatFixed(Math.abs(scaled), digits);
   const sign = Number(text) === 0 ? '' : scaled < 0 ? '-' : '+';
   return `${sign}${text}${unit}`;
 }
