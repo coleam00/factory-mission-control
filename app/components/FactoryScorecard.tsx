@@ -89,7 +89,7 @@ export function FactoryScorecardBody({
           <table className="w-full table-fixed border-collapse text-left text-[length:var(--v3-t-meta)]">
             <thead>
               <tr className="text-[color:var(--v3-fg-3)]">
-                <th className={`${CELL} w-[34%] font-normal`}>Measure</th>
+                <th className={`${CELL} w-[38%] font-normal`}>Measure</th>
                 <th className={`${CELL} w-[17%] font-normal`}>Now</th>
                 <th className={`${CELL} w-[17%] font-normal`}>Before</th>
                 <th className={`${CELL} font-normal`}>Change</th>
@@ -108,7 +108,7 @@ export function FactoryScorecardBody({
                 ...measure.routeRows.map((route) => (
                   <tr key={`${measure.name}.${route.route}`}>
                     <th
-                      className={`${CELL} pl-6 font-mono font-normal text-[color:var(--v3-fg-2)] [overflow-wrap:anywhere]`}
+                      className={`${CELL} pl-6 font-mono font-normal text-[color:var(--v3-fg-2)]`}
                     >
                       {route.route}
                     </th>
