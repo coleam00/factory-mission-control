@@ -64,9 +64,10 @@ FROM mc.capacity_waits c
 JOIN mc.factories f ON f.name = c.factory
 WHERE c.factory = $1
 UNION ALL
--- Claim: a work item claimed by a run in a status the pack's queues release (`claimDisposition`).
+-- Claim: a work item claimed by a run whose engine lease ended: the run completed or was cancelled
+-- or abandoned. A failed run keeps its claim, since it can resume (the pack's README).
 SELECT 'claim', w.number, l.run_id, l.workflow_name, 'a claim held by a finished run', l.completed_at,
   'release_claim', f.repository, f.console
 FROM mc.work_item_states w
 JOIN mc.factories f ON f.codebase = w.project_key AND f.name = $1
-JOIN mc.laps l ON l.run_id = w.claim_run_id AND l.status IN ('completed', 'failed', 'cancelled')
+JOIN mc.laps l ON l.run_id = w.claim_run_id AND l.status IN ('completed', 'cancelled')
