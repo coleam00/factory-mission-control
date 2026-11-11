@@ -18,7 +18,7 @@ test("the gate's 'return' and 'ask' are pinned sweep actions", async () => {
 type Decide = (
   items: unknown[],
   sweep: unknown,
-) => { decisions: { number: number; action: string; reason: string }[] };
+) => { number: number; action: string; reason: string }[];
 
 // `decide()` is not exported and its module runs the record step on import, and the pin is not
 // ours to edit. So the pinned text is loaded with only its closing `main()` call swapped for an
@@ -59,15 +59,14 @@ async function pinnedDecide(): Promise<Decide> {
 test('the gate lists the sweep returns and asks the pinned decide() claims, first per number', async () => {
   const decide = await pinnedDecide();
   const pr = (number: number) => ({ repo: { host: 'github.com', path: 'o/r' }, number });
-  const item = (number: number, own_pr = false) => ({
-    item: own_pr ? null : pr(number + 100),
-    own_pr,
+  const item = (number: number) => ({
+    item: pr(number + 100),
     pr: pr(number),
     url: `https://github.com/o/r/pull/${number}`,
     facts: null,
     record: null,
   });
-  const items = [item(1), item(2), item(3), item(4), item(5, true)];
+  const items = [item(1), item(2), item(3), item(4), item(5)];
   const sweepDecision = (number: number, action: string, extra = {}) => ({
     number,
     action,
@@ -105,7 +104,7 @@ test('the gate lists the sweep returns and asks the pinned decide() claims, firs
     decisions,
     base: { summary: '', reran: false, attention: null },
     summary: '',
-  }).decisions.flatMap(({ number, action, reason }) =>
+  }).flatMap(({ number, action, reason }) =>
     action === 'return'
       ? [[number, 'sweep: sent back', reason]]
       : action === 'ask' && number === 5
@@ -142,17 +141,38 @@ const REFUSALS: readonly (readonly [string, string])[] = [
     "It refuses unless CI at the PR's head is green: a failing or unfinished check holds it.",
   ],
   ['the default branch ', "It refuses while the default branch's CI is red."],
+  [
+    'no validation is recorded',
+    "It refuses, where the project trusts its own validation instead of forge CI, unless a passing validation is recorded at the PR's head.",
+  ],
+  [
+    'its validation is for ',
+    "It refuses, where the project trusts its own validation instead of forge CI, unless a passing validation is recorded at the PR's head.",
+  ],
+  [
+    'its validation at ',
+    "It refuses, where the project trusts its own validation instead of forge CI, unless a passing validation is recorded at the PR's head.",
+  ],
 ];
 
 test('the gate card lists exactly the pinned gate refusals', () => {
   const source = read('fixtures', 'pack', 'queue', 'sdlc', '.shared', 'merge.ts');
   const start = source.indexOf('export function gateRefusals(');
-  const body = source.slice(start, source.indexOf('return refusals;', start));
-  const pushed = [...body.matchAll(/refusals\.push\(\s*['"`]([^'"`]*)/g)].map(
-    (m) => m[1] as string,
-  );
+  // The CI refusal is pushed as `unvalidated`; its texts are read from `ciRefusal` below.
+  const body = source
+    .slice(start, source.indexOf('return refusals;', start))
+    .replace('refusals.push(unvalidated)', '');
+  const ciStart = source.indexOf('function ciRefusal(');
+  const ciBody = source.slice(ciStart, source.indexOf('\n}\n', ciStart));
+  const ciReturn = /return\s+(?:\w+\.\w+\s*\?\s*null\s*:\s*)?['"`]([^'"`]*)/g;
+  const pushed = [
+    ...[...body.matchAll(/refusals\.push\(\s*['"`]([^'"`]*)/g)].map((m) => m[1] as string),
+    ...[...ciBody.matchAll(ciReturn)].map((m) => m[1] as string),
+  ];
   expect(pushed.length).toBeGreaterThan(0);
-  expect(pushed.length).toBe(body.split('refusals.push(').length - 1);
+  expect(pushed.length).toBe(
+    body.split('refusals.push(').length - 1 + [...ciBody.matchAll(ciReturn)].length,
+  );
 
   for (const text of pushed) {
     expect(REFUSALS.filter(([prefix]) => text.startsWith(prefix)).length).toBe(1);
