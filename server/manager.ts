@@ -779,10 +779,10 @@ export function attentionLine(t: AttentionTally): string {
   return `${lead}${plural(total, COUNT_WORDS.one, COUNT_WORDS.many)} you: ${parts.join(', ')}.`;
 }
 
-function daySentence(day: DayDigest | null, causesListed: boolean): string {
+function daySentence(day: DayDigest | null): string {
   if (!day)
     return " Today's merged pull requests and failed runs could not be read: say so in one sentence and do not guess them.";
-  return ` Today's merged pull requests, runs by workflow and outcome, and failures grouped by cause (each with one example run) were read for you from the factory's data, a run on the day its completed_at falls: name the merged pull requests by number and title from them instead of querying for them.${causesListed ? ' The briefing already lists every failure cause as a paragraph of its own: do not list or regroup the causes and do not restate the count line: write at most two short blocks.' : ' Name the failure causes from them.'} Where and_more is above 0, more were not listed: say there were others, without a number. The numbers in them are for your judgment: state none of them. These are today's failures, not the Attention failures, which are the causes still unresolved: do not add or compare them. ${JSON.stringify(day)}`;
+  return ` Today's merged pull requests and runs by workflow and outcome were read for you from the factory's data, a run on the day its completed_at falls: name the merged pull requests by number and title from them instead of querying for them. The briefing already lists any failure causes of the day as a paragraph of its own: do not list, regroup or count them, and do not restate the count line: write at most two short blocks. Where and_more is above 0, more merged pull requests were not listed: say there were others, without a number. The numbers in them are for your judgment: state none of them. These are today's failures, not the Attention failures, which are the causes still unresolved: do not add or compare them. ${JSON.stringify({ day: day.day, merged: day.merged, runs: day.runs })}`;
 }
 
 /**
@@ -794,7 +794,6 @@ export function briefingQuestion(
   tally: AttentionTally | null,
   rows: AttentionRows | null = null,
   day: DayDigest | null = null,
-  causesListed = false,
 ): string {
   const listing = rows
     ? ` These are the Attention rows, by source, that the line was counted from; name the items from them instead of querying for them, and never copy or paraphrase the line: ${JSON.stringify(rows)}`
@@ -802,7 +801,7 @@ export function briefingQuestion(
   const counted = tally
     ? ` The briefing already opens with this line, counted from the Attention page's own rows: "${attentionLine(tally)}" That line is the only count of what waits on the owner. State no number of Attention items, open questions, paused runs, failures or merged runs yourself, and never say the rows or the opening line disagree, miss something or may be incomplete; name the individual runs and issues instead.${listing}`
     : " The Attention page's count could not be read: do not say how many things wait on the owner.";
-  return BRIEFING_QUESTION + daySentence(day, causesListed) + counted;
+  return BRIEFING_QUESTION + daySentence(day) + counted;
 }
 
 type AttentionRead = { tally: AttentionTally; rows: AttentionRows };
@@ -926,7 +925,7 @@ async function generateBriefing(manager: Manager, factory: string, read: Attenti
     factory,
     context: { place: 'attention' },
     messages: [
-      { role: 'owner', text: briefingQuestion(read?.tally ?? null, read?.rows ?? null, day, causes !== null) },
+      { role: 'owner', text: briefingQuestion(read?.tally ?? null, read?.rows ?? null, day) },
     ],
   };
   let events: ManagerEvent[] = [];
@@ -947,12 +946,14 @@ async function generateBriefing(manager: Manager, factory: string, read: Attenti
     cost += outcome.cost;
     const text = events.flatMap((e) => (e.type === 'text' ? [e.text] : [])).join('');
     const fault = ok && read ? briefingFault(text, read.tally) : null;
-    if (attempt === 1 && (fault || (rejected && !ok))) {
+    const last = attempt === 1;
+    if (last && (fault || (rejected && !ok))) {
       events = [];
       // `ok` stays as the attempt left it: a failed run is not kept, so the next ask tries again.
       if (!fault) console.warn('manager: briefing second attempt failed; showing the count line');
     }
-    if (!fault)
+    // The fallback still carries the server's cause paragraph: only the model's prose is dropped.
+    if (!fault || last)
       events = capBriefingEvents(events, read && attentionLine(read.tally), causes);
     if (!fault) break;
     rejected = true;

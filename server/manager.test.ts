@@ -15,8 +15,8 @@ import {
   briefingQuestion,
   CREDENTIAL_NAMES,
   capBriefingProse,
-  failureCausesBlock,
   createManager,
+  failureCausesBlock,
   type Manager,
   managerSettings,
 } from './manager';
@@ -1098,17 +1098,70 @@ describe('a busy day', () => {
       for (let n = 701; n <= 715; n++) {
         expect(prompt).toContain(`"number":${n},"title":"Merged work ${n}"`);
       }
-      for (let k = 0; k < 5; k++) expect(prompt).toContain(`cause-${k} `);
+      expect(prompt).not.toContain('failure_causes');
       const listed = shown.split('\n\n').filter((b) => b.startsWith('Failure causes today:'));
       expect(listed).toHaveLength(1);
       for (let k = 0; k < 5; k++) expect(shown.split(`cause-${k} `).length).toBe(2);
       expect(shown.split('overnight cause').length).toBe(2);
-      expect(prompt).toContain('overnight cause');
-      expect(prompt).toContain(OVERNIGHT);
       expect(prompt).not.toContain('"number":700');
-      expect(prompt).toContain('"and_more":0');
       expect(prompt).not.toContain('merged pull requests and failed runs could not be read');
     } finally {
+      await clean(F);
+    }
+  });
+
+  test('shows the count line once and keeps the failure causes when the model restates or contradicts it', async () => {
+    clock = new Date('2026-11-08T10:00:00');
+    const F = 'echoed';
+    await seedFactory(F);
+    const warn = spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      await fixture.direct.query(
+        `INSERT INTO mc.laps (run_id, factory, workflow_name, status, started_at, completed_at)
+         VALUES ('5eed0004-0000-4000-8000-0000000000e1', '${F}', 'archon-build', 'failed', '${local('2026-11-08T07:00:00')}', '${local('2026-11-08T08:00:00')}');
+         INSERT INTO mc.run_stops (run_id, factory, workflow_name, status, step_id, line, class, signature, stopped_at)
+         VALUES ('5eed0004-0000-4000-8000-0000000000e1', '${F}', 'archon-build', 'failed', 'implement', 'out of disk', 'code', 'sig-disk', '${local('2026-11-08T08:00:00')}')
+         ON CONFLICT (run_id) DO UPDATE SET line = excluded.line, signature = excluded.signature, step_id = excluded.step_id, class = excluded.class`,
+      );
+      const replies: string[] = [];
+      const played = model(async () => [
+        start,
+        delta(replies.shift() ?? 'Quiet day.'),
+        result(0.01),
+      ]);
+      const manager = createManager({
+        db: fixture.direct,
+        databaseUrl: fixture.url,
+        factories: [F],
+        settings: managerSettings({}),
+        run: played.run,
+        now: () => clock,
+      });
+      const ask = async (refresh: boolean) => {
+        const out = await createApp({ buildId: 't', distDir: '.', manager }).request(
+          '/api/manager/briefing',
+          { method: 'POST', body: JSON.stringify({ factory: F, refresh }) },
+        );
+        return (await events(out)).flatMap((e) => (e.type === 'text' ? [e.text] : [])).join('');
+      };
+      const line = (await ask(true)).split('\n\n')[0];
+
+      replies.push(`${line}\n\nThe archon-build run stopped early.`);
+      const fresh = await ask(true);
+      const replayed = await ask(false);
+      for (const shown of [fresh, replayed]) {
+        expect(shown.split(line).length).toBe(2);
+        expect(shown).toContain('The archon-build run stopped early.');
+        expect(shown.split('out of disk').length).toBe(2);
+      }
+
+      replies.push('99 things need you.', '98 things need you.');
+      const fallback = await ask(true);
+      expect(fallback.split(line).length).toBe(2);
+      expect(fallback).toContain('Failure causes today: out of disk');
+      expect(fallback).not.toContain('99 things');
+    } finally {
+      warn.mockRestore();
       await clean(F);
     }
   });
@@ -1210,7 +1263,8 @@ describe('the briefing question with a run paused and other Attention rows', () 
     };
     const withDay = briefingQuestion(tally, null, day);
     expect(withDay).toContain('state none of them');
-    expect(withDay).toContain(JSON.stringify(day));
+    expect(withDay).toContain('"merged":{"items":[{"number":5,"title":"Fix it"}]');
+    expect(withDay).not.toContain('failure_causes');
   });
 
   test('rejects a count sentence that states a total the line does not', () => {
