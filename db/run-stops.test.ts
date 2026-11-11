@@ -299,6 +299,47 @@ test('0032 re-projects the stop line of runs that failed before it, and leaves a
   }
 });
 
+test('mc.stop_class leaves a JavaScript heap out of memory out of transient', async () => {
+  const [row] = await db.query('SELECT mc.stop_class($1) AS class', [
+    'FATAL ERROR: Reached heap limit Allocation failed - JavaScript heap out of memory',
+  ]);
+  expect(row?.class).not.toBe('transient');
+});
+
+test('20261110T1200Z re-projects the class of runs that failed on a database blip before it', async () => {
+  const name = '20261110T1200Z_transient_database_blips';
+  const historical = await archonDb();
+  try {
+    await runMigrations({ files: migrationFiles.filter((f) => f.name < name), db: historical });
+    const [run] = await historical.query(
+      `INSERT INTO public.remote_agent_workflow_runs (workflow_name, status, user_message, metadata)
+       VALUES ('factory-app-check', 'running', 'q', '{}') RETURNING id`,
+    );
+    await historical.query(
+      `INSERT INTO public.remote_agent_workflow_events (workflow_run_id, event_type, step_name, data)
+       VALUES ($1, 'node_failed', 'prepare', $2)`,
+      [
+        run?.id,
+        JSON.stringify(
+          eventData('prepare', 'node_failed', NOW, "Couldn't connect to compute node"),
+        ),
+      ],
+    );
+    await historical.query(
+      `UPDATE public.remote_agent_workflow_runs SET status = 'failed', completed_at = now() WHERE id = $1`,
+      [run?.id],
+    );
+    const read = () =>
+      historical.query('SELECT class FROM mc.run_stops WHERE run_id = $1', [run?.id]);
+    expect((await read())[0]?.class).toBeNull();
+
+    await runMigrations({ files: migrationFiles, db: historical });
+    expect((await read())[0]?.class).toBe('transient');
+  } finally {
+    await historical.close();
+  }
+});
+
 test('0031 records a run it cannot project in projection_errors and still finishes', async () => {
   const historical = await archonDb();
   try {

@@ -26,6 +26,10 @@ f AS (
       WHERE o.status = 'completed' AND o.workflow_name = r.workflow_name
         AND (o.issue = r.issue OR o.pr = r.pr) AND o.stopped_at > r.stopped_at
     )
+    AND NOT (coalesce(r.class = 'transient', false) AND EXISTS (
+      SELECT 1 FROM runs o
+      WHERE o.status = 'completed' AND o.workflow_name = r.workflow_name AND o.stopped_at > r.stopped_at
+    ))
 )
 SELECT g.signature, g.workflow_name, g.step_id,
   CASE WHEN g.classes > 1 THEN 'mixed' ELSE latest.class END AS class, g.failures, g.first_at, g.last_at,

@@ -1592,6 +1592,16 @@ export const QUEUE_RUNS = {
 } as const;
 
 /**
+ * Three archon-merge-queue ticks on 24 October that a database or GitHub blip failed at `facts`, each retried by
+ * the completed sweep QUEUE_RUNS.merged at 09:09 (#628): Attention shows them as one muted line, not as cards.
+ */
+export const QUEUE_BLIPS = [
+  ['5eed0005-0000-4000-8000-000000000019', 0, "Couldn't connect to compute node"],
+  ['5eed0005-0000-4000-8000-00000000001a', 20, 'error: out of memory'],
+  ['5eed0005-0000-4000-8000-00000000001b', 40, 'gh: HTTP 502: Bad Gateway'],
+] as const;
+
+/**
  * Two runs for the run page (#518), on 20 and 21 October: a build of issue 485 that failed in round 2
  * (pull request 496, a refused push, its review skipped), and a passed app check of the merged
  * pull request 421. The merge sweep that page shows is QUEUE_RUNS.merged.
@@ -1985,6 +1995,26 @@ function queueFactorySql(): string[] {
     done(QUEUE_RUNS.factsOnly, 'facts', 3, claimed(412)),
     done(QUEUE_RUNS.factsOnly, 'ship', 5, { done: true }),
     ...queuePageRunsSql(() => `5eedeeee-0000-4000-8000-2${String(++event).padStart(11, '0')}`),
+    ...QUEUE_BLIPS.flatMap(([id, start, error]) => {
+      const tick = (minute: number) =>
+        new Date(Date.parse('2026-10-24T08:00:00.000Z') + (start + minute) * MINUTE).toISOString();
+      return [
+        run(id, 'archon-merge-queue', 'failed', {}, true, tick),
+        insert('remote_agent_workflow_events', {
+          id: `5eedeeee-0000-4000-8000-2${String(++event).padStart(11, '0')}`,
+          workflow_run_id: id,
+          event_type: 'node_failed',
+          step_name: 'facts',
+          data: json({
+            ...nodeBlock('facts', 'script', 'facts'),
+            timing: { startedAt: tick(1), durationMs: 1000 },
+            duration_ms: 1000,
+            error,
+          }),
+          created_at: tick(1),
+        }),
+      ];
+    }),
   ];
 }
 

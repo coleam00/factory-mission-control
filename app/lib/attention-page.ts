@@ -551,6 +551,13 @@ export const badgePanelName = (query: string): string => `attention-count:${quer
 /** The query for the head's sweep clause; it is not an item source, so the count never reads it. */
 export const SWEEP_QUERY = 'manager-sweep';
 
+/** The muted line's query; it is not an item source, so the count never reads it. */
+export const RETRIED_QUERY = 'retried-runs';
+
+export function retriedLine(n: number): string {
+  return `${n === 1 ? '1 run hit' : `${n} runs hit`} a passing database or GitHub error today and ${n === 1 ? 'was' : 'were'} retried.`;
+}
+
 /** The one row of manager-sweep.sql: when the manager's last finished run completed; null when it has none. */
 export interface SweepRow {
   swept_at: Date | null;

@@ -4,6 +4,7 @@ import { FACTORY_MAP } from '../map/factory-map';
 import type { DecideRow, UnstickRow } from './attention';
 import {
   type AttentionCard,
+  ATTENTION_SOURCES,
   attentionCount,
   byKind,
   byQueue,
@@ -12,8 +13,10 @@ import {
   ownerCards,
   QUEUE_OF_CARD,
   queueOf,
+  RETRIED_QUERY,
   releaseCommand,
   retriageCommand,
+  retriedLine,
   sweepLine,
   unstickCards,
   unstickKey,
@@ -313,4 +316,14 @@ test('an unstick card is keyed as unstickKey says, so the live phase finds it', 
       .map((c) => c.key)
       .sort(),
   ).toEqual(rows.map(unstickKey).sort());
+});
+
+test('retriedLine words one run and many, and the muted line is not an item source', () => {
+  expect(retriedLine(1)).toBe(
+    '1 run hit a passing database or GitHub error today and was retried.',
+  );
+  expect(retriedLine(3)).toBe(
+    '3 runs hit a passing database or GitHub error today and were retried.',
+  );
+  expect(Object.values(ATTENTION_SOURCES).map((s) => s.query)).not.toContain(RETRIED_QUERY);
 });
