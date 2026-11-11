@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { ATTENTION_SOURCES, attentionCount } from '../app/lib/attention-page';
 import { parseMessage, topLevelBlocks } from '../app/lib/manager-markdown';
 import { LIVE_QUERIES_DIR, loadLiveQueries } from './live';
-import { type AttentionTally, attentionLine, briefingFault, capBriefingProse } from './manager';
+import { type AttentionTally, attentionLine, capBriefingProse } from './manager';
 import { withheldFromBriefing } from './manager-tools';
 
 const keys = Object.keys(ATTENTION_SOURCES) as (keyof typeof ATTENTION_SOURCES)[];
@@ -14,18 +14,16 @@ const tallyOf = (counts: number[]): AttentionTally => {
   return t;
 };
 
-describe('the count line and its reader', () => {
-  test('the line states the total attentionCount gives, and the reader accepts it', () => {
+describe('the count line', () => {
+  test('the line states the total attentionCount gives', () => {
     for (const counts of [[1], [0, 2], [3, 1, 4, 1, 5], [1, 1, 1, 1, 1, 1, 1, 1]]) {
       const tally = tallyOf(counts);
       const total = attentionCount(
         keys.map((key) => ({ state: 'ready' as const, rows: new Array(tally[key]).fill({}) })),
       );
       expect(attentionLine(tally)).toMatch(new RegExp(`\\b${total} things? needs? you:`));
-      expect(briefingFault(attentionLine(tally), tally)).toBeNull();
     }
     expect(attentionLine(tallyOf([]))).toBe('Nothing needs you.');
-    expect(briefingFault('Nothing needs you.', tallyOf([]))).toBeNull();
   });
 });
 
