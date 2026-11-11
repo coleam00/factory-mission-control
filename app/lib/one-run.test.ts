@@ -275,7 +275,13 @@ test('a finished run names its item, PR and its state, rounds and cost, and leav
   expect(
     text(managerRead(lap({ status: 'completed', issue_number: null }), bare, runTimeline(bare))),
   ).toBe('It finished.');
-  expect(read({ workflow_name: 'archon-loop' })).toBe('It finished.');
+  const oldLoop = { workflow_name: 'archon-loop', ...named, pr_state: 'merged' as const };
+  expect(read({ ...oldLoop, gate_outcome: 'merged' })).toMatch(
+    /^It finished work on #485 \(Fix it\) in 2 rounds, for \$13\.75: .+\. PR #12 is merged\.$/,
+  );
+  expect(read({ workflow_name: 'archon-loop', issue_number: null })).toBe(
+    'It finished in 2 rounds, for $13.75.',
+  );
 });
 
 test('an answered run waiting for a slot is not read as waiting on you', () => {

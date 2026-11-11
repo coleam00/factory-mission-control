@@ -224,7 +224,11 @@ export function ForFactory(): ReactElement {
         className={`flex flex-col bg-[var(--v3-bg)] ${phoneManager ? 'h-screen' : 'min-h-screen'}`}
       >
         <PhoneTop unknownKey={unknownKey} onEngine={setEngine} />
-        {phoneManager ? panel(() => setPhoneManager(false)) : content}
+        {phoneManager ? panel(() => setPhoneManager(false)) : null}
+        {/* Mounted but hidden while the Manager is open: unmounting the page would withdraw what it published, such as a run's status. */}
+        <div className={phoneManager ? 'hidden' : 'contents'}>
+          {content}
+        </div>
         {/* Mounted but hidden: the design draws no switcher on phone, yet it is the one publisher of the factory list. */}
         <div hidden>{switcher}</div>
         <PhoneTabs manager={phoneManager} onManager={setPhoneManager} />

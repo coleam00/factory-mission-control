@@ -112,7 +112,6 @@ function RunPanels({
   runId: string;
 }): ReactElement {
   const [params] = useSearchParams();
-  usePublishPlaceWhat(lap.status);
   const [map, setMap] = useState<Lifted<LapMapRow>>({ rows: undefined, state: 'loading' });
   const [checks, setChecks] = useState<Lifted<CheckLineRow>>({ rows: undefined, state: 'loading' });
   return (
@@ -198,6 +197,7 @@ export function RunView({
   now: fixed,
   skippedOpen = false,
 }: RunViewProps): ReactElement {
+  usePublishPlaceWhat(lap.status);
   const ticking = useNow();
   const now = fixed ?? ticking;
   const timeline = runTimeline(rows);

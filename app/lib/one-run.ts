@@ -288,6 +288,7 @@ function finishedRead(
   lap: OneLapRow,
   rows: readonly StepAttemptRow[],
   timeline: readonly TimelineEntry[],
+  outcome: string | null = null,
 ): ReadPart[] {
   const rounds = longestLoop(timeline)?.round ?? 0;
   const cost = runCost(rows);
@@ -298,7 +299,8 @@ function finishedRead(
   const took = rounds === 0 ? '' : ` in ${rounds} ${rounds === 1 ? 'round' : 'rounds'}`;
   const spent =
     cost === null ? '' : `${item === '' && took === '' ? '' : ','} for ${formatCost(cost)}`;
-  const parts: ReadPart[] = [{ text: `It finished${item}${took}${spent}.` }];
+  const label = outcome === null ? '' : `: ${outcome}`;
+  const parts: ReadPart[] = [{ text: `It finished${item}${took}${spent}${label}.` }];
   if (lap.pr_number !== null) {
     parts.push(
       { text: ' ' },
@@ -385,13 +387,10 @@ export function managerRead(
       );
     }
     case 'completed': {
-      if (isOldLoop(lap.workflow_name)) {
-        const outcome = lapOutcome(lap);
-        return plain({
-          text: `It finished${outcome === null ? '' : `: ${OUTCOME_LABEL[outcome]}`}.`,
-        });
-      }
-      return plain(...finishedRead(lap, rows, timeline));
+      const outcome = isOldLoop(lap.workflow_name) ? lapOutcome(lap) : null;
+      return plain(
+        ...finishedRead(lap, rows, timeline, outcome === null ? null : OUTCOME_LABEL[outcome]),
+      );
     }
     case 'cancelled':
       return plain({ text: 'It was cancelled.' });

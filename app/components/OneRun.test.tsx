@@ -1,9 +1,20 @@
-import { expect, test } from 'bun:test';
+import { expect, mock, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { createMemoryRouter, RouterProvider } from 'react-router';
 import type { LapMapRow } from '../lib/lap-graph';
 import type { OneLapRow, StepAttemptRow } from '../lib/one-lap';
-import { RunView, type TabKey, tabOf } from './OneRun';
+import { managerPlace } from '../lib/manager';
+
+const published: Array<string | undefined> = [];
+const dock = await import('./ManagerDock');
+mock.module('./ManagerDock', () => ({
+  ...dock,
+  usePublishPlaceWhat: (what: string | undefined) => {
+    published.push(what);
+  },
+}));
+const { RunView, tabOf } = await import('./OneRun');
+type TabKey = import('./OneRun').TabKey;
 
 const RUN = '5eed0005-0000-4000-8000-000000000017';
 const GROUP = 'ship__deliver__rounds';
@@ -218,4 +229,14 @@ test('a failed run with an earlier retried failure shows one error panel and one
   expect(html.slice(html.lastIndexOf('data-timeline-step=', panel))).toStartWith(
     'data-timeline-step="ship__deliver__rounds.pr__prepare" data-status="failed"',
   );
+});
+
+test("a run page publishes its status, and the Manager's questions follow it", () => {
+  const questionsFor = (status: OneLapRow['status']) => {
+    published.length = 0;
+    render({ lap: { ...lap, status } });
+    return managerPlace(`/f/x/runs/${RUN}`, new URLSearchParams(), published.at(-1)).questions;
+  };
+  expect(questionsFor('completed').join(' ')).toContain('What did');
+  expect(questionsFor('failed').join(' ')).toContain('resume');
 });
