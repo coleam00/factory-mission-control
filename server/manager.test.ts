@@ -1080,6 +1080,18 @@ describe('the briefing question with a run paused and other Attention rows', () 
     expect(briefingFault('Nothing needs your answer or your attention.', tally)).toContain(
       'count of 0',
     );
+    for (const s of [
+      'Nothing needs your answers or attention today.',
+      'Nothing needs your answer, or your attention, right now.',
+      'Nothing needs your answer, approval or attention today.',
+      'Nothing needs your answer/attention today.',
+      'Nothing needs your answer nor your attention.',
+      'Nothing needs your answer, or anything else from you.',
+    ]) {
+      expect(briefingFault(s, tally), s).toContain('count of 0');
+    }
+    expect(briefingFault('Nothing needs your answer right now.', tally)).toBeNull();
+    expect(briefingFault('Nothing needs your answer.', tally)).toBeNull();
     const asked = { decide: 1, owner: 2, unstick: 0, failures: 0, failureRuns: 0 };
     expect(briefingFault('Nothing needs your answer right now.', asked)).toContain('count of 0');
   });

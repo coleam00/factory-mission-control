@@ -796,15 +796,21 @@ const COUNT_TAILS = [' thing needs you', ' things need you'];
 const NOTHING_WAITS = 'nothing needs you';
 /** "Nothing needs your answer" is about open questions, which the count line words as "No run is paused on a question". */
 const NOTHING_ASKED = 'nothing needs your answer';
-/** What follows the phrase when it goes on to a further object ("your answer or attention"): then it speaks for everything. */
-const ASKED_CONTINUES = [' or ', ' and '];
+/** How a sentence about questions alone may end after the phrase. Anything else may go on to speak for everything. */
+const ASKED_TIMES = [' today', ' right now', ' at the moment', ' now'];
+const ASKED_ENDS = ['', '.', '!', '?'];
 
-/** `plain` with each "nothing needs your answer" that stops at questions removed. */
+function endsAtQuestions(after: string): boolean {
+  const time = ASKED_TIMES.find((t) => after.startsWith(t)) ?? '';
+  const end = after.slice(time.length);
+  return ASKED_ENDS.some((e) => (e === '' ? end === '' : end.startsWith(e)));
+}
+
+/** `plain` with each "nothing needs your answer" that provably stops at questions removed. */
 function withoutNothingAsked(plain: string): string {
   const [first, ...rest] = plain.split(NOTHING_ASKED);
   return rest.reduce(
-    (out, part) =>
-      out + (ASKED_CONTINUES.some((w) => part.startsWith(w)) ? NOTHING_ASKED : '') + part,
+    (out, part) => out + (endsAtQuestions(part) ? '' : NOTHING_ASKED) + part,
     first,
   );
 }
