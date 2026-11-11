@@ -79,11 +79,11 @@ function linked(nodes: Inline[], remaining: ManagerLink[]): Inline[] {
 
 /** The source of each unit the panel shows as its own block: a top-level paragraph or a top-level list item, nested lines kept inside. */
 export function topLevelBlocks(text: string): string[] {
-  // markdown-it numbers lines after turning \r\n and bare \r into \n, so slice the same text it parsed.
-  const normalized = text.replace(/\r\n?/g, '\n');
-  const lines = normalized.split('\n');
-  return md
-    .parse(normalized, {})
+  // markdown-it numbers lines after normalizing newlines, so slice the source it processed, not the input.
+  const state = new md.core.State(text, md, {});
+  md.core.process(state);
+  const lines = state.src.split('\n');
+  return state.tokens
     .filter(
       (t) =>
         t.map &&
