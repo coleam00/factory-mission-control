@@ -1526,8 +1526,52 @@ function attentionSql(): string[] {
         last_activity_at: w.waitingSince,
       }),
     ]),
+    '',
+    '-- Metric records: one archon-metrics-prs run whose prs node carries two, projected by the trigger.',
+    insert('remote_agent_workflow_runs', {
+      id: METRICS_RUN,
+      workflow_name: 'archon-metrics-prs',
+      codebase_id: SEED_CODEBASE,
+      status: 'completed',
+      user_message: 'Record the SDLC metrics',
+      started_at: METRICS_AT,
+      completed_at: METRICS_AT,
+      last_activity_at: METRICS_AT,
+    }),
+    insert('remote_agent_workflow_events', {
+      workflow_run_id: METRICS_RUN,
+      event_type: 'node_completed',
+      step_name: 'prs',
+      created_at: METRICS_AT,
+      data: json({
+        type: 'script',
+        structured_output: {
+          metrics: [
+            {
+              name: 'sdlc.pr_merge_rate',
+              kind: 'score',
+              unit: 'ratio',
+              subject: 'https://github.com/coleam00/factory-mission-control/pull/16',
+              value: 1,
+              at: METRICS_AT,
+            },
+            {
+              name: 'sdlc.review_rounds',
+              kind: 'score',
+              unit: 'rounds',
+              subject: 'https://github.com/coleam00/factory-mission-control/pull/16',
+              value: 2,
+              at: METRICS_AT,
+            },
+          ],
+        },
+      }),
+    }),
   ];
 }
+
+const METRICS_RUN = '5eed0005-0000-4000-8000-000000000000';
+const METRICS_AT = '2026-10-24T11:30:00.000Z';
 
 /**
  * A second factory, in the fixture only, so the factory switcher (#77) has one to switch to: its
