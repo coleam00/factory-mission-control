@@ -798,12 +798,17 @@ const NOTHING_WAITS = 'nothing needs you';
 const NOTHING_ASKED = 'nothing needs your answer';
 /** How a sentence about questions alone may end after the phrase. Anything else may go on to speak for everything. */
 const ASKED_TIMES = [' today', ' right now', ' at the moment', ' now'];
-const ASKED_ENDS = ['', '.', '!', '?'];
+const ASKED_ENDS = ['.', '!', '?'];
 
+/** A mark ends the sentence only when text or whitespace follows it: "..." and "?!" run on. */
 function endsAtQuestions(after: string): boolean {
   const time = ASKED_TIMES.find((t) => after.startsWith(t)) ?? '';
   const end = after.slice(time.length);
-  return ASKED_ENDS.some((e) => (e === '' ? end === '' : end.startsWith(e)));
+  if (end === '') return true;
+  const mark = ASKED_ENDS.find((e) => end.startsWith(e));
+  if (mark === undefined) return false;
+  const next = end.charAt(1);
+  return next === '' || next === ' ' || next === '\n' || next === '\r' || next === '\t';
 }
 
 /** `plain` with each "nothing needs your answer" that provably stops at questions removed. */
