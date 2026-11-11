@@ -8,6 +8,7 @@ import type { ArchDiffRow } from '../app/lib/arch-diff';
 import type { AttentionRow, DecideRow, UnstickRow } from '../app/lib/attention';
 import type { SweepRow } from '../app/lib/attention-page';
 import type { BoardRow, DiscoveryRow } from '../app/lib/board';
+import type { FactoryScorecardRow } from '../app/lib/factory-scorecard';
 import type { FailureGroupRow, RetriedRunRow } from '../app/lib/failures';
 import type { HealthRunRow, HealthStepRow, HealthWorkableRow } from '../app/lib/health';
 import type { LapMapRow } from '../app/lib/lap-graph';
@@ -70,6 +71,19 @@ const ROW_COLUMNS: Record<string, string[]> = {
     'recommended',
     'message',
     'console',
+  ]),
+  'factory-scorecard': columns<FactoryScorecardRow>()([
+    'name',
+    'kind',
+    'unit',
+    'value_7',
+    'n_7',
+    'value_7_before',
+    'n_7_before',
+    'value_30',
+    'n_30',
+    'value_30_before',
+    'n_30_before',
   ]),
   'failure-groups': columns<FailureGroupRow>()([
     'signature',

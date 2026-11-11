@@ -12,6 +12,7 @@ import type { Server } from 'bun';
 import type { Context, Hono } from 'hono';
 import { isAnswerText, resolveAnswer } from '../app/lib/attention';
 import { ATTENTION_SOURCES, type AttentionKind, KINDS } from '../app/lib/attention-page';
+import { scorecardUntil, TOO_FEW_BELOW } from '../app/lib/factory-scorecard';
 import { topLevelBlocks } from '../app/lib/manager-markdown';
 import { isRunId, lapHref } from '../app/lib/one-lap';
 import { workItemHref } from '../app/lib/work-item';
@@ -347,6 +348,8 @@ ${
 } You cannot change anything, and you must never say that you did.
 Never show holdout scenario text.
 A run failed on the day its mc.laps.completed_at falls, whatever day it started: for "failed today", filter on completed_at, never started_at, and include runs that started on an earlier day. The database session may run in another timezone, so convert first: (completed_at AT TIME ZONE '${zone}')::date = DATE '${dayOf(now)}'.
+
+How the factory is doing (merge rate, review rounds, lead time, owner asks, lines, issues merged, with their per-route split): run live_query factory-scorecard with args ["${scorecardUntil(now)}"], the same query the Factory page's scorecard shows. Each row is one measure with its value and n (how many records it rests on) for the last 7 and 30 UTC days and the period before each. Compare a measure only when both periods have at least ${TOO_FEW_BELOW} records; otherwise say there are too few to compare. Never work these out from laps, pull requests or mc.metric_records yourself.
 
 The mc schema:
 ${schema}

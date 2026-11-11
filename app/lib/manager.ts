@@ -93,7 +93,11 @@ export function managerPlace(
       return {
         context: { place: 'factory' },
         chip: 'Factory map',
-        questions: ['Where is work piling up?', 'Which step costs the most?'],
+        questions: [
+          'How is the factory doing?',
+          'Where is work piling up?',
+          'Which step costs the most?',
+        ],
       };
     case 'board': {
       const order = search.get(ORDER_PARAM);

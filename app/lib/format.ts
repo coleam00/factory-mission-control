@@ -93,6 +93,11 @@ export function formatNumber(n: number): string {
   return String(n);
 }
 
+/** A number rounded to `digits` decimals and kept at that width: `3.0`, `92.9`. */
+export function formatFixed(n: number, digits: number): string {
+  return n.toFixed(digits);
+}
+
 /** A whole count with thousands separators: `12,345`. */
 export function formatCount(n: number | string): string {
   return Number(n).toLocaleString('en-US');

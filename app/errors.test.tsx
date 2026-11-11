@@ -59,5 +59,7 @@ test('a route that fails renders the error empty state', async () => {
 });
 
 test('registered routes still render through the error boundary', () => {
-  expect(mainText(render('/f/mission-control/map'))).toBe('Version - Loading the factory map.');
+  expect(mainText(render('/f/mission-control/map'))).toBe(
+    'Version - Loading the factory map. Scorecard Last 7 days Last 30 days Loading the scorecard.',
+  );
 });

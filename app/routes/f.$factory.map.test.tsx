@@ -9,7 +9,7 @@ import type { AppCheckRow } from '../lib/app-check';
 import type { StepRow } from '../lib/step-detail';
 import { FACTORY_MAP, workflowFile } from '../map/factory-map';
 import { type CardLive, cardLive, type HomeMapRow, type MapSources } from '../map/live';
-import { HomeMapBody, msToLocalMidnight } from './f.$factory.map';
+import Home, { HomeMapBody, msToLocalMidnight } from './f.$factory.map';
 
 const REPO = join(import.meta.dir, '..', '..');
 
@@ -763,4 +763,16 @@ test('Right now draws each product document as a bar with its link and counts, a
   expect(textOf(right({ here: [], listsUnavailable: ['documents'] }))).toContain(
     'The product documents are unavailable.',
   );
+});
+
+test('the scorecard sits under the home map at the current version, and under no deeper view or pinned one', () => {
+  const home = (address: string) =>
+    renderToStaticMarkup(
+      <MemoryRouter initialEntries={[address]}>
+        <Home />
+      </MemoryRouter>,
+    );
+  expect(home('/f/x/map')).toContain('>Scorecard<');
+  expect(home('/f/x/map?view=build')).not.toContain('>Scorecard<');
+  expect(home('/f/x/map?at=abc123')).not.toContain('>Scorecard<');
 });

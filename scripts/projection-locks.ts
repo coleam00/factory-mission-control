@@ -36,6 +36,30 @@ const stepEvent = (step: string) => (tx: Tx, runId: string) =>
     [runId, step, eventData(step, 'node_completed', new Date())],
   );
 
+/** A metrics node's completion carrying one valid record, which the projection writes to mc.metric_records. */
+const metricsEvent = (tx: Tx, runId: string) =>
+  tx.query(
+    `INSERT INTO remote_agent_workflow_events (workflow_run_id, event_type, step_name, data)
+     VALUES ($1, 'node_completed', 'prs', $2::jsonb)`,
+    [
+      runId,
+      {
+        type: 'script',
+        structured_output: {
+          metrics: [
+            {
+              name: 'sdlc.review_rounds',
+              kind: 'score',
+              unit: 'rounds',
+              subject: 'lock-check',
+              value: 1,
+            },
+          ],
+        },
+      },
+    ],
+  );
+
 const newStatus = (tx: Tx, runId: string) =>
   tx.query(
     `UPDATE remote_agent_workflow_runs
@@ -140,6 +164,7 @@ export const PROJECTION_TABLES = [
   'app_check_lines',
   'attention_items',
   'run_stops',
+  'metric_records',
   'capacity_waits',
   'work_item_states',
   'work_item_blockers',
@@ -180,6 +205,12 @@ export const CASES: Case[] = [
     lock: exclusive('app_check_lines'),
     errors: 1,
     write: stepEvent('check-app'),
+  },
+  {
+    name: 'ACCESS EXCLUSIVE mc.metric_records: archon-metrics-prs node_completed',
+    lock: exclusive('metric_records'),
+    errors: 1,
+    write: metricsEvent,
   },
   {
     name: 'ACCESS EXCLUSIVE mc.laps: run status UPDATE',

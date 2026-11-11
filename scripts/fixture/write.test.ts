@@ -287,3 +287,55 @@ test('label writes needs-owner unless --label names another, and --issue names t
     expect(refused.opened).toEqual([]);
   }
 });
+
+describe('the metrics kind', () => {
+  test('writes one completed archon-metrics-prs run whose prs node carries the fixture records', async () => {
+    let metricRows = 0;
+    const run = recordingDeps({
+      repoRoot: repo(),
+      rows: (sql) => {
+        if (sql.startsWith('SELECT count(*)')) return [{ n: metricRows }];
+        if (sql.startsWith('INSERT INTO remote_agent_workflow_runs')) return [{ id: 'run-1' }];
+        if (sql.startsWith('INSERT INTO remote_agent_workflow_events')) {
+          metricRows += 5;
+          return [{ stored: 'object' }];
+        }
+        return [];
+      },
+    });
+    expect(await main(['metrics'], run.deps)).toBe(0);
+    expect(run.out).toEqual(['mc.metric_records rows: 0 -> 10']);
+    const completed = run.sql.findLastIndex((sql) =>
+      sql.startsWith('INSERT INTO remote_agent_workflow_events'),
+    );
+    expect(run.params[completed]?.[2]).toMatchObject({
+      type: 'script',
+      structured_output: {
+        metrics: expect.arrayContaining([expect.objectContaining({ name: 'sdlc.pr_merge_rate' })]),
+      },
+    });
+  });
+
+  test('fails when the factory’s codebase is missing or no record was projected, and takes no option', async () => {
+    const missing = recordingDeps({
+      repoRoot: repo(),
+      rows: (sql) => (sql.startsWith('SELECT count(*)') ? [{ n: 0 }] : []),
+    });
+    expect(await main(['metrics'], missing.deps)).toBe(1);
+    expect(missing.err.join('\n')).toContain('no codebase named');
+    const none = recordingDeps({
+      repoRoot: repo(),
+      rows: (sql) =>
+        sql.startsWith('SELECT count(*)')
+          ? [{ n: 0 }]
+          : sql.startsWith('INSERT INTO remote_agent_workflow_runs')
+            ? [{ id: 'run-1' }]
+            : [{ stored: 'object' }],
+    });
+    expect(await main(['metrics'], none.deps)).toBe(1);
+    expect(none.err.join('\n')).toContain('none added');
+    const refused = recordingDeps({ repoRoot: repo() });
+    expect(await main(['metrics', '--pin', 'abcd'], refused.deps)).toBe(2);
+    expect(refused.opened).toEqual([]);
+  });
+});
