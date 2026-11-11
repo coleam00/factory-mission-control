@@ -21,6 +21,7 @@ import type { Env } from './check-env';
 import { BASE_ENV_NAMES, pick } from './child-env';
 import { readFactoryNames } from './factories';
 import { LIVE_QUERIES_DIR, loadLiveQueries } from './live';
+import { type DayDigest, readDayDigest } from './manager-day';
 import { MANAGER_LIMITS, readOnlyQuery } from './manager-sql';
 import {
   AnswerSplitter,
@@ -145,6 +146,9 @@ function dayOf(date: Date): string {
   const pad = (n: number) => String(n).padStart(2, '0');
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 }
+
+/** The server's zone, the one the system prompt and the day digest both name. */
+const serverZone = (): string => Intl.DateTimeFormat().resolvedOptions().timeZone;
 
 function spentToday(manager: Manager): number {
   const today = dayOf(manager.now());
@@ -322,7 +326,7 @@ function systemPrompt(
   briefing: boolean,
 ): string {
   const now = manager.now();
-  const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const zone = serverZone();
   const { place, run, item, workflow, step, order } = request.context;
   const viewing = [
     run && `run ${run}`,
@@ -771,6 +775,12 @@ export function attentionLine(t: AttentionTally): string {
   return `${lead}${plural(total, 'thing needs', 'things need')} you: ${parts.join(', ')}.`;
 }
 
+function daySentence(day: DayDigest | null): string {
+  if (!day)
+    return " Today's merged pull requests and failed runs could not be read: say so in one sentence and do not guess them.";
+  return ` Today's merged pull requests, runs by workflow and outcome, and failures grouped by cause (each with one example run) were read for you from the factory's data, a run on the day its completed_at falls: name the merged pull requests by number and title and the failure causes from them instead of querying for them. Where and_more is above 0, more were not listed: say there were others, without a number. The numbers in them are for your judgment: state none of them. These are today's failures, not the Attention failures, which are the causes still unresolved: do not add or compare them. ${JSON.stringify(day)}`;
+}
+
 /**
  * The question the model answers for the briefing. The opening line already carries every count,
  * so the model is told to state none: a count of its own, from its own reading of the rows, is
@@ -779,6 +789,7 @@ export function attentionLine(t: AttentionTally): string {
 export function briefingQuestion(
   tally: AttentionTally | null,
   rows: AttentionRows | null = null,
+  day: DayDigest | null = null,
 ): string {
   const listing = rows
     ? ` These are the Attention rows, by source, that the line was counted from; name the items from them instead of querying for them, and never copy or paraphrase the line: ${JSON.stringify(rows)}`
@@ -786,7 +797,7 @@ export function briefingQuestion(
   const counted = tally
     ? ` The briefing already opens with this line, counted from the Attention page's own rows: "${attentionLine(tally)}" That line is the only count of what waits on the owner. State no number of Attention items, open questions, paused runs, failures or merged runs yourself, and never say the rows or the opening line disagree, miss something or may be incomplete; name the individual runs and issues instead.${listing}`
     : " The Attention page's count could not be read: do not say how many things wait on the owner.";
-  return BRIEFING_QUESTION + counted;
+  return BRIEFING_QUESTION + daySentence(day) + counted;
 }
 
 type AttentionRead = { tally: AttentionTally; rows: AttentionRows };
@@ -836,10 +847,18 @@ function capBriefingEvents(events: ManagerEvent[]): ManagerEvent[] {
 }
 
 async function generateBriefing(manager: Manager, factory: string, read: AttentionRead | null) {
+  const day = await readDayDigest(manager.db, factory, dayOf(manager.now()), serverZone()).catch(
+    (err) => {
+      console.error(`manager: day read failed: ${err instanceof Error ? err.message : err}`);
+      return null;
+    },
+  );
   const request: ChatRequest = {
     factory,
     context: { place: 'attention' },
-    messages: [{ role: 'owner', text: briefingQuestion(read?.tally ?? null, read?.rows ?? null) }],
+    messages: [
+      { role: 'owner', text: briefingQuestion(read?.tally ?? null, read?.rows ?? null, day) },
+    ],
   };
   let events: ManagerEvent[] = [];
   let ok = false;

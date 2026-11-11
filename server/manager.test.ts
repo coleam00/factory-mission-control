@@ -18,6 +18,7 @@ import {
   type Manager,
   managerSettings,
 } from './manager';
+import { DAY_CAUSES_CAP, DAY_MERGED_CAP, type DayDigest, readDayDigest } from './manager-day';
 import {
   ELSEWHERE_FAILED,
   ELSEWHERE_WAITING,
@@ -37,6 +38,7 @@ import {
   PROPOSAL_ACTIONS,
   parseBlock,
 } from './manager-stream';
+import { MAX_RESULT_CHARS } from './manager-tools';
 
 // Each answer that calls a tool starts a `bun` subprocess, which takes seconds on Windows.
 setDefaultTimeout(30_000);
@@ -1023,6 +1025,116 @@ describe('a lap that started on an earlier day and failed today', () => {
   });
 });
 
+describe('a busy day', () => {
+  const local = (s: string) => new Date(s).toISOString();
+  const seedFactory = (F: string) =>
+    fixture.direct.query(
+      `INSERT INTO mc.factories (name, repository, codebase, console) VALUES ('${F}', 'o/b', 'o/b', 'http://localhost:3092')`,
+    );
+  const clean = async (F: string) => {
+    for (const table of ['laps', 'run_stops', 'pull_requests']) {
+      await fixture.direct.query(`DELETE FROM mc.${table} WHERE factory = '${F}'`);
+    }
+    await fixture.direct.query(`DELETE FROM mc.factories WHERE name = '${F}'`);
+  };
+  const merge = (F: string, count: number, titleOf: string, at: string) =>
+    fixture.direct.query(
+      `INSERT INTO mc.pull_requests (factory, number, title, state, merged_at, head_sha, url, created_at, updated_at, closed_at)
+       SELECT '${F}', 701 + g, ${titleOf}, 'closed', '${local(at)}'::timestamptz + (g || ' minutes')::interval, 'sha', 'u', now(), now(), now()
+       FROM generate_series(0, ${count - 1}) g`,
+    );
+
+  test('names every merge and failure cause and stays under the read size', async () => {
+    clock = new Date('2026-11-08T10:00:00');
+    const F = 'busy';
+    const OVERNIGHT = '5eed0003-0000-4000-8000-0000000000b1';
+    await seedFactory(F);
+    try {
+      await fixture.direct.query(
+        `INSERT INTO mc.laps (run_id, factory, workflow_name, status, started_at, completed_at)
+         SELECT gen_random_uuid(), '${F}', CASE g % 3 WHEN 0 THEN 'archon-build' WHEN 1 THEN 'archon-merge' ELSE 'factory-app-check' END,
+                CASE WHEN g <= 120 THEN 'failed' ELSE 'completed' END,
+                '${local('2026-11-08T07:00:00')}'::timestamptz, '${local('2026-11-08T08:00:00')}'::timestamptz + (g || ' seconds')::interval
+         FROM generate_series(1, 300) g`,
+      );
+      await fixture.direct.query(
+        `INSERT INTO mc.laps (run_id, factory, workflow_name, status, started_at, completed_at)
+         VALUES ('${OVERNIGHT}', '${F}', 'archon-loop', 'failed', '${local('2026-11-07T22:00:00')}', '${local('2026-11-08T03:00:00')}')`,
+      );
+      await fixture.direct.query(
+        `INSERT INTO mc.run_stops (run_id, factory, workflow_name, status, step_id, line, class, signature, stopped_at)
+         SELECT run_id, factory, workflow_name, 'failed', 'implement',
+                CASE WHEN run_id = '${OVERNIGHT}' THEN 'overnight cause' ELSE 'cause-' || (abs(hashtext(run_id::text)) % 5) || ' ' || repeat('x', 40) END, 'code',
+                CASE WHEN run_id = '${OVERNIGHT}' THEN 'sig-overnight' ELSE 'sig-' || (abs(hashtext(run_id::text)) % 5) END, completed_at
+         FROM mc.laps WHERE factory = '${F}' AND status = 'failed'
+         ON CONFLICT (run_id) DO UPDATE SET line = excluded.line, signature = excluded.signature, step_id = excluded.step_id, class = excluded.class`,
+      );
+      await merge(F, 15, `'Merged work ' || (701 + g)`, '2026-11-08T09:00:00');
+      await fixture.direct.query(
+        `INSERT INTO mc.pull_requests (factory, number, title, state, merged_at, head_sha, url, created_at, updated_at, closed_at)
+         VALUES ('${F}', 700, 'Merged yesterday', 'closed', '${local('2026-11-07T22:00:00')}', 'sha', 'u', now(), now(), now())`,
+      );
+
+      const played = model(async () => [start, delta('fine'), result(0.01)]);
+      const manager = createManager({
+        db: fixture.direct,
+        databaseUrl: fixture.url,
+        factories: [F],
+        settings: managerSettings({}),
+        run: played.run,
+        now: () => clock,
+      });
+      const briefed = await createApp({ buildId: 't', distDir: '.', manager }).request(
+        '/api/manager/briefing',
+        { method: 'POST', body: JSON.stringify({ factory: F, refresh: true }) },
+      );
+      await briefed.text();
+      const prompt = played.prompts[0];
+      expect(prompt.length).toBeLessThan(MAX_RESULT_CHARS);
+      for (let n = 701; n <= 715; n++) {
+        expect(prompt).toContain(`"number":${n},"title":"Merged work ${n}"`);
+      }
+      for (let k = 0; k < 5; k++) expect(prompt).toContain(`cause-${k} `);
+      expect(prompt).toContain('overnight cause');
+      expect(prompt).toContain(OVERNIGHT);
+      expect(prompt).not.toContain('"number":700');
+      expect(prompt).toContain('"and_more":0');
+      expect(prompt).not.toContain('merged pull requests and failed runs could not be read');
+    } finally {
+      await clean(F);
+    }
+  });
+
+  test('caps each section and says how many more', async () => {
+    const F = 'busier';
+    await seedFactory(F);
+    try {
+      await merge(F, DAY_MERGED_CAP + 3, `repeat('T', 256)`, '2026-11-08T09:00:00');
+      await fixture.direct.query(
+        `INSERT INTO mc.laps (run_id, factory, workflow_name, status, started_at, completed_at)
+         SELECT gen_random_uuid(), '${F}', 'archon-build', 'failed', '${local('2026-11-08T07:00:00')}', '${local('2026-11-08T08:00:00')}'::timestamptz + (g || ' seconds')::interval
+         FROM generate_series(1, ${DAY_CAUSES_CAP + 2}) g`,
+      );
+      await fixture.direct.query(
+        `INSERT INTO mc.run_stops (run_id, factory, workflow_name, status, step_id, line, class, signature, stopped_at)
+         SELECT run_id, factory, workflow_name, 'failed', 'implement', repeat('c', 2000), 'code', run_id::text, completed_at
+         FROM mc.laps WHERE factory = '${F}'
+         ON CONFLICT (run_id) DO UPDATE SET line = excluded.line, signature = excluded.signature`,
+      );
+      const digest = await readDayDigest(fixture.direct, F, '2026-11-08', 'UTC');
+      expect(digest.merged.items).toHaveLength(DAY_MERGED_CAP);
+      expect(digest.merged.and_more).toBe(3);
+      expect(digest.failure_causes.items).toHaveLength(DAY_CAUSES_CAP);
+      expect(digest.failure_causes.and_more).toBe(2);
+      expect(digest.merged.items.every((m) => m.title.length <= 200)).toBe(true);
+      expect(digest.failure_causes.items.every((c) => c.cause.length <= 300)).toBe(true);
+      expect(JSON.stringify(digest).length).toBeLessThan(MAX_RESULT_CHARS / 2);
+    } finally {
+      await clean(F);
+    }
+  });
+});
+
 describe('a structure lookup that fails', () => {
   test('ends the answer with a notice, not a silent done', async () => {
     const failing = Object.create(fixture.direct);
@@ -1049,6 +1161,16 @@ describe('the briefing question with a run paused and other Attention rows', () 
     expect(question).toContain('State no number of Attention items');
     expect(question).toContain('never say the rows or the opening line disagree');
     expect(question).not.toContain('count a run');
+    expect(question).toContain('could not be read');
+    const day: DayDigest = {
+      day: '2026-11-08',
+      merged: { items: [{ number: 5, title: 'Fix it' }], and_more: 0 },
+      runs: { items: [], and_more: 0 },
+      failure_causes: { items: [], and_more: 0 },
+    };
+    const withDay = briefingQuestion(tally, null, day);
+    expect(withDay).toContain('state none of them');
+    expect(withDay).toContain(JSON.stringify(day));
   });
 
   test('rejects a count sentence that states a total the line does not', () => {
