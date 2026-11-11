@@ -399,7 +399,7 @@ describe('one-lap on the seed', () => {
     expect(loop?.kind === 'loop' ? loop.rounds.map((r) => r.failed) : []).toEqual([false, true]);
     expect(rows.find((r) => r.status === 'failed')?.error).toBe(QUEUE_PAGE_RUNS.buildError);
     expect(rows.filter((r) => r.status === 'skipped').map((r) => r.step_id)).toEqual([
-      'ship__deliver__rounds.review__result',
+      'ship__deliver__rounds.review__publish',
     ]);
     const steps = timeline.flatMap((e) =>
       e.kind === 'step' ? [e.row] : e.rounds.flatMap((r) => r.rows),

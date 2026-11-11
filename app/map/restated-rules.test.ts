@@ -170,9 +170,9 @@ test('the gate card lists exactly the pinned gate refusals', () => {
     ...[...ciBody.matchAll(ciReturn)].map((m) => m[1] as string),
   ];
   expect(pushed.length).toBeGreaterThan(0);
-  expect(pushed.length).toBe(
-    body.split('refusals.push(').length - 1 + [...ciBody.matchAll(ciReturn)].length,
-  );
+  // Every non-null return in `ciRefusal` is a refusal, whether or not its text is a literal.
+  const ciRefusals = ciBody.match(/return\s+(?!null\b)/g)?.length ?? 0;
+  expect(pushed.length).toBe(body.split('refusals.push(').length - 1 + ciRefusals);
 
   for (const text of pushed) {
     expect(REFUSALS.filter(([prefix]) => text.startsWith(prefix)).length).toBe(1);
