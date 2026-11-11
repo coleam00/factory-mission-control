@@ -4,6 +4,7 @@ import { ANSWER_TEXT_MAX } from '../app/lib/attention';
 import { ATTENTION_SOURCES, attentionCount } from '../app/lib/attention-page';
 import { lapHref } from '../app/lib/one-lap';
 import { snapshot } from '../db/test-db';
+import type { Db } from '../scripts/lib/db';
 import { createApp } from './app';
 import { LIVE_QUERIES_DIR, loadLiveQueries } from './live';
 import {
@@ -15,9 +16,11 @@ import {
   CREDENTIAL_NAMES,
   capBriefingProse,
   createManager,
+  failureCausesBlock,
   type Manager,
   managerSettings,
 } from './manager';
+import { DAY_CAUSES_CAP, DAY_MERGED_CAP, type DayDigest, readDayDigest } from './manager-day';
 import {
   ELSEWHERE_FAILED,
   ELSEWHERE_WAITING,
@@ -37,6 +40,7 @@ import {
   PROPOSAL_ACTIONS,
   parseBlock,
 } from './manager-stream';
+import { MAX_RESULT_CHARS } from './manager-tools';
 
 // Each answer that calls a tool starts a `bun` subprocess, which takes seconds on Windows.
 setDefaultTimeout(30_000);
@@ -869,7 +873,7 @@ describe('the briefing', () => {
     });
     const ask = briefingOf(managerOf(played));
     try {
-      expect((await ask()).map((e) => e.type)).toEqual(['text', 'notice', 'done']);
+      expect((await ask()).map((e) => e.type)).toEqual(['text', 'text', 'notice', 'done']);
     } finally {
       log.mockRestore();
     }
@@ -877,15 +881,16 @@ describe('the briefing', () => {
     expect((await ask()).at(-1)).toMatchObject({ cached: true });
   });
 
-  test('a long model answer is cut to three blocks under the count line, fresh and replayed', async () => {
+  test('a long model answer is cut to two blocks under the count line and the cause list, fresh and replayed', async () => {
     clock = new Date('2026-11-08T10:00:00');
     const long = 'One.\n\n- two\n- three\n- four\n\nFive.';
     const ask = briefingOf(managerOf(model(async () => [start, delta(long), result(0.01)])));
     const shown = (events: { type: string }[]) =>
       events.flatMap((e) => ('text' in e && e.type === 'text' ? [e.text] : [])).join('');
     for (const got of [await ask(), await ask()]) {
-      const prose = shown(got).split('\n\n').slice(1);
-      expect(prose).toEqual(['One.', '- two', '- three']);
+      const [, causes, ...prose] = shown(got).split('\n\n');
+      expect(causes).toMatch(/^Failure causes today: .*archon-loop/);
+      expect(prose).toEqual(['One.', '- two']);
     }
   });
 
@@ -894,10 +899,9 @@ describe('the briefing', () => {
     const nested = 'Two failed.\n\n- build failed\n  - retry failed\n- docs waits on you';
     const ask = briefingOf(managerOf(model(async () => [start, delta(nested), result(0.01)])));
     const text = (await ask()).flatMap((e) => ('text' in e && e.type === 'text' ? [e.text] : []));
-    expect(text.join('').split('\n\n').slice(1)).toEqual([
+    expect(text.join('').split('\n\n').slice(2)).toEqual([
       'Two failed.',
       '- build failed\n  - retry failed',
-      '- docs waits on you',
     ]);
   });
 
@@ -1023,6 +1027,207 @@ describe('a lap that started on an earlier day and failed today', () => {
   });
 });
 
+describe('a busy day', () => {
+  const local = (s: string) => new Date(s).toISOString();
+  const seedFactory = (F: string) =>
+    fixture.direct.query(
+      `INSERT INTO mc.factories (name, repository, codebase, console) VALUES ('${F}', 'o/b', 'o/b', 'http://localhost:3092')`,
+    );
+  const clean = async (F: string) => {
+    for (const table of ['laps', 'run_stops', 'pull_requests']) {
+      await fixture.direct.query(`DELETE FROM mc.${table} WHERE factory = '${F}'`);
+    }
+    await fixture.direct.query(`DELETE FROM mc.factories WHERE name = '${F}'`);
+  };
+  const merge = (F: string, count: number, titleOf: string, at: string) =>
+    fixture.direct.query(
+      `INSERT INTO mc.pull_requests (factory, number, title, state, merged_at, head_sha, url, created_at, updated_at, closed_at)
+       SELECT '${F}', 701 + g, ${titleOf}, 'closed', '${local(at)}'::timestamptz + (g || ' minutes')::interval, 'sha', 'u', now(), now(), now()
+       FROM generate_series(0, ${count - 1}) g`,
+    );
+
+  test('names every merge and failure cause and stays under the read size', async () => {
+    clock = new Date('2026-11-08T10:00:00');
+    const F = 'busy';
+    const OVERNIGHT = '5eed0003-0000-4000-8000-0000000000b1';
+    await seedFactory(F);
+    try {
+      await fixture.direct.query(
+        `INSERT INTO mc.laps (run_id, factory, workflow_name, status, started_at, completed_at)
+         SELECT gen_random_uuid(), '${F}', CASE g % 3 WHEN 0 THEN 'archon-build' WHEN 1 THEN 'archon-merge' ELSE 'factory-app-check' END,
+                CASE WHEN g <= 120 THEN 'failed' ELSE 'completed' END,
+                '${local('2026-11-08T07:00:00')}'::timestamptz, '${local('2026-11-08T08:00:00')}'::timestamptz + (g || ' seconds')::interval
+         FROM generate_series(1, 300) g`,
+      );
+      await fixture.direct.query(
+        `INSERT INTO mc.laps (run_id, factory, workflow_name, status, started_at, completed_at)
+         VALUES ('${OVERNIGHT}', '${F}', 'archon-loop', 'failed', '${local('2026-11-07T22:00:00')}', '${local('2026-11-08T03:00:00')}')`,
+      );
+      await fixture.direct.query(
+        `INSERT INTO mc.run_stops (run_id, factory, workflow_name, status, step_id, line, class, signature, stopped_at)
+         SELECT run_id, factory, workflow_name, 'failed', 'implement',
+                CASE WHEN run_id = '${OVERNIGHT}' THEN 'overnight cause' ELSE 'cause-' || (abs(hashtext(run_id::text)) % 5) || ' ' || repeat('x', 40) END, 'code',
+                CASE WHEN run_id = '${OVERNIGHT}' THEN 'sig-overnight' ELSE 'sig-' || (abs(hashtext(run_id::text)) % 5) END, completed_at
+         FROM mc.laps WHERE factory = '${F}' AND status = 'failed'
+         ON CONFLICT (run_id) DO UPDATE SET line = excluded.line, signature = excluded.signature, step_id = excluded.step_id, class = excluded.class`,
+      );
+      await merge(F, 15, `'Merged work ' || (701 + g)`, '2026-11-08T09:00:00');
+      await fixture.direct.query(
+        `INSERT INTO mc.pull_requests (factory, number, title, state, merged_at, head_sha, url, created_at, updated_at, closed_at)
+         VALUES ('${F}', 700, 'Merged yesterday', 'closed', '${local('2026-11-07T22:00:00')}', 'sha', 'u', now(), now(), now())`,
+      );
+
+      const played = model(async () => [start, delta('fine'), result(0.01)]);
+      const manager = createManager({
+        db: fixture.direct,
+        databaseUrl: fixture.url,
+        factories: [F],
+        settings: managerSettings({}),
+        run: played.run,
+        now: () => clock,
+      });
+      const briefed = await createApp({ buildId: 't', distDir: '.', manager }).request(
+        '/api/manager/briefing',
+        { method: 'POST', body: JSON.stringify({ factory: F, refresh: true }) },
+      );
+      const shown = (await events(briefed))
+        .flatMap((e) => (e.type === 'text' ? [e.text] : []))
+        .join('');
+      const prompt = played.prompts[0];
+      expect(prompt.length).toBeLessThan(MAX_RESULT_CHARS);
+      for (let n = 701; n <= 715; n++) {
+        expect(prompt).toContain(`"number":${n},"title":"Merged work ${n}"`);
+      }
+      expect(prompt).not.toContain('failure_causes');
+      const listed = shown.split('\n\n').filter((b) => b.startsWith('Failure causes today:'));
+      expect(listed).toHaveLength(1);
+      for (let k = 0; k < 5; k++) expect(shown.split(`cause-${k} `).length).toBe(2);
+      expect(shown.split('overnight cause').length).toBe(2);
+      expect(prompt).not.toContain('"number":700');
+      expect(prompt).not.toContain('merged pull requests and failed runs could not be read');
+    } finally {
+      await clean(F);
+    }
+  });
+
+  test('shows the count line once and keeps the failure causes when the model restates or contradicts it', async () => {
+    clock = new Date('2026-11-08T10:00:00');
+    const F = 'echoed';
+    await seedFactory(F);
+    const warn = spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      await fixture.direct.query(
+        `INSERT INTO mc.laps (run_id, factory, workflow_name, status, started_at, completed_at)
+         VALUES ('5eed0004-0000-4000-8000-0000000000e1', '${F}', 'archon-build', 'failed', '${local('2026-11-08T07:00:00')}', '${local('2026-11-08T08:00:00')}');
+         INSERT INTO mc.run_stops (run_id, factory, workflow_name, status, step_id, line, class, signature, stopped_at)
+         VALUES ('5eed0004-0000-4000-8000-0000000000e1', '${F}', 'archon-build', 'failed', 'implement', 'out of disk', 'code', 'sig-disk', '${local('2026-11-08T08:00:00')}')
+         ON CONFLICT (run_id) DO UPDATE SET line = excluded.line, signature = excluded.signature, step_id = excluded.step_id, class = excluded.class`,
+      );
+      const replies: string[] = [];
+      const played = model(async () => [
+        start,
+        delta(replies.shift() ?? 'Quiet day.'),
+        result(0.01),
+      ]);
+      const manager = createManager({
+        db: fixture.direct,
+        databaseUrl: fixture.url,
+        factories: [F],
+        settings: managerSettings({}),
+        run: played.run,
+        now: () => clock,
+      });
+      const ask = async (refresh: boolean) => {
+        const out = await createApp({ buildId: 't', distDir: '.', manager }).request(
+          '/api/manager/briefing',
+          { method: 'POST', body: JSON.stringify({ factory: F, refresh }) },
+        );
+        return (await events(out)).flatMap((e) => (e.type === 'text' ? [e.text] : [])).join('');
+      };
+      const line = (await ask(true)).split('\n\n')[0];
+
+      replies.push(`${line}\n\nThe archon-build run stopped early.`);
+      const fresh = await ask(true);
+      const replayed = await ask(false);
+      for (const shown of [fresh, replayed]) {
+        expect(shown.split(line).length).toBe(2);
+        expect(shown).toContain('The archon-build run stopped early.');
+        expect(shown.split('out of disk').length).toBe(2);
+      }
+
+      replies.push('99 things need you.', '98 things need you.');
+      const fallback = await ask(true);
+      expect(fallback.split(line).length).toBe(2);
+      expect(fallback).toContain('Failure causes today: out of disk');
+      expect(fallback).not.toContain('99 things');
+    } finally {
+      warn.mockRestore();
+      await clean(F);
+    }
+  });
+
+  test('caps each section and says how many more', async () => {
+    const F = 'busier';
+    await seedFactory(F);
+    try {
+      await merge(F, DAY_MERGED_CAP + 3, `repeat('T', 256)`, '2026-11-08T09:00:00Z');
+      await fixture.direct.query(
+        `INSERT INTO mc.laps (run_id, factory, workflow_name, status, started_at, completed_at)
+         SELECT gen_random_uuid(), '${F}', 'archon-build', 'failed', '${local('2026-11-08T07:00:00Z')}', '${local('2026-11-08T08:00:00Z')}'::timestamptz + (g || ' seconds')::interval
+         FROM generate_series(1, ${DAY_CAUSES_CAP + 2}) g`,
+      );
+      await fixture.direct.query(
+        `INSERT INTO mc.run_stops (run_id, factory, workflow_name, status, step_id, line, class, signature, stopped_at)
+         SELECT run_id, factory, workflow_name, 'failed', 'implement', repeat('c', 2000), 'code', run_id::text, completed_at
+         FROM mc.laps WHERE factory = '${F}'
+         ON CONFLICT (run_id) DO UPDATE SET line = excluded.line, signature = excluded.signature`,
+      );
+      const digest = await readDayDigest(fixture.direct, F, '2026-11-08', 'UTC');
+      expect(digest.merged.items).toHaveLength(DAY_MERGED_CAP);
+      expect(digest.merged.and_more).toBe(3);
+      expect(digest.failure_causes.items).toHaveLength(DAY_CAUSES_CAP);
+      expect(digest.failure_causes.and_more).toBe(2);
+      expect(digest.merged.items.every((m) => m.title.length <= 200)).toBe(true);
+      expect(digest.failure_causes.items.every((c) => c.cause.length <= 300)).toBe(true);
+      expect(JSON.stringify(digest).length).toBeLessThan(MAX_RESULT_CHARS / 2);
+    } finally {
+      await clean(F);
+    }
+  });
+});
+
+describe('a briefing whose day read fails', () => {
+  test('still prompts the model, says the day could not be read, and is not kept', async () => {
+    clock = new Date('2026-11-08T10:00:00');
+    const failing = Object.create(fixture.direct);
+    failing.transaction = (fn: (tx: Db) => Promise<void>) =>
+      fixture.direct.transaction((tx) =>
+        fn({
+          ...tx,
+          query: (sql: string, params?: unknown[]) => {
+            if (sql.includes('merged_total')) throw new Error('statement timeout');
+            return tx.query(sql, params);
+          },
+        } as Db),
+      );
+    const played = model(async () => [start, delta('fine'), result(0.01)]);
+    const manager = { ...managerOf(played), db: failing };
+    const ask = async () => {
+      const res = await createApp({ buildId: 't', distDir: '.', manager }).request(
+        '/api/manager/briefing',
+        { method: 'POST', body: JSON.stringify({ factory: FACTORY }) },
+      );
+      return events(res);
+    };
+    const first = await ask();
+    expect(first.at(-1)?.type).toBe('done');
+    expect(played.prompts[0]).toContain('could not be read');
+    const second = await ask();
+    expect(played.prompts).toHaveLength(2);
+    expect(second.at(-1)).not.toMatchObject({ cached: true });
+  });
+});
+
 describe('a structure lookup that fails', () => {
   test('ends the answer with a notice, not a silent done', async () => {
     const failing = Object.create(fixture.direct);
@@ -1049,6 +1254,17 @@ describe('the briefing question with a run paused and other Attention rows', () 
     expect(question).toContain('State no number of Attention items');
     expect(question).toContain('never say the rows or the opening line disagree');
     expect(question).not.toContain('count a run');
+    expect(question).toContain('could not be read');
+    const day: DayDigest = {
+      day: '2026-11-08',
+      merged: { items: [{ number: 5, title: 'Fix it' }], and_more: 0 },
+      runs: { items: [], and_more: 0 },
+      failure_causes: { items: [], and_more: 0 },
+    };
+    const withDay = briefingQuestion(tally, null, day);
+    expect(withDay).toContain('state none of them');
+    expect(withDay).toContain('"merged":{"items":[{"number":5,"title":"Fix it"}]');
+    expect(withDay).not.toContain('failure_causes');
   });
 
   test('rejects a count sentence that states a total the line does not', () => {
@@ -1137,7 +1353,39 @@ describe('a briefing whose count cannot be read', () => {
     }
   });
 
-  test('never replays a cached body across a count that was or is unreadable', async () => {
+  test('never replays a briefing written while its count was unreadable', async () => {
+    const log = spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      // Only the Attention read fails; the day read succeeds, so the briefing is cached with no basis.
+      const failing = Object.create(fixture.direct);
+      failing.transaction = (fn: (tx: Db) => Promise<void>) =>
+        fixture.direct.transaction((tx) =>
+          fn({
+            ...tx,
+            query: (sql: string, params?: unknown[]) => {
+              if (sql.includes('AS "unstick"')) throw new Error('statement timeout');
+              return tx.query(sql, params);
+            },
+          } as Db),
+        );
+      const played = model(async () => [start, delta('fine'), result(0.01)]);
+      const manager = { ...managerOf(played), db: failing };
+      const ask = async () => {
+        const res = await createApp({ buildId: 't', distDir: '.', manager }).request(
+          '/api/manager/briefing',
+          { method: 'POST', body: JSON.stringify({ factory: FACTORY }) },
+        );
+        return (await events(res)).at(-1);
+      };
+      expect(await ask()).toMatchObject({ cached: false });
+      expect(await ask()).toMatchObject({ cached: false });
+      expect(played.prompts).toHaveLength(2);
+    } finally {
+      log.mockRestore();
+    }
+  });
+
+  test('replays the first complete briefing across unreadable asks while its count still matches', async () => {
     const log = spyOn(console, 'error').mockImplementation(() => {});
     try {
       const failing = Object.create(fixture.direct);
@@ -1160,8 +1408,8 @@ describe('a briefing whose count cannot be read', () => {
       await ask(fixture.direct);
       expect(await ask(failing)).toMatchObject({ cached: false });
       expect(await ask(failing)).toMatchObject({ cached: false });
-      expect(await ask(fixture.direct)).toMatchObject({ cached: false });
-      expect(played.prompts).toHaveLength(4);
+      expect(await ask(fixture.direct)).toMatchObject({ cached: true });
+      expect(played.prompts).toHaveLength(3);
     } finally {
       log.mockRestore();
     }
@@ -1267,5 +1515,31 @@ describe('the caps on one answer', () => {
     } finally {
       await fixture.direct.query(`DELETE FROM mc.laps WHERE run_id IN ('${EXTRA.join("','")}')`);
     }
+  });
+});
+
+describe('failureCausesBlock', () => {
+  const cause = (n: number) => ({
+    cause: `cause ${n}`,
+    workflow: n % 2 ? 'archon-build' : 'archon-merge',
+    step: n % 3 ? 'implement' : null,
+    class: null,
+    runs: n,
+    example_run: `run-${n}`,
+  });
+  const day = (n: number, and_more: number): DayDigest => ({
+    day: '2026-11-08',
+    merged: { items: [], and_more: 0 },
+    runs: { items: [], and_more: 0 },
+    failure_causes: { items: Array.from({ length: n }, (_, i) => cause(i + 1)), and_more },
+  });
+
+  test('is one paragraph naming each cause once, and says where the digest lists no more', () => {
+    expect(failureCausesBlock(day(0, 0))).toBeNull();
+    const block = failureCausesBlock(day(6, 2)) ?? '';
+    for (let n = 1; n <= 6; n++) expect(block.split(`cause ${n} (`)).toHaveLength(2);
+    expect(block).not.toContain('\n');
+    expect(block.endsWith('and 2 more causes not listed.')).toBe(true);
+    expect(capBriefingProse(block, 1)).toBe(block);
   });
 });

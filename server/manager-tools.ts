@@ -51,7 +51,8 @@ export interface ToolResult {
   isError?: boolean;
 }
 
-const MAX_RESULT_CHARS = 60_000;
+/** The most the Manager reads at once: a tool result is cut here, and the briefing's handed-in input is held under it. */
+export const MAX_RESULT_CHARS = 60_000;
 
 const selectTool = {
   name: SELECT_TOOL,
