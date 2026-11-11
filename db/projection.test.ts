@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, beforeEach, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { parseRecommendation, recommendedChoice } from '../app/lib/attention';
+import { parseRecommendation } from '../app/lib/attention';
 import { FACTORY_MAP } from '../app/map/factory-map';
 import { holdoutId } from '../parsers/metrics';
 import { eventData, structuredOutputFor } from '../scripts/fixture/write';
@@ -2640,8 +2640,8 @@ const ATTN_OPTIONS = [
 
 const decideFields = () =>
   db.query(
-    `SELECT occurrence_id, item_number, recommended, confidence, options::text AS options
-     FROM mc.attention_items`,
+    `SELECT occurrence_id, item_number, recommended, confidence, recommendation_why,
+       options::text AS options FROM mc.attention_items`,
   );
 
 test('an attention item records the rendered recommendation, confidence, descriptions, item and occurrence', async () => {
@@ -2653,12 +2653,102 @@ test('an attention item records the rendered recommendation, confidence, descrip
     item_number: 15,
     recommended: 'split',
     confidence: 'high',
+    recommendation_why: null,
   });
   expect(JSON.parse(String(item?.options))).toEqual([
     { id: 'split', label: 'Split (in two)', description: 'Two issues.' },
     { id: 'build', label: 'Build', description: 'One change.' },
   ]);
-  expect(recommendedChoice(message, ATTN_OPTIONS)).toBe('split');
+});
+
+const STRUCTURED = {
+  ...ATTN_WAIT,
+  options: [
+    { id: 'split', label: 'Split (in two)', does: 'Two issues.', value: { choice: 'split' } },
+    { id: 'build', label: 'Build', does: 'One change.', value: { choice: 'build' } },
+  ],
+  recommendation: { option: 'build', why: 'One reviewer has both screens.', confidence: 'low' },
+  message:
+    '**Build queue, issue 15: scope decision**\n\n**Recommendation: `split`** (high confidence). Old.\n\n**Choices.**\n- `split` (Split (in two)): Stale text.',
+};
+
+test('a structured wait’s recommendation, why, confidence and does win over a reworded message', async () => {
+  await pausedRun(STRUCTURED);
+  const [item] = await decideFields();
+  expect(item).toMatchObject({
+    recommended: 'build',
+    confidence: 'low',
+    recommendation_why: 'One reviewer has both screens.',
+  });
+  expect(JSON.parse(String(item?.options))).toEqual([
+    { id: 'split', label: 'Split (in two)', description: 'Two issues.' },
+    { id: 'build', label: 'Build', description: 'One change.' },
+  ]);
+
+  await db.query('TRUNCATE mc.attention_items');
+  await pausedRun({
+    ...STRUCTURED,
+    form: 'approval',
+    recommendation: { option: 'approve', why: 'Safe.' },
+  });
+  expect((await decideFields())[0]).toMatchObject({
+    recommended: 'approve',
+    confidence: null,
+    recommendation_why: 'Safe.',
+  });
+});
+
+test('a structured recommendation naming an option that is not offered leaves the message reading', async () => {
+  await pausedRun({
+    ...STRUCTURED,
+    recommendation: { option: 'ghost', why: 'Nobody offered this.', confidence: 'low' },
+  });
+  expect((await decideFields())[0]).toMatchObject({
+    recommended: 'split',
+    confidence: 'high',
+    recommendation_why: null,
+  });
+});
+
+test('a blank does leaves the option description as its choice line', async () => {
+  await pausedRun({
+    ...STRUCTURED,
+    options: [{ id: 'split', label: 'Split (in two)', does: '  ' }, ...STRUCTURED.options.slice(1)],
+  });
+  const [item] = await decideFields();
+  expect(JSON.parse(String(item?.options))[0]).toEqual({
+    id: 'split',
+    label: 'Split (in two)',
+    description: 'Stale text.',
+  });
+});
+
+test('20261110T1600Z reprojects waits stored before it, and changes nothing run again', async () => {
+  const historical = await archonDb();
+  try {
+    const name = '20261110T1600Z_attention_wait_recommendation';
+    await runMigrations({ files: migrationFiles.filter((f) => f.name < name), db: historical });
+    await historical.query(
+      `INSERT INTO public.remote_agent_workflow_runs (workflow_name, status, user_message, metadata)
+       VALUES ('archon-build-queue', 'paused', 'queue', $1)`,
+      [JSON.stringify({ wait: STRUCTURED })],
+    );
+    await runMigrations({ files: migrationFiles, db: historical });
+    const [item] = await historical.query(
+      'SELECT recommended, confidence, recommendation_why FROM mc.attention_items',
+    );
+    expect(item).toEqual({
+      recommended: 'build',
+      confidence: 'low',
+      recommendation_why: 'One reviewer has both screens.',
+    });
+    const before = await snapshot(historical);
+    const [file] = migrationFiles.filter((f) => f.name.startsWith(name));
+    await historical.query(file?.sql ?? '');
+    expect(await snapshot(historical)).toEqual(before);
+  } finally {
+    await historical.close();
+  }
 });
 
 test('the projector and parseRecommendation read the same Recommendation line', async () => {

@@ -6,7 +6,6 @@ import {
   attentionQuestion,
   attentionTitle,
   parseRecommendation,
-  recommendedChoice,
 } from './attention';
 
 const MESSAGE = [
@@ -28,6 +27,7 @@ const row = (overrides: Partial<AttentionRow>): AttentionRow => ({
   form: 'select',
   options: JSON.stringify(CHOICES),
   labels: '{"build":"scope"}',
+  recommended: null,
   message: MESSAGE,
   console: 'http://localhost:3090',
   ...overrides,
@@ -36,18 +36,12 @@ const row = (overrides: Partial<AttentionRow>): AttentionRow => ({
 test('the queue layout gives its title, its question and its recommended choice', () => {
   expect(attentionTitle(MESSAGE)).toBe('Build queue, issue 15: scope decision');
   expect(attentionQuestion(MESSAGE)).toBe('Issue 15 asks for two screens in one change.');
-  expect(recommendedChoice(MESSAGE, CHOICES)).toBe('split');
 });
 
 test('a plain message has no title and no recommendation, and its first paragraph is the question', () => {
   const plainMessage = 'Which of these should the next lap take?\n\nThe second line.';
   expect(attentionTitle(plainMessage)).toBeNull();
   expect(attentionQuestion(plainMessage)).toBe('Which of these should the next lap take?');
-  expect(recommendedChoice(plainMessage, CHOICES)).toBeNull();
-});
-
-test('a recommendation that is not one of the choices marks none', () => {
-  expect(recommendedChoice(MESSAGE, [{ id: 'build' }])).toBeNull();
 });
 
 test("the reason is the rest of the Recommendation's paragraph, wherever the line sits", () => {

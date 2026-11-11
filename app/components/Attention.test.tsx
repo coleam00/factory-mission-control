@@ -29,6 +29,7 @@ const decide: DecideRow = {
   labels: '{"build":"scope"}',
   recommended: 'split',
   confidence: 'high',
+  recommendation_why: null,
   item_number: 15,
   message: '**What it is.** Two screens.\n\n**Recommendation: `split`** (high confidence). Sooner.',
   console: 'http://localhost:3090/',

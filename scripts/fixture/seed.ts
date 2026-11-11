@@ -1412,14 +1412,24 @@ function archonSql(factory: FactoryEntry, runs: Run[]): string[] {
 }
 
 /**
- * Two runs paused on a `wait: attention` node, the shape Archon records in `metadata.wait` and the
- * pack's queues render with `renderAttention`: a title, what it is, why it matters, the
- * recommendation with its evidence, the choices with what each does, what happens if nobody answers. They write no `mc` row here: the projection trigger firing on these
+ * Two runs paused on a `wait: attention` node, the shape Archon records in `metadata.wait`: the build
+ * queue's in the layout before Archon #5367, the recommendation and the choices with what each does
+ * written into the message; the merge queue's in the structured shape, `recommendation` and each
+ * option's `does` and `value` on the wait, the message carrying neither. They write no `mc` row here: the projection trigger firing on these
  * inserts is what puts them in `mc.attention_items`, so loading the seed proves it on a check
  * branch's real Postgres.
  */
 function attentionSql(): string[] {
-  const waits = [
+  const waits: {
+    id: string;
+    workflow: string;
+    waitingSince: string;
+    pauseId: string;
+    labels: Record<string, string>;
+    options: Record<string, unknown>[];
+    recommendation?: { option: string; why: string; confidence: string };
+    message: string;
+  }[] = [
     {
       id: '5eed0006-0000-4000-8000-000000000001',
       workflow: 'archon-build-queue',
@@ -1452,20 +1462,35 @@ function attentionSql(): string[] {
       pauseId: 'seed-merge-ask',
       labels: { merge: 'pr' },
       options: [
-        { id: 'merge', label: 'Merge it now' },
-        { id: 'hold', label: 'Hold it for the next lap' },
-        { id: 'other', label: 'Something else' },
+        {
+          id: 'merge',
+          label: 'Merge it now',
+          does: 'Merge the pull request into the default branch.',
+          value: { choice: 'merge' },
+        },
+        {
+          id: 'hold',
+          label: 'Hold it for the next lap',
+          does: 'Leave it open and decide again next lap.',
+          value: { choice: 'hold' },
+        },
+        {
+          id: 'other',
+          label: 'Something else',
+          does: 'Say what to do instead.',
+          value: { choice: 'other' },
+        },
       ],
+      recommendation: {
+        option: 'merge',
+        why: 'Nothing in it waits on another change.',
+        confidence: 'medium',
+      },
       message: [
         '**Merge queue, PR 16: merge decision**',
         '**What it is.** Pull request 16 has every check green and no open review finding.',
         '**Why it matters.** It is the last change before the version is pinned.',
-        [
-          '**Recommendation: `merge`** (medium confidence). Nothing in it waits on another change.',
-          'Evidence: the checks are green and the review has no open finding.',
-          'What would change it: a failing check on the base branch.',
-        ].join('\n'),
-        '**Choices.**\n- `merge` (Merge it now): Merge the pull request into the default branch.\n- `hold` (Hold it for the next lap): Leave it open and decide again next lap.\n- `other` (Something else): Say what to do instead.',
+        '**Evidence.** The checks are green and the review has no open finding. A failing check on the base branch would change it.',
         '**If nobody answers.** The queue leaves it open and moves to the next pull request.',
         '**Evidence links.**\n- https://github.com/coleam00/factory-mission-control/pull/16',
       ].join('\n\n'),
@@ -1490,6 +1515,7 @@ function attentionSql(): string[] {
             revision: 1,
             form: 'select',
             options: w.options,
+            ...(w.recommendation && { recommendation: w.recommendation }),
             labels: w.labels,
             waitingSince: w.waitingSince,
             message: w.message,

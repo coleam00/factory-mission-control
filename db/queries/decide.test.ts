@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { attentionItems, type DecideRow } from '../../app/lib/attention';
+import { attentionItems, type DecideRow, recommendationReason } from '../../app/lib/attention';
+import { decideCards } from '../../app/lib/attention-page';
 import type { Db } from '../../scripts/lib/db';
 import { onTheSeed, queries } from './test-seed';
 
@@ -24,6 +25,7 @@ describe('the decide query on the seed', () => {
         i.item_number,
         i.recommended,
         i.confidence,
+        i.recommendation_why,
         i.options.map((o) => [o.id, o.label, o.description]),
       ]),
     ).toEqual([
@@ -32,6 +34,7 @@ describe('the decide query on the seed', () => {
         15,
         'split',
         'high',
+        null,
         [
           ['split', 'Split the issue in two', 'Two issues, one per screen, each reviewed alone.'],
           ['build', 'Build it as written', 'One change for both screens, reviewed together.'],
@@ -43,6 +46,7 @@ describe('the decide query on the seed', () => {
         16,
         'merge',
         'medium',
+        'Nothing in it waits on another change.',
         [
           ['merge', 'Merge it now', 'Merge the pull request into the default branch.'],
           ['hold', 'Hold it for the next lap', 'Leave it open and decide again next lap.'],
@@ -50,6 +54,22 @@ describe('the decide query on the seed', () => {
         ],
       ],
     ]);
+  });
+
+  test('the merge question, structured, renders its note from the fields and answers the option id; the build question from its message', async () => {
+    const rows = (await db.query(DECIDE, ['mission-control'])) as unknown as DecideRow[];
+    const cards = decideCards(rows, 'mission-control');
+    const merge = cards.find((c) => c.title.startsWith('#16:'));
+    expect(merge?.note).toMatchObject({
+      lead: 'Recommends Merge it now.',
+      rest: 'Nothing in it waits on another change.',
+    });
+    expect(merge?.tiles.find((t) => t.id === 'merge')?.answer?.request.option).toBe('merge');
+    const build = cards.find((c) => c.title.startsWith('#15:'));
+    expect(build?.note.rest).toBe(
+      recommendationReason(rows.find((r) => r.item_number === 15)?.message ?? ''),
+    );
+    expect(build?.note.rest).not.toBe('');
   });
 
   test('a question without a recommendation has none, and an answered run is not a question', async () => {

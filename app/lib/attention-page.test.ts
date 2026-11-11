@@ -38,6 +38,7 @@ const decide = (overrides: Partial<DecideRow> = {}): DecideRow => ({
   labels: '{"build":"scope"}',
   recommended: 'split',
   confidence: 'high',
+  recommendation_why: null,
   item_number: 15,
   message: [
     '**Build queue, issue 15: scope decision**',
@@ -116,6 +117,35 @@ test('a question marks the recommended option only when it is one of the options
     'f',
   );
   expect(own?.tiles.map((t) => t.label)).toEqual(['Something else']);
+});
+
+test('a structured wait renders its recommendation, why and effects from the fields, not the reworded message', () => {
+  const [card] = decideCards(
+    [
+      decide({
+        recommended: 'build',
+        confidence: 'low',
+        recommendation_why: 'One reviewer has both screens.',
+        options: JSON.stringify([
+          { id: 'split', label: 'Split it', description: 'Two issues.' },
+          { id: 'build', label: 'Build it', description: 'One change.' },
+        ]),
+        message: '**Recommendation: `split`** (high confidence). Old reason.',
+      }),
+    ],
+    'f',
+  );
+  expect(card?.note).toMatchObject({
+    lead: 'Recommends Build it.',
+    rest: 'One reviewer has both screens.',
+  });
+  expect(card?.confidence).toBe('low confidence');
+  expect(card?.tiles.filter((t) => t.recommended).map((t) => t.id)).toEqual(['build']);
+  expect(card?.tiles.slice(0, 2).map((t) => t.consequence)).toEqual(['Two issues.', 'One change.']);
+  expect(card?.tiles.find((t) => t.id === 'build')?.answer?.request.option).toBe('build');
+
+  const [legacy] = decideCards([decide({ recommendation_why: null })], 'f');
+  expect(legacy?.note.rest).toBe('Two small changes land sooner.');
 });
 
 test('each option tile answers with its row occurrence, and every tile keeps its console link', () => {
