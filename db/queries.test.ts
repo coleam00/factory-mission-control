@@ -299,6 +299,7 @@ const ROW_COLUMNS: Record<string, string[]> = {
     'stop_line',
     'stop_class',
     'capacity_since',
+    'pr_state',
   ]),
   'owner-queue': columns<OwnerQueueRow>()([
     'kind',

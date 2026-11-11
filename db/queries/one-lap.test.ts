@@ -1,8 +1,13 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { attemptsInOrder, type StepAttemptRow, shownDispositions } from '../../app/lib/one-lap';
-import { runCost, runTimeline, stepCost } from '../../app/lib/one-run';
+import {
+  attemptsInOrder,
+  type OneLapRow,
+  type StepAttemptRow,
+  shownDispositions,
+} from '../../app/lib/one-lap';
+import { managerRead, runCost, runTimeline, stepCost } from '../../app/lib/one-run';
 import {
   QUEUE_PAGE_RUNS,
   QUEUE_RETURNED,
@@ -69,6 +74,7 @@ describe('one-lap on the seed', () => {
         route: 'simple',
         depth: 'normal',
         pr_number: 103,
+        pr_state: 'merged',
         review_status: 'completed',
         review_outcome: 'merge',
         review_delivers: 'all',
@@ -346,6 +352,7 @@ describe('one-lap on the seed', () => {
       status: 'failed',
       issue_number: QUEUE_PAGE_RUNS.buildIssue,
       pr_number: 496,
+      pr_state: null,
       stop_status: 'failed',
       stop_step: 'ship__deliver__rounds.pr__prepare',
       stop_line: "Script node 'pr__prepare' failed [exit 1]",
@@ -387,6 +394,18 @@ describe('one-lap on the seed', () => {
     expect(stepCost(group as StepAttemptRow, rows)).toBeNull();
     expect(runCost(rows)).toBeCloseTo(Number(attempts?.cost), 6);
     expect(runCost(rows)).toBeCloseTo(2.2, 6);
+  });
+
+  test('the finished build run reads its item, pull request, rounds and cost', async () => {
+    const [run] = await queue('one-lap', QUEUE_RETURNED.second);
+    const rows = (await queue(
+      'one-lap-steps',
+      QUEUE_RETURNED.second,
+    )) as unknown as StepAttemptRow[];
+    const read = managerRead(run as unknown as OneLapRow, rows, runTimeline(rows));
+    expect(read.parts.map((p) => p.text).join('')).toBe(
+      'It finished work on #407 (Queue issue 407) in 1 round, for $2.20. PR #410 is merged.',
+    );
   });
 
   test('the failed build run is two rounds, its review skipped for the failure upstream', async () => {

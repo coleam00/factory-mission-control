@@ -18,7 +18,9 @@ SELECT l.run_id, l.workflow_name, l.status, l.started_at, l.completed_at, f.repo
   -- Why the run stopped (mc.run_stops, #513): the manager's read is written from it.
   st.status AS stop_status, st.step_id AS stop_step, st.line AS stop_line, st.class AS stop_class,
   -- Set while Archon holds the answered run for a free slot (mc.capacity_waits): it waits on no one.
-  cw.since AS capacity_since
+  cw.since AS capacity_since,
+  -- The pull request's state from the GitHub mirror: 'merged' once the mirror records it landed, null when the run names no PR or the mirror lacks it.
+  CASE WHEN prs.merged_at IS NOT NULL THEN 'merged' ELSE prs.state END AS pr_state
 FROM mc.laps l
 JOIN mc.factories f ON f.name = l.factory
 LEFT JOIN LATERAL (
@@ -39,5 +41,6 @@ LEFT JOIN LATERAL (
   WHERE s.run_id = l.run_id AND s.pr_number IS NOT NULL
   ORDER BY s.started_at DESC NULLS LAST, s.step_id LIMIT 1
 ) pr ON true
+LEFT JOIN mc.pull_requests prs ON prs.factory = l.factory AND prs.number = pr.pr_number
 -- A run id compared as text: a malformed one in the address is no run, not a failed query.
 WHERE l.factory = $1 AND l.run_id::text = $2
