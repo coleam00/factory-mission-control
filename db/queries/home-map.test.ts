@@ -120,21 +120,19 @@ describe('home-map on the seed', () => {
     );
   });
 
-  test("picks: the skipped lens steps of a running run's current round, not an older iteration's, a lens that ran, or a round whose router did not run", async () => {
+  test("picks: the skipped lens steps of a running run's current round, not an older iteration's, a lens that ran, or a lens the router did not decline", async () => {
     const round = (r: string) => `ship__deliver__rounds.${r}__`;
     const steps = [
-      [round('review') + 'policy', 'running', '-1 minute', null],
+      [`${round('review')}mode`, 'running', '-1 minute', null],
       [round('review') + 'tests', 'skipped', '-30 seconds', '-30 seconds'],
       [round('review') + 'seams', 'skipped', '-5 minutes', '-5 minutes'],
       [round('review') + 'code', 'completed', '-30 seconds', '-20 seconds'],
       [round('review') + 'docs', 'skipped', '-30 seconds', '-30 seconds'],
       [round('review') + 'route', 'completed', '-50 seconds', '-40 seconds'],
-      [round('rereview') + 'policy', 'running', '-1 minute', null],
-      [round('rereview') + 'route', 'skipped', '-30 seconds', '-30 seconds'],
-      [round('rereview') + 'tests', 'skipped', '-30 seconds', '-30 seconds'],
+      [round('review') + 'ux', 'skipped', '-30 seconds', '-30 seconds'],
     ] as const;
     const ids = steps.map(([id]) => id);
-    // The router picked docs, so docs skipped after a completed route is not a decline.
+    // The router picked docs and said nothing of ux, so neither skipped lens is a decline.
     const routeOutput = JSON.stringify({ tests: false, docs: true });
     for (const [id, status, started, completed] of steps) {
       await db.query(
