@@ -26,11 +26,14 @@ const record = (name: string, value: number, extra: Partial<Recorded> = {}): Rec
   ...extra,
 });
 
-/** A completed archon-metrics-prs run on `codebase`, its prs node carrying `records`, as Archon writes it. */
+/**
+ * A completed archon-metrics-prs run on `codebase`, its prs node carrying `records`, as Archon writes it.
+ * By default it completes after the run seed() writes at NOW, so it is the later run whatever the wall clock.
+ */
 async function metricsRun(
   codebase: string,
   records: Recorded[],
-  createdAt = '2026-11-11T10:00:00Z',
+  createdAt = '2026-11-11T13:00:00Z',
 ): Promise<string> {
   const [run] = await db.query(
     `INSERT INTO public.remote_agent_workflow_runs (workflow_name, codebase_id, status, user_message)
@@ -148,7 +151,7 @@ describe('factory-scorecard over the fixture records', () => {
     ]);
     await db.query(
       `INSERT INTO public.remote_agent_workflow_events (workflow_run_id, event_type, step_name, data, created_at)
-       VALUES ($1, 'node_failed', 'prs', '{"type":"script"}'::jsonb, '2026-11-11T11:00:00Z')`,
+       VALUES ($1, 'node_failed', 'prs', '{"type":"script"}'::jsonb, '2026-11-11T14:00:00Z')`,
       [second],
     );
     expect((await row('sdlc.review_rounds'))?.value_7).toBeCloseTo(40 / 14, 9);

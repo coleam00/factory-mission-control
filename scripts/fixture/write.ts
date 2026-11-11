@@ -389,8 +389,8 @@ export async function writeMetrics(tx: Tx, at: Date, codebase = REPOSITORY): Pro
   if (!run) throw new Error(`no codebase named ${codebase}, so no metrics run was written`);
   for (const event of ['node_started', 'node_completed'] as const) {
     const [inserted] = await tx.query(
-      `INSERT INTO remote_agent_workflow_events (workflow_run_id, event_type, step_name, data)
-       VALUES ($1, $2, 'prs', $3::jsonb) RETURNING jsonb_typeof(data) AS stored`,
+      `INSERT INTO remote_agent_workflow_events (workflow_run_id, event_type, step_name, data, created_at)
+       VALUES ($1, $2, 'prs', $3::jsonb, $4::timestamptz) RETURNING jsonb_typeof(data) AS stored`,
       [
         run.id,
         event,
@@ -400,6 +400,7 @@ export async function writeMetrics(tx: Tx, at: Date, codebase = REPOSITORY): Pro
             structured_output: { metrics: metricRecordsFixture(at) },
           }),
         },
+        at.toISOString(),
       ],
     );
     requireObject('the event data', inserted);
