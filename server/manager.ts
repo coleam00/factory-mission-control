@@ -759,10 +759,14 @@ const GROUP_PHRASE: Record<AttentionKind, (n: number, t: AttentionTally) => stri
     `${n} to fix (${plural(t.failureRuns, 'failure', 'failures')} in ${plural(t.failures, 'cause', 'causes')})`,
 };
 
+/** The count sentence's words: `attentionLine` writes them and `statedTotals` reads them. */
+const NOTHING_NEEDS_YOU = 'Nothing needs you';
+const COUNT_WORDS = { one: 'thing needs', many: 'things need' };
+
 /** The briefing's first line: each Attention group by the count its header shows, so the total matches the page. */
 export function attentionLine(t: AttentionTally): string {
   const total = SOURCE_KEYS.reduce((sum, key) => sum + t[key], 0);
-  if (total === 0) return 'Nothing needs you.';
+  if (total === 0) return `${NOTHING_NEEDS_YOU}.`;
   const lead =
     t.decide > 0
       ? `${plural(t.decide, 'run is', 'runs are')} paused on your answer. `
@@ -772,7 +776,7 @@ export function attentionLine(t: AttentionTally): string {
   const parts = KINDS.map(({ kind }) => ({ kind, n: inGroup(t, kind) }))
     .filter(({ n }) => n > 0)
     .map(({ kind, n }) => GROUP_PHRASE[kind](n, t));
-  return `${lead}${plural(total, 'thing needs', 'things need')} you: ${parts.join(', ')}.`;
+  return `${lead}${plural(total, COUNT_WORDS.one, COUNT_WORDS.many)} you: ${parts.join(', ')}.`;
 }
 
 function daySentence(day: DayDigest | null): string {
@@ -802,15 +806,45 @@ export function briefingQuestion(
 
 type AttentionRead = { tally: AttentionTally; rows: AttentionRows };
 
-/** The count sentence's own words, as `attentionLine` writes them: the number sits just before. */
-const COUNT_TAILS = [' thing needs you', ' things need you'];
-const NOTHING_WAITS = 'nothing needs you';
+/** The number sits just before each tail. */
+const COUNT_TAILS = [` ${COUNT_WORDS.one} you`, ` ${COUNT_WORDS.many} you`];
+const NOTHING_WAITS = NOTHING_NEEDS_YOU.toLowerCase();
+/** "Nothing needs your answer" is about open questions, which the count line words as "No run is paused on a question". */
+const NOTHING_ASKED = 'nothing needs your answer';
+/** How a sentence about questions alone may end after the phrase. Anything else may go on to speak for everything. */
+const ASKED_TIMES = [' today', ' right now', ' at the moment', ' now'];
+const ASKED_ENDS = ['.', '!', '?'];
 
-/** The totals a text states in the count sentence's form, and only those: any other number in it is not a count. */
-function statedTotals(text: string): number[] {
+/** A mark ends the sentence only when the end of text or whitespace follows it: "..." and "?!" run on. */
+function endsAtQuestions(after: string): boolean {
+  const time = ASKED_TIMES.find((t) => after.startsWith(t)) ?? '';
+  const end = after.slice(time.length);
+  if (end === '') return true;
+  const mark = ASKED_ENDS.find((e) => end.startsWith(e));
+  if (mark === undefined) return false;
+  const next = end.charAt(1);
+  return next === '' || next === ' ' || next === '\n' || next === '\r' || next === '\t';
+}
+
+/** `plain` with each "nothing needs your answer" that provably stops at questions removed. */
+function withoutNothingAsked(plain: string): string {
+  const [first, ...rest] = plain.split(NOTHING_ASKED);
+  return rest.reduce(
+    (out, part) => out + (endsAtQuestions(part) ? '' : NOTHING_ASKED) + part,
+    first,
+  );
+}
+
+/**
+ * The totals a text states in the count sentence's form, and only those: any other number in it is not a count.
+ * With `questionsOnly` (no run is paused on the owner's answer), "nothing needs your answer" is no total of 0.
+ */
+function statedTotals(text: string, questionsOnly = false): number[] {
   // The panel renders emphasis and code spans, so the marks around a count are not part of what the owner reads.
   const plain = ['*', '_', '`'].reduce((s, mark) => s.split(mark).join(''), text.toLowerCase());
-  const totals = plain.includes(NOTHING_WAITS) ? [0] : [];
+  const totals = (questionsOnly ? withoutNothingAsked(plain) : plain).includes(NOTHING_WAITS)
+    ? [0]
+    : [];
   for (const tail of COUNT_TAILS) {
     for (let at = plain.indexOf(tail); at >= 0; at = plain.indexOf(tail, at + 1)) {
       let start = at;
@@ -824,7 +858,7 @@ function statedTotals(text: string): number[] {
 /** Why the model's prose cannot sit under the count line: its count sentence states a total the line does not. */
 export function briefingFault(text: string, tally: AttentionTally): string | null {
   const allowed = statedTotals(attentionLine(tally));
-  const stray = statedTotals(text).find((n) => !allowed.includes(n));
+  const stray = statedTotals(text, tally.decide === 0).find((n) => !allowed.includes(n));
   return stray === undefined ? null : `it states a count of ${stray} the page does not show`;
 }
 
