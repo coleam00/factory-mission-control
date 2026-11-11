@@ -289,6 +289,17 @@ Three decisions of 2026-11-08:
    **resume** a failed or paused run. Both run through that factory's own Archon CLI, after a
    5-second Undo, and both are recorded. Everything else stays a link or a copied command.
 
+**Owner decision 2026-11-11 (#630).** The Factory place shows, under the map, a scorecard from the metric
+records Archon stores (`archon-metrics-prs`). It lists ten measures: issues merged, PR merge rate, review
+rounds to Ready, the share Ready in one round, the share needing five rounds or more, issue lead time,
+build rounds per issue, owner asks per issue, and test and production lines added, with the issue
+measures also per route. Each is shown for the last 7 and the last 30 UTC days, beside the period before
+it, with how many records each number rests on. A comparison resting on fewer than 10 records on either
+side reads "Too few to compare" (4.2's threshold). The numbers are Archon's records counted by Archon's
+rules (a re-run replaces earlier records), projected into `mc.metric_records` and not derived from laps.
+The Manager answers "how is the factory doing" from the same query. This adds one panel to 4.9's
+"whether a change helped is a question for the agent", which still holds for everything else.
+
 The places are:
 - **Attention** (home)
 - **Factory** (the v2 map)
@@ -445,6 +456,7 @@ measures are the right ones, are owner calls (product direction).
 | Which version a lap ran | the run's `metadata.workflow_source.digest` (a hash of the exact workflow pack it ran) | as above; versions are keyed by (factory, digest), dated by the first `archon-loop` or `archon-build-queue` run with that digest (any build-queue run, item or not), and labelled with the most recent pin committed before it. No other workflow's run dates a version (#160, amended by #378). A digest covers every workflow run from one source, so a version also names that source's intake and merge-queue runs |
 | Issues, labels, `Depends on`, PRD phase, claims, reviews, owner decisions, `Loop metrics` and `holdouts at` lines, pull requests | GitHub | webhook into the Neon Function; nightly reconcile; backfill |
 | Versions, reasons, `Hypothesis`, `Measure`, verdicts | commits on `coleam00/ai-software-factory` | push webhook (section 11.5) |
+| SDLC metrics (merge rate, review rounds, lead time, owner asks, lines) | `node_completed` events whose `structured_output` carries `metrics` (Archon's metric records) | a trigger projects them into `mc.metric_records` |
 | Key decisions | `DECISIONS.md` in `coleam00/ai-software-factory` | push webhook |
 | Architecture | the pack at the pinned Archon commit (`.archon/workflows/sdlc/` in `coleam00/Archon`) and the factory template (`template/` in ai-software-factory) and the factory package (`.archon/workflows/factory/`) | the architecture job (11.4) |
 
