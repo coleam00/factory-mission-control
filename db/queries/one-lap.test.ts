@@ -88,6 +88,11 @@ describe('one-lap on the seed', () => {
         stop_line: null,
         stop_class: null,
         capacity_since: null,
+        item_closed_at: new Date('2026-10-02T07:30:00Z'),
+        item_merged_at: new Date('2026-10-02T07:30:00Z'),
+        item_pr: null,
+        finished_by: null,
+        finished_at: null,
       },
     ]);
   });

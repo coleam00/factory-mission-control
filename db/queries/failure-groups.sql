@@ -1,10 +1,10 @@
--- $1 the factory; $2 the instant 7 days ago, cut to the hour (app/lib/failures.ts failuresSince).
--- A failed run is resolved, and in no group, when (owner change 4, 2026-11-12):
---   its work item is closed (the issue, or with no issue the pull request);
---   a later run of its workflow completed on the item, or with no item at all, on anything;
---   it stopped at or before $2.
--- one-lap.sql restates the first two for the run page; restated-rules.test.ts holds them together.
 WITH runs AS (
+-- $1 the factory, $2 the instant 7 days ago, cut to the hour (app/lib/failures.ts failuresSince).
+-- A failed run is resolved, and in no group, when (owner change 4, 2026-11-12):
+--   its work item is closed (the issue, or with no issue the pull request),
+--   a later run of its workflow completed on the item, or with no item at all, on anything,
+--   it stopped at or before $2.
+-- one-lap.sql restates the first two for the run page, restated-rules.test.ts holds them together.
   SELECT s.run_id, s.workflow_name, s.step_id, s.class, s.signature, s.line, s.status, s.stopped_at,
     (s.stopped_at AT TIME ZONE 'UTC')::date AS stopped_day,
     item.issue, CASE WHEN item.issue IS NULL THEN pr.number END AS pr,
