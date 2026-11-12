@@ -301,7 +301,7 @@ on a work item (invariant 2). A run with nothing left to do does not offer Resum
 records Archon stores (`archon-metrics-prs`). It lists ten measures: issues merged, PR merge rate, review
 rounds to Ready, the share Ready in one round, the share needing five rounds or more, issue lead time,
 build rounds per issue, owner asks per issue, and test and production lines added, with the issue
-measures also per route. Each is shown for the last 7 and the last 30 UTC days, beside the period before
+measures also per route. Each is shown for the last 7 and the last 30 days, counted by the owner's local day (owner decision 2026-11-12, #651), beside the period before
 it, with how many records each number rests on. A comparison resting on fewer than 10 records on either
 side reads "Too few to compare" (4.2's threshold). The numbers are Archon's records counted by Archon's
 rules (a re-run replaces earlier records), projected into `mc.metric_records` and not derived from laps.
