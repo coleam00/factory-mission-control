@@ -340,6 +340,45 @@ test('20261110T1200Z re-projects the class of runs that failed on a database bli
   }
 });
 
+test('20261112T2001Z re-projects the class of runs that failed on a claim conflict before it', async () => {
+  const name = '20261112T2001Z_every_failure_has_a_class';
+  const historical = await archonDb();
+  try {
+    await runMigrations({ files: migrationFiles.filter((f) => f.name < name), db: historical });
+    const [run] = await historical.query(
+      `INSERT INTO public.remote_agent_workflow_runs (workflow_name, status, user_message, metadata)
+       VALUES ('archon-build-queue', 'running', 'q', '{}') RETURNING id`,
+    );
+    await historical.query(
+      `INSERT INTO public.remote_agent_workflow_events (workflow_run_id, event_type, step_name, data)
+       VALUES ($1, 'node_failed', 'facts', $2)`,
+      [
+        run?.id,
+        JSON.stringify(
+          eventData(
+            'facts',
+            'node_failed',
+            NOW,
+            'build-queue facts: issue 630 is claimed by run e353c524-1111-4000-8000-000000000000',
+          ),
+        ),
+      ],
+    );
+    await historical.query(
+      `UPDATE public.remote_agent_workflow_runs SET status = 'failed', completed_at = now() WHERE id = $1`,
+      [run?.id],
+    );
+    const read = () =>
+      historical.query('SELECT class FROM mc.run_stops WHERE run_id = $1', [run?.id]);
+    expect((await read())[0]?.class).toBeNull();
+
+    await runMigrations({ files: migrationFiles, db: historical });
+    expect((await read())[0]?.class).toBe('input');
+  } finally {
+    await historical.close();
+  }
+});
+
 test('0031 records a run it cannot project in projection_errors and still finishes', async () => {
   const historical = await archonDb();
   try {
