@@ -42,7 +42,7 @@ const parsed = (url: string) => {
  */
 const GEOMETRY = `
   body { margin: 0; }
-  [data-map-stage] { position: relative; overflow: hidden; margin: 0 24px; }
+  [data-map-stage] { position: relative; overflow: hidden; margin: 0 24px; touch-action: none; }
   [data-map-world], [data-map-world] > svg, [data-map-group], [data-card] { position: absolute; }
   [data-map-world], [data-map-world] > svg { top: 0; left: 0; }
   [data-map-world] > svg, [data-map-group] { pointer-events: none; }

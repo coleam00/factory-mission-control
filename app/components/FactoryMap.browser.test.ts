@@ -366,11 +366,9 @@ for (const where of ['the background', 'a card']) {
       await page.touch('touchMove', from[0] + (50 * i) / 8, from[1] + (30 * i) / 8);
     }
     await page.touch('touchEnd', from[0] + 50, from[1] + 30);
-    // The slop and the browser's own touch handling eat part of the travel, so compare with one
-    // step (6.25 px): a drag that stops after its first step moves the camera no further.
     const moved = (await geometry()).camera;
-    expect(moved.x - start.camera.x).toBeGreaterThan(12.5);
-    expect(moved.y - start.camera.y).toBeGreaterThan(7.5);
+    expect(moved.x - start.camera.x).toBeCloseTo(50, 0);
+    expect(moved.y - start.camera.y).toBeCloseTo(30, 0);
   }, 30_000);
 }
 
