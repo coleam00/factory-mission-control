@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test';
+import { clock } from './format';
 import type { LapMapRow } from './lap-graph';
 import type { OneLapRow, StepAttemptRow } from './one-lap';
 import {
@@ -60,6 +61,11 @@ const lap = (over: Partial<OneLapRow> = {}): OneLapRow => ({
   stop_class: null,
   capacity_since: null,
   pr_state: null,
+  item_closed_at: null,
+  item_merged_at: null,
+  item_pr: null,
+  finished_by: null,
+  finished_at: null,
   ...over,
 });
 
@@ -244,6 +250,72 @@ test("the manager's read of a failure names the step, the resume and whether it 
   expect(text(managerRead(lap(), rows, timeline))).toStartWith(
     'pr__prepare failed on round 2: boom.',
   );
+});
+
+test('a failed run whose item is finished says there is nothing to do and offers no resume', () => {
+  const rows = failedBuild();
+  const timeline = runTimeline(rows);
+  const now = new Date('2026-10-24T15:00:00Z').getTime();
+  const stopped = lap({
+    stop_step: `${GROUP}.pr__prepare`,
+    stop_line: 'boom',
+    stop_class: 'input',
+  });
+  const local = (iso: string, today: boolean) =>
+    today
+      ? clock(new Date(iso))
+      : `${new Date(iso).toLocaleDateString([], { month: 'short', day: 'numeric' })}, ${clock(new Date(iso))}`;
+  const read = (over: Partial<OneLapRow>) =>
+    managerRead({ ...stopped, ...over }, rows, timeline, now);
+  const byRun = '5eed0002-0000-4000-8000-00000000000a';
+  const finished = { finished_by: byRun, finished_at: new Date('2026-10-11T03:30:00Z') };
+
+  const merged = read({
+    item_closed_at: new Date('2026-10-24T11:00:00Z'),
+    item_merged_at: new Date('2026-10-24T11:00:00Z'),
+    ...finished,
+    finished_at: new Date('2026-10-24T11:00:00Z'),
+  });
+  expect(text(merged)).toStartWith(
+    `Nothing to do: #485 merged at ${local('2026-10-24T11:00:00Z', true)} by run 5eed0002. pr__prepare failed`,
+  );
+  expect(text(merged)).not.toContain('Resume');
+  expect(merged).toMatchObject({
+    resumeStep: null,
+    resumeFrom: null,
+    resumeCost: null,
+    done: { open: { label: 'Open #485', kind: 'issue', n: 485 } },
+  });
+
+  expect(text(read({ item_closed_at: new Date('2026-10-11T03:30:00Z') }))).toStartWith(
+    `Nothing to do: #485 closed at ${local('2026-10-11T03:30:00Z', false)}. `,
+  );
+  expect(text(read(finished))).toStartWith(
+    `Nothing to do: run 5eed0002 completed #485 at ${local('2026-10-11T03:30:00Z', false)}. `,
+  );
+  const noItem = read({ issue_number: null, ...finished });
+  expect(text(noItem)).toStartWith(
+    `Nothing to do: run 5eed0002 of archon-build-queue completed at ${local('2026-10-11T03:30:00Z', false)}. `,
+  );
+  expect(noItem.done?.open).toEqual({
+    label: 'Open run 5eed0002',
+    kind: 'run',
+    n: null,
+    runId: byRun,
+  });
+  const pullItem = read({
+    issue_number: null,
+    item_pr: 70,
+    item_closed_at: new Date('2026-10-11T03:30:00Z'),
+  });
+  expect(pullItem.done?.open).toMatchObject({ label: 'Open #70', kind: 'pr', n: 70 });
+
+  const open = read({});
+  expect(open.done).toBeNull();
+  expect(open.resumeStep).toBe('pr__prepare');
+  expect(
+    managerRead(lap({ status: 'completed', ...finished }), rows, timeline, now).done,
+  ).toBeNull();
 });
 
 test('a paused, finished, cancelled or running run is read in one sentence', () => {

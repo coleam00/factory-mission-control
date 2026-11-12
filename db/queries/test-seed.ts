@@ -26,21 +26,25 @@ export const CHECK_APP = ['archon-loop', 'check-app'];
 /** The one-lap screen's panels: keyed by the lap's run id too. */
 export const LAP_PANELS = ['one-lap', 'one-lap-steps', 'one-lap-checks', 'one-lap-map'];
 export const LAP_RUN = '5eed0001-0000-4000-8000-000000000003';
+/** failure-groups' `$2` on the seed: 7 days before its newest stop (2026-10-24T11:35Z), so the seed's failures are still unresolved by age. */
+export const SEED_FAILURES_SINCE = '2026-10-17T11:00:00.000Z';
 /** The home map and step-detail take the version's pin as $2, '' for the current version. */
 export const paramsFor = (name: string, factory: string) =>
   name === 'step-detail' || name === 'home-map'
     ? [factory, '']
     : name === 'factory-scorecard'
       ? [factory, '2026-11-12']
-      : name === 'work-item'
-        ? [factory, '3']
-        : STEP_PANELS.includes(name)
-          ? [factory, ...CHECK_APP, '']
-          : name === 'runs'
-            ? [factory, ...runsArgs({ q: '', state: '', hideIdle: false, page: 1 })]
-            : LAP_PANELS.includes(name)
-              ? [factory, LAP_RUN]
-              : [factory];
+      : name === 'failure-groups'
+        ? [factory, SEED_FAILURES_SINCE]
+        : name === 'work-item'
+          ? [factory, '3']
+          : STEP_PANELS.includes(name)
+            ? [factory, ...CHECK_APP, '']
+            : name === 'runs'
+              ? [factory, ...runsArgs({ q: '', state: '', hideIdle: false, page: 1 })]
+              : LAP_PANELS.includes(name)
+                ? [factory, LAP_RUN]
+                : [factory];
 
 export const SEED = readFileSync(join(REPO_ROOT, 'fixtures', 'seed.sql'), 'utf8');
 

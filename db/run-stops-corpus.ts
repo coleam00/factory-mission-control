@@ -67,11 +67,7 @@ export const STOP_CORPUS: readonly (readonly [line: string, cls: StopClass, sour
     'transient',
     'issue #628 (owner check 2026-11-10)',
   ],
-  [
-    'error: out of memory',
-    'environment',
-    'issue #628 line; README owner change 5 (2026-11-12)',
-  ],
+  ['error: out of memory', 'environment', 'issue #628 line; README owner change 5 (2026-11-12)'],
   [
     'FATAL ERROR: Reached heap limit Allocation failed - JavaScript heap out of memory',
     'environment',

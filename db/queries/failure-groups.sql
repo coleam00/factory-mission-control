@@ -1,7 +1,15 @@
+-- $1 the factory; $2 the instant 7 days ago, cut to the hour (app/lib/failures.ts failuresSince).
+-- A failed run is resolved, and in no group, when (owner change 4, 2026-11-12):
+--   its work item is closed (the issue, or with no issue the pull request);
+--   a later run of its workflow completed on the item, or with no item at all, on anything;
+--   it stopped at or before $2.
+-- one-lap.sql restates the first two for the run page; restated-rules.test.ts holds them together.
 WITH runs AS (
   SELECT s.run_id, s.workflow_name, s.step_id, s.class, s.signature, s.line, s.status, s.stopped_at,
     (s.stopped_at AT TIME ZONE 'UTC')::date AS stopped_day,
-    item.issue, CASE WHEN item.issue IS NULL THEN pr.number END AS pr
+    item.issue, CASE WHEN item.issue IS NULL THEN pr.number END AS pr,
+    CASE WHEN item.issue IS NOT NULL THEN i.state = 'closed'
+      ELSE coalesce(p.state = 'closed', false) END AS closed
   FROM mc.run_stops s
   LEFT JOIN mc.laps l ON l.run_id = s.run_id
   LEFT JOIN LATERAL (
@@ -14,17 +22,20 @@ WITH runs AS (
     SELECT coalesce(c.issue_number, (facts.output -> 'item' ->> 'number')::int, l.issue_number) AS issue
   ) item
   CROSS JOIN LATERAL (SELECT min(ps.pr_number) AS number FROM mc.lap_steps ps WHERE ps.run_id = s.run_id) pr
+  LEFT JOIN mc.issues i ON i.factory = s.factory AND i.number = item.issue
+  LEFT JOIN mc.pull_requests p ON p.factory = s.factory AND p.number = pr.number
   WHERE s.factory = $1
 ), last AS (SELECT max(r.stopped_day) AS day FROM runs r),
 f AS (
   SELECT r.run_id, r.workflow_name, r.step_id, r.class, r.signature, r.line, r.stopped_at, r.stopped_day
-  FROM runs r CROSS JOIN last
+  FROM runs r
   WHERE r.status = 'failed'
-    AND NOT coalesce(r.stopped_day <= last.day - 14, false)
+    AND NOT coalesce(r.stopped_at <= $2::timestamptz, false)
+    AND NOT coalesce(r.closed, false)
     AND NOT EXISTS (
       SELECT 1 FROM runs o
       WHERE o.status = 'completed' AND o.workflow_name = r.workflow_name
-        AND (o.issue = r.issue OR o.pr = r.pr) AND o.stopped_at > r.stopped_at
+        AND ((r.issue IS NULL AND r.pr IS NULL) OR o.issue = r.issue OR o.pr = r.pr) AND o.stopped_at > r.stopped_at
     )
     AND NOT (coalesce(r.class = 'transient', false) AND EXISTS (
       SELECT 1 FROM runs o

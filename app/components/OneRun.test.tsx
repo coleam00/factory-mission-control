@@ -1,6 +1,7 @@
 import { expect, mock, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { createMemoryRouter, RouterProvider } from 'react-router';
+import { buttonClass } from './ui/Button';
 import type { LapMapRow } from '../lib/lap-graph';
 import type { OneLapRow, StepAttemptRow } from '../lib/one-lap';
 import { managerPlace } from '../lib/manager';
@@ -48,6 +49,11 @@ const lap: OneLapRow = {
   stop_class: 'environment',
   capacity_since: null,
   pr_state: null,
+  item_closed_at: null,
+  item_merged_at: null,
+  item_pr: null,
+  finished_by: null,
+  finished_at: null,
 };
 
 let minute = 0;
@@ -161,6 +167,27 @@ test("the manager's read comes from the stop record, and the primary action open
     `data-action="primary" href="http://localhost:3090/console/r/${RUN}" class="`,
   );
   expect(html).toContain('Resume from pr__prepare');
+});
+
+test('a failed run whose item is closed offers Open #n as the primary and demotes Resume', () => {
+  const html = render({
+    lap: {
+      ...lap,
+      item_closed_at: new Date('2026-10-20T10:00:00Z'),
+      item_merged_at: new Date('2026-10-20T10:00:00Z'),
+    },
+  });
+  expect(html).toContain('data-nothing-to-do');
+  expect(html).toContain('Nothing to do: #485 merged at');
+  expect(html).toMatch(
+    /data-action="primary" data-act="open-item" href="[^"]*\/issues\/485"[^>]*>Open #485</,
+  );
+  expect(html).not.toContain('Resume from pr__prepare');
+  expect(html).not.toContain('data-resume-step');
+  const panel = html.slice(html.indexOf('data-error-panel'));
+  expect(panel).toContain('Resume from here');
+  expect(panel).toContain(`class="${buttonClass('secondary')}">Resume from here`);
+  expect(render()).toContain('Resume from pr__prepare');
 });
 
 test('the timeline is the default tab: round 1 folded, round 2 open, the failure expanded, the skip explained', () => {

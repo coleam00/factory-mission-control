@@ -87,6 +87,15 @@ export interface OneLapRow {
   capacity_since: Date | null;
   /** The run's pull request in the GitHub mirror (`mc.pull_requests`); null when it names none or the mirror lacks it. */
   pr_state: 'open' | 'merged' | 'closed' | null;
+  /** When the run's work item closed (the issue, or with no issue its pull request); null while open or unmirrored. Read only for a failed run. */
+  item_closed_at: Date | null;
+  /** When a pull request that closes the item (or the item itself, a PR) merged. */
+  item_merged_at: Date | null;
+  /** The run's pull request when it has no issue: the item the run page opens. */
+  item_pr: number | null;
+  /** The earliest later completed run of the same workflow on the same item (any item, if the run has none); failed runs only. */
+  finished_by: string | null;
+  finished_at: Date | null;
 }
 
 /**
