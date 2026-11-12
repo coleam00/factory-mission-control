@@ -9,6 +9,48 @@ redrawn in the v3 surfaces. Where this file and `../v2/` disagree, this file win
 It is owner-maintained: laps read it and never edit it (`docs/design/**` is a protected path). The
 PRD's section 4.10 states the product decisions behind it.
 
+## Owner changes of 2026-11-12 (these win over everything below, `mockup.html` and `refs/`)
+
+The owner looked at v3 on live data and found Attention said "23 things need you" when two did: 21 of
+the 23 were failure groups. Where `mockup.html` or a screenshot (`01`, `02`, `03`, `40`) still shows a
+**Fix** group, a failure sparkline or a failure count on Attention, this section wins.
+
+1. **Attention holds only what needs the owner.** Its groups are **Decide**, **Unstick** and **Clean
+   up**. Failures are not on Attention. The number "N things need you", the nav badge, the phone tab
+   badge, the Manager's "Looking at Attention · N items" chip and the briefing's count all count the
+   same items, and failures are never among them.
+2. **Failures live on Runs.** Runs gets a segmented control at top right, **All runs / Failures**
+   (`/f/<factory>/runs?view=failures`). Failures shows one card per cause, newest first. No new
+   place in the nav, and the Runs nav count stays the live count.
+3. **No sparklines.** A failure card says "N runs, last <age> ago" in words. Its error line is one
+   mono line in the muted color, cut with an ellipsis, with the full text one click away (the run).
+   Red is the state dot and the class pill only.
+4. **Old failures resolve themselves.** A failure is resolved, and shown nowhere as open, when its
+   work item is closed, when a later run of the same workflow on the same item (or, for a run with no
+   item, any later run of the same workflow) completed, or when it is more than 7 days old.
+5. **Every failure has a class.** Network and GitHub connectivity errors are `transient`; out of
+   memory, database and checkout-changed errors are `environment`; claim conflicts, missing issues and
+   unknown refs are `input`; schema, reference and "not one of the choices" errors are `code`;
+   bindings, credentials and schedules are `config`. "unclassified" is a bug to report, not a class.
+6. **Every Attention item is a decision.** Each card shows what happened in two or three plain
+   sentences (what it waits on, since when, and why), then option tiles with the recommended one
+   first, then **Something else** with a text box. Unstick items offer: **Re-triage #N**
+   (recommended when the blocker closed), **Close #N**, and **Something else** (the text is posted on
+   the issue as the owner's comment and the item is re-triaged). All go through the action model:
+   toast, 5-second Undo, recorded.
+7. **A run that has nothing left to do does not offer Resume.** When its work item is closed or a
+   later run on the same item completed, the manager's read says so ("Nothing to do: #630 merged at
+   07:29 by run e353c524") and Resume is not the primary button.
+8. **Centered column.** With the Manager closed, every place centers its content column the way Runs
+   does. No place leaves a wide empty band on the right.
+9. **Local time everywhere.** Every time and every "today" is the owner's local time.
+10. **The handled line names who acted:** "You answered 1 · the manager handled 2 today".
+11. **The map moves however you grab it.** A drag that starts on a card moves the map like a drag on
+    the background; a press without movement selects the card. Selecting, opening (double-click),
+    going up (Esc or the crumb) and Fit never leave the map unable to drag or zoom. The selected
+    card's details show inside the map frame, not below the page fold. **Fit** shows the whole level
+    inside the frame at the current width, with or without the Manager open.
+
 ## How to look at it
 
 `mockup.html` is a working mockup: one self-contained page (Google Fonts is its only load). Open it
@@ -233,17 +275,21 @@ take the v3 values (`--v3-role-*`). It is the Factory place, one click from home
 
 ## Actions
 
-The dashboard writes to a factory in exactly two ways, each through that factory's own Archon CLI
-and each recorded:
+The dashboard writes to a factory in exactly five ways (owner decision 2026-11-12), each through
+that factory's own operator command and each recorded:
 
 - **Answer**: answer a paused run's question with one of its options, or with "Something else"
   plus text.
 - **Resume**: resume a failed or paused run, including from a named step.
+- **Re-triage**: send a work item back to intake (the `archon-triage` label, then one intake run).
+- **Close**: close a work item's issue, with a comment saying the owner closed it from Mission Control.
+- **Comment**: post the owner's text on a work item's issue ("Something else" on an Unstick item),
+  followed by a re-triage.
 
 Snooze and Mark resolved change only the dashboard's own records. Everything else stays a link:
-open the issue, the PR, the console, or copy a command. Examples are
-re-triage, unpark, release a claim, cancel, merge, and re-run a check, until a later owner decision
-adds them.
+open the issue, the PR, the console, or copy a command. Examples are release a claim, cancel, merge
+and re-run a check, until a later owner decision adds them. A copied command never assumes `archon` on
+the owner's PATH is this factory's CLI.
 
 Every action:
 1. shows the toast with Undo for 5 seconds before it is sent

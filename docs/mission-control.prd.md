@@ -289,6 +289,14 @@ Three decisions of 2026-11-08:
    **resume** a failed or paused run. Both run through that factory's own Archon CLI, after a
    5-second Undo, and both are recorded. Everything else stays a link or a copied command.
 
+**Owner decisions 2026-11-12.** Attention counts only what needs the owner (Decide, Unstick, Clean
+up); failures move to a Failures view on Runs and never count toward "N things need you". A failure
+resolves when its work item closes, a later run of the same workflow on the same item completes, or
+it is more than 7 days old, and every failure carries a class. Every Attention item is a decision with
+options and "Something else" plus text. The dashboard gains three writes: re-triage, close and comment
+on a work item (invariant 2). A run with nothing left to do does not offer Resume. Times are local.
+`docs/design/v3/README.md` "Owner changes of 2026-11-12" is binding.
+
 **Owner decision 2026-11-11 (#630).** The Factory place shows, under the map, a scorecard from the metric
 records Archon stores (`archon-metrics-prs`). It lists ten measures: issues merged, PR merge rate, review
 rounds to Ready, the share Ready in one round, the share needing five rounds or more, issue lead time,
@@ -312,8 +320,9 @@ one color. Violet means you, your manager and the recommended action. Amber is s
 
 ## 5. Out of scope, forever
 
-- Writing to GitHub, Archon or any factory from the dashboard, beyond the two writes of invariant 2
-  (answer and resume): no approving outside a question, halting, launching, merging or re-triaging.
+- Writing to GitHub, Archon or any factory from the dashboard, beyond the five writes of invariant 2
+  (answer, resume, re-triage, close, comment): no approving outside a question, halting, launching or
+  merging.
 - Rebuilding Archon's run log viewer. One lap links to the Archon console for the full stream.
 - Anything that requires changing the Archon engine or Archon's database schema.
 - User accounts, sharing, or hosting the dashboard UI outside the owner's machine in v1. (The
@@ -325,8 +334,9 @@ one color. Violet means you, your manager and the recommended action. Amber is s
    views) can never make an Archon write fail or wait. A trigger catches its own errors and counts
    them in a table; it never raises. Triggers on Archon's tables fire only for step-level events
    (section 11.4).
-2. **Two writes, no more (owner decision 2026-11-08).** The dashboard writes to a factory in exactly two
-   ways: answering a paused run's question and resuming a run. Each goes through that factory's own
+2. **Five writes, no more (owner decisions 2026-11-08 and 2026-11-12).** The dashboard writes to a
+   factory in exactly five ways: answering a paused run's question, resuming a run, re-triaging a work
+   item, closing a work item's issue, and commenting on it. Each goes through that factory's own
    Archon CLI, after a 5-second Undo, and is recorded in the dashboard's own table. Nothing else the
    dashboard runs writes to GitHub, to a factory's repository, or to Archon's tables, and a test
    proves there is no other write path.

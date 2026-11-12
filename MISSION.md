@@ -9,7 +9,8 @@ writes. The product document is `docs/mission-control.prd.md`; it decides.
 ## Never
 
 1. Never write to GitHub, to Archon, to a factory's repository or to Archon's tables, except the
-   two writes of PRD invariant 2: answer a paused run's question and resume a run, each through the
+   five writes of PRD invariant 2: answer a paused run's question, resume a run, and re-triage, close or
+   comment on a work item, each through the
    factory's own Archon CLI, after a 5-second Undo, and recorded.
 2. Never slow or break an Archon write. Whatever this app adds to the database fails silently
    and is counted, never raised into Archon's transaction.
