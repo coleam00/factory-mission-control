@@ -31,7 +31,6 @@ import {
   type MapView,
   midpoint,
   neighbours,
-  openCamera,
   openerOf,
   type Point,
   PHONE,
@@ -599,6 +598,8 @@ export function FactoryMap({
     onCard: boolean;
     pointerId: number;
   } | null>(null);
+  /** Whether the person has dragged or zoomed this level, so a resize or a Manager toggle leaves the camera alone (#655). */
+  const owned = useRef(false);
   /** Set by a drag's release so the click the browser may send after it does not select or open. */
   const suppressClick = useRef(false);
   /** Finishes the level change in flight at once; null when none is. */
@@ -640,6 +641,7 @@ export function FactoryMap({
     const el = stage.current;
     if (!el) return;
     takeCamera();
+    owned.current = false;
     setCamera(
       fitCamera(map, levelRef.current.level, { width: el.clientWidth, height: el.clientHeight }),
     );
@@ -649,6 +651,7 @@ export function FactoryMap({
   /**
    * The frame's height for its width: the map's height at the scale that fits its width, so the
    * opening camera leaves no empty bands (owner, PR #326 review), and the phone frame below `PHONE`.
+   * The camera refits with the frame until the person moves the map (#655).
    */
   const [frameHeight, setFrameHeight] = useState(MIN_FRAME);
   const opened = useCallback(() => {
@@ -658,14 +661,14 @@ export function FactoryMap({
     if (width >= PHONE) {
       const height = heroFrameHeight(rootWorld, width);
       setFrameHeight(height);
-      if (el.offsetHeight === height) {
+      if (el.offsetHeight === height && !owned.current) {
         const frame = { width, height: el.clientHeight };
-        placeCamera(openCamera(map, levelRef.current.level, frame), frame);
+        placeCamera(fitCamera(map, levelRef.current.level, frame), frame);
       }
       return;
     }
     setFrameHeight(PHONE_FRAME);
-    if (el.offsetHeight !== PHONE_FRAME) return;
+    if (el.offsetHeight !== PHONE_FRAME || owned.current) return;
     const { level, world } = levelRef.current;
     const at = phoneCentre(level, world);
     placeCamera(
@@ -690,6 +693,7 @@ export function FactoryMap({
   const zoomAround = useCallback(
     (factor: number, mx: number, my: number) => {
       takeCamera();
+      owned.current = true;
       const was = camRef.current;
       const k = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, was.k * factor));
       setCamera({ k, x: mx - (mx - was.x) * (k / was.k), y: my - (my - was.y) * (k / was.k) });
@@ -713,6 +717,7 @@ export function FactoryMap({
           (event.deltaMode === 0 && Math.abs(event.deltaY) < 40 && event.deltaY % 1 !== 0));
       if (swipe) {
         takeCamera();
+        owned.current = true;
         const was = camRef.current;
         setCamera({ ...was, x: was.x - event.deltaX, y: was.y - event.deltaY });
         return;
@@ -770,6 +775,7 @@ export function FactoryMap({
       setSelected(arriving.current);
       setDetailsSide(null);
       levelRef.current = { level: next, world: nextWorld };
+      owned.current = false;
       setShown(going);
     };
     let finish: (() => void) | undefined;
@@ -895,6 +901,7 @@ export function FactoryMap({
       was.moved = true;
       event.currentTarget.setPointerCapture(was.pointerId);
       takeCamera();
+      owned.current = true;
       pan(event.clientX - was.startX, event.clientY - was.startY);
     } else {
       pan(event.clientX - was.lastX, event.clientY - was.lastY);

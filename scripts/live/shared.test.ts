@@ -5,7 +5,7 @@ import {
   LIMITS,
   lateWrite,
   mapMismatches,
-  mapTypeFailures,
+  mapWidthFailures,
   type ShownCard,
   waitForHealth,
 } from './shared';
@@ -73,7 +73,7 @@ test("the map is compared card for card with factory-map.json and each card's la
   );
 });
 
-test("the map's type passes at the owner's least sizes and fails, naming it, under any", () => {
+test("the map's frame passes when it spans the column and fails, naming it, when narrower", () => {
   const fitted = {
     title: 14.3,
     text: 11.5,
@@ -82,15 +82,12 @@ test("the map's type passes at the owner's least sizes and fails, naming it, und
     frameWidth: 1176,
     columnWidth: 1224,
   };
-  expect(mapTypeFailures(fitted)).toEqual([]);
+  expect(mapWidthFailures(fitted)).toEqual([]);
   // The v3 shell at 1440: 216px nav, and with the Manager dock open 384px more.
-  expect(mapTypeFailures({ ...fitted, frameWidth: 792, columnWidth: 840 })).toEqual([]);
-  expect(mapTypeFailures({ ...fitted, title: 8, text: 5 })).toEqual([
-    "a map card's title renders 8.0px at 1440 fitted, under 14px",
-    "a map card's text renders 5.0px at 1440 fitted, under 11px",
-  ]);
-  expect(mapTypeFailures({ ...fitted, label: Number.NaN })).toHaveLength(1);
-  expect(mapTypeFailures({ ...fitted, frameWidth: 792 })).toEqual([
+  expect(mapWidthFailures({ ...fitted, frameWidth: 792, columnWidth: 840 })).toEqual([]);
+  // The map opens fitted, so its type under the floors at 1440 is recorded, not a failure (#655).
+  expect(mapWidthFailures({ ...fitted, title: 8, text: 5 })).toEqual([]);
+  expect(mapWidthFailures({ ...fitted, frameWidth: 792 })).toEqual([
     "the map's frame is 792px wide in a 1224px page column: it should span the column inside the gutters",
   ]);
 });

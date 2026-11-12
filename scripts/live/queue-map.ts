@@ -16,7 +16,7 @@ import {
   lateWrite,
   liveOutputs,
   MAP,
-  MAP_READABLE,
+  MAP_VIEWPORT,
   mapCards,
   mapMismatches,
   pageWait,
@@ -198,7 +198,7 @@ export function queueMapPhase(ctx: LiveContext): LivePhase {
       const split = await openPage(deps.env);
       const intake = await openPage(deps.env);
       try {
-        await page.setViewport(MAP_READABLE.width);
+        await page.setViewport(MAP_VIEWPORT);
         await page.goto(`${base}/f/${name}/map`);
         await page.evaluate<boolean>(
           pageWait(`document.querySelector('${MAP}[data-state="ready"]') !== null`, READY_WAIT_MS),
@@ -212,7 +212,7 @@ export function queueMapPhase(ctx: LiveContext): LivePhase {
         );
 
         const open = async (target: Page, id: string, shoot = false) => {
-          await target.setViewport(MAP_READABLE.width);
+          await target.setViewport(MAP_VIEWPORT);
           await target.goto(`${base}/f/${name}/map?view=${id}`);
           await target.evaluate<boolean>(
             pageWait(
