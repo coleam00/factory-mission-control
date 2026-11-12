@@ -11,9 +11,22 @@ export interface Page {
   /** Navigates and resolves once the page's load event fires. */
   goto(url: string): Promise<void>;
   setViewport(width: number): Promise<void>;
+  /** One real mouse event at page coordinates `x`, `y`, left button; a move while pressed is a drag. */
+  mouse(event: MouseInput): Promise<void>;
+  /** One real touch event with a single finger at page coordinates `x`, `y`; a move while down is a drag. */
+  touch(type: 'touchStart' | 'touchMove' | 'touchEnd', x: number, y: number): Promise<void>;
   /** A PNG of the whole page laid out `width` px wide. */
   screenshot(width: number): Promise<Buffer>;
   close(): Promise<void>;
+}
+
+export interface MouseInput {
+  type: 'mousePressed' | 'mouseMoved' | 'mouseReleased' | 'mouseWheel';
+  x: number;
+  y: number;
+  /** 1 for a press that starts a click, 2 for the one that completes a double-click. */
+  clickCount?: number;
+  deltaY?: number;
 }
 
 const STEP_TIMEOUT_MS = 20_000;
@@ -214,6 +227,7 @@ export async function openPage(env: Record<string, string | undefined>): Promise
       const metrics = { width, height: 900, deviceScaleFactor: 1, mobile: false };
       await cdp.send('Emulation.setDeviceMetricsOverride', metrics, sessionId);
     };
+    let pressed = false;
     return {
       async evaluate<T>(expression: string, timeoutMs = STEP_TIMEOUT_MS): Promise<T> {
         const { result, exceptionDetails } = await cdp.send<{
@@ -244,6 +258,31 @@ export async function openPage(env: Record<string, string | undefined>): Promise
         await loaded;
       },
       setViewport,
+      async mouse({ type, x, y, clickCount = 0, deltaY = 0 }: MouseInput) {
+        if (type === 'mousePressed') pressed = true;
+        else if (type === 'mouseReleased') pressed = false;
+        await cdp.send(
+          'Input.dispatchMouseEvent',
+          {
+            type,
+            x,
+            y,
+            button: type === 'mouseMoved' && !pressed ? 'none' : 'left',
+            buttons: pressed ? 1 : 0,
+            clickCount,
+            deltaX: 0,
+            deltaY,
+          },
+          sessionId,
+        );
+      },
+      async touch(type: 'touchStart' | 'touchMove' | 'touchEnd', x: number, y: number) {
+        await cdp.send(
+          'Input.dispatchTouchEvent',
+          { type, touchPoints: type === 'touchEnd' ? [] : [{ x, y }] },
+          sessionId,
+        );
+      },
       async screenshot(width: number) {
         await setViewport(width);
         const { cssContentSize } = await cdp.send<{

@@ -47,6 +47,8 @@ const page: Page = {
   },
   async goto() {},
   async setViewport() {},
+  async mouse() {},
+  async touch() {},
   async screenshot() {
     return Buffer.alloc(0);
   },

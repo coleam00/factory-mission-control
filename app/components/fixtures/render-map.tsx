@@ -36,6 +36,21 @@ const parsed = (url: string) => {
   return { pathname, search };
 };
 
+/**
+ * The fixture loads no stylesheet, so the few rules the map's geometry needs are written here, keyed
+ * on data attributes and mirroring the component's classes. The real CSS is proved by the live check.
+ */
+const GEOMETRY = `
+  body { margin: 0; }
+  [data-map-stage] { position: relative; overflow: hidden; margin: 0 24px; touch-action: none; }
+  [data-map-world], [data-map-world] > svg, [data-map-group], [data-card] { position: absolute; }
+  [data-map-world], [data-map-world] > svg { top: 0; left: 0; }
+  [data-map-world] > svg, [data-map-group] { pointer-events: none; }
+  [data-map-details] { position: absolute; overflow-y: auto; z-index: 10; }
+  [data-map-controls] { position: absolute; right: 12px; bottom: 12px; display: flex; }
+  [data-map-hint] { position: absolute; left: 12px; bottom: 12px; pointer-events: none; }
+`;
+
 let current: { router: ReturnType<typeof createMemoryRouter>; unmount: () => void } | undefined;
 
 const q = (selector: string) => document.querySelector<HTMLElement>(selector);
@@ -51,13 +66,50 @@ export const state = () => ({
   ),
 });
 
-/** Mounts the map at `url` and waits until its camera is placed. */
-export async function mount(url: string, historyState?: unknown) {
+const rect = (el: Element | null) => {
+  if (!el) return null;
+  const { left, top, right, bottom } = el.getBoundingClientRect();
+  return { left, top, right, bottom };
+};
+
+/**
+ * The map as the person sees it: the frame, the cards and the details panel as measured rects, and
+ * the camera as the world's inline transform (the computed one is mid-transition while it moves).
+ */
+export const geometry = () => {
+  const world = q('[data-map-world]') as HTMLElement;
+  const [x = 0, y = 0, k = 1] = (world.style.transform.match(/-?[\d.]+(?:e-?\d+)?/g) ?? []).map(
+    Number,
+  );
+  return {
+    stage: rect(stage()),
+    camera: { x, y, k },
+    transition: world.style.transition,
+    cards: Object.fromEntries(
+      [...document.querySelectorAll<HTMLElement>('[data-card]')].map((el) => [
+        el.dataset.card,
+        rect(el),
+      ]),
+    ),
+    details: rect(q('[data-map-details]')),
+    selected: state().selected,
+  };
+};
+
+/** Mounts the map at `url`, in a column `width` px wide when given, and waits until it is placed. */
+export async function mount(url: string, historyState?: unknown, width?: number) {
   current?.unmount();
+  if (!document.querySelector('style[data-map-geometry]')) {
+    const style = document.createElement('style');
+    style.dataset.mapGeometry = '';
+    style.textContent = GEOMETRY;
+    document.head.append(style);
+  }
   const router = createMemoryRouter([{ path: '/f/:factory', element: <Screen /> }], {
     initialEntries: [{ ...parsed(url), state: historyState }],
   });
   const container = document.createElement('div');
+  if (width !== undefined) container.style.width = `${width}px`;
   document.body.append(container);
   const root = createRoot(container);
   root.render(<RouterProvider router={router} />);
