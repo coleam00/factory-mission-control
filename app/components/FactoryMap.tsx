@@ -43,7 +43,7 @@ import { MAP_CHIP_STATE, type State, stateColor, stateInk, stateWash } from '../
 import type { StepRow } from '../lib/step-detail';
 import type { CardLive } from '../map/live';
 import { MapDetails } from './MapDetails';
-import { APP_WIDTH, CENTERED } from './Column';
+import { APP_COLUMN } from './Column';
 
 const ROLE_COLOR: Record<Role, string> = {
   source: 'var(--v3-role-source)',
@@ -472,9 +472,6 @@ function WireLabel({ text, at }: { text: string; at: Point }): ReactElement {
   );
 }
 
-/** The app's column, which the caption, legend and details keep while the map spans the window. */
-const COLUMN = `${CENTERED} ${APP_WIDTH} px-6`;
-
 const CONTROL =
   'cursor-pointer rounded-md px-[9px] py-1 font-mono text-[12px] text-[color:var(--v3-fg-2)] hover:bg-[var(--v3-raised)] hover:text-[color:var(--v3-fg)] disabled:cursor-default disabled:hover:bg-transparent disabled:hover:text-[color:var(--v3-fg-2)]';
 
@@ -776,7 +773,9 @@ export function FactoryMap({
 
   return (
     <div className="flex flex-col">
-      <div className={`${COLUMN} mb-2 flex flex-wrap items-center justify-between gap-x-4 gap-y-1`}>
+      <div
+        className={`${APP_COLUMN} mb-2 flex flex-wrap items-center justify-between gap-x-4 gap-y-1`}
+      >
         <nav
           aria-label="Map level"
           data-map-crumbs
@@ -804,7 +803,7 @@ export function FactoryMap({
         </nav>
         {aside}
       </div>
-      <p data-map-caption className={`${COLUMN} mb-3 text-sm text-[color:var(--v3-fg-2)]`}>
+      <p data-map-caption className={`${APP_COLUMN} mb-3 text-sm text-[color:var(--v3-fg-2)]`}>
         {level.caption}
       </p>
       <section
@@ -972,7 +971,7 @@ export function FactoryMap({
       </section>
       <ul
         data-map-legend
-        className={`${COLUMN} mt-2.5 flex flex-wrap gap-x-[18px] gap-y-2 text-[12px] text-[color:var(--v3-fg-2)]`}
+        className={`${APP_COLUMN} mt-2.5 flex flex-wrap gap-x-[18px] gap-y-2 text-[12px] text-[color:var(--v3-fg-2)]`}
       >
         {map.legend.map((entry) => (
           <li key={entry.role} className="flex items-center">
@@ -995,7 +994,7 @@ export function FactoryMap({
       </ul>
       {selectedCard ? (
         <MapDetails
-          className={COLUMN}
+          className={APP_COLUMN}
           card={selectedCard}
           live={live.get(selectedCard.id)}
           factory={factory}
