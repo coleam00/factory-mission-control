@@ -4,8 +4,9 @@
 -- next check retries; an item outside a buildable stage and a claim that moved to another run are input.
 -- "head/base" reads as a path to mc.stop_strip, so the moved-PR arm matches the words after it.
 -- A failed run with no stop line that never started a node (no mc.lap_steps row but skipped ones) is
--- environment, decided in mc.project_run_stop because mc.stop_class sees only text. A run with no line
--- that did start a node stays unclassified: nothing says what it was.
+-- environment, decided in mc.project_run_stop because mc.stop_class sees only text. mc.lap_steps is
+-- written only for workflows mc.projects_step_events lists, so for any other workflow an empty one says
+-- nothing and the run stays unclassified, as does a run with no line that did start a node.
 -- Stored classes are re-projected once, as 20261112T2001Z did. Like it, this never raises into Archon's
 -- write and, run again, changes nothing.
 
@@ -51,7 +52,7 @@ BEGIN
   v_at := coalesce(l.completed_at, v_at);
   INSERT INTO mc.run_stops AS r VALUES (p_run_id, l.factory, l.workflow_name, l.status, v_step, v_line,
     CASE WHEN l.status = 'failed' THEN coalesce(mc.stop_class(v_text),
-      CASE WHEN v_line IS NULL AND NOT EXISTS (SELECT 1 FROM mc.lap_steps s
+      CASE WHEN v_line IS NULL AND mc.projects_step_events(l.workflow_name) AND NOT EXISTS (SELECT 1 FROM mc.lap_steps s
         WHERE s.run_id = p_run_id AND s.status <> 'skipped') THEN 'environment' END) END,
     CASE WHEN l.status = 'failed' THEN mc.stop_signature(l.workflow_name, v_step, v_line) END,
     v_at)
