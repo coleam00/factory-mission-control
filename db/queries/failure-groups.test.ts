@@ -9,6 +9,7 @@ beforeAll(async () => {
 afterAll(() => db.close());
 
 const FACTORY = 'mission-control';
+const DAY_START = '2026-10-24T00:00:00.000Z';
 const sql = queries.find(([n]) => n === 'failure-groups')?.[1] as string;
 
 test('on the seed every finished or failed run has a stop record, classed and signed when failed', async () => {
@@ -215,6 +216,6 @@ test('a transient failure that a later run of its workflow retried is the muted 
   expect(groups.find((g) => g.workflow_name === 'stuck')?.class).toBe('transient');
 
   const retried = queries.find(([name]) => name === 'retried-runs')?.[1] as string;
-  expect((await db.query(retried, [factory])).map((r) => r.run_id)).toEqual([b, a, d]);
-  expect(await db.query(retried, ['resolve-proof'])).toEqual([]);
+  expect((await db.query(retried, [factory, DAY_START])).map((r) => r.run_id)).toEqual([b, a, d]);
+  expect(await db.query(retried, ['resolve-proof', DAY_START])).toEqual([]);
 });

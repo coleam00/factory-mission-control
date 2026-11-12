@@ -1145,7 +1145,7 @@ test('the retried rule reads the same in failure-groups, retried-runs and the li
     const live = (await db.query(FAILED_SIGNATURES_SQL, ['f'])).map((r) => r.signature).sort();
     expect(cards).toEqual(live);
     expect(cards).toHaveLength(2);
-    const retried = await db.query(sqlOf('retried-runs'), ['f']);
+    const retried = await db.query(sqlOf('retried-runs'), ['f', '2026-10-24T00:00:00.000Z']);
     expect(retried.map((r) => r.run_id)).toEqual([second, first]);
   } finally {
     await db.close();

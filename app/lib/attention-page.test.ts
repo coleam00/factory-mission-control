@@ -23,6 +23,9 @@ import {
 } from './attention-page';
 import type { FailureGroupRow } from './failures';
 import type { OwnerQueueRow } from './owner-queue';
+import { pinZone } from './pin-zone';
+
+pinZone('America/Chicago');
 
 const RUN = '5eed0005-0000-4000-8000-000000000001';
 const CONSOLE_RUN = `http://localhost:3090/console/r/${RUN}`;
@@ -231,9 +234,9 @@ test('each unstick kind leads with its own primary action', () => {
   });
 });
 
-test('a Fix card says the count, the inclusive UTC days, the step and the class', () => {
+test('a Fix card says the count, the inclusive local days, the step and the class', () => {
   const [card] = fixCards([group()], 'f');
-  expect(card?.age).toEqual({ text: '3 runs · 3 days' });
+  expect(card?.age).toEqual({ text: '3 runs · 2 days' });
   expect(card?.title).toBe('Lap failed at review');
   expect(card?.meta).toContainEqual({ pill: 'transient', state: 'failed' });
   expect(card?.note.rest).toBe('It is transient: a retry usually passes.');
@@ -307,7 +310,7 @@ test('an owner question recommends only its default tile, and says when the defa
     ['B', true],
   ]);
   expect(card?.note).toEqual({
-    lead: 'Default B applies 2026-10-25 09:07 UTC.',
+    lead: 'Default B applies 2026-10-25 04:07.',
     rest: 'JSON is simpler.',
   });
   expect(card?.tiles.map((t) => t.href)).toEqual([

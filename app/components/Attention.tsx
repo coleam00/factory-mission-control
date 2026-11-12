@@ -11,6 +11,7 @@ import {
   fixCards,
   ownerCards,
   RETRIED_QUERY,
+  retriedArgs,
   retriedLine,
   SWEEP_QUERY,
   type SweepRow,
@@ -26,6 +27,7 @@ import { lapHref } from '../lib/one-lap';
 import { clock, shortRunId } from '../lib/format';
 import { HANDLED_QUERY, type HandledRow, handledSummary, handledToday } from '../lib/manager';
 import { type OwnerQueueRow, waited } from '../lib/owner-queue';
+import { useToday } from '../live/use-today';
 import { AWAITED, Feed, type Source } from '../live/Feed';
 import { useActionPending, useActionsEnabled, useStartAction } from './ActionToast';
 import { useNow } from './panel';
@@ -601,6 +603,7 @@ export function Attention({ factory }: { factory: string }): ReactElement {
   const [sweep, setSweep] = useState<Source<SweepRow>>(AWAITED);
   const [handled, setHandled] = useState<Source<HandledRow>>(AWAITED);
   const [retried, setRetried] = useState<Source<RetriedRunRow>>(AWAITED);
+  const today = useToday();
   const into = useMemo(
     () =>
       Object.fromEntries(
@@ -615,7 +618,12 @@ export function Attention({ factory }: { factory: string }): ReactElement {
       ))}
       <Feed<SweepRow> query={SWEEP_QUERY} factory={factory} into={setSweep} />
       <Feed<HandledRow> query={HANDLED_QUERY} factory={factory} into={setHandled} />
-      <Feed<RetriedRunRow> query={RETRIED_QUERY} factory={factory} into={setRetried} />
+      <Feed<RetriedRunRow>
+        query={RETRIED_QUERY}
+        factory={factory}
+        args={retriedArgs(today)}
+        into={setRetried}
+      />
       <AttentionBody
         factory={factory}
         decide={rows.decide as Source<DecideRow>}

@@ -3,6 +3,8 @@
  * node-postgres, parses `timestamptz` into a `Date`. Pure, no React.
  */
 
+import { localDay } from './format';
+
 interface Trailers {
   hypothesis: string | null;
   measure: string | null;
@@ -36,7 +38,7 @@ export const SHARED_PROCESS = 'Decisions and versions come from the shared facto
 export interface StripEntry {
   digest: string | null;
   pin: string | null;
-  /** The labelled pin's UTC `YYYY-MM-DD` commit date, or `not recorded`. */
+  /** The labelled pin's local `YYYY-MM-DD` commit date, or `not recorded`. */
   date: string;
   reason: string;
   hypothesis: string;
@@ -55,7 +57,7 @@ export function stripEntries(rows: readonly VersionStripRow[]): StripEntry[] {
     .map((row) => ({
       digest: row.digest,
       pin: row.pin_sha,
-      date: row.committed_at?.toISOString().slice(0, 10) ?? NOT_RECORDED,
+      date: row.committed_at === null ? NOT_RECORDED : localDay(row.committed_at),
       reason: recorded(row.reason),
       hypothesis: recorded(row.hypothesis),
       measure: recorded(row.measure),

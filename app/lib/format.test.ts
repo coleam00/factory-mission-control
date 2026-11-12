@@ -1,7 +1,20 @@
-import { expect, test } from 'bun:test';
+import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { formatCost, formatCount, formatElapsed, formatNumber, formatSigned } from './format';
+import {
+  clock,
+  formatCost,
+  formatCount,
+  formatElapsed,
+  formatNumber,
+  formatSigned,
+  localDay,
+  localDayStart,
+  localMinute,
+  localSecond,
+  weekdayClock,
+} from './format';
+import { pinZone } from './pin-zone';
 
 test.each([
   [0.1, '$0.10'],
@@ -70,6 +83,28 @@ test.each([
   expect(formatSigned(n, format)).toBe(expected);
 });
 
+describe('times in the viewer zone', () => {
+  pinZone('America/Chicago');
+
+  test('a time reads in the local zone, and midnight is 00:00', () => {
+    expect(clock(new Date('2026-11-12T13:29:00Z'))).toBe('07:29');
+    expect(clock(new Date('2026-11-12T06:00:00Z'))).toBe('00:00');
+    expect(clock(null)).toBe('');
+  });
+
+  test('a day, a weekday and a second read in the local zone', () => {
+    expect(localDay(new Date('2026-11-12T04:40:00Z'))).toBe('2026-11-11');
+    expect(weekdayClock(new Date('2026-11-12T04:40:00Z'))).toBe('Wed 22:40');
+    expect(localMinute(new Date('2026-11-12T13:29:00Z'))).toBe('2026-11-12 07:29');
+    expect(localSecond(new Date('2026-11-12T13:29:05Z'))).toBe('2026-11-12 07:29:05');
+  });
+
+  test('the local day starts at local midnight, on a daylight-saving day too', () => {
+    expect(localDayStart(new Date('2026-11-12T15:00:00Z'))).toBe('2026-11-12T06:00:00.000Z');
+    expect(localDayStart(new Date('2026-11-01T18:00:00Z'))).toBe('2026-11-01T05:00:00.000Z');
+  });
+});
+
 const appDir = resolve(import.meta.dir, '..');
 
 /** What writes a number or a dollar amount itself, instead of through `format.ts`. */
@@ -109,4 +144,34 @@ test.each([
   ['the factory (`$2` on)', false],
 ])('the format guard reads %p as writing a number itself: %p', (source, found) => {
   expect(formatsItself(source)).toBe(found);
+});
+
+/** What formats a time or a date itself, instead of through `format.ts`. */
+const OWN_TIME_FORMATS = [
+  /\.toISOString\(\)\s*\.slice\(/,
+  /\bgetUTC(?:FullYear|Month|Date|Day|Hours|Minutes|Seconds)\(/,
+  /\.toLocale(?:Time|Date)String\(/,
+];
+const formatsTimeItself = (source: string) =>
+  OWN_TIME_FORMATS.some((pattern) => pattern.test(source));
+
+// factory-scorecard.ts builds its UTC-day window key on purpose: the scorecard counts whole UTC days.
+const UTC_ON_PURPOSE = ['lib/format.ts', 'lib/factory-scorecard.ts'];
+
+test('no file in app/ but format.ts formats a time or date itself', () => {
+  const offenders = [...new Bun.Glob('**/*.{ts,tsx}').scanSync(appDir)]
+    .map((file) => file.replaceAll('\\', '/'))
+    .filter((file) => !UTC_ON_PURPOSE.includes(file) && !/\.test\.tsx?$/.test(file))
+    .filter((file) => formatsTimeItself(readFileSync(join(appDir, file), 'utf-8')));
+  expect(offenders).toEqual([]);
+});
+
+test.each([
+  ['at.toISOString().slice(11, 16)', true],
+  ['WEEKDAYS[at.getUTCDay()]', true],
+  ["d.toLocaleDateString([], { month: 'short' })", true],
+  ['at.toISOString()', false],
+  ['dateTime={event.at.toISOString()}', false],
+])('the time guard reads %p as formatting a time itself: %p', (source, found) => {
+  expect(formatsTimeItself(source)).toBe(found);
 });

@@ -1,9 +1,12 @@
 import { expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { createMemoryRouter, RouterProvider } from 'react-router';
+import { pinZone } from '../lib/pin-zone';
 import type { TimelineEvent } from '../lib/work-item';
 import Work from '../routes/f.$factory.work.$n';
 import { WorkItemBody } from './WorkItem';
+
+pinZone('America/Chicago');
 
 function render(element: React.ReactElement): string {
   const router = createMemoryRouter([{ path: '/', element }]);
@@ -128,4 +131,21 @@ test('the Manager note leads, a failed row shows its stop line, and the primary 
   expect(html).toContain('data-primary-action="resume"');
   expect(html).toContain('href="http://localhost:3090/console/r/abc"');
   expect(html).toContain('Resume from pr__prepare');
+});
+
+test('the #630 timeline shows local times and splits days on the local date', () => {
+  const html = render(
+    <WorkItemBody
+      header={header}
+      board={null}
+      note={null}
+      events={[
+        event({ key: 'a', kind: 'intake', at: new Date('2026-11-11T12:23:00Z') }),
+        event({ key: 'b', kind: 'round', at: new Date('2026-11-12T04:40:00Z') }),
+        event({ key: 'c', kind: 'decision', at: new Date('2026-11-12T13:29:00Z'), text: 'Merged' }),
+      ]}
+    />,
+  );
+  const times = [...html.matchAll(/<time[^>]*>([^<]*)<\/time>/g)].map((m) => m[1]);
+  expect(times).toEqual(['Wed 06:23', '22:40', 'Thu 07:29']);
 });

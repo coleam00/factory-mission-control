@@ -20,7 +20,7 @@ import {
   type UnstickRow,
 } from './attention';
 import type { FailureGroupRow, StopClass } from './failures';
-import { shortRunId } from './format';
+import { localDayStart, localMinute, shortRunId } from './format';
 import { askAbout, type ManagerAsk } from './manager';
 import { stepPath } from './lap-graph';
 import { since } from './laps';
@@ -241,8 +241,6 @@ export function decideCards(rows: readonly DecideRow[], factory: string): Attent
 
 const timeOf = (at: Date | null) => (at === null ? Number.POSITIVE_INFINITY : at.getTime());
 
-const utcMinute = (at: Date) => `${at.toISOString().slice(0, 16).replace('T', ' ')} UTC`;
-
 /** The old loop's owner items, answered on GitHub; the loop applies a question's default when nobody answers. */
 export function ownerCards(rows: readonly OwnerQueueRow[]): AttentionCard[] {
   return ownerQueue(rows).map((item) => {
@@ -282,7 +280,9 @@ export function ownerCards(rows: readonly OwnerQueueRow[]): AttentionCard[] {
               item.default_option === null
                 ? 'No default.'
                 : `Default ${item.default_option} applies ${
-                    item.default_at === null ? 'at a time not recorded' : utcMinute(item.default_at)
+                    item.default_at === null
+                      ? 'at a time not recorded'
+                      : localMinute(item.default_at)
                   }.`,
             rest: item.recommendation ?? '',
           }
@@ -470,10 +470,12 @@ const CLASS_NOTE: Readonly<Record<StopClass | 'mixed', string>> = {
 };
 
 const DAY_MS = 86_400_000;
-const utcDay = (at: Date) => Math.floor(at.getTime() / DAY_MS);
+/** The viewer's calendar day as a day number, so a difference counts local days across a clock change. */
+const localDayNumber = (at: Date) =>
+  Math.round(Date.UTC(at.getFullYear(), at.getMonth(), at.getDate()) / DAY_MS);
 const lastTime = (g: FailureGroupRow) => g.last_at?.getTime() ?? 0;
 
-/** One card per failure signature, with the days it spans (UTC calendar days, inclusive). */
+/** One card per failure signature, with the days it spans (local calendar days, inclusive). */
 export function fixCards(rows: readonly FailureGroupRow[], factory: string): AttentionCard[] {
   return [...rows]
     .sort(
@@ -484,7 +486,9 @@ export function fixCards(rows: readonly FailureGroupRow[], factory: string): Att
     )
     .map((g): AttentionCard => {
       const days =
-        g.first_at === null || g.last_at === null ? 1 : utcDay(g.last_at) - utcDay(g.first_at) + 1;
+        g.first_at === null || g.last_at === null
+          ? 1
+          : localDayNumber(g.last_at) - localDayNumber(g.first_at) + 1;
       const queue = queueOf(g.workflow_name, g.step_id);
       const label = workflowLabel(g.workflow_name);
       const run = { href: lapHref(factory, g.latest_run_id), external: false };
@@ -553,6 +557,9 @@ export const SWEEP_QUERY = 'manager-sweep';
 
 /** The muted line's query; it is not an item source, so the count never reads it. */
 export const RETRIED_QUERY = 'retried-runs';
+
+/** `retried-runs`' `$2`: when the viewer's local day began, which is what "today" means. */
+export const retriedArgs = (now: Date): string[] => [localDayStart(now)];
 
 export function retriedLine(n: number): string {
   return `${n === 1 ? '1 run hit' : `${n} runs hit`} a passing database or GitHub error today and ${n === 1 ? 'was' : 'were'} retried.`;
