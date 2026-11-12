@@ -519,11 +519,44 @@ const FILES = liveOutputs({
   runFailedShot: 'run-failed.png',
   runAppCheckShot: 'run-app-check.png',
   runSweepShot: 'run-merge-sweep.png',
+  runClosedShot: 'run-closed-item.png',
   runFailedProbe: 'run-failed-design-probe.json',
   refusedProbe: 'one-lap-refused-design-probe.json',
   timings: 'one-lap-timings.json',
 });
 export const ONE_LAP_OUTPUTS: readonly LiveOutput[] = Object.values(FILES);
+
+/** The head's primary button: its text and what it does. */
+const primaryOnScreen = `(() => {
+  const el = document.querySelector('[data-action="primary"]');
+  return { text: el?.textContent?.trim() ?? '', act: el?.getAttribute('data-act') ?? null };
+})()`;
+
+/**
+ * The failed seed runs' primary button (owner change 7, 2026-11-12): a run whose item is closed opens
+ * the item, one whose item is open (or unmirrored) still resumes.
+ */
+const PRIMARY_EXPECTATIONS: readonly {
+  factory: string;
+  run: string;
+  text: string;
+  act?: string;
+  shot?: LiveOutput;
+}[] = [
+  { factory: QUEUE_FACTORY.name, run: QUEUE_RUNS.failedBuild, text: 'Resume from pr__prepare' },
+  {
+    factory: 'mission-control',
+    run: '5eed0002-0000-4000-8000-000000000008',
+    text: 'Open #8',
+    act: 'open-item',
+    shot: FILES.runClosedShot,
+  },
+  {
+    factory: 'mission-control',
+    run: '5eed0003-0000-4000-8000-000000000002',
+    text: 'Resume from build',
+  },
+];
 
 /**
  * One lap's screen: a gate-refused seed lap against SQL, then the first running lap, timed live
@@ -615,6 +648,29 @@ export function oneLapPhase(ctx: LiveContext): LivePhase {
           ctx.save(shot, await runPage.screenshot(1440));
         } finally {
           await runPage.close().catch(() => undefined);
+        }
+      }
+      for (const expected of PRIMARY_EXPECTATIONS) {
+        const primaryPage = await openPage(deps.env);
+        try {
+          await openOneLap(primaryPage, base, expected.factory, expected.run, 'timeline');
+          const primary = await primaryPage.evaluate<{ text: string; act: string | null }>(
+            primaryOnScreen,
+          );
+          const shown = `${primary.text} (${primary.act})`;
+          reports.push(`run ${expected.run} primary: ${shown}`);
+          if (
+            primary.text !== expected.text ||
+            (expected.act !== undefined && primary.act !== expected.act)
+          ) {
+            ctx.failures.push(
+              `one run against the seed: ${expected.run} shows the primary ${shown}, expected ${expected.text}`,
+            );
+          }
+          if (expected.shot !== undefined)
+            ctx.save(expected.shot, await primaryPage.screenshot(1440));
+        } finally {
+          await primaryPage.close().catch(() => undefined);
         }
       }
       ctx.save(FILES.runCheck, `${reports.join('\n\n')}\n`);

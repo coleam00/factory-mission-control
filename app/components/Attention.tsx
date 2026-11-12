@@ -12,6 +12,7 @@ import {
   ownerCards,
   RETRIED_QUERY,
   retriedLine,
+  sourceArgs,
   SWEEP_QUERY,
   type SweepRow,
   type Tile,
@@ -27,6 +28,7 @@ import { clock, shortRunId } from '../lib/format';
 import { HANDLED_QUERY, type HandledRow, handledSummary, handledToday } from '../lib/manager';
 import { type OwnerQueueRow, waited } from '../lib/owner-queue';
 import { AWAITED, Feed, type Source } from '../live/Feed';
+import { useHour } from '../live/use-hour';
 import { useActionPending, useActionsEnabled, useStartAction } from './ActionToast';
 import { useNow } from './panel';
 import { openManager, usePhone, usePublishPlaceWhat } from './ManagerDock';
@@ -601,6 +603,7 @@ export function Attention({ factory }: { factory: string }): ReactElement {
   const [sweep, setSweep] = useState<Source<SweepRow>>(AWAITED);
   const [handled, setHandled] = useState<Source<HandledRow>>(AWAITED);
   const [retried, setRetried] = useState<Source<RetriedRunRow>>(AWAITED);
+  const hour = useHour();
   const into = useMemo(
     () =>
       Object.fromEntries(
@@ -611,7 +614,13 @@ export function Attention({ factory }: { factory: string }): ReactElement {
   return (
     <>
       {SOURCE_KEYS.map((k) => (
-        <Feed key={k} query={ATTENTION_SOURCES[k].query} factory={factory} into={into[k]} />
+        <Feed
+          key={k}
+          query={ATTENTION_SOURCES[k].query}
+          factory={factory}
+          args={sourceArgs(k, hour)}
+          into={into[k]}
+        />
       ))}
       <Feed<SweepRow> query={SWEEP_QUERY} factory={factory} into={setSweep} />
       <Feed<HandledRow> query={HANDLED_QUERY} factory={factory} into={setHandled} />

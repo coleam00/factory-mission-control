@@ -8,8 +8,8 @@ import { PORT_FILE_NOT_WRITTEN_YET } from '../../harness/design-probe.js';
 export interface Page {
   /** Evaluates `expression` in the page, awaiting a promise, and returns its JSON value. */
   evaluate<T>(expression: string, timeoutMs?: number): Promise<T>;
-  /** Navigates and resolves once the page's load event fires. */
-  goto(url: string): Promise<void>;
+  /** Navigates and resolves once the page's load event fires. With `now`, the page's clock reads that instant (and moves on from it) before any of its scripts run. */
+  goto(url: string, now?: string): Promise<void>;
   setViewport(width: number): Promise<void>;
   /** One real mouse event at page coordinates `x`, `y`, left button; a move while pressed is a drag. */
   mouse(event: MouseInput): Promise<void>;
@@ -246,7 +246,15 @@ export async function openPage(env: Record<string, string | undefined>): Promise
         }
         return result.value;
       },
-      async goto(url: string) {
+      async goto(url: string, now?: string) {
+        if (now !== undefined) {
+          const source = `(() => { const Real = Date, offset = Real.parse(${JSON.stringify(now)}) - Real.now();
+            window.Date = class extends Real {
+              constructor(...args) { if (args.length === 0) super(Real.now() + offset); else super(...args); }
+              static now() { return Real.now() + offset; }
+            }; })()`;
+          await cdp.send('Page.addScriptToEvaluateOnNewDocument', { source }, sessionId);
+        }
         const loaded = cdp.once('Page.loadEventFired', sessionId);
         loaded.catch(() => {});
         const { errorText } = await cdp.send<{ errorText?: string }>(

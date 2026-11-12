@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, setDefaultTimeout, spyOn, test } from 'bun:test';
 import type { Options, SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import { ANSWER_TEXT_MAX } from '../app/lib/attention';
-import { ATTENTION_SOURCES, attentionCount } from '../app/lib/attention-page';
+import { ATTENTION_SOURCES, attentionCount, sourceArgs } from '../app/lib/attention-page';
 import { lapHref } from '../app/lib/one-lap';
 import { snapshot } from '../db/test-db';
 import type { Db } from '../scripts/lib/db';
@@ -597,9 +597,12 @@ describe('the briefing', () => {
     try {
       const queries = loadLiveQueries(LIVE_QUERIES_DIR);
       const sources = await Promise.all(
-        Object.values(ATTENTION_SOURCES).map(async ({ query }) => ({
+        (Object.keys(ATTENTION_SOURCES) as (keyof typeof ATTENTION_SOURCES)[]).map(async (key) => ({
           state: 'ready' as const,
-          rows: await fixture.direct.query(queries.get(query) ?? '', [F]),
+          rows: await fixture.direct.query(queries.get(ATTENTION_SOURCES[key].query) ?? '', [
+            F,
+            ...(sourceArgs(key, new Date()) ?? []),
+          ]),
         })),
       );
       const count = attentionCount(sources);
