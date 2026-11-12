@@ -356,6 +356,24 @@ test('a press released outside the frame before it moved does not leave the map 
   expect((await geometry()).camera).toEqual(start.camera);
 }, 30_000);
 
+for (const where of ['the background', 'a card']) {
+  test(`a finger drag from ${where} keeps moving the map past its first step`, async () => {
+    await page.setViewport(1440);
+    const start = await mountAt('/f/x', OPEN);
+    const from = where === 'a card' ? centre(start.cards.build as Box) : emptyPoint(start);
+    await page.touch('touchStart', from[0], from[1]);
+    for (let i = 1; i <= 8; i++) {
+      await page.touch('touchMove', from[0] + (50 * i) / 8, from[1] + (30 * i) / 8);
+    }
+    await page.touch('touchEnd', from[0] + 50, from[1] + 30);
+    // The slop and the browser's own touch handling eat part of the travel, so compare with one
+    // step (6.25 px): a drag that stops after its first step moves the camera no further.
+    const moved = (await geometry()).camera;
+    expect(moved.x - start.camera.x).toBeGreaterThan(12.5);
+    expect(moved.y - start.camera.y).toBeGreaterThan(7.5);
+  }, 30_000);
+}
+
 for (const [manager, width] of [
   ['open', OPEN],
   ['closed', CLOSED],

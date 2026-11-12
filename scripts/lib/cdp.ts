@@ -13,6 +13,8 @@ export interface Page {
   setViewport(width: number): Promise<void>;
   /** One real mouse event at page coordinates `x`, `y`, left button; a move while pressed is a drag. */
   mouse(event: MouseInput): Promise<void>;
+  /** One real touch event with a single finger at page coordinates `x`, `y`; a move while down is a drag. */
+  touch(type: 'touchStart' | 'touchMove' | 'touchEnd', x: number, y: number): Promise<void>;
   /** A PNG of the whole page laid out `width` px wide. */
   screenshot(width: number): Promise<Buffer>;
   close(): Promise<void>;
@@ -271,6 +273,13 @@ export async function openPage(env: Record<string, string | undefined>): Promise
             deltaX: 0,
             deltaY,
           },
+          sessionId,
+        );
+      },
+      async touch(type: 'touchStart' | 'touchMove' | 'touchEnd', x: number, y: number) {
+        await cdp.send(
+          'Input.dispatchTouchEvent',
+          { type, touchPoints: type === 'touchEnd' ? [] : [{ x, y }] },
           sessionId,
         );
       },
