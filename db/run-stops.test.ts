@@ -113,7 +113,7 @@ test('a run stop record follows Archon’s writes, so a fixed run never shows as
 
   const early = await newRun();
   await setStatus(early, 'failed');
-  expect(await stopOf(early)).toMatchObject({ step_id: null, class: null });
+  expect(await stopOf(early)).toMatchObject({ step_id: null, class: 'environment' });
   await failStep(early, 'check', 'No issue matched the query');
   expect(await stopOf(early)).toMatchObject({ step_id: 'check', class: 'input' });
 
@@ -374,6 +374,53 @@ test('20261112T2001Z re-projects the class of runs that failed on a claim confli
 
     await runMigrations({ files: migrationFiles, db: historical });
     expect((await read())[0]?.class).toBe('input');
+  } finally {
+    await historical.close();
+  }
+});
+
+test('20261113T1200Z gives a failed run with no stop line that never started a node the environment class, and no other', async () => {
+  const name = '20261113T1200Z_classify_host_and_unlined_failures';
+  const historical = await archonDb();
+  try {
+    await runMigrations({ files: migrationFiles.filter((f) => f.name < name), db: historical });
+    const failedRun = async (events: [string, string][]) => {
+      const [run] = await historical.query(
+        `INSERT INTO public.remote_agent_workflow_runs (workflow_name, status, user_message, metadata)
+         VALUES ('archon-build-queue', 'running', 'q', '{}') RETURNING id`,
+      );
+      for (const [type, message] of events) {
+        await historical.query(
+          `INSERT INTO public.remote_agent_workflow_events (workflow_run_id, event_type, step_name, data)
+           VALUES ($1, $2, 'facts', $3)`,
+          [run?.id, type, JSON.stringify(eventData('facts', type, NOW, message))],
+        );
+      }
+      await historical.query(
+        `UPDATE public.remote_agent_workflow_runs SET status = 'failed', completed_at = now() WHERE id = $1`,
+        [run?.id],
+      );
+      return run?.id;
+    };
+    const neverStarted = await failedRun([]);
+    const startedNoLine = await failedRun([
+      ['node_started', ''],
+      ['node_failed', ''],
+    ]);
+    const classes = async () =>
+      Object.fromEntries(
+        (await historical.query('SELECT run_id, class FROM mc.run_stops')).map((r) => [
+          r.run_id,
+          r.class,
+        ]),
+      );
+    expect(await classes()).toEqual({ [neverStarted]: null, [startedNoLine]: null });
+
+    await runMigrations({ files: migrationFiles, db: historical });
+    const after = await classes();
+    expect(after).toEqual({ [neverStarted]: 'environment', [startedNoLine]: null });
+    await runMigrations({ files: migrationFiles, db: historical });
+    expect(await classes()).toEqual(after);
   } finally {
     await historical.close();
   }
