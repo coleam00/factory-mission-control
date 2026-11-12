@@ -1,6 +1,5 @@
 import { expect, test } from 'bun:test';
 import type { UnstickRow } from '../../app/lib/attention';
-import { retriageCommand } from '../../app/lib/attention-page';
 import {
   countMismatches,
   decideMismatches,
@@ -17,7 +16,7 @@ const card = (overrides: Partial<ShownCard>): ShownCard => ({
   kind: 'decide',
   console: `http://localhost:3090/console/r/${RUN}`,
   recommended: ['split'],
-  command: null,
+  choices: [],
   waited: '1h 40m',
   ...overrides,
 });
@@ -67,21 +66,23 @@ const stuck: UnstickRow = {
   waits_on: '#6',
   since: new Date('2026-10-24T10:00:00Z'),
   action: 'retriage',
-  repository: 'o/r',
+  title: 'Seven',
+  blocker_titles: ['Six'],
+  reason: null,
   console: 'http://localhost:3090/',
 };
 
-test('Unstick cards must match the query’s rows, and a re-triage card must hold the exact command', () => {
+test('Unstick cards must match the query’s rows, and each must show the page’s option tiles', () => {
   const shown = card({
     id: 'unstick:blocked:7:',
     kind: 'unstick',
-    command: retriageCommand('o/r', 7),
+    choices: ['retriage', 'close', 'something-else'],
   });
   expect(unstickMismatches([shown], [stuck], 'f')).toEqual([]);
   expect(unstickMismatches([], [stuck], 'f')[0]).toContain('Unstick cards');
   expect(unstickMismatches([shown, shown], [stuck], 'f')[0]).toContain('Unstick cards');
-  expect(unstickMismatches([{ ...shown, command: 'gh issue edit 7' }], [stuck], 'f')[0]).toContain(
-    're-triage command',
+  expect(unstickMismatches([{ ...shown, choices: ['retriage'] }], [stuck], 'f')[0]).toContain(
+    'option tiles',
   );
 });
 

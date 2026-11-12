@@ -2,9 +2,7 @@ import type { UnstickRow } from '../../app/lib/attention';
 import {
   ATTENTION_SOURCES,
   badgePanelName,
-  retriageCommand,
   unstickCards,
-  unstickKey,
 } from '../../app/lib/attention-page';
 import { openPage, type Page } from '../lib/cdp';
 import type { Row } from '../lib/db';
@@ -60,8 +58,8 @@ export interface ShownCard {
   console: string | null;
   /** The choices that carry the "recommended" mark. */
   recommended: string[];
-  /** The command a copy button holds. */
-  command: string | null;
+  /** The ids of the option tiles, in the order shown. */
+  choices: string[];
   waited: string | null;
 }
 
@@ -72,7 +70,7 @@ const cardsOnScreen = `[...document.querySelectorAll('main [data-attention-item]
   console: card.getAttribute('data-console'),
   recommended: [...card.querySelectorAll('[data-choice][data-recommended]')]
     .map((choice) => choice.getAttribute('data-choice')),
-  command: card.querySelector('[data-command]')?.getAttribute('data-command') ?? null,
+  choices: [...card.querySelectorAll('[data-choice]')].map((choice) => choice.getAttribute('data-choice')),
   waited: card.querySelector('[data-waited]')?.textContent ?? null,
 }))`;
 
@@ -216,7 +214,7 @@ export function fixMismatches(shown: ShownCard[], signatures: Row[]): string[] {
 
 /**
  * Where the Unstick cards differ from the unstick query's rows, keyed as the page keys them, and
- * each re-triage card's copied command from the exact one for its item.
+ * each card's option tiles from the ones the page builds for its row.
  */
 export function unstickMismatches(
   shown: ShownCard[],
@@ -225,21 +223,15 @@ export function unstickMismatches(
 ): string[] {
   const mismatches: string[] = [];
   const same = screenAgainstSql(mismatches);
-  same(
-    'Unstick cards',
-    idsOf(shown, 'unstick'),
-    unstickCards(rows, factory)
-      .map((c) => c.key)
-      .sort(),
-  );
-  for (const row of rows) {
-    if (row.action !== 'retriage' || row.number === null) continue;
-    const card = shown.find((s) => s.kind === 'unstick' && s.id === unstickKey(row));
-    if (card === undefined) continue;
+  const built = unstickCards(rows, factory);
+  same('Unstick cards', idsOf(shown, 'unstick'), built.map((c) => c.key).sort());
+  for (const card of built) {
+    const onScreen = shown.find((s) => s.kind === 'unstick' && s.id === card.key);
+    if (onScreen === undefined) continue;
     same(
-      `#${row.number} re-triage command`,
-      card.command,
-      retriageCommand(row.repository, row.number),
+      `${card.key} option tiles`,
+      onScreen.choices,
+      card.tiles.map((t) => String(t.hooks['data-choice'])),
     );
   }
   return mismatches;

@@ -363,7 +363,10 @@ export const HANDLED_QUERY = 'handled';
 export interface HandledRow {
   id: number;
   action: ActionRequest['action'];
-  run_id: string;
+  /** The run an answer or resume was about; null for the actions on a work item. */
+  run_id: string | null;
+  /** The work item a re-triage, close or comment was about; null for the actions on a run. */
+  item_number: number | null;
   option: string | null;
   from_step: string | null;
   sent_at: Date;
@@ -377,14 +380,55 @@ export function handledToday(rows: readonly HandledRow[], now: number): HandledR
   return rows.filter((row) => new Date(row.sent_at).toDateString() === today);
 }
 
-/** "answered 1 question, resumed 2 runs": the answer part first, a part with none left out. */
+const HANDLED_VERBS: Record<ActionRequest['action'], string> = {
+  answer: 'answered',
+  resume: 'resumed',
+  retriage: 're-triaged',
+  close: 'closed',
+  comment: 'commented on',
+};
+
+/** "answered 1, resumed 2, re-triaged 1": a verb with none left out, in the order of the five writes. */
 export function handledSummary(rows: readonly HandledRow[]): string {
-  const answers = rows.filter((r) => r.action === 'answer').length;
-  const resumes = rows.filter((r) => r.action === 'resume').length;
-  return [
-    answers === 0 ? null : `answered ${answers} ${answers === 1 ? 'question' : 'questions'}`,
-    resumes === 0 ? null : `resumed ${resumes} ${resumes === 1 ? 'run' : 'runs'}`,
-  ]
-    .filter((part) => part !== null)
+  return Object.entries(HANDLED_VERBS)
+    .map(([action, verb]) => ({ verb, n: rows.filter((r) => r.action === action).length }))
+    .filter(({ n }) => n > 0)
+    .map(({ verb, n }) => `${verb} ${n}`)
     .join(', ');
+}
+
+export const MANAGER_HANDLED_QUERY = 'manager-handled';
+
+/** A row of `db/queries/manager-handled.sql`: a completed manager run that answered `answered` items on its own. */
+export interface ManagerHandledRow {
+  run_id: string;
+  completed_at: Date;
+  answered: number;
+}
+
+/** The manager runs that completed on `now`'s local calendar day. */
+export function managerHandledToday(
+  rows: readonly ManagerHandledRow[],
+  now: number,
+): ManagerHandledRow[] {
+  const today = new Date(now).toDateString();
+  return rows.filter((row) => new Date(row.completed_at).toDateString() === today);
+}
+
+/**
+ * "You answered 1 · the manager handled 2 today": what the owner sent that went through, then what
+ * the manager's own runs answered; a side with nothing is left out, and null when both have none.
+ */
+export function handledLine(
+  mine: readonly HandledRow[],
+  managerRuns: readonly ManagerHandledRow[],
+): string | null {
+  const managerCount = managerRuns.reduce((n, run) => n + run.answered, 0);
+  const parts = [
+    mine.length === 0 ? null : `You ${handledSummary(mine)}`,
+    managerCount === 0
+      ? null
+      : `${mine.length === 0 ? 'The' : 'the'} manager handled ${managerCount}`,
+  ].filter((part) => part !== null);
+  return parts.length === 0 ? null : `${parts.join(' · ')} today`;
 }

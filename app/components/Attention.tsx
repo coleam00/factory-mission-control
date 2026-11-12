@@ -18,13 +18,22 @@ import {
   sweepLine,
   unstickCards,
 } from '../lib/attention-page';
-import { type AnswerRequest, TEXT_ANSWER_DETAIL } from '../lib/actions';
+import { type AnswerRequest, type CommentRequest, TEXT_ANSWER_DETAIL } from '../lib/actions';
 import { ANSWER_TEXT_MAX, type DecideRow, type UnstickRow } from '../lib/attention';
 import type { FailureGroupRow, RetriedRunRow } from '../lib/failures';
 import { since } from '../lib/laps';
 import { lapHref } from '../lib/one-lap';
 import { clock, shortRunId } from '../lib/format';
-import { HANDLED_QUERY, type HandledRow, handledSummary, handledToday } from '../lib/manager';
+import {
+  HANDLED_QUERY,
+  type HandledRow,
+  handledLine,
+  handledToday,
+  MANAGER_HANDLED_QUERY,
+  type ManagerHandledRow,
+  managerHandledToday,
+} from '../lib/manager';
+import { workItemHref } from '../lib/work-item';
 import { type OwnerQueueRow, waited } from '../lib/owner-queue';
 import { AWAITED, Feed, type Source } from '../live/Feed';
 import { useActionPending, useActionsEnabled, useStartAction } from './ActionToast';
@@ -47,31 +56,6 @@ const VIEWS = [
 
 const NOT_RECORDED = 'not recorded';
 
-/** A copied command's button: "Copied" for two seconds, "Copy failed" when the clipboard refuses. */
-function CopyButton({
-  label,
-  command,
-  variant,
-}: {
-  label: string;
-  command: string;
-  variant: 'primary' | 'secondary';
-}): ReactElement {
-  const [result, setResult] = useState<'copied' | 'failed' | null>(null);
-  const copy = () => {
-    navigator.clipboard.writeText(command).then(
-      () => setResult('copied'),
-      () => setResult('failed'),
-    );
-    setTimeout(() => setResult(null), 2000);
-  };
-  return (
-    <Button variant={variant} data-command={command} onClick={copy}>
-      {result === 'copied' ? 'Copied' : result === 'failed' ? 'Copy failed' : label}
-    </Button>
-  );
-}
-
 /** Whether the server holds an operator for this factory, and the one flow every action starts. */
 interface Act {
   enabled: boolean;
@@ -79,21 +63,8 @@ interface Act {
   pending: boolean;
 }
 
-export function ActionControl({ action, act }: { action: Action; act: Act }): ReactElement {
-  if (action.type === 'copy') return <CopyButton {...action} />;
-  if (action.type === 'act' && act.enabled) {
-    return (
-      <Button
-        variant={action.variant}
-        disabled={act.pending}
-        {...action.hooks}
-        onClick={() => act.start(action.request, { item: null, label: '' })}
-      >
-        {action.label}
-      </Button>
-    );
-  }
-  const { href, external } = action.type === 'act' ? action.fallback : action;
+export function ActionControl({ action }: { action: Action }): ReactElement {
+  const { href, external } = action;
   if (!external) {
     return (
       <Link {...action.hooks} to={href} className={buttonClass(action.variant)}>
@@ -114,14 +85,14 @@ export function ActionControl({ action, act }: { action: Action; act: Act }): Re
   );
 }
 
-/** The inline box that takes the owner's own words for "Something else". */
+/** The inline box that takes the owner's own words for "Something else": an answer, or a comment on the item. */
 function AnswerBox({
   request,
   item,
   act,
   onClose,
 }: {
-  request: AnswerRequest;
+  request: AnswerRequest | CommentRequest;
   item: number | null;
   act: Act;
   onClose: () => void;
@@ -134,7 +105,7 @@ function AnswerBox({
   return (
     <div data-answer-box className="col-start-2 mt-1.5 flex flex-col items-start gap-2">
       <textarea
-        aria-label="Your answer"
+        aria-label={request.action === 'comment' ? 'Your comment' : 'Your answer'}
         value={text}
         maxLength={ANSWER_TEXT_MAX}
         onChange={(event) => setText(event.target.value)}
@@ -142,7 +113,7 @@ function AnswerBox({
       />
       <div className="flex gap-2">
         <Button variant="primary" disabled={act.pending || text.trim() === ''} onClick={send}>
-          Send answer
+          {request.action === 'comment' ? 'Post and re-triage' : 'Send answer'}
         </Button>
         <Button variant="text" onClick={onClose}>
           Cancel
@@ -241,22 +212,22 @@ function CardView({
       {card.tiles.length === 0 ? null : (
         <div className="col-start-2 mt-1.5 flex flex-wrap gap-2">
           {card.tiles.map((tile) => {
-            const here = act.enabled ? (tile.answer ?? tile.somethingElse) : undefined;
+            const { manager } = tile;
+            const here = act.enabled ? (tile.act ?? tile.somethingElse) : undefined;
             const where =
-              here !== undefined
-                ? {
-                    disabled: act.pending,
-                    onClick: () =>
-                      tile.answer
-                        ? act.start(tile.answer.request, {
-                            item: tile.answer.item,
-                            label: tile.label,
-                          })
-                        : setWriting(tile.somethingElse),
-                  }
-                : tile.href === null
-                  ? {}
-                  : { href: tile.href };
+              manager !== undefined
+                ? { onClick: () => openManager(manager) }
+                : here !== undefined
+                  ? {
+                      disabled: act.pending,
+                      onClick: () =>
+                        tile.act
+                          ? act.start(tile.act.request, { item: tile.act.item, label: tile.label })
+                          : setWriting(tile.somethingElse),
+                    }
+                  : tile.href === null
+                    ? {}
+                    : { href: tile.href };
             return (
               <OptionTile
                 key={tile.id}
@@ -279,19 +250,9 @@ function CardView({
         />
       )}
       <div className="col-start-2 mt-1.5 flex flex-wrap items-center gap-2">
-        {primary === undefined ? null : <ActionControl action={primary} act={act} />}
+        {primary === undefined ? null : <ActionControl action={primary} />}
         {rest.map((action) => (
-          <ActionControl
-            key={
-              action.type === 'copy'
-                ? action.command
-                : action.type === 'act'
-                  ? action.label
-                  : action.href
-            }
-            action={action}
-            act={act}
-          />
+          <ActionControl key={action.href} action={action} />
         ))}
         <Button variant="text" data-ask-manager onClick={() => openManager(card.ask)}>
           Ask manager
@@ -384,30 +345,71 @@ function Head({
   );
 }
 
-/** What the owner sent from the dashboard today, from `mc.actions`; nothing when there is none or the read failed. */
+/** One line of "See them" for an action the owner sent: what it did, and the run or item it was about. */
+function HandledRowView({ factory, row }: { factory: string; row: HandledRow }): ReactElement {
+  const what =
+    row.action === 'answer'
+      ? `Answered ${row.option ?? 'with your text'}`
+      : row.action === 'resume'
+        ? `Resumed${row.from_step === null ? '' : ` from ${row.from_step}`}`
+        : row.action === 'retriage'
+          ? 'Re-triaged'
+          : row.action === 'close'
+            ? 'Closed'
+            : 'Commented on';
+  const link = 'font-mono text-[color:var(--v3-you-2)] hover:underline';
+  return (
+    <li className="flex flex-wrap items-center gap-x-2 py-1 text-[length:var(--v3-t-meta)] text-[color:var(--v3-fg-2)]">
+      <StateDot state={row.exit_code === null ? 'idle' : row.exit_code === 0 ? 'done' : 'failed'} />
+      {what}
+      {row.workflow_name === null ? null : <span>{row.workflow_name}</span>}
+      {row.run_id === null ? null : (
+        <Link to={lapHref(factory, row.run_id)} className={link}>
+          {shortRunId(row.run_id)}
+        </Link>
+      )}
+      {row.item_number === null ? null : (
+        <Link to={workItemHref(factory, row.item_number)} className={link}>
+          #{row.item_number}
+        </Link>
+      )}
+      <span className="ml-auto font-mono text-[length:var(--v3-t-micro)] text-[color:var(--v3-fg-3)]">
+        {clock(row.sent_at)}
+      </span>
+    </li>
+  );
+}
+
+/** What was handled today: what the owner sent from the dashboard (`mc.actions`) and what the manager's own runs answered; nothing when there is none or a read failed. */
 function Handled({
   factory,
   source,
+  managerSource,
   now,
 }: {
   factory: string;
   source: Source<HandledRow>;
+  managerSource: Source<ManagerHandledRow>;
   now: number;
 }): ReactElement | null {
   const [open, setOpen] = useState(false);
   const rows = source.state === 'error' ? [] : handledToday(source.rows ?? [], now);
-  if (rows.length === 0) return null;
+  const managerRuns =
+    managerSource.state === 'error' ? [] : managerHandledToday(managerSource.rows ?? [], now);
+  if (rows.length === 0 && managerRuns.length === 0) return null;
   const handled = rows.filter((row) => row.exit_code === 0);
   const unconfirmed = rows.some((row) => row.exit_code === null);
+  const line = handledLine(handled, managerRuns);
+  const worked = line !== null;
   return (
     <div data-handled className="mt-[26px] border-t border-[color:var(--v3-line)] pt-3.5">
       <div className="flex flex-wrap items-center gap-2 text-[length:var(--v3-t-meta)] text-[color:var(--v3-fg-3)]">
-        <StateDot state={handled.length > 0 ? 'done' : unconfirmed ? 'idle' : 'failed'} />
-        {handled.length > 0
-          ? `The manager handled ${handled.length} today: ${handledSummary(handled)}.`
+        <StateDot state={worked ? 'done' : unconfirmed ? 'idle' : 'failed'} />
+        {line !== null
+          ? `${line}.`
           : unconfirmed
-            ? 'None of the manager’s actions today is confirmed yet.'
-            : 'None of the manager’s actions today went through.'}
+            ? 'None of your actions today is confirmed yet.'
+            : 'None of your actions today went through.'}
         <Button variant="text" aria-expanded={open} onClick={() => setOpen(!open)}>
           See them
         </Button>
@@ -415,25 +417,23 @@ function Handled({
       {open ? (
         <ul className="m-0 mt-2 list-none p-0">
           {rows.map((row) => (
+            <HandledRowView key={row.id} factory={factory} row={row} />
+          ))}
+          {managerRuns.map((run) => (
             <li
-              key={row.id}
+              key={run.run_id}
               className="flex flex-wrap items-center gap-x-2 py-1 text-[length:var(--v3-t-meta)] text-[color:var(--v3-fg-2)]"
             >
-              <StateDot
-                state={row.exit_code === null ? 'idle' : row.exit_code === 0 ? 'done' : 'failed'}
-              />
-              {row.action === 'answer'
-                ? `Answered ${row.option ?? 'with your text'}`
-                : `Resumed${row.from_step === null ? '' : ` from ${row.from_step}`}`}
-              {row.workflow_name === null ? null : <span>{row.workflow_name}</span>}
+              <StateDot state="done" />
+              The manager answered {run.answered}
               <Link
-                to={lapHref(factory, row.run_id)}
+                to={lapHref(factory, run.run_id)}
                 className="font-mono text-[color:var(--v3-you-2)] hover:underline"
               >
-                {shortRunId(row.run_id)}
+                {shortRunId(run.run_id)}
               </Link>
               <span className="ml-auto font-mono text-[length:var(--v3-t-micro)] text-[color:var(--v3-fg-3)]">
-                {clock(row.sent_at)}
+                {clock(run.completed_at)}
               </span>
             </li>
           ))}
@@ -512,6 +512,7 @@ export function AttentionBody({
   failures,
   sweep,
   handled = AWAITED,
+  managerHandled = AWAITED,
   retried = AWAITED,
   now: fixed,
   view: fixedView,
@@ -523,6 +524,7 @@ export function AttentionBody({
   failures: Source<FailureGroupRow>;
   sweep: Source<SweepRow>;
   handled?: Source<HandledRow>;
+  managerHandled?: Source<ManagerHandledRow>;
   retried?: Source<RetriedRunRow>;
   now?: number;
   view?: View;
@@ -582,7 +584,7 @@ export function AttentionBody({
       />
       {groups}
       <Retried factory={factory} source={retried} />
-      <Handled factory={factory} source={handled} now={now} />
+      <Handled factory={factory} source={handled} managerSource={managerHandled} now={now} />
     </section>
   );
 }
@@ -600,6 +602,7 @@ export function Attention({ factory }: { factory: string }): ReactElement {
   });
   const [sweep, setSweep] = useState<Source<SweepRow>>(AWAITED);
   const [handled, setHandled] = useState<Source<HandledRow>>(AWAITED);
+  const [managerHandled, setManagerHandled] = useState<Source<ManagerHandledRow>>(AWAITED);
   const [retried, setRetried] = useState<Source<RetriedRunRow>>(AWAITED);
   const into = useMemo(
     () =>
@@ -615,6 +618,11 @@ export function Attention({ factory }: { factory: string }): ReactElement {
       ))}
       <Feed<SweepRow> query={SWEEP_QUERY} factory={factory} into={setSweep} />
       <Feed<HandledRow> query={HANDLED_QUERY} factory={factory} into={setHandled} />
+      <Feed<ManagerHandledRow>
+        query={MANAGER_HANDLED_QUERY}
+        factory={factory}
+        into={setManagerHandled}
+      />
       <Feed<RetriedRunRow> query={RETRIED_QUERY} factory={factory} into={setRetried} />
       <AttentionBody
         factory={factory}
@@ -624,6 +632,7 @@ export function Attention({ factory }: { factory: string }): ReactElement {
         failures={rows.failures as Source<FailureGroupRow>}
         sweep={sweep}
         handled={handled}
+        managerHandled={managerHandled}
         retried={retried}
       />
     </>

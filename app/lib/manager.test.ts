@@ -5,8 +5,10 @@ import {
   askAbout,
   endWithout,
   type HandledRow,
+  handledLine,
   handledSummary,
   handledToday,
+  managerHandledToday,
   historyFor,
   linkify,
   type ManagerContext,
@@ -189,6 +191,7 @@ const row = (id: number, action: HandledRow['action'], at: Date): HandledRow => 
   id,
   action,
   run_id: RUN,
+  item_number: null,
   option: null,
   from_step: null,
   sent_at: at,
@@ -206,8 +209,36 @@ test('the handled line counts today only, and says it in plural and singular', (
   ];
   const today = handledToday(rows, noon);
   expect(today.map((r) => r.id)).toEqual([1, 2, 3]);
-  expect(handledSummary(today)).toBe('answered 1 question, resumed 2 runs');
-  expect(handledSummary(today.slice(0, 1))).toBe('resumed 1 run');
+  expect(handledSummary(today)).toBe('answered 1, resumed 2');
+  expect(handledSummary(today.slice(0, 1))).toBe('resumed 1');
+});
+
+test('the handled line names who acted: you, then the manager, a side with nothing left out', () => {
+  const at = new Date(2026, 10, 9, 9);
+  const mine = [
+    row(1, 'answer', at),
+    row(2, 'retriage', at),
+    row(3, 'close', at),
+    row(4, 'comment', at),
+  ];
+  const managerRuns = [
+    { run_id: RUN, completed_at: at, answered: 2 },
+    { run_id: RUN, completed_at: at, answered: 1 },
+  ];
+  expect(handledSummary(mine)).toBe('answered 1, re-triaged 1, closed 1, commented on 1');
+  expect(handledLine(mine.slice(0, 1), managerRuns.slice(0, 1))).toBe(
+    'You answered 1 · the manager handled 2 today',
+  );
+  expect(handledLine([], managerRuns)).toBe('The manager handled 3 today');
+  expect(handledLine(mine.slice(0, 1), [])).toBe('You answered 1 today');
+  expect(handledLine([], [])).toBeNull();
+  const noon = new Date(2026, 10, 9, 12).getTime();
+  expect(
+    managerHandledToday(
+      [...managerRuns, { run_id: RUN, completed_at: new Date(2026, 10, 8, 9), answered: 4 }],
+      noon,
+    ),
+  ).toHaveLength(2);
 });
 
 test('Ask manager looks at the run and work item it was pressed on', () => {

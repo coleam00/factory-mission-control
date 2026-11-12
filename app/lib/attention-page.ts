@@ -4,11 +4,13 @@
  * from the data alone. Pure, no React. The page draws the cards By kind or By queue; the nav badge
  * counts the same rows with `attentionCount`.
  *
- * Clean up ("safe to clear") is not a group here: no live query names such an item yet.
+ * Every card says in plain sentences what it waits on and what each option does, then ends in option
+ * tiles, the recommended one first, and "Something else" last. Clean up ("safe to clear") is not a
+ * group here: no live query names such an item yet.
  */
 import type { Source } from '../live/Feed';
 import { cardForStep, FACTORY_MAP } from '../map/factory-map';
-import type { ActionRequest, AnswerRequest } from './actions';
+import type { ActionRequest, AnswerRequest, CommentRequest } from './actions';
 import {
   type DecideRow,
   attentionItems,
@@ -20,11 +22,11 @@ import {
   type UnstickRow,
 } from './attention';
 import type { FailureGroupRow, StopClass } from './failures';
-import { shortRunId } from './format';
+import { localMoment, shortRunId } from './format';
 import { askAbout, type ManagerAsk } from './manager';
 import { stepPath } from './lap-graph';
 import { since } from './laps';
-import { consoleUrl, INTAKE_WORKFLOW, lapHref, workflowLabel } from './one-lap';
+import { consoleUrl, lapHref, workflowLabel } from './one-lap';
 import { type OwnerQueueRow, ownerQueue, waited } from './owner-queue';
 import { LAP_OUTCOME_STATE, STOP_CLASS_STATE, type State, UNSTICK_STATE } from './states';
 import { workItemHref } from './work-item';
@@ -82,32 +84,24 @@ export interface Tile {
   recommended: boolean;
   /** Where the answer is given; null when the item has no address. */
   href: string | null;
-  /** Answers in place with this option, when the server holds an operator for the factory. */
-  answer?: { request: AnswerRequest; item: number | null };
-  /** Opens the text box: the answer is the owner's own words, sent as `request` with `text` filled. */
-  somethingElse?: { request: AnswerRequest; item: number | null };
+  /** Sends this write in place, when the server holds an operator for the factory. */
+  act?: { request: ActionRequest; item: number | null };
+  /** Opens the text box: the owner's own words, sent as `request` with `text` filled. */
+  somethingElse?: { request: AnswerRequest | CommentRequest; item: number | null };
+  /** Opens the Manager's box on this card, for a card no write takes the owner's words for. */
+  manager?: ManagerAsk;
   hooks: Hooks;
 }
 
-export type Action =
-  | {
-      type: 'link';
-      variant: 'primary' | 'secondary';
-      label: string;
-      href: string;
-      external: boolean;
-      hooks: Hooks;
-    }
-  | {
-      /** Acts in place when the server holds an operator for the factory, else it is `fallback`. */
-      type: 'act';
-      variant: 'primary' | 'secondary';
-      label: string;
-      request: ActionRequest;
-      fallback: { href: string; external: boolean };
-      hooks: Hooks;
-    }
-  | { type: 'copy'; variant: 'primary' | 'secondary'; label: string; command: string };
+/** A link beside the tiles; the writes are the tiles. */
+export interface Action {
+  type: 'link';
+  variant: 'primary' | 'secondary';
+  label: string;
+  href: string;
+  external: boolean;
+  hooks: Hooks;
+}
 
 export interface AttentionCard {
   key: string;
@@ -128,12 +122,14 @@ export interface AttentionCard {
   hooks: Hooks;
 }
 
-/** `gh` and `archon` as the queues' own procedure runs them (archon-cli skill, operate/queues.md). */
-export const retriageCommand = (repository: string, number: number): string =>
-  `gh issue edit ${number} --repo ${repository} --add-label archon-triage && archon workflow run ${INTAKE_WORKFLOW} --input repo_host=github.com --input repo_path=${repository} --input number=${number} --input action=added --input label=archon-triage --input label_actor="$(gh api user --jq .login)" --detach`;
+const SOMETHING_ELSE = 'Something else';
 
-export const releaseCommand = (repository: string, workflow: string): string =>
-  `archon workflow run ${workflow} --input repo_host=github.com --input repo_path=${repository} --detach`;
+/** Recommended tile first, "Something else" last, the rest in the order Archon declared them. */
+const recommendedFirst = (tiles: Tile[]): Tile[] => [
+  ...tiles.filter((t) => t.recommended),
+  ...tiles.filter((t) => !t.recommended && t.label !== SOMETHING_ELSE),
+  ...tiles.filter((t) => !t.recommended && t.label === SOMETHING_ELSE),
+];
 
 /** Archon's open questions: each option tile answers in place with an operator, and opens the console without one. */
 export function decideCards(rows: readonly DecideRow[], factory: string): AttentionCard[] {
@@ -142,6 +138,7 @@ export function decideCards(rows: readonly DecideRow[], factory: string): Attent
       ? item.recommended
       : null;
     const link = consoleUrl(item.console, item.run_id);
+    const ask = askAbout(item.run_id, item.item_number);
     const question = { form: item.form, options: item.options };
     const resolves = (option: string | null) =>
       !('error' in resolveAnswer(question, { option, text: null }));
@@ -158,7 +155,7 @@ export function decideCards(rows: readonly DecideRow[], factory: string): Attent
       // "Something else" takes the owner's text; any other option is the answer itself.
       const place = !resolves(o.id)
         ? { somethingElse: { request: asked, item: item.item_number } }
-        : { answer: { request: { ...asked, option: o.id }, item: item.item_number } };
+        : { act: { request: { ...asked, option: o.id }, item: item.item_number } };
       return {
         id: o.id,
         label,
@@ -172,18 +169,28 @@ export function decideCards(rows: readonly DecideRow[], factory: string): Attent
     if (item.options.every((o) => resolves(o.id))) {
       tiles.push({
         id: 'something-else',
-        label: 'Something else',
-        consequence: 'Write your own answer',
+        label: SOMETHING_ELSE,
+        consequence: resolves(null)
+          ? 'Write your own answer'
+          : 'Tell the manager what you want; it proposes the action as a button',
         recommended: false,
         href: link,
         // Only a free-text question takes text without a declared option to carry it.
-        ...(resolves(null) ? { somethingElse: { request: asked, item: item.item_number } } : {}),
+        ...(resolves(null)
+          ? { somethingElse: { request: asked, item: item.item_number } }
+          : { manager: ask }),
         hooks: { 'data-choice': 'something-else', 'data-something-else': '' },
       });
     }
     const chosen = item.options.find((o) => o.id === recommended);
     const heading = attentionQuestion(item.message);
     const queue = queueOf(item.workflow_name, item.node_id);
+    const subject =
+      item.item_number === null
+        ? `Run ${shortRunId(item.run_id)}`
+        : item.item_title === null
+          ? `#${item.item_number}`
+          : `#${item.item_number} “${item.item_title}”`;
     return {
       key: `decide:${item.run_id}`,
       kind: ATTENTION_SOURCES.decide.kind,
@@ -196,19 +203,20 @@ export function decideCards(rows: readonly DecideRow[], factory: string): Attent
         { pill: attentionOrigin(item), state: 'needs-you' },
         { mono: item.node_id },
       ],
-      note:
-        chosen === undefined
-          ? {
-              lead: 'No recommendation.',
-              rest: `The run waits at ${item.node_id} until you answer.`,
-            }
-          : {
-              lead: `Recommends ${chosen.label ?? chosen.id}.`,
-              rest: item.recommendation_why ?? recommendationReason(item.message),
-            },
-      tiles,
+      note: {
+        lead: `${subject} waits at ${item.node_id} for your answer since ${localMoment(item.waiting_since)}. ${
+          chosen === undefined
+            ? 'There is no recommendation.'
+            : `Recommends ${chosen.label ?? chosen.id}.`
+        }`,
+        rest:
+          chosen === undefined
+            ? ''
+            : (item.recommendation_why ?? recommendationReason(item.message)),
+      },
+      tiles: recommendedFirst(tiles),
       ...(item.confidence === null ? {} : { confidence: `${item.confidence} confidence` }),
-      ask: askAbout(item.run_id, item.item_number),
+      ask,
       actions: [
         item.item_number === null
           ? {
@@ -241,12 +249,16 @@ export function decideCards(rows: readonly DecideRow[], factory: string): Attent
 
 const timeOf = (at: Date | null) => (at === null ? Number.POSITIVE_INFINITY : at.getTime());
 
-const utcMinute = (at: Date) => `${at.toISOString().slice(0, 16).replace('T', ' ')} UTC`;
+const momentOf = (at: Date | null, none: string) => (at === null ? none : localMoment(at));
 
-/** The old loop's owner items, answered on GitHub; the loop applies a question's default when nobody answers. */
+/**
+ * The old loop's owner items, answered on GitHub; the loop applies a question's default when nobody
+ * answers. No write takes an answer on GitHub, so Something else hands the owner's words to the Manager.
+ */
 export function ownerCards(rows: readonly OwnerQueueRow[]): AttentionCard[] {
   return ownerQueue(rows).map((item) => {
     const question = item.kind === 'question';
+    const ask = askAbout(null, item.issue_number);
     const actions: Action[] =
       item.url === null
         ? []
@@ -260,6 +272,28 @@ export function ownerCards(rows: readonly OwnerQueueRow[]): AttentionCard[] {
               hooks: { 'data-thread': '' },
             },
           ];
+    const options: Tile[] = question
+      ? item.options.map((o) => ({
+          id: o.key,
+          label: `${o.key}. ${o.text}`,
+          recommended: o.key === item.default_option,
+          href: item.url,
+          hooks: {
+            'data-option': o.key,
+            'data-option-text': o.text,
+            'data-default': o.key === item.default_option ? '' : undefined,
+          },
+        }))
+      : [
+          {
+            id: 'reply',
+            label: 'Reply on GitHub',
+            consequence: 'Opens the issue, where you answer in a comment',
+            recommended: true,
+            href: item.url,
+            hooks: { 'data-choice': 'reply' },
+          },
+        ];
     return {
       key: `owner:${item.id}`,
       kind: ATTENTION_SOURCES.owner.kind,
@@ -278,28 +312,31 @@ export function ownerCards(rows: readonly OwnerQueueRow[]): AttentionCard[] {
           ],
       note: question
         ? {
-            lead:
+            lead: `#${item.issue_number} asks question ${item.question_number} since ${momentOf(item.waiting_since, 'a time not recorded')}. ${
               item.default_option === null
-                ? 'No default.'
-                : `Default ${item.default_option} applies ${
-                    item.default_at === null ? 'at a time not recorded' : utcMinute(item.default_at)
-                  }.`,
+                ? 'There is no default.'
+                : `Default ${item.default_option} applies ${momentOf(item.default_at, 'at a time not recorded')}.`
+            }`,
             rest: item.recommendation ?? '',
           }
-        : { lead: 'Labelled needs-owner.', rest: 'It waits for your reply on the issue.' },
-      tiles: item.options.map((o) => ({
-        id: o.key,
-        label: `${o.key}. ${o.text}`,
-        recommended: o.key === item.default_option,
-        href: item.url,
-        hooks: {
-          'data-option': o.key,
-          'data-option-text': o.text,
-          'data-default': o.key === item.default_option ? '' : undefined,
+        : {
+            lead: `#${item.issue_number} “${item.title}” has been labelled needs-owner since ${momentOf(item.waiting_since, 'a time not recorded')}.`,
+            rest: 'It waits for your reply on the issue.',
+          },
+      tiles: recommendedFirst([
+        ...options,
+        {
+          id: 'something-else',
+          label: SOMETHING_ELSE,
+          consequence: 'Tell the manager what you want; it proposes the action as a button',
+          recommended: false,
+          href: item.url,
+          manager: ask,
+          hooks: { 'data-choice': 'something-else', 'data-something-else': '' },
         },
-      })),
+      ]),
       actions,
-      ask: askAbout(null, item.issue_number),
+      ask,
       hooks: {
         'data-owner-item': item.id,
         'data-kind': item.kind,
@@ -318,13 +355,36 @@ export function ownerCards(rows: readonly OwnerQueueRow[]): AttentionCard[] {
   });
 }
 
-const closed = (waitsOn: string) => (waitsOn.includes(',') ? 'all have closed' : 'it has closed');
+/** What an item is called in a sentence: `#455 “title”`, or `#455` when its title is not mirrored. */
+const named = (number: number | string, title: string | null | undefined) =>
+  title ? `#${number} “${title}”` : `#${number}`;
+
+/** The blockers of a row, `#455 “title”`, in the order of its `waits_on`. */
+function blockers(row: UnstickRow): string[] {
+  return row.waits_on
+    .split(', ')
+    .map((ref, i) => named(ref.replace('#', ''), row.blocker_titles?.[i]));
+}
+
+/** "#B “t” closed 24 Oct 09:08." or, for several, "#B “t”, #C “u” all closed by 24 Oct 09:08." */
+function closedSentence(row: UnstickRow): string {
+  const list = blockers(row);
+  const when = row.since === null ? '' : ` ${localMoment(row.since)}`;
+  return list.length === 1
+    ? `${list[0]} closed${when}.`
+    : `${list.join(', ')} all closed${when === '' ? '' : ` by${when}`}.`;
+}
 
 /** A card's key, which the live phase reads back to find the card of a row. */
 export const unstickKey = (row: Pick<UnstickRow, 'kind' | 'number' | 'run_id'>): string =>
   `unstick:${row.kind}:${row.number ?? ''}:${row.run_id ?? ''}`;
 
-/** Work that stopped moving. Re-triage and releasing a claim are copied commands; Resume opens the run in the console. */
+const RETRIAGE_DOES = 'Adds archon-triage and starts an intake run; triage decides its next stage';
+const CLOSE_DOES =
+  'Closes the issue as not planned, with a comment that you closed it from Mission Control';
+const COMMENT_DOES = 'Posts your text on the issue as your comment, then re-triages it';
+
+/** Work that stopped moving: re-triage, close or comment on the item, or resume a run waiting for a slot. */
 export function unstickCards(rows: readonly UnstickRow[], factory: string): AttentionCard[] {
   return [...rows]
     .sort(
@@ -338,18 +398,84 @@ export function unstickCards(rows: readonly UnstickRow[], factory: string): Atte
       const queue = row.workflow_name === null ? 'intake' : queueOf(row.workflow_name);
       const n = row.number === null ? null : `#${row.number}`;
       const run = row.run_id === null ? null : shortRunId(row.run_id);
+      const ask = askAbout(row.run_id, row.number);
+      const itemHref = row.number === null ? null : workItemHref(factory, row.number);
       const open: Action[] =
-        row.number === null
+        row.number === null || itemHref === null
           ? []
           : [
               {
                 type: 'link',
                 variant: 'secondary',
                 label: `Open #${row.number}`,
-                href: workItemHref(factory, row.number),
+                href: itemHref,
                 external: false,
                 hooks: {},
               },
+            ];
+      const act = (
+        id: 'retriage' | 'close' | 'resume',
+        label: string,
+        consequence: string,
+        request: ActionRequest,
+        recommended: boolean,
+        href: string | null,
+      ): Tile => ({
+        id,
+        label,
+        consequence,
+        recommended,
+        href,
+        act: { request, item: row.number },
+        hooks: {
+          'data-choice': id,
+          'data-act': id,
+          'data-act-item': row.number === null ? undefined : String(row.number),
+        },
+      });
+      const somethingElse = (): Tile =>
+        row.number === null
+          ? {
+              id: 'something-else',
+              label: SOMETHING_ELSE,
+              consequence: 'Tell the manager what you want; it proposes the action as a button',
+              recommended: false,
+              href: null,
+              manager: ask,
+              hooks: { 'data-choice': 'something-else', 'data-something-else': '' },
+            }
+          : {
+              id: 'something-else',
+              label: SOMETHING_ELSE,
+              consequence: COMMENT_DOES,
+              recommended: false,
+              href: itemHref,
+              somethingElse: {
+                request: { factory, action: 'comment', number: row.number, text: '' },
+                item: row.number,
+              },
+              hooks: { 'data-choice': 'something-else', 'data-something-else': '' },
+            };
+      const itemWrites = (recommendRetriage: boolean): Tile[] =>
+        row.number === null
+          ? []
+          : [
+              act(
+                'retriage',
+                `Re-triage #${row.number}`,
+                RETRIAGE_DOES,
+                { factory, action: 'retriage', number: row.number },
+                recommendRetriage,
+                itemHref,
+              ),
+              act(
+                'close',
+                `Close #${row.number}`,
+                CLOSE_DOES,
+                { factory, action: 'close', number: row.number },
+                false,
+                itemHref,
+              ),
             ];
       const base = {
         key,
@@ -357,61 +483,52 @@ export function unstickCards(rows: readonly UnstickRow[], factory: string): Atte
         queue,
         dot: 'needs-you',
         age: { since: row.since },
-        tiles: [] as Tile[],
-        ask: askAbout(row.run_id, row.number),
+        ask,
+        actions: open,
         hooks: {
           'data-attention-item': key,
           'data-attention-kind': ATTENTION_SOURCES.unstick.kind,
           'data-attention-queue': queue,
           'data-unstick-kind': row.kind,
           'data-number': row.number === null ? undefined : String(row.number),
+          'data-waits-on': row.waits_on,
         },
       } as const;
       const workflow: MetaPart[] = row.workflow_name === null ? [] : [{ mono: row.workflow_name }];
       const waits: MetaPart = { text: `waits on ${row.waits_on}` };
-      switch (row.action) {
-        case 'retriage': {
-          const copy: Action[] =
-            row.number === null
-              ? []
-              : [
-                  {
-                    type: 'copy',
-                    variant: 'primary',
-                    label: 'Copy the re-triage command',
-                    command: retriageCommand(row.repository, row.number),
-                  },
-                ];
+      const label = row.workflow_name === null ? '' : workflowLabel(row.workflow_name);
+      switch (row.kind) {
+        case 'blocked':
+        case 'parked': {
+          const closed = row.waits_on.includes(',') ? 'all have closed' : 'it has closed';
           return {
             ...base,
-            title: `${n} is ${row.kind} on ${row.waits_on}, and ${closed(row.waits_on)}`,
+            title: `${n} is ${row.kind} on ${row.waits_on}, and ${closed}`,
             meta: [{ pill: row.kind, state: UNSTICK_STATE[row.kind] }, waits],
-            note:
-              row.kind === 'blocked'
-                ? {
-                    lead: 'The blocker is gone.',
-                    rest: 'A named build round refuses blocked items, so it waits for the next revisit unless you re-triage it.',
-                  }
-                : {
-                    lead: 'What it was parked on has closed.',
-                    rest: 'A parked item waits until it is re-triaged.',
-                  },
-            actions: [...copy, ...open],
+            note: {
+              lead: closedSentence(row),
+              rest:
+                row.kind === 'blocked'
+                  ? `${n}'s issue says it depends on ${row.waits_on}, so triage put it in blocked. A named build round refuses blocked items.`
+                  : `${n} was parked on ${row.waits_on.includes(',') ? 'them' : 'it'}${row.reason === null ? '' : `: “${row.reason}”`}. Nothing re-triages a parked item on its own.`,
+            },
+            tiles: [...itemWrites(true), somethingElse()],
           };
         }
-        case 'resume': {
-          const resume: Action[] =
+        case 'capacity': {
+          const since = row.since === null ? '' : ` since ${localMoment(row.since)}`;
+          const resume: Tile[] =
             row.run_id === null
               ? []
               : [
-                  {
-                    type: 'act',
-                    variant: 'primary',
-                    label: `Resume ${run}`,
-                    request: { factory, action: 'resume', run_id: row.run_id, from_step: null },
-                    fallback: { href: consoleUrl(row.console, row.run_id), external: true },
-                    hooks: { 'data-act': 'resume', 'data-act-run': row.run_id },
-                  },
+                  act(
+                    'resume',
+                    `Resume run ${run}`,
+                    'Asks Archon to continue the run now',
+                    { factory, action: 'resume', run_id: row.run_id, from_step: null },
+                    true,
+                    consoleUrl(row.console, row.run_id),
+                  ),
                 ];
           return {
             ...base,
@@ -425,37 +542,25 @@ export function unstickCards(rows: readonly UnstickRow[], factory: string): Atte
               waits,
             ],
             note: {
-              lead: 'Answered, waiting for a free slot.',
-              rest: 'Runs in this state do not always continue on their own; resuming once a slot frees moves it.',
+              lead: `Run ${run} of ${label} was answered and has waited for a free slot${since}.`,
+              rest: 'Runs in this state do not always continue on their own.',
             },
-            actions: [...resume, ...open],
+            tiles: [...resume, ...itemWrites(false), somethingElse()],
           };
         }
-        case 'release_claim': {
-          const release: Action[] =
-            row.workflow_name === null
-              ? []
-              : [
-                  {
-                    type: 'copy',
-                    variant: 'primary',
-                    label: `Copy the command for a new ${workflowLabel(row.workflow_name)} run`,
-                    command: releaseCommand(row.repository, row.workflow_name),
-                  },
-                ];
+        case 'claim':
           return {
             ...base,
             title: `${n} is claimed by run ${run}, which has finished`,
             meta: [...workflow, { pill: 'claimed', state: UNSTICK_STATE.claim }, waits],
             note: {
-              lead: 'The run holding the claim has finished.',
-              rest: 'A new run of its queue that names no item releases it.',
+              lead: `Run ${run} of ${label} finished${row.since === null ? '' : ` at ${localMoment(row.since)}`} and still claims ${n}.`,
+              rest: `Any intake run releases the claim; re-triaging ${n} starts one and keeps its build progress.`,
             },
-            actions: [...release, ...open],
+            tiles: [...itemWrites(true), somethingElse()],
           };
-        }
         default:
-          return row.action satisfies never;
+          return row.kind satisfies never;
       }
     });
 }

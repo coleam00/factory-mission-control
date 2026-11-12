@@ -167,7 +167,6 @@ export function mount(url: string) {
                   external: false,
                   hooks: {},
                 }}
-                act={{ enabled: false, start: () => {}, pending: false }}
               />
             ),
           },

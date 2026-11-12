@@ -12,7 +12,7 @@ import type { FactoryScorecardRow } from '../app/lib/factory-scorecard';
 import type { FailureGroupRow, RetriedRunRow } from '../app/lib/failures';
 import type { HealthRunRow, HealthStepRow, HealthWorkableRow } from '../app/lib/health';
 import type { LapMapRow } from '../app/lib/lap-graph';
-import type { HandledRow } from '../app/lib/manager';
+import type { HandledRow, ManagerHandledRow } from '../app/lib/manager';
 import type { CheckLineRow, OneLapRow, StepAttemptRow } from '../app/lib/one-lap';
 import type { OwnerQueueRow } from '../app/lib/owner-queue';
 import type { RewindBranchRow } from '../app/lib/rewind';
@@ -140,12 +140,14 @@ const ROW_COLUMNS: Record<string, string[]> = {
     'id',
     'action',
     'run_id',
+    'item_number',
     'option',
     'from_step',
     'sent_at',
     'exit_code',
     'workflow_name',
   ]),
+  'manager-handled': columns<ManagerHandledRow>()(['run_id', 'completed_at', 'answered']),
   'manager-sweep': columns<SweepRow>()(['swept_at']),
   'factory-switcher': columns<FactorySwitcherRow>()(['factory', 'running', 'is_default']),
   'health-runs': columns<HealthRunRow>()([

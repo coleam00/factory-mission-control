@@ -131,6 +131,17 @@ export function formatProjectLocator(project: {
   return '';
 }
 
+/** `24 Oct 09:08` in the viewer's time zone, for the sentences an owner reads. */
+export function localMoment(at: Date): string {
+  const day = at.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+  const time = at.toLocaleTimeString('en-GB', {
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  });
+  return `${day} ${time}`;
+}
+
 /** HH:MM in the viewer's time zone; empty when there is no time. */
 export function clock(at: string | Date | null | undefined): string {
   if (at === null || at === undefined) return '';

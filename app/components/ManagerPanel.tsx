@@ -13,6 +13,7 @@ import {
 import { type Block, type Inline, parseMessage } from '../lib/manager-markdown';
 import { proposalRequest } from '../../server/manager-stream';
 import { lapHref } from '../lib/one-lap';
+import { workItemHref } from '../lib/work-item';
 import { RUN_STATE, stateOf } from '../lib/states';
 import { useActionPending, useActionsEnabled, useStartAction } from './ActionToast';
 import type { ManagerChat } from './useManagerChat';
@@ -155,11 +156,14 @@ function Proposals({
         const { label, detail } = proposal;
         const request = proposalRequest(proposal);
         // Positional: the model may repeat an identical proposal, and nothing reorders them.
-        const key = `${i}:${proposal.action}:${proposal.run_id}:${label}`;
+        const target = 'run_id' in proposal ? proposal.run_id : proposal.number;
+        const key = `${i}:${proposal.action}:${target}:${label}`;
         const named =
           proposal.action === 'answer' && proposal.text !== null
             ? `Answer “${proposal.text.length > 40 ? `${proposal.text.slice(0, 40)}…` : proposal.text}”`
             : label;
+        // A run's action names the run after its label; a work item's label already names `#N`.
+        const text = 'run_id' in proposal ? `${named} ${shortRunId(proposal.run_id)}` : named;
         return enabled ? (
           <Button
             key={key}
@@ -173,15 +177,21 @@ function Proposals({
               })
             }
           >
-            {`${named} ${shortRunId(proposal.run_id)}`}
+            {text}
           </Button>
         ) : (
           <Link
             key={key}
-            to={lapHref(factory, proposal.run_id)}
+            to={
+              'run_id' in proposal
+                ? lapHref(factory, proposal.run_id)
+                : workItemHref(factory, proposal.number)
+            }
             className={buttonClass('secondary')}
           >
-            Open run {shortRunId(proposal.run_id)}
+            {'run_id' in proposal
+              ? `Open run ${shortRunId(proposal.run_id)}`
+              : `Open #${proposal.number}`}
           </Link>
         );
       })}
