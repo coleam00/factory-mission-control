@@ -1,5 +1,6 @@
 import type { ReactElement } from 'react';
 import { isRouteErrorResponse, Link, useRouteError } from 'react-router';
+import { Column } from './components/Column';
 import { EmptyState } from './components/EmptyState';
 import { ROOT_ADDRESS } from './lib/places';
 
@@ -14,9 +15,9 @@ function HomeLink(): ReactElement {
 /** Any path no file in `routes/` serves. */
 export function NotFound(): ReactElement {
   return (
-    <main className="mx-auto max-w-6xl px-6">
+    <Column className="px-6">
       <EmptyState title="Nothing is at this address." action={<HomeLink />} />
-    </main>
+    </Column>
   );
 }
 
@@ -25,8 +26,8 @@ export function RouteError(): ReactElement {
   const error = useRouteError();
   if (isRouteErrorResponse(error) && error.status === 404) return <NotFound />;
   return (
-    <main className="mx-auto max-w-6xl px-6">
+    <Column className="px-6">
       <EmptyState title="This page failed to load." action={<HomeLink />} />
-    </main>
+    </Column>
   );
 }

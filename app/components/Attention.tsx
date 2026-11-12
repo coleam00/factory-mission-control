@@ -572,7 +572,7 @@ export function AttentionBody({
     <section
       data-attention
       data-attention-count={typeof count === 'number' ? count : undefined}
-      className={`max-w-[820px] ${phone ? 'px-4 pt-[18px] pb-6' : 'px-8 pt-[30px] pb-20'}`}
+      className={`${phone ? 'px-4 pt-[18px] pb-6' : 'px-8 pt-[30px] pb-20'}`}
     >
       <Head
         count={count}

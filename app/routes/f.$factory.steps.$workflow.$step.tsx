@@ -1,5 +1,6 @@
 import { type ReactElement, type ReactNode, useLayoutEffect, useRef, useState } from 'react';
 import { Link, Navigate, useLocation, useParams, useSearchParams } from 'react-router';
+import { Column } from '../components/Column';
 import { EmptyState } from '../components/EmptyState';
 import { StepVersionPicker } from '../components/StepVersionPicker';
 import { CARD as PANEL } from '../components/ui/Card';
@@ -507,7 +508,7 @@ export default function StepDetail(): ReactElement {
     mapAt(at, known?.asked === asked ? known.step : undefined),
   );
   return (
-    <main className="mx-auto max-w-6xl px-6 py-8">
+    <Column className="px-6 py-8">
       <nav
         aria-label="Breadcrumb"
         data-breadcrumb=""
@@ -570,6 +571,6 @@ export default function StepDetail(): ReactElement {
         <Scripts {...panel} />
         <Yaml {...panel} />
       </div>
-    </main>
+    </Column>
   );
 }
