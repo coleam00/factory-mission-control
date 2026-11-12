@@ -27,7 +27,7 @@ SELECT l.run_id, l.workflow_name, l.status, l.started_at, l.completed_at, f.repo
   CASE WHEN item.issue IS NULL THEN pitem.number END AS item_pr,
   fin.run_id AS finished_by, fin.stopped_at AS finished_at,
   -- The run that finished the item at its close: the latest later run that was running at that moment
-  -- (started at or before it, stopped at or after it), since the run that merges stops after the merge.
+  -- (started at or before it, stopped at or after it), since the run that lands the item stops after it lands.
   -- Null when no run spans the close. finished_by is the first to follow the failure, which may have merged nothing.
   fin.closed_by
 FROM mc.laps l
