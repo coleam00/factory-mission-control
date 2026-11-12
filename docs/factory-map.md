@@ -32,12 +32,12 @@ strip, chips, flow and the tour work the same in a view.
 ## Size and readability (owner deviation from the mockup)
 
 The map is the Factory place's hero. Its frame spans the window between the page gutters; the
-caption, legend and details strip stay in the app's column. The frame's height is the map's height
-at the scale that fits its width, never below the type floor below, plus its padding (at least
-420px), so a fit leaves no empty band;
-the page scrolls below it. A deeper view is fitted no larger than the largest scale the matching views
+caption and legend stay in the app's column, and the details of a clicked card show in a panel
+inside the frame, on the side away from the press, so it never covers the card pressed. The frame's
+height is the map's height at the scale that fits its width, never below the type floor below, plus
+its padding (at least 420px), so the opening view leaves no empty band; the page scrolls below it. A deeper view is fitted no larger than the largest scale the matching views
 (the ones listed in the root's `referenceViews` key: Intake, Review, App check, Build, Deliver) fit at in the same frame (about 0.73 at 1440x900), centred in
-the frame; below 701px wide Fit fits as before. A card whose kind label would wrap is widened
+the frame; below 701px wide the map opens as the phone mockup draws it. A card whose kind label would wrap is widened
 through `width` (Staging's Deploy, Work order's middle column).
 
 The owner chose readability over the mockup's proportions (PR #326 review, 2026-11-03): at 1440x900,
@@ -48,10 +48,15 @@ texts wrap to two or three lines, and columns sit closer: 52 between cards, 84 b
 Merge, where the "passed" label needs the room (the mockup has about 84 everywhere). Which card sits
 where, and every line, are the mockup's. `bun run test:live` measures the rendered sizes at 1440
 fitted and fails below these numbers.
-Fit never draws the map below the scale at which these floors hold, `FIT_MIN` in `factory-map.ts`,
-derived from `MAP_TYPE` and `MAP_TYPE_FLOOR` (0.56; owner ruling on #549, 2026-11-09). When the whole
-map does not fit at that scale, the view starts there with the map's left edge, where every level's
-main line begins, in view; the rest is a pan away. Zooming out by hand is still allowed.
+A level opens (on mount, on a resize, and on arriving by a drill-down or going up) at no less than
+the scale at which these floors hold, `FIT_MIN` in `factory-map.ts`, derived from `MAP_TYPE` and
+`MAP_TYPE_FLOOR` (0.56; owner ruling on #549, 2026-11-09). When the whole map does not fit at that
+scale, the view opens there with the map's left edge, where every level's main line begins, in view;
+the rest is a pan away. The **Fit** control is not floored: it shows the whole level inside the frame
+at the frame's width now, with the Manager open or closed (owner changes of 2026-11-12, item 11), so
+on a narrow frame it draws the map under the floor, with bands above and below. Zooming out by hand
+is still allowed. A drag from anywhere, a card included, moves the map; a press without movement
+selects.
 A card whose kind label would not fit on one line at that size is widened through its `width` and the
 cards after it move right to keep their spacing (App check's Use the app, Build's Investigate and Plan,
 Deliver's Implement); `factory-map.test.ts` fails any new kind label that would wrap.

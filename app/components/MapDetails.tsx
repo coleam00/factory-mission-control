@@ -483,11 +483,7 @@ export function MapDetails({
   const [chosen, setChosen] = useState<Tab>('about');
   const tab = tabs.some((t) => t.tab === chosen) ? chosen : (tabs[0]?.tab ?? 'live');
   return (
-    <section
-      data-details={card.id}
-      aria-label={`${card.title} details`}
-      className={`${className} mt-3.5`}
-    >
+    <section data-details={card.id} aria-label={`${card.title} details`} className={className}>
       <CardPanel>
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2.5 border-b border-[color:var(--v3-line)] px-4 py-3.5">
           <div>

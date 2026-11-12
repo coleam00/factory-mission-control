@@ -15,6 +15,7 @@ import {
   MAP_READABLE,
   type MapType,
   mapCards,
+  mapFrameFailures,
   mapMismatches,
   mapType,
   mapTypeFailures,
@@ -153,6 +154,7 @@ export function homePhase(ctx: LiveContext): LivePhase {
       mapTimings.type = await mapType(page);
       ctx.failures.push(...mapTypeFailures(mapTimings.type));
       ctx.save(FILES.shot, await page.screenshot(1440));
+      ctx.failures.push(...(await mapFrameFailures(page, CLICKED_CARD)));
       onLiveStep = Number(await page.evaluate<string>(liveCountOf(LIVE_CARD)));
     },
 

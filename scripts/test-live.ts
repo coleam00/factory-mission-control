@@ -69,7 +69,8 @@ export const SCREENS: readonly LiveScreen[] = [
       "It opens `/` in a headless browser, checks the map's cards and their lap counts against the",
       'seed, times inserted laps to the factory strip and `fixture:write step` events to the map,',
       "holds the page open --hold seconds (default 180) across seal renewals, follows App check's",
-      "Behind the scenes to check-app's step screen, and runs the design probe.",
+      "Behind the scenes to check-app's step screen, checks that Fit shows every card, and a clicked",
+      "card's details, inside the map's frame with the Manager open and closed, and runs the design probe.",
     ],
   },
   {

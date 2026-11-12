@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { afterAll, beforeAll, expect, test } from 'bun:test';
 import { openPage, type Page } from '../../scripts/lib/cdp';
 
@@ -183,3 +184,182 @@ test('arriving with a card to select shows it selected, in the view the address 
   );
   expect(arrived).toMatchObject({ view: 'app', selected: 'a-check' });
 }, 30_000);
+
+// The widths the map's column has at 1440 with the Manager dock open and closed, from the shell's tokens.
+const tokens = readFileSync(`${import.meta.dir}/../styles.css`, 'utf8');
+const token = (name: string) => Number(new RegExp(`--v3-${name}:s*(d+)px`).exec(tokens)?.[1]);
+const CLOSED = 1440 - token('nav-width');
+const OPEN = CLOSED - token('manager-width');
+
+interface Box {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+}
+interface Geometry {
+  stage: Box;
+  camera: { x: number; y: number; k: number };
+  transition: string;
+  cards: Record<string, Box>;
+  details: Box | null;
+  selected: string | null;
+}
+type At = [number, number];
+
+const geometry = () => inPage<Geometry>('return m.geometry();');
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+const centre = (box: Box): At => [(box.left + box.right) / 2, (box.top + box.bottom) / 2];
+const holds = (box: Box, [x, y]: At) =>
+  x >= box.left && x <= box.right && y >= box.top && y <= box.bottom;
+const inside = (inner: Box, outer: Box) =>
+  inner.left >= outer.left - 1 &&
+  inner.top >= outer.top - 1 &&
+  inner.right <= outer.right + 1 &&
+  inner.bottom <= outer.bottom + 1;
+
+const press = (at: At, clickCount = 1) =>
+  page.mouse({ type: 'mousePressed', x: at[0], y: at[1], clickCount });
+const release = (at: At, clickCount = 1) =>
+  page.mouse({ type: 'mouseReleased', x: at[0], y: at[1], clickCount });
+async function click(at: At, clickCount = 1) {
+  await press(at, clickCount);
+  await release(at, clickCount);
+}
+async function dblclick(at: At) {
+  await click(at);
+  await click(at, 2);
+}
+async function drag(from: At, by: At, steps = 8) {
+  await press(from);
+  for (let i = 1; i <= steps; i++) {
+    await page.mouse({
+      type: 'mouseMoved',
+      x: from[0] + (by[0] * i) / steps,
+      y: from[1] + (by[1] * i) / steps,
+    });
+  }
+  await release([from[0] + by[0], from[1] + by[1]]);
+}
+const wheel = (at: At, deltaY: number) =>
+  page.mouse({ type: 'mouseWheel', x: at[0], y: at[1], deltaY });
+
+/** The camera moved by `by` from `before`, at the same scale. */
+const movedBy = (after: Geometry, before: Geometry['camera'], by: At) => {
+  expect(after.camera.k).toBeCloseTo(before.k, 6);
+  expect(after.camera.x).toBeCloseTo(before.x + by[0], 1);
+  expect(after.camera.y).toBeCloseTo(before.y + by[1], 1);
+};
+
+/** A point of the frame no card holds, clear of the controls and the hint. */
+const emptyPoint = (g: Geometry): At => {
+  for (let y = g.stage.top + 20; y < g.stage.bottom - 70; y += 20) {
+    for (let x = g.stage.left + 20; x < g.stage.right - 20; x += 20) {
+      if (!Object.values(g.cards).some((box) => holds(box, [x, y]))) return [x, y];
+    }
+  }
+  throw new Error('no empty point in the frame');
+};
+
+const mountAt = (url: string, width: number) =>
+  inPage<Geometry>(
+    `await m.mount(${JSON.stringify(url)}, undefined, ${width}); return m.geometry();`,
+  );
+
+const sequences = [
+  {
+    name: 'the root',
+    url: '/f/x',
+    card: 'build',
+    deeper: '/f/x?view=build',
+    deeperView: 'build',
+    parentView: 'root',
+  },
+  {
+    name: 'Build',
+    url: '/f/x?view=build',
+    card: 'b-del',
+    deeper: '/f/x?view=build%2Fdeliver',
+    deeperView: 'build/deliver',
+    parentView: 'build',
+  },
+];
+
+for (const { name, url, card: opening, deeper, deeperView, parentView } of sequences) {
+  test(`the map moves however you grab it, on ${name}`, async () => {
+    await page.setViewport(1440);
+    const parent = (await mountAt(url, OPEN)).camera;
+    const child = (await mountAt(deeper, OPEN)).camera;
+    const start = await mountAt(url, OPEN);
+
+    // 1. Drag from the background.
+    await drag(emptyPoint(start), [50, 30]);
+    const dragged = await geometry();
+    movedBy(dragged, start.camera, [50, 30]);
+
+    // 2. Click a card: selected, its details inside the frame and clear of the press.
+    const pressAt = centre(dragged.cards[opening] as Box);
+    await click(pressAt);
+    const selected = await geometry();
+    expect(selected.selected).toBe(opening);
+    expect(selected.details).not.toBeNull();
+    expect(inside(selected.details as Box, selected.stage)).toBe(true);
+    expect(holds(selected.details as Box, pressAt)).toBe(false);
+
+    // 3. Drag from that card: the map moves and the selection stays.
+    await drag(pressAt, [60, 40]);
+    const grabbed = await geometry();
+    movedBy(grabbed, selected.camera, [60, 40]);
+    expect(grabbed.selected).toBe(opening);
+
+    // 4. Open the card's deeper view and drag at once, inside the transition window.
+    await dblclick(centre(grabbed.cards[opening] as Box));
+    await inPage(`return await m.waitFor(${JSON.stringify(deeperView)});`);
+    const corner: At = [grabbed.stage.left + 30, grabbed.stage.top + 30];
+    await drag(corner, [-40, 25]);
+    const inDeeper = await geometry();
+    movedBy(inDeeper, child, [-40, 25]);
+    await sleep(800);
+    const settled = await geometry();
+    expect(settled.camera).toEqual(inDeeper.camera);
+    expect(settled.transition).toBe('');
+
+    // 5. Esc goes up; drag at once; then the wheel zooms.
+    await inPage(`m.key('Escape'); await m.waitFor(${JSON.stringify(parentView)});`);
+    await drag(corner, [35, -20]);
+    const back = await geometry();
+    movedBy(back, parent, [35, -20]);
+    await sleep(800);
+    const still = await geometry();
+    expect(still.camera).toEqual(back.camera);
+    await wheel(centre(still.stage), -300);
+    expect((await geometry()).camera.k).toBeGreaterThan(still.camera.k);
+  }, 60_000);
+}
+
+for (const [manager, width] of [
+  ['open', OPEN],
+  ['closed', CLOSED],
+] as const) {
+  test(`Fit shows every card inside the frame with the Manager ${manager}`, async () => {
+    await page.setViewport(1440);
+    for (const url of ['/f/x', '/f/x?view=build']) {
+      const start = await mountAt(url, width);
+      const control = async (label: string) =>
+        centre(
+          await inPage<Box>(`
+            const { left, top, right, bottom } = document
+              .querySelector('[aria-label="${label}"]').getBoundingClientRect();
+            return { left, top, right, bottom };`),
+        );
+      await click(await control('Zoom in'));
+      await click(await control('Zoom in'));
+      await drag(emptyPoint(start), [-70, -40]);
+      await click(await control('Fit'));
+      const fitted = await geometry();
+      for (const [id, box] of Object.entries(fitted.cards)) {
+        expect([url, id, inside(box, fitted.stage)]).toEqual([url, id, true]);
+      }
+    }
+  }, 60_000);
+}
