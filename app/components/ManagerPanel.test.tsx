@@ -123,6 +123,20 @@ test('a run list draws one row per run, and a proposal is a button only when the
   expect(without).toContain('Open run 5eed0001');
 });
 
+test('an item-keyed proposal is a button with no run suffix, and an Open #N link without an operator', () => {
+  const items: ManagerReply = {
+    ...answer,
+    proposals: [
+      { type: 'proposal', factory: 'x', action: 'retriage', number: 42, label: 'Re-triage #42' },
+    ],
+  };
+  const html = render([items]);
+  expect(html).toMatch(/<button[^>]*data-proposal="retriage"[^>]*>Re-triage #42<\/button>/);
+  const without = render([items], false);
+  expect(without).not.toContain('data-proposal');
+  expect(without).toMatch(/<a [^>]*href="[^"]*42[^"]*"[^>]*>Open #42<\/a>/);
+});
+
 test('bold that opens in one list item and closes in the next shows no ** and stays out of both', () => {
   const text = '1. **Build-queue failures on issue #522\n2. keep recurring.** Fix the gate.';
   const html = render([

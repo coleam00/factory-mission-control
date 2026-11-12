@@ -64,6 +64,7 @@ const unstick = (overrides: Partial<UnstickRow>): UnstickRow => ({
   blocker_titles: null,
   reason: null,
   console: 'http://localhost:3090/',
+  open: true,
   ...overrides,
 });
 
@@ -289,6 +290,24 @@ test('capacity offers Resume first, then the item’s writes; a claim leads with
   expect(claim?.tiles[0]?.recommended).toBe(true);
   expect(TILE_IDS(itemless)).toEqual(['resume', 'something-else']);
   expect(itemless?.tiles[1]?.manager).toBeDefined();
+});
+
+test('a claim or capacity card whose item the mirror does not hold open offers no item write', () => {
+  const [capacity, claim] = unstickCards(
+    [
+      unstick({ kind: 'capacity', number: 9, run_id: RUN, action: 'resume', open: false }),
+      unstick({ kind: 'claim', number: 10, run_id: RUN, open: false }),
+    ],
+    'f',
+  );
+  expect(TILE_IDS(capacity)).toEqual(['resume', 'something-else']);
+  expect(capacity?.tiles[1]?.manager).toBeDefined();
+  expect(capacity?.tiles[1]?.somethingElse).toBeUndefined();
+  expect(capacity?.note.rest).toContain('#9 is not open in the mirror');
+  expect(TILE_IDS(claim)).toEqual(['something-else']);
+  expect(claim?.tiles[0]?.manager).toBeDefined();
+  expect(claim?.note.rest).toContain('#10 is not open in the mirror');
+  expect(claim?.actions.map((x) => x.label)).toEqual(['Open #10']);
 });
 
 test('every card ends in Something else, and no card carries a copied command', () => {

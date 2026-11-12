@@ -1,8 +1,9 @@
 SELECT 'blocked'::text AS kind, i.number, NULL::uuid AS run_id, NULL::text AS workflow_name,
   b.waits_on, b.since, 'retriage'::text AS action,
-  i.title, b.blocker_titles, NULL::text AS reason, f.console
+  i.title, b.blocker_titles, NULL::text AS reason, f.console, true AS open
 -- Work that stopped moving, with what it waits on, since when, and the one action that moves it.
 -- `since` is when it became movable, not when it was first stuck. Four kinds, each keyed by $1.
+-- `open` is whether the mirror holds the item open: the item writes are offered only then.
 -- Blocked: an open issue the queues stopped (stage 'blocked') whose every `Depends on` is closed or merged.
 FROM mc.issues i
 JOIN mc.factories f ON f.name = i.factory
@@ -30,7 +31,7 @@ WHERE i.factory = $1 AND i.state = 'open' AND b.n > 0 AND b.gone = b.n
 UNION ALL
 -- Parked: an open issue parked as the Board reads it whose ruling names only items that are closed or merged.
 SELECT 'parked', i.number, NULL, NULL, b.waits_on, b.since, 'retriage',
-  i.title, b.blocker_titles, w.parked_reason, f.console
+  i.title, b.blocker_titles, w.parked_reason, f.console, true
 FROM mc.issues i
 JOIN mc.factories f ON f.name = i.factory
 JOIN mc.work_item_states w ON w.project_key = f.codebase AND w.number = i.number
@@ -63,7 +64,7 @@ WHERE i.factory = $1 AND i.state = 'open' AND b.n > 0 AND b.gone = b.n AND (
 UNION ALL
 -- Capacity: an answered run Archon could not continue for want of a slot (migration 0031).
 SELECT 'capacity', c.item_number, c.run_id, c.workflow_name, 'a free slot', c.since, 'resume',
-  ci.title, NULL::text[], NULL, f.console
+  ci.title, NULL::text[], NULL, f.console, coalesce(ci.state = 'open', false)
 FROM mc.capacity_waits c
 JOIN mc.factories f ON f.name = c.factory
 LEFT JOIN mc.issues ci ON ci.factory = c.factory AND ci.number = c.item_number
@@ -72,7 +73,7 @@ UNION ALL
 -- Claim: a work item claimed by a run whose engine lease ended: the run completed or was cancelled
 -- or abandoned. A failed run keeps its claim, since it can resume (the pack's README).
 SELECT 'claim', w.number, l.run_id, l.workflow_name, 'a claim held by a finished run', l.completed_at,
-  'retriage', wi.title, NULL, NULL, f.console
+  'retriage', wi.title, NULL, NULL, f.console, coalesce(wi.state = 'open', false)
 FROM mc.work_item_states w
 JOIN mc.factories f ON f.codebase = w.project_key AND f.name = $1
 LEFT JOIN mc.issues wi ON wi.factory = f.name AND wi.number = w.number

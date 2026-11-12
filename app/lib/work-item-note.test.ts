@@ -83,6 +83,7 @@ const unstick = (over: Partial<UnstickRow>): UnstickRow => ({
   blocker_titles: null,
   reason: null,
   console: CONSOLE,
+  open: true,
   ...over,
 });
 

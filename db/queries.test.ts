@@ -135,6 +135,7 @@ const ROW_COLUMNS: Record<string, string[]> = {
     'blocker_titles',
     'reason',
     'console',
+    'open',
   ]),
   handled: columns<HandledRow>()([
     'id',

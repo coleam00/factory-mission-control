@@ -5,7 +5,8 @@
  * counts the same rows with `attentionCount`.
  *
  * Every card says in plain sentences what it waits on and what each option does, then ends in option
- * tiles, the recommended one first, and "Something else" last. Clean up ("safe to clear") is not a
+ * tiles, the recommended one first, and "Something else" last. Fix cards are the one exception: they
+ * leave Attention for Runs (#646) and carry no tiles. Clean up ("safe to clear") is not a
  * group here: no live query names such an item yet.
  */
 import type { Source } from '../live/Feed';
@@ -433,14 +434,19 @@ export function unstickCards(rows: readonly UnstickRow[], factory: string): Atte
           'data-act-item': row.number === null ? undefined : String(row.number),
         },
       });
+      const writable = row.number !== null && row.open;
+      const closedNote =
+        row.number === null || row.open
+          ? ''
+          : ` ${n} is not open in the mirror, so re-triage, close and comment are not offered; open it to see where it stands.`;
       const somethingElse = (): Tile =>
-        row.number === null
+        !writable || row.number === null
           ? {
               id: 'something-else',
               label: SOMETHING_ELSE,
               consequence: 'Tell the manager what you want; it proposes the action as a button',
               recommended: false,
-              href: null,
+              href: itemHref,
               manager: ask,
               hooks: { 'data-choice': 'something-else', 'data-something-else': '' },
             }
@@ -457,7 +463,7 @@ export function unstickCards(rows: readonly UnstickRow[], factory: string): Atte
               hooks: { 'data-choice': 'something-else', 'data-something-else': '' },
             };
       const itemWrites = (recommendRetriage: boolean): Tile[] =>
-        row.number === null
+        !writable || row.number === null
           ? []
           : [
               act(
@@ -543,7 +549,7 @@ export function unstickCards(rows: readonly UnstickRow[], factory: string): Atte
             ],
             note: {
               lead: `Run ${run} of ${label} was answered and has waited for a free slot${since}.`,
-              rest: 'Runs in this state do not always continue on their own.',
+              rest: `Runs in this state do not always continue on their own.${closedNote}`,
             },
             tiles: [...resume, ...itemWrites(false), somethingElse()],
           };
@@ -555,7 +561,7 @@ export function unstickCards(rows: readonly UnstickRow[], factory: string): Atte
             meta: [...workflow, { pill: 'claimed', state: UNSTICK_STATE.claim }, waits],
             note: {
               lead: `Run ${run} of ${label} finished${row.since === null ? '' : ` at ${localMoment(row.since)}`} and still claims ${n}.`,
-              rest: `Any intake run releases the claim; re-triaging ${n} starts one and keeps its build progress.`,
+              rest: `Any intake run releases the claim; re-triaging ${n} starts one and keeps its build progress.${closedNote}`,
             },
             tiles: [...itemWrites(true), somethingElse()],
           };

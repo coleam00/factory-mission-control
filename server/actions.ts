@@ -446,10 +446,18 @@ async function spawnCli(operator: Operator, argv: string[]) {
   }
 }
 
+/** What a call that exited 0 did, for the first line of a result that failed after it. */
+const WENT_THROUGH: Readonly<Record<string, string>> = {
+  label: 'label added',
+  'close-comment': 'close note posted',
+  comment: 'comment posted',
+};
+
 /**
  * Runs the calls in order and stops at the first that does not exit 0. The exit code is the last
  * call's, so 0 means every call passed. With several calls the output has one `<call>: <summary>`
- * line per call that ran, the failing one first, so the toast's first line names what failed.
+ * line per call that ran, the failing one first. When a call failed after others went through, that
+ * first line names them: "comment posted, then label failed: ...".
  */
 async function runCalls(operator: Operator, calls: Call[]) {
   const ran: { call: string; exitCode: number | null; output: string }[] = [];
@@ -460,8 +468,18 @@ async function runCalls(operator: Operator, calls: Call[]) {
   }
   const last = ran[ran.length - 1];
   if (calls.length === 1) return last;
-  const ordered = last.exitCode === 0 ? ran : [last, ...ran.slice(0, -1)];
-  const output = ordered.map((r) => `${r.call}: ${r.output}`).join('\n');
+  const line = (r: (typeof ran)[number]) => `${r.call}: ${r.output}`;
+  const before = ran.slice(0, -1);
+  const lines =
+    last.exitCode === 0
+      ? ran.map(line)
+      : [
+          before.length === 0
+            ? line(last)
+            : `${before.map((r) => WENT_THROUGH[r.call]).join(', ')}, then ${last.call} failed: ${last.output}`,
+          ...before.map(line),
+        ];
+  const output = lines.join('\n');
   return { exitCode: last.exitCode, output: output.slice(0, SUMMARY_CHARS) };
 }
 

@@ -60,6 +60,7 @@ const stuck: UnstickRow = {
   blocker_titles: ['Six'],
   reason: null,
   console: 'http://localhost:3090/',
+  open: true,
 };
 const failure: FailureGroupRow = {
   signature: 'sig',

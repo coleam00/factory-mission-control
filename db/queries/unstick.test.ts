@@ -83,14 +83,16 @@ describe('the unstick query on the seed', () => {
       title: `Queue issue ${u.parkedMerged.issue}`,
       blocker_titles: [`Queue issue ${u.parkedMerged.blocker}`],
       reason: u.parkedReason,
+      open: true,
     });
     expect(of('blocked')).toMatchObject({
       title: `Queue issue ${u.blockedMerged.issue}`,
       blocker_titles: [`Queue issue ${u.blockedMerged.blocker}`],
       reason: null,
+      open: true,
     });
-    expect(of('capacity')).toMatchObject({ blocker_titles: null, reason: null });
-    expect(of('claim')).toMatchObject({ blocker_titles: null, reason: null });
+    expect(of('capacity')).toMatchObject({ blocker_titles: null, reason: null, open: false });
+    expect(of('claim')).toMatchObject({ blocker_titles: null, reason: null, open: false });
   });
 
   test('flags nothing for an item whose blocker is still open, and runs on a factory without any', async () => {

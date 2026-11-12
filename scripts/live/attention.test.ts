@@ -70,6 +70,7 @@ const stuck: UnstickRow = {
   blocker_titles: ['Six'],
   reason: null,
   console: 'http://localhost:3090/',
+  open: true,
 };
 
 test('Unstick cards must match the query’s rows, and each must show the page’s option tiles', () => {

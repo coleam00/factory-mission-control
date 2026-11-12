@@ -274,6 +274,13 @@ describe('retriage', () => {
     expect(String(row.output)).toStartWith('label: stub refuses workitem.label.add');
   });
 
+  test('a failed intake after the label names the label as already added', async () => {
+    const failing = appWith({ MC_STUB_CLI_FAIL_ON: 'run' });
+    await post(item('retriage', OPEN_ISSUE), failing);
+    const [row] = await rows();
+    expect(String(row.output)).toStartWith('label added, then intake failed: ');
+  });
+
   test('without a login on the operator it is refused, and nothing is recorded or sent', async () => {
     const noLogin = appWith({}, null);
     for (const action of ['retriage', 'comment']) {
@@ -321,6 +328,13 @@ describe('close', () => {
     await post(item('close', OPEN_ISSUE), failing);
     expect(sent().map((argv) => argv[1])).toEqual(['workitem.comment.upsert']);
   });
+
+  test('a failed close after the note names the note as already posted', async () => {
+    const failing = appWith({ MC_STUB_CLI_FAIL_ON: 'workitem.close' });
+    await post(item('close', OPEN_ISSUE), failing);
+    const [row] = await rows();
+    expect(String(row.output)).toStartWith('close note posted, then close failed: ');
+  });
 });
 
 describe('comment', () => {
@@ -353,7 +367,7 @@ describe('comment', () => {
     ]);
     const [row] = await rows();
     expect(row.exit_code).toBe(1);
-    expect(String(row.output)).toStartWith('label:');
+    expect(String(row.output)).toStartWith('comment posted, then label failed: ');
   });
 });
 

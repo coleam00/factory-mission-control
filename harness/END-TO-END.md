@@ -18,10 +18,11 @@ the app served from a check branch loaded with the seed (`bun run fixture:branch
    reload.
 5. **Answer and resume from the dashboard.** Serve with `MC_OPERATORS_FILE` naming an operator file
    whose entry for the factory runs `fixtures/archon-stub-cli.ts` (`MC_STUB_CLI_LOG` set in its
-   `env`), for example `{"operators": {"<factory>": {"who": "owner", "command": ["bun",
+   `env`), for example `{"operators": {"<factory>": {"who": "owner", "login": "<github login>", "command": ["bun",
    "fixtures/archon-stub-cli.ts"], "cwd": "<absolute repo path>", "env": {"MC_STUB_CLI_LOG":
    "<log path>"}}}}`; the server will not start on any other shape. On Attention, click a recommended option tile: a toast with Undo shows, and after 5
    seconds the stub log holds the answer argv and `mc.actions` holds the row with exit status 0.
    Resume a failed run from its run page the same way. Click again and press Undo: `mc.actions`
-   holds an undone row and the stub log has no new line. Without an entry for the factory the
+   holds an undone row and the stub log has no new line. An Unstick card also offers Re-triage, Close and Something else (a comment): each
+   records an `mc.actions` row and a stub log line the same way, and needs `login`. Without an entry for the factory the
    buttons are console links.

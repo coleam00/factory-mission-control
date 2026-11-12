@@ -76,6 +76,8 @@ export interface UnstickRow {
   reason: string | null;
   /** The factory's Archon console, for a run link. */
   console: string;
+  /** Whether the mirror holds the item `number` names open; the item writes are offered only then. */
+  open: boolean;
 }
 
 export interface AttentionItem extends Omit<AttentionRow, 'options' | 'labels'> {
