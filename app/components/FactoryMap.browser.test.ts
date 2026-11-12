@@ -187,7 +187,11 @@ test('arriving with a card to select shows it selected, in the view the address 
 
 // The widths the map's column has at 1440 with the Manager dock open and closed, from the shell's tokens.
 const tokens = readFileSync(`${import.meta.dir}/../styles.css`, 'utf8');
-const token = (name: string) => Number(new RegExp(`--v3-${name}:s*(d+)px`).exec(tokens)?.[1]);
+const token = (name: string) => {
+  const width = Number(new RegExp(String.raw`--v3-${name}:\s*(\d+)px`).exec(tokens)?.[1]);
+  if (!Number.isFinite(width)) throw new Error(`no --v3-${name} width in styles.css`);
+  return width;
+};
 const CLOSED = 1440 - token('nav-width');
 const OPEN = CLOSED - token('manager-width');
 
@@ -261,10 +265,14 @@ const emptyPoint = (g: Geometry): At => {
   throw new Error('no empty point in the frame');
 };
 
-const mountAt = (url: string, width: number) =>
-  inPage<Geometry>(
+const mountAt = async (url: string, width: number) => {
+  const mounted = await inPage<Geometry>(
     `await m.mount(${JSON.stringify(url)}, undefined, ${width}); return m.geometry();`,
   );
+  // The frame sits in the column with its margins, so a column the test did not get shows as a wider frame.
+  expect(mounted.stage.right - mounted.stage.left).toBeLessThan(width);
+  return mounted;
+};
 
 const sequences = [
   {
@@ -336,6 +344,17 @@ for (const { name, url, card: opening, deeper, deeperView, parentView } of seque
     expect((await geometry()).camera.k).toBeGreaterThan(still.camera.k);
   }, 60_000);
 }
+
+test('a press released outside the frame before it moved does not leave the map following the mouse', async () => {
+  await page.setViewport(1440);
+  const start = await mountAt('/f/x', CLOSED);
+  const edge: At = [start.stage.right - 3, emptyPoint(start)[1]];
+  await press(edge);
+  await release([start.stage.right + 40, edge[1]]);
+  await page.mouse({ type: 'mouseMoved', x: edge[0] - 60, y: edge[1] + 30 });
+  await page.mouse({ type: 'mouseMoved', x: edge[0] - 120, y: edge[1] + 60 });
+  expect((await geometry()).camera).toEqual(start.camera);
+}, 30_000);
 
 for (const [manager, width] of [
   ['open', OPEN],

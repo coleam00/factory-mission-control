@@ -217,8 +217,8 @@ Showing those lines on the work item page's timeline waits on that page (#317).
 
 ## Clicking a card
 
-A card keeps itself and the cards a line joins to it lit and dims the rest; its details strip opens
-under the map. Right now lists the runs and items the card's chips count, each opening its page;
+A card keeps itself and the cards a line joins to it lit and dims the rest; its details open in a
+panel inside the map frame, on the side away from the press. Right now lists the runs and items the card's chips count, each opening its page;
 an open attention item is listed there too, and a lap with an issue also links that issue on GitHub, until the ticket page exists (#317).
 Behind the scenes lists, per workflow, its YAML path in the pinned pack (from the parsed
 architecture, and none when the version lacks it) and the steps the card covers that the version shown has, each

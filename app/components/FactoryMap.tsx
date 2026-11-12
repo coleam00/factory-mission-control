@@ -101,12 +101,26 @@ const cardCentre = (level: MapView, card: Card, cam: Camera): Point => [
   cam.y + (card.y + level.cardSize.height / 2) * cam.k,
 ];
 
+const PANEL_INSET = 12;
+/** Clearance under the panel: the hint and controls the fit keeps room for, and the inset. */
+const PANEL_FOOT = FIT_FOOT + 8;
+
 /** The details panel's box in the frame; its top and bottom clear the hint and the controls. */
 function detailsStyle(side: Side): CSSProperties {
   if (side === 'left' || side === 'right') {
-    return { top: 12, bottom: 56, width: 'min(400px, calc(50% - 18px))', [side]: 12 };
+    return {
+      top: PANEL_INSET,
+      bottom: PANEL_FOOT,
+      width: 'min(400px, calc(50% - 18px))',
+      [side]: PANEL_INSET,
+    };
   }
-  return { left: 12, right: 12, height: 'calc(50% - 62px)', [side]: side === 'top' ? 12 : 56 };
+  return {
+    left: PANEL_INSET,
+    right: PANEL_INSET,
+    height: `calc(50% - ${PANEL_INSET + PANEL_FOOT - 6}px)`,
+    [side]: side === 'top' ? PANEL_INSET : PANEL_FOOT,
+  };
 }
 
 const reducedQuery = '(prefers-reduced-motion: reduce)';
@@ -866,6 +880,11 @@ export function FactoryMap({
   const onPointerMove = (event: PointerEvent<HTMLElement>) => {
     const was = drag.current;
     if (!was) return;
+    // A press released outside the frame before it was captured never reaches onPointerUp.
+    if (event.buttons === 0) {
+      drag.current = null;
+      return;
+    }
     if (!was.moved) {
       if (
         Math.abs(event.clientX - was.startX) + Math.abs(event.clientY - was.startY) <=
@@ -973,8 +992,10 @@ export function FactoryMap({
         onPointerCancel={() => {
           drag.current = null;
         }}
-        onLostPointerCapture={() => {
-          drag.current = null;
+        onLostPointerCapture={(event) => {
+          // A touch's implicit capture on the pressed element ends when the frame takes it; that
+          // event bubbles here and must not end the drag.
+          if (event.target === event.currentTarget) drag.current = null;
         }}
         onClickCapture={(event) => {
           if (!suppressClick.current) return;

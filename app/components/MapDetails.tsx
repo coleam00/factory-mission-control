@@ -449,7 +449,7 @@ export function Behind({
   );
 }
 
-/** The details strip under the map for the card clicked: its tabs and what each says. */
+/** The details panel inside the map frame, on the side away from the press, for the card clicked: its tabs and what each says. */
 export function MapDetails({
   card,
   live,
