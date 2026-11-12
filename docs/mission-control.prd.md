@@ -133,7 +133,7 @@ shows merges today as "<n> merged". A card with laps on it carries `data-live-co
 and pulses its chip. Every number updates live (invariant 5).
 
 **Clicking a card** dims everything but the card and its direct neighbours and opens a details
-strip under the map with tabs: When it runs, What it does, How it works, Right now (the issues and
+panel inside the map frame (owner decision 2026-11-12, #650) with tabs: When it runs, What it does, How it works, Right now (the issues and
 laps on it), and Behind the scenes (the workflows and steps it covers, each linking to its step
 screen, its models, and its source paths). App check's Behind the scenes links its `check` step
 screen. A card shows ⤢ only once its deeper view exists (until then no ⤢, no Open button and no legend entry for it, whatever `refs/` shows); it opens it
