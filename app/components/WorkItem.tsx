@@ -22,6 +22,7 @@ import { Card } from './ui/Card';
 import { ManagerNote } from './ui/ManagerNote';
 import { Pill } from './ui/StateDot';
 import { Timeline, TimelineRow } from './ui/Timeline';
+import { Column } from './Column';
 
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const clock = (at: Date) => at.toISOString().slice(11, 16);
@@ -243,10 +244,11 @@ export function WorkItem({
         )
       : null;
   return (
-    <main
+    <Column
       data-work-item={number}
       data-state={state}
-      className="mx-auto grid max-w-4xl gap-4 px-6 py-6"
+      width="max-w-4xl"
+      className="grid gap-4 px-6 py-6"
     >
       <Feed<WorkItemRow> query="work-item" factory={factory} args={[number]} into={setItem} />
       <Feed<BoardRow> query="board" factory={factory} into={setBoard} />
@@ -272,6 +274,6 @@ export function WorkItem({
           })}
         />
       )}
-    </main>
+    </Column>
   );
 }

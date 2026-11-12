@@ -1,5 +1,6 @@
 import type { ReactElement } from 'react';
 import { useParams } from 'react-router';
+import { Column } from '../components/Column';
 import { NoRun, OneRun } from '../components/OneRun';
 import { isRunId } from '../lib/one-lap';
 
@@ -8,15 +9,15 @@ export default function Run(): ReactElement {
   // An address that is not a run id names no run: no query could find one, so none is asked.
   if (!isRunId(runId)) {
     return (
-      <main className="mx-auto grid max-w-6xl gap-8 px-6 py-6">
+      <Column className="grid gap-8 px-6 py-6">
         <NoRun runId={runId} />
-      </main>
+      </Column>
     );
   }
   // Wide enough for the loop's graph and the step panel beside it.
   return (
-    <main className="mx-auto grid max-w-[1840px] gap-8 px-6 py-6">
+    <Column width="max-w-[1840px]" className="grid gap-8 px-6 py-6">
       <OneRun factory={factory} runId={runId} />
-    </main>
+    </Column>
   );
 }

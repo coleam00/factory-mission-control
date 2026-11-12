@@ -1,5 +1,6 @@
 import type { ReactElement } from 'react';
 import { useParams } from 'react-router';
+import { Column } from '../components/Column';
 import { NoWorkItem, WorkItem } from '../components/WorkItem';
 import { WORK_ITEM_NUMBER } from '../lib/work-item';
 import { useFactory } from '../live/FactoryProvider';
@@ -10,9 +11,9 @@ export default function Work(): ReactElement {
   const { n = '' } = useParams();
   if (!WORK_ITEM_NUMBER.test(n)) {
     return (
-      <main className="mx-auto grid max-w-4xl gap-4 px-6 py-6">
+      <Column width="max-w-4xl" className="grid gap-4 px-6 py-6">
         <NoWorkItem number={n} />
-      </main>
+      </Column>
     );
   }
   return <WorkItem factory={factory} number={n} />;

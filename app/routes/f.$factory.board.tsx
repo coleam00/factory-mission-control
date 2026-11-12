@@ -1,6 +1,7 @@
 import { type ReactElement, useCallback, useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router';
 import { BoardBody } from '../components/Board';
+import { Column } from '../components/Column';
 import { EmptyState } from '../components/EmptyState';
 import { Segmented } from '../components/ui/Segmented';
 import {
@@ -89,10 +90,11 @@ export default function Board(): ReactElement {
         } satisfies BoardSources)
       : undefined;
   return (
-    <main
+    <Column
       data-board
       data-state={state}
-      className="mx-auto min-w-0 max-w-[1100px] px-4 py-6 min-[760px]:px-6"
+      width="max-w-[1100px]"
+      className="px-4 py-6 min-[760px]:px-6"
     >
       <header className="mb-4 flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0 max-w-xl">
@@ -133,6 +135,6 @@ export default function Board(): ReactElement {
           tableHref={`?${tableParams}`}
         />
       )}
-    </main>
+    </Column>
   );
 }

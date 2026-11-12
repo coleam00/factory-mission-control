@@ -43,6 +43,7 @@ import { MAP_CHIP_STATE, type State, stateColor, stateInk, stateWash } from '../
 import type { StepRow } from '../lib/step-detail';
 import type { CardLive } from '../map/live';
 import { MapDetails } from './MapDetails';
+import { APP_WIDTH, CENTERED } from './Column';
 
 const ROLE_COLOR: Record<Role, string> = {
   source: 'var(--v3-role-source)',
@@ -472,7 +473,7 @@ function WireLabel({ text, at }: { text: string; at: Point }): ReactElement {
 }
 
 /** The app's column, which the caption, legend and details keep while the map spans the window. */
-const COLUMN = 'mx-auto w-full max-w-6xl px-6';
+const COLUMN = `${CENTERED} ${APP_WIDTH} px-6`;
 
 const CONTROL =
   'cursor-pointer rounded-md px-[9px] py-1 font-mono text-[12px] text-[color:var(--v3-fg-2)] hover:bg-[var(--v3-raised)] hover:text-[color:var(--v3-fg)] disabled:cursor-default disabled:hover:bg-transparent disabled:hover:text-[color:var(--v3-fg-2)]';

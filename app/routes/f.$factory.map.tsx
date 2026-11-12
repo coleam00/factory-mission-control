@@ -1,5 +1,6 @@
 import { type ReactElement, type ReactNode, useEffect, useState } from 'react';
 import { useLocation, useSearchParams } from 'react-router';
+import { APP_WIDTH, CENTERED } from '../components/Column';
 import { EmptyState } from '../components/EmptyState';
 import { FactoryMap } from '../components/FactoryMap';
 import { FactoryScorecard } from '../components/FactoryScorecard';
@@ -31,7 +32,7 @@ import {
  * live rows count. Each other source's chips appear as its rows arrive.
  */
 /** The app's column, which the title row, the version control and the empty states keep. */
-const COLUMN = 'mx-auto w-full max-w-6xl px-6';
+const COLUMN = `${CENTERED} ${APP_WIDTH} px-6`;
 
 /** Milliseconds from `now` to the next local midnight, when "today" changes. */
 export const msToLocalMidnight = (now: Date): number =>
