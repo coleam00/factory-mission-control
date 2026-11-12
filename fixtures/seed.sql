@@ -656,7 +656,7 @@ INSERT INTO mc.issue_dependencies (factory, issue_number, depends_on) VALUES ('q
 INSERT INTO mc.issue_dependencies (factory, issue_number, depends_on) VALUES ('queue-factory', 452, 453);
 INSERT INTO mc.work_item_states (project_key, number, revision, build_status, build_at, merge_status, merge_at, triage_at, own_pr_at, stage) VALUES ('coleam00/queue-factory', 450, 1, NULL, NULL, NULL, NULL, '2026-10-24T09:01:00.000Z', NULL, 'blocked');
 INSERT INTO mc.work_item_states (project_key, number, revision, build_status, build_at, merge_status, merge_at, triage_at, own_pr_at, stage) VALUES ('coleam00/queue-factory', 452, 1, NULL, NULL, NULL, NULL, '2026-10-24T09:01:00.000Z', NULL, 'blocked');
-INSERT INTO mc.work_item_states (project_key, number, revision, build_status, build_at, merge_status, merge_at, triage_at, own_pr_at) VALUES ('coleam00/queue-factory', 454, 1, 'parked', '2026-10-24T09:06:00.000Z', NULL, NULL, '2026-10-24T09:01:00.000Z', NULL);
+INSERT INTO mc.work_item_states (project_key, number, revision, build_status, build_at, merge_status, merge_at, triage_at, own_pr_at, parked_reason) VALUES ('coleam00/queue-factory', 454, 1, 'parked', '2026-10-24T09:06:00.000Z', NULL, NULL, '2026-10-24T09:01:00.000Z', NULL, 'Waits for #455 to merge before it can be built');
 INSERT INTO mc.work_item_states (project_key, number, revision, build_status, build_at, merge_status, merge_at, triage_at, own_pr_at) VALUES ('coleam00/queue-factory', 456, 1, 'parked', '2026-10-24T09:06:00.000Z', NULL, NULL, '2026-10-24T09:01:00.000Z', NULL);
 INSERT INTO mc.work_item_blockers (project_key, number, blocker) VALUES ('coleam00/queue-factory', 454, 455);
 INSERT INTO mc.work_item_blockers (project_key, number, blocker) VALUES ('coleam00/queue-factory', 456, 457);

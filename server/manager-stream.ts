@@ -5,7 +5,8 @@
  * `link*`, at most one `runs`, at most 3 `proposal`, any `notice`, then `done` as the last line.
  * A proposal is data only: the panel turns it into a button that goes through the action
  * endpoint (#521), whose inputs it carries. `answer`: the run, the option (or `text` for
- * "Something else") and the `occurrence` id. `resume`: the run, optionally `from_step`. This
+ * "Something else") and the `occurrence` id. `resume`: the run, optionally `from_step`.
+ * `retriage`, `close` and `comment` (with `text`): the work item's `number`. This
  * file holds no secret and no server code, so the panel can import from it.
  */
 import type { ActionRequest } from '../app/lib/actions';
@@ -52,7 +53,13 @@ export type ProposalAction = Extract<ManagerEvent, { type: 'proposal' }>['action
 export type LinkKind = Extract<ManagerEvent, { type: 'link' }>['kind'];
 
 export const LINK_KINDS: Record<LinkKind, true> = { run: true, item: true };
-export const PROPOSAL_ACTIONS: Record<ProposalAction, true> = { answer: true, resume: true };
+export const PROPOSAL_ACTIONS: Record<ProposalAction, true> = {
+  answer: true,
+  resume: true,
+  retriage: true,
+  close: true,
+  comment: true,
+};
 
 function isLinkKind(value: unknown): value is LinkKind {
   return typeof value === 'string' && Object.hasOwn(LINK_KINDS, value);
@@ -124,7 +131,8 @@ export interface RawStructure {
   runs: string[];
   proposals: {
     action: ProposalAction;
-    run_id: string;
+    run_id?: string;
+    number?: number;
     option?: string;
     text?: string;
     from_step?: string;
@@ -206,11 +214,15 @@ export function parseBlock(block: string | null): RawStructure {
   }
   const proposals: RawStructure['proposals'] = [];
   for (const entry of list(parsed.proposals)) {
-    if (!isRecord(entry) || typeof entry.run_id !== 'string') continue;
-    if (!isProposalAction(entry.action)) continue;
+    if (!isRecord(entry) || !isProposalAction(entry.action)) continue;
+    const { run_id, number } = entry;
+    if (typeof run_id !== 'string' && !(typeof number === 'number' && Number.isInteger(number))) {
+      continue;
+    }
     proposals.push({
       action: entry.action,
-      run_id: entry.run_id,
+      run_id: typeof run_id === 'string' ? run_id : undefined,
+      number: typeof number === 'number' ? number : undefined,
       option: optionalString(entry.option),
       text: optionalString(entry.text),
       from_step: optionalString(entry.from_step),

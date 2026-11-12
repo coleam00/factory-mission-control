@@ -310,7 +310,7 @@ describe('the chat endpoint against a stubbed model', () => {
     expect(got.find((e) => e.type === 'notice')).toMatchObject({ kind: 'day-cap' });
   });
 
-  test('drops a proposal whose action is neither answer nor resume', async () => {
+  test('drops a proposal whose action is none of the five writes', async () => {
     const block = JSON.stringify({
       proposals: [
         { action: 'cancel', run_id: FAILED_RUN },
@@ -965,7 +965,7 @@ describe('the prompt’s example block', () => {
     await (await chat(managerOf(played))).text();
     const prompt = played.options[0].systemPrompt as string;
     const block = prompt.match(/```mc\n([\s\S]*?)\n```/)?.[1] ?? '';
-    const parsed = parseBlock(block.replace('<issue number>', '7'));
+    const parsed = parseBlock(block.replaceAll('<issue number>', '7'));
     expect<string[]>([...new Set(parsed.links.map((link) => link.kind))].sort()).toEqual(
       Object.keys(LINK_KINDS).sort(),
     );
@@ -1479,6 +1479,59 @@ ${FENCE}
     expect(got.filter((e) => e.type === 'proposal')).toMatchObject([
       { run_id: TEXT_RUN, option: null, text: 'x'.repeat(ANSWER_TEXT_MAX) },
     ]);
+  });
+});
+
+describe('a proposal on a work item', () => {
+  const structure = (proposals: object[]) => ({ proposals });
+  const proposed = async (proposals: object[]) => {
+    const played = model(async () => [
+      start,
+      delta(`${FENCE}mc
+${JSON.stringify(structure(proposals))}
+${FENCE}
+`),
+      result(0.01),
+    ]);
+    return (await events(await chat(managerOf(played)))).filter((e) => e.type === 'proposal');
+  };
+
+  test('an open issue of the factory is kept as a re-triage, a close and a comment', async () => {
+    expect(
+      await proposed([
+        { action: 'retriage', number: 514 },
+        { action: 'close', number: 514 },
+        { action: 'comment', number: 514, text: 'Go ahead' },
+      ]),
+    ).toEqual([
+      {
+        type: 'proposal',
+        action: 'retriage',
+        factory: FACTORY,
+        number: 514,
+        label: 'Re-triage #514',
+      },
+      { type: 'proposal', action: 'close', factory: FACTORY, number: 514, label: 'Close #514' },
+      {
+        type: 'proposal',
+        action: 'comment',
+        factory: FACTORY,
+        number: 514,
+        text: 'Go ahead',
+        label: 'Comment on #514, then re-triage',
+      },
+    ]);
+  });
+
+  test('an unknown issue, another factory’s issue and a comment without text are dropped', async () => {
+    expect(
+      await proposed([
+        { action: 'retriage', number: 9999 },
+        { action: 'close', number: 600 },
+        { action: 'comment', number: 514 },
+        { action: 'comment', number: 514, text: 'x'.repeat(ANSWER_TEXT_MAX + 1) },
+      ]),
+    ).toEqual([]);
   });
 });
 

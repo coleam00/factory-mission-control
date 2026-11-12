@@ -82,4 +82,14 @@ describe('the decide query on the seed', () => {
       options: [],
     });
   });
+
+  test('names the item a wait is about from the mirrored issue, and has none for a wait about no item', async () => {
+    const seeded = (await db.query(DECIDE, ['mission-control'])) as unknown as DecideRow[];
+    expect(seeded.map((r) => [r.item_number, r.item_title])).toEqual([
+      [15, 'Lanes and recent laps'],
+      [16, 'The owner queue'],
+    ]);
+    const queue = (await db.query(DECIDE, ['queue-factory'])) as unknown as DecideRow[];
+    expect(queue.map((r) => [r.item_number, r.item_title])).toEqual([[null, null]]);
+  });
 });

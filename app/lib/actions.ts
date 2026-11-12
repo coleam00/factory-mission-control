@@ -1,6 +1,6 @@
 /**
- * The dashboard's two writes from the browser's side (PRD invariant 2): answer a paused run's
- * question, resume a run. Every button starts the same flow: a toast with Undo for 5 seconds, a
+ * The dashboard's five writes from the browser's side (PRD invariant 2): answer a paused run's
+ * question, resume a run, re-triage a work item, close it, comment on it. Every button starts the same flow: a toast with Undo for 5 seconds, a
  * send only if it was not undone, then the result. The server (`server/actions.ts`) holds the
  * allowlist and the factory's CLI; this module holds the request shape, the wording and the timer.
  */
@@ -13,13 +13,17 @@ export type ActionRequest =
       option: string | null;
       text: string | null;
     }
-  | { factory: string; action: 'resume'; run_id: string; from_step: string | null };
+  | { factory: string; action: 'resume'; run_id: string; from_step: string | null }
+  | { factory: string; action: 'retriage'; number: number }
+  | { factory: string; action: 'close'; number: number }
+  | { factory: string; action: 'comment'; number: number; text: string };
 
 /** What the toast says an answer typed by the owner was. */
 export const TEXT_ANSWER_DETAIL = 'your text';
 
 export type AnswerRequest = Extract<ActionRequest, { action: 'answer' }>;
 export type ResumeRequest = Extract<ActionRequest, { action: 'resume' }>;
+export type CommentRequest = Extract<ActionRequest, { action: 'comment' }>;
 
 /** What goes over the wire: the request plus whether the owner undid it. */
 export type ActionBody = ActionRequest & { undone: boolean };
@@ -85,6 +89,14 @@ export function pendingText(
   if (request.action === 'answer') {
     const target = context.item === null ? `run ${shortRun(request.run_id)}` : `#${context.item}`;
     return { lead: `Answered ${target}: `, detail: context.label };
+  }
+  if (request.action === 'retriage') return { lead: `Re-triaged #${request.number}`, detail: '' };
+  if (request.action === 'close') return { lead: `Closed #${request.number}`, detail: '' };
+  if (request.action === 'comment') {
+    return {
+      lead: `Commented on #${request.number} and re-triaged it: `,
+      detail: TEXT_ANSWER_DETAIL,
+    };
   }
   const lead = `Resumed run ${shortRun(request.run_id)}`;
   return request.from_step === null

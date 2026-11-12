@@ -119,6 +119,7 @@ const ROW_COLUMNS: Record<string, string[]> = {
     'confidence',
     'recommendation_why',
     'item_number',
+    'item_title',
     'message',
     'console',
   ]),
@@ -130,7 +131,9 @@ const ROW_COLUMNS: Record<string, string[]> = {
     'waits_on',
     'since',
     'action',
-    'repository',
+    'title',
+    'blocker_titles',
+    'reason',
     'console',
   ]),
   handled: columns<HandledRow>()([

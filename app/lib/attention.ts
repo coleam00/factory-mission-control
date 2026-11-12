@@ -41,16 +41,23 @@ export interface DecideRow extends AttentionRow {
   /** Archon's `recommendation.why`; null for a wait recorded before Archon stored it. */
   recommendation_why: string | null;
   item_number: number | null;
+  /** The title of the issue or pull request `item_number` names; null when it is not mirrored. */
+  item_title: string | null;
 }
 
 export type DecideItem = AttentionItem &
   Pick<
     DecideRow,
-    'occurrence_id' | 'recommended' | 'confidence' | 'recommendation_why' | 'item_number'
+    | 'occurrence_id'
+    | 'recommended'
+    | 'confidence'
+    | 'recommendation_why'
+    | 'item_number'
+    | 'item_title'
   >;
 
 export const UNSTICK_KINDS = ['blocked', 'parked', 'capacity', 'claim'] as const;
-export const UNSTICK_ACTIONS = ['retriage', 'resume', 'release_claim'] as const;
+export const UNSTICK_ACTIONS = ['retriage', 'resume'] as const;
 
 /** One row of unstick.sql: work that stopped moving, what it waits on, since when, and the one action that moves it. */
 export interface UnstickRow {
@@ -61,8 +68,12 @@ export interface UnstickRow {
   waits_on: string;
   since: Date | null;
   action: (typeof UNSTICK_ACTIONS)[number];
-  /** The factory's `owner/repo`, for the command that moves the item. */
-  repository: string;
+  /** The title of the item `number` names; null for an item-less row or one not mirrored. */
+  title: string | null;
+  /** The titles of what it waits on, in the order of `waits_on`; an empty string where one is not mirrored. */
+  blocker_titles: string[] | null;
+  /** Why the build queue parked it, from the work item's state; null for any other kind. */
+  reason: string | null;
   /** The factory's Archon console, for a run link. */
   console: string;
 }

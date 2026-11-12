@@ -1731,6 +1731,8 @@ export const QUEUE_UNSTICK = {
   parkedMerged: { issue: 454, blocker: 455 },
   parkedOpen: { issue: 456, blocker: 457 },
   claimed: { issue: 458 },
+  /** The reason the build queue gave when it parked `parkedMerged`; it names that item's blocker. */
+  parkedReason: 'Waits for #455 to merge before it can be built',
   capacitySince: '2026-10-24T09:30:00.000Z',
   mergedAt: '2026-10-24T09:08:00.000Z',
 } as const;
@@ -1906,7 +1908,11 @@ function queueFactorySql(): string[] {
       depends(u.blockedOpen.issue, u.blockedOpen.blocker),
       state(u.blockedMerged.issue, { stage: 'blocked' }),
       state(u.blockedOpen.issue, { stage: 'blocked' }),
-      state(u.parkedMerged.issue, { build_status: 'parked', build_at: at(6) }),
+      state(u.parkedMerged.issue, {
+        build_status: 'parked',
+        build_at: at(6),
+        parked_reason: u.parkedReason,
+      }),
       state(u.parkedOpen.issue, { build_status: 'parked', build_at: at(6) }),
       blocker(u.parkedMerged.issue, u.parkedMerged.blocker),
       blocker(u.parkedOpen.issue, u.parkedOpen.blocker),
