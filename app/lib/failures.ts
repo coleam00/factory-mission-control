@@ -14,7 +14,7 @@ export const failuresSince = (now: Date): string =>
 /** Milliseconds from `now` to the next whole UTC hour, when `failuresSince` moves on. */
 export const msToNextHour = (now: Date): number => HOUR_MS - (now.getTime() % HOUR_MS);
 
-/** One row of failure-groups.sql: the unresolved failed runs sharing a signature (the Fix group's data, #516, #560). A failure is resolved, and not counted, when its work item is closed, a later run of its workflow completed on the item (or, with no item, at all), or it stopped at or before `failuresSince`. A transient failure that a later run of its workflow retried is not counted either (#628). The counts and dates describe the unresolved runs only. */
+/** One row of failure-groups.sql: the unresolved failed runs sharing a signature (the Failures view's data, #516, #560). A failure is resolved, and not counted, when its work item is closed, a later run of its workflow completed on the item (or, with no item, at all), or it stopped at or before `failuresSince`. A transient failure that a later run of its workflow retried is not counted either (#628). The counts and dates describe the unresolved runs only. */
 export interface FailureGroupRow {
   signature: string;
   workflow_name: string;

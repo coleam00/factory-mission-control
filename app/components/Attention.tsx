@@ -8,11 +8,7 @@ import {
   byKind,
   byQueue,
   decideCards,
-  fixCards,
   ownerCards,
-  RETRIED_QUERY,
-  retriedLine,
-  sourceArgs,
   SWEEP_QUERY,
   type SweepRow,
   type Tile,
@@ -21,14 +17,12 @@ import {
 } from '../lib/attention-page';
 import { type AnswerRequest, TEXT_ANSWER_DETAIL } from '../lib/actions';
 import { ANSWER_TEXT_MAX, type DecideRow, type UnstickRow } from '../lib/attention';
-import type { FailureGroupRow, RetriedRunRow } from '../lib/failures';
 import { since } from '../lib/laps';
 import { lapHref } from '../lib/one-lap';
 import { clock, shortRunId } from '../lib/format';
 import { HANDLED_QUERY, type HandledRow, handledSummary, handledToday } from '../lib/manager';
 import { type OwnerQueueRow, waited } from '../lib/owner-queue';
 import { AWAITED, Feed, type Source } from '../live/Feed';
-import { useHour } from '../live/use-hour';
 import { useActionPending, useActionsEnabled, useStartAction } from './ActionToast';
 import { useNow } from './panel';
 import { openManager, usePhone, usePublishPlaceWhat } from './ManagerDock';
@@ -37,7 +31,6 @@ import { Card } from './ui/Card';
 import { ManagerNote } from './ui/ManagerNote';
 import { OptionTile } from './ui/OptionTile';
 import { Segmented } from './ui/Segmented';
-import { Sparkline } from './ui/Sparkline';
 import { Pill, StateDot } from './ui/StateDot';
 
 type View = 'kind' | 'queue';
@@ -235,11 +228,6 @@ function CardView({
           )}
         </ManagerNote>
       </div>
-      {card.daily === undefined ? null : (
-        <div className="col-start-2">
-          <Sparkline counts={card.daily} />
-        </div>
-      )}
       {card.tiles.length === 0 ? null : (
         <div className="col-start-2 mt-1.5 flex flex-wrap gap-2">
           {card.tiles.map((tile) => {
@@ -445,76 +433,14 @@ function Handled({
   );
 }
 
-/** The retried transient failures as list rows, newest first. */
-export function RetriedRuns({
-  factory,
-  rows,
-}: {
-  factory: string;
-  rows: readonly RetriedRunRow[];
-}): ReactElement {
-  return (
-    <ul className="m-0 mt-2 list-none p-0">
-      {rows.map((row) => (
-        <li
-          key={row.run_id}
-          className="flex flex-wrap items-center gap-x-2 py-1 text-[length:var(--v3-t-meta)] text-[color:var(--v3-fg-2)]"
-        >
-          <StateDot state="failed" />
-          <span>{row.workflow_name}</span>
-          <Link
-            to={lapHref(factory, row.run_id)}
-            className="font-mono text-[color:var(--v3-you-2)] hover:underline"
-          >
-            {shortRunId(row.run_id)}
-          </Link>
-          {row.line === null ? null : (
-            <span className="truncate font-mono text-[color:var(--v3-fg-3)]">{row.line}</span>
-          )}
-          <span className="ml-auto font-mono text-[length:var(--v3-t-micro)] text-[color:var(--v3-fg-3)]">
-            {clock(row.stopped_at)}
-          </span>
-        </li>
-      ))}
-    </ul>
-  );
-}
-
-/** The transient failures a later run of their workflow retried, as one muted line that is never a card or counted; nothing when there is none or the read failed. */
-function Retried({
-  factory,
-  source,
-}: {
-  factory: string;
-  source: Source<RetriedRunRow>;
-}): ReactElement | null {
-  const [open, setOpen] = useState(false);
-  const rows = source.state === 'error' ? [] : (source.rows ?? []);
-  if (rows.length === 0) return null;
-  return (
-    <div data-retried className="mt-[26px] border-t border-[color:var(--v3-line)] pt-3.5">
-      <div className="flex flex-wrap items-center gap-2 text-[length:var(--v3-t-meta)] text-[color:var(--v3-fg-3)]">
-        <StateDot state="done" />
-        {retriedLine(rows.length)}
-        <Button variant="text" aria-expanded={open} onClick={() => setOpen(!open)}>
-          See them
-        </Button>
-      </div>
-      {open ? <RetriedRuns factory={factory} rows={rows} /> : null}
-    </div>
-  );
-}
-
-/** The page over its four sources; exported with a fixed clock and view for tests. */
+/** The page over its three sources; exported with a fixed clock and view for tests. */
 export function AttentionBody({
   factory,
   decide,
   owner,
   unstick,
-  failures,
   sweep,
   handled = AWAITED,
-  retried = AWAITED,
   now: fixed,
   view: fixedView,
 }: {
@@ -522,10 +448,8 @@ export function AttentionBody({
   decide: Source<DecideRow>;
   owner: Source<OwnerQueueRow>;
   unstick: Source<UnstickRow>;
-  failures: Source<FailureGroupRow>;
   sweep: Source<SweepRow>;
   handled?: Source<HandledRow>;
-  retried?: Source<RetriedRunRow>;
   now?: number;
   view?: View;
 }): ReactElement {
@@ -539,7 +463,7 @@ export function AttentionBody({
   };
   const [chosen, setView] = useState<View>('kind');
   const view = fixedView ?? chosen;
-  const sources: Record<SourceKey, Source<object>> = { decide, owner, unstick, failures };
+  const sources: Record<SourceKey, Source<object>> = { decide, owner, unstick };
   const count = attentionCount(Object.values(sources));
   usePublishPlaceWhat(
     typeof count === 'number' ? (count === 1 ? '1 item' : `${count} items`) : undefined,
@@ -558,7 +482,6 @@ export function AttentionBody({
     ...live(decide, (rows) => decideCards(rows, factory)),
     ...live(owner, ownerCards),
     ...live(unstick, (rows) => unstickCards(rows, factory)),
-    ...live(failures, (rows) => fixCards(rows, factory)),
   ];
   const groups: ReactNode =
     view === 'kind'
@@ -583,7 +506,6 @@ export function AttentionBody({
         phone={phone}
       />
       {groups}
-      <Retried factory={factory} source={retried} />
       <Handled factory={factory} source={handled} now={now} />
     </section>
   );
@@ -592,18 +514,15 @@ export function AttentionBody({
 type SourceKey = keyof typeof ATTENTION_SOURCES;
 const SOURCE_KEYS = Object.keys(ATTENTION_SOURCES) as SourceKey[];
 
-/** Attention (home): what needs the owner, grouped Decide, Unstick, Fix, each with its recommendation first. */
+/** Attention (home): what needs the owner, grouped Decide and Unstick, each with its recommendation first. */
 export function Attention({ factory }: { factory: string }): ReactElement {
   const [rows, setRows] = useState<{ [K in SourceKey]: Source<object> }>({
     decide: AWAITED,
     owner: AWAITED,
     unstick: AWAITED,
-    failures: AWAITED,
   });
   const [sweep, setSweep] = useState<Source<SweepRow>>(AWAITED);
   const [handled, setHandled] = useState<Source<HandledRow>>(AWAITED);
-  const [retried, setRetried] = useState<Source<RetriedRunRow>>(AWAITED);
-  const hour = useHour();
   const into = useMemo(
     () =>
       Object.fromEntries(
@@ -614,26 +533,17 @@ export function Attention({ factory }: { factory: string }): ReactElement {
   return (
     <>
       {SOURCE_KEYS.map((k) => (
-        <Feed
-          key={k}
-          query={ATTENTION_SOURCES[k].query}
-          factory={factory}
-          args={sourceArgs(k, hour)}
-          into={into[k]}
-        />
+        <Feed key={k} query={ATTENTION_SOURCES[k].query} factory={factory} into={into[k]} />
       ))}
       <Feed<SweepRow> query={SWEEP_QUERY} factory={factory} into={setSweep} />
       <Feed<HandledRow> query={HANDLED_QUERY} factory={factory} into={setHandled} />
-      <Feed<RetriedRunRow> query={RETRIED_QUERY} factory={factory} into={setRetried} />
       <AttentionBody
         factory={factory}
         decide={rows.decide as Source<DecideRow>}
         owner={rows.owner as Source<OwnerQueueRow>}
         unstick={rows.unstick as Source<UnstickRow>}
-        failures={rows.failures as Source<FailureGroupRow>}
         sweep={sweep}
         handled={handled}
-        retried={retried}
       />
     </>
   );

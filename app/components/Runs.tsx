@@ -1,4 +1,4 @@
-import { type ReactElement, useEffect, useMemo, useState } from 'react';
+import { type ReactElement, type ReactNode, useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router';
 import { formatCost, formatCount } from '../lib/format';
 import { lapHref } from '../lib/one-lap';
@@ -18,10 +18,23 @@ import {
 import { stateInk } from '../lib/states';
 import { LivePanel } from '../live/LivePanel';
 import { PanelBody, useNow } from './panel';
+import { Failures } from './Failures';
 import { Chip } from './ui/Chip';
+import { Segmented } from './ui/Segmented';
 import { StateDot } from './ui/StateDot';
 
 const SEARCH_DEBOUNCE_MS = 300;
+
+type RunsPlace = 'all' | 'failures';
+
+const PLACES = [
+  { value: 'all', label: 'All runs' },
+  { value: 'failures', label: 'Failures' },
+] as const;
+
+/** The view the address names: `?view=failures`, else every run. */
+export const placeOf = (params: URLSearchParams): RunsPlace =>
+  params.get('view') === 'failures' ? 'failures' : 'all';
 
 /** The columns of a run: what it is and why it stopped, the item, took and cost. */
 const COLUMNS =
@@ -57,8 +70,38 @@ export function pageWithin(counts: RunsRow | undefined, filter: RunsFilter): num
   return Math.min(filter.page, last);
 }
 
-/** Every run of the factory, newest first, one page of it, with the chips' counts from the same query. */
+/** Runs: every run, or the unresolved failures; the segmented control at the top right switches. */
 export function Runs({ factory }: { factory: string | undefined }): ReactElement {
+  const [params, setParams] = useSearchParams();
+  const place = placeOf(params);
+  const switcher = (
+    <Segmented
+      label="Runs view"
+      options={PLACES}
+      value={place}
+      onChange={(to) => setParams(to === 'failures' ? new URLSearchParams({ view: to }) : {})}
+    />
+  );
+  return place === 'failures' ? (
+    <>
+      <div className="mb-4">
+        <RunsTitle switcher={switcher} failures />
+      </div>
+      <Failures factory={factory} />
+    </>
+  ) : (
+    <AllRuns factory={factory} switcher={switcher} />
+  );
+}
+
+/** Every run of the factory, newest first, one page of it, with the chips' counts from the same query. */
+function AllRuns({
+  factory,
+  switcher,
+}: {
+  factory: string | undefined;
+  switcher: ReactNode;
+}): ReactElement {
   const [params, setParams] = useSearchParams();
   const filter = filterOf(params);
   const [draft, setDraft] = useState(filter.q);
@@ -85,6 +128,7 @@ export function Runs({ factory }: { factory: string | undefined }): ReactElement
               draft={draft}
               onDraft={setDraft}
               onChange={change}
+              switcher={switcher}
             />
             <KeepPageInRange counts={view?.counts} filter={filter} />
             <PanelBody rows={view?.runs} state={state} factory={factory} what="runs">
@@ -118,6 +162,31 @@ function KeepPageInRange({
   return null;
 }
 
+/** The title and what it says, with the view switch at the top right. */
+function RunsTitle({
+  switcher,
+  failures = false,
+}: {
+  switcher?: ReactNode;
+  failures?: boolean;
+}): ReactElement {
+  return (
+    <div className="flex items-start gap-4 max-sm:flex-wrap">
+      <div>
+        <h1 className="text-[length:var(--v3-t-title)] font-bold text-[color:var(--v3-fg)]">
+          Runs
+        </h1>
+        <p className="mt-1 text-[length:var(--v3-t-body)] text-[color:var(--v3-fg-2)]">
+          {failures
+            ? 'The failures still unresolved, one card per cause, newest first.'
+            : 'Every queue and check, newest first. The counts and the rows come from the same query.'}
+        </p>
+      </div>
+      {switcher === undefined ? null : <div className="ml-auto flex-none">{switcher}</div>}
+    </div>
+  );
+}
+
 /** The head: the title, the search, the chips with their counts and the idle-poll toggle. */
 export function RunFilters({
   counts,
@@ -125,6 +194,7 @@ export function RunFilters({
   draft,
   onDraft,
   onChange,
+  switcher,
 }: {
   /** Undefined while the page's subscription seals: the counts show nothing, never the last filter's. */
   counts: RunsRow | undefined;
@@ -132,17 +202,11 @@ export function RunFilters({
   draft: string;
   onDraft: (value: string) => void;
   onChange: (next: Partial<RunsFilter>) => void;
+  switcher?: ReactNode;
 }): ReactElement {
   return (
     <div className="mb-4 grid gap-4">
-      <div>
-        <h1 className="text-[length:var(--v3-t-title)] font-bold text-[color:var(--v3-fg)]">
-          Runs
-        </h1>
-        <p className="mt-1 text-[length:var(--v3-t-body)] text-[color:var(--v3-fg-2)]">
-          Every queue and check, newest first. The counts and the rows come from the same query.
-        </p>
-      </div>
+      <RunsTitle switcher={switcher} />
       <input
         type="search"
         aria-label="Search runs"

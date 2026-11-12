@@ -1,10 +1,11 @@
 /**
  * The Attention page's cards (PRD 4.10, v3 README "Attention"): the rows of `decide`,
- * `owner-queue`, `unstick` and `failure-groups` as one uniform card, with a manager's note written
+ * `owner-queue` and `unstick` as one uniform card, with a manager's note written
  * from the data alone. Pure, no React. The page draws the cards By kind or By queue; the nav badge
  * counts the same rows with `attentionCount`.
  *
- * Clean up ("safe to clear") is not a group here: no live query names such an item yet.
+ * Failures are not Attention items: they live on Runs (failure-view.ts). Clean up ("safe to clear")
+ * is not a group here: no live query names such an item yet.
  */
 import type { Source } from '../live/Feed';
 import { cardForStep, FACTORY_MAP } from '../map/factory-map';
@@ -19,22 +20,20 @@ import {
   UNSTICK_KINDS,
   type UnstickRow,
 } from './attention';
-import { type FailureGroupRow, failuresSince, type StopClass } from './failures';
 import { shortRunId } from './format';
 import { askAbout, type ManagerAsk } from './manager';
 import { stepPath } from './lap-graph';
 import { since } from './laps';
-import { consoleUrl, INTAKE_WORKFLOW, lapHref, workflowLabel } from './one-lap';
+import { consoleUrl, INTAKE_WORKFLOW, workflowLabel } from './one-lap';
 import { type OwnerQueueRow, ownerQueue, waited } from './owner-queue';
-import { LAP_OUTCOME_STATE, STOP_CLASS_STATE, type State, UNSTICK_STATE } from './states';
+import { LAP_OUTCOME_STATE, type State, UNSTICK_STATE } from './states';
 import { workItemHref } from './work-item';
 
-export type AttentionKind = 'decide' | 'unstick' | 'fix';
+export type AttentionKind = 'decide' | 'unstick';
 
 export const KINDS: readonly { kind: AttentionKind; name: string; why: string }[] = [
   { kind: 'decide', name: 'Decide', why: 'a question only you can answer' },
   { kind: 'unstick', name: 'Unstick', why: 'work that stopped moving' },
-  { kind: 'fix', name: 'Fix', why: 'failures, grouped by cause' },
 ];
 
 export type AttentionQueue = 'intake' | 'build' | 'merge' | 'app-check' | 'discoveries' | 'other';
@@ -123,8 +122,6 @@ export interface AttentionCard {
   actions: Action[];
   /** What "Ask manager" hands the panel: the run and work item this card is about. */
   ask: ManagerAsk;
-  /** Failures per day, oldest first (Fix). */
-  daily?: number[];
   hooks: Hooks;
 }
 
@@ -460,108 +457,21 @@ export function unstickCards(rows: readonly UnstickRow[], factory: string): Atte
     });
 }
 
-const CLASS_NOTE: Readonly<Record<StopClass | 'mixed', string>> = {
-  transient: 'It is transient: a retry usually passes.',
-  environment: 'It is the environment, not the code.',
-  config: 'It is configuration: a binding, a schedule or a credential.',
-  code: 'It is a code failure.',
-  input: 'It is the input: the run was given something it could not use.',
-  mixed: 'Its runs differ in class.',
-};
-
-const DAY_MS = 86_400_000;
-const utcDay = (at: Date) => Math.floor(at.getTime() / DAY_MS);
-const lastTime = (g: FailureGroupRow) => g.last_at?.getTime() ?? 0;
-
-/** One card per failure signature, with the days it spans (UTC calendar days, inclusive). */
-export function fixCards(rows: readonly FailureGroupRow[], factory: string): AttentionCard[] {
-  return [...rows]
-    .sort(
-      (a, b) =>
-        b.failures - a.failures ||
-        lastTime(b) - lastTime(a) ||
-        a.signature.localeCompare(b.signature),
-    )
-    .map((g): AttentionCard => {
-      const days =
-        g.first_at === null || g.last_at === null ? 1 : utcDay(g.last_at) - utcDay(g.first_at) + 1;
-      const queue = queueOf(g.workflow_name, g.step_id);
-      const label = workflowLabel(g.workflow_name);
-      const run = { href: lapHref(factory, g.latest_run_id), external: false };
-      return {
-        key: `fix:${g.signature}`,
-        kind: ATTENTION_SOURCES.failures.kind,
-        queue,
-        dot: 'failed',
-        title: g.step_id === null ? `${label} failed` : `${label} failed at ${g.step_id}`,
-        age:
-          g.failures > 1
-            ? { text: `${g.failures} runs · ${days} ${days === 1 ? 'day' : 'days'}` }
-            : { since: g.last_at },
-        meta: [
-          { mono: g.workflow_name },
-          ...(g.step_id === null ? [] : [{ text: `step ${g.step_id}` }]),
-          { pill: g.class ?? 'unclassified', state: STOP_CLASS_STATE[g.class ?? 'unclassified'] },
-        ],
-        note: {
-          lead:
-            g.failures === 1
-              ? '1 failed run has this cause.'
-              : `${g.failures} failed runs share this cause.`,
-          rest: g.class === null ? 'It is not classified.' : CLASS_NOTE[g.class],
-          ...(g.line === null ? {} : { code: g.line }),
-        },
-        tiles: [],
-        ask: askAbout(g.latest_run_id, null),
-        actions: [
-          {
-            type: 'link',
-            variant: 'secondary',
-            label: `Open run ${shortRunId(g.latest_run_id)}`,
-            ...run,
-            hooks: {},
-          },
-        ],
-        daily: g.daily,
-        hooks: {
-          'data-attention-item': g.signature,
-          'data-attention-kind': ATTENTION_SOURCES.failures.kind,
-          'data-attention-queue': queue,
-          'data-latest-run': g.latest_run_id,
-          'data-failures': String(g.failures),
-        },
-      };
-    });
-}
-
 /**
- * The four live queries the page and the nav badge both read: one table, so the cards, the count
+ * The live queries the page and the nav badge both read: one table, so the cards, the count
  * and the live phase cannot disagree about which sources make "what needs you".
  */
 export const ATTENTION_SOURCES = {
   decide: { query: 'decide', kind: 'decide', what: 'what is waiting on you' },
   owner: { query: 'owner-queue', kind: 'decide', what: 'the owner queue' },
   unstick: { query: 'unstick', kind: 'unstick', what: 'what stopped moving' },
-  failures: { query: 'failure-groups', kind: 'fix', what: 'failures' },
 } as const;
-
-/** The arguments a source's query takes after the factory: only failure-groups takes one, its cutoff. */
-export function sourceArgs(key: keyof typeof ATTENTION_SOURCES, now: Date): string[] | undefined {
-  return key === 'failures' ? [failuresSince(now)] : undefined;
-}
 
 /** The nav badge's panel of one of those queries, named apart from the page's own panel of it. */
 export const badgePanelName = (query: string): string => `attention-count:${query}`;
 
 /** The query for the head's sweep clause; it is not an item source, so the count never reads it. */
 export const SWEEP_QUERY = 'manager-sweep';
-
-/** The muted line's query; it is not an item source, so the count never reads it. */
-export const RETRIED_QUERY = 'retried-runs';
-
-export function retriedLine(n: number): string {
-  return `${n === 1 ? '1 run hit' : `${n} runs hit`} a passing database or GitHub error today and ${n === 1 ? 'was' : 'were'} retried.`;
-}
 
 /** The one row of manager-sweep.sql: when the manager's last finished run completed; null when it has none. */
 export interface SweepRow {

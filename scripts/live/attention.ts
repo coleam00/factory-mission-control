@@ -209,15 +209,13 @@ export function decideMismatches(shown: ShownCard[], archon: Row[], projected: R
   return mismatches;
 }
 
-/** Where the Fix cards differ from the failed runs' signatures: one card each, exactly once. */
-export function fixMismatches(shown: ShownCard[], signatures: Row[]): string[] {
+/** Failures are not Attention items: the seed has unresolved ones, and none may be drawn as a card here. */
+export function failureMismatches(shown: ShownCard[], signatures: Row[]): string[] {
   const mismatches: string[] = [];
-  screenAgainstSql(mismatches)(
-    'Fix cards',
-    idsOf(shown, 'fix'),
-    signatures.map((r) => String(r.signature)).sort(),
-  );
   if (signatures.length === 0) mismatches.push('the seed has no unresolved failure');
+  for (const card of shown.filter((s) => s.kind === 'fix')) {
+    mismatches.push(`a failure is drawn on Attention: ${card.id}`);
+  }
   return mismatches;
 }
 
@@ -350,7 +348,7 @@ export function attentionPhase(ctx: LiveContext): LivePhase {
 
       const mismatches = [
         ...decideMismatches(cards, archon, projected),
-        ...fixMismatches(cards, signatures),
+        ...failureMismatches(cards, signatures),
         ...unstickMismatches(cards, stuck, factory),
         ...ownerMismatches(owner, expectedItems(issues, questions)),
         ...countMismatches(head, onScreen, badge),
@@ -362,7 +360,7 @@ export function attentionPhase(ctx: LiveContext): LivePhase {
           'recount, page against SQL:',
           `cards: ${cards.length}, Decide ${idsOf(cards, 'decide').length} against mc.attention_items ${projected.length} and Archon's open attention waits ${archon.length}`,
           ...cards.map((c) => `  ${JSON.stringify(c)}`),
-          `Fix: ${idsOf(cards, 'fix').length} against ${signatures.length} failure signatures`,
+          `Failures on Attention: ${idsOf(cards, 'fix').length} (the seed has ${signatures.length} failure signatures, none counted)`,
           `Unstick: ${idsOf(cards, 'unstick').length} against ${stuck.length} rows`,
           `owner items: ${owner.length}, open needs-owner issues ${issues.length} plus open questions ${questions.length}`,
           ...owner.map((o) => `  ${o.id}`),

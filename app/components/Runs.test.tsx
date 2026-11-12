@@ -10,7 +10,7 @@ import {
   type RunsRow,
   runsView,
 } from '../lib/runs';
-import { addressOf, nextFilter, Pager, pageWithin, RunFilters, RunList } from './Runs';
+import { addressOf, nextFilter, Pager, pageWithin, placeOf, RunFilters, RunList } from './Runs';
 
 const render = (element: React.ReactElement): string =>
   renderToStaticMarkup(<RouterProvider router={createMemoryRouter([{ path: '/', element }])} />);
@@ -150,4 +150,24 @@ function pager(total: number): string {
 test('the pager shows nothing at one full page and the range at one run more', () => {
   expect(pager(RUNS_PAGE_SIZE)).toBe('');
   expect(pager(RUNS_PAGE_SIZE + 1)).toContain('1–50 of 51');
+});
+
+test('the address names the view: ?view=failures is Failures, anything else is every run', () => {
+  expect(placeOf(new URLSearchParams('view=failures'))).toBe('failures');
+  expect(placeOf(new URLSearchParams(''))).toBe('all');
+  expect(placeOf(new URLSearchParams('view=other'))).toBe('all');
+});
+
+test('the head has the All runs / Failures control at its right', () => {
+  const html = render(
+    <RunFilters
+      counts={undefined}
+      filter={filterOf(new URLSearchParams(''))}
+      draft=""
+      onDraft={() => {}}
+      onChange={() => {}}
+      switcher={<span data-switcher />}
+    />,
+  );
+  expect(html).toContain('data-switcher');
 });

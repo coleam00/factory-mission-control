@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, setDefaultTimeout, spyOn, test } from 'bun:test';
 import type { Options, SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import { ANSWER_TEXT_MAX } from '../app/lib/attention';
-import { ATTENTION_SOURCES, attentionCount, sourceArgs } from '../app/lib/attention-page';
+import { ATTENTION_SOURCES, attentionCount } from '../app/lib/attention-page';
 import { lapHref } from '../app/lib/one-lap';
 import { snapshot } from '../db/test-db';
 import type { Db } from '../scripts/lib/db';
@@ -599,14 +599,12 @@ describe('the briefing', () => {
       const sources = await Promise.all(
         (Object.keys(ATTENTION_SOURCES) as (keyof typeof ATTENTION_SOURCES)[]).map(async (key) => ({
           state: 'ready' as const,
-          rows: await fixture.direct.query(queries.get(ATTENTION_SOURCES[key].query) ?? '', [
-            F,
-            ...(sourceArgs(key, new Date()) ?? []),
-          ]),
+          rows: await fixture.direct.query(queries.get(ATTENTION_SOURCES[key].query) ?? '', [F]),
         })),
       );
       const count = attentionCount(sources);
-      expect(count).toBe(5);
+      // The three failure runs seeded above are in no source: only the decide and unstick rows count.
+      expect(count).toBe(3);
       const played = model(async () => [start, delta('fine'), result(0.01)]);
       const manager = createManager({
         db: fixture.direct,
@@ -623,13 +621,12 @@ describe('the briefing', () => {
             { method: 'POST', body: JSON.stringify({ factory: F }) },
           ),
         );
-      const line = `No run is paused on a question. ${count} things need you: 1 to decide, 2 to unstick, 2 to fix (3 failures in 2 causes).`;
+      const line = `No run is paused on a question. ${count} things need you: 1 to decide, 2 to unstick.`;
       expect((await ask())[0]).toEqual({ type: 'text', text: `${line}\n\n` });
       expect(played.prompts[0]).toContain(line);
       // The first generation is handed the rows the line was counted from, not left to query for them.
       expect(played.prompts[0]).toContain('Ask the owner');
       expect(played.prompts[0]).toContain(run(11));
-      expect(played.prompts[0]).toContain(run(23));
 
       expect((await ask())[0]).toEqual({ type: 'text', text: `${line}\n\n` });
       expect(played.prompts).toHaveLength(1);
@@ -638,10 +635,10 @@ describe('the briefing', () => {
         `INSERT INTO mc.capacity_waits (run_id, factory, workflow_name, item_number, since) VALUES ('${run(13)}', '${F}', 'archon-build', 9, now())`,
       );
       const changed = await ask();
-      expect(changed[0]).toMatchObject({ text: expect.stringContaining('6 things need you') });
+      expect(changed[0]).toMatchObject({ text: expect.stringContaining('4 things need you') });
       expect(changed.at(-1)).toMatchObject({ type: 'done', cached: false });
       expect(played.prompts).toHaveLength(2);
-      expect(played.prompts[1]).toContain('6 things need you');
+      expect(played.prompts[1]).toContain('4 things need you');
 
       // One row leaves and another arrives: the counts hold, but the prose names a row that is gone.
       await fixture.direct.query(
@@ -853,13 +850,11 @@ describe('the briefing', () => {
       decide: 0,
       owner: 0,
       unstick: 0,
-      failures: 0,
-      failureRuns: 0,
       ...t,
     });
     expect(attentionLine(tally({}))).toBe('Nothing needs you.');
-    expect(attentionLine(tally({ unstick: 2, failures: 1, failureRuns: 1 }))).toBe(
-      'No question is waiting. 3 things need you: 2 to unstick, 1 to fix (1 failure in 1 cause).',
+    expect(attentionLine(tally({ unstick: 2 }))).toBe(
+      'No question is waiting. 2 things need you: 2 to unstick.',
     );
     expect(attentionLine(tally({ decide: 1 }))).toBe(
       '1 run is paused on your answer. 1 thing needs you: 1 to decide.',
@@ -1250,7 +1245,7 @@ describe('a structure lookup that fails', () => {
 
 describe('the briefing question with a run paused and other Attention rows', () => {
   test('hands the model the opening line and forbids a count or a mismatch claim of its own', () => {
-    const tally = { decide: 1, owner: 3, unstick: 0, failures: 0, failureRuns: 0 };
+    const tally = { decide: 1, owner: 3, unstick: 0 };
     const question = briefingQuestion(tally);
     expect(question).toContain(attentionLine(tally));
     expect(question).toContain('4 things need you');
@@ -1271,7 +1266,7 @@ describe('the briefing question with a run paused and other Attention rows', () 
   });
 
   test('rejects a count sentence that states a total the line does not', () => {
-    const tally = { decide: 1, owner: 3, unstick: 0, failures: 0, failureRuns: 0 };
+    const tally = { decide: 1, owner: 3, unstick: 0 };
     expect(briefingFault('Run #12 is paused; 4 things need you.', tally)).toBeNull();
     expect(briefingFault('**28** things need you.', tally)).toContain('count of 28');
     expect(briefingFault('__28__ things need you.', tally)).toContain('count of 28');
@@ -1280,13 +1275,13 @@ describe('the briefing question with a run paused and other Attention rows', () 
     expect(briefingFault('Right now nothing needs you.', tally)).toContain('count of 0');
     expect(briefingFault('1 thing needs you.', tally)).toContain('count of 1');
     expect(briefingFault('Nothing needs you.', tally)).toContain('count of 0');
-    const none = { decide: 0, owner: 0, unstick: 0, failures: 0, failureRuns: 0 };
+    const none = { decide: 0, owner: 0, unstick: 0 };
     expect(briefingFault('Nothing needs you.', none)).toBeNull();
     expect(briefingFault('2 things need you.', none)).toContain('count of 2');
   });
 
   test('keeps "nothing needs your answer" but still rejects "nothing needs your attention"', () => {
-    const tally = { decide: 0, owner: 3, unstick: 0, failures: 0, failureRuns: 0 };
+    const tally = { decide: 0, owner: 3, unstick: 0 };
     expect(attentionLine(tally)).toContain('No run is paused on a question.');
     expect(
       briefingFault('No run is paused, so nothing needs your answer today.', tally),
@@ -1321,12 +1316,12 @@ describe('the briefing question with a run paused and other Attention rows', () 
     expect(
       briefingFault('Nothing needs your answer today.\n\n3 things need you.', tally),
     ).toBeNull();
-    const asked = { decide: 1, owner: 2, unstick: 0, failures: 0, failureRuns: 0 };
+    const asked = { decide: 1, owner: 2, unstick: 0 };
     expect(briefingFault('Nothing needs your answer right now.', asked)).toContain('count of 0');
   });
 
   test('ignores every number that is not the count sentence', () => {
-    const tally = { decide: 1, owner: 3, unstick: 0, failures: 0, failureRuns: 0 };
+    const tally = { decide: 1, owner: 3, unstick: 0 };
     const prose =
       'On 2026-11-10 at 01:10 run 0c95c843 (PR #606) cost $1.10; since Oct 10, 28 owner questions came and 4 things need you.';
     expect(briefingFault(prose, tally)).toBeNull();
