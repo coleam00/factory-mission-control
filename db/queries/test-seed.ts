@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { failuresSince } from '../../app/lib/failures';
 import { runsArgs } from '../../app/lib/runs';
 import { seededDb } from '../../scripts/fixture/seed';
 import { REPO_ROOT } from '../../scripts/lib/cli';
@@ -26,8 +27,10 @@ export const CHECK_APP = ['archon-loop', 'check-app'];
 /** The one-lap screen's panels: keyed by the lap's run id too. */
 export const LAP_PANELS = ['one-lap', 'one-lap-steps', 'one-lap-checks', 'one-lap-map'];
 export const LAP_RUN = '5eed0001-0000-4000-8000-000000000003';
-/** failure-groups' `$2` on the seed: 7 days before its newest stop (2026-10-24T11:35Z), so the seed's failures are still unresolved by age. */
-export const SEED_FAILURES_SINCE = '2026-10-17T11:00:00.000Z';
+/** The instant the seed is judged at: 30 minutes before the whole hour after its newest stop (2026-10-24T11:35Z), so its failures are unresolved by age. The live check pins the browser's clock to it. */
+export const SEED_NOW = '2026-10-24T11:30:00.000Z';
+/** failure-groups' `$2` on the seed, from the seed's own clock. */
+export const SEED_FAILURES_SINCE = failuresSince(new Date(SEED_NOW));
 /** The home map and step-detail take the version's pin as $2, '' for the current version. */
 export const paramsFor = (name: string, factory: string) =>
   name === 'step-detail' || name === 'home-map'

@@ -1294,6 +1294,19 @@ test('the retried rule reads the same in failure-groups, retried-runs and the li
     await lap('steady', 'failed', '2026-10-24T07:00:00Z', 'error: type check failed');
     await lap('steady', 'completed', '2026-10-24T07:30:00Z');
     await lap('solo', 'failed', '2026-10-24T07:40:00Z', 'error: lint failed');
+    // Resolved by age, at the cutoff exactly and before it, and by a closed item.
+    await lap('aged', 'failed', '2026-10-17T00:00:00Z', 'error: aged at the cutoff');
+    await lap('aged', 'failed', '2026-10-10T00:00:00Z', 'error: aged before the cutoff');
+    await db.query(
+      `INSERT INTO mc.issues (factory, number, title, state, url, created_at, updated_at)
+       VALUES ('f', 7, 't', 'closed', 'u', '2026-10-01T00:00:00Z', '2026-10-01T00:00:00Z')`,
+    );
+    const onClosed = await lap('closing', 'failed', '2026-10-24T07:50:00Z', 'error: closed item');
+    await db.query(
+      `INSERT INTO mc.claims (factory, issue_number, run_id, claimed_at)
+       VALUES ('f', 7, $1, '2026-10-24T07:50:00Z')`,
+      [onClosed],
+    );
 
     const since = '2026-10-17T00:00:00.000Z';
     const sqlOf = (name: string) => queries.find(([q]) => q === name)?.[1] as string;

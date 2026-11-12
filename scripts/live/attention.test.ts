@@ -57,6 +57,7 @@ test('Fix cards must be each failure signature exactly once', () => {
   expect(fixMismatches([fix('a'), fix('b')], [{ signature: 'a' }, { signature: 'b' }])).toEqual([]);
   expect(fixMismatches([fix('a')], [{ signature: 'a' }, { signature: 'b' }])[0]).toContain('Fix');
   expect(fixMismatches([fix('a'), fix('a')], [{ signature: 'a' }])[0]).toContain('Fix');
+  expect(fixMismatches([], [])).toEqual(['the seed has no unresolved failure']);
 });
 
 const stuck: UnstickRow = {

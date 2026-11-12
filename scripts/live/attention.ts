@@ -6,7 +6,7 @@ import {
   unstickCards,
   unstickKey,
 } from '../../app/lib/attention-page';
-import { failuresSince } from '../../app/lib/failures';
+import { SEED_FAILURES_SINCE, SEED_NOW } from '../../db/queries/test-seed';
 import { openPage, type Page } from '../lib/cdp';
 import type { Row } from '../lib/db';
 import {
@@ -217,6 +217,7 @@ export function fixMismatches(shown: ShownCard[], signatures: Row[]): string[] {
     idsOf(shown, 'fix'),
     signatures.map((r) => String(r.signature)).sort(),
   );
+  if (signatures.length === 0) mismatches.push('the seed has no unresolved failure');
   return mismatches;
 }
 
@@ -315,7 +316,7 @@ export function attentionPhase(ctx: LiveContext): LivePhase {
     async open() {
       const page = await openPage(deps.env);
       attentionPage = page;
-      await page.goto(url());
+      await page.goto(url(), SEED_NOW);
       await page.evaluate('window.__mcNoReload = true');
       const ready = await page.evaluate<boolean>(
         pageWait(
@@ -340,10 +341,7 @@ export function attentionPhase(ctx: LiveContext): LivePhase {
 
       const archon = await db.query(ARCHON_ATTENTION_SQL, [factory]);
       const projected = await db.query(PROJECTED_ATTENTION_SQL, [factory]);
-      const signatures = await db.query(FAILED_SIGNATURES_SQL, [
-        factory,
-        failuresSince(new Date()),
-      ]);
+      const signatures = await db.query(FAILED_SIGNATURES_SQL, [factory, SEED_FAILURES_SINCE]);
       const stuck = (await db.query(queries.get('unstick') as string, [
         factory,
       ])) as unknown as UnstickRow[];
