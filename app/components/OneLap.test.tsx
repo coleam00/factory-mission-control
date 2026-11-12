@@ -50,6 +50,7 @@ const refused: OneLapRow = {
   item_pr: null,
   finished_by: null,
   finished_at: null,
+  closed_by: null,
   status: 'completed',
   started_at: new Date('2026-10-01T14:00:00Z'),
   completed_at: new Date('2026-10-01T15:00:00Z'),

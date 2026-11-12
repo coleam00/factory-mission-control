@@ -8,7 +8,7 @@ import type { StopClass } from '../app/lib/failures';
 export const STOP_CORPUS: readonly (readonly [line: string, cls: StopClass, source: string])[] = [
   [
     'Could not persist node_skipped for ship__deliver__ci-changed: deadlock detected: deadlock detected',
-    'transient',
+    'environment',
     'archon log',
   ],
   [

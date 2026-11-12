@@ -710,17 +710,58 @@ test('failure-groups resolves a failure by a later run on the item every other s
         );
       }
     };
-    // The failed run holds claim 1, facts 2 and input 3 as listed; a later run completes on one item.
-    const cases = [
-      { workflow: 'claim-wins', src: { claim: 1, facts: 2, input: 3 }, done: 1, resolved: true },
-      { workflow: 'claim-only', src: { claim: 1, facts: 2, input: 3 }, done: 2, resolved: false },
-      { workflow: 'facts-wins', src: { facts: 2, input: 3 }, done: 2, resolved: true },
-      { workflow: 'facts-over-input', src: { facts: 2, input: 3 }, done: 3, resolved: false },
-      { workflow: 'input-only', src: { input: 3 }, done: 3, resolved: true },
+    type Src = { claim?: number; facts?: number; input?: number };
+    // The failed run and the later completed run each hold the item their sources name, by the shared
+    // claim > facts > input precedence: either side reversing it changes which cases resolve.
+    const cases: { workflow: string; src: Src; later: Src; resolved: boolean }[] = [
+      {
+        workflow: 'claim-wins',
+        src: { claim: 1, facts: 2, input: 3 },
+        later: { input: 1 },
+        resolved: true,
+      },
+      {
+        workflow: 'claim-only',
+        src: { claim: 1, facts: 2, input: 3 },
+        later: { input: 2 },
+        resolved: false,
+      },
+      { workflow: 'facts-wins', src: { facts: 2, input: 3 }, later: { input: 2 }, resolved: true },
+      {
+        workflow: 'facts-over-input',
+        src: { facts: 2, input: 3 },
+        later: { input: 3 },
+        resolved: false,
+      },
+      { workflow: 'input-only', src: { input: 3 }, later: { input: 3 }, resolved: true },
+      {
+        workflow: 'later-claim-wins',
+        src: { input: 1 },
+        later: { claim: 1, facts: 2, input: 3 },
+        resolved: true,
+      },
+      {
+        workflow: 'later-claim-only',
+        src: { input: 1 },
+        later: { claim: 2, facts: 1, input: 1 },
+        resolved: false,
+      },
+      {
+        workflow: 'later-facts-wins',
+        src: { input: 1 },
+        later: { facts: 1, input: 3 },
+        resolved: true,
+      },
+      {
+        workflow: 'later-facts-over-input',
+        src: { input: 1 },
+        later: { facts: 2, input: 1 },
+        resolved: false,
+      },
     ];
     for (const c of cases) {
       await lap(c.workflow, 'failed', '2026-10-20', c.src);
-      await lap(c.workflow, 'completed', '2026-10-21', { input: c.done });
+      await lap(c.workflow, 'completed', '2026-10-21', c.later);
     }
     const counted = (
       await db.query(sqlOf('failure-groups'), ['f', '2000-01-01T00:00:00.000Z'])
@@ -731,6 +772,15 @@ test('failure-groups resolves a failure by a later run on the item every other s
         .map((c) => c.workflow)
         .sort(),
     );
+    // The run page restates the later run's item in one-lap.sql: it finishes the same runs.
+    for (const c of cases) {
+      const [failed] = await db.query(
+        `SELECT run_id FROM mc.laps WHERE factory = 'f' AND workflow_name = $1 AND status = 'failed'`,
+        [c.workflow],
+      );
+      const [row] = await db.query(sqlOf('one-lap'), ['f', failed?.run_id]);
+      expect([c.workflow, row?.finished_by !== null]).toEqual([c.workflow, c.resolved]);
+    }
   } finally {
     await db.close();
   }

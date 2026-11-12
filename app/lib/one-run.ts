@@ -335,7 +335,7 @@ function whenText(at: Date | string, now: number): string {
  */
 export function nothingToDo(lap: OneLapRow, now: number): NothingToDo | null {
   if (lap.status !== 'failed') return null;
-  const by = lap.finished_by === null ? '' : ` by run ${shortRunId(lap.finished_by)}`;
+  const by = lap.closed_by === null ? '' : ` by run ${shortRunId(lap.closed_by)}`;
   const item = lap.issue_number ?? lap.item_pr;
   const open: NothingToDo['open'] =
     lap.issue_number !== null

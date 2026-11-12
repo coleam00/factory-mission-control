@@ -96,6 +96,7 @@ export interface OneLapRow {
   /** The earliest later completed run of the same workflow on the same item (any item, if the run has none); failed runs only. */
   finished_by: string | null;
   finished_at: Date | null;
+  closed_by: string | null;
 }
 
 /**

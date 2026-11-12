@@ -3,7 +3,8 @@
 -- a claim conflict ("is claimed by run") and an unresolvable issue or pull request are input; an answer that
 -- is not one of the choices is code.
 -- README "Owner changes of 2026-11-12" item 5 puts Postgres "out of memory" in environment, so it leaves the
--- transient arm #628 put it in (compute-node connectivity and deadlock stay transient). The JavaScript heap
+-- transient arm #628 put it in, and so does a Postgres deadlock: the connection worked and the database
+-- refused the transaction (compute-node connectivity stays transient). The JavaScript heap
 -- lookbehind goes too: environment is not folded by a later run, so the heap line needs no exemption and
 -- is no longer unclassified.
 -- Stored classes are re-projected once, as 20261110T1200Z did. Like it, this never raises into Archon's write
@@ -16,10 +17,10 @@ RETURNS text LANGUAGE sql IMMUTABLE AS $$
     WHEN r ~* '\m(http|status|error)[ :]*(code[ :]*)?401\M|\m401 (status|oauth|unauthor)|unauthor' THEN 'config'
     WHEN r ~* 'ECONN|ETIMEDOUT|fetch failed' THEN 'transient'
     WHEN e IS NULL THEN NULL
-    WHEN e ~* 'deadlock detected|usage or credit limit|rate.?limit|too many requests|overloaded|HTTP 5[0-9]{2}|\m5[0-9]{2} (bad gateway|gateway|service unavailable|internal server)|bad gateway|gateway time-?out|service unavailable|ENOTFOUND|connection terminated|timeout exceeded when trying to connect|provider reported transient|couldn.?t connect to compute node|failed to connect to|dial tcp|connectex|handshake failed' THEN 'transient'
+    WHEN e ~* 'usage or credit limit|rate.?limit|too many requests|overloaded|HTTP 5[0-9]{2}|\m5[0-9]{2} (bad gateway|gateway|service unavailable|internal server)|bad gateway|gateway time-?out|service unavailable|ENOTFOUND|connection terminated|timeout exceeded when trying to connect|provider reported transient|couldn.?t connect to compute node|failed to connect to|dial tcp|connectex|handshake failed' THEN 'transient'
     WHEN e ~* 'provider reported auth|authenticat|configuration must be fixed|bad credentials|missing binding|no binding|binding [^ ]+ (is )?(missing|not set|undefined)|no schedule|schedule [^ ]+ (is )?(missing|not found)' THEN 'config'
     WHEN e ~* 'no issue matched|no matching issue|bad argument|invalid argument|unknown (option|argument)|missing required input|is claimed by run|could not resolve to an? (issue|pull request)' THEN 'input'
-    WHEN e ~* 'out of memory|check must write|not a git repository|push [^ ]+ refused|refused: |non-fast-forward|fetch first|\[rejected\]|merge --no-edit' THEN 'environment'
+    WHEN e ~* 'out of memory|deadlock detected|check must write|not a git repository|push [^ ]+ refused|refused: |non-fast-forward|fetch first|\[rejected\]|merge --no-edit' THEN 'environment'
     WHEN e ~* 'is not one of the choices' THEN 'code'
     WHEN ep ~* 'tests? failed|\m[0-9]+ (tests? )?fail|failing tests?|typecheck|type errors?|error TS[0-9]+|app check failed|app-check .*(FAIL|red)|finding|\mFAIL\M' THEN 'code'
     WHEN e ~* 'did not complete|no such file or directory|ENOSPC|no space left|worktree|checkout|stale' THEN 'environment'

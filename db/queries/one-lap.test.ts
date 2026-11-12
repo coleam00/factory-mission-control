@@ -93,6 +93,7 @@ describe('one-lap on the seed', () => {
         item_pr: null,
         finished_by: null,
         finished_at: null,
+        closed_by: null,
       },
     ]);
   });

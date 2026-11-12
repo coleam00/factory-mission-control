@@ -319,6 +319,7 @@ const ROW_COLUMNS: Record<string, string[]> = {
     'item_pr',
     'finished_by',
     'finished_at',
+    'closed_by',
   ]),
   'owner-queue': columns<OwnerQueueRow>()([
     'kind',

@@ -238,7 +238,7 @@ test('a transient failure that a later run of its workflow retried is the muted 
   await lap('stuck', 'failed', `${day}T09:00:00Z`, { error: 'gh: HTTP 502: Bad Gateway' });
   const d = await lap('build', 'failed', `${day}T07:00:00Z`, {
     issue: 9,
-    error: 'deadlock detected',
+    error: 'connection terminated unexpectedly',
   });
   await lap('build', 'completed', `${day}T07:45:00Z`, { issue: 10 });
   await lap('steady', 'failed', `${day}T07:30:00Z`, { error: 'error: type check failed' });
@@ -260,6 +260,10 @@ test('on the seed a failed run whose item is closed reads as finished, one whose
   const [closed] = await db.query(oneLap, [FACTORY, '5eed0002-0000-4000-8000-000000000008']);
   expect(closed?.item_merged_at).not.toBeNull();
   expect(closed?.finished_by).toBe('5eed0002-0000-4000-8000-00000000000a');
+  // #3 merged after run ...000b; the earlier ...0007 completed with its land step refused and merged nothing.
+  const [refusedFirst] = await db.query(oneLap, [FACTORY, '5eed0001-0000-4000-8000-000000000006']);
+  expect(refusedFirst?.finished_by).toBe('5eed0001-0000-4000-8000-000000000007');
+  expect(refusedFirst?.closed_by).not.toBe('5eed0001-0000-4000-8000-000000000007');
   const [open] = await db.query(oneLap, [FACTORY, '5eed0003-0000-4000-8000-000000000002']);
   expect([open?.item_closed_at, open?.finished_by]).toEqual([null, null]);
 });

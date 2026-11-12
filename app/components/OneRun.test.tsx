@@ -54,6 +54,7 @@ const lap: OneLapRow = {
   item_pr: null,
   finished_by: null,
   finished_at: null,
+  closed_by: null,
 };
 
 let minute = 0;

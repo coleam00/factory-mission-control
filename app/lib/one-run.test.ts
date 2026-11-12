@@ -66,6 +66,7 @@ const lap = (over: Partial<OneLapRow> = {}): OneLapRow => ({
   item_pr: null,
   finished_by: null,
   finished_at: null,
+  closed_by: null,
   ...over,
 });
 
@@ -274,6 +275,7 @@ test('a failed run whose item is finished says there is nothing to do and offers
     item_closed_at: new Date('2026-10-24T11:00:00Z'),
     item_merged_at: new Date('2026-10-24T11:00:00Z'),
     ...finished,
+    closed_by: byRun,
     finished_at: new Date('2026-10-24T11:00:00Z'),
   });
   expect(text(merged)).toStartWith(
@@ -290,6 +292,10 @@ test('a failed run whose item is finished says there is nothing to do and offers
   expect(text(read({ item_closed_at: new Date('2026-10-11T03:30:00Z') }))).toStartWith(
     `Nothing to do: #485 closed at ${local('2026-10-11T03:30:00Z', false)}. `,
   );
+  // A run that followed the failure but did not finish the item at its close is not named as its closer.
+  expect(
+    text(read({ item_closed_at: new Date('2026-10-11T03:30:00Z'), ...finished, closed_by: null })),
+  ).toStartWith(`Nothing to do: #485 closed at ${local('2026-10-11T03:30:00Z', false)}. `);
   expect(text(read(finished))).toStartWith(
     `Nothing to do: run 5eed0002 completed #485 at ${local('2026-10-11T03:30:00Z', false)}. `,
   );
