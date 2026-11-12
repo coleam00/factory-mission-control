@@ -26,8 +26,9 @@ SELECT l.run_id, l.workflow_name, l.status, l.started_at, l.completed_at, f.repo
   cl.closed_at AS item_closed_at, cl.merged_at AS item_merged_at,
   CASE WHEN item.issue IS NULL THEN pitem.number END AS item_pr,
   fin.run_id AS finished_by, fin.stopped_at AS finished_at,
-  -- The run that finished the item at its close: the latest such run stopping at or before it.
-  -- finished_by is the first to follow the failure, which may have merged nothing.
+  -- The run that finished the item at its close: the latest later run that was running at that moment
+  -- (started at or before it, stopped at or after it), since the run that merges stops after the merge.
+  -- Null when no run spans the close. finished_by is the first to follow the failure, which may have merged nothing.
   fin.closed_by
 FROM mc.laps l
 JOIN mc.factories f ON f.name = l.factory
@@ -68,9 +69,10 @@ LEFT JOIN mc.pull_requests prs ON prs.factory = l.factory AND prs.number = pr.pr
 LEFT JOIN LATERAL (
   SELECT (array_agg(d.run_id ORDER BY d.stopped_at, d.run_id))[1] AS run_id, min(d.stopped_at) AS stopped_at,
     (array_agg(d.run_id ORDER BY d.stopped_at DESC, d.run_id DESC)
-      FILTER (WHERE d.stopped_at <= coalesce(cl.merged_at, cl.closed_at)))[1] AS closed_by
+      FILTER (WHERE d.started_at <= coalesce(cl.merged_at, cl.closed_at)
+        AND d.stopped_at >= coalesce(cl.merged_at, cl.closed_at)))[1] AS closed_by
   FROM (
-    SELECT o.run_id, o.stopped_at FROM mc.run_stops o
+    SELECT o.run_id, o.stopped_at, ol.started_at FROM mc.run_stops o
     LEFT JOIN mc.laps ol ON ol.run_id = o.run_id
     LEFT JOIN LATERAL (
       SELECT oc.issue_number FROM mc.claims oc

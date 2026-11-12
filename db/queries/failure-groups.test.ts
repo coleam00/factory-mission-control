@@ -267,3 +267,27 @@ test('on the seed a failed run whose item is closed reads as finished, one whose
   const [open] = await db.query(oneLap, [FACTORY, '5eed0003-0000-4000-8000-000000000002']);
   expect([open?.item_closed_at, open?.finished_by]).toEqual([null, null]);
 });
+
+test('closed_by names the run that was running when the item merged, and no run when none spans the merge', async () => {
+  const oneLap = queries.find(([n]) => n === 'one-lap')?.[1] as string;
+  const failed = '5eed0001-0000-4000-8000-000000000006';
+  const closedBy = async (mergedAt: string) => {
+    await db.query(
+      `UPDATE mc.pull_requests SET merged_at = $1::timestamptz WHERE factory = $2 AND number = 103`,
+      [mergedAt, FACTORY],
+    );
+    const [row] = await db.query(oneLap, [FACTORY, failed]);
+    return row?.closed_by;
+  };
+  try {
+    // ...000b ran 06:00-07:30; ...0009 stopped at 03:00, before the merge, so it is not the closer.
+    expect(await closedBy('2026-10-02T06:58:00Z')).toBe('5eed0001-0000-4000-8000-00000000000b');
+    // No completed run spans 05:00: the sentence names no run.
+    expect(await closedBy('2026-10-02T05:00:00Z')).toBeNull();
+  } finally {
+    await db.query(
+      `UPDATE mc.pull_requests SET merged_at = '2026-10-02T07:30:00Z' WHERE factory = $1 AND number = 103`,
+      [FACTORY],
+    );
+  }
+});
