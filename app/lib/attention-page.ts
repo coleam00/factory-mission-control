@@ -33,7 +33,11 @@ import { workItemHref } from './work-item';
 
 export type AttentionKind = 'decide' | 'unstick';
 
-export const KINDS: readonly { kind: AttentionKind; name: string; why: string }[] = [
+export const KINDS: readonly {
+  kind: AttentionKind;
+  name: string;
+  why: string;
+}[] = [
   { kind: 'decide', name: 'Decide', why: 'a question only you can answer' },
   { kind: 'unstick', name: 'Unstick', why: 'work that stopped moving' },
 ];
@@ -86,7 +90,10 @@ export interface Tile {
   /** Sends this write in place, when the server holds an operator for the factory. */
   act?: { request: ActionRequest; item: number | null };
   /** Opens the text box: the owner's own words, sent as `request` with `text` filled. */
-  somethingElse?: { request: AnswerRequest | CommentRequest; item: number | null };
+  somethingElse?: {
+    request: AnswerRequest | CommentRequest;
+    item: number | null;
+  };
   /** Opens the Manager's box on this card, for a card no write takes the owner's words for. */
   manager?: ManagerAsk;
   hooks: Hooks;
@@ -152,7 +159,12 @@ export function decideCards(rows: readonly DecideRow[], factory: string): Attent
       // "Something else" takes the owner's text; any other option is the answer itself.
       const place = !resolves(o.id)
         ? { somethingElse: { request: asked, item: item.item_number } }
-        : { act: { request: { ...asked, option: o.id }, item: item.item_number } };
+        : {
+            act: {
+              request: { ...asked, option: o.id },
+              item: item.item_number,
+            },
+          };
       return {
         id: o.id,
         label,
@@ -381,12 +393,15 @@ const COMMENT_DOES = 'Posts your text on the issue as your comment, then re-tria
 /**
  * Work that stopped moving: re-triage, close or comment on the item, or resume a run waiting for a
  * slot. The tile `row.action` names is the recommended one. `loginMissing` is an operator with no
- * `login`: the server refuses re-triage and comment for it, so only Close is offered.
+ * `login`: the server refuses re-triage and comment for it, so only Close is offered. Without an
+ * operator entry (`operator` false) the page cannot write at all, so a tile only opens the item and
+ * says so, and no tile is recommended.
  */
 export function unstickCards(
   rows: readonly UnstickRow[],
   factory: string,
   loginMissing: boolean,
+  operator = true,
 ): AttentionCard[] {
   return [...rows]
     .sort(
@@ -403,7 +418,7 @@ export function unstickCards(
       const ask = askAbout(row.run_id, row.number);
       const itemHref = row.number === null ? null : workItemHref(factory, row.number);
       const open: Action[] =
-        row.number === null || itemHref === null
+        row.number === null || itemHref === null || !operator
           ? []
           : [
               {
@@ -434,16 +449,33 @@ export function unstickCards(
           'data-act-item': row.number === null ? undefined : String(row.number),
         },
       });
-      const writable = row.number !== null && row.open;
+      const writable = row.number !== null && row.open && operator;
+      const openOnly = (): Tile[] =>
+        row.number === null || itemHref === null
+          ? []
+          : [
+              {
+                id: 'open',
+                label: `Open #${row.number}`,
+                consequence: `Opens #${row.number} in Mission Control; nothing is changed from here`,
+                recommended: false,
+                href: itemHref,
+                hooks: { 'data-choice': 'open' },
+              },
+            ];
       const offered = (action: ActionRequest['action']) => !(loginMissing && needsLogin(action));
       const commentable = writable && offered('comment');
-      const withheld = !writable
-        ? ` ${n} is not an open issue, so re-triage, close and comment are not offered; open it to see where it stands.`
-        : loginMissing
-          ? ' Re-triage and comments need the operator’s `login`, which this factory’s operator entry lacks; Close is offered.'
-          : '';
+      const withheld =
+        row.number !== null && !row.open
+          ? ` ${n} is not an open issue, so re-triage, close and comment are not offered; open it to see where it stands.`
+          : !operator
+            ? ` Mission Control is not writing for this factory right now, so it does not offer to re-triage, close or comment on ${n}; open it in Mission Control, then use its Issue link to act on GitHub.`
+            : loginMissing
+              ? ' Re-triage and comments need the operator’s `login`, which this factory’s operator entry lacks; Close is offered.'
+              : '';
       const closedNote = row.number === null ? '' : withheld;
-      const somethingElse = (): Tile =>
+      const somethingElse = (): Tile[] => (!operator ? openOnly() : [somethingElseTile()]);
+      const somethingElseTile = (): Tile =>
         !commentable || row.number === null
           ? {
               id: 'something-else',
@@ -455,7 +487,10 @@ export function unstickCards(
               recommended: false,
               href: itemHref,
               manager: ask,
-              hooks: { 'data-choice': 'something-else', 'data-something-else': '' },
+              hooks: {
+                'data-choice': 'something-else',
+                'data-something-else': '',
+              },
             }
           : {
               id: 'something-else',
@@ -464,10 +499,18 @@ export function unstickCards(
               recommended: false,
               href: itemHref,
               somethingElse: {
-                request: { factory, action: 'comment', number: row.number, text: '' },
+                request: {
+                  factory,
+                  action: 'comment',
+                  number: row.number,
+                  text: '',
+                },
                 item: row.number,
               },
-              hooks: { 'data-choice': 'something-else', 'data-something-else': '' },
+              hooks: {
+                'data-choice': 'something-else',
+                'data-something-else': '',
+              },
             };
       const itemWrites = (): Tile[] =>
         !writable || row.number === null
@@ -528,7 +571,7 @@ export function unstickCards(
                   : `${n} was parked on ${row.waits_on.includes(',') ? 'them' : 'it'}${row.reason === null ? '' : `: “${row.reason}”`}. Nothing re-triages a parked item on its own.`) +
                 closedNote,
             },
-            tiles: [...itemWrites(), somethingElse()],
+            tiles: [...itemWrites(), ...somethingElse()],
           };
         }
         case 'capacity': {
@@ -536,15 +579,32 @@ export function unstickCards(
           const resume: Tile[] =
             row.run_id === null
               ? []
-              : [
-                  act(
-                    'resume',
-                    `Resume run ${run}`,
-                    'Asks Archon to continue the run now',
-                    { factory, action: 'resume', run_id: row.run_id, from_step: null },
-                    consoleUrl(row.console, row.run_id),
-                  ),
-                ];
+              : !operator
+                ? [
+                    {
+                      id: 'resume',
+                      label: `Open run ${run}`,
+                      consequence:
+                        'Opens the run in the Archon console; nothing is changed from here',
+                      recommended: false,
+                      href: consoleUrl(row.console, row.run_id),
+                      hooks: { 'data-choice': 'resume' },
+                    },
+                  ]
+                : [
+                    act(
+                      'resume',
+                      `Resume run ${run}`,
+                      'Asks Archon to continue the run now',
+                      {
+                        factory,
+                        action: 'resume',
+                        run_id: row.run_id,
+                        from_step: null,
+                      },
+                      consoleUrl(row.console, row.run_id),
+                    ),
+                  ];
           return {
             ...base,
             title:
@@ -553,14 +613,17 @@ export function unstickCards(
                 : `${n} was answered, but its run is waiting for a slot`,
             meta: [
               ...workflow,
-              { pill: 'answered · waiting for capacity', state: UNSTICK_STATE.capacity },
+              {
+                pill: 'answered · waiting for capacity',
+                state: UNSTICK_STATE.capacity,
+              },
               waits,
             ],
             note: {
               lead: `Run ${run} of ${label} was answered and has waited for a free slot${since}.`,
               rest: `Runs in this state do not always continue on their own.${closedNote}`,
             },
-            tiles: [...resume, ...itemWrites(), somethingElse()],
+            tiles: [...resume, ...itemWrites(), ...somethingElse()],
           };
         }
         case 'claim':
@@ -572,7 +635,7 @@ export function unstickCards(
               lead: `Run ${run} of ${label} finished${row.since === null ? '' : ` at ${localMinute(row.since)}`} and still claims ${n}.`,
               rest: `Any intake run releases the claim${commentable ? `; re-triaging ${n} starts one and keeps its build progress` : ''}.${closedNote}`,
             },
-            tiles: [...itemWrites(), somethingElse()],
+            tiles: [...itemWrites(), ...somethingElse()],
           };
         default:
           return row.kind satisfies never;
@@ -635,12 +698,14 @@ export function attentionCount(
 
 /** The groups in README order; an empty group is not drawn. */
 export const byKind = (cards: readonly AttentionCard[]) =>
-  KINDS.map((k) => ({ ...k, cards: cards.filter((c) => c.kind === k.kind) })).filter(
-    (g) => g.cards.length > 0,
-  );
+  KINDS.map((k) => ({
+    ...k,
+    cards: cards.filter((c) => c.kind === k.kind),
+  })).filter((g) => g.cards.length > 0);
 
 /** The same cards under their queues; an empty queue is not drawn. */
 export const byQueue = (cards: readonly AttentionCard[]) =>
-  QUEUES.map((q) => ({ ...q, cards: cards.filter((c) => c.queue === q.queue) })).filter(
-    (g) => g.cards.length > 0,
-  );
+  QUEUES.map((q) => ({
+    ...q,
+    cards: cards.filter((c) => c.queue === q.queue),
+  })).filter((g) => g.cards.length > 0);

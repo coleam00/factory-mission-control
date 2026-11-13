@@ -215,10 +215,12 @@ test('cards drawn beside an errored or loading source keep the recommendation cl
   }
 });
 
-test('before the server says an operator exists, every write tile stays a link and nothing is copied', () => {
+test('before the server says an operator exists, Unstick tiles only open the item and claim no write', () => {
   const html = render({ decide: ready([decide]), unstick: ready([stuck]) });
   expect(html).not.toContain('data-answer-box');
-  expect(html).toMatch(/<a (?=[^>]*data-choice="retriage")(?=[^>]*href="\/f\/f\/work\/7")[^>]*>/);
+  expect(html).toMatch(/<a (?=[^>]*data-choice="open")(?=[^>]*href="\/f\/f\/work\/7")[^>]*>/);
+  expect(html).not.toMatch(/data-choice="(retriage|close)"/);
+  expect(html).not.toContain('Re-triage #7');
   expect(html).toMatch(/<a [^>]*data-choice="split"/);
   expect(html).not.toMatch(/<button[^>]*data-choice="(retriage|close|split|build)"/);
   expect(html).not.toContain('data-command');
@@ -226,12 +228,10 @@ test('before the server says an operator exists, every write tile stays a link a
 });
 
 test('an unstick card says what it waits on and ends in Re-triage, Close and Something else', () => {
-  const html = render({ unstick: ready([stuck]) });
-  expect(html).toContain('#6 “Six” closed');
-  const labels = [...html.matchAll(/data-choice="([^"]+)"/g)].map((m) => m[1]);
-  expect(labels).toEqual(['retriage', 'close', 'something-else']);
-  expect(html).toContain('Re-triage #7');
-  expect(html).toContain('Close #7');
+  const [card] = unstickCards([stuck], 'f', false, true);
+  expect(card?.tiles.map((t) => t.id)).toEqual(['retriage', 'close', 'something-else']);
+  expect(card?.tiles.map((t) => t.label).slice(0, 2)).toEqual(['Re-triage #7', 'Close #7']);
+  expect(card?.note.lead).toContain('#6 “Six” closed');
 });
 
 test('every card offers Ask manager, and the handled line counts only the actions of today', () => {
