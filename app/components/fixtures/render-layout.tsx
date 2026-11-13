@@ -78,8 +78,27 @@ export function gaps() {
   };
 }
 
-/** Opens or closes the docked Manager from the nav, whatever state the browser remembered. */
+/** Opens or closes the Manager, the dock or the phone's tab, whatever state the browser remembered. */
 export const setManager = (open: boolean) => {
   const button = document.querySelector<HTMLButtonElement>('nav button[aria-pressed]');
-  if ((button?.getAttribute('aria-pressed') === 'true') !== open) button?.click();
+  const tab = document.querySelector('aside[data-manager="tab"]');
+  if (open && button?.getAttribute('aria-pressed') !== 'true') button?.click();
+  else if (!open && tab)
+    tab.querySelector<HTMLButtonElement>('button[aria-label="Close the Manager"]')?.click();
+  else if (!open && button?.getAttribute('aria-pressed') === 'true') button.click();
 };
+
+/** Which shell is drawn, and how much of the viewport Attention's column and the Manager take. */
+export function shell() {
+  const nav = document.querySelector('nav[aria-label="Places"]');
+  const attention = document.querySelector('section[data-attention]');
+  const aside = document.querySelector('aside[data-manager]');
+  const a = attention?.getBoundingClientRect();
+  const m = aside?.getBoundingClientRect();
+  return {
+    phone: nav ? getComputedStyle(nav).position === 'sticky' : null,
+    attention:
+      a && a.width > 0 ? { width: Math.round(a.width), left: a.left, right: a.right } : null,
+    manager: m ? { width: Math.round(m.width), left: m.left } : null,
+  };
+}
