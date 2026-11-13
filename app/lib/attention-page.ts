@@ -480,12 +480,22 @@ export interface SweepRow {
 
 const RECOMMENDATION = 'put its recommendation first on each.';
 
-/** The head's line under the title. The sweep clause is left out when the factory has no finished manager run. */
-export function sweepLine(factory: string, sweptAt: Date | null, now: number): string {
+/**
+ * The head's line under the title. The sweep clause is left out when the factory has no finished
+ * manager run; the recommendation clause only when cards are drawn, since "each" needs items.
+ */
+export function sweepLine(
+  factory: string,
+  sweptAt: Date | null,
+  now: number,
+  cardsDrawn: number,
+): string {
   const seconds = since(sweptAt, now);
-  return seconds === null
-    ? `${factory}. The manager ${RECOMMENDATION}`
-    : `${factory}. The manager swept ${waited(seconds)} ago and ${RECOMMENDATION}`;
+  const items = cardsDrawn > 0;
+  if (seconds === null) return items ? `${factory}. The manager ${RECOMMENDATION}` : `${factory}.`;
+  return items
+    ? `${factory}. The manager swept ${waited(seconds)} ago and ${RECOMMENDATION}`
+    : `${factory}. The manager swept ${waited(seconds)} ago.`;
 }
 
 /**
