@@ -461,3 +461,23 @@ test('a page of panels in a sealing outage asks no more than 5 times in any 10 s
   expect(renewed).toBe(6);
   expect(sent.filter((at) => at >= 90_000 && at < 120_000).length).toBeGreaterThanOrEqual(6);
 });
+
+test('a panel on an offline client is in error, rows or not; online keeps the usual states', () => {
+  const rows = [{ running: 2 }];
+  for (const [status, data] of [
+    ['connecting', undefined],
+    ['connecting', rows],
+    ['live', rows],
+  ] as const) {
+    expect(panelState({ status, data, error: undefined, offline: true })).toBe('error');
+    expect(panelState({ status, data, error: undefined, offline: false })).toBe(
+      panelState({ status, data, error: undefined }),
+    );
+  }
+});
+
+test('a client going offline puts its panel in recovery until the subscription is live again', () => {
+  expect(recovering(false, 'connecting', true)).toBe(true);
+  expect(recovering(true, 'connecting', false)).toBe(true);
+  expect(recovering(true, 'live', false)).toBe(false);
+});

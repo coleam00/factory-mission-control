@@ -15,7 +15,7 @@ import { AT_PARAM, type StepRow, type StepVersionRow } from '../lib/step-detail'
 import { useFactory } from '../live/FactoryProvider';
 import { AWAITED, Feed, type Source } from '../live/Feed';
 import { LivePanel, type PanelState } from '../live/LivePanel';
-import { useLive } from '../live/LiveProvider';
+import { useLive, useUnavailable } from '../live/LiveProvider';
 import { useToday } from '../live/use-today';
 import { FACTORY_MAP, selectOnArrival } from '../map/factory-map';
 import {
@@ -73,6 +73,7 @@ export function HomeMapBody({
   /** The card to have selected on arrival. */
   select?: string;
 }): ReactElement {
+  const unavailable = useUnavailable();
   const { map } = sources;
   const empty = (title: string) => (
     <div className={APP_COLUMN}>
@@ -80,7 +81,7 @@ export function HomeMapBody({
       <EmptyState title={title} />
     </div>
   );
-  if (state === 'error') return empty('Live data is unavailable.');
+  if (state === 'error') return empty(unavailable);
   // The server is ready and shows no factory: nothing will ever load, so say why (#215).
   if (map === undefined && configured === false) return empty('No factory is configured.');
   if (map === undefined) return empty('Loading the factory map.');

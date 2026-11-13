@@ -181,7 +181,15 @@ test('/f/<factory> leaves Attention for the map when the address is an old map l
 
 test('/ says no factory is configured when the server is ready and serves none', () => {
   const client = {} as RealtimeClient;
-  const none: Live = { status: 'ready', factories: [], client, homeClient: client, rewind: null };
+  const none: Live = {
+    status: 'ready',
+    factories: [],
+    client,
+    homeClient: client,
+    rewind: null,
+    offline: false,
+    homeOffline: false,
+  };
   const router = createMemoryRouter(
     [
       {

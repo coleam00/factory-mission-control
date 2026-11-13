@@ -3,7 +3,7 @@ import { Link, useLocation } from 'react-router';
 import { shownRows, switcherEntries } from '../lib/factory-choice';
 import { useChooseFactory, useFactory, usePublishFactories } from '../live/FactoryProvider';
 import { LivePanel, type PanelState } from '../live/LivePanel';
-import { useLive } from '../live/LiveProvider';
+import { useLive, useUnavailable } from '../live/LiveProvider';
 import { factoryPath } from '../routing';
 import { LiveDot } from './LiveDot';
 
@@ -66,7 +66,8 @@ function Entries({
   hrefFor: (factory: string) => string;
   onChoose: (factory: string) => void;
 }): ReactElement {
-  if (state === 'error') return <p className={NOTE}>Live data is unavailable.</p>;
+  const unavailable = useUnavailable();
+  if (state === 'error') return <p className={NOTE}>{unavailable}</p>;
   if (rows === undefined) return <p className={NOTE}>Loading the factories.</p>;
   if (rows.length === 0) return <p className={NOTE}>No factory has recorded laps yet.</p>;
   return (

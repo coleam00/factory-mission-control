@@ -3,6 +3,7 @@ import { switchBranch } from '../lib/rewind';
 import type { PanelState } from '../live/LivePanel';
 import { LivePanel } from '../live/LivePanel';
 import { useFactory } from '../live/FactoryProvider';
+import { useUnavailable } from '../live/LiveProvider';
 import { LiveDot } from './LiveDot';
 import { StateDot } from './ui/StateDot';
 
@@ -66,6 +67,7 @@ export function FactoryStripBody({
   state: PanelState;
   unknown?: boolean;
 }): ReactElement {
+  const unavailable = useUnavailable();
   const running = rows?.[0]?.running;
   const waiting = rows?.[0]?.waiting;
   if (unknown) {
@@ -84,9 +86,7 @@ export function FactoryStripBody({
           tech and for checks that read the strip's text, so the name shows once. */}
       <span className="sr-only">{factory ?? '-'}</span>
       {state === 'error' ? (
-        <p className="text-[length:var(--v3-t-meta)] text-[color:var(--v3-fg-2)]">
-          Live data is unavailable.
-        </p>
+        <p className="text-[length:var(--v3-t-meta)] text-[color:var(--v3-fg-2)]">{unavailable}</p>
       ) : (
         <span className="flex items-center gap-2 text-[length:var(--v3-t-meta)] text-[color:var(--v3-fg-2)]">
           {running !== undefined && running > 0 ? <LiveDot size={8} /> : <StateDot state="idle" />}

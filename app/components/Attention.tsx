@@ -23,6 +23,7 @@ import { clock, shortRunId } from '../lib/format';
 import { HANDLED_QUERY, type HandledRow, handledSummary, handledToday } from '../lib/manager';
 import { type OwnerQueueRow, waited } from '../lib/owner-queue';
 import { AWAITED, Feed, type Source } from '../live/Feed';
+import { OFFLINE_SENTENCE, useLive } from '../live/LiveProvider';
 import { useActionPending, useActionsEnabled, useStartAction } from './ActionToast';
 import { useNow } from './panel';
 import { openManager, usePhone, usePublishPlaceWhat } from './ManagerDock';
@@ -333,6 +334,7 @@ function Head({
   count,
   line,
   failed,
+  offline,
   view,
   onView,
   phone,
@@ -340,6 +342,8 @@ function Head({
   count: number | 'loading' | 'unavailable';
   line: string;
   failed: readonly string[];
+  /** The Realtime connection itself is down: it, not each source, is what failed. */
+  offline: boolean;
   view: View;
   onView: (view: View) => void;
   phone: boolean;
@@ -362,6 +366,14 @@ function Head({
         <p data-sweep className="m-0 max-w-[56ch] text-[color:var(--v3-fg-2)]">
           {line}
         </p>
+        {offline ? (
+          <p
+            data-live-offline
+            className="m-0 text-[length:var(--v3-t-meta)] text-[color:var(--v3-fg-2)]"
+          >
+            {OFFLINE_SENTENCE}
+          </p>
+        ) : null}
         {failed.map((what) => (
           <p key={what} className="m-0 text-[length:var(--v3-t-meta)] text-[color:var(--v3-fg-2)]">
             Live data for {what} is unavailable.
@@ -464,12 +476,14 @@ export function AttentionBody({
   const [chosen, setView] = useState<View>('kind');
   const view = fixedView ?? chosen;
   const sources: Record<SourceKey, Source<object>> = { decide, owner, unstick };
-  const count = attentionCount(Object.values(sources));
+  const shared = useLive();
+  const offline = shared.status === 'ready' && shared.offline;
+  const count = offline ? 'unavailable' : attentionCount(Object.values(sources));
   usePublishPlaceWhat(
     typeof count === 'number' ? (count === 1 ? '1 item' : `${count} items`) : undefined,
   );
   const failed = SOURCE_KEYS.flatMap((k) =>
-    sources[k].state === 'error' ? [ATTENTION_SOURCES[k].what] : [],
+    !offline && sources[k].state === 'error' ? [ATTENTION_SOURCES[k].what] : [],
   );
   // The sweep clause is drawn only from a manager run read now: not through an outage.
   const sweptAt = sweep.state === 'error' ? null : (sweep.rows?.[0]?.swept_at ?? null);
@@ -501,6 +515,7 @@ export function AttentionBody({
         count={count}
         line={sweepLine(factory, sweptAt, now, cards.length)}
         failed={failed}
+        offline={offline}
         view={view}
         onView={setView}
         phone={phone}

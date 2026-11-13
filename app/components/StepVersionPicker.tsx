@@ -2,6 +2,7 @@ import { type ReactElement, useState } from 'react';
 import { Link } from 'react-router';
 import { type StepVersionRow, stepVersions } from '../lib/step-detail';
 import { LivePanel, type PanelState } from '../live/LivePanel';
+import { useUnavailable } from '../live/LiveProvider';
 
 const LABEL =
   'font-mono text-[10px] font-semibold uppercase tracking-[0.04em] text-[color:var(--v3-fg-2)]';
@@ -20,7 +21,8 @@ function Entries({
   href: (at: string | null) => string;
   onChoose: () => void;
 }): ReactElement {
-  if (state === 'error') return <p className={NOTE}>Live data is unavailable.</p>;
+  const unavailable = useUnavailable();
+  if (state === 'error') return <p className={NOTE}>{unavailable}</p>;
   if (rows === undefined) return <p className={NOTE}>Loading versions.</p>;
   if (rows.length === 0) return <p className={NOTE}>No version with architecture is recorded.</p>;
   return (

@@ -1,5 +1,6 @@
 import { type ReactElement, type ReactNode, useEffect, useState } from 'react';
 import type { PanelState } from '../live/LivePanel';
+import { useUnavailable } from '../live/LiveProvider';
 
 export const LABEL =
   'font-mono text-[10px] font-semibold uppercase tracking-[0.04em] text-text-secondary';
@@ -30,8 +31,9 @@ export function PanelBody<Row>({
   what: string;
   children: (rows: readonly Row[], factory: string) => ReactNode;
 }): ReactElement {
+  const unavailable = useUnavailable();
   if (state === 'error') {
-    return <p className="text-sm text-text-secondary">Live data is unavailable.</p>;
+    return <p className="text-sm text-text-secondary">{unavailable}</p>;
   }
   if (rows === undefined || factory === undefined) {
     return <p className="text-sm text-text-secondary">Loading {what}.</p>;

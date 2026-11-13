@@ -26,6 +26,7 @@ import {
 } from '../lib/step-detail';
 import { useFactory } from '../live/FactoryProvider';
 import { LivePanel, type PanelState } from '../live/LivePanel';
+import { useUnavailable } from '../live/LiveProvider';
 import { FACTORY_MAP, mapOrigin, selectState } from '../map/factory-map';
 
 const LABEL =
@@ -52,7 +53,8 @@ interface PanelProps {
 }
 
 function Unavailable(): ReactElement {
-  return <p className={NOTE}>Live data is unavailable.</p>;
+  const unavailable = useUnavailable();
+  return <p className={NOTE}>{unavailable}</p>;
 }
 
 /** A panel's heading, then its body once its rows are in: nothing until its step is known. */
