@@ -153,17 +153,20 @@ export const FIT_FOOT = 48;
 export const MIN_FRAME = 420;
 /** The largest scale a fit uses. */
 export const FIT_MAX = 1.15;
-/** Below this width the map opens as the phone mockup draws it, and Fit fits the whole map. */
+/** The frame width from which the details panel docks beside a card rather than above or below it. */
 export const PHONE = 701;
 
 /**
- * The map's type in map units, larger than the mockup's so that fitted, a card's title renders at
- * least `MAP_TYPE_FLOOR.title` px, its text `.text` px and the labels `.label` px.
+ * The map's type in map units, larger than the mockup's so that at `FIT_MIN`, a card's title renders
+ * at least `MAP_TYPE_FLOOR.title` px, its text `.text` px and the labels `.label` px.
  */
 export const MAP_TYPE = { kind: 18, title: 25, text: 20, chip: 15, label: 18 } as const;
-/** The least rendered size in px of each map type (owner, PR #326 review; ruling on #549). */
+/** The least rendered size in px of each map type (owner, PR #326 review). */
 export const MAP_TYPE_FLOOR = { title: 14, text: 11, kind: 10, label: 10 } as const;
-/** The least scale a level opens at: the least at which every type meets its floor (ruling on #549). */
+/**
+ * The scale at which every map type meets its floor. The map opens fitted and may sit below it on
+ * a narrow frame (#655, which reverses the opening half of the ruling on #549); zooming in reaches it.
+ */
 export const FIT_MIN = Math.max(
   ...(Object.keys(MAP_TYPE_FLOOR) as (keyof typeof MAP_TYPE_FLOOR)[]).map(
     (key) => MAP_TYPE_FLOOR[key] / MAP_TYPE[key],
@@ -171,30 +174,25 @@ export const FIT_MIN = Math.max(
 );
 
 /**
- * The frame's height for a `width` of at least the phone's: the map's height at the scale that
- * fits its width, never below `FIT_MIN`, so the opening camera leaves no empty bands (owner, PR
- * #326 review, acceptance 10) and shows the floored map whole in height. Fit may leave bands above
- * and below on a narrow frame, where it fits under the floor.
+ * The frame's height for a `width` of at least the phone's: the root's height at the scale that fits
+ * its width, plus padding, at least `MIN_FRAME`, so the fitted opening leaves no empty band (owner,
+ * PR #326 review, acceptance 10; #655).
  */
 export function heroFrameHeight(world: { width: number; height: number }, width: number): number {
   const k = fitScale(world, { width, height: Number.POSITIVE_INFINITY });
   return Math.max(MIN_FRAME, Math.ceil(world.height * k + FIT_PAD * 2 + FIT_FOOT));
 }
 
-/** The scale that fits `world` in `frame`, up to `max` and never below `min`, the type floor. */
+/** The scale that fits `world` in `frame`, up to `max`; never floored. */
 export function fitScale(
   world: { width: number; height: number },
   frame: { width: number; height: number },
   max = FIT_MAX,
-  min = FIT_MIN,
 ): number {
-  return Math.max(
-    min,
-    Math.min(
-      (frame.width - FIT_PAD * 2) / world.width,
-      (frame.height - FIT_PAD * 2 - FIT_FOOT) / world.height,
-      max,
-    ),
+  return Math.min(
+    (frame.width - FIT_PAD * 2) / world.width,
+    (frame.height - FIT_PAD * 2 - FIT_FOOT) / world.height,
+    max,
   );
 }
 
@@ -202,6 +200,7 @@ export function fitScale(
  * The largest scale `level` is fitted at in `frame`: FIT_MAX for the root; for a deeper view, the
  * largest scale the matching views fit at in the same frame, so a view with few cards is not drawn
  * larger than the reference (issue #485). The matching views keep their own fit by construction.
+ * Nothing floors a fit, so the cap holds at every width, the Manager open included.
  */
 export function levelMax(
   map: FactoryMap,
@@ -216,10 +215,10 @@ export function levelMax(
 }
 
 /**
- * The Fit control's camera: the whole level inside the frame, centred, as large as the frame allows
- * and never floored, so Fit shows the level whole at the frame's current width (owner changes of
- * 2026-11-12, item 11, which supersedes the ruling on #549 for Fit). From phone width up a deeper
- * view is no larger than `levelMax`.
+ * The Fit control's camera, and the camera every level opens at on a desktop layout (mount, resize,
+ * and arriving by a drill-down or going up): the whole level inside the frame, centred, as large as
+ * the frame allows and never floored (owner changes of 2026-11-12, item 11; #655, which reverses the
+ * opening half of the ruling on #549). A deeper view is no larger than `levelMax`, at any frame width.
  */
 export function fitCamera(
   map: FactoryMap,
@@ -227,31 +226,11 @@ export function fitCamera(
   frame: { width: number; height: number },
 ): { k: number; x: number; y: number } {
   const world = worldSize(level);
-  const k = fitScale(world, frame, frame.width < PHONE ? FIT_MAX : levelMax(map, level, frame), 0);
+  const k = fitScale(world, frame, levelMax(map, level, frame));
   return {
     k,
     x: Math.max(FIT_PAD, (frame.width - world.width * k) / 2),
     y: Math.max(FIT_PAD, (frame.height - FIT_FOOT - world.height * k) / 2),
-  };
-}
-
-/**
- * The camera a level opens at, from phone width up (mount, resize, and arriving by a drill-down or
- * going up): `fitCamera`, raised to the type floor `FIT_MIN`. A level wider than the frame at the
- * floor starts at its left edge, where every level's main line begins (ruling on #549).
- */
-export function openCamera(
-  map: FactoryMap,
-  level: MapView,
-  frame: { width: number; height: number },
-): { k: number; x: number; y: number } {
-  const fit = fitCamera(map, level, frame);
-  if (fit.k >= FIT_MIN) return fit;
-  const world = worldSize(level);
-  return {
-    k: FIT_MIN,
-    x: Math.max(FIT_PAD, (frame.width - world.width * FIT_MIN) / 2),
-    y: Math.max(FIT_PAD, (frame.height - FIT_FOOT - world.height * FIT_MIN) / 2),
   };
 }
 

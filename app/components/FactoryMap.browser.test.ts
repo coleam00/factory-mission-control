@@ -321,7 +321,17 @@ for (const { name, url, card: opening, deeper, deeperView, parentView } of seque
     expect(grabbed.selected).toBe(opening);
 
     // 4. Open the card's deeper view and drag at once, inside the transition window.
-    await dblclick(centre(grabbed.cards[opening] as Box));
+    // The fitted map is small, so the docked details can cover the card's middle: press its bare part.
+    const cardBox = grabbed.cards[opening] as Box;
+    const panel = grabbed.details;
+    let bare = cardBox;
+    if (panel !== null && panel.left < cardBox.right && panel.right > cardBox.left) {
+      bare =
+        panel.left > cardBox.left
+          ? { ...cardBox, right: panel.left }
+          : { ...cardBox, left: panel.right };
+    }
+    await dblclick(centre(bare));
     await inPage(`return await m.waitFor(${JSON.stringify(deeperView)});`);
     const corner: At = [grabbed.stage.left + 30, grabbed.stage.top + 30];
     await drag(corner, [-40, 25]);
@@ -376,10 +386,13 @@ for (const [manager, width] of [
   ['open', OPEN],
   ['closed', CLOSED],
 ] as const) {
-  test(`Fit shows every card inside the frame with the Manager ${manager}`, async () => {
+  test(`the map opens fitted, and Fit after a drag and zoom refits, with the Manager ${manager}`, async () => {
     await page.setViewport(1440);
     for (const url of ['/f/x', '/f/x?view=build']) {
       const start = await mountAt(url, width);
+      for (const [id, box] of Object.entries(start.cards)) {
+        expect([url, id, inside(box, start.stage)]).toEqual([url, id, true]);
+      }
       const control = async (label: string) =>
         centre(
           await inPage<Box>(`
@@ -398,6 +411,62 @@ for (const [manager, width] of [
     }
   }, 60_000);
 }
+
+const resizeTo = (width: number) => inPage<void>(`await m.resize(${width});`);
+const near = (got: Geometry['camera'], want: Geometry['camera']) => {
+  expect(got.k).toBeCloseTo(want.k, 3);
+  expect(got.x).toBeCloseTo(want.x, 3);
+  expect(got.y).toBeCloseTo(want.y, 3);
+};
+const allInside = (g: Geometry) => {
+  for (const [id, box] of Object.entries(g.cards))
+    expect([id, inside(box, g.stage)]).toEqual([id, true]);
+};
+
+test('a Manager toggle before any move refits the map to the new width', async () => {
+  await page.setViewport(1440);
+  const expected = (await mountAt('/f/x', OPEN)).camera;
+  await mountAt('/f/x', CLOSED);
+  await resizeTo(OPEN);
+  const after = await geometry();
+  allInside(after);
+  near(after.camera, expected);
+}, 60_000);
+
+for (const url of ['/f/x', '/f/x?view=build']) {
+  for (const how of ['drag', 'wheel'] as const) {
+    test(`after a ${how} on ${url}, toggling the Manager does not move the map`, async () => {
+      await page.setViewport(1440);
+      const start = await mountAt(url, OPEN);
+      if (how === 'drag') await drag(emptyPoint(start), [50, 30]);
+      else await wheel(centre(start.stage), -300);
+      await sleep(300);
+      const before = await geometry();
+      for (const width of [CLOSED, OPEN]) {
+        await resizeTo(width);
+        near((await geometry()).camera, before.camera);
+      }
+    }, 60_000);
+  }
+}
+
+test('Fit hands the camera back: a toggle after Fit refits', async () => {
+  await page.setViewport(1440);
+  for (const url of ['/f/x', '/f/x?view=build']) {
+    const expected = (await mountAt(url, OPEN)).camera;
+    const start = await mountAt(url, CLOSED);
+    await drag(emptyPoint(start), [50, 30]);
+    const fit = await inPage<Box>(`
+      const { left, top, right, bottom } = document
+        .querySelector('[aria-label="Fit"]').getBoundingClientRect();
+      return { left, top, right, bottom };`);
+    await click(centre(fit));
+    await resizeTo(OPEN);
+    const after = await geometry();
+    allInside(after);
+    near(after.camera, expected);
+  }
+}, 60_000);
 
 const overlaps = (a: Box, b: Box) =>
   Math.min(a.right, b.right) - Math.max(a.left, b.left) > 0.5 &&
@@ -551,3 +620,102 @@ test("a map move made while a click's pan is waiting is not undone when the pane
     await page.setViewport(1440);
   }
 }, 30_000);
+
+test('a desktop frame under 701px opens fitted, not at the phone opening', async () => {
+  await page.setViewport(1280);
+  const width = 1280 - token('nav-width') - token('manager-width');
+  for (const url of ['/f/x', '/f/x?view=build']) {
+    const g = await mountAt(url, width);
+    expect([url, g.stage.right - g.stage.left < 701]).toEqual([url, true]);
+    for (const [id, box] of Object.entries(g.cards)) {
+      expect([url, id, inside(box, g.stage)]).toEqual([url, id, true]);
+    }
+  }
+  await page.setViewport(1440);
+}, 60_000);
+
+for (const window of [800, 1000]) {
+  test(`a ${window}px window opens fitted, though the shell draws its phone layout there`, async () => {
+    await page.setViewport(window);
+    try {
+      for (const url of ['/f/x', '/f/x?view=build']) {
+        const g = await mountAt(url, window - 32);
+        for (const [id, box] of Object.entries(g.cards)) {
+          expect([url, id, inside(box, g.stage)]).toEqual([url, id, true]);
+        }
+      }
+    } finally {
+      await page.setViewport(1440);
+    }
+  }, 60_000);
+}
+
+test('the phone layout opens the root and a deeper view at the 0.42 centred camera, not fitted', async () => {
+  await page.setViewport(390);
+  try {
+    for (const url of ['/f/x', '/f/x?view=build']) {
+      await inPage(`await m.mount(${JSON.stringify(url)});`);
+      await sleep(300);
+      const scale = await inPage<string>(
+        `return document.querySelector('[data-map-world]').style.transform;`,
+      );
+      expect([url, scale.endsWith('scale(0.42)')]).toEqual([url, true]);
+    }
+  } finally {
+    await page.setViewport(1440);
+  }
+}, 30_000);
+
+test('the world is not painted before the camera is placed for the frame', async () => {
+  const unplaced = await inPage<number>(`
+    let seen = 0;
+    const probe = () => {
+      const w = document.querySelector('[data-map-world]');
+      const s = document.querySelector('[data-map-stage]');
+      if (w && getComputedStyle(w).opacity !== '0' && !s?.hasAttribute('data-placed')) seen++;
+      requestAnimationFrame(probe);
+    };
+    requestAnimationFrame(probe);
+    await m.mount('/f/x?view=build');
+    await new Promise((r) => setTimeout(r, 400));
+    return seen;`);
+  expect(unplaced).toBe(0);
+}, 30_000);
+
+test('a wheel before the camera is placed still shows the map', async () => {
+  const shown = await inPage<{ wheeled: boolean; placed: boolean; opacity: string }>(`
+    let wheeled = false;
+    const probe = () => {
+      const s = document.querySelector('[data-map-stage]');
+      if (s && !wheeled && !s.hasAttribute('data-placed')) {
+        s.dispatchEvent(new WheelEvent('wheel', { deltaY: -100, cancelable: true, bubbles: true }));
+        wheeled = true;
+      }
+      requestAnimationFrame(probe);
+    };
+    requestAnimationFrame(probe);
+    await m.mount('/f/x?view=build');
+    await new Promise((r) => setTimeout(r, 500));
+    const s = document.querySelector('[data-map-stage]');
+    const w = document.querySelector('[data-map-world]');
+    return { wheeled, placed: s.hasAttribute('data-placed'), opacity: getComputedStyle(w).opacity };`);
+  expect(shown.wheeled).toBe(true);
+  expect([shown.placed, shown.opacity]).toEqual([true, '1']);
+}, 30_000);
+
+test('a drag that outlives a level change still owns the camera', async () => {
+  await page.setViewport(1440);
+  const start = await mountAt('/f/x?view=build', OPEN);
+  const from = emptyPoint(start);
+  await press(from);
+  for (let i = 1; i <= 4; i++)
+    await page.mouse({ type: 'mouseMoved', x: from[0] + 8 * i, y: from[1] });
+  await inPage(`m.key('Escape'); await m.waitFor('root');`);
+  for (let i = 5; i <= 8; i++)
+    await page.mouse({ type: 'mouseMoved', x: from[0] + 8 * i, y: from[1] + 5 });
+  await release([from[0] + 64, from[1] + 5]);
+  await sleep(800);
+  const before = await geometry();
+  await resizeTo(CLOSED);
+  near((await geometry()).camera, before.camera);
+}, 60_000);

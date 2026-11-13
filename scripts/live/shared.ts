@@ -1,5 +1,5 @@
 import { stepPath } from '../../app/lib/lap-graph';
-import { type Card, cardsCounting, FACTORY_MAP, MAP_TYPE_FLOOR } from '../../app/map/factory-map';
+import { type Card, cardsCounting, FACTORY_MAP } from '../../app/map/factory-map';
 import { SERVE_PORTS } from '../../server/ports';
 import type { Page } from '../lib/cdp';
 import type { Deps } from '../lib/cli';
@@ -175,8 +175,8 @@ export interface MapType {
   columnWidth: number;
 }
 
-/** The least rendered size of each, at 1440x900 fitted; the floors live in `factory-map.ts`. */
-export const MAP_READABLE = { width: 1440, ...MAP_TYPE_FLOOR } as const;
+/** The window width the live check opens the map at. */
+export const MAP_VIEWPORT = 1440;
 /** The page's gutters either side of the map's frame, which spans the page column between them. */
 const MAP_GUTTERS = 48;
 
@@ -197,16 +197,12 @@ export const mapType = (page: Page) =>
     })()`,
   );
 
-/** Each size below the owner's least, and a frame narrower than the page column between its gutters. */
-export function mapTypeFailures(type: MapType): string[] {
+/**
+ * A frame narrower than the page column between its gutters. The map's type is measured and recorded
+ * but not judged against the floors: the map opens fitted, so at 1440 it is under them (#655).
+ */
+export function mapWidthFailures(type: MapType): string[] {
   const failures: string[] = [];
-  for (const what of ['title', 'text', 'kind', 'label'] as const) {
-    if (!(type[what] >= MAP_READABLE[what])) {
-      failures.push(
-        `a map card's ${what} renders ${type[what].toFixed(1)}px at ${MAP_READABLE.width} fitted, under ${MAP_READABLE[what]}px`,
-      );
-    }
-  }
   if (type.frameWidth < type.columnWidth - MAP_GUTTERS - 1) {
     failures.push(
       `the map's frame is ${Math.round(type.frameWidth)}px wide in a ${type.columnWidth}px page column: it should span the column inside the gutters`,
@@ -217,28 +213,27 @@ export function mapTypeFailures(type: MapType): string[] {
 
 const STAGE = `${MAP} [data-map-stage]`;
 
-/** The map's cards that lie outside its frame: ids, empty when Fit shows the whole level. */
-const cardsOutsideFrame = (page: Page) =>
-  page.evaluate<string[]>(
-    `(() => {
-      const frame = document.querySelector('${STAGE}').getBoundingClientRect();
-      return [...document.querySelectorAll('${MAP} [data-card]')]
-        .filter((el) => {
-          const r = el.getBoundingClientRect();
-          return r.left < frame.left - 1 || r.top < frame.top - 1 ||
-            r.right > frame.right + 1 || r.bottom > frame.bottom + 1;
-        })
-        .map((el) => el.getAttribute('data-card'));
-    })()`,
-  );
+/** In the page: the ids of the map's cards that lie outside its frame, empty when it shows the whole level. */
+const OUTSIDE_FRAME = `(() => {
+  const frame = document.querySelector('${STAGE}').getBoundingClientRect();
+  return [...document.querySelectorAll('${MAP} [data-card]')]
+    .filter((el) => {
+      const r = el.getBoundingClientRect();
+      return r.left < frame.left - 1 || r.top < frame.top - 1 ||
+        r.right > frame.right + 1 || r.bottom > frame.bottom + 1;
+    })
+    .map((el) => el.getAttribute('data-card'));
+})()`;
+const cardsOutsideFrame = (page: Page) => page.evaluate<string[]>(OUTSIDE_FRAME);
 
 /** Two animation frames, enough for a click's state to be drawn. */
 const drawn = (page: Page) =>
   page.evaluate(`new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)))`);
 
 /**
- * Fit shows every card inside the frame, with the Manager open and closed, and a clicked card shows
- * its details inside the frame (owner changes of 2026-11-12, item 11); what each misses, one line each.
+ * The map opens with every card inside the frame, a Manager toggle before any move refits it, Fit
+ * shows every card with the Manager open and closed, and a clicked card shows its details inside the
+ * frame (#655; owner changes of 2026-11-12, item 11); what each misses, one line each.
  * Leaves the Manager as it found it and nothing selected.
  */
 export async function mapFrameFailures(page: Page, card: string): Promise<string[]> {
@@ -253,6 +248,17 @@ export async function mapFrameFailures(page: Page, card: string): Promise<string
       );
     }
   };
+  const opening = await cardsOutsideFrame(page);
+  if (opening.length > 0) {
+    failures.push(`the map opens with ${opening.join(', ')} outside its frame`);
+  }
+  // The refit lands after two observer passes, so it is polled, not sampled once.
+  const refits = async () => {
+    const fitted = await page.evaluate<boolean>(pageWait(`${OUTSIDE_FRAME}.length === 0`, 2000));
+    if (fitted) return;
+    const outside = await cardsOutsideFrame(page);
+    failures.push(`toggling the Manager leaves ${outside.join(', ')} outside the map's frame`);
+  };
   await fits('as it was');
   const width = () =>
     page.evaluate<number>(`document.querySelector('${STAGE}').getBoundingClientRect().width`);
@@ -262,12 +268,14 @@ export async function mapFrameFailures(page: Page, card: string): Promise<string
   await page.evaluate(
     pageWait(`document.querySelector('${STAGE}').getBoundingClientRect().width !== ${was}`, 2000),
   );
+  await refits();
   await drawn(page);
   await fits('toggled');
   await click(page, toggle);
   await page.evaluate(
     pageWait(`document.querySelector('${STAGE}').getBoundingClientRect().width === ${was}`, 2000),
   );
+  await refits();
   await click(page, `${MAP} [data-card="${card}"]`);
   await drawn(page);
   const inFrame = await page.evaluate<boolean>(`(() => {

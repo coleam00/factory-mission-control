@@ -12,13 +12,13 @@ import {
   lateWrite,
   liveOutputs,
   MAP,
-  MAP_READABLE,
+  MAP_VIEWPORT,
   type MapType,
   mapCards,
   mapFrameFailures,
   mapMismatches,
   mapType,
-  mapTypeFailures,
+  mapWidthFailures,
   PANEL,
   pageWait,
   READY_WAIT_MS,
@@ -87,7 +87,7 @@ interface Timings extends PanelTimings {
   noReload: boolean | null;
   /** Where App check's Behind the scenes link to check-app went. */
   clickedTo?: string | null;
-  /** The map's smallest type at 1440 fitted, and its frame's width. */
+  /** The map's smallest type as it opens at 1440, recorded not judged, and its frame's width. */
   type?: MapType | null;
   limits: typeof LIMITS;
 }
@@ -136,7 +136,7 @@ export function homePhase(ctx: LiveContext): LivePhase {
       const { base } = ctx;
       const page = await openPage(deps.env);
       homePage = page;
-      await page.setViewport(MAP_READABLE.width);
+      await page.setViewport(MAP_VIEWPORT);
       await page.goto(`${base}/f/${factory}/map`);
       await page.evaluate('window.__mcNoReload = true');
       await observeHomePanels(page, panels);
@@ -152,8 +152,8 @@ export function homePhase(ctx: LiveContext): LivePhase {
         pageWait(`document.querySelector('${MAP} [data-placed]') !== null`, 2000),
       );
       mapTimings.type = await mapType(page);
-      ctx.failures.push(...mapTypeFailures(mapTimings.type));
-      ctx.save(FILES.shot, await page.screenshot(1440));
+      ctx.failures.push(...mapWidthFailures(mapTimings.type));
+      ctx.save(FILES.shot, await page.screenshot(MAP_VIEWPORT));
       ctx.failures.push(...(await mapFrameFailures(page, CLICKED_CARD)));
       onLiveStep = Number(await page.evaluate<string>(liveCountOf(LIVE_CARD)));
     },
