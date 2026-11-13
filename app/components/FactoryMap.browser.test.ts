@@ -505,3 +505,26 @@ test('on a phone frame a double-click still opens a card the panel would cover',
     await page.setViewport(1440);
   }
 }, 30_000);
+
+test("a map move made while a click's pan is waiting is not undone when the panel opens", async () => {
+  await page.setViewport(390);
+  try {
+    const start = await mountAt('/f/x', 390);
+    const review = start.cards.review as Box;
+    const middle: At = [
+      (start.stage.left + start.stage.right) / 2,
+      (start.stage.top + start.stage.bottom - 56) / 2,
+    ];
+    await drag(centre(review), [middle[0] - centre(review)[0], middle[1] - centre(review)[1]]);
+    const at = centre((await geometry()).cards.review as Box);
+    await click(at);
+    await drag(at, [0, 40]);
+    const moved = (await geometry()).camera;
+    await settle();
+    const after = await geometry();
+    expect(after.camera).toEqual(moved);
+    expect(after.details).not.toBeNull();
+  } finally {
+    await page.setViewport(1440);
+  }
+}, 30_000);
