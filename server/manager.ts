@@ -707,7 +707,7 @@ export function answer(manager: Manager, request: ChatRequest, signal: AbortSign
 
 /** The briefing is the server's count line, its failure sentence, then at most this many blocks of the model's. */
 export const BRIEFING_PROSE_BLOCKS = 2;
-/** A model block longer than this is dropped: the briefing keeps every line to about 200 characters. */
+/** A model block longer than this is shortened at a word boundary: the briefing keeps every line to about 200 characters. */
 export const BRIEFING_BLOCK_CHARS = 200;
 
 const BRIEFING_QUESTION = `Write today's briefing: what merged, what failed (judge a run by the day it failed, completed_at, not the day it started), what waits on the owner, and the one or two things that matter most. At most ${BRIEFING_PROSE_BLOCKS} short blocks (a paragraph or a bullet each), each under ${BRIEFING_BLOCK_CHARS} characters.`;
@@ -793,7 +793,7 @@ export function attentionLine(t: AttentionTally): string {
 function daySentence(day: DayDigest | null): string {
   if (!day)
     return " Today's merged pull requests could not be read: say so in one sentence and do not guess them.";
-  return ` Today's merged pull requests and runs by workflow and outcome were read for you from the factory's data, a run on the day its completed_at falls: name the most notable merged pull requests by number and title from them, briefly, instead of querying for them. The briefing already says in one sentence of its own how many failure causes are open, with a link to Runs > Failures: do not list, regroup, count or quote failures, and do not restate the count line: write at most ${BRIEFING_PROSE_BLOCKS} short blocks. Where and_more is above 0, more merged pull requests were not listed: say there were others, without a number. The numbers in them are for your judgment: state none of them. Failures are not things that wait on the owner and are not in the count line: do not add or compare them. ${JSON.stringify({ day: day.day, merged: day.merged, runs: day.runs })}`;
+  return ` Today's merged pull requests and runs by workflow and outcome were read for you from the factory's data, a run on the day its completed_at falls: name the most notable merged pull requests by number and title from them, briefly, instead of querying for them. The briefing already says in one sentence of its own what to know about open failures, with a link to Runs > Failures: do not list, regroup, count or quote failures, and do not restate the count line: write at most ${BRIEFING_PROSE_BLOCKS} short blocks. Where and_more is above 0, more merged pull requests were not listed: say there were others, without a number. The numbers in them are for your judgment: state none of them. Failures are not things that wait on the owner and are not in the count line: do not add or compare them. ${JSON.stringify({ day: day.day, merged: day.merged, runs: day.runs })}`;
 }
 
 /**
