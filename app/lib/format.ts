@@ -147,9 +147,14 @@ export function localDay(at: Date): string {
   return `${at.getFullYear()}-${pad2(at.getMonth() + 1)}-${pad2(at.getDate())}`;
 }
 
+/** The start of the viewer's local day `days` from `now`'s, as an ISO instant: DST-safe, since it counts calendar days. */
+export function localMidnight(now: Date, days: number): string {
+  return new Date(now.getFullYear(), now.getMonth(), now.getDate() + days).toISOString();
+}
+
 /** The instant the viewer's local day containing `now` began, as an ISO string. */
 export function localDayStart(now: Date): string {
-  return new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
+  return localMidnight(now, 0);
 }
 
 /** `Oct 11`: the month and day in the viewer's time zone. */

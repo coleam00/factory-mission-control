@@ -1,4 +1,4 @@
-import { formatFixed } from './format';
+import { formatFixed, localMidnight } from './format';
 
 /** A row of the `factory-scorecard` live query: one metric name, its value and sample size in each window. */
 export type FactoryScorecardRow = {
@@ -22,10 +22,6 @@ export type ScorecardWindow = '7' | '30';
  * laps, applied to metric records. One number for every measure.
  */
 export const TOO_FEW_BELOW = 10;
-
-/** The start of the viewer's local day `days` from `now`'s, as an ISO instant: DST-safe, since it counts calendar days. */
-const localMidnight = (now: Date, days: number): string =>
-  new Date(now.getFullYear(), now.getMonth(), now.getDate() + days).toISOString();
 
 /** The start of the viewer's next local day: where the scorecard's windows end. */
 export const scorecardUntil = (now: Date): string => localMidnight(now, 1);
