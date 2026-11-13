@@ -2,7 +2,12 @@ import { describe, expect, test } from 'bun:test';
 import { ATTENTION_SOURCES, attentionCount } from '../app/lib/attention-page';
 import { parseMessage, topLevelBlocks } from '../app/lib/manager-markdown';
 import { LIVE_QUERIES_DIR, loadLiveQueries } from './live';
-import { type AttentionTally, attentionLine, BRIEFING_PROSE_BLOCKS, capBriefingProse } from './manager';
+import {
+  type AttentionTally,
+  attentionLine,
+  BRIEFING_PROSE_BLOCKS,
+  capBriefingProse,
+} from './manager';
 import { withheldFromBriefing } from './manager-tools';
 
 const keys = Object.keys(ATTENTION_SOURCES) as (keyof typeof ATTENTION_SOURCES)[];

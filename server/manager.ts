@@ -708,8 +708,7 @@ export function answer(manager: Manager, request: ChatRequest, signal: AbortSign
 /** The briefing is the server's count line, its failure sentence, then at most this many blocks of the model's. */
 export const BRIEFING_PROSE_BLOCKS = 2;
 
-const BRIEFING_QUESTION =
-  `Write today's briefing: what merged, what failed (judge a run by the day it failed, completed_at, not the day it started), what waits on the owner, and the one or two things that matter most. At most ${BRIEFING_PROSE_BLOCKS} short blocks (a paragraph or a bullet each).`;
+const BRIEFING_QUESTION = `Write today's briefing: what merged, what failed (judge a run by the day it failed, completed_at, not the day it started), what waits on the owner, and the one or two things that matter most. At most ${BRIEFING_PROSE_BLOCKS} short blocks (a paragraph or a bullet each).`;
 
 /** What the Attention header counts: the row count of each source. Failures are not among them. */
 export type AttentionTally = Record<keyof typeof ATTENTION_SOURCES, number>;
