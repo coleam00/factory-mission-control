@@ -133,10 +133,9 @@ export const OFFLINE_SENTENCE = 'Cannot connect to Realtime for live data; still
 export const UNAVAILABLE_SENTENCE = 'Live data is unavailable.';
 
 /** What a panel in `error` says: that the connection is down when its client is offline, else that its data is unavailable. */
-export function useUnavailable(home = false): string {
+export function useUnavailable(): string {
   const live = useLive();
-  const offline = live.status === 'ready' && (home ? live.homeOffline : live.offline);
-  return offline ? OFFLINE_SENTENCE : UNAVAILABLE_SENTENCE;
+  return live.status === 'ready' && live.offline ? OFFLINE_SENTENCE : UNAVAILABLE_SENTENCE;
 }
 
 /** Opens the clients for `boot` (or `GET /api/live`), publishing each `Live` to `setLive`; returns the cleanup. Exported for tests. */
