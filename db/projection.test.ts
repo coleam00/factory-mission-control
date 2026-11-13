@@ -2960,6 +2960,75 @@ test('a work item state keeps the reason of the decision that parked it, and dro
   expect(await reasons()).toContainEqual({ number: 40, parked_reason: null });
 });
 
+test('a work item state projects its rounds compactly, its returns, last decision and pull request', async () => {
+  const round = (reason: string, pr: number, reviews: number) => ({
+    at: `T-${pr}`,
+    reason,
+    summary: 'long text that is not kept',
+    reviews: Array.from({ length: reviews }, () => ({ verdict: 'x' })),
+    run_id: `run-${pr}`,
+    pr_number: pr,
+  });
+  const returned = { decision: 'returned by the merge queue', reason: 'conflict' };
+  const doc = (build: object) =>
+    JSON.stringify({
+      version: 1,
+      stage: 'deliver',
+      facts: { build: { status: 'ready', at: 'T', ...build } },
+    });
+  const facts = () =>
+    db.query(
+      `SELECT number, rounds, returns, last_decision, pr_number FROM mc.work_item_states
+       WHERE number IN (648, 649) ORDER BY number`,
+    );
+  await putState(
+    'work/648',
+    1,
+    doc({
+      rounds: [
+        round('ask', 650, 0),
+        round('delivered', 651, 2),
+        round('delivered', 652, 1),
+        round('ask', 653, 0),
+        round('delivered', 654, 3),
+      ],
+      decisions: [
+        returned,
+        { decision: 'park', reason: 'returned by the merge queue' },
+        returned,
+        returned,
+      ],
+    }),
+  );
+  await putState('work/649', 1, doc({}));
+  const [full, empty] = (await facts()) as unknown as {
+    rounds: { at: string; reason: string; reviews: number; run_id: string }[];
+    returns: number;
+    last_decision: string | null;
+    pr_number: number | null;
+  }[];
+  expect(full.rounds.map((r) => [r.reason, r.reviews])).toEqual([
+    ['ask', 0],
+    ['delivered', 2],
+    ['delivered', 1],
+    ['ask', 0],
+    ['delivered', 3],
+  ]);
+  expect(full.rounds[4]).toEqual({
+    at: 'T-654',
+    reason: 'delivered',
+    reviews: 3,
+    run_id: 'run-654',
+  });
+  expect(full).toMatchObject({
+    returns: 3,
+    last_decision: 'returned by the merge queue',
+    pr_number: 654,
+  });
+  expect(empty).toEqual({ rounds: [], returns: 0, last_decision: null, pr_number: null });
+  expect(await projectionErrors()).toEqual([]);
+});
+
 test('0031 fills the new columns and tables for runs and documents stored before it, and changes nothing run again', async () => {
   const historical = await archonDb();
   try {

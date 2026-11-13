@@ -401,6 +401,96 @@ test('a run that has just taken a work item is running on the Board, here on the
   }
 });
 
+const missionItem = async (number: number) =>
+  (await run<BoardRow>('board', 'mission-control')).find((r) => r.number === number);
+
+test("a work item's rounds are Archon's finished rounds, and the run count only stands in without a state", async () => {
+  expect(await missionItem(9)).toMatchObject({ rounds: 3, round_list: null, returns: null });
+  await db.query(
+    `INSERT INTO mc.work_item_states (project_key, number, revision, rounds, returns, last_decision)
+     SELECT codebase, 9, 1, '[{"at":"a","reason":"ask","reviews":0,"run_id":"r1"},{"at":"b","reason":"delivered","reviews":2,"run_id":"r2"}]',
+       3, 'returned by the merge queue' FROM mc.factories WHERE name = 'mission-control'`,
+  );
+  try {
+    const row = await missionItem(9);
+    expect(row).toMatchObject({
+      rounds: 2,
+      returns: 3,
+      last_decision: 'returned by the merge queue',
+    });
+    expect(JSON.parse(row?.round_list ?? 'null')).toEqual([
+      { at: 'a', reason: 'ask', reviews: 0, run_id: 'r1' },
+      { at: 'b', reason: 'delivered', reviews: 2, run_id: 'r2' },
+    ]);
+  } finally {
+    await db.query(`DELETE FROM mc.work_item_states WHERE number = 9`);
+  }
+});
+
+test('a Refs-only item takes its pull request from the projection, with its head and app check head', async () => {
+  await db.query(
+    `INSERT INTO mc.pull_requests (factory, number, title, state, merged_at, head_sha, url, created_at, updated_at)
+     VALUES ('mission-control', 9102, 't', 'open', NULL, 'abc123', 'u', now(), now())`,
+  );
+  await db.query(
+    `INSERT INTO mc.work_item_states (project_key, number, revision, pr_number)
+     SELECT codebase, 13, 1, 9102 FROM mc.factories WHERE name = 'mission-control'`,
+  );
+  await db.query('BEGIN');
+  try {
+    expect(await missionItem(13)).toMatchObject({
+      pr: 9102,
+      pr_open: true,
+      pr_head: 'abc123',
+      app_check_head: null,
+      app_check_run: null,
+    });
+    const runId = '5eed0700-0000-4000-8000-000000000001';
+    await db.query(
+      `INSERT INTO mc.laps (run_id, factory, workflow_name, status, started_at)
+       VALUES ($1, 'mission-control', 'factory-app-check', 'running', '2026-10-25T11:50:00Z')`,
+      [runId],
+    );
+    await db.query(
+      `INSERT INTO mc.lap_steps (run_id, step_id, status, started_at, output) VALUES
+       ($1, 'select', 'completed', '2026-10-25T11:50:00Z', '{"pr":9102}')`,
+      [runId],
+    );
+    expect(await missionItem(13)).toMatchObject({ app_check_run: runId });
+    await db.query(`UPDATE mc.laps SET status = 'completed' WHERE run_id = $1`, [runId]);
+    await db.query(
+      `INSERT INTO mc.lap_steps (run_id, step_id, status, started_at, output)
+       VALUES ($1, 'check', 'completed', '2026-10-25T11:51:00Z', '{"pr":9102,"head":"abc123","overall":"PASS"}')`,
+      [runId],
+    );
+    expect(await missionItem(13)).toMatchObject({
+      app_check_run: null,
+      app_check: 'PASS',
+      app_check_head: 'abc123',
+    });
+  } finally {
+    await db.query('ROLLBACK');
+    await db.query(`DELETE FROM mc.work_item_states WHERE number = 13`);
+    await db.query(
+      `DELETE FROM mc.pull_requests WHERE factory = 'mission-control' AND number = 9102`,
+    );
+  }
+});
+
+test('merged_at is the merge fact’s time, else the merged pull request’s', async () => {
+  expect(await missionItem(10)).toMatchObject({ pr: 110, merged_at: expect.any(String) });
+  expect(await missionItem(9)).toMatchObject({ merged_at: null });
+  await db.query(
+    `INSERT INTO mc.work_item_states (project_key, number, revision, merge_status, merge_at)
+     SELECT codebase, 10, 1, 'merged', '2026-10-20T08:00:00.000Z' FROM mc.factories WHERE name = 'mission-control'`,
+  );
+  try {
+    expect(await missionItem(10)).toMatchObject({ merged_at: '2026-10-20T08:00:00.000Z' });
+  } finally {
+    await db.query(`DELETE FROM mc.work_item_states WHERE number = 10`);
+  }
+});
+
 test('the board query stays fast when many runs have shipped', async () => {
   await db.query('BEGIN');
   try {

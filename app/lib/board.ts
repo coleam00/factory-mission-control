@@ -23,10 +23,11 @@ export interface BoardRow {
   work_orders: string[] | null;
   /** deliver, plan, investigate or split: the queue's state label, else the loop's claim. */
   route: string | null;
+  /** Archon's finished rounds; the runs that reached ship when the item has no state. */
   rounds: number | null;
   /** The latest app check's overall verdict on its pull request. */
   app_check: string | null;
-  /** The open pull request that closes it, else the merged one. */
+  /** The open pull request that closes it, else the one Archon's last round opened if open or merged, else the merged one that closes it. */
   pr: number | null;
   pr_open: boolean | null;
   /** The queues' work-item state, the five fields the Parked rule reads; null without a state. */
@@ -37,6 +38,19 @@ export interface BoardRow {
   triage_at: string | null;
   /** The queue's work-item stage (new, needs_maintainer, a route, needs_contract, blocked, close); null without a state. */
   stage: string | null;
+  /** Archon's finished rounds as JSON text, `{ at, reason, reviews, run_id }` each, in order; null without a state. */
+  round_list: string | null;
+  /** How often the merge queue returned the item; null without a state. */
+  returns: number | null;
+  /** The decision of the last build decision; null without one. */
+  last_decision: string | null;
+  /** The head commit of `pr`, and the head the latest app check on it ran against. */
+  pr_head: string | null;
+  app_check_head: string | null;
+  /** When it merged: the merge fact's time, else its merged pull request's. */
+  merged_at: string | null;
+  /** The running app check run on `pr`. */
+  app_check_run: string | null;
   /** The factory row: its repository and its work items a pull request merged. */
   repository: string | null;
   merged_total: number | null;
