@@ -13,6 +13,7 @@ import {
   RETRIED_QUERY,
   retriedArgs,
   retriedLine,
+  sourceArgs,
   SWEEP_QUERY,
   type SweepRow,
   type Tile,
@@ -29,6 +30,7 @@ import { HANDLED_QUERY, type HandledRow, handledSummary, handledToday } from '..
 import { type OwnerQueueRow, waited } from '../lib/owner-queue';
 import { useToday } from '../live/use-today';
 import { AWAITED, Feed, type Source } from '../live/Feed';
+import { useHour } from '../live/use-hour';
 import { useActionPending, useActionsEnabled, useStartAction } from './ActionToast';
 import { useNow } from './panel';
 import { openManager, usePhone, usePublishPlaceWhat } from './ManagerDock';
@@ -572,7 +574,7 @@ export function AttentionBody({
     <section
       data-attention
       data-attention-count={typeof count === 'number' ? count : undefined}
-      className={`max-w-[820px] ${phone ? 'px-4 pt-[18px] pb-6' : 'px-8 pt-[30px] pb-20'}`}
+      className={`${phone ? 'px-4 pt-[18px] pb-6' : 'px-8 pt-[30px] pb-20'}`}
     >
       <Head
         count={count}
@@ -604,6 +606,7 @@ export function Attention({ factory }: { factory: string }): ReactElement {
   const [handled, setHandled] = useState<Source<HandledRow>>(AWAITED);
   const [retried, setRetried] = useState<Source<RetriedRunRow>>(AWAITED);
   const today = useToday();
+  const hour = useHour();
   const into = useMemo(
     () =>
       Object.fromEntries(
@@ -614,7 +617,13 @@ export function Attention({ factory }: { factory: string }): ReactElement {
   return (
     <>
       {SOURCE_KEYS.map((k) => (
-        <Feed key={k} query={ATTENTION_SOURCES[k].query} factory={factory} into={into[k]} />
+        <Feed
+          key={k}
+          query={ATTENTION_SOURCES[k].query}
+          factory={factory}
+          args={sourceArgs(k, hour)}
+          into={into[k]}
+        />
       ))}
       <Feed<SweepRow> query={SWEEP_QUERY} factory={factory} into={setSweep} />
       <Feed<HandledRow> query={HANDLED_QUERY} factory={factory} into={setHandled} />

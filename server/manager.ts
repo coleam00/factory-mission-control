@@ -11,8 +11,15 @@ import {
 import type { Server } from 'bun';
 import type { Context, Hono } from 'hono';
 import { isAnswerText, resolveAnswer } from '../app/lib/attention';
-import { ATTENTION_SOURCES, type AttentionKind, KINDS } from '../app/lib/attention-page';
-import { scorecardUntil, TOO_FEW_BELOW } from '../app/lib/factory-scorecard';
+import {
+  ATTENTION_SOURCES,
+  type AttentionKind,
+  KINDS,
+  retriedArgs,
+  sourceArgs,
+} from '../app/lib/attention-page';
+import { scorecardEdges, TOO_FEW_BELOW } from '../app/lib/factory-scorecard';
+import { failuresSince } from '../app/lib/failures';
 import { topLevelBlocks } from '../app/lib/manager-markdown';
 import { isRunId, lapHref } from '../app/lib/one-lap';
 import { workItemHref } from '../app/lib/work-item';
@@ -349,7 +356,15 @@ ${
 Never show holdout scenario text.
 A run failed on the day its mc.laps.completed_at falls, whatever day it started: for "failed today", filter on completed_at, never started_at, and include runs that started on an earlier day. The database session may run in another timezone, so convert first: (completed_at AT TIME ZONE '${zone}')::date = DATE '${dayOf(now)}'.
 
-How the factory is doing (merge rate, review rounds, lead time, owner asks, lines, issues merged, with their per-route split): run live_query factory-scorecard with args ["${scorecardUntil(now)}"], the same query the Factory page's scorecard shows. Each row is one measure with its value and n (how many records it rests on) for the last 7 and 30 UTC days and the period before each. Compare a measure only when both periods have at least ${TOO_FEW_BELOW} records; otherwise say there are too few to compare. Never work these out from laps, pull requests or mc.metric_records yourself.
+${
+  briefing
+    ? ''
+    : `The failures still unresolved (not on a closed item, not followed by a completed run of the same workflow, stopped within 7 days): run live_query failure-groups with args ["${failuresSince(now)}"], the query the Attention failures read. Never count failures from laps or mc.run_stops yourself.
+
+`
+}How the factory is doing (merge rate, review rounds, lead time, owner asks, lines, issues merged, with their per-route split): run live_query factory-scorecard with args ${JSON.stringify(scorecardEdges(now))}, the same query the Factory page's scorecard shows. Each row is one measure with its value and n (how many records it rests on) for the last 7 and 30 days and the period before each. Compare a measure only when both periods have at least ${TOO_FEW_BELOW} records; otherwise say there are too few to compare. Never work these out from laps, pull requests or mc.metric_records yourself.
+
+The transient failures a later run of their workflow retried, today (the Attention page's muted line): run live_query retried-runs with args ${JSON.stringify(retriedArgs(now))}.
 
 The mc schema:
 ${schema}
@@ -727,7 +742,7 @@ async function attentionTally(
     const { rows } = await readOnlyQuery(
       manager.db,
       `SELECT\n  ${listed.join(',\n  ')}`,
-      [factory],
+      [factory, ...keys.flatMap((key) => sourceArgs(key, manager.now()) ?? [])],
       MANAGER_LIMITS,
     );
     const listing = rows[0] as AttentionRows;

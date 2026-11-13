@@ -8,7 +8,7 @@ import type { StopClass } from '../app/lib/failures';
 export const STOP_CORPUS: readonly (readonly [line: string, cls: StopClass, source: string])[] = [
   [
     'Could not persist node_skipped for ship__deliver__ci-changed: deadlock detected: deadlock detected',
-    'transient',
+    'environment',
     'archon log',
   ],
   [
@@ -67,7 +67,47 @@ export const STOP_CORPUS: readonly (readonly [line: string, cls: StopClass, sour
     'transient',
     'issue #628 (owner check 2026-11-10)',
   ],
-  ['error: out of memory', 'transient', 'issue #628 (owner check 2026-11-10)'],
+  ['error: out of memory', 'environment', 'issue #628 line; README owner change 5 (2026-11-12)'],
+  [
+    'FATAL ERROR: Reached heap limit Allocation failed - JavaScript heap out of memory',
+    'environment',
+    'db/run-stops.test.ts (#628 heap line)',
+  ],
+  [
+    "fatal: unable to access 'https://github.com/coleam00/factory-mission-control/': Failed to connect to github.com port 443 after 21045 ms: Could not connect to server",
+    'transient',
+    'issue #647 (live data 2026-11-12)',
+  ],
+  [
+    'gh pr list failed: Post "https://api.github.com/graphql": dial tcp 140.82.112.6:443: connectex: A connection attempt failed',
+    'transient',
+    'issue #647 (live data 2026-11-12)',
+  ],
+  [
+    'forge metadata failed: discovery:github: metadata handshake failed',
+    'transient',
+    'issue #647 (live data 2026-11-12)',
+  ],
+  [
+    'Failed to list events for runs: out of memory',
+    'environment',
+    'issue #647 (live data 2026-11-12)',
+  ],
+  [
+    'build-queue facts: issue 630 is claimed by run e353c524-1111-4000-8000-000000000000',
+    'input',
+    'issue #647 (live data 2026-11-12)',
+  ],
+  [
+    'the answer "close-as-covered-by-317" is not one of the choices',
+    'code',
+    'issue #647 (live data 2026-11-12)',
+  ],
+  [
+    'gh issue view failed: GraphQL: Could not resolve to an issue or pull request with the number of 395',
+    'input',
+    'issue #647 (live data 2026-11-12)',
+  ],
   [
     'Could not persist node_completed for facts: Couldn’t connect to compute node',
     'transient',

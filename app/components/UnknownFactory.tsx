@@ -2,6 +2,7 @@ import type { ReactElement } from 'react';
 import { Link } from 'react-router';
 import { placeAddress, ROOT_ADDRESS } from '../lib/places';
 import { EmptyState } from './EmptyState';
+import { Column } from './Column';
 
 /**
  * A factory screen whose URL key is not a factory (#79): it names the key as typed, so a mistyped
@@ -20,10 +21,7 @@ export function UnknownFactory({
   const target = factory === '' ? undefined : fallback;
   const home = target === undefined ? ROOT_ADDRESS : placeAddress(target, '');
   return (
-    <main
-      data-unknown-factory={factory}
-      className="mx-auto max-w-6xl px-6 [overflow-wrap:anywhere]"
-    >
+    <Column data-unknown-factory={factory} className="px-6 [overflow-wrap:anywhere]">
       <EmptyState
         title={
           factory === ''
@@ -36,6 +34,6 @@ export function UnknownFactory({
           </Link>
         }
       />
-    </main>
+    </Column>
   );
 }

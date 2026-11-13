@@ -1,7 +1,13 @@
 import { type ReactElement, useCallback, useState } from 'react';
-import { ATTENTION_SOURCES, attentionCount, badgePanelName } from '../lib/attention-page';
+import {
+  ATTENTION_SOURCES,
+  attentionCount,
+  badgePanelName,
+  sourceArgs,
+} from '../lib/attention-page';
 import { stateColor } from '../lib/states';
 import { AWAITED, Feed, type Source } from '../live/Feed';
+import { useHour } from '../live/use-hour';
 
 const MARK = 'ml-1.5 rounded-full px-1.5 font-mono font-medium text-[11px] tabular-nums';
 /** The mockup's `.nav .badge`: a solid violet chip with dark text. */
@@ -49,15 +55,25 @@ type SourceKey = keyof typeof ATTENTION_SOURCES;
 function CountFeed({
   id,
   factory,
+  hour,
   report,
 }: {
   id: SourceKey;
   factory: string;
+  hour: Date;
   report: (id: SourceKey, source: Source<object>) => void;
 }): ReactElement {
   const { query } = ATTENTION_SOURCES[id];
   const into = useCallback((source: Source<object>) => report(id, source), [id, report]);
-  return <Feed<object> query={query} name={badgePanelName(query)} factory={factory} into={into} />;
+  return (
+    <Feed<object>
+      query={query}
+      name={badgePanelName(query)}
+      factory={factory}
+      args={sourceArgs(id, hour)}
+      into={into}
+    />
+  );
 }
 
 /**
@@ -71,6 +87,7 @@ export function AttentionCount({ factory }: { factory: string }): ReactElement {
     unstick: AWAITED,
     failures: AWAITED,
   });
+  const hour = useHour();
   const report = useCallback(
     (id: SourceKey, source: Source<object>) => setSources((all) => ({ ...all, [id]: source })),
     [],
@@ -78,7 +95,7 @@ export function AttentionCount({ factory }: { factory: string }): ReactElement {
   return (
     <>
       {(Object.keys(ATTENTION_SOURCES) as SourceKey[]).map((id) => (
-        <CountFeed key={id} id={id} factory={factory} report={report} />
+        <CountFeed key={id} id={id} factory={factory} hour={hour} report={report} />
       ))}
       <CountMark sources={Object.values(sources)} />
     </>

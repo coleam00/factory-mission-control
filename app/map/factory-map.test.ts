@@ -18,6 +18,7 @@ import {
   mapOrigin,
   midpoint,
   neighbours,
+  openCamera,
   PHONE,
   pinnedStepLinks,
   stepLinks,
@@ -388,7 +389,7 @@ test("a step's default origin is the map at the view of its deepest card, that c
 const rootAndViews = [FACTORY_MAP as MapView, ...Object.values(FACTORY_MAP.views ?? {})];
 const keys = Object.keys(MAP_TYPE_FLOOR) as (keyof typeof MAP_TYPE_FLOOR)[];
 
-test("fit's least scale is the least at which every card type meets its floor", () => {
+test("a level's opening scale is the least at which every card type meets its floor", () => {
   for (const key of keys) {
     expect(FIT_MIN * MAP_TYPE[key]).toBeGreaterThanOrEqual(MAP_TYPE_FLOOR[key] - 1e-9);
   }
@@ -396,10 +397,10 @@ test("fit's least scale is the least at which every card type meets its floor", 
   expect(FIT_MIN).toBeCloseTo(0.56);
 });
 
-test('with the Manager dock open at 1440 every level fits at the floor, its main line in view from its left end', () => {
+test('with the Manager dock open at 1440 every level opens at the floor, its main line in view from its left end', () => {
   const frame = { width: 792, height: heroFrameHeight(worldSize(FACTORY_MAP), 792) };
   for (const level of rootAndViews) {
-    const { k, x, y } = fitCamera(FACTORY_MAP, level, frame);
+    const { k, x, y } = openCamera(FACTORY_MAP, level, frame);
     expect(k).toBeGreaterThanOrEqual(FIT_MIN);
     if (worldSize(level).width * k > frame.width - FIT_PAD * 2) expect(x).toBe(FIT_PAD);
     const first = level.tour[0] ? level.cards.find((c) => c.id === level.tour[0]) : undefined;
@@ -412,7 +413,7 @@ test('with the Manager dock open at 1440 every level fits at the floor, its main
   expect(FACTORY_MAP.tour[0]).toBe('prd');
 });
 
-test('across hero widths a fit never cuts the floored map in height, and is unchanged where it already fits', () => {
+test('across hero widths the opening camera never cuts the floored map in height, and is unchanged where the level already fits', () => {
   const root = worldSize(FACTORY_MAP);
   for (let w = PHONE; w <= 2560; w += 7) {
     const frame = hero(w);
@@ -421,7 +422,7 @@ test('across hero widths a fit never cuts the floored map in height, and is unch
     );
     for (const level of rootAndViews) {
       const world = worldSize(level);
-      const cam = fitCamera(FACTORY_MAP, level, frame);
+      const cam = openCamera(FACTORY_MAP, level, frame);
       expect(cam.k).toBeGreaterThanOrEqual(FIT_MIN);
       expect(cam.y).toBeGreaterThanOrEqual(FIT_PAD - 1e-9);
       const before = fitScale(world, frame, levelMax(FACTORY_MAP, level, frame), 0);
@@ -436,13 +437,43 @@ test('across hero widths a fit never cuts the floored map in height, and is unch
   }
 });
 
-test('1920 with the dock closed fits the whole root map', () => {
+test('1920 with the dock closed fits the whole root map, opening and fitting alike', () => {
   const frame = { width: 1656, height: heroFrameHeight(worldSize(FACTORY_MAP), 1656) };
   const root = worldSize(FACTORY_MAP);
-  const { k, x } = fitCamera(FACTORY_MAP, FACTORY_MAP, frame);
-  expect(k).toBe((1656 - FIT_PAD * 2) / root.width);
-  expect(x).toBeGreaterThanOrEqual(0);
-  expect(x + root.width * k).toBeLessThanOrEqual(frame.width);
+  for (const camera of [fitCamera, openCamera]) {
+    const { k, x } = camera(FACTORY_MAP, FACTORY_MAP, frame);
+    expect(k).toBe((1656 - FIT_PAD * 2) / root.width);
+    expect(x).toBeGreaterThanOrEqual(0);
+    expect(x + root.width * k).toBeLessThanOrEqual(frame.width);
+  }
+});
+
+test('with the dock open (792) and closed (1176) at 1440, Fit shows every card of every level inside the frame', () => {
+  for (const width of [792, 1176]) {
+    const frame = hero(width);
+    for (const level of rootAndViews) {
+      const { k, x, y } = fitCamera(FACTORY_MAP, level, frame);
+      for (const card of level.cards) {
+        expect(x + card.x * k).toBeGreaterThanOrEqual(-1e-9);
+        expect(x + (card.x + cardWidth(level, card)) * k).toBeLessThanOrEqual(frame.width + 1e-9);
+        expect(y + card.y * k).toBeGreaterThanOrEqual(-1e-9);
+        expect(y + (card.y + level.cardSize.height) * k).toBeLessThanOrEqual(
+          frame.height - FIT_FOOT + 1e-9,
+        );
+      }
+    }
+  }
+  expect(fitCamera(FACTORY_MAP, FACTORY_MAP, hero(792)).k).toBeLessThan(FIT_MIN);
+});
+
+test('Fit and the opening camera agree wherever the whole level fits at or above the floor', () => {
+  for (let w = PHONE; w <= 2560; w += 7) {
+    const frame = hero(w);
+    for (const level of rootAndViews) {
+      const fit = fitCamera(FACTORY_MAP, level, frame);
+      if (fit.k >= FIT_MIN) expect(openCamera(FACTORY_MAP, level, frame)).toEqual(fit);
+    }
+  }
 });
 
 test('below the phone width fit still fits the whole map under the floor', () => {
@@ -475,8 +506,9 @@ test('at the phone width a drill-down view is capped by levelMax and centred in 
   const level = view('deploy');
   const world = worldSize(level);
   const k = fitScale(world, frame, levelMax(FACTORY_MAP, level, frame));
-  const cam = fitCamera(FACTORY_MAP, level, frame);
+  const cam = openCamera(FACTORY_MAP, level, frame);
   expect(cam.k).toBe(Math.max(FIT_MIN, k));
+  expect(fitCamera(FACTORY_MAP, level, frame).k).toBe(k);
   expect(cam.x).toBe(Math.max(FIT_PAD, (frame.width - world.width * cam.k) / 2));
   expect(cam.y).toBe(Math.max(FIT_PAD, (frame.height - FIT_FOOT - world.height * cam.k) / 2));
 });

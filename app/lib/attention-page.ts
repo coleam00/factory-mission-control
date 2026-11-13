@@ -19,7 +19,7 @@ import {
   UNSTICK_KINDS,
   type UnstickRow,
 } from './attention';
-import type { FailureGroupRow, StopClass } from './failures';
+import { type FailureGroupRow, failuresSince, type StopClass } from './failures';
 import { localDayStart, localMinute, shortRunId } from './format';
 import { askAbout, type ManagerAsk } from './manager';
 import { stepPath } from './lap-graph';
@@ -548,6 +548,11 @@ export const ATTENTION_SOURCES = {
   unstick: { query: 'unstick', kind: 'unstick', what: 'what stopped moving' },
   failures: { query: 'failure-groups', kind: 'fix', what: 'failures' },
 } as const;
+
+/** The arguments a source's query takes after the factory: only failure-groups takes one, its cutoff. */
+export function sourceArgs(key: keyof typeof ATTENTION_SOURCES, now: Date): string[] | undefined {
+  return key === 'failures' ? [failuresSince(now)] : undefined;
+}
 
 /** The nav badge's panel of one of those queries, named apart from the page's own panel of it. */
 export const badgePanelName = (query: string): string => `attention-count:${query}`;

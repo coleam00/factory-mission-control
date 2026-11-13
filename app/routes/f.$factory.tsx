@@ -1,6 +1,7 @@
 import type { ReactElement } from 'react';
 import { Navigate, useParams, useSearchParams } from 'react-router';
 import { Attention as AttentionPage } from '../components/Attention';
+import { Column } from '../components/Column';
 import { placeAddress } from '../lib/places';
 import { homeAddressTarget } from '../routing';
 
@@ -11,8 +12,8 @@ export default function Attention(): ReactElement {
   const target = homeAddressTarget(factory, search);
   if (target !== placeAddress(factory, '')) return <Navigate replace to={target} />;
   return (
-    <main>
+    <Column width="max-w-[820px]">
       <AttentionPage factory={factory} />
-    </main>
+    </Column>
   );
 }

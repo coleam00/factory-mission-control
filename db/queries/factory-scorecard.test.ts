@@ -11,12 +11,15 @@ import { migratedDb, queries } from './test-seed';
 
 const sql = queries.find(([name]) => name === 'factory-scorecard')?.[1] as string;
 const NOW = new Date('2026-11-11T12:00:00Z');
-const UNTIL = '2026-11-12';
+// Whole UTC days: 60, 30, 14, 7 days before 2026-11-12, then that midnight (scorecardEdges, with the clock in UTC).
+const EDGES = ['2026-09-13', '2026-10-13', '2026-10-29', '2026-11-05', '2026-11-12'].map(
+  (day) => `${day}T00:00:00.000Z`,
+);
 const PR = 'https://github.com/coleam00/factory-mission-control/pull/200';
 
 let db: Db;
 const scorecard = async (factory = 'mission-control') =>
-  (await db.query(sql, [factory, UNTIL])) as unknown as FactoryScorecardRow[];
+  (await db.query(sql, [factory, ...EDGES])) as unknown as FactoryScorecardRow[];
 const row = async (name: string, factory?: string) =>
   (await scorecard(factory)).find((r) => r.name === name);
 
@@ -209,7 +212,7 @@ describe('factory-scorecard over the fixture records', () => {
     await db.query('ANALYZE');
     const plan = (await db.query(`EXPLAIN (ANALYZE, FORMAT JSON) ${sql}`, [
       'mission-control',
-      UNTIL,
+      ...EDGES,
     ])) as unknown as { 'QUERY PLAN': { 'Execution Time': number }[] }[];
     expect(plan[0]?.['QUERY PLAN'][0]?.['Execution Time']).toBeLessThan(100);
   });

@@ -9,6 +9,7 @@ import {
   type CheckLineRow,
   consoleUrl,
   isOldLoop,
+  lapHref,
   issueUrl,
   lapOutcome,
   type OneLapRow,
@@ -21,6 +22,8 @@ import {
   displayStep,
   failedAttempt,
   managerRead,
+  type NothingToDo,
+  nothingToDo,
   type Round,
   runCost,
   runTimeline,
@@ -223,7 +226,7 @@ export function RunView({
           timeline={timeline}
           map={mapRows}
           consoleHref={consoleHref}
-          resume={{ factory, runId: lap.run_id }}
+          resume={{ factory, runId: lap.run_id, demoted: nothingToDo(lap, now) !== null }}
           now={now}
           skippedOpen={skippedOpen}
         />
@@ -343,16 +346,18 @@ function RunHead({
   const tokens = runTokens(rows);
   const seconds = lap.status === 'running' ? since(lap.started_at, now) : durationOf(lap);
   const outcome = isOldLoop(lap.workflow_name) ? lapOutcome(lap) : null;
-  const read = managerRead(lap, rows, timeline);
+  const read = managerRead(lap, rows, timeline, now);
   const enabled = useActionsEnabled(factory);
   const start = useStartAction();
   const pending = useActionPending();
   const primary =
-    lap.status === 'failed' && read.resumeStep !== null
-      ? `Resume from ${read.resumeStep}`
-      : lap.status === 'paused' && lap.stop_step !== null && !waitsForSlot(lap)
-        ? 'Answer in console'
-        : null;
+    read.done !== null
+      ? read.done.open.label
+      : lap.status === 'failed' && read.resumeStep !== null
+        ? `Resume from ${read.resumeStep}`
+        : lap.status === 'paused' && lap.stop_step !== null && !waitsForSlot(lap)
+          ? 'Answer in console'
+          : null;
   return (
     <div
       data-lap={lap.run_id}
@@ -400,9 +405,16 @@ function RunHead({
           </div>
         </div>
         <div className="flex shrink-0 gap-2">
-          {primary === null ? null : enabled &&
-            read.resumeFrom !== null &&
-            lap.status === 'failed' ? (
+          {primary === null ? null : read.done !== null ? (
+            <a
+              data-action="primary"
+              data-act="open-item"
+              href={doneHref(read.done.open, lap, factory)}
+              className={buttonClass('primary')}
+            >
+              {primary}
+            </a>
+          ) : enabled && read.resumeFrom !== null && lap.status === 'failed' ? (
             <Button
               variant="primary"
               disabled={pending}
@@ -441,6 +453,13 @@ function RunHead({
   );
 }
 
+/** Where the finished run's primary button goes: the issue, the pull request, or the run that did the work. */
+function doneHref(open: NothingToDo['open'], lap: OneLapRow, factory: string): string {
+  if (open.kind === 'pr' && open.n !== null) return pullUrl(lap.repository, open.n);
+  if (open.kind === 'run' && open.runId !== null) return lapHref(factory, open.runId);
+  return lap.issue_url ?? issueUrl(lap.repository, open.n ?? 0);
+}
+
 function ManagerRead({
   lap,
   rows,
@@ -458,6 +477,7 @@ function ManagerRead({
       data-code-failure={read.codeFailure}
       data-resume-step={read.resumeStep ?? undefined}
       data-resume-cost={read.resumeCost ?? undefined}
+      data-nothing-to-do={read.done === null ? undefined : ''}
       className="rounded-[var(--v3-radius-card)] border border-[color:var(--v3-you-line)] bg-[var(--v3-you-wash)] px-4 py-3.5"
     >
       <div className="mb-1.5 flex items-center gap-2 text-[13.5px] font-semibold text-[color:var(--v3-you-2)]">
@@ -506,7 +526,7 @@ function RunTimeline({
   map: readonly LapMapRow[];
   consoleHref: string;
   /** Which run a failed step resumes. */
-  resume: { factory: string; runId: string };
+  resume: { factory: string; runId: string; demoted: boolean };
   now: number;
   skippedOpen: boolean;
 }): ReactElement {
@@ -674,7 +694,7 @@ function FailedStep({
 }: {
   row: StepAttemptRow;
   consoleHref: string;
-  resume: { factory: string; runId: string };
+  resume: { factory: string; runId: string; demoted: boolean };
 }): ReactElement {
   const enabled = useActionsEnabled(resume.factory);
   const start = useStartAction();
@@ -689,7 +709,7 @@ function FailedStep({
           <>
             {enabled ? (
               <Button
-                variant="primary"
+                variant={resume.demoted ? 'secondary' : 'primary'}
                 disabled={pending}
                 data-act="resume"
                 data-act-run={resume.runId}
@@ -708,7 +728,10 @@ function FailedStep({
                 Resume from here
               </Button>
             ) : (
-              <a href={consoleHref} className={buttonClass('primary')}>
+              <a
+                href={consoleHref}
+                className={buttonClass(resume.demoted ? 'secondary' : 'primary')}
+              >
                 Resume from here
               </a>
             )}

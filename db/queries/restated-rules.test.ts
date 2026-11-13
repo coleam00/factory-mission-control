@@ -710,25 +710,179 @@ test('failure-groups resolves a failure by a later run on the item every other s
         );
       }
     };
-    // The failed run holds claim 1, facts 2 and input 3 as listed; a later run completes on one item.
-    const cases = [
-      { workflow: 'claim-wins', src: { claim: 1, facts: 2, input: 3 }, done: 1, resolved: true },
-      { workflow: 'claim-only', src: { claim: 1, facts: 2, input: 3 }, done: 2, resolved: false },
-      { workflow: 'facts-wins', src: { facts: 2, input: 3 }, done: 2, resolved: true },
-      { workflow: 'facts-over-input', src: { facts: 2, input: 3 }, done: 3, resolved: false },
-      { workflow: 'input-only', src: { input: 3 }, done: 3, resolved: true },
+    type Src = { claim?: number; facts?: number; input?: number };
+    // The failed run and the later completed run each hold the item their sources name, by the shared
+    // claim > facts > input precedence: either side reversing it changes which cases resolve.
+    const cases: { workflow: string; src: Src; later: Src; resolved: boolean }[] = [
+      {
+        workflow: 'claim-wins',
+        src: { claim: 1, facts: 2, input: 3 },
+        later: { input: 1 },
+        resolved: true,
+      },
+      {
+        workflow: 'claim-only',
+        src: { claim: 1, facts: 2, input: 3 },
+        later: { input: 2 },
+        resolved: false,
+      },
+      { workflow: 'facts-wins', src: { facts: 2, input: 3 }, later: { input: 2 }, resolved: true },
+      {
+        workflow: 'facts-over-input',
+        src: { facts: 2, input: 3 },
+        later: { input: 3 },
+        resolved: false,
+      },
+      { workflow: 'input-only', src: { input: 3 }, later: { input: 3 }, resolved: true },
+      {
+        workflow: 'later-claim-wins',
+        src: { input: 1 },
+        later: { claim: 1, facts: 2, input: 3 },
+        resolved: true,
+      },
+      {
+        workflow: 'later-claim-only',
+        src: { input: 1 },
+        later: { claim: 2, facts: 1, input: 1 },
+        resolved: false,
+      },
+      {
+        workflow: 'later-facts-wins',
+        src: { input: 1 },
+        later: { facts: 1, input: 3 },
+        resolved: true,
+      },
+      {
+        workflow: 'later-facts-over-input',
+        src: { input: 1 },
+        later: { facts: 2, input: 1 },
+        resolved: false,
+      },
     ];
     for (const c of cases) {
       await lap(c.workflow, 'failed', '2026-10-20', c.src);
-      await lap(c.workflow, 'completed', '2026-10-21', { input: c.done });
+      await lap(c.workflow, 'completed', '2026-10-21', c.later);
     }
-    const counted = (await db.query(sqlOf('failure-groups'), ['f'])).map((g) => g.workflow_name);
+    const counted = (
+      await db.query(sqlOf('failure-groups'), ['f', '2000-01-01T00:00:00.000Z'])
+    ).map((g) => g.workflow_name);
     expect(counted.sort()).toEqual(
       cases
         .filter((c) => !c.resolved)
         .map((c) => c.workflow)
         .sort(),
     );
+    // The run page restates the later run's item in one-lap.sql: it finishes the same runs.
+    for (const c of cases) {
+      const [failed] = await db.query(
+        `SELECT run_id FROM mc.laps WHERE factory = 'f' AND workflow_name = $1 AND status = 'failed'`,
+        [c.workflow],
+      );
+      const [row] = await db.query(sqlOf('one-lap'), ['f', failed?.run_id]);
+      expect([c.workflow, row?.finished_by !== null]).toEqual([c.workflow, c.resolved]);
+    }
+  } finally {
+    await db.close();
+  }
+}, 60_000);
+
+test('failure-groups and the run page agree on which failed runs are finished', async () => {
+  const db = await migratedDb();
+  try {
+    await db.query(
+      `INSERT INTO mc.factories (name, repository, codebase, console) VALUES ('f', 'o/r', 'o/r', 'c')`,
+    );
+    const issue = (n: number, state: 'open' | 'closed') =>
+      db.query(
+        `INSERT INTO mc.issues (factory, number, title, state, url, created_at, updated_at, closed_at)
+         VALUES ('f', $1, 't', $2, 'u', now(), now(), CASE WHEN $2 = 'closed' THEN now() END)`,
+        [n, state],
+      );
+    const pull = (n: number, state: 'open' | 'closed') =>
+      db.query(
+        `INSERT INTO mc.pull_requests (factory, number, title, state, head_sha, url, created_at, updated_at, closed_at)
+         VALUES ('f', $1, 't', $2, 'sha', 'u', now(), now(), CASE WHEN $2 = 'closed' THEN now() END)`,
+        [n, state],
+      );
+    let k = 0;
+    const lap = async (
+      workflow: string,
+      status: 'failed' | 'completed',
+      at: string,
+      src: { issue?: number; pr?: number; transient?: boolean },
+    ) => {
+      const id = `5eed0000-0000-4000-8000-${String(++k).padStart(12, '0')}`;
+      await db.query(
+        `INSERT INTO mc.laps (run_id, factory, workflow_name, status, started_at, completed_at, issue_number)
+         VALUES ($1, 'f', $2, $3, $4::timestamptz, $4::timestamptz, $5)`,
+        [id, workflow, status, at, src.issue ?? null],
+      );
+      if (src.pr !== undefined) {
+        await db.query(
+          `INSERT INTO mc.lap_steps (run_id, step_id, status, pr_number) VALUES ($1, 'select', 'completed', $2)`,
+          [id, src.pr],
+        );
+      }
+      if (status === 'failed') {
+        await db.query(
+          `INSERT INTO mc.lap_steps (run_id, step_id, status, completed_at, error)
+           VALUES ($1, 'prepare', 'failed', $2::timestamptz, $3)`,
+          [
+            id,
+            at,
+            src.transient
+              ? "Couldn't connect to compute node"
+              : `error: case ${String.fromCharCode(96 + k)}${String.fromCharCode(96 + k)}`,
+          ],
+        );
+      }
+      return id;
+    };
+    const oct = (day: number) => `2026-10-${day}T09:00:00Z`;
+    await issue(1, 'open');
+    await issue(2, 'open');
+    await issue(3, 'closed');
+    await issue(4, 'open');
+    await pull(70, 'closed');
+    await pull(71, 'open');
+
+    const later = await lap('w1', 'failed', oct(20), { issue: 1 });
+    const laterDone = await lap('w1', 'completed', oct(21), { issue: 1 });
+    await lap('w2', 'failed', oct(20), { issue: 2 });
+    await lap('w2', 'failed', oct(21), { issue: 2 });
+    await lap('w3', 'failed', oct(20), { issue: 2 });
+    await lap('other', 'completed', oct(21), { issue: 2 });
+    await lap('w4', 'completed', oct(10), { issue: 2 });
+    await lap('w4', 'failed', oct(20), { issue: 2 });
+    await lap('w5', 'failed', oct(20), { issue: 3 });
+    await lap('w6', 'failed', oct(20), { pr: 70 });
+    await lap('w7', 'failed', oct(20), { pr: 71 });
+    await lap('w8', 'failed', oct(20), { pr: 71 });
+    await lap('w8', 'completed', oct(21), { pr: 71 });
+    await lap('w9', 'failed', oct(20), {});
+    await lap('w9', 'completed', oct(21), { issue: 4 });
+    await lap('w10', 'failed', oct(20), {});
+    await lap('other', 'completed', oct(22), {});
+    // The one exception, kept on purpose: a transient failure is also retried by a run on any other item.
+    const retried = await lap('w11', 'failed', oct(20), { issue: 1, transient: true });
+    await lap('w11', 'completed', oct(21), { issue: 2 });
+
+    const groups = await db.query(sqlOf('failure-groups'), ['f', '2000-01-01T00:00:00.000Z']);
+    const counted = new Set(groups.map((g) => g.latest_run_id));
+    const failed = await db.query(
+      `SELECT run_id FROM mc.laps WHERE factory = 'f' AND status = 'failed'`,
+    );
+    expect(failed).toHaveLength(12);
+    for (const { run_id } of failed) {
+      const [row] = await db.query(sqlOf('one-lap'), ['f', run_id]);
+      const finished = row?.item_closed_at !== null || row?.finished_by !== null;
+      if (run_id === retried) {
+        expect([run_id, counted.has(run_id as string), finished]).toEqual([run_id, false, false]);
+      } else {
+        expect([run_id, counted.has(run_id as string)]).toEqual([run_id, !finished]);
+      }
+    }
+    expect((await db.query(sqlOf('one-lap'), ['f', later]))[0]?.finished_by).toBe(laterDone);
   } finally {
     await db.close();
   }
@@ -1139,10 +1293,29 @@ test('the retried rule reads the same in failure-groups, retried-runs and the li
     await lap('stuck', 'failed', '2026-10-24T09:00:00Z', blip);
     await lap('steady', 'failed', '2026-10-24T07:00:00Z', 'error: type check failed');
     await lap('steady', 'completed', '2026-10-24T07:30:00Z');
+    await lap('solo', 'failed', '2026-10-24T07:40:00Z', 'error: lint failed');
+    // Resolved by age, at the cutoff exactly and before it, and by a closed item.
+    await lap('aged', 'failed', '2026-10-17T00:00:00Z', 'error: aged at the cutoff');
+    await lap('aged', 'failed', '2026-10-10T00:00:00Z', 'error: aged before the cutoff');
+    await db.query(
+      `INSERT INTO mc.issues (factory, number, title, state, url, created_at, updated_at)
+       VALUES ('f', 7, 't', 'closed', 'u', '2026-10-01T00:00:00Z', '2026-10-01T00:00:00Z')`,
+    );
+    const onClosed = await lap('closing', 'failed', '2026-10-24T07:50:00Z', 'error: closed item');
+    await db.query(
+      `INSERT INTO mc.claims (factory, issue_number, run_id, claimed_at)
+       VALUES ('f', 7, $1, '2026-10-24T07:50:00Z')`,
+      [onClosed],
+    );
 
+    const since = '2026-10-17T00:00:00.000Z';
     const sqlOf = (name: string) => queries.find(([q]) => q === name)?.[1] as string;
-    const cards = (await db.query(sqlOf('failure-groups'), ['f'])).map((g) => g.signature).sort();
-    const live = (await db.query(FAILED_SIGNATURES_SQL, ['f'])).map((r) => r.signature).sort();
+    const cards = (await db.query(sqlOf('failure-groups'), ['f', since]))
+      .map((g) => g.signature)
+      .sort();
+    const live = (await db.query(FAILED_SIGNATURES_SQL, ['f', since]))
+      .map((r) => r.signature)
+      .sort();
     expect(cards).toEqual(live);
     expect(cards).toHaveLength(2);
     const retried = await db.query(sqlOf('retried-runs'), ['f', '2026-10-24T00:00:00.000Z']);

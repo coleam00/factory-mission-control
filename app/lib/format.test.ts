@@ -155,8 +155,7 @@ const OWN_TIME_FORMATS = [
 const formatsTimeItself = (source: string) =>
   OWN_TIME_FORMATS.some((pattern) => pattern.test(source));
 
-// factory-scorecard.ts builds its UTC-day window key on purpose: the scorecard counts whole UTC days.
-const UTC_ON_PURPOSE = ['lib/format.ts', 'lib/factory-scorecard.ts'];
+const UTC_ON_PURPOSE = ['lib/format.ts'];
 
 test('no file in app/ but format.ts formats a time or date itself', () => {
   const offenders = [...new Bun.Glob('**/*.{ts,tsx}').scanSync(appDir)]

@@ -6,6 +6,7 @@ import {
   unstickCards,
   unstickKey,
 } from '../../app/lib/attention-page';
+import { SEED_FAILURES_SINCE, SEED_NOW } from '../../db/queries/test-seed';
 import { openPage, type Page } from '../lib/cdp';
 import type { Row } from '../lib/db';
 import {
@@ -135,11 +136,12 @@ const PROJECTED_ATTENTION_SQL = `SELECT a.run_id::text AS run, f.console,
   WHERE a.factory = $1 ORDER BY 1`;
 
 /**
- * The signatures of unresolved failures, read apart from failure-groups.sql (the owner's ruling of
- * 2026-11-09, issue #560): a failed run is resolved by a later completed run of its workflow on the same
- * issue (claim, else facts step, else input) or, with no issue, the same PR, or by being 14 days older
- * than the factory's latest stop. A transient failure (issue #628) is also resolved by a later completed
- * run of its workflow on any item.
+ * The signatures of unresolved failures, read apart from failure-groups.sql (owner change 4 of
+ * 2026-11-12, issue #647): $2 is the instant 7 days ago. A failed run is resolved when its item is closed
+ * (the issue, else the PR), when a later completed run of its workflow is on the same issue (claim, else
+ * facts step, else input) or, with no issue, the same PR (with no item at all, on anything), or when it
+ * stopped at or before $2. A transient failure (issue #628) is also resolved by a later completed run of
+ * its workflow on any item.
  */
 export const FAILED_SIGNATURES_SQL = `WITH item AS (
     SELECT l.run_id,
@@ -152,16 +154,20 @@ export const FAILED_SIGNATURES_SQL = `WITH item AS (
     FROM mc.laps l WHERE l.factory = $1
   ), stop AS (
     SELECT s.signature, s.class, s.status, s.workflow_name, s.stopped_at, i.issue,
-      CASE WHEN i.issue IS NULL THEN i.pr END AS pr
+      CASE WHEN i.issue IS NULL THEN i.pr END AS pr,
+      CASE WHEN i.issue IS NOT NULL
+        THEN EXISTS (SELECT 1 FROM mc.issues x WHERE x.factory = s.factory AND x.number = i.issue AND x.state = 'closed')
+        ELSE EXISTS (SELECT 1 FROM mc.pull_requests x WHERE x.factory = s.factory AND x.number = i.pr AND x.state = 'closed')
+      END AS closed
     FROM mc.run_stops s LEFT JOIN item i ON i.run_id = s.run_id WHERE s.factory = $1
   )
   SELECT DISTINCT f.signature FROM stop f
   WHERE f.status = 'failed'
-    AND (f.stopped_at IS NULL OR (f.stopped_at AT TIME ZONE 'UTC')::date
-      > (SELECT max((x.stopped_at AT TIME ZONE 'UTC')::date) FROM stop x) - 14)
+    AND (f.stopped_at IS NULL OR f.stopped_at > $2::timestamptz)
+    AND NOT f.closed
     AND NOT EXISTS (
       SELECT 1 FROM stop o WHERE o.status = 'completed' AND o.workflow_name = f.workflow_name
-        AND (o.issue = f.issue OR o.pr = f.pr) AND o.stopped_at > f.stopped_at)
+        AND ((f.issue IS NULL AND f.pr IS NULL) OR o.issue = f.issue OR o.pr = f.pr) AND o.stopped_at > f.stopped_at)
     AND NOT (coalesce(f.class = 'transient', false) AND EXISTS (
       SELECT 1 FROM stop o WHERE o.status = 'completed' AND o.workflow_name = f.workflow_name
         AND o.stopped_at > f.stopped_at))
@@ -211,6 +217,7 @@ export function fixMismatches(shown: ShownCard[], signatures: Row[]): string[] {
     idsOf(shown, 'fix'),
     signatures.map((r) => String(r.signature)).sort(),
   );
+  if (signatures.length === 0) mismatches.push('the seed has no unresolved failure');
   return mismatches;
 }
 
@@ -309,7 +316,7 @@ export function attentionPhase(ctx: LiveContext): LivePhase {
     async open() {
       const page = await openPage(deps.env);
       attentionPage = page;
-      await page.goto(url());
+      await page.goto(url(), SEED_NOW);
       await page.evaluate('window.__mcNoReload = true');
       const ready = await page.evaluate<boolean>(
         pageWait(
@@ -334,7 +341,7 @@ export function attentionPhase(ctx: LiveContext): LivePhase {
 
       const archon = await db.query(ARCHON_ATTENTION_SQL, [factory]);
       const projected = await db.query(PROJECTED_ATTENTION_SQL, [factory]);
-      const signatures = await db.query(FAILED_SIGNATURES_SQL, [factory]);
+      const signatures = await db.query(FAILED_SIGNATURES_SQL, [factory, SEED_FAILURES_SINCE]);
       const stuck = (await db.query(queries.get('unstick') as string, [
         factory,
       ])) as unknown as UnstickRow[];

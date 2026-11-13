@@ -132,6 +132,7 @@ export function formatProjectLocator(project: {
 }
 
 const pad2 = (n: number): string => n.toString().padStart(2, '0');
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 /** HH:MM in the viewer's time zone; empty when there is no time. */
@@ -149,6 +150,11 @@ export function localDay(at: Date): string {
 /** The instant the viewer's local day containing `now` began, as an ISO string. */
 export function localDayStart(now: Date): string {
   return new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
+}
+
+/** `Oct 11`: the month and day in the viewer's time zone. */
+export function monthDay(at: Date): string {
+  return `${MONTHS[at.getMonth()]} ${at.getDate()}`;
 }
 
 /** `Thu 07:29`: the weekday and time in the viewer's time zone. */

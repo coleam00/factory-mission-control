@@ -25,3 +25,6 @@ dist/
 .mc-serve.log
 .mc-serve.pid
 .mc-local/
+
+# Browser-tool scratch a review lens writes into the checkout (failed #630 r3, #647 r2 on mutates_checkout)
+.playwright-cli/

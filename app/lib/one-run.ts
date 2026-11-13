@@ -4,7 +4,7 @@
  * the head, the read and the timeline compute from the same rows. Pure, no React.
  */
 import type { StopClass } from './failures';
-import { formatCost } from './format';
+import { clock, formatCost, monthDay, shortRunId } from './format';
 import { type LapMapRow, mapPathOf } from './lap-graph';
 import { costOf, OUTCOME_LABEL } from './laps';
 import { questionOf } from './work-item';
@@ -256,6 +256,14 @@ export interface ManagerRead {
   /** The failed step's own id, what a resume names; `resumeStep` is how the page spells it. */
   resumeFrom: string | null;
   resumeCost: number | null;
+  /** Set when a failed run has nothing left to do (its item is finished): the primary action opens this instead of resuming. */
+  done: NothingToDo | null;
+}
+
+/** Where a failed run's primary button goes when its item is finished: the item, or the run that finished the work. */
+export interface NothingToDo {
+  text: string;
+  open: { label: string; kind: 'issue' | 'pr' | 'run'; n: number | null; runId: string | null };
 }
 
 const firstLine = (text: string | null) =>
@@ -270,6 +278,7 @@ const NO_STOP = {
   resumeStep: null,
   resumeFrom: null,
   resumeCost: null,
+  done: null,
 } as const;
 
 /** A paused run holding an answer that is queued for a free slot; the pill, the read and the primary action all key off this. */
@@ -311,11 +320,57 @@ function finishedRead(
   return parts;
 }
 
+/** `at` as a clock time on the viewer's today, else the short local date and the clock. */
+function whenText(at: Date | string, now: number): string {
+  const date = new Date(at);
+  const today = new Date(now);
+  return date.toDateString() === today.toDateString()
+    ? clock(date)
+    : `${monthDay(date)}, ${clock(date)}`;
+}
+
+/**
+ * A failed run whose item is closed, or that a later run of its workflow completed, has nothing to
+ * do (owner change 7, 2026-11-12): the read says why and the primary action opens the item.
+ */
+export function nothingToDo(lap: OneLapRow, now: number): NothingToDo | null {
+  if (lap.status !== 'failed') return null;
+  const by = lap.closed_by === null ? '' : ` by run ${shortRunId(lap.closed_by)}`;
+  const item = lap.issue_number ?? lap.item_pr;
+  const open: NothingToDo['open'] =
+    lap.issue_number !== null
+      ? { label: `Open #${lap.issue_number}`, kind: 'issue', n: lap.issue_number, runId: null }
+      : lap.item_pr !== null
+        ? { label: `Open #${lap.item_pr}`, kind: 'pr', n: lap.item_pr, runId: null }
+        : {
+            label: `Open run ${lap.finished_by === null ? '' : shortRunId(lap.finished_by)}`,
+            kind: 'run',
+            n: null,
+            runId: lap.finished_by,
+          };
+  const text = (() => {
+    if (lap.item_closed_at !== null && item !== null) {
+      const merged = lap.item_merged_at;
+      return merged === null
+        ? `Nothing to do: #${item} closed at ${whenText(lap.item_closed_at, now)}${by}.`
+        : `Nothing to do: #${item} merged at ${whenText(merged, now)}${by}.`;
+    }
+    if (lap.finished_by === null || lap.finished_at === null) return null;
+    const run = shortRunId(lap.finished_by);
+    const at = whenText(lap.finished_at, now);
+    return item === null
+      ? `Nothing to do: run ${run} of ${lap.workflow_name} completed at ${at}.`
+      : `Nothing to do: run ${run} completed #${item} at ${at}.`;
+  })();
+  return text === null ? null : { text, open };
+}
+
 /** The manager's read of a run, written from its stop record and rows by fixed templates. */
 export function managerRead(
   lap: OneLapRow,
   rows: readonly StepAttemptRow[],
   timeline: readonly TimelineEntry[],
+  now: number = Date.now(),
 ): ManagerRead {
   const plain = (...parts: ReadPart[]): ManagerRead => ({ ...NO_STOP, parts });
   switch (lap.status) {
@@ -333,7 +388,9 @@ export function managerRead(
         loop?.kind === 'loop'
           ? loop.rounds.find((r) => failed && r.rows.includes(failed))
           : undefined;
+      const done = nothingToDo(lap, now);
       const parts: ReadPart[] = [
+        ...(done === null ? [] : [{ text: `${done.text} ` }]),
         {
           text: stepId === null ? 'The run' : displayStep(stepId),
           bold: true,
@@ -350,7 +407,7 @@ export function managerRead(
       let resumeStep: string | null = null;
       let resumeFrom: string | null = null;
       let resumeCost: number | null = null;
-      if (failed !== null) {
+      if (failed !== null && done === null) {
         const estimate = resumeEstimate(failed, rows, timeline);
         resumeStep = estimate.step;
         resumeFrom = failed.step_id;
@@ -372,7 +429,7 @@ export function managerRead(
               ? ' This is a code failure.'
               : ` This is not a code failure: ${NOT_CODE[stopClass]}.`,
       });
-      return { parts, stopClass, codeFailure, resumeStep, resumeFrom, resumeCost };
+      return { parts, stopClass, codeFailure, resumeStep, resumeFrom, resumeCost, done };
     }
     case 'paused': {
       if (waitsForSlot(lap)) {
