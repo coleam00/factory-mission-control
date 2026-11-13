@@ -1,23 +1,16 @@
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import {
-  UNSTICK_ACTIONS,
-  UNSTICK_KINDS,
-  type UnstickRow,
-} from "../../app/lib/attention";
-import { QUEUE_RUNS, QUEUE_UNSTICK } from "../../scripts/fixture/seed";
-import type { Db } from "../../scripts/lib/db";
-import { onTheSeed, queries } from "./test-seed";
+import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { UNSTICK_ACTIONS, UNSTICK_KINDS, type UnstickRow } from '../../app/lib/attention';
+import { QUEUE_RUNS, QUEUE_UNSTICK } from '../../scripts/fixture/seed';
+import type { Db } from '../../scripts/lib/db';
+import { onTheSeed, queries } from './test-seed';
 
-const UNSTICK = queries.find(([n]) => n === "unstick")?.[1] as string;
+const UNSTICK = queries.find(([n]) => n === 'unstick')?.[1] as string;
 
-type Expected = Pick<
-  UnstickRow,
-  "kind" | "number" | "run_id" | "waits_on" | "action"
-> & {
+type Expected = Pick<UnstickRow, 'kind' | 'number' | 'run_id' | 'waits_on' | 'action'> & {
   since: string;
 };
 
-describe("the unstick query on the seed", () => {
+describe('the unstick query on the seed', () => {
   let db: Db;
 
   beforeAll(async () => {
@@ -25,19 +18,16 @@ describe("the unstick query on the seed", () => {
   }, 60_000);
   afterAll(() => db.close());
 
-  test("finds the blocked and the parked item whose blockers merged, the capacity wait and the stale claim", async () => {
-    const rows = await db.query(UNSTICK, ["queue-factory"]);
+  test('finds the blocked and the parked item whose blockers merged, the capacity wait and the stale claim', async () => {
+    const rows = await db.query(UNSTICK, ['queue-factory']);
     const u = QUEUE_UNSTICK;
     const found = rows.map((r) => r as unknown as UnstickRow);
-    const [factory] = await db.query(
-      "SELECT console FROM mc.factories WHERE name = $1",
-      ["queue-factory"],
-    );
+    const [factory] = await db.query('SELECT console FROM mc.factories WHERE name = $1', [
+      'queue-factory',
+    ]);
     for (const r of found) expect(r.console).toBe(String(factory?.console));
     expect(new Set(found.map((r) => r.kind))).toEqual(new Set(UNSTICK_KINDS));
-    expect(new Set(found.map((r) => r.action))).toEqual(
-      new Set(UNSTICK_ACTIONS),
-    );
+    expect(new Set(found.map((r) => r.action))).toEqual(new Set(UNSTICK_ACTIONS));
     expect(
       rows
         .map((r) => ({
@@ -51,105 +41,98 @@ describe("the unstick query on the seed", () => {
         .sort((a, b) => String(a.kind).localeCompare(String(b.kind))),
     ).toEqual<Expected[]>([
       {
-        kind: "blocked",
+        kind: 'blocked',
         number: u.blockedMerged.issue,
         run_id: null,
         waits_on: `#${u.blockedMerged.blocker}`,
         since: u.mergedAt,
-        action: "retriage",
+        action: 'retriage',
       },
       {
-        kind: "capacity",
+        kind: 'capacity',
         number: 458,
         run_id: QUEUE_RUNS.capacity,
-        waits_on: "a free slot",
+        waits_on: 'a free slot',
         since: u.capacitySince,
-        action: "resume",
+        action: 'resume',
       },
       {
-        kind: "claim",
+        kind: 'claim',
         number: u.claimed.issue,
         run_id: QUEUE_RUNS.built,
-        waits_on: "a claim held by a finished run",
+        waits_on: 'a claim held by a finished run',
         since: expect.any(String) as unknown as string,
-        action: "retriage",
+        action: 'retriage',
       },
       {
-        kind: "parked",
+        kind: 'parked',
         number: u.parkedMerged.issue,
         run_id: null,
         waits_on: `#${u.parkedMerged.blocker}`,
         since: u.mergedAt,
-        action: "retriage",
+        action: 'retriage',
       },
     ]);
   });
 
-  test("names the item, what it waits on and why it was parked, so a card can say it in words", async () => {
+  test('names the item, what it waits on and why it was parked, so a card can say it in words', async () => {
     const u = QUEUE_UNSTICK;
-    const rows = (await db.query(UNSTICK, [
-      "queue-factory",
-    ])) as unknown as UnstickRow[];
+    const rows = (await db.query(UNSTICK, ['queue-factory'])) as unknown as UnstickRow[];
     const of = (kind: string) => rows.find((r) => r.kind === kind);
-    expect(of("parked")).toMatchObject({
+    expect(of('parked')).toMatchObject({
       title: `Queue issue ${u.parkedMerged.issue}`,
       blocker_titles: [`Queue issue ${u.parkedMerged.blocker}`],
       reason: u.parkedReason,
       open: true,
     });
-    expect(of("blocked")).toMatchObject({
+    expect(of('blocked')).toMatchObject({
       title: `Queue issue ${u.blockedMerged.issue}`,
       blocker_titles: [`Queue issue ${u.blockedMerged.blocker}`],
       reason: null,
       open: true,
     });
-    expect(of("capacity")).toMatchObject({
+    expect(of('capacity')).toMatchObject({
       blocker_titles: null,
       reason: null,
       open: false,
     });
-    expect(of("claim")).toMatchObject({
+    expect(of('claim')).toMatchObject({
       blocker_titles: null,
       reason: null,
       open: false,
     });
   });
 
-  test("reads a claim or capacity item as open once the mirror holds its issue open", async () => {
+  test('reads a claim or capacity item as open once the mirror holds its issue open', async () => {
     const number = QUEUE_UNSTICK.claimed.issue;
-    const at = "2026-10-24T09:08:00.000Z";
+    const at = '2026-10-24T09:08:00.000Z';
     await db.query(
       `INSERT INTO mc.issues (factory, number, title, state, url, created_at, updated_at)
        VALUES ('queue-factory', $1, 'open item', 'open', $2, $3, $3)`,
       [number, `https://github.com/example/queue-factory/issues/${number}`, at],
     );
     try {
-      const rows = (await db.query(UNSTICK, [
-        "queue-factory",
-      ])) as unknown as UnstickRow[];
+      const rows = (await db.query(UNSTICK, ['queue-factory'])) as unknown as UnstickRow[];
       const of = (kind: string) => rows.find((r) => r.kind === kind);
-      expect(of("capacity")).toMatchObject({ number, open: true });
-      expect(of("claim")).toMatchObject({ number, open: true });
+      expect(of('capacity')).toMatchObject({ number, open: true });
+      expect(of('claim')).toMatchObject({ number, open: true });
     } finally {
-      await db.query(
-        `DELETE FROM mc.issues WHERE factory = 'queue-factory' AND number = $1`,
-        [number],
-      );
+      await db.query(`DELETE FROM mc.issues WHERE factory = 'queue-factory' AND number = $1`, [
+        number,
+      ]);
     }
   });
 
-  test("flags nothing for an item whose blocker is still open, and runs on a factory without any", async () => {
-    const numbers = (await db.query(UNSTICK, ["queue-factory"])).map(
-      (r) => r.number,
-    );
+  test('flags nothing for an item whose blocker is still open, and runs on a factory without any', async () => {
+    const numbers = (await db.query(UNSTICK, ['queue-factory'])).map((r) => r.number);
     expect(numbers).not.toContain(QUEUE_UNSTICK.blockedOpen.issue);
     expect(numbers).not.toContain(QUEUE_UNSTICK.parkedOpen.issue);
     expect(numbers).not.toContain(413);
-    expect(await db.query(UNSTICK, ["mission-control"])).toEqual([]);
+    expect(await db.query(UNSTICK, ['mission-control'])).toEqual([]);
   });
 
-  test("flags an item only when every blocker is gone, and a blocker that is not mirrored is not gone", async () => {
-    const at = "2026-10-24T09:08:00.000Z";
+  test('flags an item only when every blocker is gone, and a blocker that is not mirrored is not gone', async () => {
+    const at = '2026-10-24T09:08:00.000Z';
     const url = (kind: string, n: number) =>
       `https://github.com/example/queue-factory/${kind}/${n}`;
     const pr = (n: number, merged: boolean) =>
@@ -158,37 +141,33 @@ describe("the unstick query on the seed", () => {
          VALUES ('queue-factory', $1, 'pr', $2, $3, $4, $5, $6, $6, $3)`,
         [
           n,
-          merged ? "closed" : "open",
+          merged ? 'closed' : 'open',
           merged ? at : null,
-          `${"f".repeat(39)}${n % 10}`,
-          url("pull", n),
+          `${'f'.repeat(39)}${n % 10}`,
+          url('pull', n),
           at,
         ],
       );
-    const item = async (
-      n: number,
-      blockers: number[],
-      kind: "dependency" | "ruling",
-    ) => {
+    const item = async (n: number, blockers: number[], kind: 'dependency' | 'ruling') => {
       await db.query(
         `INSERT INTO mc.issues (factory, number, title, state, url, created_at, updated_at)
          VALUES ('queue-factory', $1, 'item', 'open', $2, $3, $3)`,
-        [n, url("issues", n), at],
+        [n, url('issues', n), at],
       );
       await db.query(
         `INSERT INTO mc.work_item_states (project_key, number, revision, build_status, build_at, triage_at, stage)
          SELECT codebase, $1, 1, $2, $3, $4, $5 FROM mc.factories WHERE name = 'queue-factory'`,
         [
           n,
-          kind === "ruling" ? "parked" : null,
-          kind === "ruling" ? "2026-10-24T09:06:00.000Z" : null,
-          "2026-10-24T09:01:00.000Z",
-          kind === "dependency" ? "blocked" : null,
+          kind === 'ruling' ? 'parked' : null,
+          kind === 'ruling' ? '2026-10-24T09:06:00.000Z' : null,
+          '2026-10-24T09:01:00.000Z',
+          kind === 'dependency' ? 'blocked' : null,
         ],
       );
       for (const b of blockers) {
         await db.query(
-          kind === "dependency"
+          kind === 'dependency'
             ? "INSERT INTO mc.issue_dependencies (factory, issue_number, depends_on) VALUES ('queue-factory', $1, $2)"
             : "INSERT INTO mc.work_item_blockers (project_key, number, blocker) SELECT codebase, $1, $2 FROM mc.factories WHERE name = 'queue-factory'",
           [n, b],
@@ -202,31 +181,23 @@ describe("the unstick query on the seed", () => {
     await pr(478, false);
     await pr(480, true);
     await pr(481, true);
-    await item(470, [471, 472], "dependency");
-    await item(473, [474, 475], "dependency");
-    await item(476, [477, 478], "ruling");
-    await item(479, [480, 481], "dependency");
-    const rows = await db.query(UNSTICK, ["queue-factory"]);
-    const added = rows.filter(
-      (r) => Number(r.number) >= 470 && Number(r.number) <= 481,
-    );
-    expect(added.map((r) => [r.number, r.waits_on])).toEqual([
-      [479, "#480, #481"],
-    ]);
+    await item(470, [471, 472], 'dependency');
+    await item(473, [474, 475], 'dependency');
+    await item(476, [477, 478], 'ruling');
+    await item(479, [480, 481], 'dependency');
+    const rows = await db.query(UNSTICK, ['queue-factory']);
+    const added = rows.filter((r) => Number(r.number) >= 470 && Number(r.number) <= 481);
+    expect(added.map((r) => [r.number, r.waits_on])).toEqual([[479, '#480, #481']]);
   });
 
-  describe("a write sent from the dashboard that the mirror has not caught up with", () => {
+  describe('a write sent from the dashboard that the mirror has not caught up with', () => {
     const number = QUEUE_UNSTICK.blockedMerged.issue;
     const sentOf = async () => {
-      const rows = (await db.query(UNSTICK, [
-        "queue-factory",
-      ])) as unknown as UnstickRow[];
+      const rows = (await db.query(UNSTICK, ['queue-factory'])) as unknown as UnstickRow[];
       const [blocked] = rows.filter((r) => r.number === number);
-      expect(
-        rows
-          .filter((r) => r.number !== number)
-          .every((r) => r.sent_action === null),
-      ).toBe(true);
+      expect(rows.filter((r) => r.number !== number).every((r) => r.sent_action === null)).toBe(
+        true,
+      );
       return [blocked?.sent_action, blocked?.sent_at?.toISOString() ?? null];
     };
     const write = (
@@ -238,67 +209,57 @@ describe("the unstick query on the seed", () => {
       db.query(
         `INSERT INTO mc.actions (factory, who, action, item_number, comment_text, undone, sent_at, exit_code, finished_at)
          VALUES ('queue-factory', 'owner', $1, $2, $3, $4, $5, $6, $7)`,
-        [
-          action,
-          number,
-          action === "comment" ? "hello" : null,
-          at === null,
-          at,
-          exit,
-          finished,
-        ],
+        [action, number, action === 'comment' ? 'hello' : null, at === null, at, exit, finished],
       );
     const clean = async () => {
       await db.query(
         `DELETE FROM mc.actions WHERE factory = 'queue-factory' AND item_number = $1`,
         [number],
       );
-      await db.query(
-        `DELETE FROM mc.laps WHERE run_id = '5eed0690-0000-4000-8000-000000000001'`,
-      );
+      await db.query(`DELETE FROM mc.laps WHERE run_id = '5eed0690-0000-4000-8000-000000000001'`);
     };
-    const T1 = "2026-11-13T14:00:00.000Z";
-    const T2 = "2026-11-13T14:02:00.000Z";
+    const T1 = '2026-11-13T14:00:00.000Z';
+    const T2 = '2026-11-13T14:02:00.000Z';
 
-    test("names the latest write that was sent, not undone and exited 0", async () => {
+    test('names the latest write that was sent, not undone and exited 0', async () => {
       try {
         expect(await sentOf()).toEqual([null, null]);
-        await write("retriage", T1, 0);
-        expect(await sentOf()).toEqual(["retriage", T1]);
-        await write("close", T2, 0);
-        expect(await sentOf()).toEqual(["close", T2]);
-        await write("comment", "2026-11-13T14:03:00.000Z", 0);
-        expect((await sentOf())[0]).toBe("comment");
+        await write('retriage', T1, 0);
+        expect(await sentOf()).toEqual(['retriage', T1]);
+        await write('close', T2, 0);
+        expect(await sentOf()).toEqual(['close', T2]);
+        await write('comment', '2026-11-13T14:03:00.000Z', 0);
+        expect((await sentOf())[0]).toBe('comment');
       } finally {
         await clean();
       }
     });
 
-    test("does not count an undone write, a failed one or one with no exit yet", async () => {
+    test('does not count an undone write, a failed one or one with no exit yet', async () => {
       try {
-        await write("retriage", null, null);
-        await write("retriage", T1, 1);
-        await write("retriage", T2, null);
+        await write('retriage', null, null);
+        await write('retriage', T1, 1);
+        await write('retriage', T2, null);
         expect(await sentOf()).toEqual([null, null]);
       } finally {
         await clean();
       }
     });
 
-    test("ends when an intake run on the item has finished since the write", async () => {
+    test('ends when an intake run on the item has finished since the write', async () => {
       const lap = (completed: string | null) =>
         db.query(
           `INSERT INTO mc.laps (run_id, factory, workflow_name, status, started_at, completed_at, issue_number)
            VALUES ('5eed0690-0000-4000-8000-000000000001', 'queue-factory', 'archon-intake', $1, $2, $3, $4)`,
-          [completed === null ? "running" : "completed", T2, completed, number],
+          [completed === null ? 'running' : 'completed', T2, completed, number],
         );
       try {
-        await write("retriage", T1, 0);
+        await write('retriage', T1, 0);
         await lap(null);
-        expect(await sentOf()).toEqual(["retriage", T1]);
+        expect(await sentOf()).toEqual(['retriage', T1]);
         await db.query(
           `UPDATE mc.laps SET status = 'completed', completed_at = $1 WHERE run_id = $2`,
-          ["2026-11-13T14:05:00.000Z", "5eed0690-0000-4000-8000-000000000001"],
+          ['2026-11-13T14:05:00.000Z', '5eed0690-0000-4000-8000-000000000001'],
         );
         expect(await sentOf()).toEqual([null, null]);
       } finally {
@@ -306,21 +267,21 @@ describe("the unstick query on the seed", () => {
       }
     });
 
-    test("keeps a write sent after an intake run that started before it", async () => {
+    test('keeps a write sent after an intake run that started before it', async () => {
       try {
-        await write("retriage", T2, 0);
+        await write('retriage', T2, 0);
         await db.query(
           `INSERT INTO mc.laps (run_id, factory, workflow_name, status, started_at, completed_at, issue_number)
            VALUES ('5eed0690-0000-4000-8000-000000000001', 'queue-factory', 'archon-intake', 'completed', $1, $2, $3)`,
-          [T1, "2026-11-13T14:05:00.000Z", number],
+          [T1, '2026-11-13T14:05:00.000Z', number],
         );
-        expect(await sentOf()).toEqual(["retriage", T2]);
+        expect(await sentOf()).toEqual(['retriage', T2]);
       } finally {
         await clean();
       }
     });
 
-    test("keeps a sent close that only its own note has moved, and ends it once the issue moves after the CLI returned", async () => {
+    test('keeps a sent close that only its own note has moved, and ends it once the issue moves after the CLI returned', async () => {
       const [issue] = await db.query(
         `SELECT updated_at FROM mc.issues WHERE factory = 'queue-factory' AND number = $1`,
         [number],
@@ -332,11 +293,11 @@ describe("the unstick query on the seed", () => {
           [at, number],
         );
       try {
-        await write("close", T1, 0, T2);
-        expect(await sentOf()).toEqual(["close", T1]);
-        await touch("2026-11-13T14:01:00.000Z");
-        expect(await sentOf()).toEqual(["close", T1]);
-        await touch("2026-11-13T14:03:00.000Z");
+        await write('close', T1, 0, T2);
+        expect(await sentOf()).toEqual(['close', T1]);
+        await touch('2026-11-13T14:01:00.000Z');
+        expect(await sentOf()).toEqual(['close', T1]);
+        await touch('2026-11-13T14:03:00.000Z');
         expect(await sentOf()).toEqual([null, null]);
       } finally {
         await touch(before);

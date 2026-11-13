@@ -128,6 +128,9 @@ describe('answer', () => {
     });
     expect(row.sent_at).not.toBeNull();
     expect(String(row.output)).toContain('"ok":true');
+    expect(new Date(String(row.finished_at)).getTime()).toBeGreaterThanOrEqual(
+      new Date(String(row.sent_at)).getTime(),
+    );
   });
 
   test('free text goes with the declared other option, or alone on a message', async () => {
