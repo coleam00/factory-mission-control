@@ -72,6 +72,10 @@ export async function postAction(
 /** The factories the server holds an operator for, and those whose operator has a `login`. */
 export type Operators = { factories: string[]; logins: string[] };
 
+/** The writes the server refuses for an operator with no `login`; Close needs none. */
+export const needsLogin = (action: ActionRequest['action']): boolean =>
+  action === 'retriage' || action === 'comment';
+
 /** An operator with no `login`: the server refuses re-triage and comment for it. False when there is no operator. */
 export const loginMissing = ({ factories, logins }: Operators, factory: string): boolean =>
   factories.includes(factory) && !logins.includes(factory);

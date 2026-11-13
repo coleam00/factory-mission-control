@@ -21,7 +21,13 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { isAbsolute, join } from 'node:path';
 import type { Hono } from 'hono';
-import type { ActionBody, ActionRequest, ActionResult } from '../app/lib/actions';
+import type {
+  ActionBody,
+  ActionRequest,
+  ActionResult,
+  Operators as OperatorsBody,
+} from '../app/lib/actions';
+import { needsLogin } from '../app/lib/actions';
 import {
   ANSWER_TEXT_MAX,
   type AttentionOption,
@@ -318,7 +324,7 @@ async function checkItem(db: Db, request: ItemRequest, login: string | null): Pr
     const [row] = await db.query(OPEN_ISSUE_SQL, [request.factory, request.number]);
     return row === undefined ? null : String(row.repository);
   };
-  if (request.action === 'close') {
+  if (!needsLogin(request.action)) {
     const repository = await repositoryOf();
     return repository === null
       ? notOpen
@@ -333,9 +339,9 @@ async function checkItem(db: Db, request: ItemRequest, login: string | null): Pr
   const repository = await repositoryOf();
   if (repository === null) return notOpen;
   const calls =
-    request.action === 'retriage'
-      ? retriageCalls(repository, request.number, login)
-      : commentCalls(repository, request.number, login, request.text, crypto.randomUUID());
+    request.action === 'comment'
+      ? commentCalls(repository, request.number, login, request.text, crypto.randomUUID())
+      : retriageCalls(repository, request.number, login);
   return { calls, option: null };
 }
 
@@ -556,10 +562,11 @@ export function actionsFromEnv(env: Env, repoRoot: string): Actions | undefined 
 export function actionsRoutes(app: Hono, actions: Actions | undefined): void {
   app.get('/api/actions', (c) => {
     const operators = [...(actions?.operators ?? [])];
-    return c.json({
+    const body = {
       factories: operators.map(([name]) => name),
       logins: operators.filter(([, operator]) => operator.login !== null).map(([name]) => name),
-    });
+    } satisfies OperatorsBody;
+    return c.json(body);
   });
   app.post('/api/actions', async (c) => {
     if (!actions) return c.json({ error: 'actions are not configured' }, 503);

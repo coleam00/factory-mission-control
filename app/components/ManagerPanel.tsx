@@ -1,6 +1,6 @@
 import { type ReactElement, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router';
-import { quoted, TEXT_ANSWER_DETAIL } from '../lib/actions';
+import { needsLogin, quoted, TEXT_ANSWER_DETAIL } from '../lib/actions';
 import { clock, shortRunId } from '../lib/format';
 import {
   MAX_MESSAGE_CHARS,
@@ -172,9 +172,7 @@ function Proposals({
               ? `${label}: ${quoted(proposal.text)}`
               : label;
         // The server refuses a re-triage or a comment for an operator with no `login`.
-        const writable =
-          enabled &&
-          !(loginMissing && (proposal.action === 'retriage' || proposal.action === 'comment'));
+        const writable = enabled && !(loginMissing && needsLogin(proposal.action));
         // A run's action names the run after its label; a work item's label already names `#N`.
         const text = 'run_id' in proposal ? `${named} ${shortRunId(proposal.run_id)}` : named;
         return writable ? (

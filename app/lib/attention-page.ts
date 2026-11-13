@@ -11,7 +11,7 @@
  */
 import type { Source } from '../live/Feed';
 import { cardForStep, FACTORY_MAP } from '../map/factory-map';
-import type { ActionRequest, AnswerRequest, CommentRequest } from './actions';
+import { type ActionRequest, type AnswerRequest, type CommentRequest, needsLogin } from './actions';
 import {
   type DecideRow,
   attentionItems,
@@ -442,7 +442,8 @@ export function unstickCards(
         },
       });
       const writable = row.number !== null && row.open;
-      const commentable = writable && !loginMissing;
+      const offered = (action: ActionRequest['action']) => !(loginMissing && needsLogin(action));
+      const commentable = writable && offered('comment');
       const withheld = !writable
         ? ` ${n} is not an open issue, so re-triage, close and comment are not offered; open it to see where it stands.`
         : loginMissing
@@ -476,9 +477,8 @@ export function unstickCards(
         !writable || row.number === null
           ? []
           : [
-              ...(loginMissing
-                ? []
-                : [
+              ...(offered('retriage')
+                ? [
                     act(
                       'retriage',
                       `Re-triage #${row.number}`,
@@ -486,7 +486,8 @@ export function unstickCards(
                       { factory, action: 'retriage', number: row.number },
                       itemHref,
                     ),
-                  ]),
+                  ]
+                : []),
               act(
                 'close',
                 `Close #${row.number}`,
