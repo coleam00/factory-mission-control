@@ -794,7 +794,7 @@ export function attentionLine(t: AttentionTally): string {
 
 function daySentence(day: DayDigest | null, failuresSaid: boolean): string {
   if (!day)
-    return " Today's merged pull requests could not be read: say so in one sentence and do not guess them.";
+    return " Today's merged pull requests could not be read: say so in one sentence and do not guess them. Do not list, regroup, count or quote failures.";
   return ` Today's merged pull requests and runs by workflow and outcome were read for you from the factory's data, a run on the day its completed_at falls: name the most notable merged pull requests by number and title from them, briefly, instead of querying for them. ${failuresSaid ? 'The briefing already says in one sentence of its own what to know about open failures, with a link to Runs > Failures. ' : ''}Do not list, regroup, count or quote failures, and do not restate the count line: write at most ${BRIEFING_PROSE_BLOCKS} short blocks. Where and_more is above 0, more merged pull requests were not listed: say there were others, without a number. The numbers in them are for your judgment: state none of them. Failures are not things that wait on the owner and are not in the count line: do not add or compare them. ${JSON.stringify({ day: day.day, merged: day.merged, runs: day.runs })}`;
 }
 

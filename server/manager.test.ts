@@ -1365,6 +1365,7 @@ describe('a briefing whose day read fails', () => {
     const first = await ask();
     expect(first.at(-1)?.type).toBe('done');
     expect(played.prompts[0]).toContain('could not be read');
+    expect(played.prompts[0]).toContain('Do not list, regroup, count or quote failures');
     const second = await ask();
     expect(played.prompts).toHaveLength(2);
     expect(second.at(-1)).not.toMatchObject({ cached: true });
