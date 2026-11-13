@@ -133,7 +133,7 @@ shows merges today as "<n> merged". A card with laps on it carries `data-live-co
 and pulses its chip. Every number updates live (invariant 5).
 
 **Clicking a card** dims everything but the card and its direct neighbours and opens a details
-strip under the map with tabs: When it runs, What it does, How it works, Right now (the issues and
+panel inside the map frame (owner decision 2026-11-12, #650) with tabs: When it runs, What it does, How it works, Right now (the issues and
 laps on it), and Behind the scenes (the workflows and steps it covers, each linking to its step
 screen, its models, and its source paths). App check's Behind the scenes links its `check` step
 screen. A card shows ⤢ only once its deeper view exists (until then no ⤢, no Open button and no legend entry for it, whatever `refs/` shows); it opens it
@@ -285,9 +285,10 @@ Three decisions of 2026-11-08:
    about the factory and proposes actions. An agent runs it on the server, over the same data the
    dashboard reads; it has read-only access to the data. Its credentials stay on the server
    (invariant 7). Health, history and "did a change help" are asked here.
-3. **The dashboard may act, in two ways only.** It may **answer** a paused run's question and
-   **resume** a failed or paused run. Both run through that factory's own Archon CLI, after a
-   5-second Undo, and both are recorded. Everything else stays a link or a copied command.
+3. **The dashboard may act, in the five ways of invariant 2** (two on 2026-11-08, three more on 2026-11-12): it may
+   **answer** a paused run's question, **resume** a failed or paused run, and **re-triage**, **close** or
+   **comment on** a work item. All run through that factory's own operator command, after a 5-second Undo,
+   and all are recorded. Everything else stays a link.
 
 **Owner decisions 2026-11-12.** Attention counts only what needs the owner (Decide, Unstick, Clean
 up); failures move to a Failures view on Runs and never count toward "N things need you". A failure
@@ -301,7 +302,7 @@ on a work item (invariant 2). A run with nothing left to do does not offer Resum
 records Archon stores (`archon-metrics-prs`). It lists ten measures: issues merged, PR merge rate, review
 rounds to Ready, the share Ready in one round, the share needing five rounds or more, issue lead time,
 build rounds per issue, owner asks per issue, and test and production lines added, with the issue
-measures also per route. Each is shown for the last 7 and the last 30 UTC days, beside the period before
+measures also per route. Each is shown for the last 7 and the last 30 days, counted by the owner's local day (owner decision 2026-11-12, #651), beside the period before
 it, with how many records each number rests on. A comparison resting on fewer than 10 records on either
 side reads "Too few to compare" (4.2's threshold). The numbers are Archon's records counted by Archon's
 rules (a re-run replaces earlier records), projected into `mc.metric_records` and not derived from laps.

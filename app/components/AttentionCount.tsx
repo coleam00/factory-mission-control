@@ -69,7 +69,6 @@ export function AttentionCount({ factory }: { factory: string }): ReactElement {
     decide: AWAITED,
     owner: AWAITED,
     unstick: AWAITED,
-    failures: AWAITED,
   });
   const report = useCallback(
     (id: SourceKey, source: Source<object>) => setSources((all) => ({ ...all, [id]: source })),

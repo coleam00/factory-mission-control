@@ -13,6 +13,7 @@ import type { Context, Hono } from 'hono';
 import { isAnswerText, resolveAnswer } from '../app/lib/attention';
 import { ATTENTION_SOURCES, type AttentionKind, KINDS } from '../app/lib/attention-page';
 import { scorecardUntil, TOO_FEW_BELOW } from '../app/lib/factory-scorecard';
+import { failuresSince } from '../app/lib/failures';
 import { topLevelBlocks } from '../app/lib/manager-markdown';
 import { isRunId, lapHref } from '../app/lib/one-lap';
 import { workItemHref } from '../app/lib/work-item';
@@ -355,7 +356,13 @@ ${
 Never show holdout scenario text.
 A run failed on the day its mc.laps.completed_at falls, whatever day it started: for "failed today", filter on completed_at, never started_at, and include runs that started on an earlier day. The database session may run in another timezone, so convert first: (completed_at AT TIME ZONE '${zone}')::date = DATE '${dayOf(now)}'.
 
-How the factory is doing (merge rate, review rounds, lead time, owner asks, lines, issues merged, with their per-route split): run live_query factory-scorecard with args ["${scorecardUntil(now)}"], the same query the Factory page's scorecard shows. Each row is one measure with its value and n (how many records it rests on) for the last 7 and 30 UTC days and the period before each. Compare a measure only when both periods have at least ${TOO_FEW_BELOW} records; otherwise say there are too few to compare. Never work these out from laps, pull requests or mc.metric_records yourself.
+${
+  briefing
+    ? ''
+    : `The failures still unresolved (not on a closed item, not followed by a completed run of the same workflow, stopped within 7 days): run live_query failure-groups with args ["${failuresSince(now)}"], the query Runs > Failures reads. Never count failures from laps or mc.run_stops yourself.
+
+`
+}How the factory is doing (merge rate, review rounds, lead time, owner asks, lines, issues merged, with their per-route split): run live_query factory-scorecard with args ["${scorecardUntil(now)}"], the same query the Factory page's scorecard shows. Each row is one measure with its value and n (how many records it rests on) for the last 7 and 30 UTC days and the period before each. Compare a measure only when both periods have at least ${TOO_FEW_BELOW} records; otherwise say there are too few to compare. Never work these out from laps, pull requests or mc.metric_records yourself.
 
 The mc schema:
 ${schema}
@@ -721,10 +728,8 @@ export function answer(manager: Manager, request: ChatRequest, signal: AbortSign
 const BRIEFING_QUESTION =
   "Write today's briefing: what merged, what failed (judge a run by the day it failed, completed_at, not the day it started), what waits on the owner, and the one or two things that matter most. At most three short blocks (a paragraph or a bullet each).";
 
-/** What the Attention header counts: the row count of each source, and the runs behind the failure causes. */
-export type AttentionTally = Record<keyof typeof ATTENTION_SOURCES, number> & {
-  failureRuns: number;
-};
+/** What the Attention header counts: the row count of each source. Failures are not among them. */
+export type AttentionTally = Record<keyof typeof ATTENTION_SOURCES, number>;
 
 /** The rows of each Attention source, the ones the count line is built from. */
 export type AttentionRows = Record<keyof typeof ATTENTION_SOURCES, unknown[]>;
@@ -732,7 +737,7 @@ export type AttentionRows = Record<keyof typeof ATTENTION_SOURCES, unknown[]>;
 let attentionQueries: Map<string, string> | undefined;
 
 /**
- * The rows of the four queries the Attention page sums, read in one statement so the parts add up,
+ * The rows of the queries the Attention page sums, read in one statement so the parts add up,
  * and the counts taken from them. Null when any of them fails, as the page then shows no number either.
  */
 async function attentionTally(
@@ -754,10 +759,8 @@ async function attentionTally(
       MANAGER_LIMITS,
     );
     const listing = rows[0] as AttentionRows;
-    const tally = { failureRuns: 0 } as AttentionTally;
+    const tally = {} as AttentionTally;
     for (const key of keys) tally[key] = listing[key].length;
-    for (const group of listing.failures as { failures: number }[])
-      tally.failureRuns += group.failures;
     return { tally, rows: listing };
   } catch (err) {
     console.error(`manager: attention count failed: ${err instanceof Error ? err.message : err}`);
@@ -778,11 +781,9 @@ const inGroup = (t: AttentionTally, kind: AttentionKind): number =>
   );
 
 /** How the briefing's line words each group's count; the groups and their order come from the page's `KINDS`. */
-const GROUP_PHRASE: Record<AttentionKind, (n: number, t: AttentionTally) => string> = {
+const GROUP_PHRASE: Record<AttentionKind, (n: number) => string> = {
   decide: (n) => `${n} to decide`,
   unstick: (n) => `${n} to unstick`,
-  fix: (n, t) =>
-    `${n} to fix (${plural(t.failureRuns, 'failure', 'failures')} in ${plural(t.failures, 'cause', 'causes')})`,
 };
 
 /** The count sentence's words: `attentionLine` writes them and `statedTotals` reads them. */
@@ -801,14 +802,14 @@ export function attentionLine(t: AttentionTally): string {
         : 'No question is waiting. ';
   const parts = KINDS.map(({ kind }) => ({ kind, n: inGroup(t, kind) }))
     .filter(({ n }) => n > 0)
-    .map(({ kind, n }) => GROUP_PHRASE[kind](n, t));
+    .map(({ kind, n }) => GROUP_PHRASE[kind](n));
   return `${lead}${plural(total, COUNT_WORDS.one, COUNT_WORDS.many)} you: ${parts.join(', ')}.`;
 }
 
 function daySentence(day: DayDigest | null): string {
   if (!day)
     return " Today's merged pull requests and failed runs could not be read: say so in one sentence and do not guess them.";
-  return ` Today's merged pull requests and runs by workflow and outcome were read for you from the factory's data, a run on the day its completed_at falls: name the merged pull requests by number and title from them instead of querying for them. The briefing already lists any failure causes of the day as a paragraph of its own: do not list, regroup or count them, and do not restate the count line: write at most two short blocks. Where and_more is above 0, more merged pull requests were not listed: say there were others, without a number. The numbers in them are for your judgment: state none of them. These are today's failures, not the Attention failures, which are the causes still unresolved: do not add or compare them. ${JSON.stringify({ day: day.day, merged: day.merged, runs: day.runs })}`;
+  return ` Today's merged pull requests and runs by workflow and outcome were read for you from the factory's data, a run on the day its completed_at falls: name the merged pull requests by number and title from them instead of querying for them. The briefing already lists any failure causes of the day as a paragraph of its own: do not list, regroup or count them, and do not restate the count line: write at most two short blocks. Where and_more is above 0, more merged pull requests were not listed: say there were others, without a number. The numbers in them are for your judgment: state none of them. These are today's failures: the causes still unresolved are not things that wait on the owner and are not in the count line, so do not add or compare them; you may say they are listed as failures on Runs. ${JSON.stringify({ day: day.day, merged: day.merged, runs: day.runs })}`;
 }
 
 /**

@@ -18,7 +18,7 @@ import { shortRunId } from './format';
 import { ORDER_PARAM, TABLE_VIEW, VIEW_PARAM } from './board';
 import { isRunId } from './one-lap';
 import type { RUN_STATE } from './states';
-import { filterOf, RUN_CHIPS } from './runs';
+import { filterOf, placeOf, RUN_CHIPS } from './runs';
 
 export type ManagerContext = ChatRequest['context'];
 
@@ -113,6 +113,17 @@ export function managerPlace(
       };
     }
     case 'runs': {
+      if (first === '' && placeOf(search) === 'failures') {
+        return {
+          context: { place: 'runs' },
+          chip: 'Runs · failures',
+          questions: [
+            'Which failure comes up most?',
+            'Which failures are environment problems?',
+            'What failed most recently?',
+          ],
+        };
+      }
       if (first === '') {
         const state = filterOf(search).state;
         const label = RUN_CHIPS.find((c) => c.state === state)?.label ?? 'All';

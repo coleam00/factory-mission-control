@@ -31,6 +31,7 @@ import {
   type MapView,
   midpoint,
   neighbours,
+  openCamera,
   openerOf,
   type Point,
   PHONE,
@@ -43,6 +44,7 @@ import { MAP_CHIP_STATE, type State, stateColor, stateInk, stateWash } from '../
 import type { StepRow } from '../lib/step-detail';
 import type { CardLive } from '../map/live';
 import { MapDetails } from './MapDetails';
+import { APP_COLUMN } from './Column';
 
 const ROLE_COLOR: Record<Role, string> = {
   source: 'var(--v3-role-source)',
@@ -68,6 +70,8 @@ const LINE_DASH: Record<LineStyle, string | undefined> = {
 
 /** A wire label's Geist Mono advance per character, 0.6em, rounded up. */
 const LABEL_CHAR_W = Math.ceil(MAP_TYPE.label * 0.6);
+/** How far a press must move before it is a drag, not a click, in pixels. */
+const DRAG_SLOP = 3;
 const MIN_ZOOM = 0.1;
 const MAX_ZOOM = 2.4;
 /**
@@ -81,6 +85,113 @@ interface Camera {
   x: number;
   y: number;
   k: number;
+}
+
+/** Where the details panel docks in the frame: left or right from `PHONE` up, top or bottom below it. */
+type Side = 'left' | 'right' | 'top' | 'bottom';
+
+interface Box {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+}
+
+/** A card's box in the frame under `cam`. */
+const cardBox = (level: MapView, card: Card, cam: Camera): Box => {
+  const left = cam.x + card.x * cam.k;
+  const top = cam.y + card.y * cam.k;
+  return {
+    left,
+    top,
+    right: left + cardWidth(level, card) * cam.k,
+    bottom: top + level.cardSize.height * cam.k,
+  };
+};
+
+const PANEL_INSET = 12;
+/** Clearance under the panel: the hint and controls the fit keeps room for, and the inset. */
+const PANEL_FOOT = FIT_FOOT + 8;
+/** The narrowest side panel, about the width the phone panel renders well at. */
+const DETAILS_MIN_WIDTH = 300;
+/** The shortest top or bottom panel: the header, the tabs and a line of the tab's content, even when the Open button wraps. */
+const DETAILS_MIN_HEIGHT = 240;
+/** How long a click's pan waits, so the second click of a double-click still lands on the card. */
+const DOUBLE_CLICK_MS = 500;
+
+/** A docked panel: its side, and its width (left, right) or height (top, bottom) in pixels. */
+interface Dock {
+  side: Side;
+  extent: number;
+}
+
+/**
+ * Where the selected card's details dock: on the side of the frame with more room beside the card's
+ * box, as wide (or tall) as that room within the panel's bounds. When the room is under the floor,
+ * the camera pans by the shortfall. It never pans so far that the card's top-left corner (its kind
+ * and title) leaves the frame, and the corner wins when both cannot hold.
+ */
+function dockDetails(
+  box: Box,
+  frame: { width: number; height: number },
+): { dock: Dock; pan: Point } {
+  const gap = PANEL_INSET;
+  /** A shortfall under a pixel is none. */
+  const shortBy = (extent: number, room: number) => {
+    const short = extent - room;
+    return short < 1 ? 0 : short;
+  };
+  if (frame.width >= PHONE) {
+    const standard = Math.min(400, frame.width / 2 - 18);
+    if (box.bottom <= PANEL_INSET || box.top >= frame.height - PANEL_FOOT) {
+      const side = (box.left + box.right) / 2 < frame.width / 2 ? 'right' : 'left';
+      return { dock: { side, extent: standard }, pan: [0, 0] };
+    }
+    const roomRight = frame.width - PANEL_INSET - (box.right + gap);
+    const roomLeft = box.left - gap - PANEL_INSET;
+    const side: Side = roomRight >= roomLeft ? 'right' : 'left';
+    const room = side === 'right' ? roomRight : roomLeft;
+    const extent = Math.min(standard, Math.max(DETAILS_MIN_WIDTH, room));
+    const short = shortBy(extent, room);
+    const pan: Point =
+      side === 'right' ? [-Math.min(short, Math.max(0, box.left - PANEL_INSET)), 0] : [short, 0];
+    return { dock: { side, extent }, pan };
+  }
+  const usable = frame.height - PANEL_INSET - PANEL_FOOT;
+  if (box.right <= PANEL_INSET || box.left >= frame.width - PANEL_INSET) {
+    const side = (box.top + box.bottom) / 2 < frame.height / 2 ? 'bottom' : 'top';
+    return { dock: { side, extent: DETAILS_MIN_HEIGHT }, pan: [0, 0] };
+  }
+  const roomBottom = frame.height - PANEL_FOOT - (box.bottom + gap);
+  const roomTop = box.top - gap - PANEL_INSET;
+  const side: Side = roomBottom >= roomTop ? 'bottom' : 'top';
+  const room = side === 'bottom' ? roomBottom : roomTop;
+  const extent = Math.min(usable, Math.max(DETAILS_MIN_HEIGHT, room));
+  const short = shortBy(extent, room);
+  const pan: Point =
+    side === 'bottom' ? [0, -Math.min(short, Math.max(0, box.top - PANEL_INSET))] : [0, short];
+  return { dock: { side, extent }, pan };
+}
+
+/**
+ * The details panel's box in the frame; its top and bottom clear the hint and the controls. The
+ * caps keep it inside a frame that is resized without a re-dock.
+ */
+function detailsStyle({ side, extent }: Dock): CSSProperties {
+  if (side === 'left' || side === 'right') {
+    return {
+      top: PANEL_INSET,
+      bottom: PANEL_FOOT,
+      width: `min(${extent}px, calc(50% - 18px))`,
+      [side]: PANEL_INSET,
+    };
+  }
+  return {
+    left: PANEL_INSET,
+    right: PANEL_INSET,
+    height: `min(${extent}px, calc(100% - ${PANEL_INSET + PANEL_FOOT}px))`,
+    [side]: side === 'top' ? PANEL_INSET : PANEL_FOOT,
+  };
 }
 
 const reducedQuery = '(prefers-reduced-motion: reduce)';
@@ -274,7 +385,8 @@ function MapCard({
   card: Card;
   live: CardLive | undefined;
   state: 'selected' | 'near' | 'dim' | 'plain';
-  onSelect: (id: string) => void;
+  /** `pointer`: a mouse or touch press selected it, not the keyboard. */
+  onSelect: (id: string, pointer?: boolean) => void;
   onOpen: (view: string) => void;
   /** Goes up to the card of the parent level that `card.upTo` names. */
   onUp: (target: string) => void;
@@ -308,10 +420,9 @@ function MapCard({
       onClick={(event) => {
         event.stopPropagation();
         if (card.upTo !== undefined) onUp(card.upTo);
-        else onSelect(card.id);
+        else onSelect(card.id, event.detail > 0);
       }}
       onDoubleClick={() => card.opens !== undefined && onOpen(card.opens)}
-      onPointerDown={(event) => event.stopPropagation()}
       onKeyDown={onKey}
       data-selected={state === 'selected' || undefined}
       className={`absolute cursor-pointer select-none rounded-[16px] border-2 bg-[var(--v3-panel)] pt-3 pr-3 pb-3 pl-4 transition-[opacity,box-shadow,border-color] duration-200 ${
@@ -471,17 +582,15 @@ function WireLabel({ text, at }: { text: string; at: Point }): ReactElement {
   );
 }
 
-/** The app's column, which the caption, legend and details keep while the map spans the window. */
-const COLUMN = 'mx-auto w-full max-w-6xl px-6';
-
 const CONTROL =
   'cursor-pointer rounded-md px-[9px] py-1 font-mono text-[12px] text-[color:var(--v3-fg-2)] hover:bg-[var(--v3-raised)] hover:text-[color:var(--v3-fg)] disabled:cursor-default disabled:hover:bg-transparent disabled:hover:text-[color:var(--v3-fg-2)]';
 
 /**
  * The factory map (PRD 4.1): the owner's drawing with live chips on its cards, a camera that pans,
- * zooms around the cursor and fits the stage, and a details strip for the card clicked. A card with
- * `opens` zooms into its view; `path` names the view shown (the address), and the one component
- * draws every level. `flow` off, or `prefers-reduced-motion`, stops the travelling dot and the
+ * zooms around the cursor and fits the stage, and a details panel inside the frame, docked clear
+ * of the selected card. A drag from anywhere, a card included, pans; a press without movement
+ * selects. A card with `opens` zooms into its view; `path` names the view shown (the address), and
+ * the one component draws every level. `flow` off, or `prefers-reduced-motion`, stops the travelling dot and the
  * flowing dashes.
  */
 export function FactoryMap({
@@ -530,14 +639,49 @@ export function FactoryMap({
   const dot = useRef<SVGCircleElement>(null);
   const cardEls = useRef(new Map<string, HTMLElement>());
   const [cam, setCam] = useState<Camera>({ x: 0, y: 0, k: 0.5 });
+  // The camera as the person's input reads it: a drag, a wheel and a placement compose on this, not
+  // on the last render's value.
+  const camRef = useRef(cam);
+  const setCamera = useCallback((next: Camera) => {
+    camRef.current = next;
+    setCam(next);
+  }, []);
   /** Whether the camera has been placed for the frame yet (read by `bun run test:live`). */
   const [placed, setPlaced] = useState(false);
   const [selected, setSelected] = useState<string | null>(select ?? null);
+  const selectedRef = useRef(selected);
+  selectedRef.current = selected;
+  /**
+   * Where the selected card's details dock; null until a selection or a placement docks them, and
+   * while a click waits out a double-click.
+   */
+  const [dock, setDock] = useState<Dock | null>(null);
+  /** The timer of a click's deferred pan. */
+  const pendingDock = useRef<number | null>(null);
+  const clearPending = useCallback(() => {
+    if (pendingDock.current === null) return;
+    window.clearTimeout(pendingDock.current);
+    pendingDock.current = null;
+  }, []);
+  useEffect(() => clearPending, [clearPending]);
   /** The world's fade and zoom while a level opens or closes. */
   const [motion, setMotion] = useState({ moving: false, hidden: false });
   /** The card to select, and flash, on the level above once an `upTo` card has gone up. */
   const arriving = useRef<string | null>(null);
-  const drag = useRef<{ x: number; y: number; cam: Camera; moved: boolean } | null>(null);
+  const drag = useRef<{
+    startX: number;
+    startY: number;
+    lastX: number;
+    lastY: number;
+    moved: boolean;
+    /** Whether the press began on a card, which a press without movement selects. */
+    onCard: boolean;
+    pointerId: number;
+  } | null>(null);
+  /** Set by a drag's release so the click the browser may send after it does not select or open. */
+  const suppressClick = useRef(false);
+  /** Finishes the level change in flight at once; null when none is. */
+  const transition = useRef<(() => void) | null>(null);
   const reduced = useReducedMotion();
   const moving = flow && !reduced;
   const touring = moving && level.tour.length > 1;
@@ -547,18 +691,49 @@ export function FactoryMap({
     return () => onDrawn?.(false);
   }, [onDrawn]);
 
-  /** The Fit camera: see `fitCamera`. */
+  const settle = useCallback(
+    () => setMotion((was) => (was.moving ? { ...was, moving: false } : was)),
+    [],
+  );
+  /** Hands the camera to the person: a level change in flight finishes now, and no motion is left. */
+  const takeCamera = useCallback(() => {
+    transition.current?.();
+    settle();
+  }, [settle]);
+
+  /** Puts the camera where the level opens, and docks the selected card's details clear of it. */
+  const placeCamera = useCallback(
+    (next: Camera, frame: { width: number; height: number }) => {
+      clearPending();
+      const { level } = levelRef.current;
+      const card = level.cards.find((c) => c.id === selectedRef.current);
+      if (card === undefined) {
+        setCamera(next);
+        setPlaced(true);
+        return;
+      }
+      const { dock, pan } = dockDetails(cardBox(level, card, next), frame);
+      setCamera(pan[0] || pan[1] ? { ...next, x: next.x + pan[0], y: next.y + pan[1] } : next);
+      setDock(dock);
+      setPlaced(true);
+    },
+    [setCamera, clearPending],
+  );
+
+  /** The Fit control: the whole level in the frame as it is now, see `fitCamera`. */
   const fit = useCallback(() => {
     const el = stage.current;
     if (!el) return;
-    const frame = { width: el.clientWidth, height: el.clientHeight };
-    setCam(fitCamera(map, levelRef.current.level, frame));
+    takeCamera();
+    setCamera(
+      fitCamera(map, levelRef.current.level, { width: el.clientWidth, height: el.clientHeight }),
+    );
     setPlaced(true);
-  }, [map]);
+  }, [map, takeCamera, setCamera]);
 
   /**
-   * The frame's height for its width: the map's height at the scale that fits its width, so a fit
-   * leaves no empty bands (owner, PR #326 review), and the phone frame below `PHONE`.
+   * The frame's height for its width: the map's height at the scale that fits its width, so the
+   * opening camera leaves no empty bands (owner, PR #326 review), and the phone frame below `PHONE`.
    */
   const [frameHeight, setFrameHeight] = useState(MIN_FRAME);
   const opened = useCallback(() => {
@@ -568,20 +743,25 @@ export function FactoryMap({
     if (width >= PHONE) {
       const height = heroFrameHeight(rootWorld, width);
       setFrameHeight(height);
-      if (el.offsetHeight === height) fit();
+      if (el.offsetHeight === height) {
+        const frame = { width, height: el.clientHeight };
+        placeCamera(openCamera(map, levelRef.current.level, frame), frame);
+      }
       return;
     }
     setFrameHeight(PHONE_FRAME);
     if (el.offsetHeight !== PHONE_FRAME) return;
     const { level, world } = levelRef.current;
     const at = phoneCentre(level, world);
-    setCam({
-      k: PHONE_SCALE,
-      x: width / 2 - at[0] * PHONE_SCALE,
-      y: (PHONE_FRAME - FIT_FOOT) / 2 - at[1] * PHONE_SCALE,
-    });
-    setPlaced(true);
-  }, [rootWorld, fit]);
+    placeCamera(
+      {
+        k: PHONE_SCALE,
+        x: width / 2 - at[0] * PHONE_SCALE,
+        y: (PHONE_FRAME - FIT_FOOT) / 2 - at[1] * PHONE_SCALE,
+      },
+      { width, height: PHONE_FRAME },
+    );
+  }, [map, rootWorld, placeCamera]);
 
   useEffect(() => {
     const el = stage.current;
@@ -592,20 +772,14 @@ export function FactoryMap({
     return () => observer.disconnect();
   }, [opened]);
 
-  const settle = useCallback(
-    () => setMotion((was) => (was.moving ? { ...was, moving: false } : was)),
-    [],
-  );
-
   const zoomAround = useCallback(
     (factor: number, mx: number, my: number) => {
-      settle();
-      setCam((was) => {
-        const k = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, was.k * factor));
-        return { k, x: mx - (mx - was.x) * (k / was.k), y: my - (my - was.y) * (k / was.k) };
-      });
+      takeCamera();
+      const was = camRef.current;
+      const k = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, was.k * factor));
+      setCamera({ k, x: mx - (mx - was.x) * (k / was.k), y: my - (my - was.y) * (k / was.k) });
     },
-    [settle],
+    [takeCamera, setCamera],
   );
 
   // A wheel listener React would attach passive, and a passive one cannot keep the page still.
@@ -613,6 +787,8 @@ export function FactoryMap({
     const el = stage.current;
     if (!el) return;
     const onWheel = (event: WheelEvent) => {
+      // The details panel scrolls itself.
+      if (event.target instanceof Element && event.target.closest('[data-map-details]')) return;
       event.preventDefault();
       const box = el.getBoundingClientRect();
       // A trackpad's two-finger swipe pans; a wheel, or a pinch (ctrl), zooms.
@@ -621,8 +797,9 @@ export function FactoryMap({
         (Math.abs(event.deltaX) > Math.abs(event.deltaY) ||
           (event.deltaMode === 0 && Math.abs(event.deltaY) < 40 && event.deltaY % 1 !== 0));
       if (swipe) {
-        settle();
-        setCam((was) => ({ ...was, x: was.x - event.deltaX, y: was.y - event.deltaY }));
+        takeCamera();
+        const was = camRef.current;
+        setCamera({ ...was, x: was.x - event.deltaX, y: was.y - event.deltaY });
         return;
       }
       zoomAround(
@@ -633,7 +810,7 @@ export function FactoryMap({
     };
     el.addEventListener('wheel', onWheel, { passive: false });
     return () => el.removeEventListener('wheel', onWheel);
-  }, [zoomAround, settle]);
+  }, [zoomAround, takeCamera, setCamera]);
 
   // Esc, and Backspace outside a field: deselect first, else go up a level.
   useEffect(() => {
@@ -670,14 +847,25 @@ export function FactoryMap({
       arriving.current = null;
       if (!into) flash(target === undefined ? undefined : cardEls.current.get(target));
     };
+    let swapped = false;
     const swap = () => {
+      if (swapped) return;
+      swapped = true;
+      selectedRef.current = arriving.current;
       setSelected(arriving.current);
+      setDock(null);
       levelRef.current = { level: next, world: nextWorld };
       setShown(going);
     };
+    let finish: (() => void) | undefined;
     const timers: number[] = [];
+    const frames: number[] = [];
     const later = (ms: number, run: () => void) => timers.push(window.setTimeout(run, ms));
-    if (reduced || !el) {
+    const cancel = () => {
+      for (const timer of timers) window.clearTimeout(timer);
+      for (const frame of frames) cancelAnimationFrame(frame);
+    };
+    if (reduced || !el || drag.current?.moved) {
       swap();
       later(0, () => {
         opened();
@@ -689,57 +877,143 @@ export function FactoryMap({
       if (card) {
         const cx = card.x + cardWidth(levelRef.current.level, card) / 2;
         const cy = card.y + levelRef.current.level.cardSize.height / 2;
-        setCam({
+        setCamera({
           k: ZOOM_IN,
           x: el.clientWidth / 2 - cx * ZOOM_IN,
           y: (el.clientHeight - FIT_FOOT) / 2 - cy * ZOOM_IN,
         });
       }
+      finish = () => {
+        cancel();
+        transition.current = null;
+        swap();
+        setMotion({ moving: false, hidden: false });
+        opened();
+        arrive();
+      };
+      transition.current = finish;
       later(SWAP_MS, () => {
         swap();
         const k = into ? ENTER_SCALE : LEAVE_SCALE;
         setMotion({ moving: false, hidden: true });
-        setCam({
+        setCamera({
           k,
           x: (el.clientWidth - nextWorld.width * k) / 2,
           y: (el.clientHeight - FIT_FOOT - nextWorld.height * k) / 2,
         });
-        requestAnimationFrame(() =>
-          requestAnimationFrame(() => {
-            setMotion({ moving: true, hidden: false });
-            opened();
-          }),
+        frames.push(
+          requestAnimationFrame(() =>
+            frames.push(
+              requestAnimationFrame(() => {
+                setMotion({ moving: true, hidden: false });
+                opened();
+              }),
+            ),
+          ),
         );
       });
-      later(FLASH_MS, arrive);
       later(SWAP_MS + SETTLE_MS, settle);
+      later(FLASH_MS, () => {
+        transition.current = null;
+        arrive();
+      });
     }
     return () => {
-      for (const timer of timers) window.clearTimeout(timer);
+      cancel();
+      if (transition.current === finish) transition.current = null;
     };
-  }, [key, map, reduced, opened, settle]);
+  }, [key, map, reduced, opened, settle, setCamera]);
 
   const zoomCentre = (factor: number) => {
     const box = stage.current?.getBoundingClientRect();
     if (box) zoomAround(factor, box.width / 2, box.height / 2);
   };
 
-  const onPointerDown = (event: PointerEvent<HTMLElement>) => {
-    settle();
-    drag.current = { x: event.clientX, y: event.clientY, cam, moved: false };
-    event.currentTarget.setPointerCapture(event.pointerId);
+  const selectCard = (id: string, pointer = false) => {
+    clearPending();
+    const el = stage.current;
+    if (el) {
+      const frame = { width: el.clientWidth, height: el.clientHeight };
+      const level = levelRef.current.level;
+      const card = level.cards.find((c) => c.id === id) as Card;
+      const was = camRef.current;
+      const { dock, pan } = dockDetails(cardBox(level, card, was), frame);
+      const panned = pan[0] !== 0 || pan[1] !== 0;
+      if (panned && pointer) {
+        setDock(null);
+        pendingDock.current = window.setTimeout(() => {
+          pendingDock.current = null;
+          if (selectedRef.current !== id || levelRef.current.level !== level) return;
+          if (camRef.current !== was) {
+            // The person moved the map meanwhile; panning now would undo that.
+            setDock(dockDetails(cardBox(level, card, camRef.current), frame).dock);
+            return;
+          }
+          setCamera({ ...was, x: was.x + pan[0], y: was.y + pan[1] });
+          setDock(dock);
+        }, DOUBLE_CLICK_MS);
+      } else {
+        setDock(dock);
+        if (panned) setCamera({ ...was, x: was.x + pan[0], y: was.y + pan[1] });
+      }
+    }
+    setSelected(id);
   };
+
+  const pan = (dx: number, dy: number) => {
+    const was = camRef.current;
+    setCamera({ ...was, x: was.x + dx, y: was.y + dy });
+  };
+  const onPointerDown = (event: PointerEvent<HTMLElement>) => {
+    suppressClick.current = false;
+    drag.current = {
+      startX: event.clientX,
+      startY: event.clientY,
+      lastX: event.clientX,
+      lastY: event.clientY,
+      moved: false,
+      onCard: event.target instanceof Element && event.target.closest('[data-card]') !== null,
+      pointerId: event.pointerId,
+    };
+  };
+  // Capture waits for the press to move: captured at once, the click of a plain press on a card
+  // would go to the frame, not the card.
   const onPointerMove = (event: PointerEvent<HTMLElement>) => {
     const was = drag.current;
     if (!was) return;
-    const dx = event.clientX - was.x;
-    const dy = event.clientY - was.y;
-    if (Math.abs(dx) + Math.abs(dy) > 3) was.moved = true;
-    setCam({ ...was.cam, x: was.cam.x + dx, y: was.cam.y + dy });
+    // A press released outside the frame before it was captured never reaches onPointerUp.
+    if (event.buttons === 0) {
+      drag.current = null;
+      return;
+    }
+    if (!was.moved) {
+      if (
+        Math.abs(event.clientX - was.startX) + Math.abs(event.clientY - was.startY) <=
+        DRAG_SLOP
+      ) {
+        return;
+      }
+      was.moved = true;
+      event.currentTarget.setPointerCapture(was.pointerId);
+      takeCamera();
+      pan(event.clientX - was.startX, event.clientY - was.startY);
+    } else {
+      pan(event.clientX - was.lastX, event.clientY - was.lastY);
+    }
+    was.lastX = event.clientX;
+    was.lastY = event.clientY;
   };
   const onPointerUp = () => {
-    if (drag.current && !drag.current.moved) setSelected(null);
+    const was = drag.current;
     drag.current = null;
+    if (!was) return;
+    if (was.moved) {
+      // The click a browser sends after a drag comes straight after this event, or not at all.
+      suppressClick.current = true;
+      setTimeout(() => {
+        suppressClick.current = false;
+      }, 0);
+    } else if (!was.onCard) setSelected(null);
   };
 
   const near = useMemo(() => neighbours(level, selected), [level, selected]);
@@ -775,7 +1049,9 @@ export function FactoryMap({
 
   return (
     <div className="flex flex-col">
-      <div className={`${COLUMN} mb-2 flex flex-wrap items-center justify-between gap-x-4 gap-y-1`}>
+      <div
+        className={`${APP_COLUMN} mb-2 flex flex-wrap items-center justify-between gap-x-4 gap-y-1`}
+      >
         <nav
           aria-label="Map level"
           data-map-crumbs
@@ -803,7 +1079,7 @@ export function FactoryMap({
         </nav>
         {aside}
       </div>
-      <p data-map-caption className={`${COLUMN} mb-3 text-sm text-[color:var(--v3-fg-2)]`}>
+      <p data-map-caption className={`${APP_COLUMN} mb-3 text-sm text-[color:var(--v3-fg-2)]`}>
         {level.caption}
       </p>
       <section
@@ -819,7 +1095,17 @@ export function FactoryMap({
         onPointerCancel={() => {
           drag.current = null;
         }}
-        className="relative mx-3 cursor-grab touch-none overflow-hidden rounded-xl border border-[color:var(--v3-line)] bg-[var(--v3-bg)] active:cursor-grabbing min-[701px]:mx-6"
+        onLostPointerCapture={(event) => {
+          // A touch's implicit capture on the pressed element ends when the frame takes it; that
+          // event bubbles here and must not end the drag.
+          if (event.target === event.currentTarget) drag.current = null;
+        }}
+        onClickCapture={(event) => {
+          if (!suppressClick.current) return;
+          suppressClick.current = false;
+          event.stopPropagation();
+        }}
+        className="@container relative mx-3 cursor-grab touch-none overflow-hidden rounded-xl border border-[color:var(--v3-line)] bg-[var(--v3-bg)] active:cursor-grabbing min-[701px]:mx-6"
         style={{
           height: frameHeight,
           // The one gradient on a surface the owner allows: the map frame's dot grid (#307).
@@ -920,14 +1206,17 @@ export function FactoryMap({
                       ? 'near'
                       : 'dim'
               }
-              onSelect={setSelected}
+              onSelect={selectCard}
               onOpen={(view) => onPath([...path, view])}
               onUp={goUp}
               register={register}
             />
           ))}
         </div>
-        <div className="pointer-events-none absolute bottom-3 left-3 hidden rounded-lg border border-[color:var(--v3-line)] bg-[var(--v3-panel)] px-[9px] py-[5px] font-mono text-[11px] text-[color:var(--v3-fg-2)] min-[701px]:block">
+        <div
+          data-map-hint
+          className="pointer-events-none absolute bottom-3 left-3 hidden rounded-lg border border-[color:var(--v3-line)] bg-[var(--v3-panel)] px-[9px] py-[5px] font-mono text-[11px] text-[color:var(--v3-fg-2)] @min-[760px]:block"
+        >
           drag = move · scroll = zoom · click = details · double-click ⤢ = open · Esc = up
         </div>
         <div
@@ -968,10 +1257,38 @@ export function FactoryMap({
             +
           </button>
         </div>
+        {selectedCard && dock ? (
+          <div
+            data-map-details
+            data-side={dock.side}
+            onPointerDown={(event) => event.stopPropagation()}
+            className="absolute z-10 cursor-auto touch-pan-y select-text overflow-y-auto overscroll-contain"
+            style={detailsStyle(dock)}
+          >
+            <MapDetails
+              card={selectedCard}
+              live={live.get(selectedCard.id)}
+              factory={factory}
+              at={at}
+              steps={steps}
+              stepsFailed={stepsFailed}
+              onClose={() => setSelected(null)}
+              open={
+                selectedCard.opens === undefined
+                  ? undefined
+                  : {
+                      title: selectedCard.title,
+                      steps: map.views?.[selectedCard.opens]?.cards.length ?? 0,
+                      onOpen: () => onPath([...path, selectedCard.opens as string]),
+                    }
+              }
+            />
+          </div>
+        ) : null}
       </section>
       <ul
         data-map-legend
-        className={`${COLUMN} mt-2.5 flex flex-wrap gap-x-[18px] gap-y-2 text-[12px] text-[color:var(--v3-fg-2)]`}
+        className={`${APP_COLUMN} mt-2.5 flex flex-wrap gap-x-[18px] gap-y-2 text-[12px] text-[color:var(--v3-fg-2)]`}
       >
         {map.legend.map((entry) => (
           <li key={entry.role} className="flex items-center">
@@ -992,27 +1309,6 @@ export function FactoryMap({
           </li>
         ) : null}
       </ul>
-      {selectedCard ? (
-        <MapDetails
-          className={COLUMN}
-          card={selectedCard}
-          live={live.get(selectedCard.id)}
-          factory={factory}
-          at={at}
-          steps={steps}
-          stepsFailed={stepsFailed}
-          onClose={() => setSelected(null)}
-          open={
-            selectedCard.opens === undefined
-              ? undefined
-              : {
-                  title: selectedCard.title,
-                  steps: map.views?.[selectedCard.opens]?.cards.length ?? 0,
-                  onOpen: () => onPath([...path, selectedCard.opens as string]),
-                }
-          }
-        />
-      ) : null}
     </div>
   );
 }

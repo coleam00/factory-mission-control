@@ -320,6 +320,12 @@ const ROW_COLUMNS: Record<string, string[]> = {
     'stop_class',
     'capacity_since',
     'pr_state',
+    'item_closed_at',
+    'item_merged_at',
+    'item_pr',
+    'finished_by',
+    'finished_at',
+    'closed_by',
   ]),
   'owner-queue': columns<OwnerQueueRow>()([
     'kind',

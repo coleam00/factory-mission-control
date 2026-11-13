@@ -54,6 +54,10 @@ test('each address gives the context the Manager is asked with and the chip that
   });
   expect(place('/f/x/board', 'view=table').context).toEqual({ place: 'board' });
   expect(place('/f/x/runs')).toMatchObject({ context: { place: 'runs' }, chip: 'Runs · all' });
+  expect(place('/f/x/runs', 'view=failures')).toMatchObject({
+    context: { place: 'runs' },
+    chip: 'Runs · failures',
+  });
   expect(place('/f/x/runs', 'state=failed').chip).toBe('Runs · failed');
   expect(place(`/f/x/runs/${RUN.toUpperCase()}`)).toMatchObject({
     context: { place: 'run', run: RUN },

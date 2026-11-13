@@ -1663,7 +1663,8 @@ export const QUEUE_RUNS = {
 
 /**
  * Three archon-merge-queue ticks on 24 October that a database or GitHub blip failed at `facts`, each retried by
- * the completed sweep QUEUE_RUNS.merged at 09:09 (#628): Attention shows them as one muted line, not as cards.
+ * the completed sweep QUEUE_RUNS.merged at 09:09 (#628): Attention shows the transient ones (compute node, 502) as one muted line, not as cards.
+ * The 'error: out of memory' tick is environment (owner change 5, 2026-11-12), so the muted line leaves it out; it has no item, so the sweep still resolves it.
  */
 export const QUEUE_BLIPS = [
   ['5eed0005-0000-4000-8000-000000000019', 0, "Couldn't connect to compute node"],

@@ -10,7 +10,6 @@ import { ErrorPanel } from './ErrorPanel';
 import { ManagerNote } from './ManagerNote';
 import { OptionTile, RecommendedTag } from './OptionTile';
 import { Segmented } from './Segmented';
-import { Sparkline } from './Sparkline';
 import { Pill, StateDot } from './StateDot';
 import { Tabs } from './Tabs';
 import { Timeline, TimelineRow } from './Timeline';
@@ -72,8 +71,6 @@ const VARIANTS: [string, ReactElement][] = [
   ['OptionTile', <OptionTile key="o" label="Merge" consequence="Lands the PR" />],
   ['OptionTile recommended', <OptionTile key="r" recommended label="Merge" consequence="Lands" />],
   ['RecommendedTag', <RecommendedTag key="t" />],
-  ['Sparkline', <Sparkline key="p" counts={[0, 2, 5, 1]} />],
-  ['Sparkline empty', <Sparkline key="q" counts={[0, 0]} />],
   [
     'Timeline',
     <Timeline key="tl">
@@ -133,10 +130,7 @@ const VARIANTS: [string, ReactElement][] = [
       Answered
     </Toast>,
   ],
-  [
-    'Toast result',
-    <Toast key="tr">Answered · sent</Toast>,
-  ],
+  ['Toast result', <Toast key="tr">Answered Â· sent</Toast>],
 ];
 
 test.each(VARIANTS)('%s renders with v3 tokens only', (_name, element) => {

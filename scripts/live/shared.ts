@@ -215,6 +215,74 @@ export function mapTypeFailures(type: MapType): string[] {
   return failures;
 }
 
+const STAGE = `${MAP} [data-map-stage]`;
+
+/** The map's cards that lie outside its frame: ids, empty when Fit shows the whole level. */
+const cardsOutsideFrame = (page: Page) =>
+  page.evaluate<string[]>(
+    `(() => {
+      const frame = document.querySelector('${STAGE}').getBoundingClientRect();
+      return [...document.querySelectorAll('${MAP} [data-card]')]
+        .filter((el) => {
+          const r = el.getBoundingClientRect();
+          return r.left < frame.left - 1 || r.top < frame.top - 1 ||
+            r.right > frame.right + 1 || r.bottom > frame.bottom + 1;
+        })
+        .map((el) => el.getAttribute('data-card'));
+    })()`,
+  );
+
+/** Two animation frames, enough for a click's state to be drawn. */
+const drawn = (page: Page) =>
+  page.evaluate(`new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)))`);
+
+/**
+ * Fit shows every card inside the frame, with the Manager open and closed, and a clicked card shows
+ * its details inside the frame (owner changes of 2026-11-12, item 11); what each misses, one line each.
+ * Leaves the Manager as it found it and nothing selected.
+ */
+export async function mapFrameFailures(page: Page, card: string): Promise<string[]> {
+  const failures: string[] = [];
+  const fits = async (manager: string) => {
+    await click(page, `${MAP} [aria-label="Fit"]`);
+    await drawn(page);
+    const outside = await cardsOutsideFrame(page);
+    if (outside.length > 0) {
+      failures.push(
+        `Fit with the Manager ${manager} leaves ${outside.join(', ')} outside the map's frame`,
+      );
+    }
+  };
+  await fits('as it was');
+  const width = () =>
+    page.evaluate<number>(`document.querySelector('${STAGE}').getBoundingClientRect().width`);
+  const was = await width();
+  const toggle = `nav[aria-label="Places"] button[aria-pressed]`;
+  await click(page, toggle);
+  await page.evaluate(
+    pageWait(`document.querySelector('${STAGE}').getBoundingClientRect().width !== ${was}`, 2000),
+  );
+  await drawn(page);
+  await fits('toggled');
+  await click(page, toggle);
+  await page.evaluate(
+    pageWait(`document.querySelector('${STAGE}').getBoundingClientRect().width === ${was}`, 2000),
+  );
+  await click(page, `${MAP} [data-card="${card}"]`);
+  await drawn(page);
+  const inFrame = await page.evaluate<boolean>(`(() => {
+    const frame = document.querySelector('${STAGE}').getBoundingClientRect();
+    const r = document.querySelector('${MAP} [data-map-details]')?.getBoundingClientRect();
+    return r !== undefined && r.left >= frame.left - 1 && r.top >= frame.top - 1 &&
+      r.right <= frame.right + 1 && r.bottom <= frame.bottom + 1;
+  })()`);
+  if (!inFrame) failures.push(`the details of ${card} are missing or outside the map's frame`);
+  await page.evaluate(
+    `document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))`,
+  );
+  return failures;
+}
+
 /** Where the map, in document order, differs from factory-map.json and from `counts`: one line each. */
 export function mapMismatches(
   cards: ShownCard[],

@@ -4,22 +4,17 @@ import { FACTORY_MAP } from '../map/factory-map';
 import type { DecideRow, UnstickRow } from './attention';
 import {
   type AttentionCard,
-  ATTENTION_SOURCES,
   attentionCount,
   byKind,
   byQueue,
   decideCards,
-  fixCards,
   ownerCards,
   QUEUE_OF_CARD,
   queueOf,
-  RETRIED_QUERY,
-  retriedLine,
   sweepLine,
   unstickCards,
   unstickKey,
 } from './attention-page';
-import type { FailureGroupRow } from './failures';
 import { localMoment } from './format';
 import type { OwnerQueueRow } from './owner-queue';
 
@@ -65,22 +60,6 @@ const unstick = (overrides: Partial<UnstickRow>): UnstickRow => ({
   reason: null,
   console: 'http://localhost:3090/',
   open: true,
-  ...overrides,
-});
-
-const group = (overrides: Partial<FailureGroupRow> = {}): FailureGroupRow => ({
-  signature: 'sig',
-  workflow_name: 'archon-loop',
-  step_id: 'review',
-  class: 'transient',
-  failures: 3,
-  first_at: new Date('2026-10-22T23:00:00Z'),
-  last_at: new Date('2026-10-24T01:00:00Z'),
-  latest_run_id: RUN,
-  line: 'boom',
-  last_day: new Date('2026-10-24'),
-  daily: [0, 1, 2],
-  console: 'http://localhost:3090/',
   ...overrides,
 });
 
@@ -414,26 +393,6 @@ test('the needs-owner issue recommends replying on GitHub, and a question links 
   );
 });
 
-test('a Fix card says the count, the inclusive UTC days, the step and the class', () => {
-  const [card] = fixCards([group()], 'f');
-  expect(card?.age).toEqual({ text: '3 runs · 3 days' });
-  expect(card?.title).toBe('Lap failed at review');
-  expect(card?.meta).toContainEqual({ pill: 'transient', state: 'failed' });
-  expect(card?.note.rest).toBe('It is transient: a retry usually passes.');
-  expect(card?.actions[0]).toMatchObject({ href: `/f/f/runs/${RUN}`, external: false });
-  const [queued] = fixCards([group({ workflow_name: 'archon-build-queue', step_id: 'ask' })], 'f');
-  expect(queued?.actions[0]).toMatchObject({ href: `/f/f/runs/${RUN}`, external: false });
-
-  const [bare] = fixCards([group({ step_id: null, class: null, failures: 1, line: null })], 'f');
-  expect(bare?.title).toBe('Lap failed');
-  expect(bare?.note).toEqual({
-    lead: '1 failed run has this cause.',
-    rest: 'It is not classified.',
-  });
-  expect(bare?.meta).toContainEqual({ pill: 'unclassified', state: 'failed' });
-  expect(bare?.age).toEqual({ since: new Date('2026-10-24T01:00:00Z') });
-});
-
 test('By queue holds exactly the cards By kind holds, and an unknown workflow lands in Other', () => {
   expect(queueOf('archon-merge-queue')).toBe('merge');
   expect(queueOf('archon-loop', 'review')).toBe('merge');
@@ -446,13 +405,12 @@ test('By queue holds exactly the cards By kind holds, and an unknown workflow la
   const cards: AttentionCard[] = [
     ...decideCards([decide()], 'f'),
     ...unstickCards([unstick({})], 'f', false),
-    ...fixCards([group(), group({ signature: 'b', workflow_name: 'mystery' })], 'f'),
   ];
   const keys = (groups: { cards: AttentionCard[] }[]) =>
     groups.flatMap((g) => g.cards.map((c) => c.key)).sort();
   expect(keys(byQueue(cards))).toEqual(keys(byKind(cards)));
-  expect(byQueue(cards).map((g) => g.queue)).toEqual(['intake', 'build', 'merge', 'other']);
-  expect(byKind(cards).map((g) => g.kind)).toEqual(['decide', 'unstick', 'fix']);
+  expect(byQueue(cards).map((g) => g.queue)).toEqual(['intake', 'build']);
+  expect(byKind(cards).map((g) => g.kind)).toEqual(['decide', 'unstick']);
 });
 
 test('By queue names real factory-map cards, and every card that covers a workflow has a queue or is listed as Other', () => {
@@ -527,14 +485,4 @@ test('an unstick card is keyed as unstickKey says, so the live phase finds it', 
       .map((c) => c.key)
       .sort(),
   ).toEqual(rows.map(unstickKey).sort());
-});
-
-test('retriedLine words one run and many, and the muted line is not an item source', () => {
-  expect(retriedLine(1)).toBe(
-    '1 run hit a passing database or GitHub error today and was retried.',
-  );
-  expect(retriedLine(3)).toBe(
-    '3 runs hit a passing database or GitHub error today and were retried.',
-  );
-  expect(Object.values(ATTENTION_SOURCES).map((s) => s.query)).not.toContain(RETRIED_QUERY);
 });

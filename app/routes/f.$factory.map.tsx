@@ -1,5 +1,6 @@
 import { type ReactElement, type ReactNode, useEffect, useState } from 'react';
 import { useLocation, useSearchParams } from 'react-router';
+import { APP_COLUMN } from '../components/Column';
 import { EmptyState } from '../components/EmptyState';
 import { FactoryMap } from '../components/FactoryMap';
 import { FactoryScorecard } from '../components/FactoryScorecard';
@@ -30,9 +31,6 @@ import {
  * The map once `home-map` has answered: the owner's drawing, always the same, with the chips the
  * live rows count. Each other source's chips appear as its rows arrive.
  */
-/** The app's column, which the title row, the version control and the empty states keep. */
-const COLUMN = 'mx-auto w-full max-w-6xl px-6';
-
 /** Milliseconds from `now` to the next local midnight, when "today" changes. */
 export const msToLocalMidnight = (now: Date): number =>
   new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1).getTime() - now.getTime();
@@ -89,7 +87,7 @@ export function HomeMapBody({
 }): ReactElement {
   const { map } = sources;
   const empty = (title: string) => (
-    <div className={COLUMN}>
+    <div className={APP_COLUMN}>
       {aside ? <div className="mb-4">{aside}</div> : null}
       <EmptyState title={title} />
     </div>
@@ -211,7 +209,7 @@ export default function Home(): ReactElement {
         )}
       </LivePanel>
       {path.length === 0 && at === null ? (
-        <div className={`${COLUMN} mt-6`}>
+        <div className={`${APP_COLUMN} mt-6`}>
           <FactoryScorecard factory={factory} />
         </div>
       ) : null}
