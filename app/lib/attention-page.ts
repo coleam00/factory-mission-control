@@ -455,7 +455,10 @@ export function unstickCards(
           ? {
               id: 'something-else',
               label: SOMETHING_ELSE,
-              consequence: 'Tell the manager what you want; it proposes the action as a button',
+              consequence:
+                writable && loginMissing
+                  ? 'Tell the manager what you want; for re-triage or a comment it can only link the issue, since those need the operator’s `login`'
+                  : 'Tell the manager what you want; it proposes the action as a button',
               recommended: false,
               href: itemHref,
               manager: ask,

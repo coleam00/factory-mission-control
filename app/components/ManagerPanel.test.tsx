@@ -171,7 +171,11 @@ test('a comment proposal shows its quoted text, and re-triage and comment become
   ]);
   const noLogin = render([items], true, 'x', true);
   expect(buttons(noLogin)).toEqual(['Close #42']);
-  expect(noLogin.match(/>Open #42<\/a>/g)).toHaveLength(2);
+  const links = (noLogin.match(/<a [^>]*>[^<]*<\/a>/g) ?? []).map((a) => a.replace(/<[^>]*>/g, ''));
+  expect(links.filter((l) => l.startsWith('Open #'))).toEqual([
+    'Open #42: Re-triage #42, which needs the operator’s `login`',
+    `Open #42: Comment on #42, then re-triage: “${text.slice(0, 40)}…”, which needs the operator’s \`login\``,
+  ]);
 });
 
 test('bold that opens in one list item and closes in the next shows no ** and stays out of both', () => {

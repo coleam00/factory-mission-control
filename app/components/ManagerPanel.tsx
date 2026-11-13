@@ -172,7 +172,8 @@ function Proposals({
               ? `${label}: ${quoted(proposal.text)}`
               : label;
         // The server refuses a re-triage or a comment for an operator with no `login`.
-        const writable = enabled && !(loginMissing && needsLogin(proposal.action));
+        const gated = loginMissing && needsLogin(proposal.action);
+        const writable = enabled && !gated;
         // A run's action names the run after its label; a work item's label already names `#N`.
         const text = 'run_id' in proposal ? `${named} ${shortRunId(proposal.run_id)}` : named;
         return writable ? (
@@ -202,7 +203,9 @@ function Proposals({
           >
             {'run_id' in proposal
               ? `Open run ${shortRunId(proposal.run_id)}`
-              : `Open #${proposal.number}`}
+              : gated
+                ? `Open #${proposal.number}: ${named}, which needs the operator’s \`login\``
+                : `Open #${proposal.number}`}
           </Link>
         );
       })}
