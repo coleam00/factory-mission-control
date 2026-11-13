@@ -15,8 +15,8 @@ The owner looked at v3 on live data and found Attention said "23 things need you
 the 23 were failure groups. Where `mockup.html` or a screenshot (`01`, `02`, `03`, `40`) still shows a
 **Fix** group, a failure sparkline or a failure count on Attention, this section wins.
 
-1. **Attention holds only what needs the owner.** Its groups are **Decide**, **Unstick** and **Clean
-   up**. Failures are not on Attention. The number "N things need you", the nav badge, the phone tab
+1. **Attention holds only what needs the owner.** Its groups are **Decide** and **Unstick**
+   (a Clean up group returns only once its source is defined; owner ruling on #646). Failures are not on Attention. The number "N things need you", the nav badge, the phone tab
    badge, the Manager's "Looking at Attention · N items" chip and the briefing's count all count the
    same items, and failures are never among them.
 2. **Failures live on Runs.** Runs gets a segmented control at top right, **All runs / Failures**
