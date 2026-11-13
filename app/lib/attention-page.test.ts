@@ -18,6 +18,9 @@ import {
   unstickKey,
 } from './attention-page';
 import type { OwnerQueueRow } from './owner-queue';
+import { pinZone } from './pin-zone';
+
+pinZone('America/Chicago');
 
 const RUN = '5eed0005-0000-4000-8000-000000000001';
 const CONSOLE_RUN = `http://localhost:3090/console/r/${RUN}`;
@@ -265,7 +268,7 @@ test('an owner question recommends only its default tile, and says when the defa
     ['B', true],
   ]);
   expect(card?.note).toEqual({
-    lead: 'Default B applies 2026-10-25 09:07 UTC.',
+    lead: 'Default B applies 2026-10-25 04:07.',
     rest: 'JSON is simpler.',
   });
   expect(card?.tiles.map((t) => t.href)).toEqual([

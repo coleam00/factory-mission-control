@@ -1,5 +1,6 @@
 import { type ReactElement, useState } from 'react';
 import { Link } from 'react-router';
+import { clock, localDay, weekdayClock } from '../lib/format';
 import type { DecideRow, UnstickRow } from '../lib/attention';
 import { type BoardRow, type ItemOnBoard, itemOnBoard } from '../lib/board';
 import type { HealthWorkableRow } from '../lib/health';
@@ -24,14 +25,9 @@ import { Pill } from './ui/StateDot';
 import { Timeline, TimelineRow } from './ui/Timeline';
 import { Column } from './Column';
 
-const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-const clock = (at: Date) => at.toISOString().slice(11, 16);
-
-/** The weekday and time on the first row and wherever the UTC day changes, else the time alone. */
+/** The weekday and time on the first row and wherever the local day changes, else the time alone. */
 function whenOf(at: Date, before: Date | null): string {
-  const newDay =
-    before === null || before.toISOString().slice(0, 10) !== at.toISOString().slice(0, 10);
-  return newDay ? `${WEEKDAYS[at.getUTCDay()]} ${clock(at)}` : clock(at);
+  return before === null || localDay(before) !== localDay(at) ? weekdayClock(at) : clock(at);
 }
 
 export function NoWorkItem({ number }: { number: string }): ReactElement {

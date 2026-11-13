@@ -1,10 +1,13 @@
 import { expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { MemoryRouter } from 'react-router';
+import { pinZone } from '../lib/pin-zone';
 import { homeHref } from '../lib/home-map';
 import { type StepVersionRow, stepHref } from '../lib/step-detail';
 import type { PanelState } from '../live/LivePanel';
 import { StepVersionPickerBody } from './StepVersionPicker';
+
+pinZone('America/Chicago');
 
 const OLDER = '8e3e1cefaf1e1b7955789d6a43a81b6c2dbd7082';
 const CURRENT = '5ffd60c6c6e591487f2fbb5ec67ccc8fc55ca915';
@@ -55,7 +58,7 @@ test('without a version the current one is shown, and opens the address without 
     { sha: CURRENT, href: '/f/x/steps/archon-loop/review', shown: true },
     { sha: OLDER, href: `/f/x/steps/archon-loop/review?at=${OLDER}`, shown: false },
   ]);
-  expect(summary(html)).toBe('Version 5ffd60c6 2026-02-01 current');
+  expect(summary(html)).toBe('Version 5ffd60c6 2026-01-31 current');
   expect(html).toContain('data-step-version');
 });
 
@@ -65,7 +68,7 @@ test('an older version in the address is the one shown', () => {
     [CURRENT, false],
     [OLDER, true],
   ]);
-  expect(summary(html)).toBe('Version 8e3e1cef 2026-01-01');
+  expect(summary(html)).toBe('Version 8e3e1cef 2025-12-31');
 });
 
 test('a version nobody recorded is named as given, and none is shown as chosen', () => {

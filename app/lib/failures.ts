@@ -34,7 +34,7 @@ export interface FailureGroupRow {
   console: string;
 }
 
-/** One row of retried-runs.sql: a transient failure that a later completed run of its workflow followed, on the factory's latest stop day (#628). */
+/** One row of retried-runs.sql: a transient failure that a later completed run of its workflow followed, on the viewer's local day (#628). */
 export interface RetriedRunRow {
   run_id: string;
   workflow_name: string;

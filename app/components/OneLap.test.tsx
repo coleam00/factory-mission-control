@@ -7,6 +7,9 @@ import { type LapMapRow, lapGraph } from '../lib/lap-graph';
 import { StepPanel } from './LapGraph';
 import { CheckList, LapStepsBody, StepList } from './OneLap';
 import { NoRun, RunView, type RunViewProps } from './OneRun';
+import { pinZone } from '../lib/pin-zone';
+
+pinZone('America/Chicago');
 
 /** The run page on its Steps tab with no steps: the head and, for an old loop, review and gate. */
 function LapHeaderBody({

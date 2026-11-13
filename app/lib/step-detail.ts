@@ -1,3 +1,4 @@
+import { localDay } from './format';
 import { placeAddress } from './places';
 import { recorded } from './version-strip';
 
@@ -281,7 +282,7 @@ export function stepVersions(rows: readonly StepVersionRow[]): StepVersion[] {
     )
     .map((row) => ({
       sha: row.sha,
-      label: `${row.sha.slice(0, 8)} ${row.committed_at.toISOString().slice(0, 10)}`,
+      label: `${row.sha.slice(0, 8)} ${localDay(row.committed_at)}`,
       reason: recorded(row.reason),
       current: row.is_current,
     }));

@@ -1,17 +1,17 @@
-import { type ReactElement, useEffect, useState } from 'react';
+import { type ReactElement, useState } from 'react';
 import {
   type Comparison,
   type FactoryScorecardRow,
   formatChange,
   formatValue,
   type MeasureFormat,
-  msToUtcMidnight,
   type ScorecardWindow,
   scorecardMeasures,
-  scorecardUntil,
+  scorecardEdges,
   TOO_FEW_BELOW,
 } from '../lib/factory-scorecard';
 import { LivePanel, type PanelState } from '../live/LivePanel';
+import { useToday } from '../live/use-today';
 import { Card } from './ui/Card';
 import { Segmented } from './ui/Segmented';
 
@@ -84,9 +84,9 @@ export function FactoryScorecardBody({
       ) : (
         <>
           <p className={`mb-3 mt-0 ${NOTE}`}>
-            From Archon’s metric records, by UTC day, beside the period before. n is how many
-            records each number rests on. Indented rows split a measure by route. A change needs{' '}
-            {TOO_FEW_BELOW} records in both periods.
+            From Archon’s metric records, beside the period before. n is how many records each
+            number rests on. Indented rows split a measure by route. A change needs {TOO_FEW_BELOW}{' '}
+            records in both periods.
           </p>
           <table className="w-full table-fixed border-collapse text-left text-[length:var(--v3-t-meta)]">
             <thead>
@@ -126,22 +126,12 @@ export function FactoryScorecardBody({
   );
 }
 
-/** The browser's clock, moved on at each UTC midnight, when the scorecard's windows move a day. */
-function useUtcDay(): Date {
-  const [now, setNow] = useState(() => new Date());
-  useEffect(() => {
-    const timer = setTimeout(() => setNow(new Date()), msToUtcMidnight(now));
-    return () => clearTimeout(timer);
-  }, [now]);
-  return now;
-}
-
 /** The factory's scorecard (#630): Archon's metric records for the last 7 or 30 days, live. */
 export function FactoryScorecard({ factory }: { factory: string | undefined }): ReactElement {
   const [window, setWindow] = useState<ScorecardWindow>('7');
-  const until = scorecardUntil(useUtcDay());
+  const edges = scorecardEdges(useToday());
   return (
-    <LivePanel<FactoryScorecardRow> query="factory-scorecard" factory={factory} args={[until]}>
+    <LivePanel<FactoryScorecardRow> query="factory-scorecard" factory={factory} args={edges}>
       {(rows, state) => (
         <FactoryScorecardBody rows={rows} state={state} window={window} onWindow={setWindow} />
       )}

@@ -4,7 +4,7 @@
  * the head, the read and the timeline compute from the same rows. Pure, no React.
  */
 import type { StopClass } from './failures';
-import { clock, formatCost, shortRunId } from './format';
+import { clock, formatCost, monthDay, shortRunId } from './format';
 import { type LapMapRow, mapPathOf } from './lap-graph';
 import { costOf, OUTCOME_LABEL } from './laps';
 import { questionOf } from './work-item';
@@ -326,7 +326,7 @@ function whenText(at: Date | string, now: number): string {
   const today = new Date(now);
   return date.toDateString() === today.toDateString()
     ? clock(date)
-    : `${date.toLocaleDateString([], { month: 'short', day: 'numeric' })}, ${clock(date)}`;
+    : `${monthDay(date)}, ${clock(date)}`;
 }
 
 /**

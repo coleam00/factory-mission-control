@@ -14,6 +14,9 @@ import {
   mapAt,
   versionName,
 } from './step-detail';
+import { pinZone } from './pin-zone';
+
+pinZone('America/Chicago');
 
 function step(path: string, fields: Partial<StepRow> = {}): StepRow {
   const parent = path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : null;
@@ -182,8 +185,8 @@ test('the versions a step opens at are newest first, the current one marked, a b
       },
     ]),
   ).toEqual([
-    { sha: 'bbbb2222new', label: 'bbbb2222 2026-02-01', reason: 'two', current: true },
-    { sha: 'aaaa1111old', label: 'aaaa1111 2026-01-01', reason: 'not recorded', current: false },
+    { sha: 'bbbb2222new', label: 'bbbb2222 2026-01-31', reason: 'two', current: true },
+    { sha: 'aaaa1111old', label: 'aaaa1111 2025-12-31', reason: 'not recorded', current: false },
   ]);
 });
 

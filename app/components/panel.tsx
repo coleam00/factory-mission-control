@@ -39,9 +39,6 @@ export function PanelBody<Row>({
   return <>{children(rows, factory)}</>;
 }
 
-/** `2026-10-24 10:00 UTC`: the same moment for every viewer. */
-export const utcMinute = (at: Date) => `${at.toISOString().slice(0, 16).replace('T', ' ')} UTC`;
-
 export function Field({ label, children }: { label: string; children: ReactNode }): ReactElement {
   return (
     <div className="flex min-w-0 flex-col gap-1">

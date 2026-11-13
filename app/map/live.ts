@@ -12,7 +12,7 @@ import {
   attentionTitle,
   attentionItems as parseAttention,
 } from '../lib/attention';
-import { formatElapsed } from '../lib/format';
+import { formatElapsed, localDay } from '../lib/format';
 import {
   CAUSE_LABEL,
   failedLaps,
@@ -225,10 +225,7 @@ export function deepestStep(steps: readonly string[] | null): string | undefined
   return deepest;
 }
 
-const sameLocalDay = (a: Date, b: Date) =>
-  a.getFullYear() === b.getFullYear() &&
-  a.getMonth() === b.getMonth() &&
-  a.getDate() === b.getDate();
+const sameLocalDay = (a: Date, b: Date) => localDay(a) === localDay(b);
 
 /**
  * The merges of `now`'s local day, newest first: a loop lap whose land step merged is one, a
