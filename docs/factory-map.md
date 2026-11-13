@@ -58,7 +58,8 @@ ruling on #549 (2026-11-09), which opened at the type floor on the main line. At
 at about 0.48 with the Manager closed and 0.32 with it open, under the type floor; zooming in
 reaches it. A resize or a Manager toggle refits the camera until the owner drags, swipes or zooms
 (wheel, pinch, or the zoom buttons); then the camera stays where the owner put it. Fit and a level
-change hand the camera back. A drag from anywhere, a card included, moves the map; a press without
+change hand the camera back, and so does a resize across the shell's 1024px layout switch, which
+remounts the page: the map opens afresh, fitted. A drag from anywhere, a card included, moves the map; a press without
 movement selects.
 A card whose kind label would not fit on one line at that size is widened through its `width` and the
 cards after it move right to keep their spacing (App check's Use the app, Build's Investigate and Plan,

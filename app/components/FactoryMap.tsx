@@ -679,7 +679,7 @@ export function FactoryMap({
     onCard: boolean;
     pointerId: number;
   } | null>(null);
-  /** Whether the person has dragged or zoomed this level, so a resize or a Manager toggle leaves the camera alone (#655). */
+  /** Whether the person has dragged or zoomed this level, so a resize or a Manager toggle leaves the camera alone (#655). A resize across the shell's 1024px layout switch remounts the map, which opens afresh. */
   const owned = useRef(false);
   /** Set by a drag's release so the click the browser may send after it does not select or open. */
   const suppressClick = useRef(false);
