@@ -1061,6 +1061,102 @@ describe('a busy day', () => {
        FROM generate_series(0, ${count - 1}) g`,
     );
 
+  describe('with failures and nothing for the owner', () => {
+    const F = 'quiet';
+    const stop = (n: number, signature: string) =>
+      `('5eed000a-0000-4000-8000-0000000000${n}', '${F}', 'archon-build', 'failed', 'implement', 'a long error line that stays out of the briefing', 'code', '${signature}', now())`;
+    const ask = async (manager: Manager) =>
+      (
+        await events(
+          await createApp({ buildId: 't', distDir: '.', manager }).request(
+            '/api/manager/briefing',
+            {
+              method: 'POST',
+              body: JSON.stringify({ factory: F }),
+            },
+          ),
+        )
+      )
+        .flatMap((e) => (e.type === 'text' ? [e.text] : []))
+        .join('');
+    const seed = async () => {
+      await seedFactory(F);
+      await fixture.direct.query(
+        `INSERT INTO mc.run_stops (run_id, factory, workflow_name, status, step_id, line, class, signature, stopped_at)
+         VALUES ${stop(11, 'sig-a')}, ${stop(12, 'sig-b')}`,
+      );
+    };
+    const managerOver = (db: Db) =>
+      createManager({
+        db,
+        databaseUrl: fixture.url,
+        factories: [F],
+        settings: managerSettings({}),
+        run: model(async () => [start, delta('Quiet.'), result(0.01)]).run,
+        now: () => clock,
+      });
+
+    test('says nothing needs you, then one short failure sentence with the link', async () => {
+      clock = new Date('2026-11-08T10:00:00');
+      await seed();
+      try {
+        const text = await ask(managerOver(fixture.direct));
+        expect(text.startsWith('Nothing needs you')).toBe(true);
+        const lines = text.split('\n').filter((l) => l.includes('failure cause'));
+        expect(lines).toEqual([
+          `2 failure causes are open, all code. See [Runs > Failures](/f/${F}/runs?view=failures).`,
+        ]);
+        for (const line of text.split('\n')) expect(line.length).toBeLessThanOrEqual(200);
+        expect(text).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}-/);
+        expect(text).not.toContain('long error line');
+      } finally {
+        await clean(F);
+      }
+    });
+
+    test('states the open count as of each ask, even when the prose is replayed', async () => {
+      clock = new Date('2026-11-08T10:00:00');
+      await seed();
+      try {
+        const manager = managerOver(fixture.direct);
+        expect(await ask(manager)).toContain('2 failure causes are open');
+        await fixture.direct.query(`DELETE FROM mc.run_stops WHERE signature = 'sig-b'`);
+        const replayed = await ask(manager);
+        expect(replayed).toContain('1 failure cause is open');
+        expect(replayed).not.toContain('2 failure causes');
+      } finally {
+        await clean(F);
+      }
+    });
+
+    test('leaves the sentence out when the failure read fails, and states it on the next ask', async () => {
+      clock = new Date('2026-11-08T10:00:00');
+      await seed();
+      const error = spyOn(console, 'error').mockImplementation(() => {});
+      try {
+        let broken = true;
+        const failing = Object.create(fixture.direct);
+        failing.transaction = (fn: (tx: Db) => Promise<void>) =>
+          fixture.direct.transaction((tx) =>
+            fn({
+              ...tx,
+              query: (sql: string, params?: unknown[]) => {
+                if (broken && sql.includes('latest_run_id')) throw new Error('statement timeout');
+                return tx.query(sql, params);
+              },
+            } as Db),
+          );
+        const manager = managerOver(failing);
+        expect(await ask(manager)).not.toContain('failure cause');
+        broken = false;
+        expect(await ask(manager)).toContain('2 failure causes are open');
+      } finally {
+        error.mockRestore();
+        await clean(F);
+      }
+    });
+  });
+
   test('names every merge and failure cause and stays under the read size', async () => {
     clock = new Date('2026-11-08T10:00:00');
     const F = 'busy';

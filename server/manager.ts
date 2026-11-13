@@ -13,11 +13,12 @@ import type { Context, Hono } from 'hono';
 import { isAnswerText, resolveAnswer } from '../app/lib/attention';
 import { ATTENTION_SOURCES, type AttentionKind, KINDS } from '../app/lib/attention-page';
 import { scorecardUntil, TOO_FEW_BELOW } from '../app/lib/factory-scorecard';
-import { FAILURES_QUERY } from '../app/lib/failure-view';
+import { FAILURES_QUERY, failureLabel } from '../app/lib/failure-view';
 import { type FailureGroupRow, failuresSince } from '../app/lib/failures';
-import { addressOfPlace } from '../app/lib/runs';
 import { topLevelBlocks } from '../app/lib/manager-markdown';
 import { isRunId, lapHref } from '../app/lib/one-lap';
+import { placeAddress } from '../app/lib/places';
+import { addressOfPlace } from '../app/lib/runs';
 import { workItemHref } from '../app/lib/work-item';
 import { type Db, openDb } from '../scripts/lib/db';
 import { OPEN_QUESTION_SQL, openQuestionOf, RESUMABLE_RUN_SQL, RESUME_FROM_SQL } from './actions';
@@ -787,8 +788,8 @@ export function attentionLine(t: AttentionTally): string {
 
 function daySentence(day: DayDigest | null): string {
   if (!day)
-    return " Today's merged pull requests and failed runs could not be read: say so in one sentence and do not guess them.";
-  return ` Today's merged pull requests and runs by workflow and outcome were read for you from the factory's data, a run on the day its completed_at falls: name the merged pull requests by number and title from them instead of querying for them. The briefing already says in one sentence of its own how many failure causes are open, with a link to Runs > Failures: do not list, regroup, count or quote failures, and do not restate the count line: write at most two short blocks. Where and_more is above 0, more merged pull requests were not listed: say there were others, without a number. The numbers in them are for your judgment: state none of them. These are today's failures: the causes still unresolved are not things that wait on the owner and are not in the count line, so do not add or compare them; you may say they are listed as failures on Runs. ${JSON.stringify({ day: day.day, merged: day.merged, runs: day.runs })}`;
+    return " Today's merged pull requests could not be read: say so in one sentence and do not guess them.";
+  return ` Today's merged pull requests and runs by workflow and outcome were read for you from the factory's data, a run on the day its completed_at falls: name the merged pull requests by number and title from them instead of querying for them. The briefing already says in one sentence of its own how many failure causes are open, with a link to Runs > Failures: do not list, regroup, count or quote failures, and do not restate the count line: write at most two short blocks. Where and_more is above 0, more merged pull requests were not listed: say there were others, without a number. The numbers in them are for your judgment: state none of them. Failures are not things that wait on the owner and are not in the count line: do not add or compare them. ${JSON.stringify({ day: day.day, merged: day.merged, runs: day.runs })}`;
 }
 
 /**
@@ -887,13 +888,16 @@ export function failureLine(
 ): string | null {
   if (groups.length === 0) return null;
   const byClass = new Map<string, number>();
-  for (const g of groups) byClass.set(g.class ?? 'unclassified', (byClass.get(g.class ?? 'unclassified') ?? 0) + 1);
+  for (const g of groups) {
+    const label = failureLabel(g);
+    byClass.set(label, (byClass.get(label) ?? 0) + 1);
+  }
   const classes =
     byClass.size === 1
       ? `${groups.length === 1 ? '' : 'all '}${[...byClass.keys()][0]}`
       : [...byClass].map(([name, n]) => `${n} ${name}`).join(', ');
   const open = `${plural(groups.length, 'failure cause is', 'failure causes are')} open`;
-  const link = `[Runs > Failures](/f/${encodeURIComponent(factory)}/runs?${addressOfPlace('failures')})`;
+  const link = `[Runs > Failures](${placeAddress(factory, 'runs')}?${addressOfPlace('failures')})`;
   return `${open}${byClass.size === 1 ? ',' : ':'} ${classes}. See ${link}.`;
 }
 
@@ -922,24 +926,17 @@ const withoutCountLine = (text: string, line: string): string =>
     .filter((block) => !block.includes(line))
     .join('\n\n');
 
-function capBriefingEvents(
-  events: ManagerEvent[],
-  line: string | null,
-  causes: string | null,
-): ManagerEvent[] {
+/** The prose leaves one block of the cap to the failure sentence, which `briefing` adds on every ask. */
+function capBriefingEvents(events: ManagerEvent[], line: string | null): ManagerEvent[] {
   const raw = events.flatMap((e) => (e.type === 'text' ? [e.text] : [])).join('');
   const prose = capBriefingProse(
     line ? withoutCountLine(raw, line) : raw,
-    BRIEFING_PROSE_BLOCKS - (causes ? 1 : 0),
+    BRIEFING_PROSE_BLOCKS - 1,
   );
-  const capped: ManagerEvent = {
-    type: 'text',
-    text: [causes, prose].filter((b) => b).join('\n\n'),
-  };
   const at = events.findIndex((e) => e.type === 'text');
-  if (at < 0) return causes ? [capped, ...events] : events;
+  if (at < 0) return events;
   return events.flatMap((e, i): ManagerEvent[] =>
-    e.type !== 'text' ? [e] : i === at ? [capped] : [],
+    e.type !== 'text' ? [e] : i === at ? [{ type: 'text', text: prose }] : [],
   );
 }
 
@@ -950,8 +947,6 @@ async function generateBriefing(manager: Manager, factory: string, read: Attenti
       return null;
     },
   );
-  const open = await openFailures(manager, factory);
-  const causes = open && failureLine(open, factory);
   const request: ChatRequest = {
     factory,
     context: { place: 'attention' },
@@ -963,7 +958,7 @@ async function generateBriefing(manager: Manager, factory: string, read: Attenti
   let ok = false;
   let cost = 0;
   let rejected = false;
-  // The model may contradict the count line: try once more, then show the count line and the server's failure sentence.
+  // The model may contradict the count line: try once more, then show the count line alone.
   for (let attempt = 0; attempt < 2; attempt++) {
     events = [];
     const outcome = await produce(
@@ -983,9 +978,7 @@ async function generateBriefing(manager: Manager, factory: string, read: Attenti
       // `ok` stays as the attempt left it: a failed run is not kept, so the next ask tries again.
       if (!fault) console.warn('manager: briefing second attempt failed; showing the count line');
     }
-    // The fallback still carries the server's failure sentence: only the model's prose is dropped.
-    if (!fault || last)
-      events = capBriefingEvents(events, read && attentionLine(read.tally), causes);
+    if (!fault || last) events = capBriefingEvents(events, read && attentionLine(read.tally));
     if (!fault) break;
     rejected = true;
     console.warn(`manager: briefing rejected (attempt ${attempt + 1}): ${fault}`);
@@ -996,8 +989,8 @@ async function generateBriefing(manager: Manager, factory: string, read: Attenti
     generatedAt: manager.now().toISOString(),
     basis: basisOf(read),
   };
-  // Without the day's digest or the open failures the briefing is degraded: kept out of the cache so the next ask reads them again.
-  if (ok && day && open) manager.briefings.set(factory, briefing);
+  // Without the day's digest the briefing is degraded: kept out of the cache so the next ask reads it again.
+  if (ok && day) manager.briefings.set(factory, briefing);
   return { briefing, cost };
 }
 
@@ -1009,9 +1002,13 @@ export function briefing(manager: Manager, factory: string, refresh: boolean): R
     const read = await attentionTally(manager, factory);
     const tally = read?.tally ?? null;
     const basis = basisOf(read);
-    // Emitted with the prose, not before it: any event ends the panel's wait text.
-    const countLine = () => {
+    // Emitted with the prose, not before it: any event ends the panel's wait text. The failure
+    // sentence is read on every ask, not cached with the prose: it must agree with the live view it links to.
+    const opening = async () => {
       if (tally) emit({ type: 'text', text: `${attentionLine(tally)}\n\n` });
+      const open = await openFailures(manager, factory);
+      const sentence = open && failureLine(open, factory);
+      if (sentence) emit({ type: 'text', text: `${sentence}\n\n` });
     };
     const cached = manager.briefings.get(factory);
     if (
@@ -1021,7 +1018,7 @@ export function briefing(manager: Manager, factory: string, refresh: boolean): R
       cached.basis !== null &&
       cached.basis === basis
     ) {
-      countLine();
+      await opening();
       for (const event of cached.events) emit(event);
       emit(done(manager, 0, { generated_at: cached.generatedAt, cached: true }));
       return;
@@ -1040,7 +1037,7 @@ export function briefing(manager: Manager, factory: string, refresh: boolean): R
     if (made.basis !== basis) {
       ({ briefing: made, cost } = await generateBriefing(manager, factory, read));
     }
-    countLine();
+    await opening();
     for (const event of made.events) emit(event);
     emit(done(manager, cost, { generated_at: made.generatedAt, cached: false }));
   });
