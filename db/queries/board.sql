@@ -114,8 +114,8 @@ LEFT JOIN LATERAL (
     AND (p.state = 'open' OR p.merged_at IS NOT NULL)
 ) projected ON true
 LEFT JOIN LATERAL (
-  -- One pull request, so number, head and merge time never describe different ones: the open linked
-  -- pull request, else the projected one, else the merged linked one.
+  -- One pull request, so number, head and merged time never describe different ones: the open linked
+  -- pull request, else the projected one, else the linked one that landed.
   SELECT c.number, c.head_sha, c.merged_at
   FROM (
     SELECT 1 AS rank, linked.number, linked.head_sha, linked.merged_at WHERE linked.open
