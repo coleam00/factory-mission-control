@@ -707,8 +707,10 @@ export function answer(manager: Manager, request: ChatRequest, signal: AbortSign
 
 /** The briefing is the server's count line, its failure sentence, then at most this many blocks of the model's. */
 export const BRIEFING_PROSE_BLOCKS = 2;
+/** A model block longer than this is dropped: the briefing keeps every line to about 200 characters. */
+export const BRIEFING_BLOCK_CHARS = 200;
 
-const BRIEFING_QUESTION = `Write today's briefing: what merged, what failed (judge a run by the day it failed, completed_at, not the day it started), what waits on the owner, and the one or two things that matter most. At most ${BRIEFING_PROSE_BLOCKS} short blocks (a paragraph or a bullet each).`;
+const BRIEFING_QUESTION = `Write today's briefing: what merged, what failed (judge a run by the day it failed, completed_at, not the day it started), what waits on the owner, and the one or two things that matter most. At most ${BRIEFING_PROSE_BLOCKS} short blocks (a paragraph or a bullet each), each under ${BRIEFING_BLOCK_CHARS} characters.`;
 
 /** What the Attention header counts: the row count of each source. Failures are not among them. */
 export type AttentionTally = Record<keyof typeof ATTENTION_SOURCES, number>;
@@ -873,7 +875,10 @@ export function briefingFault(text: string, tally: AttentionTally): string | nul
 
 /** Blocks are the panel's own: its markdown parser decides where one ends. */
 export function capBriefingProse(text: string, blocks = BRIEFING_PROSE_BLOCKS): string {
-  return topLevelBlocks(text).slice(0, blocks).join('\n\n');
+  return topLevelBlocks(text)
+    .filter((block) => block.length <= BRIEFING_BLOCK_CHARS)
+    .slice(0, blocks)
+    .join('\n\n');
 }
 
 /**

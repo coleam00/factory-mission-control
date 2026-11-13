@@ -5,6 +5,7 @@ import { LIVE_QUERIES_DIR, loadLiveQueries } from './live';
 import {
   type AttentionTally,
   attentionLine,
+  BRIEFING_BLOCK_CHARS,
   BRIEFING_PROSE_BLOCKS,
   capBriefingProse,
 } from './manager';
@@ -67,4 +68,9 @@ describe('the briefing cap and the panel agree on what a block is', () => {
     expect(topLevelBlocks(text)).toHaveLength(units(text));
     expect(units(capBriefingProse(text))).toBe(Math.min(units(text), BRIEFING_PROSE_BLOCKS));
   });
+});
+
+test('a model block over the line limit is dropped, a short one after it stays', () => {
+  const long = 'x'.repeat(BRIEFING_BLOCK_CHARS + 1);
+  expect(capBriefingProse(`${long}\n\nShort.`)).toBe('Short.');
 });
