@@ -130,10 +130,7 @@ const VARIANTS: [string, ReactElement][] = [
       Answered
     </Toast>,
   ],
-  [
-    'Toast result',
-    <Toast key="tr">Answered · sent</Toast>,
-  ],
+  ['Toast result', <Toast key="tr">Answered Â· sent</Toast>],
 ];
 
 test.each(VARIANTS)('%s renders with v3 tokens only', (_name, element) => {
