@@ -30,13 +30,13 @@ export function FailureCardView({ card, now }: { card: FailureCard; now: number 
       <span className="mt-[7px]">
         <StateDot state="failed" />
       </span>
-      <h3 className="m-0 flex gap-3 text-[length:var(--v3-t-head)] leading-[1.35] font-semibold text-[color:var(--v3-fg)]">
-        <Link to={card.href} data-title className="hover:underline">
+      <h3 className="m-0 flex flex-wrap gap-x-3 gap-y-1 text-[length:var(--v3-t-head)] leading-[1.35] font-semibold text-[color:var(--v3-fg)]">
+        <Link to={card.href} data-title className="min-w-0 break-words hover:underline">
           {card.title}
         </Link>
         <span
           data-when
-          className="ml-auto whitespace-nowrap text-[length:var(--v3-t-meta)] font-normal text-[color:var(--v3-fg-3)]"
+          className="ml-auto text-[length:var(--v3-t-meta)] font-normal text-[color:var(--v3-fg-3)]"
         >
           {failureWhen(card, now)}
         </span>

@@ -10,7 +10,16 @@ import {
   type RunsRow,
   runsView,
 } from '../lib/runs';
-import { addressOf, nextFilter, Pager, pageWithin, placeOf, RunFilters, RunList } from './Runs';
+import {
+  addressOf,
+  nextFilter,
+  Pager,
+  pageWithin,
+  placeOf,
+  RunFilters,
+  RunList,
+  Runs,
+} from './Runs';
 
 const render = (element: React.ReactElement): string =>
   renderToStaticMarkup(<RouterProvider router={createMemoryRouter([{ path: '/', element }])} />);
@@ -170,4 +179,23 @@ test('the head has the All runs / Failures control at its right', () => {
     />,
   );
   expect(html).toContain('data-switcher');
+});
+
+const renderRuns = (search: string): string =>
+  renderToStaticMarkup(
+    <RouterProvider
+      router={createMemoryRouter([{ path: '/', element: <Runs factory="x" /> }], {
+        initialEntries: [`/${search}`],
+      })}
+    />,
+  );
+
+test('Runs renders the failure groups with Failures selected for ?view=failures, and every run for the bare address', () => {
+  const failures = renderRuns('?view=failures');
+  expect(failures).toContain('data-live="failure-groups"');
+  expect(failures).toMatch(/aria-pressed="true"[^>]*>Failures</);
+  const all = renderRuns('');
+  expect(all).toContain('data-live="runs"');
+  expect(all).not.toContain('data-live="failure-groups"');
+  expect(all).toMatch(/aria-pressed="true"[^>]*>All runs</);
 });

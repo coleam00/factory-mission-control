@@ -54,9 +54,9 @@ test('a seed with no question or no recommendation says so', () => {
 
 test('Attention draws no failure card, though the seed has failures', () => {
   expect(failureMismatches([card({})], [{ signature: 'a' }])).toEqual([]);
-  expect(failureMismatches([card({ id: 'a', kind: 'fix' })], [{ signature: 'a' }])[0]).toContain(
-    'a failure is drawn',
-  );
+  expect(
+    failureMismatches([card({ id: 'a', kind: 'unstick' })], [{ signature: 'a' }])[0],
+  ).toContain('a failure is drawn');
   expect(failureMismatches([], [])).toEqual(['the seed has no unresolved failure']);
 });
 

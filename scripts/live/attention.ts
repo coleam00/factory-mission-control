@@ -213,7 +213,8 @@ export function decideMismatches(shown: ShownCard[], archon: Row[], projected: R
 export function failureMismatches(shown: ShownCard[], signatures: Row[]): string[] {
   const mismatches: string[] = [];
   if (signatures.length === 0) mismatches.push('the seed has no unresolved failure');
-  for (const card of shown.filter((s) => s.kind === 'fix')) {
+  const failed = new Set(signatures.map((r) => String(r.signature)));
+  for (const card of shown.filter((s) => s.id !== null && failed.has(s.id))) {
     mismatches.push(`a failure is drawn on Attention: ${card.id}`);
   }
   return mismatches;
@@ -360,7 +361,7 @@ export function attentionPhase(ctx: LiveContext): LivePhase {
           'recount, page against SQL:',
           `cards: ${cards.length}, Decide ${idsOf(cards, 'decide').length} against mc.attention_items ${projected.length} and Archon's open attention waits ${archon.length}`,
           ...cards.map((c) => `  ${JSON.stringify(c)}`),
-          `Failures on Attention: ${idsOf(cards, 'fix').length} (the seed has ${signatures.length} failure signatures, none counted)`,
+          `Failures on Attention: ${failureMismatches(cards, signatures).filter((m) => m.startsWith('a failure is drawn')).length} (the seed has ${signatures.length} failure signatures, none counted)`,
           `Unstick: ${idsOf(cards, 'unstick').length} against ${stuck.length} rows`,
           `owner items: ${owner.length}, open needs-owner issues ${issues.length} plus open questions ${questions.length}`,
           ...owner.map((o) => `  ${o.id}`),

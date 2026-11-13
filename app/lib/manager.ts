@@ -113,6 +113,17 @@ export function managerPlace(
       };
     }
     case 'runs': {
+      if (first === '' && search.get(VIEW_PARAM) === 'failures') {
+        return {
+          context: { place: 'runs' },
+          chip: 'Runs · failures',
+          questions: [
+            'Which failure comes up most?',
+            'Which failures are environment problems?',
+            'What failed most recently?',
+          ],
+        };
+      }
       if (first === '') {
         const state = filterOf(search).state;
         const label = RUN_CHIPS.find((c) => c.state === state)?.label ?? 'All';
