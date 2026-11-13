@@ -10,7 +10,8 @@ export type Inline =
   | { type: 'text'; text: string; literal?: true; marker?: true }
   | { type: 'bold'; children: Inline[] }
   | { type: 'code'; text: string }
-  | { type: 'link'; link: ManagerLink };
+  | { type: 'link'; link: ManagerLink }
+  | { type: 'page'; href: string; children: Inline[] };
 
 export type Block =
   | { type: 'paragraph'; inlines: Inline[] }
@@ -34,11 +35,15 @@ const push = (into: Inline[], node: Inline) => {
   else into.push(node);
 };
 
+/** A link to a page of this app (`/f/...`) is kept as a link; any other target is dropped to its text. */
+const APP_PATH = /^\/(?![/\\])/;
+
 /** Bold and code kept, emphasis and link targets dropped to their text. A `**` that found no partner is not shown. */
 function inlines(children: Token[]): Inline[] {
   const root: Inline[] = [];
   const stack: Inline[][] = [root];
   let inLink = 0;
+  const pages: number[] = [];
   for (const t of children) {
     const into = stack[stack.length - 1];
     if (t.type === 'strong_open') {
@@ -51,7 +56,18 @@ function inlines(children: Token[]): Inline[] {
       into.push({ type: 'code', text: t.content });
     } else if (t.type === 'link_open') {
       inLink++;
+      const href = t.attrGet('href') ?? '';
+      if (APP_PATH.test(href)) {
+        const page: Inline = { type: 'page', href, children: [] };
+        into.push(page);
+        stack.push(page.children);
+        pages.push(inLink);
+      }
     } else if (t.type === 'link_close') {
+      if (pages[pages.length - 1] === inLink) {
+        pages.pop();
+        stack.pop();
+      }
       inLink--;
     } else if (t.type === 'text') {
       const text = t.content.replaceAll('**', '');
@@ -67,6 +83,7 @@ function inlines(children: Token[]): Inline[] {
 function linked(nodes: Inline[], remaining: ManagerLink[]): Inline[] {
   return nodes.flatMap((node): Inline[] => {
     if (node.type === 'bold') return [{ type: 'bold', children: linked(node.children, remaining) }];
+    if (node.type === 'page') return [node];
     if (node.type !== 'text' || node.literal) return [node];
     const { segments, rest } = linkify(node.text, remaining);
     remaining.splice(0, remaining.length, ...rest);

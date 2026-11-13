@@ -58,6 +58,12 @@ function Inlines({ nodes }: { nodes: Inline[] }): ReactElement {
               <Inlines nodes={node.children} />
             </b>
           );
+        if (node.type === 'page')
+          return (
+            <Link key={key} to={node.href} className={LINK}>
+              <Inlines nodes={node.children} />
+            </Link>
+          );
         return <ItemLink key={key} link={node.link} />;
       })}
     </>

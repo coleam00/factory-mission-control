@@ -12,7 +12,11 @@ const item = (id: number): ManagerLink => ({
 const flat = (nodes: Inline[]): string =>
   nodes
     .map((n) =>
-      n.type === 'bold' ? flat(n.children) : n.type === 'link' ? `#${n.link.id}` : n.text,
+      n.type === 'bold' || n.type === 'page'
+        ? flat(n.children)
+        : n.type === 'link'
+          ? `#${n.link.id}`
+          : n.text,
     )
     .join('');
 const kinds = (nodes: Inline[]) => nodes.map((n) => n.type);
@@ -104,4 +108,15 @@ test('a reference inside a model-written link stays text and stays unnamed', () 
   const p = blocks[0] as Extract<Block, { type: 'paragraph' }>;
   expect(p.inlines.some((n) => n.type === 'link')).toBe(false);
   expect(rest).toEqual([link]);
+});
+
+test('links to pages of the app: keeps a /f/ link as a page link and drops other targets to text', () => {
+  const { blocks } = parseMessage(
+    'See [Runs > Failures](/f/x/runs?view=failures), [out](https://evil.test) and [r](//evil.test).',
+    [],
+  );
+  const inl = (blocks[0] as { inlines: { type: string; href?: string }[] }).inlines;
+  expect(inl.filter((n) => n.type === 'page').map((n) => n.href)).toEqual([
+    '/f/x/runs?view=failures',
+  ]);
 });
