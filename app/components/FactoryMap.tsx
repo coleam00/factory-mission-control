@@ -697,6 +697,12 @@ export function FactoryMap({
     () => setMotion((was) => (was.moving ? { ...was, moving: false } : was)),
     [],
   );
+  /** The person moves the map: the opening stops refitting, and a map still hidden before its placement shows. */
+  const own = useCallback(() => {
+    owned.current = true;
+    setPlaced(true);
+  }, []);
+
   /** Hands the camera to the person: a level change in flight finishes now, and no motion is left. */
   const takeCamera = useCallback(() => {
     transition.current?.();
@@ -779,12 +785,12 @@ export function FactoryMap({
   const zoomAround = useCallback(
     (factor: number, mx: number, my: number) => {
       takeCamera();
-      owned.current = true;
+      own();
       const was = camRef.current;
       const k = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, was.k * factor));
       setCamera({ k, x: mx - (mx - was.x) * (k / was.k), y: my - (my - was.y) * (k / was.k) });
     },
-    [takeCamera, setCamera],
+    [takeCamera, own, setCamera],
   );
 
   // A wheel listener React would attach passive, and a passive one cannot keep the page still.
@@ -803,7 +809,7 @@ export function FactoryMap({
           (event.deltaMode === 0 && Math.abs(event.deltaY) < 40 && event.deltaY % 1 !== 0));
       if (swipe) {
         takeCamera();
-        owned.current = true;
+        own();
         const was = camRef.current;
         setCamera({ ...was, x: was.x - event.deltaX, y: was.y - event.deltaY });
         return;
@@ -816,7 +822,7 @@ export function FactoryMap({
     };
     el.addEventListener('wheel', onWheel, { passive: false });
     return () => el.removeEventListener('wheel', onWheel);
-  }, [zoomAround, takeCamera, setCamera]);
+  }, [zoomAround, takeCamera, own, setCamera]);
 
   // Esc, and Backspace outside a field: deselect first, else go up a level.
   useEffect(() => {
@@ -968,7 +974,7 @@ export function FactoryMap({
   };
 
   const pan = (dx: number, dy: number) => {
-    owned.current = true;
+    own();
     const was = camRef.current;
     setCamera({ ...was, x: was.x + dx, y: was.y + dy });
   };

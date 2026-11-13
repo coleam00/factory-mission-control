@@ -666,6 +666,27 @@ test('the world is not painted before the camera is placed for the frame', async
   expect(unplaced).toBe(0);
 }, 30_000);
 
+test('a wheel before the camera is placed still shows the map', async () => {
+  const shown = await inPage<{ wheeled: boolean; placed: boolean; opacity: string }>(`
+    let wheeled = false;
+    const probe = () => {
+      const s = document.querySelector('[data-map-stage]');
+      if (s && !wheeled && !s.hasAttribute('data-placed')) {
+        s.dispatchEvent(new WheelEvent('wheel', { deltaY: -100, cancelable: true, bubbles: true }));
+        wheeled = true;
+      }
+      requestAnimationFrame(probe);
+    };
+    requestAnimationFrame(probe);
+    await m.mount('/f/x?view=build');
+    await new Promise((r) => setTimeout(r, 500));
+    const s = document.querySelector('[data-map-stage]');
+    const w = document.querySelector('[data-map-world]');
+    return { wheeled, placed: s.hasAttribute('data-placed'), opacity: getComputedStyle(w).opacity };`);
+  expect(shown.wheeled).toBe(true);
+  expect([shown.placed, shown.opacity]).toEqual([true, '1']);
+}, 30_000);
+
 test('a drag that outlives a level change still owns the camera', async () => {
   await page.setViewport(1440);
   const start = await mountAt('/f/x?view=build', OPEN);
