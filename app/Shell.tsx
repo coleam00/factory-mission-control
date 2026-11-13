@@ -1,4 +1,12 @@
-import { Fragment, type ReactElement, type ReactNode, useCallback, useRef, useState } from 'react';
+import {
+  Fragment,
+  type ReactElement,
+  type ReactNode,
+  useCallback,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { Outlet, useLocation, useSearchParams } from 'react-router';
 import { ActionToastHost } from './components/ActionToast';
 import { FactoryStrip, FactoryStripBody, RewindIndicator } from './components/FactoryStrip';
@@ -175,9 +183,11 @@ export function ForFactory(): ReactElement {
   const factory = useFactory() ?? '';
   const inUrl = useUrlFactory();
   const live = useLive();
-  const dock = useManagerDock();
   const phone = usePhone();
   const [phoneManager, setPhoneManager] = useState(wantsManager);
+  const dock = useManagerDock(
+    useMemo(() => (phone ? () => setPhoneManager((was) => !was) : undefined), [phone]),
+  );
   const location = useLocation();
   const [search] = useSearchParams();
   const [asked, setAsked] = useState<{ path: string; ask: ManagerAsk } | null>(null);
