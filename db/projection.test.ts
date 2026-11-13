@@ -3025,7 +3025,13 @@ test('a work item state projects its rounds compactly, its returns, last decisio
     last_decision: 'returned by the merge queue',
     pr_number: 654,
   });
-  expect(empty).toEqual({ rounds: [], returns: 0, last_decision: null, pr_number: null });
+  expect(empty).toEqual({
+    number: 649,
+    rounds: [],
+    returns: 0,
+    last_decision: null,
+    pr_number: null,
+  });
   expect(await projectionErrors()).toEqual([]);
 });
 
