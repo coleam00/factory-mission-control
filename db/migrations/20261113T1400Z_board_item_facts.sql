@@ -4,7 +4,7 @@
 -- mc.work_item_states gains
 --   rounds         one compact entry per element of facts.build.rounds, in order:
 --                  { at, reason, reviews: the length of that round's reviews, run_id }; [] when none.
---   returns        how many facts.build.decisions have decision = 'returned by the merge queue'.
+--   returns        how many of the last 20 facts.build.decisions Archon keeps have decision = 'returned by the merge queue'.
 --   last_decision  the `decision` of the last build decision; NULL when there is none.
 --   pr_number      the pr_number of the last round; NULL when there is none.
 -- Idempotent: the replay projects what Archon already stored and changes nothing run again.

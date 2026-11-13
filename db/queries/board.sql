@@ -60,11 +60,11 @@ SELECT 'item' AS kind, i.number, i.title, i.url, i.state, i.closed_at,
   -- Archon's finished rounds when the item has a work/<n> state, else the runs that reached ship.
   coalesce(jsonb_array_length(st.rounds), rd.rounds, 0) AS rounds,
   ac.overall AS app_check,
-  pr.number AS pr, pr.open AS pr_open,
+  pr.number AS pr, linked.open AS pr_open,
   st.build_status, st.build_at, st.merge_status, st.merge_at, st.triage_at, st.stage,
   st.rounds::text AS round_list, st.returns, st.last_decision,
   pr.head_sha AS pr_head, ac.head AS app_check_head,
-  CASE WHEN st.merge_status = 'merged' THEN st.merge_at ELSE pr.merged_at END AS merged_at,
+  CASE WHEN st.merge_status = 'merged' THEN st.merge_at ELSE to_char(pr.merged_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') END AS merged_at,
   ar.run_id AS app_check_run,
   NULL::text AS repository, NULL::integer AS merged_total
 FROM items i
@@ -114,12 +114,17 @@ LEFT JOIN LATERAL (
     AND (p.state = 'open' OR p.merged_at IS NOT NULL)
 ) projected ON true
 LEFT JOIN LATERAL (
-  -- The open linked pull request, else the projected one, else the merged linked one.
-  SELECT CASE WHEN linked.open THEN linked.number ELSE coalesce(projected.number, linked.number) END AS number,
-    CASE WHEN linked.open THEN true ELSE coalesce(projected.open, linked.open) END AS open,
-    CASE WHEN linked.open THEN linked.head_sha ELSE coalesce(projected.head_sha, linked.head_sha) END AS head_sha,
-    CASE WHEN linked.open THEN to_char(linked.merged_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')
-      ELSE to_char(coalesce(projected.merged_at, linked.merged_at) AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') END AS merged_at
+  -- One pull request, so number, head and merge time never describe different ones: the open linked
+  -- pull request, else the projected one, else the merged linked one.
+  SELECT c.number, c.head_sha, c.merged_at
+  FROM (
+    SELECT 1 AS rank, linked.number, linked.head_sha, linked.merged_at WHERE linked.open
+    UNION ALL
+    SELECT 2, projected.number, projected.head_sha, projected.merged_at WHERE projected.number IS NOT NULL
+    UNION ALL
+    SELECT 3, linked.number, linked.head_sha, linked.merged_at WHERE linked.number IS NOT NULL
+  ) c
+  ORDER BY c.rank LIMIT 1
 ) pr ON true
 LEFT JOIN checks ac ON ac.pr_number = pr.number
 LEFT JOIN LATERAL (

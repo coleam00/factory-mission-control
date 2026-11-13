@@ -440,7 +440,7 @@ test('a Refs-only item takes its pull request from the projection, with its head
   try {
     expect(await missionItem(13)).toMatchObject({
       pr: 9102,
-      pr_open: true,
+      pr_open: null,
       pr_head: 'abc123',
       app_check_head: null,
       app_check_run: null,
@@ -478,7 +478,7 @@ test('a Refs-only item takes its pull request from the projection, with its head
 });
 
 test('merged_at is the merge fact’s time, else the merged pull request’s', async () => {
-  expect(await missionItem(10)).toMatchObject({ pr: 110, merged_at: expect.any(String) });
+  expect(await missionItem(10)).toMatchObject({ pr: 110, merged_at: '2026-10-20T09:30:00.000Z' });
   expect(await missionItem(9)).toMatchObject({ merged_at: null });
   await db.query(
     `INSERT INTO mc.work_item_states (project_key, number, revision, merge_status, merge_at)
@@ -489,6 +489,52 @@ test('merged_at is the merge fact’s time, else the merged pull request’s', a
   } finally {
     await db.query(`DELETE FROM mc.work_item_states WHERE number = 10`);
   }
+});
+
+test('one pull request answers pr, pr_head and merged_at: open linked, else projected, else merged linked', async () => {
+  const fixtures = async (factory: string) => {
+    await db.query(
+      `INSERT INTO mc.pull_requests (factory, number, title, state, merged_at, head_sha, url, created_at, updated_at)
+       VALUES ($1, 9102, 't', 'open', NULL, 'projected', 'u', now(), now()),
+         ($1, 9103, 't', 'open', NULL, 'linked', 'u', now(), now())`,
+      [factory],
+    );
+    await db.query(
+      `INSERT INTO mc.work_item_states (project_key, number, revision, pr_number)
+       SELECT codebase, 10, 1, 9102 FROM mc.factories WHERE name = $1`,
+      [factory],
+    );
+  };
+  await fixtures('mission-control');
+  try {
+    // Item 10: a merged closing pull request, and a later round's open one.
+    expect(await missionItem(10)).toMatchObject({
+      pr: 9102,
+      pr_head: 'projected',
+      pr_open: false,
+      merged_at: null,
+    });
+    await db.query(
+      `INSERT INTO mc.pull_request_issues (factory, pr_number, issue_number) VALUES ('mission-control', 9103, 10)`,
+    );
+    expect(await missionItem(10)).toMatchObject({
+      pr: 9103,
+      pr_head: 'linked',
+      pr_open: true,
+      merged_at: null,
+    });
+  } finally {
+    await db.query(`DELETE FROM mc.pull_request_issues WHERE pr_number = 9103`);
+    await db.query(`DELETE FROM mc.work_item_states WHERE number = 10`);
+    await db.query(
+      `DELETE FROM mc.pull_requests WHERE factory = 'mission-control' AND number IN (9102, 9103)`,
+    );
+  }
+  expect(await missionItem(10)).toMatchObject({
+    pr: 110,
+    pr_open: false,
+    merged_at: '2026-10-20T09:30:00.000Z',
+  });
 });
 
 test('the board query stays fast when many runs have shipped', async () => {

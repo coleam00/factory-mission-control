@@ -1324,3 +1324,26 @@ test('the retried rule reads the same in failure-groups, retried-runs and the li
     await db.close();
   }
 }, 60_000);
+
+test('the work-item facts the Board projects are the pinned pack’s words', () => {
+  const migration = read('db', 'migrations', '20261113T1400Z_board_item_facts.sql');
+  const label = /d ->> 'decision' = '([^']*)'/.exec(migration)?.[1] ?? '';
+  expect(label).not.toBe('');
+  expect(read('fixtures/pack/queue/sdlc/merge-queue/scripts/record.ts')).toContain(
+    `decision: '${label}'`,
+  );
+  const merged = /st\.merge_status = '([^']*)'/.exec(sqlOf('board'))?.[1] ?? '';
+  expect(statusUnion('merge.ts', 'MergeStatus')).toContain(merged);
+  const shape = /export interface BuildRound \{([\s\S]*?)\n\}/.exec(
+    read('fixtures', 'pack', 'queue', 'sdlc', '.shared', 'build.ts'),
+  )?.[1];
+  expect(shape, 'build.ts declares BuildRound').toBeDefined();
+  const keys = new Set([...(shape ?? '').matchAll(/^ {2}readonly (\w+)\??:/gm)].map((m) => m[1]));
+  const roundKeys = [
+    ...migration.matchAll(/\br -> '(\w+)'/g),
+    ...migration.matchAll(/\br ->> '(\w+)'/g),
+    ...migration.matchAll(/'rounds' -> -1 ->> '(\w+)'/g),
+  ].map((m) => m[1]);
+  for (const key of roundKeys) expect(keys, `BuildRound key '${key}'`).toContain(key);
+  expect(roundKeys).toEqual(expect.arrayContaining(['at', 'reason', 'reviews', 'run_id']));
+});

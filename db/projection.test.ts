@@ -3002,6 +3002,7 @@ test('a work item state projects its rounds compactly, its returns, last decisio
   );
   await putState('work/649', 1, doc({}));
   const [full, empty] = (await facts()) as unknown as {
+    number: number;
     rounds: { at: string; reason: string; reviews: number; run_id: string }[];
     returns: number;
     last_decision: string | null;
