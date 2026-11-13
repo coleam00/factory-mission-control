@@ -18,6 +18,9 @@ import {
   unstickKey,
 } from './attention-page';
 import type { OwnerQueueRow } from './owner-queue';
+import { pinZone } from './pin-zone';
+
+pinZone('America/Chicago');
 
 const RUN = '5eed0005-0000-4000-8000-000000000001';
 const CONSOLE_RUN = `http://localhost:3090/console/r/${RUN}`;
@@ -265,7 +268,7 @@ test('an owner question recommends only its default tile, and says when the defa
     ['B', true],
   ]);
   expect(card?.note).toEqual({
-    lead: 'Default B applies 2026-10-25 09:07 UTC.',
+    lead: 'Default B applies 2026-10-25 04:07.',
     rest: 'JSON is simpler.',
   });
   expect(card?.tiles.map((t) => t.href)).toEqual([
@@ -282,10 +285,18 @@ test('an owner question without a default says so and recommends no tile', () =>
 
 test('sweepLine says how long ago the manager swept, and drops the clause when it never did', () => {
   const now = Date.parse('2026-10-24T12:00:00Z');
-  expect(sweepLine('f', new Date('2026-10-24T08:48:00Z'), now)).toBe(
+  const swept = new Date('2026-10-24T08:48:00Z');
+  expect(sweepLine('f', swept, now, 2)).toBe(
     'f. The manager swept 3h 12m ago and put its recommendation first on each.',
   );
-  expect(sweepLine('f', null, now)).toBe('f. The manager put its recommendation first on each.');
+  expect(sweepLine('f', null, now, 1)).toBe('f. The manager put its recommendation first on each.');
+});
+
+test('sweepLine makes no claim about items when no card is drawn', () => {
+  const now = Date.parse('2026-10-24T12:00:00Z');
+  const swept = new Date('2026-10-24T08:48:00Z');
+  expect(sweepLine('f', swept, now, 0)).toBe('f. The manager swept 3h 12m ago.');
+  expect(sweepLine('f', null, now, 0)).toBe('f.');
 });
 
 test('an unstick card is keyed as unstickKey says, so the live phase finds it', () => {

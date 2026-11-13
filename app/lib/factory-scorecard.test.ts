@@ -1,12 +1,15 @@
 import { expect, test } from 'bun:test';
+import { pinZone } from './pin-zone';
 import {
   type FactoryScorecardRow,
   formatChange,
   formatValue,
-  msToUtcMidnight,
+  scorecardEdges,
   scorecardMeasures,
   scorecardUntil,
 } from './factory-scorecard';
+
+pinZone('America/Chicago');
 
 const row = (name: string, over: Partial<FactoryScorecardRow> = {}): FactoryScorecardRow => ({
   name,
@@ -103,9 +106,16 @@ test('measures come in the scorecard’s order, one per measure, with or without
   ]);
 });
 
-test('the windows end at the UTC date after now, and move on at UTC midnight', () => {
-  expect(scorecardUntil(new Date('2026-11-11T23:30:00Z'))).toBe('2026-11-12');
-  expect(scorecardUntil(new Date('2026-11-12T00:00:00Z'))).toBe('2026-11-13');
-  expect(msToUtcMidnight(new Date('2026-11-11T23:30:00Z'))).toBe(30 * 60_000);
-  expect(msToUtcMidnight(new Date('2026-11-12T00:00:00Z'))).toBe(86_400_000);
+test('the windows end at the viewer’s next local midnight and each edge is a local midnight, across a clock change', () => {
+  const late = new Date('2026-11-12T05:30:00Z'); // 23:30 on 11/11 in Chicago
+  expect(scorecardUntil(late)).toBe('2026-11-12T06:00:00.000Z');
+  expect(scorecardUntil(new Date('2026-11-12T06:00:00Z'))).toBe('2026-11-13T06:00:00.000Z');
+  // Chicago left daylight time on 11/1: the 14 and 30 day edges are CDT midnights, the nearer ones CST.
+  expect(scorecardEdges(new Date('2026-11-12T15:00:00Z'))).toEqual([
+    '2026-09-14T05:00:00.000Z',
+    '2026-10-14T05:00:00.000Z',
+    '2026-10-30T05:00:00.000Z',
+    '2026-11-06T06:00:00.000Z',
+    '2026-11-13T06:00:00.000Z',
+  ]);
 });

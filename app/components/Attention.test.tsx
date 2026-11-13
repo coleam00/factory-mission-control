@@ -172,7 +172,7 @@ test('the recommendation span holds the text alone, so the separator is not read
 
 test('the head says when the manager swept, and leaves the clause out without a finished manager run', () => {
   const swept = new Date(NOW - 12 * 60_000);
-  expect(render({ sweep: ready([{ swept_at: swept }]) })).toContain(
+  expect(render({ unstick: ready([stuck]), sweep: ready([{ swept_at: swept }]) })).toContain(
     'f. The manager swept 12m ago and put its recommendation first on each.',
   );
   for (const sweep of [
@@ -180,7 +180,29 @@ test('the head says when the manager swept, and leaves the clause out without a 
     ready([]),
     { rows: [{ swept_at: swept }], state: 'error' } as const,
   ]) {
-    expect(render({ sweep })).toContain('f. The manager put its recommendation first on each.');
+    expect(render({ unstick: ready([stuck]), sweep })).toContain(
+      'f. The manager put its recommendation first on each.',
+    );
+  }
+});
+
+test('the empty head names the factory and the sweep without a recommendation clause', () => {
+  const swept = new Date(NOW - 12 * 60_000);
+  expect(render({ sweep: ready([{ swept_at: swept }]) })).toContain(
+    'f. The manager swept 12m ago.',
+  );
+  expect(render()).not.toContain('recommendation first');
+});
+
+test('cards drawn beside an errored or loading source keep the recommendation clause', () => {
+  const sources = [
+    { rows: undefined, state: 'error' },
+    { rows: undefined, state: 'loading' },
+  ] as const;
+  for (const decide of sources) {
+    expect(render({ decide, unstick: ready([stuck]) })).toContain(
+      'f. The manager put its recommendation first on each.',
+    );
   }
 });
 

@@ -1,6 +1,8 @@
 import { afterAll, beforeAll, expect, test } from 'bun:test';
 import { join } from 'node:path';
-import { scorecardUntil } from '../app/lib/factory-scorecard';
+import { scorecardEdges } from '../app/lib/factory-scorecard';
+import { retriedArgs } from '../app/lib/failure-view';
+import { pinZone } from '../app/lib/pin-zone';
 import { queries } from '../db/queries/test-seed';
 import { snapshot } from '../db/test-db';
 import { writeMetrics } from '../scripts/fixture/write';
@@ -12,6 +14,8 @@ interface ToolsResult {
   content: { text: string }[];
   isError?: boolean;
 }
+
+pinZone('America/Chicago');
 
 let fixture: ManagerDb;
 beforeAll(async () => {
@@ -74,10 +78,10 @@ test('live_query factory-scorecard answers the rows the Factory page reads, from
     const [, answer] = await session([
       { jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-06-18' } },
       { jsonrpc: '2.0', method: 'notifications/initialized' },
-      call(3, 'live_query', { name: 'factory-scorecard', args: [scorecardUntil(now)] }),
+      call(3, 'live_query', { name: 'factory-scorecard', args: scorecardEdges(now) }),
     ]);
     const asked = JSON.parse(answer?.result.content[0]?.text ?? '{}').rows;
-    const direct = await fixture.direct.query(sql, [FACTORY, scorecardUntil(now)]);
+    const direct = await fixture.direct.query(sql, [FACTORY, ...scorecardEdges(now)]);
     expect(asked.length).toBeGreaterThan(0);
     expect(asked).toEqual(JSON.parse(JSON.stringify(direct)));
   } finally {
@@ -88,5 +92,44 @@ test('live_query factory-scorecard answers the rows the Factory page reads, from
       `DELETE FROM public.remote_agent_workflow_runs WHERE workflow_name = 'archon-metrics-prs'`,
     );
     await fixture.direct.query(`DELETE FROM public.remote_agent_codebases WHERE name = 'o/r'`);
+  }
+}, 30_000);
+
+test('live_query retried-runs answers today in the viewer’s zone, not a run from yesterday evening', async () => {
+  const blip = "Couldn't connect to compute node";
+  const lap = async (id: string, status: string, at: string) => {
+    await fixture.direct.query(
+      `INSERT INTO mc.laps (run_id, factory, workflow_name, status, started_at, completed_at)
+       VALUES ($1, $2, 'ticks', $3, $4::timestamptz, $4::timestamptz)`,
+      [id, FACTORY, status, at],
+    );
+    if (status === 'failed') {
+      await fixture.direct.query(
+        `INSERT INTO mc.lap_steps (run_id, step_id, status, completed_at, error)
+         VALUES ($1, 'facts', 'failed', $2::timestamptz, $3)`,
+        [id, at, blip],
+      );
+    }
+  };
+  const yesterday = '5eed0009-0000-4000-8000-000000000001';
+  const today = '5eed0009-0000-4000-8000-000000000002';
+  const retry = '5eed0009-0000-4000-8000-000000000003';
+  // 20:00 on 11/11 and 08:00 on 11/12 in Chicago; the viewer's clock is 09:00 on 11/12.
+  await lap(yesterday, 'failed', '2026-11-12T02:00:00Z');
+  await lap(today, 'failed', '2026-11-12T14:00:00Z');
+  await lap(retry, 'completed', '2026-11-12T14:30:00Z');
+  try {
+    const [, answer] = await session([
+      { jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-06-18' } },
+      { jsonrpc: '2.0', method: 'notifications/initialized' },
+      call(3, 'live_query', {
+        name: 'retried-runs',
+        args: retriedArgs(new Date('2026-11-12T15:00:00Z')),
+      }),
+    ]);
+    const rows = JSON.parse(answer?.result.content[0]?.text ?? '{}').rows;
+    expect(rows.map((r: { run_id: string }) => r.run_id)).toEqual([today]);
+  } finally {
+    await fixture.direct.query(`DELETE FROM mc.laps WHERE run_id::text LIKE '5eed0009-%'`);
   }
 }, 30_000);

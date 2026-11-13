@@ -131,11 +131,48 @@ export function formatProjectLocator(project: {
   return '';
 }
 
+const pad2 = (n: number): string => n.toString().padStart(2, '0');
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
 /** HH:MM in the viewer's time zone; empty when there is no time. */
 export function clock(at: string | Date | null | undefined): string {
   if (at === null || at === undefined) return '';
   const date = new Date(at);
-  return Number.isNaN(date.getTime())
-    ? ''
-    : date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+  return Number.isNaN(date.getTime()) ? '' : `${pad2(date.getHours())}:${pad2(date.getMinutes())}`;
+}
+
+/** YYYY-MM-DD, the calendar day in the viewer's time zone. */
+export function localDay(at: Date): string {
+  return `${at.getFullYear()}-${pad2(at.getMonth() + 1)}-${pad2(at.getDate())}`;
+}
+
+/** The start of the viewer's local day `days` from `now`'s, as an ISO instant: DST-safe, since it counts calendar days. */
+export function localMidnight(now: Date, days: number): string {
+  return new Date(now.getFullYear(), now.getMonth(), now.getDate() + days).toISOString();
+}
+
+/** The instant the viewer's local day containing `now` began, as an ISO string. */
+export function localDayStart(now: Date): string {
+  return localMidnight(now, 0);
+}
+
+/** `Oct 11`: the month and day in the viewer's time zone. */
+export function monthDay(at: Date): string {
+  return `${MONTHS[at.getMonth()]} ${at.getDate()}`;
+}
+
+/** `Thu 07:29`: the weekday and time in the viewer's time zone. */
+export function weekdayClock(at: Date): string {
+  return `${WEEKDAYS[at.getDay()]} ${clock(at)}`;
+}
+
+/** `2026-10-25 09:07`: the local day and time in the viewer's time zone. */
+export function localMinute(at: Date): string {
+  return `${localDay(at)} ${clock(at)}`;
+}
+
+/** `2026-10-24 10:00:30`: the local day and time to the second in the viewer's time zone. */
+export function localSecond(at: Date): string {
+  return `${localDay(at)} ${formatClock(at.toISOString())}`;
 }
