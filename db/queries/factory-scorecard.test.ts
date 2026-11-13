@@ -210,7 +210,9 @@ describe('factory-scorecard over the fixture records', () => {
       count('#3', '2026-11-12T05:59:59Z'), // 23:59 on 11/11: still today
       count('#4', '2026-11-12T06:00:00Z'), // 00:00 on 11/12: tomorrow, in no window
     ]);
-    const [merged] = ((await db.query(sql, ['mission-control', ...edges])) as unknown as FactoryScorecardRow[]).filter((r) => r.name === 'sdlc.issues_merged');
+    const [merged] = (
+      (await db.query(sql, ['mission-control', ...edges])) as unknown as FactoryScorecardRow[]
+    ).filter((r) => r.name === 'sdlc.issues_merged');
     expect([merged?.n_7, merged?.n_7_before]).toEqual([2, 1]);
   });
 
