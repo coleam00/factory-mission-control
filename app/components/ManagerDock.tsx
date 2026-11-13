@@ -5,8 +5,11 @@ import type { ManagerAsk } from '../lib/manager';
 const OPEN_KEY = 'mc.manager.open';
 const OPEN_EVENT = 'mc:manager-open';
 
-/** Under this width there is no side nav and no docked panel: a top bar and a tab bar instead. */
-export const PHONE_QUERY = '(max-width: 759.98px)';
+/**
+ * Under this width there is no side nav and no docked panel: a top bar and a tab bar instead.
+ * The nav (216 px) and the dock (384 px) leave a page column too narrow to read below 1024 px.
+ */
+export const PHONE_QUERY = '(max-width: 1023.98px)';
 
 /** Reading `localStorage` itself throws where the browser blocks storage. */
 function storage(): Storage | undefined {
