@@ -33,11 +33,11 @@ strip, chips, flow and the tour work the same in a view.
 
 The map is the Factory place's hero. Its frame spans the window between the page gutters; the
 caption and legend stay in the app's column, and the details of a clicked card show in a panel
-inside the frame, on the side away from the press, so it never covers the card pressed. The frame's
-height is the map's height at the scale that fits its width, plus its padding (at least 420px), so
-the opening view leaves no empty band; the page scrolls below it. A deeper view is fitted no larger than the largest scale the matching views
+inside the frame, docked on the side with more room beside the card and narrowed to that room, so it clears the card when there is room; when no side has room (a card zoomed wide, or a card in the middle of the frame below 701px, where the panel is at least 240px tall) the map pans the card clear, after a click's double-click window, as far as keeping the card's top-left corner in the frame allows, so a card zoomed wider than the free room can still be partly covered. The frame's
+height is the map's height at the scale that fits its width, never below the type floor below, plus
+its padding (at least 420px), so the opening view leaves no empty band; the page scrolls below it. A deeper view is fitted no larger than the largest scale the matching views
 (the ones listed in the root's `referenceViews` key: Intake, Review, App check, Build, Deliver) fit at in the same frame (about 0.58 at 1440x900 with the Manager closed, 0.38 with it open), centred in
-the frame; below 701px wide the map opens as the phone mockup draws it. A card whose kind label would wrap is widened
+the frame; in the phone layout (window under 760px) the map opens as the phone mockup draws it. A card whose kind label would wrap is widened
 through `width` (Staging's Deploy, Work order's middle column).
 
 The owner chose readability over the mockup's proportions (PR #326 review, 2026-11-03): at 1440x900,
@@ -64,9 +64,9 @@ A card whose kind label would not fit on one line at that size is widened throug
 cards after it move right to keep their spacing (App check's Use the app, Build's Investigate and Plan,
 Deliver's Implement); `factory-map.test.ts` fails any new kind label that would wrap.
 
-Below 701px wide the map opens as `refs/40-home-phone.png` draws it: the line at a readable scale
+In the phone layout (window under 760px, the shell's `PHONE_QUERY`) the map opens as `refs/40-home-phone.png` draws it: the line at a readable scale
 in a 460px frame, centred on the line's box with the Manager above, the rest a pan away. There Fit
-fits the whole map, under the floor.
+fits the whole map, under the floor. This is an owner-authorized exception to the fitted opening every other frame gets: the phone keeps its 0.42 centred opening (issue #655, "Current scope (maintainer ruling on the build queue's question on a stopped run, 2026-11-12)"). Every desktop frame, even one narrower than 701px with the Manager open, opens and refits at the fitted camera.
 
 ## The map check
 
@@ -221,7 +221,7 @@ Showing those lines on the work item page's timeline waits on that page (#317).
 ## Clicking a card
 
 A card keeps itself and the cards a line joins to it lit and dims the rest; its details open in a
-panel inside the map frame, on the side away from the press. Right now lists the runs and items the card's chips count, each opening its page;
+panel inside the map frame, docked on the side with more room beside the card and narrowed to that room, so it clears the card when there is room; when no side has room (a card zoomed wide, or a card in the middle of the frame below 701px, where the panel is at least 240px tall) the map pans the card clear, after a click's double-click window, as far as keeping the card's top-left corner in the frame allows, so a card zoomed wider than the free room can still be partly covered. Right now lists the runs and items the card's chips count, each opening its page;
 an open attention item is listed there too, and a lap with an issue also links that issue on GitHub, until the ticket page exists (#317).
 Behind the scenes lists, per workflow, its YAML path in the pinned pack (from the parsed
 architecture, and none when the version lacks it) and the steps the card covers that the version shown has, each

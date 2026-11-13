@@ -113,7 +113,7 @@ test('a run stop record follows Archon’s writes, so a fixed run never shows as
 
   const early = await newRun();
   await setStatus(early, 'failed');
-  expect(await stopOf(early)).toMatchObject({ step_id: null, class: null });
+  expect(await stopOf(early)).toMatchObject({ step_id: null, class: 'environment' });
   await failStep(early, 'check', 'No issue matched the query');
   expect(await stopOf(early)).toMatchObject({ step_id: 'check', class: 'input' });
 
@@ -337,6 +337,177 @@ test('20261110T1200Z re-projects the class of runs that failed on a database bli
     expect((await read())[0]?.class).toBe('transient');
   } finally {
     await historical.close();
+  }
+});
+
+test('20261112T2001Z re-projects the class of runs that failed on a claim conflict before it', async () => {
+  const name = '20261112T2001Z_every_failure_has_a_class';
+  const historical = await archonDb();
+  try {
+    await runMigrations({ files: migrationFiles.filter((f) => f.name < name), db: historical });
+    const [run] = await historical.query(
+      `INSERT INTO public.remote_agent_workflow_runs (workflow_name, status, user_message, metadata)
+       VALUES ('archon-build-queue', 'running', 'q', '{}') RETURNING id`,
+    );
+    await historical.query(
+      `INSERT INTO public.remote_agent_workflow_events (workflow_run_id, event_type, step_name, data)
+       VALUES ($1, 'node_failed', 'facts', $2)`,
+      [
+        run?.id,
+        JSON.stringify(
+          eventData(
+            'facts',
+            'node_failed',
+            NOW,
+            'build-queue facts: issue 630 is claimed by run e353c524-1111-4000-8000-000000000000',
+          ),
+        ),
+      ],
+    );
+    await historical.query(
+      `UPDATE public.remote_agent_workflow_runs SET status = 'failed', completed_at = now() WHERE id = $1`,
+      [run?.id],
+    );
+    const read = () =>
+      historical.query('SELECT class FROM mc.run_stops WHERE run_id = $1', [run?.id]);
+    expect((await read())[0]?.class).toBeNull();
+
+    await runMigrations({ files: migrationFiles, db: historical });
+    expect((await read())[0]?.class).toBe('input');
+  } finally {
+    await historical.close();
+  }
+});
+
+test('20261113T1200Z gives a failed run with no stop line that never started a node the environment class, and no other', async () => {
+  const name = '20261113T1200Z_classify_host_and_unlined_failures';
+  const historical = await archonDb();
+  try {
+    await runMigrations({ files: migrationFiles.filter((f) => f.name < name), db: historical });
+    const failedRun = async (
+      workflow: string,
+      events: ['node_started' | 'node_failed' | 'node_skipped', string][],
+    ): Promise<string> => {
+      const [run] = await historical.query(
+        `INSERT INTO public.remote_agent_workflow_runs (workflow_name, status, user_message, metadata)
+         VALUES ($1, 'running', 'q', '{}') RETURNING id`,
+        [workflow],
+      );
+      for (const [type, message] of events) {
+        const shape = type === 'node_skipped' ? 'node_completed' : type;
+        await historical.query(
+          `INSERT INTO public.remote_agent_workflow_events (workflow_run_id, event_type, step_name, data)
+           VALUES ($1, $2, 'facts', $3)`,
+          [run?.id, type, JSON.stringify(eventData('facts', shape, NOW, message))],
+        );
+      }
+      await historical.query(
+        `UPDATE public.remote_agent_workflow_runs SET status = 'failed', completed_at = now() WHERE id = $1`,
+        [run?.id],
+      );
+      return String(run?.id);
+    };
+    const neverStarted = await failedRun('archon-build-queue', []);
+    const onlySkipped = await failedRun('archon-build-queue', [['node_skipped', '']]);
+    const startedNoLine = await failedRun('archon-build-queue', [
+      ['node_started', ''],
+      ['node_failed', ''],
+    ]);
+    const unlistedWorkflow = await failedRun('archon-build', [
+      ['node_started', ''],
+      ['node_failed', ''],
+    ]);
+    const classes = async () =>
+      Object.fromEntries(
+        (await historical.query('SELECT run_id, class FROM mc.run_stops')).map((r) => [
+          String(r.run_id),
+          r.class,
+        ]),
+      );
+    expect(await classes()).toEqual({
+      [neverStarted]: null,
+      [onlySkipped]: null,
+      [startedNoLine]: null,
+      [unlistedWorkflow]: null,
+    });
+
+    await runMigrations({ files: migrationFiles, db: historical });
+    const after = await classes();
+    expect(after).toEqual({
+      [neverStarted]: 'environment',
+      [onlySkipped]: 'environment',
+      [startedNoLine]: null,
+      [unlistedWorkflow]: null,
+    });
+    await runMigrations({ files: migrationFiles, db: historical });
+    expect(await classes()).toEqual(after);
+  } finally {
+    await historical.close();
+  }
+});
+
+test('a failed projecting run that starts a node after it failed stops being environment', async () => {
+  const db = await archonDb();
+  try {
+    await runMigrations({ files: migrationFiles, db });
+    const [run] = await db.query(
+      `INSERT INTO public.remote_agent_workflow_runs (workflow_name, status, user_message, metadata)
+       VALUES ('archon-build-queue', 'running', 'q', '{}') RETURNING id`,
+    );
+    await db.query(
+      `UPDATE public.remote_agent_workflow_runs SET status = 'failed', completed_at = now() WHERE id = $1`,
+      [run?.id],
+    );
+    const read = async () =>
+      (await db.query('SELECT class FROM mc.run_stops WHERE run_id = $1', [String(run?.id)]))[0]
+        ?.class;
+    expect(await read()).toBe('environment');
+    await db.query(
+      `INSERT INTO public.remote_agent_workflow_events (workflow_run_id, event_type, step_name, data)
+       VALUES ($1, 'node_started', 'facts', $2)`,
+      [run?.id, JSON.stringify(eventData('facts', 'node_started', NOW, ''))],
+    );
+    expect(await read()).toBeNull();
+  } finally {
+    await db.close();
+  }
+});
+
+test('a failed projecting run with no stop line follows its step rows through update and delete', async () => {
+  const db = await archonDb();
+  try {
+    await runMigrations({ files: migrationFiles, db });
+    const [run] = await db.query(
+      `INSERT INTO public.remote_agent_workflow_runs (workflow_name, status, user_message, metadata)
+       VALUES ('archon-build-queue', 'running', 'q', '{}') RETURNING id`,
+    );
+    await db.query(
+      `UPDATE public.remote_agent_workflow_runs SET status = 'failed', completed_at = now() WHERE id = $1`,
+      [run?.id],
+    );
+    const id = String(run?.id);
+    const read = async () =>
+      (await db.query('SELECT class FROM mc.run_stops WHERE run_id = $1', [id]))[0]?.class;
+    const step = (status: string) =>
+      db.query(`UPDATE mc.lap_steps SET status = $2 WHERE run_id = $1 AND step_id = 'facts'`, [
+        id,
+        status,
+      ]);
+    await db.query(
+      `INSERT INTO mc.lap_steps (run_id, step_id, status) VALUES ($1, 'facts', 'skipped')`,
+      [id],
+    );
+    expect(await read()).toBe('environment');
+    await step('running');
+    expect(await read()).toBeNull();
+    await step('skipped');
+    expect(await read()).toBe('environment');
+    await step('running');
+    expect(await read()).toBeNull();
+    await db.query(`DELETE FROM mc.lap_steps WHERE run_id = $1`, [id]);
+    expect(await read()).toBe('environment');
+  } finally {
+    await db.close();
   }
 });
 

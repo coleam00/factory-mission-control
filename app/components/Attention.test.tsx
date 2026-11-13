@@ -1,14 +1,13 @@
 import { expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { MemoryRouter } from 'react-router';
-import { decideCards, fixCards, ownerCards, unstickCards } from '../lib/attention-page';
+import { decideCards, ownerCards, unstickCards } from '../lib/attention-page';
 import type { DecideRow, UnstickRow } from '../lib/attention';
-import type { FailureGroupRow, RetriedRunRow } from '../lib/failures';
 import type { HandledRow } from '../lib/manager';
 import type { OwnerQueueRow } from '../lib/owner-queue';
 import type { Source } from '../live/Feed';
 import type { Action } from '../lib/attention-page';
-import { ActionControl, AttentionBody, RetriedRuns } from './Attention';
+import { ActionControl, AttentionBody } from './Attention';
 
 const NOW = Date.parse('2026-10-24T12:00:00Z');
 const RUN = '5eed0005-0000-4000-8000-000000000001';
@@ -58,21 +57,6 @@ const stuck: UnstickRow = {
   repository: 'o/r',
   console: 'http://localhost:3090/',
 };
-const failure: FailureGroupRow = {
-  signature: 'sig',
-  workflow_name: 'archon-loop',
-  step_id: 'review',
-  class: 'code',
-  failures: 2,
-  first_at: new Date('2026-10-23T10:00:00Z'),
-  last_at: new Date('2026-10-24T10:00:00Z'),
-  latest_run_id: RUN,
-  line: 'boom',
-  last_day: new Date('2026-10-24'),
-  daily: [0, 1, 1],
-  console: 'http://localhost:3090/',
-};
-
 const handledRow = (id: number, action: HandledRow['action'], sent_at: Date): HandledRow => ({
   id,
   action,
@@ -93,7 +77,6 @@ const render = (props: Partial<Parameters<typeof AttentionBody>[0]> = {}) =>
         decide={none}
         owner={none}
         unstick={none}
-        failures={none}
         sweep={none}
         now={NOW}
         {...props}
@@ -108,18 +91,19 @@ test('with nothing waiting the head says so and no group is drawn', () => {
   expect(html).not.toContain('<h2');
 });
 
-test('the head counts every card, and the groups come in the order Decide, Unstick, Fix', () => {
+test('the head counts every card, and the groups come in the order Decide, Unstick', () => {
   const html = render({
     decide: ready([decide]),
     owner: ready([owner]),
     unstick: ready([stuck]),
-    failures: ready([failure]),
   });
-  expect(html).toContain('4 things need you');
-  expect(html).toContain('data-attention-count="4"');
-  expect(html.match(/data-attention-kind=/g)?.length).toBe(4);
+  expect(html).toContain('3 things need you');
+  expect(html).toContain('data-attention-count="3"');
+  expect(html.match(/data-attention-kind=/g)?.length).toBe(3);
   const headers = [...html.matchAll(/<h2[^>]*>(Decide|Unstick|Fix)/g)].map((m) => m[1]);
-  expect(headers).toEqual(['Decide', 'Unstick', 'Fix']);
+  expect(headers).toEqual(['Decide', 'Unstick']);
+  expect(html).not.toContain('retried');
+  expect(html).not.toContain('Failures per day');
 });
 
 test('one item reads "1 thing needs you"', () => {
@@ -158,12 +142,12 @@ test('an errored source says so, draws none of its stale rows, and the other gro
 });
 
 test('By queue draws the same cards under queue headers', () => {
-  const props = { decide: ready([decide]), unstick: ready([stuck]), failures: ready([failure]) };
+  const props = { decide: ready([decide]), unstick: ready([stuck]) };
   const html = render({ ...props, view: 'queue' });
   const headers = [
     ...html.matchAll(/<h2[^>]*>(Intake|Build|Merge|App check|Discoveries|Other)/g),
   ].map((m) => m[1]);
-  expect(headers).toEqual(['Intake', 'Build', 'Merge']);
+  expect(headers).toEqual(['Intake', 'Build']);
   const keys = (h: string) =>
     [...h.matchAll(/data-attention-item="([^"]+)"/g)].map((m) => m[1]).sort();
   expect(keys(html)).toEqual(keys(render(props)));
@@ -210,13 +194,12 @@ test('before the server says an operator exists, every tile and the Resume butto
 test('every card offers Ask manager, and the handled line counts only the actions of today', () => {
   const html = render({
     decide: ready([decide]),
-    failures: ready([failure]),
     handled: ready([
       handledRow(1, 'resume', new Date(NOW - 60_000)),
       handledRow(2, 'resume', new Date(NOW - 2 * 86_400_000)),
     ]),
   });
-  expect(html.match(/data-ask-manager/g)?.length).toBe(2);
+  expect(html.match(/data-ask-manager/g)?.length).toBe(1);
   expect(html).toContain('The manager handled 1 today: resumed 1 run.');
   const failed = render({
     handled: { rows: [handledRow(1, 'resume', new Date(NOW - 60_000))], state: 'error' },
@@ -247,7 +230,6 @@ test('Ask manager on each kind of card carries that card’s run and work item',
   });
   expect(ownerCards([owner])[0]?.ask.context).toEqual({ place: 'attention', item: 17 });
   expect(unstickCards([stuck], 'f')[0]?.ask.context).toEqual({ place: 'attention', item: 7 });
-  expect(fixCards([failure], 'f')[0]?.ask.context).toEqual({ place: 'attention', run: RUN });
 });
 
 test('a console link opens in a new tab, and an in-app link stays in the dashboard tab', () => {
@@ -269,36 +251,4 @@ test('a console link opens in a new tab, and an in-app link stays in the dashboa
   expect(draw(true)).toContain('target="_blank"');
   expect(draw(true)).toContain('rel="noreferrer"');
   expect(draw(false)).not.toContain('target=');
-});
-
-const retriedRow = (id: number, line: string | null): RetriedRunRow => ({
-  run_id: `5eed0000-0000-4000-8000-${String(id).padStart(12, '0')}`,
-  workflow_name: 'archon-merge-queue',
-  step_id: 'facts',
-  line,
-  stopped_at: new Date(NOW - id * 60_000),
-});
-
-test('retried blips are one muted line that opens their list, and the head counts only cards', () => {
-  const rows = [
-    retriedRow(1, "Couldn't connect to compute node"),
-    retriedRow(2, null),
-    retriedRow(3, 'x'),
-  ];
-  const html = render({ failures: ready([failure]), retried: ready(rows) });
-  expect(html).toContain('data-attention-count="1"');
-  expect(html).toContain('1 thing needs you');
-  expect(html).toContain('3 runs hit a passing database or GitHub error today and were retried.');
-  expect(html).toContain('data-retried');
-  expect(html).toMatch(/aria-expanded="false"[^>]*>See them/);
-  expect(render({ retried: { rows, state: 'error' } })).not.toContain('data-retried');
-  expect(render({ retried: ready([]) })).not.toContain('data-retried');
-
-  const list = renderToStaticMarkup(
-    <MemoryRouter>
-      <RetriedRuns factory="f" rows={rows} />
-    </MemoryRouter>,
-  );
-  expect(list).toContain('compute node');
-  expect(list.match(/href="\/f\/f\/runs\//g)?.length).toBe(3);
 });

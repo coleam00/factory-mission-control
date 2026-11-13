@@ -4,7 +4,7 @@ import { retriageCommand } from '../../app/lib/attention-page';
 import {
   countMismatches,
   decideMismatches,
-  fixMismatches,
+  failureMismatches,
   type ShownCard,
   unstickMismatches,
 } from './attention';
@@ -52,11 +52,12 @@ test('a seed with no question or no recommendation says so', () => {
   );
 });
 
-test('Fix cards must be each failure signature exactly once', () => {
-  const fix = (id: string) => card({ id, kind: 'fix' });
-  expect(fixMismatches([fix('a'), fix('b')], [{ signature: 'a' }, { signature: 'b' }])).toEqual([]);
-  expect(fixMismatches([fix('a')], [{ signature: 'a' }, { signature: 'b' }])[0]).toContain('Fix');
-  expect(fixMismatches([fix('a'), fix('a')], [{ signature: 'a' }])[0]).toContain('Fix');
+test('Attention draws no failure card, though the seed has failures', () => {
+  expect(failureMismatches([card({})], [{ signature: 'a' }])).toEqual([]);
+  expect(
+    failureMismatches([card({ id: 'a', kind: 'unstick' })], [{ signature: 'a' }])[0],
+  ).toContain('a failure is drawn');
+  expect(failureMismatches([], [])).toEqual(['the seed has no unresolved failure']);
 });
 
 const stuck: UnstickRow = {
