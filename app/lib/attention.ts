@@ -78,6 +78,10 @@ export interface UnstickRow {
   console: string;
   /** Whether the mirror holds the item `number` names open; the item writes are offered only then. */
   open: boolean;
+  /** The item's latest write sent from the dashboard that the mirror has not caught up with; null when none. */
+  sent_action: 'retriage' | 'close' | 'comment' | null;
+  /** When `sent_action` was sent. */
+  sent_at: Date | null;
 }
 
 export interface AttentionItem extends Omit<AttentionRow, 'options' | 'labels'> {

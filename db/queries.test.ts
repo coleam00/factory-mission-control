@@ -136,6 +136,8 @@ const ROW_COLUMNS: Record<string, string[]> = {
     'reason',
     'console',
     'open',
+    'sent_action',
+    'sent_at',
   ]),
   handled: columns<HandledRow>()([
     'id',

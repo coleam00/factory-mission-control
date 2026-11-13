@@ -181,4 +181,77 @@ describe('the unstick query on the seed', () => {
     const added = rows.filter((r) => Number(r.number) >= 470 && Number(r.number) <= 481);
     expect(added.map((r) => [r.number, r.waits_on])).toEqual([[479, '#480, #481']]);
   });
+
+  describe('a write sent from the dashboard that the mirror has not caught up with', () => {
+    const number = QUEUE_UNSTICK.blockedMerged.issue;
+    const sentOf = async () => {
+      const rows = (await db.query(UNSTICK, ['queue-factory'])) as unknown as UnstickRow[];
+      const [blocked] = rows.filter((r) => r.number === number);
+      expect(rows.filter((r) => r.number !== number).every((r) => r.sent_action === null)).toBe(
+        true,
+      );
+      return [blocked?.sent_action, blocked?.sent_at?.toISOString() ?? null];
+    };
+    const write = (action: string, at: string | null, exit: number | null) =>
+      db.query(
+        `INSERT INTO mc.actions (factory, who, action, item_number, comment_text, undone, sent_at, exit_code)
+         VALUES ('queue-factory', 'owner', $1, $2, $3, $4, $5, $6)`,
+        [action, number, action === 'comment' ? 'hello' : null, at === null, at, exit],
+      );
+    const clean = async () => {
+      await db.query(
+        `DELETE FROM mc.actions WHERE factory = 'queue-factory' AND item_number = $1`,
+        [number],
+      );
+      await db.query(`DELETE FROM mc.laps WHERE run_id = '5eed0690-0000-4000-8000-000000000001'`);
+    };
+    const T1 = '2026-11-13T14:00:00.000Z';
+    const T2 = '2026-11-13T14:02:00.000Z';
+
+    test('names the latest write that was sent, not undone and exited 0', async () => {
+      try {
+        expect(await sentOf()).toEqual([null, null]);
+        await write('retriage', T1, 0);
+        expect(await sentOf()).toEqual(['retriage', T1]);
+        await write('close', T2, 0);
+        expect(await sentOf()).toEqual(['close', T2]);
+        await write('comment', '2026-11-13T14:03:00.000Z', 0);
+        expect((await sentOf())[0]).toBe('comment');
+      } finally {
+        await clean();
+      }
+    });
+
+    test('does not count an undone write, a failed one or one with no exit yet', async () => {
+      try {
+        await write('retriage', null, null);
+        await write('retriage', T1, 1);
+        await write('retriage', T2, null);
+        expect(await sentOf()).toEqual([null, null]);
+      } finally {
+        await clean();
+      }
+    });
+
+    test('ends when an intake run on the item has finished since the write', async () => {
+      const lap = (completed: string | null) =>
+        db.query(
+          `INSERT INTO mc.laps (run_id, factory, workflow_name, status, started_at, completed_at, issue_number)
+           VALUES ('5eed0690-0000-4000-8000-000000000001', 'queue-factory', 'archon-intake', $1, $2, $3, $4)`,
+          [completed === null ? 'running' : 'completed', T2, completed, number],
+        );
+      try {
+        await write('retriage', T1, 0);
+        await lap(null);
+        expect(await sentOf()).toEqual(['retriage', T1]);
+        await db.query(
+          `UPDATE mc.laps SET status = 'completed', completed_at = $1 WHERE run_id = $2`,
+          ['2026-11-13T14:05:00.000Z', '5eed0690-0000-4000-8000-000000000001'],
+        );
+        expect(await sentOf()).toEqual([null, null]);
+      } finally {
+        await clean();
+      }
+    });
+  });
 });

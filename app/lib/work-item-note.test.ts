@@ -84,6 +84,8 @@ const unstick = (over: Partial<UnstickRow>): UnstickRow => ({
   reason: null,
   console: CONSOLE,
   open: true,
+  sent_action: null,
+  sent_at: null,
   ...over,
 });
 
