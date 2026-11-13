@@ -36,7 +36,12 @@ import {
 import { workItemHref } from '../lib/work-item';
 import { type OwnerQueueRow, waited } from '../lib/owner-queue';
 import { AWAITED, Feed, type Source } from '../live/Feed';
-import { useActionPending, useActionsEnabled, useStartAction } from './ActionToast';
+import {
+  useActionPending,
+  useActionsEnabled,
+  useLoginMissing,
+  useStartAction,
+} from './ActionToast';
 import { useNow } from './panel';
 import { openManager, usePhone, usePublishPlaceWhat } from './ManagerDock';
 import { Button, buttonClass } from './ui/Button';
@@ -537,6 +542,7 @@ export function AttentionBody({
     start: useStartAction(),
     pending: useActionPending(),
   };
+  const loginMissing = useLoginMissing(factory);
   const [chosen, setView] = useState<View>('kind');
   const view = fixedView ?? chosen;
   const sources: Record<SourceKey, Source<object>> = { decide, owner, unstick, failures };
@@ -557,7 +563,7 @@ export function AttentionBody({
   const cards: AttentionCard[] = [
     ...live(decide, (rows) => decideCards(rows, factory)),
     ...live(owner, ownerCards),
-    ...live(unstick, (rows) => unstickCards(rows, factory)),
+    ...live(unstick, (rows) => unstickCards(rows, factory, loginMissing)),
     ...live(failures, (rows) => fixCards(rows, factory)),
   ];
   const groups: ReactNode =

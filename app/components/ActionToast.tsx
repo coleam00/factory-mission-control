@@ -1,5 +1,11 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
-import { createActionFlow, fetchEnabled, postAction } from '../lib/actions';
+import {
+  createActionFlow,
+  fetchEnabled,
+  loginMissing,
+  type Operators,
+  postAction,
+} from '../lib/actions';
 import { Toast } from './ui/Toast';
 
 /** The one flow every Answer and Resume button starts: README rule 4, one action model. */
@@ -35,20 +41,29 @@ export function useActionDone(onDone: (text: string) => void): void {
   }, []);
 }
 
-let enabled: Promise<string[]> | undefined;
+let enabled: Promise<Operators> | undefined;
 
-/** Whether the server holds an operator for `factory`; false until it answers, so buttons start as links. */
-export function useActionsEnabled(factory: string): boolean {
-  const [factories, setFactories] = useState<string[]>([]);
+function useOperators(): Operators {
+  const [operators, setOperators] = useState<Operators>({ factories: [], logins: [] });
   useEffect(() => {
     enabled ??= fetchEnabled();
     let live = true;
-    enabled.then((names) => live && setFactories(names));
+    enabled.then((found) => live && setOperators(found));
     return () => {
       live = false;
     };
   }, []);
-  return factories.includes(factory);
+  return operators;
+}
+
+/** Whether the server holds an operator for `factory`; false until it answers, so buttons start as links. */
+export function useActionsEnabled(factory: string): boolean {
+  return useOperators().factories.includes(factory);
+}
+
+/** True when the factory's operator has no `login`; false until the server answers. */
+export function useLoginMissing(factory: string): boolean {
+  return loginMissing(useOperators(), factory);
 }
 
 export function ActionToastHost() {

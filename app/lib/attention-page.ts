@@ -385,8 +385,16 @@ const CLOSE_DOES =
   'Closes the issue as not planned, with a comment that you closed it from Mission Control';
 const COMMENT_DOES = 'Posts your text on the issue as your comment, then re-triages it';
 
-/** Work that stopped moving: re-triage, close or comment on the item, or resume a run waiting for a slot. */
-export function unstickCards(rows: readonly UnstickRow[], factory: string): AttentionCard[] {
+/**
+ * Work that stopped moving: re-triage, close or comment on the item, or resume a run waiting for a
+ * slot. The tile `row.action` names is the recommended one. `loginMissing` is an operator with no
+ * `login`: the server refuses re-triage and comment for it, so only Close is offered.
+ */
+export function unstickCards(
+  rows: readonly UnstickRow[],
+  factory: string,
+  loginMissing: boolean,
+): AttentionCard[] {
   return [...rows]
     .sort(
       (a, b) =>
@@ -419,13 +427,12 @@ export function unstickCards(rows: readonly UnstickRow[], factory: string): Atte
         label: string,
         consequence: string,
         request: ActionRequest,
-        recommended: boolean,
         href: string | null,
       ): Tile => ({
         id,
         label,
         consequence,
-        recommended,
+        recommended: id === row.action,
         href,
         act: { request, item: row.number },
         hooks: {
@@ -435,12 +442,15 @@ export function unstickCards(rows: readonly UnstickRow[], factory: string): Atte
         },
       });
       const writable = row.number !== null && row.open;
-      const closedNote =
-        row.number === null || row.open
-          ? ''
-          : ` ${n} is not open in the mirror, so re-triage, close and comment are not offered; open it to see where it stands.`;
+      const commentable = writable && !loginMissing;
+      const withheld = !writable
+        ? ` ${n} is not an open issue, so re-triage, close and comment are not offered; open it to see where it stands.`
+        : loginMissing
+          ? ' Re-triage and comments need the operator’s `login`, which this factory’s operator entry lacks; Close is offered.'
+          : '';
+      const closedNote = row.number === null ? '' : withheld;
       const somethingElse = (): Tile =>
-        !writable || row.number === null
+        !commentable || row.number === null
           ? {
               id: 'something-else',
               label: SOMETHING_ELSE,
@@ -462,24 +472,26 @@ export function unstickCards(rows: readonly UnstickRow[], factory: string): Atte
               },
               hooks: { 'data-choice': 'something-else', 'data-something-else': '' },
             };
-      const itemWrites = (recommendRetriage: boolean): Tile[] =>
+      const itemWrites = (): Tile[] =>
         !writable || row.number === null
           ? []
           : [
-              act(
-                'retriage',
-                `Re-triage #${row.number}`,
-                RETRIAGE_DOES,
-                { factory, action: 'retriage', number: row.number },
-                recommendRetriage,
-                itemHref,
-              ),
+              ...(loginMissing
+                ? []
+                : [
+                    act(
+                      'retriage',
+                      `Re-triage #${row.number}`,
+                      RETRIAGE_DOES,
+                      { factory, action: 'retriage', number: row.number },
+                      itemHref,
+                    ),
+                  ]),
               act(
                 'close',
                 `Close #${row.number}`,
                 CLOSE_DOES,
                 { factory, action: 'close', number: row.number },
-                false,
                 itemHref,
               ),
             ];
@@ -514,11 +526,12 @@ export function unstickCards(rows: readonly UnstickRow[], factory: string): Atte
             note: {
               lead: closedSentence(row),
               rest:
-                row.kind === 'blocked'
+                (row.kind === 'blocked'
                   ? `${n}'s issue says it depends on ${row.waits_on}, so triage put it in blocked. A named build round refuses blocked items.`
-                  : `${n} was parked on ${row.waits_on.includes(',') ? 'them' : 'it'}${row.reason === null ? '' : `: “${row.reason}”`}. Nothing re-triages a parked item on its own.`,
+                  : `${n} was parked on ${row.waits_on.includes(',') ? 'them' : 'it'}${row.reason === null ? '' : `: “${row.reason}”`}. Nothing re-triages a parked item on its own.`) +
+                closedNote,
             },
-            tiles: [...itemWrites(true), somethingElse()],
+            tiles: [...itemWrites(), somethingElse()],
           };
         }
         case 'capacity': {
@@ -532,7 +545,6 @@ export function unstickCards(rows: readonly UnstickRow[], factory: string): Atte
                     `Resume run ${run}`,
                     'Asks Archon to continue the run now',
                     { factory, action: 'resume', run_id: row.run_id, from_step: null },
-                    true,
                     consoleUrl(row.console, row.run_id),
                   ),
                 ];
@@ -551,7 +563,7 @@ export function unstickCards(rows: readonly UnstickRow[], factory: string): Atte
               lead: `Run ${run} of ${label} was answered and has waited for a free slot${since}.`,
               rest: `Runs in this state do not always continue on their own.${closedNote}`,
             },
-            tiles: [...resume, ...itemWrites(false), somethingElse()],
+            tiles: [...resume, ...itemWrites(), somethingElse()],
           };
         }
         case 'claim':
@@ -561,9 +573,9 @@ export function unstickCards(rows: readonly UnstickRow[], factory: string): Atte
             meta: [...workflow, { pill: 'claimed', state: UNSTICK_STATE.claim }, waits],
             note: {
               lead: `Run ${run} of ${label} finished${row.since === null ? '' : ` at ${localMoment(row.since)}`} and still claims ${n}.`,
-              rest: `Any intake run releases the claim; re-triaging ${n} starts one and keeps its build progress.${closedNote}`,
+              rest: `Any intake run releases the claim${commentable ? `; re-triaging ${n} starts one and keeps its build progress` : ''}.${closedNote}`,
             },
-            tiles: [...itemWrites(true), somethingElse()],
+            tiles: [...itemWrites(), somethingElse()],
           };
         default:
           return row.kind satisfies never;

@@ -50,6 +50,7 @@ const FETCH_SITES: Record<string, string> = {
   'scripts/lib/neon.ts': 'the Neon API: database branches, not GitHub, Archon or a factory',
   'scripts/lib/cli.ts': 'passes the real fetch to its dependants',
   'scripts/idle-check.ts': 'the local function',
+  'scripts/live/attention.ts': 'the local app: GET /api/actions',
   'scripts/live/shared.ts': 'the local app',
   'scripts/live/switcher.ts': 'the local app',
 };

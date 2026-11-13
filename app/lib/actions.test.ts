@@ -143,5 +143,5 @@ test('the pending toast names the work item for re-triage, close and comment', (
   });
   expect(
     pendingText({ factory: 'f', action: 'comment', number: 553, text: 'Go ahead' }, none),
-  ).toEqual({ lead: 'Commented on #553 and re-triaged it: ', detail: 'your text' });
+  ).toEqual({ lead: 'Commented on #553 and re-triaged it: ', detail: '“Go ahead”' });
 });

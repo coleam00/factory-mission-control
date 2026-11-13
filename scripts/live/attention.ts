@@ -1,9 +1,6 @@
+import { loginMissing, operatorsOf } from '../../app/lib/actions';
 import type { UnstickRow } from '../../app/lib/attention';
-import {
-  ATTENTION_SOURCES,
-  badgePanelName,
-  unstickCards,
-} from '../../app/lib/attention-page';
+import { ATTENTION_SOURCES, badgePanelName, unstickCards } from '../../app/lib/attention-page';
 import { openPage, type Page } from '../lib/cdp';
 import type { Row } from '../lib/db';
 import {
@@ -220,10 +217,11 @@ export function unstickMismatches(
   shown: ShownCard[],
   rows: UnstickRow[],
   factory: string,
+  noLogin: boolean,
 ): string[] {
   const mismatches: string[] = [];
   const same = screenAgainstSql(mismatches);
-  const built = unstickCards(rows, factory);
+  const built = unstickCards(rows, factory, noLogin);
   same('Unstick cards', idsOf(shown, 'unstick'), built.map((c) => c.key).sort());
   for (const card of built) {
     const onScreen = shown.find((s) => s.kind === 'unstick' && s.id === card.key);
@@ -333,10 +331,12 @@ export function attentionPhase(ctx: LiveContext): LivePhase {
       const issues = await db.query(OPEN_NEEDS_OWNER_SQL, [factory]);
       const questions = await db.query(OPEN_QUESTIONS_SQL, [factory]);
 
+      const operators = operatorsOf(await (await fetch(`${ctx.base}/api/actions`)).json());
+      const noLogin = loginMissing(operators, factory);
       const mismatches = [
         ...decideMismatches(cards, archon, projected),
         ...fixMismatches(cards, signatures),
-        ...unstickMismatches(cards, stuck, factory),
+        ...unstickMismatches(cards, stuck, factory, noLogin),
         ...ownerMismatches(owner, expectedItems(issues, questions)),
         ...countMismatches(head, onScreen, badge),
       ];

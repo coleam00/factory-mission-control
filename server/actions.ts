@@ -554,7 +554,13 @@ export function actionsFromEnv(env: Env, repoRoot: string): Actions | undefined 
 }
 
 export function actionsRoutes(app: Hono, actions: Actions | undefined): void {
-  app.get('/api/actions', (c) => c.json({ factories: [...(actions?.operators.keys() ?? [])] }));
+  app.get('/api/actions', (c) => {
+    const operators = [...(actions?.operators ?? [])];
+    return c.json({
+      factories: operators.map(([name]) => name),
+      logins: operators.filter(([, operator]) => operator.login !== null).map(([name]) => name),
+    });
+  });
   app.post('/api/actions', async (c) => {
     if (!actions) return c.json({ error: 'actions are not configured' }, 503);
     const parsed = parseActionBody(await c.req.json().catch(() => null));

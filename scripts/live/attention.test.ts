@@ -79,12 +79,12 @@ test('Unstick cards must match the queryâ€™s rows, and each must show the pageâ€
     kind: 'unstick',
     choices: ['retriage', 'close', 'something-else'],
   });
-  expect(unstickMismatches([shown], [stuck], 'f')).toEqual([]);
-  expect(unstickMismatches([], [stuck], 'f')[0]).toContain('Unstick cards');
-  expect(unstickMismatches([shown, shown], [stuck], 'f')[0]).toContain('Unstick cards');
-  expect(unstickMismatches([{ ...shown, choices: ['retriage'] }], [stuck], 'f')[0]).toContain(
-    'option tiles',
-  );
+  expect(unstickMismatches([shown], [stuck], 'f', false)).toEqual([]);
+  expect(unstickMismatches([], [stuck], 'f', false)[0]).toContain('Unstick cards');
+  expect(unstickMismatches([shown, shown], [stuck], 'f', false)[0]).toContain('Unstick cards');
+  expect(
+    unstickMismatches([{ ...shown, choices: ['retriage'] }], [stuck], 'f', false)[0],
+  ).toContain('option tiles');
 });
 
 test('the head, the cards and the tab badge must say one number, and the badge hides at zero', () => {

@@ -1,6 +1,6 @@
 import { type ReactElement, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router';
-import { TEXT_ANSWER_DETAIL } from '../lib/actions';
+import { quoted, TEXT_ANSWER_DETAIL } from '../lib/actions';
 import { clock, shortRunId } from '../lib/format';
 import {
   MAX_MESSAGE_CHARS,
@@ -15,7 +15,12 @@ import { proposalRequest } from '../../server/manager-stream';
 import { lapHref } from '../lib/one-lap';
 import { workItemHref } from '../lib/work-item';
 import { RUN_STATE, stateOf } from '../lib/states';
-import { useActionPending, useActionsEnabled, useStartAction } from './ActionToast';
+import {
+  useActionPending,
+  useActionsEnabled,
+  useLoginMissing,
+  useStartAction,
+} from './ActionToast';
 import type { ManagerChat } from './useManagerChat';
 import { Button, buttonClass } from './ui/Button';
 import { StateDot } from './ui/StateDot';
@@ -142,10 +147,12 @@ function Proposals({
   proposals,
   factory,
   enabled,
+  loginMissing,
 }: {
   proposals: ManagerProposal[];
   factory: string;
   enabled: boolean;
+  loginMissing: boolean;
 }): ReactElement | null {
   const start = useStartAction();
   const pending = useActionPending();
@@ -160,11 +167,17 @@ function Proposals({
         const key = `${i}:${proposal.action}:${target}:${label}`;
         const named =
           proposal.action === 'answer' && proposal.text !== null
-            ? `Answer “${proposal.text.length > 40 ? `${proposal.text.slice(0, 40)}…` : proposal.text}”`
-            : label;
+            ? `Answer ${quoted(proposal.text)}`
+            : proposal.action === 'comment'
+              ? `${label}: ${quoted(proposal.text)}`
+              : label;
+        // The server refuses a re-triage or a comment for an operator with no `login`.
+        const writable =
+          enabled &&
+          !(loginMissing && (proposal.action === 'retriage' || proposal.action === 'comment'));
         // A run's action names the run after its label; a work item's label already names `#N`.
         const text = 'run_id' in proposal ? `${named} ${shortRunId(proposal.run_id)}` : named;
-        return enabled ? (
+        return writable ? (
           <Button
             key={key}
             variant={i === 0 ? 'primary' : 'secondary'}
@@ -203,10 +216,12 @@ function Message({
   message,
   factory,
   enabled,
+  loginMissing,
 }: {
   message: ManagerMessage;
   factory: string;
   enabled: boolean;
+  loginMissing: boolean;
 }): ReactElement {
   if (message.role === 'owner') {
     return (
@@ -239,7 +254,12 @@ function Message({
         <Prose message={message} />
       )}
       <RunList runs={message.runs} />
-      <Proposals proposals={message.proposals} factory={factory} enabled={enabled} />
+      <Proposals
+        proposals={message.proposals}
+        factory={factory}
+        enabled={enabled}
+        loginMissing={loginMissing}
+      />
       {message.notices.map((notice) => (
         <p
           key={notice}
@@ -261,6 +281,7 @@ export function ManagerPanelBody({
   place,
   factory,
   enabled,
+  loginMissing = false,
   draft = '',
   onDraft = () => {},
   onSend = () => {},
@@ -271,6 +292,7 @@ export function ManagerPanelBody({
   place: ManagerPlace;
   factory: string | undefined;
   enabled: boolean;
+  loginMissing?: boolean;
   draft?: string;
   onDraft?: (text: string) => void;
   onSend?: (text: string) => void;
@@ -340,6 +362,7 @@ export function ManagerPanelBody({
                 message={message}
                 factory={factory}
                 enabled={enabled}
+                loginMissing={loginMissing}
               />
             ))}
             <div ref={end} />
@@ -404,6 +427,7 @@ export function ManagerPanel({
 }): ReactElement {
   const [draft, setDraft] = useState('');
   const enabled = useActionsEnabled(factory ?? '');
+  const loginMissing = useLoginMissing(factory ?? '');
   return (
     <ManagerPanelBody
       phone={phone}
@@ -412,6 +436,7 @@ export function ManagerPanel({
       place={place}
       factory={factory}
       enabled={enabled}
+      loginMissing={loginMissing}
       draft={draft}
       onDraft={setDraft}
       onSend={(text) => {

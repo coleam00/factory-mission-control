@@ -95,6 +95,26 @@ describe('the unstick query on the seed', () => {
     expect(of('claim')).toMatchObject({ blocker_titles: null, reason: null, open: false });
   });
 
+  test('reads a claim or capacity item as open once the mirror holds its issue open', async () => {
+    const number = QUEUE_UNSTICK.claimed.issue;
+    const at = '2026-10-24T09:08:00.000Z';
+    await db.query(
+      `INSERT INTO mc.issues (factory, number, title, state, url, created_at, updated_at)
+       VALUES ('queue-factory', $1, 'open item', 'open', $2, $3, $3)`,
+      [number, `https://github.com/example/queue-factory/issues/${number}`, at],
+    );
+    try {
+      const rows = (await db.query(UNSTICK, ['queue-factory'])) as unknown as UnstickRow[];
+      const of = (kind: string) => rows.find((r) => r.kind === kind);
+      expect(of('capacity')).toMatchObject({ number, open: true });
+      expect(of('claim')).toMatchObject({ number, open: true });
+    } finally {
+      await db.query(`DELETE FROM mc.issues WHERE factory = 'queue-factory' AND number = $1`, [
+        number,
+      ]);
+    }
+  });
+
   test('flags nothing for an item whose blocker is still open, and runs on a factory without any', async () => {
     const numbers = (await db.query(UNSTICK, ['queue-factory'])).map((r) => r.number);
     expect(numbers).not.toContain(QUEUE_UNSTICK.blockedOpen.issue);

@@ -21,6 +21,10 @@ export type ActionRequest =
 /** What the toast says an answer typed by the owner was. */
 export const TEXT_ANSWER_DETAIL = 'your text';
 
+/** Text as a button or toast shows it: in quotes, cut after 40 characters. */
+export const quoted = (text: string): string =>
+  `“${text.length > 40 ? `${text.slice(0, 40)}…` : text}”`;
+
 export type AnswerRequest = Extract<ActionRequest, { action: 'answer' }>;
 export type ResumeRequest = Extract<ActionRequest, { action: 'resume' }>;
 export type CommentRequest = Extract<ActionRequest, { action: 'comment' }>;
@@ -65,17 +69,30 @@ export async function postAction(
   }
 }
 
-/** The factories the server holds an operator for; empty on any failure, so buttons stay links. */
-export async function fetchEnabled(fetchImpl: Fetch = fetch): Promise<string[]> {
+/** The factories the server holds an operator for, and those whose operator has a `login`. */
+export type Operators = { factories: string[]; logins: string[] };
+
+/** An operator with no `login`: the server refuses re-triage and comment for it. False when there is no operator. */
+export const loginMissing = ({ factories, logins }: Operators, factory: string): boolean =>
+  factories.includes(factory) && !logins.includes(factory);
+
+const names = (value: unknown): string[] =>
+  Array.isArray(value) ? value.filter((name): name is string => typeof name === 'string') : [];
+
+/** The operators in a `GET /api/actions` body. */
+export const operatorsOf = (body: unknown): Operators => {
+  const { factories, logins } = (body ?? {}) as { factories?: unknown; logins?: unknown };
+  return { factories: names(factories), logins: names(logins) };
+};
+
+/** The server's operators; none on any failure, so buttons stay links. */
+export async function fetchEnabled(fetchImpl: Fetch = fetch): Promise<Operators> {
   try {
     const response = await fetchImpl('/api/actions');
-    if (!response.ok) return [];
-    const body = (await response.json()) as { factories?: unknown };
-    return Array.isArray(body.factories)
-      ? body.factories.filter((name): name is string => typeof name === 'string')
-      : [];
+    if (!response.ok) return { factories: [], logins: [] };
+    return operatorsOf(await response.json());
   } catch {
-    return [];
+    return { factories: [], logins: [] };
   }
 }
 
@@ -95,7 +112,7 @@ export function pendingText(
   if (request.action === 'comment') {
     return {
       lead: `Commented on #${request.number} and re-triaged it: `,
-      detail: TEXT_ANSWER_DETAIL,
+      detail: quoted(request.text),
     };
   }
   const lead = `Resumed run ${shortRun(request.run_id)}`;

@@ -491,12 +491,17 @@ test('a CLI failure is recorded with its exit status and error, and shown to the
   });
 });
 
-test('GET /api/actions names the factories with an entry and nothing else', async () => {
+test('GET /api/actions names the factories with an entry, and which of them have a login, and nothing else', async () => {
   const response = await app.request('/api/actions');
   const text = await response.text();
-  expect(JSON.parse(text)).toEqual({ factories: [FACTORY] });
+  expect(JSON.parse(text)).toEqual({ factories: [FACTORY], logins: [FACTORY] });
   expect(text).not.toContain(STUB);
   expect(text).not.toContain(scratch);
+});
+
+test('GET /api/actions leaves a factory whose operator has no login out of logins', async () => {
+  const response = await appWith({}, null).request('/api/actions');
+  expect(await response.json()).toEqual({ factories: [FACTORY], logins: [] });
 });
 
 test('summarize reads the message of a pretty-printed forge error', () => {

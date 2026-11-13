@@ -278,7 +278,10 @@ test('Ask manager on each kind of card carries that card’s run and work item',
     item: 15,
   });
   expect(ownerCards([owner])[0]?.ask.context).toEqual({ place: 'attention', item: 17 });
-  expect(unstickCards([stuck], 'f')[0]?.ask.context).toEqual({ place: 'attention', item: 7 });
+  expect(unstickCards([stuck], 'f', false)[0]?.ask.context).toEqual({
+    place: 'attention',
+    item: 7,
+  });
   expect(fixCards([failure], 'f')[0]?.ask.context).toEqual({ place: 'attention', run: RUN });
 });
 

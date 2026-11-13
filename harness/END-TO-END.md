@@ -24,5 +24,6 @@ the app served from a check branch loaded with the seed (`bun run fixture:branch
    seconds the stub log holds the answer argv and `mc.actions` holds the row with exit status 0.
    Resume a failed run from its run page the same way. Click again and press Undo: `mc.actions`
    holds an undone row and the stub log has no new line. An Unstick card also offers Re-triage, Close and Something else (a comment): each
-   records an `mc.actions` row and a stub log line the same way, and needs `login`. Without an entry for the factory the
+   records an `mc.actions` row and logs one stub line per call it sends the same way. Re-triage and Something else need
+   the entry's `login`, and Close does not. Without an entry for the factory the
    buttons are console links.

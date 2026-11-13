@@ -7,7 +7,12 @@ import { ManagerPanelBody } from './ManagerPanel';
 const RUN = '5eed0001-0000-4000-8000-0000000000a1';
 const place = managerPlace('/f/x', new URLSearchParams(), '7 items');
 
-const render = (messages: ManagerMessage[], enabled = true, factory: string | null = 'x') =>
+const render = (
+  messages: ManagerMessage[],
+  enabled = true,
+  factory: string | null = 'x',
+  loginMissing = false,
+) =>
   renderToStaticMarkup(
     <MemoryRouter>
       <ManagerPanelBody
@@ -17,6 +22,7 @@ const render = (messages: ManagerMessage[], enabled = true, factory: string | nu
         place={place}
         factory={factory ?? undefined}
         enabled={enabled}
+        loginMissing={loginMissing}
       />
     </MemoryRouter>,
   );
@@ -135,6 +141,37 @@ test('an item-keyed proposal is a button with no run suffix, and an Open #N link
   const without = render([items], false);
   expect(without).not.toContain('data-proposal');
   expect(without).toMatch(/<a [^>]*href="[^"]*42[^"]*"[^>]*>Open #42<\/a>/);
+});
+
+test('a comment proposal shows its quoted text, and re-triage and comment become links without a login', () => {
+  const text = 'Both blockers shipped, so this can go back through triage today';
+  const items: ManagerReply = {
+    ...answer,
+    proposals: [
+      { type: 'proposal', factory: 'x', action: 'retriage', number: 42, label: 'Re-triage #42' },
+      { type: 'proposal', factory: 'x', action: 'close', number: 42, label: 'Close #42' },
+      {
+        type: 'proposal',
+        factory: 'x',
+        action: 'comment',
+        number: 42,
+        text,
+        label: 'Comment on #42, then re-triage',
+      },
+    ],
+  };
+  const buttons = (html: string) =>
+    (html.match(/<button[^>]*data-proposal[^>]*>[^<]*<\/button>/g) ?? []).map((b) =>
+      b.replace(/<[^>]*>/g, ''),
+    );
+  expect(buttons(render([items]))).toEqual([
+    'Re-triage #42',
+    'Close #42',
+    `Comment on #42, then re-triage: “${text.slice(0, 40)}…”`,
+  ]);
+  const noLogin = render([items], true, 'x', true);
+  expect(buttons(noLogin)).toEqual(['Close #42']);
+  expect(noLogin.match(/>Open #42<\/a>/g)).toHaveLength(2);
 });
 
 test('bold that opens in one list item and closes in the next shows no ** and stays out of both', () => {

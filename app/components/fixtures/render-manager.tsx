@@ -85,7 +85,8 @@ export function mount(url: string) {
       if (target === '/api/actions' && init?.method === 'POST') {
         return Response.json({ id: 1, sent: false, ok: null, exit_code: null, summary: '' });
       }
-      if (target === '/api/actions') return Response.json({ factories: ['x', 'y'] });
+      if (target === '/api/actions')
+        return Response.json({ factories: ['x', 'y'], logins: ['x', 'y'] });
       if (target === '/api/manager/briefing') {
         return lines(
           { type: 'text', text: `Quiet night.${'\n\nFiller line.'.repeat(60)}` },

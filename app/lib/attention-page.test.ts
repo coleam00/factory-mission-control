@@ -199,6 +199,7 @@ test('a parked item whose blocker closed offers Re-triage first, Close and Somet
       }),
     ],
     'f',
+    false,
   );
   expect(TILE_IDS(card)).toEqual(['retriage', 'close', 'something-else']);
   expect(card?.tiles.map((t) => t.label)).toEqual([
@@ -234,6 +235,7 @@ test('an unstick card names the blocker’s title and when it closed, and why th
       }),
     ],
     'f',
+    false,
   );
   expect(parked?.note.lead).toBe(`#455 “Queue issue 455” closed ${localMoment(since)}.`);
   expect(parked?.note.rest).toBe(
@@ -242,6 +244,7 @@ test('an unstick card names the blocker’s title and when it closed, and why th
   const [blocked] = unstickCards(
     [unstick({ waits_on: '#6, #7', blocker_titles: ['Six', ''], since })],
     'f',
+    false,
   );
   expect(blocked?.note.lead).toBe(`#6 “Six”, #7 all closed by ${localMoment(since)}.`);
   expect(blocked?.note.rest).toContain('depends on #6, #7');
@@ -278,6 +281,7 @@ test('capacity offers Resume first, then the item’s writes; a claim leads with
       }),
     ],
     'f',
+    false,
   );
   expect(TILE_IDS(capacity)).toEqual(['resume', 'retriage', 'close', 'something-else']);
   expect(capacity?.tiles[0]).toMatchObject({
@@ -299,15 +303,50 @@ test('a claim or capacity card whose item the mirror does not hold open offers n
       unstick({ kind: 'claim', number: 10, run_id: RUN, open: false }),
     ],
     'f',
+    false,
   );
   expect(TILE_IDS(capacity)).toEqual(['resume', 'something-else']);
   expect(capacity?.tiles[1]?.manager).toBeDefined();
   expect(capacity?.tiles[1]?.somethingElse).toBeUndefined();
-  expect(capacity?.note.rest).toContain('#9 is not open in the mirror');
+  expect(capacity?.note.rest).toContain('#9 is not an open issue');
   expect(TILE_IDS(claim)).toEqual(['something-else']);
   expect(claim?.tiles[0]?.manager).toBeDefined();
-  expect(claim?.note.rest).toContain('#10 is not open in the mirror');
+  expect(claim?.note.rest).toContain('#10 is not an open issue');
   expect(claim?.actions.map((x) => x.label)).toEqual(['Open #10']);
+});
+
+test('a claim card names its remedy only when it offers it', () => {
+  const [offered] = unstickCards([unstick({ kind: 'claim', number: 10, run_id: RUN })], 'f', false);
+  expect(offered?.note.rest).toContain('re-triaging #10 starts one');
+  const [withheld] = unstickCards(
+    [unstick({ kind: 'claim', number: 10, run_id: RUN, open: false })],
+    'f',
+    false,
+  );
+  expect(withheld?.note.rest).not.toContain('re-triaging');
+  expect(withheld?.actions.map((x) => x.label)).toEqual(['Open #10']);
+});
+
+test('an operator with no login gets Close and Open #N, and a sentence saying why not the rest', () => {
+  const rows = [
+    unstick({ kind: 'parked', number: 8 }),
+    unstick({ kind: 'capacity', number: 9, run_id: RUN, action: 'resume' }),
+    unstick({ kind: 'claim', number: 10, run_id: RUN }),
+  ];
+  const [parked, capacity, claim] = unstickCards(rows, 'f', true);
+  expect(TILE_IDS(parked)).toEqual(['close', 'something-else']);
+  expect(TILE_IDS(capacity)).toEqual(['resume', 'close', 'something-else']);
+  expect(TILE_IDS(claim)).toEqual(['close', 'something-else']);
+  expect(claim?.tiles.some((t) => t.recommended)).toBe(false);
+  for (const card of [parked, capacity, claim]) {
+    expect(card?.tiles.at(-1)?.manager).toBeDefined();
+    expect(card?.tiles.at(-1)?.somethingElse).toBeUndefined();
+    expect(card?.note.rest).toContain('need the operator’s `login`');
+    expect(card?.actions.map((x) => x.label)).toEqual([
+      `Open ${card?.hooks['data-number']}`.replace('Open ', 'Open #'),
+    ]);
+  }
+  expect(claim?.note.rest).not.toContain('re-triaging');
 });
 
 test('every card ends in Something else, and no card carries a copied command', () => {
@@ -335,6 +374,7 @@ test('every card ends in Something else, and no card carries a copied command', 
         unstick({ kind: 'claim', number: 10, run_id: RUN, workflow_name: 'archon-build-queue' }),
       ],
       'f',
+      false,
     ),
   ];
   expect(cards.length).toBeGreaterThan(5);
@@ -405,7 +445,7 @@ test('By queue holds exactly the cards By kind holds, and an unknown workflow la
   expect(queueOf(null)).toBe('other');
   const cards: AttentionCard[] = [
     ...decideCards([decide()], 'f'),
-    ...unstickCards([unstick({})], 'f'),
+    ...unstickCards([unstick({})], 'f', false),
     ...fixCards([group(), group({ signature: 'b', workflow_name: 'mystery' })], 'f'),
   ];
   const keys = (groups: { cards: AttentionCard[] }[]) =>
@@ -483,7 +523,7 @@ test('an unstick card is keyed as unstickKey says, so the live phase finds it', 
     }),
   ];
   expect(
-    unstickCards(rows, 'f')
+    unstickCards(rows, 'f', false)
       .map((c) => c.key)
       .sort(),
   ).toEqual(rows.map(unstickKey).sort());
