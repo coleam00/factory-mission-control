@@ -80,3 +80,14 @@ BEGIN
     END;
   END LOOP;
 END $$;
+
+-- The no-line arm above reads every non-skipped step row, so those writes re-project the stop too.
+CREATE OR REPLACE TRIGGER run_stops_step_insert AFTER INSERT ON mc.lap_steps FOR EACH ROW
+  WHEN (NEW.status <> 'skipped') EXECUTE FUNCTION mc.project_run_stop_trigger();
+CREATE OR REPLACE TRIGGER run_stops_step_update AFTER UPDATE ON mc.lap_steps FOR EACH ROW
+  WHEN (((OLD.status = 'failed' OR NEW.status = 'failed')
+      AND (OLD.status, OLD.error, OLD.completed_at) IS DISTINCT FROM (NEW.status, NEW.error, NEW.completed_at))
+    OR (OLD.status = 'skipped') <> (NEW.status = 'skipped'))
+  EXECUTE FUNCTION mc.project_run_stop_trigger();
+CREATE OR REPLACE TRIGGER run_stops_step_delete AFTER DELETE ON mc.lap_steps FOR EACH ROW
+  WHEN (OLD.status <> 'skipped') EXECUTE FUNCTION mc.project_run_stop_trigger();

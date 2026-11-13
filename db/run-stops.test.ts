@@ -446,6 +446,33 @@ test('20261113T1200Z gives a failed run with no stop line that never started a n
   }
 });
 
+test('a failed projecting run that starts a node after it failed stops being environment', async () => {
+  const db = await archonDb();
+  try {
+    await runMigrations({ files: migrationFiles, db });
+    const [run] = await db.query(
+      `INSERT INTO public.remote_agent_workflow_runs (workflow_name, status, user_message, metadata)
+       VALUES ('archon-build-queue', 'running', 'q', '{}') RETURNING id`,
+    );
+    await db.query(
+      `UPDATE public.remote_agent_workflow_runs SET status = 'failed', completed_at = now() WHERE id = $1`,
+      [run?.id],
+    );
+    const read = async () =>
+      (await db.query('SELECT class FROM mc.run_stops WHERE run_id = $1', [String(run?.id)]))[0]
+        ?.class;
+    expect(await read()).toBe('environment');
+    await db.query(
+      `INSERT INTO public.remote_agent_workflow_events (workflow_run_id, event_type, step_name, data)
+       VALUES ($1, 'node_started', 'facts', $2)`,
+      [run?.id, JSON.stringify(eventData('facts', 'node_started', NOW, ''))],
+    );
+    expect(await read()).toBeNull();
+  } finally {
+    await db.close();
+  }
+});
+
 test('0031 records a run it cannot project in projection_errors and still finishes', async () => {
   const historical = await archonDb();
   try {
