@@ -309,6 +309,12 @@ rules (a re-run replaces earlier records), projected into `mc.metric_records` an
 The Manager answers "how is the factory doing" from the same query. This adds one panel to 4.9's
 "whether a change helped is a question for the agent", which still holds for everything else.
 
+**Owner decision 2026-11-13 (Board).** The Board follows every work item through seven stages, Intake, Planned,
+Build, Review, App check, Merge and Merged, placed by Archon's own item state (`work/<n>`, projected into
+`mc.work_item_states`) and the live runs. Each card shows its round (Archon's count of build rounds, one dot
+per round in its outcome color), the workflow and step working on it now, how many times the merge queue
+returned it, and when it merged. The board moves live. `docs/design/v3/README.md` "Board" is binding.
+
 The places are:
 - **Attention** (home)
 - **Factory** (the v2 map)
