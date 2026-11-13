@@ -34,6 +34,7 @@ const decide: DecideRow = {
   confidence: 'high',
   recommendation_why: null,
   item_number: 15,
+  item_title: 'Lanes and recent laps',
   message: '**What it is.** Two screens.\n\n**Recommendation: `split`** (high confidence). Sooner.',
   console: 'http://localhost:3090/',
 };
@@ -58,13 +59,17 @@ const stuck: UnstickRow = {
   waits_on: '#6',
   since: new Date('2026-10-24T08:00:00Z'),
   action: 'retriage',
-  repository: 'o/r',
+  title: 'Seven',
+  blocker_titles: ['Six'],
+  reason: null,
   console: 'http://localhost:3090/',
+  open: true,
 };
 const handledRow = (id: number, action: HandledRow['action'], sent_at: Date): HandledRow => ({
   id,
   action,
   run_id: RUN,
+  item_number: null,
   option: null,
   from_step: null,
   sent_at,
@@ -122,7 +127,7 @@ test('a card draws its parts in the README order: dot, title, age, meta, note, o
     'data-title',
     'data-waited',
     'archon-build-queue',
-    'Recommends',
+    'waits at ask for your answer',
     'data-choice',
     'Open #15',
   ];
@@ -140,7 +145,7 @@ test('an errored source says so, draws none of its stale rows, and the other gro
   });
   expect(html).toContain('What needs you');
   expect(html).toContain('Live data for what is waiting on you is unavailable.');
-  expect(html).not.toContain('data-choice');
+  expect(html).not.toContain('data-choice="split"');
   expect(html).toContain('data-unstick-kind="blocked"');
   expect(html).not.toContain('data-attention-count=');
 });
@@ -210,11 +215,23 @@ test('cards drawn beside an errored or loading source keep the recommendation cl
   }
 });
 
-test('before the server says an operator exists, every tile and the Resume button stay console links', () => {
+test('before the server says an operator exists, every write tile stays a link and nothing is copied', () => {
   const html = render({ decide: ready([decide]), unstick: ready([stuck]) });
   expect(html).not.toContain('data-answer-box');
-  expect(html).toMatch(/<a [^>]*data-choice=/);
-  expect(html).not.toMatch(/<button[^>]*data-choice=/);
+  expect(html).toMatch(/<a (?=[^>]*data-choice="retriage")(?=[^>]*href="\/f\/f\/work\/7")[^>]*>/);
+  expect(html).toMatch(/<a [^>]*data-choice="split"/);
+  expect(html).not.toMatch(/<button[^>]*data-choice="(retriage|close|split|build)"/);
+  expect(html).not.toContain('data-command');
+  expect(html).not.toContain('Copy');
+});
+
+test('an unstick card says what it waits on and ends in Re-triage, Close and Something else', () => {
+  const html = render({ unstick: ready([stuck]) });
+  expect(html).toContain('#6 “Six” closed');
+  const labels = [...html.matchAll(/data-choice="([^"]+)"/g)].map((m) => m[1]);
+  expect(labels).toEqual(['retriage', 'close', 'something-else']);
+  expect(html).toContain('Re-triage #7');
+  expect(html).toContain('Close #7');
 });
 
 test('every card offers Ask manager, and the handled line counts only the actions of today', () => {
@@ -226,11 +243,26 @@ test('every card offers Ask manager, and the handled line counts only the action
     ]),
   });
   expect(html.match(/data-ask-manager/g)?.length).toBe(1);
-  expect(html).toContain('The manager handled 1 today: resumed 1 run.');
+  expect(html).toContain('You resumed 1 today.');
   const failed = render({
     handled: { rows: [handledRow(1, 'resume', new Date(NOW - 60_000))], state: 'error' },
   });
   expect(failed).not.toContain('data-handled');
+});
+
+test('the handled line names who acted: your actions, then what the manager answered on its own', () => {
+  const html = render({
+    handled: ready([handledRow(1, 'answer', new Date(NOW - 60_000))]),
+    managerHandled: ready([
+      { run_id: RUN, completed_at: new Date(NOW - 120_000), answered: 2 },
+      { run_id: RUN, completed_at: new Date(NOW - 3 * 86_400_000), answered: 5 },
+    ]),
+  });
+  expect(html).toContain('You answered 1 · the manager handled 2 today.');
+  const managerOnly = render({
+    managerHandled: ready([{ run_id: RUN, completed_at: new Date(NOW - 60_000), answered: 1 }]),
+  });
+  expect(managerOnly).toContain('The manager handled 1 today.');
 });
 
 test('the handled sentence counts only the actions that went through', () => {
@@ -239,11 +271,11 @@ test('the handled sentence counts only the actions that went through', () => {
   const mixed = render({
     handled: ready([handledRow(1, 'resume', new Date(NOW - 60_000)), refused, unknown]),
   });
-  expect(mixed).toContain('The manager handled 1 today: resumed 1 run.');
+  expect(mixed).toContain('You resumed 1 today.');
   const none = render({ handled: ready([refused]) });
-  expect(none).toContain('None of the manager’s actions today went through.');
+  expect(none).toContain('None of your actions today went through.');
   const pending = render({ handled: ready([unknown]) });
-  expect(pending).toContain('None of the manager’s actions today is confirmed yet.');
+  expect(pending).toContain('None of your actions today is confirmed yet.');
   expect(pending).not.toContain('went through');
   expect(pending).not.toContain('background:var(--v3-done)');
 });
@@ -255,7 +287,10 @@ test('Ask manager on each kind of card carries that card’s run and work item',
     item: 15,
   });
   expect(ownerCards([owner])[0]?.ask.context).toEqual({ place: 'attention', item: 17 });
-  expect(unstickCards([stuck], 'f')[0]?.ask.context).toEqual({ place: 'attention', item: 7 });
+  expect(unstickCards([stuck], 'f', false)[0]?.ask.context).toEqual({
+    place: 'attention',
+    item: 7,
+  });
 });
 
 test('a console link opens in a new tab, and an in-app link stays in the dashboard tab', () => {
@@ -267,11 +302,10 @@ test('a console link opens in a new tab, and an in-app link stays in the dashboa
     external,
     hooks: {},
   });
-  const act = { enabled: false, pending: false, start: () => {} };
   const draw = (external: boolean) =>
     renderToStaticMarkup(
       <MemoryRouter>
-        <ActionControl action={link(external)} act={act} />
+        <ActionControl action={link(external)} />
       </MemoryRouter>,
     );
   expect(draw(true)).toContain('target="_blank"');

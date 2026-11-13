@@ -21,7 +21,13 @@ import { placeAddress } from '../app/lib/places';
 import { addressOfPlace } from '../app/lib/runs';
 import { workItemHref } from '../app/lib/work-item';
 import { type Db, openDb } from '../scripts/lib/db';
-import { OPEN_QUESTION_SQL, openQuestionOf, RESUMABLE_RUN_SQL, RESUME_FROM_SQL } from './actions';
+import {
+  OPEN_ISSUE_SQL,
+  OPEN_QUESTION_SQL,
+  openQuestionOf,
+  RESUMABLE_RUN_SQL,
+  RESUME_FROM_SQL,
+} from './actions';
 import type { Env } from './check-env';
 import { BASE_ENV_NAMES, pick } from './child-env';
 import { readFactoryNames } from './factories';
@@ -368,9 +374,9 @@ ${schema}
 
 Answer in short plain prose, naming runs by workflow and status. To give the owner links, a run list or a button, end the answer with one fenced block whose info string is mc, holding JSON:
 \`\`\`mc
-{"links":[{"kind":"run","id":"<run id>"},{"kind":"item","id":<issue number>}],"runs":["<run id>"],"proposals":[{"action":"answer","run_id":"<run id>","option":"<option id>"},{"action":"answer","run_id":"<run id>","text":"<free text>"},{"action":"resume","run_id":"<run id>","from_step":"<step id>"}]}
+{"links":[{"kind":"run","id":"<run id>"},{"kind":"item","id":<issue number>}],"runs":["<run id>"],"proposals":[{"action":"answer","run_id":"<run id>","option":"<option id>"},{"action":"answer","run_id":"<run id>","text":"<free text>"},{"action":"resume","run_id":"<run id>","from_step":"<step id>"},{"action":"retriage","number":<issue number>},{"action":"close","number":<issue number>},{"action":"comment","number":<issue number>,"text":"<the owner's words>"}]}
 \`\`\`
-Every field is optional. Propose an answer only for a run waiting on a question in mc.attention_items, using one of its option ids (or text for "Something else"). Propose a resume only for a ${RESUMABLE_STATUSES.join(' or ')} run; from_step is optional and, when given, must be the step that failed: Archon resumes a run from its failed step. A proposal is a button the owner presses; it does nothing until they do. At most ${MAX_RUNS} runs and ${MAX_PROPOSALS} proposals.`;
+Every field is optional. Propose an answer only for a run waiting on a question in mc.attention_items, using one of its option ids (or text for "Something else"). Propose a resume only for a ${RESUMABLE_STATUSES.join(' or ')} run; from_step is optional and, when given, must be the step that failed: Archon resumes a run from its failed step. Propose retriage, close or comment only for an open issue: a comment's text is posted on the issue as the owner's words and the item is then re-triaged, and for a blocked or parked item whose blockers closed prefer retriage. A proposal is a button the owner presses; it does nothing until they do. At most ${MAX_RUNS} runs and ${MAX_PROPOSALS} proposals.`;
 }
 
 function renderConversation(messages: ChatRequest['messages']): string {
@@ -471,6 +477,24 @@ async function linkEvents(manager: Manager, factory: string, links: RawStructure
   return events;
 }
 
+/** A re-triage, close or comment on an issue the mirror holds open; a comment also needs its text. */
+async function itemProposal(
+  manager: Manager,
+  factory: string,
+  action: 'retriage' | 'close' | 'comment',
+  raw: RawStructure['proposals'][number],
+): Promise<ManagerEvent | undefined> {
+  const { number } = raw;
+  if (number === undefined) return undefined;
+  const [issue] = await lookup(manager, OPEN_ISSUE_SQL, [factory, number]);
+  if (!issue) return undefined;
+  const base = { type: 'proposal', factory, number } as const;
+  if (action === 'retriage') return { ...base, action, label: `Re-triage #${number}` };
+  if (action === 'close') return { ...base, action, label: `Close #${number}` };
+  if (!isAnswerText(raw.text)) return undefined;
+  return { ...base, action, text: raw.text, label: `Comment on #${number}, then re-triage` };
+}
+
 /**
  * A proposal the database backs: the run waits on a question and the option is one of its own, or
  * the run failed or paused and the step is one it ran. The server writes `occurrence` and `label`.
@@ -480,7 +504,10 @@ async function proposalEvent(
   factory: string,
   raw: RawStructure['proposals'][number],
 ): Promise<ManagerEvent | undefined> {
-  if (!isRunId(raw.run_id)) return undefined;
+  if (raw.action === 'retriage' || raw.action === 'close' || raw.action === 'comment') {
+    return itemProposal(manager, factory, raw.action, raw);
+  }
+  if (raw.run_id === undefined || !isRunId(raw.run_id)) return undefined;
   const runId = raw.run_id.toLowerCase();
   if (raw.action === 'answer') {
     const [row] = await lookup(manager, OPEN_QUESTION_SQL, [factory, runId]);
@@ -506,10 +533,6 @@ async function proposalEvent(
       };
     }
     return { ...base, occurrence, option: null, text, label: 'Answer with your text' };
-  }
-  if (raw.action !== 'resume') {
-    const unknown: never = raw.action;
-    throw new Error(`unknown proposal action ${unknown}`);
   }
   const [lap] = await lookup(manager, RESUMABLE_RUN_SQL, [factory, runId]);
   if (!lap) return undefined;

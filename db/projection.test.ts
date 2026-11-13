@@ -2936,6 +2936,30 @@ test('a work item state keeps its stage, its claim’s run and the items its par
   expect(await workBlockers()).toEqual([]);
 });
 
+test('a work item state keeps the reason of the decision that parked it, and drops it once it is not parked', async () => {
+  const doc = (facts: object) => JSON.stringify({ version: 1, stage: 'deliver', facts });
+  const reasons = () =>
+    db.query('SELECT number, parked_reason FROM mc.work_item_states ORDER BY number');
+  await putState(
+    'work/40',
+    1,
+    doc({
+      build: {
+        status: 'parked',
+        at: 'T2',
+        decisions: [{ reason: 'Earlier' }, { reason: 'Wait for #41 to merge' }],
+      },
+    }),
+  );
+  await putState('work/42', 1, doc({ build: { status: 'parked', at: 'T2', decisions: [{}] } }));
+  expect(await reasons()).toEqual([
+    { number: 40, parked_reason: 'Wait for #41 to merge' },
+    { number: 42, parked_reason: null },
+  ]);
+  await putState('work/40', 2, doc({ build: { status: 'next', at: 'T3' } }));
+  expect(await reasons()).toContainEqual({ number: 40, parked_reason: null });
+});
+
 test('0031 fills the new columns and tables for runs and documents stored before it, and changes nothing run again', async () => {
   const historical = await archonDb();
   try {

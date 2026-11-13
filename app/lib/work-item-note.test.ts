@@ -79,8 +79,11 @@ const unstick = (over: Partial<UnstickRow>): UnstickRow => ({
   waits_on: 'a slot',
   since: at('10:00'),
   action: 'resume',
-  repository: 'o/r',
+  title: null,
+  blocker_titles: null,
+  reason: null,
   console: CONSOLE,
+  open: true,
   ...over,
 });
 
@@ -238,6 +241,7 @@ const decideRow = (over: Partial<DecideRow> = {}): DecideRow => ({
   confidence: 'high',
   recommendation_why: null,
   item_number: 7,
+  item_title: 'A title',
   message: 'Which?',
   console: CONSOLE,
   ...over,

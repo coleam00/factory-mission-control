@@ -60,11 +60,13 @@ describe('the decide query on the seed', () => {
     const rows = (await db.query(DECIDE, ['mission-control'])) as unknown as DecideRow[];
     const cards = decideCards(rows, 'mission-control');
     const merge = cards.find((c) => c.title.startsWith('#16:'));
-    expect(merge?.note).toMatchObject({
-      lead: 'Recommends Merge it now.',
-      rest: 'Nothing in it waits on another change.',
+    expect(merge?.note.lead).toContain('#16 “The owner queue” waits at');
+    expect(merge?.note.lead).toEndWith('Recommends Merge it now.');
+    expect(merge?.note.rest).toBe('Nothing in it waits on another change.');
+    expect(merge?.tiles[0]?.id).toBe('merge');
+    expect(merge?.tiles.find((t) => t.id === 'merge')?.act?.request).toMatchObject({
+      option: 'merge',
     });
-    expect(merge?.tiles.find((t) => t.id === 'merge')?.answer?.request.option).toBe('merge');
     const build = cards.find((c) => c.title.startsWith('#15:'));
     expect(build?.note.rest).toBe(
       recommendationReason(rows.find((r) => r.item_number === 15)?.message ?? ''),
@@ -81,5 +83,15 @@ describe('the decide query on the seed', () => {
       confidence: null,
       options: [],
     });
+  });
+
+  test('names the item a wait is about from the mirrored issue, and has none for a wait about no item', async () => {
+    const seeded = (await db.query(DECIDE, ['mission-control'])) as unknown as DecideRow[];
+    expect(seeded.map((r) => [r.item_number, r.item_title])).toEqual([
+      [15, 'Lanes and recent laps'],
+      [16, 'The owner queue'],
+    ]);
+    const queue = (await db.query(DECIDE, ['queue-factory'])) as unknown as DecideRow[];
+    expect(queue.map((r) => [r.item_number, r.item_title])).toEqual([[null, null]]);
   });
 });

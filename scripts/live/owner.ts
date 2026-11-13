@@ -77,11 +77,14 @@ export function expectedItems(
     expected.set(`question-${q.issue_number}-${q.question_number}`, {
       title: String(q.question),
       href: q.url === null ? null : String(q.url),
-      options: options.map((o) => ({
-        key: o.key,
-        text: o.text,
-        isDefault: o.key === q.default_option,
-      })),
+      // The page puts the default option first.
+      options: [...options]
+        .sort((a, b) => Number(b.key === q.default_option) - Number(a.key === q.default_option))
+        .map((o) => ({
+          key: o.key,
+          text: o.text,
+          isDefault: o.key === q.default_option,
+        })),
       recommendation: q.recommendation === null ? null : String(q.recommendation),
       defaultOption: q.default_option === null ? null : String(q.default_option),
       defaultAt: iso(q.default_at),

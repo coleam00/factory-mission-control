@@ -1,6 +1,6 @@
 import { type ReactElement, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router';
-import { TEXT_ANSWER_DETAIL } from '../lib/actions';
+import { needsLogin, quoted, TEXT_ANSWER_DETAIL } from '../lib/actions';
 import { clock, shortRunId } from '../lib/format';
 import {
   MAX_MESSAGE_CHARS,
@@ -13,8 +13,14 @@ import {
 import { type Block, type Inline, parseMessage } from '../lib/manager-markdown';
 import { proposalRequest } from '../../server/manager-stream';
 import { lapHref } from '../lib/one-lap';
+import { workItemHref } from '../lib/work-item';
 import { RUN_STATE, stateOf } from '../lib/states';
-import { useActionPending, useActionsEnabled, useStartAction } from './ActionToast';
+import {
+  useActionPending,
+  useActionsEnabled,
+  useLoginMissing,
+  useStartAction,
+} from './ActionToast';
 import type { ManagerChat } from './useManagerChat';
 import { Button, buttonClass } from './ui/Button';
 import { StateDot } from './ui/StateDot';
@@ -147,10 +153,12 @@ function Proposals({
   proposals,
   factory,
   enabled,
+  loginMissing,
 }: {
   proposals: ManagerProposal[];
   factory: string;
   enabled: boolean;
+  loginMissing: boolean;
 }): ReactElement | null {
   const start = useStartAction();
   const pending = useActionPending();
@@ -161,12 +169,20 @@ function Proposals({
         const { label, detail } = proposal;
         const request = proposalRequest(proposal);
         // Positional: the model may repeat an identical proposal, and nothing reorders them.
-        const key = `${i}:${proposal.action}:${proposal.run_id}:${label}`;
+        const target = 'run_id' in proposal ? proposal.run_id : proposal.number;
+        const key = `${i}:${proposal.action}:${target}:${label}`;
         const named =
           proposal.action === 'answer' && proposal.text !== null
-            ? `Answer “${proposal.text.length > 40 ? `${proposal.text.slice(0, 40)}…` : proposal.text}”`
-            : label;
-        return enabled ? (
+            ? `Answer ${quoted(proposal.text)}`
+            : proposal.action === 'comment'
+              ? `${label}: ${quoted(proposal.text)}`
+              : label;
+        // The server refuses a re-triage or a comment for an operator with no `login`.
+        const gated = loginMissing && needsLogin(proposal.action);
+        const writable = enabled && !gated;
+        // A run's action names the run after its label; a work item's label already names `#N`.
+        const text = 'run_id' in proposal ? `${named} ${shortRunId(proposal.run_id)}` : named;
+        return writable ? (
           <Button
             key={key}
             variant={i === 0 ? 'primary' : 'secondary'}
@@ -179,15 +195,23 @@ function Proposals({
               })
             }
           >
-            {`${named} ${shortRunId(proposal.run_id)}`}
+            {text}
           </Button>
         ) : (
           <Link
             key={key}
-            to={lapHref(factory, proposal.run_id)}
+            to={
+              'run_id' in proposal
+                ? lapHref(factory, proposal.run_id)
+                : workItemHref(factory, proposal.number)
+            }
             className={buttonClass('secondary')}
           >
-            Open run {shortRunId(proposal.run_id)}
+            {'run_id' in proposal
+              ? `Open run ${shortRunId(proposal.run_id)}`
+              : gated
+                ? `Open #${proposal.number}: ${named}, which needs the operator’s \`login\``
+                : `Open #${proposal.number}`}
           </Link>
         );
       })}
@@ -199,10 +223,12 @@ function Message({
   message,
   factory,
   enabled,
+  loginMissing,
 }: {
   message: ManagerMessage;
   factory: string;
   enabled: boolean;
+  loginMissing: boolean;
 }): ReactElement {
   if (message.role === 'owner') {
     return (
@@ -235,7 +261,12 @@ function Message({
         <Prose message={message} />
       )}
       <RunList runs={message.runs} />
-      <Proposals proposals={message.proposals} factory={factory} enabled={enabled} />
+      <Proposals
+        proposals={message.proposals}
+        factory={factory}
+        enabled={enabled}
+        loginMissing={loginMissing}
+      />
       {message.notices.map((notice) => (
         <p
           key={notice}
@@ -257,6 +288,7 @@ export function ManagerPanelBody({
   place,
   factory,
   enabled,
+  loginMissing = false,
   draft = '',
   onDraft = () => {},
   onSend = () => {},
@@ -267,6 +299,7 @@ export function ManagerPanelBody({
   place: ManagerPlace;
   factory: string | undefined;
   enabled: boolean;
+  loginMissing?: boolean;
   draft?: string;
   onDraft?: (text: string) => void;
   onSend?: (text: string) => void;
@@ -336,6 +369,7 @@ export function ManagerPanelBody({
                 message={message}
                 factory={factory}
                 enabled={enabled}
+                loginMissing={loginMissing}
               />
             ))}
             <div ref={end} />
@@ -400,6 +434,7 @@ export function ManagerPanel({
 }): ReactElement {
   const [draft, setDraft] = useState('');
   const enabled = useActionsEnabled(factory ?? '');
+  const loginMissing = useLoginMissing(factory ?? '');
   return (
     <ManagerPanelBody
       phone={phone}
@@ -408,6 +443,7 @@ export function ManagerPanel({
       place={place}
       factory={factory}
       enabled={enabled}
+      loginMissing={loginMissing}
       draft={draft}
       onDraft={setDraft}
       onSend={(text) => {

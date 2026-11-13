@@ -22,14 +22,10 @@ describe('the unstick query on the seed', () => {
     const rows = await db.query(UNSTICK, ['queue-factory']);
     const u = QUEUE_UNSTICK;
     const found = rows.map((r) => r as unknown as UnstickRow);
-    const [factory] = await db.query(
-      'SELECT repository, console FROM mc.factories WHERE name = $1',
-      ['queue-factory'],
-    );
-    for (const r of found) {
-      expect(r.repository).toBe(String(factory?.repository));
-      expect(r.console).toBe(String(factory?.console));
-    }
+    const [factory] = await db.query('SELECT console FROM mc.factories WHERE name = $1', [
+      'queue-factory',
+    ]);
+    for (const r of found) expect(r.console).toBe(String(factory?.console));
     expect(new Set(found.map((r) => r.kind))).toEqual(new Set(UNSTICK_KINDS));
     expect(new Set(found.map((r) => r.action))).toEqual(new Set(UNSTICK_ACTIONS));
     expect(
@@ -66,7 +62,7 @@ describe('the unstick query on the seed', () => {
         run_id: QUEUE_RUNS.built,
         waits_on: 'a claim held by a finished run',
         since: expect.any(String) as unknown as string,
-        action: 'release_claim',
+        action: 'retriage',
       },
       {
         kind: 'parked',
@@ -77,6 +73,46 @@ describe('the unstick query on the seed', () => {
         action: 'retriage',
       },
     ]);
+  });
+
+  test('names the item, what it waits on and why it was parked, so a card can say it in words', async () => {
+    const u = QUEUE_UNSTICK;
+    const rows = (await db.query(UNSTICK, ['queue-factory'])) as unknown as UnstickRow[];
+    const of = (kind: string) => rows.find((r) => r.kind === kind);
+    expect(of('parked')).toMatchObject({
+      title: `Queue issue ${u.parkedMerged.issue}`,
+      blocker_titles: [`Queue issue ${u.parkedMerged.blocker}`],
+      reason: u.parkedReason,
+      open: true,
+    });
+    expect(of('blocked')).toMatchObject({
+      title: `Queue issue ${u.blockedMerged.issue}`,
+      blocker_titles: [`Queue issue ${u.blockedMerged.blocker}`],
+      reason: null,
+      open: true,
+    });
+    expect(of('capacity')).toMatchObject({ blocker_titles: null, reason: null, open: false });
+    expect(of('claim')).toMatchObject({ blocker_titles: null, reason: null, open: false });
+  });
+
+  test('reads a claim or capacity item as open once the mirror holds its issue open', async () => {
+    const number = QUEUE_UNSTICK.claimed.issue;
+    const at = '2026-10-24T09:08:00.000Z';
+    await db.query(
+      `INSERT INTO mc.issues (factory, number, title, state, url, created_at, updated_at)
+       VALUES ('queue-factory', $1, 'open item', 'open', $2, $3, $3)`,
+      [number, `https://github.com/example/queue-factory/issues/${number}`, at],
+    );
+    try {
+      const rows = (await db.query(UNSTICK, ['queue-factory'])) as unknown as UnstickRow[];
+      const of = (kind: string) => rows.find((r) => r.kind === kind);
+      expect(of('capacity')).toMatchObject({ number, open: true });
+      expect(of('claim')).toMatchObject({ number, open: true });
+    } finally {
+      await db.query(`DELETE FROM mc.issues WHERE factory = 'queue-factory' AND number = $1`, [
+        number,
+      ]);
+    }
   });
 
   test('flags nothing for an item whose blocker is still open, and runs on a factory without any', async () => {

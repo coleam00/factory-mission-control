@@ -6,7 +6,10 @@ SELECT a.run_id, a.workflow_name, a.node_id, a.occurrence_id, a.waiting_since, a
   -- Options and labels go as text and the browser parses the JSON, sorts and computes the ages.
   a.options::text AS options, a.labels::text AS labels, a.recommended, a.confidence,
   a.recommendation_why,
-  a.item_number, a.message, f.console
+  a.item_number, coalesce(ii.title, ip.title) AS item_title, a.message, f.console
 FROM mc.attention_items a
 JOIN mc.factories f ON f.name = a.factory
+-- A build wait names an issue, a wait in the queue that lands changes a pull request.
+LEFT JOIN mc.issues ii ON ii.factory = a.factory AND ii.number = a.item_number
+LEFT JOIN mc.pull_requests ip ON ip.factory = a.factory AND ip.number = a.item_number
 WHERE a.factory = $1

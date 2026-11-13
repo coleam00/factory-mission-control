@@ -1,5 +1,5 @@
 /**
- * PRD invariant 2: the dashboard writes to a factory in exactly two ways, both in
+ * PRD invariant 2: the dashboard writes to a factory in exactly five ways, all in
  * `server/actions.ts`. This scans the dashboard's own code and fails on any other process spawn,
  * network call, Archon write verb, SQL write to Archon's tables, or GitHub/Archon client library.
  * A new entry below is for a path that does not write to GitHub, Archon or a factory, with its reason.
@@ -27,7 +27,7 @@ const remedy =
   'Add a reasoned entry only for a path that writes to neither GitHub, Archon nor a factory.';
 
 const SPAWN_SITES: Record<string, string> = {
-  'server/actions.ts': 'the two writes',
+  'server/actions.ts': 'the five writes',
   'server/build-id.ts': 'git rev-parse',
   'server/manager.ts': 'the Manager agent: read-only tools, proven by manager-tools.test.ts',
   'scripts/lib/archon-run.ts': 'workflow get, read',
@@ -50,6 +50,7 @@ const FETCH_SITES: Record<string, string> = {
   'scripts/lib/neon.ts': 'the Neon API: database branches, not GitHub, Archon or a factory',
   'scripts/lib/cli.ts': 'passes the real fetch to its dependants',
   'scripts/idle-check.ts': 'the local function',
+  'scripts/live/attention.ts': 'the local app: GET /api/actions',
   'scripts/live/shared.ts': 'the local app',
   'scripts/live/switcher.ts': 'the local app',
 };
@@ -72,6 +73,10 @@ const ARCHON_WRITE = /(INSERT\s+INTO|UPDATE|DELETE\s+FROM|TRUNCATE)\s+(public\.)
 const ARCHON_VERBS = [
   'answer',
   'resume',
+  'forge',
+  'workitem.label.add',
+  'workitem.close',
+  'workitem.comment.upsert',
   'approve',
   'reject',
   'respond',
@@ -89,12 +94,25 @@ test('only the listed files spawn a process', () => {
 });
 
 // The Manager's own 'answer' and 'resume' are proposal kinds it streams, not argv: it spawns the agent SDK, not a CLI.
+// 'run' is not listed: scripts/live/shared.ts and scripts/test-live.ts spawn `bun run`.
 test('no CLI spawn site outside server/actions.ts names an Archon write or pushes to GitHub', () => {
   const quoted = new RegExp(`['"\`](${[...ARCHON_VERBS, 'gh', 'push'].join('|')})['"\`]`);
   const offenders = matching(
     /Bun\.spawn|Bun\.spawnSync|Bun\.\$|node:child_process|from 'child_process'/,
   ).filter((file) => file !== 'server/actions.ts' && quoted.test(sources.get(file) ?? ''));
   expect(offenders, 'a spawn site names an Archon write verb, gh or push').toEqual([]);
+});
+
+test('server/actions.ts sends exactly the five writes', () => {
+  const text = sources.get('server/actions.ts') ?? '';
+  const operations = [...text.matchAll(/['"`](workitem\.[\w.]+)['"`]/g)].map((m) => m[1]);
+  expect([...new Set(operations)].sort()).toEqual([
+    'workitem.close',
+    'workitem.comment.upsert',
+    'workitem.label.add',
+  ]);
+  const verbs = [...text.matchAll(/'workflow',\s*'([\w-]+)'/g)].map((m) => m[1]);
+  expect([...new Set(verbs)].sort()).toEqual(['answer', 'resume', 'run']);
 });
 
 test('the operator command is read in one place', () => {

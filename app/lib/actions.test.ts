@@ -130,3 +130,18 @@ test('the pending toast names the item and the choice, or the run and the step',
     pendingText({ factory: 'f', action: 'resume', run_id: RUN, from_step: 'implement' }, context),
   ).toEqual({ lead: 'Resumed run 5eed0001: ', detail: 'from implement' });
 });
+
+test('the pending toast names the work item for re-triage, close and comment', () => {
+  const none = { item: null, label: '' };
+  expect(pendingText({ factory: 'f', action: 'retriage', number: 553 }, none)).toEqual({
+    lead: 'Re-triaged #553',
+    detail: '',
+  });
+  expect(pendingText({ factory: 'f', action: 'close', number: 553 }, none)).toEqual({
+    lead: 'Closed #553',
+    detail: '',
+  });
+  expect(
+    pendingText({ factory: 'f', action: 'comment', number: 553, text: 'Go ahead' }, none),
+  ).toEqual({ lead: 'Commented on #553 and re-triaged it: ', detail: '“Go ahead”' });
+});
