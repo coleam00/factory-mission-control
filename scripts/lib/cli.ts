@@ -6,6 +6,7 @@ import { askArchon, type RunStatus } from './archon-run';
 import { type OpenDb, openDb } from './db';
 import { RefusedBranch, requireCheckBranch } from './guard';
 import { createNeonApi, type NeonApi, type Sleep } from './neon';
+import { advisoryPassLock, type TakePassLock } from './pass-lock';
 import { resolveBranchName } from './target';
 
 export const REPO_ROOT = resolve(import.meta.dir, '..', '..');
@@ -19,6 +20,8 @@ export type Deps = {
   neon: () => NeonApi;
   github: () => GitHub;
   openDb: OpenDb;
+  /** Takes a job's single-pass lock on the database at `url`; undefined while another pass holds it (`scripts/lib/pass-lock.ts`). */
+  passLock: TakePassLock;
   /** GET-only fetch for commands that read raw GitHub contents (`arch:parse`). */
   fetch: GetFetch;
   now: () => Date;
@@ -71,6 +74,7 @@ export function defaultDeps(): Deps {
     neon: () => neonFromEnv(Bun.env),
     github: () => createGitHub(fetch, Bun.env.GITHUB_TOKEN),
     openDb,
+    passLock: advisoryPassLock(openDb),
     fetch: (url, init) => fetch(url, init),
     now: () => new Date(),
     sleep: (ms) => Bun.sleep(ms),

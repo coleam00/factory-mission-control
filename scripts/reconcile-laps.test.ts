@@ -3,7 +3,7 @@ import { rmSync } from 'node:fs';
 import { archonDb, migrationFiles, snapshot } from '../db/test-db';
 import { eventData } from './fixture/write';
 import type { Db, Row, Tx } from './lib/db';
-import { DATABASE_URL, NOW, recordingDeps, scratchRepo } from './lib/test-deps';
+import { DATABASE_URL, memoryPassLock, NOW, recordingDeps, scratchRepo } from './lib/test-deps';
 import { runMigrations } from './migrate';
 import { main, REPLAY_LOCK_TIMEOUT, STEP_EVENT_TYPES } from './reconcile-laps';
 
@@ -892,4 +892,78 @@ test('a finished build-queue run whose version is missing gets it back', async (
   await rows('DELETE FROM mc.versions');
   expect((await run([])).out).toEqual(['reconcile: 1 run(s) repaired']);
   expect(await rows('SELECT * FROM mc.versions')).toEqual(live);
+});
+
+test('a finished run whose lap agrees sends no lap row to the client, only a digest per comparison (#619)', async () => {
+  const runId = await wrongPausedLap();
+  await run([]);
+  const results: { text: string; result: Row[] }[] = [];
+  const repoRoot = scratchRepo({ MC_DATABASE_URL: DATABASE_URL });
+  scratch.push(repoRoot);
+  const recorder = recordingDeps({ repoRoot });
+  const recording = (tx: Tx): Tx => ({
+    query: async (text, params) => {
+      const result = await tx.query(text, params);
+      results.push({ text, result });
+      return result;
+    },
+  });
+  const deps = {
+    ...recorder.deps,
+    openDb: (): Db => ({
+      ...recording(db),
+      transaction: (fn) => db.transaction((tx) => fn(recording(tx))),
+      close: async () => {},
+    }),
+  };
+  expect(await main([], deps)).toBe(0);
+  expect(recorder.out).toEqual(['reconcile: 0 run(s) repaired']);
+  const lapReads = results.filter(({ text }) => text.includes('to_jsonb'));
+  expect(lapReads).toHaveLength(2);
+  for (const { result } of lapReads)
+    expect(result).toEqual([{ digest: expect.stringMatching(/^[0-9a-f]{32}$/) }]);
+  expect(await rows('SELECT 1 FROM mc.laps WHERE run_id = $1', [runId])).toHaveLength(1);
+});
+
+test('a second start while another pass of the same job runs exits 0 without work (#619)', async () => {
+  const runId = await wrongPausedLap();
+  const before = await tuples(runId);
+  const repoRoot = scratchRepo({ MC_DATABASE_URL: DATABASE_URL });
+  scratch.push(repoRoot);
+  const passLock = memoryPassLock();
+  const first = recordingDeps({ repoRoot, passLock });
+  const second = recordingDeps({ repoRoot, passLock });
+  const open =
+    (recorder: typeof first) =>
+    (url: string): Db => {
+      recorder.opened.push(url);
+      return { ...db, close: async () => {} };
+    };
+
+  // The first pass stalls on its first statement until the second has started.
+  let startSecond!: () => Promise<number>;
+  const firstDeps = {
+    ...first.deps,
+    openDb: (url: string): Db => ({
+      ...open(first)(url),
+      query: async (text, params) => {
+        if (!first.sql.length) {
+          first.sql.push(text);
+          expect(await startSecond()).toBe(0);
+        }
+        return db.query(text, params);
+      },
+    }),
+  };
+  startSecond = () => main([], { ...second.deps, openDb: open(second) });
+  expect(await main([], firstDeps)).toBe(0);
+
+  expect(second.out).toEqual([
+    'reconcile:laps: another reconcile:laps pass is running on this database, so this one did not start',
+  ]);
+  expect(second.opened).toEqual([]);
+  expect(first.out).toEqual(['reconcile: 1 run(s) repaired']);
+  expect(await tuples(runId)).not.toEqual(before);
+  // The lock is free again once the pass ends.
+  expect((await run([])).out).toEqual(['reconcile: 0 run(s) repaired']);
 });

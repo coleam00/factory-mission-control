@@ -13,11 +13,13 @@
 // projected before versions were (0008, issue #74) differs by its missing version, so this writes
 // that too, and a finish lost to a locked lap (issue #152) differs by its status. Archon's tables
 // are only read. It writes the check branch in .mc-check.env; `:main` writes `main`, and is the
-// owner's scheduled run beside `reconcile:main`.
+// owner's scheduled run beside `reconcile:main`. One pass runs per database at a time (#619): a
+// start that finds another running prints so and exits 0, so a timer cannot stack passes.
 
 import { parseArgs } from 'node:util';
 import { failing, guardedDatabaseUrl, type Main, runCli } from './lib/cli';
 import type { Db, Row, Tx } from './lib/db';
+import { singlePass } from './lib/pass-lock';
 
 /** Thrown to roll back a replay that reproduced the lap's rows, so they are not rewritten. */
 class Agrees extends Error {}
@@ -63,10 +65,11 @@ const REPLAY_SOURCES = sqlList([REPLAY_RUN, REPLAY_STEP_EVENT]);
 type Scope = 'run' | 'steps';
 
 /**
- * The rows the projection writes for a run, as text, in a fixed order: in the `run` scope all of
- * them, its version's included; in the `steps` scope only the step and attempt rows the lane reads.
+ * An md5 of the rows the projection writes for a run, as text, in a fixed order: in the `run` scope
+ * all of them, its version's included; in the `steps` scope only the step and attempt rows the lane
+ * reads. It is computed in SQL, so 32 characters cross the wire instead of the rows (#619).
  */
-async function lapRows(tx: Tx, runId: string, scope: Scope): Promise<string> {
+async function lapDigest(tx: Tx, runId: string, scope: Scope): Promise<string> {
   const stepRows = `SELECT 'lap_steps' AS t, to_jsonb(s)::text AS row FROM mc.lap_steps s
        WHERE run_id = $1
      UNION ALL SELECT 'lap_step_attempts', to_jsonb(a)::text FROM mc.lap_step_attempts a
@@ -78,10 +81,12 @@ async function lapRows(tx: Tx, runId: string, scope: Scope): Promise<string> {
      UNION ALL SELECT 'run_stops', to_jsonb(r)::text FROM mc.run_stops r WHERE run_id = $1
      UNION ALL SELECT 'versions', to_jsonb(v)::text FROM mc.versions v
        JOIN mc.laps l ON l.factory = v.factory AND l.digest = v.digest WHERE l.run_id = $1`;
-  const rows = await tx.query(`${stepRows} ${scope === 'run' ? otherRows : ''} ORDER BY 1, 2`, [
-    runId,
-  ]);
-  return JSON.stringify(rows);
+  const [row] = await tx.query(
+    `SELECT md5(coalesce(string_agg(t || ':' || row, E'\\n' ORDER BY t, row), '')) AS digest
+       FROM (${stepRows} ${scope === 'run' ? otherRows : ''}) x`,
+    [runId],
+  );
+  return String(row?.digest);
 }
 
 /**
@@ -97,7 +102,7 @@ async function reproject(tx: Tx, runId: string, scope: Scope): Promise<void> {
   // REPLAY_LOCK_TIMEOUT rather than waiting without bound (#221). The projection functions set
   // their own lock_timeout, so this bounds only this transaction's own statements.
   await tx.query(`SET LOCAL lock_timeout = '${REPLAY_LOCK_TIMEOUT}'`, []);
-  const before = await lapRows(tx, runId, scope);
+  const before = await lapDigest(tx, runId, scope);
   const [copied] = await tx.query(PROJECTED_RUN, [runId]);
   const [lastError] = await tx.query(
     'SELECT coalesce(max(id), 0) AS id FROM mc.projection_errors',
@@ -157,7 +162,7 @@ async function reproject(tx: Tx, runId: string, scope: Scope): Promise<void> {
     [runId, lastError?.id],
   );
   if (current?.run !== copied?.run || liveBusy.length > 0) throw new Busy();
-  if ((await lapRows(tx, runId, scope)) === before) throw new Agrees();
+  if ((await lapDigest(tx, runId, scope)) === before) throw new Agrees();
   // A replay error the live triggers recorded too is already evidence; one they did not (its
   // record dropped, or a cause that came later) rolls the repair back and is reported instead.
   // 22000 is the exception: a structured_output that is not an object (a step's plain text, an
@@ -313,19 +318,21 @@ export const main: Main = async (argv, deps) => {
   return failing(deps, async () => {
     // No terminal prompt for `:main`, like `backfill:main`: the owner schedules it.
     const url = await guardedDatabaseUrl(deps, values.main ? 'main' : 'check');
-    const db = deps.openDb(url);
-    try {
-      const { repaired, busy, live, failed } = await reconcileLaps(db);
-      deps.out(`reconcile: ${repaired} run(s) repaired`);
-      if (busy > 0) deps.out(`reconcile: ${busy} run(s) busy, left for the next run`);
-      if (live > 0) {
-        deps.out(`reconcile: ${live} run(s) differ but are still running, left to live triggers`);
+    await singlePass(deps, url, 'reconcile:laps', async () => {
+      const db = deps.openDb(url);
+      try {
+        const { repaired, busy, live, failed } = await reconcileLaps(db);
+        deps.out(`reconcile: ${repaired} run(s) repaired`);
+        if (busy > 0) deps.out(`reconcile: ${busy} run(s) busy, left for the next run`);
+        if (live > 0) {
+          deps.out(`reconcile: ${live} run(s) differ but are still running, left to live triggers`);
+        }
+        for (const { runId, message } of failed) deps.err(`reconcile: run ${runId}: ${message}`);
+        if (failed.length > 0) throw new Error(`reconcile: ${failed.length} run(s) failed`);
+      } finally {
+        await db.close();
       }
-      for (const { runId, message } of failed) deps.err(`reconcile: run ${runId}: ${message}`);
-      if (failed.length > 0) throw new Error(`reconcile: ${failed.length} run(s) failed`);
-    } finally {
-      await db.close();
-    }
+    });
   });
 };
 

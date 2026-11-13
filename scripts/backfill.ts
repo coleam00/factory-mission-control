@@ -27,6 +27,7 @@ import {
 } from '../function/ingest';
 import { failing, guardedDatabaseUrl, type Main, runCli } from './lib/cli';
 import type { Db, Tx } from './lib/db';
+import { singlePass } from './lib/pass-lock';
 
 interface FactoryHistory {
   factory: string;
@@ -252,23 +253,27 @@ export const main: Main = async (argv, deps) => {
   return failing(deps, async () => {
     // No terminal prompt for `:main`, unlike `migrate:main`: the owner schedules the nightly run.
     const url = await guardedDatabaseUrl(deps, values.main ? 'main' : 'check');
-    const readAt = deps.now().toISOString();
-    const history = await readHistory(deps.github(), factories.factories);
-    // Every GitHub read is done before the first write, and each write is its own short
-    // transaction: nothing holds the dashboard's rows while GitHub answers (#260).
-    const db = deps.openDb(url);
-    try {
-      const lines: string[] = [];
-      const removed = await storeHistory(db, history, values.reconcile ? readAt : undefined);
-      if (values.reconcile) {
-        lines.push(`removed ${removed.issues} issue(s) and ${removed.comments} comment(s)`);
+    const work = async () => {
+      const readAt = deps.now().toISOString();
+      const history = await readHistory(deps.github(), factories.factories);
+      // Every GitHub read is done before the first write, and each write is its own short
+      // transaction: nothing holds the dashboard's rows while GitHub answers (#260).
+      const db = deps.openDb(url);
+      try {
+        const lines: string[] = [];
+        const removed = await storeHistory(db, history, values.reconcile ? readAt : undefined);
+        if (values.reconcile) {
+          lines.push(`removed ${removed.issues} issue(s) and ${removed.comments} comment(s)`);
+        }
+        lines.push(...(await storedCounts(db, history)));
+        lines.push(...history.unresolvedPins.map((pin) => `pin without an Archon sha ${pin}`));
+        for (const line of lines) deps.out(line);
+      } finally {
+        await db.close();
       }
-      lines.push(...(await storedCounts(db, history)));
-      lines.push(...history.unresolvedPins.map((pin) => `pin without an Archon sha ${pin}`));
-      for (const line of lines) deps.out(line);
-    } finally {
-      await db.close();
-    }
+    };
+    // `reconcile` runs on a timer: one pass per database at a time (#619).
+    await (values.reconcile ? singlePass(deps, url, 'reconcile', work) : work());
   });
 };
 
