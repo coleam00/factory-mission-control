@@ -549,3 +549,11 @@ test('without an operator entry no tile claims a write, none is recommended, and
     expect(card.tiles.some((t) => t.href === `/f/f/work/${card.hooks['data-number']}`)).toBe(true);
   }
 });
+
+test('a closed item says it is not an open issue whether or not an operator is known', () => {
+  const rows = [unstick({ kind: 'blocked', number: 40, open: false })];
+  for (const operator of [true, false]) {
+    const [card] = unstickCards(rows, 'f', false, operator);
+    expect(card?.note.rest).toContain('#40 is not an open issue');
+  }
+});

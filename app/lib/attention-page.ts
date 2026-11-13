@@ -457,7 +457,7 @@ export function unstickCards(
               {
                 id: 'open',
                 label: `Open #${row.number}`,
-                consequence: `Opens #${row.number} in Mission Control; this factory has no operator entry, so nothing is changed from here`,
+                consequence: `Opens #${row.number} in Mission Control; nothing is changed from here`,
                 recommended: false,
                 href: itemHref,
                 hooks: { 'data-choice': 'open' },
@@ -465,13 +465,14 @@ export function unstickCards(
             ];
       const offered = (action: ActionRequest['action']) => !(loginMissing && needsLogin(action));
       const commentable = writable && offered('comment');
-      const withheld = !operator
-        ? ` This factory has no operator entry, so Mission Control cannot re-triage, close or comment on ${n}; open it to act on it there.`
-        : !writable
+      const withheld =
+        row.number !== null && !row.open
           ? ` ${n} is not an open issue, so re-triage, close and comment are not offered; open it to see where it stands.`
-          : loginMissing
-            ? ' Re-triage and comments need the operator’s `login`, which this factory’s operator entry lacks; Close is offered.'
-            : '';
+          : !operator
+            ? ` Mission Control is not writing for this factory right now, so it does not offer to re-triage, close or comment on ${n}; open it in Mission Control, then use its Issue link to act on GitHub.`
+            : loginMissing
+              ? ' Re-triage and comments need the operator’s `login`, which this factory’s operator entry lacks; Close is offered.'
+              : '';
       const closedNote = row.number === null ? '' : withheld;
       const somethingElse = (): Tile[] => (!operator ? openOnly() : [somethingElseTile()]);
       const somethingElseTile = (): Tile =>
@@ -584,7 +585,7 @@ export function unstickCards(
                       id: 'resume',
                       label: `Open run ${run}`,
                       consequence:
-                        'Opens the run in the Archon console; this factory has no operator entry, so nothing is changed from here',
+                        'Opens the run in the Archon console; nothing is changed from here',
                       recommended: false,
                       href: consoleUrl(row.console, row.run_id),
                       hooks: { 'data-choice': 'resume' },

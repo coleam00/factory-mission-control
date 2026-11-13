@@ -221,7 +221,6 @@ test('before the server says an operator exists, Unstick tiles only open the ite
   expect(html).toMatch(/<a (?=[^>]*data-choice="open")(?=[^>]*href="\/f\/f\/work\/7")[^>]*>/);
   expect(html).not.toMatch(/data-choice="(retriage|close)"/);
   expect(html).not.toContain('Re-triage #7');
-  expect(html).not.toContain('Recommended</span></b></a><a href="/f/f/work/7"');
   expect(html).toMatch(/<a [^>]*data-choice="split"/);
   expect(html).not.toMatch(/<button[^>]*data-choice="(retriage|close|split|build)"/);
   expect(html).not.toContain('data-command');
