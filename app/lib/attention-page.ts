@@ -360,7 +360,7 @@ function blockers(row: UnstickRow): string[] {
     .map((ref, i) => named(ref.replace('#', ''), row.blocker_titles?.[i]));
 }
 
-/** "#B “t” closed 24 Oct 09:08." or, for several, "#B “t”, #C “u” all closed by 24 Oct 09:08." */
+/** "#B “t” closed 2026-10-24 09:08." or, for several, "#B “t”, #C “u” all closed by 2026-10-24 09:08." */
 function closedSentence(row: UnstickRow): string {
   const list = blockers(row);
   const when = row.since === null ? '' : ` ${localMinute(row.since)}`;
