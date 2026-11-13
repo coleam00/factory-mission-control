@@ -473,6 +473,44 @@ test('a failed projecting run that starts a node after it failed stops being env
   }
 });
 
+test('a failed projecting run with no stop line follows its step rows through update and delete', async () => {
+  const db = await archonDb();
+  try {
+    await runMigrations({ files: migrationFiles, db });
+    const [run] = await db.query(
+      `INSERT INTO public.remote_agent_workflow_runs (workflow_name, status, user_message, metadata)
+       VALUES ('archon-build-queue', 'running', 'q', '{}') RETURNING id`,
+    );
+    await db.query(
+      `UPDATE public.remote_agent_workflow_runs SET status = 'failed', completed_at = now() WHERE id = $1`,
+      [run?.id],
+    );
+    const id = String(run?.id);
+    const read = async () =>
+      (await db.query('SELECT class FROM mc.run_stops WHERE run_id = $1', [id]))[0]?.class;
+    const step = (status: string) =>
+      db.query(`UPDATE mc.lap_steps SET status = $2 WHERE run_id = $1 AND step_id = 'facts'`, [
+        id,
+        status,
+      ]);
+    await db.query(
+      `INSERT INTO mc.lap_steps (run_id, step_id, status) VALUES ($1, 'facts', 'skipped')`,
+      [id],
+    );
+    expect(await read()).toBe('environment');
+    await step('running');
+    expect(await read()).toBeNull();
+    await step('skipped');
+    expect(await read()).toBe('environment');
+    await step('running');
+    expect(await read()).toBeNull();
+    await db.query(`DELETE FROM mc.lap_steps WHERE run_id = $1`, [id]);
+    expect(await read()).toBe('environment');
+  } finally {
+    await db.close();
+  }
+});
+
 test('0031 records a run it cannot project in projection_errors and still finishes', async () => {
   const historical = await archonDb();
   try {
