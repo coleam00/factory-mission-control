@@ -218,7 +218,10 @@ function CardView({
                       disabled: act.pending,
                       onClick: () =>
                         tile.act
-                          ? act.start(tile.act.request, { item: tile.act.item, label: tile.label })
+                          ? act.start(tile.act.request, {
+                              item: tile.act.item,
+                              label: tile.label,
+                            })
                           : setWriting(tile.somethingElse),
                     }
                   : tile.href === null
@@ -503,7 +506,7 @@ export function AttentionBody({
   const cards: AttentionCard[] = [
     ...live(decide, (rows) => decideCards(rows, factory)),
     ...live(owner, ownerCards),
-    ...live(unstick, (rows) => unstickCards(rows, factory, loginMissing)),
+    ...live(unstick, (rows) => unstickCards(rows, factory, loginMissing, act.enabled)),
   ];
   const groups: ReactNode =
     view === 'kind'

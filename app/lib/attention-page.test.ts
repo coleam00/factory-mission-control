@@ -67,7 +67,10 @@ const unstick = (overrides: Partial<UnstickRow>): UnstickRow => ({
 });
 
 test('attentionCount is unavailable on any error, loading until every query answers, else the sum', () => {
-  const ready = (n: number): Source<object> => ({ rows: Array(n).fill({}), state: 'ready' });
+  const ready = (n: number): Source<object> => ({
+    rows: Array(n).fill({}),
+    state: 'ready',
+  });
   expect(attentionCount([ready(2), { rows: [{}], state: 'error' }])).toBe('unavailable');
   expect(attentionCount([ready(2), { rows: undefined, state: 'loading' }])).toBe('loading');
   expect(attentionCount([ready(2), ready(3)])).toBe(5);
@@ -160,7 +163,9 @@ test('"Something else" opens the text box where a write takes the text, else the
   ).toMatchObject({ request: { option: null, text: null } });
   // A declared "Something else" option carries the text and is not an option answer.
   const declared = tileFor(
-    decide({ options: JSON.stringify([{ id: 'other', label: 'Something else' }]) }),
+    decide({
+      options: JSON.stringify([{ id: 'other', label: 'Something else' }]),
+    }),
   );
   expect(declared?.somethingElse).toBeDefined();
   expect(declared?.act).toBeUndefined();
@@ -190,8 +195,16 @@ test('a parked item whose blocker closed offers Re-triage first, Close and Somet
     'Something else',
   ]);
   expect(card?.tiles.map((t) => t.recommended)).toEqual([true, false, false]);
-  expect(card?.tiles[0]?.act?.request).toEqual({ factory: 'f', action: 'retriage', number: 454 });
-  expect(card?.tiles[1]?.act?.request).toEqual({ factory: 'f', action: 'close', number: 454 });
+  expect(card?.tiles[0]?.act?.request).toEqual({
+    factory: 'f',
+    action: 'retriage',
+    number: 454,
+  });
+  expect(card?.tiles[1]?.act?.request).toEqual({
+    factory: 'f',
+    action: 'close',
+    number: 454,
+  });
   expect(card?.tiles[2]?.somethingElse?.request).toEqual({
     factory: 'f',
     action: 'comment',
@@ -269,7 +282,9 @@ test('capacity offers Resume first, then the item’s writes; a claim leads with
   expect(capacity?.tiles[0]).toMatchObject({
     recommended: true,
     href: CONSOLE_RUN,
-    act: { request: { factory: 'f', action: 'resume', run_id: RUN, from_step: null } },
+    act: {
+      request: { factory: 'f', action: 'resume', run_id: RUN, from_step: null },
+    },
   });
   expect(capacity?.tiles[1]?.recommended).toBe(false);
   expect(TILE_IDS(claim)).toEqual(['retriage', 'close', 'something-else']);
@@ -281,7 +296,13 @@ test('capacity offers Resume first, then the item’s writes; a claim leads with
 test('a claim or capacity card whose item the mirror does not hold open offers no item write', () => {
   const [capacity, claim] = unstickCards(
     [
-      unstick({ kind: 'capacity', number: 9, run_id: RUN, action: 'resume', open: false }),
+      unstick({
+        kind: 'capacity',
+        number: 9,
+        run_id: RUN,
+        action: 'resume',
+        open: false,
+      }),
       unstick({ kind: 'claim', number: 10, run_id: RUN, open: false }),
     ],
     'f',
@@ -352,8 +373,18 @@ test('every card ends in Something else, and no card carries a copied command', 
       [
         unstick({}),
         unstick({ kind: 'parked', number: 8 }),
-        unstick({ kind: 'capacity', number: null, run_id: RUN, waits_on: 'a free slot' }),
-        unstick({ kind: 'claim', number: 10, run_id: RUN, workflow_name: 'archon-build-queue' }),
+        unstick({
+          kind: 'capacity',
+          number: null,
+          run_id: RUN,
+          waits_on: 'a free slot',
+        }),
+        unstick({
+          kind: 'claim',
+          number: 10,
+          run_id: RUN,
+          workflow_name: 'archon-build-queue',
+        }),
       ],
       'f',
       false,
@@ -496,4 +527,25 @@ test('an unstick card is keyed as unstickKey says, so the live phase finds it', 
       .map((c) => c.key)
       .sort(),
   ).toEqual(rows.map(unstickKey).sort());
+});
+
+test('without an operator entry no tile claims a write, none is recommended, and each opens the item', () => {
+  const rows = [
+    unstick({ kind: 'blocked', number: 7, action: 'retriage' }),
+    unstick({ kind: 'capacity', number: 9, run_id: RUN, action: 'resume' }),
+    unstick({ kind: 'claim', number: 10, run_id: RUN }),
+  ];
+  for (const card of unstickCards(rows, 'f', false, false)) {
+    expect(card.tiles.length).toBeGreaterThan(0);
+    for (const tile of card.tiles) {
+      expect(tile.recommended).toBe(false);
+      expect(tile.act).toBeUndefined();
+      expect(tile.somethingElse).toBeUndefined();
+      expect(tile.href).not.toBeNull();
+      expect(`${tile.label} ${tile.consequence}`).not.toMatch(
+        /\b(close[sd]?|re-triage|posts?|comment|asks archon)\b/i,
+      );
+    }
+    expect(card.tiles.some((t) => t.href === `/f/f/work/${card.hooks['data-number']}`)).toBe(true);
+  }
 });
