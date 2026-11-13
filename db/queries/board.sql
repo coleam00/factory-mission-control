@@ -64,7 +64,7 @@ SELECT 'item' AS kind, i.number, i.title, i.url, i.state, i.closed_at,
   st.build_status, st.build_at, st.merge_status, st.merge_at, st.triage_at, st.stage,
   st.rounds::text AS round_list, st.returns, st.last_decision,
   pr.head_sha AS pr_head, ac.head AS app_check_head,
-  CASE WHEN st.merge_status = 'merged' THEN st.merge_at ELSE to_char(pr.merged_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') END AS merged_at,
+  CASE WHEN st.merge_status = 'merged' THEN st.merge_at ELSE CASE WHEN pr.merged_at IS NULL THEN NULL ELSE date_trunc('second', (pr.merged_at AT TIME ZONE 'UTC'))::date::text || 'T' || date_trunc('second', (pr.merged_at AT TIME ZONE 'UTC'))::time::text || '.' || lpad((floor(extract(milliseconds FROM (pr.merged_at AT TIME ZONE 'UTC')))::bigint % 1000)::text, 3, '0') || 'Z' END END AS merged_at,
   ar.run_id AS app_check_run,
   NULL::text AS repository, NULL::integer AS merged_total
 FROM items i
@@ -115,16 +115,12 @@ LEFT JOIN LATERAL (
 ) projected ON true
 LEFT JOIN LATERAL (
   -- One pull request, so number, head and merged time never describe different ones: the open linked
-  -- pull request, else the projected one, else the linked one that landed.
-  SELECT c.number, c.head_sha, c.merged_at
-  FROM (
-    SELECT 1 AS rank, linked.number, linked.head_sha, linked.merged_at WHERE linked.open
-    UNION ALL
-    SELECT 2, projected.number, projected.head_sha, projected.merged_at WHERE projected.number IS NOT NULL
-    UNION ALL
-    SELECT 3, linked.number, linked.head_sha, linked.merged_at WHERE linked.number IS NOT NULL
-  ) c
-  ORDER BY c.rank LIMIT 1
+  -- pull request, else the projected one, else the linked one that landed. A plain select with no set
+  -- operation, as Realtime refuses one whose operands read the outer row.
+  SELECT
+    CASE WHEN linked.open THEN linked.number WHEN projected.number IS NOT NULL THEN projected.number ELSE linked.number END AS number,
+    CASE WHEN linked.open THEN linked.head_sha WHEN projected.number IS NOT NULL THEN projected.head_sha ELSE linked.head_sha END AS head_sha,
+    CASE WHEN linked.open THEN linked.merged_at WHEN projected.number IS NOT NULL THEN projected.merged_at ELSE linked.merged_at END AS merged_at
 ) pr ON true
 LEFT JOIN checks ac ON ac.pr_number = pr.number
 LEFT JOIN LATERAL (
