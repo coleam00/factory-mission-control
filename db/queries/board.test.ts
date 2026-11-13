@@ -477,6 +477,30 @@ test('a Refs-only item takes its pull request from the projection, with its head
   }
 });
 
+test('a Refs-only item whose projected pull request merged reads it, with its merge time', async () => {
+  await db.query(
+    `INSERT INTO mc.pull_requests (factory, number, title, state, merged_at, head_sha, url, created_at, updated_at)
+     VALUES ('mission-control', 9104, 't', 'closed', '2026-03-04T05:06:07.089Z', 'merged1', 'u', now(), now())`,
+  );
+  await db.query(
+    `INSERT INTO mc.work_item_states (project_key, number, revision, pr_number)
+     SELECT codebase, 13, 1, 9104 FROM mc.factories WHERE name = 'mission-control'`,
+  );
+  try {
+    expect(await missionItem(13)).toMatchObject({
+      pr: 9104,
+      pr_open: null,
+      pr_head: 'merged1',
+      merged_at: '2026-03-04T05:06:07.089Z',
+    });
+  } finally {
+    await db.query(`DELETE FROM mc.work_item_states WHERE number = 13`);
+    await db.query(
+      `DELETE FROM mc.pull_requests WHERE factory = 'mission-control' AND number = 9104`,
+    );
+  }
+});
+
 test('merged_at is the merge fact’s time, else the merged pull request’s', async () => {
   expect(await missionItem(10)).toMatchObject({ pr: 110, merged_at: '2026-10-20T09:30:00.000Z' });
   expect(await missionItem(9)).toMatchObject({ merged_at: null });
