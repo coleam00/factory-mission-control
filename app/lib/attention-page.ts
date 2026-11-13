@@ -14,6 +14,7 @@ import { cardForStep, FACTORY_MAP } from '../map/factory-map';
 import { type ActionRequest, type AnswerRequest, type CommentRequest, needsLogin } from './actions';
 import {
   type DecideRow,
+  type ItemWrite,
   attentionItems,
   attentionOrigin,
   attentionQuestion,
@@ -385,13 +386,20 @@ function closedSentence(row: UnstickRow): string {
 export const unstickKey = (row: Pick<UnstickRow, 'kind' | 'number' | 'run_id'>): string =>
   `unstick:${row.kind}:${row.number ?? ''}:${row.run_id ?? ''}`;
 
+const SENT_VERBS: Record<ItemWrite, string> = {
+  retriage: 'Re-triage',
+  close: 'Close',
+  comment: 'Comment',
+};
+
 /** What the card says first while the item has a write the mirror has not caught up with. */
 function sentSentence(row: UnstickRow): string | null {
   if (row.sent_action === null || row.sent_at === null) return null;
   const at = localMinute(row.sent_at);
+  const verb = SENT_VERBS[row.sent_action];
   return row.sent_action === 'close'
-    ? `Close sent ${at}; waiting for GitHub to show #${row.number} closed.`
-    : `${row.sent_action === 'comment' ? 'Comment' : 'Re-triage'} sent ${at}; waiting for intake.`;
+    ? `${verb} sent ${at}; waiting for GitHub to show #${row.number} closed.`
+    : `${verb} sent ${at}; waiting for intake.`;
 }
 
 const RETRIAGE_DOES = 'Adds archon-triage and starts an intake run; triage decides its next stage';

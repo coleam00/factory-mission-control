@@ -253,5 +253,42 @@ describe('the unstick query on the seed', () => {
         await clean();
       }
     });
+
+    test('keeps a write sent after an intake run that started before it', async () => {
+      try {
+        await write('retriage', T2, 0);
+        await db.query(
+          `INSERT INTO mc.laps (run_id, factory, workflow_name, status, started_at, completed_at, issue_number)
+           VALUES ('5eed0690-0000-4000-8000-000000000001', 'queue-factory', 'archon-intake', 'completed', $1, $2, $3)`,
+          [T1, '2026-11-13T14:05:00.000Z', number],
+        );
+        expect(await sentOf()).toEqual(['retriage', T2]);
+      } finally {
+        await clean();
+      }
+    });
+
+    test('ends a sent close once the mirror has moved the issue since, even if it is open again', async () => {
+      const [issue] = await db.query(
+        `SELECT updated_at FROM mc.issues WHERE factory = 'queue-factory' AND number = $1`,
+        [number],
+      );
+      const before = issue?.updated_at;
+      try {
+        await write('close', T1, 0);
+        expect(await sentOf()).toEqual(['close', T1]);
+        await db.query(
+          `UPDATE mc.issues SET updated_at = $1 WHERE factory = 'queue-factory' AND number = $2`,
+          [T2, number],
+        );
+        expect(await sentOf()).toEqual([null, null]);
+      } finally {
+        await db.query(
+          `UPDATE mc.issues SET updated_at = $1 WHERE factory = 'queue-factory' AND number = $2`,
+          [before, number],
+        );
+        await clean();
+      }
+    });
   });
 });
