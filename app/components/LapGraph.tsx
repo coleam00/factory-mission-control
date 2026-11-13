@@ -1,6 +1,6 @@
 import { type ReactElement, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation } from 'react-router';
-import { formatCost, formatCount, formatElapsed } from '../lib/format';
+import { formatCost, formatCount, formatElapsed, localSecond } from '../lib/format';
 import { type Box, layoutSteps, openedBlocks, type StepNode, shownAs } from '../lib/home-map';
 import {
   foldGraph,
@@ -28,9 +28,6 @@ const markToken = (state: StepState) => STATE_COLOR[STEP_STATE_STATE[state]];
 
 const tint = (token: string, percent: number) =>
   `color-mix(in oklch, var(${token}) ${percent}%, transparent)`;
-
-/** `2026-10-24 10:00:30 UTC`: a step's start, to the second, the same for every viewer. */
-const utcSecond = (at: Date) => `${at.toISOString().slice(0, 19).replace('T', ' ')} UTC`;
 
 /** A step's mark: a check, a cross, a pulsing dot, a dash, or an empty ring. */
 export function StateMark({ state, size = 14 }: { state: StepState; size?: number }): ReactElement {
@@ -427,7 +424,7 @@ export function StepPanel({
                 </span>
                 <dl className="grid grid-cols-2 gap-x-4 gap-y-2">
                   <PanelField label="Started">
-                    {attempt.started_at === null ? 'no start' : utcSecond(attempt.started_at)}
+                    {attempt.started_at === null ? 'no start' : localSecond(attempt.started_at)}
                   </PanelField>
                   <PanelField label={attempt.status === 'running' ? 'Running for' : 'Duration'}>
                     {seconds === null ? 'none' : formatElapsed(seconds)}

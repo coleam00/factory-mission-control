@@ -4,6 +4,7 @@
  * the owner, so nothing here is an Attention item.
  */
 import type { FailureGroupRow, StopClass } from './failures';
+import { localDayStart } from './format';
 import { lapHref, workflowLabel } from './one-lap';
 import { waited } from './owner-queue';
 import { since } from './laps';
@@ -13,6 +14,9 @@ export const FAILURES_QUERY = 'failure-groups';
 
 /** The muted line's query: the transient failures a later run retried. */
 export const RETRIED_QUERY = 'retried-runs';
+
+/** `retried-runs`' `$2`: when the viewer's local day began, which is what "today" means. */
+export const retriedArgs = (now: Date): string[] => [localDayStart(now)];
 
 export function retriedLine(n: number): string {
   return `${n === 1 ? '1 run hit' : `${n} runs hit`} a passing database or GitHub error today and ${n === 1 ? 'was' : 'were'} retried.`;

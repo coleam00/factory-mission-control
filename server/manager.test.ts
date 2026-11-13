@@ -2,6 +2,8 @@ import { afterAll, beforeAll, describe, expect, setDefaultTimeout, spyOn, test }
 import type { Options, SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import { ANSWER_TEXT_MAX } from '../app/lib/attention';
 import { ATTENTION_SOURCES, attentionCount } from '../app/lib/attention-page';
+import { scorecardEdges } from '../app/lib/factory-scorecard';
+import { retriedArgs } from '../app/lib/failure-view';
 import { lapHref } from '../app/lib/one-lap';
 import { snapshot } from '../db/test-db';
 import type { Db } from '../scripts/lib/db';
@@ -1631,12 +1633,17 @@ describe('the caps on one answer', () => {
 });
 
 describe('how the factory is doing', () => {
-  test('the prompt sends the Manager to the scorecard query, with the UTC date after today, and the too-few rule', async () => {
+  test('the prompt sends the Manager to the scorecard query, with the viewer’s local-day edges, and the too-few rule', async () => {
     clock = new Date('2026-11-11T23:30:00Z');
     const played = model(async () => [start, delta('fine'), result(0.01)]);
     await (await chat(managerOf(played))).text();
     const prompt = played.options[0].systemPrompt as string;
-    expect(prompt).toContain('live_query factory-scorecard with args ["2026-11-12"]');
+    expect(prompt).toContain(
+      `live_query factory-scorecard with args ${JSON.stringify(scorecardEdges(clock))}`,
+    );
+    expect(prompt).toContain(
+      `live_query retried-runs with args ${JSON.stringify(retriedArgs(clock))}`,
+    );
     expect(prompt).toContain('at least 10 records');
   });
 });

@@ -6,6 +6,7 @@ import {
   failureWhen,
   FAILURES_QUERY,
   RETRIED_QUERY,
+  retriedArgs,
   retriedLine,
 } from '../lib/failure-view';
 import { type FailureGroupRow, failuresSince, type RetriedRunRow } from '../lib/failures';
@@ -14,6 +15,7 @@ import { lapHref } from '../lib/one-lap';
 import { AWAITED, Feed, type Source } from '../live/Feed';
 import { LivePanel } from '../live/LivePanel';
 import { useHour } from '../live/use-hour';
+import { useToday } from '../live/use-today';
 import { PanelBody, useNow } from './panel';
 import { Button } from './ui/Button';
 import { Card } from './ui/Card';
@@ -152,10 +154,16 @@ export function FailuresBody({
 /** Runs > Failures: the unresolved failure causes, from `failure-groups`. */
 export function Failures({ factory }: { factory: string | undefined }): ReactElement {
   const hour = useHour();
+  const today = useToday();
   const [retried, setRetried] = useState<Source<RetriedRunRow>>(AWAITED);
   return (
     <>
-      <Feed<RetriedRunRow> query={RETRIED_QUERY} factory={factory} into={setRetried} />
+      <Feed<RetriedRunRow>
+        query={RETRIED_QUERY}
+        factory={factory}
+        args={retriedArgs(today)}
+        into={setRetried}
+      />
       <LivePanel<FailureGroupRow>
         query={FAILURES_QUERY}
         factory={factory}

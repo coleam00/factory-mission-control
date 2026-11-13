@@ -2,8 +2,10 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import {
   type FactoryScorecardRow,
   MEASURES,
+  scorecardEdges,
   scorecardMeasures,
 } from '../../app/lib/factory-scorecard';
+import { pinZone } from '../../app/lib/pin-zone';
 import { type MetricRecord, metricRecordsFixture } from '../../scripts/fixture/metric-records';
 import { REPOSITORY, writeMetrics } from '../../scripts/fixture/write';
 import type { Db } from '../../scripts/lib/db';
@@ -11,12 +13,13 @@ import { migratedDb, queries } from './test-seed';
 
 const sql = queries.find(([name]) => name === 'factory-scorecard')?.[1] as string;
 const NOW = new Date('2026-11-11T12:00:00Z');
-const UNTIL = '2026-11-12';
+pinZone('UTC');
+let EDGES: string[];
 const PR = 'https://github.com/coleam00/factory-mission-control/pull/200';
 
 let db: Db;
 const scorecard = async (factory = 'mission-control') =>
-  (await db.query(sql, [factory, UNTIL])) as unknown as FactoryScorecardRow[];
+  (await db.query(sql, [factory, ...EDGES])) as unknown as FactoryScorecardRow[];
 const row = async (name: string, factory?: string) =>
   (await scorecard(factory)).find((r) => r.name === name);
 
@@ -54,6 +57,7 @@ async function metricsRun(
 }
 
 beforeEach(async () => {
+  EDGES = scorecardEdges(NOW);
   db = await migratedDb();
   await db.query(`INSERT INTO mc.factories (name, repository, codebase, console) VALUES
     ('mission-control', '${REPOSITORY}', '${REPOSITORY}', 'http://localhost:3090'),
@@ -193,6 +197,25 @@ describe('factory-scorecard over the fixture records', () => {
     expect([merged?.n_7, merged?.value_7, merged?.n_7_before]).toEqual([2, 2, 1]);
   });
 
+  test('the windows follow the viewer’s local days: a record either side of a local midnight lands either side of the edge', async () => {
+    const before = process.env.TZ;
+    process.env.TZ = 'America/Chicago';
+    const edges = scorecardEdges(NOW);
+    process.env.TZ = before;
+    const count = (subject: string, at: string) =>
+      record('sdlc.issues_merged', 1, { kind: 'count', unit: 'issues', subject, at });
+    await metricsRun(REPOSITORY, [
+      count('#1', '2026-11-05T05:59:59Z'), // 23:59 on 11/4 in Chicago: the 7 days before
+      count('#2', '2026-11-05T06:00:00Z'), // 00:00 on 11/5: the last 7 days
+      count('#3', '2026-11-12T05:59:59Z'), // 23:59 on 11/11: still today
+      count('#4', '2026-11-12T06:00:00Z'), // 00:00 on 11/12: tomorrow, in no window
+    ]);
+    const [merged] = (
+      (await db.query(sql, ['mission-control', ...edges])) as unknown as FactoryScorecardRow[]
+    ).filter((r) => r.name === 'sdlc.issues_merged');
+    expect([merged?.n_7, merged?.n_7_before]).toEqual([2, 1]);
+  });
+
   test('another factory’s records never appear, and it reads only its own (Never 9)', async () => {
     await seed();
     expect(await scorecard('other')).toEqual([]);
@@ -209,7 +232,7 @@ describe('factory-scorecard over the fixture records', () => {
     await db.query('ANALYZE');
     const plan = (await db.query(`EXPLAIN (ANALYZE, FORMAT JSON) ${sql}`, [
       'mission-control',
-      UNTIL,
+      ...EDGES,
     ])) as unknown as { 'QUERY PLAN': { 'Execution Time': number }[] }[];
     expect(plan[0]?.['QUERY PLAN'][0]?.['Execution Time']).toBeLessThan(100);
   });

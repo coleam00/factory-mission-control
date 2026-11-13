@@ -10,7 +10,7 @@ export interface Page {
   evaluate<T>(expression: string, timeoutMs?: number): Promise<T>;
   /** Navigates and resolves once the page's load event fires. With `now`, the page's clock reads that instant (and moves on from it) before any of its scripts run. */
   goto(url: string, now?: string): Promise<void>;
-  setViewport(width: number): Promise<void>;
+  setViewport(width: number, height?: number): Promise<void>;
   /** One real mouse event at page coordinates `x`, `y`, left button; a move while pressed is a drag. */
   mouse(event: MouseInput): Promise<void>;
   /** One real touch event with a single finger at page coordinates `x`, `y`; a move while down is a drag. */
@@ -223,8 +223,8 @@ export async function openPage(env: Record<string, string | undefined>): Promise
       flatten: true,
     });
     await cdp.send('Page.enable', {}, sessionId);
-    const setViewport = async (width: number) => {
-      const metrics = { width, height: 900, deviceScaleFactor: 1, mobile: false };
+    const setViewport = async (width: number, height = 900) => {
+      const metrics = { width, height, deviceScaleFactor: 1, mobile: false };
       await cdp.send('Emulation.setDeviceMetricsOverride', metrics, sessionId);
     };
     let pressed = false;

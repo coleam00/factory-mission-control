@@ -7,9 +7,10 @@ import { parsePack, type Step } from '../../parsers/pack';
 import { AppCheckList, Behind, MapDetails, RightNow } from '../components/MapDetails';
 import type { AppCheckRow } from '../lib/app-check';
 import type { StepRow } from '../lib/step-detail';
+import { msToLocalMidnight } from '../live/use-today';
 import { FACTORY_MAP, workflowFile } from '../map/factory-map';
 import { type CardLive, cardLive, type HomeMapRow, type MapSources } from '../map/live';
-import Home, { HomeMapBody, msToLocalMidnight } from './f.$factory.map';
+import Home, { HomeMapBody } from './f.$factory.map';
 
 const REPO = join(import.meta.dir, '..', '..');
 

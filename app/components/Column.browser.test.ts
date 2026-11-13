@@ -73,3 +73,71 @@ for (const place of ['', '/board', '/runs']) {
     expect(gaps?.right).toBeGreaterThanOrEqual(0);
   }, 30_000);
 }
+
+type Shell = () => { manager: { width: number; left: number } | null };
+
+const shellAt = (managerOpen: boolean) =>
+  page.evaluate<{
+    phone: boolean | null;
+    attention: { width: number; left: number; right: number } | null;
+    manager: { width: number; left: number } | null;
+  }>(
+    `import('data:text/javascript;base64,${source}').then(async (m) => {
+      m.mount('/f/x');
+      await new Promise((r) => setTimeout(r, 1000));
+      m.setManager(${managerOpen});
+      await new Promise((r) => setTimeout(r, 300));
+      return m.shell();
+    })`,
+  );
+
+test('820 px uses the phone layout, and Attention keeps a readable column with the Manager closed', async () => {
+  await page.setViewport(820, 1000);
+  const { phone, attention } = await shellAt(false);
+  expect(phone).toBe(true);
+  expect(attention?.width).toBeGreaterThanOrEqual(360);
+}, 30_000);
+
+test('820 px shows the Manager as a full-screen tab with no page content under it', async () => {
+  await page.setViewport(820, 1000);
+  const { phone, attention, manager } = await shellAt(true);
+  expect(phone).toBe(true);
+  expect(attention).toBeNull();
+  expect(manager).toEqual({ width: 820, left: 0 });
+}, 30_000);
+
+test('820 px Ctrl+J opens the full-screen Manager and leaves the dock as it was', async () => {
+  try {
+    await page.setViewport(820, 1000);
+    await shellAt(false);
+    const phone = await page.evaluate<ReturnType<Shell>['manager']>(
+      `import('data:text/javascript;base64,${source}').then(async (m) => {
+        window.dispatchEvent(new KeyboardEvent('keydown', { key: 'j', ctrlKey: true, cancelable: true }));
+        await new Promise((r) => setTimeout(r, 300));
+        return m.shell().manager;
+      })`,
+    );
+    expect(phone).toEqual({ width: 820, left: 0 });
+    await page.setViewport(1440, 1000);
+    const docked = await page.evaluate<ReturnType<Shell>['manager']>(
+      `import('data:text/javascript;base64,${source}').then(async (m) => {
+        await new Promise((r) => setTimeout(r, 300));
+        return m.shell().manager;
+      })`,
+    );
+    expect(docked?.width).toBe(384);
+  } finally {
+    await page.setViewport(1440);
+  }
+}, 30_000);
+
+test('1024 px still draws the desktop shell, with the Manager docked beside the page', async () => {
+  try {
+    await page.setViewport(1024, 1000);
+    const { phone, manager } = await shellAt(true);
+    expect(phone).toBe(false);
+    expect(manager?.width).toBe(384);
+  } finally {
+    await page.setViewport(1440);
+  }
+}, 30_000);

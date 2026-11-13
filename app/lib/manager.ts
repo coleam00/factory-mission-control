@@ -14,7 +14,7 @@ import {
 } from '../../server/manager-stream';
 export { MAX_MESSAGE_CHARS };
 import type { ActionRequest } from './actions';
-import { shortRunId } from './format';
+import { localDay, shortRunId } from './format';
 import { ORDER_PARAM, TABLE_VIEW, VIEW_PARAM } from './board';
 import { isRunId } from './one-lap';
 import type { RUN_STATE } from './states';
@@ -384,8 +384,8 @@ export interface HandledRow {
 
 /** The rows sent on `now`'s local calendar day. */
 export function handledToday(rows: readonly HandledRow[], now: number): HandledRow[] {
-  const today = new Date(now).toDateString();
-  return rows.filter((row) => new Date(row.sent_at).toDateString() === today);
+  const today = localDay(new Date(now));
+  return rows.filter((row) => localDay(new Date(row.sent_at)) === today);
 }
 
 /** "answered 1 question, resumed 2 runs": the answer part first, a part with none left out. */

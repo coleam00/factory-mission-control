@@ -40,11 +40,6 @@ export function followSwitch(): void {
   window.location.reload();
 }
 
-/** The moment a rewind branch shows, in UTC to the second as its name has it. */
-export function rewindMoment(at: Date): string {
-  return `${at.toISOString().slice(0, 19).replace('T', ' ')} UTC`;
-}
-
 /**
  * Which of `names` have no Neon branch any more, as the server's `GET /api/rewind/branches`
  * answers. A name is gone only when the server says so: when it cannot ask Neon, none is.

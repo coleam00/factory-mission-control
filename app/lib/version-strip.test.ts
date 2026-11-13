@@ -4,6 +4,9 @@ import { join } from 'node:path';
 import { seededDb } from '../../scripts/fixture/seed';
 import { REPO_ROOT } from '../../scripts/lib/cli';
 import { NOT_RECORDED, stripEntries, type VersionStripRow } from './version-strip';
+import { pinZone } from './pin-zone';
+
+pinZone('America/Chicago');
 
 const version = (
   digest: string,

@@ -409,6 +409,29 @@ const controlsBox = () =>
       .querySelector('[data-map-controls]').getBoundingClientRect();
     return { left, top, right, bottom };`);
 
+const hintAt = async (width: number) => {
+  await mountAt('/f/x', width);
+  return inPage<{ shown: boolean; lines: number; box: Box }>(`
+    const hint = document.querySelector('[data-map-hint]');
+    const { left, top, right, bottom } = hint.getBoundingClientRect();
+    const lineHeight = parseFloat(getComputedStyle(hint).lineHeight) || 13;
+    return {
+      shown: getComputedStyle(hint).display !== 'none',
+      lines: Math.round((bottom - top - 12) / lineHeight),
+      box: { left, top, right, bottom },
+    };`);
+};
+
+test('the map hint never runs under the controls: shown on one line when the frame has room, hidden when not', async () => {
+  await page.setViewport(1440);
+  const wide = await hintAt(CLOSED);
+  expect([wide.shown, wide.lines]).toEqual([true, 1]);
+  expect(overlaps(wide.box, await controlsBox())).toBe(false);
+
+  const docked = await hintAt(1024 - token('nav-width') - token('manager-width'));
+  expect(docked.shown).toBe(false);
+}, 30_000);
+
 /** Longer than the map's DOUBLE_CLICK_MS (500), so a click's deferred pan has landed. */
 const settle = () => sleep(700);
 

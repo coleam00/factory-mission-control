@@ -106,10 +106,12 @@ The work item page (`/f/<factory>/work/<n>`) and the step screens stay, and adop
   - schedules and main health, with one dot
   - the factory switcher, with the engine version
 
-**Phone (under 760 px).** There is no side nav and no docked panel. Instead:
+**Phone (under 1024 px).** There is no side nav and no docked panel. Instead:
 - a top bar with the brand and the running count
 - one column of content
 - a bottom tab bar: Attention (with its badge), Factory, Board, Runs, Manager. The Manager is a full-screen tab.
+
+Under 1024 px the shell draws this layout, so a docked Manager never squeezes the page. The page content of Board, Runs and One run still switches its own columns at 760 px, so between 760 and 1023 px the phone shell holds the wider page layouts.
 
 ## Five rules every screen follows
 

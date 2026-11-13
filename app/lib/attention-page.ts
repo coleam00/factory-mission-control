@@ -20,7 +20,7 @@ import {
   UNSTICK_KINDS,
   type UnstickRow,
 } from './attention';
-import { shortRunId } from './format';
+import { localMinute, shortRunId } from './format';
 import { askAbout, type ManagerAsk } from './manager';
 import { stepPath } from './lap-graph';
 import { since } from './laps';
@@ -238,8 +238,6 @@ export function decideCards(rows: readonly DecideRow[], factory: string): Attent
 
 const timeOf = (at: Date | null) => (at === null ? Number.POSITIVE_INFINITY : at.getTime());
 
-const utcMinute = (at: Date) => `${at.toISOString().slice(0, 16).replace('T', ' ')} UTC`;
-
 /** The old loop's owner items, answered on GitHub; the loop applies a question's default when nobody answers. */
 export function ownerCards(rows: readonly OwnerQueueRow[]): AttentionCard[] {
   return ownerQueue(rows).map((item) => {
@@ -279,7 +277,9 @@ export function ownerCards(rows: readonly OwnerQueueRow[]): AttentionCard[] {
               item.default_option === null
                 ? 'No default.'
                 : `Default ${item.default_option} applies ${
-                    item.default_at === null ? 'at a time not recorded' : utcMinute(item.default_at)
+                    item.default_at === null
+                      ? 'at a time not recorded'
+                      : localMinute(item.default_at)
                   }.`,
             rest: item.recommendation ?? '',
           }
@@ -480,12 +480,22 @@ export interface SweepRow {
 
 const RECOMMENDATION = 'put its recommendation first on each.';
 
-/** The head's line under the title. The sweep clause is left out when the factory has no finished manager run. */
-export function sweepLine(factory: string, sweptAt: Date | null, now: number): string {
+/**
+ * The head's line under the title. The sweep clause is left out when the factory has no finished
+ * manager run; the recommendation clause only when cards are drawn, since "each" needs items.
+ */
+export function sweepLine(
+  factory: string,
+  sweptAt: Date | null,
+  now: number,
+  cardsDrawn: number,
+): string {
   const seconds = since(sweptAt, now);
-  return seconds === null
-    ? `${factory}. The manager ${RECOMMENDATION}`
-    : `${factory}. The manager swept ${waited(seconds)} ago and ${RECOMMENDATION}`;
+  const items = cardsDrawn > 0;
+  if (seconds === null) return items ? `${factory}. The manager ${RECOMMENDATION}` : `${factory}.`;
+  return items
+    ? `${factory}. The manager swept ${waited(seconds)} ago and ${RECOMMENDATION}`
+    : `${factory}. The manager swept ${waited(seconds)} ago.`;
 }
 
 /**

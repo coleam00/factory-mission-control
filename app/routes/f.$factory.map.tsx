@@ -16,6 +16,7 @@ import { useFactory } from '../live/FactoryProvider';
 import { AWAITED, Feed, type Source } from '../live/Feed';
 import { LivePanel, type PanelState } from '../live/LivePanel';
 import { useLive } from '../live/LiveProvider';
+import { useToday } from '../live/use-today';
 import { FACTORY_MAP, selectOnArrival } from '../map/factory-map';
 import {
   cardLive,
@@ -31,19 +32,6 @@ import {
  * The map once `home-map` has answered: the owner's drawing, always the same, with the chips the
  * live rows count. Each other source's chips appear as its rows arrive.
  */
-/** Milliseconds from `now` to the next local midnight, when "today" changes. */
-export const msToLocalMidnight = (now: Date): number =>
-  new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1).getTime() - now.getTime();
-
-/** The browser's clock, moved on at each local midnight so "merged today" never keeps yesterday. */
-function useToday(): Date {
-  const [now, setNow] = useState(() => new Date());
-  useEffect(() => {
-    const timer = setTimeout(() => setNow(new Date()), msToLocalMidnight(now));
-    return () => clearTimeout(timer);
-  }, [now]);
-  return now;
-}
 
 export function HomeMapBody({
   sources,
