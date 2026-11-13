@@ -3,8 +3,11 @@ import { Link, useSearchParams } from 'react-router';
 import { formatCost, formatCount } from '../lib/format';
 import { lapHref } from '../lib/one-lap';
 import {
+  addressOfPlace,
   filterOf,
+  placeOf,
   RUN_CHIPS,
+  RUNS_PLACES,
   RUNS_PAGE_SIZE,
   type RunRow,
   type RunsFilter,
@@ -24,17 +27,6 @@ import { Segmented } from './ui/Segmented';
 import { StateDot } from './ui/StateDot';
 
 const SEARCH_DEBOUNCE_MS = 300;
-
-type RunsPlace = 'all' | 'failures';
-
-const PLACES = [
-  { value: 'all', label: 'All runs' },
-  { value: 'failures', label: 'Failures' },
-] as const;
-
-/** The view the address names: `?view=failures`, else every run. */
-export const placeOf = (params: URLSearchParams): RunsPlace =>
-  params.get('view') === 'failures' ? 'failures' : 'all';
 
 /** The columns of a run: what it is and why it stopped, the item, took and cost. */
 const COLUMNS =
@@ -77,18 +69,18 @@ export function Runs({ factory }: { factory: string | undefined }): ReactElement
   const switcher = (
     <Segmented
       label="Runs view"
-      options={PLACES}
+      options={RUNS_PLACES}
       value={place}
-      onChange={(to) => setParams(to === 'failures' ? new URLSearchParams({ view: to }) : {})}
+      onChange={(to) => setParams(addressOfPlace(to))}
     />
   );
   return place === 'failures' ? (
-    <>
+    <div>
       <div className="mb-4">
         <RunsTitle switcher={switcher} failures />
       </div>
       <Failures factory={factory} />
-    </>
+    </div>
   ) : (
     <AllRuns factory={factory} switcher={switcher} />
   );

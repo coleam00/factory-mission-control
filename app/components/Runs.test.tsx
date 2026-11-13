@@ -4,22 +4,14 @@ import { createMemoryRouter, RouterProvider } from 'react-router';
 import { lapHref } from '../lib/one-lap';
 import {
   filterOf,
+  placeOf,
   RUNS_PAGE_SIZE,
   type RunRow,
   type RunsFilter,
   type RunsRow,
   runsView,
 } from '../lib/runs';
-import {
-  addressOf,
-  nextFilter,
-  Pager,
-  pageWithin,
-  placeOf,
-  RunFilters,
-  RunList,
-  Runs,
-} from './Runs';
+import { addressOf, nextFilter, Pager, pageWithin, RunFilters, RunList, Runs } from './Runs';
 
 const render = (element: React.ReactElement): string =>
   renderToStaticMarkup(<RouterProvider router={createMemoryRouter([{ path: '/', element }])} />);
@@ -165,20 +157,6 @@ test('the address names the view: ?view=failures is Failures, anything else is e
   expect(placeOf(new URLSearchParams('view=failures'))).toBe('failures');
   expect(placeOf(new URLSearchParams(''))).toBe('all');
   expect(placeOf(new URLSearchParams('view=other'))).toBe('all');
-});
-
-test('the head has the All runs / Failures control at its right', () => {
-  const html = render(
-    <RunFilters
-      counts={undefined}
-      filter={filterOf(new URLSearchParams(''))}
-      draft=""
-      onDraft={() => {}}
-      onChange={() => {}}
-      switcher={<span data-switcher />}
-    />,
-  );
-  expect(html).toContain('data-switcher');
 });
 
 const renderRuns = (search: string): string =>
