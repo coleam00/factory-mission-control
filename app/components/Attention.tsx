@@ -507,7 +507,7 @@ export function AttentionBody({
     >
       <Head
         count={count}
-        line={sweepLine(factory, sweptAt, now)}
+        line={sweepLine(factory, sweptAt, now, cards.length)}
         failed={failed}
         view={view}
         onView={setView}

@@ -1,5 +1,5 @@
 import { type ReactElement, type ReactNode, useEffect, useMemo, useState } from 'react';
-import { formatCost, formatCount, formatElapsed } from '../lib/format';
+import { formatCost, formatCount, formatElapsed, localSecond } from '../lib/format';
 import { stepLabel } from '../lib/laps';
 import {
   actionText,
@@ -31,9 +31,6 @@ import { Field, LABEL, MONO, useNow } from './panel';
 const CARD = 'rounded-[10px] border border-border bg-surface';
 const _LINK = 'underline decoration-border-bright underline-offset-2 hover:decoration-text-primary';
 const TAG = 'font-mono text-[11px] font-semibold uppercase tracking-[0.05em]';
-
-/** `2026-10-24 10:00:30 UTC`: a step's start, to the second, the same for every viewer. */
-const utcSecond = (at: Date) => `${at.toISOString().slice(0, 19).replace('T', ' ')} UTC`;
 
 /** The text color of a value's state; none for a value no map knows. */
 const inkOf = (state: State | undefined) =>
@@ -288,7 +285,7 @@ export function StepList({
                 {attempt.started_at === null ? (
                   <None>no start</None>
                 ) : (
-                  utcSecond(attempt.started_at)
+                  localSecond(attempt.started_at)
                 )}
               </span>
               <span className="text-text-secondary sm:text-right">

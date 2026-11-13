@@ -22,7 +22,7 @@ import {
   UNSTICK_KINDS,
   type UnstickRow,
 } from './attention';
-import { localMoment, shortRunId } from './format';
+import { localMinute, shortRunId } from './format';
 import { askAbout, type ManagerAsk } from './manager';
 import { stepPath } from './lap-graph';
 import { since } from './laps';
@@ -201,7 +201,7 @@ export function decideCards(rows: readonly DecideRow[], factory: string): Attent
         { mono: item.node_id },
       ],
       note: {
-        lead: `${subject} waits at ${item.node_id} for your answer since ${localMoment(item.waiting_since)}. ${
+        lead: `${subject} waits at ${item.node_id} for your answer since ${localMinute(item.waiting_since)}. ${
           chosen === undefined
             ? 'There is no recommendation.'
             : `Recommends ${chosen.label ?? chosen.id}.`
@@ -246,12 +246,9 @@ export function decideCards(rows: readonly DecideRow[], factory: string): Attent
 
 const timeOf = (at: Date | null) => (at === null ? Number.POSITIVE_INFINITY : at.getTime());
 
-const momentOf = (at: Date | null, none: string) => (at === null ? none : localMoment(at));
+const momentOf = (at: Date | null, none: string) => (at === null ? none : localMinute(at));
 
-/**
- * The old loop's owner items, answered on GitHub; the loop applies a question's default when nobody
- * answers. No write takes an answer on GitHub, so Something else hands the owner's words to the Manager.
- */
+/** The old loop's owner items, answered on GitHub; the loop applies a question's default when nobody answers. No write takes an answer on GitHub, so Something else hands the owner's words to the Manager. */
 export function ownerCards(rows: readonly OwnerQueueRow[]): AttentionCard[] {
   return ownerQueue(rows).map((item) => {
     const question = item.kind === 'question';
@@ -366,7 +363,7 @@ function blockers(row: UnstickRow): string[] {
 /** "#B “t” closed 24 Oct 09:08." or, for several, "#B “t”, #C “u” all closed by 24 Oct 09:08." */
 function closedSentence(row: UnstickRow): string {
   const list = blockers(row);
-  const when = row.since === null ? '' : ` ${localMoment(row.since)}`;
+  const when = row.since === null ? '' : ` ${localMinute(row.since)}`;
   return list.length === 1
     ? `${list[0]} closed${when}.`
     : `${list.join(', ')} all closed${when === '' ? '' : ` by${when}`}.`;
@@ -535,7 +532,7 @@ export function unstickCards(
           };
         }
         case 'capacity': {
-          const since = row.since === null ? '' : ` since ${localMoment(row.since)}`;
+          const since = row.since === null ? '' : ` since ${localMinute(row.since)}`;
           const resume: Tile[] =
             row.run_id === null
               ? []
@@ -572,7 +569,7 @@ export function unstickCards(
             title: `${n} is claimed by run ${run}, which has finished`,
             meta: [...workflow, { pill: 'claimed', state: UNSTICK_STATE.claim }, waits],
             note: {
-              lead: `Run ${run} of ${label} finished${row.since === null ? '' : ` at ${localMoment(row.since)}`} and still claims ${n}.`,
+              lead: `Run ${run} of ${label} finished${row.since === null ? '' : ` at ${localMinute(row.since)}`} and still claims ${n}.`,
               rest: `Any intake run releases the claim${commentable ? `; re-triaging ${n} starts one and keeps its build progress` : ''}.${closedNote}`,
             },
             tiles: [...itemWrites(), somethingElse()],
@@ -606,12 +603,22 @@ export interface SweepRow {
 
 const RECOMMENDATION = 'put its recommendation first on each.';
 
-/** The head's line under the title. The sweep clause is left out when the factory has no finished manager run. */
-export function sweepLine(factory: string, sweptAt: Date | null, now: number): string {
+/**
+ * The head's line under the title. The sweep clause is left out when the factory has no finished
+ * manager run; the recommendation clause only when cards are drawn, since "each" needs items.
+ */
+export function sweepLine(
+  factory: string,
+  sweptAt: Date | null,
+  now: number,
+  cardsDrawn: number,
+): string {
   const seconds = since(sweptAt, now);
-  return seconds === null
-    ? `${factory}. The manager ${RECOMMENDATION}`
-    : `${factory}. The manager swept ${waited(seconds)} ago and ${RECOMMENDATION}`;
+  const items = cardsDrawn > 0;
+  if (seconds === null) return items ? `${factory}. The manager ${RECOMMENDATION}` : `${factory}.`;
+  return items
+    ? `${factory}. The manager swept ${waited(seconds)} ago and ${RECOMMENDATION}`
+    : `${factory}. The manager swept ${waited(seconds)} ago.`;
 }
 
 /**

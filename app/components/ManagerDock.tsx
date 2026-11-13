@@ -5,8 +5,11 @@ import type { ManagerAsk } from '../lib/manager';
 const OPEN_KEY = 'mc.manager.open';
 const OPEN_EVENT = 'mc:manager-open';
 
-/** Under this width there is no side nav and no docked panel: a top bar and a tab bar instead. */
-export const PHONE_QUERY = '(max-width: 759.98px)';
+/**
+ * Under this width there is no side nav and no docked panel: a top bar and a tab bar instead.
+ * The nav (216 px) and the dock (384 px) leave a page column too narrow to read below 1024 px.
+ */
+export const PHONE_QUERY = '(max-width: 1023.98px)';
 
 /** Reading `localStorage` itself throws where the browser blocks storage. */
 function storage(): Storage | undefined {
@@ -90,8 +93,11 @@ export function usePublishPlaceWhat(what: string | undefined): void {
   }, [pathname, what]);
 }
 
-/** The docked Manager's state, kept in the browser; ⌘J or Ctrl+J toggles it. */
-export function useManagerDock(): { open: boolean; toggle: () => void } {
+/**
+ * The docked Manager's state, kept in the browser; ⌘J or Ctrl+J toggles it. Where the dock is not
+ * drawn, `onShortcut` takes the shortcut instead and the remembered state is left alone.
+ */
+export function useManagerDock(onShortcut?: () => void): { open: boolean; toggle: () => void } {
   const [open, setOpen] = useState(() => readOpen(storage()) || wantsManager());
   const toggle = useCallback(() => setOpen((was) => !was), []);
   useEffect(() => {
@@ -106,12 +112,12 @@ export function useManagerDock(): { open: boolean; toggle: () => void } {
     const onKey = (event: KeyboardEvent) => {
       if (isManagerShortcut(event)) {
         event.preventDefault();
-        toggle();
+        (onShortcut ?? toggle)();
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [toggle]);
+  }, [toggle, onShortcut]);
   return { open, toggle };
 }
 

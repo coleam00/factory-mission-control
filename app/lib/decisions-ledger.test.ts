@@ -7,6 +7,9 @@ import {
   timelineEntries,
 } from './decisions-ledger';
 import { NOT_RECORDED } from './version-strip';
+import { pinZone } from './pin-zone';
+
+pinZone('America/Chicago');
 
 const decision = (date: string, title: string): TimelineRow => ({
   date,
@@ -125,7 +128,7 @@ test('a pin with a verdict leaves being tested and shows its verdict and sentenc
   ]);
   expect(testing).toEqual([]);
   expect(verdicts.map((v) => [v.pin, v.verdict, v.sentence, v.date])).toEqual([
-    ['c', 'inconclusive', 'too few laps.', '2026-10-02'],
+    ['c', 'inconclusive', 'too few laps.', '2026-10-01'],
     ['a', 'helped', 'faster.', '2026-10-09'],
   ]);
 });

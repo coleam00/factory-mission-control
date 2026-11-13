@@ -31,23 +31,33 @@ export const LAP_RUN = '5eed0001-0000-4000-8000-000000000003';
 export const SEED_NOW = '2026-10-24T11:30:00.000Z';
 /** failure-groups' `$2` on the seed, from the seed's own clock. */
 export const SEED_FAILURES_SINCE = failuresSince(new Date(SEED_NOW));
+/** factory-scorecard's `$2`..`$6` on the seed: whole UTC days ending 2026-11-12, as scorecardEdges returns for a viewer in UTC. */
+const SEED_SCORECARD_EDGES = [
+  '2026-09-13',
+  '2026-10-13',
+  '2026-10-29',
+  '2026-11-05',
+  '2026-11-12',
+].map((day) => `${day}T00:00:00.000Z`);
 /** The home map and step-detail take the version's pin as $2, '' for the current version. */
 export const paramsFor = (name: string, factory: string) =>
   name === 'step-detail' || name === 'home-map'
     ? [factory, '']
-    : name === 'factory-scorecard'
-      ? [factory, '2026-11-12']
-      : name === 'failure-groups'
-        ? [factory, SEED_FAILURES_SINCE]
-        : name === 'work-item'
-          ? [factory, '3']
-          : STEP_PANELS.includes(name)
-            ? [factory, ...CHECK_APP, '']
-            : name === 'runs'
-              ? [factory, ...runsArgs({ q: '', state: '', hideIdle: false, page: 1 })]
-              : LAP_PANELS.includes(name)
-                ? [factory, LAP_RUN]
-                : [factory];
+    : name === 'retried-runs'
+      ? [factory, '2026-10-24T00:00:00.000Z']
+      : name === 'factory-scorecard'
+        ? [factory, ...SEED_SCORECARD_EDGES]
+        : name === 'failure-groups'
+          ? [factory, SEED_FAILURES_SINCE]
+          : name === 'work-item'
+            ? [factory, '3']
+            : STEP_PANELS.includes(name)
+              ? [factory, ...CHECK_APP, '']
+              : name === 'runs'
+                ? [factory, ...runsArgs({ q: '', state: '', hideIdle: false, page: 1 })]
+                : LAP_PANELS.includes(name)
+                  ? [factory, LAP_RUN]
+                  : [factory];
 
 export const SEED = readFileSync(join(REPO_ROOT, 'fixtures', 'seed.sql'), 'utf8');
 

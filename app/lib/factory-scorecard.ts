@@ -1,4 +1,4 @@
-import { formatFixed } from './format';
+import { formatFixed, localMidnight } from './format';
 
 /** A row of the `factory-scorecard` live query: one metric name, its value and sample size in each window. */
 export type FactoryScorecardRow = {
@@ -23,17 +23,15 @@ export type ScorecardWindow = '7' | '30';
  */
 export const TOO_FEW_BELOW = 10;
 
-const DAY_MS = 86_400_000;
+/** The start of the viewer's next local day: where the scorecard's windows end. */
+export const scorecardUntil = (now: Date): string => localMidnight(now, 1);
 
 /**
- * The UTC date after `now`'s UTC day, as `YYYY-MM-DD`: the `$2` of `factory-scorecard`, which ends its
- * windows at that midnight. The panel and the Manager both pass it, so their numbers agree.
+ * The `$2`..`$6` of `factory-scorecard`: the local midnights that bound its 7 and 30 day windows and the
+ * periods before them, then `scorecardUntil`. The panel and the Manager both pass them, so their numbers agree.
  */
-export const scorecardUntil = (now: Date): string =>
-  new Date(Math.floor(now.getTime() / DAY_MS) * DAY_MS + DAY_MS).toISOString().slice(0, 10);
-
-/** Milliseconds from `now` to the next UTC midnight, when `scorecardUntil` moves on. */
-export const msToUtcMidnight = (now: Date): number => DAY_MS - (now.getTime() % DAY_MS);
+export const scorecardEdges = (now: Date): string[] =>
+  [-59, -29, -13, -6].map((days) => localMidnight(now, days)).concat(scorecardUntil(now));
 
 export type MeasureFormat = 'count' | 'percent' | 'whole-percent' | 'decimal' | 'hours';
 

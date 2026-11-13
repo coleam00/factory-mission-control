@@ -4,6 +4,7 @@
  * `Date`. Pure, no React.
  */
 
+import { localDay } from './format';
 import { NOT_RECORDED, recorded } from './version-strip';
 
 /**
@@ -82,7 +83,7 @@ export interface VerdictEntry {
   reason: string;
   verdict: NonNullable<LedgerRow['verdict']>;
   sentence: string;
-  /** UTC `YYYY-MM-DD` of the verdict commit. */
+  /** Local `YYYY-MM-DD` of the verdict commit. */
   date: string;
 }
 
@@ -121,7 +122,7 @@ export function ledger(rows: readonly LedgerRow[]): {
         reason: recorded(row.reason),
         verdict,
         sentence: row.sentence ?? NOT_RECORDED,
-        date: at.toISOString().slice(0, 10),
+        date: localDay(at),
       }),
     );
   return { testing, verdicts };

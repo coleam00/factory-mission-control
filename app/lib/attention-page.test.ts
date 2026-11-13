@@ -15,8 +15,11 @@ import {
   unstickCards,
   unstickKey,
 } from './attention-page';
-import { localMoment } from './format';
+import { localMinute } from './format';
 import type { OwnerQueueRow } from './owner-queue';
+import { pinZone } from './pin-zone';
+
+pinZone('America/Chicago');
 
 const RUN = '5eed0005-0000-4000-8000-000000000001';
 const CONSOLE_RUN = `http://localhost:3090/console/r/${RUN}`;
@@ -76,7 +79,7 @@ test('a question marks the recommended option only when it is one of the options
   expect(card?.tiles.map((t) => t.label)).toEqual(['Split it', 'Build it', 'Something else']);
   expect(card?.tiles.every((t) => t.href === CONSOLE_RUN)).toBe(true);
   expect(card?.note.lead).toStartWith(
-    `#15 “Lanes and recent laps” waits at ask for your answer since ${localMoment(new Date('2026-10-24T10:20:00Z'))}.`,
+    `#15 “Lanes and recent laps” waits at ask for your answer since ${localMinute(new Date('2026-10-24T10:20:00Z'))}.`,
   );
   expect(card?.note.lead).toEndWith('. Recommends Split it.');
   expect(card?.note.rest).toBe('Two small changes land sooner.');
@@ -216,7 +219,7 @@ test('an unstick card names the blocker’s title and when it closed, and why th
     'f',
     false,
   );
-  expect(parked?.note.lead).toBe(`#455 “Queue issue 455” closed ${localMoment(since)}.`);
+  expect(parked?.note.lead).toBe(`#455 “Queue issue 455” closed ${localMinute(since)}.`);
   expect(parked?.note.rest).toBe(
     '#454 was parked on it: “Waits for #455 to merge”. Nothing re-triages a parked item on its own.',
   );
@@ -225,7 +228,7 @@ test('an unstick card names the blocker’s title and when it closed, and why th
     'f',
     false,
   );
-  expect(blocked?.note.lead).toBe(`#6 “Six”, #7 all closed by ${localMoment(since)}.`);
+  expect(blocked?.note.lead).toBe(`#6 “Six”, #7 all closed by ${localMinute(since)}.`);
   expect(blocked?.note.rest).toContain('depends on #6, #7');
 });
 
@@ -389,7 +392,7 @@ test('the needs-owner issue recommends replying on GitHub, and a question links 
     ['Something else', false, issue.url],
   ]);
   expect(card?.note.lead).toBe(
-    `#12 “Needs you” has been labelled needs-owner since ${localMoment(issue.waiting_since as Date)}.`,
+    `#12 “Needs you” has been labelled needs-owner since ${localMinute(issue.waiting_since as Date)}.`,
   );
 });
 
@@ -449,7 +452,7 @@ test('an owner question recommends only its default tile, and says when the defa
     ['something-else', false],
   ]);
   expect(card?.note).toEqual({
-    lead: `#12 asks question 1 since ${localMoment(new Date('2026-10-24T09:00:00Z'))}. Default B applies ${localMoment(new Date('2026-10-25T09:07:30Z'))}.`,
+    lead: `#12 asks question 1 since ${localMinute(new Date('2026-10-24T09:00:00Z'))}. Default B applies ${localMinute(new Date('2026-10-25T09:07:30Z'))}.`,
     rest: 'JSON is simpler.',
   });
   expect(card?.tiles.map((t) => t.href)).toEqual(Array(3).fill('https://github.com/o/r/issues/12'));
@@ -463,10 +466,18 @@ test('an owner question without a default says so and recommends no tile', () =>
 
 test('sweepLine says how long ago the manager swept, and drops the clause when it never did', () => {
   const now = Date.parse('2026-10-24T12:00:00Z');
-  expect(sweepLine('f', new Date('2026-10-24T08:48:00Z'), now)).toBe(
+  const swept = new Date('2026-10-24T08:48:00Z');
+  expect(sweepLine('f', swept, now, 2)).toBe(
     'f. The manager swept 3h 12m ago and put its recommendation first on each.',
   );
-  expect(sweepLine('f', null, now)).toBe('f. The manager put its recommendation first on each.');
+  expect(sweepLine('f', null, now, 1)).toBe('f. The manager put its recommendation first on each.');
+});
+
+test('sweepLine makes no claim about items when no card is drawn', () => {
+  const now = Date.parse('2026-10-24T12:00:00Z');
+  const swept = new Date('2026-10-24T08:48:00Z');
+  expect(sweepLine('f', swept, now, 0)).toBe('f. The manager swept 3h 12m ago.');
+  expect(sweepLine('f', null, now, 0)).toBe('f.');
 });
 
 test('an unstick card is keyed as unstickKey says, so the live phase finds it', () => {
