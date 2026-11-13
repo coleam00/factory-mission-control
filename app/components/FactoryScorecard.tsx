@@ -11,6 +11,7 @@ import {
   TOO_FEW_BELOW,
 } from '../lib/factory-scorecard';
 import { LivePanel, type PanelState } from '../live/LivePanel';
+import { useUnavailable } from '../live/LiveProvider';
 import { useToday } from '../live/use-today';
 import { Card } from './ui/Card';
 import { Segmented } from './ui/Segmented';
@@ -66,6 +67,7 @@ export function FactoryScorecardBody({
   window: ScorecardWindow;
   onWindow: (window: ScorecardWindow) => void;
 }): ReactElement {
+  const unavailable = useUnavailable();
   const say = (text: string) => <p className={`m-0 ${NOTE}`}>{text}</p>;
   return (
     <Card className="p-4" aria-label="Scorecard">
@@ -76,7 +78,7 @@ export function FactoryScorecardBody({
         <Segmented label="Period" options={WINDOWS} value={window} onChange={onWindow} />
       </div>
       {state === 'error' ? (
-        say('Live data is unavailable.')
+        say(unavailable)
       ) : rows === undefined ? (
         say('Loading the scorecard.')
       ) : rows.length === 0 ? (

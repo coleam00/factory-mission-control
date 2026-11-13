@@ -13,16 +13,17 @@ import {
   type AgentRunner,
   type AttentionTally,
   attentionLine,
+  BRIEFING_PROSE_BLOCKS,
   briefingFault,
   briefingQuestion,
   CREDENTIAL_NAMES,
   capBriefingProse,
   createManager,
-  failureCausesBlock,
+  failureLine,
   type Manager,
   managerSettings,
 } from './manager';
-import { DAY_CAUSES_CAP, DAY_MERGED_CAP, type DayDigest, readDayDigest } from './manager-day';
+import { DAY_MERGED_CAP, type DayDigest, readDayDigest } from './manager-day';
 import {
   ELSEWHERE_FAILED,
   ELSEWHERE_WAITING,
@@ -53,6 +54,9 @@ beforeAll(async () => {
 }, 60_000);
 afterAll(() => fixture.stop());
 
+/** The briefing's one sentence about open failures, ending in the link to Runs > Failures. */
+const FAILURE_SENTENCE =
+  /^\d+ failure causes? (is|are) open.*\[Runs > Failures\]\(\/f\/[^)]+\/runs\?view=failures\)\.$/;
 const ghost = '5eed0001-0000-4000-8000-0000000000ff';
 const STRUCTURE = {
   links: [
@@ -889,9 +893,23 @@ describe('the briefing', () => {
       events.flatMap((e) => ('text' in e && e.type === 'text' ? [e.text] : [])).join('');
     for (const got of [await ask(), await ask()]) {
       const [, causes, ...prose] = shown(got).split('\n\n');
-      expect(causes).toMatch(/^Failure causes today: .*archon-loop/);
+      expect(causes).toMatch(FAILURE_SENTENCE);
       expect(prose).toEqual(['One.', '- two']);
     }
+  });
+
+  test('says failures in one short sentence with the link: no error text, step name or run id', async () => {
+    clock = new Date('2026-11-08T10:00:00');
+    const ask = briefingOf(managerOf(model(async () => [start, delta('Quiet.'), result(0.01)])));
+    const text = (await ask())
+      .flatMap((e) => ('text' in e && e.type === 'text' ? [e.text] : []))
+      .join('');
+    const lines = text.split('\n').filter((l) => l.includes('failure cause'));
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toContain(`/f/${FACTORY}/runs?view=failures`);
+    for (const line of text.split('\n')) expect(line.length).toBeLessThanOrEqual(200);
+    expect(text).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}-/);
+    expect(text).not.toContain('step ');
   });
 
   test('the cap counts top-level blocks: nested items and continuations stay with their item', async () => {
@@ -908,16 +926,22 @@ describe('the briefing', () => {
   test('the cap counts indented lists and paragraphs the panel renders as their own blocks', () => {
     expect(
       capBriefingProse('Two failed.\n  - a\n  - b\n  - c\n  - d\n  - e').split('\n\n'),
-    ).toHaveLength(3);
-    expect(capBriefingProse('  - a\n  - b\n  - c\n  - d\n  - e').split('\n\n')).toHaveLength(3);
+    ).toHaveLength(BRIEFING_PROSE_BLOCKS);
+    expect(capBriefingProse('  - a\n  - b\n  - c\n  - d\n  - e').split('\n\n')).toHaveLength(
+      BRIEFING_PROSE_BLOCKS,
+    );
     expect(
       capBriefingProse('Quiet.\n\n  two\n\n  three\n\n  four\n\n  five').split('\n\n'),
-    ).toHaveLength(3);
+    ).toHaveLength(BRIEFING_PROSE_BLOCKS);
   });
 
   test('the cap takes its block boundaries from the text the panel parses, bare \\r breaks included', () => {
-    expect(capBriefingProse('a\r\rb\r\rc\r\rd\r\re').split('\n\n')).toHaveLength(3);
-    expect(capBriefingProse('a\r\n\r\nb\r\n\r\nc\r\n\r\nd\r\n\r\ne').split('\n\n')).toHaveLength(3);
+    expect(capBriefingProse('a\r\rb\r\rc\r\rd\r\re').split('\n\n')).toHaveLength(
+      BRIEFING_PROSE_BLOCKS,
+    );
+    expect(capBriefingProse('a\r\n\r\nb\r\n\r\nc\r\n\r\nd\r\n\r\ne').split('\n\n')).toHaveLength(
+      BRIEFING_PROSE_BLOCKS,
+    );
   });
 
   test('two askers at once share one generation', async () => {
@@ -1046,6 +1070,138 @@ describe('a busy day', () => {
        FROM generate_series(0, ${count - 1}) g`,
     );
 
+  describe('with failures and nothing for the owner', () => {
+    const F = 'quiet';
+    const stop = (n: number, signature: string) =>
+      `('5eed000a-0000-4000-8000-0000000000${n}', '${F}', 'archon-build', 'failed', 'implement', 'a long error line that stays out of the briefing', 'code', '${signature}', now())`;
+    const ask = async (manager: Manager) =>
+      (
+        await events(
+          await createApp({ buildId: 't', distDir: '.', manager }).request(
+            '/api/manager/briefing',
+            {
+              method: 'POST',
+              body: JSON.stringify({ factory: F }),
+            },
+          ),
+        )
+      )
+        .flatMap((e) => (e.type === 'text' ? [e.text] : []))
+        .join('');
+    const seed = async () => {
+      await seedFactory(F);
+      await fixture.direct.query(
+        `INSERT INTO mc.run_stops (run_id, factory, workflow_name, status, step_id, line, class, signature, stopped_at)
+         VALUES ${stop(11, 'sig-a')}, ${stop(12, 'sig-b')}`,
+      );
+    };
+    const played = model(async () => [start, delta('Quiet.'), result(0.01)]);
+    const managerOver = (db: Db) => {
+      played.prompts.length = 0;
+      return createManager({
+        db,
+        databaseUrl: fixture.url,
+        factories: [F],
+        settings: managerSettings({}),
+        run: played.run,
+        now: () => clock,
+      });
+    };
+
+    test('tells the model about the failures link only when the briefing wrote one', async () => {
+      clock = new Date('2026-11-08T10:00:00');
+      await seed();
+      const error = spyOn(console, 'error').mockImplementation(() => {});
+      try {
+        const sent = (manager: Manager) => ask(manager).then(() => played.prompts.join('\n'));
+        expect(await sent(managerOver(fixture.direct))).toContain('Runs > Failures');
+        const failing = Object.create(fixture.direct);
+        failing.transaction = (fn: (tx: Db) => Promise<void>) =>
+          fixture.direct.transaction((tx) =>
+            fn({
+              ...tx,
+              query: (sql: string, params?: unknown[]) => {
+                if (sql.includes('latest_run_id')) throw new Error('statement timeout');
+                return tx.query(sql, params);
+              },
+            } as Db),
+          );
+        expect(await sent(managerOver(failing))).toContain('Runs > Failures');
+        await fixture.direct.query(`DELETE FROM mc.run_stops WHERE factory = '${F}'`);
+        const none = await sent(managerOver(fixture.direct));
+        expect(none).not.toContain('Runs > Failures');
+        expect(none).toContain('do not restate the count line');
+        expect(none).toContain('Do not list, regroup, count or quote failures');
+      } finally {
+        error.mockRestore();
+        await clean(F);
+      }
+    });
+
+    test('says nothing needs you, then one short failure sentence with the link', async () => {
+      clock = new Date('2026-11-08T10:00:00');
+      await seed();
+      try {
+        const text = await ask(managerOver(fixture.direct));
+        expect(text.startsWith('Nothing needs you')).toBe(true);
+        const lines = text.split('\n').filter((l) => l.includes('failure cause'));
+        expect(lines).toEqual([
+          `2 failure causes are open, all code. See [Runs > Failures](/f/${F}/runs?view=failures).`,
+        ]);
+        for (const line of text.split('\n')) expect(line.length).toBeLessThanOrEqual(200);
+        expect(text).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}-/);
+        expect(text).not.toContain('long error line');
+      } finally {
+        await clean(F);
+      }
+    });
+
+    test('states the open count as of each ask, even when the prose is replayed', async () => {
+      clock = new Date('2026-11-08T10:00:00');
+      await seed();
+      try {
+        const manager = managerOver(fixture.direct);
+        expect(await ask(manager)).toContain('2 failure causes are open');
+        await fixture.direct.query(`DELETE FROM mc.run_stops WHERE signature = 'sig-b'`);
+        const replayed = await ask(manager);
+        expect(replayed).toContain('1 failure cause is open');
+        expect(replayed).not.toContain('2 failure causes');
+      } finally {
+        await clean(F);
+      }
+    });
+
+    test('says the failures could not be read when the read fails, and states them on the next ask', async () => {
+      clock = new Date('2026-11-08T10:00:00');
+      await seed();
+      const error = spyOn(console, 'error').mockImplementation(() => {});
+      try {
+        let broken = true;
+        const failing = Object.create(fixture.direct);
+        failing.transaction = (fn: (tx: Db) => Promise<void>) =>
+          fixture.direct.transaction((tx) =>
+            fn({
+              ...tx,
+              query: (sql: string, params?: unknown[]) => {
+                if (broken && sql.includes('latest_run_id')) throw new Error('statement timeout');
+                return tx.query(sql, params);
+              },
+            } as Db),
+          );
+        const manager = managerOver(failing);
+        const unread = await ask(manager);
+        expect(unread).toContain('Open failures could not be read');
+        expect(unread).toContain('/runs?view=failures)');
+        expect(unread).not.toContain('failure cause');
+        broken = false;
+        expect(await ask(manager)).toContain('2 failure causes are open');
+      } finally {
+        error.mockRestore();
+        await clean(F);
+      }
+    });
+  });
+
   test('names every merge and failure cause and stays under the read size', async () => {
     clock = new Date('2026-11-08T10:00:00');
     const F = 'busy';
@@ -1099,10 +1255,10 @@ describe('a busy day', () => {
         expect(prompt).toContain(`"number":${n},"title":"Merged work ${n}"`);
       }
       expect(prompt).not.toContain('failure_causes');
-      const listed = shown.split('\n\n').filter((b) => b.startsWith('Failure causes today:'));
+      const listed = shown.split('\n\n').filter((b) => FAILURE_SENTENCE.test(b));
       expect(listed).toHaveLength(1);
-      for (let k = 0; k < 5; k++) expect(shown.split(`cause-${k} `).length).toBe(2);
-      expect(shown.split('overnight cause').length).toBe(2);
+      expect(listed[0]).toContain('1 failure cause is open, code.');
+      expect(shown).not.toContain('overnight cause');
       expect(prompt).not.toContain('"number":700');
       expect(prompt).not.toContain('merged pull requests and failed runs could not be read');
     } finally {
@@ -1152,13 +1308,14 @@ describe('a busy day', () => {
       for (const shown of [fresh, replayed]) {
         expect(shown.split(line).length).toBe(2);
         expect(shown).toContain('The archon-build run stopped early.');
-        expect(shown.split('out of disk').length).toBe(2);
+        expect(shown.split('1 failure cause is open').length).toBe(2);
+        expect(shown).not.toContain('out of disk');
       }
 
       replies.push('99 things need you.', '98 things need you.');
       const fallback = await ask(true);
       expect(fallback.split(line).length).toBe(2);
-      expect(fallback).toContain('Failure causes today: out of disk');
+      expect(fallback).toContain('1 failure cause is open, code.');
       expect(fallback).not.toContain('99 things');
     } finally {
       warn.mockRestore();
@@ -1171,24 +1328,10 @@ describe('a busy day', () => {
     await seedFactory(F);
     try {
       await merge(F, DAY_MERGED_CAP + 3, `repeat('T', 256)`, '2026-11-08T09:00:00Z');
-      await fixture.direct.query(
-        `INSERT INTO mc.laps (run_id, factory, workflow_name, status, started_at, completed_at)
-         SELECT gen_random_uuid(), '${F}', 'archon-build', 'failed', '${local('2026-11-08T07:00:00Z')}', '${local('2026-11-08T08:00:00Z')}'::timestamptz + (g || ' seconds')::interval
-         FROM generate_series(1, ${DAY_CAUSES_CAP + 2}) g`,
-      );
-      await fixture.direct.query(
-        `INSERT INTO mc.run_stops (run_id, factory, workflow_name, status, step_id, line, class, signature, stopped_at)
-         SELECT run_id, factory, workflow_name, 'failed', 'implement', repeat('c', 2000), 'code', run_id::text, completed_at
-         FROM mc.laps WHERE factory = '${F}'
-         ON CONFLICT (run_id) DO UPDATE SET line = excluded.line, signature = excluded.signature`,
-      );
       const digest = await readDayDigest(fixture.direct, F, '2026-11-08', 'UTC');
       expect(digest.merged.items).toHaveLength(DAY_MERGED_CAP);
       expect(digest.merged.and_more).toBe(3);
-      expect(digest.failure_causes.items).toHaveLength(DAY_CAUSES_CAP);
-      expect(digest.failure_causes.and_more).toBe(2);
       expect(digest.merged.items.every((m) => m.title.length <= 200)).toBe(true);
-      expect(digest.failure_causes.items.every((c) => c.cause.length <= 300)).toBe(true);
       expect(JSON.stringify(digest).length).toBeLessThan(MAX_RESULT_CHARS / 2);
     } finally {
       await clean(F);
@@ -1222,6 +1365,7 @@ describe('a briefing whose day read fails', () => {
     const first = await ask();
     expect(first.at(-1)?.type).toBe('done');
     expect(played.prompts[0]).toContain('could not be read');
+    expect(played.prompts[0]).toContain('Do not list, regroup, count or quote failures');
     const second = await ask();
     expect(played.prompts).toHaveLength(2);
     expect(second.at(-1)).not.toMatchObject({ cached: true });
@@ -1259,12 +1403,17 @@ describe('the briefing question with a run paused and other Attention rows', () 
       day: '2026-11-08',
       merged: { items: [{ number: 5, title: 'Fix it' }], and_more: 0 },
       runs: { items: [], and_more: 0 },
-      failure_causes: { items: [], and_more: 0 },
     };
     const withDay = briefingQuestion(tally, null, day);
     expect(withDay).toContain('state none of them');
     expect(withDay).toContain('"merged":{"items":[{"number":5,"title":"Fix it"}]');
     expect(withDay).not.toContain('failure_causes');
+    expect(withDay).toContain('with a link to Runs > Failures');
+    const noFailures = briefingQuestion(tally, null, day, false);
+    expect(noFailures).not.toContain('Runs > Failures');
+    expect(noFailures).not.toContain('open failures');
+    expect(noFailures).toContain('Do not list, regroup, count or quote failures');
+    expect(withDay).toContain('Do not list, regroup, count or quote failures');
   });
 
   test('rejects a count sentence that states a total the line does not', () => {
@@ -1345,7 +1494,11 @@ describe('a briefing whose count cannot be read', () => {
         { method: 'POST', body: JSON.stringify({ factory: FACTORY, refresh: true }) },
       );
       const got = await events(res);
-      expect(got[0]).toMatchObject({ type: 'text', text: 'fine' });
+      expect(got[0]).toMatchObject({
+        type: 'text',
+        text: expect.stringContaining('could not be read'),
+      });
+      expect(got).toContainEqual({ type: 'text', text: 'fine' });
       expect(JSON.stringify(got)).not.toContain('need you');
       expect(played.prompts[0]).toContain('could not be read');
     } finally {
@@ -1587,28 +1740,22 @@ describe('how the factory is doing', () => {
   });
 });
 
-describe('failureCausesBlock', () => {
-  const cause = (n: number) => ({
-    cause: `cause ${n}`,
-    workflow: n % 2 ? 'archon-build' : 'archon-merge',
-    step: n % 3 ? 'implement' : null,
-    class: null,
-    runs: n,
-    example_run: `run-${n}`,
-  });
-  const day = (n: number, and_more: number): DayDigest => ({
-    day: '2026-11-08',
-    merged: { items: [], and_more: 0 },
-    runs: { items: [], and_more: 0 },
-    failure_causes: { items: Array.from({ length: n }, (_, i) => cause(i + 1)), and_more },
+describe('failureLine', () => {
+  const groups = (...classes: (string | null)[]) =>
+    classes.map((c) => ({ class: c as 'code' | null }));
+
+  test('says nothing without an open failure cause', () => {
+    expect(failureLine([], 'f')).toBeNull();
   });
 
-  test('is one paragraph naming each cause once, and says where the digest lists no more', () => {
-    expect(failureCausesBlock(day(0, 0))).toBeNull();
-    const block = failureCausesBlock(day(6, 2)) ?? '';
-    for (let n = 1; n <= 6; n++) expect(block.split(`cause ${n} (`)).toHaveLength(2);
-    expect(block).not.toContain('\n');
-    expect(block.endsWith('and 2 more causes not listed.')).toBe(true);
-    expect(capBriefingProse(block, 1)).toBe(block);
+  test('is one plain sentence: the count, the classes and the link to Runs > Failures', () => {
+    const link = '[Runs > Failures](/f/f/runs?view=failures)';
+    expect(failureLine(groups('code'), 'f')).toBe(`1 failure cause is open, code. See ${link}.`);
+    expect(failureLine(groups('code', 'code', 'code'), 'f')).toBe(
+      `3 failure causes are open, all code. See ${link}.`,
+    );
+    expect(failureLine(groups('code', null, 'code'), 'f')).toBe(
+      `3 failure causes are open: 2 code, 1 unclassified. See ${link}.`,
+    );
   });
 });

@@ -22,12 +22,18 @@ export function retriedLine(n: number): string {
   return `${n === 1 ? '1 run hit' : `${n} runs hit`} a passing database or GitHub error today and ${n === 1 ? 'was' : 'were'} retried.`;
 }
 
+export type FailureLabel = StopClass | 'mixed' | 'unclassified';
+
+/** The class a group shows on its card; a group with no class is unclassified. */
+export const failureLabel = (g: Pick<FailureGroupRow, 'class'>): FailureLabel =>
+  g.class ?? 'unclassified';
+
 export interface FailureCard {
   key: string;
   title: string;
   workflow: string;
   step: string | null;
-  pill: { label: StopClass | 'mixed' | 'unclassified'; state: State };
+  pill: { label: FailureLabel; state: State };
   failures: number;
   lastAt: Date | null;
   /** The error, whole; the card cuts it to one line. */
@@ -49,7 +55,7 @@ export function failureCards(rows: readonly FailureGroupRow[], factory: string):
     )
     .map((g) => {
       const label = workflowLabel(g.workflow_name);
-      const pill = g.class ?? 'unclassified';
+      const pill = failureLabel(g);
       return {
         key: g.signature,
         title: g.step_id === null ? `${label} failed` : `${label} failed at ${g.step_id}`,

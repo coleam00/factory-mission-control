@@ -18,6 +18,7 @@ import type { HealthWorkableRow } from '../lib/health';
 import type { OwnerQueueRow } from '../lib/owner-queue';
 import { useFactory } from '../live/FactoryProvider';
 import { AWAITED, Feed, overall, type Source } from '../live/Feed';
+import { useUnavailable } from '../live/LiveProvider';
 import type { HomeMapRow, WorkOrderRow } from '../map/live';
 
 /** The browser's clock, moved on to each moment a merged work item or a finished order drops off. */
@@ -38,6 +39,7 @@ export default function Board(): ReactElement {
   const [search, setSearch] = useSearchParams();
   const order = search.get(ORDER_PARAM) || null;
   const mode = search.get(VIEW_PARAM) === TABLE_VIEW ? 'table' : 'pipeline';
+  const unavailable = useUnavailable();
   const [board, setBoard] = useState<Source<BoardRow>>(AWAITED);
   const [map, setMap] = useState<Source<HomeMapRow>>(AWAITED);
   const [workable, setWorkable] = useState<Source<HealthWorkableRow>>(AWAITED);
@@ -123,7 +125,7 @@ export default function Board(): ReactElement {
       <Feed<WorkOrderRow> query="work-orders" factory={factory} into={setOrders} />
       <Feed<DiscoveryRow> query="discoveries" factory={factory} into={setDiscoveries} />
       {state === 'error' ? (
-        <EmptyState title="Live data is unavailable." />
+        <EmptyState title={unavailable} />
       ) : sources === undefined ? (
         <EmptyState title="Loading the board." />
       ) : (

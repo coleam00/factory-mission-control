@@ -6,7 +6,11 @@ import type { DecideRow, UnstickRow } from '../lib/attention';
 import type { HandledRow } from '../lib/manager';
 import type { OwnerQueueRow } from '../lib/owner-queue';
 import type { Source } from '../live/Feed';
+import type { RealtimeClient } from '@neon/realtime/client';
+import type { ReactNode } from 'react';
 import type { Action } from '../lib/attention-page';
+import { AWAITED } from '../live/Feed';
+import { type Live, LiveContext, OFFLINE_SENTENCE } from '../live/LiveProvider';
 import { ActionControl, AttentionBody } from './Attention';
 
 const NOW = Date.parse('2026-10-24T12:00:00Z');
@@ -307,4 +311,46 @@ test('a console link opens in a new tab, and an in-app link stays in the dashboa
   expect(draw(true)).toContain('target="_blank"');
   expect(draw(true)).toContain('rel="noreferrer"');
   expect(draw(false)).not.toContain('target=');
+});
+
+const connection = (offline: boolean): Live => {
+  const client = {} as RealtimeClient;
+  return {
+    status: 'ready',
+    factories: [],
+    client,
+    homeClient: client,
+    rewind: null,
+    offline,
+    homeOffline: offline,
+  };
+};
+const within = (live: Live, node: ReactNode) =>
+  renderToStaticMarkup(<LiveContext.Provider value={live}>{node}</LiveContext.Provider>);
+
+test('an offline connection is named in the head, never loading (#684)', () => {
+  const body = (sources: Source<never>) => (
+    <MemoryRouter>
+      <AttentionBody
+        factory="f"
+        decide={sources}
+        owner={sources}
+        unstick={sources}
+        sweep={none}
+        now={NOW}
+      />
+    </MemoryRouter>
+  );
+  const failed: Source<never> = { rows: undefined, state: 'error' };
+  for (const sources of [AWAITED as Source<never>, failed]) {
+    const html = within(connection(true), body(sources));
+    expect(html).toContain(OFFLINE_SENTENCE);
+    expect(html).toContain('data-live-offline');
+    expect(html).toContain('What needs you');
+    expect(html).not.toContain('Loading what needs you.');
+    expect(html).not.toContain('Live data for');
+  }
+  const online = within(connection(false), body(AWAITED as Source<never>));
+  expect(online).toContain('Loading what needs you.');
+  expect(online).not.toContain('data-live-offline');
 });

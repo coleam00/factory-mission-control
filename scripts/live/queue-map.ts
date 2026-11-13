@@ -16,7 +16,7 @@ import {
   lateWrite,
   liveOutputs,
   MAP,
-  MAP_READABLE,
+  MAP_VIEWPORT,
   mapCards,
   mapMismatches,
   pageWait,
@@ -198,13 +198,13 @@ export function queueMapPhase(ctx: LiveContext): LivePhase {
       const split = await openPage(deps.env);
       const intake = await openPage(deps.env);
       try {
-        await page.setViewport(MAP_READABLE.width);
+        await page.setViewport(MAP_VIEWPORT);
         await page.goto(`${base}/f/${name}/map`);
         await page.evaluate<boolean>(
           pageWait(`document.querySelector('${MAP}[data-state="ready"]') !== null`, READY_WAIT_MS),
         );
         failures.push(...mapMismatches(await mapCards(page), await lapsOnCards(db, name)));
-        ctx.save(FILES.shot, await page.screenshot(1440));
+        ctx.save(FILES.shot, await page.screenshot(MAP_VIEWPORT));
         failures.push(...(await appCheckPromptMismatches(page, base, name)));
         await page.goto(`${base}/f/${name}/map`);
         await page.evaluate<boolean>(
@@ -212,7 +212,7 @@ export function queueMapPhase(ctx: LiveContext): LivePhase {
         );
 
         const open = async (target: Page, id: string, shoot = false) => {
-          await target.setViewport(MAP_READABLE.width);
+          await target.setViewport(MAP_VIEWPORT);
           await target.goto(`${base}/f/${name}/map?view=${id}`);
           await target.evaluate<boolean>(
             pageWait(
@@ -231,7 +231,7 @@ export function queueMapPhase(ctx: LiveContext): LivePhase {
             const opened = QUEUE_MAP_VIEWS.find((v) => v.id === id);
             if (!opened)
               throw new Error(`queue-map opens ?view=${id}, which QUEUE_MAP_VIEWS does not list`);
-            ctx.save(opened.shot, await target.screenshot(1440));
+            ctx.save(opened.shot, await target.screenshot(MAP_VIEWPORT));
           }
         };
         const pageOf: Record<string, Page> = { build: view, split, intake, review: reviewView };

@@ -34,36 +34,40 @@ strip, chips, flow and the tour work the same in a view.
 The map is the Factory place's hero. Its frame spans the window between the page gutters; the
 caption and legend stay in the app's column, and the details of a clicked card show in a panel
 inside the frame, docked on the side with more room beside the card and narrowed to that room, so it clears the card when there is room; when no side has room (a card zoomed wide, or a card in the middle of the frame below 701px, where the panel is at least 240px tall) the map pans the card clear, after a click's double-click window, as far as keeping the card's top-left corner in the frame allows, so a card zoomed wider than the free room can still be partly covered. The frame's
-height is the map's height at the scale that fits its width, never below the type floor below, plus
+height is the map's height at the scale that fits its width, plus
 its padding (at least 420px), so the opening view leaves no empty band; the page scrolls below it. A deeper view is fitted no larger than the largest scale the matching views
-(the ones listed in the root's `referenceViews` key: Intake, Review, App check, Build, Deliver) fit at in the same frame (about 0.73 at 1440x900), centred in
-the frame; below 701px wide the map opens as the phone mockup draws it. A card whose kind label would wrap is widened
+(the ones listed in the root's `referenceViews` key: Intake, Review, App check, Build, Deliver) fit at in the same frame (about 0.58 at 1440x900 with the Manager closed, 0.38 with it open), centred in
+the frame; in the phone layout (window under 760px) the map opens as the phone mockup draws it. A card whose kind label would wrap is widened
 through `width` (Staging's Deploy, Work order's middle column).
 
 The owner chose readability over the mockup's proportions (PR #326 review, 2026-11-03): at 1440x900,
-fitted, a card's title renders at least 14px, its text 11px, and its kind label and the line labels
+at `FIT_MIN`, a card's title renders at least 14px, its text 11px, and its kind label and the line labels
 10px. So the type inside the map is larger than the mockup's (in map units: title 25, text 20, kind
 18, line labels 18, chips 15; `MAP_TYPE` in `factory-map.ts`), cards are 208 wide and 212 tall so
 texts wrap to two or three lines, and columns sit closer: 52 between cards, 84 between App check and
 Merge, where the "passed" label needs the room (the mockup has about 84 everywhere). Which card sits
-where, and every line, are the mockup's. `bun run test:live` measures the rendered sizes at 1440
-fitted and fails below these numbers.
-A level opens (on mount, on a resize, and on arriving by a drill-down or going up) at no less than
-the scale at which these floors hold, `FIT_MIN` in `factory-map.ts`, derived from `MAP_TYPE` and
-`MAP_TYPE_FLOOR` (0.56; owner ruling on #549, 2026-11-09). When the whole map does not fit at that
-scale, the view opens there with the map's left edge, where every level's main line begins, in view;
-the rest is a pan away. The **Fit** control is not floored: it shows the whole level inside the frame
-at the frame's width now, with the Manager open or closed (owner changes of 2026-11-12, item 11), so
-on a narrow frame it draws the map under the floor, with bands above and below. Zooming out by hand
-is still allowed. A drag from anywhere, a card included, moves the map; a press without movement
-selects.
+where, and every line, are the mockup's. `bun run test:live` records the rendered sizes at 1440 and
+fails when the map opens, or a Manager toggle leaves it, with a card outside the frame.
+`MAP_TYPE` is sized so that at `FIT_MIN` (0.56, derived from `MAP_TYPE` and `MAP_TYPE_FLOOR` in
+`factory-map.ts`) each type meets its floor: the zoom at which the owner's numbers hold.
+
+Every level opens fitted (on mount, and on arriving by a drill-down or going up): its camera is the
+**Fit** control's, the whole level inside the frame at the frame's width now, with the Manager open
+or closed, and not floored (owner, #655, 2026-11-12). This reverses the opening half of the owner
+ruling on #549 (2026-11-09), which opened at the type floor on the main line. At 1440 the root opens
+at about 0.48 with the Manager closed and 0.32 with it open, under the type floor; zooming in
+reaches it. A resize or a Manager toggle refits the camera until the owner drags, swipes or zooms
+(wheel, pinch, or the zoom buttons); then the camera stays where the owner put it. Fit and a level
+change hand the camera back, and so does a resize across the shell's 1024px layout switch, which
+remounts the page: the map opens afresh, fitted. A drag from anywhere, a card included, moves the map; a press without
+movement selects.
 A card whose kind label would not fit on one line at that size is widened through its `width` and the
 cards after it move right to keep their spacing (App check's Use the app, Build's Investigate and Plan,
 Deliver's Implement); `factory-map.test.ts` fails any new kind label that would wrap.
 
-Below 701px wide the map opens as `refs/40-home-phone.png` draws it: the line at a readable scale
+In the phone layout (window under 760px; not the shell's `PHONE_QUERY`, which switches at 1024px, so a window from 760 to 1023px opens fitted) the map opens as `refs/40-home-phone.png` draws it: the line at a readable scale
 in a 460px frame, centred on the line's box with the Manager above, the rest a pan away. There Fit
-fits the whole map, under the floor.
+fits the whole map, under the floor. This is an owner-authorized exception to the fitted opening every other frame gets: the phone keeps its 0.42 centred opening (issue #655, "Current scope (maintainer ruling on the build queue's question on a stopped run, 2026-11-12)"). Every desktop frame, even one narrower than 701px with the Manager open, opens and refits at the fitted camera.
 
 ## The map check
 

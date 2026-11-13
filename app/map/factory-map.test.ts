@@ -18,7 +18,6 @@ import {
   mapOrigin,
   midpoint,
   neighbours,
-  openCamera,
   PHONE,
   pinnedStepLinks,
   stepLinks,
@@ -214,7 +213,7 @@ test('a version with only the old loop lists each review round once, not once pe
   ]);
 });
 
-test('the hero frame is the map at the width-fitting scale, never below the type floor, plus padding', () => {
+test('the hero frame is the map at the width-fitting scale plus padding', () => {
   const world = worldSize(FACTORY_MAP);
   const at = (width: number) => (width - FIT_PAD * 2) / world.width;
   expect(heroFrameHeight(world, 1384)).toBe(
@@ -225,9 +224,8 @@ test('the hero frame is the map at the width-fitting scale, never below the type
   );
   expect(heroFrameHeight(world, 1384)).toBeGreaterThan(MIN_FRAME);
   expect(heroFrameHeight(world, PHONE)).toBe(
-    Math.ceil(world.height * FIT_MIN + FIT_PAD * 2 + FIT_FOOT),
+    Math.max(MIN_FRAME, Math.ceil(world.height * at(PHONE) + FIT_PAD * 2 + FIT_FOOT)),
   );
-  expect(heroFrameHeight(world, PHONE)).toBeGreaterThan(MIN_FRAME);
   expect(heroFrameHeight(world, 5000)).toBe(
     Math.ceil(world.height * 1.15 + FIT_PAD * 2 + FIT_FOOT),
   );
@@ -389,7 +387,7 @@ test("a step's default origin is the map at the view of its deepest card, that c
 const rootAndViews = [FACTORY_MAP as MapView, ...Object.values(FACTORY_MAP.views ?? {})];
 const keys = Object.keys(MAP_TYPE_FLOOR) as (keyof typeof MAP_TYPE_FLOOR)[];
 
-test("a level's opening scale is the least at which every card type meets its floor", () => {
+test('the type-floor scale is the least at which every card type meets its floor', () => {
   for (const key of keys) {
     expect(FIT_MIN * MAP_TYPE[key]).toBeGreaterThanOrEqual(MAP_TYPE_FLOOR[key] - 1e-9);
   }
@@ -397,58 +395,39 @@ test("a level's opening scale is the least at which every card type meets its fl
   expect(FIT_MIN).toBeCloseTo(0.56);
 });
 
-test('with the Manager dock open at 1440 every level opens at the floor, its main line in view from its left end', () => {
-  const frame = { width: 792, height: heroFrameHeight(worldSize(FACTORY_MAP), 792) };
-  for (const level of rootAndViews) {
-    const { k, x, y } = openCamera(FACTORY_MAP, level, frame);
-    expect(k).toBeGreaterThanOrEqual(FIT_MIN);
-    if (worldSize(level).width * k > frame.width - FIT_PAD * 2) expect(x).toBe(FIT_PAD);
-    const first = level.tour[0] ? level.cards.find((c) => c.id === level.tour[0]) : undefined;
-    if (first === undefined) continue;
-    expect(x + first.x * k).toBeGreaterThanOrEqual(0);
-    expect(x + (first.x + cardWidth(level, first)) * k).toBeLessThanOrEqual(frame.width);
-    expect(y + first.y * k).toBeGreaterThanOrEqual(0);
-    expect(y + (first.y + level.cardSize.height) * k).toBeLessThanOrEqual(frame.height - FIT_FOOT);
-  }
-  expect(FACTORY_MAP.tour[0]).toBe('prd');
-});
-
-test('across hero widths the opening camera never cuts the floored map in height, and is unchanged where the level already fits', () => {
+test('across hero widths the frame fits the root at its width-fitting scale, so the opening root leaves no band', () => {
   const root = worldSize(FACTORY_MAP);
   for (let w = PHONE; w <= 2560; w += 7) {
     const frame = hero(w);
-    expect((frame.height - FIT_PAD * 2 - FIT_FOOT) / root.height).toBeGreaterThanOrEqual(
-      fitScale(root, { width: w, height: Number.POSITIVE_INFINITY }) - 1e-9,
+    expect(fitCamera(FACTORY_MAP, FACTORY_MAP, frame).k).toBe(
+      fitScale(root, { width: w, height: Number.POSITIVE_INFINITY }),
     );
     for (const level of rootAndViews) {
-      const world = worldSize(level);
-      const cam = openCamera(FACTORY_MAP, level, frame);
-      expect(cam.k).toBeGreaterThanOrEqual(FIT_MIN);
-      expect(cam.y).toBeGreaterThanOrEqual(FIT_PAD - 1e-9);
-      const before = fitScale(world, frame, levelMax(FACTORY_MAP, level, frame), 0);
-      if (before >= FIT_MIN) {
-        expect(cam.k).toBe(before);
-        expect(cam.x).toBe(Math.max(FIT_PAD, (w - world.width * before) / 2));
-        expect(cam.y).toBe(
-          Math.max(FIT_PAD, (frame.height - FIT_FOOT - world.height * before) / 2),
-        );
-      }
+      expect(fitCamera(FACTORY_MAP, level, frame).y).toBeGreaterThanOrEqual(FIT_PAD - 1e-9);
     }
   }
 });
 
-test('1920 with the dock closed fits the whole root map, opening and fitting alike', () => {
-  const frame = { width: 1656, height: heroFrameHeight(worldSize(FACTORY_MAP), 1656) };
-  const root = worldSize(FACTORY_MAP);
-  for (const camera of [fitCamera, openCamera]) {
-    const { k, x } = camera(FACTORY_MAP, FACTORY_MAP, frame);
-    expect(k).toBe((1656 - FIT_PAD * 2) / root.width);
-    expect(x).toBeGreaterThanOrEqual(0);
-    expect(x + root.width * k).toBeLessThanOrEqual(frame.width);
+test('with the Manager open (792) and closed (1176) at 1440, a few-card view is fitted no larger than the largest reference view', () => {
+  for (const width of [792, 1176]) {
+    const frame = hero(width);
+    const largest = Math.max(...MATCHING.map((id) => fitScale(worldSize(view(id)), frame)));
+    for (const id of FEW_CARDS) {
+      expect(fitCamera(FACTORY_MAP, view(id), frame).k).toBeLessThanOrEqual(largest);
+    }
   }
 });
 
-test('with the dock open (792) and closed (1176) at 1440, Fit shows every card of every level inside the frame', () => {
+test('1920 with the dock closed fits the whole root map', () => {
+  const frame = { width: 1656, height: heroFrameHeight(worldSize(FACTORY_MAP), 1656) };
+  const root = worldSize(FACTORY_MAP);
+  const { k, x } = fitCamera(FACTORY_MAP, FACTORY_MAP, frame);
+  expect(k).toBe((1656 - FIT_PAD * 2) / root.width);
+  expect(x).toBeGreaterThanOrEqual(0);
+  expect(x + root.width * k).toBeLessThanOrEqual(frame.width);
+});
+
+test('with the dock open (792) and closed (1176) at 1440, the opening camera and Fit show every card of every level inside the frame', () => {
   for (const width of [792, 1176]) {
     const frame = hero(width);
     for (const level of rootAndViews) {
@@ -466,32 +445,22 @@ test('with the dock open (792) and closed (1176) at 1440, Fit shows every card o
   expect(fitCamera(FACTORY_MAP, FACTORY_MAP, hero(792)).k).toBeLessThan(FIT_MIN);
 });
 
-test('Fit and the opening camera agree wherever the whole level fits at or above the floor', () => {
-  for (let w = PHONE; w <= 2560; w += 7) {
-    const frame = hero(w);
-    for (const level of rootAndViews) {
-      const fit = fitCamera(FACTORY_MAP, level, frame);
-      if (fit.k >= FIT_MIN) expect(openCamera(FACTORY_MAP, level, frame)).toEqual(fit);
-    }
-  }
-});
-
 test('below the phone width fit still fits the whole map under the floor', () => {
   const root = worldSize(FACTORY_MAP);
   const frame = { width: PHONE - 1, height: 460 };
   const { k } = fitCamera(FACTORY_MAP, FACTORY_MAP, frame);
-  expect(k).toBe(fitScale(root, frame, FIT_MAX, 0));
+  expect(k).toBe(fitScale(root, frame));
   expect(k).toBeLessThan(FIT_MIN);
 });
 
-test('below the phone width fit centres the root and a drill-down view at the scale that fits the frame', () => {
+test('below the phone width fit centres the root and a drill-down view, capped by levelMax like any width', () => {
   const frame = { width: PHONE - 1, height: 460 };
   for (const level of [FACTORY_MAP as MapView, view('deploy')]) {
     const world = worldSize(level);
     const k = Math.min(
       (frame.width - FIT_PAD * 2) / world.width,
       (frame.height - FIT_PAD * 2 - FIT_FOOT) / world.height,
-      FIT_MAX,
+      levelMax(FACTORY_MAP, level, frame),
     );
     expect(fitCamera(FACTORY_MAP, level, frame)).toEqual({
       k,
@@ -506,9 +475,8 @@ test('at the phone width a drill-down view is capped by levelMax and centred in 
   const level = view('deploy');
   const world = worldSize(level);
   const k = fitScale(world, frame, levelMax(FACTORY_MAP, level, frame));
-  const cam = openCamera(FACTORY_MAP, level, frame);
-  expect(cam.k).toBe(Math.max(FIT_MIN, k));
-  expect(fitCamera(FACTORY_MAP, level, frame).k).toBe(k);
-  expect(cam.x).toBe(Math.max(FIT_PAD, (frame.width - world.width * cam.k) / 2));
-  expect(cam.y).toBe(Math.max(FIT_PAD, (frame.height - FIT_FOOT - world.height * cam.k) / 2));
+  const cam = fitCamera(FACTORY_MAP, level, frame);
+  expect(cam.k).toBe(k);
+  expect(cam.x).toBe(Math.max(FIT_PAD, (frame.width - world.width * k) / 2));
+  expect(cam.y).toBe(Math.max(FIT_PAD, (frame.height - FIT_FOOT - world.height * k) / 2));
 });

@@ -210,3 +210,11 @@ test('an issue link reads #N and not the title', () => {
   expect(html).toContain('>#514</a>');
   expect(html).not.toContain('Manager backend');
 });
+
+test('the briefing link to Runs > Failures renders as an anchor to that view', () => {
+  const html = render([
+    reply('briefing', 'See [Runs > Failures](/f/x/runs?view=failures).', 'done'),
+  ]);
+  expect(html).toContain('href="/f/x/runs?view=failures"');
+  expect(html).toMatch(/<a [^>]*><span>Runs &gt; Failures<\/span><\/a>/);
+});

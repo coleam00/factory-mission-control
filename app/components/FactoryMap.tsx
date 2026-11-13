@@ -31,7 +31,6 @@ import {
   type MapView,
   midpoint,
   neighbours,
-  openCamera,
   openerOf,
   type Point,
   PHONE,
@@ -75,10 +74,12 @@ const DRAG_SLOP = 3;
 const MIN_ZOOM = 0.1;
 const MAX_ZOOM = 2.4;
 /**
- * Below `PHONE` the map opens as refs/40-home-phone.png draws it: the line at a readable scale,
+ * In a window under 760px the map opens as refs/40-home-phone.png draws it: the line at a readable scale,
  * centred between Review and App check, the rest a pan away. Fit still fits the whole map.
  */
 const PHONE_SCALE = 0.42;
+/** The ruling's own threshold, not the shell's `PHONE_QUERY` (1024px): windows from 760px up open fitted. */
+const PHONE_WINDOW_QUERY = '(max-width: 759.98px)';
 const PHONE_FRAME = 460;
 
 interface Camera {
@@ -678,6 +679,8 @@ export function FactoryMap({
     onCard: boolean;
     pointerId: number;
   } | null>(null);
+  /** Whether the person has dragged or zoomed this level, so a resize or a Manager toggle leaves the camera alone (#655). A resize across the shell's 1024px layout switch remounts the map, which opens afresh. */
+  const owned = useRef(false);
   /** Set by a drag's release so the click the browser may send after it does not select or open. */
   const suppressClick = useRef(false);
   /** Finishes the level change in flight at once; null when none is. */
@@ -695,6 +698,12 @@ export function FactoryMap({
     () => setMotion((was) => (was.moving ? { ...was, moving: false } : was)),
     [],
   );
+  /** The person moves the map: the opening stops refitting, and a map still hidden before its placement shows. */
+  const own = useCallback(() => {
+    owned.current = true;
+    setPlaced(true);
+  }, []);
+
   /** Hands the camera to the person: a level change in flight finishes now, and no motion is left. */
   const takeCamera = useCallback(() => {
     transition.current?.();
@@ -725,6 +734,7 @@ export function FactoryMap({
     const el = stage.current;
     if (!el) return;
     takeCamera();
+    owned.current = false;
     setCamera(
       fitCamera(map, levelRef.current.level, { width: el.clientWidth, height: el.clientHeight }),
     );
@@ -733,24 +743,25 @@ export function FactoryMap({
 
   /**
    * The frame's height for its width: the map's height at the scale that fits its width, so the
-   * opening camera leaves no empty bands (owner, PR #326 review), and the phone frame below `PHONE`.
+   * opening camera leaves no empty bands (owner, PR #326 review), and the phone frame in the phone layout.
+   * The camera refits with the frame until the person moves the map (#655).
    */
   const [frameHeight, setFrameHeight] = useState(MIN_FRAME);
   const opened = useCallback(() => {
     const el = stage.current;
     if (!el) return;
     const width = el.clientWidth;
-    if (width >= PHONE) {
+    if (!window.matchMedia(PHONE_WINDOW_QUERY).matches) {
       const height = heroFrameHeight(rootWorld, width);
       setFrameHeight(height);
-      if (el.offsetHeight === height) {
+      if (el.offsetHeight === height && !owned.current) {
         const frame = { width, height: el.clientHeight };
-        placeCamera(openCamera(map, levelRef.current.level, frame), frame);
+        placeCamera(fitCamera(map, levelRef.current.level, frame), frame);
       }
       return;
     }
     setFrameHeight(PHONE_FRAME);
-    if (el.offsetHeight !== PHONE_FRAME) return;
+    if (el.offsetHeight !== PHONE_FRAME || owned.current) return;
     const { level, world } = levelRef.current;
     const at = phoneCentre(level, world);
     placeCamera(
@@ -775,11 +786,12 @@ export function FactoryMap({
   const zoomAround = useCallback(
     (factor: number, mx: number, my: number) => {
       takeCamera();
+      own();
       const was = camRef.current;
       const k = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, was.k * factor));
       setCamera({ k, x: mx - (mx - was.x) * (k / was.k), y: my - (my - was.y) * (k / was.k) });
     },
-    [takeCamera, setCamera],
+    [takeCamera, own, setCamera],
   );
 
   // A wheel listener React would attach passive, and a passive one cannot keep the page still.
@@ -798,6 +810,7 @@ export function FactoryMap({
           (event.deltaMode === 0 && Math.abs(event.deltaY) < 40 && event.deltaY % 1 !== 0));
       if (swipe) {
         takeCamera();
+        own();
         const was = camRef.current;
         setCamera({ ...was, x: was.x - event.deltaX, y: was.y - event.deltaY });
         return;
@@ -810,7 +823,7 @@ export function FactoryMap({
     };
     el.addEventListener('wheel', onWheel, { passive: false });
     return () => el.removeEventListener('wheel', onWheel);
-  }, [zoomAround, takeCamera, setCamera]);
+  }, [zoomAround, takeCamera, own, setCamera]);
 
   // Esc, and Backspace outside a field: deselect first, else go up a level.
   useEffect(() => {
@@ -855,6 +868,7 @@ export function FactoryMap({
       setSelected(arriving.current);
       setDock(null);
       levelRef.current = { level: next, world: nextWorld };
+      owned.current = false;
       setShown(going);
     };
     let finish: (() => void) | undefined;
@@ -961,6 +975,7 @@ export function FactoryMap({
   };
 
   const pan = (dx: number, dy: number) => {
+    own();
     const was = camRef.current;
     setCamera({ ...was, x: was.x + dx, y: was.y + dy });
   };
@@ -1043,7 +1058,7 @@ export function FactoryMap({
     height: world.height,
     transform: `translate(${cam.x}px, ${cam.y}px) scale(${cam.k})`,
     transformOrigin: '0 0',
-    opacity: motion.hidden ? 0 : 1,
+    opacity: motion.hidden || !placed ? 0 : 1,
     transition: motion.moving ? WORLD_MOTION : undefined,
   };
 
