@@ -16,11 +16,11 @@ import {
   CREDENTIAL_NAMES,
   capBriefingProse,
   createManager,
-  failureCausesBlock,
+  failureLine,
   type Manager,
   managerSettings,
 } from './manager';
-import { DAY_CAUSES_CAP, DAY_MERGED_CAP, type DayDigest, readDayDigest } from './manager-day';
+import { DAY_MERGED_CAP, type DayDigest, readDayDigest } from './manager-day';
 import {
   ELSEWHERE_FAILED,
   ELSEWHERE_WAITING,
@@ -51,6 +51,9 @@ beforeAll(async () => {
 }, 60_000);
 afterAll(() => fixture.stop());
 
+/** The briefing's one sentence about open failures, ending in the link to Runs > Failures. */
+const FAILURE_SENTENCE =
+  /^\d+ failure causes? (is|are) open.*\[Runs > Failures\]\(\/f\/[^)]+\/runs\?view=failures\)\.$/;
 const ghost = '5eed0001-0000-4000-8000-0000000000ff';
 const STRUCTURE = {
   links: [
@@ -887,9 +890,23 @@ describe('the briefing', () => {
       events.flatMap((e) => ('text' in e && e.type === 'text' ? [e.text] : [])).join('');
     for (const got of [await ask(), await ask()]) {
       const [, causes, ...prose] = shown(got).split('\n\n');
-      expect(causes).toMatch(/^Failure causes today: .*archon-loop/);
+      expect(causes).toMatch(FAILURE_SENTENCE);
       expect(prose).toEqual(['One.', '- two']);
     }
+  });
+
+  test('says failures in one short sentence with the link: no error text, step name or run id', async () => {
+    clock = new Date('2026-11-08T10:00:00');
+    const ask = briefingOf(managerOf(model(async () => [start, delta('Quiet.'), result(0.01)])));
+    const text = (await ask())
+      .flatMap((e) => ('text' in e && e.type === 'text' ? [e.text] : []))
+      .join('');
+    const lines = text.split('\n').filter((l) => l.includes('failure cause'));
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toContain(`/f/${FACTORY}/runs?view=failures`);
+    for (const line of text.split('\n')) expect(line.length).toBeLessThanOrEqual(200);
+    expect(text).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}-/);
+    expect(text).not.toContain('step ');
   });
 
   test('the cap counts top-level blocks: nested items and continuations stay with their item', async () => {
@@ -1097,10 +1114,10 @@ describe('a busy day', () => {
         expect(prompt).toContain(`"number":${n},"title":"Merged work ${n}"`);
       }
       expect(prompt).not.toContain('failure_causes');
-      const listed = shown.split('\n\n').filter((b) => b.startsWith('Failure causes today:'));
+      const listed = shown.split('\n\n').filter((b) => FAILURE_SENTENCE.test(b));
       expect(listed).toHaveLength(1);
-      for (let k = 0; k < 5; k++) expect(shown.split(`cause-${k} `).length).toBe(2);
-      expect(shown.split('overnight cause').length).toBe(2);
+      expect(listed[0]).toContain('1 failure cause is open, code.');
+      expect(shown).not.toContain('overnight cause');
       expect(prompt).not.toContain('"number":700');
       expect(prompt).not.toContain('merged pull requests and failed runs could not be read');
     } finally {
@@ -1150,13 +1167,14 @@ describe('a busy day', () => {
       for (const shown of [fresh, replayed]) {
         expect(shown.split(line).length).toBe(2);
         expect(shown).toContain('The archon-build run stopped early.');
-        expect(shown.split('out of disk').length).toBe(2);
+        expect(shown.split('1 failure cause is open').length).toBe(2);
+        expect(shown).not.toContain('out of disk');
       }
 
       replies.push('99 things need you.', '98 things need you.');
       const fallback = await ask(true);
       expect(fallback.split(line).length).toBe(2);
-      expect(fallback).toContain('Failure causes today: out of disk');
+      expect(fallback).toContain('1 failure cause is open, code.');
       expect(fallback).not.toContain('99 things');
     } finally {
       warn.mockRestore();
@@ -1169,24 +1187,10 @@ describe('a busy day', () => {
     await seedFactory(F);
     try {
       await merge(F, DAY_MERGED_CAP + 3, `repeat('T', 256)`, '2026-11-08T09:00:00Z');
-      await fixture.direct.query(
-        `INSERT INTO mc.laps (run_id, factory, workflow_name, status, started_at, completed_at)
-         SELECT gen_random_uuid(), '${F}', 'archon-build', 'failed', '${local('2026-11-08T07:00:00Z')}', '${local('2026-11-08T08:00:00Z')}'::timestamptz + (g || ' seconds')::interval
-         FROM generate_series(1, ${DAY_CAUSES_CAP + 2}) g`,
-      );
-      await fixture.direct.query(
-        `INSERT INTO mc.run_stops (run_id, factory, workflow_name, status, step_id, line, class, signature, stopped_at)
-         SELECT run_id, factory, workflow_name, 'failed', 'implement', repeat('c', 2000), 'code', run_id::text, completed_at
-         FROM mc.laps WHERE factory = '${F}'
-         ON CONFLICT (run_id) DO UPDATE SET line = excluded.line, signature = excluded.signature`,
-      );
       const digest = await readDayDigest(fixture.direct, F, '2026-11-08', 'UTC');
       expect(digest.merged.items).toHaveLength(DAY_MERGED_CAP);
       expect(digest.merged.and_more).toBe(3);
-      expect(digest.failure_causes.items).toHaveLength(DAY_CAUSES_CAP);
-      expect(digest.failure_causes.and_more).toBe(2);
       expect(digest.merged.items.every((m) => m.title.length <= 200)).toBe(true);
-      expect(digest.failure_causes.items.every((c) => c.cause.length <= 300)).toBe(true);
       expect(JSON.stringify(digest).length).toBeLessThan(MAX_RESULT_CHARS / 2);
     } finally {
       await clean(F);
@@ -1257,12 +1261,12 @@ describe('the briefing question with a run paused and other Attention rows', () 
       day: '2026-11-08',
       merged: { items: [{ number: 5, title: 'Fix it' }], and_more: 0 },
       runs: { items: [], and_more: 0 },
-      failure_causes: { items: [], and_more: 0 },
     };
     const withDay = briefingQuestion(tally, null, day);
     expect(withDay).toContain('state none of them');
     expect(withDay).toContain('"merged":{"items":[{"number":5,"title":"Fix it"}]');
     expect(withDay).not.toContain('failure_causes');
+    expect(withDay).toContain('with a link to Runs > Failures');
   });
 
   test('rejects a count sentence that states a total the line does not', () => {
@@ -1527,28 +1531,22 @@ describe('how the factory is doing', () => {
   });
 });
 
-describe('failureCausesBlock', () => {
-  const cause = (n: number) => ({
-    cause: `cause ${n}`,
-    workflow: n % 2 ? 'archon-build' : 'archon-merge',
-    step: n % 3 ? 'implement' : null,
-    class: null,
-    runs: n,
-    example_run: `run-${n}`,
-  });
-  const day = (n: number, and_more: number): DayDigest => ({
-    day: '2026-11-08',
-    merged: { items: [], and_more: 0 },
-    runs: { items: [], and_more: 0 },
-    failure_causes: { items: Array.from({ length: n }, (_, i) => cause(i + 1)), and_more },
+describe('failureLine', () => {
+  const groups = (...classes: (string | null)[]) =>
+    classes.map((c) => ({ class: c as 'code' | null }));
+
+  test('says nothing without an open failure cause', () => {
+    expect(failureLine([], 'f')).toBeNull();
   });
 
-  test('is one paragraph naming each cause once, and says where the digest lists no more', () => {
-    expect(failureCausesBlock(day(0, 0))).toBeNull();
-    const block = failureCausesBlock(day(6, 2)) ?? '';
-    for (let n = 1; n <= 6; n++) expect(block.split(`cause ${n} (`)).toHaveLength(2);
-    expect(block).not.toContain('\n');
-    expect(block.endsWith('and 2 more causes not listed.')).toBe(true);
-    expect(capBriefingProse(block, 1)).toBe(block);
+  test('is one plain sentence: the count, the classes and the link to Runs > Failures', () => {
+    const link = '[Runs > Failures](/f/f/runs?view=failures)';
+    expect(failureLine(groups('code'), 'f')).toBe(`1 failure cause is open, code. See ${link}.`);
+    expect(failureLine(groups('code', 'code', 'code'), 'f')).toBe(
+      `3 failure causes are open, all code. See ${link}.`,
+    );
+    expect(failureLine(groups('code', null, 'code'), 'f')).toBe(
+      `3 failure causes are open: 2 code, 1 unclassified. See ${link}.`,
+    );
   });
 });
