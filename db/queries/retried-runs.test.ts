@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test';
-import { retriedArgs } from '../../app/lib/attention-page';
+import { retriedArgs } from '../../app/lib/failure-view';
 import { pinZone } from '../../app/lib/pin-zone';
 import { migratedDb, queries } from './test-seed';
 

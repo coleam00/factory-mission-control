@@ -47,8 +47,11 @@ const GEOMETRY = `
   [data-map-world], [data-map-world] > svg { top: 0; left: 0; }
   [data-map-world] > svg, [data-map-group] { pointer-events: none; }
   [data-map-details] { position: absolute; overflow-y: auto; z-index: 10; }
-  [data-map-controls] { position: absolute; right: 12px; bottom: 12px; display: flex; }
-  [data-map-hint] { position: absolute; left: 12px; bottom: 12px; pointer-events: none; }
+  [data-map-stage] { container-type: inline-size; }
+  [data-map-controls] { position: absolute; right: 12px; bottom: 12px; display: flex; gap: 4px; padding: 4px; border: 1px solid; font: 12px monospace; }
+  [data-map-controls] button { padding: 4px 9px; border: 0; font: inherit; }
+  [data-map-hint] { position: absolute; left: 12px; bottom: 12px; display: none; padding: 5px 9px; border: 1px solid; font: 11px monospace; pointer-events: none; }
+  @container (min-width: 760px) { [data-map-hint] { display: block; } }
 `;
 
 let current: { router: ReturnType<typeof createMemoryRouter>; unmount: () => void } | undefined;

@@ -7,7 +7,7 @@ import { withheldFromBriefing } from './manager-tools';
 
 const keys = Object.keys(ATTENTION_SOURCES) as (keyof typeof ATTENTION_SOURCES)[];
 const tallyOf = (counts: number[]): AttentionTally => {
-  const t = { failureRuns: 0, failures: 0 } as AttentionTally;
+  const t = {} as AttentionTally;
   keys.forEach((key, i) => {
     t[key] = counts[i] ?? 0;
   });
@@ -16,7 +16,7 @@ const tallyOf = (counts: number[]): AttentionTally => {
 
 describe('the count line', () => {
   test('the line states the total attentionCount gives', () => {
-    for (const counts of [[1], [0, 2], [3, 1, 4, 1, 5], [1, 1, 1, 1, 1, 1, 1, 1]]) {
+    for (const counts of [[1], [0, 2], [3, 1, 4], [1, 1, 1]]) {
       const tally = tallyOf(counts);
       const total = attentionCount(
         keys.map((key) => ({ state: 'ready' as const, rows: new Array(tally[key]).fill({}) })),
@@ -33,6 +33,7 @@ describe('the briefing queries', () => {
     const named = [
       'attention-items',
       'home-map',
+      'failure-groups',
       ...Object.values(ATTENTION_SOURCES).map((s) => s.query),
     ];
     for (const name of named) expect(queries.has(name)).toBe(true);

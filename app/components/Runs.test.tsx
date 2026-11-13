@@ -4,13 +4,14 @@ import { createMemoryRouter, RouterProvider } from 'react-router';
 import { lapHref } from '../lib/one-lap';
 import {
   filterOf,
+  placeOf,
   RUNS_PAGE_SIZE,
   type RunRow,
   type RunsFilter,
   type RunsRow,
   runsView,
 } from '../lib/runs';
-import { addressOf, nextFilter, Pager, pageWithin, RunFilters, RunList } from './Runs';
+import { addressOf, nextFilter, Pager, pageWithin, RunFilters, RunList, Runs } from './Runs';
 
 const render = (element: React.ReactElement): string =>
   renderToStaticMarkup(<RouterProvider router={createMemoryRouter([{ path: '/', element }])} />);
@@ -150,4 +151,29 @@ function pager(total: number): string {
 test('the pager shows nothing at one full page and the range at one run more', () => {
   expect(pager(RUNS_PAGE_SIZE)).toBe('');
   expect(pager(RUNS_PAGE_SIZE + 1)).toContain('1–50 of 51');
+});
+
+test('the address names the view: ?view=failures is Failures, anything else is every run', () => {
+  expect(placeOf(new URLSearchParams('view=failures'))).toBe('failures');
+  expect(placeOf(new URLSearchParams(''))).toBe('all');
+  expect(placeOf(new URLSearchParams('view=other'))).toBe('all');
+});
+
+const renderRuns = (search: string): string =>
+  renderToStaticMarkup(
+    <RouterProvider
+      router={createMemoryRouter([{ path: '/', element: <Runs factory="x" /> }], {
+        initialEntries: [`/${search}`],
+      })}
+    />,
+  );
+
+test('Runs renders the failure groups with Failures selected for ?view=failures, and every run for the bare address', () => {
+  const failures = renderRuns('?view=failures');
+  expect(failures).toContain('data-live="failure-groups"');
+  expect(failures).toMatch(/aria-pressed="true"[^>]*>Failures</);
+  const all = renderRuns('');
+  expect(all).toContain('data-live="runs"');
+  expect(all).not.toContain('data-live="failure-groups"');
+  expect(all).toMatch(/aria-pressed="true"[^>]*>All runs</);
 });

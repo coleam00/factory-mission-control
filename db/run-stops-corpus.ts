@@ -109,6 +109,41 @@ export const STOP_CORPUS: readonly (readonly [line: string, cls: StopClass, sour
     'issue #647 (live data 2026-11-12)',
   ],
   [
+    'error: gh pr list failed: panic: Failed to load user32: A dynamic link library (DLL) initialization routine failed',
+    'environment',
+    'issue #664 (live data 2026-11-12)',
+  ],
+  [
+    "Script node 'facts' failed [exit 1]: merge-queue facts: git config --get-regexp failed:",
+    'environment',
+    'issue #664 (live data 2026-11-12)',
+  ],
+  [
+    'error: pull request head/base changed before preparation',
+    'transient',
+    'issue #664 (live data 2026-11-12)',
+  ],
+  [
+    'build-queue facts: issue 655 does not wait for the build queue: stage new',
+    'input',
+    'issue #664 (live data 2026-11-12)',
+  ],
+  [
+    'build-queue facts: issue 655 does not wait for the build queue: stage plan',
+    'input',
+    'issue #664 (live data 2026-11-12)',
+  ],
+  [
+    'build-queue facts: issue 655 does not wait for the build queue: stage blocked',
+    'input',
+    'issue #664 (live data 2026-11-12)',
+  ],
+  [
+    'build-queue apply: work/522 is no longer claimed by this run',
+    'input',
+    'issue #664 (live data 2026-11-12)',
+  ],
+  [
     'Could not persist node_completed for facts: Couldn’t connect to compute node',
     'transient',
     'issue #628 (a curly apostrophe)',

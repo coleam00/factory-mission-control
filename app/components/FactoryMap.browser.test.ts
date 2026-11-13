@@ -398,3 +398,156 @@ for (const [manager, width] of [
     }
   }, 60_000);
 }
+
+const overlaps = (a: Box, b: Box) =>
+  Math.min(a.right, b.right) - Math.max(a.left, b.left) > 0.5 &&
+  Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top) > 0.5;
+
+const controlsBox = () =>
+  inPage<Box>(`
+    const { left, top, right, bottom } = document
+      .querySelector('[data-map-controls]').getBoundingClientRect();
+    return { left, top, right, bottom };`);
+
+const hintAt = async (width: number) => {
+  await mountAt('/f/x', width);
+  return inPage<{ shown: boolean; lines: number; box: Box }>(`
+    const hint = document.querySelector('[data-map-hint]');
+    const { left, top, right, bottom } = hint.getBoundingClientRect();
+    const lineHeight = parseFloat(getComputedStyle(hint).lineHeight) || 13;
+    return {
+      shown: getComputedStyle(hint).display !== 'none',
+      lines: Math.round((bottom - top - 12) / lineHeight),
+      box: { left, top, right, bottom },
+    };`);
+};
+
+test('the map hint never runs under the controls: shown on one line when the frame has room, hidden when not', async () => {
+  await page.setViewport(1440);
+  const wide = await hintAt(CLOSED);
+  expect([wide.shown, wide.lines]).toEqual([true, 1]);
+  expect(overlaps(wide.box, await controlsBox())).toBe(false);
+
+  const docked = await hintAt(1024 - token('nav-width') - token('manager-width'));
+  expect(docked.shown).toBe(false);
+}, 30_000);
+
+/** Longer than the map's DOUBLE_CLICK_MS (500), so a click's deferred pan has landed. */
+const settle = () => sleep(700);
+
+/** The ids of the cards wholly inside the frame whose centre the controls do not hold. */
+const reachable = async (g: Geometry) => {
+  const controls = await controlsBox();
+  return Object.entries(g.cards)
+    .filter(([, box]) => inside(box, g.stage) && !holds(controls, centre(box)))
+    .map(([id]) => id);
+};
+
+test("a selected card's details dock clear of it at 1440 with the Manager open, even across the midline", async () => {
+  await page.setViewport(1440);
+  const start = await mountAt('/f/x', OPEN);
+  const mid = (start.stage.left + start.stage.right) / 2;
+  const order = start.cards.order as Box;
+  await drag(centre(order), [mid - centre(order)[0], 0]);
+  const dragged = await geometry();
+  const straddling = dragged.cards.order as Box;
+  expect(straddling.left < mid && straddling.right > mid).toBe(true);
+  await click(centre(straddling));
+  await settle();
+  const after = await geometry();
+  expect(after.selected).toBe('order');
+  expect(inside(after.details as Box, after.stage)).toBe(true);
+  expect(overlaps(after.cards.order as Box, after.details as Box)).toBe(false);
+
+  for (const id of await reachable(start)) {
+    const fresh = await mountAt('/f/x', OPEN);
+    await click(centre(fresh.cards[id] as Box));
+    await settle();
+    const g = await geometry();
+    expect([id, g.selected]).toEqual([id, id]);
+    expect([id, inside(g.details as Box, g.stage)]).toEqual([id, true]);
+    expect([id, overlaps(g.cards[id] as Box, g.details as Box)]).toEqual([id, false]);
+  }
+}, 90_000);
+
+test("below PHONE a selected card's details show a line of the tab's content, clear of the card", async () => {
+  await page.setViewport(390);
+  try {
+    for (const url of ['/f/x', '/f/x?view=build']) {
+      for (const id of await reachable(await mountAt(url, 390))) {
+        const fresh = await mountAt(url, 390);
+        await click(centre(fresh.cards[id] as Box));
+        await settle();
+        const g = await geometry();
+        const first = await inPage<{ scrollTop: number; top: number; bottom: number } | null>(`
+          const panel = document.querySelector('[data-map-details]');
+          const body = panel.querySelector('[role="tabpanel"]');
+          const walk = document.createTreeWalker(body, NodeFilter.SHOW_TEXT);
+          for (let n = walk.nextNode(); n; n = walk.nextNode()) {
+            if (!n.textContent.trim()) continue;
+            if (String(n.parentElement.className).includes('uppercase')) continue;
+            const range = document.createRange();
+            range.selectNodeContents(n);
+            const rect = range.getClientRects()[0];
+            return { scrollTop: panel.scrollTop, top: rect.top, bottom: rect.bottom };
+          }
+          return null;`);
+        const details = g.details as Box;
+        expect([url, id, g.selected]).toEqual([url, id, id]);
+        expect([url, id, inside(details, g.stage)]).toEqual([url, id, true]);
+        expect([url, id, overlaps(g.cards[id] as Box, details)]).toEqual([url, id, false]);
+        expect([url, id, first?.scrollTop]).toEqual([url, id, 0]);
+        expect([url, id, first !== null && first.top >= details.top]).toEqual([url, id, true]);
+        expect([url, id, first !== null && first.bottom <= details.bottom]).toEqual([
+          url,
+          id,
+          true,
+        ]);
+      }
+    }
+  } finally {
+    await page.setViewport(1440);
+  }
+}, 90_000);
+
+test('on a phone frame a double-click still opens a card the panel would cover', async () => {
+  await page.setViewport(390);
+  try {
+    const start = await mountAt('/f/x', 390);
+    const review = start.cards.review as Box;
+    const middle: At = [
+      (start.stage.left + start.stage.right) / 2,
+      (start.stage.top + start.stage.bottom - 56) / 2,
+    ];
+    await drag(centre(review), [middle[0] - centre(review)[0], middle[1] - centre(review)[1]]);
+    const at = centre((await geometry()).cards.review as Box);
+    await click(at, 1);
+    await click(at, 2);
+    await inPage("return await m.waitFor('review');");
+  } finally {
+    await page.setViewport(1440);
+  }
+}, 30_000);
+
+test("a map move made while a click's pan is waiting is not undone when the panel opens", async () => {
+  await page.setViewport(390);
+  try {
+    const start = await mountAt('/f/x', 390);
+    const review = start.cards.review as Box;
+    const middle: At = [
+      (start.stage.left + start.stage.right) / 2,
+      (start.stage.top + start.stage.bottom - 56) / 2,
+    ];
+    await drag(centre(review), [middle[0] - centre(review)[0], middle[1] - centre(review)[1]]);
+    const at = centre((await geometry()).cards.review as Box);
+    await click(at);
+    await drag(at, [0, 40]);
+    const moved = (await geometry()).camera;
+    await settle();
+    const after = await geometry();
+    expect(after.camera).toEqual(moved);
+    expect(after.details).not.toBeNull();
+  } finally {
+    await page.setViewport(1440);
+  }
+}, 30_000);

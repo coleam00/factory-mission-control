@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, expect, test } from 'bun:test';
 import { join } from 'node:path';
-import { retriedArgs } from '../app/lib/attention-page';
 import { scorecardEdges } from '../app/lib/factory-scorecard';
+import { retriedArgs } from '../app/lib/failure-view';
 import { pinZone } from '../app/lib/pin-zone';
 import { queries } from '../db/queries/test-seed';
 import { snapshot } from '../db/test-db';
