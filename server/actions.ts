@@ -537,11 +537,10 @@ export async function runAction(
   }
   const { exitCode, output } = await runCalls(operator, checked.calls);
   try {
-    await db.query('UPDATE mc.actions SET exit_code = $2, output = $3 WHERE id = $1', [
-      id,
-      exitCode,
-      output,
-    ]);
+    await db.query(
+      'UPDATE mc.actions SET exit_code = $2, output = $3, finished_at = now() WHERE id = $1',
+      [id, exitCode, output],
+    );
   } catch (error) {
     console.error(`actions: sent action ${id} but could not record its result`, error);
   }

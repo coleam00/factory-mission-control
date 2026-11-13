@@ -1,3 +1,7 @@
+import type { ActionRequest } from './actions';
+
+/** The writes on a work item, as `ActionRequest` owns them. */
+export type ItemWrite = Extract<ActionRequest, { number: number }>['action'];
 /**
  * The Attention page's attention items (PRD 4.9): `db/queries/attention-items.sql`'s rows as the
  * runs waiting on a person, longest-waiting first. Pure, no React; the browser's clock gives the
@@ -78,6 +82,10 @@ export interface UnstickRow {
   console: string;
   /** Whether the mirror holds the item `number` names open; the item writes are offered only then. */
   open: boolean;
+  /** The item's latest write sent from the dashboard that the mirror has not caught up with; null when none. */
+  sent_action: ItemWrite | null;
+  /** When `sent_action` was sent. */
+  sent_at: Date | null;
 }
 
 export interface AttentionItem extends Omit<AttentionRow, 'options' | 'labels'> {

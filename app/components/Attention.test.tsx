@@ -64,6 +64,8 @@ const stuck: UnstickRow = {
   reason: null,
   console: 'http://localhost:3090/',
   open: true,
+  sent_action: null,
+  sent_at: null,
 };
 const handledRow = (id: number, action: HandledRow['action'], sent_at: Date): HandledRow => ({
   id,

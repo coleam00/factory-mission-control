@@ -115,9 +115,9 @@ test('health-workable.sql excludes the workflows board.ts says hold no work item
   ).toEqual([SPLIT_WORKFLOW]);
 });
 
-test('work-item.sql and scorecard.sql name only the workflows one-lap.ts owns', () => {
+test('work-item.sql, scorecard.sql and unstick.sql name only the workflows one-lap.ts owns', () => {
   const owned = new Set([OLD_LOOP_WORKFLOW, BUILD_QUEUE_WORKFLOW, INTAKE_WORKFLOW]);
-  for (const file of ['work-item.sql', 'scorecard.sql']) {
+  for (const file of ['work-item.sql', 'scorecard.sql', 'unstick.sql']) {
     const named = [...read('db', 'queries', file).matchAll(/workflow_name\s*=\s*'([^']*)'/g)].map(
       (m) => m[1] as string,
     );

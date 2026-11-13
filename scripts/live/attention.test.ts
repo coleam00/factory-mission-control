@@ -72,6 +72,8 @@ const stuck: UnstickRow = {
   reason: null,
   console: 'http://localhost:3090/',
   open: true,
+  sent_action: null,
+  sent_at: null,
 };
 
 test('Unstick cards must match the query’s rows, and each must show the page’s option tiles', () => {

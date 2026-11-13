@@ -63,6 +63,8 @@ const unstick = (overrides: Partial<UnstickRow>): UnstickRow => ({
   reason: null,
   console: 'http://localhost:3090/',
   open: true,
+  sent_action: null,
+  sent_at: null,
   ...overrides,
 });
 
@@ -172,6 +174,67 @@ test('"Something else" opens the text box where a write takes the text, else the
 });
 
 const TILE_IDS = (card: AttentionCard | undefined) => card?.tiles.map((t) => t.id);
+
+const PARKED_454 = {
+  kind: 'parked' as const,
+  number: 454,
+  waits_on: '#455',
+  blocker_titles: ['Queue issue 455'],
+  title: 'Queue issue 454',
+} satisfies Partial<UnstickRow>;
+const SENT_AT = new Date('2026-11-13T14:02:00Z');
+
+test.each([
+  ['retriage', (at: string) => `Re-triage sent ${at}; waiting for intake.`],
+  ['comment', (at: string) => `Comment sent ${at}; waiting for intake.`],
+  ['close', (at: string) => `Close sent ${at}; waiting for GitHub to show #454 closed.`],
+] as const)('a sent %s is said first and no item write is recommended', (sent_action, said) => {
+  const [card] = unstickCards(
+    [unstick({ ...PARKED_454, sent_action, sent_at: SENT_AT })],
+    'f',
+    false,
+  );
+  expect(TILE_IDS(card)).toEqual(['retriage', 'close', 'something-else']);
+  expect(card?.tiles.map((t) => t.recommended)).toEqual([false, false, false]);
+  expect(card?.note.lead).toBe(said(localMinute(SENT_AT)));
+  expect(card?.note.rest).toContain('#455 “Queue issue 455” closed');
+});
+
+test('a sent write leaves Resume recommended on a capacity card', () => {
+  const [card] = unstickCards(
+    [
+      unstick({
+        kind: 'capacity',
+        number: 454,
+        run_id: RUN,
+        workflow_name: 'archon-queue-build',
+        action: 'resume',
+        sent_action: 'retriage',
+        sent_at: SENT_AT,
+      }),
+    ],
+    'f',
+    false,
+  );
+  expect(card?.tiles.map((t) => [t.id, t.recommended])).toEqual([
+    ['resume', true],
+    ['retriage', false],
+    ['close', false],
+    ['something-else', false],
+  ]);
+});
+
+test('without an operator entry a sent write is still said and no tile is recommended', () => {
+  const [card] = unstickCards(
+    [unstick({ ...PARKED_454, sent_action: 'retriage', sent_at: SENT_AT })],
+    'f',
+    false,
+    false,
+  );
+  expect(TILE_IDS(card)).toEqual(['open']);
+  expect(card?.tiles.every((t) => !t.recommended)).toBe(true);
+  expect(card?.note.lead).toContain('Re-triage sent');
+});
 
 test('a parked item whose blocker closed offers Re-triage first, Close and Something else', () => {
   const [card] = unstickCards(

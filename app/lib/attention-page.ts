@@ -14,6 +14,7 @@ import { cardForStep, FACTORY_MAP } from '../map/factory-map';
 import { type ActionRequest, type AnswerRequest, type CommentRequest, needsLogin } from './actions';
 import {
   type DecideRow,
+  type ItemWrite,
   attentionItems,
   attentionOrigin,
   attentionQuestion,
@@ -385,6 +386,22 @@ function closedSentence(row: UnstickRow): string {
 export const unstickKey = (row: Pick<UnstickRow, 'kind' | 'number' | 'run_id'>): string =>
   `unstick:${row.kind}:${row.number ?? ''}:${row.run_id ?? ''}`;
 
+const SENT_VERBS: Record<ItemWrite, string> = {
+  retriage: 'Re-triage',
+  close: 'Close',
+  comment: 'Comment',
+};
+
+/** What the card says first while the item has a write the mirror has not caught up with. */
+function sentSentence(row: UnstickRow): string | null {
+  if (row.sent_action === null || row.sent_at === null) return null;
+  const at = localMinute(row.sent_at);
+  const verb = SENT_VERBS[row.sent_action];
+  return row.sent_action === 'close'
+    ? `${verb} sent ${at}; waiting for GitHub to show #${row.number} closed.`
+    : `${verb} sent ${at}; waiting for intake.`;
+}
+
 const RETRIAGE_DOES = 'Adds archon-triage and starts an intake run; triage decides its next stage';
 const CLOSE_DOES =
   'Closes the issue as not planned, with a comment that you closed it from Mission Control';
@@ -395,7 +412,8 @@ const COMMENT_DOES = 'Posts your text on the issue as your comment, then re-tria
  * slot. The tile `row.action` names is the recommended one. `loginMissing` is an operator with no
  * `login`: the server refuses re-triage and comment for it, so only Close is offered. Without an
  * operator entry (`operator` false) the page cannot write at all, so a tile only opens the item and
- * says so, and no tile is recommended.
+ * says so, and no tile is recommended. While the item has a sent write the mirror has not caught up
+ * with, the card says so first and recommends no item write; Resume keeps its recommendation.
  */
 export function unstickCards(
   rows: readonly UnstickRow[],
@@ -440,7 +458,7 @@ export function unstickCards(
         id,
         label,
         consequence,
-        recommended: id === row.action,
+        recommended: id === row.action && (id === 'resume' || row.sent_action === null),
         href,
         act: { request, item: row.number },
         hooks: {
@@ -449,6 +467,11 @@ export function unstickCards(
           'data-act-item': row.number === null ? undefined : String(row.number),
         },
       });
+      const sent = sentSentence(row);
+      const note = (lead: string, rest: string) =>
+        sent === null
+          ? { lead, rest }
+          : { lead: sent, rest: rest === '' ? lead : `${lead} ${rest}` };
       const writable = row.number !== null && row.open && operator;
       const openOnly = (): Tile[] =>
         row.number === null || itemHref === null
@@ -563,14 +586,13 @@ export function unstickCards(
             ...base,
             title: `${n} is ${row.kind} on ${row.waits_on}, and ${closed}`,
             meta: [{ pill: row.kind, state: UNSTICK_STATE[row.kind] }, waits],
-            note: {
-              lead: closedSentence(row),
-              rest:
-                (row.kind === 'blocked'
-                  ? `${n}'s issue says it depends on ${row.waits_on}, so triage put it in blocked. A named build round refuses blocked items.`
-                  : `${n} was parked on ${row.waits_on.includes(',') ? 'them' : 'it'}${row.reason === null ? '' : `: “${row.reason}”`}. Nothing re-triages a parked item on its own.`) +
+            note: note(
+              closedSentence(row),
+              (row.kind === 'blocked'
+                ? `${n}'s issue says it depends on ${row.waits_on}, so triage put it in blocked. A named build round refuses blocked items.`
+                : `${n} was parked on ${row.waits_on.includes(',') ? 'them' : 'it'}${row.reason === null ? '' : `: “${row.reason}”`}. Nothing re-triages a parked item on its own.`) +
                 closedNote,
-            },
+            ),
             tiles: [...itemWrites(), ...somethingElse()],
           };
         }
@@ -619,10 +641,10 @@ export function unstickCards(
               },
               waits,
             ],
-            note: {
-              lead: `Run ${run} of ${label} was answered and has waited for a free slot${since}.`,
-              rest: `Runs in this state do not always continue on their own.${closedNote}`,
-            },
+            note: note(
+              `Run ${run} of ${label} was answered and has waited for a free slot${since}.`,
+              `Runs in this state do not always continue on their own.${closedNote}`,
+            ),
             tiles: [...resume, ...itemWrites(), ...somethingElse()],
           };
         }
@@ -631,10 +653,10 @@ export function unstickCards(
             ...base,
             title: `${n} is claimed by run ${run}, which has finished`,
             meta: [...workflow, { pill: 'claimed', state: UNSTICK_STATE.claim }, waits],
-            note: {
-              lead: `Run ${run} of ${label} finished${row.since === null ? '' : ` at ${localMinute(row.since)}`} and still claims ${n}.`,
-              rest: `Any intake run releases the claim${commentable ? `; re-triaging ${n} starts one and keeps its build progress` : ''}.${closedNote}`,
-            },
+            note: note(
+              `Run ${run} of ${label} finished${row.since === null ? '' : ` at ${localMinute(row.since)}`} and still claims ${n}.`,
+              `Any intake run releases the claim${commentable ? `; re-triaging ${n} starts one and keeps its build progress` : ''}.${closedNote}`,
+            ),
             tiles: [...itemWrites(), ...somethingElse()],
           };
         default:
