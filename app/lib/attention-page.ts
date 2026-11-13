@@ -482,16 +482,16 @@ const RECOMMENDATION = 'put its recommendation first on each.';
 
 /**
  * The head's line under the title. The sweep clause is left out when the factory has no finished
- * manager run; the recommendation clause only when items are shown, since "each" needs items.
+ * manager run; the recommendation clause only when cards are drawn, since "each" needs items.
  */
 export function sweepLine(
   factory: string,
   sweptAt: Date | null,
   now: number,
-  count: number | 'loading' | 'unavailable',
+  cardsDrawn: number,
 ): string {
   const seconds = since(sweptAt, now);
-  const items = typeof count === 'number' && count > 0;
+  const items = cardsDrawn > 0;
   if (seconds === null) return items ? `${factory}. The manager ${RECOMMENDATION}` : `${factory}.`;
   return items
     ? `${factory}. The manager swept ${waited(seconds)} ago and ${RECOMMENDATION}`

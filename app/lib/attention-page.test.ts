@@ -289,13 +289,11 @@ test('sweepLine says how long ago the manager swept, and drops the clause when i
   expect(sweepLine('f', null, now, 1)).toBe('f. The manager put its recommendation first on each.');
 });
 
-test('sweepLine makes no claim about items when there are none or the count is not known', () => {
+test('sweepLine makes no claim about items when no card is drawn', () => {
   const now = Date.parse('2026-10-24T12:00:00Z');
   const swept = new Date('2026-10-24T08:48:00Z');
-  for (const count of [0, 'loading', 'unavailable'] as const) {
-    expect(sweepLine('f', swept, now, count)).toBe('f. The manager swept 3h 12m ago.');
-    expect(sweepLine('f', null, now, count)).toBe('f.');
-  }
+  expect(sweepLine('f', swept, now, 0)).toBe('f. The manager swept 3h 12m ago.');
+  expect(sweepLine('f', null, now, 0)).toBe('f.');
 });
 
 test('an unstick card is keyed as unstickKey says, so the live phase finds it', () => {
