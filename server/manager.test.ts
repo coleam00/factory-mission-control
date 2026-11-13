@@ -1095,15 +1095,48 @@ describe('a busy day', () => {
          VALUES ${stop(11, 'sig-a')}, ${stop(12, 'sig-b')}`,
       );
     };
-    const managerOver = (db: Db) =>
-      createManager({
+    const played = model(async () => [start, delta('Quiet.'), result(0.01)]);
+    const managerOver = (db: Db) => {
+      played.prompts.length = 0;
+      return createManager({
         db,
         databaseUrl: fixture.url,
         factories: [F],
         settings: managerSettings({}),
-        run: model(async () => [start, delta('Quiet.'), result(0.01)]).run,
+        run: played.run,
         now: () => clock,
       });
+    };
+
+    test('tells the model about the failures link only when the briefing wrote one', async () => {
+      clock = new Date('2026-11-08T10:00:00');
+      await seed();
+      const error = spyOn(console, 'error').mockImplementation(() => {});
+      try {
+        const sent = (manager: Manager) => ask(manager).then(() => played.prompts.join('\n'));
+        expect(await sent(managerOver(fixture.direct))).toContain('Runs > Failures');
+        const failing = Object.create(fixture.direct);
+        failing.transaction = (fn: (tx: Db) => Promise<void>) =>
+          fixture.direct.transaction((tx) =>
+            fn({
+              ...tx,
+              query: (sql: string, params?: unknown[]) => {
+                if (sql.includes('latest_run_id')) throw new Error('statement timeout');
+                return tx.query(sql, params);
+              },
+            } as Db),
+          );
+        expect(await sent(managerOver(failing))).toContain('Runs > Failures');
+        await fixture.direct.query(`DELETE FROM mc.run_stops WHERE factory = '${F}'`);
+        const none = await sent(managerOver(fixture.direct));
+        expect(none).not.toContain('Runs > Failures');
+        expect(none).toContain('do not restate the count line');
+        expect(none).toContain('Do not list, regroup, count or quote failures');
+      } finally {
+        error.mockRestore();
+        await clean(F);
+      }
+    });
 
     test('says nothing needs you, then one short failure sentence with the link', async () => {
       clock = new Date('2026-11-08T10:00:00');
@@ -1378,6 +1411,8 @@ describe('the briefing question with a run paused and other Attention rows', () 
     const noFailures = briefingQuestion(tally, null, day, false);
     expect(noFailures).not.toContain('Runs > Failures');
     expect(noFailures).not.toContain('open failures');
+    expect(noFailures).toContain('Do not list, regroup, count or quote failures');
+    expect(withDay).toContain('Do not list, regroup, count or quote failures');
   });
 
   test('rejects a count sentence that states a total the line does not', () => {
