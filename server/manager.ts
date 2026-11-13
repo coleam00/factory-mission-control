@@ -705,8 +705,11 @@ export function answer(manager: Manager, request: ChatRequest, signal: AbortSign
   });
 }
 
+/** The briefing is the server's count line, its failure sentence, then at most this many blocks of the model's. */
+export const BRIEFING_PROSE_BLOCKS = 2;
+
 const BRIEFING_QUESTION =
-  "Write today's briefing: what merged, what failed (judge a run by the day it failed, completed_at, not the day it started), what waits on the owner, and the one or two things that matter most. At most three short blocks (a paragraph or a bullet each).";
+  `Write today's briefing: what merged, what failed (judge a run by the day it failed, completed_at, not the day it started), what waits on the owner, and the one or two things that matter most. At most ${BRIEFING_PROSE_BLOCKS} short blocks (a paragraph or a bullet each).`;
 
 /** What the Attention header counts: the row count of each source. Failures are not among them. */
 export type AttentionTally = Record<keyof typeof ATTENTION_SOURCES, number>;
@@ -789,7 +792,7 @@ export function attentionLine(t: AttentionTally): string {
 function daySentence(day: DayDigest | null): string {
   if (!day)
     return " Today's merged pull requests could not be read: say so in one sentence and do not guess them.";
-  return ` Today's merged pull requests and runs by workflow and outcome were read for you from the factory's data, a run on the day its completed_at falls: name the merged pull requests by number and title from them instead of querying for them. The briefing already says in one sentence of its own how many failure causes are open, with a link to Runs > Failures: do not list, regroup, count or quote failures, and do not restate the count line: write at most two short blocks. Where and_more is above 0, more merged pull requests were not listed: say there were others, without a number. The numbers in them are for your judgment: state none of them. Failures are not things that wait on the owner and are not in the count line: do not add or compare them. ${JSON.stringify({ day: day.day, merged: day.merged, runs: day.runs })}`;
+  return ` Today's merged pull requests and runs by workflow and outcome were read for you from the factory's data, a run on the day its completed_at falls: name the merged pull requests by number and title from them instead of querying for them. The briefing already says in one sentence of its own how many failure causes are open, with a link to Runs > Failures: do not list, regroup, count or quote failures, and do not restate the count line: write at most ${BRIEFING_PROSE_BLOCKS} short blocks. Where and_more is above 0, more merged pull requests were not listed: say there were others, without a number. The numbers in them are for your judgment: state none of them. Failures are not things that wait on the owner and are not in the count line: do not add or compare them. ${JSON.stringify({ day: day.day, merged: day.merged, runs: day.runs })}`;
 }
 
 /**
@@ -869,9 +872,6 @@ export function briefingFault(text: string, tally: AttentionTally): string | nul
   return stray === undefined ? null : `it states a count of ${stray} the page does not show`;
 }
 
-/** The briefing is 4 blocks: the server's count line, then at most this many of the model's. */
-export const BRIEFING_PROSE_BLOCKS = 3;
-
 /** Blocks are the panel's own: its markdown parser decides where one ends. */
 export function capBriefingProse(text: string, blocks = BRIEFING_PROSE_BLOCKS): string {
   return topLevelBlocks(text).slice(0, blocks).join('\n\n');
@@ -926,13 +926,9 @@ const withoutCountLine = (text: string, line: string): string =>
     .filter((block) => !block.includes(line))
     .join('\n\n');
 
-/** The prose leaves one block of the cap to the failure sentence, which `briefing` adds on every ask. */
 function capBriefingEvents(events: ManagerEvent[], line: string | null): ManagerEvent[] {
   const raw = events.flatMap((e) => (e.type === 'text' ? [e.text] : [])).join('');
-  const prose = capBriefingProse(
-    line ? withoutCountLine(raw, line) : raw,
-    BRIEFING_PROSE_BLOCKS - 1,
-  );
+  const prose = capBriefingProse(line ? withoutCountLine(raw, line) : raw);
   const at = events.findIndex((e) => e.type === 'text');
   if (at < 0) return events;
   return events.flatMap((e, i): ManagerEvent[] =>

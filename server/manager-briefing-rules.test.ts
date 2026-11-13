@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { ATTENTION_SOURCES, attentionCount } from '../app/lib/attention-page';
 import { parseMessage, topLevelBlocks } from '../app/lib/manager-markdown';
 import { LIVE_QUERIES_DIR, loadLiveQueries } from './live';
-import { type AttentionTally, attentionLine, capBriefingProse } from './manager';
+import { type AttentionTally, attentionLine, BRIEFING_PROSE_BLOCKS, capBriefingProse } from './manager';
 import { withheldFromBriefing } from './manager-tools';
 
 const keys = Object.keys(ATTENTION_SOURCES) as (keyof typeof ATTENTION_SOURCES)[];
@@ -60,6 +60,6 @@ describe('the briefing cap and the panel agree on what a block is', () => {
     ['mixed', 'intro\n\n1. one\n2. two\n\n- x\n\nend'],
   ])('%s', (_name, text) => {
     expect(topLevelBlocks(text)).toHaveLength(units(text));
-    expect(units(capBriefingProse(text))).toBe(Math.min(units(text), 3));
+    expect(units(capBriefingProse(text))).toBe(Math.min(units(text), BRIEFING_PROSE_BLOCKS));
   });
 });

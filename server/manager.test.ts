@@ -11,6 +11,7 @@ import {
   type AgentRunner,
   type AttentionTally,
   attentionLine,
+  BRIEFING_PROSE_BLOCKS,
   briefingFault,
   briefingQuestion,
   CREDENTIAL_NAMES,
@@ -923,16 +924,16 @@ describe('the briefing', () => {
   test('the cap counts indented lists and paragraphs the panel renders as their own blocks', () => {
     expect(
       capBriefingProse('Two failed.\n  - a\n  - b\n  - c\n  - d\n  - e').split('\n\n'),
-    ).toHaveLength(3);
-    expect(capBriefingProse('  - a\n  - b\n  - c\n  - d\n  - e').split('\n\n')).toHaveLength(3);
+    ).toHaveLength(BRIEFING_PROSE_BLOCKS);
+    expect(capBriefingProse('  - a\n  - b\n  - c\n  - d\n  - e').split('\n\n')).toHaveLength(BRIEFING_PROSE_BLOCKS);
     expect(
       capBriefingProse('Quiet.\n\n  two\n\n  three\n\n  four\n\n  five').split('\n\n'),
-    ).toHaveLength(3);
+    ).toHaveLength(BRIEFING_PROSE_BLOCKS);
   });
 
   test('the cap takes its block boundaries from the text the panel parses, bare \\r breaks included', () => {
-    expect(capBriefingProse('a\r\rb\r\rc\r\rd\r\re').split('\n\n')).toHaveLength(3);
-    expect(capBriefingProse('a\r\n\r\nb\r\n\r\nc\r\n\r\nd\r\n\r\ne').split('\n\n')).toHaveLength(3);
+    expect(capBriefingProse('a\r\rb\r\rc\r\rd\r\re').split('\n\n')).toHaveLength(BRIEFING_PROSE_BLOCKS);
+    expect(capBriefingProse('a\r\n\r\nb\r\n\r\nc\r\n\r\nd\r\n\r\ne').split('\n\n')).toHaveLength(BRIEFING_PROSE_BLOCKS);
   });
 
   test('two askers at once share one generation', async () => {
