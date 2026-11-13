@@ -793,7 +793,7 @@ export function attentionLine(t: AttentionTally): string {
 function daySentence(day: DayDigest | null): string {
   if (!day)
     return " Today's merged pull requests could not be read: say so in one sentence and do not guess them.";
-  return ` Today's merged pull requests and runs by workflow and outcome were read for you from the factory's data, a run on the day its completed_at falls: name the merged pull requests by number and title from them instead of querying for them. The briefing already says in one sentence of its own how many failure causes are open, with a link to Runs > Failures: do not list, regroup, count or quote failures, and do not restate the count line: write at most ${BRIEFING_PROSE_BLOCKS} short blocks. Where and_more is above 0, more merged pull requests were not listed: say there were others, without a number. The numbers in them are for your judgment: state none of them. Failures are not things that wait on the owner and are not in the count line: do not add or compare them. ${JSON.stringify({ day: day.day, merged: day.merged, runs: day.runs })}`;
+  return ` Today's merged pull requests and runs by workflow and outcome were read for you from the factory's data, a run on the day its completed_at falls: name the most notable merged pull requests by number and title from them, briefly, instead of querying for them. The briefing already says in one sentence of its own how many failure causes are open, with a link to Runs > Failures: do not list, regroup, count or quote failures, and do not restate the count line: write at most ${BRIEFING_PROSE_BLOCKS} short blocks. Where and_more is above 0, more merged pull requests were not listed: say there were others, without a number. The numbers in them are for your judgment: state none of them. Failures are not things that wait on the owner and are not in the count line: do not add or compare them. ${JSON.stringify({ day: day.day, merged: day.merged, runs: day.runs })}`;
 }
 
 /**
@@ -873,13 +873,21 @@ export function briefingFault(text: string, tally: AttentionTally): string | nul
   return stray === undefined ? null : `it states a count of ${stray} the page does not show`;
 }
 
+/** A block over the limit is cut at a word boundary: its content shortens, it never vanishes. */
+function shortened(block: string): string {
+  if (block.length <= BRIEFING_BLOCK_CHARS) return block;
+  const room = block.slice(0, BRIEFING_BLOCK_CHARS - 1);
+  const space = room.search(/\s\S*$/);
+  return `${(space > 0 ? room.slice(0, space) : room).trimEnd()}…`;
+}
+
 /** Blocks are the panel's own: its markdown parser decides where one ends. */
 export function capBriefingProse(text: string, blocks = BRIEFING_PROSE_BLOCKS): string {
-  return topLevelBlocks(text)
-    .filter((block) => block.length <= BRIEFING_BLOCK_CHARS)
-    .slice(0, blocks)
-    .join('\n\n');
+  return topLevelBlocks(text).slice(0, blocks).map(shortened).join('\n\n');
 }
+
+const failuresLink = (factory: string): string =>
+  `[Runs > Failures](${placeAddress(factory, 'runs')}?${addressOfPlace('failures')})`;
 
 /**
  * The open failure causes as one plain sentence: how many, their classes, and the link to Runs >
@@ -901,13 +909,16 @@ export function failureLine(
       ? `${groups.length === 1 ? '' : 'all '}${[...byClass.keys()][0]}`
       : [...byClass].map(([name, n]) => `${n} ${name}`).join(', ');
   const open = `${plural(groups.length, 'failure cause is', 'failure causes are')} open`;
-  const link = `[Runs > Failures](${placeAddress(factory, 'runs')}?${addressOfPlace('failures')})`;
-  return `${open}${byClass.size === 1 ? ',' : ':'} ${classes}. See ${link}.`;
+  return `${open}${byClass.size === 1 ? ',' : ':'} ${classes}. See ${failuresLink(factory)}.`;
 }
+
+/** Said when the failure read fails, so an unreadable count never looks like no failures. */
+export const failuresUnreadable = (factory: string): string =>
+  `Open failures could not be read just now. See ${failuresLink(factory)}.`;
 
 let failureQuery: string | undefined;
 
-/** The unresolved failure groups the Failures view shows; null when they cannot be read, so the briefing says nothing of them. */
+/** The unresolved failure groups the Failures view shows; null when they cannot be read, which the briefing says. */
 async function openFailures(manager: Manager, factory: string): Promise<FailureGroupRow[] | null> {
   try {
     failureQuery ??= loadLiveQueries(LIVE_QUERIES_DIR).get(FAILURES_QUERY);
@@ -1007,7 +1018,7 @@ export function briefing(manager: Manager, factory: string, refresh: boolean): R
     const opening = async () => {
       if (tally) emit({ type: 'text', text: `${attentionLine(tally)}\n\n` });
       const open = await openFailures(manager, factory);
-      const sentence = open && failureLine(open, factory);
+      const sentence = open ? failureLine(open, factory) : failuresUnreadable(factory);
       if (sentence) emit({ type: 'text', text: `${sentence}\n\n` });
     };
     const cached = manager.briefings.get(factory);

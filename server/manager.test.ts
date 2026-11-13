@@ -1136,7 +1136,7 @@ describe('a busy day', () => {
       }
     });
 
-    test('leaves the sentence out when the failure read fails, and states it on the next ask', async () => {
+    test('says the failures could not be read when the read fails, and states them on the next ask', async () => {
       clock = new Date('2026-11-08T10:00:00');
       await seed();
       const error = spyOn(console, 'error').mockImplementation(() => {});
@@ -1154,7 +1154,10 @@ describe('a busy day', () => {
             } as Db),
           );
         const manager = managerOver(failing);
-        expect(await ask(manager)).not.toContain('failure cause');
+        const unread = await ask(manager);
+        expect(unread).toContain('Open failures could not be read');
+        expect(unread).toContain('/runs?view=failures)');
+        expect(unread).not.toContain('failure cause');
         broken = false;
         expect(await ask(manager)).toContain('2 failure causes are open');
       } finally {
@@ -1450,7 +1453,11 @@ describe('a briefing whose count cannot be read', () => {
         { method: 'POST', body: JSON.stringify({ factory: FACTORY, refresh: true }) },
       );
       const got = await events(res);
-      expect(got[0]).toMatchObject({ type: 'text', text: 'fine' });
+      expect(got[0]).toMatchObject({
+        type: 'text',
+        text: expect.stringContaining('could not be read'),
+      });
+      expect(got).toContainEqual({ type: 'text', text: 'fine' });
       expect(JSON.stringify(got)).not.toContain('need you');
       expect(played.prompts[0]).toContain('could not be read');
     } finally {

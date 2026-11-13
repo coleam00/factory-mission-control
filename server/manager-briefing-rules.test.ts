@@ -70,7 +70,10 @@ describe('the briefing cap and the panel agree on what a block is', () => {
   });
 });
 
-test('a model block over the line limit is dropped, a short one after it stays', () => {
-  const long = 'x'.repeat(BRIEFING_BLOCK_CHARS + 1);
-  expect(capBriefingProse(`${long}\n\nShort.`)).toBe('Short.');
+test('a model block over the line limit is shortened at a word, not dropped', () => {
+  const long = `${'word '.repeat(60)}end`;
+  const [first, second] = capBriefingProse(`${long}\n\nShort.`).split('\n\n');
+  expect(first.length).toBeLessThanOrEqual(BRIEFING_BLOCK_CHARS);
+  expect(first).toMatch(/word…$/);
+  expect(second).toBe('Short.');
 });
