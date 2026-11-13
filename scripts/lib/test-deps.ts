@@ -7,6 +7,7 @@ import type { RunStatus } from './archon-run';
 import type { Deps, NeonctlResult } from './cli';
 import type { Db, Row } from './db';
 import type { Branch, NeonApi } from './neon';
+import type { TakePassLock } from './pass-lock';
 
 export const NOW = new Date('2026-10-24T12:00:00Z');
 export const PROJECT = 'proj-test';
@@ -27,6 +28,17 @@ export const POOLED_URL =
 
 /** The `invocation_url` the fake neonctl reports for every deploy. */
 export const FUNCTION_URL = 'https://br-check-mcwebhook.compute.c-1.us-east-1.aws.neon.tech';
+
+/** An in-memory pass lock: undefined while `job` on `url` is held, until its `release`. */
+export function memoryPassLock(): TakePassLock {
+  const held = new Set<string>();
+  return async (url, job) => {
+    const key = `${url}\n${job}`;
+    if (held.has(key)) return undefined;
+    held.add(key);
+    return { release: async () => void held.delete(key) };
+  };
+}
 
 export type Recorder = {
   deps: Deps;
@@ -82,6 +94,8 @@ export function recordingDeps(options: {
   neonctl?: (args: string[]) => NeonctlResult;
   /** Answers `deps.runStatus`; without it Archon cannot be asked, so no run is ever judged ended. */
   runStatus?: (run: string) => RunStatus;
+  /** The single-pass lock; defaults to a fresh `memoryPassLock()`. */
+  passLock?: TakePassLock;
 }): Recorder {
   const recorder: Omit<Recorder, 'deps'> = {
     neonCalls: [],
@@ -189,6 +203,7 @@ export function recordingDeps(options: {
         recorder.githubCalls.push(url);
         throw new Error(`fake GitHub: no response for ${url}`);
       }),
+    passLock: options.passLock ?? memoryPassLock(),
     openDb: (url) => {
       recorder.opened.push(url);
       return db;

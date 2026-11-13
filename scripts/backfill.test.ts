@@ -6,7 +6,7 @@ import { createGitHub, type GetFetch } from '../function/github';
 import { BATCH, type History, inBatches, main, storeHistory } from './backfill';
 import { REPO_ROOT } from './lib/cli';
 import type { Db, Row } from './lib/db';
-import { DATABASE_URL, NOW, recordingDeps, scratchRepo } from './lib/test-deps';
+import { DATABASE_URL, memoryPassLock, NOW, recordingDeps, scratchRepo } from './lib/test-deps';
 import { migrationsDir, readMigrationFiles, runMigrations } from './migrate';
 
 /** GitHub's answers for every URL backfill reads, recorded as `{ link?, body }`. */
@@ -439,4 +439,20 @@ test('a batch commits once it has been open its time limit, even short of its co
   expect(batches.flat()).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9]);
   expect(batches.length).toBeGreaterThanOrEqual(3);
   for (const batch of batches) expect(batch.length).toBeLessThanOrEqual(3);
+});
+
+test('a second reconcile while another reconcile pass runs exits 0 without reading GitHub (#619)', async () => {
+  const repoRoot = scratchRepo({ MC_DATABASE_URL: DATABASE_URL });
+  scratch.push(repoRoot);
+  const passLock = memoryPassLock();
+  await passLock(DATABASE_URL, 'reconcile');
+  const recorder = recordingDeps({ repoRoot, passLock });
+
+  const code = await main(['--reconcile'], recorder.deps);
+  expect(code).toBe(0);
+  expect(recorder.out).toEqual([
+    'reconcile: another reconcile pass is running on this database, so this one did not start',
+  ]);
+  expect(recorder.githubCalls).toEqual([]);
+  expect(recorder.opened).toEqual([]);
 });
