@@ -1051,7 +1051,7 @@ export function FactoryMap({
     height: world.height,
     transform: `translate(${cam.x}px, ${cam.y}px) scale(${cam.k})`,
     transformOrigin: '0 0',
-    opacity: motion.hidden ? 0 : 1,
+    opacity: motion.hidden || !placed ? 0 : 1,
     transition: motion.moving ? WORLD_MOTION : undefined,
   };
 

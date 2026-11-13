@@ -153,7 +153,7 @@ export function homePhase(ctx: LiveContext): LivePhase {
       );
       mapTimings.type = await mapType(page);
       ctx.failures.push(...mapWidthFailures(mapTimings.type));
-      ctx.save(FILES.shot, await page.screenshot(1440));
+      ctx.save(FILES.shot, await page.screenshot(MAP_VIEWPORT));
       ctx.failures.push(...(await mapFrameFailures(page, CLICKED_CARD)));
       onLiveStep = Number(await page.evaluate<string>(liveCountOf(LIVE_CARD)));
     },

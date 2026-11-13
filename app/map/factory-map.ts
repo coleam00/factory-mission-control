@@ -153,7 +153,7 @@ export const FIT_FOOT = 48;
 export const MIN_FRAME = 420;
 /** The largest scale a fit uses. */
 export const FIT_MAX = 1.15;
-/** Below this width the map opens as the phone mockup draws it, and Fit fits the whole map. */
+/** The frame width from which the details panel docks beside a card rather than above or below it. */
 export const PHONE = 701;
 
 /**
@@ -215,10 +215,10 @@ export function levelMax(
 }
 
 /**
- * The Fit control's camera, and the camera every level opens at from phone width up (mount, resize,
+ * The Fit control's camera, and the camera every level opens at on a desktop layout (mount, resize,
  * and arriving by a drill-down or going up): the whole level inside the frame, centred, as large as
  * the frame allows and never floored (owner changes of 2026-11-12, item 11; #655, which reverses the
- * opening half of the ruling on #549). From phone width up a deeper view is no larger than `levelMax`.
+ * opening half of the ruling on #549). A deeper view is no larger than `levelMax`, at any frame width.
  */
 export function fitCamera(
   map: FactoryMap,
@@ -226,7 +226,7 @@ export function fitCamera(
   frame: { width: number; height: number },
 ): { k: number; x: number; y: number } {
   const world = worldSize(level);
-  const k = fitScale(world, frame, frame.width < PHONE ? FIT_MAX : levelMax(map, level, frame));
+  const k = fitScale(world, frame, levelMax(map, level, frame));
   return {
     k,
     x: Math.max(FIT_PAD, (frame.width - world.width * k) / 2),

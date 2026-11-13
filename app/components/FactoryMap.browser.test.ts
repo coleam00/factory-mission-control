@@ -634,6 +634,38 @@ test('a desktop frame under 701px opens fitted, not at the phone opening', async
   await page.setViewport(1440);
 }, 60_000);
 
+test('the phone layout opens the root and a deeper view at the 0.42 centred camera, not fitted', async () => {
+  await page.setViewport(390);
+  try {
+    for (const url of ['/f/x', '/f/x?view=build']) {
+      await inPage(`await m.mount(${JSON.stringify(url)});`);
+      await sleep(300);
+      const scale = await inPage<string>(
+        `return document.querySelector('[data-map-world]').style.transform;`,
+      );
+      expect([url, scale.endsWith('scale(0.42)')]).toEqual([url, true]);
+    }
+  } finally {
+    await page.setViewport(1440);
+  }
+}, 30_000);
+
+test('the world is not painted before the camera is placed for the frame', async () => {
+  const unplaced = await inPage<number>(`
+    let seen = 0;
+    const probe = () => {
+      const w = document.querySelector('[data-map-world]');
+      const s = document.querySelector('[data-map-stage]');
+      if (w && getComputedStyle(w).opacity !== '0' && !s?.hasAttribute('data-placed')) seen++;
+      requestAnimationFrame(probe);
+    };
+    requestAnimationFrame(probe);
+    await m.mount('/f/x?view=build');
+    await new Promise((r) => setTimeout(r, 400));
+    return seen;`);
+  expect(unplaced).toBe(0);
+}, 30_000);
+
 test('a drag that outlives a level change still owns the camera', async () => {
   await page.setViewport(1440);
   const start = await mountAt('/f/x?view=build', OPEN);

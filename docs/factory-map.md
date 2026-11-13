@@ -34,7 +34,7 @@ strip, chips, flow and the tour work the same in a view.
 The map is the Factory place's hero. Its frame spans the window between the page gutters; the
 caption and legend stay in the app's column, and the details of a clicked card show in a panel
 inside the frame, docked on the side with more room beside the card and narrowed to that room, so it clears the card when there is room; when no side has room (a card zoomed wide, or a card in the middle of the frame below 701px, where the panel is at least 240px tall) the map pans the card clear, after a click's double-click window, as far as keeping the card's top-left corner in the frame allows, so a card zoomed wider than the free room can still be partly covered. The frame's
-height is the map's height at the scale that fits its width, never below the type floor below, plus
+height is the map's height at the scale that fits its width, plus
 its padding (at least 420px), so the opening view leaves no empty band; the page scrolls below it. A deeper view is fitted no larger than the largest scale the matching views
 (the ones listed in the root's `referenceViews` key: Intake, Review, App check, Build, Deliver) fit at in the same frame (about 0.58 at 1440x900 with the Manager closed, 0.38 with it open), centred in
 the frame; in the phone layout (window under 760px) the map opens as the phone mockup draws it. A card whose kind label would wrap is widened

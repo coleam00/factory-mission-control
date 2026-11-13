@@ -453,14 +453,14 @@ test('below the phone width fit still fits the whole map under the floor', () =>
   expect(k).toBeLessThan(FIT_MIN);
 });
 
-test('below the phone width fit centres the root and a drill-down view at the scale that fits the frame', () => {
+test('below the phone width fit centres the root and a drill-down view, capped by levelMax like any width', () => {
   const frame = { width: PHONE - 1, height: 460 };
   for (const level of [FACTORY_MAP as MapView, view('deploy')]) {
     const world = worldSize(level);
     const k = Math.min(
       (frame.width - FIT_PAD * 2) / world.width,
       (frame.height - FIT_PAD * 2 - FIT_FOOT) / world.height,
-      FIT_MAX,
+      levelMax(FACTORY_MAP, level, frame),
     );
     expect(fitCamera(FACTORY_MAP, level, frame)).toEqual({
       k,
