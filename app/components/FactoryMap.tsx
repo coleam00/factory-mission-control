@@ -1105,7 +1105,7 @@ export function FactoryMap({
           suppressClick.current = false;
           event.stopPropagation();
         }}
-        className="relative mx-3 cursor-grab touch-none overflow-hidden rounded-xl border border-[color:var(--v3-line)] bg-[var(--v3-bg)] active:cursor-grabbing min-[701px]:mx-6"
+        className="@container relative mx-3 cursor-grab touch-none overflow-hidden rounded-xl border border-[color:var(--v3-line)] bg-[var(--v3-bg)] active:cursor-grabbing min-[701px]:mx-6"
         style={{
           height: frameHeight,
           // The one gradient on a surface the owner allows: the map frame's dot grid (#307).
@@ -1215,7 +1215,7 @@ export function FactoryMap({
         </div>
         <div
           data-map-hint
-          className="pointer-events-none absolute bottom-3 left-3 hidden rounded-lg border border-[color:var(--v3-line)] bg-[var(--v3-panel)] px-[9px] py-[5px] font-mono text-[11px] text-[color:var(--v3-fg-2)] min-[701px]:block"
+          className="pointer-events-none absolute bottom-3 left-3 hidden rounded-lg border border-[color:var(--v3-line)] bg-[var(--v3-panel)] px-[9px] py-[5px] font-mono text-[11px] text-[color:var(--v3-fg-2)] @min-[760px]:block"
         >
           drag = move · scroll = zoom · click = details · double-click ⤢ = open · Esc = up
         </div>
