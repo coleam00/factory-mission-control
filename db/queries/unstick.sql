@@ -86,11 +86,12 @@ JOIN mc.laps l ON l.run_id = w.claim_run_id AND l.status IN ('completed', 'cance
 )  u
 -- Sent: the item's latest write from the dashboard (retriage, close or comment, never undone or failed
 -- ones), until the mirror catches up: an intake run on the item has finished since,
--- or, for a close, the mirror holds the issue closed or has moved it since the send (a reopened
--- issue is open again, so only its updated_at tells it was closed).
+-- or, for a close, the mirror holds the issue closed or has moved it since the CLI returned (a reopened
+-- issue is open again, so only its updated_at tells it was closed). The close's own note moves the
+-- issue before the CLI returns, so it does not end the close. Rows from before `finished_at` use sent_at.
 LEFT JOIN LATERAL (
   SELECT x.action, x.sent_at FROM (
-    SELECT a.action, a.sent_at
+    SELECT a.action, a.sent_at, coalesce(a.finished_at, a.sent_at) AS finished_at
     FROM mc.actions a
     WHERE a.factory = $1 AND a.item_number = u.number AND NOT a.undone AND a.exit_code = 0
     ORDER BY a.sent_at DESC, a.id DESC
@@ -98,7 +99,7 @@ LEFT JOIN LATERAL (
   ) x
   WHERE NOT (x.action = 'close' AND (NOT u.open OR EXISTS (
       SELECT 1 FROM mc.issues ci
-      WHERE ci.factory = $1 AND ci.number = u.number AND ci.updated_at > x.sent_at
+      WHERE ci.factory = $1 AND ci.number = u.number AND ci.updated_at > x.finished_at
     )))
     AND NOT EXISTS (
       SELECT 1 FROM mc.laps il
