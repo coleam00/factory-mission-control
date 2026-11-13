@@ -792,10 +792,10 @@ export function attentionLine(t: AttentionTally): string {
   return `${lead}${plural(total, COUNT_WORDS.one, COUNT_WORDS.many)} you: ${parts.join(', ')}.`;
 }
 
-function daySentence(day: DayDigest | null): string {
+function daySentence(day: DayDigest | null, failuresSaid: boolean): string {
   if (!day)
     return " Today's merged pull requests could not be read: say so in one sentence and do not guess them.";
-  return ` Today's merged pull requests and runs by workflow and outcome were read for you from the factory's data, a run on the day its completed_at falls: name the most notable merged pull requests by number and title from them, briefly, instead of querying for them. The briefing already says in one sentence of its own what to know about open failures, with a link to Runs > Failures: do not list, regroup, count or quote failures, and do not restate the count line: write at most ${BRIEFING_PROSE_BLOCKS} short blocks. Where and_more is above 0, more merged pull requests were not listed: say there were others, without a number. The numbers in them are for your judgment: state none of them. Failures are not things that wait on the owner and are not in the count line: do not add or compare them. ${JSON.stringify({ day: day.day, merged: day.merged, runs: day.runs })}`;
+  return ` Today's merged pull requests and runs by workflow and outcome were read for you from the factory's data, a run on the day its completed_at falls: name the most notable merged pull requests by number and title from them, briefly, instead of querying for them. ${failuresSaid ? 'The briefing already says in one sentence of its own what to know about open failures, with a link to Runs > Failures: do not list, regroup, count or quote failures, and ' : ''}do not restate the count line: write at most ${BRIEFING_PROSE_BLOCKS} short blocks. Where and_more is above 0, more merged pull requests were not listed: say there were others, without a number. The numbers in them are for your judgment: state none of them. Failures are not things that wait on the owner and are not in the count line: do not add or compare them. ${JSON.stringify({ day: day.day, merged: day.merged, runs: day.runs })}`;
 }
 
 /**
@@ -807,6 +807,7 @@ export function briefingQuestion(
   tally: AttentionTally | null,
   rows: AttentionRows | null = null,
   day: DayDigest | null = null,
+  failuresSaid = true,
 ): string {
   const listing = rows
     ? ` These are the Attention rows, by source, that the line was counted from; name the items from them instead of querying for them, and never copy or paraphrase the line: ${JSON.stringify(rows)}`
@@ -814,7 +815,7 @@ export function briefingQuestion(
   const counted = tally
     ? ` The briefing already opens with this line, counted from the Attention page's own rows: "${attentionLine(tally)}" That line is the only count of what waits on the owner. State no number of Attention items, open questions, paused runs, failures or merged runs yourself, and never say the rows or the opening line disagree, miss something or may be incomplete; name the individual runs and issues instead.${listing}`
     : " The Attention page's count could not be read: do not say how many things wait on the owner.";
-  return BRIEFING_QUESTION + daySentence(day) + counted;
+  return BRIEFING_QUESTION + daySentence(day, failuresSaid) + counted;
 }
 
 type AttentionRead = { tally: AttentionTally; rows: AttentionRows };
@@ -960,11 +961,15 @@ async function generateBriefing(manager: Manager, factory: string, read: Attenti
       return null;
     },
   );
+  const open = await openFailures(manager, factory);
   const request: ChatRequest = {
     factory,
     context: { place: 'attention' },
     messages: [
-      { role: 'owner', text: briefingQuestion(read?.tally ?? null, read?.rows ?? null, day) },
+      {
+        role: 'owner',
+        text: briefingQuestion(read?.tally ?? null, read?.rows ?? null, day, open?.length !== 0),
+      },
     ],
   };
   let events: ManagerEvent[] = [];

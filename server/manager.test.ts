@@ -1375,6 +1375,9 @@ describe('the briefing question with a run paused and other Attention rows', () 
     expect(withDay).toContain('"merged":{"items":[{"number":5,"title":"Fix it"}]');
     expect(withDay).not.toContain('failure_causes');
     expect(withDay).toContain('with a link to Runs > Failures');
+    const noFailures = briefingQuestion(tally, null, day, false);
+    expect(noFailures).not.toContain('Runs > Failures');
+    expect(noFailures).not.toContain('open failures');
   });
 
   test('rejects a count sentence that states a total the line does not', () => {
