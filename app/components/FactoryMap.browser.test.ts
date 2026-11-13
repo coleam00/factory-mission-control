@@ -634,6 +634,22 @@ test('a desktop frame under 701px opens fitted, not at the phone opening', async
   await page.setViewport(1440);
 }, 60_000);
 
+for (const window of [800, 1000]) {
+  test(`a ${window}px window opens fitted, though the shell draws its phone layout there`, async () => {
+    await page.setViewport(window);
+    try {
+      for (const url of ['/f/x', '/f/x?view=build']) {
+        const g = await mountAt(url, window - 32);
+        for (const [id, box] of Object.entries(g.cards)) {
+          expect([url, id, inside(box, g.stage)]).toEqual([url, id, true]);
+        }
+      }
+    } finally {
+      await page.setViewport(1440);
+    }
+  }, 60_000);
+}
+
 test('the phone layout opens the root and a deeper view at the 0.42 centred camera, not fitted', async () => {
   await page.setViewport(390);
   try {

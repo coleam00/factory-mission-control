@@ -64,7 +64,7 @@ A card whose kind label would not fit on one line at that size is widened throug
 cards after it move right to keep their spacing (App check's Use the app, Build's Investigate and Plan,
 Deliver's Implement); `factory-map.test.ts` fails any new kind label that would wrap.
 
-In the phone layout (window under 760px, the shell's `PHONE_QUERY`) the map opens as `refs/40-home-phone.png` draws it: the line at a readable scale
+In the phone layout (window under 760px; not the shell's `PHONE_QUERY`, which switches at 1024px, so a window from 760 to 1023px opens fitted) the map opens as `refs/40-home-phone.png` draws it: the line at a readable scale
 in a 460px frame, centred on the line's box with the Manager above, the rest a pan away. There Fit
 fits the whole map, under the floor. This is an owner-authorized exception to the fitted opening every other frame gets: the phone keeps its 0.42 centred opening (issue #655, "Current scope (maintainer ruling on the build queue's question on a stopped run, 2026-11-12)"). Every desktop frame, even one narrower than 701px with the Manager open, opens and refits at the fitted camera.
 

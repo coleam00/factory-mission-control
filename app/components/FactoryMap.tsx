@@ -44,7 +44,6 @@ import type { StepRow } from '../lib/step-detail';
 import type { CardLive } from '../map/live';
 import { MapDetails } from './MapDetails';
 import { APP_COLUMN } from './Column';
-import { PHONE_QUERY } from './ManagerDock';
 
 const ROLE_COLOR: Record<Role, string> = {
   source: 'var(--v3-role-source)',
@@ -75,10 +74,12 @@ const DRAG_SLOP = 3;
 const MIN_ZOOM = 0.1;
 const MAX_ZOOM = 2.4;
 /**
- * In the phone layout (`PHONE_QUERY`) the map opens as refs/40-home-phone.png draws it: the line at a readable scale,
+ * In a window under 760px the map opens as refs/40-home-phone.png draws it: the line at a readable scale,
  * centred between Review and App check, the rest a pan away. Fit still fits the whole map.
  */
 const PHONE_SCALE = 0.42;
+/** The ruling's own threshold, not the shell's `PHONE_QUERY` (1024px): windows from 760px up open fitted. */
+const PHONE_WINDOW_QUERY = '(max-width: 759.98px)';
 const PHONE_FRAME = 460;
 
 interface Camera {
@@ -750,7 +751,7 @@ export function FactoryMap({
     const el = stage.current;
     if (!el) return;
     const width = el.clientWidth;
-    if (!window.matchMedia(PHONE_QUERY).matches) {
+    if (!window.matchMedia(PHONE_WINDOW_QUERY).matches) {
       const height = heroFrameHeight(rootWorld, width);
       setFrameHeight(height);
       if (el.offsetHeight === height && !owned.current) {
