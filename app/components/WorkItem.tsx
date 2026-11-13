@@ -15,6 +15,7 @@ import {
 } from '../lib/work-item';
 import { type WorkItemNote, workItemNote } from '../lib/work-item-note';
 import { AWAITED, Feed, overall, type Source } from '../live/Feed';
+import { useUnavailable } from '../live/LiveProvider';
 import type { HomeMapRow } from '../map/live';
 import { EmptyState } from './EmptyState';
 import { useActionPending, useActionsEnabled, useStartAction } from './ActionToast';
@@ -214,6 +215,7 @@ export function WorkItem({
   factory: string | undefined;
   number: string;
 }): ReactElement {
+  const unavailable = useUnavailable();
   const [item, setItem] = useState<Source<WorkItemRow>>(AWAITED);
   const [board, setBoard] = useState<Source<BoardRow>>(AWAITED);
   const [map, setMap] = useState<Source<HomeMapRow>>(AWAITED);
@@ -254,7 +256,7 @@ export function WorkItem({
       <Feed<UnstickRow> query="unstick" factory={factory} into={setStuck} />
       <Feed<DecideRow> query="decide" factory={factory} into={setDecide} />
       {state === 'error' ? (
-        <EmptyState title="Live data is unavailable." />
+        <EmptyState title={unavailable} />
       ) : !ready || item.rows === undefined ? (
         <EmptyState title="Loading the work item." />
       ) : header === null ? (

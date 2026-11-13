@@ -21,6 +21,8 @@ const ready: Live = {
   client,
   homeClient: client,
   rewind: null,
+  offline: false,
+  homeOffline: false,
 };
 
 /** The app's tree as `appRoutes` builds it, over a server configuration that is already in. */

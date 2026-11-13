@@ -18,30 +18,39 @@ export type PanelState = 'loading' | 'ready' | 'error';
  * through `connecting`. A `stale` subscription's seal has expired with no replacement: it gets
  * no more updates, so its rows are no longer live and the panel is in `error`. Rows kept through
  * a `stale` or `error` spell are from before the outage, so while the subscription reconnects
- * after one (`recovering`) the panel is `loading`, not `ready`, until it is `live` again.
+ * after one (`recovering`) the panel is `loading`, not `ready`, until it is `live` again. A client
+ * that is `offline` (its connection down past `OFFLINE_AFTER_MS`) is not live either, rows or no:
+ * the panel is in `error`.
  */
 export function panelState({
   status,
   data,
   error,
   recovering = false,
+  offline = false,
 }: {
   status: LiveQueryState['status'];
   data: readonly unknown[] | undefined;
   error: unknown;
   recovering?: boolean;
+  offline?: boolean;
 }): PanelState {
-  if (error !== undefined || status === 'error' || status === 'stale') return 'error';
+  if (offline || error !== undefined || status === 'error' || status === 'stale') return 'error';
   if (recovering && status !== 'live') return 'loading';
   return data === undefined ? 'loading' : 'ready';
 }
 
 /**
  * Whether a subscription is in or coming back from an outage: it entered one at `stale` or
- * `error`, and it leaves it only at `live`, when the fresh snapshot has been published.
+ * `error`, or its client went `offline`, and it leaves it only at `live`, when the fresh snapshot
+ * has been published.
  */
-export function recovering(wasRecovering: boolean, status: LiveQueryState['status']): boolean {
-  if (status === 'stale' || status === 'error') return true;
+export function recovering(
+  wasRecovering: boolean,
+  status: LiveQueryState['status'],
+  offline = false,
+): boolean {
+  if (offline || status === 'stale' || status === 'error') return true;
   if (status === 'live') return false;
   return wasRecovering;
 }
@@ -369,6 +378,7 @@ export function LivePanel<Row>({
         observation={accepted.observation}
         requestSeal={accepted.requestSeal}
         backoff={accepted.backoff}
+        offline={accepted.observation.home ? live.homeOffline : live.offline}
         onFailed={resubscribe}
         className={className}
         render={children}
@@ -388,6 +398,7 @@ function Subscribed<Row>({
   observation,
   requestSeal,
   backoff,
+  offline,
   onFailed,
   className,
   render,
@@ -397,6 +408,7 @@ function Subscribed<Row>({
   observation: QueryObservation;
   requestSeal: (renewal?: boolean) => Promise<SealedLiveQuery<Row>>;
   backoff: SealBackoff;
+  offline: boolean;
   onFailed: () => void;
   className?: string;
   render: Render<Row>;
@@ -409,9 +421,9 @@ function Subscribed<Row>({
   }, [query, requestSeal, observation]);
   const { status, data, error } = useLiveQuery(sealed, { refreshQuery });
   const [wasRecovering, setRecovering] = useState(false);
-  const isRecovering = recovering(wasRecovering, status);
+  const isRecovering = recovering(wasRecovering, status, offline);
   if (isRecovering !== wasRecovering) setRecovering(isRecovering);
-  const state = panelState({ status, data, error, recovering: isRecovering });
+  const state = panelState({ status, data, error, recovering: isRecovering, offline });
 
   useEffect(() => {
     if (state === 'ready') markRendered(observation);

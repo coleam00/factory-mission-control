@@ -1,6 +1,7 @@
 import { expect, test } from 'bun:test';
 import { openPage } from '../../scripts/lib/cdp';
 import { collectPanelMarks, performanceFailures } from '../../scripts/live/timings';
+import { OFFLINE_AFTER_MS, OFFLINE_SENTENCE } from './LiveProvider';
 
 test.each([false, true])(
   'LivePanel includes expensive row rendering through DOM commit (empty=%s)',
@@ -164,4 +165,36 @@ test('a panel that stays live for the stable time owes no extra wait when it fai
   // is asked about 19 s after the last. Unreset, the wait would be 16 s and no seal comes in time.
   expect(asked.length).toBeGreaterThanOrEqual(4);
   expect(asked[3] - asked[2]).toBeLessThan(21_000);
+}, 105_000);
+
+test('a page whose Realtime socket is refused says it cannot connect after OFFLINE_AFTER_MS and loads once it connects, without a reload (#684)', async () => {
+  const bundle = await Bun.build({
+    entrypoints: [`${import.meta.dir}/fixtures/render-refused.tsx`],
+    target: 'browser',
+    format: 'esm',
+    define: { 'process.env.NODE_ENV': '"production"' },
+  });
+  expect(bundle.success).toBe(true);
+  const source = Buffer.from(await bundle.outputs[0].text()).toString('base64');
+  const page = await openPage(process.env);
+  try {
+    type Sample = { at: number; title: string; offline: boolean; panel: string; panelText: string };
+    const result = await page.evaluate<{ samples: Sample[]; atOffline?: Sample; last: Sample }>(
+      `import('data:text/javascript;base64,${source}').then(m => m.renderRefused(65000))`,
+      75_000,
+    );
+    expect(result.samples[0]?.title).toBe('Loading what needs you.');
+    expect(result.atOffline).toBeDefined();
+    expect(result.atOffline?.at).toBeGreaterThanOrEqual(OFFLINE_AFTER_MS - 1_000);
+    expect(
+      result.samples.filter((s) => s.offline && s.title === 'Loading what needs you.'),
+    ).toEqual([]);
+    expect(result.atOffline?.panel).toBe('error');
+    expect(result.atOffline?.panelText).toBe(OFFLINE_SENTENCE);
+    expect(result.last.title).toBe('Nothing needs you');
+    expect(result.last.offline).toBe(false);
+    expect(result.last.panel).toBe('ready');
+  } finally {
+    await page.close();
+  }
 }, 105_000);
