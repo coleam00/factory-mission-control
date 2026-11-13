@@ -1,6 +1,6 @@
 SELECT r.run_id, r.workflow_name, r.step_id, r.line, r.stopped_at
--- The transient failures a later completed run of their workflow retried, for Attention's muted line (issue #628).
--- $1 is the factory, $2 is the start of the viewer's local day as an instant (`retriedArgs` in app/lib/attention-page.ts).
+-- The transient failures a later completed run of their workflow retried, for the retried line on Runs > Failures (issue #628).
+-- $1 is the factory, $2 is the start of the viewer's local day as an instant (`retriedArgs` in app/lib/failure-view.ts).
 -- "Today" is the viewer's local day, which the page passes: a live query may not read the clock.
 FROM mc.run_stops r
 WHERE r.factory = $1 AND r.status = 'failed' AND r.class = 'transient'
