@@ -275,6 +275,7 @@ function StageCard({
     <Card
       role="region"
       data-board-stage={stage.id}
+      tabIndex={-1}
       data-count={stage.items.length}
       aria-label={stage.title}
       className={`flex min-w-0 flex-col gap-2 p-3 ${wide ? '' : 'min-[760px]:max-h-[max(20rem,calc(100vh-var(--board-row-top,8rem)-1.5rem))]'}`}
@@ -354,6 +355,16 @@ function Pipeline({
       scroller.removeEventListener('scroll', update);
     };
   }, [row]);
+  /** The hint unmounts once its side has nothing hidden, so focus moves to the first revealed column, where the next Tab carries on. */
+  const reveal = (to: 'start' | 'end', column: number) => {
+    const scroller = row.current;
+    const target = scroller?.firstElementChild?.children[column];
+    if (target instanceof HTMLElement) target.focus({ preventScroll: true });
+    scroller?.scrollTo({
+      left: to === 'start' ? 0 : scroller.scrollWidth,
+      behavior: 'smooth',
+    });
+  };
   const hiddenLeft = stages.slice(0, cut.left);
   const hiddenRight = cut.right === null ? [] : stages.slice(cut.right);
   const names = (hidden: PipelineStage[]) =>
@@ -370,7 +381,7 @@ function Pipeline({
               type="button"
               data-stage-fade="left"
               className={HINT}
-              onClick={() => row.current?.scrollTo({ left: 0, behavior: 'smooth' })}
+              onClick={() => reveal('start', 0)}
             >
               ← {names(hiddenLeft)}
             </button>
@@ -382,9 +393,7 @@ function Pipeline({
               type="button"
               data-stage-fade="right"
               className={`${HINT} text-right`}
-              onClick={() =>
-                row.current?.scrollTo({ left: row.current.scrollWidth, behavior: 'smooth' })
-              }
+              onClick={() => reveal('end', cut.right ?? 0)}
             >
               {names(hiddenRight)} →
             </button>

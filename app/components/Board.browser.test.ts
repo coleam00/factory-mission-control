@@ -153,3 +153,48 @@ test('with the Manager open each hidden edge names its columns and a click bring
   expect(back.scrollLeft).toBe(0);
   expect(back.right).toMatch(/Merged 0 →$/);
 }, 30_000);
+
+const focusAt = () =>
+  page.evaluate<{ inBoard: boolean; isBody: boolean; scrollLeft: number }>(
+    `import('data:text/javascript;base64,${source}').then((m) => m.focusAt())`,
+  );
+
+const withManagerOpen = () =>
+  fades('m.setManager(true); await new Promise((r) => setTimeout(r, 300));');
+
+const focusFade = (side: 'left' | 'right') =>
+  page.evaluate(
+    `import('data:text/javascript;base64,${source}').then((m) => m.focusFade('${side}'))`,
+  );
+
+test('Enter on the right hint keeps focus in the Board, and Tab keeps Merged in view', async () => {
+  await withManagerOpen();
+  await focusFade('right');
+  await page.key('Enter');
+  await Bun.sleep(1200);
+  const entered = await focusAt();
+  expect(entered.isBody).toBe(false);
+  expect(entered.inBoard).toBe(true);
+  expect(entered.scrollLeft).toBeGreaterThan(0);
+  await page.key('Tab');
+  await Bun.sleep(600);
+  expect((await focusAt()).scrollLeft).toBeGreaterThan(0);
+  const after = await page.evaluate<Fades>(
+    `import('data:text/javascript;base64,${source}').then((m) => m.fades())`,
+  );
+  expect(after.mergedVisible).toBe(true);
+}, 30_000);
+
+test('Enter on the left hint keeps focus in the Board', async () => {
+  await withManagerOpen();
+  await page.evaluate(
+    `import('data:text/javascript;base64,${source}').then((m) => m.clickFade('right'))`,
+  );
+  await focusFade('left');
+  await page.key('Enter');
+  await Bun.sleep(1200);
+  const entered = await focusAt();
+  expect(entered.isBody).toBe(false);
+  expect(entered.inBoard).toBe(true);
+  expect(entered.scrollLeft).toBe(0);
+}, 30_000);

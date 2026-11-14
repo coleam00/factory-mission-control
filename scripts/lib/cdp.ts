@@ -16,6 +16,8 @@ export interface Page {
   mouse(event: MouseInput): Promise<void>;
   /** One real touch event with a single finger at page coordinates `x`, `y`; a move while down is a drag. */
   touch(type: 'touchStart' | 'touchMove' | 'touchEnd', x: number, y: number): Promise<void>;
+  /** One real key press and release of `key` ('Enter' or 'Tab'), as the keyboard sends it. */
+  key(key: 'Enter' | 'Tab'): Promise<void>;
   /** A PNG of the whole page laid out `width` px wide. */
   screenshot(width: number): Promise<Buffer>;
   close(): Promise<void>;
@@ -295,6 +297,17 @@ export async function openPage(env: Record<string, string | undefined>): Promise
           { type, touchPoints: type === 'touchEnd' ? [] : [{ x, y }] },
           sessionId,
         );
+      },
+      async key(key: 'Enter' | 'Tab') {
+        const code = { Enter: 13, Tab: 9 }[key];
+        const text = key === 'Enter' ? String.fromCharCode(13) : undefined;
+        const event = { key, code: key, windowsVirtualKeyCode: code, text };
+        await cdp.send(
+          'Input.dispatchKeyEvent',
+          { type: text ? 'keyDown' : 'rawKeyDown', ...event },
+          sessionId,
+        );
+        await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', ...event }, sessionId);
       },
       async screenshot(width: number) {
         await setViewport(width);
