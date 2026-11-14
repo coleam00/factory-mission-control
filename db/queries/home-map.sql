@@ -56,11 +56,18 @@ JOIN (
 WHERE pr.factory = $1 AND pr.state = 'open'
 UNION ALL
 -- Each run of the factory waiting on a person (the chip counts the factory as it stands, not a
--- version): a paused run whose attention wait has no answer. Only the issue's own title, never
--- the wait's text.
-SELECT 'waiting', l.run_id, l.workflow_name, NULL, l.issue_number, i.title, i.url, NULL, NULL
+-- version): a paused run whose attention wait has no answer, with the item it holds (the lap
+-- rule above). Only the issue's own title, never the wait's text.
+SELECT 'waiting', l.run_id, l.workflow_name, NULL, coalesce(c.issue_number, (facts.output -> 'item' ->> 'number')::int, l.issue_number),
+  i.title, i.url, NULL, NULL
 FROM mc.laps l
-LEFT JOIN mc.issues i ON i.factory = l.factory AND i.number = l.issue_number
+LEFT JOIN LATERAL (
+  SELECT c.issue_number FROM mc.claims c
+  WHERE c.factory = l.factory AND c.run_id = l.run_id
+  ORDER BY c.claimed_at DESC NULLS LAST, c.issue_number LIMIT 1
+) c ON true
+LEFT JOIN mc.lap_steps facts ON facts.run_id = l.run_id AND facts.step_id = 'facts'
+LEFT JOIN mc.issues i ON i.factory = l.factory AND i.number = coalesce(c.issue_number, (facts.output -> 'item' ->> 'number')::int, l.issue_number)
 WHERE l.factory = $1 AND l.attention_open
 UNION ALL
 -- One row for a factory on the queues, which is one that has run a workflow only the queue pack
