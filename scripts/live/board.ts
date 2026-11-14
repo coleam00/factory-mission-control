@@ -3,7 +3,6 @@ import {
   boardView,
   type DiscoveryRow,
   found,
-  MINI_CARDS,
   orderLine,
   TABLE_VIEW,
   VIEW_PARAM,
@@ -143,16 +142,12 @@ export function boardPhase(ctx: LiveContext): LivePhase {
     };
   }
 
-  /** The Pipeline's cards against the same recount: counts, the first mini cards, one home per item, and the found numbers. */
+  /** The Pipeline's cards against the same recount: counts, one home per item, and the found numbers. */
   async function pipelineMismatches(page: Page, factory: string): Promise<string[]> {
     const screen = await page.evaluate<ShownPipeline>(SHOWN_PIPELINE);
     const view = await sqlView(factory, null);
     const where = `board ${factory} pipeline`;
-    const stages = view.pipeline.map((s) => [
-      s.id,
-      s.items.length,
-      s.items.slice(0, MINI_CARDS).map((i) => i.number),
-    ]);
+    const stages = view.pipeline.map((s) => [s.id, s.items.length, s.items.map((i) => i.number)]);
     const { filed, tracked, dropped } = found(await run<DiscoveryRow>('discoveries', factory));
     const failures: string[] = [];
     if (JSON.stringify(screen.stages) !== JSON.stringify(stages))

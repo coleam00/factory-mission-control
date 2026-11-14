@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { createMemoryRouter, RouterProvider } from 'react-router';
-import { type BoardView, COLUMNS, MINI_CARDS, PIPELINE } from '../lib/board';
+import { type BoardView, COLUMNS, PIPELINE } from '../lib/board';
 import { BoardBody } from './Board';
 
 const longTitle = '.archon/workflows/factory-build-queue-with-an-unbroken-path-token.yaml';
@@ -11,7 +11,7 @@ const longChip = 'factory-build-queue-with-an-unbroken-order-name-token';
 const empty: BoardView = {
   orders: [],
   columns: COLUMNS.map((c) => ({ ...c, items: [] })),
-  pipeline: PIPELINE.map(({ columns: _, ...spec }) => ({ ...spec, items: [], pills: [] })),
+  pipeline: PIPELINE.map((spec) => ({ ...spec, items: [], pills: [] })),
   found: { filed: 0, tracked: 0, dropped: 0 },
   notInOrder: 0,
   older: 0,
@@ -22,15 +22,7 @@ function render(view: BoardView, mode: 'pipeline' | 'table'): string {
   const router = createMemoryRouter([
     {
       path: '/',
-      element: (
-        <BoardBody
-          view={view}
-          mode={mode}
-          order={null}
-          onOrder={() => {}}
-          tableHref="?view=table"
-        />
-      ),
+      element: <BoardBody view={view} mode={mode} order={null} onOrder={() => {}} />,
     },
   ]);
   return renderToStaticMarkup(<RouterProvider router={router} />);
@@ -108,7 +100,6 @@ test('a failed chip renders the v3 failed color and a running chip pulses', () =
 
 const stage = (id: string, numbers: number[]) => ({
   ...(PIPELINE.find((h) => h.id === id) as (typeof PIPELINE)[number]),
-  columns: undefined,
   items: numbers.map((number) => ({
     number,
     title: `Item ${number}`,
@@ -122,14 +113,23 @@ const stage = (id: string, numbers: number[]) => ({
       : [],
 });
 
-test('the Pipeline renders the five stages in order, then Blocked and parked, each with its count and a link to the work item', () => {
+test('the Pipeline renders the seven stages in order, then Blocked and parked, each with its count and a link to the work item', () => {
   const view: BoardView = {
     ...empty,
     pipeline: PIPELINE.map((h) => stage(h.id, h.id === 'build' ? [7] : [])),
   };
   const html = render(view, 'pipeline');
   const ids = [...html.matchAll(/data-board-stage="(\w+)"/g)].map((m) => m[1]);
-  expect(ids).toEqual(['intake', 'planned', 'build', 'merge', 'merged', 'blocked']);
+  expect(ids).toEqual([
+    'intake',
+    'planned',
+    'build',
+    'review',
+    'app',
+    'merge',
+    'merged',
+    'blocked',
+  ]);
   expect(html).toContain('data-count="1"');
   expect(html).toMatch(
     /<a[^>]*href="\/f\/x\/work\/7"[^>]*data-work-item="7"|data-work-item="7"[^>]*href="\/f\/x\/work\/7"/,
@@ -137,23 +137,25 @@ test('the Pipeline renders the five stages in order, then Blocked and parked, ea
   expect(html).toContain('data-found');
 });
 
-test('the Pipeline shows at most three mini cards and a more-in-Table link', () => {
-  const numbers = Array.from({ length: MINI_CARDS + 2 }, (_, i) => i + 1);
+test('a Pipeline column shows every item it holds, and the stage row scrolls inside the Board', () => {
+  const numbers = Array.from({ length: 12 }, (_, i) => i + 1);
   const view: BoardView = {
     ...empty,
     pipeline: PIPELINE.map((h) => stage(h.id, h.id === 'build' ? numbers : [])),
   };
   const html = render(view, 'pipeline');
-  expect(html.match(/data-work-item=/g)).toHaveLength(MINI_CARDS);
-  expect(html).toContain('data-count="5"');
-  expect(html).toMatch(/href="\/\?view=table"[^>]*>2 more in Table/);
+  expect(html.match(/data-work-item=/g)).toHaveLength(numbers.length);
+  expect(html).toContain('data-count="12"');
+  expect(html).not.toContain('more in Table');
+  expect(html).toMatch(/data-stage-row[^>]*class="[^"]*overflow-x-auto/);
+  expect(html).toContain('auto-cols-[minmax(200px,1fr)]');
 });
 
 test('a mini card moves its state pill under the number instead of breaking it', () => {
   const html = render(
     {
       ...empty,
-      pipeline: PIPELINE.map(({ columns: _, ...spec }, i) => ({
+      pipeline: PIPELINE.map((spec, i) => ({
         ...spec,
         items:
           i === 0
