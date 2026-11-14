@@ -71,7 +71,7 @@ const SHOWN = `(() => {
     notInOrder: text(document.querySelector('[data-not-in-order]')),
     older: Number(text(document.querySelector('[data-older]')).match(/\\d+/)?.[0] ?? 0),
     cardOrders: [...document.querySelectorAll('[data-work-item]')].map((a) =>
-      [...a.querySelectorAll('[data-chip="order"]')].map(text),
+      [...(a.closest('tr') ?? a).querySelectorAll('[data-chip="order"]')].map(text),
     ),
   };
 })()`;
