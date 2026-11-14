@@ -151,3 +151,25 @@ export function measure() {
     foundTop: Math.round(found.getBoundingClientRect().top),
   };
 }
+
+/** The hidden-column hints, their labels, and whether the Merged column is fully inside the row. */
+export function fades() {
+  const label = (side: string) =>
+    document.querySelector(`[data-stage-fade="${side}"]`)?.textContent ?? null;
+  const row = document.querySelector<HTMLElement>('[data-stage-row]');
+  const merged = document.querySelector<HTMLElement>('[data-board-stage="merged"]');
+  const r = row?.getBoundingClientRect();
+  const m = merged?.getBoundingClientRect();
+  return {
+    left: label('left'),
+    right: label('right'),
+    mergedVisible: !!r && !!m && m.right <= r.right + 1 && m.left >= r.left - 1,
+    scrollLeft: row?.scrollLeft ?? 0,
+  };
+}
+
+/** Clicks a hint and waits for the smooth scroll to settle. */
+export async function clickFade(side: 'left' | 'right') {
+  document.querySelector<HTMLElement>(`[data-stage-fade="${side}"]`)?.click();
+  await new Promise((r) => setTimeout(r, 1200));
+}

@@ -153,7 +153,7 @@ test('a Pipeline column shows every item it holds, and the stage row scrolls ins
   expect(html).toContain('data-count="12"');
   expect(html).not.toContain('more in Table');
   expect(html).toMatch(/data-stage-row[^>]*class="[^"]*overflow-x-auto/);
-  expect(html).toContain('auto-cols-[minmax(200px,1fr)]');
+  expect(html).toContain('auto-cols-[minmax(150px,1fr)]');
 });
 
 test('a mini card moves its state pill under the number instead of breaking it', () => {

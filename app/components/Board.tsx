@@ -1,4 +1,4 @@
-import { type ReactElement, type RefObject, useLayoutEffect, useRef } from 'react';
+import { type ReactElement, type RefObject, useLayoutEffect, useRef, useState } from 'react';
 import { Link } from 'react-router';
 import {
   type BoardColumn,
@@ -287,14 +287,85 @@ function Pipeline({
   const stages = view.pipeline.filter((s) => s.id !== 'blocked');
   const blocked = view.pipeline.find((s) => s.id === 'blocked');
   const { filed, tracked, dropped } = view.found;
+  const [cut, setCut] = useState<{ left: number; right: number | null }>({ left: 0, right: null });
+  useLayoutEffect(() => {
+    const scroller = row.current;
+    const grid = scroller?.firstElementChild;
+    if (!scroller || !grid) return;
+    const update = () => {
+      const edge = scroller.scrollLeft + scroller.clientWidth + 1;
+      const columns = Array.from(grid.children).filter(
+        (column): column is HTMLElement => column instanceof HTMLElement,
+      );
+      const right = columns.findIndex((column) => column.offsetLeft + column.offsetWidth > edge);
+      const left = columns.filter((column) => column.offsetLeft < scroller.scrollLeft - 1).length;
+      setCut((was) =>
+        was.left === left && was.right === (right < 0 ? null : right)
+          ? was
+          : { left, right: right < 0 ? null : right },
+      );
+    };
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(scroller);
+    observer.observe(grid);
+    scroller.addEventListener('scroll', update, { passive: true });
+    return () => {
+      observer.disconnect();
+      scroller.removeEventListener('scroll', update);
+    };
+  }, [row]);
+  const hiddenLeft = stages.slice(0, cut.left);
+  const hiddenRight = cut.right === null ? [] : stages.slice(cut.right);
+  const names = (hidden: PipelineStage[]) =>
+    hidden.map((stage) => `${stage.title} ${stage.items.length}`).join(' · ');
+  const FADE = 'pointer-events-none absolute inset-y-0 w-8 from-[var(--v3-bg)] to-transparent';
+  const HINT =
+    'cursor-pointer text-[length:var(--v3-t-meta)] font-semibold text-[color:var(--v3-fg)] hover:underline';
   return (
     <div className="space-y-2.5">
-      <div ref={row} data-stage-row className="min-w-0 overflow-x-auto">
-        <div className="grid grid-cols-1 items-start gap-2.5 min-[760px]:grid-cols-none min-[760px]:grid-flow-col min-[760px]:auto-cols-[minmax(200px,1fr)]">
-          {stages.map((stage) => (
-            <StageCard key={stage.id} stage={stage} older={stage.id === 'merged' ? older : null} />
-          ))}
+      {hiddenLeft.length + hiddenRight.length > 0 ? (
+        <div className="flex justify-between gap-4">
+          {hiddenLeft.length > 0 ? (
+            <button
+              type="button"
+              data-stage-fade="left"
+              className={HINT}
+              onClick={() => row.current?.scrollTo({ left: 0, behavior: 'smooth' })}
+            >
+              ← {names(hiddenLeft)}
+            </button>
+          ) : (
+            <span />
+          )}
+          {hiddenRight.length > 0 ? (
+            <button
+              type="button"
+              data-stage-fade="right"
+              className={`${HINT} text-right`}
+              onClick={() =>
+                row.current?.scrollTo({ left: row.current.scrollWidth, behavior: 'smooth' })
+              }
+            >
+              {names(hiddenRight)} →
+            </button>
+          ) : null}
         </div>
+      ) : null}
+      <div className="relative">
+        <div ref={row} data-stage-row className="min-w-0 overflow-x-auto">
+          <div className="grid grid-cols-1 items-start gap-2.5 min-[760px]:grid-cols-none min-[760px]:grid-flow-col min-[760px]:auto-cols-[minmax(150px,1fr)]">
+            {stages.map((stage) => (
+              <StageCard
+                key={stage.id}
+                stage={stage}
+                older={stage.id === 'merged' ? older : null}
+              />
+            ))}
+          </div>
+        </div>
+        {hiddenLeft.length > 0 ? <div className={`${FADE} left-0 bg-gradient-to-r`} /> : null}
+        {hiddenRight.length > 0 ? <div className={`${FADE} right-0 bg-gradient-to-l`} /> : null}
       </div>
       <div className="grid grid-cols-1 gap-2.5 min-[760px]:grid-cols-2">
         <Card

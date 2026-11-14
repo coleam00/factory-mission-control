@@ -112,3 +112,44 @@ test('below 760px a tall column is not capped and its list does not scroll insid
     await page.setViewport(1440, 900);
   }
 }, 30_000);
+
+type Fades = {
+  left: string | null;
+  right: string | null;
+  mergedVisible: boolean;
+  scrollLeft: number;
+};
+
+const fades = (mount: string) =>
+  page.evaluate<Fades>(
+    `import('data:text/javascript;base64,${source}').then(async (m) => {
+      m.mount(0);
+      await new Promise((r) => setTimeout(r, 1000));
+      ${mount}
+      return m.fades();
+    })`,
+  );
+
+test('with the Manager closed at 1440 all seven columns fit and no hint shows', async () => {
+  const f = await fades('m.setManager(false); await new Promise((r) => setTimeout(r, 300));');
+  expect(f).toEqual({ left: null, right: null, mergedVisible: true, scrollLeft: 0 });
+}, 30_000);
+
+test('with the Manager open each hidden edge names its columns and a click brings them into view', async () => {
+  const f = await fades('m.setManager(true); await new Promise((r) => setTimeout(r, 300));');
+  expect(f.left).toBeNull();
+  expect(f.right).toMatch(/Merged 0 →$/);
+  expect(f.mergedVisible).toBe(false);
+  const after = await page.evaluate<Fades>(
+    `import('data:text/javascript;base64,${source}').then(async (m) => { await m.clickFade('right'); return m.fades(); })`,
+  );
+  expect(after.mergedVisible).toBe(true);
+  expect(after.right).toBeNull();
+  expect(after.left).toMatch(/^← Intake 0/);
+  const back = await page.evaluate<Fades>(
+    `import('data:text/javascript;base64,${source}').then(async (m) => { await m.clickFade('left'); return m.fades(); })`,
+  );
+  expect(back.left).toBeNull();
+  expect(back.scrollLeft).toBe(0);
+  expect(back.right).toMatch(/Merged 0 →$/);
+}, 30_000);
