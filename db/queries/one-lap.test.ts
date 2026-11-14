@@ -193,6 +193,27 @@ describe('one-lap on the seed', () => {
         await restore();
       }
     });
+
+    test('a Closes merge does not deliver an item closed as not planned or a duplicate', async () => {
+      try {
+        for (const [reason, merged] of [
+          ['not_planned', false],
+          ['duplicate', false],
+          ['completed', true],
+        ] as const) {
+          await db.query(
+            `UPDATE mc.issues SET close_reason = $1 WHERE factory = 'mission-control' AND number = 3`,
+            [reason],
+          );
+          expect([reason, (await read(LAP_RUN)).item_merged_at !== null]).toEqual([reason, merged]);
+        }
+      } finally {
+        await db.query(
+          `UPDATE mc.issues SET close_reason = $1 WHERE factory = 'mission-control' AND number = 3`,
+          [originalReason],
+        );
+      }
+    });
   });
 
   test("the header is the gate-refused lap's claim, pick, review and merge gate", async () => {
