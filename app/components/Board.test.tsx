@@ -361,3 +361,28 @@ test('a blocked card and its Table row say what the item waits on', () => {
   );
   expect(row).toMatch(/Blocked on <a [^>]*href="\/f\/x\/work\/3"[^>]*>#3<\/a>/);
 });
+
+const order = (name: string, done: number, total: number) => ({
+  name,
+  done,
+  total,
+  landsOn: null,
+  building: 0,
+  needsYou: 0,
+});
+
+test('finished orders fold into one row and only open orders get a card', () => {
+  const html = render(
+    { ...empty, orders: [order('live', 1, 3), order('old-a', 8, 8), order('old-b', 4, 4)] },
+    'pipeline',
+  );
+  expect(html).toContain('data-work-order="live"');
+  expect(html).not.toContain('data-work-order="old-a"');
+  expect(html).toContain('2 finished orders: old-a, old-b');
+});
+
+test('with no open order the finished row shows alone', () => {
+  const html = render({ ...empty, orders: [order('old-a', 8, 8)] }, 'pipeline');
+  expect(html).not.toContain('data-work-order=');
+  expect(html).toContain('1 finished order: old-a');
+});
