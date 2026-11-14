@@ -494,6 +494,33 @@ test("a work item's parked reason and blockers come from its state", async () =>
   }
 });
 
+test("a stage 'blocked' item with no parked decision is blocked on its open Depends on", async () => {
+  const state = (stage: string) =>
+    db.query(
+      `INSERT INTO mc.work_item_states (project_key, number, revision, stage)
+       SELECT codebase, 9, 1, '${stage}' FROM mc.factories WHERE name = 'mission-control'`,
+    );
+  await db.query(
+    `INSERT INTO mc.issue_dependencies (factory, issue_number, depends_on) VALUES ('mission-control', 9, 4), ('mission-control', 9, 12)`,
+  );
+  await db.query(
+    `UPDATE mc.issues SET state = 'closed' WHERE factory = 'mission-control' AND number = 4`,
+  );
+  try {
+    await state('blocked');
+    expect((await missionItem(9))?.blockers).toEqual([12]);
+    await db.query(`DELETE FROM mc.work_item_states WHERE number = 9`);
+    await state('ready');
+    expect((await missionItem(9))?.blockers).toEqual([]);
+  } finally {
+    await db.query(`DELETE FROM mc.work_item_states WHERE number = 9`);
+    await db.query(`DELETE FROM mc.issue_dependencies WHERE issue_number = 9`);
+    await db.query(
+      `UPDATE mc.issues SET state = 'open' WHERE factory = 'mission-control' AND number = 4`,
+    );
+  }
+});
+
 test('a Refs-only item takes its pull request from the projection, with its head and app check head', async () => {
   await db.query(
     `INSERT INTO mc.pull_requests (factory, number, title, state, merged_at, head_sha, url, created_at, updated_at)

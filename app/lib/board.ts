@@ -65,7 +65,7 @@ export interface BoardRow {
   last_decision: string | null;
   /** The reason of the decision that parked the item; null when nothing is parked or the decision gave none, and without a state. */
   parked_reason: string | null;
-  /** The items it is blocked on (`mc.work_item_blockers`), in order; null without a state. */
+  /** The items it is blocked on, in order: the parked decision's (`mc.work_item_blockers`), else a stage 'blocked' item's open `Depends on`; null without a state. */
   blockers: number[] | null;
   /** The head commit of `pr`, and the head the latest app check on it ran against. */
   pr_head: string | null;
