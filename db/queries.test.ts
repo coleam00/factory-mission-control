@@ -462,6 +462,7 @@ const ROW_COLUMNS: Record<string, string[]> = {
     'name',
     'total_count',
     'open_count',
+    'done_count',
     'merged_count',
     'lands_on',
     'last_closed_at',
@@ -632,6 +633,8 @@ describe('the rules the live queries restate, which they may not call a function
       'work-orders': 1,
       'product-documents': 1,
     };
+    // work-orders.sql restates the closed-and-not-excluded gate for its done and total counts too.
+    const gates: Record<string, number> = { 'work-orders': 3 };
     for (const [name, sql] of queries) {
       const expected = copies[name] ?? 0;
       expect([
@@ -639,7 +642,7 @@ describe('the rules the live queries restate, which they may not call a function
         count(sql, NOT_DELIVERED),
         count(sql, DELIVERED) + count(sql, DELIVERED_COUNTED),
         count(sql, BY_CLOSING),
-      ]).toEqual([name, expected, expected, expected]);
+      ]).toEqual([name, gates[name] ?? expected, expected, expected]);
     }
   });
 

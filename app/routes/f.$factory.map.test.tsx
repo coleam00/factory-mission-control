@@ -155,6 +155,7 @@ test('Right now lists the gate outcomes, the latest deploy or that there is none
     name: 'combat',
     total_count: 1,
     open_count: 1,
+    done_count: 0,
     merged_count: 0,
     lands_on,
     last_closed_at: null,
@@ -661,6 +662,7 @@ test('the Work order card counts its open work orders and says nothing with none
       name: 'combat',
       total_count: 3,
       open_count: 2,
+      done_count: 1,
       merged_count: 1,
       lands_on: 'staging',
       last_closed_at: null,
@@ -687,7 +689,7 @@ test('the Work order card counts its open work orders and says nothing with none
     ),
   );
   expect(right).toContain('combat');
-  expect(right).toContain('1 of 3 merged · lands on staging');
+  expect(right).toContain('1 of 3 done · lands on staging');
   const odd = { ...orders[0], name: 'a b&c' };
   const links = renderToStaticMarkup(
     <MemoryRouter>
