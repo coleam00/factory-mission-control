@@ -158,8 +158,15 @@ export interface RoundDot {
 
 /** The run that holds a work item: the workflow and its deepest running step, linking to the run. */
 export interface RunLine {
-  text: string;
+  workflow: string;
+  /** The deepest running step; null while the run has none. */
+  step: string | null;
   to: string;
+}
+
+/** The run line as one string: "<workflow> · <step>", or the workflow alone. */
+export function runLineText(run: RunLine): string {
+  return run.step === null ? run.workflow : `${run.workflow} · ${run.step}`;
 }
 
 /** What a blocked or parked item waits on: the parked decision's reason (full text), else each blocker, else a contract. */
@@ -735,7 +742,8 @@ export function boardView(sources: BoardSources, now: Date, order: string | null
         hold === undefined
           ? null
           : {
-              text: hold.step === null ? hold.workflow : `${hold.workflow} · ${hold.step}`,
+              workflow: hold.workflow,
+              step: hold.step,
               to: lapHref(factory, hold.run),
             },
       returned: row.returns ?? 0,

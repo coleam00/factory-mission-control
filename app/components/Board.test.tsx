@@ -248,15 +248,30 @@ test('a running item shows the live dot and its workflow and step linking to the
     card({
       round: 6,
       dots: [dot('running', 'Round 6: running')],
-      run: { text: 'archon-build-queue · review__code', to: '/f/x/runs/abc' },
+      run: { workflow: 'archon-build-queue', step: 'review__code', to: '/f/x/runs/abc' },
     }),
   );
   expect(html).toContain('round 6');
   expect(html).toContain('data-round-dot="running"');
-  expect(html).toMatch(
-    /<a [^>]*href="\/f\/x\/runs\/abc"[^>]*>archon-build-queue · review__code<\/a>/,
-  );
+  expect(html).toContain('title="archon-build-queue · review__code"');
+  expect(html).toContain('href="/f/x/runs/abc"');
+  expect(html).toMatch(/data-run-workflow[^>]*>archon-build-queue<\/span>/);
+  expect(html).toMatch(/data-run-step[^>]*>review__code<\/span>/);
   expect(html).not.toContain('returned');
+});
+
+test('a running item between steps shows only its workflow, titled with the bare workflow', () => {
+  const html = inMerged(
+    card({
+      round: 1,
+      dots: [dot('running', 'Round 1: running')],
+      run: { workflow: 'archon-build-queue', step: null, to: '/f/x/runs/abc' },
+    }),
+  );
+  expect(html).toContain('title="archon-build-queue"');
+  expect(html).toMatch(/data-run-workflow[^>]*>archon-build-queue<\/span>/);
+  expect(html).not.toContain('data-run-step');
+  expect(html).not.toContain('null');
 });
 
 test('a merged item shows when it merged, and an asking item its stop line', () => {
@@ -271,7 +286,7 @@ test('a Pipeline card shows round, run, returned, merged and stop line below its
     ...card({
       round: 2,
       dots: [dot('done'), dot('running')],
-      run: { text: 'archon-build-queue · review__code', to: '/f/x/runs/abc' },
+      run: { workflow: 'archon-build-queue', step: 'review__code', to: '/f/x/runs/abc' },
       returned: 2,
       mergedAt: new Date(2026, 10, 12, 9, 7),
       stop: { text: 'Asking: Merge it?', state: 'needs-you' },
@@ -290,9 +305,8 @@ test('a Pipeline card shows round, run, returned, merged and stop line below its
   ].map((text) => html.indexOf(text));
   expect(at.every((i) => i >= 0)).toBe(true);
   expect(at).toEqual([...at].sort((a, b) => a - b));
-  expect(html).toMatch(
-    /<a [^>]*href="\/f\/x\/runs\/abc"[^>]*>archon-build-queue · review__code<\/a>/,
-  );
+  expect(html).toContain('title="archon-build-queue · review__code"');
+  expect(html).toContain('href="/f/x/runs/abc"');
   expect(html).toMatch(/<a [^>]*href="\/f\/x\/work\/648"[^>]*>returned ×2<\/a>/);
 });
 
