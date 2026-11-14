@@ -63,8 +63,8 @@ test('the seed recount: each column and each work order bar equal the definition
   expect(mission.older).toBe(8);
   // foundations holds 5, 6, 7 (merged) and 9 (open); screens holds 10 (merged), 11, 12 and 14.
   expect(mission.orders).toMatchObject([
-    { name: 'foundations', merged: 3, total: 4, landsOn: 'main' },
-    { name: 'screens', merged: 1, total: 4, landsOn: 'staging' },
+    { name: 'foundations', done: 3, total: 4, landsOn: 'main' },
+    { name: 'screens', done: 1, total: 4, landsOn: 'staging' },
   ]);
   // The filter narrows the columns to the order, and leaves the panels.
   const screens = await view('mission-control', 'screens');
@@ -284,6 +284,66 @@ test('a Refs-delivered item is merged unless closed as not planned or a duplicat
   }
 });
 
+test('a Refs-only item shows the latest merged Refs pull request’s time', async () => {
+  const merged = async () => (await missionItem(4))?.merged_at;
+  expect(await merged()).not.toBeNull();
+  await db.query(
+    `INSERT INTO mc.pull_requests (factory, number, title, state, merged_at, head_sha, url, created_at, updated_at)
+     VALUES ('mission-control', 9106, 't', 'closed', '2031-01-02T03:04:05Z', 'r', 'u', now(), now()),
+       ('mission-control', 9107, 't', 'closed', '2030-01-01T00:00:00Z', 'r', 'u', now(), now())`,
+  );
+  await db.query(
+    `INSERT INTO mc.pull_request_references (factory, pr_number, issue_number) VALUES ('mission-control', 9106, 4), ('mission-control', 9107, 4)`,
+  );
+  try {
+    expect(await merged()).toBe('2031-01-02T03:04:05.000Z');
+  } finally {
+    await db.query(`DELETE FROM mc.pull_request_references WHERE pr_number IN (9106, 9107)`);
+    await db.query(
+      `DELETE FROM mc.pull_requests WHERE factory = 'mission-control' AND number IN (9106, 9107)`,
+    );
+  }
+});
+
+test('with several merged closing pull requests the card shows the latest merge, not the highest number’s', async () => {
+  const merged = async () => (await missionItem(10))?.merged_at;
+  expect(await merged()).toBe('2026-10-20T09:30:00.000Z');
+  await db.query(
+    `INSERT INTO mc.pull_requests (factory, number, title, state, merged_at, head_sha, url, created_at, updated_at)
+     VALUES ('mission-control', 9201, 't', 'closed', '2026-01-01T00:00:00Z', 'e', 'u', now(), now())`,
+  );
+  await db.query(
+    `INSERT INTO mc.pull_request_issues (factory, pr_number, issue_number) VALUES ('mission-control', 9201, 10)`,
+  );
+  try {
+    expect(await merged()).toBe('2026-10-20T09:30:00.000Z');
+  } finally {
+    await db.query(`DELETE FROM mc.pull_request_issues WHERE pr_number = 9201`);
+    await db.query(
+      `DELETE FROM mc.pull_requests WHERE factory = 'mission-control' AND number = 9201`,
+    );
+  }
+});
+
+test('a merged projected pull request does not outrank the merged closing one', async () => {
+  await db.query(
+    `INSERT INTO mc.pull_requests (factory, number, title, state, merged_at, head_sha, url, created_at, updated_at)
+     VALUES ('mission-control', 9203, 't', 'closed', '2026-02-02T00:00:00Z', 'p', 'u', now(), now())`,
+  );
+  await db.query(
+    `INSERT INTO mc.work_item_states (project_key, number, revision, pr_number)
+     SELECT codebase, 10, 1, 9203 FROM mc.factories WHERE name = 'mission-control'`,
+  );
+  try {
+    expect((await missionItem(10))?.merged_at).toBe('2026-10-20T09:30:00.000Z');
+  } finally {
+    await db.query(`DELETE FROM mc.work_item_states WHERE number = 10`);
+    await db.query(
+      `DELETE FROM mc.pull_requests WHERE factory = 'mission-control' AND number = 9203`,
+    );
+  }
+});
+
 test('a work item state reaches only the factory whose codebase it names', async () => {
   const parkedOf = async (factory: string) =>
     (await run<BoardRow>('board', factory))
@@ -478,6 +538,26 @@ test("a work item's rounds are Archon's finished rounds, and the run count only 
   }
 });
 
+test("a work item's parked reason and blockers come from its state", async () => {
+  await db.query(
+    `INSERT INTO mc.work_item_states (project_key, number, revision, parked_reason)
+     SELECT codebase, 9, 1, 'Held by the 11/09 ruling' FROM mc.factories WHERE name = 'mission-control'`,
+  );
+  await db.query(
+    `INSERT INTO mc.work_item_blockers (project_key, number, blocker)
+     SELECT codebase, 9, b FROM mc.factories, unnest(ARRAY[12, 4]) b WHERE name = 'mission-control'`,
+  );
+  try {
+    expect(await missionItem(9)).toMatchObject({
+      parked_reason: 'Held by the 11/09 ruling',
+      blockers: [4, 12],
+    });
+  } finally {
+    await db.query(`DELETE FROM mc.work_item_blockers WHERE number = 9`);
+    await db.query(`DELETE FROM mc.work_item_states WHERE number = 9`);
+  }
+});
+
 test('a Refs-only item takes its pull request from the projection, with its head and app check head', async () => {
   await db.query(
     `INSERT INTO mc.pull_requests (factory, number, title, state, merged_at, head_sha, url, created_at, updated_at)
@@ -589,7 +669,7 @@ test('merged_at is null for a merge that a later build or triage has overtaken, 
   }
 });
 
-test('one pull request answers pr, pr_head and merged_at: open linked, else projected, else merged linked', async () => {
+test('one pull request answers pr and pr_head: open linked, else projected, else merged linked', async () => {
   const fixtures = async (factory: string) => {
     await db.query(
       `INSERT INTO mc.pull_requests (factory, number, title, state, merged_at, head_sha, url, created_at, updated_at)
@@ -610,7 +690,7 @@ test('one pull request answers pr, pr_head and merged_at: open linked, else proj
       pr: 9102,
       pr_head: 'projected',
       pr_open: false,
-      merged_at: null,
+      merged_at: '2026-10-20T09:30:00.000Z',
     });
     await db.query(
       `INSERT INTO mc.pull_request_issues (factory, pr_number, issue_number) VALUES ('mission-control', 9103, 10)`,
@@ -619,13 +699,23 @@ test('one pull request answers pr, pr_head and merged_at: open linked, else proj
       pr: 9103,
       pr_head: 'linked',
       pr_open: true,
-      merged_at: null,
+      merged_at: '2026-10-20T09:30:00.000Z',
     });
+    // A merged Refs pull request never replaces the closing one's time, even a later one.
+    await db.query(
+      `INSERT INTO mc.pull_requests (factory, number, title, state, merged_at, head_sha, url, created_at, updated_at)
+       VALUES ('mission-control', 9105, 't', 'closed', '2026-12-01T00:00:00Z', 'refs', 'u', now(), now())`,
+    );
+    await db.query(
+      `INSERT INTO mc.pull_request_references (factory, pr_number, issue_number) VALUES ('mission-control', 9105, 10)`,
+    );
+    expect(await missionItem(10)).toMatchObject({ merged_at: '2026-10-20T09:30:00.000Z' });
   } finally {
+    await db.query(`DELETE FROM mc.pull_request_references WHERE pr_number = 9105`);
     await db.query(`DELETE FROM mc.pull_request_issues WHERE pr_number = 9103`);
     await db.query(`DELETE FROM mc.work_item_states WHERE number = 10`);
     await db.query(
-      `DELETE FROM mc.pull_requests WHERE factory = 'mission-control' AND number IN (9102, 9103)`,
+      `DELETE FROM mc.pull_requests WHERE factory = 'mission-control' AND number IN (9102, 9103, 9105)`,
     );
   }
   expect(await missionItem(10)).toMatchObject({

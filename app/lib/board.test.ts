@@ -43,6 +43,8 @@ const item = (number: number, over: Partial<BoardRow> = {}): BoardRow => ({
   round_list: null,
   returns: null,
   last_decision: null,
+  parked_reason: null,
+  blockers: null,
   pr_head: null,
   app_check_head: null,
   merged_at: null,
@@ -92,6 +94,7 @@ const ORDER = (over: Partial<WorkOrderRow> = {}): WorkOrderRow => ({
   name: 'screens',
   total_count: 4,
   open_count: 3,
+  done_count: 1,
   merged_count: 1,
   lands_on: null,
   last_closed_at: null,
@@ -244,7 +247,7 @@ test('an item in two work orders shows under each, with a chip for each', () => 
 
 test('a work order drops off 7 days after its last issue closes', () => {
   const finished = (days: number) =>
-    ORDER({ open_count: 0, merged_count: 4, last_closed_at: daysAgo(days) });
+    ORDER({ open_count: 0, done_count: 4, merged_count: 4, last_closed_at: daysAgo(days) });
   expect(view({ orders: [finished(6)] }).orders).toHaveLength(1);
   expect(view({ orders: [finished(8)] }).orders).toHaveLength(0);
   expect(nextChange({ board: [], orders: [finished(6)] }, NOW)).toEqual(
@@ -621,11 +624,11 @@ test('a work order line counts building and needs you over every item, whatever 
     'other',
   );
   const screens = v.orders.find((o) => o.name === 'screens');
-  expect(screens && orderLine(screens)).toBe('1 of 4 merged · 1 building · 1 needs you');
+  expect(screens && orderLine(screens)).toBe('1 of 4 done · 1 building · 1 needs you');
   const other = v.orders.find((o) => o.name === 'other');
-  expect(other && orderLine(other)).toBe('1 of 4 merged');
-  expect(orderTarget({ name: 'x', merged: 0, total: 1, landsOn: null })).toBe('work order');
-  expect(orderTarget({ name: 'x', merged: 0, total: 1, landsOn: 'staging' })).toBe(
+  expect(other && orderLine(other)).toBe('1 of 4 done');
+  expect(orderTarget({ name: 'x', done: 0, total: 1, landsOn: null })).toBe('work order');
+  expect(orderTarget({ name: 'x', done: 0, total: 1, landsOn: 'staging' })).toBe(
     'work order · lands on staging',
   );
 });
@@ -704,6 +707,21 @@ test('an item held only by a running app check shows that run, with its step fro
   });
 });
 
+test('Merged is ordered by merge time, newest first, however the issues were closed; one with none sorts last by close time', () => {
+  const closed = { state: 'closed' as const, closed_at: daysAgo(1) };
+  const v = view({
+    board: [
+      item(648, { ...closed, closed_at: daysAgo(2), merged_at: '2026-11-03T06:42:38Z' }),
+      item(664, { ...closed, closed_at: daysAgo(1), merged_at: '2026-11-03T01:30:06Z' }),
+      item(700, { ...closed, closed_at: daysAgo(0.5), merged_at: null }),
+      item(701, { ...closed, closed_at: daysAgo(2), merged_at: null }),
+    ],
+  });
+  const order = (items: { number: number }[] | undefined) => items?.map((i) => i.number);
+  expect(order(v.columns.find((c) => c.id === 'merged')?.items)).toEqual([648, 664, 700, 701]);
+  expect(order(v.pipeline.find((s) => s.id === 'merged')?.items)).toEqual([648, 664, 700, 701]);
+});
+
 test('a merged card carries its returns and merge time; a waiting one its question; a failed check says so', () => {
   const v = view({
     board: [
@@ -761,4 +779,29 @@ test('an asking card shows the question of the run that asks about it, however t
   expect(stop(44)?.text).toBe('Waiting on you');
   expect(home(v, 'build')).toEqual([42, 44]);
   expect(home(v, 'merge')).toEqual([43]);
+});
+
+const waitsOn = (over: Partial<BoardRow>) =>
+  view({ board: [item(1, over), factoryRow()] }).pipeline.find((s) => s.id === 'blocked')?.items[0]
+    ?.waits;
+
+test('a blocked or parked card says what it waits on: the parked reason, else its blockers, else a contract', () => {
+  const blocked = { stage: 'blocked' };
+  expect(
+    waitsOn({ ...buildParked, parked_reason: 'Held by the 11/09 ruling', blockers: [3] }),
+  ).toEqual({ kind: 'reason', text: 'Held by the 11/09 ruling' });
+  expect(waitsOn({ ...blocked, blockers: [3, 9] })).toEqual({
+    kind: 'blockers',
+    items: [
+      { number: 3, to: '/f/f/work/3' },
+      { number: 9, to: '/f/f/work/9' },
+    ],
+  });
+  expect(waitsOn({ stage: 'needs_contract' })).toEqual({ kind: 'contract' });
+  expect(waitsOn({ ...blocked, parked_reason: ' ', blockers: [] })).toBeNull();
+});
+
+test('an item outside Blocked and parked carries no waiting line', () => {
+  const v = view({ board: [item(1, { parked_reason: 'old', blockers: [3] }), factoryRow()] });
+  expect(v.pipeline.flatMap((s) => s.items).map((i) => i.waits)).toEqual([null]);
 });

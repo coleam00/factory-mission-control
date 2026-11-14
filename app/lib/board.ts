@@ -63,10 +63,14 @@ export interface BoardRow {
   returns: number | null;
   /** The decision of the last build decision; null without one. */
   last_decision: string | null;
+  /** The reason of the decision that parked the item; null when nothing is parked or the decision gave none, and without a state. */
+  parked_reason: string | null;
+  /** The items it is blocked on (`mc.work_item_blockers`), in order; null without a state. */
+  blockers: number[] | null;
   /** The head commit of `pr`, and the head the latest app check on it ran against. */
   pr_head: string | null;
   app_check_head: string | null;
-  /** When it merged: the merge fact's time only while that merge still finishes the item (no later build or triage, as the pack's `finished()`), else `pr`'s own merge time (null while `pr` is open). */
+  /** When it merged: the merge fact's time only while that merge still finishes the item (no later build or triage, as the pack's `finished()`), else the delivering pull request's merge time: the latest merged one that closes the item, else the latest merged one that names it with `Refs`, else Archon's projected one. Null when none merged; only a closed item's is shown. */
   merged_at: string | null;
   /** The running app check run on `pr`. */
   app_check_run: string | null;
@@ -165,6 +169,24 @@ export function runLineText(run: RunLine): string {
   return run.step === null ? run.workflow : `${run.workflow} · ${run.step}`;
 }
 
+/** What a blocked or parked item waits on: the parked decision's reason (full text), else each blocker, else a contract. */
+export type Waits =
+  | { kind: 'reason'; text: string }
+  | { kind: 'blockers'; items: { number: number; to: string }[] }
+  | { kind: 'contract' };
+
+function waitsOf(row: BoardRow, factory: string): Waits | null {
+  const reason = row.parked_reason?.trim() ?? '';
+  if (reason !== '') return { kind: 'reason', text: reason };
+  const blockers = row.blockers ?? [];
+  if (blockers.length > 0)
+    return {
+      kind: 'blockers',
+      items: blockers.map((number) => ({ number, to: workItemHref(factory, number) })),
+    };
+  return row.stage === 'needs_contract' ? { kind: 'contract' } : null;
+}
+
 export interface WorkItem {
   number: number;
   title: string;
@@ -178,13 +200,15 @@ export interface WorkItem {
   mergedAt: Date | null;
   /** Why a work item waiting on you or with a failed check stopped, in its state's color. */
   stop: { text: string; state: State } | null;
+  /** What a Blocked and parked item waits on, as the design's one muted line; null for any other item or when nothing names it. */
+  waits: Waits | null;
   /** The work item's own page. */
   to: string;
 }
 
 export interface OrderPanel {
   name: string;
-  merged: number;
+  done: number;
   total: number;
   landsOn: string | null;
 }
@@ -201,15 +225,15 @@ export function boardHref(factory: string, order: string): string {
 export function orderPanel(row: WorkOrderRow): OrderPanel {
   return {
     name: row.name,
-    merged: row.merged_count,
+    done: row.done_count,
     total: row.total_count,
     landsOn: row.lands_on,
   };
 }
 
 /** How far a work order has got, in the words the Board and the map both show. */
-export function orderProgress({ merged, total, landsOn }: OrderPanel): string {
-  return `${merged} of ${total} merged${landsOn === null ? '' : ` · lands on ${landsOn}`}`;
+export function orderProgress({ done, total, landsOn }: OrderPanel): string {
+  return `${done} of ${total} done${landsOn === null ? '' : ` · lands on ${landsOn}`}`;
 }
 
 export interface BoardColumn extends ColumnSpec {
@@ -298,9 +322,9 @@ export function orderTarget({ landsOn }: OrderPanel): string {
 }
 
 /** How far a work order has got, as the strip counts it; a part of zero is left out. */
-export function orderLine({ merged, total, building, needsYou }: BoardOrder): string {
+export function orderLine({ done, total, building, needsYou }: BoardOrder): string {
   return [
-    `${merged} of ${total} merged`,
+    `${done} of ${total} done`,
     ...(building > 0 ? [`${building} building`] : []),
     ...(needsYou > 0 ? [`${needsYou} needs you`] : []),
   ].join(' · ');
@@ -725,6 +749,7 @@ export function boardView(sources: BoardSources, now: Date, order: string | null
       returned: row.returns ?? 0,
       mergedAt: home === 'merged' && row.merged_at !== null ? new Date(row.merged_at) : null,
       stop: stopOf(status, questionOf(row, number, home, facts)),
+      waits: home === 'blocked' ? waitsOf(row, factory) : null,
       to: workItemHref(factory, number),
     };
     homes.get(home)?.push({ ...item, status });
@@ -735,7 +760,12 @@ export function boardView(sources: BoardSources, now: Date, order: string | null
   columns.set(
     'merged',
     merged
-      .sort((a, b) => b.closedAt.getTime() - a.closedAt.getTime() || a.item.number - b.item.number)
+      .sort(
+        (a, b) =>
+          (b.item.mergedAt?.getTime() ?? 0) - (a.item.mergedAt?.getTime() ?? 0) ||
+          b.closedAt.getTime() - a.closedAt.getTime() ||
+          a.item.number - b.item.number,
+      )
       .map((m) => m.item),
   );
 

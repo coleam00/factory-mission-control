@@ -84,6 +84,32 @@ function Merged({ item }: { item: WorkItem }): ReactElement | null {
   );
 }
 
+/** What a Blocked and parked item waits on: one muted line, a parked reason cut to the line with its full text in the title. */
+function WaitsLine({ item }: { item: WorkItem }): ReactElement | null {
+  const waits = item.waits;
+  if (waits === null) return null;
+  return (
+    <span data-waits={waits.kind} className={`block min-w-0 ${DETAIL}`}>
+      {waits.kind === 'reason' ? (
+        <span title={waits.text} className="block w-0 min-w-full truncate">
+          {waits.text}
+        </span>
+      ) : waits.kind === 'contract' ? (
+        'Needs a contract'
+      ) : (
+        waits.items.map((blocker, i) => (
+          <span key={blocker.number}>
+            {i > 0 ? ', ' : 'Blocked on '}
+            <Link to={blocker.to} className={INNER_LINK}>
+              #{blocker.number}
+            </Link>
+          </span>
+        ))
+      )}
+    </span>
+  );
+}
+
 function StopLine({ item }: { item: WorkItem }): ReactElement | null {
   if (item.stop === null) return null;
   return (
@@ -106,6 +132,7 @@ function CardDetail({ item }: { item: WorkItem }): ReactElement {
       <Returned item={item} />
       <Merged item={item} />
       <StopLine item={item} />
+      <WaitsLine item={item} />
     </span>
   );
 }
@@ -136,6 +163,7 @@ function ItemTable({ items }: { items: WorkItem[] }): ReactElement {
                 #{item.number} <span className="[overflow-wrap:anywhere]">{item.title}</span>
               </Link>
               <StopLine item={item} />
+              <WaitsLine item={item} />
               {item.chips.length > 0 ? (
                 <span className="mt-1 flex flex-wrap gap-1">
                   {item.chips.map((chip) => (
@@ -436,7 +464,7 @@ function OrderStrip({
         {orderTarget(order)}
       </span>
       <span className="mt-2 flex h-1.5 overflow-hidden rounded-full bg-[var(--v3-raised)]">
-        <span style={{ width: share(order.merged), background: stateColor('done') }} />
+        <span style={{ width: share(order.done), background: stateColor('done') }} />
         <span style={{ width: share(order.building), background: stateColor('running') }} />
         <span style={{ width: share(order.needsYou), background: stateColor('needs-you') }} />
       </span>

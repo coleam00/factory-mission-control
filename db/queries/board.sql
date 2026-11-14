@@ -62,9 +62,9 @@ SELECT 'item' AS kind, i.number, i.title, i.url, i.state, i.closed_at,
   ac.overall AS app_check,
   pr.number AS pr, linked.open AS pr_open,
   st.build_status, st.build_at, st.merge_status, st.merge_at, st.triage_at, st.stage,
-  st.rounds::text AS round_list, st.returns, st.last_decision,
+  st.rounds::text AS round_list, st.returns, st.last_decision, st.parked_reason, st.blockers,
   pr.head_sha AS pr_head, ac.head AS app_check_head,
-  CASE WHEN st.merge_status = 'merged' AND st.merge_at >= coalesce(st.build_at, '') AND st.merge_at >= coalesce(st.triage_at, '') THEN st.merge_at ELSE CASE WHEN pr.merged_at IS NULL THEN NULL ELSE lpad(extract(year FROM (pr.merged_at AT TIME ZONE 'UTC'))::int::text, 4, '0') || '-' || lpad(extract(month FROM (pr.merged_at AT TIME ZONE 'UTC'))::int::text, 2, '0') || '-' || lpad(extract(day FROM (pr.merged_at AT TIME ZONE 'UTC'))::int::text, 2, '0') || 'T' || date_trunc('second', (pr.merged_at AT TIME ZONE 'UTC'))::time::text || '.' || lpad((floor(extract(milliseconds FROM (pr.merged_at AT TIME ZONE 'UTC')))::bigint % 1000)::text, 3, '0') || 'Z' END END AS merged_at,
+  CASE WHEN st.merge_status = 'merged' AND st.merge_at >= coalesce(st.build_at, '') AND st.merge_at >= coalesce(st.triage_at, '') THEN st.merge_at ELSE CASE WHEN landed.at IS NULL THEN NULL ELSE lpad(extract(year FROM (landed.at AT TIME ZONE 'UTC'))::int::text, 4, '0') || '-' || lpad(extract(month FROM (landed.at AT TIME ZONE 'UTC'))::int::text, 2, '0') || '-' || lpad(extract(day FROM (landed.at AT TIME ZONE 'UTC'))::int::text, 2, '0') || 'T' || date_trunc('second', (landed.at AT TIME ZONE 'UTC'))::time::text || '.' || lpad((floor(extract(milliseconds FROM (landed.at AT TIME ZONE 'UTC')))::bigint % 1000)::text, 3, '0') || 'Z' END END AS merged_at,
   ar.run_id AS app_check_run,
   NULL::text AS repository, NULL::integer AS merged_total
 FROM items i
@@ -91,14 +91,16 @@ LEFT JOIN rounds rd ON rd.number = i.number
 LEFT JOIN LATERAL (
   -- The queues' own state for the item (Archon's work/<n> document), as the Board's parked rule reads it.
   SELECT w.build_status, w.build_at, w.merge_status, w.merge_at, w.triage_at, w.stage,
-    w.rounds, w.returns, w.last_decision, w.pr_number
+    w.rounds, w.returns, w.last_decision, w.parked_reason, w.pr_number,
+    (SELECT coalesce(array_agg(k.blocker ORDER BY k.blocker), '{}'::int[]) FROM mc.work_item_blockers k
+     WHERE k.project_key = w.project_key AND k.number = w.number) AS blockers
   FROM mc.work_item_states w
   JOIN mc.factories f ON f.codebase = w.project_key
   WHERE f.name = i.factory AND w.number = i.number
 ) st ON true
 LEFT JOIN LATERAL (
   -- The open pull request that closes the item (the lowest), else the merged one (the highest).
-  SELECT p.number, p.state = 'open' AS open, p.head_sha, p.merged_at
+  SELECT p.number, p.state = 'open' AS open, p.head_sha
   FROM mc.pull_request_issues pi
   JOIN mc.pull_requests p ON p.factory = pi.factory AND p.number = pi.pr_number
   WHERE pi.factory = i.factory AND pi.issue_number = i.number
@@ -114,14 +116,26 @@ LEFT JOIN LATERAL (
     AND (p.state = 'open' OR p.merged_at IS NOT NULL)
 ) projected ON true
 LEFT JOIN LATERAL (
-  -- One pull request, so number, head and merged time never describe different ones: the open linked
+  -- One pull request, so number and head never describe different ones: the open linked
   -- pull request, else the projected one, else the linked one that landed. A plain select with no set
   -- operation, as Realtime refuses one whose operands read the outer row.
   SELECT
     CASE WHEN linked.open THEN linked.number WHEN projected.number IS NOT NULL THEN projected.number ELSE linked.number END AS number,
-    CASE WHEN linked.open THEN linked.head_sha WHEN projected.number IS NOT NULL THEN projected.head_sha ELSE linked.head_sha END AS head_sha,
-    CASE WHEN linked.open THEN linked.merged_at WHEN projected.number IS NOT NULL THEN projected.merged_at ELSE linked.merged_at END AS merged_at
+    CASE WHEN linked.open THEN linked.head_sha WHEN projected.number IS NOT NULL THEN projected.head_sha ELSE linked.head_sha END AS head_sha
 ) pr ON true
+LEFT JOIN LATERAL (
+  -- The latest merged pull request that closes the item (whatever `pr` shows, which may be an open one), else the latest
+  -- merged one that names it with `Refs` (an older item has no Closes link and no pr_number), else the projected pull
+  -- request if it merged and has neither link. Only a closed item shows it, and the `items` CTE gates its close reason.
+  SELECT coalesce(
+    (SELECT max(m.merged_at) FROM mc.pull_request_issues x
+     JOIN mc.pull_requests m ON m.factory = x.factory AND m.number = x.pr_number
+     WHERE x.factory = i.factory AND x.issue_number = i.number),
+    (SELECT max(rm.merged_at) FROM mc.pull_request_references rf
+     JOIN mc.pull_requests rm ON rm.factory = rf.factory AND rm.number = rf.pr_number
+     WHERE rf.factory = i.factory AND rf.issue_number = i.number AND rm.merged_at IS NOT NULL),
+    projected.merged_at) AS at
+) landed ON true
 LEFT JOIN checks ac ON ac.pr_number = pr.number
 LEFT JOIN LATERAL (
   -- The running app check on the item's pull request: the map's lap rows carry no issue number for them.
@@ -136,7 +150,7 @@ UNION ALL
 -- One row for the factory: where "N older" points, and how many work items a merged pull
 -- request closed or named with `Refs` in all, of which only the newest 200 are above.
 SELECT 'factory', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
-  NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+  NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
   f.repository,
   (SELECT count(*)::int FROM mc.issues i
    WHERE i.factory = f.name AND i.state = 'closed' AND coalesce(i.close_reason, 'completed') NOT IN ('not_planned', 'duplicate') AND (EXISTS (

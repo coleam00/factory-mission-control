@@ -1,7 +1,8 @@
 SELECT
   substring(wo.label FROM 12) AS name,
-  (count(*))::int AS total_count,
+  (count(*) FILTER (WHERE i.state = 'open') + count(*) FILTER (WHERE i.state = 'closed' AND coalesce(i.close_reason, 'completed') NOT IN ('not_planned', 'duplicate')))::int AS total_count,
   (count(*) FILTER (WHERE i.state = 'open'))::int AS open_count,
+  (count(*) FILTER (WHERE i.state = 'closed' AND coalesce(i.close_reason, 'completed') NOT IN ('not_planned', 'duplicate')))::int AS done_count,
   (count(*) FILTER (WHERE i.state = 'closed' AND coalesce(i.close_reason, 'completed') NOT IN ('not_planned', 'duplicate') AND (mp.n > 0 OR mr.n > 0)))::int AS merged_count,
   min(lo.name) AS lands_on,
   max(i.closed_at) AS last_closed_at
@@ -30,7 +31,8 @@ WHERE wo.factory = $1 AND wo.label LIKE 'work-order:%' AND length(wo.label) > 11
   AND i.title NOT IN ('Owner decisions needed', 'Loop metrics')
 -- One row per work order: the distinct `work-order:<name>` labels on this factory's issues, but
 -- the manager's two tracking issues, which board.sql leaves off the board too.
--- total_count is the order's issues, merged_count those closed, but not as not planned or a duplicate,
+-- total_count is the order's issues but those closed as not planned or a duplicate, done_count those
+-- closed otherwise (a merged pull request or by hand), merged_count those done
 -- that a merged pull request closes or names with `Refs`, and
 -- lands_on the `lands-on:<target>` label its issues carry, the first by name when they differ.
 -- Realtime refuses a subquery inside an aggregate's FILTER (db/queries/REALTIME.md), so each count is a

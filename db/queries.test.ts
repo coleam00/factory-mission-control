@@ -247,6 +247,8 @@ const ROW_COLUMNS: Record<string, string[]> = {
     'round_list',
     'returns',
     'last_decision',
+    'parked_reason',
+    'blockers',
     'pr_head',
     'app_check_head',
     'merged_at',
@@ -462,6 +464,7 @@ const ROW_COLUMNS: Record<string, string[]> = {
     'name',
     'total_count',
     'open_count',
+    'done_count',
     'merged_count',
     'lands_on',
     'last_closed_at',
@@ -632,6 +635,8 @@ describe('the rules the live queries restate, which they may not call a function
       'work-orders': 1,
       'product-documents': 1,
     };
+    // work-orders.sql restates the closed-and-not-excluded gate for its done and total counts too.
+    const gates: Record<string, number> = { 'work-orders': 3 };
     for (const [name, sql] of queries) {
       const expected = copies[name] ?? 0;
       expect([
@@ -639,7 +644,7 @@ describe('the rules the live queries restate, which they may not call a function
         count(sql, NOT_DELIVERED),
         count(sql, DELIVERED) + count(sql, DELIVERED_COUNTED),
         count(sql, BY_CLOSING),
-      ]).toEqual([name, expected, expected, expected]);
+      ]).toEqual([name, gates[name] ?? expected, expected, expected]);
     }
   });
 
@@ -649,7 +654,7 @@ describe('the rules the live queries restate, which they may not call a function
     const REFS_MERGED =
       /FROM mc\.pull_request_references rf\s+JOIN mc\.pull_requests (\w+) ON \1\.factory = rf\.factory AND \1\.number = rf\.pr_number\s+WHERE rf\.factory = [\w.$]+ AND rf\.issue_number(?:::text)? = [\w.$]+ AND \1\.merged_at IS NOT NULL/g;
     const copies: Record<string, number> = {
-      board: 2,
+      board: 3,
       'work-orders': 1,
       'product-documents': 1,
       'work-item': 1,

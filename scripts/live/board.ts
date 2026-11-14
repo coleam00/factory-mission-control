@@ -372,7 +372,7 @@ export function boardPhase(ctx: LiveContext): LivePhase {
 
         const demo = (await sqlView(FACTORY, null)).orders.find((o) => o.name === DEMO);
         if (demo === undefined) throw new Error(`the board has no ${DEMO} work order`);
-        const after = orderLine({ ...demo, merged: demo.merged + 1, total: demo.total + 1 });
+        const after = orderLine({ ...demo, done: demo.done + 1, total: demo.total + 1 });
         ms.refsMerged = await writeToScreen(
           page,
           deps,
