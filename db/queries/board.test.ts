@@ -319,7 +319,9 @@ test('with several merged closing pull requests the card shows the latest merge,
     expect(await merged()).toBe('2026-10-20T09:30:00.000Z');
   } finally {
     await db.query(`DELETE FROM mc.pull_request_issues WHERE pr_number = 9201`);
-    await db.query(`DELETE FROM mc.pull_requests WHERE factory = 'mission-control' AND number = 9201`);
+    await db.query(
+      `DELETE FROM mc.pull_requests WHERE factory = 'mission-control' AND number = 9201`,
+    );
   }
 });
 
