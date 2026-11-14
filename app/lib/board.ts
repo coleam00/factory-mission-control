@@ -63,6 +63,10 @@ export interface BoardRow {
   returns: number | null;
   /** The decision of the last build decision; null without one. */
   last_decision: string | null;
+  /** The reason of the decision that parked the item; null when nothing is parked or the decision gave none, and without a state. */
+  parked_reason: string | null;
+  /** The items it is blocked on (`mc.work_item_blockers`), in order; null without a state. */
+  blockers: number[] | null;
   /** The head commit of `pr`, and the head the latest app check on it ran against. */
   pr_head: string | null;
   app_check_head: string | null;
@@ -158,6 +162,24 @@ export interface RunLine {
   to: string;
 }
 
+/** What a blocked or parked item waits on: the parked decision's reason (full text), else each blocker, else a contract. */
+export type Waits =
+  | { kind: 'reason'; text: string }
+  | { kind: 'blockers'; items: { number: number; to: string }[] }
+  | { kind: 'contract' };
+
+function waitsOf(row: BoardRow, factory: string): Waits | null {
+  const reason = row.parked_reason?.trim() ?? '';
+  if (reason !== '') return { kind: 'reason', text: reason };
+  const blockers = row.blockers ?? [];
+  if (blockers.length > 0)
+    return {
+      kind: 'blockers',
+      items: blockers.map((number) => ({ number, to: workItemHref(factory, number) })),
+    };
+  return row.stage === 'needs_contract' ? { kind: 'contract' } : null;
+}
+
 export interface WorkItem {
   number: number;
   title: string;
@@ -171,6 +193,8 @@ export interface WorkItem {
   mergedAt: Date | null;
   /** Why a work item waiting on you or with a failed check stopped, in its state's color. */
   stop: { text: string; state: State } | null;
+  /** What a Blocked and parked item waits on, as the design's one muted line; null for any other item or when nothing names it. */
+  waits: Waits | null;
   /** The work item's own page. */
   to: string;
 }
@@ -717,6 +741,7 @@ export function boardView(sources: BoardSources, now: Date, order: string | null
       returned: row.returns ?? 0,
       mergedAt: home === 'merged' && row.merged_at !== null ? new Date(row.merged_at) : null,
       stop: stopOf(status, questionOf(row, number, home, facts)),
+      waits: home === 'blocked' ? waitsOf(row, factory) : null,
       to: workItemHref(factory, number),
     };
     homes.get(home)?.push({ ...item, status });

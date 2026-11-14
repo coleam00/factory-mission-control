@@ -247,6 +247,8 @@ const ROW_COLUMNS: Record<string, string[]> = {
     'round_list',
     'returns',
     'last_decision',
+    'parked_reason',
+    'blockers',
     'pr_head',
     'app_check_head',
     'merged_at',
