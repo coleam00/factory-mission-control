@@ -301,7 +301,7 @@ function StageCard({
         data-stage-items
         className={`min-h-0 gap-2 ${
           wide
-            ? 'grid grid-cols-1 min-[760px]:grid-cols-3'
+            ? 'grid grid-cols-1 min-[760px]:grid-cols-[repeat(auto-fill,minmax(160px,1fr))]'
             : 'flex flex-col overflow-y-auto min-[760px]:flex-1'
         }`}
       >
