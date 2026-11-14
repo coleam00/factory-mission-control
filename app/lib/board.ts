@@ -495,7 +495,7 @@ export function parked(state: WorkItemState): boolean {
 }
 
 /** Why a work item sits on the Blocked and parked card: a queue parked it, or a contract or another pull request holds it. */
-export const heldKind = (row: WorkItemState): 'parked' | 'blocked' =>
+const heldKind = (row: WorkItemState): 'parked' | 'blocked' =>
   parked(row) ? 'parked' : 'blocked';
 
 /** Where an open work item stands: its home, and whether it waits on the owner. */
