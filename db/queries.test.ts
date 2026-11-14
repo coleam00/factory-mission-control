@@ -654,7 +654,7 @@ describe('the rules the live queries restate, which they may not call a function
     const REFS_MERGED =
       /FROM mc\.pull_request_references rf\s+JOIN mc\.pull_requests (\w+) ON \1\.factory = rf\.factory AND \1\.number = rf\.pr_number\s+WHERE rf\.factory = [\w.$]+ AND rf\.issue_number(?:::text)? = [\w.$]+ AND \1\.merged_at IS NOT NULL/g;
     const copies: Record<string, number> = {
-      board: 2,
+      board: 3,
       'work-orders': 1,
       'product-documents': 1,
       'work-item': 1,

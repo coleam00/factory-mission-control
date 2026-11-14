@@ -70,7 +70,7 @@ export interface BoardRow {
   /** The head commit of `pr`, and the head the latest app check on it ran against. */
   pr_head: string | null;
   app_check_head: string | null;
-  /** When it merged: the merge fact's time only while that merge still finishes the item (no later build or triage, as the pack's `finished()`), else `pr`'s own merge time (null while `pr` is open). */
+  /** When it merged: the merge fact's time only while that merge still finishes the item (no later build or triage, as the pack's `finished()`), else the delivering pull request's merge time: the latest merged one that closes the item, else the latest merged one that names it with `Refs`, else Archon's projected one. Null when none merged; only a closed item's is shown. */
   merged_at: string | null;
   /** The running app check run on `pr`. */
   app_check_run: string | null;
@@ -752,7 +752,12 @@ export function boardView(sources: BoardSources, now: Date, order: string | null
   columns.set(
     'merged',
     merged
-      .sort((a, b) => b.closedAt.getTime() - a.closedAt.getTime() || a.item.number - b.item.number)
+      .sort(
+        (a, b) =>
+          (b.item.mergedAt?.getTime() ?? 0) - (a.item.mergedAt?.getTime() ?? 0) ||
+          b.closedAt.getTime() - a.closedAt.getTime() ||
+          a.item.number - b.item.number,
+      )
       .map((m) => m.item),
   );
 
