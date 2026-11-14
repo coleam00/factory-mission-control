@@ -112,24 +112,6 @@ export function pageWait(condition: string, ms: number): string {
   })`;
 }
 
-/**
- * Lays the page out at `width` from a fresh load and waits for `ready`. A resize across the shell's
- * 1024px layout switch remounts the routed page and drops its rows until its sources answer again (#713),
- * so a probe taken right after `setViewport` reads a loading Board or the pre-switch tree.
- */
-export async function openAtWidth(
-  page: Page,
-  url: string,
-  width: number,
-  ready: string,
-): Promise<void> {
-  await page.setViewport(width);
-  await page.goto(url);
-  await page.evaluate<boolean>(
-    pageWait(`document.querySelector('${ready}') !== null`, READY_WAIT_MS),
-  );
-}
-
 const countIs = (target: number) =>
   `document.querySelector('${PANEL} [data-count]')?.getAttribute('data-count') === '${target}'`;
 
