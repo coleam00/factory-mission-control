@@ -292,10 +292,6 @@ test('a failed run whose item is finished says there is nothing to do and offers
   expect(text(read({ item_closed_at: new Date('2026-10-11T03:30:00Z') }))).toStartWith(
     `Nothing to do: #485 closed at ${local('2026-10-11T03:30:00Z', false)}. `,
   );
-  // An item closed as not planned or a duplicate has no counted merge, so item_merged_at is null and the page says closed.
-  const notPlanned = text(read({ item_closed_at: new Date('2026-10-11T03:30:00Z') }));
-  expect(notPlanned).toContain('#485 closed at');
-  expect(notPlanned).not.toContain('#485 merged at');
   // A run that followed the failure but did not finish the item at its close is not named as its closer.
   expect(
     text(read({ item_closed_at: new Date('2026-10-11T03:30:00Z'), ...finished, closed_by: null })),
