@@ -261,6 +261,60 @@ describe('the chat endpoint against a stubbed model', () => {
     expect(await snapshot(fixture.direct)).toEqual(before);
   });
 
+  describe('the run page the owner is viewing', () => {
+    const proseOnly = (text: string, fence = '') =>
+      model(async () => [start, delta(text + fence), result(0.01)]);
+    const linksOf = async (text: string, run: string, fence = '') =>
+      (
+        await events(
+          await chat(managerOf(proseOnly(text, fence)), { context: { place: 'run', run } }),
+        )
+      )
+        .filter((e) => e.type === 'link')
+        .map((e) => (e as { id: string | number }).id);
+
+    test('is linked when the prose names it by short id and the model gave no block', async () => {
+      const text = 'Run 5eed0001 is an archon-loop run with status failed.';
+      expect(await linksOf(text, FAILED_RUN)).toEqual([FAILED_RUN]);
+      expect(await linksOf('"5eed0001" is the start of its id.', FAILED_RUN)).toEqual([FAILED_RUN]);
+    });
+
+    test('is linked once when the block already links it', async () => {
+      const block = `
+${FENCE}mc
+${JSON.stringify({ links: [{ kind: 'run', id: FAILED_RUN }] })}
+${FENCE}
+`;
+      expect(await linksOf('Run 5eed0001 failed.', FAILED_RUN, block)).toEqual([FAILED_RUN]);
+    });
+
+    const blockOf = (runs: string[]) => `\n${FENCE}mc\n${JSON.stringify({ runs })}\n${FENCE}\n`;
+
+    test('is not linked a second time when the model lists it as a run card', async () => {
+      expect(await linksOf('Run 5eed0001 failed.', FAILED_RUN, blockOf([FAILED_RUN]))).toEqual([]);
+    });
+
+    test('is linked when the model lists it past the run cap, where no card shows it', async () => {
+      const others = Array.from(
+        { length: MAX_RUNS },
+        (_, i) => `5eed0004-0000-4000-8000-${String(i).padStart(12, '0')}`,
+      );
+      const text = 'Run 5eed0001 failed.';
+      expect(await linksOf(text, FAILED_RUN, blockOf([...others, FAILED_RUN]))).toEqual([
+        FAILED_RUN,
+      ]);
+    });
+
+    test('is not linked when the prose never names it, or it is not a run of the factory', async () => {
+      expect(await linksOf('This run failed.', FAILED_RUN)).toEqual([]);
+      expect(await linksOf(`Run ${ghost.slice(0, 8)} failed.`, ghost)).toEqual([]);
+    });
+
+    test('is not linked when the prose names only a sibling run that shares its short id', async () => {
+      expect(await linksOf(`${OTHER_RUN} failed.`, FAILED_RUN)).toEqual([]);
+    });
+  });
+
   test('the agent has no tool but the two read tools, and the write it tried was refused', async () => {
     let refused: unknown;
     const played = model(async (options) => {

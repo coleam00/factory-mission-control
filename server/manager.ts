@@ -15,8 +15,9 @@ import { ATTENTION_SOURCES, type AttentionKind, KINDS } from '../app/lib/attenti
 import { scorecardEdges, TOO_FEW_BELOW } from '../app/lib/factory-scorecard';
 import { FAILURES_QUERY, failureLabel, retriedArgs } from '../app/lib/failure-view';
 import { type FailureGroupRow, failuresSince } from '../app/lib/failures';
+import { linkify } from '../app/lib/manager';
 import { topLevelBlocks } from '../app/lib/manager-markdown';
-import { isRunId, lapHref } from '../app/lib/one-lap';
+import { isRunId, lapHref, replaceRunIds } from '../app/lib/one-lap';
 import { placeAddress } from '../app/lib/places';
 import { addressOfPlace } from '../app/lib/runs';
 import { workItemHref } from '../app/lib/work-item';
@@ -372,7 +373,7 @@ The transient failures a later run of their workflow retried, today (the muted l
 The mc schema:
 ${schema}
 
-Answer in short plain prose, naming runs by workflow and status. To give the owner links, a run list or a button, end the answer with one fenced block whose info string is mc, holding JSON:
+Answer in short plain prose, naming runs by workflow and status. Every run the answer names goes in the block's links by its full run id, and every work item by its issue number. To give the owner links, a run list or a button, end the answer with one fenced block whose info string is mc, holding JSON:
 \`\`\`mc
 {"links":[{"kind":"run","id":"<run id>"},{"kind":"item","id":<issue number>}],"runs":["<run id>"],"proposals":[{"action":"answer","run_id":"<run id>","option":"<option id>"},{"action":"answer","run_id":"<run id>","text":"<free text>"},{"action":"resume","run_id":"<run id>","from_step":"<step id>"},{"action":"retriage","number":<issue number>},{"action":"close","number":<issue number>},{"action":"comment","number":<issue number>,"text":"<the owner's words>"}]}
 \`\`\`
@@ -550,11 +551,36 @@ async function proposalEvent(
   };
 }
 
-/** Every entry the model named, checked against `mc`; what fails is dropped and logged. */
-async function structureEvents(manager: Manager, factory: string, block: string | null) {
+/**
+ * The run page's own run, when the prose names it and the model did not show it as a run card.
+ * Naming is case-insensitive over the raw prose, code spans included, with sibling runs' full ids
+ * masked since they share the short id. A link the panel cannot place inline shows after the prose.
+ */
+function viewedRunLink(cards: string[], viewed: string | undefined, prose: string) {
+  if (viewed === undefined) return [];
+  const id = viewed.toLowerCase();
+  if (cards.some((r) => r.toLowerCase() === id)) return [];
+  const own = replaceRunIds(prose, (uuid) => (uuid.toLowerCase() === id ? uuid : ' '));
+  const link = { type: 'link', kind: 'run', id, href: lapHref('', id) } as const;
+  return linkify(own.toLowerCase(), [link]).rest.length === 0 ? [{ kind: 'run' as const, id }] : [];
+}
+
+/**
+ * Every entry the model named, checked against `mc`; what fails is dropped and logged. The run
+ * the owner is viewing is linked when the prose names it, as the design has answers cite runs.
+ */
+async function structureEvents(
+  manager: Manager,
+  factory: string,
+  block: string | null,
+  prose: string,
+  viewed: string | undefined,
+) {
   const raw = parseBlock(block);
+  const cards = raw.runs.slice(0, MAX_RUNS);
+  raw.links.push(...viewedRunLink(cards, viewed, prose));
   const events: ManagerEvent[] = await linkEvents(manager, factory, raw.links);
-  const runs = await runSummaries(manager, factory, raw.runs.slice(0, MAX_RUNS));
+  const runs = await runSummaries(manager, factory, cards);
   if (runs.length > 0) events.push({ type: 'runs', runs });
   let proposals = 0;
   for (const proposal of raw.proposals) {
@@ -600,9 +626,11 @@ async function produce(
   const splitter = new AnswerSplitter();
   let wrote = false;
   let started = false;
+  let prose = '';
   const show = (text: string) => {
     if (text) {
       wrote = true;
+      prose += text;
       emit({ type: 'text', text });
     }
   };
@@ -676,7 +704,14 @@ async function produce(
   }
   let structured = true;
   try {
-    for (const event of await structureEvents(manager, request.factory, block)) emit(event);
+    for (const event of await structureEvents(
+      manager,
+      request.factory,
+      block,
+      prose,
+      briefing ? undefined : request.context.run,
+    ))
+      emit(event);
   } catch (error) {
     structured = false;
     console.error(`manager structure failed: ${error instanceof Error ? error.message : error}`);
