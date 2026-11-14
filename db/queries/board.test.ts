@@ -435,6 +435,13 @@ test('an item a paused run waits on holds only by its claim or its facts step is
     const board = await view('queue-factory');
     const decision = board.columns.find((c) => c.id === 'decision')?.items.map((i) => i.number);
     expect(decision).toEqual(expect.arrayContaining([404, 405]));
+    const build = board.pipeline.find((s) => s.id === 'build')?.items;
+    expect(
+      build?.filter((i) => [404, 405].includes(i.number)).map((i) => [i.number, i.status]),
+    ).toEqual([
+      [404, 'needs you'],
+      [405, 'needs you'],
+    ]);
   } finally {
     await db.query('ROLLBACK');
   }
