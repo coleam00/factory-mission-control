@@ -66,7 +66,7 @@ export interface BoardRow {
   /** The head commit of `pr`, and the head the latest app check on it ran against. */
   pr_head: string | null;
   app_check_head: string | null;
-  /** When it merged: the merge fact's time only while that merge still finishes the item (no later build or triage, as the pack's `finished()`), else the delivering pull request's merge time: `pr`'s when it merged, else the latest merged one that closes the item, else the latest merged one that names it with `Refs`. Null when none merged; only a closed item's is shown. */
+  /** When it merged: the merge fact's time only while that merge still finishes the item (no later build or triage, as the pack's `finished()`), else the delivering pull request's merge time: the latest merged one that closes the item, else the latest merged one that names it with `Refs`, else Archon's projected one. Null when none merged; only a closed item's is shown. */
   merged_at: string | null;
   /** The running app check run on `pr`. */
   app_check_run: string | null;

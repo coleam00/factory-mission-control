@@ -325,6 +325,25 @@ test('with several merged closing pull requests the card shows the latest merge,
   }
 });
 
+test('a merged projected pull request does not outrank the merged closing one', async () => {
+  await db.query(
+    `INSERT INTO mc.pull_requests (factory, number, title, state, merged_at, head_sha, url, created_at, updated_at)
+     VALUES ('mission-control', 9203, 't', 'closed', '2026-02-02T00:00:00Z', 'p', 'u', now(), now())`,
+  );
+  await db.query(
+    `INSERT INTO mc.work_item_states (project_key, number, revision, pr_number)
+     SELECT codebase, 10, 1, 9203 FROM mc.factories WHERE name = 'mission-control'`,
+  );
+  try {
+    expect((await missionItem(10))?.merged_at).toBe('2026-10-20T09:30:00.000Z');
+  } finally {
+    await db.query(`DELETE FROM mc.work_item_states WHERE number = 10`);
+    await db.query(
+      `DELETE FROM mc.pull_requests WHERE factory = 'mission-control' AND number = 9203`,
+    );
+  }
+});
+
 test('a work item state reaches only the factory whose codebase it names', async () => {
   const parkedOf = async (factory: string) =>
     (await run<BoardRow>('board', factory))
@@ -626,7 +645,7 @@ test('merged_at is null for a merge that a later build or triage has overtaken, 
   }
 });
 
-test('one pull request answers pr, pr_head and merged_at: open linked, else projected, else merged linked', async () => {
+test('one pull request answers pr and pr_head: open linked, else projected, else merged linked', async () => {
   const fixtures = async (factory: string) => {
     await db.query(
       `INSERT INTO mc.pull_requests (factory, number, title, state, merged_at, head_sha, url, created_at, updated_at)
