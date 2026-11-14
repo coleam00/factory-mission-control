@@ -2,6 +2,7 @@ import { join } from 'node:path';
 import { PGlite, type Transaction } from '@electric-sql/pglite';
 import type { Db, Row, Tx } from '../scripts/lib/db';
 import { migrationsDir, readMigrationFiles } from '../scripts/migrate';
+import { STATE_REVISIONS_TABLE } from './archon-state-table';
 
 export const migrationFiles = readMigrationFiles(migrationsDir(join(import.meta.dir, '..')));
 
@@ -34,15 +35,7 @@ export const ARCHON_TABLES = `
     step_name varchar(255),
     data jsonb DEFAULT '{}'::jsonb,
     created_at timestamptz DEFAULT CURRENT_TIMESTAMP);
-  CREATE TABLE public.remote_agent_state_revisions (
-    project_key text NOT NULL,
-    name text NOT NULL,
-    revision integer NOT NULL CHECK (revision >= 1),
-    value text,
-    operation text NOT NULL,
-    writer_kind text NOT NULL CHECK (writer_kind IN ('run', 'operator')),
-    created_at timestamptz NOT NULL DEFAULT now(),
-    PRIMARY KEY (project_key, name, revision));`;
+  ${STATE_REVISIONS_TABLE};`;
 
 /** Without params a migration file is several statements, which only exec runs. */
 function txOn(client: PGlite | Transaction): Tx {
