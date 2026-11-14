@@ -1,8 +1,11 @@
 WITH item_prs AS (
-  -- The item's pull requests, each once: Closes-linked, or the one Archon's state for the item names
-  -- (a Refs-only pull request has no Closes link). Reads only the parameters, so Realtime accepts the union.
+  -- The item's pull requests, each once: Closes-linked, named with Refs (board.sql), or the one
+  -- Archon's state for the item names. Reads only the parameters, so Realtime accepts the union.
   SELECT pi.pr_number FROM mc.pull_request_issues pi
   WHERE pi.factory = $1 AND pi.issue_number::text = $2
+  UNION
+  SELECT rf.pr_number FROM mc.pull_request_references rf
+  WHERE rf.factory = $1 AND rf.issue_number::text = $2
   UNION
   SELECT w.pr_number FROM mc.work_item_states w
   JOIN mc.factories wf ON wf.codebase = w.project_key
@@ -106,8 +109,8 @@ FROM runs r
 JOIN mc.app_check_lines a ON a.run_id = r.run_id
 WHERE a.kind <> 'holdout'
 UNION ALL
--- Each queue sweep that ran while one of the item's pull requests (a Closes-linked one, or the one
--- Archon's state names, as the Board's pull request rule reads them) was open, with that sweep's
+-- Each queue sweep that ran while one of the item's pull requests (Closes-linked, named with Refs, or the
+-- one Archon's state names, as the Board reads them) was open, with that sweep's
 -- decisions and the pull requests its record step read back as merged, and the browser keeps the
 -- decision whose number is this pull request's, and drops a sweep that has none.
 SELECT 'sweep', l.run_id, l.workflow_name, l.status, l.started_at, l.completed_at, NULL,

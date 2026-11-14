@@ -72,6 +72,21 @@ test('a Refs-only pull request named by the item state keeps its sweep rows, onc
   });
 });
 
+test('a merged pull request that only Refs the item, with no item state, keeps its sweep rows', async () => {
+  const closesLinked = await lines('queue-factory', QUEUE_RETURNED.issue);
+  await inRollback(async (tx) => {
+    await tx.query(
+      'DELETE FROM mc.pull_request_issues WHERE factory = $1 AND issue_number = $2 AND pr_number = $3',
+      ['queue-factory', QUEUE_RETURNED.issue, QUEUE_RETURNED.pr],
+    );
+    await tx.query(
+      'INSERT INTO mc.pull_request_references (factory, pr_number, issue_number) VALUES ($1, $2, $3)',
+      ['queue-factory', QUEUE_RETURNED.pr, QUEUE_RETURNED.issue],
+    );
+    expect(await lines('queue-factory', QUEUE_RETURNED.issue, tx)).toEqual(closesLinked);
+  });
+});
+
 test('a refused land attempt shows its stored reason verbatim, and says so when there is none', async () => {
   const refusals = (all: string[]) => all.filter((t) => t.startsWith('Merge gate refused'));
   expect(refusals(await lines('mission-control', 3))).toEqual([
