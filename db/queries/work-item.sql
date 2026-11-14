@@ -1,11 +1,12 @@
 WITH item_prs AS (
-  -- The item's pull requests, each once: Closes-linked, named with Refs (board.sql), or the one
+  -- The item's pull requests, each once: Closes-linked, named with Refs once merged (board.sql), or the one
   -- Archon's state for the item names. Reads only the parameters, so Realtime accepts the union.
   SELECT pi.pr_number FROM mc.pull_request_issues pi
   WHERE pi.factory = $1 AND pi.issue_number::text = $2
   UNION
   SELECT rf.pr_number FROM mc.pull_request_references rf
-  WHERE rf.factory = $1 AND rf.issue_number::text = $2
+  JOIN mc.pull_requests rp ON rp.factory = rf.factory AND rp.number = rf.pr_number
+  WHERE rf.factory = $1 AND rf.issue_number::text = $2 AND rp.merged_at IS NOT NULL
   UNION
   SELECT w.pr_number FROM mc.work_item_states w
   JOIN mc.factories wf ON wf.codebase = w.project_key
