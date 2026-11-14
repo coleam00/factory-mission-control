@@ -566,6 +566,10 @@ test('a Depends on is open on the Board exactly when Unstick does not count it g
         name,
         gone,
       ]);
+      const workable = (await db.query(sqlOf('health-workable'), ['mission-control'])).some(
+        (r) => r.kind === 'issue' && r.issue_number === 9,
+      );
+      expect([name, workable]).toEqual([name, gone]);
     }
   } finally {
     await db.close();

@@ -1,7 +1,7 @@
 SELECT 'issue' AS kind, i.number AS issue_number, i.title, i.url, NULL::uuid AS run_id
 FROM mc.issues i
--- Workable: open, not labelled needs-owner, every `Depends on` closed (one that is not mirrored
--- is not known to be closed), no live claim, one not yet released, not held by a running run, and not parked by the queues as
+-- Workable: open, not labelled needs-owner, every `Depends on` gone as unstick.sql reads it: a closed issue or a
+-- closed or merged pull request (one that is not mirrored is not known to be gone), no live claim, one not yet released, not held by a running run, and not parked by the queues as
 -- the Board reads it. The manager's two tracking
 -- issues, kept by exact title, are never work a lap picks (#247).
 WHERE i.factory = $1 AND i.state = 'open'
@@ -12,10 +12,9 @@ WHERE i.factory = $1 AND i.state = 'open'
   )
   AND NOT EXISTS (
     SELECT 1 FROM mc.issue_dependencies d
-    WHERE d.factory = i.factory AND d.issue_number = i.number AND NOT EXISTS (
-      SELECT 1 FROM mc.issues di
-      WHERE di.factory = d.factory AND di.number = d.depends_on AND di.state = 'closed'
-    )
+    WHERE d.factory = i.factory AND d.issue_number = i.number
+      AND NOT EXISTS (SELECT 1 FROM mc.issues di WHERE di.factory = d.factory AND di.number = d.depends_on AND di.state = 'closed')
+      AND NOT EXISTS (SELECT 1 FROM mc.pull_requests dr WHERE dr.factory = d.factory AND dr.number = d.depends_on AND dr.state = 'closed')
   )
   AND NOT EXISTS (
     SELECT 1 FROM mc.claims c
