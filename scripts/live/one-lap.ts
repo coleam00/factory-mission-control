@@ -178,11 +178,11 @@ const pageLapPrJoin = (sql: string) =>
     'pr lateral',
   );
 
-/** The claim lateral, the facts step join and the issue join that follow it: which item a run shows. */
+/** The claim lateral through the issue join: which item a run shows (the facts step and the item lateral sit between). */
 const pageLapClaimJoin = (sql: string) =>
   pageLapRule(
     sql,
-    /^LEFT JOIN LATERAL \(\r?\n\s*SELECT c\.issue_number, c\.route FROM mc\.claims c[\s\S]*?^\) c ON true\r?\n.*mc\.lap_steps facts .*\r?\n.*mc\.issues i .*$/m,
+    /^LEFT JOIN LATERAL \(\r?\n\s*SELECT c\.issue_number, c\.route FROM mc\.claims c[\s\S]*?^\) c ON true\r?\n[\s\S]*?^LEFT JOIN mc\.issues i .*$/m,
     'claim lateral',
   );
 

@@ -422,6 +422,7 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
       'retried-runs': retriedArgs(at),
       runs: runsArgs({ q: '', state: '', hideIdle: false, page: 1 }),
     };
+    const accepted: string[] = [];
     for (const [name, sql] of queries) {
       const params = [
         factory,
@@ -430,8 +431,13 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
       const seen = await runProbe(sql, params, { databaseUrl, secret, origin: base });
       if (seen.verdict === 'rejected') {
         failures.push(`Realtime refuses db/queries/${name}.sql (${seen.error})`);
+      } else {
+        accepted.push(name);
       }
     }
+    deps.out(
+      `Realtime accepted ${accepted.length} of ${queries.size} db/queries files: ${accepted.join(', ')}`,
+    );
 
     const laps = await db.query(
       `SELECT l.run_id FROM mc.laps l
