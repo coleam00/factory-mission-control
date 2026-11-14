@@ -21,6 +21,7 @@ import {
   type LivePhase,
   lateWrite,
   liveOutputs,
+  openAtWidth,
   pageWait,
   READY_WAIT_MS,
   writeToScreen,
@@ -177,7 +178,7 @@ export function boardPhase(ctx: LiveContext): LivePhase {
   ): Promise<string[]> {
     const failures: string[] = [];
     for (const width of PILL_WIDTHS) {
-      await page.setViewport(width);
+      await openAtWidth(page, `${ctx.base}/f/${factory}/board`, width, READY);
       const fit = await page.evaluate<{ seen: string[]; bad: string[] }>(PILL_FIT);
       seen.set(width, [...(seen.get(width) ?? []), ...fit.seen]);
       failures.push(...fit.bad.map((b) => `board ${factory} at ${width}px: stage pill ${b}`));
@@ -234,9 +235,8 @@ export function boardPhase(ctx: LiveContext): LivePhase {
   async function pillsOutsideTiles(page: Page): Promise<string[]> {
     const failures: string[] = [];
     await page.evaluate<boolean>(`(localStorage.setItem('mc.manager.open', 'open'), true)`);
-    await open(page, path);
     for (const width of [760, 800, 900, 1000, 1264, 1440]) {
-      await page.setViewport(width);
+      await openAtWidth(page, `${ctx.base}${path}`, width, READY);
       const { bad, missing } = await page.evaluate<{ bad: string[]; missing: string[] }>(
         MINI_PILL_FIT,
       );

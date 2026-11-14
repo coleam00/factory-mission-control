@@ -6,6 +6,7 @@ import {
   lateWrite,
   mapMismatches,
   mapWidthFailures,
+  openAtWidth,
   type ShownCard,
   waitForHealth,
 } from './shared';
@@ -120,4 +121,18 @@ test('waitForHealth accepts a server that answers only after 20 seconds', async 
     Bun.sleep = realSleep;
     setSystemTime();
   }
+});
+
+test('openAtWidth sets the width, then loads the page and waits for it, so a probe never reads a remounting page', async () => {
+  const calls: string[] = [];
+  const page = {
+    setViewport: async (w: number) => void calls.push(`viewport ${w}`),
+    goto: async (url: string) => void calls.push(`goto ${url}`),
+    evaluate: async (expression: string) => {
+      calls.push(expression.includes('main[data-board]') ? 'ready' : 'other');
+      return true;
+    },
+  } as unknown as import('../lib/cdp').Page;
+  await openAtWidth(page, 'http://x/board', 760, 'main[data-board]');
+  expect(calls).toEqual(['viewport 760', 'goto http://x/board', 'ready']);
 });
