@@ -58,6 +58,36 @@ describe('one-lap on the seed', () => {
     expect(seedLaps(seed).find((l) => l.runId === LAP_RUN)?.what).toBe('gate-refused');
   });
 
+  test('an item delivered by a merged pull request that only Refs it has that merge as its merged time', async () => {
+    const read = async () => {
+      const [row] = await lap('one-lap', LAP_RUN);
+      return [row.item_merged_at, row.closed_by];
+    };
+    const before = await read();
+    const links = await db.query(
+      `SELECT factory, pr_number FROM mc.pull_request_issues WHERE factory = 'mission-control' AND issue_number = 3`,
+    );
+    expect(links).toHaveLength(1);
+    const [{ pr_number }] = links;
+    await db.query(
+      `DELETE FROM mc.pull_request_issues WHERE factory = 'mission-control' AND issue_number = 3`,
+    );
+    expect((await read())[0]).toBeNull();
+    await db.query(
+      `INSERT INTO mc.pull_request_references (factory, pr_number, issue_number) VALUES ('mission-control', $1, 3)`,
+      [pr_number],
+    );
+    expect(await read()).toEqual(before);
+    await db.query(
+      `DELETE FROM mc.pull_request_references WHERE factory = 'mission-control' AND issue_number = 3`,
+    );
+    await db.query(
+      `INSERT INTO mc.pull_request_issues (factory, pr_number, issue_number) VALUES ('mission-control', $1, 3)`,
+      [pr_number],
+    );
+    expect(await read()).toEqual(before);
+  });
+
   test("the header is the gate-refused lap's claim, pick, review and merge gate", async () => {
     expect(await lap('one-lap', LAP_RUN)).toEqual([
       {

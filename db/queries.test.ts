@@ -637,6 +637,27 @@ describe('the rules the live queries restate, which they may not call a function
     }
   });
 
+  test('a merged pull request that Refs the item counts as delivering it in every query that reads the link', () => {
+    // The Refs branch alone, whatever the item is matched by: work-item.sql and one-lap.sql restate it
+    // for one item, so the delivered-predicate regexes above cannot see them.
+    const REFS_MERGED =
+      /FROM mc\.pull_request_references rf\s+JOIN mc\.pull_requests (\w+) ON \1\.factory = rf\.factory AND \1\.number = rf\.pr_number\s+WHERE rf\.factory = [\w.$]+ AND rf\.issue_number(?:::text)? = [\w.$]+ AND \1\.merged_at IS NOT NULL/g;
+    const copies: Record<string, number> = {
+      board: 2,
+      'work-orders': 1,
+      'product-documents': 1,
+      'work-item': 1,
+      'one-lap': 1,
+    };
+    for (const [name, sql] of queries) {
+      expect([name, count(sql, REFS_MERGED), count(sql, /pull_request_references/g)]).toEqual([
+        name,
+        copies[name] ?? 0,
+        copies[name] ?? 0,
+      ]);
+    }
+  });
+
   test('a build-queue lap is a run whose facts step names an item, in every copy of the rule', () => {
     for (const sql of [
       query('scorecard'),
