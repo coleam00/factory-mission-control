@@ -509,10 +509,26 @@ test("a stage 'blocked' item with no parked decision is blocked on its open Depe
   try {
     await state('blocked');
     expect((await missionItem(9))?.blockers).toEqual([12]);
+    const waits = (await view('mission-control')).pipeline
+      .flatMap((s) => s.items)
+      .find((i) => i.number === 9)?.waits;
+    expect(waits).toEqual({
+      kind: 'blockers',
+      items: [{ number: 12, to: '/f/mission-control/work/12' }],
+    });
+    await db.query(`DELETE FROM mc.work_item_states WHERE number = 9`);
+    await state('blocked');
+    await db.query(
+      `INSERT INTO mc.work_item_blockers (project_key, number, blocker)
+       SELECT codebase, 9, 7 FROM mc.factories WHERE name = 'mission-control'`,
+    );
+    expect((await missionItem(9))?.blockers).toEqual([7]);
+    await db.query(`DELETE FROM mc.work_item_blockers WHERE number = 9`);
     await db.query(`DELETE FROM mc.work_item_states WHERE number = 9`);
     await state('ready');
     expect((await missionItem(9))?.blockers).toEqual([]);
   } finally {
+    await db.query(`DELETE FROM mc.work_item_blockers WHERE number = 9`);
     await db.query(`DELETE FROM mc.work_item_states WHERE number = 9`);
     await db.query(`DELETE FROM mc.issue_dependencies WHERE issue_number = 9`);
     await db.query(
