@@ -96,6 +96,23 @@ describe('home-map on the seed', () => {
     ]);
   });
 
+  test('a waiting run carries the question it stopped on and the number its title names, not its number input', async () => {
+    await db.query('BEGIN');
+    try {
+      await db.query(
+        `UPDATE remote_agent_workflow_runs
+           SET metadata = jsonb_set(metadata, '{wait,message}', to_jsonb($2::text)) WHERE id = $1`,
+        [QUEUE_RUNS.waiting, '**Merge queue, PR 16: merge decision**\n\nPull request 16 is green.'],
+      );
+      const waiting = (await rows('queue-factory')).filter((r) => r.kind === 'waiting');
+      expect(waiting).toHaveLength(1);
+      expect(waiting[0]).toMatchObject({ number: null, asks: 16 });
+      expect(waiting[0]?.stop_line).toBeTruthy();
+    } finally {
+      await db.query('ROLLBACK');
+    }
+  });
+
   test('at a pin, the queue factory shows the queue runs that ran it', async () => {
     expect(await versions('queue-factory', V2)).toBe(1);
     expect(Object.keys(await laps('queue-factory', V2)).sort()).toEqual(

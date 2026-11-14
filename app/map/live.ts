@@ -60,6 +60,8 @@ export interface HomeMapRow {
   prs: string | null;
   /** A waiting run's recorded stop line: the question it asks; null when it recorded none. */
   stop_line: string | null;
+  /** A waiting run's question names this issue or pull request (the attention item's number), else the run's number input. */
+  asks: number | null;
 }
 
 /** A lap on the map: its run, its claimed issue, and the step it counts on. */

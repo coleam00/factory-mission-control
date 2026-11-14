@@ -70,6 +70,7 @@ const lap = (number: number, workflow: string, steps: string[] | null): HomeMapR
   at: null,
   prs: null,
   stop_line: null,
+  asks: null,
 });
 const row = (
   kind: HomeMapRow['kind'],
@@ -629,7 +630,7 @@ test('a merged card carries its returns and merge time; a waiting one its questi
       item(3, { app_check: 'FAIL', rounds: 1, pr: 5 }),
       item(4, { build_status: 'asking', rounds: 1 }),
     ],
-    map: [{ ...row('waiting', 2, 'archon-build-queue'), stop_line: 'Merge it?' }],
+    map: [{ ...row('waiting', 2, 'archon-build-queue'), stop_line: 'Merge it?', asks: 2 }],
   });
   const merged = v.pipeline.find((s) => s.id === 'merged')?.items[0];
   expect(merged?.returned).toBe(2);
@@ -647,4 +648,30 @@ test('a merged card carries its returns and merge time; a waiting one its questi
     text: 'App check failed',
     state: 'failed',
   });
+});
+
+test('an asking card shows the question of the run that asks about it, however the run found the item', () => {
+  // Production shapes: a build-queue run that claimed its item has no number input, a merge-queue ask names a pull request.
+  const waiting = (workflow: string, asks: number, stop_line: string): HomeMapRow => ({
+    ...row('waiting', null, workflow),
+    stop_line,
+    asks,
+  });
+  const v = view({
+    board: [
+      item(42, { build_status: 'asking', rounds: 1 }),
+      item(43, { build_status: 'ready', merge_status: 'asking', pr: 16, pr_open: true }),
+      item(44, { build_status: 'asking', rounds: 1 }),
+    ],
+    map: [
+      waiting('archon-build-queue', 42, 'Split it?'),
+      waiting('archon-merge-queue', 16, 'Merge it?'),
+    ],
+  });
+  const stop = (n: number) => v.pipeline.flatMap((s) => s.items).find((i) => i.number === n)?.stop;
+  expect(stop(42)?.text).toBe('Asking: Split it?');
+  expect(stop(43)?.text).toBe('Asking: Merge it?');
+  expect(stop(44)?.text).toBe('Waiting on you');
+  expect(home(v, 'build')).toEqual([42, 44]);
+  expect(home(v, 'merge')).toEqual([43]);
 });

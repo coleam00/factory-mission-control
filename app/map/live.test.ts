@@ -32,6 +32,7 @@ const lap = (
   at: null,
   prs: null,
   stop_line: null,
+  asks: null,
 });
 
 const hereOn = (rows: HomeMapRow[], cards: readonly { id: string }[]) => {
@@ -146,6 +147,7 @@ test('each chip sits on the card that carries it, and a source not delivered yet
     at: null,
     prs: null,
     stop_line: null,
+    asks: null,
   };
   const live = cardLive(
     FACTORY_MAP,

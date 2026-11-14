@@ -16,6 +16,7 @@ const VERSION_ROW: HomeMapRow = {
   at: null,
   prs: null,
   stop_line: null,
+  asks: null,
 };
 
 /** A socket that answers every subscribe with `home-map`'s one version row, and no rows otherwise. */

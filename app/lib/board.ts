@@ -416,8 +416,10 @@ function chipsOf(item: BoardRow, home: HomeId, needsYou: boolean, running: boole
 }
 
 interface Facts {
-  /** Each work item a paused run waits on a person for: the stage of that run's workflow and the question it recorded. */
-  attention: ReadonlyMap<number, { stage: StageId | null; question: string | null }>;
+  /** Each work item a paused run waits on a person for, by the run's number input: the stage of that run's workflow. */
+  attention: ReadonlyMap<number, { stage: StageId | null }>;
+  /** The question each waiting run recorded, by what it asks about: a pull request for a merge-queue ask, else an issue. */
+  questions: ReadonlyMap<string, string>;
   needsOwner: ReadonlySet<number>;
   running: ReadonlyMap<number, Hold>;
   steps: ReadonlyMap<string, string | null>;
@@ -499,6 +501,16 @@ function tableColumnOf({ home, needsYou }: Placement): ColumnId {
   return home === 'blocked' ? 'parked' : home;
 }
 
+const askKey = (workflow: string | null, number: number): string =>
+  `${WORKFLOW_STAGE[workflow ?? ''] === 'merge' ? 'pr' : 'issue'}:${number}`;
+
+/** The question of the run asking about this item: its merge ask when it sits in Merge, else its issue's ask, else the other. */
+function questionOf(row: BoardRow, number: number, home: HomeId, facts: Facts): string | null {
+  const issue = facts.questions.get(`issue:${number}`);
+  const pr = row.pr === null ? undefined : facts.questions.get(`pr:${row.pr}`);
+  return (home === 'merge' ? (pr ?? issue) : (issue ?? pr)) ?? null;
+}
+
 function factsOf(
   map: readonly HomeMapRow[],
   workable: readonly HealthWorkableRow[],
@@ -508,12 +520,14 @@ function factsOf(
     attention: new Map(
       map.flatMap((r) =>
         r.kind === 'waiting' && r.number !== null
-          ? [
-              [
-                r.number,
-                { stage: WORKFLOW_STAGE[r.workflow ?? ''] ?? null, question: r.stop_line },
-              ] as const,
-            ]
+          ? [[r.number, { stage: WORKFLOW_STAGE[r.workflow ?? ''] ?? null }] as const]
+          : [],
+      ),
+    ),
+    questions: new Map(
+      map.flatMap((r) =>
+        r.kind === 'waiting' && r.asks !== null && r.stop_line !== null
+          ? [[askKey(r.workflow, r.asks), r.stop_line] as const]
           : [],
       ),
     ),
@@ -667,7 +681,7 @@ export function boardView(sources: BoardSources, now: Date, order: string | null
             },
       returned: row.returns ?? 0,
       mergedAt: home === 'merged' && row.merged_at !== null ? new Date(row.merged_at) : null,
-      stop: stopOf(status, facts.attention.get(number)?.question ?? null),
+      stop: stopOf(status, questionOf(row, number, home, facts)),
       to: workItemHref(factory, number),
     };
     homes.get(home)?.push({ ...item, status });
