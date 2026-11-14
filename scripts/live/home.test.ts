@@ -48,6 +48,7 @@ test.each(['timeout', 'error state', 'evaluation throws', 'ready'])(
       async setViewport() {},
       async mouse() {},
       async touch() {},
+      async key() {},
       async screenshot() {
         return Buffer.alloc(0);
       },

@@ -174,3 +174,18 @@ export async function clickFade(side: 'left' | 'right') {
   document.querySelector<HTMLElement>(`[data-stage-fade="${side}"]`)?.click();
   await new Promise((r) => setTimeout(r, 1200));
 }
+
+/** Focuses a hint, ready for a real key press. */
+export function focusFade(side: 'left' | 'right') {
+  document.querySelector<HTMLElement>(`[data-stage-fade="${side}"]`)?.focus();
+}
+
+/** Where keyboard focus is: whether it is inside the Board, and the row's scroll position. */
+export function focusAt() {
+  const active = document.activeElement;
+  return {
+    inBoard: !!active && !!document.querySelector('[data-board]')?.contains(active),
+    isBody: active === document.body,
+    scrollLeft: document.querySelector<HTMLElement>('[data-stage-row]')?.scrollLeft ?? 0,
+  };
+}
