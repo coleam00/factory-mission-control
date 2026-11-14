@@ -417,7 +417,7 @@ function chipsOf(item: BoardRow, home: HomeId, needsYou: boolean, running: boole
 }
 
 interface Facts {
-  /** Each work item a paused run waits on a person for, by the run's number input: the stage of that run's workflow. */
+  /** Each work item a paused run waits on a person for, by the item the run holds (its claim, else its facts step's item, else its number input): the stage of that run's workflow. */
   attention: ReadonlyMap<number, StageId | null>;
   /** The question each waiting run recorded, by the number its ask names: issues and pull requests share one number space. */
   questions: ReadonlyMap<number, string>;

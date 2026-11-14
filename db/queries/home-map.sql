@@ -61,9 +61,9 @@ UNION ALL
 -- line, as the Runs page reads it) for the Board. `asks` is the number the question names, the
 -- attention item's: the issue of a build-queue run that claimed it itself, the pull request a
 -- queue ask names, else the item the run holds (a loop run has no attention number).
-SELECT 'waiting', l.run_id, l.workflow_name, NULL, coalesce(c.issue_number, (facts.output -> 'item' ->> 'number')::int, l.issue_number),
+SELECT 'waiting', l.run_id, l.workflow_name, NULL, h.held,
   i.title, i.url, NULL, NULL, st.line,
-  coalesce(a.item_number, c.issue_number, (facts.output -> 'item' ->> 'number')::int, l.issue_number)
+  coalesce(a.item_number, h.held)
 FROM mc.laps l
 LEFT JOIN LATERAL (
   SELECT c.issue_number FROM mc.claims c
@@ -71,7 +71,8 @@ LEFT JOIN LATERAL (
   ORDER BY c.claimed_at DESC NULLS LAST, c.issue_number LIMIT 1
 ) c ON true
 LEFT JOIN mc.lap_steps facts ON facts.run_id = l.run_id AND facts.step_id = 'facts'
-LEFT JOIN mc.issues i ON i.factory = l.factory AND i.number = coalesce(c.issue_number, (facts.output -> 'item' ->> 'number')::int, l.issue_number)
+CROSS JOIN LATERAL (SELECT coalesce(c.issue_number, (facts.output -> 'item' ->> 'number')::int, l.issue_number) AS held) h
+LEFT JOIN mc.issues i ON i.factory = l.factory AND i.number = h.held
 LEFT JOIN mc.run_stops st ON st.run_id = l.run_id
 LEFT JOIN mc.attention_items a ON a.run_id = l.run_id
 WHERE l.factory = $1 AND l.attention_open
