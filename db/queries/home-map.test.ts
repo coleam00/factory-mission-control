@@ -96,6 +96,46 @@ describe('home-map on the seed', () => {
     ]);
   });
 
+  test('a waiting run carries the question it stopped on and the number its title names, not its number input', async () => {
+    await db.query('BEGIN');
+    try {
+      await db.query(
+        `UPDATE remote_agent_workflow_runs
+           SET metadata = jsonb_set(metadata, '{wait,message}', to_jsonb($2::text)) WHERE id = $1`,
+        [QUEUE_RUNS.waiting, '**Merge queue, PR 16: merge decision**\n\nPull request 16 is green.'],
+      );
+      const waiting = (await rows('queue-factory')).filter((r) => r.kind === 'waiting');
+      expect(waiting).toHaveLength(1);
+      expect(waiting[0]).toMatchObject({ number: null, asks: 16 });
+      expect(waiting[0]?.stop_line).toBeTruthy();
+    } finally {
+      await db.query('ROLLBACK');
+    }
+  });
+
+  test('a loop run known only by its claim, paused on an ask, asks about the issue it claimed', async () => {
+    const runId = '5eed0003-0000-4000-8000-00000000000a';
+    await db.query('BEGIN');
+    try {
+      await db.query(
+        `UPDATE remote_agent_workflow_runs
+           SET status = 'paused',
+               metadata = metadata || jsonb_build_object('wait',
+                 jsonb_build_object('kind', 'attention', 'message', 'Fixture question',
+                   'nodeId', 'ask', 'waitingSince', now()))
+         WHERE id = $1`,
+        [runId],
+      );
+      const waiting = (await rows()).filter((r) => r.kind === 'waiting' && r.run_id === runId);
+      expect(waiting).toHaveLength(1);
+      expect(waiting[0]?.number).not.toBeNull();
+      expect(waiting[0]?.asks).toBe(waiting[0]?.number);
+      expect(waiting[0]?.stop_line).toBeTruthy();
+    } finally {
+      await db.query('ROLLBACK');
+    }
+  });
+
   test('at a pin, the queue factory shows the queue runs that ran it', async () => {
     expect(await versions('queue-factory', V2)).toBe(1);
     expect(Object.keys(await laps('queue-factory', V2)).sort()).toEqual(

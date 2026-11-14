@@ -69,6 +69,8 @@ const lap = (number: number, workflow: string, steps: string[] | null): HomeMapR
   url: null,
   at: null,
   prs: null,
+  stop_line: null,
+  asks: null,
 });
 const row = (
   kind: HomeMapRow['kind'],
@@ -169,7 +171,6 @@ test('a work item with a round and no run waits in Build; Queued is workable ite
     workable: [workable(2)],
   });
   expect(v.columns.find((c) => c.id === 'build')?.items[0]?.chips.map((c) => c.text)).toEqual([
-    'round 1',
     'PR #9',
     'waiting for a run',
   ]);
@@ -249,7 +250,7 @@ test('a work order drops off 7 days after its last issue closes', () => {
   expect(nextChange({ board: [], orders: [finished(8)] }, NOW)).toBeNull();
 });
 
-test('chips: the route, the pulse of a run on it, the app verdict and where the card opens', () => {
+test('chips: the route, the app verdict and where the card opens', () => {
   const v = view({
     board: [
       item(1, {
@@ -269,14 +270,13 @@ test('chips: the route, the pulse of a run on it, the app verdict and where the 
   const [one] = v.columns.find((c) => c.id === 'build')?.items ?? [];
   expect(one?.chips).toEqual([
     { kind: 'route', text: 'deliver' },
-    { kind: 'round', text: 'round 2', state: 'running', pulse: true },
     { kind: 'app', text: 'app fail', state: 'failed' },
     { kind: 'pr', text: 'PR #7' },
     { kind: 'order', text: 'screens' },
   ]);
   expect(one?.to).toBe('/f/f/work/1');
   const two = v.columns.find((c) => c.id === 'build')?.items[1];
-  expect(two?.chips.map((c) => c.text)).toEqual(['round 1', 'app pass', 'waiting for a run']);
+  expect(two?.chips.map((c) => c.text)).toEqual(['app pass', 'waiting for a run']);
   expect(two?.to).toBe('/f/f/work/2');
 });
 
@@ -321,7 +321,6 @@ test('Parked is the last column, held by you, and a parked item is in it and now
   expect(column(v, 'build')).toEqual([]);
   expect(column(v, 'decision')).toEqual([]);
   expect(v.columns.find((c) => c.id === 'parked')?.items[1]?.chips.map((c) => c.text)).toEqual([
-    'running',
     'app pass',
     'PR #9',
   ]);
@@ -581,4 +580,121 @@ test('found counts filed, tracked and dropped, and ignores what is not a list', 
       { run_id: 'c', written: '"text"', dropped: '{"a":1}' },
     ]),
   ).toEqual({ filed: 2, tracked: 1, dropped: 2 });
+});
+
+test('a running build card reads round N+1 with the live dot, and the run line names the step as the Runs screen does', () => {
+  const rounds = JSON.stringify([
+    { at: '2026-11-03T10:00:00Z', reason: 'delivered', reviews: 2 },
+    { at: '2026-11-03T11:00:00Z', reason: 'ask', reviews: 1 },
+    { at: '2026-11-03T11:30:00Z', reason: null, reviews: 0 },
+  ]);
+  const v = view({
+    board: [item(1, { rounds: 3, round_list: rounds })],
+    map: [lap(1, 'archon-build-queue', [REVIEW])],
+  });
+  const card = v.pipeline.find((s) => s.id === 'review')?.items[0];
+  expect(card?.round).toBe(4);
+  expect(card?.dots.map((d) => d.state)).toEqual(['done', 'needs-you', 'idle', 'running']);
+  expect(card?.dots[0]?.title).toMatch(/^Round 1: delivered, 2 reviews · /);
+  expect(card?.run).toEqual({
+    text: 'archon-build-queue · review__policy',
+    to: '/f/f/runs/00000000-0000-4000-8000-000000000001',
+  });
+});
+
+test('a build round keeps its live dot while an app check runs on its pull request', () => {
+  const run = '00000000-0000-4000-8000-0000000000bb';
+  const v = view({
+    board: [item(1, { rounds: 1, pr: 9, app_check_run: run })],
+    map: [
+      lap(1, 'archon-build-queue', [REVIEW]),
+      { ...lap(0, 'factory-app-check', ['check__browser']), run_id: run, number: null },
+    ],
+  });
+  const card = v.pipeline.flatMap((s) => s.items).find((i) => i.number === 1);
+  expect(card?.round).toBe(1);
+  expect(card?.dots.map((d) => d.state)).toEqual(['running']);
+});
+
+test('a merged item with a still-running build round shows no live round', () => {
+  const v = view({
+    board: [item(1, { state: 'closed', closed_at: daysAgo(1), rounds: 1 })],
+    map: [lap(1, 'archon-build-queue', [REVIEW])],
+  });
+  const card = v.pipeline.flatMap((s) => s.items).find((i) => i.number === 1);
+  expect(card).toMatchObject({ round: 0, dots: [] });
+});
+
+test('an item held only by a running app check shows that run, with its step from the map', () => {
+  const run = '00000000-0000-4000-8000-0000000000bb';
+  const check: HomeMapRow = {
+    ...lap(0, 'factory-app-check', ['check__browser']),
+    run_id: run,
+    number: null,
+  };
+  const v = view({
+    board: [item(2, { pr: 9, app_check_run: run })],
+    map: [check],
+  });
+  const card = v.pipeline.find((s) => s.id === 'app')?.items[0];
+  expect(card?.run).toEqual({ text: 'factory-app-check · check__browser', to: `/f/f/runs/${run}` });
+});
+
+test('a merged card carries its returns and merge time; a waiting one its question; a failed check says so', () => {
+  const v = view({
+    board: [
+      item(1, {
+        state: 'closed',
+        closed_at: daysAgo(1),
+        merged_at: '2026-11-03T08:00:00Z',
+        returns: 2,
+      }),
+      item(2, { rounds: 1 }),
+      item(3, { app_check: 'FAIL', rounds: 1, pr: 5 }),
+      item(4, { build_status: 'asking', rounds: 1 }),
+    ],
+    map: [{ ...row('waiting', 2, 'archon-build-queue'), stop_line: 'Merge it?', asks: 2 }],
+  });
+  const merged = v.pipeline.find((s) => s.id === 'merged')?.items[0];
+  expect(merged?.returned).toBe(2);
+  expect(merged?.mergedAt).toEqual(new Date('2026-11-03T08:00:00Z'));
+  const items = v.pipeline.flatMap((s) => s.items);
+  expect(items.find((i) => i.number === 2)?.stop).toEqual({
+    text: 'Asking: Merge it?',
+    state: 'needs-you',
+  });
+  expect(items.find((i) => i.number === 4)?.stop).toEqual({
+    text: 'Waiting on you',
+    state: 'needs-you',
+  });
+  expect(items.find((i) => i.number === 3)?.stop).toEqual({
+    text: 'App check failed',
+    state: 'failed',
+  });
+});
+
+test('an asking card shows the question of the run that asks about it, however the run found the item', () => {
+  // Production shapes: a build-queue run that claimed its item has no number input, a merge-queue ask names a pull request.
+  const waiting = (workflow: string, asks: number, stop_line: string): HomeMapRow => ({
+    ...row('waiting', null, workflow),
+    stop_line,
+    asks,
+  });
+  const v = view({
+    board: [
+      item(42, { build_status: 'asking', rounds: 1 }),
+      item(43, { build_status: 'ready', merge_status: 'asking', pr: 16, pr_open: true }),
+      item(44, { build_status: 'asking', rounds: 1 }),
+    ],
+    map: [
+      waiting('archon-build-queue', 42, 'Split it?'),
+      waiting('archon-merge-queue', 16, 'Merge it?'),
+    ],
+  });
+  const stop = (n: number) => v.pipeline.flatMap((s) => s.items).find((i) => i.number === n)?.stop;
+  expect(stop(42)?.text).toBe('Asking: Split it?');
+  expect(stop(43)?.text).toBe('Asking: Merge it?');
+  expect(stop(44)?.text).toBe('Waiting on you');
+  expect(home(v, 'build')).toEqual([42, 44]);
+  expect(home(v, 'merge')).toEqual([43]);
 });
