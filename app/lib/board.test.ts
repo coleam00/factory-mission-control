@@ -69,6 +69,7 @@ const lap = (number: number, workflow: string, steps: string[] | null): HomeMapR
   url: null,
   at: null,
   prs: null,
+  stop_line: null,
 });
 const row = (
   kind: HomeMapRow['kind'],
@@ -580,9 +581,6 @@ test('found counts filed, tracked and dropped, and ignores what is not a list', 
   ).toEqual({ filed: 2, tracked: 1, dropped: 2 });
 });
 
-const owner = (number: number, title: string): OwnerQueueRow =>
-  ({ kind: 'question', issue_number: number, title }) as OwnerQueueRow;
-
 test('a running build card reads round N+1 with the live dot, and the run line names the step as the Runs screen does', () => {
   const rounds = JSON.stringify([
     { at: '2026-11-03T10:00:00Z', reason: 'delivered', reviews: 2 },
@@ -627,17 +625,22 @@ test('a merged card carries its returns and merge time; a waiting one its questi
         merged_at: '2026-11-03T08:00:00Z',
         returns: 2,
       }),
-      item(2, { build_status: 'asking', rounds: 1 }),
+      item(2, { rounds: 1 }),
       item(3, { app_check: 'FAIL', rounds: 1, pr: 5 }),
+      item(4, { build_status: 'asking', rounds: 1 }),
     ],
-    owner: [owner(2, 'Which one?')],
+    map: [{ ...row('waiting', 2, 'archon-build-queue'), stop_line: 'Merge it?' }],
   });
   const merged = v.pipeline.find((s) => s.id === 'merged')?.items[0];
   expect(merged?.returned).toBe(2);
   expect(merged?.mergedAt).toEqual(new Date('2026-11-03T08:00:00Z'));
   const items = v.pipeline.flatMap((s) => s.items);
   expect(items.find((i) => i.number === 2)?.stop).toEqual({
-    text: 'Asking: Which one?',
+    text: 'Asking: Merge it?',
+    state: 'needs-you',
+  });
+  expect(items.find((i) => i.number === 4)?.stop).toEqual({
+    text: 'Waiting on you',
     state: 'needs-you',
   });
   expect(items.find((i) => i.number === 3)?.stop).toEqual({

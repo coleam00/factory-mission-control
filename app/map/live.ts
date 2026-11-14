@@ -58,6 +58,8 @@ export interface HomeMapRow {
   at: Date | null;
   /** A merge-queue lap's merged pull requests, as the JSON text of an array of numbers. */
   prs: string | null;
+  /** A waiting run's recorded stop line: the question it asks; null when it recorded none. */
+  stop_line: string | null;
 }
 
 /** A lap on the map: its run, its claimed issue, and the step it counts on. */

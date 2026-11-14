@@ -65,6 +65,7 @@ const lap = (run: string, step: string): HomeMapRow => ({
   url: null,
   at: null,
   prs: null,
+  stop_line: null,
 });
 
 const cardTag = (html: string, id: string) =>
@@ -245,6 +246,7 @@ test('queued, failing, waiting and merged chips sit on Build, App check, the Man
               url: null,
               at: null,
               prs: null,
+              stop_line: null,
             },
             {
               kind: 'merged',
@@ -256,6 +258,7 @@ test('queued, failing, waiting and merged chips sit on Build, App check, the Man
               url: null,
               at: new Date(2026, 10, 3, 9),
               prs: null,
+              stop_line: null,
             },
           ],
           workable: [{ kind: 'issue', issue_number: 2, title: 'w', url: null, run_id: null }],

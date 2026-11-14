@@ -264,6 +264,7 @@ const ROW_COLUMNS: Record<string, string[]> = {
     'url',
     'at',
     'prs',
+    'stop_line',
   ]),
   'one-lap-checks': columns<CheckLineRow>()([
     'position',

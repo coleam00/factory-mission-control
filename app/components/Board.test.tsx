@@ -257,3 +257,33 @@ test('a merged item shows when it merged, and an asking item its stop line', () 
   const asking = inMerged(card({ stop: { text: 'Waiting on you', state: 'needs-you' } }));
   expect(asking).toMatch(/data-stop-line[^>]*>Waiting on you</);
 });
+
+test('a Pipeline card shows round, run, returned, merged and stop line below its title, in the design order', () => {
+  const full = {
+    ...card({
+      round: 2,
+      dots: [dot('done'), dot('running')],
+      run: { text: 'archon-build-queue · review__code', to: '/f/x/runs/abc' },
+      returned: 2,
+      mergedAt: new Date(2026, 10, 12, 9, 7),
+      stop: { text: 'Asking: Merge it?', state: 'needs-you' },
+    }),
+    status: 'needs you' as const,
+  };
+  const spec = PIPELINE.find((h) => h.id === 'merged') as (typeof PIPELINE)[number];
+  const html = render({ ...empty, pipeline: [{ ...spec, items: [full], pills: [] }] }, 'pipeline');
+  const at = [
+    'Build the thing',
+    'round 2',
+    'review__code',
+    'returned ×2',
+    'merged 2026-11-12',
+    'Asking: Merge it?',
+  ].map((text) => html.indexOf(text));
+  expect(at.every((i) => i >= 0)).toBe(true);
+  expect(at).toEqual([...at].sort((a, b) => a - b));
+  expect(html).toMatch(
+    /<a [^>]*href="\/f\/x\/runs\/abc"[^>]*>archon-build-queue · review__code<\/a>/,
+  );
+  expect(html).toMatch(/<a [^>]*href="\/f\/x\/work\/648"[^>]*>returned ×2<\/a>/);
+});
