@@ -38,6 +38,7 @@ function view(orders: number): BoardView {
           returned: 0,
           mergedAt: null,
           stop: null,
+          waits: null,
           to: `/f/x/work/${number}`,
           status: 'waiting' as const,
         })),

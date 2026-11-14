@@ -474,6 +474,26 @@ test("a work item's rounds are Archon's finished rounds, and the run count only 
   }
 });
 
+test("a work item's parked reason and blockers come from its state", async () => {
+  await db.query(
+    `INSERT INTO mc.work_item_states (project_key, number, revision, parked_reason)
+     SELECT codebase, 9, 1, 'Held by the 11/09 ruling' FROM mc.factories WHERE name = 'mission-control'`,
+  );
+  await db.query(
+    `INSERT INTO mc.work_item_blockers (project_key, number, blocker)
+     SELECT codebase, 9, b FROM mc.factories, unnest(ARRAY[12, 4]) b WHERE name = 'mission-control'`,
+  );
+  try {
+    expect(await missionItem(9)).toMatchObject({
+      parked_reason: 'Held by the 11/09 ruling',
+      blockers: [4, 12],
+    });
+  } finally {
+    await db.query(`DELETE FROM mc.work_item_blockers WHERE number = 9`);
+    await db.query(`DELETE FROM mc.work_item_states WHERE number = 9`);
+  }
+});
+
 test('a Refs-only item takes its pull request from the projection, with its head and app check head', async () => {
   await db.query(
     `INSERT INTO mc.pull_requests (factory, number, title, state, merged_at, head_sha, url, created_at, updated_at)

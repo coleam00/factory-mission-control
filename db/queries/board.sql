@@ -62,7 +62,7 @@ SELECT 'item' AS kind, i.number, i.title, i.url, i.state, i.closed_at,
   ac.overall AS app_check,
   pr.number AS pr, linked.open AS pr_open,
   st.build_status, st.build_at, st.merge_status, st.merge_at, st.triage_at, st.stage,
-  st.rounds::text AS round_list, st.returns, st.last_decision,
+  st.rounds::text AS round_list, st.returns, st.last_decision, st.parked_reason, st.blockers,
   pr.head_sha AS pr_head, ac.head AS app_check_head,
   CASE WHEN st.merge_status = 'merged' AND st.merge_at >= coalesce(st.build_at, '') AND st.merge_at >= coalesce(st.triage_at, '') THEN st.merge_at ELSE CASE WHEN pr.merged_at IS NULL THEN NULL ELSE lpad(extract(year FROM (pr.merged_at AT TIME ZONE 'UTC'))::int::text, 4, '0') || '-' || lpad(extract(month FROM (pr.merged_at AT TIME ZONE 'UTC'))::int::text, 2, '0') || '-' || lpad(extract(day FROM (pr.merged_at AT TIME ZONE 'UTC'))::int::text, 2, '0') || 'T' || date_trunc('second', (pr.merged_at AT TIME ZONE 'UTC'))::time::text || '.' || lpad((floor(extract(milliseconds FROM (pr.merged_at AT TIME ZONE 'UTC')))::bigint % 1000)::text, 3, '0') || 'Z' END END AS merged_at,
   ar.run_id AS app_check_run,
@@ -91,7 +91,9 @@ LEFT JOIN rounds rd ON rd.number = i.number
 LEFT JOIN LATERAL (
   -- The queues' own state for the item (Archon's work/<n> document), as the Board's parked rule reads it.
   SELECT w.build_status, w.build_at, w.merge_status, w.merge_at, w.triage_at, w.stage,
-    w.rounds, w.returns, w.last_decision, w.pr_number
+    w.rounds, w.returns, w.last_decision, w.parked_reason, w.pr_number,
+    (SELECT coalesce(array_agg(k.blocker ORDER BY k.blocker), '{}'::int[]) FROM mc.work_item_blockers k
+     WHERE k.project_key = w.project_key AND k.number = w.number) AS blockers
   FROM mc.work_item_states w
   JOIN mc.factories f ON f.codebase = w.project_key
   WHERE f.name = i.factory AND w.number = i.number
@@ -136,7 +138,7 @@ UNION ALL
 -- One row for the factory: where "N older" points, and how many work items a merged pull
 -- request closed or named with `Refs` in all, of which only the newest 200 are above.
 SELECT 'factory', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
-  NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+  NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
   f.repository,
   (SELECT count(*)::int FROM mc.issues i
    WHERE i.factory = f.name AND i.state = 'closed' AND coalesce(i.close_reason, 'completed') NOT IN ('not_planned', 'duplicate') AND (EXISTS (

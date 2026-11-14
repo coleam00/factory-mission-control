@@ -43,6 +43,8 @@ const item = (number: number, over: Partial<BoardRow> = {}): BoardRow => ({
   round_list: null,
   returns: null,
   last_decision: null,
+  parked_reason: null,
+  blockers: null,
   pr_head: null,
   app_check_head: null,
   merged_at: null,
@@ -757,4 +759,29 @@ test('an asking card shows the question of the run that asks about it, however t
   expect(stop(44)?.text).toBe('Waiting on you');
   expect(home(v, 'build')).toEqual([42, 44]);
   expect(home(v, 'merge')).toEqual([43]);
+});
+
+const waitsOn = (over: Partial<BoardRow>) =>
+  view({ board: [item(1, over), factoryRow()] }).pipeline.find((s) => s.id === 'blocked')?.items[0]
+    ?.waits;
+
+test('a blocked or parked card says what it waits on: the parked reason, else its blockers, else a contract', () => {
+  const blocked = { stage: 'blocked' };
+  expect(
+    waitsOn({ ...buildParked, parked_reason: 'Held by the 11/09 ruling', blockers: [3] }),
+  ).toEqual({ kind: 'reason', text: 'Held by the 11/09 ruling' });
+  expect(waitsOn({ ...blocked, blockers: [3, 9] })).toEqual({
+    kind: 'blockers',
+    items: [
+      { number: 3, to: '/f/f/work/3' },
+      { number: 9, to: '/f/f/work/9' },
+    ],
+  });
+  expect(waitsOn({ stage: 'needs_contract' })).toEqual({ kind: 'contract' });
+  expect(waitsOn({ ...blocked, parked_reason: ' ', blockers: [] })).toBeNull();
+});
+
+test('an item outside Blocked and parked carries no waiting line', () => {
+  const v = view({ board: [item(1, { parked_reason: 'old', blockers: [3] }), factoryRow()] });
+  expect(v.pipeline.flatMap((s) => s.items).map((i) => i.waits)).toEqual([null]);
 });

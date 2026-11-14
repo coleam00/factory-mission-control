@@ -8,7 +8,15 @@ const longTitle = '.archon/workflows/factory-build-queue-with-an-unbroken-path-t
 
 const longChip = 'factory-build-queue-with-an-unbroken-order-name-token';
 
-const bare = { round: 0, dots: [], run: null, returned: 0, mergedAt: null, stop: null };
+const bare = {
+  round: 0,
+  dots: [],
+  run: null,
+  returned: 0,
+  mergedAt: null,
+  stop: null,
+  waits: null,
+};
 
 const empty: BoardView = {
   orders: [],
@@ -286,4 +294,48 @@ test('a Pipeline card shows round, run, returned, merged and stop line below its
     /<a [^>]*href="\/f\/x\/runs\/abc"[^>]*>archon-build-queue · review__code<\/a>/,
   );
   expect(html).toMatch(/<a [^>]*href="\/f\/x\/work\/648"[^>]*>returned ×2<\/a>/);
+});
+
+test('a blocked card and its Table row say what the item waits on', () => {
+  const reason = { kind: 'reason' as const, text: 'Held by the 11/09 ruling' };
+  const blockers = {
+    kind: 'blockers' as const,
+    items: [
+      { number: 3, to: '/f/x/work/3' },
+      { number: 9, to: '/f/x/work/9' },
+    ],
+  };
+  const cards = (waits: WorkItem['waits']) =>
+    render(
+      {
+        ...empty,
+        pipeline: PIPELINE.map((spec) => ({
+          ...spec,
+          items: spec.id === 'blocked' ? [{ ...card({ waits }), status: 'blocked' as const }] : [],
+          pills: [],
+        })),
+      },
+      'pipeline',
+    );
+  const html = cards(reason);
+  expect(html).toContain('title="Held by the 11/09 ruling"');
+  expect(cards({ kind: 'contract' })).toContain('Needs a contract');
+  const linked = cards(blockers);
+  expect(linked).toMatch(/Blocked on <a [^>]*href="\/f\/x\/work\/3"[^>]*>#3<\/a>/);
+  expect(linked).toMatch(/href="\/f\/x\/work\/9"/);
+  const table = render(
+    {
+      ...empty,
+      columns: [
+        {
+          id: 'parked',
+          title: 'Parked',
+          holder: 'x',
+          items: [card({ waits: { kind: 'contract' } })],
+        },
+      ],
+    },
+    'table',
+  );
+  expect(table).toContain('Needs a contract');
 });
