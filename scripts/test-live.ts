@@ -6,6 +6,10 @@ import { join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { createRealtimeClient, type WebSocketLike } from '@neon/realtime/client';
 import { createRealtime, rawSql } from '@neon/realtime/server';
+import { retriedArgs } from '../app/lib/failure-view';
+import { failuresSince } from '../app/lib/failures';
+import { scorecardEdges } from '../app/lib/factory-scorecard';
+import { runsArgs } from '../app/lib/runs';
 import { loadLiveQueries, parameterCount, realtimeUrlFor } from '../server/live';
 import { QUEUE_FACTORY, SECOND_FACTORY } from './fixture/seed';
 import { type Deps, failing, guardedDatabaseUrl, type Main, runCli } from './lib/cli';
@@ -408,20 +412,20 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
       `${JSON.stringify({ branch: ctx.branch, features }, null, 2)}\n`,
     );
 
-    // Every file the app seals, with the factory and a value of the right type for each further
-    // parameter: text, or an instant or a count where the query casts it. A query Realtime refuses
-    // fails here, by name.
-    const EPOCH = '1970-01-01T00:00:00Z';
-    const typedArgs: Record<string, string[]> = {
-      'factory-scorecard': [EPOCH, EPOCH, EPOCH, EPOCH, EPOCH],
-      'failure-groups': [EPOCH],
-      'retried-runs': [EPOCH],
-      runs: ['', '', 'show', '0', '1'],
+    // Every file the app seals, with the factory and the arguments the app's own builders produce
+    // for the queries that cast theirs, and text for the rest. A query Realtime refuses fails
+    // here, by name.
+    const at = new Date(0);
+    const builtArgs: Record<string, string[]> = {
+      'factory-scorecard': scorecardEdges(at),
+      'failure-groups': [failuresSince(at)],
+      'retried-runs': retriedArgs(at),
+      runs: runsArgs({ q: '', state: '', hideIdle: false, page: 1 }),
     };
     for (const [name, sql] of queries) {
       const params = [
         factory,
-        ...(typedArgs[name] ?? Array(Math.max(0, parameterCount(sql) - 1)).fill('')),
+        ...(builtArgs[name] ?? Array(Math.max(0, parameterCount(sql) - 1)).fill('')),
       ];
       const seen = await runProbe(sql, params, { databaseUrl, secret, origin: base });
       if (seen.verdict === 'rejected') {

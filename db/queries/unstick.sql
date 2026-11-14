@@ -84,8 +84,8 @@ JOIN mc.factories f ON f.codebase = w.project_key AND f.name = $1
 LEFT JOIN mc.issues wi ON wi.factory = f.name AND wi.number = w.number
 JOIN mc.laps l ON l.run_id = w.claim_run_id AND l.status IN ('completed', 'cancelled')
 )  u
--- Sent (Realtime refuses a subquery inside an expression, so the two tests are counted by lateral
--- joins and read in the select list): the item's latest write from the dashboard (retriage, close or comment, never undone or failed
+-- Sent (the two tests are counted by lateral joins and read in the select list, as a precaution: a
+-- subquery in a NOT/OR is not probed in db/queries/REALTIME.md): the item's latest write from the dashboard (retriage, close or comment, never undone or failed
 -- ones), until the mirror catches up: an intake run on the item has finished since,
 -- or, for a close, the mirror holds the issue closed or has moved it since the CLI returned (a reopened
 -- issue is open again, so only its updated_at tells it was closed). The close's own note moves the

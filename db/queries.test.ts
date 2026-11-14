@@ -609,7 +609,7 @@ describe('the rules the live queries restate, which they may not call a function
     const DELIVERED =
       /AND \(EXISTS \(\s*SELECT 1 FROM mc\.pull_request_issues pi\s+JOIN mc\.pull_requests p ON p\.factory = pi\.factory AND p\.number = pi\.pr_number\s+WHERE pi\.factory = i\.factory AND pi\.issue_number = i\.number AND p\.merged_at IS NOT NULL\s*\) OR EXISTS \(\s*SELECT 1 FROM mc\.pull_request_references rf\s+JOIN mc\.pull_requests p ON p\.factory = rf\.factory AND p\.number = rf\.pr_number\s+WHERE rf\.factory = i\.factory AND rf\.issue_number = i\.number AND p\.merged_at IS NOT NULL\s*\)\)/g;
     // work-orders.sql counts the two branches in lateral joins, since Realtime refuses a subquery
-    // inside an expression: the same two branches, read as `mp.n > 0 OR mr.n > 0`.
+    // inside an aggregate's FILTER: the same two branches, read as `mp.n > 0 OR mr.n > 0`.
     const DELIVERED_COUNTED =
       /AND \(mp\.n > 0 OR mr\.n > 0\)[\s\S]*rf\.factory = i\.factory AND rf\.issue_number = i\.number AND p\.merged_at IS NOT NULL/g;
     // The closing branch alone, so a copy in the pre-Refs form is counted too.

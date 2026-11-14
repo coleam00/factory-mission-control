@@ -33,7 +33,7 @@ WHERE wo.factory = $1 AND wo.label LIKE 'work-order:%' AND length(wo.label) > 11
 -- total_count is the order's issues, merged_count those closed, but not as not planned or a duplicate,
 -- that a merged pull request closes or names with `Refs`, and
 -- lands_on the `lands-on:<target>` label its issues carry, the first by name when they differ.
--- Realtime refuses a subquery inside an expression (db/queries/REALTIME.md), so each count is a
+-- Realtime refuses a subquery inside an aggregate's FILTER (db/queries/REALTIME.md), so each count is a
 -- LEFT JOIN LATERAL aggregate. last_closed_at is when its latest issue closed, which is when a finished order drops off.
 GROUP BY wo.label
 ORDER BY wo.label
