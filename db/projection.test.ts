@@ -2979,7 +2979,7 @@ test('a work item state projects its rounds compactly, its returns, last decisio
   const facts = () =>
     db.query(
       `SELECT number, rounds, returns, last_decision, pr_number FROM mc.work_item_states
-       WHERE number IN (648, 649) ORDER BY number`,
+       WHERE number IN (648, 649, 651) ORDER BY number`,
     );
   await putState(
     'work/648',
@@ -3000,8 +3000,13 @@ test('a work item state projects its rounds compactly, its returns, last decisio
       ],
     }),
   );
-  await putState('work/649', 1, doc({}));
-  const [full, empty] = (await facts()) as unknown as {
+  await putState(
+    'work/649',
+    1,
+    doc({ decisions: [{ decision: 'answered: return', reason: 'owner' }] }),
+  );
+  await putState('work/651', 1, doc({}));
+  const [full, answered, empty] = (await facts()) as unknown as {
     number: number;
     rounds: { at: string; reason: string; reviews: number; run_id: string }[];
     returns: number;
@@ -3026,8 +3031,9 @@ test('a work item state projects its rounds compactly, its returns, last decisio
     last_decision: 'returned by the merge queue',
     pr_number: 654,
   });
+  expect(answered).toMatchObject({ returns: 1, last_decision: 'answered: return' });
   expect(empty).toEqual({
-    number: 649,
+    number: 651,
     rounds: [],
     returns: 0,
     last_decision: null,
