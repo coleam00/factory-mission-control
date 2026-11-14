@@ -231,6 +231,11 @@ export function orderPanel(row: WorkOrderRow): OrderPanel {
   };
 }
 
+/** A work order with no open item: every item it counts is done. */
+export function isFinished({ done, total }: OrderPanel): boolean {
+  return done >= total;
+}
+
 /** How far a work order has got, in the words the Board and the map both show. */
 export function orderProgress({ done, total, landsOn }: OrderPanel): string {
   return `${done} of ${total} done${landsOn === null ? '' : ` · lands on ${landsOn}`}`;

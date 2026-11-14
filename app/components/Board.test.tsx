@@ -1,4 +1,4 @@
-import { expect, test } from 'bun:test';
+import { afterEach, expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { createMemoryRouter, RouterProvider } from 'react-router';
 import { type BoardView, COLUMNS, PIPELINE, type WorkItem } from '../lib/board';
@@ -28,11 +28,15 @@ const empty: BoardView = {
   olderHref: null,
 };
 
-function render(view: BoardView, mode: 'pipeline' | 'table'): string {
+function render(
+  view: BoardView,
+  mode: 'pipeline' | 'table',
+  selected: string | null = null,
+): string {
   const router = createMemoryRouter([
     {
       path: '/',
-      element: <BoardBody view={view} mode={mode} order={null} onOrder={() => {}} />,
+      element: <BoardBody view={view} mode={mode} order={selected} onOrder={() => {}} />,
     },
   ]);
   return renderToStaticMarkup(<RouterProvider router={router} />);
@@ -360,4 +364,83 @@ test('a blocked card and its Table row say what the item waits on', () => {
     'table',
   );
   expect(row).toMatch(/Blocked on <a [^>]*href="\/f\/x\/work\/3"[^>]*>#3<\/a>/);
+});
+
+const order = (name: string, done: number, total: number) => ({
+  name,
+  done,
+  total,
+  landsOn: null,
+  building: 0,
+  needsYou: 0,
+});
+
+test('finished orders fold into one row and only open orders get a card', () => {
+  const html = render(
+    { ...empty, orders: [order('live', 1, 3), order('old-a', 8, 8), order('old-b', 4, 4)] },
+    'pipeline',
+  );
+  expect(html).toContain('data-work-order="live"');
+  expect(html).not.toContain('data-work-order="old-a"');
+  expect(html).toContain('2 finished orders: old-a, old-b');
+});
+
+test('with no open order the finished row shows alone', () => {
+  const html = render({ ...empty, orders: [order('old-a', 8, 8)] }, 'pipeline');
+  expect(html).not.toContain('data-work-order=');
+  expect(html).toContain('1 finished order: old-a');
+});
+
+test('a finished order named by ?order= keeps its card while the row is folded', () => {
+  const html = render(
+    { ...empty, orders: [order('live', 1, 3), order('old-a', 8, 8), order('old-b', 4, 4)] },
+    'pipeline',
+    'old-b',
+  );
+  expect(html).toContain('data-work-order="old-b"');
+  expect(html).not.toContain('data-work-order="old-a"');
+  expect(html).toContain('2 finished orders: old-a, old-b');
+});
+
+const openRow = (): void => {
+  Object.defineProperty(globalThis, 'localStorage', {
+    value: { getItem: () => 'open' },
+    configurable: true,
+  });
+};
+
+afterEach(() => {
+  Reflect.deleteProperty(globalThis, 'localStorage');
+});
+
+test('blocked storage leaves the finished row folded instead of throwing', () => {
+  Object.defineProperty(globalThis, 'localStorage', {
+    get: () => {
+      throw new Error('blocked');
+    },
+    configurable: true,
+  });
+  const html = render(
+    { ...empty, orders: [order('live', 1, 3), order('old-a', 8, 8)] },
+    'pipeline',
+  );
+  expect(html).toContain('aria-expanded="false"');
+});
+
+test('a remembered open row shows every finished card after the row, a selected one once', () => {
+  openRow();
+  const view = {
+    ...empty,
+    orders: [order('live', 1, 3), order('old-a', 8, 8), order('old-b', 4, 4)],
+  };
+  for (const selected of [undefined, 'old-b']) {
+    const html = render(view, 'pipeline', selected);
+    const row = html.indexOf('data-finished-orders');
+    expect(html).toContain('aria-expanded="true"');
+    expect(html.indexOf('data-work-order="live"')).toBeLessThan(row);
+    for (const name of ['old-a', 'old-b']) {
+      expect(html.split(`data-work-order="${name}"`)).toHaveLength(2);
+      expect(html.indexOf(`data-work-order="${name}"`)).toBeGreaterThan(row);
+    }
+  }
 });

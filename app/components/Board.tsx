@@ -4,6 +4,7 @@ import {
   type BoardColumn,
   type BoardOrder,
   type BoardView,
+  isFinished,
   orderLine,
   orderTarget,
   type PipelineStage,
@@ -487,6 +488,73 @@ function OrderStrip({
   );
 }
 
+const FINISHED_KEY = 'mc.board.finished-open';
+
+/** Reading `localStorage` itself throws where the browser blocks storage. */
+function readFinishedOpen(): boolean {
+  try {
+    return globalThis.localStorage?.getItem(FINISHED_KEY) === 'open';
+  } catch {
+    return false;
+  }
+}
+
+function writeFinishedOpen(open: boolean): void {
+  try {
+    globalThis.localStorage?.setItem(FINISHED_KEY, open ? 'open' : 'closed');
+  } catch {
+    // The choice then lasts only until the next load.
+  }
+}
+
+/** Orders with work left get a card; finished ones fold into one muted row that expands in place. */
+function WorkOrders({
+  orders,
+  selected,
+  onOrder,
+}: {
+  orders: BoardOrder[];
+  selected: string | null;
+  onOrder: (name: string | null) => void;
+}): ReactElement | null {
+  const [open, setOpen] = useState(readFinishedOpen);
+  const finished = orders.filter(isFinished);
+  // A filtered finished order stays visible while the row is folded, so the filter can be seen and cleared.
+  const above = orders.filter((o) => !isFinished(o) || (!open && o.name === selected));
+  const below = open ? finished : [];
+  if (orders.length === 0) return null;
+  const card = (o: BoardOrder) => (
+    <OrderStrip
+      key={o.name}
+      order={o}
+      selected={selected === o.name}
+      onToggle={() => onOrder(selected === o.name ? null : o.name)}
+    />
+  );
+  return (
+    <div className="space-y-2.5">
+      {above.length > 0 ? <div className="flex flex-wrap gap-2.5">{above.map(card)}</div> : null}
+      {finished.length > 0 ? (
+        <button
+          type="button"
+          data-finished-orders
+          aria-expanded={open}
+          onClick={() => {
+            writeFinishedOpen(!open);
+            setOpen(!open);
+          }}
+          className="block w-full min-w-0 cursor-pointer truncate text-left text-[length:var(--v3-t-meta)] text-[color:var(--v3-fg-3)] hover:text-[color:var(--v3-fg-2)]"
+        >
+          <span aria-hidden="true">{open ? '▾' : '▸'} </span>
+          {finished.length} finished {finished.length === 1 ? 'order' : 'orders'}:{' '}
+          {finished.map((o) => o.name).join(', ')}
+        </button>
+      ) : null}
+      {below.length > 0 ? <div className="flex flex-wrap gap-2.5">{below.map(card)}</div> : null}
+    </div>
+  );
+}
+
 /** The board once every source has answered: the work orders above the Pipeline or the Table. */
 export function BoardBody({
   view,
@@ -526,18 +594,7 @@ export function BoardBody({
   }, []);
   return (
     <div ref={root} className="min-w-0 space-y-4">
-      {view.orders.length > 0 ? (
-        <div className="flex flex-wrap gap-2.5">
-          {view.orders.map((o) => (
-            <OrderStrip
-              key={o.name}
-              order={o}
-              selected={order === o.name}
-              onToggle={() => onOrder(order === o.name ? null : o.name)}
-            />
-          ))}
-        </div>
-      ) : null}
+      <WorkOrders orders={view.orders} selected={order} onOrder={onOrder} />
       <p
         data-not-in-order={view.notInOrder}
         className="text-[length:var(--v3-t-meta)] text-[color:var(--v3-fg-3)]"
