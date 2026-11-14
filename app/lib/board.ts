@@ -410,11 +410,14 @@ function holdOf(row: BoardRow, number: number, facts: Facts): Hold | undefined {
   return held === undefined || furthest(held.stage, check.stage) !== held.stage ? check : held;
 }
 
+/** The check's passing verdict, keyed into the check-overall states so a rename there fails the type check. */
+const PASS = 'PASS' satisfies keyof typeof CHECK_OVERALL_STATE;
+
 function chipsOf(item: BoardRow, home: HomeId, needsYou: boolean, running: boolean): BoardChip[] {
   const chips: BoardChip[] = [];
   if (item.route !== null) chips.push({ kind: 'route', text: item.route });
-  if (item.app_check === 'PASS')
-    chips.push({ kind: 'app', text: 'app pass', state: CHECK_OVERALL_STATE.PASS });
+  if (item.app_check === PASS)
+    chips.push({ kind: 'app', text: 'app pass', state: CHECK_OVERALL_STATE[PASS] });
   if (item.app_check === 'FAIL')
     chips.push({ kind: 'app', text: 'app fail', state: CHECK_OVERALL_STATE.FAIL });
   if (item.pr !== null) chips.push({ kind: 'pr', text: `PR #${item.pr}` });
@@ -435,8 +438,8 @@ interface Facts {
   workable: ReadonlySet<number>;
 }
 
-/** The stage of a paused queue run, taken before its step: a queue workflow's steps can sit under another card (the build queue's review round). */
-const WORKFLOW_STAGE: Readonly<Record<string, StageId>> = {
+/** The stage of a paused queue run, taken before its step (restated-rules.test.ts holds each entry to the map's covers): a queue workflow's steps can sit under another card (the build queue's review round). */
+export const WORKFLOW_STAGE: Readonly<Record<string, StageId>> = {
   [INTAKE_WORKFLOW]: 'intake',
   [BUILD_QUEUE_WORKFLOW]: 'build',
   [APP_CHECK_WORKFLOW]: 'app',
@@ -491,6 +494,9 @@ export function parked(state: WorkItemState): boolean {
   return !(state.build_status === 'ready' && later(state.build_at, state.merge_at));
 }
 
+/** Why a work item sits on the Blocked and parked card: a queue parked it, or a contract or another pull request holds it. */
+const heldKind = (row: WorkItemState): 'parked' | 'blocked' => (parked(row) ? 'parked' : 'blocked');
+
 /** Where an open work item stands: its home, and whether it waits on the owner. */
 interface Placement {
   home: HomeId;
@@ -520,7 +526,7 @@ function placeOf(row: BoardRow, number: number, facts: Facts, holder: StageId | 
   const needsYou = asked !== null || facts.attention.has(number) || facts.needsOwner.has(number);
   if (asked !== null) return { home: asked, needsYou };
   if (isReady(row)) {
-    const passed = row.app_check === 'PASS' && row.app_check_head === row.pr_head;
+    const passed = row.app_check === PASS && row.app_check_head === row.pr_head;
     return { home: passed ? 'merge' : 'app', needsYou };
   }
   if ((row.rounds ?? 0) >= 1) return { home: 'build', needsYou };
@@ -597,7 +603,7 @@ export function itemOnBoard(
       ? null
       : placeOf(row, number, facts, holdOf(row, number, facts)?.stage ?? null);
   const id = placement === null ? 'merged' : tableColumnOf(placement);
-  const blocked = placement?.home === 'blocked' && !parked(row);
+  const blocked = placement?.home === 'blocked' && heldKind(row) === 'blocked';
   return {
     // The Table folds a blocked item into its Parked column; the page names it Blocked instead.
     column: blocked ? null : (COLUMNS.find((c) => c.id === id) ?? null),
@@ -611,7 +617,7 @@ export function itemOnBoard(
 /** What an item is doing, first match: a person's wait, the home it sits in, a run, a failed check. */
 function statusOf(row: BoardRow, home: HomeId, needsYou: boolean, running: boolean): Status {
   if (needsYou) return 'needs you';
-  if (home === 'blocked') return parked(row) ? 'parked' : 'blocked';
+  if (home === 'blocked') return heldKind(row);
   if (home === 'merged') return 'merged';
   if (running) return 'running';
   if (row.app_check === 'FAIL') return 'check failed';
