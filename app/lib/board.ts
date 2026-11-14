@@ -468,9 +468,11 @@ export function itemOnBoard(
       ? null
       : placeOf(row, number, factsOf(sources.map, sources.workable, sources.owner));
   const id = placement === null ? 'merged' : tableColumnOf(placement);
+  const blocked = placement?.home === 'blocked' && !parked(row);
   return {
-    column: COLUMNS.find((c) => c.id === id) ?? null,
-    blocked: placement?.home === 'blocked' && !parked(row),
+    // The Table folds a blocked item into its Parked column; the page names it Blocked instead.
+    column: blocked ? null : (COLUMNS.find((c) => c.id === id) ?? null),
+    blocked,
     pr: row.pr,
     prUrl: row.pr === null || repository === null ? null : pullUrl(repository, row.pr),
     workOrders: row.work_orders ?? [],

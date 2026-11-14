@@ -354,7 +354,7 @@ test('itemOnBoard says Blocked, not parked, for a needs_contract item', () => {
     workable: [],
     owner: [],
   };
-  expect(itemOnBoard(sources, 1)).toMatchObject({ blocked: true });
+  expect(itemOnBoard(sources, 1)).toMatchObject({ blocked: true, column: null });
 });
 
 test('an item waiting on the owner in Build carries no waiting-for-a-run chip', () => {
