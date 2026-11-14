@@ -472,7 +472,10 @@ function OrderStrip({
       <span className="block text-[length:var(--v3-t-body)] font-semibold text-[color:var(--v3-fg)] [overflow-wrap:anywhere]">
         {order.name}
       </span>
-      <span className="block font-mono text-[length:var(--v3-t-micro)] text-[color:var(--v3-fg-3)]">
+      <span
+        data-order-target
+        className={`block font-mono text-[length:var(--v3-t-micro)] ${selected ? 'text-[color:var(--v3-fg-2)]' : 'text-[color:var(--v3-fg-3)]'}`}
+      >
         {orderTarget(order)}
       </span>
       <span
