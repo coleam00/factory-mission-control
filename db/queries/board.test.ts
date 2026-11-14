@@ -515,6 +515,29 @@ test('merged_at is the merge fact’s time, else the merged pull request’s', a
   }
 });
 
+test('merged_at is null for a merge that a later build or triage has overtaken, next to an open pull request', async () => {
+  const state = (build: string | null, triage: string | null) =>
+    db.query(
+      `INSERT INTO mc.work_item_states (project_key, number, revision, merge_status, merge_at, build_at, triage_at)
+       SELECT codebase, 9, 1, 'merged', '2026-11-01T00:00:00.000Z', $1, $2 FROM mc.factories WHERE name = 'mission-control'
+       ON CONFLICT (project_key, number) DO UPDATE SET build_at = $1, triage_at = $2`,
+      [build, triage],
+    );
+  try {
+    await state('2026-11-05T00:00:00.000Z', '2026-11-04T00:00:00.000Z');
+    expect(await missionItem(9)).toMatchObject({ pr_open: true, merged_at: null });
+    await state(null, '2026-11-04T00:00:00.000Z');
+    expect(await missionItem(9)).toMatchObject({ merged_at: null });
+    await state('2026-11-01T00:00:00.000Z', null);
+    expect(await missionItem(9)).toMatchObject({
+      pr_open: true,
+      merged_at: '2026-11-01T00:00:00.000Z',
+    });
+  } finally {
+    await db.query(`DELETE FROM mc.work_item_states WHERE number = 9`);
+  }
+});
+
 test('one pull request answers pr, pr_head and merged_at: open linked, else projected, else merged linked', async () => {
   const fixtures = async (factory: string) => {
     await db.query(

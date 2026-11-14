@@ -1354,3 +1354,13 @@ test('the work-item facts the Board projects are the pinned pack’s words', () 
   for (const key of roundKeys) expect(keys, `BuildRound key '${key}'`).toContain(key);
   expect(roundKeys).toEqual(expect.arrayContaining(['at', 'reason', 'reviews', 'run_id']));
 });
+
+test('the board merged_at keeps a merge only while it finishes the item, as the pack’s finished() does', () => {
+  const pack = squashed(read('fixtures', 'pack', 'queue', 'sdlc', '.shared', 'order.ts'));
+  expect(pack).toContain(
+    "merge?.status === 'merged' && merge.at >= (doc.facts.build?.at ?? '') && merge.at >= (doc.facts.triage?.at ?? '')",
+  );
+  expect(squashed(sqlOf('board'))).toContain(
+    "st.merge_status = 'merged' AND st.merge_at >= coalesce(st.build_at, '') AND st.merge_at >= coalesce(st.triage_at, '') THEN st.merge_at",
+  );
+});
