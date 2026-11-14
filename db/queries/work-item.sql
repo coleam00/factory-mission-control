@@ -1,4 +1,18 @@
-WITH runs AS (
+WITH item_prs AS (
+  -- The item's pull requests, each once: Closes-linked, named with Refs once merged (board.sql), or the one
+  -- Archon's state for the item names. Reads only the parameters, so Realtime accepts the union.
+  SELECT pi.pr_number FROM mc.pull_request_issues pi
+  WHERE pi.factory = $1 AND pi.issue_number::text = $2
+  UNION
+  SELECT rf.pr_number FROM mc.pull_request_references rf
+  JOIN mc.pull_requests rp ON rp.factory = rf.factory AND rp.number = rf.pr_number
+  WHERE rf.factory = $1 AND rf.issue_number::text = $2 AND rp.merged_at IS NOT NULL
+  UNION
+  SELECT w.pr_number FROM mc.work_item_states w
+  JOIN mc.factories wf ON wf.codebase = w.project_key
+  WHERE wf.name = $1 AND w.number::text = $2 AND w.pr_number IS NOT NULL
+),
+runs AS (
   -- Every run on work item $2 (a number as text: a malformed one in the address is no work item,
   -- not a failed query). An old-loop lap by its claim or number input, a build-queue lap by its
   -- facts step naming the item (PRD 4.2's lap rule, #378), or a build-queue run on the item by
@@ -96,7 +110,8 @@ FROM runs r
 JOIN mc.app_check_lines a ON a.run_id = r.run_id
 WHERE a.kind <> 'holdout'
 UNION ALL
--- Each queue sweep that ran while one of the item's pull requests was open, with that sweep's
+-- Each queue sweep that ran while one of the item's pull requests (Closes-linked, named with Refs, or the
+-- one Archon's state names, as the Board reads them) was open, with that sweep's
 -- decisions and the pull requests its record step read back as merged, and the browser keeps the
 -- decision whose number is this pull request's, and drops a sweep that has none.
 SELECT 'sweep', l.run_id, l.workflow_name, l.status, l.started_at, l.completed_at, NULL,
@@ -105,11 +120,10 @@ SELECT 'sweep', l.run_id, l.workflow_name, l.status, l.started_at, l.completed_a
   ruling.completed_at, NULL, NULL, p.pr_number, sw.output -> 'decisions',
   rec.output -> 'merged', rec.output -> 'asked' -> 'pr' ->> 'number', rec.status, NULL, NULL, NULL, NULL,
   NULL, NULL, NULL
-FROM mc.pull_request_issues p
-JOIN mc.pull_requests pr ON pr.factory = p.factory AND pr.number = p.pr_number
-JOIN mc.laps l ON l.factory = p.factory
+FROM item_prs p
+JOIN mc.pull_requests pr ON pr.factory = $1 AND pr.number = p.pr_number
+JOIN mc.laps l ON l.factory = $1
 JOIN mc.lap_steps sw ON sw.run_id = l.run_id AND sw.step_id = 'sweep' AND sw.status = 'completed'
   AND sw.completed_at >= pr.created_at AND (pr.closed_at IS NULL OR sw.started_at <= pr.closed_at)
 LEFT JOIN mc.lap_steps rec ON rec.run_id = l.run_id AND rec.step_id = 'record'
 LEFT JOIN mc.lap_steps ruling ON ruling.run_id = l.run_id AND ruling.step_id = 'ruling'
-WHERE p.factory = $1 AND p.issue_number::text = $2
