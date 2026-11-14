@@ -1,4 +1,4 @@
-import { type ReactElement, type RefObject, useLayoutEffect, useRef } from 'react';
+import { type ReactElement, type RefObject, useLayoutEffect, useRef, useState } from 'react';
 import { Link } from 'react-router';
 import {
   type BoardColumn,
@@ -287,14 +287,63 @@ function Pipeline({
   const stages = view.pipeline.filter((s) => s.id !== 'blocked');
   const blocked = view.pipeline.find((s) => s.id === 'blocked');
   const { filed, tracked, dropped } = view.found;
+  const [firstHidden, setFirstHidden] = useState<number | null>(null);
+  useLayoutEffect(() => {
+    const scroller = row.current;
+    const grid = scroller?.firstElementChild;
+    if (!scroller || !grid) return;
+    const update = () => {
+      const edge = scroller.scrollLeft + scroller.clientWidth + 1;
+      const index = Array.from(grid.children).findIndex(
+        (column) => column instanceof HTMLElement && column.offsetLeft + column.offsetWidth > edge,
+      );
+      setFirstHidden(index < 0 ? null : index);
+    };
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(scroller);
+    observer.observe(grid);
+    scroller.addEventListener('scroll', update, { passive: true });
+    return () => {
+      observer.disconnect();
+      scroller.removeEventListener('scroll', update);
+    };
+  }, [row]);
+  const hidden = firstHidden === null ? [] : stages.slice(firstHidden);
   return (
     <div className="space-y-2.5">
-      <div ref={row} data-stage-row className="min-w-0 overflow-x-auto">
-        <div className="grid grid-cols-1 items-start gap-2.5 min-[760px]:grid-cols-none min-[760px]:grid-flow-col min-[760px]:auto-cols-[minmax(200px,1fr)]">
-          {stages.map((stage) => (
-            <StageCard key={stage.id} stage={stage} older={stage.id === 'merged' ? older : null} />
-          ))}
+      <div className="relative">
+        <div ref={row} data-stage-row className="min-w-0 overflow-x-auto">
+          <div className="grid grid-cols-1 items-start gap-2.5 min-[760px]:grid-cols-none min-[760px]:grid-flow-col min-[760px]:auto-cols-[minmax(150px,1fr)]">
+            {stages.map((stage) => (
+              <StageCard
+                key={stage.id}
+                stage={stage}
+                older={stage.id === 'merged' ? older : null}
+              />
+            ))}
+          </div>
         </div>
+        {hidden.length > 0 ? (
+          <div
+            data-stage-fade
+            className="pointer-events-none absolute inset-y-0 right-0 flex w-40 items-start justify-end bg-gradient-to-l from-[var(--v3-bg)] via-[var(--v3-bg)]/80 to-transparent"
+          >
+            <button
+              type="button"
+              data-stage-fade-button
+              className="pointer-events-auto cursor-pointer p-2 text-right text-[length:var(--v3-t-meta)] font-semibold text-[color:var(--v3-fg)] hover:underline"
+              onClick={() =>
+                row.current?.scrollTo({
+                  left: row.current.scrollWidth,
+                  behavior: 'smooth',
+                })
+              }
+            >
+              {hidden.map((stage) => `${stage.title} ${stage.items.length}`).join(' · ')} →
+            </button>
+          </div>
+        ) : null}
       </div>
       <div className="grid grid-cols-1 gap-2.5 min-[760px]:grid-cols-2">
         <Card
