@@ -12,10 +12,12 @@ import {
   liveOutputs,
   pageWait,
   READY_WAIT_MS,
+  settleAt,
   writeToScreen,
 } from './shared';
 
 const READY = 'main[data-work-item][data-state="ready"]';
+const READY_NOW = `document.querySelector('${READY}') !== null`;
 /** The seed's work items on the old loop, whose pages must show no hidden check line or text. */
 const LOOP_ITEMS = [2, 3, 7, 9, 13];
 /** The seed's open work item whose newest run failed on a stop record (class config). */
@@ -30,13 +32,16 @@ const STOP_LINES = `[...document.querySelectorAll('[data-event]')].map((li) =>
   li.querySelector('[data-stop-line]')?.textContent ?? null)`;
 const MARKERS = `document.documentElement.outerHTML.split(${JSON.stringify(MARKER)}).length - 1`;
 
-/** Rows whose dot's vertical centre is outside the time's line box: the dot belongs beside the entry's first line. */
-const DOTS_OFF_TIME = `[...document.querySelectorAll('[data-event]')].flatMap((li, i) => {
+/**
+ * How many rows were measured, and those whose dot's vertical centre is outside the time's line
+ * box: the dot belongs beside the entry's first line.
+ */
+const DOTS_OFF_TIME = `(() => { const off = [...document.querySelectorAll('[data-event]')].flatMap((li, i) => {
   const t = li.querySelector('time').getBoundingClientRect();
   const d = li.querySelector('[aria-hidden]').getBoundingClientRect();
   const mid = (d.top + d.bottom) / 2;
   return mid >= t.top && mid <= t.bottom ? [] : [i + ': dot ' + mid.toFixed(1) + ' time ' + t.top.toFixed(1) + '-' + t.bottom.toFixed(1)];
-})`;
+}); return { rows: document.querySelectorAll('[data-event]').length, off }; })()`;
 
 const FILES = liveOutputs({
   shot: 'work-item.png',
@@ -50,13 +55,11 @@ export const WORK_ITEM_OUTPUTS: readonly LiveOutput[] = Object.values(FILES);
 /** The work item page (#317): its timeline equals a recount, shows no hidden line, and a running row moves. */
 export function workItemPhase(ctx: LiveContext): LivePhase {
   const { deps, db, queries } = ctx;
-  const ms = { runningRow: null as number | null };
+  const ms = { runningRow: null as number | null, dotRows: {} as Record<number, number> };
 
   const open = async (page: Page, factory: string, number: number) => {
     await page.goto(`${ctx.base}/f/${factory}/work/${number}`);
-    await page.evaluate<boolean>(
-      pageWait(`document.querySelector('${READY}') !== null`, READY_WAIT_MS),
-    );
+    await page.evaluate<boolean>(pageWait(READY_NOW, READY_WAIT_MS));
   };
 
   /** What the page must list for the work item, from the query run straight against the database. */
@@ -119,11 +122,17 @@ export function workItemPhase(ctx: LiveContext): LivePhase {
         ctx.save(FILES.shot, await page.screenshot(1440));
         failures.push(...(await mismatches(page, QUEUE_FACTORY.name, QUEUE_RETURNED.issue)));
         for (const width of [1440, 390]) {
-          await page.setViewport(width);
-          for (const row of await page.evaluate<string[]>(DOTS_OFF_TIME))
-            failures.push(`${returned} at ${width}: row ${row}`);
+          failures.push(...(await settleAt(page, width, READY_NOW, returned)));
+          const { rows, off } = await page.evaluate<{ rows: number; off: string[] }>(DOTS_OFF_TIME);
+          deps.out(
+            `work item ${QUEUE_RETURNED.issue} dots: ${rows} timeline rows measured at ${width}px`,
+          );
+          ms.dotRows[width] = rows;
+          if (rows === 0)
+            failures.push(`${returned} at ${width}: no timeline rows to measure the dots on`);
+          for (const row of off) failures.push(`${returned} at ${width}: row ${row}`);
         }
-        await page.setViewport(1440);
+        failures.push(...(await settleAt(page, 1440, READY_NOW, returned)));
         const shown = await page.evaluate<string[]>(SHOWN);
         const back = shown.findIndex((t) => t.includes('Returned to Build'));
         const merged = shown.findIndex((t) => t.includes('Merged'));

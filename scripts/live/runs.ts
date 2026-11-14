@@ -17,6 +17,7 @@ import {
   renewalsOf,
   required,
   screenAgainstSql,
+  settleAt,
   untilShown,
 } from './shared';
 import {
@@ -28,6 +29,9 @@ import {
 } from './timings';
 
 const RUNS_QUERIES = ['runs'] as const;
+const RUNS_READY = RUNS_QUERIES.map(
+  (q) => `document.querySelector('[data-live="${q}"][data-state="ready"]') !== null`,
+).join(' && ');
 const PANEL = '[data-live="runs"]';
 const SWITCH = `${PANEL} [role="switch"]`;
 // The Runs view switch also uses aria-pressed, so the state chips are scoped to their own row.
@@ -233,14 +237,7 @@ export function runsPhase(ctx: LiveContext): LivePhase {
       runsPage = page;
       await page.goto(`${base}/f/${factory}/runs`);
       await page.evaluate('window.__mcNoReload = true');
-      const ready = await page.evaluate<boolean>(
-        pageWait(
-          RUNS_QUERIES.map(
-            (q) => `document.querySelector('[data-live="${q}"][data-state="ready"]') !== null`,
-          ).join(' && '),
-          READY_WAIT_MS,
-        ),
-      );
+      const ready = await page.evaluate<boolean>(pageWait(RUNS_READY, READY_WAIT_MS));
       if (!ready) {
         throw new Error(
           `the runs screen did not reach data-state="ready" within ${READY_WAIT_MS} ms`,
@@ -250,6 +247,7 @@ export function runsPhase(ctx: LiveContext): LivePhase {
       const seed = await seedRunsMismatches(page, db, ctx.queries, factory);
       ctx.save(FILES.check, `${seed.report}\n`);
       ctx.failures.push(...seed.mismatches.map((m) => `runs screen against the seed: ${m}`));
+      ctx.failures.push(...(await settleAt(page, 1440, RUNS_READY, 'the runs screen')));
       ctx.save(FILES.shot, await page.screenshot(1440));
       for (const lap of [firstLap, secondLap]) {
         if (await page.evaluate<boolean>(runOn(lap, LIVE_STEP))) {

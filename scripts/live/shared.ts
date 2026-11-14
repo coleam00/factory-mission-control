@@ -112,6 +112,25 @@ export function pageWait(condition: string, ms: number): string {
   })`;
 }
 
+/**
+ * Sets the window to `width`, then waits for `ready`, the page's own ready marker as an in-page
+ * boolean expression. Crossing the shell's 1024 px switch remounts the routed page, which reloads
+ * its sources. Returns one failure line when `ready` does not hold within `READY_WAIT_MS`.
+ */
+export async function settleAt(
+  page: Page,
+  width: number,
+  ready: string,
+  where: string,
+): Promise<string[]> {
+  await page.setViewport(width);
+  const settled = await page.evaluate<boolean>(
+    pageWait(ready, READY_WAIT_MS),
+    READY_WAIT_MS + 5000,
+  );
+  return settled ? [] : [`${where} was not ready at ${width}px within ${READY_WAIT_MS} ms`];
+}
+
 const countIs = (target: number) =>
   `document.querySelector('${PANEL} [data-count]')?.getAttribute('data-count') === '${target}'`;
 

@@ -26,6 +26,7 @@ import {
   renewalsOf,
   required,
   screenAgainstSql,
+  settleAt,
 } from './shared';
 import {
   emptyGroupTimings,
@@ -81,6 +82,9 @@ export const headCount = `(() => {
 
 /** The tab badge's own panels, named apart from the page's panels of the same queries. */
 const BADGE_PANELS = QUERIES.map((q) => `nav [data-live="${badgePanelName(q)}"]`);
+const ATTENTION_READY = [...QUERIES.map((q) => `[data-live="${q}"]`), ...BADGE_PANELS]
+  .map((p) => `document.querySelector('${p}[data-state="ready"]') !== null`)
+  .join(' && ');
 
 /** The Attention tab's count, or null when no count is drawn. */
 const tabCount = `(() => {
@@ -307,14 +311,7 @@ export function attentionPhase(ctx: LiveContext): LivePhase {
       attentionPage = page;
       await page.goto(url());
       await page.evaluate('window.__mcNoReload = true');
-      const ready = await page.evaluate<boolean>(
-        pageWait(
-          [...QUERIES.map((q) => `[data-live="${q}"]`), ...BADGE_PANELS]
-            .map((p) => `document.querySelector('${p}[data-state="ready"]') !== null`)
-            .join(' && '),
-          READY_WAIT_MS,
-        ),
-      );
+      const ready = await page.evaluate<boolean>(pageWait(ATTENTION_READY, READY_WAIT_MS));
       if (!ready) {
         throw new Error(
           `the attention page did not reach data-state="ready" within ${READY_WAIT_MS} ms`,
@@ -365,8 +362,13 @@ export function attentionPhase(ctx: LiveContext): LivePhase {
         ].join('\n'),
       );
       ctx.failures.push(...mismatches.map((m) => `attention page against the seed: ${m}`));
-      ctx.save(FILES.phone, await page.screenshot(390));
-      ctx.save(FILES.shot, await page.screenshot(1440));
+      for (const [width, file] of [
+        [390, FILES.phone],
+        [1440, FILES.shot],
+      ] as const) {
+        ctx.failures.push(...(await settleAt(page, width, ATTENTION_READY, 'the attention page')));
+        ctx.save(file, await page.screenshot(width));
+      }
     },
 
     async write() {

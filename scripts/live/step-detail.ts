@@ -15,6 +15,7 @@ import {
   READY_WAIT_MS,
   RENEWALS_IN_180S,
   required,
+  settleAt,
 } from './shared';
 import {
   emptyGroupTimings,
@@ -288,6 +289,7 @@ export function stepDetailPhase(ctx: LiveContext): LivePhase {
       await page.evaluate('window.__mcNoReload = true');
       Object.assign(stepTimings, groupTimings(await measure(page, ALL_STEP_QUERIES)));
       ctx.failures.push(...(await checkAppMismatches(page, deps.repoRoot)));
+      ctx.failures.push(...(await settleAt(page, 1440, stepPanelsReady, STEP_PATH)));
       ctx.save(FILES.shot, await page.screenshot(1440));
     },
 

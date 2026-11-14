@@ -1,12 +1,15 @@
 import { expect, setSystemTime, test } from 'bun:test';
 import { FACTORY_MAP } from '../../app/map/factory-map';
+import type { Page } from '../lib/cdp';
 import {
   freePort,
   LIMITS,
   lateWrite,
   mapMismatches,
   mapWidthFailures,
+  READY_WAIT_MS,
   type ShownCard,
+  settleAt,
   waitForHealth,
 } from './shared';
 
@@ -120,4 +123,25 @@ test('waitForHealth accepts a server that answers only after 20 seconds', async 
     Bun.sleep = realSleep;
     setSystemTime();
   }
+});
+
+test("settleAt sets the width before waiting for the page's ready marker and names a page that never settles", async () => {
+  const run = async (settled: boolean) => {
+    const calls: string[] = [];
+    const page = {
+      setViewport: async (width: number) => void calls.push(`viewport ${width}`),
+      evaluate: async (expression: string) => {
+        calls.push(expression.includes('the-ready-marker') ? 'ready wait' : 'other');
+        return settled;
+      },
+    } as unknown as Page;
+    const failures = await settleAt(page, 390, 'the-ready-marker', 'the page');
+    return { calls, failures };
+  };
+  const ok = await run(true);
+  expect(ok.calls).toEqual(['viewport 390', 'ready wait']);
+  expect(ok.failures).toEqual([]);
+  expect((await run(false)).failures).toEqual([
+    `the page was not ready at 390px within ${READY_WAIT_MS} ms`,
+  ]);
 });
