@@ -3,7 +3,14 @@ import { readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { REPO_ROOT } from '../lib/cli';
 import { DATABASE_URL, NOW, recordingDeps, scratchRepo } from '../lib/test-deps';
-import { attentionWait, eventData, main, PROJECTION_TRIGGER, structuredOutputFor } from './write';
+import {
+  attentionWait,
+  eventData,
+  main,
+  PROJECTION_TRIGGER,
+  revisionDocument,
+  structuredOutputFor,
+} from './write';
 
 const scratch: string[] = [];
 afterEach(() => {
@@ -279,6 +286,27 @@ describe('the revision kind', () => {
     expect(JSON.parse(String(run.params[at]?.[3])).facts.build.status).toBe('ready');
   });
 
+  test('writes the claim and triage of the state row into a document the pack parses', async () => {
+    const { parseWorkItem } = await import(
+      join(REPO_ROOT, 'fixtures/pack/queue/sdlc/.shared/workitem.ts')
+    );
+    const claimed = { ...state, claim_run_id: 'c1a08f53-e5a8-46ca-a820-7f85071aa45f' };
+    const run = recordingDeps({
+      repoRoot: repo(),
+      rows: (sql) =>
+        sql.includes('FROM mc.work_item_states WHERE number = $1 AND')
+          ? [{ build_status: 'next' }]
+          : [claimed],
+    });
+    expect(await main(['revision', '--issue', '458', '--build', 'next'], run.deps)).toBe(0);
+    const at = run.sql.findIndex((sql) =>
+      sql.startsWith('INSERT INTO public.remote_agent_state_revisions'),
+    );
+    const doc = parseWorkItem(JSON.parse(String(run.params[at]?.[3])));
+    expect(doc.claim.run_id).toBe(claimed.claim_run_id);
+    expect(doc.facts.triage.at).toBe('T');
+  });
+
   test('fails when the item has no state row or the trigger did not project the revision', async () => {
     const none = recordingDeps({ repoRoot: repo(), rows: () => [] });
     expect(await main(['revision', '--issue', '9', '--build', 'ready'], none.deps)).toBe(1);
@@ -289,6 +317,27 @@ describe('the revision kind', () => {
     });
     expect(await main(['revision', '--issue', '9', '--build', 'ready'], unprojected.deps)).toBe(1);
     expect(unprojected.err.join('\n')).toContain('did not reach mc.work_item_states');
+  });
+
+  test('writes a document the pinned pack parses, with or without a claim', async () => {
+    const { parseWorkItem } = await import(
+      join(REPO_ROOT, 'fixtures/pack/queue/sdlc/.shared/workitem.ts')
+    );
+    const item = { issue: 458, build: 'next', at: NOW.toISOString(), triageAt: 'T' } as const;
+    for (const claimRunId of [null, 'c1a08f53-e5a8-46ca-a820-7f85071aa45f']) {
+      const doc = revisionDocument({ ...item, claimRunId });
+      expect(parseWorkItem(doc)).toEqual(doc);
+      for (const field of [
+        'subject',
+        'created_at',
+        'trust',
+        'requests',
+        'links',
+        'promoted',
+        'history',
+      ])
+        expect(() => parseWorkItem({ ...doc, [field]: undefined })).toThrow();
+    }
   });
 
   test('creates the projection trigger exactly as migration 0028 installs it', () => {

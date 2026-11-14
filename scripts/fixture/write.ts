@@ -1,5 +1,6 @@
 import { parseArgs } from 'node:util';
 import { STATE_REVISIONS_TABLE } from '../../db/archon-state-table';
+import type { WorkItem } from '../../fixtures/pack/queue/sdlc/.shared/workitem.ts';
 import type { StepKind } from '../../parsers/pack';
 import { failing, guardedDatabaseUrl, type Main, runCli } from '../lib/cli';
 import type { Row, Tx } from '../lib/db';
@@ -387,6 +388,57 @@ export const PROJECTION_TRIGGER = `CREATE OR REPLACE TRIGGER mc_project_work_ite
     FOR EACH ROW WHEN (NEW.name LIKE 'work/%')
     EXECUTE FUNCTION mc.project_work_item_state_revision()`;
 
+/** The fixed run the fixture's finished round names; the queues' rounds carry the run that delivered them. */
+const ROUND_RUN_ID = '00000000-0000-4000-8000-000000000741';
+
+/**
+ * The `work/<n>` document `revision` appends. Its type is the pinned pack's WorkItem, so tsc fails
+ * when the pack's shape (the build record, its rounds, the claim) and this document drift; write.test.ts
+ * adds the pack's parseWorkItem at runtime. The triage fact carries only the item's `at`, which is all
+ * the projector reads, so it is not the pack's full TriageFacts.
+ */
+export function revisionDocument(item: {
+  issue: number;
+  build: BuildStatus;
+  at: string;
+  triageAt: string;
+  claimRunId: string | null;
+}): WorkItem {
+  return {
+    version: 1,
+    subject: { repo: { host: 'github.com', path: REPOSITORY }, number: item.issue },
+    created_at: item.at,
+    stage: 'deliver',
+    trust: null,
+    claim: item.claimRunId === null ? null : { run_id: item.claimRunId, at: item.at, requests: [] },
+    requests: [],
+    links: { runs: [] },
+    promoted: null,
+    facts: {
+      triage: { at: item.triageAt } as WorkItem['facts']['triage'],
+      build: {
+        status: item.build,
+        brief: '',
+        at: item.at,
+        rounds: [
+          {
+            run_id: ROUND_RUN_ID,
+            at: item.at,
+            delivered: true,
+            reason: 'delivered',
+            pr_url: `https://github.com/${REPOSITORY}/pull/${item.issue}`,
+            summary: 'Delivered by the fixture.',
+            artifacts: '',
+            reviews: [],
+          },
+        ],
+        decisions: [],
+      },
+    },
+    history: [],
+  };
+}
+
 /**
  * Appends the next revision of the work item's `work/<n>` document to Archon's state table, as the
  * queues do, so the projection trigger fills the item's state row; it keeps the row's claim and
@@ -402,16 +454,13 @@ async function revision(tx: Tx, issue: number, build: BuildStatus, at: Date): Pr
   if (!state) throw new Error(`no work item state for #${issue}, so no revision continues it`);
   for (const ddl of [STATE_REVISIONS_TABLE, PROJECTION_TRIGGER]) await tx.query(ddl);
   const next = Number(state.revision) + 1;
-  const time = at.toISOString();
-  const doc = {
-    version: 1,
-    stage: 'deliver',
-    ...(state.claim_run_id !== null && { claim: { run_id: state.claim_run_id } }),
-    facts: {
-      triage: { at: state.triage_at },
-      build: { status: build, at: time, rounds: [{ at: time, reason: 'delivered', reviews: [] }] },
-    },
-  };
+  const doc = revisionDocument({
+    issue,
+    build,
+    at: at.toISOString(),
+    triageAt: state.triage_at as string,
+    claimRunId: state.claim_run_id === null ? null : String(state.claim_run_id),
+  });
   await tx.query(
     `INSERT INTO public.remote_agent_state_revisions (project_key, name, revision, value, operation, writer_kind)
      VALUES ($1, $2, $3, $4, 'put', 'operator')`,
