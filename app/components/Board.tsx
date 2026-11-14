@@ -9,22 +9,83 @@ import {
   type PipelineStage,
   type WorkItem,
 } from '../lib/board';
+import { localMinute } from '../lib/format';
 import { BOARD_ITEM_STATE, stateColor } from '../lib/states';
 import { Card } from './ui/Card';
-import { Pill } from './ui/StateDot';
+import { Pill, StateDot } from './ui/StateDot';
 
 const TILE =
   'block rounded-[7px] border border-[color:var(--v3-line)] bg-[var(--v3-bg)] px-2.5 py-2 hover:border-[color:var(--v3-line-2)]';
 
+/** The card opens the work item through its first link, stretched over the card; the run and returned links sit above it. */
+const OPENS = "after:absolute after:inset-0 after:content-['']";
+const INNER_LINK = 'relative z-10 underline hover:text-[color:var(--v3-fg)]';
+const DETAIL = 'font-mono text-[length:var(--v3-t-micro)] text-[color:var(--v3-fg-2)]';
+
+/** Round, the run that holds the item, returns, merge time and stop line: the lines below a card's title. */
+function CardDetail({ item }: { item: WorkItem }): ReactElement {
+  return (
+    <>
+      {item.round > 0 ? (
+        <span data-round={item.round} className={`mt-1.5 flex items-center gap-1.5 ${DETAIL}`}>
+          round {item.round}
+          {item.dots.map((dot, i) => (
+            <span
+              // biome-ignore lint/suspicious/noArrayIndexKey: a round's place is its identity
+              key={i}
+              data-round-dot={dot.state}
+              title={dot.title}
+              className="inline-block size-2 rounded-full"
+              style={{ background: stateColor(dot.state) }}
+            />
+          ))}
+        </span>
+      ) : null}
+      {item.run === null ? null : (
+        <span data-run className={`mt-1 flex items-center gap-1.5 ${DETAIL}`}>
+          <StateDot state="running" small />
+          <Link to={item.run.to} className={`${INNER_LINK} [overflow-wrap:anywhere]`}>
+            {item.run.text}
+          </Link>
+        </span>
+      )}
+      {item.returned > 0 ? (
+        <span data-returned={item.returned} className={`mt-1 block ${DETAIL}`}>
+          <Link to={item.to} className={INNER_LINK}>
+            returned ×{item.returned}
+          </Link>
+        </span>
+      ) : null}
+      {item.mergedAt === null ? null : (
+        <span data-merged-at className={`mt-1 block ${DETAIL}`}>
+          merged {localMinute(item.mergedAt)}
+        </span>
+      )}
+      {item.stop === null ? null : (
+        <span
+          data-stop-line
+          className="mt-1 block text-[length:var(--v3-t-meta)] [overflow-wrap:anywhere]"
+          style={{ color: stateColor('needs-you') }}
+        >
+          {item.stop}
+        </span>
+      )}
+    </>
+  );
+}
+
 function WorkItemCard({ item }: { item: WorkItem }): ReactElement {
   return (
-    <Link to={item.to} data-work-item={item.number} className={TILE}>
-      <span className="font-mono text-[length:var(--v3-t-micro)] text-[color:var(--v3-fg-2)]">
-        #{item.number}
-      </span>
-      <span className="mt-0.5 block text-[length:var(--v3-t-meta)] text-[color:var(--v3-fg)] [overflow-wrap:anywhere]">
-        {item.title}
-      </span>
+    <div className={`${TILE} relative`}>
+      <Link to={item.to} data-work-item={item.number} className={`block ${OPENS}`}>
+        <span className="font-mono text-[length:var(--v3-t-micro)] text-[color:var(--v3-fg-2)]">
+          #{item.number}
+        </span>
+        <span className="mt-0.5 block text-[length:var(--v3-t-meta)] text-[color:var(--v3-fg)] [overflow-wrap:anywhere]">
+          {item.title}
+        </span>
+      </Link>
+      <CardDetail item={item} />
       {item.chips.length > 0 ? (
         <span className="mt-1.5 flex flex-wrap gap-1">
           {item.chips.map((chip) => (
@@ -40,7 +101,7 @@ function WorkItemCard({ item }: { item: WorkItem }): ReactElement {
           ))}
         </span>
       ) : null}
-    </Link>
+    </div>
   );
 }
 
@@ -89,19 +150,22 @@ const MUTED_LINK =
 
 function MiniCard({ item }: { item: PipelineStage['items'][number] }): ReactElement {
   return (
-    <Link to={item.to} data-work-item={item.number} className={TILE}>
-      <span className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1 whitespace-nowrap font-mono text-[length:var(--v3-t-micro)] text-[color:var(--v3-fg-2)]">
-        #{item.number}
-        <span className="flex max-w-full min-w-0 [&>span]:min-w-0" title={item.status}>
-          <Pill compact state={BOARD_ITEM_STATE[item.status]} live={item.status === 'running'}>
-            <span className="min-w-0 truncate">{item.status}</span>
-          </Pill>
+    <div className={`${TILE} relative`}>
+      <Link to={item.to} data-work-item={item.number} className={`block ${OPENS}`}>
+        <span className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1 whitespace-nowrap font-mono text-[length:var(--v3-t-micro)] text-[color:var(--v3-fg-2)]">
+          #{item.number}
+          <span className="flex max-w-full min-w-0 [&>span]:min-w-0" title={item.status}>
+            <Pill compact state={BOARD_ITEM_STATE[item.status]} live={item.status === 'running'}>
+              <span className="min-w-0 truncate">{item.status}</span>
+            </Pill>
+          </span>
         </span>
-      </span>
-      <span className="mt-0.5 block text-[length:var(--v3-t-meta)] text-[color:var(--v3-fg)] [overflow-wrap:anywhere]">
-        {item.title}
-      </span>
-    </Link>
+        <span className="mt-0.5 block text-[length:var(--v3-t-meta)] text-[color:var(--v3-fg)] [overflow-wrap:anywhere]">
+          {item.title}
+        </span>
+      </Link>
+      <CardDetail item={item} />
+    </div>
   );
 }
 

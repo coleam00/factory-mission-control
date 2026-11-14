@@ -1,12 +1,14 @@
 import { expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { createMemoryRouter, RouterProvider } from 'react-router';
-import { type BoardView, COLUMNS, PIPELINE } from '../lib/board';
+import { type BoardView, COLUMNS, PIPELINE, type WorkItem } from '../lib/board';
 import { BoardBody } from './Board';
 
 const longTitle = '.archon/workflows/factory-build-queue-with-an-unbroken-path-token.yaml';
 
 const longChip = 'factory-build-queue-with-an-unbroken-order-name-token';
+
+const bare = { round: 0, dots: [], run: null, returned: 0, mergedAt: null, stop: null };
 
 const empty: BoardView = {
   orders: [],
@@ -40,6 +42,7 @@ test('a card title and an order chip with long unbroken tokens wrap inside their
           holder: 'test',
           items: [
             {
+              ...bare,
               number: 441,
               title: longTitle,
               chips: [{ kind: 'order', text: longChip }],
@@ -78,6 +81,7 @@ test('a failed chip renders the v3 failed color and a running chip pulses', () =
           holder: 'test',
           items: [
             {
+              ...bare,
               number: 1,
               title: 'x',
               chips: [
@@ -101,6 +105,7 @@ test('a failed chip renders the v3 failed color and a running chip pulses', () =
 const stage = (id: string, numbers: number[]) => ({
   ...(PIPELINE.find((h) => h.id === id) as (typeof PIPELINE)[number]),
   items: numbers.map((number) => ({
+    ...bare,
     number,
     title: `Item ${number}`,
     chips: [],
@@ -161,6 +166,7 @@ test('a mini card moves its state pill under the number instead of breaking it',
           i === 0
             ? [
                 {
+                  ...bare,
                   number: 7,
                   title: 't',
                   status: 'check failed' as const,
@@ -191,4 +197,63 @@ test('a stage summary pill truncates on one line and carries its full text in a 
     'pipeline',
   );
   expect(html).toMatch(/title="check failed 1"[^>]*><span class="truncate">check failed/);
+});
+
+const card = (over: Partial<WorkItem>): WorkItem => ({
+  ...bare,
+  number: 648,
+  title: 'Build the thing',
+  chips: [],
+  to: '/f/x/work/648',
+  ...over,
+});
+
+const inMerged = (item: WorkItem) =>
+  render(
+    { ...empty, columns: [{ id: 'merged', title: 'Merged', holder: 'done', items: [item] }] },
+    'table',
+  );
+
+const dot = (state: 'done' | 'needs-you' | 'idle' | 'running', title = 't') => ({ state, title });
+
+test('a finished item shows its round, one dot per round in order, and returned', () => {
+  const html = inMerged(
+    card({
+      round: 5,
+      dots: [dot('done'), dot('needs-you'), dot('idle'), dot('done'), dot('done')],
+      returned: 3,
+    }),
+  );
+  expect(html).toContain('round 5');
+  expect([...html.matchAll(/data-round-dot="([\w-]+)"/g)].map((m) => m[1])).toEqual([
+    'done',
+    'needs-you',
+    'idle',
+    'done',
+    'done',
+  ]);
+  expect(html).toMatch(/<a [^>]*href="\/f\/x\/work\/648"[^>]*>returned ×3<\/a>/);
+});
+
+test('a running item shows the live dot and its workflow and step linking to the run', () => {
+  const html = inMerged(
+    card({
+      round: 6,
+      dots: [dot('running', 'Round 6: running')],
+      run: { text: 'archon-build-queue · review__code', to: '/f/x/runs/abc' },
+    }),
+  );
+  expect(html).toContain('round 6');
+  expect(html).toContain('data-round-dot="running"');
+  expect(html).toMatch(
+    /<a [^>]*href="\/f\/x\/runs\/abc"[^>]*>archon-build-queue · review__code<\/a>/,
+  );
+  expect(html).not.toContain('returned');
+});
+
+test('a merged item shows when it merged, and an asking item its stop line', () => {
+  const merged = inMerged(card({ mergedAt: new Date(2026, 10, 12, 9, 7) }));
+  expect(merged).toContain('merged 2026-11-12 09:07');
+  const asking = inMerged(card({ stop: 'Waiting on you' }));
+  expect(asking).toMatch(/data-stop-line[^>]*>Waiting on you</);
 });

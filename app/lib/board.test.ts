@@ -169,7 +169,6 @@ test('a work item with a round and no run waits in Build; Queued is workable ite
     workable: [workable(2)],
   });
   expect(v.columns.find((c) => c.id === 'build')?.items[0]?.chips.map((c) => c.text)).toEqual([
-    'round 1',
     'PR #9',
     'waiting for a run',
   ]);
@@ -249,7 +248,7 @@ test('a work order drops off 7 days after its last issue closes', () => {
   expect(nextChange({ board: [], orders: [finished(8)] }, NOW)).toBeNull();
 });
 
-test('chips: the route, the pulse of a run on it, the app verdict and where the card opens', () => {
+test('chips: the route, the app verdict and where the card opens', () => {
   const v = view({
     board: [
       item(1, {
@@ -269,14 +268,13 @@ test('chips: the route, the pulse of a run on it, the app verdict and where the 
   const [one] = v.columns.find((c) => c.id === 'build')?.items ?? [];
   expect(one?.chips).toEqual([
     { kind: 'route', text: 'deliver' },
-    { kind: 'round', text: 'round 2', state: 'running', pulse: true },
     { kind: 'app', text: 'app fail', state: 'failed' },
     { kind: 'pr', text: 'PR #7' },
     { kind: 'order', text: 'screens' },
   ]);
   expect(one?.to).toBe('/f/f/work/1');
   const two = v.columns.find((c) => c.id === 'build')?.items[1];
-  expect(two?.chips.map((c) => c.text)).toEqual(['round 1', 'app pass', 'waiting for a run']);
+  expect(two?.chips.map((c) => c.text)).toEqual(['app pass', 'waiting for a run']);
   expect(two?.to).toBe('/f/f/work/2');
 });
 
@@ -321,7 +319,6 @@ test('Parked is the last column, held by you, and a parked item is in it and now
   expect(column(v, 'build')).toEqual([]);
   expect(column(v, 'decision')).toEqual([]);
   expect(v.columns.find((c) => c.id === 'parked')?.items[1]?.chips.map((c) => c.text)).toEqual([
-    'running',
     'app pass',
     'PR #9',
   ]);
