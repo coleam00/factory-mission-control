@@ -6,7 +6,7 @@ import { join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { createRealtimeClient, type WebSocketLike } from '@neon/realtime/client';
 import { createRealtime, rawSql } from '@neon/realtime/server';
-import { loadLiveQueries, realtimeUrlFor } from '../server/live';
+import { loadLiveQueries, parameterCount, realtimeUrlFor } from '../server/live';
 import { QUEUE_FACTORY, SECOND_FACTORY } from './fixture/seed';
 import { type Deps, failing, guardedDatabaseUrl, type Main, runCli } from './lib/cli';
 import { machineLockPath, withMachineLock } from './lib/machine-lock';
@@ -59,7 +59,8 @@ export const SCREENS: readonly LiveScreen[] = [
       '`bun run fixture:branch` first): serves the app on a free port in 8850-8864 (waiting up to 30',
       'minutes while every one is taken), reading a factories file (in --out, as MC_FACTORIES_FILE) of',
       "factories.json plus the seed's second and queue factories, re-runs the probes in",
-      'db/queries/REALTIME.md, and writes every file below to --out (default harness/.results/live).',
+      'db/queries/REALTIME.md, subscribes every file in db/queries/ and fails naming each Realtime refuses,',
+      'and writes every file below to --out (default harness/.results/live).',
     ],
   },
   {
@@ -251,10 +252,10 @@ const BunWebSocket = WebSocket as unknown as new (
   options: { protocols: string[]; headers: Record<string, string> },
 ) => WebSocketLike;
 
-/** Subscribes `probe` from this process as the browser would, and reports what Realtime said. */
+/** Subscribes `probe` with `params` from this process as the browser would, and reports what Realtime said. */
 async function runProbe(
   probe: string,
-  factory: string,
+  params: string[],
   env: { databaseUrl: string; secret: string; origin: string },
 ): Promise<Pick<Feature, 'verdict' | 'error'>> {
   const sealer = createRealtime({
@@ -270,7 +271,7 @@ async function runProbe(
   });
   try {
     const sealed = await sealer.seal({
-      query: rawSql(probe, probe.includes('$1') ? [factory] : []),
+      query: rawSql(probe, params),
     });
     const subscription = client.subscribe(sealed);
     return await new Promise((done) => {
@@ -390,7 +391,11 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
     );
     const features: Feature[] = [];
     for (const row of documented) {
-      const seen = await runProbe(row.probe, factory, { databaseUrl, secret, origin: base });
+      const seen = await runProbe(row.probe, row.probe.includes('$1') ? [factory] : [], {
+        databaseUrl,
+        secret,
+        origin: base,
+      });
       features.push({ ...row, ...seen });
       if (seen.verdict !== row.verdict || seen.error !== row.error) {
         failures.push(
@@ -402,6 +407,16 @@ async function testLive(deps: Deps, outDir: string, holdSeconds: number): Promis
       RUNNER_FILES.features,
       `${JSON.stringify({ branch: ctx.branch, features }, null, 2)}\n`,
     );
+
+    // Every file the app seals, with the factory and an empty string for each further parameter
+    // (a step's workflow, path and version pin), so a query Realtime refuses fails here, by name.
+    for (const [name, sql] of queries) {
+      const params = [factory, ...Array(Math.max(0, parameterCount(sql) - 1)).fill('')];
+      const seen = await runProbe(sql, params, { databaseUrl, secret, origin: base });
+      if (seen.verdict === 'rejected') {
+        failures.push(`Realtime refuses db/queries/${name}.sql (${seen.error})`);
+      }
+    }
 
     const laps = await db.query(
       `SELECT l.run_id FROM mc.laps l

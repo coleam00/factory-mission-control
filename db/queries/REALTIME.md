@@ -12,7 +12,7 @@ and rejected when `bun run test:live` ran each probe query on a check branch; `t
 them again on every run and fails when a verdict or an error differs from this table.
 
 - `@neon/realtime`: 0.1.2
-- Run: check-816754c9, check-ff19c267 and check-bfb770e3, 2026-10-25; the now() error as worded on check-646f49ad, 2026-10-27; the value of 16 KiB or more as the app check of #336 saw it, 2026-11-04
+- Run: check-816754c9, check-ff19c267 and check-bfb770e3, 2026-10-25; the now() error as worded on check-646f49ad, 2026-10-27; the value of 16 KiB or more as the app check of #336 saw it, 2026-11-04; the two rows for a subquery inside an expression and a set operation reading an outer level as the app checks of #704 and #705 saw them on 2026-11-13 (their probes are written from the refused shapes and not yet run by `test:live`)
 
 | Feature                 | Probe                                                                                                                                                                                             | Verdict  | Error                                                                                                      |
 | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- | ---------------------------------------------------------------------------------------------------------- |
@@ -30,6 +30,14 @@ them again on every run and fails when a verdict or an error differs from this t
 | NOT EXISTS              | `SELECT p.sha FROM mc.pins p WHERE NOT EXISTS (SELECT 1 FROM mc.laps l WHERE l.factory = $1 AND l.started_at > p.committed_at)`                                                                   | accepted |                                                                                                            |
 | starts_with()           | `SELECT p.sha, v.verdict FROM mc.pins p JOIN mc.verdicts v ON starts_with(p.sha, v.pin)`                                                                                                          | accepted |                                                                                                            |
 | EXISTS in CASE          | `SELECT i.number, CASE WHEN EXISTS (SELECT 1 FROM mc.issue_labels l WHERE l.issue_number = i.number) THEN 1 ELSE 0 END AS n FROM mc.issues i WHERE i.factory = $1`                                | accepted |                                                                                                            |
+| EXISTS in FILTER | `SELECT count(*) FILTER (WHERE EXISTS (SELECT 1 FROM mc.issue_labels l WHERE l.factory = i.factory AND l.issue_number = i.number)) AS n FROM mc.issues i WHERE i.factory = $1` | rejected | upstream_rejected: the compiler refuses at the front end: unsupported query: subquery inside an expression the core does not analyse |
+| set operation in a LATERAL | `SELECT l.run_id, g.title FROM mc.laps l LEFT JOIN LATERAL (SELECT min(x.title) AS title FROM (SELECT s.step_id AS title FROM mc.lap_steps s WHERE s.run_id = l.run_id UNION ALL SELECT e.step_id FROM mc.lap_steps e WHERE e.run_id = l.run_id) x) g ON true WHERE l.factory = $1` | rejected | upstream_rejected: the compiler refuses at the front end: set operation operand reads an outer query level |
+
+A subquery inside an expression is refused, so a live query counts with a `LEFT JOIN LATERAL`
+aggregate and reads the count in the expression (`work-orders` and `unstick` do). A `UNION ALL`
+inside a lateral whose operand reads the outer row is refused too; the two operands become two
+laterals, combined with `greatest` or `least`. Past the probes, `test:live` subscribes every file in
+this directory and fails naming each one Realtime refuses.
 
 A volatile function such as `now()` is rejected, so a query returns timestamps and the browser
 computes elapsed times. The probe for a value of 16 KiB or more was accepted on 2026-11-04: the
