@@ -287,17 +287,23 @@ function Pipeline({
   const stages = view.pipeline.filter((s) => s.id !== 'blocked');
   const blocked = view.pipeline.find((s) => s.id === 'blocked');
   const { filed, tracked, dropped } = view.found;
-  const [firstHidden, setFirstHidden] = useState<number | null>(null);
+  const [cut, setCut] = useState<{ left: number; right: number | null }>({ left: 0, right: null });
   useLayoutEffect(() => {
     const scroller = row.current;
     const grid = scroller?.firstElementChild;
     if (!scroller || !grid) return;
     const update = () => {
       const edge = scroller.scrollLeft + scroller.clientWidth + 1;
-      const index = Array.from(grid.children).findIndex(
-        (column) => column instanceof HTMLElement && column.offsetLeft + column.offsetWidth > edge,
+      const columns = Array.from(grid.children).filter(
+        (column): column is HTMLElement => column instanceof HTMLElement,
       );
-      setFirstHidden(index < 0 ? null : index);
+      const right = columns.findIndex((column) => column.offsetLeft + column.offsetWidth > edge);
+      const left = columns.filter((column) => column.offsetLeft < scroller.scrollLeft - 1).length;
+      setCut((was) =>
+        was.left === left && was.right === (right < 0 ? null : right)
+          ? was
+          : { left, right: right < 0 ? null : right },
+      );
     };
     update();
     const observer = new ResizeObserver(update);
@@ -309,9 +315,43 @@ function Pipeline({
       scroller.removeEventListener('scroll', update);
     };
   }, [row]);
-  const hidden = firstHidden === null ? [] : stages.slice(firstHidden);
+  const hiddenLeft = stages.slice(0, cut.left);
+  const hiddenRight = cut.right === null ? [] : stages.slice(cut.right);
+  const names = (hidden: PipelineStage[]) =>
+    hidden.map((stage) => `${stage.title} ${stage.items.length}`).join(' · ');
+  const FADE = 'pointer-events-none absolute inset-y-0 w-8 from-[var(--v3-bg)] to-transparent';
+  const HINT =
+    'cursor-pointer text-[length:var(--v3-t-meta)] font-semibold text-[color:var(--v3-fg)] hover:underline';
   return (
     <div className="space-y-2.5">
+      {hiddenLeft.length + hiddenRight.length > 0 ? (
+        <div className="flex justify-between gap-4">
+          {hiddenLeft.length > 0 ? (
+            <button
+              type="button"
+              data-stage-fade="left"
+              className={HINT}
+              onClick={() => row.current?.scrollTo({ left: 0, behavior: 'smooth' })}
+            >
+              ← {names(hiddenLeft)}
+            </button>
+          ) : (
+            <span />
+          )}
+          {hiddenRight.length > 0 ? (
+            <button
+              type="button"
+              data-stage-fade="right"
+              className={`${HINT} text-right`}
+              onClick={() =>
+                row.current?.scrollTo({ left: row.current.scrollWidth, behavior: 'smooth' })
+              }
+            >
+              {names(hiddenRight)} →
+            </button>
+          ) : null}
+        </div>
+      ) : null}
       <div className="relative">
         <div ref={row} data-stage-row className="min-w-0 overflow-x-auto">
           <div className="grid grid-cols-1 items-start gap-2.5 min-[760px]:grid-cols-none min-[760px]:grid-flow-col min-[760px]:auto-cols-[minmax(150px,1fr)]">
@@ -324,26 +364,8 @@ function Pipeline({
             ))}
           </div>
         </div>
-        {hidden.length > 0 ? (
-          <div
-            data-stage-fade
-            className="pointer-events-none absolute inset-y-0 right-0 flex w-40 items-start justify-end bg-gradient-to-l from-[var(--v3-bg)] via-[var(--v3-bg)]/80 to-transparent"
-          >
-            <button
-              type="button"
-              data-stage-fade-button
-              className="pointer-events-auto cursor-pointer p-2 text-right text-[length:var(--v3-t-meta)] font-semibold text-[color:var(--v3-fg)] hover:underline"
-              onClick={() =>
-                row.current?.scrollTo({
-                  left: row.current.scrollWidth,
-                  behavior: 'smooth',
-                })
-              }
-            >
-              {hidden.map((stage) => `${stage.title} ${stage.items.length}`).join(' · ')} →
-            </button>
-          </div>
-        ) : null}
+        {hiddenLeft.length > 0 ? <div className={`${FADE} left-0 bg-gradient-to-r`} /> : null}
+        {hiddenRight.length > 0 ? <div className={`${FADE} right-0 bg-gradient-to-l`} /> : null}
       </div>
       <div className="grid grid-cols-1 gap-2.5 min-[760px]:grid-cols-2">
         <Card
