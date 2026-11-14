@@ -1,4 +1,4 @@
-import { expect, test } from 'bun:test';
+import { afterEach, expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { createMemoryRouter, RouterProvider } from 'react-router';
 import { type BoardView, COLUMNS, PIPELINE, type WorkItem } from '../lib/board';
@@ -400,4 +400,30 @@ test('a finished order named by ?order= keeps its card while the row is folded',
   expect(html).toContain('data-work-order="old-b"');
   expect(html).not.toContain('data-work-order="old-a"');
   expect(html).toContain('2 finished orders: old-a, old-b');
+});
+
+const openRow = (): void => {
+  Object.defineProperty(globalThis, 'localStorage', {
+    value: { getItem: () => 'open' },
+    configurable: true,
+  });
+};
+
+afterEach(() => {
+  Reflect.deleteProperty(globalThis, 'localStorage');
+});
+
+test('a remembered open row shows every finished card after the row, a selected one once', () => {
+  openRow();
+  const view = { ...empty, orders: [order('live', 1, 3), order('old-a', 8, 8), order('old-b', 4, 4)] };
+  for (const selected of [undefined, 'old-b']) {
+    const html = render(view, 'pipeline', selected);
+    const row = html.indexOf('data-finished-orders');
+    expect(html).toContain('aria-expanded="true"');
+    expect(html.indexOf('data-work-order="live"')).toBeLessThan(row);
+    for (const name of ['old-a', 'old-b']) {
+      expect(html.split(`data-work-order="${name}"`)).toHaveLength(2);
+      expect(html.indexOf(`data-work-order="${name}"`)).toBeGreaterThan(row);
+    }
+  }
 });
