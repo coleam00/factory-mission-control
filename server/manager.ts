@@ -17,7 +17,7 @@ import { FAILURES_QUERY, failureLabel, retriedArgs } from '../app/lib/failure-vi
 import { type FailureGroupRow, failuresSince } from '../app/lib/failures';
 import { linkify } from '../app/lib/manager';
 import { topLevelBlocks } from '../app/lib/manager-markdown';
-import { isRunId, lapHref } from '../app/lib/one-lap';
+import { isRunId, lapHref, replaceRunIds } from '../app/lib/one-lap';
 import { placeAddress } from '../app/lib/places';
 import { addressOfPlace } from '../app/lib/runs';
 import { workItemHref } from '../app/lib/work-item';
@@ -373,7 +373,7 @@ The transient failures a later run of their workflow retried, today (the muted l
 The mc schema:
 ${schema}
 
-Answer in short plain prose, naming runs by workflow and status. Every run or work item the answer names goes in the block's links, by its full run id. To give the owner links, a run list or a button, end the answer with one fenced block whose info string is mc, holding JSON:
+Answer in short plain prose, naming runs by workflow and status. Every run the answer names goes in the block's links by its full run id, and every work item by its issue number. To give the owner links, a run list or a button, end the answer with one fenced block whose info string is mc, holding JSON:
 \`\`\`mc
 {"links":[{"kind":"run","id":"<run id>"},{"kind":"item","id":<issue number>}],"runs":["<run id>"],"proposals":[{"action":"answer","run_id":"<run id>","option":"<option id>"},{"action":"answer","run_id":"<run id>","text":"<free text>"},{"action":"resume","run_id":"<run id>","from_step":"<step id>"},{"action":"retriage","number":<issue number>},{"action":"close","number":<issue number>},{"action":"comment","number":<issue number>,"text":"<the owner's words>"}]}
 \`\`\`
@@ -551,18 +551,16 @@ async function proposalEvent(
   };
 }
 
-const RUN_UUID = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
-
 /**
- * The run page's own run, when the prose names it and the model gave it no link. The panel's
- * matcher decides what names it; a sibling run's full id, which shares the short id, does not.
+ * The run page's own run, when the prose names it and the model did not list it as a run card.
+ * Naming is case-insensitive over the raw prose, code spans included, with sibling runs' full ids
+ * masked since they share the short id. A link the panel cannot place inline shows after the prose.
  */
 function viewedRunLink(raw: RawStructure, viewed: string | undefined, prose: string) {
   if (viewed === undefined || !isRunId(viewed)) return [];
   const id = viewed.toLowerCase();
-  const given = [...raw.links.filter((l) => l.kind === 'run').map((l) => l.id), ...raw.runs];
-  if (given.some((g) => String(g).toLowerCase() === id)) return [];
-  const own = prose.replace(RUN_UUID, (uuid) => (uuid.toLowerCase() === id ? uuid : ' '));
+  if (raw.runs.some((r) => String(r).toLowerCase() === id)) return [];
+  const own = replaceRunIds(prose, (uuid) => (uuid.toLowerCase() === id ? uuid : ' '));
   const link = { type: 'link', kind: 'run', id, href: lapHref('', id) } as const;
   return linkify(own.toLowerCase(), [link]).rest.length === 0 ? [{ kind: 'run' as const, id }] : [];
 }

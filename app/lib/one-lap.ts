@@ -239,6 +239,11 @@ export function actionText(action: unknown): string | null {
   return typeof action === 'string' ? action : JSON.stringify(action);
 }
 
+const RUN_ID_SOURCE = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';
+
 /** Whether an address names a run id at all: Archon's run ids are UUIDs. */
-export const isRunId = (runId: string) =>
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(runId);
+export const isRunId = (runId: string) => new RegExp(`^${RUN_ID_SOURCE}$`, 'i').test(runId);
+
+/** A text with each run id written in it replaced by `replace(id)`. */
+export const replaceRunIds = (text: string, replace: (runId: string) => string) =>
+  text.replace(new RegExp(RUN_ID_SOURCE, 'gi'), replace);
