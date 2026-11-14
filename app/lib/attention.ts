@@ -47,6 +47,8 @@ export interface DecideRow extends AttentionRow {
   item_number: number | null;
   /** The title of the issue or pull request `item_number` names; null when it is not mirrored. */
   item_title: string | null;
+  /** The steps the run was running when it paused, newest first (home-map's lap rule); null when none. */
+  steps: string[] | null;
 }
 
 export type DecideItem = AttentionItem &

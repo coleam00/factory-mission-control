@@ -3,7 +3,7 @@
  * work orders it belongs to. The stage columns are the map's own cards, read with the map's "here"
  * rule, so the board never disagrees with the map. Pure, no React.
  */
-import { FACTORY_MAP, type Role } from '../map/factory-map';
+import { cardForStep, FACTORY_MAP, type Role } from '../map/factory-map';
 import {
   deepestStep,
   type HomeMapRow,
@@ -14,6 +14,7 @@ import {
 } from '../map/live';
 import { localMinute } from './format';
 import type { HealthWorkableRow } from './health';
+import { stepPath } from './lap-graph';
 import { lapHref } from './one-lap';
 import {
   APP_CHECK_WORKFLOW,
@@ -424,7 +425,7 @@ function chipsOf(item: BoardRow, home: HomeId, needsYou: boolean, running: boole
 }
 
 interface Facts {
-  /** Each work item a paused run waits on a person for, by the item the run holds (its claim, else its facts step's item, else its number input): the stage of that run's map card (its queue workflow's, else its running step's). */
+  /** Each work item a paused run waits on a person for, by the item the run holds (its claim, else its facts step's item, else its number input): the stage of that run's `waitCard`. */
   attention: ReadonlyMap<number, StageId | null>;
   /** The question each waiting run recorded, by the number its ask names: issues and pull requests share one number space. */
   questions: ReadonlyMap<number, string>;
@@ -442,12 +443,27 @@ const WORKFLOW_STAGE: Readonly<Record<string, StageId>> = {
   [MERGE_QUEUE_WORKFLOW]: 'merge',
 };
 
-/** The column of a paused run's map card: a queue workflow's own stage, else the card covering the step it was running when it paused. */
+/**
+ * The map card a paused run's wait belongs to: a queue workflow's own card, else the card covering
+ * the deepest step it was running when it paused, else the card covering the node it waits at.
+ * Undefined when none is covered; each caller keeps its own fallback.
+ */
+export function waitCard(
+  workflow: string,
+  steps: readonly string[] | null,
+  node: string | null,
+): string | undefined {
+  return (
+    WORKFLOW_STAGE[workflow] ??
+    stepsCard(FACTORY_MAP, workflow, steps)?.card.id ??
+    (node === null ? undefined : cardForStep(FACTORY_MAP, workflow, stepPath(node))?.id)
+  );
+}
+
+/** The column of a paused run's map card (`waitCard`); the home map's waiting row names no node, so the Board places by the queue workflow and the running steps alone. */
 function pausedStage(row: HomeMapRow): StageId | null {
-  const queue = WORKFLOW_STAGE[row.workflow ?? ''];
-  if (queue !== undefined) return queue;
   if (row.workflow === null) return null;
-  const id = stepsCard(FACTORY_MAP, row.workflow, row.steps)?.card.id;
+  const id = waitCard(row.workflow, row.steps, null);
   return id !== undefined && isStage(id) ? id : null;
 }
 

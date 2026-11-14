@@ -247,6 +247,7 @@ const decideRow = (over: Partial<DecideRow> = {}): DecideRow => ({
   item_title: 'A title',
   message: 'Which?',
   console: CONSOLE,
+  steps: null,
   ...over,
 });
 

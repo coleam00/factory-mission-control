@@ -122,6 +122,7 @@ const ROW_COLUMNS: Record<string, string[]> = {
     'item_title',
     'message',
     'console',
+    'steps',
   ]),
   unstick: columns<UnstickRow>()([
     'kind',

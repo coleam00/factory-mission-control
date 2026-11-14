@@ -10,7 +10,7 @@
  * such an item yet.
  */
 import type { Source } from '../live/Feed';
-import { cardForStep, FACTORY_MAP } from '../map/factory-map';
+import { FACTORY_MAP } from '../map/factory-map';
 import { type ActionRequest, type AnswerRequest, type CommentRequest, needsLogin } from './actions';
 import {
   type DecideRow,
@@ -23,9 +23,9 @@ import {
   UNSTICK_KINDS,
   type UnstickRow,
 } from './attention';
+import { waitCard } from './board';
 import { localMinute, shortRunId } from './format';
 import { askAbout, type ManagerAsk } from './manager';
-import { stepPath } from './lap-graph';
 import { since } from './laps';
 import { consoleUrl, workflowLabel } from './one-lap';
 import { type OwnerQueueRow, ownerQueue, waited } from './owner-queue';
@@ -66,15 +66,20 @@ export const QUEUE_OF_CARD: Readonly<Record<string, AttentionQueue>> = {
 };
 
 /**
- * The queue the factory map gives a step: the card covering it, else (no step, or one no card
- * covers) the first card covering the workflow at all. A workflow no card covers is Other.
+ * The queue of the map card a wait belongs to (`waitCard`: a queue workflow's own, else its deepest
+ * running step's, else its node's), else the first card covering the workflow at all. A workflow no
+ * card covers is Other.
  */
-export function queueOf(workflow: string | null, step: string | null = null): AttentionQueue {
+export function queueOf(
+  workflow: string | null,
+  node: string | null = null,
+  steps: readonly string[] | null = null,
+): AttentionQueue {
   if (workflow === null) return 'other';
   const card =
-    (step === null ? undefined : cardForStep(FACTORY_MAP, workflow, stepPath(step))) ??
-    FACTORY_MAP.cards.find((c) => c.covers.some((cover) => cover.workflow === workflow));
-  return QUEUE_OF_CARD[card?.id ?? ''] ?? 'other';
+    waitCard(workflow, steps, node) ??
+    FACTORY_MAP.cards.find((c) => c.covers.some((cover) => cover.workflow === workflow))?.id;
+  return QUEUE_OF_CARD[card ?? ''] ?? 'other';
 }
 
 export type MetaPart = { mono: string } | { pill: string; state: State } | { text: string };
@@ -194,7 +199,7 @@ export function decideCards(rows: readonly DecideRow[], factory: string): Attent
     }
     const chosen = item.options.find((o) => o.id === recommended);
     const heading = attentionQuestion(item.message);
-    const queue = queueOf(item.workflow_name, item.node_id);
+    const queue = queueOf(item.workflow_name, item.node_id, item.steps);
     const subject =
       item.item_number === null
         ? `Run ${shortRunId(item.run_id)}`
