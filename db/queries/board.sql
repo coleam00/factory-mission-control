@@ -123,13 +123,16 @@ LEFT JOIN LATERAL (
     CASE WHEN linked.open THEN linked.merged_at WHEN projected.number IS NOT NULL THEN projected.merged_at ELSE linked.merged_at END AS merged_at
 ) pr ON true
 LEFT JOIN LATERAL (
-  -- When the item landed, else: the pull request above if it merged, else the latest merged pull request that names
-  -- the item with `Refs` (an older item has no Closes link and no pr_number), not for an item closed as not planned or a duplicate.
-  SELECT coalesce(pr.merged_at, (
-    SELECT max(rm.merged_at) FROM mc.pull_request_references rf
-    JOIN mc.pull_requests rm ON rm.factory = rf.factory AND rm.number = rf.pr_number
-    WHERE rf.factory = i.factory AND rf.issue_number = i.number AND rm.merged_at IS NOT NULL
-      AND coalesce(i.close_reason, 'completed') NOT IN ('not_planned', 'duplicate'))) AS at
+  -- When the item landed, else: the projected pull request if it merged, else the latest merged pull request that closes
+  -- the item (whatever `pr` shows, which may be an open one), else the latest merged one that names it with `Refs` (an
+  -- older item has no Closes link and no pr_number). Only a closed item shows it, and the `items` CTE gates its close reason.
+  SELECT coalesce(pr.merged_at,
+    (SELECT max(m.merged_at) FROM mc.pull_request_issues x
+     JOIN mc.pull_requests m ON m.factory = x.factory AND m.number = x.pr_number
+     WHERE x.factory = i.factory AND x.issue_number = i.number),
+    (SELECT max(rm.merged_at) FROM mc.pull_request_references rf
+     JOIN mc.pull_requests rm ON rm.factory = rf.factory AND rm.number = rf.pr_number
+     WHERE rf.factory = i.factory AND rf.issue_number = i.number AND rm.merged_at IS NOT NULL)) AS at
 ) landed ON true
 LEFT JOIN checks ac ON ac.pr_number = pr.number
 LEFT JOIN LATERAL (

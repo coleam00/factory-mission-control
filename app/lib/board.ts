@@ -66,7 +66,7 @@ export interface BoardRow {
   /** The head commit of `pr`, and the head the latest app check on it ran against. */
   pr_head: string | null;
   app_check_head: string | null;
-  /** When it merged: the merge fact's time only while that merge still finishes the item (no later build or triage, as the pack's `finished()`), else `pr`'s own merge time (null while `pr` is open). */
+  /** When it merged: the merge fact's time only while that merge still finishes the item (no later build or triage, as the pack's `finished()`), else the delivering pull request's merge time: `pr`'s when it merged, else the latest merged one that closes the item, else the latest merged one that names it with `Refs`. Null when none merged; only a closed item's is shown. */
   merged_at: string | null;
   /** The running app check run on `pr`. */
   app_check_run: string | null;
@@ -670,7 +670,7 @@ export function boardView(sources: BoardSources, now: Date, order: string | null
   const facts = factsOf(map, workable, owner);
 
   const columns = new Map<ColumnId, WorkItem[]>(COLUMNS.map((c) => [c.id, []]));
-  const merged: { item: WorkItem; closedAt: Date; mergedAt: Date | null }[] = [];
+  const merged: { item: WorkItem; closedAt: Date }[] = [];
   const homes = new Map<HomeId, PipelineItem[]>(PIPELINE.map((h) => [h.id, []]));
   const tally = new Map<string, { building: number; needsYou: number }>();
   let notInOrder = 0;
@@ -720,8 +720,7 @@ export function boardView(sources: BoardSources, now: Date, order: string | null
       to: workItemHref(factory, number),
     };
     homes.get(home)?.push({ ...item, status });
-    if (home === 'merged' && row.closed_at !== null)
-      merged.push({ item, closedAt: row.closed_at, mergedAt: item.mergedAt });
+    if (home === 'merged' && row.closed_at !== null) merged.push({ item, closedAt: row.closed_at });
     else columns.get(tableColumnOf({ home, needsYou }))?.push(item);
   }
   for (const items of columns.values()) items.sort((a, b) => a.number - b.number);
@@ -730,8 +729,7 @@ export function boardView(sources: BoardSources, now: Date, order: string | null
     merged
       .sort(
         (a, b) =>
-          Number(b.mergedAt !== null) - Number(a.mergedAt !== null) ||
-          (b.mergedAt?.getTime() ?? 0) - (a.mergedAt?.getTime() ?? 0) ||
+          (b.item.mergedAt?.getTime() ?? 0) - (a.item.mergedAt?.getTime() ?? 0) ||
           b.closedAt.getTime() - a.closedAt.getTime() ||
           a.item.number - b.item.number,
       )
