@@ -22,86 +22,141 @@ const OPENS = "after:absolute after:inset-0 after:content-['']";
 const INNER_LINK = 'relative z-10 underline hover:text-[color:var(--v3-fg)]';
 const DETAIL = 'font-mono text-[length:var(--v3-t-micro)] text-[color:var(--v3-fg-2)]';
 
-/** Round, the run that holds the item, returns, merge time and stop line: the lines below a card's title. */
-function CardDetail({ item }: { item: WorkItem }): ReactElement {
+function Rounds({ item }: { item: WorkItem }): ReactElement | null {
+  if (item.round === 0) return null;
   return (
-    <>
-      {item.round > 0 ? (
-        <span data-round={item.round} className={`mt-1.5 flex items-center gap-1.5 ${DETAIL}`}>
-          round {item.round}
-          {item.dots.map((dot, i) => (
-            <span
-              // biome-ignore lint/suspicious/noArrayIndexKey: a round's place is its identity
-              key={i}
-              data-round-dot={dot.state}
-              title={dot.title}
-              className="inline-block size-2 rounded-full"
-              style={{ background: stateColor(dot.state) }}
-            />
-          ))}
-        </span>
-      ) : null}
-      {item.run === null ? null : (
-        <span data-run className={`mt-1 flex items-center gap-1.5 ${DETAIL}`}>
-          <StateDot state="running" small />
-          <Link to={item.run.to} className={`${INNER_LINK} [overflow-wrap:anywhere]`}>
-            {item.run.text}
-          </Link>
-        </span>
-      )}
-      {item.returned > 0 ? (
-        <span data-returned={item.returned} className={`mt-1 block ${DETAIL}`}>
-          <Link to={item.to} className={INNER_LINK}>
-            returned ×{item.returned}
-          </Link>
-        </span>
-      ) : null}
-      {item.mergedAt === null ? null : (
-        <span data-merged-at className={`mt-1 block ${DETAIL}`}>
-          merged {localMinute(item.mergedAt)}
-        </span>
-      )}
-      {item.stop === null ? null : (
+    <span data-round={item.round} className={`flex flex-wrap items-center gap-1.5 ${DETAIL}`}>
+      round {item.round}
+      {item.dots.map((dot, i) => (
         <span
-          data-stop-line
-          className="mt-1 block text-[length:var(--v3-t-meta)] [overflow-wrap:anywhere]"
-          style={{ color: stateColor('needs-you') }}
-        >
-          {item.stop}
-        </span>
-      )}
-    </>
+          // biome-ignore lint/suspicious/noArrayIndexKey: a round's place is its identity
+          key={i}
+          data-round-dot={dot.state}
+          title={dot.title}
+          className="inline-block size-2 shrink-0 rounded-full"
+          style={{ background: stateColor(dot.state) }}
+        />
+      ))}
+    </span>
   );
 }
 
-function WorkItemCard({ item }: { item: WorkItem }): ReactElement {
+function RunLine({ item }: { item: WorkItem }): ReactElement | null {
+  if (item.run === null) return null;
   return (
-    <div className={`${TILE} relative`}>
-      <Link to={item.to} data-work-item={item.number} className={`block ${OPENS}`}>
-        <span className="font-mono text-[length:var(--v3-t-micro)] text-[color:var(--v3-fg-2)]">
-          #{item.number}
-        </span>
-        <span className="mt-0.5 block text-[length:var(--v3-t-meta)] text-[color:var(--v3-fg)] [overflow-wrap:anywhere]">
-          {item.title}
-        </span>
+    <span data-run className={`flex items-center gap-1.5 ${DETAIL}`}>
+      <StateDot state="running" small />
+      <Link to={item.run.to} className={`${INNER_LINK} [overflow-wrap:anywhere]`}>
+        {item.run.text}
       </Link>
-      <CardDetail item={item} />
-      {item.chips.length > 0 ? (
-        <span className="mt-1.5 flex flex-wrap gap-1">
-          {item.chips.map((chip) => (
-            <Pill
-              compact
-              key={`${chip.kind}-${chip.text}`}
-              data-chip={chip.kind}
-              state={chip.state}
-              live={chip.pulse}
-            >
-              {chip.text}
-            </Pill>
-          ))}
-        </span>
-      ) : null}
-    </div>
+    </span>
+  );
+}
+
+function Returned({ item }: { item: WorkItem }): ReactElement | null {
+  if (item.returned === 0) return null;
+  return (
+    <span data-returned={item.returned} className={`block ${DETAIL}`}>
+      <Link to={item.to} className={INNER_LINK}>
+        returned ×{item.returned}
+      </Link>
+    </span>
+  );
+}
+
+function Merged({ item }: { item: WorkItem }): ReactElement | null {
+  if (item.mergedAt === null) return null;
+  return (
+    <span data-merged-at className={`block ${DETAIL}`}>
+      merged {localMinute(item.mergedAt)}
+    </span>
+  );
+}
+
+function StopLine({ item }: { item: WorkItem }): ReactElement | null {
+  if (item.stop === null) return null;
+  return (
+    <span
+      data-stop-line
+      className="block text-[length:var(--v3-t-meta)] [overflow-wrap:anywhere]"
+      style={{ color: stateColor(item.stop.state) }}
+    >
+      {item.stop.text}
+    </span>
+  );
+}
+
+/** Round, the run that holds the item, returns, merge time and stop line: the lines below a card's title, in the design's order. */
+function CardDetail({ item }: { item: WorkItem }): ReactElement {
+  return (
+    <span className="mt-1.5 flex flex-col gap-1">
+      <Rounds item={item} />
+      <RunLine item={item} />
+      <Returned item={item} />
+      <Merged item={item} />
+      <StopLine item={item} />
+    </span>
+  );
+}
+
+/** The Table's rows: the same items, with round, run and step, returned and merged time as columns. */
+function ItemTable({ items }: { items: WorkItem[] }): ReactElement {
+  const head = 'px-2 py-1 text-left font-normal';
+  return (
+    <table className={`w-full border-collapse ${DETAIL}`}>
+      <thead>
+        <tr className="text-[color:var(--v3-fg-3)]">
+          <th className={head}>Item</th>
+          <th className={head}>Round</th>
+          <th className={head}>Run and step</th>
+          <th className={head}>Returned</th>
+          <th className={head}>Merged</th>
+        </tr>
+      </thead>
+      <tbody>
+        {items.map((item) => (
+          <tr key={item.number} className="border-t border-[color:var(--v3-line)] align-top">
+            <td className="px-2 py-1.5">
+              <Link
+                to={item.to}
+                data-work-item={item.number}
+                className="block text-[length:var(--v3-t-meta)] text-[color:var(--v3-fg)]"
+              >
+                #{item.number} <span className="[overflow-wrap:anywhere]">{item.title}</span>
+              </Link>
+              <StopLine item={item} />
+              {item.chips.length > 0 ? (
+                <span className="mt-1 flex flex-wrap gap-1">
+                  {item.chips.map((chip) => (
+                    <Pill
+                      compact
+                      key={`${chip.kind}-${chip.text}`}
+                      data-chip={chip.kind}
+                      state={chip.state}
+                      live={chip.pulse}
+                    >
+                      {chip.text}
+                    </Pill>
+                  ))}
+                </span>
+              ) : null}
+            </td>
+            <td className="px-2 py-1.5">
+              <Rounds item={item} />
+            </td>
+            <td className="px-2 py-1.5">
+              <RunLine item={item} />
+            </td>
+            <td className="px-2 py-1.5">
+              <Returned item={item} />
+            </td>
+            <td className="px-2 py-1.5">
+              <Merged item={item} />
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
   );
 }
 
@@ -134,11 +189,7 @@ function Column({ column, older }: { column: BoardColumn; older: ReactElement | 
           {column.empty ?? 'Nothing here'}
         </p>
       ) : (
-        <div className="grid grid-cols-1 gap-2 min-[760px]:grid-cols-2 min-[1100px]:grid-cols-3">
-          {column.items.map((item) => (
-            <WorkItemCard key={item.number} item={item} />
-          ))}
-        </div>
+        <ItemTable items={column.items} />
       )}
       {older}
     </Card>

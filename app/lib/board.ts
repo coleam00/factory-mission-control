@@ -7,7 +7,7 @@ import { FACTORY_MAP, type Role } from '../map/factory-map';
 import { deepestStep, type HomeMapRow, lapCard, onQueues, type WorkOrderRow } from '../map/live';
 import { localMinute } from './format';
 import type { HealthWorkableRow } from './health';
-import { stepPath } from './lap-graph';
+import { lapHref } from './one-lap';
 import {
   APP_CHECK_WORKFLOW,
   BUILD_QUEUE_WORKFLOW,
@@ -18,6 +18,7 @@ import {
 } from './one-lap';
 import type { OwnerQueueRow } from './owner-queue';
 import { BOARD_ITEM_STATE, CHECK_OVERALL_STATE, type State } from './states';
+import { stepName } from './runs';
 import { needsYouLine, workItemHref } from './work-item';
 
 /** One row of `db/queries/board.sql`: a work item, or the one row for the factory. */
@@ -160,8 +161,8 @@ export interface WorkItem {
   /** How often the merge queue sent it back. */
   returned: number;
   mergedAt: Date | null;
-  /** Why a work item waiting on you stopped. */
-  stop: string | null;
+  /** Why a work item waiting on you or with a failed check stopped, in its state's color. */
+  stop: { text: string; state: State } | null;
   /** The work item's own page. */
   to: string;
 }
@@ -320,8 +321,22 @@ interface Hold {
   stage: StageId | null;
   run: string;
   workflow: string;
-  /** The last segment of the deepest running step's path; null between two steps. */
+  /** The deepest running step's name, as the Runs screen shows it; null between two steps. */
   step: string | null;
+}
+
+function stepOf(row: HomeMapRow): string | null {
+  const deepest = deepestStep(row.steps);
+  return deepest === undefined ? null : stepName(deepest);
+}
+
+/** The running step of each run on the map, including a run that holds no work item by number. */
+function stepsByRun(map: readonly HomeMapRow[]): Map<string, string | null> {
+  return new Map(
+    map.flatMap((row) =>
+      row.kind === 'lap' && row.run_id !== null ? [[row.run_id, stepOf(row)] as const] : [],
+    ),
+  );
 }
 
 /**
@@ -336,12 +351,11 @@ function runningRuns(map: readonly HomeMapRow[]): Map<number, Hold> {
     if (row.kind !== 'lap' || row.number === null || run === null || workflow === null) continue;
     if (workflow === SPLIT_WORKFLOW) continue;
     const placed = lapCard(FACTORY_MAP, row)?.card.id;
-    const deepest = deepestStep(row.steps);
     const hold: Hold = {
       stage: placed !== undefined && isStage(placed) ? placed : null,
       run,
       workflow,
-      step: deepest === undefined ? null : (stepPath(deepest).split('/').at(-1) ?? null),
+      step: stepOf(row),
     };
     const was = running.get(row.number);
     if (was === undefined || furthest(was.stage, hold.stage) !== was.stage) {
@@ -351,22 +365,42 @@ function runningRuns(map: readonly HomeMapRow[]): Map<number, Hold> {
   return running;
 }
 
+/** Why an item waits or failed: the question it asks the owner, else that a person is waited on, else its failed check. */
+function stopOf(status: Status, number: number, owner: readonly OwnerQueueRow[]): WorkItem['stop'] {
+  if (status === 'needs you') {
+    const question = owner.find((r) => r.kind === 'question' && r.issue_number === number);
+    return { text: needsYouLine(question?.title ?? null), state: 'needs-you' };
+  }
+  return status === 'check failed' ? { text: 'App check failed', state: 'failed' } : null;
+}
+
 const REASON_STATE = { delivered: 'done', ask: 'needs-you' } as const;
 
-/** The finished rounds Archon recorded, oldest first; an entry that is not a round is skipped. */
-function finishedRounds(text: string | null): RoundDot[] {
-  return listOf(text).flatMap((entry, i): RoundDot[] => {
+/** The rounds Archon recorded, oldest first; an entry without a known reason is a grey dot. */
+function recordedRounds(text: string | null): RoundDot[] {
+  return listOf(text).map((entry, i): RoundDot => {
     const { at, reason, reviews } = (entry ?? {}) as Record<string, unknown>;
-    if (typeof reason !== 'string') return [];
     const n = typeof reviews === 'number' ? reviews : 0;
     const when = typeof at === 'string' ? ` · ${localMinute(new Date(at))}` : '';
-    return [
-      {
-        state: REASON_STATE[reason as keyof typeof REASON_STATE] ?? 'idle',
-        title: `Round ${i + 1}: ${reason}, ${n} ${n === 1 ? 'review' : 'reviews'}${when}`,
-      },
-    ];
+    const why = typeof reason === 'string' ? reason : 'no reason recorded';
+    return {
+      state: REASON_STATE[reason as keyof typeof REASON_STATE] ?? 'idle',
+      title: `Round ${i + 1}: ${why}, ${n} ${n === 1 ? 'review' : 'reviews'}${when}`,
+    };
   });
+}
+
+/** The run that holds an item: the furthest of its build-side run and its running app check. */
+function holdOf(row: BoardRow, number: number, facts: Facts): Hold | undefined {
+  const held = facts.running.get(number);
+  if (row.app_check_run === null) return held;
+  const check: Hold = {
+    stage: 'app',
+    run: row.app_check_run,
+    workflow: APP_CHECK_WORKFLOW,
+    step: facts.steps.get(row.app_check_run) ?? null,
+  };
+  return held === undefined || furthest(held.stage, 'app') !== held.stage ? check : held;
 }
 
 function chipsOf(item: BoardRow, home: HomeId, needsYou: boolean, running: boolean): BoardChip[] {
@@ -388,6 +422,7 @@ interface Facts {
   attention: ReadonlyMap<number, StageId | null>;
   needsOwner: ReadonlySet<number>;
   running: ReadonlyMap<number, Hold>;
+  steps: ReadonlyMap<string, string | null>;
   workable: ReadonlySet<number>;
 }
 
@@ -488,6 +523,7 @@ function factsOf(
       onQueues(map) ? [] : owner.filter((r) => r.kind === 'issue').map((r) => r.issue_number),
     ),
     running: runningRuns(map),
+    steps: stepsByRun(map),
     workable: new Set(
       workable.flatMap((r) =>
         r.kind === 'issue' && r.issue_number !== null ? [r.issue_number] : [],
@@ -613,26 +649,26 @@ export function boardView(sources: BoardSources, now: Date, order: string | null
       tally.set(name, counts);
     }
     if (order !== null && !names.includes(order)) continue;
-    const hold = row.state === 'open' ? running.get(number) : undefined;
-    const dots = finishedRounds(row.round_list);
+    const hold = row.state === 'open' ? holdOf(row, number, facts) : undefined;
+    const dots = recordedRounds(row.round_list);
     const building = hold?.workflow === BUILD_QUEUE_WORKFLOW;
     if (building) dots.push({ state: 'running', title: `Round ${dots.length + 1}: running` });
     const item: WorkItem = {
       number,
       title: row.title ?? '',
       chips: chipsOf(row, home, needsYou, isRunning),
-      round: (row.rounds ?? 0) + (building ? 1 : 0),
+      round: dots.length,
       dots,
       run:
         hold === undefined
           ? null
           : {
               text: hold.step === null ? hold.workflow : `${hold.workflow} · ${hold.step}`,
-              to: `/f/${encodeURIComponent(factory)}/runs/${hold.run}`,
+              to: lapHref(factory, hold.run),
             },
       returned: row.returns ?? 0,
       mergedAt: home === 'merged' && row.merged_at !== null ? new Date(row.merged_at) : null,
-      stop: needsYou ? needsYouLine(null) : null,
+      stop: stopOf(status, number, owner),
       to: workItemHref(factory, number),
     };
     homes.get(home)?.push({ ...item, status });

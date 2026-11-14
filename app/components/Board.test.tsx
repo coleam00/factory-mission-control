@@ -254,6 +254,6 @@ test('a running item shows the live dot and its workflow and step linking to the
 test('a merged item shows when it merged, and an asking item its stop line', () => {
   const merged = inMerged(card({ mergedAt: new Date(2026, 10, 12, 9, 7) }));
   expect(merged).toContain('merged 2026-11-12 09:07');
-  const asking = inMerged(card({ stop: 'Waiting on you' }));
+  const asking = inMerged(card({ stop: { text: 'Waiting on you', state: 'needs-you' } }));
   expect(asking).toMatch(/data-stop-line[^>]*>Waiting on you</);
 });

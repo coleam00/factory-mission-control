@@ -579,3 +579,69 @@ test('found counts filed, tracked and dropped, and ignores what is not a list', 
     ]),
   ).toEqual({ filed: 2, tracked: 1, dropped: 2 });
 });
+
+const owner = (number: number, title: string): OwnerQueueRow =>
+  ({ kind: 'question', issue_number: number, title }) as OwnerQueueRow;
+
+test('a running build card reads round N+1 with the live dot, and the run line names the step as the Runs screen does', () => {
+  const rounds = JSON.stringify([
+    { at: '2026-11-03T10:00:00Z', reason: 'delivered', reviews: 2 },
+    { at: '2026-11-03T11:00:00Z', reason: 'ask', reviews: 1 },
+    { at: '2026-11-03T11:30:00Z', reason: null, reviews: 0 },
+  ]);
+  const v = view({
+    board: [item(1, { rounds: 3, round_list: rounds })],
+    map: [lap(1, 'archon-build-queue', [REVIEW])],
+  });
+  const card = v.pipeline.find((s) => s.id === 'review')?.items[0];
+  expect(card?.round).toBe(4);
+  expect(card?.dots.map((d) => d.state)).toEqual(['done', 'needs-you', 'idle', 'running']);
+  expect(card?.dots[0]?.title).toMatch(/^Round 1: delivered, 2 reviews · /);
+  expect(card?.run).toEqual({
+    text: 'archon-build-queue · review__policy',
+    to: '/f/f/runs/00000000-0000-4000-8000-000000000001',
+  });
+});
+
+test('an item held only by a running app check shows that run, with its step from the map', () => {
+  const run = '00000000-0000-4000-8000-0000000000bb';
+  const check: HomeMapRow = {
+    ...lap(0, 'factory-app-check', ['check__browser']),
+    run_id: run,
+    number: null,
+  };
+  const v = view({
+    board: [item(2, { pr: 9, app_check_run: run })],
+    map: [check],
+  });
+  const card = v.pipeline.find((s) => s.id === 'app')?.items[0];
+  expect(card?.run).toEqual({ text: 'factory-app-check · check__browser', to: `/f/f/runs/${run}` });
+});
+
+test('a merged card carries its returns and merge time; a waiting one its question; a failed check says so', () => {
+  const v = view({
+    board: [
+      item(1, {
+        state: 'closed',
+        closed_at: daysAgo(1),
+        merged_at: '2026-11-03T08:00:00Z',
+        returns: 2,
+      }),
+      item(2, { build_status: 'asking', rounds: 1 }),
+      item(3, { app_check: 'FAIL', rounds: 1, pr: 5 }),
+    ],
+    owner: [owner(2, 'Which one?')],
+  });
+  const merged = v.pipeline.find((s) => s.id === 'merged')?.items[0];
+  expect(merged?.returned).toBe(2);
+  expect(merged?.mergedAt).toEqual(new Date('2026-11-03T08:00:00Z'));
+  const items = v.pipeline.flatMap((s) => s.items);
+  expect(items.find((i) => i.number === 2)?.stop).toEqual({
+    text: 'Asking: Which one?',
+    state: 'needs-you',
+  });
+  expect(items.find((i) => i.number === 3)?.stop).toEqual({
+    text: 'App check failed',
+    state: 'failed',
+  });
+});
