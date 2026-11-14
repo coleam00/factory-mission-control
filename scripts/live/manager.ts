@@ -62,6 +62,16 @@ export function answerMismatches(shown: readonly string[], known: ReadonlySet<st
     .map((id) => `the answer names run ${id}, which is not a run of the factory`);
 }
 
+/** A notice says why the model did not answer, so it is the failure; the run links are then not judged. */
+export function answerFailures(
+  notices: readonly string[],
+  shown: readonly string[],
+  known: ReadonlySet<string>,
+): string[] {
+  if (notices.length > 0) return [`the answer carries a notice: ${notices.join(' ')}`];
+  return answerMismatches(shown, known);
+}
+
 const panelOnScreen = `(() => ({
   head: document.querySelector('aside[data-manager] > div')?.textContent ?? '',
   placeholder: document.querySelector('aside[data-manager] textarea')?.getAttribute('placeholder') ?? null,
@@ -192,7 +202,7 @@ export function managerPhase(ctx: LiveContext): LivePhase {
             await db.query('SELECT run_id::text AS run FROM mc.laps WHERE factory = $1', [factory])
           ).map((r) => String(r.run)),
         );
-        mismatches.push(...answerMismatches(answer.runs, known));
+        mismatches.push(...answerFailures(answer.notices, answer.runs, known));
       }
       ctx.save(FILES.run, await page.screenshot(1440));
 
