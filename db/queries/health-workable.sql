@@ -12,13 +12,9 @@ WHERE i.factory = $1 AND i.state = 'open'
   )
   AND NOT EXISTS (
     SELECT 1 FROM mc.issue_dependencies d
-    WHERE d.factory = i.factory AND d.issue_number = i.number AND NOT EXISTS (
-      SELECT 1 FROM mc.issues di
-      WHERE di.factory = d.factory AND di.number = d.depends_on AND di.state = 'closed'
-      UNION ALL
-      SELECT 1 FROM mc.pull_requests p
-      WHERE p.factory = d.factory AND p.number = d.depends_on AND p.state = 'closed'
-    )
+    WHERE d.factory = i.factory AND d.issue_number = i.number
+      AND NOT EXISTS (SELECT 1 FROM mc.issues di WHERE di.factory = d.factory AND di.number = d.depends_on AND di.state = 'closed')
+      AND NOT EXISTS (SELECT 1 FROM mc.pull_requests dr WHERE dr.factory = d.factory AND dr.number = d.depends_on AND dr.state = 'closed')
   )
   AND NOT EXISTS (
     SELECT 1 FROM mc.claims c
