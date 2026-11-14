@@ -27,6 +27,7 @@ import {
 } from '../../app/lib/states';
 import { ROUTE_OF_LABEL, WORK_ITEM_NUMBER } from '../../app/lib/work-item';
 import { FACTORY_MAP } from '../../app/map/factory-map';
+import { BUILD_STATUSES } from '../../scripts/fixture/write';
 import { FAILED_SIGNATURES_SQL } from '../../scripts/live/attention';
 import { runMigrations } from '../../scripts/migrate';
 import { STOP_CORPUS } from '../run-stops-corpus';
@@ -438,6 +439,8 @@ test('the statuses board.ts compares are the pinned pack’s and the check’s',
   for (const status of placed.merge) expect(merge).toContain(status);
   for (const verdict of compared('app_check'))
     expect(Object.keys(CHECK_OVERALL_STATE)).toContain(verdict);
+  for (const status of BUILD_STATUSES)
+    expect(build, `fixture:write revision ${status}`).toContain(status);
 });
 
 test('WORKFLOW_STAGE names, for each workflow, a stage whose card covers that workflow', () => {
