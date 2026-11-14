@@ -180,6 +180,8 @@ async function checkSwitcher(ctx: LiveContext): Promise<void> {
       expectedEngine,
     );
     ctx.save(FILES.shot, await page.screenshot(1440));
+    // The screenshot resizes across the shell's phone breakpoint, which remounts the switcher closed.
+    await openList(page);
 
     const before = listed.find(([name]) => name === second)?.[1] ?? 0;
     const started = performance.now();

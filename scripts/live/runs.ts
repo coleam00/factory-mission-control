@@ -30,6 +30,8 @@ import {
 const RUNS_QUERIES = ['runs'] as const;
 const PANEL = '[data-live="runs"]';
 const SWITCH = `${PANEL} [role="switch"]`;
+// The Runs view switch also uses aria-pressed, so the state chips are scoped to their own row.
+const CHIPS = `${PANEL} div:has(> [role="switch"]) > button[aria-pressed]`;
 
 /** The run's row names the step the write started. */
 const runOn = (runId: string, step: string) =>
@@ -59,7 +61,7 @@ interface RunsOnScreen {
 const runsOnScreen = `(() => {
   const text = (el) => el?.textContent ?? '';
   return {
-    chips: [...document.querySelectorAll('${PANEL} button[aria-pressed]')].map((b) => {
+    chips: [...document.querySelectorAll('${CHIPS}')].map((b) => {
       const m = text(b).match(/^(.*?)([0-9,]*)$/);
       return [m[1], Number((m[2] || '').replaceAll(',', ''))];
     }),
@@ -203,10 +205,19 @@ export function runsPhase(ctx: LiveContext): LivePhase {
 
   const press = (page: Page, selector: string) =>
     page.evaluate(`document.querySelector('${selector}').click()`);
-  const allCount = (page: Page) =>
-    page.evaluate<number>(
-      `Number(document.querySelector('${PANEL} button[aria-pressed]').textContent.replace(/[^0-9]/g, ''))`,
+  const allCount = async (page: Page) => {
+    const shown = await page.evaluate<boolean>(
+      pageWait(
+        `/[0-9]/.test(document.querySelector('${CHIPS}')?.textContent ?? '')`,
+        LIMITS.insertToScreenMs,
+      ),
+      LIMITS.insertToScreenMs + 5000,
     );
+    if (!shown) return Number.NaN;
+    return page.evaluate<number>(
+      `Number(document.querySelector('${CHIPS}').textContent.replace(/[^0-9]/g, ''))`,
+    );
+  };
   const within = (page: Page, condition: string) =>
     page.evaluate<boolean>(
       pageWait(condition, LIMITS.insertToScreenMs),
