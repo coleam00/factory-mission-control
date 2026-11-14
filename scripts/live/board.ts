@@ -286,12 +286,13 @@ export function boardPhase(ctx: LiveContext): LivePhase {
       `work-order:${DEMO}`,
     ]);
     await db.query(
-      'DELETE FROM remote_agent_workflow_events WHERE workflow_run_id = $1 AND step_name = ANY($2)',
-      [QUEUE_RUNS.build, [BUILD_STEP, NEXT_STEP]],
+      'DELETE FROM remote_agent_workflow_events WHERE workflow_run_id = $1 AND step_name IN ($2, $3)',
+      [QUEUE_RUNS.build, BUILD_STEP, NEXT_STEP],
     );
-    await db.query('DELETE FROM mc.lap_steps WHERE run_id = $1 AND step_id = ANY($2)', [
+    await db.query('DELETE FROM mc.lap_steps WHERE run_id = $1 AND step_id IN ($2, $3)', [
       QUEUE_RUNS.build,
-      [BUILD_STEP, NEXT_STEP],
+      BUILD_STEP,
+      NEXT_STEP,
     ]);
     // The state table exists only once a `revision` write has created it.
     await db.query(
@@ -311,7 +312,7 @@ export function boardPhase(ctx: LiveContext): LivePhase {
         REVISED,
       ]);
       await db.query(
-        'INSERT INTO mc.work_item_states SELECT * FROM jsonb_populate_record(NULL::mc.work_item_states, $1::jsonb)',
+        'INSERT INTO mc.work_item_states SELECT * FROM jsonb_populate_record(NULL::mc.work_item_states, $1::text::jsonb)',
         [seededRevised],
       );
     }
