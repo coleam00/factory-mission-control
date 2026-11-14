@@ -478,7 +478,11 @@ const ROW_COLUMNS: Record<string, string[]> = {
 const VOLATILE =
   /\b(now|random|clock_timestamp|statement_timestamp|transaction_timestamp|timeofday|gen_random_uuid|nextval|current_timestamp|current_date|current_time|localtime|localtimestamp)\b/i;
 
-/** Set-returning functions; Realtime refuses them as a query source (REALTIME.md). */
+/**
+ * Set-returning functions, banned in a live query by project rule (REALTIME.md). Realtime accepted the
+ * constant `generate_series(0, 1)` probe on 2026-11-13, but #402's query expanding a JSON column with
+ * `jsonb_array_elements` was refused, and no other set-returning shape is probed.
+ */
 const SET_RETURNING =
   /\b(generate_series|generate_subscripts|unnest|jsonb?_array_elements(_text)?|jsonb?_each(_text)?|jsonb?_object_keys|jsonb?_to_recordset|jsonb?_populate_recordset|jsonb?_path_query(_array)?|regexp_matches|regexp_split_to_table|string_to_table|json_table|pg_ls_dir|pg_stat_get_activity|pg_show_all_settings)\s*\(/i;
 
