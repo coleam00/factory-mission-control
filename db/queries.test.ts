@@ -656,6 +656,13 @@ describe('the rules the live queries restate, which they may not call a function
         copies[name] ?? 0,
       ]);
     }
+    // one-lap.sql's Refs arm carries the Board's close-reason gate on the same item row.
+    expect(
+      count(
+        query('one-lap'),
+        /rm\.merged_at IS NOT NULL\s+AND coalesce\(i\.close_reason, 'completed'\) NOT IN \('not_planned', 'duplicate'\)/g,
+      ),
+    ).toBe(1);
   });
 
   test('a build-queue lap is a run whose facts step names an item, in every copy of the rule', () => {
