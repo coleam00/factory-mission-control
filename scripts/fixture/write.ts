@@ -1,5 +1,6 @@
 import { parseArgs } from 'node:util';
 import { STATE_REVISIONS_TABLE } from '../../db/archon-state-table';
+import type { WorkItem } from '../../fixtures/pack/queue/sdlc/.shared/workitem.ts';
 import type { StepKind } from '../../parsers/pack';
 import { failing, guardedDatabaseUrl, type Main, runCli } from '../lib/cli';
 import type { Row, Tx } from '../lib/db';
@@ -391,10 +392,10 @@ export const PROJECTION_TRIGGER = `CREATE OR REPLACE TRIGGER mc_project_work_ite
 const ROUND_RUN_ID = '00000000-0000-4000-8000-000000000741';
 
 /**
- * The `work/<n>` document `revision` appends, shaped as the pinned pack's WorkItem so the
- * projector reads what the queues write (the pack stays out of the script's type graph; write.test.ts
- * runs it through the pack's parseWorkItem).
- * The triage fact stays the item's own `at`, as the projector reads only that.
+ * The `work/<n>` document `revision` appends. Its type is the pinned pack's WorkItem, so tsc fails
+ * when the pack's shape (the build record, its rounds, the claim) and this document drift; write.test.ts
+ * adds the pack's parseWorkItem at runtime. The triage fact carries only the item's `at`, which is all
+ * the projector reads, so it is not the pack's full TriageFacts.
  */
 export function revisionDocument(item: {
   issue: number;
@@ -402,7 +403,7 @@ export function revisionDocument(item: {
   at: string;
   triageAt: string;
   claimRunId: string | null;
-}) {
+}): WorkItem {
   return {
     version: 1,
     subject: { repo: { host: 'github.com', path: REPOSITORY }, number: item.issue },
@@ -414,7 +415,7 @@ export function revisionDocument(item: {
     links: { runs: [] },
     promoted: null,
     facts: {
-      triage: { at: item.triageAt },
+      triage: { at: item.triageAt } as WorkItem['facts']['triage'],
       build: {
         status: item.build,
         brief: '',
