@@ -49,9 +49,16 @@ CROSS JOIN LATERAL (
       CASE WHEN i.state = 'closed' THEN coalesce(i.closed_at, i.updated_at) END
     ELSE CASE WHEN pip.state = 'closed' THEN coalesce(pip.closed_at, pip.updated_at) END END AS closed_at,
     CASE WHEN item.issue IS NOT NULL THEN
-      (SELECT max(m.merged_at) FROM mc.pull_request_issues x
-       JOIN mc.pull_requests m ON m.factory = x.factory AND m.number = x.pr_number
-       WHERE x.factory = l.factory AND x.issue_number = item.issue)
+      -- The latest landing among the item's Closes-linked pull requests and its landed Refs-linked ones, the latter
+      -- only for an item not closed as not planned or a duplicate (board.sql's rule). greatest() skips a null side, and a set operation here would read the outer row, which Realtime refuses.
+      greatest(
+        (SELECT max(m.merged_at) FROM mc.pull_request_issues x
+         JOIN mc.pull_requests m ON m.factory = x.factory AND m.number = x.pr_number
+         WHERE x.factory = l.factory AND x.issue_number = item.issue),
+        (SELECT max(rm.merged_at) FROM mc.pull_request_references rf
+         JOIN mc.pull_requests rm ON rm.factory = rf.factory AND rm.number = rf.pr_number
+         WHERE rf.factory = l.factory AND rf.issue_number = item.issue AND rm.merged_at IS NOT NULL
+           AND coalesce(i.close_reason, 'completed') NOT IN ('not_planned', 'duplicate')))
     ELSE pip.merged_at END AS merged_at
 ) cl
 LEFT JOIN mc.run_stops st ON st.run_id = l.run_id

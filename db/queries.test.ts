@@ -608,9 +608,14 @@ describe('the rules the live queries restate, which they may not call a function
     }
   });
 
+  // The Board's close-reason gate: one declaration for every copy that restates it.
+  const CLOSE_REASON_GATE = String.raw`coalesce\(i\.close_reason, 'completed'\) NOT IN \('not_planned', 'duplicate'\)`;
+
   test('merged is closed, not as not planned or a duplicate, with a merged pull request that closes or Refs it, in every copy', () => {
-    const NOT_DELIVERED =
-      /i\.state = 'closed'\s+AND coalesce\(i\.close_reason, 'completed'\) NOT IN \('not_planned', 'duplicate'\)/g;
+    const NOT_DELIVERED = new RegExp(
+      String.raw`i\.state = 'closed'\s+AND ${CLOSE_REASON_GATE}`,
+      'g',
+    );
     // The delivery branches as one predicate: a merged PR that closes the item, or one that Refs it.
     const DELIVERED =
       /AND \(EXISTS \(\s*SELECT 1 FROM mc\.pull_request_issues pi\s+JOIN mc\.pull_requests p ON p\.factory = pi\.factory AND p\.number = pi\.pr_number\s+WHERE pi\.factory = i\.factory AND pi\.issue_number = i\.number AND p\.merged_at IS NOT NULL\s*\) OR EXISTS \(\s*SELECT 1 FROM mc\.pull_request_references rf\s+JOIN mc\.pull_requests p ON p\.factory = rf\.factory AND p\.number = rf\.pr_number\s+WHERE rf\.factory = i\.factory AND rf\.issue_number = i\.number AND p\.merged_at IS NOT NULL\s*\)\)/g;
@@ -635,6 +640,34 @@ describe('the rules the live queries restate, which they may not call a function
         count(sql, BY_CLOSING),
       ]).toEqual([name, expected, expected, expected]);
     }
+  });
+
+  test('a merged pull request that Refs the item counts as delivering it in every query that reads the link', () => {
+    // The Refs branch alone, whatever the item is matched by: work-item.sql and one-lap.sql restate it
+    // for one item, so the delivered-predicate regexes above cannot see them.
+    const REFS_MERGED =
+      /FROM mc\.pull_request_references rf\s+JOIN mc\.pull_requests (\w+) ON \1\.factory = rf\.factory AND \1\.number = rf\.pr_number\s+WHERE rf\.factory = [\w.$]+ AND rf\.issue_number(?:::text)? = [\w.$]+ AND \1\.merged_at IS NOT NULL/g;
+    const copies: Record<string, number> = {
+      board: 2,
+      'work-orders': 1,
+      'product-documents': 1,
+      'work-item': 1,
+      'one-lap': 1,
+    };
+    for (const [name, sql] of queries) {
+      expect([name, count(sql, REFS_MERGED), count(sql, /pull_request_references/g)]).toEqual([
+        name,
+        copies[name] ?? 0,
+        copies[name] ?? 0,
+      ]);
+    }
+    // one-lap.sql's Refs arm carries the Board's close-reason gate on the same item row.
+    expect(
+      count(
+        query('one-lap'),
+        new RegExp(String.raw`rm\.merged_at IS NOT NULL\s+AND ${CLOSE_REASON_GATE}`, 'g'),
+      ),
+    ).toBe(1);
   });
 
   test('a build-queue lap is a run whose facts step names an item, in every copy of the rule', () => {

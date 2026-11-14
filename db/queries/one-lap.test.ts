@@ -58,6 +58,143 @@ describe('one-lap on the seed', () => {
     expect(seedLaps(seed).find((l) => l.runId === LAP_RUN)?.what).toBe('gate-refused');
   });
 
+  test('an item delivered by a merged pull request that only Refs it has that merge as its merged time', async () => {
+    const read = async () => {
+      const [row] = await lap('one-lap', LAP_RUN);
+      return [row.item_merged_at, row.closed_by];
+    };
+    const before = await read();
+    const links = await db.query(
+      `SELECT factory, pr_number FROM mc.pull_request_issues WHERE factory = 'mission-control' AND issue_number = 3`,
+    );
+    expect(links).toHaveLength(1);
+    const [{ pr_number }] = links;
+    await db.query(
+      `DELETE FROM mc.pull_request_issues WHERE factory = 'mission-control' AND issue_number = 3`,
+    );
+    expect((await read())[0]).toBeNull();
+    await db.query(
+      `INSERT INTO mc.pull_request_references (factory, pr_number, issue_number) VALUES ('mission-control', $1, 3)`,
+      [pr_number],
+    );
+    expect(await read()).toEqual(before);
+    await db.query(
+      `DELETE FROM mc.pull_request_references WHERE factory = 'mission-control' AND issue_number = 3`,
+    );
+    await db.query(
+      `INSERT INTO mc.pull_request_issues (factory, pr_number, issue_number) VALUES ('mission-control', $1, 3)`,
+      [pr_number],
+    );
+    expect(await read()).toEqual(before);
+  });
+
+  describe('an item delivered by Refs-linked pull requests', () => {
+    const FAILED = '5eed0001-0000-4000-8000-000000000006';
+    const CLOSER = '5eed0001-0000-4000-8000-00000000000b';
+    const setMerged = (n: number, at: string) =>
+      db.query(
+        `UPDATE mc.pull_requests SET merged_at = $1::timestamptz WHERE factory = 'mission-control' AND number = $2`,
+        [at, n],
+      );
+    const read = async (runId: string) => {
+      const [row] = await lap('one-lap', runId);
+      return row;
+    };
+    let originalReason: unknown;
+    beforeAll(async () => {
+      [{ close_reason: originalReason }] = await db.query(
+        `SELECT close_reason FROM mc.issues WHERE factory = 'mission-control' AND number = 3`,
+      );
+    });
+    const asRefsOnly = async () => {
+      const [{ pr_number }] = await db.query(
+        `SELECT pr_number FROM mc.pull_request_issues WHERE factory = 'mission-control' AND issue_number = 3`,
+      );
+      await db.query(
+        `DELETE FROM mc.pull_request_issues WHERE factory = 'mission-control' AND issue_number = 3`,
+      );
+      await db.query(
+        `INSERT INTO mc.pull_request_references (factory, pr_number, issue_number) VALUES ('mission-control', $1, 3)`,
+        [pr_number],
+      );
+      return async () => {
+        await db.query(
+          `DELETE FROM mc.pull_request_references WHERE factory = 'mission-control' AND issue_number = 3`,
+        );
+        await db.query(
+          `INSERT INTO mc.pull_request_issues (factory, pr_number, issue_number) VALUES ('mission-control', $1, 3)`,
+          [pr_number],
+        );
+        await setMerged(Number(pr_number), '2026-10-02T07:30:00Z');
+      };
+    };
+
+    test('a Refs-only merge decides the closing run of a failed run', async () => {
+      const restore = await asRefsOnly();
+      try {
+        await setMerged(103, '2026-10-02T06:58:00Z');
+        expect((await read(FAILED)).closed_by).toBe(CLOSER);
+        // No completed run spans 05:00: the sentence names no run.
+        await setMerged(103, '2026-10-02T05:00:00Z');
+        expect((await read(FAILED)).closed_by).toBeNull();
+      } finally {
+        await restore();
+      }
+    });
+
+    test('the item merged time is the latest of its Closes and Refs merges, in either order', async () => {
+      const [{ number: other }] = await db.query(
+        `SELECT number FROM mc.pull_requests
+         WHERE factory = 'mission-control' AND merged_at IS NOT NULL AND number <> 103 ORDER BY number LIMIT 1`,
+      );
+      const [{ merged_at: otherAt }] = await db.query(
+        `SELECT merged_at FROM mc.pull_requests WHERE factory = 'mission-control' AND number = $1`,
+        [other],
+      );
+      await db.query(
+        `INSERT INTO mc.pull_request_references (factory, pr_number, issue_number) VALUES ('mission-control', $1, 3)`,
+        [other],
+      );
+      try {
+        await setMerged(103, '2026-10-02T06:00:00Z');
+        await setMerged(Number(other), '2026-10-02T07:00:00Z');
+        expect((await read(LAP_RUN)).item_merged_at).toEqual(new Date('2026-10-02T07:00:00Z'));
+        await setMerged(Number(other), '2026-10-02T05:00:00Z');
+        expect((await read(LAP_RUN)).item_merged_at).toEqual(new Date('2026-10-02T06:00:00Z'));
+      } finally {
+        await db.query(
+          `DELETE FROM mc.pull_request_references WHERE factory = 'mission-control' AND pr_number = $1 AND issue_number = 3`,
+          [other],
+        );
+        await setMerged(Number(other), (otherAt as Date).toISOString());
+        await setMerged(103, '2026-10-02T07:30:00Z');
+      }
+    });
+
+    test('a Refs merge does not deliver an item closed as not planned or a duplicate', async () => {
+      const restore = await asRefsOnly();
+      try {
+        for (const [reason, merged] of [
+          ['not_planned', false],
+          ['duplicate', false],
+          ['completed', true],
+        ] as const) {
+          await db.query(
+            `UPDATE mc.issues SET close_reason = $1 WHERE factory = 'mission-control' AND number = 3`,
+            [reason],
+          );
+          expect([reason, (await read(LAP_RUN)).item_merged_at !== null]).toEqual([reason, merged]);
+        }
+      } finally {
+        await db.query(
+          `UPDATE mc.issues SET close_reason = $1 WHERE factory = 'mission-control' AND number = 3`,
+          [originalReason],
+        );
+        await restore();
+      }
+    });
+  });
+
   test("the header is the gate-refused lap's claim, pick, review and merge gate", async () => {
     expect(await lap('one-lap', LAP_RUN)).toEqual([
       {
