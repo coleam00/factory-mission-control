@@ -528,7 +528,8 @@ function WorkOrders({
   const [open, setOpen] = useState(readFinishedOpen);
   const finished = orders.filter(isFinished);
   // A filtered finished order stays visible while the row is folded, so the filter can be seen and cleared.
-  const shown = orders.filter((o) => !isFinished(o) || open || o.name === selected);
+  const above = orders.filter((o) => !isFinished(o) || (!open && o.name === selected));
+  const below = open ? finished : [];
   if (orders.length === 0) return null;
   const card = (o: BoardOrder) => (
     <OrderStrip
@@ -540,7 +541,7 @@ function WorkOrders({
   );
   return (
     <div className="space-y-2.5">
-      {shown.length > 0 ? <div className="flex flex-wrap gap-2.5">{shown.map(card)}</div> : null}
+      {above.length > 0 ? <div className="flex flex-wrap gap-2.5">{above.map(card)}</div> : null}
       {finished.length > 0 ? (
         <button
           type="button"
@@ -552,10 +553,12 @@ function WorkOrders({
           }}
           className="block w-full min-w-0 cursor-pointer truncate text-left text-[length:var(--v3-t-meta)] text-[color:var(--v3-fg-3)] hover:text-[color:var(--v3-fg-2)]"
         >
+          <span aria-hidden="true">{open ? '▾' : '▸'} </span>
           {finished.length} finished {finished.length === 1 ? 'order' : 'orders'}:{' '}
           {finished.map((o) => o.name).join(', ')}
         </button>
       ) : null}
+      {below.length > 0 ? <div className="flex flex-wrap gap-2.5">{below.map(card)}</div> : null}
     </div>
   );
 }

@@ -28,11 +28,15 @@ const empty: BoardView = {
   olderHref: null,
 };
 
-function render(view: BoardView, mode: 'pipeline' | 'table'): string {
+function render(
+  view: BoardView,
+  mode: 'pipeline' | 'table',
+  selected: string | null = null,
+): string {
   const router = createMemoryRouter([
     {
       path: '/',
-      element: <BoardBody view={view} mode={mode} order={null} onOrder={() => {}} />,
+      element: <BoardBody view={view} mode={mode} order={selected} onOrder={() => {}} />,
     },
   ]);
   return renderToStaticMarkup(<RouterProvider router={router} />);
@@ -385,4 +389,15 @@ test('with no open order the finished row shows alone', () => {
   const html = render({ ...empty, orders: [order('old-a', 8, 8)] }, 'pipeline');
   expect(html).not.toContain('data-work-order=');
   expect(html).toContain('1 finished order: old-a');
+});
+
+test('a finished order named by ?order= keeps its card while the row is folded', () => {
+  const html = render(
+    { ...empty, orders: [order('live', 1, 3), order('old-a', 8, 8), order('old-b', 4, 4)] },
+    'pipeline',
+    'old-b',
+  );
+  expect(html).toContain('data-work-order="old-b"');
+  expect(html).not.toContain('data-work-order="old-a"');
+  expect(html).toContain('2 finished orders: old-a, old-b');
 });
