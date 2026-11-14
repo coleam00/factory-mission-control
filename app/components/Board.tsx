@@ -7,6 +7,7 @@ import {
   orderLine,
   orderTarget,
   type PipelineStage,
+  runLineText,
   type WorkItem,
 } from '../lib/board';
 import { localMinute } from '../lib/format';
@@ -42,12 +43,22 @@ function Rounds({ item }: { item: WorkItem }): ReactElement | null {
 }
 
 function RunLine({ item }: { item: WorkItem }): ReactElement | null {
-  if (item.run === null) return null;
+  const run = item.run;
+  if (run === null) return null;
   return (
-    <span data-run className={`flex items-center gap-1.5 ${DETAIL}`}>
-      <StateDot state="running" small />
-      <Link to={item.run.to} className={`${INNER_LINK} [overflow-wrap:anywhere]`}>
-        {item.run.text}
+    <span data-run className={`flex items-start gap-1.5 ${DETAIL}`}>
+      <span className="mt-[3px] shrink-0">
+        <StateDot state="running" small />
+      </span>
+      <Link to={run.to} title={runLineText(run)} className={`${INNER_LINK} block min-w-0 flex-1`}>
+        <span data-run-workflow className="block truncate text-[color:var(--v3-fg-3)]">
+          {run.workflow}
+        </span>
+        {run.step === null ? null : (
+          <span data-run-step className="block truncate text-[color:var(--v3-fg-2)]">
+            {run.step}
+          </span>
+        )}
       </Link>
     </span>
   );

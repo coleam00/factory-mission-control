@@ -656,7 +656,8 @@ test('a running build card reads round N+1 with the live dot, and the run line n
   expect(card?.dots.map((d) => d.state)).toEqual(['done', 'needs-you', 'idle', 'running']);
   expect(card?.dots[0]?.title).toMatch(/^Round 1: delivered, 2 reviews · /);
   expect(card?.run).toEqual({
-    text: 'archon-build-queue · review__policy',
+    workflow: 'archon-build-queue',
+    step: 'review__policy',
     to: '/f/f/runs/00000000-0000-4000-8000-000000000001',
   });
 });
@@ -696,7 +697,11 @@ test('an item held only by a running app check shows that run, with its step fro
     map: [check],
   });
   const card = v.pipeline.find((s) => s.id === 'app')?.items[0];
-  expect(card?.run).toEqual({ text: 'factory-app-check · check__browser', to: `/f/f/runs/${run}` });
+  expect(card?.run).toEqual({
+    workflow: 'factory-app-check',
+    step: 'check__browser',
+    to: `/f/f/runs/${run}`,
+  });
 });
 
 test('a merged card carries its returns and merge time; a waiting one its question; a failed check says so', () => {
