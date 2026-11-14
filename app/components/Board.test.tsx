@@ -417,7 +417,9 @@ test('the order ?order= selects is raised with a stronger edge than a hovered ca
   expect(other).toContain('border-[color:var(--v3-line)]');
   expect(other).toContain('hover:border-[color:var(--v3-line-2)]');
   const target = (name: string) =>
-    html.match(new RegExp(`data-work-order="${name}".*?<span data-order-target="true" class="([^"]*)"`))?.[1] ?? '';
+    html.match(
+      new RegExp(`data-work-order="${name}".*?<span data-order-target="true" class="([^"]*)"`),
+    )?.[1] ?? '';
   expect(target('a')).toContain('text-[color:var(--v3-fg-2)]');
   expect(target('a')).not.toContain('--v3-fg-3');
   expect(target('b')).toContain('text-[color:var(--v3-fg-3)]');
