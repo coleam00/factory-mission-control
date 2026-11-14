@@ -3,9 +3,28 @@ import { isAbsolute, join, resolve } from "node:path";
 import { emit, env, readJsonFile } from "../../.shared/utils.ts";
 
 export const LINE = /^(C\d+|P\d+|A\d+)\s{2}(PASS|FAIL|INCOMPLETE)\s{2}(.+?)\s{2}evidence:\s+(.+)$/;
+
+// result.json can arrive as UTF-8 bytes decoded as windows-1252 ("·" as "Â·", "→" as "â†’"), which latin1 alone cannot invert.
+const CP1252_BYTE = new Map<string, number>();
+for (let b = 0x80; b <= 0x9f; b++) CP1252_BYTE.set(new TextDecoder("windows-1252").decode(Uint8Array.of(b)), b);
+const UTF8 = new TextDecoder("utf-8", { fatal: true });
+
+function repairMojibake(text: string): string {
+  const bytes = new Uint8Array(text.length);
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i]!, byte = CP1252_BYTE.get(ch) ?? text.charCodeAt(i);
+    if (byte > 0xff) return text;
+    bytes[i] = byte;
+  }
+  try { return UTF8.decode(bytes); } catch { return text; }
+}
+
+const comparable = (text: string) => repairMojibake(text).normalize("NFC");
+
 export function evidenceProblems(result: any, report: string, root: string, preparedAt: number): string[] {
   const problems: string[] = [], lines = Array.isArray(result?.lines) ? result.lines : [];
   if (!lines.length) problems.push("result has no check lines");
+  const comparableReport = report.split("\n").map(comparable).join("\n");
   let blocked = false, criteria = 0;
   const seen = new Set<string>();
   for (const raw of lines) {
@@ -20,7 +39,7 @@ export function evidenceProblems(result: any, report: string, root: string, prep
     const path = isAbsolute(cited) ? cited : resolve(root, cited);
     if (!existsSync(path) || !statSync(path).isFile()) problems.push(`${match[1]} cites a missing file: ${cited}`);
     else if (statSync(path).mtimeMs < preparedAt) problems.push(`${match[1]} cites evidence older than prepare: ${cited}`);
-    if (!report.includes(raw)) problems.push(`${match[1]} is absent from report.md`);
+    if (!comparableReport.includes(comparable(raw))) problems.push(`${match[1]} is absent from report.md`);
   }
   if (criteria === 0) problems.push("result has no acceptance/core check lines");
   const expectedOverall = blocked ? "FAIL" : "PASS";
