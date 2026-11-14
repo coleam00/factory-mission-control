@@ -612,7 +612,10 @@ describe('the rules the live queries restate, which they may not call a function
   const CLOSE_REASON_GATE = String.raw`coalesce\(i\.close_reason, 'completed'\) NOT IN \('not_planned', 'duplicate'\)`;
 
   test('merged is closed, not as not planned or a duplicate, with a merged pull request that closes or Refs it, in every copy', () => {
-    const NOT_DELIVERED = new RegExp(String.raw`i\.state = 'closed'\s+AND ${CLOSE_REASON_GATE}`, 'g');
+    const NOT_DELIVERED = new RegExp(
+      String.raw`i\.state = 'closed'\s+AND ${CLOSE_REASON_GATE}`,
+      'g',
+    );
     // The delivery branches as one predicate: a merged PR that closes the item, or one that Refs it.
     const DELIVERED =
       /AND \(EXISTS \(\s*SELECT 1 FROM mc\.pull_request_issues pi\s+JOIN mc\.pull_requests p ON p\.factory = pi\.factory AND p\.number = pi\.pr_number\s+WHERE pi\.factory = i\.factory AND pi\.issue_number = i\.number AND p\.merged_at IS NOT NULL\s*\) OR EXISTS \(\s*SELECT 1 FROM mc\.pull_request_references rf\s+JOIN mc\.pull_requests p ON p\.factory = rf\.factory AND p\.number = rf\.pr_number\s+WHERE rf\.factory = i\.factory AND rf\.issue_number = i\.number AND p\.merged_at IS NOT NULL\s*\)\)/g;
