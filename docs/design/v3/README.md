@@ -249,8 +249,10 @@ screenshots `20` and `42`.
 
 - **Pipeline** (default), with a Table alternative. Work orders stay on top as today: name,
   "work order · lands on <target>", a progress bar in state colors, and "N of M merged · building ·
-  needs you". M counts the order's work items but those closed as not planned or a duplicate, so a
-  finished order reads "M of M merged" with a full bar (owner audit 2026-11-14).
+  needs you". The strip counts work done, not pull requests: it reads "N of M done", where M counts
+  the order's work items but those closed as not planned or a duplicate, and N those closed as
+  completed (by a merged pull request or by hand), so a finished order reads "M of M done" with a
+  full bar (owner audit 2026-11-14).
 - **Seven stage columns, left to right:** Intake, Planned, Build, Review, App check, Merge, Merged.
   Each has a name, a muted subtitle (triage · waits for a build slot · build rounds · reviews · app
   check · merge queue · last 7 days), a count, and state pills with counts.
