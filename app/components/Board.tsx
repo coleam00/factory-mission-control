@@ -463,8 +463,10 @@ function OrderStrip({
       data-work-order={order.name}
       aria-pressed={selected}
       onClick={onToggle}
-      className={`min-w-0 flex-[1_1_280px] cursor-pointer rounded-[var(--v3-radius-card)] border bg-[var(--v3-panel)] px-3 py-2.5 text-left hover:border-[color:var(--v3-line-2)] ${
-        selected ? 'border-[color:var(--v3-line-2)]' : 'border-[color:var(--v3-line)]'
+      className={`min-w-0 flex-[1_1_280px] cursor-pointer rounded-[var(--v3-radius-card)] border px-3 py-2.5 text-left ${
+        selected
+          ? 'border-[color:var(--v3-fg-3)] bg-[var(--v3-raised)]'
+          : 'border-[color:var(--v3-line)] bg-[var(--v3-panel)] hover:border-[color:var(--v3-line-2)]'
       }`}
     >
       <span className="block text-[length:var(--v3-t-body)] font-semibold text-[color:var(--v3-fg)] [overflow-wrap:anywhere]">
@@ -473,7 +475,9 @@ function OrderStrip({
       <span className="block font-mono text-[length:var(--v3-t-micro)] text-[color:var(--v3-fg-3)]">
         {orderTarget(order)}
       </span>
-      <span className="mt-2 flex h-1.5 overflow-hidden rounded-full bg-[var(--v3-raised)]">
+      <span
+        className={`mt-2 flex h-1.5 overflow-hidden rounded-full ${selected ? 'bg-[var(--v3-bg)]' : 'bg-[var(--v3-raised)]'}`}
+      >
         <span style={{ width: share(order.done), background: stateColor('done') }} />
         <span style={{ width: share(order.building), background: stateColor('running') }} />
         <span style={{ width: share(order.needsYou), background: stateColor('needs-you') }} />

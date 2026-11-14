@@ -402,6 +402,22 @@ test('a finished order named by ?order= keeps its card while the row is folded',
   expect(html).toContain('2 finished orders: old-a, old-b');
 });
 
+test('the order ?order= selects is raised with a stronger edge than a hovered card', () => {
+  const html = render({ ...empty, orders: [order('a', 1, 3), order('b', 1, 3)] }, 'pipeline', 'a');
+  const button = (name: string) =>
+    html.match(new RegExp(`<button[^>]*data-work-order="${name}"[^>]*>`))?.[0] ?? '';
+  const selected = button('a');
+  const other = button('b');
+  expect(selected).toContain('aria-pressed="true"');
+  expect(selected).toContain('bg-[var(--v3-raised)]');
+  expect(selected).toContain('border-[color:var(--v3-fg-3)]');
+  expect(selected).not.toContain('hover:');
+  expect(other).toContain('aria-pressed="false"');
+  expect(other).toContain('bg-[var(--v3-panel)]');
+  expect(other).toContain('border-[color:var(--v3-line)]');
+  expect(other).toContain('hover:border-[color:var(--v3-line-2)]');
+});
+
 const openRow = (): void => {
   Object.defineProperty(globalThis, 'localStorage', {
     value: { getItem: () => 'open' },
