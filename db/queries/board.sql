@@ -64,7 +64,7 @@ SELECT 'item' AS kind, i.number, i.title, i.url, i.state, i.closed_at,
   st.build_status, st.build_at, st.merge_status, st.merge_at, st.triage_at, st.stage,
   st.rounds::text AS round_list, st.returns, st.last_decision,
   pr.head_sha AS pr_head, ac.head AS app_check_head,
-  CASE WHEN st.merge_status = 'merged' AND st.merge_at >= coalesce(st.build_at, '') AND st.merge_at >= coalesce(st.triage_at, '') THEN st.merge_at ELSE CASE WHEN pr.merged_at IS NULL THEN NULL ELSE lpad(extract(year FROM (pr.merged_at AT TIME ZONE 'UTC'))::int::text, 4, '0') || '-' || lpad(extract(month FROM (pr.merged_at AT TIME ZONE 'UTC'))::int::text, 2, '0') || '-' || lpad(extract(day FROM (pr.merged_at AT TIME ZONE 'UTC'))::int::text, 2, '0') || 'T' || date_trunc('second', (pr.merged_at AT TIME ZONE 'UTC'))::time::text || '.' || lpad((floor(extract(milliseconds FROM (pr.merged_at AT TIME ZONE 'UTC')))::bigint % 1000)::text, 3, '0') || 'Z' END END AS merged_at,
+  CASE WHEN st.merge_status = 'merged' AND st.merge_at >= coalesce(st.build_at, '') AND st.merge_at >= coalesce(st.triage_at, '') THEN st.merge_at ELSE CASE WHEN landed.at IS NULL THEN NULL ELSE lpad(extract(year FROM (landed.at AT TIME ZONE 'UTC'))::int::text, 4, '0') || '-' || lpad(extract(month FROM (landed.at AT TIME ZONE 'UTC'))::int::text, 2, '0') || '-' || lpad(extract(day FROM (landed.at AT TIME ZONE 'UTC'))::int::text, 2, '0') || 'T' || date_trunc('second', (landed.at AT TIME ZONE 'UTC'))::time::text || '.' || lpad((floor(extract(milliseconds FROM (landed.at AT TIME ZONE 'UTC')))::bigint % 1000)::text, 3, '0') || 'Z' END END AS merged_at,
   ar.run_id AS app_check_run,
   NULL::text AS repository, NULL::integer AS merged_total
 FROM items i
@@ -122,6 +122,15 @@ LEFT JOIN LATERAL (
     CASE WHEN linked.open THEN linked.head_sha WHEN projected.number IS NOT NULL THEN projected.head_sha ELSE linked.head_sha END AS head_sha,
     CASE WHEN linked.open THEN linked.merged_at WHEN projected.number IS NOT NULL THEN projected.merged_at ELSE linked.merged_at END AS merged_at
 ) pr ON true
+LEFT JOIN LATERAL (
+  -- When the item landed, else: the pull request above if it merged, else the latest merged pull request that names
+  -- the item with `Refs` (an older item has no Closes link and no pr_number), not for an item closed as not planned or a duplicate.
+  SELECT coalesce(pr.merged_at, (
+    SELECT max(rm.merged_at) FROM mc.pull_request_references rf
+    JOIN mc.pull_requests rm ON rm.factory = rf.factory AND rm.number = rf.pr_number
+    WHERE rf.factory = i.factory AND rf.issue_number = i.number AND rm.merged_at IS NOT NULL
+      AND coalesce(i.close_reason, 'completed') NOT IN ('not_planned', 'duplicate'))) AS at
+) landed ON true
 LEFT JOIN checks ac ON ac.pr_number = pr.number
 LEFT JOIN LATERAL (
   -- The running app check on the item's pull request: the map's lap rows carry no issue number for them.

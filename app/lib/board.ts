@@ -670,7 +670,7 @@ export function boardView(sources: BoardSources, now: Date, order: string | null
   const facts = factsOf(map, workable, owner);
 
   const columns = new Map<ColumnId, WorkItem[]>(COLUMNS.map((c) => [c.id, []]));
-  const merged: { item: WorkItem; closedAt: Date }[] = [];
+  const merged: { item: WorkItem; closedAt: Date; mergedAt: Date | null }[] = [];
   const homes = new Map<HomeId, PipelineItem[]>(PIPELINE.map((h) => [h.id, []]));
   const tally = new Map<string, { building: number; needsYou: number }>();
   let notInOrder = 0;
@@ -720,14 +720,21 @@ export function boardView(sources: BoardSources, now: Date, order: string | null
       to: workItemHref(factory, number),
     };
     homes.get(home)?.push({ ...item, status });
-    if (home === 'merged' && row.closed_at !== null) merged.push({ item, closedAt: row.closed_at });
+    if (home === 'merged' && row.closed_at !== null)
+      merged.push({ item, closedAt: row.closed_at, mergedAt: item.mergedAt });
     else columns.get(tableColumnOf({ home, needsYou }))?.push(item);
   }
   for (const items of columns.values()) items.sort((a, b) => a.number - b.number);
   columns.set(
     'merged',
     merged
-      .sort((a, b) => b.closedAt.getTime() - a.closedAt.getTime() || a.item.number - b.item.number)
+      .sort(
+        (a, b) =>
+          Number(b.mergedAt !== null) - Number(a.mergedAt !== null) ||
+          (b.mergedAt?.getTime() ?? 0) - (a.mergedAt?.getTime() ?? 0) ||
+          b.closedAt.getTime() - a.closedAt.getTime() ||
+          a.item.number - b.item.number,
+      )
       .map((m) => m.item),
   );
 

@@ -699,6 +699,21 @@ test('an item held only by a running app check shows that run, with its step fro
   expect(card?.run).toEqual({ text: 'factory-app-check · check__browser', to: `/f/f/runs/${run}` });
 });
 
+test('Merged is ordered by merge time, newest first, however the issues were closed; one with none sorts last by close time', () => {
+  const closed = { state: 'closed' as const, closed_at: daysAgo(1) };
+  const v = view({
+    board: [
+      item(648, { ...closed, merged_at: '2026-11-03T06:42:38Z' }),
+      item(664, { ...closed, merged_at: '2026-11-03T01:30:06Z' }),
+      item(700, { ...closed, closed_at: daysAgo(0.5), merged_at: null }),
+      item(701, { ...closed, closed_at: daysAgo(2), merged_at: null }),
+    ],
+  });
+  const order = (items: { number: number }[] | undefined) => items?.map((i) => i.number);
+  expect(order(v.columns.find((c) => c.id === 'merged')?.items)).toEqual([648, 664, 700, 701]);
+  expect(order(v.pipeline.find((s) => s.id === 'merged')?.items)).toEqual([648, 664, 700, 701]);
+});
+
 test('a merged card carries its returns and merge time; a waiting one its question; a failed check says so', () => {
   const v = view({
     board: [
