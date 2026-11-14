@@ -82,6 +82,19 @@ describe("app-check deterministic decisions", () => {
     const incomplete = "C1  INCOMPLETE  Browser stopped.  evidence: shot.txt";
     expect(evidenceProblems({ overall: "PASS", lines: [incomplete] }, incomplete, root, preparedAt)).toContain("overall must be FAIL");
   });
+  test("evidence matches double-encoded non-ASCII lines but still flags an absent one", () => {
+    const root = mkdtempSync(join(tmpdir(), "factory-evidence-mojibake-test-"));
+    const preparedAt = Date.now();
+    writeFileSync(join(root, "e.txt"), "observed");
+    utimesSync(join(root, "e.txt"), new Date(preparedAt + 1000), new Date(preparedAt + 1000));
+    const mojibake = (s: string) => new TextDecoder("windows-1252").decode(new TextEncoder().encode(s));
+    const good = ["C1  PASS  Board shows 3 · 4.  evidence: e.txt", "C2  PASS  Board shows 3 → done.  evidence: e.txt"];
+    const report = good.join("\n");
+    expect(mojibake(good[0]!)).toContain("Â·");
+    expect(evidenceProblems({ overall: "PASS", lines: good.map(mojibake) }, report, root, preparedAt)).toEqual([]);
+    const absent = "C3  PASS  Never reported · here.  evidence: e.txt";
+    expect(evidenceProblems({ overall: "PASS", lines: [...good, mojibake(absent)] }, report, root, preparedAt)).toEqual(["C3 is absent from report.md"]);
+  });
   test("runtime mode accepts probe and assertion lines ", () => {
     const root = mkdtempSync(join(tmpdir(), "factory-evidence-runtime-test-"));
     const preparedAt = Date.now();
