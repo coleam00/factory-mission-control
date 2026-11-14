@@ -1,7 +1,13 @@
 import { expect, test } from 'bun:test';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { BLOCKED_STAGES, FOUND_OUTCOMES, PARKED, parked } from '../../app/lib/board';
+import {
+  BLOCKED_STAGES,
+  FOUND_OUTCOMES,
+  PARKED,
+  parked,
+  WORKFLOW_STAGE,
+} from '../../app/lib/board';
 import { STOP_CLASSES } from '../../app/lib/failures';
 import { causeOf } from '../../app/lib/health';
 import {
@@ -13,8 +19,14 @@ import {
   SPLIT_WORKFLOW,
 } from '../../app/lib/one-lap';
 import { runsArgs } from '../../app/lib/runs';
-import { QUEUE_ENDING_STATE, QUEUE_REVIEW_STATE, REVIEW_OUTCOME_STATE } from '../../app/lib/states';
+import {
+  CHECK_OVERALL_STATE,
+  QUEUE_ENDING_STATE,
+  QUEUE_REVIEW_STATE,
+  REVIEW_OUTCOME_STATE,
+} from '../../app/lib/states';
 import { ROUTE_OF_LABEL, WORK_ITEM_NUMBER } from '../../app/lib/work-item';
+import { FACTORY_MAP } from '../../app/map/factory-map';
 import { FAILED_SIGNATURES_SQL } from '../../scripts/live/attention';
 import { runMigrations } from '../../scripts/migrate';
 import { STOP_CORPUS } from '../run-stops-corpus';
@@ -410,11 +422,33 @@ const statusUnion = (file: string, name: string) => {
   return quoted(match?.[1] ?? '');
 };
 
-test('the statuses the Board places by are the pinned pack’s', () => {
+test('the statuses board.ts compares are the pinned pack’s and the check’s', () => {
   const build = statusUnion('build.ts', 'BuildStatus');
   const merge = statusUnion('merge.ts', 'MergeStatus');
-  for (const status of ['ready', 'asking']) expect(build).toContain(status);
-  for (const status of ['waiting', 'returned', 'asking']) expect(merge).toContain(status);
+  const source = read('app', 'lib', 'board.ts');
+  const compared = (field: string) =>
+    [...source.matchAll(new RegExp(`${field} (?:===|!==) '([^']*)'`, 'g'))].map(
+      (m) => m[1] as string,
+    );
+  const placed = { build: compared('build_status'), merge: compared('merge_status') };
+  // The four the Board places by are compared there, so the scan below cannot pass by finding none.
+  for (const status of ['ready', 'asking']) expect(placed.build).toContain(status);
+  for (const status of ['waiting', 'returned', 'asking']) expect(placed.merge).toContain(status);
+  for (const status of placed.build) expect(build).toContain(status);
+  for (const status of placed.merge) expect(merge).toContain(status);
+  for (const verdict of compared('app_check'))
+    expect(Object.keys(CHECK_OVERALL_STATE)).toContain(verdict);
+});
+
+test('WORKFLOW_STAGE names, for each workflow, a stage whose card covers that workflow', () => {
+  for (const [workflow, stage] of Object.entries(WORKFLOW_STAGE)) {
+    const card = FACTORY_MAP.cards.find((c) => c.id === stage);
+    expect(card, `the map has a ${stage} card`).toBeDefined();
+    expect(
+      card?.covers.map((c) => c.workflow),
+      `${stage} covers ${workflow}`,
+    ).toContain(workflow);
+  }
 });
 
 test('the parked status is the pinned pack’s, in parked() and in health-workable', () => {
