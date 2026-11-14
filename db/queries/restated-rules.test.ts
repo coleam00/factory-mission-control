@@ -574,7 +574,7 @@ test('runs, home-map and health-workable resolve the same item for every source 
     await db.query(
       `INSERT INTO mc.factories (name, repository, codebase, console) VALUES ('f', 'o/r', 'o/r', 'c')`,
     );
-    for (let n = 1; n <= 8; n++) {
+    for (let n = 1; n <= 14; n++) {
       await db.query(
         `INSERT INTO mc.issues (factory, number, title, state, url, created_at, updated_at)
          VALUES ('f', $1, $2, 'open', 'u', now(), now())`,
@@ -592,11 +592,17 @@ test('runs, home-map and health-workable resolve the same item for every source 
       '6': { status: 'running', claim: null, facts: null, input: null },
       '7': { status: 'completed', claim: null, facts: 7, input: null },
       '8': { status: 'running', claim: null, facts: 8, input: null, workflow: SPLIT_WORKFLOW },
+      // Paused on a person: the waiting rows of home-map name the same item.
+      a: { status: 'paused', claim: 9, facts: null, input: null },
+      b: { status: 'paused', claim: null, facts: 10, input: null },
+      c: { status: 'paused', claim: null, facts: null, input: 11 },
+      d: { status: 'paused', claim: 12, facts: 13, input: 14 },
+      e: { status: 'paused', claim: null, facts: null, input: null },
     } as const;
     for (const [c, r] of Object.entries(runs)) {
       await db.query(
-        `INSERT INTO mc.laps (run_id, factory, workflow_name, status, started_at, issue_number)
-         VALUES ($1, 'f', $4, $2, now(), $3)`,
+        `INSERT INTO mc.laps (run_id, factory, workflow_name, status, started_at, issue_number, attention_open)
+         VALUES ($1, 'f', $4, $2, now(), $3, $2 = 'paused')`,
         [id(c), r.status, r.input, 'workflow' in r ? r.workflow : 'w'],
       );
       if (r.facts !== null) {
@@ -632,23 +638,41 @@ test('runs, home-map and health-workable resolve the same item for every source 
     const expectedTitles = Object.fromEntries(
       Object.entries(expected).map(([k, v]) => [k, v === null ? null : `t${v}`]),
     );
+    const waitingRuns = {
+      [id('a')]: 9,
+      [id('b')]: 10,
+      [id('c')]: 11,
+      [id('d')]: 12,
+      [id('e')]: null,
+    };
     const lanes = (
       await db.query(sqlOf('runs'), [
         'f',
         ...runsArgs({ q: '', state: '', hideIdle: false, page: 1 }),
       ])
     ).filter((r) => r.status === 'running');
-    const laps = (await db.query(sqlOf('home-map'), ['f', ''])).filter((r) => r.kind === 'lap');
+    const map = await db.query(sqlOf('home-map'), ['f', '']);
+    const laps = map.filter((r) => r.kind === 'lap' && (r.run_id as string) in expected);
+    const waiting = map.filter((r) => r.kind === 'waiting');
     expect(held(lanes)).toEqual(expected);
     expect(held(laps)).toEqual(expected);
     expect(titled(lanes, 'issue_title')).toEqual(expectedTitles);
     expect(titled(laps, 'title')).toEqual(expectedTitles);
+    // A paused run waiting on a person still counts with no item, and names the same item otherwise.
+    expect(held(waiting)).toEqual(waitingRuns);
+    expect(titled(waiting, 'title')).toEqual(
+      Object.fromEntries(
+        Object.entries(waitingRuns).map(([k, v]) => [k, v === null ? null : `t${v}`]),
+      ),
+    );
     // The run page names the same item, and has no status filter: the completed run 7 is on it too.
     const page = await Promise.all(
-      Object.keys(runs).map(
-        async (c) =>
-          ((await db.query(sqlOf('one-lap'), ['f', id(c)]))[0] ?? {}) as Record<string, unknown>,
-      ),
+      Object.keys(runs)
+        .filter((c) => !(id(c) in waitingRuns))
+        .map(
+          async (c) =>
+            ((await db.query(sqlOf('one-lap'), ['f', id(c)]))[0] ?? {}) as Record<string, unknown>,
+        ),
     );
     expect(Object.fromEntries(page.map((r) => [r.run_id, r.issue_number ?? null]))).toEqual({
       ...expected,
@@ -659,59 +683,13 @@ test('runs, home-map and health-workable resolve the same item for every source 
       [id('7')]: 't7',
     });
     const workable = (await db.query(sqlOf('health-workable'), ['f']))
-      .flatMap((r) => (r.kind === 'issue' ? [r.issue_number as number] : []))
+      .flatMap((r) =>
+        r.kind === 'issue' && (r.issue_number as number) <= 8 ? [r.issue_number as number] : [],
+      )
       .sort();
+    // Issues 9 and up belong to the paused runs, which health-workable does not read.
     // A split run shows its item on Laps and the map, but holds nothing: 8 stays workable.
     expect(workable).toEqual([6, 7, 8]);
-  } finally {
-    await db.close();
-  }
-});
-
-test('home-map names the item a waiting run holds from every source of it', async () => {
-  const db = await migratedDb();
-  try {
-    await db.query(
-      `INSERT INTO mc.factories (name, repository, codebase, console) VALUES ('f', 'o/r', 'o/r', 'c')`,
-    );
-    for (let n = 1; n <= 3; n++) {
-      await db.query(
-        `INSERT INTO mc.issues (factory, number, title, state, url, created_at, updated_at)
-         VALUES ('f', $1, $2, 'open', 'u', now(), now())`,
-        [n, `t${n}`],
-      );
-    }
-    const id = (c: number) => `5eed0000-0000-4000-8000-00000000000${c}`;
-    const src = [
-      { claim: 1, facts: null, input: null },
-      { claim: null, facts: 2, input: null },
-      { claim: null, facts: null, input: 3 },
-    ];
-    for (const [k, r] of src.entries()) {
-      await db.query(
-        `INSERT INTO mc.laps (run_id, factory, workflow_name, status, started_at, issue_number, attention_open)
-         VALUES ($1, 'f', 'archon-build-queue', 'paused', now(), $2, true)`,
-        [id(k + 1), r.input],
-      );
-      if (r.facts !== null) {
-        await db.query(
-          `INSERT INTO mc.lap_steps (run_id, step_id, status, started_at, output)
-           VALUES ($1, 'facts', 'completed', now(), $2)`,
-          [id(k + 1), JSON.stringify({ item: { number: r.facts } })],
-        );
-      }
-      if (r.claim !== null) {
-        await db.query(
-          `INSERT INTO mc.claims (factory, issue_number, run_id, claimed_at, released_at)
-           VALUES ('f', $1, $2, now(), now())`,
-          [r.claim, id(k + 1)],
-        );
-      }
-    }
-    const rows = (await db.query(sqlOf('home-map'), ['f', ''])).filter((r) => r.kind === 'waiting');
-    expect(
-      Object.fromEntries(rows.map((r) => [r.run_id as string, [r.number, r.title]])),
-    ).toEqual({ [id(1)]: [1, 't1'], [id(2)]: [2, 't2'], [id(3)]: [3, 't3'] });
   } finally {
     await db.close();
   }
