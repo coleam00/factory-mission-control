@@ -19,6 +19,7 @@ import {
   pageWait,
   READY_WAIT_MS,
   RUN_ROW,
+  settleAt,
   waitForHealth,
 } from './shared';
 import {
@@ -178,6 +179,14 @@ async function checkSwitcher(ctx: LiveContext): Promise<void> {
         `document.querySelector('[data-engine]')?.textContent ?? null`,
       ),
       expectedEngine,
+    );
+    failures.push(
+      ...(await settleAt(
+        page,
+        1440,
+        `document.querySelector('${SWITCHER}[data-state="ready"]') !== null`,
+        'the switcher',
+      )),
     );
     ctx.save(FILES.shot, await page.screenshot(1440));
     // The screenshot resizes across the shell's phone breakpoint, which remounts the switcher closed.

@@ -17,6 +17,7 @@ import {
   renewalsOf,
   required,
   screenAgainstSql,
+  settleAt,
   untilShown,
   writeToScreen,
 } from './shared';
@@ -135,10 +136,13 @@ const oneLapOnScreen = `(() => {
   };
 })()`;
 
-/**
- * Opens `runId`'s page on a tab and waits until its panels are `ready`: the Steps tab holds all
- * four, the Timeline every one but the app check's.
- */
+/** The page condition for "every panel of the tab is `ready`": the Steps tab holds all four, the Timeline every one but the app check's. */
+const lapReady = (tab: 'steps' | 'timeline') =>
+  (tab === 'steps' ? ONE_LAP_QUERIES : ONE_LAP_QUERIES.filter((q) => q !== 'one-lap-checks'))
+    .map((q) => `document.querySelector('[data-live="${q}"][data-state="ready"]') !== null`)
+    .join(' && ');
+
+/** Opens `runId`'s page on a tab and waits until its panels are `ready`. */
 async function openOneLap(
   page: Page,
   base: string,
@@ -148,16 +152,7 @@ async function openOneLap(
 ): Promise<void> {
   await page.goto(`${base}/f/${factory}/runs/${runId}${tab === 'steps' ? '?tab=steps' : ''}`);
   await page.evaluate('window.__mcNoReload = true');
-  const panels =
-    tab === 'steps' ? ONE_LAP_QUERIES : ONE_LAP_QUERIES.filter((q) => q !== 'one-lap-checks');
-  const ready = await page.evaluate<boolean>(
-    pageWait(
-      panels
-        .map((q) => `document.querySelector('[data-live="${q}"][data-state="ready"]') !== null`)
-        .join(' && '),
-      READY_WAIT_MS,
-    ),
-  );
+  const ready = await page.evaluate<boolean>(pageWait(lapReady(tab), READY_WAIT_MS));
   if (!ready) {
     throw new Error(`the lap ${runId} did not reach data-state="ready" within ${READY_WAIT_MS} ms`);
   }
@@ -619,6 +614,9 @@ export function oneLapPhase(ctx: LiveContext): LivePhase {
         );
         ctx.save(FILES.check, `${oneLapSeed.report}\n`);
         ctx.failures.push(...oneLapSeed.mismatches.map((m) => `one lap against the seed: ${m}`));
+        ctx.failures.push(
+          ...(await settleAt(refusedPage, 1440, lapReady('steps'), `the lap ${refusedRun}`)),
+        );
         ctx.save(FILES.shot, await refusedPage.screenshot(1440));
       } finally {
         await refusedPage.close().catch(() => undefined);
@@ -645,6 +643,9 @@ export function oneLapPhase(ctx: LiveContext): LivePhase {
           const checked = await seedRunMismatches(runPage, db, expected);
           reports.push(checked.report);
           ctx.failures.push(...checked.mismatches.map((m) => `one run against the seed: ${m}`));
+          ctx.failures.push(
+            ...(await settleAt(runPage, 1440, lapReady('timeline'), `the run ${expected.run}`)),
+          );
           ctx.save(shot, await runPage.screenshot(1440));
         } finally {
           await runPage.close().catch(() => undefined);
@@ -667,8 +668,17 @@ export function oneLapPhase(ctx: LiveContext): LivePhase {
               `one run against the seed: ${expected.run} shows the primary ${shown}, expected ${expected.text}`,
             );
           }
-          if (expected.shot !== undefined)
+          if (expected.shot !== undefined) {
+            ctx.failures.push(
+              ...(await settleAt(
+                primaryPage,
+                1440,
+                lapReady('timeline'),
+                `the run ${expected.run}`,
+              )),
+            );
             ctx.save(expected.shot, await primaryPage.screenshot(1440));
+          }
         } finally {
           await primaryPage.close().catch(() => undefined);
         }

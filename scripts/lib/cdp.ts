@@ -10,6 +10,7 @@ export interface Page {
   evaluate<T>(expression: string, timeoutMs?: number): Promise<T>;
   /** Navigates and resolves once the page's load event fires. */
   goto(url: string): Promise<void>;
+  /** Resolves once the resized page has been drawn (two animation frames), so a remount the width causes has committed. */
   setViewport(width: number, height?: number): Promise<void>;
   /** One real mouse event at page coordinates `x`, `y`, left button; a move while pressed is a drag. */
   mouse(event: MouseInput): Promise<void>;
@@ -226,6 +227,18 @@ export async function openPage(env: Record<string, string | undefined>): Promise
     const setViewport = async (width: number, height = 900) => {
       const metrics = { width, height, deviceScaleFactor: 1, mobile: false };
       await cdp.send('Emulation.setDeviceMetricsOverride', metrics, sessionId);
+      // A resize across the shell's 1024 px switch remounts the routed page on the next rendering
+      // update. Two frames let that commit before the caller reads (#728).
+      await cdp.send(
+        'Runtime.evaluate',
+        {
+          expression:
+            'new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(() => done(true))))',
+          awaitPromise: true,
+          returnByValue: true,
+        },
+        sessionId,
+      );
     };
     let pressed = false;
     return {
