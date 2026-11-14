@@ -48,14 +48,14 @@ export interface BoardRow {
   stage: string | null;
   /** Archon's finished rounds (the last 10 it keeps) as JSON text, `{ at, reason, reviews, run_id }` each, in order; null without a state. */
   round_list: string | null;
-  /** How often the merge queue returned the item within the last 20 decisions Archon keeps, so not a total and it can fall; null without a state. */
+  /** How often the item was returned, by the merge queue or by an owner's answered return, within the last 20 decisions Archon keeps, so not a total and it can fall; null without a state. */
   returns: number | null;
   /** The decision of the last build decision; null without one. */
   last_decision: string | null;
   /** The head commit of `pr`, and the head the latest app check on it ran against. */
   pr_head: string | null;
   app_check_head: string | null;
-  /** When it merged: the merge fact's time, else `pr`'s own merge time (null while `pr` is open). */
+  /** When it merged: the merge fact's time only while that merge still finishes the item (no later build or triage, as the pack's `finished()`), else `pr`'s own merge time (null while `pr` is open). */
   merged_at: string | null;
   /** The running app check run on `pr`. */
   app_check_run: string | null;

@@ -1333,12 +1333,22 @@ test('the retried rule reads the same in failure-groups, retried-runs and the li
 }, 60_000);
 
 test('the work-item facts the Board projects are the pinned pack’s words', () => {
-  const migration = read('db', 'migrations', '20261113T1400Z_board_item_facts.sql');
-  const label = /d ->> 'decision' = '([^']*)'/.exec(migration)?.[1] ?? '';
-  expect(label).not.toBe('');
-  expect(read('fixtures/pack/queue/sdlc/merge-queue/scripts/record.ts')).toContain(
-    `decision: '${label}'`,
+  const migration = read('db', 'migrations', '20261113T1500Z_returns_answered_return.sql');
+  const labels = [
+    ...(/d ->> 'decision' IN \(([^)]*)\)/.exec(migration)?.[1] ?? '').matchAll(/'([^']*)'/g),
+  ].map((m) => m[1]);
+  expect(labels).toHaveLength(2);
+  const record = read('fixtures/pack/queue/sdlc/merge-queue/scripts/record.ts');
+  const merge = squashed(read('fixtures', 'pack', 'queue', 'sdlc', '.shared', 'merge.ts'));
+  expect(merge).toContain(
+    'export function answeredMergeDecision(effect: MergeEffect): `answered: ${MergeEffect}` { return `answered: ${effect}`; }',
   );
+  const effects = /MERGE_EFFECTS = \[([^\]]*)\]/.exec(merge)?.[1] ?? '';
+  for (const label of labels) {
+    const answered = /^answered: (\w+)$/.exec(label)?.[1];
+    if (answered) expect(effects, `merge effect '${answered}'`).toContain(`'${answered}'`);
+    else expect(record).toContain(`decision: '${label}'`);
+  }
   const merged = /st\.merge_status = '([^']*)'/.exec(sqlOf('board'))?.[1] ?? '';
   expect(statusUnion('merge.ts', 'MergeStatus')).toContain(merged);
   const shape = /export interface BuildRound \{([\s\S]*?)\n\}/.exec(
