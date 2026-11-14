@@ -15,6 +15,7 @@ import {
 import { runsArgs } from '../../app/lib/runs';
 import { QUEUE_ENDING_STATE, QUEUE_REVIEW_STATE, REVIEW_OUTCOME_STATE } from '../../app/lib/states';
 import { ROUTE_OF_LABEL, WORK_ITEM_NUMBER } from '../../app/lib/work-item';
+import { BUILD_STATUSES } from '../../scripts/fixture/write';
 import { FAILED_SIGNATURES_SQL } from '../../scripts/live/attention';
 import { runMigrations } from '../../scripts/migrate';
 import { STOP_CORPUS } from '../run-stops-corpus';
@@ -414,6 +415,8 @@ test('the statuses the Board places by are the pinned pack’s', () => {
   const build = statusUnion('build.ts', 'BuildStatus');
   const merge = statusUnion('merge.ts', 'MergeStatus');
   for (const status of ['ready', 'asking']) expect(build).toContain(status);
+  for (const status of BUILD_STATUSES)
+    expect(build, `fixture:write revision ${status}`).toContain(status);
   for (const status of ['waiting', 'returned', 'asking']) expect(merge).toContain(status);
 });
 

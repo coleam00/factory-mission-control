@@ -1,4 +1,5 @@
 import { parseArgs } from 'node:util';
+import { STATE_REVISIONS_TABLE } from '../../db/archon-state-table';
 import type { StepKind } from '../../parsers/pack';
 import { failing, guardedDatabaseUrl, type Main, runCli } from '../lib/cli';
 import type { Row, Tx } from '../lib/db';
@@ -8,7 +9,7 @@ const EVENTS = ['node_started', 'node_completed', 'node_failed'] as const;
 type StepEvent = (typeof EVENTS)[number];
 
 const USAGE =
-  'usage: bun run fixture:write step [--run <id>] [--step <step id>] [--event node_started|node_completed|node_failed] [--error <text>] | attention --run <id> | label [--label <name>] [--issue <number>] | retriage --issue <number> | revision --issue <number> --build running|ready | metrics | comment | issue | pin | verdict [--pin <sha prefix>] | decision';
+  'usage: bun run fixture:write step [--run <id>] [--step <step id>] [--event node_started|node_completed|node_failed] [--error <text>] | attention --run <id> | label [--label <name>] [--issue <number>] | retriage --issue <number> | revision --issue <number> --build next|ready | metrics | comment | issue | pin | verdict [--pin <sha prefix>] | decision';
 
 export const WORKFLOW = 'archon-loop';
 export const FACTORY = 'mission-control';
@@ -372,30 +373,19 @@ async function retriage(tx: Tx, issue: number, at: Date): Promise<string> {
   return `work item #${issue}: re-triaged`;
 }
 
-/** The statuses `revision` records on a work item's build: one round done and the next running, or ready for the app check. */
-export const BUILD_STATUSES = ['running', 'ready'] as const;
+/** The statuses `revision` records on a work item's build: one round done and the next to come, or ready for the app check. Both are the pack's BuildStatus (restated-rules.test.ts). */
+export const BUILD_STATUSES = ['next', 'ready'] as const;
 type BuildStatus = (typeof BUILD_STATUSES)[number];
 
 /**
- * Archon's state table and the projection trigger on it, which migration 0028 installs only where
- * the table exists. The fixture branch check branches fork from predates both, so `revision`
- * creates what is missing; both statements are idempotent.
+ * The projection trigger on Archon's state table, as migration 0028 installs it where the table
+ * exists (write.test.ts holds the two together); the fixture branch predates both, so `revision`
+ * creates what is missing.
  */
-const STATE_STORE = [
-  `CREATE TABLE IF NOT EXISTS public.remote_agent_state_revisions (
-    project_key text NOT NULL,
-    name text NOT NULL,
-    revision integer NOT NULL CHECK (revision >= 1),
-    value text,
-    operation text NOT NULL,
-    writer_kind text NOT NULL CHECK (writer_kind IN ('run', 'operator')),
-    created_at timestamptz NOT NULL DEFAULT now(),
-    PRIMARY KEY (project_key, name, revision))`,
-  `CREATE OR REPLACE TRIGGER mc_project_work_item_state
+export const PROJECTION_TRIGGER = `CREATE OR REPLACE TRIGGER mc_project_work_item_state
     AFTER INSERT ON public.remote_agent_state_revisions
     FOR EACH ROW WHEN (NEW.name LIKE 'work/%')
-    EXECUTE FUNCTION mc.project_work_item_state_revision()`,
-];
+    EXECUTE FUNCTION mc.project_work_item_state_revision()`;
 
 /**
  * Appends the next revision of the work item's `work/<n>` document to Archon's state table, as the
@@ -410,7 +400,7 @@ async function revision(tx: Tx, issue: number, build: BuildStatus, at: Date): Pr
     [issue],
   );
   if (!state) throw new Error(`no work item state for #${issue}, so no revision continues it`);
-  for (const ddl of STATE_STORE) await tx.query(ddl);
+  for (const ddl of [STATE_REVISIONS_TABLE, PROJECTION_TRIGGER]) await tx.query(ddl);
   const next = Number(state.revision) + 1;
   const time = at.toISOString();
   const doc = {
@@ -551,7 +541,7 @@ function parseCli(argv: string[]): Cli {
     const { issue, build, ...others } = values;
     const status = BUILD_STATUSES.find((name) => name === build);
     if (issue === undefined || !/^[1-9][0-9]*$/.test(issue) || status === undefined)
-      throw new Error('revision needs --issue <number> and --build running|ready');
+      throw new Error('revision needs --issue <number> and --build next|ready');
     if (Object.keys(others).length > 0) throw new Error('revision takes only --issue and --build');
     return { kind, issue: Number(issue), build: status };
   }

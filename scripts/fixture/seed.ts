@@ -1898,7 +1898,7 @@ function queueFactorySql(): string[] {
         blocker: blockedOn,
       });
     return [
-      ...[u.blockedMerged, u.blockedOpen, u.parkedMerged, u.parkedOpen].map((i) =>
+      ...[u.blockedMerged, u.blockedOpen, u.parkedMerged, u.parkedOpen, u.claimed].map((i) =>
         issue(i.issue, `Queue issue ${i.issue}`),
       ),
       prRow(u.blockedMerged.blocker, u.mergedAt),

@@ -3,7 +3,7 @@ import { readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { REPO_ROOT } from '../lib/cli';
 import { DATABASE_URL, NOW, recordingDeps, scratchRepo } from '../lib/test-deps';
-import { attentionWait, eventData, main, structuredOutputFor } from './write';
+import { attentionWait, eventData, main, PROJECTION_TRIGGER, structuredOutputFor } from './write';
 
 const scratch: string[] = [];
 afterEach(() => {
@@ -289,6 +289,15 @@ describe('the revision kind', () => {
     });
     expect(await main(['revision', '--issue', '9', '--build', 'ready'], unprojected.deps)).toBe(1);
     expect(unprojected.err.join('\n')).toContain('did not reach mc.work_item_states');
+  });
+
+  test('creates the projection trigger exactly as migration 0028 installs it', () => {
+    const squash = (sql: string) => sql.replace(/''/g, "'").replace(/\s+/g, ' ');
+    const migration = readFileSync(
+      join(REPO_ROOT, 'db', 'migrations', '0028_work_item_states.sql'),
+      'utf8',
+    );
+    expect(squash(migration)).toContain(squash(PROJECTION_TRIGGER));
   });
 
   test.each([

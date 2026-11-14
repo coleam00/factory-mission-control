@@ -33,7 +33,7 @@ import {
 } from './shared';
 
 const DEMO = 'demo';
-/** The queue factory's claimed work item (QUEUE_UNSTICK): open, held by no running run, with no build record. */
+/** The queue factory's claimed work item (QUEUE_UNSTICK): an open issue held by no running run, with no build record. */
 const REVISED = QUEUE_UNSTICK.claimed.issue;
 /** A step below BUILD_STEP, so it is the deepest running step the card names once it starts. */
 const NEXT_STEP = `${BUILD_STEP}.verify`;
@@ -273,6 +273,9 @@ export function boardPhase(ctx: LiveContext): LivePhase {
     );
   };
 
+  /** The revised item's state row as the seed wrote it, which a run of `write` puts back. */
+  let seededRevised: string | null = null;
+
   async function restore(): Promise<void> {
     await db.query('DELETE FROM mc.issue_labels WHERE factory = $1 AND label = $2', [
       FACTORY,
@@ -294,11 +297,16 @@ export function boardPhase(ctx: LiveContext): LivePhase {
          END IF;
        END $$`,
     );
-    await db.query(
-      `UPDATE mc.work_item_states SET revision = 1, build_status = NULL, build_at = NULL, stage = NULL, rounds = '[]'
-       WHERE project_key = $1 AND number = $2`,
-      [QUEUE_FACTORY.codebase, REVISED],
-    );
+    if (seededRevised !== null) {
+      await db.query('DELETE FROM mc.work_item_states WHERE project_key = $1 AND number = $2', [
+        QUEUE_FACTORY.codebase,
+        REVISED,
+      ]);
+      await db.query(
+        'INSERT INTO mc.work_item_states SELECT * FROM jsonb_populate_record(NULL::mc.work_item_states, $1::jsonb)',
+        [seededRevised],
+      );
+    }
     await db.query(
       'UPDATE mc.work_item_states SET triage_at = $2, revision = $3 WHERE project_key = $1 AND number = $4',
       [QUEUE_FACTORY.codebase, QUEUE_PARKED.triagedAt, QUEUE_PARKED.revision, QUEUE_PARKED.issue],
@@ -310,6 +318,11 @@ export function boardPhase(ctx: LiveContext): LivePhase {
   return {
     async write() {
       const { failures } = ctx;
+      const [seeded] = await db.query(
+        'SELECT to_jsonb(w)::text AS row FROM mc.work_item_states w WHERE project_key = $1 AND number = $2',
+        [QUEUE_FACTORY.codebase, REVISED],
+      );
+      seededRevised = seeded ? String(seeded.row) : null;
       const page = await openPage(deps.env);
       try {
         const pillsSeen = new Map<number, string[]>();
@@ -407,7 +420,7 @@ export function boardPhase(ctx: LiveContext): LivePhase {
         ms.revisedToBuild = await writeToScreen(
           page,
           deps,
-          ['revision', '--issue', String(REVISED), '--build', 'running'],
+          ['revision', '--issue', String(REVISED), '--build', 'next'],
           inColumn('build'),
         );
         ms.buildToAppCheck = await writeToScreen(
@@ -423,7 +436,7 @@ export function boardPhase(ctx: LiveContext): LivePhase {
           page,
           deps,
           ['step', '--run', QUEUE_RUNS.build, '--step', NEXT_STEP, '--event', 'node_started'],
-          `(document.querySelector('[data-work-item="401"] [data-run]')?.textContent ?? '').includes('verify')`,
+          `(document.querySelector('[data-work-item="401"]')?.closest('tr')?.querySelector('[data-run]')?.textContent ?? '').includes('verify')`,
         );
         failures.push(...(await mismatches(page, QUEUE_FACTORY.name, null)));
       } finally {
@@ -459,7 +472,7 @@ export function boardPhase(ctx: LiveContext): LivePhase {
         ms.unparked,
       ),
       ...lateWrite(
-        `a work/${REVISED} revision with a running build`,
+        `a work/${REVISED} revision with a build to come`,
         `${QUEUE_FACTORY.name}'s Build column`,
         ms.revisedToBuild,
       ),
