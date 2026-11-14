@@ -669,6 +669,13 @@ describe('the rules the live queries restate, which they may not call a function
         new RegExp(String.raw`rm\.merged_at IS NOT NULL\s+AND ${CLOSE_REASON_GATE}`, 'g'),
       ),
     ).toBe(1);
+    // and so does its Closes arm.
+    expect(
+      count(
+        query('one-lap'),
+        new RegExp(String.raw`x\.issue_number = item\.issue\s+AND ${CLOSE_REASON_GATE}`, 'g'),
+      ),
+    ).toBe(1);
   });
 
   test('a build-queue lap is a run whose facts step names an item, in every copy of the rule', () => {
