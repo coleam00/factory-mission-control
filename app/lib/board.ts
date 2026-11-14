@@ -185,16 +185,19 @@ export const TABLE_VIEW = 'table';
 /** The queue stages an item with no column of its own is blocked on: a contract, or another pull request. */
 export const BLOCKED_STAGES: readonly string[] = ['blocked', 'needs_contract'];
 
-/** Where a work item stands on the Pipeline: a stage column, or the wide Blocked and parked card. */
-export type HomeId =
-  | 'intake'
-  | 'planned'
-  | 'build'
-  | 'review'
-  | 'app'
-  | 'merge'
-  | 'merged'
-  | 'blocked';
+/** Where a work item stands on the Pipeline, left to right: seven stage columns, then the wide Blocked and parked card. */
+const HOME_IDS = [
+  'intake',
+  'planned',
+  'build',
+  'review',
+  'app',
+  'merge',
+  'merged',
+  'blocked',
+] as const;
+
+export type HomeId = (typeof HOME_IDS)[number];
 
 export interface HomeSpec {
   id: HomeId;
@@ -202,21 +205,21 @@ export interface HomeSpec {
   subtitle: string;
 }
 
-/** The Pipeline's seven stage columns, left to right, then the wide "Blocked and parked" card. */
-export const PIPELINE: readonly HomeSpec[] = [
-  { id: 'intake', title: 'Intake', subtitle: 'triage' },
-  { id: 'planned', title: 'Planned', subtitle: 'waits for a build slot' },
-  { id: 'build', title: 'Build', subtitle: 'build rounds' },
-  { id: 'review', title: 'Review', subtitle: 'reviews' },
-  { id: 'app', title: 'App check', subtitle: 'app check' },
-  { id: 'merge', title: 'Merge', subtitle: 'merge queue' },
-  { id: 'merged', title: 'Merged', subtitle: 'last 7 days' },
-  {
-    id: 'blocked',
+const HOME_TEXT: Record<HomeId, Omit<HomeSpec, 'id'>> = {
+  intake: { title: 'Intake', subtitle: 'triage' },
+  planned: { title: 'Planned', subtitle: 'waits for a build slot' },
+  build: { title: 'Build', subtitle: 'build rounds' },
+  review: { title: 'Review', subtitle: 'reviews' },
+  app: { title: 'App check', subtitle: 'app check' },
+  merge: { title: 'Merge', subtitle: 'merge queue' },
+  merged: { title: 'Merged', subtitle: 'last 7 days' },
+  blocked: {
     title: 'Blocked and parked',
     subtitle: 'needs a contract, a decision or another PR',
   },
-];
+};
+
+export const PIPELINE: readonly HomeSpec[] = HOME_IDS.map((id) => ({ id, ...HOME_TEXT[id] }));
 
 export type Status = keyof typeof BOARD_ITEM_STATE;
 
@@ -306,7 +309,7 @@ function runningRuns(map: readonly HomeMapRow[]): Map<number, StageId | null> {
   return running;
 }
 
-function chipsOf(item: BoardRow, home: HomeId, running: boolean): BoardChip[] {
+function chipsOf(item: BoardRow, home: HomeId, needsYou: boolean, running: boolean): BoardChip[] {
   const chips: BoardChip[] = [];
   if (item.route !== null) chips.push({ kind: 'route', text: item.route });
   const rounds = item.rounds ?? 0;
@@ -324,7 +327,7 @@ function chipsOf(item: BoardRow, home: HomeId, running: boolean): BoardChip[] {
     chips.push({ kind: 'app', text: 'app fail', state: CHECK_OVERALL_STATE.FAIL });
   if (item.pr !== null) chips.push({ kind: 'pr', text: `PR #${item.pr}` });
   for (const name of item.work_orders ?? []) chips.push({ kind: 'order', text: name });
-  if (home === 'build' && !running)
+  if (home === 'build' && !running && !needsYou)
     chips.push({ kind: 'waiting', text: 'waiting for a run', state: 'idle' });
   return chips;
 }
@@ -445,6 +448,8 @@ function factsOf(
 /** Where a work item stands on the board, whatever the board's display window. */
 export interface ItemOnBoard {
   column: ColumnSpec | null;
+  /** Held on the Blocked and parked card by a contract or another pull request, not parked by a queue. */
+  blocked: boolean;
   pr: number | null;
   prUrl: string | null;
   workOrders: string[];
@@ -458,12 +463,14 @@ export function itemOnBoard(
   const row = sources.board.find((r) => r.kind === 'item' && r.number === number);
   if (row === undefined) return null;
   const repository = sources.board.find((r) => r.kind === 'factory')?.repository ?? null;
-  const id =
+  const placement =
     row.state === 'closed'
-      ? 'merged'
-      : tableColumnOf(placeOf(row, number, factsOf(sources.map, sources.workable, sources.owner)));
+      ? null
+      : placeOf(row, number, factsOf(sources.map, sources.workable, sources.owner));
+  const id = placement === null ? 'merged' : tableColumnOf(placement);
   return {
     column: COLUMNS.find((c) => c.id === id) ?? null,
+    blocked: placement?.home === 'blocked' && !parked(row),
     pr: row.pr,
     prUrl: row.pr === null || repository === null ? null : pullUrl(repository, row.pr),
     workOrders: row.work_orders ?? [],
@@ -556,7 +563,7 @@ export function boardView(sources: BoardSources, now: Date, order: string | null
     const item: WorkItem = {
       number,
       title: row.title ?? '',
-      chips: chipsOf(row, home, isRunning),
+      chips: chipsOf(row, home, needsYou, isRunning),
       to: workItemHref(factory, number),
     };
     homes.get(home)?.push({ ...item, status });

@@ -253,6 +253,15 @@ export function workItemNote(
     };
   }
 
+  if (board?.blocked) {
+    return {
+      state: 'idle',
+      pill: 'Blocked',
+      parts: [bold('Blocked.'), plain(' It waits on a contract or another pull request.')],
+      action: null,
+    };
+  }
+
   if (board?.column != null) return { ...COLUMN_NOTE[board.column.id](board.column), action: null };
 
   return {

@@ -344,7 +344,23 @@ test('a re-triage takes an item out of Parked, and a closed parked item is Merge
 
 test('itemOnBoard names Parked for a parked item', () => {
   const sources = { board: [item(1, buildParked), factoryRow()], map: [], workable: [], owner: [] };
-  expect(itemOnBoard(sources, 1)?.column?.id).toBe('parked');
+  expect(itemOnBoard(sources, 1)).toMatchObject({ blocked: false, column: { id: 'parked' } });
+});
+
+test('itemOnBoard says Blocked, not parked, for a needs_contract item', () => {
+  const sources = {
+    board: [item(1, { stage: 'needs_contract' }), factoryRow()],
+    map: [],
+    workable: [],
+    owner: [],
+  };
+  expect(itemOnBoard(sources, 1)).toMatchObject({ blocked: true });
+});
+
+test('an item waiting on the owner in Build carries no waiting-for-a-run chip', () => {
+  const v = view({ board: [item(1, { build_status: 'asking', rounds: 1 }), factoryRow()] });
+  const chips = v.pipeline.find((s) => s.id === 'build')?.items[0]?.chips.map((c) => c.text);
+  expect(chips).not.toContain('waiting for a run');
 });
 
 test('parked: a merge park holds until a triage or renewed build readiness', () => {

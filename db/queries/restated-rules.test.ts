@@ -410,6 +410,13 @@ const statusUnion = (file: string, name: string) => {
   return quoted(match?.[1] ?? '');
 };
 
+test('the statuses the Board places by are the pinned pack’s', () => {
+  const build = statusUnion('build.ts', 'BuildStatus');
+  const merge = statusUnion('merge.ts', 'MergeStatus');
+  for (const status of ['ready', 'asking']) expect(build).toContain(status);
+  for (const status of ['waiting', 'returned', 'asking']) expect(merge).toContain(status);
+});
+
 test('the parked status is the pinned pack’s, in parked() and in health-workable', () => {
   const statuses = {
     build: statusUnion('build.ts', 'BuildStatus'),

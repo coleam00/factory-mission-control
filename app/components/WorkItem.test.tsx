@@ -40,6 +40,7 @@ test('the header links the issue, the pull request and the newest run, under the
       events={[]}
       note={null}
       board={{
+        blocked: false,
         column: { id: 'merged', title: 'Merged', role: 'test', holder: 'done' },
         pr: 410,
         prUrl: 'https://github.com/o/r/pull/410',

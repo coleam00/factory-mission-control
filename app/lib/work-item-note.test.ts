@@ -91,6 +91,7 @@ const unstick = (over: Partial<UnstickRow>): UnstickRow => ({
 
 const board = (id: string): ItemOnBoard => ({
   column: COLUMNS.find((c) => c.id === id) ?? null,
+  blocked: false,
   pr: null,
   prUrl: null,
   workOrders: [],

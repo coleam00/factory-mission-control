@@ -164,7 +164,7 @@ function Pipeline({ view, older }: { view: BoardView; older: ReactElement | null
   return (
     <div className="space-y-2.5">
       <div data-stage-row className="min-w-0 overflow-x-auto">
-        <div className="grid grid-cols-1 items-start gap-2.5 min-[760px]:grid-flow-col min-[760px]:auto-cols-[minmax(200px,1fr)]">
+        <div className="grid grid-cols-1 items-start gap-2.5 min-[760px]:grid-cols-none min-[760px]:grid-flow-col min-[760px]:auto-cols-[minmax(200px,1fr)]">
           {stages.map((stage) => (
             <StageCard key={stage.id} stage={stage} older={stage.id === 'merged' ? older : null} />
           ))}
