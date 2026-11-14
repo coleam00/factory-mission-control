@@ -60,11 +60,16 @@ UNION ALL
 -- rule above). The issue's own title, and the question the run stopped on (its recorded stop
 -- line, as the Runs page reads it) for the Board. `asks` is the number the question names, the
 -- attention item's: the issue of a build-queue run that claimed it itself, the pull request a
--- queue ask names, else the item the run holds (a loop run has no attention number).
-SELECT 'waiting', l.run_id, l.workflow_name, NULL, h.held,
+-- queue ask names, else the item the run holds (a loop run has no attention number). `steps` are
+-- the steps it was running when it paused (the lap rule above), which the Board places it by.
+SELECT 'waiting', l.run_id, l.workflow_name, s.steps, h.held,
   i.title, i.url, NULL, NULL, st.line,
   coalesce(a.item_number, h.held)
 FROM mc.laps l
+LEFT JOIN LATERAL (
+  SELECT array_agg(ls.step_id ORDER BY ls.started_at DESC NULLS LAST, ls.step_id) AS steps
+  FROM mc.lap_steps ls WHERE ls.run_id = l.run_id AND ls.status = 'running'
+) s ON true
 LEFT JOIN LATERAL (
   SELECT c.issue_number FROM mc.claims c
   WHERE c.factory = l.factory AND c.run_id = l.run_id

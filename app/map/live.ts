@@ -48,7 +48,7 @@ export interface HomeMapRow {
   run_id: string | null;
   /** A lap's workflow. */
   workflow: string | null;
-  /** A lap's running steps by Archon's step id, newest first; null while none runs. A picks row's one step. */
+  /** A lap's running steps by Archon's step id, newest first; null while none runs. A waiting row carries the steps its paused run was running. A picks row's one step. */
   steps: string[] | null;
   /** A lap's issue (its claim, else its facts step's item, else its number input), or a failing pull request. */
   number: number | null;
@@ -341,21 +341,29 @@ export const onQueues = (map: readonly HomeMapRow[]): boolean =>
   map.some((r) => r.kind === 'queues');
 
 /**
- * The map's "here" rule: the card covering a running lap's deepest running step, with that step's
- * path. Undefined for a row that is not a lap with a run, one with no running step, or one whose
- * step no card covers.
+ * The map's "here" rule: the card covering the deepest of a run's running steps, with that step's
+ * path. Undefined for no running step or one no card covers. Kind-independent: `lapCard` gates on a
+ * running lap, the Board also asks it for a paused run.
  */
+export function stepsCard(
+  factoryMap: FactoryMap,
+  workflow: string,
+  steps: readonly string[] | null,
+): { card: Card; step: string } | undefined {
+  const step = deepestStep(steps);
+  if (step === undefined) return undefined;
+  const card = cardForStep(factoryMap, workflow, stepPath(step));
+  return card === undefined ? undefined : { card, step: stepPath(step) };
+}
+
+/** The "here" rule for a running lap row. Undefined for a row that is not a lap with a run. */
 export function lapCard(
   factoryMap: FactoryMap,
   row: HomeMapRow,
 ): { card: Card; step: string; run: string; workflow: string } | undefined {
   if (row.kind !== 'lap' || row.run_id === null || row.workflow === null) return undefined;
-  const step = deepestStep(row.steps);
-  if (step === undefined) return undefined;
-  const card = cardForStep(factoryMap, row.workflow, stepPath(step));
-  return card === undefined
-    ? undefined
-    : { card, step: stepPath(step), run: row.run_id, workflow: row.workflow };
+  const here = stepsCard(factoryMap, row.workflow, row.steps);
+  return here === undefined ? undefined : { ...here, run: row.run_id, workflow: row.workflow };
 }
 
 const REVIEW_ROUND = /^(.*\/(?:re)?review)\//;

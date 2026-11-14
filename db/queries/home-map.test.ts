@@ -115,6 +115,9 @@ describe('home-map on the seed', () => {
 
   test('a loop run known only by its claim, paused on an ask, asks about the issue it claimed', async () => {
     const runId = '5eed0003-0000-4000-8000-00000000000a';
+    const lapSteps =
+      (await rows()).find((r) => r.kind === 'lap' && r.run_id === runId)?.steps ?? null;
+    expect(lapSteps).toEqual(['build']);
     await db.query('BEGIN');
     try {
       await db.query(
@@ -131,6 +134,7 @@ describe('home-map on the seed', () => {
       expect(waiting[0]?.number).not.toBeNull();
       expect(waiting[0]?.asks).toBe(waiting[0]?.number);
       expect(waiting[0]?.stop_line).toBeTruthy();
+      expect(waiting[0]?.steps).toEqual(lapSteps);
     } finally {
       await db.query('ROLLBACK');
     }
