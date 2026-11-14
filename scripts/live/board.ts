@@ -33,7 +33,11 @@ import {
 } from './shared';
 
 const DEMO = 'demo';
-/** The queue factory's claimed work item (QUEUE_UNSTICK): an open issue held by no running run, with no build record. */
+/**
+ * The queue factory's claimed work item (QUEUE_UNSTICK), which the seed leaves without an issue
+ * row (the unstick query's tests rely on that): the phase opens one for it and removes it, so the
+ * Board shows it as an item held by no running run.
+ */
 const REVISED = QUEUE_UNSTICK.claimed.issue;
 /** A step below BUILD_STEP, so it is the deepest running step the card names once it starts. */
 const NEXT_STEP = `${BUILD_STEP}.verify`;
@@ -297,6 +301,10 @@ export function boardPhase(ctx: LiveContext): LivePhase {
          END IF;
        END $$`,
     );
+    await db.query('DELETE FROM mc.issues WHERE factory = $1 AND number = $2', [
+      QUEUE_FACTORY.name,
+      REVISED,
+    ]);
     if (seededRevised !== null) {
       await db.query('DELETE FROM mc.work_item_states WHERE project_key = $1 AND number = $2', [
         QUEUE_FACTORY.codebase,
@@ -323,6 +331,15 @@ export function boardPhase(ctx: LiveContext): LivePhase {
         [QUEUE_FACTORY.codebase, REVISED],
       );
       seededRevised = seeded ? String(seeded.row) : null;
+      await db.query(
+        `INSERT INTO mc.issues (factory, number, title, state, url, created_at, updated_at)
+         VALUES ($1, $2, 'Claimed work item', 'open', $3, now(), now())`,
+        [
+          QUEUE_FACTORY.name,
+          REVISED,
+          `https://github.com/${QUEUE_FACTORY.repository}/issues/${REVISED}`,
+        ],
+      );
       const page = await openPage(deps.env);
       try {
         const pillsSeen = new Map<number, string[]>();
