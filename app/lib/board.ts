@@ -23,11 +23,13 @@ export interface BoardRow {
   work_orders: string[] | null;
   /** deliver, plan, investigate or split: the queue's state label, else the loop's claim. */
   route: string | null;
+  /** Archon's finished rounds, as many as it keeps (the last 10); the runs that reached ship when the item has no state. */
   rounds: number | null;
   /** The latest app check's overall verdict on its pull request. */
   app_check: string | null;
-  /** The open pull request that closes it, else the merged one. */
+  /** The open pull request that closes it, else the one Archon's last round opened if open or merged, else the merged one that closes it. */
   pr: number | null;
+  /** Whether the pull request that closes it is open, as before the projected pull request: not `pr`'s own state. */
   pr_open: boolean | null;
   /** The queues' work-item state, the five fields the Parked rule reads; null without a state. */
   build_status: string | null;
@@ -37,6 +39,19 @@ export interface BoardRow {
   triage_at: string | null;
   /** The queue's work-item stage (new, needs_maintainer, a route, needs_contract, blocked, close); null without a state. */
   stage: string | null;
+  /** Archon's finished rounds (the last 10 it keeps) as JSON text, `{ at, reason, reviews, run_id }` each, in order; null without a state. */
+  round_list: string | null;
+  /** How often the merge queue returned the item within the last 20 decisions Archon keeps, so not a total and it can fall; null without a state. */
+  returns: number | null;
+  /** The decision of the last build decision; null without one. */
+  last_decision: string | null;
+  /** The head commit of `pr`, and the head the latest app check on it ran against. */
+  pr_head: string | null;
+  app_check_head: string | null;
+  /** When it merged: the merge fact's time, else `pr`'s own merge time (null while `pr` is open). */
+  merged_at: string | null;
+  /** The running app check run on `pr`. */
+  app_check_run: string | null;
   /** The factory row: its repository and its work items a pull request merged. */
   repository: string | null;
   merged_total: number | null;
