@@ -176,8 +176,10 @@ export function boardPhase(ctx: LiveContext): LivePhase {
     seen: Map<number, string[]>,
   ): Promise<string[]> {
     const failures: string[] = [];
+    // Load fresh at each width: a resize across the shell's 1024px switch remounts the Board and drops its rows until its sources answer (#713).
     for (const width of PILL_WIDTHS) {
       await page.setViewport(width);
+      await open(page, `/f/${factory}/board`);
       const fit = await page.evaluate<{ seen: string[]; bad: string[] }>(PILL_FIT);
       seen.set(width, [...(seen.get(width) ?? []), ...fit.seen]);
       failures.push(...fit.bad.map((b) => `board ${factory} at ${width}px: stage pill ${b}`));
@@ -234,9 +236,9 @@ export function boardPhase(ctx: LiveContext): LivePhase {
   async function pillsOutsideTiles(page: Page): Promise<string[]> {
     const failures: string[] = [];
     await page.evaluate<boolean>(`(localStorage.setItem('mc.manager.open', 'open'), true)`);
-    await open(page, path);
     for (const width of [760, 800, 900, 1000, 1264, 1440]) {
       await page.setViewport(width);
+      await open(page, path);
       const { bad, missing } = await page.evaluate<{ bad: string[]; missing: string[] }>(
         MINI_PILL_FIT,
       );
