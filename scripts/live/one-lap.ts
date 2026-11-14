@@ -136,15 +136,13 @@ const oneLapOnScreen = `(() => {
   };
 })()`;
 
-/**
- * Opens `runId`'s page on a tab and waits until its panels are `ready`: the Steps tab holds all
- * four, the Timeline every one but the app check's.
- */
+/** The page condition for "every panel of the tab is `ready`": the Steps tab holds all four, the Timeline every one but the app check's. */
 const lapReady = (tab: 'steps' | 'timeline') =>
   (tab === 'steps' ? ONE_LAP_QUERIES : ONE_LAP_QUERIES.filter((q) => q !== 'one-lap-checks'))
     .map((q) => `document.querySelector('[data-live="${q}"][data-state="ready"]') !== null`)
     .join(' && ');
 
+/** Opens `runId`'s page on a tab and waits until its panels are `ready`. */
 async function openOneLap(
   page: Page,
   base: string,
