@@ -3,7 +3,14 @@ import { readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { REPO_ROOT } from '../lib/cli';
 import { DATABASE_URL, NOW, recordingDeps, scratchRepo } from '../lib/test-deps';
-import { attentionWait, eventData, main, PROJECTION_TRIGGER, structuredOutputFor } from './write';
+import {
+  attentionWait,
+  eventData,
+  main,
+  PROJECTION_TRIGGER,
+  revisionDocument,
+  structuredOutputFor,
+} from './write';
 
 const scratch: string[] = [];
 afterEach(() => {
@@ -289,6 +296,27 @@ describe('the revision kind', () => {
     });
     expect(await main(['revision', '--issue', '9', '--build', 'ready'], unprojected.deps)).toBe(1);
     expect(unprojected.err.join('\n')).toContain('did not reach mc.work_item_states');
+  });
+
+  test('writes a document the pinned pack parses, with or without a claim', async () => {
+    const { parseWorkItem } = await import(
+      join(REPO_ROOT, 'fixtures/pack/queue/sdlc/.shared/workitem.ts')
+    );
+    const item = { issue: 458, build: 'next', at: NOW.toISOString(), triageAt: 'T' } as const;
+    for (const claimRunId of [null, 'c1a08f53-e5a8-46ca-a820-7f85071aa45f']) {
+      const doc = revisionDocument({ ...item, claimRunId });
+      expect(parseWorkItem(doc)).toEqual(doc);
+      for (const field of [
+        'subject',
+        'created_at',
+        'trust',
+        'requests',
+        'links',
+        'promoted',
+        'history',
+      ])
+        expect(() => parseWorkItem({ ...doc, [field]: undefined })).toThrow();
+    }
   });
 
   test('creates the projection trigger exactly as migration 0028 installs it', () => {
