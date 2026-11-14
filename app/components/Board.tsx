@@ -143,7 +143,7 @@ function ItemTable({ items }: { items: WorkItem[] }): ReactElement {
       <tbody>
         {items.map((item) => (
           <tr key={item.number} className="border-t border-[color:var(--v3-line)] align-top">
-            <td className="px-2 py-1.5">
+            <td className="w-full max-w-0 px-2 py-1.5">
               <Link
                 to={item.to}
                 data-work-item={item.number}
