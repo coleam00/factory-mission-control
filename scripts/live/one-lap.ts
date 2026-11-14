@@ -202,6 +202,21 @@ const pageLapPickJoin = (sql: string) =>
 const pageLapRoute = (sql: string) =>
   pageLapRule(sql, /coalesce\(p\.output ->> 'route', c\.route\)/, 'route expression');
 
+/** The seed lap's header columns, built from one-lap.sql's own item, route and PR rules; `$1` is the run id. */
+export const seedLapHeaderSql = (oneLapSql: string) => `SELECT f.repository, f.console,
+       ${pageLapIssue(oneLapSql)} AS issue, i.url AS issue_url,
+       ${pageLapRoute(oneLapSql)} AS route, p.output ->> 'depth' AS depth,
+       review.output ->> 'outcome' AS review, pr.pr_number,
+       land.output ->> 'outcome' AS gate, land.output ->> 'reason' AS reason
+     FROM mc.laps l
+     JOIN mc.factories f ON f.name = l.factory
+     ${pageLapClaimJoin(oneLapSql)}
+     ${pageLapPickJoin(oneLapSql)}
+     LEFT JOIN mc.lap_steps review ON review.run_id = l.run_id AND review.step_id = 'review'
+     LEFT JOIN mc.lap_steps land ON land.run_id = l.run_id AND land.step_id = 'land'
+     ${pageLapPrJoin(oneLapSql)}
+     WHERE l.run_id = $1`;
+
 /**
  * A finished lap's screen against SQL over the seed's tables, not the screen's queries (except the issue, issue link,
  * route and PR columns, which run one-lap.sql's own item, route and PR rules so the page and the check share one owner): each
@@ -220,22 +235,7 @@ async function seedOneLapMismatches(
   const same = screenAgainstSql(mismatches);
   const nullable = (value: unknown) => (value === null ? null : Number(value));
 
-  const [lap] = await db.query(
-    `SELECT f.repository, f.console,
-       ${pageLapIssue(oneLapSql)} AS issue, i.url AS issue_url,
-       ${pageLapRoute(oneLapSql)} AS route, p.output ->> 'depth' AS depth,
-       review.output ->> 'outcome' AS review, pr.pr_number,
-       land.output ->> 'outcome' AS gate, land.output ->> 'reason' AS reason
-     FROM mc.laps l
-     JOIN mc.factories f ON f.name = l.factory
-     ${pageLapClaimJoin(oneLapSql)}
-     ${pageLapPickJoin(oneLapSql)}
-     LEFT JOIN mc.lap_steps review ON review.run_id = l.run_id AND review.step_id = 'review'
-     LEFT JOIN mc.lap_steps land ON land.run_id = l.run_id AND land.step_id = 'land'
-     ${pageLapPrJoin(oneLapSql)}
-     WHERE l.run_id = $1`,
-    [runId],
-  );
+  const [lap] = await db.query(seedLapHeaderSql(oneLapSql), [runId]);
   const issue = nullable(lap.issue);
   const pr = nullable(lap.pr_number);
   const headerSql = {
