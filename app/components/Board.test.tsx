@@ -413,6 +413,20 @@ afterEach(() => {
   Reflect.deleteProperty(globalThis, 'localStorage');
 });
 
+test('blocked storage leaves the finished row folded instead of throwing', () => {
+  Object.defineProperty(globalThis, 'localStorage', {
+    get: () => {
+      throw new Error('blocked');
+    },
+    configurable: true,
+  });
+  const html = render(
+    { ...empty, orders: [order('live', 1, 3), order('old-a', 8, 8)] },
+    'pipeline',
+  );
+  expect(html).toContain('aria-expanded="false"');
+});
+
 test('a remembered open row shows every finished card after the row, a selected one once', () => {
   openRow();
   const view = {

@@ -491,17 +491,9 @@ function OrderStrip({
 const FINISHED_KEY = 'mc.board.finished-open';
 
 /** Reading `localStorage` itself throws where the browser blocks storage. */
-function storage(): Storage | undefined {
-  try {
-    return globalThis.localStorage;
-  } catch {
-    return undefined;
-  }
-}
-
 function readFinishedOpen(): boolean {
   try {
-    return storage()?.getItem(FINISHED_KEY) === 'open';
+    return globalThis.localStorage?.getItem(FINISHED_KEY) === 'open';
   } catch {
     return false;
   }
@@ -509,7 +501,7 @@ function readFinishedOpen(): boolean {
 
 function writeFinishedOpen(open: boolean): void {
   try {
-    storage()?.setItem(FINISHED_KEY, open ? 'open' : 'closed');
+    globalThis.localStorage?.setItem(FINISHED_KEY, open ? 'open' : 'closed');
   } catch {
     // The choice then lasts only until the next load.
   }
