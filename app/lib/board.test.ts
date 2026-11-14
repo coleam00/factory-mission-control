@@ -256,6 +256,19 @@ test('a work order drops off 7 days after its last issue closes', () => {
   expect(nextChange({ board: [], orders: [finished(8)] }, NOW)).toBeNull();
 });
 
+test('a work order whose every issue was dropped is off the strip, a finished one stays', () => {
+  const closed = (total_count: number) =>
+    ORDER({
+      total_count,
+      open_count: 0,
+      done_count: 0,
+      merged_count: 0,
+      last_closed_at: daysAgo(2),
+    });
+  expect(view({ orders: [closed(0)] }).orders).toHaveLength(0);
+  expect(view({ orders: [closed(4)] }).orders).toHaveLength(1);
+});
+
 test('chips: the route, the app verdict and where the card opens', () => {
   const v = view({
     board: [

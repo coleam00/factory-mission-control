@@ -773,7 +773,7 @@ export function boardView(sources: BoardSources, now: Date, order: string | null
   const total = factoryRow?.merged_total ?? recent;
   return {
     orders: orders
-      .filter((o) => o.open_count > 0 || withinKeep(o.last_closed_at, now))
+      .filter((o) => o.open_count > 0 || (o.total_count > 0 && withinKeep(o.last_closed_at, now)))
       .map((o) => ({ ...orderPanel(o), building: 0, needsYou: 0, ...tally.get(o.name) })),
     columns: COLUMNS.map((c) => ({ ...c, items: columns.get(c.id) ?? [] })),
     pipeline: PIPELINE.map((spec) => {
