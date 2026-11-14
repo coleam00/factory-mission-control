@@ -372,7 +372,8 @@ function stopOf(status: Status, question: string | null): WorkItem['stop'] {
   return status === 'check failed' ? { text: 'App check failed', state } : null;
 }
 
-const REASON_STATE = { delivered: 'done', ask: 'needs-you' } as const;
+/** The pack's round reasons that colour a dot; app/map/restated-rules.test.ts pins them to `Ended` in the pack's round.ts. */
+export const REASON_STATE = { delivered: 'done', ask: 'needs-you' } as const;
 
 /** The rounds Archon recorded, oldest first; an entry without a known reason is a grey dot. */
 function recordedRounds(text: string | null): RoundDot[] {
@@ -417,7 +418,7 @@ function chipsOf(item: BoardRow, home: HomeId, needsYou: boolean, running: boole
 
 interface Facts {
   /** Each work item a paused run waits on a person for, by the run's number input: the stage of that run's workflow. */
-  attention: ReadonlyMap<number, { stage: StageId | null }>;
+  attention: ReadonlyMap<number, StageId | null>;
   /** The question each waiting run recorded, by the number its ask names: issues and pull requests share one number space. */
   questions: ReadonlyMap<number, string>;
   needsOwner: ReadonlySet<number>;
@@ -483,7 +484,7 @@ function placeOf(row: BoardRow, number: number, facts: Facts, holder: StageId | 
       ? 'merge'
       : row.build_status === 'asking'
         ? 'build'
-        : (facts.attention.get(number)?.stage ?? null);
+        : (facts.attention.get(number) ?? null);
   const needsYou = asked !== null || facts.attention.has(number) || facts.needsOwner.has(number);
   if (asked !== null) return { home: asked, needsYou };
   if (isReady(row)) {
@@ -517,7 +518,7 @@ function factsOf(
     attention: new Map(
       map.flatMap((r) =>
         r.kind === 'waiting' && r.number !== null
-          ? [[r.number, { stage: WORKFLOW_STAGE[r.workflow ?? ''] ?? null }] as const]
+          ? [[r.number, WORKFLOW_STAGE[r.workflow ?? ''] ?? null] as const]
           : [],
       ),
     ),
@@ -661,7 +662,7 @@ export function boardView(sources: BoardSources, now: Date, order: string | null
     }
     if (order !== null && !names.includes(order)) continue;
     const dots = recordedRounds(row.round_list);
-    const building = hold?.workflow === BUILD_QUEUE_WORKFLOW;
+    const building = facts.running.get(number)?.workflow === BUILD_QUEUE_WORKFLOW;
     if (building) dots.push({ state: 'running', title: `Round ${dots.length + 1}: running` });
     const item: WorkItem = {
       number,

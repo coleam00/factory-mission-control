@@ -33,7 +33,7 @@ function Rounds({ item }: { item: WorkItem }): ReactElement | null {
           key={i}
           data-round-dot={dot.state}
           title={dot.title}
-          className="inline-block size-2 shrink-0 rounded-full"
+          className="relative z-10 inline-block size-2 shrink-0 rounded-full"
           style={{ background: stateColor(dot.state) }}
         />
       ))}
@@ -205,7 +205,10 @@ function MiniCard({ item }: { item: PipelineStage['items'][number] }): ReactElem
       <Link to={item.to} data-work-item={item.number} className={`block ${OPENS}`}>
         <span className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1 whitespace-nowrap font-mono text-[length:var(--v3-t-micro)] text-[color:var(--v3-fg-2)]">
           #{item.number}
-          <span className="flex max-w-full min-w-0 [&>span]:min-w-0" title={item.status}>
+          <span
+            className="relative z-10 flex max-w-full min-w-0 [&>span]:min-w-0"
+            title={item.status}
+          >
             <Pill compact state={BOARD_ITEM_STATE[item.status]} live={item.status === 'running'}>
               <span className="min-w-0 truncate">{item.status}</span>
             </Pill>

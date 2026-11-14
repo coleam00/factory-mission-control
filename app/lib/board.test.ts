@@ -602,6 +602,20 @@ test('a running build card reads round N+1 with the live dot, and the run line n
   });
 });
 
+test('a build round keeps its live dot while an app check runs on its pull request', () => {
+  const run = '00000000-0000-4000-8000-0000000000bb';
+  const v = view({
+    board: [item(1, { rounds: 1, pr: 9, app_check_run: run })],
+    map: [
+      lap(1, 'archon-build-queue', [REVIEW]),
+      { ...lap(0, 'factory-app-check', ['check__browser']), run_id: run, number: null },
+    ],
+  });
+  const card = v.pipeline.flatMap((s) => s.items).find((i) => i.number === 1);
+  expect(card?.round).toBe(1);
+  expect(card?.dots.map((d) => d.state)).toEqual(['running']);
+});
+
 test('an item held only by a running app check shows that run, with its step from the map', () => {
   const run = '00000000-0000-4000-8000-0000000000bb';
   const check: HomeMapRow = {
