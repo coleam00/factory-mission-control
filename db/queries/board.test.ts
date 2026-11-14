@@ -305,6 +305,24 @@ test('a Refs-only item shows the latest merged Refs pull request’s time', asyn
   }
 });
 
+test('with several merged closing pull requests the card shows the latest merge, not the highest number’s', async () => {
+  const merged = async () => (await missionItem(10))?.merged_at;
+  expect(await merged()).toBe('2026-10-20T09:30:00.000Z');
+  await db.query(
+    `INSERT INTO mc.pull_requests (factory, number, title, state, merged_at, head_sha, url, created_at, updated_at)
+     VALUES ('mission-control', 9201, 't', 'closed', '2026-01-01T00:00:00Z', 'e', 'u', now(), now())`,
+  );
+  await db.query(
+    `INSERT INTO mc.pull_request_issues (factory, pr_number, issue_number) VALUES ('mission-control', 9201, 10)`,
+  );
+  try {
+    expect(await merged()).toBe('2026-10-20T09:30:00.000Z');
+  } finally {
+    await db.query(`DELETE FROM mc.pull_request_issues WHERE pr_number = 9201`);
+    await db.query(`DELETE FROM mc.pull_requests WHERE factory = 'mission-control' AND number = 9201`);
+  }
+});
+
 test('a work item state reaches only the factory whose codebase it names', async () => {
   const parkedOf = async (factory: string) =>
     (await run<BoardRow>('board', factory))

@@ -126,7 +126,7 @@ LEFT JOIN LATERAL (
   -- When the item landed, else: the projected pull request if it merged, else the latest merged pull request that closes
   -- the item (whatever `pr` shows, which may be an open one), else the latest merged one that names it with `Refs` (an
   -- older item has no Closes link and no pr_number). Only a closed item shows it, and the `items` CTE gates its close reason.
-  SELECT coalesce(pr.merged_at,
+  SELECT coalesce(projected.merged_at,
     (SELECT max(m.merged_at) FROM mc.pull_request_issues x
      JOIN mc.pull_requests m ON m.factory = x.factory AND m.number = x.pr_number
      WHERE x.factory = i.factory AND x.issue_number = i.number),
