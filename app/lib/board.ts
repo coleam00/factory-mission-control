@@ -418,8 +418,8 @@ function chipsOf(item: BoardRow, home: HomeId, needsYou: boolean, running: boole
 interface Facts {
   /** Each work item a paused run waits on a person for, by the run's number input: the stage of that run's workflow. */
   attention: ReadonlyMap<number, { stage: StageId | null }>;
-  /** The question each waiting run recorded, by what it asks about: a pull request for a merge-queue ask, else an issue. */
-  questions: ReadonlyMap<string, string>;
+  /** The question each waiting run recorded, by the number its ask names: issues and pull requests share one number space. */
+  questions: ReadonlyMap<number, string>;
   needsOwner: ReadonlySet<number>;
   running: ReadonlyMap<number, Hold>;
   steps: ReadonlyMap<string, string | null>;
@@ -501,13 +501,10 @@ function tableColumnOf({ home, needsYou }: Placement): ColumnId {
   return home === 'blocked' ? 'parked' : home;
 }
 
-const askKey = (workflow: string | null, number: number): string =>
-  `${WORKFLOW_STAGE[workflow ?? ''] === 'merge' ? 'pr' : 'issue'}:${number}`;
-
 /** The question of the run asking about this item: its merge ask when it sits in Merge, else its issue's ask, else the other. */
 function questionOf(row: BoardRow, number: number, home: HomeId, facts: Facts): string | null {
-  const issue = facts.questions.get(`issue:${number}`);
-  const pr = row.pr === null ? undefined : facts.questions.get(`pr:${row.pr}`);
+  const issue = facts.questions.get(number);
+  const pr = row.pr === null ? undefined : facts.questions.get(row.pr);
   return (home === 'merge' ? (pr ?? issue) : (issue ?? pr)) ?? null;
 }
 
@@ -527,7 +524,7 @@ function factsOf(
     questions: new Map(
       map.flatMap((r) =>
         r.kind === 'waiting' && r.asks !== null && r.stop_line !== null
-          ? [[askKey(r.workflow, r.asks), r.stop_line] as const]
+          ? [[r.asks, r.stop_line] as const]
           : [],
       ),
     ),
