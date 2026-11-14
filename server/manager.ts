@@ -15,6 +15,7 @@ import { ATTENTION_SOURCES, type AttentionKind, KINDS } from '../app/lib/attenti
 import { scorecardEdges, TOO_FEW_BELOW } from '../app/lib/factory-scorecard';
 import { FAILURES_QUERY, failureLabel, retriedArgs } from '../app/lib/failure-view';
 import { type FailureGroupRow, failuresSince } from '../app/lib/failures';
+import { linkify } from '../app/lib/manager';
 import { topLevelBlocks } from '../app/lib/manager-markdown';
 import { isRunId, lapHref } from '../app/lib/one-lap';
 import { placeAddress } from '../app/lib/places';
@@ -372,7 +373,7 @@ The transient failures a later run of their workflow retried, today (the muted l
 The mc schema:
 ${schema}
 
-Answer in short plain prose, naming runs by workflow and status. To give the owner links, a run list or a button, end the answer with one fenced block whose info string is mc, holding JSON:
+Answer in short plain prose, naming runs by workflow and status. Every run or work item the answer names goes in the block's links, by its full run id. To give the owner links, a run list or a button, end the answer with one fenced block whose info string is mc, holding JSON:
 \`\`\`mc
 {"links":[{"kind":"run","id":"<run id>"},{"kind":"item","id":<issue number>}],"runs":["<run id>"],"proposals":[{"action":"answer","run_id":"<run id>","option":"<option id>"},{"action":"answer","run_id":"<run id>","text":"<free text>"},{"action":"resume","run_id":"<run id>","from_step":"<step id>"},{"action":"retriage","number":<issue number>},{"action":"close","number":<issue number>},{"action":"comment","number":<issue number>,"text":"<the owner's words>"}]}
 \`\`\`
@@ -550,9 +551,35 @@ async function proposalEvent(
   };
 }
 
-/** Every entry the model named, checked against `mc`; what fails is dropped and logged. */
-async function structureEvents(manager: Manager, factory: string, block: string | null) {
+const RUN_UUID = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
+
+/**
+ * The run page's own run, when the prose names it and the model gave it no link. The panel's
+ * matcher decides what names it; a sibling run's full id, which shares the short id, does not.
+ */
+function viewedRunLink(raw: RawStructure, viewed: string | undefined, prose: string) {
+  if (viewed === undefined || !isRunId(viewed)) return [];
+  const id = viewed.toLowerCase();
+  const given = [...raw.links.filter((l) => l.kind === 'run').map((l) => l.id), ...raw.runs];
+  if (given.some((g) => String(g).toLowerCase() === id)) return [];
+  const own = prose.replace(RUN_UUID, (uuid) => (uuid.toLowerCase() === id ? uuid : ' '));
+  const link = { type: 'link', kind: 'run', id, href: lapHref('', id) } as const;
+  return linkify(own.toLowerCase(), [link]).rest.length === 0 ? [{ kind: 'run' as const, id }] : [];
+}
+
+/**
+ * Every entry the model named, checked against `mc`; what fails is dropped and logged. The run
+ * the owner is viewing is linked when the prose names it, as the design has answers cite runs.
+ */
+async function structureEvents(
+  manager: Manager,
+  factory: string,
+  block: string | null,
+  prose: string,
+  viewed: string | undefined,
+) {
   const raw = parseBlock(block);
+  raw.links.push(...viewedRunLink(raw, viewed, prose));
   const events: ManagerEvent[] = await linkEvents(manager, factory, raw.links);
   const runs = await runSummaries(manager, factory, raw.runs.slice(0, MAX_RUNS));
   if (runs.length > 0) events.push({ type: 'runs', runs });
@@ -600,9 +627,11 @@ async function produce(
   const splitter = new AnswerSplitter();
   let wrote = false;
   let started = false;
+  let prose = '';
   const show = (text: string) => {
     if (text) {
       wrote = true;
+      prose += text;
       emit({ type: 'text', text });
     }
   };
@@ -676,7 +705,14 @@ async function produce(
   }
   let structured = true;
   try {
-    for (const event of await structureEvents(manager, request.factory, block)) emit(event);
+    for (const event of await structureEvents(
+      manager,
+      request.factory,
+      block,
+      prose,
+      briefing ? undefined : request.context.run,
+    ))
+      emit(event);
   } catch (error) {
     structured = false;
     console.error(`manager structure failed: ${error instanceof Error ? error.message : error}`);
