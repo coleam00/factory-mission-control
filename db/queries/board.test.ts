@@ -387,7 +387,7 @@ test('a parked work item is not workable, and a re-triage makes it workable agai
     (await view('queue-factory')).columns
       .find((c) => c.id === 'parked')
       ?.items.map((i) => i.number);
-  expect(await workable()).toEqual([404, 405, 410]);
+  expect(await workable()).toEqual([404, 405, 410, 450]);
   expect(await parkedItems()).toEqual(
     [QUEUE_PARKED.issue, ...UNSTICK_PARKED, 450, 452].sort((a, b) => a - b),
   );
@@ -450,7 +450,7 @@ test('a run that has just taken a work item is running on the Board, here on the
       NOW,
     ).get('build');
     expect(live?.here.map((l) => l.issue?.number)).toContain(404);
-    expect(live?.queued?.map((i) => i.number)).toEqual([405, 410]);
+    expect(live?.queued?.map((i) => i.number)).toEqual([405, 410, 450]);
 
     const laps = await run<{ issue_number: number | null; step_id: string }>(
       'runs',
