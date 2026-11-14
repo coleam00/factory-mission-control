@@ -33,7 +33,7 @@ them again on every run and fails when a verdict or an error differs from this t
 | EXISTS in FILTER | `SELECT count(*) FILTER (WHERE EXISTS (SELECT 1 FROM mc.issue_labels l WHERE l.factory = i.factory AND l.issue_number = i.number)) AS n FROM mc.issues i WHERE i.factory = $1` | rejected | upstream_rejected: the compiler refuses at the front end: unsupported query: subquery inside an expression the core does not analyse |
 | set operation in a LATERAL | `SELECT l.run_id, g.title FROM mc.laps l LEFT JOIN LATERAL (SELECT min(x.title) AS title FROM (SELECT s.step_id AS title FROM mc.lap_steps s WHERE s.run_id = l.run_id UNION ALL SELECT e.step_id FROM mc.lap_steps e WHERE e.run_id = l.run_id) x) g ON true WHERE l.factory = $1` | rejected | upstream_rejected: the compiler refuses at the front end: set operation operand reads an outer query level |
 
-A subquery inside an expression is refused, so a live query counts with a `LEFT JOIN LATERAL`
+A subquery inside an aggregate's `FILTER` is refused (the `EXISTS in CASE` and `NOT EXISTS` rows above are accepted), so a live query counts with a `LEFT JOIN LATERAL`
 aggregate and reads the count in the expression (`work-orders` and `unstick` do). A `UNION ALL`
 inside a lateral whose operand reads the outer row is refused too; the two operands become two
 laterals, combined with `greatest` or `least`. Past the probes, `test:live` subscribes every file in
