@@ -3,11 +3,17 @@
  * work orders it belongs to. The stage columns are the map's own cards, read with the map's "here"
  * rule, so the board never disagrees with the map. Pure, no React.
  */
-import { cardForStep, FACTORY_MAP, type Role } from '../map/factory-map';
-import { deepestStep, type HomeMapRow, lapCard, onQueues, type WorkOrderRow } from '../map/live';
+import { FACTORY_MAP, type Role } from '../map/factory-map';
+import {
+  deepestStep,
+  type HomeMapRow,
+  lapCard,
+  onQueues,
+  stepsCard,
+  type WorkOrderRow,
+} from '../map/live';
 import { localMinute } from './format';
 import type { HealthWorkableRow } from './health';
-import { stepPath } from './lap-graph';
 import { lapHref } from './one-lap';
 import {
   APP_CHECK_WORKFLOW,
@@ -440,9 +446,8 @@ const WORKFLOW_STAGE: Readonly<Record<string, StageId>> = {
 function pausedStage(row: HomeMapRow): StageId | null {
   const queue = WORKFLOW_STAGE[row.workflow ?? ''];
   if (queue !== undefined) return queue;
-  const step = deepestStep(row.steps);
-  if (step === undefined || row.workflow === null) return null;
-  const id = cardForStep(FACTORY_MAP, row.workflow, stepPath(step))?.id;
+  if (row.workflow === null) return null;
+  const id = stepsCard(FACTORY_MAP, row.workflow, row.steps)?.card.id;
   return id !== undefined && isStage(id) ? id : null;
 }
 
