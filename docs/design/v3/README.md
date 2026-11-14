@@ -252,7 +252,11 @@ screenshots `20` and `42`.
   needs you". The strip counts work done, not pull requests: it reads "N of M done", where M counts
   the order's work items but those closed as not planned or a duplicate, and N those closed as
   completed (by a merged pull request or by hand), so a finished order reads "M of M done" with a
-  full bar (owner audit 2026-11-14).
+  full bar (owner audit 2026-11-14). Only orders with work left get a card. Finished orders fold
+  into one muted row under them, "5 finished orders: attention-cleanup, attention-followups, …", which
+  expands in place to their cards and remembers whether it was open; with no open order the row
+  shows alone. The stage columns start in the first screen at 1440 x 900 with the Manager open
+  (owner audit 2026-11-14).
 - **Seven stage columns, left to right:** Intake, Planned, Build, Review, App check, Merge, Merged.
   Each has a name, a muted subtitle (triage · waits for a build slot · build rounds · reviews · app
   check · merge queue · last 7 days), a count, and state pills with counts.
