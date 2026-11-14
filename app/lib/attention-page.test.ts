@@ -47,6 +47,7 @@ const decide = (overrides: Partial<DecideRow> = {}): DecideRow => ({
     '**Recommendation: `split`** (high confidence). Two small changes land sooner.',
   ].join('\n\n'),
   console: 'http://localhost:3090/',
+  steps: null,
   ...overrides,
 });
 

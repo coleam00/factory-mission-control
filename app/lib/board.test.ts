@@ -12,7 +12,10 @@ import {
   orderLine,
   orderTarget,
   parked,
+  waitCard,
 } from './board';
+import type { DecideRow } from './attention';
+import { decideCards, queueOf } from './attention-page';
 import type { OwnerQueueRow } from './owner-queue';
 
 const NOW = new Date('2026-11-04T12:00:00Z');
@@ -487,6 +490,38 @@ test('a paused run holds its item in its map card column with Needs you; a pause
   ]);
   expect(at('review')).toEqual([[2, 'needs you']]);
   expect(at('intake')).toEqual([[4, 'needs you']]);
+});
+
+test("a paused loop run's wait sits in one card on the Board and on Attention", () => {
+  expect(waitCard('archon-loop', ['build'], 'ask')).toBe('build');
+  const v = view({
+    board: [item(1)],
+    map: [{ ...lap(1, 'archon-loop', ['build']), kind: 'waiting' }],
+  });
+  expect(v.pipeline.find((s) => s.id === 'build')?.items.map((i) => [i.number, i.status])).toEqual([
+    [1, 'needs you'],
+  ]);
+  const row: DecideRow = {
+    run_id: '00000000-0000-4000-8000-000000000001',
+    workflow_name: 'archon-loop',
+    node_id: 'ask',
+    occurrence_id: 'p1',
+    waiting_since: NOW,
+    form: 'select',
+    options: '[]',
+    labels: '{}',
+    recommended: null,
+    confidence: null,
+    recommendation_why: null,
+    item_number: 1,
+    item_title: null,
+    message: 'Which?',
+    console: 'http://localhost:3090/',
+    steps: ['build'],
+  };
+  expect(decideCards([row], 'f')[0]?.queue).toBe('build');
+  expect(queueOf('archon-loop', 'ask', null)).toBe('intake');
+  expect(queueOf('archon-loop', 'review', ['build'])).toBe('build');
 });
 
 test('asking at merge is Merge with the Needs you status, and Ready or waiting is never Build', () => {

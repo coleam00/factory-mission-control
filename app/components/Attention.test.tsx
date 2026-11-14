@@ -37,6 +37,7 @@ const decide: DecideRow = {
   item_title: 'Lanes and recent laps',
   message: '**What it is.** Two screens.\n\n**Recommendation: `split`** (high confidence). Sooner.',
   console: 'http://localhost:3090/',
+  steps: null,
 };
 const owner: OwnerQueueRow = {
   kind: 'issue',
