@@ -80,7 +80,7 @@ function WaitsLine({ item }: { item: WorkItem }): ReactElement | null {
   return (
     <span data-waits={waits.kind} className={`block min-w-0 ${DETAIL}`}>
       {waits.kind === 'reason' ? (
-        <span title={waits.text} className="block truncate">
+        <span title={waits.text} className="block w-0 min-w-full truncate">
           {waits.text}
         </span>
       ) : waits.kind === 'contract' ? (
@@ -143,7 +143,7 @@ function ItemTable({ items }: { items: WorkItem[] }): ReactElement {
       <tbody>
         {items.map((item) => (
           <tr key={item.number} className="border-t border-[color:var(--v3-line)] align-top">
-            <td className="w-full max-w-0 px-2 py-1.5">
+            <td className="px-2 py-1.5">
               <Link
                 to={item.to}
                 data-work-item={item.number}
