@@ -259,6 +259,53 @@ describe('the retriage kind', () => {
   });
 });
 
+describe('the revision kind', () => {
+  const state = { project_key: 'q/f', revision: 1, triage_at: 'T', claim_run_id: null };
+
+  test('appends the next work/<n> revision for the trigger and reports it', async () => {
+    const run = recordingDeps({
+      repoRoot: repo(),
+      rows: (sql) =>
+        sql.includes('FROM mc.work_item_states WHERE number = $1 AND')
+          ? [{ build_status: 'ready' }]
+          : [state],
+    });
+    expect(await main(['revision', '--issue', '458', '--build', 'ready'], run.deps)).toBe(0);
+    expect(run.out).toEqual(['work item #458: revision 2, build ready']);
+    const at = run.sql.findIndex((sql) =>
+      sql.startsWith('INSERT INTO public.remote_agent_state_revisions'),
+    );
+    expect(run.params[at]?.slice(0, 3)).toEqual(['q/f', 'work/458', 2]);
+    expect(JSON.parse(String(run.params[at]?.[3])).facts.build.status).toBe('ready');
+  });
+
+  test('fails when the item has no state row or the trigger did not project the revision', async () => {
+    const none = recordingDeps({ repoRoot: repo(), rows: () => [] });
+    expect(await main(['revision', '--issue', '9', '--build', 'ready'], none.deps)).toBe(1);
+    expect(none.err.join('\n')).toContain('no work item state for #9');
+    const unprojected = recordingDeps({
+      repoRoot: repo(),
+      rows: (sql) => (sql.includes('AND revision') ? [] : [state]),
+    });
+    expect(await main(['revision', '--issue', '9', '--build', 'ready'], unprojected.deps)).toBe(1);
+    expect(unprojected.err.join('\n')).toContain('did not reach mc.work_item_states');
+  });
+
+  test.each([
+    [['revision']],
+    [['revision', '--issue', '9']],
+    [['revision', '--issue', '9', '--build', 'done']],
+    [['revision', '--issue', '9', '--build', 'ready', '--label', 'a']],
+    [['retriage', '--issue', '9', '--build', 'ready']],
+    [['label', '--build', 'ready']],
+    [['step', '--build', 'ready']],
+  ])('exits 2 for %j before connecting', async (argv) => {
+    const refused = recordingDeps({ repoRoot: repo() });
+    expect(await main(argv, refused.deps)).toBe(2);
+    expect(refused.opened).toEqual([]);
+  });
+});
+
 test('label writes needs-owner unless --label names another, and --issue names the issue; both are refused where they do not apply', async () => {
   const insertedLabel = async (argv: string[]) => {
     const run = recordingDeps({ repoRoot: repo(), rows: counting(1, 2) });

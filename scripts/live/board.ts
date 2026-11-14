@@ -10,7 +10,13 @@ import {
 import type { HealthWorkableRow } from '../../app/lib/health';
 import type { OwnerQueueRow } from '../../app/lib/owner-queue';
 import type { HomeMapRow, WorkOrderRow } from '../../app/map/live';
-import { QUEUE_FACTORY, QUEUE_PARKED, QUEUE_RUNS, REFS_DELIVERED } from '../fixture/seed';
+import {
+  QUEUE_FACTORY,
+  QUEUE_PARKED,
+  QUEUE_RUNS,
+  QUEUE_UNSTICK,
+  REFS_DELIVERED,
+} from '../fixture/seed';
 import { FACTORY } from '../fixture/write';
 import { openPage, type Page } from '../lib/cdp';
 import { BUILD_STEP } from './queue-map';
@@ -27,6 +33,10 @@ import {
 } from './shared';
 
 const DEMO = 'demo';
+/** The queue factory's claimed work item (QUEUE_UNSTICK): open, held by no running run, with no build record. */
+const REVISED = QUEUE_UNSTICK.claimed.issue;
+/** A step below BUILD_STEP, so it is the deepest running step the card names once it starts. */
+const NEXT_STEP = `${BUILD_STEP}.verify`;
 const READY = 'main[data-board][data-state="ready"]';
 
 interface Shown {
@@ -110,6 +120,9 @@ export function boardPhase(ctx: LiveContext): LivePhase {
     refsMerged: null as number | null,
     intakeToBuild: null as number | null,
     unparked: null as number | null,
+    revisedToBuild: null as number | null,
+    buildToAppCheck: null as number | null,
+    stepText: null as number | null,
   };
 
   const run = async <Row>(name: string, factory: string, ...args: string[]) =>
@@ -266,13 +279,26 @@ export function boardPhase(ctx: LiveContext): LivePhase {
       `work-order:${DEMO}`,
     ]);
     await db.query(
-      'DELETE FROM remote_agent_workflow_events WHERE workflow_run_id = $1 AND step_name = $2',
-      [QUEUE_RUNS.build, BUILD_STEP],
+      'DELETE FROM remote_agent_workflow_events WHERE workflow_run_id = $1 AND step_name = ANY($2)',
+      [QUEUE_RUNS.build, [BUILD_STEP, NEXT_STEP]],
     );
-    await db.query('DELETE FROM mc.lap_steps WHERE run_id = $1 AND step_id = $2', [
+    await db.query('DELETE FROM mc.lap_steps WHERE run_id = $1 AND step_id = ANY($2)', [
       QUEUE_RUNS.build,
-      BUILD_STEP,
+      [BUILD_STEP, NEXT_STEP],
     ]);
+    // The state table exists only once a `revision` write has created it.
+    await db.query(
+      `DO $$ BEGIN
+         IF to_regclass('public.remote_agent_state_revisions') IS NOT NULL THEN
+           DELETE FROM public.remote_agent_state_revisions WHERE project_key = '${QUEUE_FACTORY.codebase}' AND name = 'work/${REVISED}';
+         END IF;
+       END $$`,
+    );
+    await db.query(
+      `UPDATE mc.work_item_states SET revision = 1, build_status = NULL, build_at = NULL, stage = NULL, rounds = '[]'
+       WHERE project_key = $1 AND number = $2`,
+      [QUEUE_FACTORY.codebase, REVISED],
+    );
     await db.query(
       'UPDATE mc.work_item_states SET triage_at = $2, revision = $3 WHERE project_key = $1 AND number = $4',
       [QUEUE_FACTORY.codebase, QUEUE_PARKED.triagedAt, QUEUE_PARKED.revision, QUEUE_PARKED.issue],
@@ -373,6 +399,33 @@ export function boardPhase(ctx: LiveContext): LivePhase {
           `document.querySelector('[data-board-column="parked"] [data-work-item="${QUEUE_PARKED.issue}"]') === null && document.querySelector('[data-board-column="queued"] [data-work-item="${QUEUE_PARKED.issue}"]') !== null`,
         );
         failures.push(...(await mismatches(page, QUEUE_FACTORY.name, null)));
+
+        const inColumn = (column: string) =>
+          `document.querySelector('[data-board-column="${column}"] [data-work-item="${REVISED}"]') !== null`;
+        if (await page.evaluate<boolean>(inColumn('build')))
+          failures.push(`board: work item ${REVISED} is in Build before its work revision`);
+        ms.revisedToBuild = await writeToScreen(
+          page,
+          deps,
+          ['revision', '--issue', String(REVISED), '--build', 'running'],
+          inColumn('build'),
+        );
+        ms.buildToAppCheck = await writeToScreen(
+          page,
+          deps,
+          ['revision', '--issue', String(REVISED), '--build', 'ready'],
+          inColumn('app'),
+        );
+        failures.push(...(await mismatches(page, QUEUE_FACTORY.name, null)));
+
+        // 401 is in Build under the running build step started above.
+        ms.stepText = await writeToScreen(
+          page,
+          deps,
+          ['step', '--run', QUEUE_RUNS.build, '--step', NEXT_STEP, '--event', 'node_started'],
+          `(document.querySelector('[data-work-item="401"] [data-run]')?.textContent ?? '').includes('verify')`,
+        );
+        failures.push(...(await mismatches(page, QUEUE_FACTORY.name, null)));
       } finally {
         await page.close().catch(() => undefined);
         await restore();
@@ -404,6 +457,21 @@ export function boardPhase(ctx: LiveContext): LivePhase {
         `a re-triage of #${QUEUE_PARKED.issue}`,
         `${QUEUE_FACTORY.name}'s Queued column`,
         ms.unparked,
+      ),
+      ...lateWrite(
+        `a work/${REVISED} revision with a running build`,
+        `${QUEUE_FACTORY.name}'s Build column`,
+        ms.revisedToBuild,
+      ),
+      ...lateWrite(
+        `a work/${REVISED} revision ready for the app check`,
+        `${QUEUE_FACTORY.name}'s App check column`,
+        ms.buildToAppCheck,
+      ),
+      ...lateWrite(
+        `a ${NEXT_STEP} step on 401`,
+        `the "<workflow> · <step>" line of 401's card`,
+        ms.stepText,
       ),
     ],
 

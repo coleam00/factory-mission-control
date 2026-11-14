@@ -8,7 +8,7 @@ const EVENTS = ['node_started', 'node_completed', 'node_failed'] as const;
 type StepEvent = (typeof EVENTS)[number];
 
 const USAGE =
-  'usage: bun run fixture:write step [--run <id>] [--step <step id>] [--event node_started|node_completed|node_failed] [--error <text>] | attention --run <id> | label [--label <name>] [--issue <number>] | retriage --issue <number> | metrics | comment | issue | pin | verdict [--pin <sha prefix>] | decision';
+  'usage: bun run fixture:write step [--run <id>] [--step <step id>] [--event node_started|node_completed|node_failed] [--error <text>] | attention --run <id> | label [--label <name>] [--issue <number>] | retriage --issue <number> | revision --issue <number> --build running|ready | metrics | comment | issue | pin | verdict [--pin <sha prefix>] | decision';
 
 export const WORKFLOW = 'archon-loop';
 export const FACTORY = 'mission-control';
@@ -372,6 +372,70 @@ async function retriage(tx: Tx, issue: number, at: Date): Promise<string> {
   return `work item #${issue}: re-triaged`;
 }
 
+/** The statuses `revision` records on a work item's build: one round done and the next running, or ready for the app check. */
+export const BUILD_STATUSES = ['running', 'ready'] as const;
+type BuildStatus = (typeof BUILD_STATUSES)[number];
+
+/**
+ * Archon's state table and the projection trigger on it, which migration 0028 installs only where
+ * the table exists. The fixture branch check branches fork from predates both, so `revision`
+ * creates what is missing; both statements are idempotent.
+ */
+const STATE_STORE = [
+  `CREATE TABLE IF NOT EXISTS public.remote_agent_state_revisions (
+    project_key text NOT NULL,
+    name text NOT NULL,
+    revision integer NOT NULL CHECK (revision >= 1),
+    value text,
+    operation text NOT NULL,
+    writer_kind text NOT NULL CHECK (writer_kind IN ('run', 'operator')),
+    created_at timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (project_key, name, revision))`,
+  `CREATE OR REPLACE TRIGGER mc_project_work_item_state
+    AFTER INSERT ON public.remote_agent_state_revisions
+    FOR EACH ROW WHEN (NEW.name LIKE 'work/%')
+    EXECUTE FUNCTION mc.project_work_item_state_revision()`,
+];
+
+/**
+ * Appends the next revision of the work item's `work/<n>` document to Archon's state table, as the
+ * queues do, so the projection trigger fills the item's state row; it keeps the row's claim and
+ * triage and records one finished round and the build status. Fails unless the item has a state
+ * row to continue.
+ */
+async function revision(tx: Tx, issue: number, build: BuildStatus, at: Date): Promise<string> {
+  const [state] = await tx.query(
+    `SELECT project_key, revision, triage_at, claim_run_id::text AS claim_run_id
+     FROM mc.work_item_states WHERE number = $1`,
+    [issue],
+  );
+  if (!state) throw new Error(`no work item state for #${issue}, so no revision continues it`);
+  for (const ddl of STATE_STORE) await tx.query(ddl);
+  const next = Number(state.revision) + 1;
+  const time = at.toISOString();
+  const doc = {
+    version: 1,
+    stage: 'deliver',
+    ...(state.claim_run_id !== null && { claim: { run_id: state.claim_run_id } }),
+    facts: {
+      triage: { at: state.triage_at },
+      build: { status: build, at: time, rounds: [{ at: time, reason: 'delivered', reviews: [] }] },
+    },
+  };
+  await tx.query(
+    `INSERT INTO public.remote_agent_state_revisions (project_key, name, revision, value, operation, writer_kind)
+     VALUES ($1, $2, $3, $4, 'put', 'operator')`,
+    [state.project_key, `work/${issue}`, next, JSON.stringify(doc)],
+  );
+  const [after] = await tx.query(
+    'SELECT build_status FROM mc.work_item_states WHERE number = $1 AND revision = $2',
+    [issue, next],
+  );
+  if (after?.build_status !== build)
+    throw new Error(`revision ${next} of work/${issue} did not reach mc.work_item_states`);
+  return `work item #${issue}: revision ${next}, build ${build}`;
+}
+
 /**
  * Writes one completed `archon-metrics-prs` run on the codebase (the factory's repository by default), its `prs` node carrying
  * the records of metricRecordsFixture, as Archon does; the projection trigger fills mc.metric_records.
@@ -428,6 +492,8 @@ export const main: Main = async (argv, deps) => {
         else if (parsed.kind === 'attention')
           report = await pauseOnAttention(tx, parsed.run, deps.now());
         else if (parsed.kind === 'retriage') report = await retriage(tx, parsed.issue, deps.now());
+        else if (parsed.kind === 'revision')
+          report = await revision(tx, parsed.issue, parsed.build, deps.now());
         else if (parsed.kind === 'metrics') report = await writeMetrics(tx, deps.now());
         else report = await writeRow(tx, parsed.kind, deps.now(), parsed);
       });
@@ -441,8 +507,15 @@ export const main: Main = async (argv, deps) => {
 type StepCli = { kind: 'step'; step: string; event: StepEvent; run?: string; error?: string };
 type AttentionCli = { kind: 'attention'; run: string };
 type RetriageCli = { kind: 'retriage'; issue: number };
+type RevisionCli = { kind: 'revision'; issue: number; build: BuildStatus };
 type MetricsCli = { kind: 'metrics' };
-type Cli = StepCli | AttentionCli | RetriageCli | MetricsCli | ({ kind: RowKindName } & RowOptions);
+type Cli =
+  | StepCli
+  | AttentionCli
+  | RetriageCli
+  | RevisionCli
+  | MetricsCli
+  | ({ kind: RowKindName } & RowOptions);
 
 function parseCli(argv: string[]): Cli {
   const { values, positionals } = parseArgs({
@@ -456,6 +529,7 @@ function parseCli(argv: string[]): Cli {
       label: { type: 'string' },
       issue: { type: 'string' },
       error: { type: 'string' },
+      build: { type: 'string' },
     },
   });
   const [kind, ...extra] = positionals;
@@ -473,12 +547,21 @@ function parseCli(argv: string[]): Cli {
     if (Object.keys(others).length > 0) throw new Error('retriage takes only --issue');
     return { kind, issue: Number(issue) };
   }
+  if (kind === 'revision') {
+    const { issue, build, ...others } = values;
+    const status = BUILD_STATUSES.find((name) => name === build);
+    if (issue === undefined || !/^[1-9][0-9]*$/.test(issue) || status === undefined)
+      throw new Error('revision needs --issue <number> and --build running|ready');
+    if (Object.keys(others).length > 0) throw new Error('revision takes only --issue and --build');
+    return { kind, issue: Number(issue), build: status };
+  }
   if (kind === 'metrics') {
     if (Object.keys(values).length > 0) throw new Error('metrics takes no option');
     return { kind };
   }
   if (isRowKind(kind)) {
-    const { pin, label, issue: issueText, ...stepOnly } = values;
+    const { pin, label, issue: issueText, build, ...stepOnly } = values;
+    if (build !== undefined) throw new Error('--build is for revision');
     if (Object.keys(stepOnly).length > 0) {
       throw new Error('--run, --step, --event and --error are for step');
     }
@@ -507,6 +590,7 @@ function parseCli(argv: string[]): Cli {
   if (values.pin !== undefined) throw new Error('--pin is for verdict');
   if (values.label !== undefined) throw new Error('--label is for label');
   if (values.issue !== undefined) throw new Error('--issue is for label');
+  if (values.build !== undefined) throw new Error('--build is for revision');
   if (kind !== 'step') throw new Error(`unknown kind ${kind}`);
   const event = EVENTS.find((name) => name === (values.event ?? 'node_completed'));
   if (!event) throw new Error(`unknown event ${values.event}`);
