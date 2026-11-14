@@ -1,4 +1,4 @@
-import type { ReactElement } from 'react';
+import { type ReactElement, type RefObject, useLayoutEffect, useRef } from 'react';
 import { Link } from 'react-router';
 import {
   type BoardColumn,
@@ -120,7 +120,7 @@ function StageCard({
       data-board-stage={stage.id}
       data-count={stage.items.length}
       aria-label={stage.title}
-      className={`flex min-w-0 flex-col gap-2 p-3 ${wide ? '' : 'min-[760px]:max-h-[calc(100vh-8rem)]'}`}
+      className={`flex min-w-0 flex-col gap-2 p-3 ${wide ? '' : 'min-[760px]:max-h-[max(20rem,calc(100vh-var(--board-row-top,8rem)-1.5rem))]'}`}
     >
       <h2 className="text-[13.5px] font-semibold text-[color:var(--v3-fg)]">{stage.title}</h2>
       <p className="text-[length:var(--v3-t-meta)] text-[color:var(--v3-fg-3)]">{stage.subtitle}</p>
@@ -157,13 +157,21 @@ function StageCard({
   );
 }
 
-function Pipeline({ view, older }: { view: BoardView; older: ReactElement | null }): ReactElement {
+function Pipeline({
+  view,
+  older,
+  row,
+}: {
+  view: BoardView;
+  older: ReactElement | null;
+  row: RefObject<HTMLDivElement | null>;
+}): ReactElement {
   const stages = view.pipeline.filter((s) => s.id !== 'blocked');
   const blocked = view.pipeline.find((s) => s.id === 'blocked');
   const { filed, tracked, dropped } = view.found;
   return (
     <div className="space-y-2.5">
-      <div data-stage-row className="min-w-0 overflow-x-auto">
+      <div ref={row} data-stage-row className="min-w-0 overflow-x-auto">
         <div className="grid grid-cols-1 items-start gap-2.5 min-[760px]:grid-cols-none min-[760px]:grid-flow-col min-[760px]:auto-cols-[minmax(200px,1fr)]">
           {stages.map((stage) => (
             <StageCard key={stage.id} stage={stage} older={stage.id === 'merged' ? older : null} />
@@ -261,8 +269,26 @@ export function BoardBody({
         {view.older} older
       </a>
     ) : null;
+  const root = useRef<HTMLDivElement>(null);
+  const row = useRef<HTMLDivElement>(null);
+  // Where the stage row starts with every scroll at the top, so a column's cap ends in the window.
+  useLayoutEffect(() => {
+    const board = root.current;
+    if (!board) return;
+    const place = () => {
+      const stages = row.current;
+      if (!stages) return;
+      let top = stages.getBoundingClientRect().top;
+      for (let a = stages.parentElement; a; a = a.parentElement) top += a.scrollTop;
+      board.style.setProperty('--board-row-top', `${Math.round(top)}px`);
+    };
+    place();
+    const observer = new ResizeObserver(place);
+    observer.observe(board);
+    return () => observer.disconnect();
+  }, []);
   return (
-    <div className="min-w-0 space-y-4">
+    <div ref={root} className="min-w-0 space-y-4">
       {view.orders.length > 0 ? (
         <div className="flex flex-wrap gap-2.5">
           {view.orders.map((o) => (
@@ -282,7 +308,7 @@ export function BoardBody({
         {view.notInOrder} not in a work order
       </p>
       {mode === 'pipeline' ? (
-        <Pipeline view={view} older={older} />
+        <Pipeline view={view} older={older} row={row} />
       ) : (
         <div className="space-y-2.5">
           {view.columns.map((column) => (
