@@ -668,6 +668,55 @@ test('runs, home-map and health-workable resolve the same item for every source 
   }
 });
 
+test('home-map names the item a waiting run holds from every source of it', async () => {
+  const db = await migratedDb();
+  try {
+    await db.query(
+      `INSERT INTO mc.factories (name, repository, codebase, console) VALUES ('f', 'o/r', 'o/r', 'c')`,
+    );
+    for (let n = 1; n <= 3; n++) {
+      await db.query(
+        `INSERT INTO mc.issues (factory, number, title, state, url, created_at, updated_at)
+         VALUES ('f', $1, $2, 'open', 'u', now(), now())`,
+        [n, `t${n}`],
+      );
+    }
+    const id = (c: number) => `5eed0000-0000-4000-8000-00000000000${c}`;
+    const src = [
+      { claim: 1, facts: null, input: null },
+      { claim: null, facts: 2, input: null },
+      { claim: null, facts: null, input: 3 },
+    ];
+    for (const [k, r] of src.entries()) {
+      await db.query(
+        `INSERT INTO mc.laps (run_id, factory, workflow_name, status, started_at, issue_number, attention_open)
+         VALUES ($1, 'f', 'archon-build-queue', 'paused', now(), $2, true)`,
+        [id(k + 1), r.input],
+      );
+      if (r.facts !== null) {
+        await db.query(
+          `INSERT INTO mc.lap_steps (run_id, step_id, status, started_at, output)
+           VALUES ($1, 'facts', 'completed', now(), $2)`,
+          [id(k + 1), JSON.stringify({ item: { number: r.facts } })],
+        );
+      }
+      if (r.claim !== null) {
+        await db.query(
+          `INSERT INTO mc.claims (factory, issue_number, run_id, claimed_at, released_at)
+           VALUES ('f', $1, $2, now(), now())`,
+          [r.claim, id(k + 1)],
+        );
+      }
+    }
+    const rows = (await db.query(sqlOf('home-map'), ['f', ''])).filter((r) => r.kind === 'waiting');
+    expect(
+      Object.fromEntries(rows.map((r) => [r.run_id as string, [r.number, r.title]])),
+    ).toEqual({ [id(1)]: [1, 't1'], [id(2)]: [2, 't2'], [id(3)]: [3, 't3'] });
+  } finally {
+    await db.close();
+  }
+});
+
 test('failure-groups resolves a failure by a later run on the item every other screen holds', async () => {
   const db = await migratedDb();
   try {
