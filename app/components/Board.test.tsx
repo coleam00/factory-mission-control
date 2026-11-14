@@ -252,6 +252,20 @@ test('a running item shows the live dot and its workflow and step linking to the
   expect(html).not.toContain('returned');
 });
 
+test('a running item between steps shows only its workflow, titled with the bare workflow', () => {
+  const html = inMerged(
+    card({
+      round: 1,
+      dots: [dot('running', 'Round 1: running')],
+      run: { workflow: 'archon-build-queue', step: null, to: '/f/x/runs/abc' },
+    }),
+  );
+  expect(html).toContain('title="archon-build-queue"');
+  expect(html).toMatch(/data-run-workflow[^>]*>archon-build-queue<\/span>/);
+  expect(html).not.toContain('data-run-step');
+  expect(html).not.toContain('null');
+});
+
 test('a merged item shows when it merged, and an asking item its stop line', () => {
   const merged = inMerged(card({ mergedAt: new Date(2026, 10, 12, 9, 7) }));
   expect(merged).toContain('merged 2026-11-12 09:07');

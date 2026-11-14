@@ -374,7 +374,11 @@ test('a run that has just taken a work item is running on the Board, here on the
     expect(column('queued').map((i) => i.number)).not.toContain(404);
     expect(column('build').find((i) => i.number === 404)).toMatchObject({
       round: 1,
-      run: { text: 'archon-build-queue · route', to: `/f/queue-factory/runs/${runId}` },
+      run: {
+        workflow: 'archon-build-queue',
+        step: 'route',
+        to: `/f/queue-factory/runs/${runId}`,
+      },
     });
 
     const live = cardLive(
