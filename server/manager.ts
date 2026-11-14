@@ -552,14 +552,14 @@ async function proposalEvent(
 }
 
 /**
- * The run page's own run, when the prose names it and the model did not list it as a run card.
+ * The run page's own run, when the prose names it and the model did not show it as a run card.
  * Naming is case-insensitive over the raw prose, code spans included, with sibling runs' full ids
  * masked since they share the short id. A link the panel cannot place inline shows after the prose.
  */
-function viewedRunLink(raw: RawStructure, viewed: string | undefined, prose: string) {
-  if (viewed === undefined || !isRunId(viewed)) return [];
+function viewedRunLink(cards: string[], viewed: string | undefined, prose: string) {
+  if (viewed === undefined) return [];
   const id = viewed.toLowerCase();
-  if (raw.runs.some((r) => String(r).toLowerCase() === id)) return [];
+  if (cards.some((r) => r.toLowerCase() === id)) return [];
   const own = replaceRunIds(prose, (uuid) => (uuid.toLowerCase() === id ? uuid : ' '));
   const link = { type: 'link', kind: 'run', id, href: lapHref('', id) } as const;
   return linkify(own.toLowerCase(), [link]).rest.length === 0 ? [{ kind: 'run' as const, id }] : [];
@@ -577,9 +577,10 @@ async function structureEvents(
   viewed: string | undefined,
 ) {
   const raw = parseBlock(block);
-  raw.links.push(...viewedRunLink(raw, viewed, prose));
+  const cards = raw.runs.slice(0, MAX_RUNS);
+  raw.links.push(...viewedRunLink(cards, viewed, prose));
   const events: ManagerEvent[] = await linkEvents(manager, factory, raw.links);
-  const runs = await runSummaries(manager, factory, raw.runs.slice(0, MAX_RUNS));
+  const runs = await runSummaries(manager, factory, cards);
   if (runs.length > 0) events.push({ type: 'runs', runs });
   let proposals = 0;
   for (const proposal of raw.proposals) {

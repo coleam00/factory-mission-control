@@ -288,6 +288,23 @@ ${FENCE}
       expect(await linksOf('Run 5eed0001 failed.', FAILED_RUN, block)).toEqual([FAILED_RUN]);
     });
 
+    const blockOf = (runs: string[]) => `\n${FENCE}mc\n${JSON.stringify({ runs })}\n${FENCE}\n`;
+
+    test('is not linked a second time when the model lists it as a run card', async () => {
+      expect(await linksOf('Run 5eed0001 failed.', FAILED_RUN, blockOf([FAILED_RUN]))).toEqual([]);
+    });
+
+    test('is linked when the model lists it past the run cap, where no card shows it', async () => {
+      const others = Array.from(
+        { length: MAX_RUNS },
+        (_, i) => `5eed0004-0000-4000-8000-${String(i).padStart(12, '0')}`,
+      );
+      const text = 'Run 5eed0001 failed.';
+      expect(await linksOf(text, FAILED_RUN, blockOf([...others, FAILED_RUN]))).toEqual([
+        FAILED_RUN,
+      ]);
+    });
+
     test('is not linked when the prose never names it, or it is not a run of the factory', async () => {
       expect(await linksOf('This run failed.', FAILED_RUN)).toEqual([]);
       expect(await linksOf(`Run ${ghost.slice(0, 8)} failed.`, ghost)).toEqual([]);
