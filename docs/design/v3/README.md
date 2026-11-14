@@ -249,13 +249,17 @@ screenshots `20` and `42`.
 
 - **Pipeline** (default), with a Table alternative. Work orders stay on top as today: name,
   "work order · lands on <target>", a progress bar in state colors, and "N of M merged · building ·
-  needs you".
+  needs you". M counts the order's work items but those closed as not planned or a duplicate, so a
+  finished order reads "M of M merged" with a full bar (owner audit 2026-11-14).
 - **Seven stage columns, left to right:** Intake, Planned, Build, Review, App check, Merge, Merged.
   Each has a name, a muted subtitle (triage · waits for a build slot · build rounds · reviews · app
   check · merge queue · last 7 days), a count, and state pills with counts.
 - **Width.** The Board is the one place exempt from the centered column of owner change 8: its
-  columns use the whole content width. Each column is at least 200 px wide; when the seven do not
-  fit, the row scrolls sideways inside the Board, and the page itself never scrolls sideways.
+  columns use the whole content width. Each column is at least 150 px wide, so all seven fit at
+  1440 px with the Manager closed; when they do not fit, the row scrolls sideways inside the Board,
+  the page itself never scrolls sideways, and the edge that hides columns shows a fade with the
+  hidden columns' names and counts ("Merge 0 · Merged 109 →"), which scrolls to them on click
+  (owner audit 2026-11-14).
 - **Every open work item is in exactly one place**, by the first rule that matches:
   1. parked by a queue, or its stage is blocked or needs a contract: the wide
      **Blocked and parked** card below the columns;
@@ -285,8 +289,12 @@ screenshots `20` and `42`.
      ("archon-build-queue · review__code"), linking to `/runs/<id>`, with the live dot
   5. "returned ×N" when the merge queue sent it back N times (build decisions
      "returned by the merge queue"), linking to the work item timeline
-  6. in Merged: "merged <local time>"
-  7. a failed or asking item's stop line (rule 3)
+  6. in Merged: "merged <local time>". Every merged card has one: the item's merge record, else
+     the merge time of the pull request that closes or names it (`Refs` included). Merged is
+     ordered by that time, newest first (owner audit 2026-11-14).
+  7. a failed or asking item's stop line (rule 3); in Blocked and parked, one muted line that says
+     what it waits on: the parked decision's reason, or "Blocked on #N" for its blocker, or "Needs a
+     contract" (owner audit 2026-11-14)
 - **Mini cards:** a column shows every item, not the first three; a column taller than the
   viewport scrolls inside itself.
 - **A card opens the work item page.** Its timeline is unchanged.
