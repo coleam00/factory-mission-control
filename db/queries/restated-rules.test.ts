@@ -516,6 +516,62 @@ test('the stages Unstick reads are the pinned pack’s', () => {
   for (const stage of literals) expect(stages, `stage '${stage}'`).toContain(stage);
 });
 
+test('the stage the Board reads a Depends on for is the pinned pack’s', () => {
+  const stages = statusUnion('workitem.ts', 'Stage');
+  const literals = [...sqlOf('board').matchAll(/w\.stage (?:=|IS DISTINCT FROM) '([^']*)'/g)].map(
+    (m) => m[1],
+  );
+  expect(literals.length).toBeGreaterThan(0);
+  for (const stage of literals) expect(stages, `stage '${stage}'`).toContain(stage);
+});
+
+test('a Depends on is open on the Board exactly when Unstick does not count it gone', async () => {
+  const db = await onTheSeed();
+  const cases: [string, string | null][] = [
+    ['a closed issue', null],
+    [
+      'a closed pull request',
+      `INSERT INTO mc.pull_requests (factory, number, title, state, merged_at, head_sha, url, created_at, updated_at) VALUES ('mission-control', 9101, 't', 'closed', now(), 'h', 'u', now(), now())`,
+    ],
+    ['an open issue', null],
+    [
+      'an open pull request',
+      `INSERT INTO mc.pull_requests (factory, number, title, state, merged_at, head_sha, url, created_at, updated_at) VALUES ('mission-control', 9102, 't', 'open', NULL, 'h', 'u', now(), now())`,
+    ],
+    ['a number that is not mirrored', null],
+  ];
+  const depends = [4, 9101, 12, 9102, 999];
+  try {
+    await db.query(
+      `UPDATE mc.issues SET state = 'closed' WHERE factory = 'mission-control' AND number = 4`,
+    );
+    await db.query(
+      `INSERT INTO mc.work_item_states (project_key, number, revision, stage)
+       SELECT codebase, 9, 1, 'blocked' FROM mc.factories WHERE name = 'mission-control'`,
+    );
+    for (const [i, [name, insert]] of cases.entries()) {
+      if (insert !== null) await db.query(insert);
+      await db.query(`DELETE FROM mc.issue_dependencies WHERE issue_number = 9`);
+      await db.query(
+        `INSERT INTO mc.issue_dependencies (factory, issue_number, depends_on) VALUES ('mission-control', 9, $1)`,
+        [depends[i]],
+      );
+      const [row] = (
+        await db.query(queries.find(([n]) => n === 'board')?.[1] as string, ['mission-control'])
+      ).filter((r) => r.number === 9);
+      const gone = (await db.query(sqlOf('unstick'), ['mission-control'])).some(
+        (r) => r.kind === 'blocked' && r.number === 9,
+      );
+      expect([name, ((row?.blockers as number[] | undefined) ?? []).length === 0]).toEqual([
+        name,
+        gone,
+      ]);
+    }
+  } finally {
+    await db.close();
+  }
+}, 60_000);
+
 test('the stages the Board calls blocked are the pinned pack’s', () => {
   const stages = statusUnion('workitem.ts', 'Stage');
   for (const stage of BLOCKED_STAGES) expect(stages, `stage '${stage}'`).toContain(stage);

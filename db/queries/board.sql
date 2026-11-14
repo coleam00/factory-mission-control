@@ -92,10 +92,21 @@ LEFT JOIN LATERAL (
   -- The queues' own state for the item (Archon's work/<n> document), as the Board's parked rule reads it.
   SELECT w.build_status, w.build_at, w.merge_status, w.merge_at, w.triage_at, w.stage,
     w.rounds, w.returns, w.last_decision, w.parked_reason, w.pr_number,
-    (SELECT coalesce(array_agg(k.blocker ORDER BY k.blocker), '{}'::int[]) FROM mc.work_item_blockers k
-     WHERE k.project_key = w.project_key AND k.number = w.number) AS blockers
+    -- The parked decision's blockers, else (a stage 'blocked' item the queues stopped) its open `Depends on`:
+    -- not closed as an issue and not closed or merged as a pull request, as unstick.sql counts them gone.
+    CASE WHEN cardinality(pb.items) > 0 OR w.stage IS DISTINCT FROM 'blocked' THEN pb.items ELSE dp.items END AS blockers
   FROM mc.work_item_states w
   JOIN mc.factories f ON f.codebase = w.project_key
+  CROSS JOIN LATERAL (
+    SELECT coalesce(array_agg(k.blocker ORDER BY k.blocker), '{}'::int[]) AS items FROM mc.work_item_blockers k
+    WHERE k.project_key = w.project_key AND k.number = w.number
+  ) pb
+  CROSS JOIN LATERAL (
+    SELECT coalesce(array_agg(d.depends_on ORDER BY d.depends_on), '{}'::int[]) AS items FROM mc.issue_dependencies d
+    WHERE d.factory = f.name AND d.issue_number = w.number
+      AND NOT EXISTS (SELECT 1 FROM mc.issues di WHERE di.factory = d.factory AND di.number = d.depends_on AND di.state = 'closed')
+      AND NOT EXISTS (SELECT 1 FROM mc.pull_requests dr WHERE dr.factory = d.factory AND dr.number = d.depends_on AND dr.state = 'closed')
+  ) dp
   WHERE f.name = i.factory AND w.number = i.number
 ) st ON true
 LEFT JOIN LATERAL (

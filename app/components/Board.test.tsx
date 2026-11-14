@@ -352,4 +352,12 @@ test('a blocked card and its Table row say what the item waits on', () => {
     'table',
   );
   expect(table).toContain('Needs a contract');
+  const row = render(
+    {
+      ...empty,
+      columns: [{ id: 'parked', title: 'Parked', holder: 'x', items: [card({ waits: blockers })] }],
+    },
+    'table',
+  );
+  expect(row).toMatch(/Blocked on <a [^>]*href="\/f\/x\/work\/3"[^>]*>#3<\/a>/);
 });
