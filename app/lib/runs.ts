@@ -121,7 +121,7 @@ export function took(
 }
 
 /** The part of a step's address that says where it is: `ship__deliver__rounds.review__synthesize` reads `review__synthesize`. */
-const stepName = (step: string): string => step.split('.').pop() ?? step;
+export const stepName = (step: string): string => step.split('.').pop() ?? step;
 
 /** The mono line under the workflow: round, step and pull request, each when known. */
 export function subLine(run: RunRow): string {

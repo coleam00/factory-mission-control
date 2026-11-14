@@ -1,6 +1,7 @@
 import { expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join, sep } from 'node:path';
+import { REASON_STATE } from '../lib/board';
 import { allCards, FACTORY_MAP } from './factory-map';
 import { gateOutcomes, type MapRightNowRow } from './live';
 
@@ -184,4 +185,12 @@ test('the gate card lists exactly the pinned gate refusals', () => {
   const gate = allCards(FACTORY_MAP).find((c) => c.id === 'm-gate');
   const lines = (gate?.details?.how ?? []).filter((line) => line.startsWith('It refuses'));
   expect(new Set(REFUSALS.map(([, line]) => line))).toEqual(new Set(lines));
+});
+
+test("the board's round-dot reasons are reasons the pack's deliver round ends with", () => {
+  const ended = /type Ended =([\s\S]*?);/.exec(
+    read('fixtures', 'pack', 'queue', 'sdlc', 'deliver', 'scripts', 'round.ts'),
+  )?.[1];
+  expect(ended, 'round.ts declares Ended').toBeDefined();
+  for (const reason of Object.keys(REASON_STATE)) expect(ended).toContain(`'${reason}'`);
 });
