@@ -1,5 +1,7 @@
 SELECT u.kind, u.number, u.run_id, u.workflow_name, u.waits_on, u.since, u.action, u.title,
-  u.blocker_titles, u.reason, u.console, u.open, s.action AS sent_action, s.sent_at
+  u.blocker_titles, u.reason, u.console, u.open,
+  CASE WHEN NOT (x.action = 'close' AND (NOT u.open OR moved.n > 0)) AND intake.n = 0 THEN x.action END AS sent_action,
+  CASE WHEN NOT (x.action = 'close' AND (NOT u.open OR moved.n > 0)) AND intake.n = 0 THEN x.sent_at END AS sent_at
 FROM (
 SELECT 'blocked'::text AS kind, i.number, NULL::uuid AS run_id, NULL::text AS workflow_name,
   b.waits_on, b.since, 'retriage'::text AS action,
@@ -14,22 +16,21 @@ FROM mc.issues i
 JOIN mc.factories f ON f.name = i.factory
 JOIN mc.work_item_states w ON w.project_key = f.codebase AND w.number = i.number AND w.stage = 'blocked'
 CROSS JOIN LATERAL (
-  SELECT count(*) AS n, count(g.at) AS gone, max(g.at) AS since,
+  SELECT count(*) AS n, count(greatest(gp.at, gi.at)) AS gone, max(greatest(gp.at, gi.at)) AS since,
     array_to_string(array_agg('#' || d.depends_on ORDER BY d.depends_on), ', ') AS waits_on,
-    array_agg(coalesce(g.title, '') ORDER BY d.depends_on) AS blocker_titles
+    array_agg(coalesce(least(gp.title, gi.title), '') ORDER BY d.depends_on) AS blocker_titles
   FROM mc.issue_dependencies d
   -- Gone: closed or merged. A number that is not mirrored is not known to be gone.
   LEFT JOIN LATERAL (
-    SELECT max(x.at) AS at, min(x.title) AS title FROM (
-      SELECT coalesce(p.merged_at, p.closed_at, p.updated_at) AS at, p.title
-      FROM mc.pull_requests p
-      WHERE p.factory = d.factory AND p.number = d.depends_on AND p.state = 'closed'
-      UNION ALL
-      SELECT coalesce(di.closed_at, di.updated_at), di.title
-      FROM mc.issues di
-      WHERE di.factory = d.factory AND di.number = d.depends_on AND di.state = 'closed'
-    ) x
-  ) g ON true
+    SELECT max(coalesce(p.merged_at, p.closed_at, p.updated_at)) AS at, min(p.title) AS title
+    FROM mc.pull_requests p
+    WHERE p.factory = d.factory AND p.number = d.depends_on AND p.state = 'closed'
+  ) gp ON true
+  LEFT JOIN LATERAL (
+    SELECT max(coalesce(di.closed_at, di.updated_at)) AS at, min(di.title) AS title
+    FROM mc.issues di
+    WHERE di.factory = d.factory AND di.number = d.depends_on AND di.state = 'closed'
+  ) gi ON true
   WHERE d.factory = i.factory AND d.issue_number = i.number
 ) b
 WHERE i.factory = $1 AND i.state = 'open' AND b.n > 0 AND b.gone = b.n
@@ -41,21 +42,20 @@ FROM mc.issues i
 JOIN mc.factories f ON f.name = i.factory
 JOIN mc.work_item_states w ON w.project_key = f.codebase AND w.number = i.number
 CROSS JOIN LATERAL (
-  SELECT count(*) AS n, count(g.at) AS gone, max(g.at) AS since,
+  SELECT count(*) AS n, count(greatest(gp.at, gi.at)) AS gone, max(greatest(gp.at, gi.at)) AS since,
     array_to_string(array_agg('#' || k.blocker ORDER BY k.blocker), ', ') AS waits_on,
-    array_agg(coalesce(g.title, '') ORDER BY k.blocker) AS blocker_titles
+    array_agg(coalesce(least(gp.title, gi.title), '') ORDER BY k.blocker) AS blocker_titles
   FROM mc.work_item_blockers k
   LEFT JOIN LATERAL (
-    SELECT max(x.at) AS at, min(x.title) AS title FROM (
-      SELECT coalesce(p.merged_at, p.closed_at, p.updated_at) AS at, p.title
-      FROM mc.pull_requests p
-      WHERE p.factory = i.factory AND p.number = k.blocker AND p.state = 'closed'
-      UNION ALL
-      SELECT coalesce(di.closed_at, di.updated_at), di.title
-      FROM mc.issues di
-      WHERE di.factory = i.factory AND di.number = k.blocker AND di.state = 'closed'
-    ) x
-  ) g ON true
+    SELECT max(coalesce(p.merged_at, p.closed_at, p.updated_at)) AS at, min(p.title) AS title
+    FROM mc.pull_requests p
+    WHERE p.factory = i.factory AND p.number = k.blocker AND p.state = 'closed'
+  ) gp ON true
+  LEFT JOIN LATERAL (
+    SELECT max(coalesce(di.closed_at, di.updated_at)) AS at, min(di.title) AS title
+    FROM mc.issues di
+    WHERE di.factory = i.factory AND di.number = k.blocker AND di.state = 'closed'
+  ) gi ON true
   WHERE k.project_key = w.project_key AND k.number = w.number
 ) b
 -- The Board's parked rule (`parked` in app/lib/board.ts), as health-workable.sql restates it.
@@ -84,26 +84,25 @@ JOIN mc.factories f ON f.codebase = w.project_key AND f.name = $1
 LEFT JOIN mc.issues wi ON wi.factory = f.name AND wi.number = w.number
 JOIN mc.laps l ON l.run_id = w.claim_run_id AND l.status IN ('completed', 'cancelled')
 )  u
--- Sent: the item's latest write from the dashboard (retriage, close or comment, never undone or failed
+-- Sent (the two tests are counted by lateral joins and read in the select list, as a precaution: a
+-- subquery in a NOT/OR is not probed in db/queries/REALTIME.md): the item's latest write from the dashboard (retriage, close or comment, never undone or failed
 -- ones), until the mirror catches up: an intake run on the item has finished since,
 -- or, for a close, the mirror holds the issue closed or has moved it since the CLI returned (a reopened
 -- issue is open again, so only its updated_at tells it was closed). The close's own note moves the
 -- issue before the CLI returns, so it does not end the close. Rows from before `finished_at` use sent_at.
 LEFT JOIN LATERAL (
-  SELECT x.action, x.sent_at FROM (
-    SELECT a.action, a.sent_at, coalesce(a.finished_at, a.sent_at) AS finished_at
-    FROM mc.actions a
-    WHERE a.factory = $1 AND a.item_number = u.number AND NOT a.undone AND a.exit_code = 0
-    ORDER BY a.sent_at DESC, a.id DESC
-    LIMIT 1
-  ) x
-  WHERE NOT (x.action = 'close' AND (NOT u.open OR EXISTS (
-      SELECT 1 FROM mc.issues ci
-      WHERE ci.factory = $1 AND ci.number = u.number AND ci.updated_at > x.finished_at
-    )))
-    AND NOT EXISTS (
-      SELECT 1 FROM mc.laps il
-      WHERE il.factory = $1 AND il.issue_number = u.number AND il.workflow_name = 'archon-intake'
-        AND il.started_at >= x.sent_at AND il.completed_at IS NOT NULL
-    )
-) s ON true
+  SELECT a.action, a.sent_at, coalesce(a.finished_at, a.sent_at) AS finished_at
+  FROM mc.actions a
+  WHERE a.factory = $1 AND a.item_number = u.number AND NOT a.undone AND a.exit_code = 0
+  ORDER BY a.sent_at DESC, a.id DESC
+  LIMIT 1
+) x ON true
+LEFT JOIN LATERAL (
+  SELECT count(*) AS n FROM mc.issues ci
+  WHERE ci.factory = $1 AND ci.number = u.number AND ci.updated_at > x.finished_at
+) moved ON true
+LEFT JOIN LATERAL (
+  SELECT count(*) AS n FROM mc.laps il
+  WHERE il.factory = $1 AND il.issue_number = u.number AND il.workflow_name = 'archon-intake'
+    AND il.started_at >= x.sent_at AND il.completed_at IS NOT NULL
+) intake ON true
