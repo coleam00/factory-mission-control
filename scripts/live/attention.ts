@@ -1,7 +1,7 @@
 import { loginMissing, operatorsOf } from '../../app/lib/actions';
 import type { UnstickRow } from '../../app/lib/attention';
 import { ATTENTION_SOURCES, badgePanelName, unstickCards } from '../../app/lib/attention-page';
-import { SEED_FAILURES_SINCE, SEED_NOW } from '../../db/queries/test-seed';
+import { SEED_FAILURES_SINCE } from '../../db/queries/test-seed';
 import { openPage, type Page } from '../lib/cdp';
 import type { Row } from '../lib/db';
 import {
@@ -305,7 +305,7 @@ export function attentionPhase(ctx: LiveContext): LivePhase {
     async open() {
       const page = await openPage(deps.env);
       attentionPage = page;
-      await page.goto(url(), SEED_NOW);
+      await page.goto(url());
       await page.evaluate('window.__mcNoReload = true');
       const ready = await page.evaluate<boolean>(
         pageWait(

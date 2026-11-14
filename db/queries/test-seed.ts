@@ -27,7 +27,7 @@ export const CHECK_APP = ['archon-loop', 'check-app'];
 /** The one-lap screen's panels: keyed by the lap's run id too. */
 export const LAP_PANELS = ['one-lap', 'one-lap-steps', 'one-lap-checks', 'one-lap-map'];
 export const LAP_RUN = '5eed0001-0000-4000-8000-000000000003';
-/** The instant the seed is judged at: 30 minutes before the whole hour after its newest stop (2026-10-24T11:35Z), so its failures are unresolved by age. The live check pins the browser's clock to it. */
+/** The instant the seed is judged at: 30 minutes before the whole hour after its newest stop (2026-10-24T11:35Z), so its failures are unresolved by age. */
 export const SEED_NOW = '2026-10-24T11:30:00.000Z';
 /** failure-groups' `$2` on the seed, from the seed's own clock. */
 export const SEED_FAILURES_SINCE = failuresSince(new Date(SEED_NOW));
