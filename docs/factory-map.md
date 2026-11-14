@@ -118,7 +118,7 @@ its steps have screens beside the pack's.
 ## Live counts
 
 The cards' chips come from these live queries (`map-right-now` also feeds the Merge and Staging views' lists, and the Manager view adds three, below): `home-map` (each running run of the factory with its
-running steps and issue, the runs waiting on attention, whether the factory is on the queues, the
+running steps and issue, the runs waiting on attention with the steps they were running, whether the factory is on the queues, the
 open pull requests whose latest app check failed, the merges with when they finished, and whether
 the version the address names is recorded),
 `health-workable`, `owner-queue`, `product-documents` (below) and `work-orders` (the distinct `work-order:<name>` labels on the

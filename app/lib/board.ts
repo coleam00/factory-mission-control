@@ -3,10 +3,11 @@
  * work orders it belongs to. The stage columns are the map's own cards, read with the map's "here"
  * rule, so the board never disagrees with the map. Pure, no React.
  */
-import { FACTORY_MAP, type Role } from '../map/factory-map';
+import { cardForStep, FACTORY_MAP, type Role } from '../map/factory-map';
 import { deepestStep, type HomeMapRow, lapCard, onQueues, type WorkOrderRow } from '../map/live';
 import { localMinute } from './format';
 import type { HealthWorkableRow } from './health';
+import { stepPath } from './lap-graph';
 import { lapHref } from './one-lap';
 import {
   APP_CHECK_WORKFLOW,
@@ -417,7 +418,7 @@ function chipsOf(item: BoardRow, home: HomeId, needsYou: boolean, running: boole
 }
 
 interface Facts {
-  /** Each work item a paused run waits on a person for, by the item the run holds (its claim, else its facts step's item, else its number input): the stage of that run's workflow. */
+  /** Each work item a paused run waits on a person for, by the item the run holds (its claim, else its facts step's item, else its number input): the stage of that run's map card (its queue workflow's, else its running step's). */
   attention: ReadonlyMap<number, StageId | null>;
   /** The question each waiting run recorded, by the number its ask names: issues and pull requests share one number space. */
   questions: ReadonlyMap<number, string>;
@@ -427,13 +428,23 @@ interface Facts {
   workable: ReadonlySet<number>;
 }
 
-/** The map card a paused run sits on: its workflow's own stage, as a paused run has no running step. */
+/** The stage of a paused queue run, taken before its step: a queue workflow's steps can sit under another card (the build queue's review round). */
 const WORKFLOW_STAGE: Readonly<Record<string, StageId>> = {
   [INTAKE_WORKFLOW]: 'intake',
   [BUILD_QUEUE_WORKFLOW]: 'build',
   [APP_CHECK_WORKFLOW]: 'app',
   [MERGE_QUEUE_WORKFLOW]: 'merge',
 };
+
+/** The column of a paused run's map card: a queue workflow's own stage, else the card covering the step it was running when it paused. */
+function pausedStage(row: HomeMapRow): StageId | null {
+  const queue = WORKFLOW_STAGE[row.workflow ?? ''];
+  if (queue !== undefined) return queue;
+  const step = deepestStep(row.steps);
+  if (step === undefined || row.workflow === null) return null;
+  const id = cardForStep(FACTORY_MAP, row.workflow, stepPath(step))?.id;
+  return id !== undefined && isStage(id) ? id : null;
+}
 
 type WorkItemState = Pick<
   BoardRow,
@@ -517,9 +528,7 @@ function factsOf(
   return {
     attention: new Map(
       map.flatMap((r) =>
-        r.kind === 'waiting' && r.number !== null
-          ? [[r.number, WORKFLOW_STAGE[r.workflow ?? ''] ?? null] as const]
-          : [],
+        r.kind === 'waiting' && r.number !== null ? [[r.number, pausedStage(r)] as const] : [],
       ),
     ),
     questions: new Map(

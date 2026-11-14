@@ -465,6 +465,30 @@ test.each(placements)('%s: %s', (stage, _why, one, map) => {
   expect(home(v, stage)).toEqual([one.number as number]);
 });
 
+test('a paused run holds its item in its map card column with Needs you; a paused queue run in its own', () => {
+  const paused = (number: number, workflow: string, steps: string[] | null): HomeMapRow => ({
+    ...lap(number, workflow, steps),
+    kind: 'waiting',
+  });
+  const v = view({
+    board: [item(1), item(2), item(3), item(4)],
+    map: [
+      paused(1, 'archon-loop', [BUILD]),
+      paused(2, 'archon-loop', [REVIEW]),
+      paused(3, 'archon-build-queue', [REVIEW]),
+      paused(4, 'archon-loop', null),
+    ],
+  });
+  const at = (id: string) =>
+    v.pipeline.find((s) => s.id === id)?.items.map((i) => [i.number, i.status]);
+  expect(at('build')).toEqual([
+    [1, 'needs you'],
+    [3, 'needs you'],
+  ]);
+  expect(at('review')).toEqual([[2, 'needs you']]);
+  expect(at('intake')).toEqual([[4, 'needs you']]);
+});
+
 test('asking at merge is Merge with the Needs you status, and Ready or waiting is never Build', () => {
   const board = [
     item(1, { merge_status: 'asking' }),

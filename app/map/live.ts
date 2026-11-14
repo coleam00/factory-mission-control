@@ -48,7 +48,7 @@ export interface HomeMapRow {
   run_id: string | null;
   /** A lap's workflow. */
   workflow: string | null;
-  /** A lap's running steps by Archon's step id, newest first; null while none runs. A picks row's one step. */
+  /** A lap's running steps by Archon's step id, newest first; null while none runs. A waiting row carries the steps its paused run was running. A picks row's one step. */
   steps: string[] | null;
   /** A lap's issue (its claim, else its facts step's item, else its number input), or a failing pull request. */
   number: number | null;
