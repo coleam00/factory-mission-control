@@ -92,6 +92,7 @@ const ORDER = (over: Partial<WorkOrderRow> = {}): WorkOrderRow => ({
   name: 'screens',
   total_count: 4,
   open_count: 3,
+  done_count: 1,
   merged_count: 1,
   lands_on: null,
   last_closed_at: null,
@@ -244,7 +245,7 @@ test('an item in two work orders shows under each, with a chip for each', () => 
 
 test('a work order drops off 7 days after its last issue closes', () => {
   const finished = (days: number) =>
-    ORDER({ open_count: 0, merged_count: 4, last_closed_at: daysAgo(days) });
+    ORDER({ open_count: 0, done_count: 4, merged_count: 4, last_closed_at: daysAgo(days) });
   expect(view({ orders: [finished(6)] }).orders).toHaveLength(1);
   expect(view({ orders: [finished(8)] }).orders).toHaveLength(0);
   expect(nextChange({ board: [], orders: [finished(6)] }, NOW)).toEqual(
@@ -621,11 +622,11 @@ test('a work order line counts building and needs you over every item, whatever 
     'other',
   );
   const screens = v.orders.find((o) => o.name === 'screens');
-  expect(screens && orderLine(screens)).toBe('1 of 4 merged · 1 building · 1 needs you');
+  expect(screens && orderLine(screens)).toBe('1 of 4 done · 1 building · 1 needs you');
   const other = v.orders.find((o) => o.name === 'other');
-  expect(other && orderLine(other)).toBe('1 of 4 merged');
-  expect(orderTarget({ name: 'x', merged: 0, total: 1, landsOn: null })).toBe('work order');
-  expect(orderTarget({ name: 'x', merged: 0, total: 1, landsOn: 'staging' })).toBe(
+  expect(other && orderLine(other)).toBe('1 of 4 done');
+  expect(orderTarget({ name: 'x', done: 0, total: 1, landsOn: null })).toBe('work order');
+  expect(orderTarget({ name: 'x', done: 0, total: 1, landsOn: 'staging' })).toBe(
     'work order · lands on staging',
   );
 });

@@ -177,7 +177,7 @@ export interface WorkItem {
 
 export interface OrderPanel {
   name: string;
-  merged: number;
+  done: number;
   total: number;
   landsOn: string | null;
 }
@@ -194,15 +194,15 @@ export function boardHref(factory: string, order: string): string {
 export function orderPanel(row: WorkOrderRow): OrderPanel {
   return {
     name: row.name,
-    merged: row.merged_count,
+    done: row.done_count,
     total: row.total_count,
     landsOn: row.lands_on,
   };
 }
 
 /** How far a work order has got, in the words the Board and the map both show. */
-export function orderProgress({ merged, total, landsOn }: OrderPanel): string {
-  return `${merged} of ${total} merged${landsOn === null ? '' : ` · lands on ${landsOn}`}`;
+export function orderProgress({ done, total, landsOn }: OrderPanel): string {
+  return `${done} of ${total} done${landsOn === null ? '' : ` · lands on ${landsOn}`}`;
 }
 
 export interface BoardColumn extends ColumnSpec {
@@ -291,9 +291,9 @@ export function orderTarget({ landsOn }: OrderPanel): string {
 }
 
 /** How far a work order has got, as the strip counts it; a part of zero is left out. */
-export function orderLine({ merged, total, building, needsYou }: BoardOrder): string {
+export function orderLine({ done, total, building, needsYou }: BoardOrder): string {
   return [
-    `${merged} of ${total} merged`,
+    `${done} of ${total} done`,
     ...(building > 0 ? [`${building} building`] : []),
     ...(needsYou > 0 ? [`${needsYou} needs you`] : []),
   ].join(' · ');

@@ -107,8 +107,11 @@ export interface MapMerge {
 /** One row of `db/queries/work-orders.sql`: a work order, the issues carrying one `work-order:` label. */
 export interface WorkOrderRow {
   name: string;
+  /** The order's issues but those closed as not planned or a duplicate. */
   total_count: number;
   open_count: number;
+  /** Those closed otherwise, by a merged pull request or by hand. */
+  done_count: number;
   merged_count: number;
   /** The `lands-on:<target>` label its issues carry, when one does. */
   lands_on: string | null;

@@ -63,8 +63,8 @@ test('the seed recount: each column and each work order bar equal the definition
   expect(mission.older).toBe(8);
   // foundations holds 5, 6, 7 (merged) and 9 (open); screens holds 10 (merged), 11, 12 and 14.
   expect(mission.orders).toMatchObject([
-    { name: 'foundations', merged: 3, total: 4, landsOn: 'main' },
-    { name: 'screens', merged: 1, total: 4, landsOn: 'staging' },
+    { name: 'foundations', done: 3, total: 4, landsOn: 'main' },
+    { name: 'screens', done: 1, total: 4, landsOn: 'staging' },
   ]);
   // The filter narrows the columns to the order, and leaves the panels.
   const screens = await view('mission-control', 'screens');

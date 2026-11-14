@@ -17,7 +17,7 @@ function view(orders: number): BoardView {
   return {
     orders: Array.from({ length: orders }, (_, i) => ({
       name: `order-${i}`,
-      merged: 1,
+      done: 1,
       total: 4,
       landsOn: 'main',
       building: 1,

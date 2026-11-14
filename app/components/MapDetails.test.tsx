@@ -85,6 +85,7 @@ const ONE: { [K in Chip]: Pick<Required<CardLive>, K> } = {
         name: 'order',
         total_count: 1,
         open_count: 1,
+        done_count: 0,
         merged_count: 0,
         lands_on: null,
         last_closed_at: null,

@@ -354,7 +354,7 @@ function OrderStrip({
         {orderTarget(order)}
       </span>
       <span className="mt-2 flex h-1.5 overflow-hidden rounded-full bg-[var(--v3-raised)]">
-        <span style={{ width: share(order.merged), background: stateColor('done') }} />
+        <span style={{ width: share(order.done), background: stateColor('done') }} />
         <span style={{ width: share(order.building), background: stateColor('running') }} />
         <span style={{ width: share(order.needsYou), background: stateColor('needs-you') }} />
       </span>
