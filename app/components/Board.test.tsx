@@ -415,7 +415,10 @@ afterEach(() => {
 
 test('a remembered open row shows every finished card after the row, a selected one once', () => {
   openRow();
-  const view = { ...empty, orders: [order('live', 1, 3), order('old-a', 8, 8), order('old-b', 4, 4)] };
+  const view = {
+    ...empty,
+    orders: [order('live', 1, 3), order('old-a', 8, 8), order('old-b', 4, 4)],
+  };
   for (const selected of [undefined, 'old-b']) {
     const html = render(view, 'pipeline', selected);
     const row = html.indexOf('data-finished-orders');
