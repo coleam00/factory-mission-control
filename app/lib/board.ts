@@ -662,7 +662,8 @@ export function boardView(sources: BoardSources, now: Date, order: string | null
     }
     if (order !== null && !names.includes(order)) continue;
     const dots = recordedRounds(row.round_list);
-    const building = facts.running.get(number)?.workflow === BUILD_QUEUE_WORKFLOW;
+    const building =
+      row.state === 'open' && facts.running.get(number)?.workflow === BUILD_QUEUE_WORKFLOW;
     if (building) dots.push({ state: 'running', title: `Round ${dots.length + 1}: running` });
     const item: WorkItem = {
       number,

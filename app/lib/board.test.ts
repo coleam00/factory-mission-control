@@ -616,6 +616,15 @@ test('a build round keeps its live dot while an app check runs on its pull reque
   expect(card?.dots.map((d) => d.state)).toEqual(['running']);
 });
 
+test('a merged item with a still-running build round shows no live round', () => {
+  const v = view({
+    board: [item(1, { state: 'closed', closed_at: daysAgo(1), rounds: 1 })],
+    map: [lap(1, 'archon-build-queue', [REVIEW])],
+  });
+  const card = v.pipeline.flatMap((s) => s.items).find((i) => i.number === 1);
+  expect(card).toMatchObject({ round: 0, dots: [] });
+});
+
 test('an item held only by a running app check shows that run, with its step from the map', () => {
   const run = '00000000-0000-4000-8000-0000000000bb';
   const check: HomeMapRow = {
