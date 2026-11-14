@@ -56,15 +56,22 @@ JOIN (
 WHERE pr.factory = $1 AND pr.state = 'open'
 UNION ALL
 -- Each run of the factory waiting on a person (the chip counts the factory as it stands, not a
--- version): a paused run whose attention wait has no answer. The issue's own title, and the
--- question the run stopped on (its recorded stop line, as the Runs page reads it) for the Board.
--- `asks` is the number the question names, the attention item's: the issue of a build-queue run
--- that claimed it itself, the pull request a queue ask names. `number` stays the run's number
--- input, which is what places an item.
-SELECT 'waiting', l.run_id, l.workflow_name, NULL, l.issue_number, i.title, i.url, NULL, NULL, st.line,
+-- version): a paused run whose attention wait has no answer, with the item it holds (the lap
+-- rule above). The issue's own title, and the question the run stopped on (its recorded stop
+-- line, as the Runs page reads it) for the Board. `asks` is the number the question names, the
+-- attention item's: the issue of a build-queue run that claimed it itself, the pull request a
+-- queue ask names.
+SELECT 'waiting', l.run_id, l.workflow_name, NULL, coalesce(c.issue_number, (facts.output -> 'item' ->> 'number')::int, l.issue_number),
+  i.title, i.url, NULL, NULL, st.line,
   coalesce(a.item_number, l.issue_number)
 FROM mc.laps l
-LEFT JOIN mc.issues i ON i.factory = l.factory AND i.number = l.issue_number
+LEFT JOIN LATERAL (
+  SELECT c.issue_number FROM mc.claims c
+  WHERE c.factory = l.factory AND c.run_id = l.run_id
+  ORDER BY c.claimed_at DESC NULLS LAST, c.issue_number LIMIT 1
+) c ON true
+LEFT JOIN mc.lap_steps facts ON facts.run_id = l.run_id AND facts.step_id = 'facts'
+LEFT JOIN mc.issues i ON i.factory = l.factory AND i.number = coalesce(c.issue_number, (facts.output -> 'item' ->> 'number')::int, l.issue_number)
 LEFT JOIN mc.run_stops st ON st.run_id = l.run_id
 LEFT JOIN mc.attention_items a ON a.run_id = l.run_id
 WHERE l.factory = $1 AND l.attention_open

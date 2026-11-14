@@ -402,6 +402,52 @@ test('a run that has just taken a work item is running on the Board, here on the
   }
 });
 
+test('an item a paused run waits on holds only by its claim or its facts step is on its run card with Needs you', async () => {
+  const waiting = [
+    { run: '5eed0715-0000-4000-8000-000000000001', item: 404, by: 'claim' },
+    { run: '5eed0715-0000-4000-8000-000000000002', item: 405, by: 'facts' },
+  ] as const;
+  await db.query('BEGIN');
+  try {
+    for (const { run: runId, item, by } of waiting) {
+      await db.query(
+        `INSERT INTO mc.laps (run_id, factory, workflow_name, status, started_at, attention_open)
+         VALUES ($1, 'queue-factory', 'archon-build-queue', 'paused', '2026-10-25T11:50:00Z', true)`,
+        [runId],
+      );
+      if (by === 'claim')
+        await db.query(
+          `INSERT INTO mc.claims (factory, issue_number, run_id, claimed_at)
+           VALUES ('queue-factory', $1, $2, '2026-10-25T11:50:00Z')`,
+          [item, runId],
+        );
+      else
+        await db.query(
+          `INSERT INTO mc.lap_steps (run_id, step_id, status, started_at, output)
+           VALUES ($1, 'facts', 'completed', '2026-10-25T11:51:00Z', $2)`,
+          [
+            runId,
+            JSON.stringify({
+              item: { repo: { host: 'github.com', path: 'coleam00/queue-factory' }, number: item },
+            }),
+          ],
+        );
+    }
+    const board = await view('queue-factory');
+    const decision = board.columns.find((c) => c.id === 'decision')?.items.map((i) => i.number);
+    expect(decision).toEqual(expect.arrayContaining([404, 405]));
+    const build = board.pipeline.find((s) => s.id === 'build')?.items;
+    expect(
+      build?.filter((i) => [404, 405].includes(i.number)).map((i) => [i.number, i.status]),
+    ).toEqual([
+      [404, 'needs you'],
+      [405, 'needs you'],
+    ]);
+  } finally {
+    await db.query('ROLLBACK');
+  }
+});
+
 const missionItem = async (number: number) =>
   (await run<BoardRow>('board', 'mission-control')).find((r) => r.number === number);
 
