@@ -410,7 +410,7 @@ test('the order ?order= selects is raised with a stronger edge than a hovered ca
   const other = button('b');
   expect(selected).toContain('aria-pressed="true"');
   expect(selected).toContain('bg-[var(--v3-raised)]');
-  expect(selected).toContain('border-[color:var(--v3-fg-3)]');
+  expect(selected).toContain('border-[color:var(--v3-fg-3)]!');
   expect(selected).not.toContain('hover:');
   expect(other).toContain('aria-pressed="false"');
   expect(other).toContain('bg-[var(--v3-panel)]');

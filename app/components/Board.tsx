@@ -465,7 +465,7 @@ function OrderStrip({
       onClick={onToggle}
       className={`min-w-0 flex-[1_1_280px] cursor-pointer rounded-[var(--v3-radius-card)] border px-3 py-2.5 text-left ${
         selected
-          ? 'border-[color:var(--v3-fg-3)] bg-[var(--v3-raised)]'
+          ? 'border-[color:var(--v3-fg-3)]! bg-[var(--v3-raised)]'
           : 'border-[color:var(--v3-line)] bg-[var(--v3-panel)] hover:border-[color:var(--v3-line-2)]'
       }`}
     >
