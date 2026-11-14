@@ -44,15 +44,15 @@ test('the seed recount: each column and each work order bar equal the definition
   const columns = (v: Awaited<ReturnType<typeof view>>) =>
     Object.fromEntries(v.columns.map((c) => [c.id, c.items.map((i) => i.number)]));
   // mission-control at NOW. Open, by the rules in order: 9 has an open pull request and no run (Build,
-  // waiting for a run); 11 runs `build` (Build); 12 runs `check-app` (App check). 13 to 16 have no
-  // run and no open pull request and are not workable, so no column. 10 closed on 2026-10-20, inside
+  // waiting for a run); 11 runs `build` (Build); 12 runs `check-app` (App check). 13 has a round
+  // (Build); 14 to 16 have no run, no round and are not workable (Intake). 10 closed on 2026-10-20, inside
   // 7 days (Merged); the other merged-closed items (1, 2, 3, 5, 6, 7, 8) and 4, closed as completed
   // after #103 named it with `Refs`, are older.
   const mission = await view('mission-control');
   expect(columns(mission)).toEqual({
     queued: [],
-    intake: [],
-    build: [9, 11],
+    intake: [14, 15, 16],
+    build: [9, 11, 13],
     review: [],
     app: [12],
     merge: [],
@@ -72,8 +72,8 @@ test('the seed recount: each column and each work order bar equal the definition
   expect(screens.orders).toEqual(mission.orders);
 
   // queue-factory: 401 is in triage and built (the build run is between steps), so Intake; 402 and
-  // 403 only have runs between steps, so no column; 404 and 405 are workable with no run (Queued);
-  // 410's running split run holds nothing, so it is Queued too, which makes 7 not in order, plus the
+  // 403 only have runs between steps, so Intake with 406; 404 and 405 are workable with no run (Queued);
+  // 410's running split run holds nothing, so it is Queued too, which makes 10 not in order, with 402, 403 and 406, plus the
   // two parked items of the Unstick fixture;
   // 406 is needs-owner, which a queue factory does not read, and is not workable. 410 is a product
   // document, 411 and 412 are its merged pieces and 413 its open one. 413's work item state says
@@ -81,18 +81,18 @@ test('the seed recount: each column and each work order bar equal the definition
   const queue = await view('queue-factory');
   expect(columns(queue)).toEqual({
     queued: [404, 405, 410],
-    intake: [401],
+    intake: [401, 402, 403, 406],
     build: [],
     review: [],
     app: [],
     merge: [],
     decision: [],
     merged: [411, 412],
-    parked: [413, ...UNSTICK_PARKED],
+    parked: [413, ...UNSTICK_PARKED, 450, 452].sort((a, b) => a - b),
   });
-  // The Unstick fixture's two stage-blocked items (450, 452) have no column but a home in the Pipeline.
+  // The Unstick fixture's two stage-blocked items (450, 452) are in the Parked column and the wide card.
   const blocked = [QUEUE_UNSTICK.blockedMerged.issue, QUEUE_UNSTICK.blockedOpen.issue];
-  expect(queue.notInOrder).toBe(7 + UNSTICK_PARKED.length + blocked.length);
+  expect(queue.notInOrder).toBe(10 + UNSTICK_PARKED.length + blocked.length);
   // The Pipeline holds every placed item once, and "Blocked and parked" holds the parked and blocked ones.
   const homes = queue.pipeline.flatMap((s) => s.items.map((i) => i.number));
   expect(new Set(homes).size).toBe(homes.length);
@@ -252,8 +252,6 @@ test('a Refs-delivered item is merged unless closed as not planned or a duplicat
       `INSERT INTO mc.pull_request_references (factory, pr_number, issue_number) VALUES ('mission-control', 9101, 13)`,
     );
     expect((await board()).find((r) => r.number === 13)).toMatchObject({ pr: null, pr_open: null });
-    const columns = (await view('mission-control')).columns;
-    expect(columns.some((c) => c.items.some((i) => i.number === 13))).toBe(false);
 
     for (const reason of ['not_planned', 'duplicate']) {
       await setReason(4, reason);
@@ -330,7 +328,9 @@ test('a parked work item is not workable, and a re-triage makes it workable agai
       .find((c) => c.id === 'parked')
       ?.items.map((i) => i.number);
   expect(await workable()).toEqual([404, 405, 410]);
-  expect(await parkedItems()).toEqual([QUEUE_PARKED.issue, ...UNSTICK_PARKED]);
+  expect(await parkedItems()).toEqual(
+    [QUEUE_PARKED.issue, ...UNSTICK_PARKED, 450, 452].sort((a, b) => a - b),
+  );
   try {
     await db.query(
       `UPDATE mc.work_item_states SET triage_at = '2026-10-24T10:00:00.000Z', revision = revision + 1
@@ -338,7 +338,7 @@ test('a parked work item is not workable, and a re-triage makes it workable agai
       [QUEUE_PARKED.issue],
     );
     expect(await workable()).toContain(QUEUE_PARKED.issue);
-    expect(await parkedItems()).toEqual(UNSTICK_PARKED);
+    expect(await parkedItems()).toEqual([...UNSTICK_PARKED, 450, 452].sort((a, b) => a - b));
   } finally {
     await db.query(
       `UPDATE mc.work_item_states SET triage_at = $2, revision = $3 WHERE number = $1`,

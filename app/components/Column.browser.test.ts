@@ -59,12 +59,18 @@ const measure = (url: string, managerOpen: boolean) =>
 for (const place of ['', '/board', '/runs']) {
   const url = `/f/x${place}`;
 
-  test(`${url} centers its column at 1440 px with the Manager closed`, async () => {
-    const gaps = await measure(url, false);
-    expect(gaps).not.toBeNull();
-    expect(Math.abs((gaps?.left ?? 0) - (gaps?.right ?? 99999))).toBeLessThanOrEqual(24);
-    expect(gaps?.left).toBeGreaterThan(0);
-  }, 30_000);
+  // The Board takes the full width instead of a centered column (design v3, Board).
+  const centered = place === '/board' ? test.skip : test;
+  centered(
+    `${url} centers its column at 1440 px with the Manager closed`,
+    async () => {
+      const gaps = await measure(url, false);
+      expect(gaps).not.toBeNull();
+      expect(Math.abs((gaps?.left ?? 0) - (gaps?.right ?? 99999))).toBeLessThanOrEqual(24);
+      expect(gaps?.left).toBeGreaterThan(0);
+    },
+    30_000,
+  );
 
   test(`${url} fits beside the open Manager without sideways scrolling`, async () => {
     const gaps = await measure(url, true);

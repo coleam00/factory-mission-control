@@ -11,7 +11,6 @@ import {
   nextChange,
   orderLine,
   orderTarget,
-  PIPELINE,
   parked,
 } from './board';
 import type { OwnerQueueRow } from './owner-queue';
@@ -71,11 +70,15 @@ const lap = (number: number, workflow: string, steps: string[] | null): HomeMapR
   at: null,
   prs: null,
 });
-const row = (kind: HomeMapRow['kind'], number: number | null = null): HomeMapRow => ({
+const row = (
+  kind: HomeMapRow['kind'],
+  number: number | null = null,
+  workflow: string | null = null,
+): HomeMapRow => ({
   ...lap(number ?? 0, 'archon-build-queue', null),
   kind,
   run_id: kind === 'queues' ? null : '00000000-0000-4000-8000-0000000000aa',
-  workflow: null,
+  workflow,
   number,
 });
 const BUILD = 'ship__deliver__rounds.implement__implement';
@@ -107,6 +110,8 @@ const view = (over: Partial<BoardSources>, order: string | null = null) =>
   );
 const column = (v: ReturnType<typeof view>, id: string) =>
   v.columns.find((c) => c.id === id)?.items.map((i) => i.number);
+const home = (v: ReturnType<typeof view>, id: string) =>
+  v.pipeline.find((s) => s.id === id)?.items.map((i) => i.number);
 const workable = (number: number) => ({
   kind: 'issue' as const,
   issue_number: number,
@@ -115,17 +120,20 @@ const workable = (number: number) => ({
   run_id: null,
 });
 
-test('an attention item beats a running run, and a stage beats nothing', () => {
+test('a running run holds its item before a wait on the owner; a wait with no card of its own leaves it where the state puts it', () => {
   const v = view({
-    board: [item(1), item(2)],
+    board: [item(1), item(2), item(3)],
     map: [
       lap(1, 'archon-build-queue', [BUILD]),
       row('waiting', 1),
       lap(2, 'archon-build-queue', [BUILD]),
+      row('waiting', 3),
     ],
   });
-  expect(column(v, 'decision')).toEqual([1]);
-  expect(column(v, 'build')).toEqual([2]);
+  expect(column(v, 'build')).toEqual([1, 2]);
+  expect(home(v, 'intake')).toEqual([3]);
+  expect(column(v, 'decision')).toEqual([3]);
+  expect(v.pipeline.find((s) => s.id === 'intake')?.items[0]?.status).toBe('needs you');
 });
 
 test('the furthest stage a work item runs on wins', () => {
@@ -137,14 +145,13 @@ test('the furthest stage a work item runs on wins', () => {
   expect(column(v, 'intake')).toEqual([]);
 });
 
-test('a run on a card with no column, or between steps, holds the work item out of Queued', () => {
+test('a run on a card with no column, or between steps, does not move the work item off its state', () => {
   const v = view({
     board: [item(1), item(2), item(3)],
     map: [lap(1, 'archon-intake', ['slice']), lap(2, 'archon-build-queue', null)],
     workable: [workable(1), workable(2), workable(3)],
   });
-  expect(v.columns.flatMap((c) => c.items.map((i) => i.number))).toEqual([3]);
-  expect(column(v, 'queued')).toEqual([3]);
+  expect(column(v, 'queued')).toEqual([1, 2, 3]);
 });
 
 test('a running split run holds no work item: it stays in Queued', () => {
@@ -156,12 +163,13 @@ test('a running split run holds no work item: it stays in Queued', () => {
   expect(column(v, 'queued')).toEqual([1]);
 });
 
-test('an open pull request with no run waits in Build; Queued is workable items only', () => {
+test('a work item with a round and no run waits in Build; Queued is workable items only', () => {
   const v = view({
-    board: [item(1, { pr: 9, pr_open: true }), item(2), item(3)],
+    board: [item(1, { pr: 9, pr_open: true, rounds: 1 }), item(2), item(3)],
     workable: [workable(2)],
   });
   expect(v.columns.find((c) => c.id === 'build')?.items[0]?.chips.map((c) => c.text)).toEqual([
+    'round 1',
     'PR #9',
     'waiting for a run',
   ]);
@@ -267,8 +275,8 @@ test('chips: the route, the pulse of a run on it, the app verdict and where the 
     { kind: 'order', text: 'screens' },
   ]);
   expect(one?.to).toBe('/f/f/work/1');
-  const [two] = v.columns.find((c) => c.id === 'queued')?.items ?? [];
-  expect(two?.chips.map((c) => c.text)).toEqual(['round 1', 'app pass']);
+  const two = v.columns.find((c) => c.id === 'build')?.items[1];
+  expect(two?.chips.map((c) => c.text)).toEqual(['round 1', 'app pass', 'waiting for a run']);
   expect(two?.to).toBe('/f/f/work/2');
 });
 
@@ -336,7 +344,23 @@ test('a re-triage takes an item out of Parked, and a closed parked item is Merge
 
 test('itemOnBoard names Parked for a parked item', () => {
   const sources = { board: [item(1, buildParked), factoryRow()], map: [], workable: [], owner: [] };
-  expect(itemOnBoard(sources, 1)?.column?.id).toBe('parked');
+  expect(itemOnBoard(sources, 1)).toMatchObject({ blocked: false, column: { id: 'parked' } });
+});
+
+test('itemOnBoard says Blocked, not parked, for a needs_contract item', () => {
+  const sources = {
+    board: [item(1, { stage: 'needs_contract' }), factoryRow()],
+    map: [],
+    workable: [],
+    owner: [],
+  };
+  expect(itemOnBoard(sources, 1)).toMatchObject({ blocked: true, column: null });
+});
+
+test('an item waiting on the owner in Build carries no waiting-for-a-run chip', () => {
+  const v = view({ board: [item(1, { build_status: 'asking', rounds: 1 }), factoryRow()] });
+  const chips = v.pipeline.find((s) => s.id === 'build')?.items[0]?.chips.map((c) => c.text);
+  expect(chips).not.toContain('waiting for a run');
 });
 
 test('parked: a merge park holds until a triage or renewed build readiness', () => {
@@ -381,55 +405,103 @@ test('every column carries the caption the reference draws', () => {
   ]);
 });
 
-const home = (v: ReturnType<typeof view>, id: string) =>
-  v.pipeline.find((s) => s.id === id)?.items.map((i) => i.number);
+const APP_CHECK = 'factory-app-check';
+const placements: [string, string, BoardRow, HomeMapRow[]][] = [
+  ['intake', 'nothing known of it', item(1), []],
+  ['planned', 'workable', item(2), []],
+  ['intake', 'a run on triage', item(3), [lap(3, 'archon-intake', ['triage'])]],
+  ['build', 'a run on build', item(4), [lap(4, 'archon-build-queue', [BUILD])]],
+  ['review', 'a run on review', item(5), [lap(5, 'archon-build-queue', [REVIEW])]],
+  ['app', 'a running app check', item(6), [lap(6, APP_CHECK, ['check'])]],
+  ['app', 'its app check run, by pull request', item(7, { app_check_run: 'r' }), []],
+  ['merge', 'a run on merge', item(8), [lap(8, 'archon-merge-queue', ['sweep'])]],
+  ['merge', 'asking at merge', item(9, { merge_status: 'asking', build_status: 'ready' }), []],
+  ['build', 'asking at build', item(10, { build_status: 'asking', rounds: 2 }), []],
+  ['build', 'waiting, its run on build', item(11), [row('waiting', 11, 'archon-build-queue')]],
+  ['app', 'Ready, no check yet', item(12, { build_status: 'ready' }), []],
+  [
+    'app',
+    'Ready, its check passed at an older head',
+    item(13, { build_status: 'ready', app_check: 'PASS', pr_head: 'b', app_check_head: 'a' }),
+    [],
+  ],
+  [
+    'merge',
+    'Ready, its check passed at the head',
+    item(14, { build_status: 'ready', app_check: 'PASS', pr_head: 'a', app_check_head: 'a' }),
+    [],
+  ],
+  [
+    'merge',
+    'waiting at the merge queue, checked at the head',
+    item(15, { merge_status: 'waiting', app_check: 'PASS', pr_head: 'a', app_check_head: 'a' }),
+    [],
+  ],
+  ['build', 'a round, not Ready', item(16, { rounds: 1 }), []],
+  ['build', 'returned by the merge queue', item(17, { merge_status: 'returned', rounds: 2 }), []],
+  [
+    'build',
+    'returned, though build was Ready before',
+    item(18, {
+      build_status: 'ready',
+      build_at: T(1),
+      merge_status: 'returned',
+      merge_at: T(2),
+      rounds: 2,
+    }),
+    [],
+  ],
+  ['blocked', 'its stage is blocked', item(19, { stage: 'blocked' }), []],
+  ['blocked', 'needs a contract', item(20, { stage: 'needs_contract' }), []],
+  [
+    'blocked',
+    'parked, though a run holds it',
+    item(21, buildParked),
+    [lap(21, 'archon-build-queue', [BUILD])],
+  ],
+];
 
-test('every work item has exactly one home, and each stage holds its items', () => {
-  const v = view({
-    board: [
-      item(1), // queued
-      item(2), // intake
-      item(3), // build
-      item(4), // review
-      item(5), // app
-      item(6), // merge
-      item(7), // decision
-      item(8, { state: 'closed', closed_at: daysAgo(1) }), // merged
-      item(9, { build_status: 'parked' }), // parked
-      item(10, { stage: 'blocked' }), // blocked
-      item(11, { stage: 'needs_contract' }), // needs a contract
-      item(12, { stage: 'blocked' }), // blocked but workable: stays Planned
-      item(13), // no home
-    ],
-    map: [
-      lap(2, 'archon-intake', ['triage']),
-      lap(3, 'archon-build-queue', [BUILD]),
-      lap(4, 'archon-build-queue', [REVIEW]),
-      lap(5, 'factory-app-check', ['check-app']),
-      lap(6, 'archon-merge-queue', ['merge']),
-      row('waiting', 7),
-    ],
-    workable: [workable(1), workable(12)],
-  });
-  expect(v.pipeline.map((s) => s.id)).toEqual(PIPELINE.map((s) => s.id));
-  expect(home(v, 'planned')).toEqual([1, 12]);
-  expect(home(v, 'intake')).toEqual([2]);
-  expect(home(v, 'build')?.sort((a, b) => a - b)).toEqual([3, 4]);
-  expect(home(v, 'merged')).toEqual([8]);
-  expect(home(v, 'blocked')?.sort((a, b) => a - b)).toEqual([7, 9, 10, 11]);
-  const placed = v.pipeline.flatMap((s) => s.items.map((i) => i.number));
-  expect(new Set(placed).size).toBe(placed.length);
-  expect(placed).not.toContain(13);
-  // The Table's nine columns are untouched by a blocked item.
-  expect(
-    v.columns.flatMap((c) => c.items.map((i) => i.number)).sort((a, b) => a - b),
-  ).not.toContain(10);
+test.each(placements)('%s: %s', (stage, _why, one, map) => {
+  const v = view({ board: [one], map, workable: one.number === 2 ? [workable(2)] : [] });
+  expect(home(v, stage)).toEqual([one.number as number]);
 });
 
-test('the fold maps every Table column to exactly one home', () => {
-  for (const { id } of COLUMNS) {
-    expect([id, PIPELINE.filter((h) => h.columns.includes(id)).length]).toEqual([id, 1]);
-  }
+test('asking at merge is Merge with the Needs you status, and Ready or waiting is never Build', () => {
+  const board = [
+    item(1, { merge_status: 'asking' }),
+    item(2, { build_status: 'ready', rounds: 3 }),
+    item(3, { merge_status: 'waiting', rounds: 3 }),
+  ];
+  const v = view({ board });
+  expect(v.pipeline.find((s) => s.id === 'merge')?.items[0]).toMatchObject({
+    number: 1,
+    status: 'needs you',
+  });
+  expect(home(v, 'build')).toEqual([]);
+});
+
+test('every open item in the board query is on the Pipeline exactly once, in seven stages', () => {
+  const board = [
+    ...placements.map(([, , one]) => one),
+    item(30, { state: 'closed', closed_at: daysAgo(1) }),
+    item(31, { state: 'closed', closed_at: daysAgo(20) }),
+    factoryRow(),
+  ];
+  const map = placements.flatMap(([, , , rows]) => rows);
+  const v = view({ board, map, workable: [workable(2)] });
+  const placed = v.pipeline.flatMap((s) => s.items.map((i) => i.number)).sort((a, b) => a - b);
+  const open = placements.map(([, , one]) => one.number as number).sort((a, b) => a - b);
+  expect(placed).toEqual([...open, 30]);
+  expect(v.pipeline.map((s) => s.id)).toEqual([
+    'intake',
+    'planned',
+    'build',
+    'review',
+    'app',
+    'merge',
+    'merged',
+    'blocked',
+  ]);
 });
 
 test('Merged and Parked numbers are the Table columns', () => {
@@ -448,32 +520,31 @@ test('Merged and Parked numbers are the Table columns', () => {
     { label: 'parked', state: 'idle', count: 1 },
     { label: 'blocked', state: 'idle', count: 1 },
   ]);
-  expect(column(v, 'parked')).toEqual([3]);
+  expect(column(v, 'parked')).toEqual([3, 4]);
 });
 
 test('an item reads its status, pills come in state order, and cards list needs-you first', () => {
   const v = view({
     board: [
-      item(1, { pr: 9, pr_open: true }),
-      item(2, { pr: 8, pr_open: true, app_check: 'FAIL' }),
+      item(1, { pr: 9, pr_open: true, rounds: 1 }),
+      item(2, { pr: 8, pr_open: true, app_check: 'FAIL', rounds: 1 }),
       item(3),
       item(4),
     ],
-    map: [lap(3, 'archon-build-queue', [BUILD]), row('waiting', 4)],
+    map: [lap(3, 'archon-build-queue', [BUILD]), row('waiting', 4, 'archon-build-queue')],
   });
   const build = v.pipeline.find((s) => s.id === 'build');
   expect(build?.items.map((i) => [i.number, i.status])).toEqual([
+    [4, 'needs you'],
     [2, 'check failed'],
     [3, 'running'],
     [1, 'waiting'],
   ]);
   expect(build?.pills.map((p) => [p.label, p.state, p.count])).toEqual([
+    ['needs you', 'needs-you', 1],
     ['check failed', 'failed', 1],
     ['running', 'running', 1],
     ['waiting', 'idle', 1],
-  ]);
-  expect(v.pipeline.find((s) => s.id === 'blocked')?.items.map((i) => i.status)).toEqual([
-    'needs you',
   ]);
 });
 

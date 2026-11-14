@@ -4,7 +4,6 @@ import {
   type BoardColumn,
   type BoardOrder,
   type BoardView,
-  MINI_CARDS,
   orderLine,
   orderTarget,
   type PipelineStage,
@@ -108,24 +107,20 @@ function MiniCard({ item }: { item: PipelineStage['items'][number] }): ReactElem
 
 function StageCard({
   stage,
-  moreHref,
   older,
   wide,
 }: {
   stage: PipelineStage;
-  moreHref: string;
   older?: ReactElement | null;
   wide?: boolean;
 }): ReactElement {
-  const shown = stage.items.slice(0, MINI_CARDS);
-  const more = stage.items.length - shown.length;
   return (
     <Card
       role="region"
       data-board-stage={stage.id}
       data-count={stage.items.length}
       aria-label={stage.title}
-      className="flex min-w-0 flex-col gap-2 p-3"
+      className={`flex min-w-0 flex-col gap-2 p-3 ${wide ? '' : 'min-[760px]:max-h-[calc(100vh-8rem)]'}`}
     >
       <h2 className="text-[13.5px] font-semibold text-[color:var(--v3-fg)]">{stage.title}</h2>
       <p className="text-[length:var(--v3-t-meta)] text-[color:var(--v3-fg-3)]">{stage.subtitle}</p>
@@ -146,45 +141,32 @@ function StageCard({
         </div>
       ) : null}
       <div
-        className={wide ? 'grid grid-cols-1 gap-2 min-[760px]:grid-cols-3' : 'flex flex-col gap-2'}
+        data-stage-items
+        className={`min-h-0 gap-2 ${
+          wide
+            ? 'grid grid-cols-1 min-[760px]:grid-cols-3'
+            : 'flex flex-col overflow-y-auto min-[760px]:flex-1'
+        }`}
       >
-        {shown.map((item) => (
+        {stage.items.map((item) => (
           <MiniCard key={item.number} item={item} />
         ))}
       </div>
-      {more > 0 ? (
-        <Link to={moreHref} className={MUTED_LINK}>
-          {more} more in Table
-        </Link>
-      ) : null}
       {older}
     </Card>
   );
 }
 
-function Pipeline({
-  view,
-  moreHref,
-  older,
-}: {
-  view: BoardView;
-  moreHref: string;
-  older: ReactElement | null;
-}): ReactElement {
+function Pipeline({ view, older }: { view: BoardView; older: ReactElement | null }): ReactElement {
   const stages = view.pipeline.filter((s) => s.id !== 'blocked');
   const blocked = view.pipeline.find((s) => s.id === 'blocked');
   const { filed, tracked, dropped } = view.found;
   return (
     <div className="space-y-2.5">
-      <div className="@container">
-        <div className="grid grid-cols-1 gap-2.5 min-[760px]:@min-[400px]:grid-cols-2 min-[760px]:@min-[640px]:grid-cols-5">
+      <div data-stage-row className="min-w-0 overflow-x-auto">
+        <div className="grid grid-cols-1 items-start gap-2.5 min-[760px]:grid-cols-none min-[760px]:grid-flow-col min-[760px]:auto-cols-[minmax(200px,1fr)]">
           {stages.map((stage) => (
-            <StageCard
-              key={stage.id}
-              stage={stage}
-              moreHref={moreHref}
-              older={stage.id === 'merged' ? older : null}
-            />
+            <StageCard key={stage.id} stage={stage} older={stage.id === 'merged' ? older : null} />
           ))}
         </div>
       </div>
@@ -213,7 +195,7 @@ function Pipeline({
             <Pill compact>dropped {dropped}</Pill>
           </div>
         </Card>
-        {blocked === undefined ? null : <StageCard stage={blocked} moreHref={moreHref} />}
+        {blocked === undefined ? null : <StageCard stage={blocked} wide />}
       </div>
     </div>
   );
@@ -266,15 +248,12 @@ export function BoardBody({
   mode,
   order,
   onOrder,
-  tableHref,
 }: {
   view: BoardView;
   mode: 'pipeline' | 'table';
   /** The work order the address filters to, or null. */
   order: string | null;
   onOrder: (name: string | null) => void;
-  /** The Board's address with the Table picked, where a card's "more" points. */
-  tableHref: string;
 }): ReactElement {
   const older =
     view.older > 0 && view.olderHref !== null ? (
@@ -303,7 +282,7 @@ export function BoardBody({
         {view.notInOrder} not in a work order
       </p>
       {mode === 'pipeline' ? (
-        <Pipeline view={view} moreHref={tableHref} older={older} />
+        <Pipeline view={view} older={older} />
       ) : (
         <div className="space-y-2.5">
           {view.columns.map((column) => (

@@ -92,12 +92,7 @@ export default function Board(): ReactElement {
         } satisfies BoardSources)
       : undefined;
   return (
-    <Column
-      data-board
-      data-state={state}
-      width="max-w-[1100px]"
-      className="px-4 py-6 min-[760px]:px-6"
-    >
+    <Column data-board data-state={state} width="max-w-none" className="px-4 py-6 min-[760px]:px-6">
       <header className="mb-4 flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0 max-w-xl">
           <h1 className="text-[length:var(--v3-t-title)] leading-tight font-bold text-[color:var(--v3-fg)]">
@@ -134,7 +129,6 @@ export default function Board(): ReactElement {
           mode={mode}
           order={order}
           onOrder={setOrder}
-          tableHref={`?${tableParams}`}
         />
       )}
     </Column>
