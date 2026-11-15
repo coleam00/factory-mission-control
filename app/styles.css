@@ -233,12 +233,6 @@
   letter-spacing: -0.028em;
 }
 
-.console-root *,
-.console-root *::before,
-.console-root *::after {
-  border-color: var(--border);
-}
-
 .console-root ::selection {
   background: var(--accent-ring);
   color: var(--text-primary);
@@ -283,7 +277,9 @@
 }
 
 @layer base {
-  * {
+  *,
+  ::before,
+  ::after {
     @apply border-border outline-ring/50;
   }
   body {

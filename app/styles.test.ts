@@ -160,3 +160,12 @@ describe('keyboard focus', () => {
     expect(rule("[data-details] [role='tab']:focus-visible")?.value).toBe('-2px');
   });
 });
+
+describe('border color cascade', () => {
+  test('no unlayered rule sets border-color, so border utilities can override the base default', () => {
+    const css = read('app/styles.css');
+    const unlayered = css.replace(/@layer base \{[\s\S]*?\n\}\n/, '');
+    expect(unlayered).not.toMatch(/(^|[;{}\s])border-color\s*:/);
+    expect(css).toMatch(/@layer base \{\s*\*,\s*::before,\s*::after \{\s*@apply border-border/);
+  });
+});
