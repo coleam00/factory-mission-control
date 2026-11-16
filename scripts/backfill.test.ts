@@ -1,4 +1,4 @@
-import { afterAll, afterEach, beforeEach, expect, mock, test } from 'bun:test';
+import { afterEach, beforeEach, expect, test } from 'bun:test';
 import { readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { archonDb, snapshot } from '../db/test-db';
@@ -14,15 +14,8 @@ const responses: Record<string, { link?: string; body: unknown }> = JSON.parse(
   readFileSync(join(REPO_ROOT, 'fixtures', 'github', 'responses.json'), 'utf-8'),
 );
 
-/**
- * backfill reads the factories it follows from the committed factories.json; these tests follow
- * the one factory `responses` recorded, whatever that file lists, and give it back when done.
- */
-const readJson = (path: string) => JSON.parse(readFileSync(join(REPO_ROOT, path), 'utf-8'));
-mock.module('../factories.json', () => ({ default: readJson('fixtures/github/factories.json') }));
-afterAll(() => {
-  mock.module('../factories.json', () => ({ default: readJson('factories.json') }));
-});
+/** The one factory `responses` recorded, whatever factories.json lists. */
+const MC_FACTORIES_FILE = join(REPO_ROOT, 'fixtures', 'github', 'factories.json');
 
 let db: Db;
 let requests: { url: string; method: string }[];
@@ -50,7 +43,7 @@ const recorded: GetFetch = async (url, init) => {
 
 /** Runs the command against the recorded GitHub and the in-memory database, on `branchName`. */
 async function run(argv: string[], branchName = 'check-abc', fetch = recorded) {
-  const repoRoot = scratchRepo({ MC_DATABASE_URL: DATABASE_URL });
+  const repoRoot = scratchRepo({ MC_DATABASE_URL: DATABASE_URL, MC_FACTORIES_FILE });
   scratch.push(repoRoot);
   const recorder = recordingDeps({ repoRoot, branchName });
   const deps = {
@@ -326,7 +319,7 @@ test('no transaction is open while GitHub is asked, and each writes at most BATC
     if (open > 0) askedInTransaction.push(url);
     return recorded(url, init);
   };
-  const repoRoot = scratchRepo({ MC_DATABASE_URL: DATABASE_URL });
+  const repoRoot = scratchRepo({ MC_DATABASE_URL: DATABASE_URL, MC_FACTORIES_FILE });
   scratch.push(repoRoot);
   const recorder = recordingDeps({ repoRoot, branchName: 'check-abc' });
   const deps = {
@@ -442,7 +435,7 @@ test('a batch commits once it has been open its time limit, even short of its co
 });
 
 test('a second reconcile while another reconcile pass runs exits 0 without reading GitHub (#619)', async () => {
-  const repoRoot = scratchRepo({ MC_DATABASE_URL: DATABASE_URL });
+  const repoRoot = scratchRepo({ MC_DATABASE_URL: DATABASE_URL, MC_FACTORIES_FILE });
   scratch.push(repoRoot);
   const passLock = memoryPassLock();
   await passLock(DATABASE_URL, 'reconcile');

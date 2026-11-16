@@ -330,7 +330,7 @@ export const main: Main = async (argv, deps) => {
   }
   const { target, ...args } = parsed;
   return failing(deps, async () => {
-    const url = await guardedDatabaseUrl(deps, target);
+    const url = await guardedDatabaseUrl(deps, target, { allowLocal: true });
     if (target === 'main' && !deps.confirmOwner(deps.env.NEON_PROJECT_ID ?? '')) {
       throw new Error('arch:parse:main is for the owner, at a terminal');
     }

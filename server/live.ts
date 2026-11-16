@@ -2,10 +2,19 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createRealtime, rawSql, type SealedLiveQuery } from '@neon/realtime/server';
 import type { Hono } from 'hono';
+import pg from 'pg';
 import { isRewindBranch } from '../scripts/lib/guard';
 import { createNeonApi, type NeonApi } from '../scripts/lib/neon';
 import type { Env } from './check-env';
 import { readFactoryNames } from './factories';
+import {
+  isLocalMode,
+  type LiveMode,
+  LOCAL_UNAVAILABLE,
+  localSeal,
+  poolRunner,
+  type RunQuery,
+} from './local-live';
 import {
   rewindBranchNames,
   rewindListed,
@@ -19,7 +28,7 @@ export const LIVE_QUERY_NAME = /^[a-z0-9-]+$/;
 /** One branch's sealing: the Realtime WebSocket the browser subscribes on, and its sealer. */
 export interface Sealer {
   url: string;
-  seal(sql: string, params: readonly string[]): Promise<SealedLiveQuery<unknown>>;
+  seal(sql: string, params: readonly string[], name: string): Promise<SealedLiveQuery<unknown>>;
 }
 
 export type RewindSealer = Sealer & { name: string };
@@ -38,6 +47,10 @@ export interface Live {
   openRewind?: (name: string) => Promise<RewindSealer>;
   /** The rewind-* branches Neon has now; absent without NEON_API_KEY and NEON_PROJECT_ID. */
   rewindBranches?: () => Promise<string[]>;
+  /** `local`: no Realtime; the browser polls `POST /api/live-rows`, which `run` answers. Default `neon`. */
+  mode?: LiveMode;
+  /** Local mode only: runs a named query's SQL against MC_DATABASE_URL, read-only. */
+  run?: RunQuery;
 }
 
 /** The one directory of sealed queries, for the page, the Manager's tools and the briefing alike. */
@@ -105,8 +118,28 @@ export function factoryNames(env: Env, repoRoot: string): string[] {
   return readFactoryNames(env, repoRoot);
 }
 
+/** Local mode's `Live`: seals are plain objects, rows come from a pg Pool on MC_DATABASE_URL. */
+export function localLive(env: Env, repoRoot: string, run: RunQuery): Live {
+  return {
+    mode: 'local',
+    factories: factoryNames(env, repoRoot),
+    queries: loadLiveQueries(LIVE_QUERIES_DIR),
+    home: { url: '', seal: async (_sql, params, name) => localSeal(name, params) },
+    run,
+  };
+}
+
 export function liveFromEnv(env: Env, repoRoot: string): Live | undefined {
   const databaseUrl = env.MC_DATABASE_URL;
+  if (databaseUrl && isLocalMode(env)) {
+    return localLive(
+      env,
+      repoRoot,
+      poolRunner(
+        new pg.Pool({ connectionString: databaseUrl, max: 5, connectionTimeoutMillis: 5_000 }),
+      ),
+    );
+  }
   const secret = env.NEON_REALTIME_SECRET;
   if (!databaseUrl || !secret) return undefined;
   const db = new URL(databaseUrl).pathname.slice(1);
@@ -151,6 +184,7 @@ export function liveConfig(live: Live) {
     home: live.home.url,
     factories: live.factories,
     rewind: live.rewind?.name ?? null,
+    ...(live.mode === 'local' && { mode: 'local' as const }),
   };
 }
 
@@ -190,13 +224,40 @@ export function liveRoutes(app: Hono, live: Live | undefined): void {
     const branch = field(body, 'branch');
     if (branch !== undefined && branch !== 'home') return c.json({ error: 'unknown branch' }, 400);
     const rewind = branch === 'home' ? undefined : live.rewind;
-    const sealed = await (rewind ?? live.home).seal(sql, params);
+    const sealed = await (rewind ?? live.home).seal(sql, params, c.req.param('name'));
     return c.json({ ...sealed, rewind: rewind?.name ?? null });
+  });
+
+  // Local mode: the browser sends back what `POST /api/live/:name` answered; the rows are read now.
+  app.post('/api/live-rows', async (c) => {
+    if (!live) return c.json(NOT_CONFIGURED, 503);
+    if (!live.run) return c.json({ error: 'polling is only served in local mode' }, 404);
+    const body: unknown = await c.req.json().catch(() => undefined);
+    const name = field(body, 'query');
+    const sql = typeof name === 'string' ? live.queries.get(name) : undefined;
+    if (sql === undefined) return c.json({ error: 'unknown live query' }, 404);
+    const given = field(body, 'params');
+    if (
+      !Array.isArray(given) ||
+      typeof given[0] !== 'string' ||
+      !live.factories.includes(given[0])
+    ) {
+      return c.json({ error: 'unknown factory' }, 400);
+    }
+    const params = liveParams(sql, given[0], given.slice(1));
+    if (!params) return c.json({ error: 'wrong arguments for this query' }, 400);
+    try {
+      return c.json(await live.run(sql, params));
+    } catch (error) {
+      console.error(`live query ${name} failed: ${error instanceof Error ? error.message : error}`);
+      return c.json({ error: `live query ${name} failed` }, 502);
+    }
   });
 
   // The rewind-* branches that exist, so `/rewind` offers no switch to a listed one Neon lost.
   app.get('/api/rewind/branches', async (c) => {
     if (!live) return c.json(NOT_CONFIGURED, 503);
+    if (live.mode === 'local') return c.json({ error: `rewind is ${LOCAL_UNAVAILABLE}` }, 503);
     if (!live.rewindBranches) {
       return c.json({ error: 'needs NEON_API_KEY and NEON_PROJECT_ID on the server' }, 503);
     }
@@ -218,6 +279,7 @@ export function liveRoutes(app: Hono, live: Live | undefined): void {
       live.rewind = undefined;
       return c.json({ rewind: null });
     }
+    if (live.mode === 'local') return c.json({ error: `rewind is ${LOCAL_UNAVAILABLE}` }, 503);
     if (typeof branch !== 'string' || !isRewindBranch(branch)) {
       return c.json({ error: 'not a rewind-* branch' }, 400);
     }
@@ -252,6 +314,7 @@ export const REALTIME_PROTOCOL = 'neon.realtime.v1';
  */
 export function liveBootScript(config: LiveConfig): string {
   const boot = JSON.stringify({ ...config, protocol: REALTIME_PROTOCOL }).replace(/</g, '\\u003c');
+  if (config.mode === 'local') return `<script>window.__MC_LIVE__=${boot}</script>`;
   return (
     "<script>(function(c){try{var r=0;performance.mark('live:connection:start');" +
     'var s=new WebSocket(c.url,c.protocol);c.socket=s;c.early=[];' +

@@ -1,11 +1,10 @@
 // `bun run backfill` and `bun run reconcile` (PRD 11.1, 11.2): every issue, comment, label and pull
-// request of each factory in factories.json, and the pin and verdict commits and DECISIONS.md of the
-// versions repository, read with GETs and stored through the webhook's own upserts. `reconcile`
+// request of each factory in MC_FACTORIES_FILE (factories.json when unset), and the pin and verdict
+// commits and DECISIONS.md of the versions repository, read with GETs and stored through the webhook's own upserts. `reconcile`
 // also removes the issues and comments GitHub no longer has. Both write the check branch in
 // .mc-check.env; their `:main` forms write `main`, which only the owner runs.
 
 import { parseArgs } from 'node:util';
-import factories from '../factories.json';
 import type { GitHub } from '../function/github';
 import {
   type Comment,
@@ -25,6 +24,7 @@ import {
   writeLabeledAt,
   writePullRequest,
 } from '../function/ingest';
+import { readFactories } from '../server/factories';
 import { failing, guardedDatabaseUrl, type Main, runCli } from './lib/cli';
 import type { Db, Tx } from './lib/db';
 import { singlePass } from './lib/pass-lock';
@@ -252,10 +252,12 @@ export const main: Main = async (argv, deps) => {
   }
   return failing(deps, async () => {
     // No terminal prompt for `:main`, unlike `migrate:main`: the owner schedules the nightly run.
-    const url = await guardedDatabaseUrl(deps, values.main ? 'main' : 'check');
+    const url = await guardedDatabaseUrl(deps, values.main ? 'main' : 'check', {
+      allowLocal: true,
+    });
     const work = async () => {
       const readAt = deps.now().toISOString();
-      const history = await readHistory(deps.github(), factories.factories);
+      const history = await readHistory(deps.github(), readFactories(deps.env, deps.repoRoot));
       // Every GitHub read is done before the first write, and each write is its own short
       // transaction: nothing holds the dashboard's rows while GitHub answers (#260).
       const db = deps.openDb(url);
