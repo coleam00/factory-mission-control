@@ -29,6 +29,9 @@ const remedy =
 const SPAWN_SITES: Record<string, string> = {
   'server/actions.ts': 'the five writes',
   'server/build-id.ts': 'git rev-parse',
+  'scripts/local/serve.ts': 'local mode: bun scripts/migrate.ts, then bun server/main.ts',
+  'scripts/local/ingest.ts':
+    'local mode: bun scripts/backfill.ts --reconcile, bun scripts/reconcile-laps.ts',
   'server/manager.ts': 'the Manager agent: read-only tools, proven by manager-tools.test.ts',
   'scripts/lib/archon-run.ts': 'workflow get, read',
   'scripts/lib/cdp.ts': 'headless Chrome',
@@ -44,6 +47,7 @@ const FETCH_SITES: Record<string, string> = {
   'app/lib/manager.ts': 'same-origin /api/',
   'app/lib/rewind.ts': 'same-origin /api/',
   'app/live/LivePanel.tsx': 'same-origin /api/',
+  'app/live/poll.ts': 'same-origin /api/',
   'app/live/LiveProvider.tsx': 'same-origin /api/',
   'function/github.ts': 'GET only',
   'scripts/lib/github.ts': 'GET only',

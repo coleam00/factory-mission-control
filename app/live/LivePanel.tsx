@@ -3,6 +3,7 @@ import { RealtimeProvider, useLiveQuery } from '@neon/realtime-react';
 import { type ReactElement, type ReactNode, useCallback, useEffect, useState } from 'react';
 import { followSwitch } from '../lib/rewind';
 import { useLive } from './LiveProvider';
+import { type LocalSealed, usePolledQuery } from './poll';
 import {
   discardObservation,
   expectSubscribe,
@@ -370,6 +371,17 @@ export function LivePanel<Row>({
       </Frame>
     );
   }
+  if (live.mode === 'local') {
+    return (
+      <Polled
+        query={accepted.observation.query}
+        sealed={accepted.sealed as unknown as LocalSealed}
+        observation={accepted.observation}
+        className={className}
+        render={children}
+      />
+    );
+  }
   return (
     <RealtimeProvider client={accepted.observation.home ? live.homeClient : live.client}>
       <Subscribed
@@ -384,6 +396,40 @@ export function LivePanel<Row>({
         render={children}
       />
     </RealtimeProvider>
+  );
+}
+
+/**
+ * Local mode's panel body: polls the rows (`usePolledQuery`) instead of subscribing. A failed poll
+ * is `error` until the next one answers; nothing needs a new seal, since local seals never expire.
+ */
+function Polled<Row>({
+  query,
+  sealed,
+  observation,
+  className,
+  render,
+}: {
+  query: string;
+  sealed: LocalSealed;
+  observation: QueryObservation;
+  className?: string;
+  render: Render<Row>;
+}): ReactElement {
+  const { status, data, error } = usePolledQuery<Row>(sealed);
+  const [wasRecovering, setRecovering] = useState(false);
+  const isRecovering = recovering(wasRecovering, status);
+  if (isRecovering !== wasRecovering) setRecovering(isRecovering);
+  const state = panelState({ status, data, error, recovering: isRecovering });
+
+  useEffect(() => {
+    if (state === 'ready') markRendered(observation);
+  }, [state, observation]);
+
+  return (
+    <Frame query={query} state={state} className={className}>
+      {render(state === 'loading' ? undefined : data, state)}
+    </Frame>
   );
 }
 

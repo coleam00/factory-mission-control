@@ -73,7 +73,12 @@ const app = createApp({
   manager,
   actions,
 });
-const server = Bun.serve({ hostname: '127.0.0.1', port, fetch: app.fetch });
+// MC_LISTEN_HOST=0.0.0.0 serves beyond this machine, e.g. from a container.
+const server = Bun.serve({
+  hostname: Bun.env.MC_LISTEN_HOST || '127.0.0.1',
+  port,
+  fetch: app.fetch,
+});
 console.log(`serving http://localhost:${server.port}`);
 
 startLeaseRefresh(

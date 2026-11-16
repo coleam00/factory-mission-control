@@ -5,6 +5,7 @@ import type { NeonApi } from '../scripts/lib/neon';
 import { resolveBranchName } from '../scripts/lib/target';
 import type { Env } from './check-env';
 import { readFactories } from './factories';
+import { isLocalMode } from './local-live';
 
 export type SyncDeps = {
   env: Env;
@@ -23,6 +24,9 @@ export type SyncDeps = {
 export async function syncFactoriesAtStart(deps: SyncDeps): Promise<string | undefined> {
   const url = deps.env.MC_DATABASE_URL;
   if (!url) return undefined;
+  if (isLocalMode(deps.env)) {
+    return 'factories not synced at start: local mode (no Neon API); `bun run migrate -- --configured-factories` loads them';
+  }
   const { NEON_API_KEY: apiKey, NEON_PROJECT_ID: projectId } = deps.env;
   if (!apiKey || !projectId) {
     return 'factories not synced: NEON_API_KEY and NEON_PROJECT_ID are needed to tell a check-* branch';

@@ -317,7 +317,9 @@ export const main: Main = async (argv, deps) => {
   }
   return failing(deps, async () => {
     // No terminal prompt for `:main`, like `backfill:main`: the owner schedules it.
-    const url = await guardedDatabaseUrl(deps, values.main ? 'main' : 'check');
+    const url = await guardedDatabaseUrl(deps, values.main ? 'main' : 'check', {
+      allowLocal: true,
+    });
     await singlePass(deps, url, 'reconcile:laps', async () => {
       const db = deps.openDb(url);
       try {

@@ -18,7 +18,17 @@ import { markingSubscribes } from './subscribe-marks';
 export type Live =
   | { status: 'loading' | 'error' }
   | {
+      /** Local mode (server/local-live.ts): no Realtime client; panels poll. */
       status: 'ready';
+      mode: 'local';
+      factories: readonly string[];
+      rewind: null;
+      offline: false;
+      homeOffline: false;
+    }
+  | {
+      status: 'ready';
+      mode?: 'neon';
       factories: readonly string[];
       client: RealtimeClient;
       /** The home branch's client: `client` itself unless the server is switched to a rewind. */
@@ -40,6 +50,20 @@ interface LiveConfig {
   home: string;
   factories: string[];
   rewind: string | null;
+  /** `local`: no Realtime, panels poll `POST /api/live-rows`. Absent means `neon`. */
+  mode?: 'neon' | 'local';
+}
+
+/** The `Live` for a local-mode configuration: ready at once, nothing to connect. */
+function localLive(config: { factories: string[] }): Live {
+  return {
+    status: 'ready',
+    mode: 'local',
+    factories: config.factories,
+    rewind: null,
+    offline: false,
+    homeOffline: false,
+  };
 }
 
 const newSocket: WebSocketFactory = (url, protocols) => new WebSocket(url, protocols);
@@ -240,6 +264,10 @@ export function shareLive(
     clients?.client.close();
     if (clients?.homeClient !== clients?.client) clients?.homeClient.close();
   };
+  if (boot?.mode === 'local') {
+    setLive(localLive(boot));
+    return () => {};
+  }
   if (boot) {
     config = boot;
     clients = clientsFor(earlySocketFactory(boot));
@@ -254,6 +282,10 @@ export function shareLive(
       if (!res.ok) throw new Error(`GET /api/live answered ${res.status}`);
       const answered = (await res.json()) as LiveConfig;
       if (cancelled) return;
+      if (answered.mode === 'local') {
+        setLive(localLive(answered));
+        return;
+      }
       config = answered;
       clients = clientsFor(newSocket);
       publish();

@@ -76,3 +76,21 @@ test("guardedDatabaseUrl refreshes the check branch's lease", async () => {
 test('guardedDatabaseUrl creates no lease where there is none', async () => {
   expect(await guardedCheck()).toEqual([]);
 });
+
+test('in local mode guardedDatabaseUrl skips the Neon API only for commands that opt in', async () => {
+  const local = (url: string) => {
+    const repoRoot = scratchRepo({ MC_DATABASE_URL: url, MC_LIVE_MODE: 'local' });
+    scratch.push(repoRoot);
+    return recordingDeps({ repoRoot });
+  };
+  const own = local('postgres://mc@db.internal/mc');
+  expect(await guardedDatabaseUrl(own.deps, 'check', { allowLocal: true })).toBe(
+    'postgres://mc@db.internal/mc',
+  );
+  expect(own.neonCalls).toEqual([]);
+  await expect(guardedDatabaseUrl(own.deps, 'check')).rejects.toThrow('unavailable in local mode');
+  const neon = local('postgres://u@ep-a-1.us-east-1.aws.neon.tech/mc');
+  await expect(guardedDatabaseUrl(neon.deps, 'check', { allowLocal: true })).rejects.toThrow(
+    'refuses a Neon MC_DATABASE_URL',
+  );
+});

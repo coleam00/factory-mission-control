@@ -93,7 +93,8 @@ test.each([
 /** The last `Live` published, which is a `ready` one once the clients are open. */
 function last(published: Live[]) {
   const live = published.at(-1);
-  if (live?.status !== 'ready') throw new Error('nothing ready was published');
+  if (live?.status !== 'ready' || live.mode === 'local')
+    throw new Error('nothing ready was published');
   return live;
 }
 

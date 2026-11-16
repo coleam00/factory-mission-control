@@ -2,6 +2,7 @@ import { resolve } from 'node:path';
 import { createGitHub, type GetFetch, type GitHub } from '../../function/github';
 import { type Env, loadCheckEnv } from '../../server/check-env';
 import { defaultLeaseDir, refreshLease } from '../../server/check-lease';
+import { isLocalMode, LOCAL_UNAVAILABLE } from '../../server/local-live';
 import { askArchon, type RunStatus } from './archon-run';
 import { type OpenDb, openDb } from './db';
 import { RefusedBranch, requireCheckBranch } from './guard';
@@ -44,6 +45,7 @@ export type NeonctlResult = { code: number; stdout: string; stderr: string };
 export type Main = (argv: string[], deps: Deps) => Promise<number>;
 
 function neonFromEnv(env: Env): NeonApi {
+  if (isLocalMode(env)) throw new Error(`the Neon API is ${LOCAL_UNAVAILABLE}`);
   const apiKey = env.NEON_API_KEY;
   const projectId = env.NEON_PROJECT_ID;
   if (!apiKey || !projectId) throw new Error('NEON_API_KEY and NEON_PROJECT_ID must be set');
@@ -134,10 +136,25 @@ export function refreshCheckLease(deps: Deps, name: string): void {
  * `MC_DATABASE_URL` once the Neon API says it points at a `check-*` branch, or, for the owner's
  * `:main` commands, at `main`. Nothing may connect to the URL before this returns.
  */
-export async function guardedDatabaseUrl(deps: Deps, target: 'check' | 'main'): Promise<string> {
+export async function guardedDatabaseUrl(
+  deps: Deps,
+  target: 'check' | 'main',
+  { allowLocal = false }: { allowLocal?: boolean } = {},
+): Promise<string> {
   loadCheckEnv(deps.repoRoot, deps.env);
   const url = deps.env.MC_DATABASE_URL;
   if (!url) throw new Error('MC_DATABASE_URL is not set: run `bun run fixture:branch` first');
+  // Local mode: a self-hosted Postgres has no Neon branches to tell apart; the URL is the target.
+  // Only the commands that keep the real database current opt in; fixtures and checks never do.
+  if (isLocalMode(deps.env)) {
+    if (new URL(url).hostname.endsWith('.neon.tech')) {
+      throw new Error('MC_LIVE_MODE=local refuses a Neon MC_DATABASE_URL');
+    }
+    if (allowLocal) return url;
+    throw new Error(
+      `this command is ${LOCAL_UNAVAILABLE}: it writes fixtures or needs a check branch`,
+    );
+  }
   const name = await resolveBranchName(url, deps.neon());
   if (target === 'check') {
     requireCheckBranch(name);

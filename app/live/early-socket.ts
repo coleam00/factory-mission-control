@@ -10,6 +10,8 @@ export interface LiveBoot {
   home: string;
   factories: string[];
   rewind: string | null;
+  /** `local`: the server opened no socket (server/local-live.ts). */
+  mode?: 'neon' | 'local';
   protocol: string;
   socket?: WebSocket;
   early?: unknown[] | null;

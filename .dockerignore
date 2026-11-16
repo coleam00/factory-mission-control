@@ -1,0 +1,16 @@
+.git
+node_modules
+dist
+.env
+.env.*
+.mc-check.env
+.mc-serve.*
+.mc-local
+*.pem
+secrets.json
+credentials.json
+harness/.results
+.factory/holdout/.results
+.factory/backup
+.playwright-cli
+**/__pycache__
